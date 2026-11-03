@@ -276,3 +276,56 @@ The rows of round 3 stay valid: the tests moved unchanged and the Linux run abov
 ### Gate
 
 `mise exec -- mbx +1.99.1 xtask ci --fast` (macOS arm64, this section in the tree, code at `25305212b`): `Summary [72.237s] 1205 tests run: 1205 passed, 0 skipped`, then the REUSE line `Congratulations! Your project is compliant with version 3.3 of the REUSE Specification :-)`, exit code 0. The first run on `ee8dfb9ab` failed one test, `layers::edges_outside_the_row_are_reported` (1202 of 1203 run passed; see the layers rows above), which `25305212b` fixes. `cargo shear --deny-warnings` is a step of this gate and passed. The G-FAST in a sandbox of the Architect role has not run; the owed rows of round 3 are unchanged.
+
+## Round 5: the test gaps of the independent red/green
+
+Commits on `wt/sandbox-pgid` after `ca995c11f`: `ed3b2a22a` (U1), `089ae4449` (the lifecycle oracle), `3a4a19c9f` (the FakeClock reset), `ebb975956` (the exec sleepers), `cd2202524` (the xtask group fault) and `09fd55e60` (API.md); this section follows them. Inputs: the red/green report `/private/tmp/claude-501/plans/sandbox-pgid-redgreen.md` (CHANGES_REQUIRED; breaks L2, X1-X3 and M11b survived), the plan amendments A4 and A10, and the accepted oracle patch `/private/tmp/claude-501/plans/lifecycle-fix.patch`, applied with `git apply` and unchanged.
+
+### Decisions
+
+1. U1. `emptied` in `process_group/tests.rs` now asserts that the first `by_member` call returns `Signalled` before it polls for `Empty`. Both tests checked, just before, that the group had live members, so the first call must signal them. The poll loop still ends only on `Empty`, so a `by_member` that never returns `Empty` still fails by timeout.
+2. xtask fault plumbing (A10). `ToolRunner` in `production.rs` is public, with `ToolRunner::new(host, env)`, and `e2e.rs` re-exports it. It was reachable only through `production()`, which builds `jackin` and resolves a gateway. The tests drive it with a scripted `HostProcess`, a fake at the process boundary. `production()` builds the runner through `new`. No other change in `src`.
+3. xtask zombie rows. The test holds a zombie in the group, as the P1 table does (`sh -c 'exit 0'` joined to the group, not reaped, checked with `waitid(NOWAIT)`), and expects `None` on Linux and `Alive { after: 5s }` elsewhere. Three rows: the output cap, the timeout and the cancel. A clean exit of `RealHost::run` never calls `stop_group`, so unlike P1a there is no clean-exit row; the `HostError::Group` path is reached only after a read error or the output cap, and the cap row is the trigger. A fourth test checks the `ToolRunner` mapping for `Timeout`, `Cancelled` and `Group`, each with and without a fault.
+4. FakeClock `yields = 0` reset (A4). A deterministic test exists, so it is pinned and not left unproven. Poll a sleep until 20 polls before it wakes, take a guard, poll 100 times (still pending), drop the guard, and expect the wake at exactly `wake_at` polls, the same count as a fresh sleep. Without the reset the sleep wakes after 20 polls. The six-method leak check of A4 is still not written (see Not proven).
+5. Lifecycle oracle. The patch gives the Linux oracle its own `/proc/<pid>/stat` parser that treats `Z` and `X` as gone and keeps the signal probe elsewhere. Known cost, from the red/green report: a run that returns a moment early while the killed members are still zombies is no longer caught by this oracle (break 2 below). The strong case, a runner that never kills the group, is still caught on every run.
+6. Leaked processes. `exec.rs` runs `sh -c "sleep 300"` through the fake exec backend of `exec_rpc.rs`, which kills the shell it started and nothing under it. On macOS only `collected_output_is_capped_per_stream` reproduced the leak (`head ...; head ...; sleep 300` forks the sleep, the backend kills the shell, the sleep is orphaned): two `sleep 300` per run. `program_timeout_and_cancel_stop_the_remote_process` did not leak, because `sh` execs a lone command. All three now start `exec sleep 300`, so the child the backend holds is the sleep itself, and `child.kill()` or `kill_on_drop` ends and reaps it on a pass and on a failure. A group kill in the backend would cover every `host_shell` test, but `jackin-openshell` has no `rustix` dev-dependency, and adding one was not in the brief.
+7. API.md. The xtask section (line 3092) said it depends on no product crate and named an `e2e` cargo feature, `jackin-usage` and `schemars`. `crates/xtask/Cargo.toml` has no features, no `jackin-usage`, no `schemars`, and depends on `jackin-core`, `jackin-openshell` and `jackin-session`. The text now says that.
+8. Test environment as in round 3: Linux binaries from `cargo-zigbuild` (target `aarch64-unknown-linux-gnu`, `CARGO_ZIGBUILD_ZIG_PATH` set, run through `mise exec` with the binary of the mise install), run on `jackin-engine` with `orb -m jackin-engine <binary>` from the crate directory. Breaks ran in the worktree through a script that restores the file from a copy and compares it (`cmp`) afterwards; the commits hold no break.
+
+### Red and green
+
+Red lines are the first failing assertion of the run. Green: macOS rows pass in the gate run below; Linux rows were run on `jackin-engine`.
+
+| Test | Break | Red line |
+|---|---|---|
+| `by_member_ends_every_live_member_...` and `..._the_orphans_...` (linux) (L2) | `by_member` returns `Sweep::Empty` after the kills | `tests.rs:177 the first sweep, while the group has live members, reports that it signalled them: left Ok(Empty), right Ok(Signalled)` (both tests) |
+| `a_failed_group_stop_after_too_much_output_is_a_group_error_and_never_swallowed` (mac) (X1) | `RealHost::run` drops the fault of a failed group stop and returns the read error | `e_scratch.rs:473 expected Some(Alive { after: 5s }) as the fault, got Err(OutputTooLarge { program: "/bin/sh", stream: "stdout", limit: 1048576 })` |
+| `a_timeout_that_leaves_only_a_zombie_...` (mac) (X2a) | `HostError::Timeout` built with `group: None` | `e_scratch.rs:488 left: None, right: Some(Alive { after: 5s })` |
+| `a_cancel_that_leaves_only_a_zombie_...` (mac) (X2b) | `HostError::Cancelled` built with `group: None` | `e_scratch.rs:500 left: None, right: Some(Alive { after: 5s })` |
+| `a_tool_run_hands_the_group_fault_of_the_host_to_the_process_error` (mac) (X3a) | `production.rs` maps `Timeout` with `group: None` | `e_scratch.rs:563 a timeout keeps its fault: left None, right Some(Alive { after: 5s })` |
+| same (X3b) | `production.rs` maps `Cancelled` with `group: None` | `e_scratch.rs:587 a cancel keeps its fault: left None, right Some(Unreachable { message: "cannot list /proc" })` |
+| same (X3c) | the `HostError::Group` arm is removed | `e_scratch.rs:612 expected Group, got Err(Spawn { program: Git, message: "git: processes of its group were still alive after 5s" })` |
+| the three zombie rows (linux) | `b'Z' => self.threads > 1000` in `stat.rs` (a zombie counts as live) | `expected None as the fault, got Err(Group { program: "/bin/sh", fault: Alive { after: 5s } })`; the timeout and cancel rows `left: Some(Alive { after: 5s }), right: None` |
+| `a_sleep_interrupted_by_a_guard_counts_its_quiet_yields_again_from_zero` (mac) (M11b) | drop `if !quiet { yields = 0 }` from `FakeClock::sleep` | `host.rs:487 the quiet yields before the guard still counted: left Some(20), right Some(65)`; the other four guard tests stay green |
+| `lifecycle::a_run_returns_only_after_no_process_of_its_group_is_left` (linux), oracle | the unpatched oracle (`git apply -R`) | 27 of 40 runs red: `lifecycle.rs:193:5 exit, round 6`; with the patch 40 of 40 pass |
+| same, runner (linux) | `strike` does nothing and `stop` returns `Ok(())` at once | `lifecycle.rs:239:5 exit, round 0` (patched oracle) |
+| `collected_output_is_capped_per_stream` (mac), leak | the base file (`sleep 300` without `exec`) | two `sleep 300` left per run, parent 1 (pids 90855 and 91192 in the two-test run, 54332 and 54344 in the single-test run, all killed by pid); `ps` after the change: none, over 8 runs of both tests |
+| same, failure path | the assertion `limit == CAP` made `CAP + 1`, with the change in place | the test fails 3 of 3 and `ps` shows no new `sleep 300` |
+
+Linux greens: `process_group::tests` 4 of 4; `e_scratch::` and `f_pty::` 16 of 16 (`--test-threads=1`); `lifecycle` 40 of 40. `ps` on `jackin-engine` after each run showed no test process; the 8 loop subshells of the broken-runner row were killed by their group id (846851).
+
+### Owed in the sandbox rerun
+
+Unchanged from round 3, plus the new xtask rows and the patched lifecycle oracle (`lifecycle::a_run_returns_only_after_no_process_of_its_group_is_left`). On the EPERM branch a zombie is not live, so the zombie rows expect the Linux answer there.
+
+### Not proven
+
+- The six-method leak check of A4: that each guarded fake method returns its guard. The stalled `run_program` row stands for the six.
+- The leak fix has no assertion. A leaked sleeper shows only in `ps`; no test fails on it.
+- Two `sleep 300` processes (pids 42691 and 42987, parent 1, started 17:08:47) were on the host before my runs of the exec tests and are not mine; they were left alone.
+- The `streaming::a_128_mib_line_does_not_grow_process_memory` failure of a plain Linux run is explained in the red/green report: `resident_kib()` reads the RSS of the whole test binary, which holds every test as a thread when the binary runs directly; it fails the same way on the base commit and passes under nextest.
+- The Linux-only code of this round (the oracle, `by_member` test) was compiled and run on `jackin-engine`; clippy ran on macOS only, because the Linux target needs a C cross compiler for `aws-lc-sys`.
+
+### Gate
+
+`mise exec -- mbx +1.99.1 xtask ci --fast` (macOS arm64, this section in the tree, code at `cd2202524`): `Summary [76.987s] 1210 tests run: 1210 passed, 0 skipped`, then the REUSE line `Congratulations! Your project is compliant with version 3.3 of the REUSE Specification :-)`, exit code 0. `ps` after the run: no `sleep` that began after the gate started. Two `sleep 300` (pids 96790 and 97297, parent 1, started 17:22:46, cwd in a `jackin-openshell` test `TempDir`) began 85 s before the gate and are not from my runs (inferred: another session running the base `exec.rs`); they were left alone. The G-FAST in a sandbox has not run; the owed rows are listed above.
