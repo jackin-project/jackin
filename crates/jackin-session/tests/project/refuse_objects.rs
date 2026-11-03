@@ -115,3 +115,28 @@ async fn a_pack_entry_that_is_not_a_directory_is_refused() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn a_linked_worktree_of_a_repository_that_borrows_objects_is_refused() -> TestResult {
+    guard(async {
+        let other = RepoFixture::new().await?;
+        other.file("private.txt", b"TOP-SECRET-TOKEN\n").await?;
+        other.commit().await?;
+        let head = other.git(&["rev-parse", "HEAD"]).await?.trim().to_owned();
+        let main = base().await?;
+        let tree = main.linked_worktree("topic").await?;
+        let git_dir = main.root().as_path().join(".git");
+        let file = git_dir.join("objects/info/alternates");
+        let listed = other.root().as_path().join(".git/objects");
+        std::fs::write(&file, format!("{}\n", listed.display()))?;
+        std::fs::create_dir_all(git_dir.join("refs/remotes/o"))?;
+        std::fs::write(git_dir.join("refs/remotes/o/x"), format!("{head}\n"))?;
+        let rig = Rig::new(tree).await?;
+        match unsupported(rig.launch(1).await?)? {
+            UnsupportedProject::Alternates(named) => assert_eq!(named.as_path(), file),
+            other => return Err(format!("expected Alternates, saw {other:?}").into()),
+        }
+        assert_nothing_created(&rig)
+    })
+    .await
+}
