@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod edit;
+mod failed_add;
 mod lock;
 mod login;
 mod peers;
 mod race;
+mod stale_launch;
 mod support;
 mod sync;

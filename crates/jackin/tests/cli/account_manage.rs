@@ -314,13 +314,13 @@ fn session_on(rig: &Rig, gateway: &Arc<FakeGateway>) -> Session {
     })
 }
 
-struct Fleet {
-    harness: Harness,
-    second: Arc<FakeGateway>,
-    provider: ProviderName,
+pub(super) struct Fleet {
+    pub(super) harness: Harness,
+    pub(super) second: Arc<FakeGateway>,
+    pub(super) provider: ProviderName,
 }
 
-async fn on_two_gateways(rig: &Rig, second_holds_it: bool) -> Result<Fleet, Failure> {
+pub(super) async fn on_two_gateways(rig: &Rig, second_holds_it: bool) -> Result<Fleet, Failure> {
     let mut harness = Harness::new(&rig.world);
     let second = second_gateway()?;
     harness.connector = harness

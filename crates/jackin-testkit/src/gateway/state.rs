@@ -135,6 +135,7 @@ pub(super) struct Registry {
     pub(super) version: String,
     pub(super) host_home: Option<PathBuf>,
     pub(super) host_edits: Vec<(UploadKind, HostEdit)>,
+    pub(super) put_fails_after_write: Option<GatewayError>,
 }
 
 impl Registry {
@@ -164,6 +165,7 @@ impl Registry {
             version: "0.1.6".to_owned(),
             host_home: None,
             host_edits: Vec::new(),
+            put_fails_after_write: None,
         }
     }
 

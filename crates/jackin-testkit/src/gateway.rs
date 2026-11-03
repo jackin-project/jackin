@@ -156,6 +156,9 @@ pub enum Fault {
     HoldAt {
         trigger: Trigger,
     },
+    PutProviderFailsAfterWrite {
+        error: GatewayError,
+    },
 }
 
 fn protocol(message: impl ToString) -> GatewayError {
@@ -205,6 +208,9 @@ impl FakeGateway {
             Fault::HideUntilCreateConflict => registry.hidden_until_conflict = true,
             Fault::StartIgnored => registry.start_ignored = true,
             Fault::HoldAt { trigger } => registry.holds.push(Hold::new(trigger)),
+            Fault::PutProviderFailsAfterWrite { error } => {
+                registry.put_fails_after_write = Some(error);
+            }
         }
     }
 
@@ -643,7 +649,10 @@ impl Gateway for FakeGateway {
                 chatgpt_account_id: chatgpt_account_id.clone(),
             },
         );
-        Ok(())
+        match registry.put_fails_after_write.take() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
