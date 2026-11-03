@@ -218,4 +218,61 @@ The group signal works on macOS and on `jackin-engine`, so these cannot show red
 - The three xtask paths of decision 3 and the six-method leak check of A4 (that each guarded fake method returns its guard) have no test. The stalled `run_program` row is the representative of the six.
 - `lifecycle::a_run_returns_only_after_no_process_of_its_group_is_left` fails on `jackin-engine` as a plain binary in 5 of 6 runs on the base commit `fac3877b7` too (`exit, round N`; the oracle `group_is_empty` sees a live group after `run` returned). A retry of the oracle for 1 s did not remove it (13 of 20 runs failed), and a later `ps` showed no zombie, so the cause is not found. It passed in the sandbox rerun. Not touched here.
 - Run directly (not through nextest) on `jackin-engine`, `env::the_child_gets_the_spec_environment_...` fails by design ("run the test under cargo nextest") and `streaming::a_128_mib_line_does_not_grow_process_memory` reports a peak of 68144 KiB against a 48 MiB budget. Not investigated.
-- `ImageError::Cancelled` still drops the fault (decision 1).
+- `ImageError::Cancelled` still drops the fault (decision 1). Closed in round 4.
+
+## Round 4: the group stop leaves jackin-core, and `ImageError::Cancelled` carries its fault
+
+Commits on `wt/sandbox-pgid` after `44bdfcd40`: `ed4a8f6b1` (the move), `ee8dfb9ab`, `25305212b` (the layers fixture test) (the image fault and its test). Round 3 decision 2 put `ProcessGroup` in `jackin-core`, which breaks D14 ("No I/O except config files"; `jackin-session` owns the host process runner). Round 4 reverses it.
+
+### Decisions
+
+1. Layering. `ProcessGroup`, `Sweep`, the `/proc` stat parser and the Linux-only test module moved with `git mv` to `crates/jackin-session/src/process_group.rs` and `process_group/{stat,tests}.rs`. The tests are unchanged. `jackin-session` exports `ProcessGroup` and `Sweep` (`pub use process_group::*`); `host.rs` uses the local module. `GroupFault` stays in `jackin-core`: `ProcessError` holds it and it does no I/O.
+2. The `layers` table. The only change is the `jackin-xtask` row: `depends` goes from `["jackin-core", "jackin-openshell"]` to `["jackin-core", "jackin-openshell", "jackin-session"]`. `xtask` is a top-level tooling binary and nothing sits above it, so the edge cannot make a cycle (`jackin-session` does not depend on `xtask`; `xtask` dev-depends on `jackin-testkit`, which depends on `jackin-session`, and that was allowed already). Every other row, the import rules, the HTTP-client rule and the `Secret::expose` allowlist are unchanged, and the `layers` step passed.
+3. Dependencies. `jackin-core`: the `tokio` `time` feature is gone and the dev-dependency `tokio` features are back to `["macros"]` (both were added in round 3 for the group stop only); `rustix` stays, `fs.rs` uses it. `jackin-session`: `rustix` moved from dev-dependencies to dependencies. `jackin-xtask`: new dependency `jackin-session` (workspace entry); `Cargo.lock` gains that one line. `cargo shear --deny-warnings` runs in the `--fast` gate and passed.
+4. `ImageError::Cancelled` is `Cancelled { group: Option<GroupFault> }`, with `Display` `cancelled` plus `GroupFault::note`. `from_engine` passes the fault from `EngineError::Cancelled`. The `live()` check of a cancelled token has no process, so it gives `group: None`. The exit-class match in `crates/jackin/src/error.rs` and the existing image tests use `Cancelled { .. }`.
+
+### Audit of `Cancelled` and `Timeout` variants
+
+Every `Cancelled` and `Timeout` construction and match in non-test code was listed with `grep -rnE "(ProcessError|GatewayError|EngineError|ExportError|ImageError|HostError)::(Cancelled|Timeout)" crates` and read. None of the conversions between the wrapped types drops `group`, except where the source has no process group:
+
+| Site | Result |
+|---|---|
+| `jackin-core/src/boundary.rs` `ProcessError::{Timeout,Cancelled}` | carry `group` |
+| `jackin-session/src/host.rs` `with_group` | sets `group: Some(fault)` on both; other variants become `Group` |
+| `jackin-openshell/src/transfer.rs:75-76` `process_error` | passes `group` into `GatewayError::{Timeout,Cancelled}` |
+| `jackin-image/src/buildx.rs:64` `from_process` | passes `group` into `EngineError::Cancelled`; `Timeout` stays `Process(Timeout{group})` |
+| `jackin-image/src/ensure.rs:40` `from_engine` | was the dropped fault; now passes `group` (this round) |
+| `jackin-session/src/export.rs:208, 217` | `GatewayError::Cancelled` and `ProcessError::Cancelled` pass `group`; a `Timeout` keeps the whole error in `ExportError::Gateway` or `Process` |
+| `jackin/src/app.rs:52-55` `ConnectError::cancel` | reads `group` from both sources |
+| `jackin/src/error.rs:129-131` `class` | classifies only; the text comes from `Display`, which carries the note |
+| `xtask/src/e2e/host.rs:288-294` and `production.rs:107-112` | `HostError::{Timeout,Cancelled}` carry `group` and map to `ProcessError` with it |
+| `jackin-testkit` runner, gateway, `engine.rs` | `ProcessReply` bodies carry `group`; the other constructors have no group stop |
+
+No process, so `group: None` is correct: `GatewayError::Timeout` and `Cancelled` built from the gRPC deadline, token or status (`grpc.rs:86`, `grpc/status.rs:52`, `grpc/shell.rs:87`, `grpc/main_pty.rs:259`, `grpc/program.rs:281,284`), `attach.rs:455,503`, `project.rs:213` (`LockError::Cancelled`), `launch/run.rs:583` (an upload timer), `ExportError::Cancelled` at `export.rs:404` and `export/bundle.rs:154,456`, `EngineError::Cancelled` at `buildx.rs:340`, and the host runner's own `cancel.cancelled()` and `timer` arms (`host.rs:422,453,454`, before the group stop runs). Not wrapping a process error: `LockError::Cancelled`, `PollError::{Cancelled,Timeout}`, `UsageError::Cancelled`, `PtyError::Timeout`, `LaunchError::{ReadyTimeout,SupervisorTimeout,AttemptTimeout}`, `EngineError::LockTimeout`, `ImageError::LockTimeout`, `LaunchOutcome::Cancelled`, `CommandError::Cancelled(String)` (its text from `ConnectError` already holds the note).
+
+### Red and green
+
+The F9 row follows the F1-F8 pattern: a scripted `docker image inspect` reply, the public `ensure_image`, the resulting error. `a_cancel_whose_group_stop_failed_reaches_the_image_error_with_its_fault` (`crates/jackin-image/tests/image_io/ensure.rs`) has three rows: a plain cancel gives `Cancelled { group: None }` and the text `cancelled` (negative control); a cancel with `GroupFault::Alive` gives `Cancelled { group: Some(Alive) }` and the text with the note; a timeout with a fault gives `Engine(Process(Timeout { group: Some(Alive) }))`.
+
+| Test | Break | Red line |
+|---|---|---|
+| F9 (mac) | `from_engine` returns `Cancelled { group: None }` | `ensure.rs:939 cancel with a fault: left None, right Some(Alive { after: 5s })` |
+| F9 (mac) | `Display` without `GroupFault::note` | `ensure.rs:940 cancel with a fault: left Some("cancelled"), right Some("cancelled; processes of its group were still alive after 5s")` |
+| `layers::edges_outside_the_row_are_reported` (mac) | none; the fixture named `jackin-xtask -> jackin-session` as its forbidden edge, which the new row allows | `repo_gates.rs:705 left` has no `crates/jackin-xtask/Cargo.toml` entry, `right` has one (first gate run, 1 failed of 1205) |
+| same, after the fixture uses `jackin-xtask -> jackin-tui` | the `jackin-xtask` row also lists `jackin-tui` | `repo_gates.rs:705 left` has no `crates/jackin-xtask/Cargo.toml` entry, `right` has one |
+| `a_stat_line_is_a_live_member_...` (linux, moved) | `b'Z' => self.threads < 1000` | `tests.rs:83 a zombie leader with a running thread: left Ok(false), right Ok(true)` |
+
+The first layers row is the red of the old fixture against the new row; the second proves the fixture still catches a forbidden xtask edge. The break edits ran in the worktree and were restored from a copy before the commit (`git diff` of the file was empty after each). Green after the move: macOS in the gate run below; Linux on `jackin-engine` (aarch64, kernel 7.2.12), binaries built with `cargo zigbuild` as in round 3:
+
+```text
+jackin_session lib (process_group::tests): 4 passed
+process_runner: 21 passed, 3 failed (the same three as round 3: env (needs nextest), lifecycle::a_run_returns_only_after_no_process_of_its_group_is_left (oracle flake, open), streaming::a_128_mib_line_does_not_grow_process_memory (68 to 80 MiB peak))
+  group::* (P1a-c, P2 hostile neighbours), stdin::stdin_is_dev_null_..., lifecycle::cancel_kills_..., a_timeout_kills_...: ok
+xtask e2e (--test-threads=1): e_scratch::real_host_kills_the_whole_process_group_on_timeout ok, f_pty::dropping_a_link_kills_the_child_and_its_group ok
+```
+
+The rows of round 3 stay valid: the tests moved unchanged and the Linux run above shows them live (the stat break is red at the new path).
+
+### Gate
+
+`mise exec -- mbx +1.99.1 xtask ci --fast` (macOS arm64, this section in the tree, code at `25305212b`): `Summary [72.237s] 1205 tests run: 1205 passed, 0 skipped`, then the REUSE line `Congratulations! Your project is compliant with version 3.3 of the REUSE Specification :-)`, exit code 0. The first run on `ee8dfb9ab` failed one test, `layers::edges_outside_the_row_are_reported` (1202 of 1203 run passed; see the layers rows above), which `25305212b` fixes. `cargo shear --deny-warnings` is a step of this gate and passed. The G-FAST in a sandbox of the Architect role has not run; the owed rows of round 3 are unchanged.
