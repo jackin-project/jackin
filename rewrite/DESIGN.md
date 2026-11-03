@@ -114,9 +114,9 @@ Evidence: `evidence/P0.2-gateway.md`, `evidence/P0.3-codex.md`, `evidence/P7.1-i
 
 - `jackin load` creates one OpenShell sandbox for one workspace, role, and account.
 - The sandbox name is `jackin-<slug>-<suffix>`. The slug is the first 7 characters of the workspace name in lowercase DNS-1123 form. The suffix is 4 characters derived from the launch ID, which is random. OpenShell 0.1.6 limits a sandbox name to 19 characters, so the full workspace name lives in a label. Because the name is derived from the launch ID, the gateway rejects a second create of the same launch.
-- Labels on the sandbox hold the workspace, role, agent, account, the first 32 hex characters of the image ID, and the launch ID. A label value has at most 63 characters.
+- Labels on the sandbox hold the workspace, role, agent, account, the first 32 hex characters of the image ID, the launch ID, and the Docker capability (`jackin.dev/docker`: `off`, or the engine port when it is on). A label value has at most 63 characters.
 - Jackin keeps no local instance index and no database. To find sandboxes, jackin lists them by label.
-- A retry with the same launch ID finds the existing sandbox and continues from its observed state. It does not create a second sandbox.
+- A retry with the same launch ID finds the existing sandbox and continues from its observed state. It does not create a second sandbox. When the image or the Docker capability label differs from the planned value, the retry is refused (`StaleSandbox`) and nothing changes.
 
 ### D08. Upload the project as a working tree and a git bundle, and export work as a git bundle
 
