@@ -19,3 +19,16 @@ targetRules = ["generic-api-key"]
 regexTarget = "line"
 regexes = ['''host key pinned SHA256:[A-Za-z0-9+/]{43}''']
 paths = ['''^rewrite/evidence/.*\.md$''']
+
+[[allowlists]]
+description = "jackin placeholder ID token: alg none, fixed claims, literal placeholder signature"
+condition = "AND"
+targetRules = ["jwt"]
+regexTarget = "match"
+regexes = ['''\.placeholder["']?$''']
+paths = ['''^crates/jackin-core/src/agent\.rs$''']
+
+[[allowlists]]
+description = "e2e world fixture tokens: base64 of readable text as the signature, no key behind them"
+targetRules = ["jwt"]
+paths = ['''^crates/xtask/tests/e2e/scenario/world\.rs$''']
