@@ -35,7 +35,7 @@ features = ["default"]
 target = "host"
 
 [discovery]
-exclude = ["crates/usage/**", "docs/**"]
+exclude = ["docs/**"]
 
 [actions.overrides]
 
