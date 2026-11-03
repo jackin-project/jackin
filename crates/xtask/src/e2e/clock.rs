@@ -49,6 +49,7 @@ pub struct Budgets {
     pub usage_backoff: Duration,
     pub poll: Duration,
     pub key_gap: Duration,
+    pub codex_age: Duration,
 }
 
 const fn secs(count: u64) -> Duration {
@@ -89,6 +90,7 @@ impl Budgets {
             usage_backoff: secs(20),
             poll: secs(2),
             key_gap: Duration::from_millis(500),
+            codex_age: secs(15),
         }
     }
 
@@ -106,6 +108,7 @@ impl Budgets {
             usage_backoff: Duration::from_millis(5),
             poll: Duration::from_millis(5),
             key_gap: Duration::from_millis(5),
+            codex_age: Duration::from_secs(2),
         }
     }
 

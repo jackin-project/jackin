@@ -582,3 +582,14 @@ async fn j08_reflection_survives_an_enter_that_a_busy_codex_swallows() {
         &[],
     );
 }
+
+#[tokio::test]
+async fn the_shared_probe_waits_until_codex_has_settled() {
+    let scenario = Scenario::new().await;
+    scenario.knobs().codex_young_polls = 3;
+    let ran = scenario.run().await;
+    ran.expect(
+        "a probe that started a second Codex too early would crash the first",
+        &[],
+    );
+}

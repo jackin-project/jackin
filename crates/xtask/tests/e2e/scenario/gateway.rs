@@ -108,6 +108,13 @@ impl ScenarioGateway {
     }
 
     fn answer_probe(&self, run: &ProgramRun) -> Result<ProgramOutcome, GatewayError> {
+        let young = self.shared.knobs().codex_young_polls;
+        if run.args.join(" ").contains("J04") && self.shared.state().age_polls <= young {
+            if let Some(model) = self.shared.state().sandboxes.get_mut(run.sandbox.as_str()) {
+                model.crashed = true;
+                model.supervisor = "exited 1 1".to_owned();
+            }
+        }
         let model = self
             .model_of(&run.sandbox)
             .ok_or_else(|| GatewayError::NotFound {
@@ -138,6 +145,11 @@ impl ScenarioGateway {
         let model = self.model_of(&run.sandbox).unwrap_or_default();
         let digest = self.world.probe_digest();
         let mut state = self.shared.state();
+        if script.contains("etimes=") {
+            state.age_polls += 1;
+            let young = state.age_polls <= self.shared.knobs().codex_young_polls;
+            return outcome(0, if young { "1\n" } else { "999\n" });
+        }
         if script == "/usr/bin/env" {
             return outcome(
                 0,
@@ -148,11 +160,15 @@ impl ScenarioGateway {
             return outcome(0, "uid=1000\nuser=sandbox\ndocker=no\nsudo=no\n");
         }
         if script.contains("ps -eo pid,ppid,comm,args") {
+            let codex = if model.crashed {
+                String::new()
+            } else {
+                format!(" {} 100 codex codex\n", model.codex_pid.max(4242))
+            };
             return outcome(
                 0,
                 &format!(
-                    "  PID  PPID COMMAND ARGS\n  100     1 jackin-start jackin-start\n {} 100 codex codex\n",
-                    model.codex_pid.max(4242)
+                    "  PID  PPID COMMAND ARGS\n  100     1 jackin-start jackin-start\n{codex}"
                 ),
             );
         }

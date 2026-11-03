@@ -146,6 +146,7 @@ pub(crate) struct Knobs {
     pub reflect_body: Option<String>,
     pub reflect_not_descendant: bool,
     pub reflect_never_done: bool,
+    pub codex_young_polls: u32,
     pub reflect_swallow_first_enter: bool,
     pub reflect_done_code: i32,
     pub auth_id_token: Option<String>,
@@ -209,6 +210,7 @@ pub(crate) struct State {
     pub containers: Vec<String>,
     pub commands: Vec<String>,
     pub loads: u32,
+    pub age_polls: u32,
     pub exports: u32,
     pub attaches: u32,
     pub rule_hits: BTreeMap<String, u32>,
@@ -237,6 +239,7 @@ pub(crate) struct SandboxModel {
     pub stopped: bool,
     pub started_once: bool,
     pub kept: bool,
+    pub crashed: bool,
 }
 
 #[derive(Debug)]

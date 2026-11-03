@@ -4,7 +4,7 @@
 use jackin_core::SandboxName;
 
 use crate::e2e::probe::{FactsJ04, ProbeReport};
-use crate::e2e::run::{Fail, Res, Run, fail};
+use crate::e2e::run::{Fail, Res, Run, fail, text_of};
 use crate::e2e::verdict::Verdict;
 
 const SHARED: [&str; 7] = ["J04", "J05", "J06", "J07", "J08", "J09", "J10"];
@@ -92,8 +92,23 @@ impl Run<'_> {
         }
     }
 
+    pub(crate) async fn wait_for_codex(&mut self, sandbox: &SandboxName) -> Res<()> {
+        let wanted = self.b.budgets.codex_age.as_secs();
+        let script = "ps -eo etimes=,comm= | awk '$2 == \"codex\" {print $1; exit}'";
+        let deadline = tokio::time::Instant::now() + self.b.budgets.exec;
+        loop {
+            let outcome = self.exec(sandbox, "J04 codex age", script).await?;
+            let age = text_of(&outcome.stdout).trim().parse::<u64>().ok();
+            if age.is_some_and(|age| age >= wanted) || tokio::time::Instant::now() >= deadline {
+                return Ok(());
+            }
+            tokio::time::sleep(self.b.budgets.poll).await;
+        }
+    }
+
     async fn j04_inner(&mut self) -> Res<Verdict> {
         let sandbox = self.sandbox_s()?;
+        self.wait_for_codex(&sandbox).await?;
         let report = self
             .probe(&sandbox, "J04 shared probe", false, false, &SHARED)
             .await
