@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::path::Path;
+use std::time::{Duration, UNIX_EPOCH};
+
 use jackin_core::{BranchName, Config, Phase, SandboxName};
 use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::{PurgeError, PurgeMode, PurgeOutcome, Unexported, UnknownReason, WorkState};
-use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
+use jackin_testkit::{Fault, Rig, SandboxHandle, TestResult, Trigger, guard};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{export, ref_of, state};
@@ -352,6 +355,97 @@ async fn an_index_flag_cannot_hide_a_modified_file_from_the_purge_check() -> Tes
             handle.git(&["checkout", "-q", "--", "README.md"]).await?;
             assert_eq!(state(&rig, &name).await, WorkState::Exported, "{flag}");
         }
+        Ok(())
+    })
+    .await
+}
+
+async fn pin_mtime(path: &Path) -> TestResult {
+    tokio::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .await?
+        .into_std()
+        .await
+        .set_modified(UNIX_EPOCH + Duration::from_secs(1_700_000_000))?;
+    Ok(())
+}
+
+async fn hide_and_expect_one(
+    rig: &Rig,
+    handle: &SandboxHandle,
+    settings: &[(&str, &str)],
+    case: &str,
+) -> TestResult {
+    let name = handle.name();
+    assert_eq!(
+        state(rig, &name).await,
+        unexported(1, &[])?,
+        "{case}: control"
+    );
+    for (key, value) in settings {
+        handle.git(&["config", key, value]).await?;
+    }
+    assert_eq!(handle.git(&["status", "--porcelain"]).await?, "", "{case}");
+    assert_eq!(state(rig, &name).await, unexported(1, &[])?, "{case}");
+    refuses_a_guarded_purge(rig, &name).await
+}
+
+#[tokio::test]
+async fn a_repository_setting_cannot_hide_a_tracked_change_from_the_purge_check() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let readme = handle.root().join("project/README.md");
+        std::fs::set_permissions(&readme, std::os::unix::fs::PermissionsExt::from_mode(0o755))?;
+        hide_and_expect_one(
+            &rig,
+            &handle,
+            &[("core.fileMode", "false")],
+            "core.fileMode",
+        )
+        .await?;
+
+        rig.launch(2).await?;
+        let handle = rig.handle(2).await?;
+        let readme = handle.root().join("project/README.md");
+        pin_mtime(&readme).await?;
+        handle.git(&["update-index", "--really-refresh"]).await?;
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        std::fs::write(&readme, b"README\n")?;
+        pin_mtime(&readme).await?;
+        hide_and_expect_one(
+            &rig,
+            &handle,
+            &[("core.checkStat", "minimal"), ("core.trustctime", "false")],
+            "core.checkStat and core.trustctime",
+        )
+        .await?;
+
+        rig.launch(3).await?;
+        let handle = rig.handle(3).await?;
+        let nested = handle.root().join("project/sub");
+        std::fs::create_dir_all(&nested)?;
+        handle.git(&["-C", "sub", "init", "-q"]).await?;
+        std::fs::write(nested.join("s.txt"), b"one\n")?;
+        handle.git(&["-C", "sub", "add", "-A"]).await?;
+        handle
+            .git(&["-C", "sub", "commit", "-q", "-m", "s"])
+            .await?;
+        handle.git(&["add", "sub"]).await?;
+        handle.git(&["commit", "-q", "-m", "gitlink"]).await?;
+        export(&rig, &handle.name()).await?;
+        assert_eq!(state(&rig, &handle.name()).await, WorkState::Exported);
+        std::fs::write(nested.join("s.txt"), b"two\n")?;
+        hide_and_expect_one(
+            &rig,
+            &handle,
+            &[("diff.ignoreSubmodules", "all")],
+            "diff.ignoreSubmodules",
+        )
+        .await?;
         Ok(())
     })
     .await

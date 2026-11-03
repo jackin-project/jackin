@@ -296,7 +296,20 @@ impl Remote<'_> {
         };
         for path in &repository.checkouts {
             let status = self
-                .require(&["-C", path, "status", "--porcelain", "--untracked-files=all"])
+                .require(&[
+                    "-C",
+                    path,
+                    "-c",
+                    "core.fileMode=true",
+                    "-c",
+                    "core.trustctime=true",
+                    "-c",
+                    "core.checkStat=default",
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                    "--ignore-submodules=none",
+                ])
                 .await?;
             count += lines(&status);
             let flagged = self.require(&["-C", path, "ls-files", "-v", "-z"]).await?;
