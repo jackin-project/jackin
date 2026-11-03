@@ -208,14 +208,25 @@ impl Run<'_> {
         .ok()
     }
 
-    pub(crate) async fn jackin_refs(&mut self, dir: &std::path::Path) -> String {
+    pub(crate) async fn jackin_refs(&mut self, dir: &std::path::Path) -> Res<String> {
         let output = self
             .git(
                 dir,
                 &["for-each-ref", "--format=%(refname)", "refs/heads/jackin"],
             )
-            .await;
-        output.map_or_else(|_| String::new(), |out| text_of(&out.stdout))
+            .await?;
+        if output.ok() {
+            return Ok(text_of(&output.stdout));
+        }
+        let why = output.stderr_text();
+        if why.contains("not a git repository") {
+            return Ok(String::new());
+        }
+        Err(fail(format!(
+            "git exited {}: {}",
+            output.exit.describe(),
+            why.trim()
+        )))
     }
 
     async fn remove_refs(&mut self, residue: &mut Vec<String>) {
@@ -227,29 +238,49 @@ impl Run<'_> {
             if !project.is_dir() {
                 continue;
             }
-            let listing = self.jackin_refs(&project).await;
+            let listing = match self.jackin_refs(&project).await {
+                Ok(listing) => listing,
+                Err(failure) => {
+                    residue.push(format!(
+                        "cannot list host refs in {}: {}",
+                        project.display(),
+                        failure.0
+                    ));
+                    continue;
+                }
+            };
             for reference in listing.lines().filter(|line| !line.trim().is_empty()) {
                 drop(
                     self.git(&project, &["update-ref", "-d", reference.trim()])
                         .await,
                 );
             }
-            let left = self.jackin_refs(&project).await;
-            if !left.trim().is_empty() {
-                residue.push(format!(
+            match self.jackin_refs(&project).await {
+                Ok(left) if left.trim().is_empty() => {}
+                Ok(left) => residue.push(format!(
                     "host refs remain in {}: {}",
                     project.display(),
                     left.trim()
-                ));
+                )),
+                Err(failure) => residue.push(format!(
+                    "cannot list host refs in {}: {}",
+                    project.display(),
+                    failure.0
+                )),
             }
         }
         let role = self.role.clone();
-        let after = self.jackin_refs(&role).await;
-        if after != self.role_refs_before {
-            residue.push(format!(
+        match self.jackin_refs(&role).await {
+            Ok(after) if after == self.role_refs_before => {}
+            Ok(_) => residue.push(format!(
                 "host ref refs/heads/jackin/... changed in the role repository {}",
                 role.display()
-            ));
+            )),
+            Err(failure) => residue.push(format!(
+                "cannot list host refs in the role repository {}: {}",
+                role.display(),
+                failure.0
+            )),
         }
     }
 

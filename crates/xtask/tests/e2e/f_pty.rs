@@ -105,7 +105,7 @@ async fn ansi_sequences_do_not_defeat_matching() {
 async fn markers_defeat_the_terminal_echo() {
     let shell = || {
         let link = PortablePty::default()
-            .open(&spec("/bin/sh", &["-i"]))
+            .open(&spec("/bin/sh", &[]))
             .expect("open");
         PtySession::new(link, Redactor::none())
     };

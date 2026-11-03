@@ -318,4 +318,14 @@ async fn host_refs_are_deleted_and_the_role_repository_ref_set_is_checked() {
         &[("CLEAN", "FAIL")],
     );
     ran.reason_has("role repository", "CLEAN", "role repository");
+
+    let broken = Scenario::new().await;
+    init_role_repo(&broken);
+    broken.knobs().git_fail = Some((
+        "--format=%(refname) refs/heads/jackin".to_owned(),
+        "projects".to_owned(),
+    ));
+    let ran = broken.run().await;
+    assert_eq!(ran.status_of("CLEAN"), "FAIL", "{}", ran.stdout);
+    ran.reason_has("host refs unreadable", "CLEAN", "cannot list host refs");
 }

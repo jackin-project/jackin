@@ -294,7 +294,9 @@ impl Gateway for ScenarioGateway {
         let mut put = |key: &str, value: String| {
             env.insert(jackin_core::EnvName::parse(key).expect("name"), value);
         };
-        put("JACKIN_LAUNCH_ID", model.launch.clone());
+        if !knobs.create_env_drop_launch {
+            put("JACKIN_LAUNCH_ID", model.launch.clone());
+        }
         if let Some((key, value)) = knobs.create_env_extra {
             put(&key, value);
         }

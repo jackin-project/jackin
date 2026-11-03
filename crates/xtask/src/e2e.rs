@@ -22,6 +22,7 @@ mod world;
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::io::Write;
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -135,6 +136,21 @@ pub async fn run_e2e(args: &E2eArgs, boundaries: Boundaries) -> ExitStatus {
     let _quiet = QuietPanics::install();
     let _signals = Signals::start(boundaries.cancel.clone(), printer.clone());
     execute(args, &boundaries, &printer).await
+}
+
+pub async fn e2e_command(
+    args: &E2eArgs,
+    boundaries: impl Future<Output = Result<Boundaries, ProductionError>>,
+) -> u8 {
+    match boundaries.await {
+        Ok(boundaries) => run_e2e(args, boundaries).await.code(),
+        Err(error) => {
+            match writeln!(std::io::stderr().lock(), "xtask: {error}") {
+                Ok(()) | Err(_) => {}
+            }
+            ExitStatus::Setup.code()
+        }
+    }
 }
 
 fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {

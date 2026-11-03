@@ -175,7 +175,16 @@ async fn build_run<'a>(
         shield: tokio_util::sync::CancellationToken::new(),
     };
     let role = run.role.clone();
-    run.role_refs_before = run.jackin_refs(&role).await;
+    run.role_refs_before = match run.jackin_refs(&role).await {
+        Ok(listing) => listing,
+        Err(failure) => {
+            drop(run.scratch.remove());
+            return Err(setup(format!(
+                "cannot list the refs of the role repository: {}",
+                failure.0
+            )));
+        }
+    };
     Ok(run)
 }
 

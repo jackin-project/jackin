@@ -282,7 +282,14 @@ fn a1_lock_is_exclusive_and_fails_fast() {
     let dir = tempfile::tempdir().expect("tempdir");
     let first = A1Lock::acquire(dir.path()).expect("first");
     let started = Instant::now();
-    let second = A1Lock::acquire(dir.path());
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let path = dir.path().to_path_buf();
+    std::thread::spawn(move || {
+        drop(sender.send(A1Lock::acquire(&path).map(drop)));
+    });
+    let second = receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the second acquire must answer at once, not wait for the first");
     assert!(matches!(second, Err(A1Error::LockHeld(_))), "{second:?}");
     assert!(
         started.elapsed().as_millis() < 500,
@@ -364,5 +371,43 @@ async fn host_login_change_is_reported_without_a_hash() {
     assert!(
         !Regex::new("[0-9a-f]{32}").expect("regex").is_match(result),
         "no digest: {result}"
+    );
+}
+
+#[tokio::test]
+async fn a_needle_in_a_setup_error_is_scrubbed_from_stderr() {
+    let scenario = Scenario::new().await;
+    scenario.knobs().host_spawn_error =
+        Some(("gateway add".to_owned(), format!("boom {ACCESS} {REFRESH}")));
+    let ran = scenario.run().await;
+    assert_eq!(ran.status.code(), 2, "{}", ran.stderr);
+    assert!(
+        ran.stderr.contains("jackin gateway add could not run"),
+        "the error reaches stderr: {}",
+        ran.stderr
+    );
+    assert!(
+        !ran.stderr.contains(ACCESS) && !ran.stderr.contains(REFRESH),
+        "stderr carries a token: {}",
+        ran.stderr
+    );
+}
+
+#[tokio::test]
+async fn a_step_panic_never_reaches_a_panic_hook_installed_before_the_run() {
+    let heard = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let sink = std::sync::Arc::clone(&heard);
+    std::panic::set_hook(Box::new(move |info| {
+        sink.lock().expect("lock").push_str(&info.to_string());
+    }));
+    let panics = Scenario::new().await;
+    panics.knobs().panic_in_probe = Some(format!("boom {ACCESS}"));
+    let ran = panics.run().await;
+    drop(std::panic::take_hook());
+    assert_eq!(ran.status_of("J04"), "FAIL", "{}", ran.stdout);
+    let text = heard.lock().expect("lock").clone();
+    assert!(
+        !text.contains(ACCESS),
+        "the hook installed before the run heard the token: {text}"
     );
 }

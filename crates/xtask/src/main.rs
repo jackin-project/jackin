@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use jackin_xtask::{CiArgs, CiFailure, E2eArgs, Repo, production, run_ci, run_e2e};
+use jackin_xtask::{CiArgs, CiFailure, E2eArgs, Repo, e2e_command, production, run_ci};
 
 const E2E_HELP: &str = "J15 and J16 need the operator's D24 test engine: a rootless dockerd at \
 host.openshell.internal:2376 (localhost:2376 on the Mac) with client certificates in \
@@ -43,13 +43,7 @@ async fn main() -> ExitCode {
 }
 
 async fn e2e(args: &E2eArgs) -> ExitCode {
-    match production(args).await {
-        Ok(boundaries) => ExitCode::from(run_e2e(args, boundaries).await.code()),
-        Err(error) => {
-            fail(&error);
-            ExitCode::from(2)
-        }
-    }
+    ExitCode::from(e2e_command(args, production(args)).await)
 }
 
 fn ci(args: CiArgs) -> ExitCode {

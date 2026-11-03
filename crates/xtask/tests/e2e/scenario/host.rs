@@ -597,6 +597,14 @@ impl ScenarioHost {
             .get(name)
             .is_some_and(|model| model.committed);
         if !force && committed && !knobs.purge_unguarded {
+            if knobs.purge_vanishes {
+                drop(
+                    self.fake
+                        .delete_sandbox(&SandboxName::parse(name).expect("name"))
+                        .await,
+                );
+                self.shared.state().sandboxes.remove(name);
+            }
             return done(3, "", "refused: the sandbox holds unexported work\n");
         }
         if force && knobs.force_leaves_sandbox {
@@ -648,11 +656,35 @@ impl HostProcess for ScenarioHost {
         command: &HostCommand,
         cancel: &CancellationToken,
     ) -> Result<HostOutput, HostError> {
+        if cancel.is_cancelled() {
+            return Err(HostError::Cancelled {
+                program: command.program.clone(),
+            });
+        }
         if command.program == "git" {
+            let broken = self.shared.knobs().git_fail.clone();
+            if let Some((needle, place)) = broken
+                && command.display().contains(&needle)
+                && command
+                    .cwd
+                    .as_ref()
+                    .is_some_and(|dir| dir.display().to_string().contains(&place))
+            {
+                return done(128, "", "fatal: the repository is broken\n");
+            }
             return self.real.run(command, cancel).await;
         }
         let line = command.display();
         self.shared.state().commands.push(line.clone());
+        let spawn = self.shared.knobs().host_spawn_error.clone();
+        if let Some((needle, message)) = spawn
+            && line.contains(&needle)
+        {
+            return Err(HostError::Spawn {
+                program: "jackin".to_owned(),
+                message,
+            });
+        }
         let advances = self.shared.knobs().advance.clone();
         for (needle, by) in advances {
             if line.contains(&needle) {

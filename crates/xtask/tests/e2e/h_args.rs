@@ -3,6 +3,10 @@
 
 use std::process::{Command, Output};
 
+use jackin_xtask::{ProductionError, e2e_command};
+use serde_json::json;
+
+use super::scenario::Scenario;
 use super::support::capture;
 
 fn xtask(args: &[&str]) -> Output {
@@ -94,4 +98,53 @@ fn the_e2e_command_parses_and_the_stub_is_gone() {
             "{args:?}: {message}"
         );
     }
+}
+
+fn prepared(scenario: &Scenario) -> jackin_xtask::Boundaries {
+    scenario.state().tag.clone_from(&scenario.tag);
+    scenario.boundaries().0
+}
+
+#[tokio::test]
+async fn the_command_glue_maps_every_outcome_to_its_exit_code() {
+    let pass = Scenario::new().await;
+    let boundaries = prepared(&pass);
+    assert_eq!(e2e_command(&pass.args, async { Ok(boundaries) }).await, 0);
+
+    let failing = Scenario::new().await;
+    failing.patch("J10", None, "/result", json!("FAIL"));
+    failing.patch("J10", None, "/reason", json!("broken"));
+    failing.patch("J10", None, "/checks/0/result", json!("FAIL"));
+    let boundaries = prepared(&failing);
+    assert_eq!(
+        e2e_command(&failing.args, async { Ok(boundaries) }).await,
+        1
+    );
+
+    let skipping = Scenario::new().await;
+    skipping.patch("J08", None, "/checks/0/name", json!("environment"));
+    skipping.patch("J08", None, "/checks/0/result", json!("SKIP"));
+    skipping.patch("J08", None, "/result", json!("SKIP"));
+    skipping.patch("J08", None, "/reason", json!("skipped"));
+    skipping.patch("J08", None, "/facts/start_record/state", json!("absent"));
+    let boundaries = prepared(&skipping);
+    assert_eq!(
+        e2e_command(&skipping.args, async { Ok(boundaries) }).await,
+        3
+    );
+
+    let interrupted = Scenario::new().await;
+    interrupted.knobs().cancel_at = Some("ps -eo".to_owned());
+    let boundaries = prepared(&interrupted);
+    assert_eq!(
+        e2e_command(&interrupted.args, async { Ok(boundaries) }).await,
+        130
+    );
+
+    let refused = Scenario::new().await;
+    let code = e2e_command(&refused.args, async {
+        Err(ProductionError::Setup("no gateway".to_owned()))
+    })
+    .await;
+    assert_eq!(code, 2);
 }
