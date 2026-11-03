@@ -102,13 +102,14 @@ async fn ansi_sequences_do_not_defeat_matching() {
 }
 
 #[tokio::test]
-#[ignore = "flaky: rewrite/reconciliation/flake-pty-echo.md"]
 async fn markers_defeat_the_terminal_echo() {
     let shell = || {
         let link = PortablePty::default()
             .open(&spec("/bin/sh", &[]))
             .expect("open");
-        PtySession::new(link, Redactor::none())
+        let mut screen = PtySession::new(link, Redactor::none());
+        screen.send(b"set +m\n").expect("job control off");
+        screen
     };
     let mut screen = shell();
     assert_eq!(
