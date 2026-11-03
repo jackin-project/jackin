@@ -14,29 +14,31 @@ Per-pid signals are allowed. `mediate_process_signal` accepts a positive target,
 
 | File | Change |
 |---|---|
-| `crates/jackin-session/src/host/group.rs` (new) | `sweep(group)` sends SIGKILL to the group. ESRCH is `Empty`. EPERM on Linux lists the members from `/proc/<pid>/stat` (field 5, `pgrp`, read after the last `)` because the command name may hold spaces and parentheses; zombies `Z` and `X` are skipped) and sends SIGKILL to each pid. EPERM on macOS is `Empty`. Any other errno is a fault. |
-| `crates/jackin-session/src/host.rs` | `gone` repeats `sweep` every 2 ms until `Empty`, within the unchanged 5 s cap. `GroupGuard::fire` and `Drop` use the same `sweep`, so a dropped run also stops the group by member. `gone` is awaited with `?` on the success path, the error path and the missing-pipes path, so its error replaces `Timeout` or `Cancelled`. |
-| `crates/jackin-core/src/boundary.rs` | `ProcessError::GroupAlive { program, after }` for a cap that expired with members alive, and `ProcessError::GroupUnreachable { program, message }` for a group that cannot be signalled or listed. |
-| `crates/jackin-openshell/src/transfer.rs` | The exhaustive `process_error` match carries both variants into `GatewayError::Process`. |
+| `crates/jackin-session/src/host/group.rs` (new) | `sweep(group)` sends SIGKILL to the group. ESRCH is `Empty`. On Linux, success and EPERM both continue with `/proc`: success asks whether any live member is left (none is `Empty`), and EPERM calls `by_member`, which sends SIGKILL to each live member. On other systems both answers are `Signalled`. Any other errno is a `GroupFault::Unreachable`. `strike(group)` is the plain group signal for `GroupGuard::fire`. |
+| `crates/jackin-session/src/host/group/stat.rs` (new, Linux) | Pure parse of one `/proc/<pid>/stat` as bytes: everything after the last `)`, then state, `pgrp` and `num_threads`. |
+| `crates/jackin-session/src/host.rs` | `gone` repeats `swept` (the sweep on `spawn_blocking`) every 2 ms until `Empty`, within the unchanged 5 s cap, and returns a `GroupFault`. A group fault joins `Cancelled` and `Timeout` as their `group` field (`with_group`), so the outcome that stopped the run stays visible. Any other run error, or a clean exit, becomes `ProcessError::Group`. `Drop` of the guard runs the full `sweep` synchronously. |
+| `crates/jackin-core/src/boundary.rs` | `GroupFault` (`Alive { after }`, `Unreachable { message }`). `ProcessError::Timeout` and `ProcessError::Cancelled` gain `group: Option<GroupFault>`. `ProcessError::Group { program, fault }` replaces `GroupAlive` and `GroupUnreachable`. |
+| `crates/jackin-openshell/src/transfer.rs` | The exhaustive `process_error` match carries `Group` into `GatewayError::Process`. `Cancelled` and `Timeout` map as before. |
 
 Decisions:
 
-1. Zombies do not count as members in the `/proc` path. They cannot run, and an orphan zombie waits for its new parent to reap it, which a sandbox without a reaping init may never do. This matches macOS, where `kill(-pgid)` on a group of zombies returns EPERM (measured: `os.killpg` gives EPERM for signals 0 and 9 on a zombie-only group and ESRCH after the reap). The Linux host path keeps the old rule (a zombie answers success until reaped).
-2. A fork racing the scan is caught by the next scan. Each pass kills all current members, so a new member needs a living parent. A fork loop that outruns the passes ends at the cap as `GroupAlive`.
+1. A zombie is not a member, on both Linux paths. A member is gone when its state is `X`, or `Z` with `num_threads` 1 (a zombie leader with live threads still runs). A group that holds only such zombies is `Empty` whether the group signal answered success or EPERM, because the parent of an orphan zombie may never reap it (a sandbox without a reaping init) and a zombie cannot run. On macOS there is no procfs; see finding 1.
+2. A fork racing the scan is caught by the next scan. Each pass kills all current members, so a new member needs a living parent. A fork loop that outruns the passes ends at the cap as `GroupFault::Alive`.
 3. Reuse of a listed pid between the `/proc` read and the `kill` needs a full pid wrap in microseconds. It is not guarded (pidfds are not available to the workload).
-4. The scan runs on the async thread, as the old `kill` did. It runs only after EPERM.
+4. The scan runs on `spawn_blocking`. `GroupGuard::fire` in the async path only sends the plain group signal. `Drop` runs the whole `sweep` on the dropping thread, because it cannot await.
+5. A group fault never replaces `Cancelled` or `Timeout`. For `Spawn`, `OutputTooLarge` and `Read` the group fault takes over as `ProcessError::Group`, because no caller keys on those.
 
 ### Test seam for the EPERM path
 
-No hermetic seam exists without a fake of code the repo owns or a new dependency, so the live proof is the G-FAST in a sandbox.
+The EPERM trigger has no hermetic source: it needs a seccomp filter, root, or Seatbelt. The effects of the EPERM branch are testable without it, because `by_member(group)` does not depend on the errno and uses real `/proc` and real signals. No fake of owned code is involved.
 
-- The denial is a seccomp-notify rule. A test would have to install a seccomp filter in the test process. `unsafe_code` is forbidden in the workspace, so that needs a crate such as `seccompiler`, and the OpenShell workload filter denies `seccomp(SET_MODE_FILTER)`. The test would pass on a Linux CI host and fail in the sandbox, which is the surface this task serves.
+- A seccomp-notify rule needs `unsafe_code`, which the workspace forbids, and the OpenShell workload filter denies `seccomp(SET_MODE_FILTER)`.
 - A uid mismatch (the other source of EPERM on Linux) needs root.
 - Seatbelt on macOS cannot deny `kill` by argument sign, and macOS has no `/proc`.
 - A trait over the signal call, or a `/proc` root path, would be a fake of owned code, and a fake `/proc` root would make the runner kill real pids.
-- The existing test `a_run_returns_only_after_no_process_of_its_group_is_left` proves the contract on any host, and it is the test that exercises the EPERM branch when it runs in a sandbox. On the host it keeps proving the `killpg` branch.
+- `lifecycle::a_run_returns_only_after_no_process_of_its_group_is_left` proves the contract on any host, and it exercises the EPERM branch when it runs in a sandbox.
 
-Test plan for `test-reviewer` (not written): behavior "the member sweep stops every live process of a group and skips zombies". Positive case: a Linux-only unit test starts a process group of eight loops, calls the Linux branch of `sweep` directly, and asserts that `/proc` lists no member of the group afterwards. Negative case: a group whose only members are zombies lists none. No other test covers the `/proc` parse, because on a Linux host the group signal succeeds and the branch is never taken. The test would need `pub(crate)` access, so it would live in `group.rs`.
+The test plan for `test-reviewer` is `/private/tmp/claude-501/plans/sandbox-pgid-test-plan.md`. No test was written in this round.
 
 ## Root cause 2: the fake clock moves while real work is in flight
 
@@ -76,7 +78,19 @@ sandbox, after the change: not run (the G-FAST in a sandbox is the proof, run by
 
 The first red was a real EPERM on the host: macOS answers EPERM for a group of zombies, which is what decision 1 records.
 
-Linux code: `clippy --target aarch64-unknown-linux-gnu -W clippy::pedantic -D warnings` passes on a scratch crate that includes `group.rs` (the workspace cannot cross-compile, because `aws-lc-sys` needs `aarch64-linux-gnu-gcc`). The `/proc/<pid>/stat` parse was run on six sample lines (command name with `)` and spaces, zombie, other group, garbage). Neither runs the Linux branch against a live kernel.
+Linux code, after the review fixes: the real `host.rs` and `host/` were copied into a scratch workspace outside the repo (with the workspace lints) and checked with `clippy -D warnings` for `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` and `aarch64-apple-darwin`; all three pass. The repo itself cannot cross-compile (`aws-lc-sys` needs a Linux C compiler). A deliberate type error in a Linux-only function failed the Linux check and not the macOS check, so the Linux code is compiled. `cargo zigbuild` then built a scratch binary for `aarch64-unknown-linux-gnu`, which ran on the OrbStack machine `jackin-engine` (Linux 7.2.12, no seccomp), where `kill(-pgid)` is allowed, so `by_member` was called directly:
+
+```text
+A by_member live group (3 sleeps): Empty after 2 rounds; killpg afterwards: ESRCH
+B zombie-only group, killpg(0) answers Ok: by_member Empty after 1 round; sweep Empty after 1 round; killpg still Ok
+C sweep of a live group, group signal allowed: Empty after 1 round; killpg afterwards: ESRCH
+D leader killed and reaped, two members left: by_member Empty after 2 rounds; killpg afterwards: ESRCH
+E zombie leader with a live thread (num_threads 2), a bystander whose comm is \xffx\xfe running: sweep Empty after 1 round, bystander alive, no fault
+```
+
+`stat.rs` ran against real `/proc/<pid>/stat` lines captured on that machine: the own process, a non-UTF-8 `comm`, a `comm` of `a) S 1 2 3 (b c`, a zombie leader with 2 threads (live), the same zombie after SIGKILL with 1 thread (gone), and empty, truncated and parenless lines. All verdicts matched. The EPERM trigger itself did not run on Linux.
+
+macOS: `sweep` of the live root-owned group 90 (`logd`, EPERM for a user) answered `Signalled` in five rounds, where the first version answered `Empty`.
 
 Clock (host), the stall is a temporary `spawn_blocking(sleep)` before the `run/state` write in `files::write_file`, removed after the run:
 
@@ -98,8 +112,22 @@ CPU burners alone (54, then 354 `while :; do :; done` subshells, killed by PID) 
 
 `mise exec -- mbx +1.99.1 xtask ci --fast` on `58740e2c6` (macOS arm64): `Summary [60.298s] 1187 tests run: 1187 passed, 0 skipped`, then the REUSE line `Congratulations! Your project is compliant with version 3.3 of the REUSE Specification :-)`, exit code 0. The G-FAST in a sandbox of the Architect role has not run.
 
+## Review findings (`/private/tmp/claude-501/plans/sandbox-pgid-review.md`)
+
+| # | Finding | Resolution |
+|---|---|---|
+| 1 | macOS read every EPERM as "zombies only" and returned `Empty`; a live root group also gives EPERM (`logd`, group 90). | EPERM is `Signalled` on macOS, so `gone` keeps polling and a live unsignalable group ends as `GroupFault::Alive` at the cap. The `denied` stub for macOS is gone. No better sound test exists: libproc and sysctl need `unsafe` or a new crate, and a spawned `ps` would add a tool dependency. The cost is a zombie whose parent never reaps it: on macOS it also ends as `Alive`, where launchd reaps orphans within milliseconds (review probe `f.py`). The runner reaps the leader before `gone` whenever the output pipes exist. |
+| 2 | A group failure replaced `Cancelled` and `Timeout`; callers key on them (`buildx.rs`, `export.rs`, `app.rs`, `transfer.rs`). | `Cancelled` and `Timeout` carry `group: Option<GroupFault>`. A caller that matches `Cancelled { .. }` still sees the cancel with no change, and a timeout keeps `after`. Every consumer of `ProcessError` was grepped: `buildx.rs`, `export.rs`, `app.rs` use `Cancelled { .. }` and need no edit; `transfer.rs` takes the new `Group` variant; the testkit runners, `xtask/src/e2e/production.rs` and the tests construct or match the two variants and got `group: None` (list in the commit). The three unit-variant translations (`EngineError::Cancelled`, `ExportError::Cancelled`, `GatewayError::Cancelled`) and `GatewayError::Timeout` drop the group field, because those types have no field for it. The typed fault is intact at the `ProcessError` level, which is the level that holds the process group. |
+| 3 | One non-UTF-8 `comm` in `/proc` aborted the sweep (`read_to_string` gives `InvalidData`). | `members` reads bytes, and `stat.rs` parses after the last `)`. Run on Linux with a bystander named `\xffx\xfe`. |
+| 4 | A zombie leader with live threads was skipped as a zombie. | `Z` counts as gone only when `num_threads` is 1. Run on Linux: leader `Z`, `num_threads` 2, is a member. |
+| 5 | A zombie-only group ended as `GroupAlive` after 5 s when the group signal was allowed, and as `Empty` when it gave EPERM. | One rule for both: success and EPERM both ask `/proc`, and a group of zombies is `Empty` (decision 1). Run on Linux (case B). |
+| 6 | The Display table lacks the group variants; the clock guard has no test. | Test plan written; tests wait for approval. |
+| 7 | The clock guard is not held by `SandboxHandle::commit_in_project` and the late-change peers. | `SandboxHandle` holds a clock handle (set by `FakeGateway::sandbox` and `sandboxes`), and `git` and `commit_in_project` hold a `Working` guard. The other gateway methods do no awaited real I/O: `create_sandbox`, `delete_sandbox` and `set_power` use `std::fs` inside one poll, `open_terminal` only spawns, and every test runtime is current-thread (no `multi_thread` in the workspace), so the clock cannot move during one poll. The peers in `tests/project/late_change.rs` are test code and were left alone: the launch they overlap waits in `lock::hold`, which polls without a limit (`lock.rs:39`), so virtual time moving during the peer's git calls cannot fail it. |
+| 8 | The `/proc` scan ran on the async worker. | `gone` calls the sweep through `spawn_blocking`. `Drop` stays synchronous. The pid-reuse window is still accepted (decision 3). |
+
 ## Not proven
 
-- The `/proc` branch against a live OpenShell kernel.
+- The `/proc` branch against a live OpenShell kernel (the EPERM trigger). The branch body ran on Linux through `by_member`.
 - `adr008` root cause.
 - That a pool stall is what hit the sandbox run (the symptom and the mechanism match; the sandbox was not instrumented).
+- A sandbox without a reaping init (finding 5 ran with the primitive and a plain zombie, not in a pid namespace).
