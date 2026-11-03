@@ -25,9 +25,10 @@ use crate::terminal::{
     TerminalRequest, TerminalSession,
 };
 
-pub const CORE_CHECKS: [&str; 15] = [
+pub const CORE_CHECKS: [&str; 16] = [
     "create_find_by_label",
     "create_duplicate_name",
+    "sandbox_environment_is_the_create_request",
     "absent_sandbox_is_not_found",
     "provisioning_failed_reported",
     "program_exit_code_and_stdin",
@@ -384,6 +385,22 @@ async fn create_find_by_label(ctx: &Ctx<'_>) -> Outcome<()> {
     )
 }
 
+async fn sandbox_environment_is_the_create_request(ctx: &Ctx<'_>) -> Outcome<()> {
+    let launch = fresh_launch()?;
+    let spec = ctx.spec(
+        &launch,
+        &ctx.fixture.image,
+        Ctx::main("/bin/sh", &["-c", "sleep 3600"])?,
+    )?;
+    ctx.gateway.create_sandbox(&spec).await.map_err(text)?;
+    let seen = ctx.gateway.sandbox_environment(spec.name()).await;
+    ctx.cleanup(spec.name()).await;
+    expect(
+        seen.map_err(text)? == spec.environment(),
+        "the stored environment differs from the create request",
+    )
+}
+
 async fn create_duplicate_name(ctx: &Ctx<'_>) -> Outcome<()> {
     let launch = fresh_launch()?;
     let spec = ctx.spec(
@@ -444,6 +461,10 @@ async fn absent_sandbox_is_not_found(ctx: &Ctx<'_>) -> Outcome<()> {
                 .map(drop),
         ),
         ("write_file", gateway.write_file(&name, &file).await),
+        (
+            "sandbox_environment",
+            gateway.sandbox_environment(&name).await.map(drop),
+        ),
         (
             "open_terminal(Shell)",
             gateway.open_terminal(&shell).await.map(drop),
@@ -1721,6 +1742,12 @@ pub async fn run(
         ContractGroup::Core => {
             check!(checks, ctx, "create_find_by_label", create_find_by_label);
             check!(checks, ctx, "create_duplicate_name", create_duplicate_name);
+            check!(
+                checks,
+                ctx,
+                "sandbox_environment_is_the_create_request",
+                sandbox_environment_is_the_create_request
+            );
             check!(
                 checks,
                 ctx,

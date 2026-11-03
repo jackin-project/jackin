@@ -32,6 +32,10 @@ pub trait Gateway: Send + Sync + Debug {
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
     async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError>;
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError>;
+    async fn sandbox_environment(
+        &self,
+        name: &SandboxName,
+    ) -> Result<BTreeMap<EnvName, String>, GatewayError>;
     async fn set_power(
         &self,
         name: &SandboxName,

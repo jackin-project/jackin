@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-use jackin_core::{Labels, Phase, ProviderName, SandboxName, TerminalText};
+use jackin_core::{EnvName, Labels, Phase, ProviderName, SandboxName, TerminalText};
 use openshell_sdk::raw::proto::GetSandboxConfigRequest;
 use openshell_sdk::raw::proto::{
     CreateSandboxRequest, DeleteSandboxRequest, GetSandboxPolicyStatusRequest, GetSandboxRequest,
@@ -161,6 +161,30 @@ impl Inner {
             )
             .await?;
         response_view(response)
+    }
+
+    pub(crate) async fn sandbox_environment(
+        &self,
+        name: &SandboxName,
+    ) -> Result<BTreeMap<EnvName, String>, GatewayError> {
+        let response = self
+            .unary(
+                GatewayOp::Detail,
+                Some(Missing::Sandbox(name.clone())),
+                self.grpc().get_sandbox(GetSandboxRequest {
+                    workspace_scope: Some(self.scope()),
+                    name: name.to_string(),
+                }),
+            )
+            .await?;
+        let spec = response
+            .sandbox
+            .and_then(|sandbox| sandbox.spec)
+            .ok_or_else(|| protocol("the sandbox record has no spec"))?;
+        spec.environment
+            .into_iter()
+            .map(|(key, value)| Ok((EnvName::parse(&key).map_err(protocol)?, value)))
+            .collect()
     }
 
     pub(crate) async fn find_sandboxes(

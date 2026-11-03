@@ -1,14 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    GatewayName, HostPath, OpenShellWorkspace, ProcessRunner, ProfileId, ProjectRoot, ProviderName,
-    SandboxName, SandboxPath, Sha256,
+    EnvName, GatewayName, HostPath, OpenShellWorkspace, ProcessRunner, ProfileId, ProjectRoot,
+    ProviderName, SandboxName, SandboxPath, Sha256,
 };
 use openshell_sdk::OpenShellClient;
 use openshell_sdk::raw::AuthedGrpcClient;
@@ -132,6 +133,13 @@ impl Gateway for GrpcGateway {
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
         self.inner.sandbox_detail(name).await
+    }
+
+    async fn sandbox_environment(
+        &self,
+        name: &SandboxName,
+    ) -> Result<BTreeMap<EnvName, String>, GatewayError> {
+        self.inner.sandbox_environment(name).await
     }
 
     async fn set_power(

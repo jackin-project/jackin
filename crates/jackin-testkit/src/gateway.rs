@@ -705,6 +705,16 @@ impl Gateway for FakeGateway {
         })
     }
 
+    async fn sandbox_environment(
+        &self,
+        name: &SandboxName,
+    ) -> Result<BTreeMap<EnvName, String>, GatewayError> {
+        tokio::task::yield_now().await;
+        let cell = self.cell(GatewayOp::Detail, name)?;
+        let environment = cell.state().spec.environment();
+        Ok(environment)
+    }
+
     async fn set_power(
         &self,
         name: &SandboxName,

@@ -158,7 +158,12 @@ impl Fake {
                 workspace,
                 ..ObjectMeta::default()
             }),
-            spec: request.spec.clone(),
+            spec: request.spec.clone().map(|mut spec| {
+                if !state.store_environment {
+                    spec.environment.clear();
+                }
+                spec
+            }),
             status: Some(SandboxStatus {
                 phase: SandboxPhase::Provisioning as i32,
                 ..SandboxStatus::default()

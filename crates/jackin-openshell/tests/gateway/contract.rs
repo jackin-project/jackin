@@ -210,6 +210,24 @@ async fn a_server_that_drops_labels_fails_the_labels_check_and_runs_the_rest() {
 }
 
 #[tokio::test]
+async fn a_server_that_drops_the_environment_fails_only_the_environment_check() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().store_environment = false;
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Core).await;
+    let failed: Vec<&str> = report
+        .checks
+        .iter()
+        .filter(|check| check.outcome.is_err())
+        .map(|check| check.name)
+        .collect();
+    assert_eq!(failed, ["sandbox_environment_is_the_create_request"]);
+}
+
+#[tokio::test]
 async fn a_sandbox_that_never_reaches_ready_is_deleted_by_the_check() {
     let env = env().await;
     let root = TempDir::new().unwrap();
