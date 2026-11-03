@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{Clock, Timestamp};
+use tokio::sync::Notify;
 
 use crate::sync::locked;
 
@@ -16,6 +18,21 @@ const WAKE_YIELDS: u32 = 64;
 #[derive(Debug)]
 pub struct FakeClock {
     state: Mutex<ClockState>,
+    working: AtomicUsize,
+    quiet: Notify,
+}
+
+#[derive(Debug)]
+pub struct Working {
+    clock: Arc<FakeClock>,
+}
+
+impl Drop for Working {
+    fn drop(&mut self) {
+        if self.clock.working.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.clock.quiet.notify_waiters();
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -41,6 +58,27 @@ impl FakeClock {
     pub fn new() -> FakeClock {
         FakeClock {
             state: Mutex::new(ClockState::default()),
+            working: AtomicUsize::new(0),
+            quiet: Notify::new(),
+        }
+    }
+
+    pub fn working(self: &Arc<FakeClock>) -> Working {
+        self.working.fetch_add(1, Ordering::SeqCst);
+        Working {
+            clock: Arc::clone(self),
+        }
+    }
+
+    async fn until_quiet(&self) {
+        loop {
+            let quiet = self.quiet.notified();
+            let mut quiet = std::pin::pin!(quiet);
+            quiet.as_mut().enable();
+            if self.working.load(Ordering::SeqCst) == 0 {
+                return;
+            }
+            quiet.await;
         }
     }
 
@@ -81,14 +119,19 @@ impl Clock for FakeClock {
         };
         let mut yields = 0_u32;
         loop {
+            self.until_quiet().await;
             tokio::task::yield_now().await;
             yields += 1;
             let mut state = locked(&self.state);
             let earliest = state.waiting.values().all(|other| *other >= deadline);
-            if state.elapsed >= deadline || (yields >= WAKE_YIELDS && earliest) {
+            let quiet = self.working.load(Ordering::SeqCst) == 0;
+            if state.elapsed >= deadline || (quiet && yields >= WAKE_YIELDS && earliest) {
                 state.elapsed = state.elapsed.max(deadline);
                 state.slept.push(duration);
                 return;
+            }
+            if !quiet {
+                yields = 0;
             }
         }
     }

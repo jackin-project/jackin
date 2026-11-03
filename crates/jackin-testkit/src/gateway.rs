@@ -33,6 +33,7 @@ pub use handle::SandboxHandle;
 use self::main_process::MainPlan;
 use self::state::{Action, Armed, ArmedTrigger, Cell, Direction, Registry, Sandbox, Settling};
 use crate::engine::FakeEngine;
+use crate::host::{FakeClock, Working};
 use crate::supervisor::SupervisorModel;
 use crate::sync::locked;
 
@@ -261,6 +262,14 @@ impl FakeGateway {
 
     pub fn link_engine(&self, engine: Arc<FakeEngine>) {
         self.registry().engine = Some(engine);
+    }
+
+    pub fn link_clock(&self, clock: Arc<FakeClock>) {
+        self.registry().clock = Some(clock);
+    }
+
+    fn working(&self) -> Option<Working> {
+        self.registry().clock.as_ref().map(FakeClock::working)
     }
 
     pub fn set_serving(&self, serving: bool) {
@@ -792,6 +801,7 @@ impl Gateway for FakeGateway {
         run: &ProgramRun,
         cancel: &CancellationToken,
     ) -> Result<ProgramOutcome, GatewayError> {
+        let _working = self.working();
         tokio::task::yield_now().await;
         let trigger = Trigger::Program(run.program.clone());
         let cell = self.exec_cell_at(GatewayOp::Program, Some(&trigger), &run.sandbox)?;
@@ -810,6 +820,7 @@ impl Gateway for FakeGateway {
         sandbox: &SandboxName,
         paths: &[SandboxPath],
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
+        let _working = self.working();
         tokio::task::yield_now().await;
         let cell = self.exec_cell(GatewayOp::ReadFiles, sandbox)?;
         let installed = self.registry().installed.clone();
@@ -821,6 +832,7 @@ impl Gateway for FakeGateway {
         sandbox: &SandboxName,
         file: &SandboxFile,
     ) -> Result<(), GatewayError> {
+        let _working = self.working();
         tokio::task::yield_now().await;
         let trigger = Trigger::Write(file.path.clone());
         let cell = self.exec_cell_at(GatewayOp::WriteFile, Some(&trigger), sandbox)?;
@@ -834,6 +846,7 @@ impl Gateway for FakeGateway {
         dest: &SandboxPath,
         cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
+        let _working = self.working();
         tokio::task::yield_now().await;
         let cell = self.upload_cell(GatewayOp::UploadTree, TransferOp::UploadFiltered, sandbox)?;
         let home = self.registry().host_home.clone();
@@ -848,6 +861,7 @@ impl Gateway for FakeGateway {
         dest: &SandboxPath,
         cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
+        let _working = self.working();
         tokio::task::yield_now().await;
         let cell = self.upload_cell(GatewayOp::UploadFile, TransferOp::UploadFile, sandbox)?;
         let corrupt = self.registry().corrupt.remove(&Direction::Upload);
@@ -862,6 +876,7 @@ impl Gateway for FakeGateway {
         local: &HostPath,
         cancel: &CancellationToken,
     ) -> Result<Sha256, GatewayError> {
+        let _working = self.working();
         tokio::task::yield_now().await;
         let found = self.struck_at(GatewayOp::Download, None, sandbox)?;
         if cancel.is_cancelled() {

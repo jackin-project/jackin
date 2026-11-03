@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 use super::main_process::{Main, MainPlan, PlanEnd};
 use super::{HostEdit, ProgramScript, ProviderRecord, RunRecord, Trigger, UploadKind};
 use crate::engine::FakeEngine;
+use crate::host::FakeClock;
 use crate::supervisor::{Supervisor, SupervisorModel};
 use crate::sync::locked;
 
@@ -67,6 +68,7 @@ pub(super) struct Registry {
     pub(super) images: BTreeSet<ImageTag>,
     pub(super) installed: BTreeMap<SandboxPath, Vec<u8>>,
     pub(super) engine: Option<Arc<FakeEngine>>,
+    pub(super) clock: Option<Arc<FakeClock>>,
     pub(super) faults: Vec<Armed>,
     pub(super) triggers: Vec<ArmedTrigger>,
     pub(super) stale_observations: u32,
@@ -93,6 +95,7 @@ impl Registry {
             images: BTreeSet::new(),
             installed: BTreeMap::new(),
             engine: None,
+            clock: None,
             faults: Vec::new(),
             triggers: Vec::new(),
             stale_observations: 0,
