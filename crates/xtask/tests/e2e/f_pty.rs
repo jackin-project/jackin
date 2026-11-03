@@ -170,7 +170,10 @@ async fn a_detach_key_ends_a_scripted_attach_child() {
 async fn dropping_a_link_kills_the_child_and_its_group() {
     let dir = tempfile::tempdir().expect("tempdir");
     let pidfile = dir.path().join("pid");
-    let script = format!("sleep 600 & echo $! > {}; echo up; wait", pidfile.display());
+    let script = format!(
+        "trap '' HUP; (trap '' HUP; exec sleep 600) & echo $! > {}; echo up; wait",
+        pidfile.display()
+    );
     let mut screen = session(&script, Redactor::none());
     screen.expect("up", WAIT).await.expect("up");
     let pid: i32 = std::fs::read_to_string(&pidfile)

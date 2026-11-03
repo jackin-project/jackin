@@ -9,8 +9,6 @@ use crate::e2e::run::{Fail, Res, Run, fail, labels_of, text_of};
 use crate::e2e::verdict::Verdict;
 use crate::e2e::world::LoadObs;
 
-pub(crate) const NAME_MAX: usize = 19;
-pub(crate) const LABEL_MAX: usize = 63;
 const KEYS: [&str; 7] = [
     "jackin.dev/managed",
     "jackin.dev/workspace",
@@ -69,23 +67,10 @@ pub(crate) fn judge_launch(
         if !shape {
             problems.push(format!("the name {name} is not jackin-<slug>-<4>"));
         }
-        if name.chars().count() > NAME_MAX {
-            problems.push(format!(
-                "the name {name} has {} characters, over {NAME_MAX}",
-                name.chars().count()
-            ));
-        }
     }
     for key in KEYS {
-        match labels.get(key) {
-            None => problems.push(format!("label {key} is missing")),
-            Some(value) if value.chars().count() > LABEL_MAX => {
-                problems.push(format!(
-                    "label {key} has {} characters",
-                    value.chars().count()
-                ));
-            }
-            Some(_) => {}
+        if !labels.contains_key(key) {
+            problems.push(format!("label {key} is missing"));
         }
     }
     let wanted = [

@@ -254,7 +254,7 @@ async fn j04_identity_faults() {
     fault(
         "the probe says sudo works",
         "J04",
-        "sudo works",
+        "the probe says sudo works",
         |scenario| {
             scenario.patch("J04", None, "/facts/sudo/works", json!(true));
         },
