@@ -134,7 +134,7 @@ CPU burners alone (54, then 354 `while :; do :; done` subshells, killed by PID) 
 
 ## Round 3: the approved tests and three code fixes
 
-Commits on `wt/sandbox-pgid` after `fac3877b7`: `cc8f18f8f` (fault translation), `9a197a3bb` (one group stop, unreadable stat line, the process-group tests), `5371a61c2` (clock-guard tests) and the follow-up test commits up to the head of this round. Inputs: the code review, the test plan, the plan review (APPROVED WITH AMENDMENTS) and the rerun section of the P11.2 evidence. Only the amended cases were written: P1a-c, P2, U1, the parser table, H1-H4, the amended T4 rows, F1-F8 and A9-A10. A11 (`shell_exit_code_cannot_hang_the_run`) is out of scope and untouched. The Display rows of T3/A7 and the per-type Display checks of A6 were written because A6 and A7 are amendments.
+Commits on `wt/sandbox-pgid` after `fac3877b7`: `cc8f18f8f` (fault translation), `9a197a3bb` (one group stop, unreadable stat line, the process-group tests), `5371a61c2` (clock-guard tests), and the follow-ups `8d172f92e`, `1f763613e`, `70e22a311` and `deac82e31` (test fixes found by the red runs) and `9d733b01c` (this section). Inputs: the code review, the test plan, the plan review (APPROVED WITH AMENDMENTS) and the rerun section of the P11.2 evidence. Only the amended cases were written: P1a-c, P2, U1, the parser table, H1-H4, the amended T4 rows, F1-F8 and A9-A10. A11 (`shell_exit_code_cannot_hang_the_run`) is out of scope and untouched. The Display rows of T3/A7 and the per-type Display checks of A6 were written because A6 and A7 are amendments.
 
 ### Decisions
 
@@ -169,7 +169,7 @@ Each row: the named break (a one-place edit to production code or to the probe, 
 | P1b-c (mac) | `execute` drops the `gone` result | `group.rs:159 left: None, right: Some(Alive { after: 5s })` |
 | P1a (mac) | the clean-exit path drops the fault | `expected Some(Alive { after: 5s }) as the fault, got Ok(ProcessOutput { status: Exited(0), ... })` |
 | P1a-c (linux) | `survivors` always `Signalled` | `expected None as the fault, got Err(Group { program: Git, fault: Alive { after: 5s } })`; `group.rs:159 left: Some(Alive { after: 5s }), right: None` |
-| P1b-c (linux) | a zombie counts as live | `group.rs:159 left: Some(Alive { after: 5s }), right: None` (3 of 4 tests fail) |
+| P1a-c (linux) | a zombie counts as live | `group.rs:159 left: Some(Alive { after: 5s }), right: None` (the three P1 tests fail, P2 passes) |
 | P2 non-UTF-8 name (linux) | `members` reads with `read_to_string` | `Error: Group { program: Git, fault: Unreachable { message: "reading the state of process 14586 failed: stream did not contain valid UTF-8" } }` |
 | P2 forged name (linux) | `rposition` to `position` | none: green on this host, see decision 7. Owed in the sandbox rerun. |
 | A9 `stdin_is_dev_null_...` (mac, linux) | `Null` stdin as a pipe | `Null stdin: left "other\n", right "devnull\n"` |
