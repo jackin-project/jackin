@@ -16,8 +16,25 @@ use jackin_testkit::{FakeGateway, Fault};
 
 use super::support::{IMAGE, TestResult, fake, guard, observe, sh, spec_with};
 
-const ACCESS: &str = "Zq7#Xv9!Lm2@Hk4wP";
-const REFRESH: &str = "Rt5$Bn8%Qw3&Jd6yS";
+const ACCESS: &str = "Zq#7X!v9@Lm$2H%k4";
+const REFRESH: &str = "Rt&5B$n8%Qw#3J!d6";
+
+const fn every_window_has_a_symbol(secret: &str) -> bool {
+    let bytes = secret.as_bytes();
+    let mut start = 0;
+    while start + 3 <= bytes.len() {
+        if bytes[start].is_ascii_alphanumeric()
+            && bytes[start + 1].is_ascii_alphanumeric()
+            && bytes[start + 2].is_ascii_alphanumeric()
+        {
+            return false;
+        }
+        start += 1;
+    }
+    true
+}
+
+const _: () = assert!(every_window_has_a_symbol(ACCESS) && every_window_has_a_symbol(REFRESH));
 
 fn leaks(text: &str, secret: &str) -> bool {
     let chars: Vec<char> = secret.chars().collect();
