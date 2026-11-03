@@ -19,6 +19,8 @@ fn provider() -> Result<ProviderName, jackin_core::IdError> {
     ProviderName::parse("jackin-work-codex")
 }
 
+const PROVIDER_CALLS_BEFORE_THE_ROLLBACK: u32 = 3;
+
 fn reset() -> GatewayError {
     GatewayError::Unreachable {
         endpoint: "gateway".to_owned(),
@@ -163,6 +165,43 @@ async fn a_launch_whose_provider_write_fails_after_it_landed_leaves_no_provider(
             rig.gateway().providers()
         );
         assert!(rig.gateway().sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_launch_that_cannot_remove_the_provider_it_wrote_reports_both_failures() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.gateway()
+            .inject(Fault::PutProviderFailsAfterWrite { error: reset() });
+        rig.gateway().inject(Fault::FailAfter {
+            op: GatewayOp::Provider,
+            calls: PROVIDER_CALLS_BEFORE_THE_ROLLBACK,
+            error: reset(),
+        });
+
+        let outcome = rig.launch_observed(1).await?;
+
+        let failed = outcome.result.err().ok_or("the launch went through")?;
+        assert_eq!(failed.step, LaunchStep::Provider);
+        assert!(
+            matches!(
+                &*failed.error,
+                LaunchError::ProviderUnavailable { source, .. }
+                    if matches!(
+                        &**source,
+                        AccountError::RollbackFailed { account, original, rollback }
+                            if account.as_str() == "work"
+                                && matches!(**original, AccountError::Gateway(_))
+                                && matches!(**rollback, AccountError::Gateway(_))
+                    )
+            ),
+            "{:?}",
+            failed.error
+        );
+        assert_eq!(rig.gateway().providers(), [provider()?]);
         Ok(())
     })
     .await
