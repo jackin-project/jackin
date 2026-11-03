@@ -25,6 +25,8 @@ use tokio::sync::mpsc;
 const DOWNLOAD_LIMIT: u64 = 4 * 1024 * 1024 * 1024;
 const LINE_CAPACITY: usize = 16;
 const GROWTH_POLL: Duration = Duration::from_millis(10);
+const STAGED_FILE: &str = "file";
+const STAGING_MODE: u32 = 0o700;
 
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
@@ -62,7 +64,7 @@ fn within_limit(size: u64) -> Result<(), GatewayError> {
     }
 }
 
-fn temp_beside(target: &Path) -> Option<PathBuf> {
+fn staging_beside(target: &Path) -> Option<PathBuf> {
     let (parent, name) = (target.parent()?, target.file_name()?);
     Some(parent.join(format!(
         ".{}.jackin-{}-{}",
@@ -269,7 +271,7 @@ async fn remote_size(
     let run = ProgramRun {
         sandbox: sandbox.clone(),
         program: sandbox_layout::STAT.clone(),
-        args: ["-c", "%s", "--", remote.as_str()]
+        args: ["-c", "%F %s", "--", remote.as_str()]
             .map(str::to_owned)
             .to_vec(),
         workdir: None,
@@ -286,20 +288,49 @@ async fn remote_size(
             tail: crate::discovery::tail(&outcome.stderr),
         });
     }
-    String::from_utf8_lossy(&outcome.stdout)
-        .trim()
-        .parse::<u64>()
-        .map_err(|_| {
-            transfer_failure(
-                TransferOp::Size,
-                ProcessStatus::Exited(0),
-                "the sandbox stat output has no size",
-            )
+    let stdout = String::from_utf8_lossy(&outcome.stdout);
+    let no_size = || {
+        transfer_failure(
+            TransferOp::Size,
+            ProcessStatus::Exited(0),
+            "the sandbox stat output has no size",
+        )
+    };
+    let (kind, size) = stdout.trim().rsplit_once(' ').ok_or_else(no_size)?;
+    let size = size.parse::<u64>().map_err(|_| no_size())?;
+    if matches!(kind, "regular file" | "regular empty file") {
+        Ok(size)
+    } else {
+        Err(GatewayError::NotRegularFile {
+            kind: TerminalText::sanitize(kind.as_bytes()),
         })
+    }
+}
+
+async fn tree_size(root: &Path) -> u64 {
+    let mut total = 0_u64;
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            let Ok(meta) = tokio::fs::symlink_metadata(&path).await else {
+                continue;
+            };
+            if meta.is_dir() {
+                pending.push(path);
+            } else {
+                total = total.saturating_add(meta.len());
+            }
+        }
+    }
+    total
 }
 
 async fn watch_growth(
-    temp: &Path,
+    staging: &Path,
     stop: &CancellationToken,
     finished: &CancellationToken,
 ) -> Option<u64> {
@@ -310,11 +341,10 @@ async fn watch_growth(
             () = finished.cancelled() => return None,
             _ = tick.tick() => {}
         }
-        if let Ok(landed) = tokio::fs::metadata(temp).await
-            && landed.len() > DOWNLOAD_LIMIT
-        {
+        let size = tree_size(staging).await;
+        if size > DOWNLOAD_LIMIT {
             stop.cancel();
-            return Some(landed.len());
+            return Some(size);
         }
     }
 }
@@ -323,9 +353,10 @@ async fn download_into(
     inner: &Inner,
     sandbox: &SandboxName,
     remote: &SandboxPath,
-    temp: &Path,
+    staging: &Path,
     cancel: &CancellationToken,
 ) -> Result<Sha256, GatewayError> {
+    let temp = staging.join(STAGED_FILE);
     let destination = temp.display().to_string();
     let args = inner.scope_args().download(sandbox, remote, &destination);
     let call = CliCall {
@@ -343,7 +374,7 @@ async fn download_into(
         finished.cancel();
         result
     };
-    let (result, grown) = tokio::join!(running, watch_growth(temp, &stop, &finished));
+    let (result, grown) = tokio::join!(running, watch_growth(staging, &stop, &finished));
     if let Some(size) = grown {
         return Err(GatewayError::DownloadTooLarge {
             size,
@@ -351,11 +382,11 @@ async fn download_into(
         });
     }
     result?;
-    if let Ok(landed) = tokio::fs::metadata(temp).await {
+    if let Ok(landed) = tokio::fs::metadata(&temp).await {
         within_limit(landed.len())?;
     }
     let expected = remote_digest(inner, sandbox, remote, cancel).await?;
-    let actual = local_digest(temp).await.map_err(|error| {
+    let actual = local_digest(&temp).await.map_err(|error| {
         transfer_failure(
             TransferOp::Download,
             ProcessStatus::Exited(0),
@@ -381,16 +412,27 @@ pub(crate) async fn download_file(
     cancel: &CancellationToken,
 ) -> Result<Sha256, GatewayError> {
     within_limit(remote_size(inner, sandbox, remote, cancel).await?)?;
-    let temp = temp_beside(local.as_path()).ok_or_else(|| {
+    let staging = staging_beside(local.as_path()).ok_or_else(|| {
         transfer_failure(
             TransferOp::Download,
             ProcessStatus::Exited(0),
             "the download target has no directory or name",
         )
     })?;
-    let landed = download_into(inner, sandbox, remote, &temp, cancel).await;
-    let renamed = match landed {
-        Ok(digest) => tokio::fs::rename(&temp, local.as_path())
+    tokio::fs::DirBuilder::new()
+        .mode(STAGING_MODE)
+        .create(&staging)
+        .await
+        .map_err(|error| {
+            transfer_failure(
+                TransferOp::Download,
+                ProcessStatus::Exited(0),
+                &format!("the download staging directory cannot be created: {error}"),
+            )
+        })?;
+    let landed = download_into(inner, sandbox, remote, &staging, cancel).await;
+    let placed = match landed {
+        Ok(digest) => tokio::fs::rename(staging.join(STAGED_FILE), local.as_path())
             .await
             .map(|()| digest)
             .map_err(|error| {
@@ -402,8 +444,6 @@ pub(crate) async fn download_file(
             }),
         Err(error) => Err(error),
     };
-    if renamed.is_err() {
-        drop(tokio::fs::remove_file(&temp).await);
-    }
-    renamed
+    drop(tokio::fs::remove_dir_all(&staging).await);
+    placed
 }

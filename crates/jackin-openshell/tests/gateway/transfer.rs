@@ -488,7 +488,10 @@ async fn download_names_the_targets_and_verifies_the_digest() {
     let size = bytes.len();
     env.server.state().exec = Some(scripted(move |start, _| {
         if start.command[0] == STAT {
-            vec![Step::Out(format!("{size}\n").into_bytes()), Step::Exit(0)]
+            vec![
+                Step::Out(format!("regular file {size}\n").into_bytes()),
+                Step::Exit(0),
+            ]
         } else if exit.load(Ordering::SeqCst) == 0 {
             vec![
                 Step::Out(
@@ -525,7 +528,10 @@ async fn download_names_the_targets_and_verifies_the_digest() {
     let call = runner.calls().remove(0);
     let first_temp = std::path::PathBuf::from(call.args.last().unwrap());
     assert_ne!(first_temp, destination);
-    assert_eq!(first_temp.parent(), destination.parent());
+    assert_eq!(first_temp.file_name().unwrap(), "file");
+    let first_staging = first_temp.parent().unwrap().to_path_buf();
+    assert_eq!(first_staging.parent(), destination.parent());
+    assert_ne!(first_staging, dir.path());
     let mut expected = words(&[
         "sandbox",
         "download",
@@ -600,6 +606,7 @@ pub(super) fn entries(dir: &Path) -> Vec<String> {
 }
 
 struct Download {
+    kind: &'static str,
     size: String,
     stat_exit: i32,
     sums_exit: i32,
@@ -616,6 +623,7 @@ enum CliReply {
 
 struct Scenario {
     label: &'static str,
+    kind: &'static str,
     size: String,
     stat_exit: i32,
     cli: CliReply,
@@ -628,6 +636,7 @@ struct Scenario {
 fn scenarios() -> Vec<Scenario> {
     let base = |label, expect: fn(&GatewayError) -> bool| Scenario {
         label,
+        kind: "regular file",
         size: "12".to_owned(),
         stat_exit: 0,
         cli: CliReply::Exit(0),
@@ -643,6 +652,24 @@ fn scenarios() -> Vec<Scenario> {
             ..base(
                 "one byte over the limit",
                 |error| matches!(error, GatewayError::DownloadTooLarge { size, limit } if *size == FOUR_GIB + 1 && *limit == FOUR_GIB),
+            )
+        },
+        Scenario {
+            kind: "directory",
+            size: "4096".to_owned(),
+            cli_calls: 0,
+            ..base(
+                "the remote path is a directory",
+                |error| matches!(error, GatewayError::NotRegularFile { kind } if kind.to_string() == "directory"),
+            )
+        },
+        Scenario {
+            kind: "socket",
+            size: "0".to_owned(),
+            cli_calls: 0,
+            ..base(
+                "the remote path is a socket",
+                |error| matches!(error, GatewayError::NotRegularFile { kind } if kind.to_string() == "socket"),
             )
         },
         Scenario {
@@ -753,7 +780,7 @@ fn download_backend(plan: &Arc<Mutex<Download>>) -> super::server::ExecBackend {
         if start.command[0] == STAT {
             if plan.stat_exit == 0 {
                 vec![
-                    Step::Out(format!("{}\n", plan.size).into_bytes()),
+                    Step::Out(format!("{} {}\n", plan.kind, plan.size).into_bytes()),
                     Step::Exit(0),
                 ]
             } else {
@@ -794,6 +821,7 @@ async fn a_failed_download_never_touches_the_destination_leaves_no_temp_and_the_
     let bytes = b"partial or whole".to_vec();
     let good = Sha256::of(&bytes).as_str().to_owned();
     let plan = Arc::new(Mutex::new(Download {
+        kind: "regular file",
         size: FOUR_GIB.to_string(),
         stat_exit: 0,
         sums_exit: 0,
@@ -850,6 +878,7 @@ async fn a_failed_download_never_touches_the_destination_leaves_no_temp_and_the_
     for scenario in scenarios() {
         {
             let mut plan = plan.lock().unwrap();
+            plan.kind = scenario.kind;
             plan.size.clone_from(&scenario.size);
             plan.stat_exit = scenario.stat_exit;
             plan.sums_exit = scenario.sums_exit;
@@ -933,7 +962,7 @@ async fn a_group_fault_rides_through_each_transfer_and_a_missing_one_stays_missi
         &[],
     );
     env.server.state().exec = Some(scripted(|_, _| {
-        vec![Step::Out(b"12\n".to_vec()), Step::Exit(0)]
+        vec![Step::Out(b"regular file 12\n".to_vec()), Step::Exit(0)]
     }));
     let alive = GroupFault::Alive {
         after: Duration::from_secs(5),
