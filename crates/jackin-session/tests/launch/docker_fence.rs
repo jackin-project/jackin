@@ -14,7 +14,7 @@ use jackin_session::{
 use jackin_testkit::{ENGINE_PORT, Outcome, Rig, launch_id};
 use tokio_util::sync::CancellationToken;
 
-use super::docker_support::{docker_rig, rule_keys, split_failure};
+use super::docker_support::{Engine, docker_rig, rule_keys, split_failure};
 use super::support::{TestResult, guard, ready, write};
 
 type Snapshot = (
@@ -100,7 +100,7 @@ async fn a_retry_whose_capability_differs_from_the_sandbox_is_refused_and_change
 -> TestResult {
     guard(async {
         for (before, after) in [(true, false), (false, true)] {
-            let rig = docker_rig(false, before, true, true).await?;
+            let rig = docker_rig(false, before, Engine::WithCerts).await?;
             ready(rig.launch_observed(1).await?)?;
             let env = sandbox_layout::env_file(&launch_id(1));
             write(&rig, &rig.handle(1).await?.name(), &env, "SENTINEL=1\n").await?;
@@ -134,7 +134,7 @@ async fn a_retry_whose_capability_differs_from_the_sandbox_is_refused_and_change
 async fn a_retry_with_another_image_a_rebuild_that_changes_the_image_or_another_engine_port_is_refused()
 -> TestResult {
     guard(async {
-        let rig = docker_rig(false, true, true, true).await?;
+        let rig = docker_rig(false, true, Engine::WithCerts).await?;
         ready(rig.launch_observed(1).await?)?;
         let kept = snapshot(&rig).await?;
         let same = retry(&rig, &rig.config, Rebuild::Yes).await?;

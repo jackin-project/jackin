@@ -12,8 +12,8 @@ use jackin_testkit::{
 use tokio_util::sync::CancellationToken;
 
 use super::docker_support::{
-    docker_files, docker_rig, engine_error, env_values, nothing_was_created, padded, rule_keys,
-    split_failure, warnings,
+    Engine, docker_files, docker_rig, engine_error, env_values, nothing_was_created, padded,
+    rule_keys, split_failure, warnings,
 };
 use super::support::{TestResult, failure, guard, ready, unreachable};
 
@@ -25,7 +25,7 @@ fn parent(path: &SandboxPath) -> &str {
 async fn disabled_leaves_no_client_rule_file_or_variable_even_with_a_gateway_engine() -> TestResult
 {
     guard(async {
-        let rig = docker_rig(false, false, true, false).await?;
+        let rig = docker_rig(false, false, Engine::Configured).await?;
         let outcome = rig.launch_observed(1).await?;
         assert_eq!(warnings(&outcome.events), 0);
         ready(outcome)?;
@@ -70,7 +70,7 @@ async fn each_source_writes_the_certificates_modes_variables_and_rule_and_a_reru
 -> TestResult {
     guard(async {
         for (role, workspace) in [(true, false), (false, true), (true, true)] {
-            let rig = docker_rig(role, workspace, true, true).await?;
+            let rig = docker_rig(role, workspace, Engine::WithCerts).await?;
             ready(rig.launch_observed(1).await?)?;
             let handle = rig.handle(1).await?;
             for cert in EngineCert::ALL {
@@ -149,7 +149,7 @@ async fn unusable_certificate_content_is_refused_before_anything_is_created() ->
             ),
         ];
         for (slot, bytes, expected) in cases {
-            let rig = docker_rig(true, false, true, true).await?;
+            let rig = docker_rig(true, false, Engine::WithCerts).await?;
             let path = rig.engine_certs()?.as_path().join(slot.file_name());
             match bytes {
                 Some(bytes) => std::fs::write(&path, bytes)?,
@@ -167,7 +167,7 @@ async fn unusable_certificate_content_is_refused_before_anything_is_created() ->
             assert!(!shown.contains(KEY_MARKER), "{shown}");
             nothing_was_created(&rig).await?;
         }
-        let rig = docker_rig(true, false, true, true).await?;
+        let rig = docker_rig(true, false, Engine::WithCerts).await?;
         let path = rig.engine_certs()?.as_path().join("cert.pem");
         std::fs::write(&path, padded("CERTIFICATE", 65536))?;
         ready(rig.launch_observed(1).await?)?;
@@ -181,7 +181,7 @@ async fn directory_symlink_and_symlinked_parent_shapes_are_refused_or_accepted_a
 -> TestResult {
     guard(async {
         for symlink in [false, true] {
-            let rig = docker_rig(true, false, true, true).await?;
+            let rig = docker_rig(true, false, Engine::WithCerts).await?;
             let key = rig.engine_certs()?.as_path().join("key.pem");
             let valid = rig.home.as_path().join("other-key.pem");
             std::fs::write(&valid, engine_pem(EngineCert::Key))?;
@@ -207,7 +207,7 @@ async fn directory_symlink_and_symlinked_parent_shapes_are_refused_or_accepted_a
             assert_eq!((file, problem), (EngineCert::Key, expected));
             nothing_was_created(&rig).await?;
         }
-        let rig = docker_rig(true, false, true, true).await?;
+        let rig = docker_rig(true, false, Engine::WithCerts).await?;
         let link = rig.home.as_path().join("linked-certs");
         std::os::unix::fs::symlink(rig.engine_certs()?.as_path(), &link)?;
         let text = rig.config.render().replace("engine-certs", "linked-certs");
@@ -228,7 +228,7 @@ async fn a_certificate_changed_during_the_build_is_refused_at_the_write_and_the_
 -> TestResult {
     guard(async {
         for symlink in [true, false] {
-            let rig = docker_rig(true, false, true, true).await?;
+            let rig = docker_rig(true, false, Engine::WithCerts).await?;
             let key = rig.engine_certs()?.as_path().join("key.pem");
             let other = rig.home.as_path().join("other-key.pem");
             std::fs::write(&other, engine_pem(EngineCert::Key))?;
@@ -278,7 +278,7 @@ async fn a_crash_between_the_certificates_and_the_env_file_never_leaves_docker_h
             (Trigger::Write(EngineCert::Key.sandbox_path()), 2),
             (Trigger::Write(env.clone()), 3),
         ] {
-            let rig = docker_rig(true, false, true, true).await?;
+            let rig = docker_rig(true, false, Engine::WithCerts).await?;
             rig.gateway().inject(Fault::FailAt {
                 trigger,
                 error: unreachable(),
@@ -306,7 +306,7 @@ async fn a_crash_between_the_certificates_and_the_env_file_never_leaves_docker_h
 #[tokio::test]
 async fn the_key_content_reaches_only_the_key_file() -> TestResult {
     guard(async {
-        let rig = docker_rig(true, false, true, true).await?;
+        let rig = docker_rig(true, false, Engine::WithCerts).await?;
         let outcome = rig.launch_observed(1).await?;
         let events = format!("{:?}", outcome.events);
         ready(outcome)?;
@@ -335,7 +335,7 @@ async fn the_key_content_reaches_only_the_key_file() -> TestResult {
         for surface in surfaces {
             assert!(!surface.contains(KEY_MARKER), "{surface}");
         }
-        let swapped = docker_rig(true, false, true, true).await?;
+        let swapped = docker_rig(true, false, Engine::WithCerts).await?;
         let cert = swapped.engine_certs()?.as_path().join("cert.pem");
         std::fs::write(&cert, engine_pem(EngineCert::Key))?;
         let (events, failed) = split_failure(swapped.launch_observed(1).await?)?;
@@ -350,7 +350,7 @@ async fn the_key_content_reaches_only_the_key_file() -> TestResult {
 async fn the_warning_is_the_first_event_once_per_launch_and_never_for_a_refusal_or_a_disabled_launch()
 -> TestResult {
     guard(async {
-        let rig = docker_rig(false, true, true, true).await?;
+        let rig = docker_rig(false, true, Engine::WithCerts).await?;
         let first = rig.launch_observed(1).await?;
         assert_eq!(
             first.events.first(),
@@ -374,11 +374,11 @@ async fn the_warning_is_the_first_event_once_per_launch_and_never_for_a_refusal_
             again.events.first(),
             Some(&LaunchEvent::Warning(LaunchWarning::DockerCapability))
         );
-        let off = docker_rig(false, false, true, true).await?;
+        let off = docker_rig(false, false, Engine::WithCerts).await?;
         assert_eq!(warnings(&off.launch_observed(1).await?.events), 0);
         let cancelled = CancellationToken::new();
         cancelled.cancel();
-        let early = docker_rig(false, true, true, true).await?;
+        let early = docker_rig(false, true, Engine::WithCerts).await?;
         let outcome = early.run(early.request(1)?, cancelled).await?;
         assert_eq!(warnings(&outcome.events), 0);
         Ok(())

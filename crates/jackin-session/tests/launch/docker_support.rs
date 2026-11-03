@@ -12,21 +12,25 @@ use jackin_testkit::{ENGINE_PORT, Rig, SandboxHandle, launch_id};
 
 use super::support::builder;
 
+#[derive(Clone, Copy)]
+pub(crate) enum Engine {
+    Configured,
+    WithCerts,
+}
+
 pub(crate) async fn docker_rig(
     role: bool,
     workspace: bool,
-    engine: bool,
-    certs: bool,
+    engine: Engine,
 ) -> Result<Rig, Box<dyn Error>> {
-    let mut builder = builder()
+    let rig = builder()
         .await?
         .role_docker(role)
-        .workspace_docker(workspace);
-    if engine {
-        builder = builder.engine(ENGINE_PORT);
-    }
-    let rig = builder.build().await?;
-    if certs {
+        .workspace_docker(workspace)
+        .engine(ENGINE_PORT)
+        .build()
+        .await?;
+    if matches!(engine, Engine::WithCerts) {
         rig.write_engine_certs().await?;
     }
     Ok(rig)

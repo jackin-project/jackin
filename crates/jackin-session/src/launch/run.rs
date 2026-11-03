@@ -106,15 +106,15 @@ impl Run<'_> {
                 });
             }
         }
-        if let DockerCapability::Enabled(access) = self.plan.docker() {
-            if let Err(error) = certs::precheck(deps.host.fs.as_ref(), access).await {
-                return Err(LaunchFailure {
-                    launch_id: self.plan.launch_id().clone(),
-                    step: LaunchStep::Credentials,
-                    sandbox: None,
-                    error: Box::new(error),
-                });
-            }
+        if let DockerCapability::Enabled(access) = self.plan.docker()
+            && let Err(error) = certs::precheck(deps.host.fs.as_ref(), access).await
+        {
+            return Err(LaunchFailure {
+                launch_id: self.plan.launch_id().clone(),
+                step: LaunchStep::Credentials,
+                sandbox: None,
+                error: Box::new(error),
+            });
         }
         for warning in self.plan.warnings() {
             self.events.emit(LaunchEvent::Warning(*warning)).await;
