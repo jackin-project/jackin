@@ -9,6 +9,7 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use jackin_core::{plain, plain_duration};
 use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -134,19 +135,19 @@ impl HostOutput {
 
 #[derive(Debug, Error)]
 pub enum HostError {
-    #[error("cannot start {program}: {message}")]
+    #[error("cannot start {}: {}", plain(.program), plain(.message))]
     Spawn { program: String, message: String },
-    #[error("{program} timed out after {after:?}")]
+    #[error("{} timed out after {}", plain(.program), plain_duration(.after))]
     Timeout { program: String, after: Duration },
-    #[error("{program} was cancelled")]
+    #[error("{} was cancelled", plain(.program))]
     Cancelled { program: String },
-    #[error("{program} wrote more than {limit} bytes to {stream}")]
+    #[error("{} wrote more than {limit} bytes to {stream}", plain(.program))]
     OutputTooLarge {
         program: String,
         stream: &'static str,
         limit: usize,
     },
-    #[error("reading {stream} of {program} failed: {message}")]
+    #[error("reading {stream} of {} failed: {}", plain(.program), plain(.message))]
     Read {
         program: String,
         stream: &'static str,

@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
+use jackin_core::plain;
 use jsonschema::Validator;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -18,19 +19,19 @@ const MESSAGE_MAX: usize = 160;
 
 #[derive(Debug, Error)]
 pub enum ProbeError {
-    #[error("the probe exited with code {code}: {tail}")]
+    #[error("the probe exited with code {code}: {}", plain(.tail))]
     Exit { code: i32, tail: String },
     #[error("the probe was killed by signal {0}")]
     Signal(i32),
-    #[error("the probe output is not exactly one JSON value: {0}")]
+    #[error("the probe output is not exactly one JSON value: {}", plain(.0))]
     NotJson(String),
-    #[error("the probe output breaks probe-schema.json: {0}")]
+    #[error("the probe output breaks probe-schema.json: {}", plain(.0))]
     Schema(String),
-    #[error("the probe report does not match the request: {0}")]
+    #[error("the probe report does not match the request: {}", plain(.0))]
     Coverage(String),
-    #[error("the embedded probe schema does not compile: {0}")]
+    #[error("the embedded probe schema does not compile: {}", plain(.0))]
     Embedded(String),
-    #[error("the facts of {step} do not parse: {message}")]
+    #[error("the facts of {} do not parse: {}", plain(.step), plain(.message))]
     Facts { step: String, message: String },
 }
 

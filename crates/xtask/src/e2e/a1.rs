@@ -5,7 +5,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use jackin_core::Secret;
+use jackin_core::{Secret, plain};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -27,11 +27,11 @@ pub enum A1Error {
     EmptyField(&'static str),
     #[error("another e2e run holds the A1 lock at {}", .0.display())]
     LockHeld(PathBuf),
-    #[error("cannot take the A1 lock at {}: {message}", .path.display())]
+    #[error("cannot take the A1 lock at {}: {}", .path.display(), plain(.message))]
     LockIo { path: PathBuf, message: String },
-    #[error("cannot write a fixture login at {}: {message}", .path.display())]
+    #[error("cannot write a fixture login at {}: {}", .path.display(), plain(.message))]
     Write { path: PathBuf, message: String },
-    #[error("no entropy for the fixture login: {0}")]
+    #[error("no entropy for the fixture login: {}", plain(.0))]
     Entropy(String),
 }
 

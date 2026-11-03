@@ -31,6 +31,8 @@ pub const EXPOSE_ALLOWLIST: &[&str] = &[
     "crates/jackin-testkit/src/host/runner.rs",
     "crates/usage/jackin-usage/src/credential.rs",
     "crates/usage/jackin-usage/src/dispatch.rs",
+    "crates/xtask/src/e2e/a1.rs",
+    "crates/xtask/src/e2e/redact.rs",
 ];
 
 pub const HTTP_CLIENT_CRATE: &str = "reqwest";

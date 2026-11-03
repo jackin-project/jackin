@@ -9,7 +9,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     EnvValue, GatewayName, HostPath, OutputStream, ProcessError, ProcessOutput, ProcessRunner,
-    ProcessSpec, ProcessStatus, ProcessStdin, SecretOutput, StdFileSystem,
+    ProcessSpec, ProcessStatus, ProcessStdin, SecretOutput, StdFileSystem, plain,
 };
 use jackin_openshell::{GrpcGateway, GrpcGatewayConfig, resolve_gateway};
 use serde_json::Value;
@@ -30,7 +30,7 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Error)]
 pub enum ProductionError {
-    #[error("{0}")]
+    #[error("{}", plain(.0))]
     Setup(String),
 }
 
@@ -78,8 +78,8 @@ impl ProcessRunner for ToolRunner {
                 EnvValue::Plain(text) => {
                     env.insert(name.clone(), text.clone());
                 }
-                EnvValue::Secret(secret) => {
-                    env.insert(name.clone(), secret.expose().to_owned());
+                EnvValue::Secret(_) => {
+                    return Err(spawn_error(spec, "xtask e2e passes no secret to a tool"));
                 }
             }
         }

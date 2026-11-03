@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use jackin_core::{plain, plain_duration};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use rustix::process::{Pid, Signal, kill_process_group};
 use thiserror::Error;
@@ -25,17 +26,17 @@ pub(crate) const INTERRUPT: u8 = 0x03;
 
 #[derive(Debug, Error)]
 pub enum PtyError {
-    #[error("cannot open the pseudo terminal: {0}")]
+    #[error("cannot open the pseudo terminal: {}", plain(.0))]
     Open(String),
-    #[error("pseudo terminal i/o failed: {0}")]
+    #[error("pseudo terminal i/o failed: {}", plain(.0))]
     Io(String),
-    #[error("timed out after {after:?} waiting for {what}; the screen ended with: {tail}")]
+    #[error("timed out after {} waiting for {}; the screen ended with: {}", plain_duration(.after), plain(.what), plain(.tail))]
     Timeout {
         what: String,
         after: Duration,
         tail: String,
     },
-    #[error("the terminal closed while waiting for {what}; the screen ended with: {tail}")]
+    #[error("the terminal closed while waiting for {}; the screen ended with: {}", plain(.what), plain(.tail))]
     Closed { what: String, tail: String },
 }
 

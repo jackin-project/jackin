@@ -8,6 +8,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use jackin_core::plain;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -28,9 +29,9 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Error)]
 pub enum ScratchError {
-    #[error("scratch i/o at {}: {message}", .path.display())]
+    #[error("scratch i/o at {}: {}", .path.display(), plain(.message))]
     Io { path: PathBuf, message: String },
-    #[error("git {command} failed in {}: {message}", .dir.display())]
+    #[error("git {} failed in {}: {}", plain(.command), .dir.display(), plain(.message))]
     Git {
         command: String,
         dir: PathBuf,
