@@ -6,7 +6,7 @@ use std::time::Duration;
 use rustix::io::Errno;
 use rustix::process::{Pid, Signal, kill_process_group};
 
-use crate::GroupFault;
+use jackin_core::GroupFault;
 
 #[cfg(target_os = "linux")]
 mod stat;

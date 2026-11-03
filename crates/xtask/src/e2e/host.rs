@@ -9,7 +9,8 @@ use std::process::Stdio;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use jackin_core::{GroupFault, ProcessGroup, plain, plain_duration};
+use jackin_core::{GroupFault, plain, plain_duration};
+use jackin_session::ProcessGroup;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};

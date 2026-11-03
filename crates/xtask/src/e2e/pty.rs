@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use jackin_core::{ProcessGroup, plain, plain_duration};
+use jackin_core::{plain, plain_duration};
+use jackin_session::ProcessGroup;
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use thiserror::Error;
 use tokio::sync::mpsc;

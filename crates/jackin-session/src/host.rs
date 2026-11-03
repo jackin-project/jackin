@@ -12,8 +12,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     Clock, EnvValue, FileSystem, GroupFault, LineSink, OutputLine, OutputStream, ProcessError,
-    ProcessGroup, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
-    SecretBytes, SecretOutput, Timestamp,
+    ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, SecretBytes,
+    SecretOutput, Timestamp,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
@@ -21,6 +21,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
+use crate::process_group::ProcessGroup;
 use crate::service::HostPorts;
 
 const TAIL_LIMIT: usize = 65536;
