@@ -286,7 +286,7 @@ executor = "hosted"
 id = "repository-steps"
 task = "check:repository-steps"
 directory = "."
-inputs = [".cargo", ".velnor/config.toml", "Cargo.lock", "Cargo.toml", "crates", "docs", "mise.lock", "mise.toml", "rewrite", "rust-toolchain.toml"]
+inputs = [".cargo/config.toml", ".velnor/config.toml", "Cargo.lock", "Cargo.toml", "mise.lock", "mise.toml", "rust-toolchain.toml"]
 tools = ["rust"]
 timeout_minutes = 10
 

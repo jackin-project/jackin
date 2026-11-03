@@ -23,7 +23,7 @@ rust = { version = "1.99.1", profile = "minimal", components = [
   "x86_64-unknown-linux-gnu",
 ], mr_boxington = true }
 shellcheck = "0.11.0"
-jactionlint = "2.4.0"
+jactionlint = "2.3.0"
 rumdl = "0.3.2"
 uv = "0.13.6"
 node = "26.13.0"
@@ -46,7 +46,7 @@ run = "cargo shear --deny-warnings"
 
 [tasks."check:repository-steps"]
 description = "Run the repository steps that start no external tool: comments, layers, pins, containers, errors"
-run = "mbx +1.99.1 xtask ci --only comments,layers,pins,containers,errors"
+run = "cargo xtask ci --only comments,layers,pins,containers,errors"
 
 [tasks."ci:fast"]
 description = "Run the repository gates without the docs build"
