@@ -879,17 +879,5 @@ impl EnvName {
                 .iter()
                 .any(|prefix| name.starts_with(prefix))
             || RESERVED_NAMES.contains(&name)
-            || Agent::ALL.iter().any(|agent| {
-                let spec = agent.spec();
-                let keys = &spec.openshell.keys;
-                spec.reserved_env.contains(&name)
-                    || [
-                        keys.access_token,
-                        keys.refresh_token,
-                        keys.account_id,
-                        keys.id_token,
-                    ]
-                    .contains(&name)
-            })
     }
 }
