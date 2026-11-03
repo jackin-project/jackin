@@ -292,7 +292,7 @@ Delete these features. Do not rebuild them in this program:
 ### D20. Agent Smith and The Architect become Codex roles
 
 - Agent Smith is a Codex role for code review. Its policy allows only the Codex hosts and `github.com`.
-- The Architect is a Codex role with the Rust toolchain for jackin development. Its policy also allows the crates.io, GitHub, and mise download hosts.
+- The Architect is a Codex role with the Rust toolchain for jackin development, installed from a mise lock under root-owned `/usr/local` with the same pins as jackin. Its policy also allows `index.crates.io` and `static.crates.io` (read-only) and `github.com` git fetches only (`info/refs?service=git-upload-pack` and `git-upload-pack`). It allows no tool download host, because the image carries the toolchain; a live G-FAST in a sandbox of the role proves the list is enough.
 - Delete every Claude file, plugin, marketplace script, and hook from both roles.
 - The final stage of each role `Dockerfile` starts `FROM construct`. Jackin builds both images.
 
