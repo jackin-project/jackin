@@ -85,6 +85,44 @@ async fn an_export_that_bundled_an_older_tip_never_moves_the_recovery_ref_back()
 }
 
 #[tokio::test]
+async fn an_older_export_never_moves_a_ref_an_earlier_export_created_back() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        handle.commit_in_project("first.txt", b"f", "first").await?;
+        export(&rig, &name).await?;
+        let older = handle.commit_in_project("a.txt", b"a", "older").await?;
+        let gateway = &rig.world.gateway;
+        let held = Trigger::Op(GatewayOp::Download);
+        gateway.inject(Fault::HoldAt {
+            trigger: held.clone(),
+        });
+        let slow = export(&rig, &name);
+        let fast = async {
+            assert!(gateway.until_held(&held).await);
+            let newer = handle.commit_in_project("b.txt", b"b", "newer").await;
+            let report = export(&rig, &name).await;
+            gateway.release(&held);
+            (newer, report)
+        };
+        let (slow, (newer, fast)) = tokio::join!(slow, fast);
+        let newer = newer?;
+        assert_ne!(older, newer);
+        fast?;
+        let landed = exports(&snapshot(&rig).await?);
+        assert_eq!(
+            landed.get(&ref_of(&name, "main")).map(String::as_str),
+            Some(newer.as_str()),
+            "slow: {slow:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn an_export_finishes_the_refs_that_another_run_has_not_published_yet() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
