@@ -9,6 +9,8 @@ use jackin_core::{CommitId, FileSystem, HookKind, HostPath, ProjectRoot, StdFile
 use tempfile::TempDir;
 use tokio::process::Command;
 
+use crate::git::git_command;
+
 pub type FixtureError = Box<dyn Error>;
 
 const DOCKERFILE: &str = "FROM construct\n";
@@ -73,18 +75,13 @@ pub struct RepoFixture {
 }
 
 pub(crate) async fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, FixtureError> {
-    let output = Command::new("/usr/bin/git")
+    let output = Command::from(git_command())
         .args(["-c", "user.name=jackin-test"])
         .args(["-c", "user.email=test@example.invalid"])
         .args(["-c", "commit.gpgsign=false"])
         .args(["-c", "init.defaultBranch=main"])
         .args(args)
         .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .stdin(std::process::Stdio::null())
         .output()
         .await?;

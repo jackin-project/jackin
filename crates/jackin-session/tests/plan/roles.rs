@@ -568,7 +568,7 @@ async fn context_files_skip_deleted_tracked_files_and_submodule_paths() -> TestR
         let commit = role.commit().await?;
         role.remove("README.md").await?;
         tokio::fs::create_dir_all(role.root().as_path().join("vendor/sub")).await?;
-        let status = tokio::process::Command::new("git")
+        let status = tokio::process::Command::from(jackin_testkit::git_command())
             .args(["update-index", "--add", "--cacheinfo"])
             .arg(format!("160000,{},vendor/sub", commit.as_str()))
             .current_dir(role.root().as_path())

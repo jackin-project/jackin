@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::process::Command;
 use std::time::Duration;
 
 use jackin_core::LabelSelector;
@@ -291,7 +290,7 @@ fn init_role_repo(scenario: &Scenario) {
             "role",
         ],
     ] {
-        let status = Command::new("git")
+        let status = jackin_testkit::git_command()
             .args(&args)
             .current_dir(&scenario.world.role)
             .status()

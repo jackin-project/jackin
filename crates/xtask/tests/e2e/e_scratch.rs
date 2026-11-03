@@ -139,7 +139,11 @@ async fn fixture_projects_have_the_shapes_journey_steps_need() {
         .await
         .expect("fixture");
     let git = |args: &[&str]| {
-        let output = capture(Command::new("git").args(args).current_dir(&project));
+        let output = capture(
+            jackin_testkit::git_command()
+                .args(args)
+                .current_dir(&project),
+        );
         String::from_utf8_lossy(&output.stdout).into_owned()
     };
     assert_eq!(
