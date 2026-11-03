@@ -84,6 +84,31 @@ async fn j17_usage_content_faults() {
     )]))
     .await;
     fault(
+        "a credits window without a remaining amount",
+        "J17",
+        "has no remaining amount",
+        usage(vec![script(
+            json!({"state": "windows", "windows": [
+                {"kind": "weekly", "label": "w", "used_percent": 1.0, "resets_at": 1},
+                {"kind": "credits", "label": "c", "used_percent": null, "remaining": null, "resets_at": null},
+            ]}),
+            expired.clone(),
+        )]),
+    )
+    .await;
+    fault(
+        "a weekly window without a percentage",
+        "J17",
+        "has no used percentage",
+        usage(vec![script(
+            json!({"state": "windows", "windows": [
+                {"kind": "weekly", "label": "w", "used_percent": null, "remaining": {"kind": "amount", "value": "5", "unit": "x"}, "resets_at": 1},
+            ]}),
+            expired.clone(),
+        )]),
+    )
+    .await;
+    fault(
         "a fixture returns windows",
         "J17",
         "returned windows",

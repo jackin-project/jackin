@@ -102,6 +102,9 @@ impl Run<'_> {
         if id >= StepId::J03 && self.w.build_failed {
             return Some(StepId::J00);
         }
+        if matches!(id, StepId::J11 | StepId::J12) && failed(StepId::J07) {
+            return Some(StepId::J07);
+        }
         let needs_sandbox = id >= StepId::J04 && id <= StepId::J14 || id == StepId::J16;
         (needs_sandbox && failed(StepId::J03)).then_some(StepId::J03)
     }

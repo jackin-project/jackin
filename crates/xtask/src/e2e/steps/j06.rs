@@ -6,8 +6,15 @@ use crate::e2e::run::{Fail, Res, Run, fail, text_of};
 use crate::e2e::verdict::Verdict;
 use crate::e2e::world::LoadObs;
 
-pub(crate) const HOOK_ERROR: &str = "the preflight hook exited with 17";
+pub(crate) const HOOK_FLAG_EXIT: i32 = 17;
 pub(crate) const HOOK_FLAG: &str = "SENTINEL_FAIL_PREFLIGHT=1";
+
+pub(crate) fn hook_exit(text: &str, hook: &str) -> Option<i32> {
+    let marker = format!("the {hook} hook exited with code ");
+    let rest = &text[text.find(&marker)? + marker.len()..];
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().ok()
+}
 
 pub(crate) fn judge_hooks(
     first: &LoadObs,
@@ -19,10 +26,18 @@ pub(crate) fn judge_hooks(
     if first.exit_ok {
         problems.push("load #1 with SENTINEL_FAIL_PREFLIGHT=1 exited 0".to_owned());
     }
-    for needle in [HOOK_ERROR, HOOK_FLAG] {
-        if !first.text.contains(needle) {
-            problems.push(format!("load #1 output lacks `{needle}`"));
-        }
+    if hook_exit(&first.text, "preflight") != Some(HOOK_FLAG_EXIT) {
+        problems.push(format!(
+            "load #1 did not report the preflight hook exiting with code {HOOK_FLAG_EXIT}"
+        ));
+    }
+    if !first.text.contains("failed at step hooks") {
+        problems.push("load #1 did not fail at the hooks step".to_owned());
+    }
+    if !first.text.contains(HOOK_FLAG) {
+        problems.push(format!(
+            "load #1 output lacks the hook output `{HOOK_FLAG}`"
+        ));
     }
     if !first.ready {
         problems.push("the sandbox is not Ready after the failed preflight".to_owned());

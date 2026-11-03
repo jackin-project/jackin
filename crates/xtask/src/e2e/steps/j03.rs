@@ -210,7 +210,7 @@ impl Run<'_> {
         problems.extend(judge_launch(&first_names, &sandboxes2, &labels, &expect));
         if problems.is_empty() {
             Ok(Verdict::pass(format!(
-                "one sandbox {}, seven labels, retry kept it",
+                "one sandbox {}, eight labels, retry kept it",
                 sandboxes2.first().cloned().unwrap_or_default()
             )))
         } else {

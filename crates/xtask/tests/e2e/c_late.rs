@@ -5,9 +5,11 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::scenario::world::ACCESS;
+use jackin_core::CODEX_PLACEHOLDER_ID_TOKEN;
+
+use super::scenario::world::{ACCESS, ID_TOKEN};
 use super::scenario::{ExportMode, PtyFault, Scenario};
-use super::support::fault;
+use super::support::{blocking_fault, fault};
 
 type Tweak = Box<dyn Fn(&Scenario)>;
 
@@ -48,7 +50,7 @@ async fn j06_hook_faults() {
             ),
             (
                 "hook text lacks the exit code",
-                "lacks `the preflight hook exited with 17`",
+                "did not report the preflight hook exiting with code 17",
                 Box::new(|s| s.knobs().hook_error_text = Some("launch failed: boom".to_owned())),
             ),
             (
@@ -73,37 +75,39 @@ async fn j06_hook_faults() {
 
 #[tokio::test]
 async fn j07_codex_process_faults() {
-    table(
-        "J07",
-        vec![
-            (
-                "codex ppid is not the main pid",
-                "is not the jackin-start pid",
-                patched("J07", None, "/facts/processes/codex/0/ppid", json!(1)),
-            ),
-            (
-                "probe and ps disagree",
-                "but ps shows",
-                patched("J07", None, "/facts/processes/codex/0/pid", json!(9999)),
-            ),
-            (
-                "exec did not answer",
-                "did not answer the fixed prompt",
-                patched("J07", None, "/facts/codex_exec/answered", json!(false)),
-            ),
-            (
-                "phase Stopped after quit",
-                "phase after quit is not Ready",
-                Box::new(|s| s.knobs().stopped_after_quit = true),
-            ),
-            (
-                "pid unchanged after restart",
-                "did not start a new codex process",
-                Box::new(|s| s.knobs().restart_same_pid = true),
-            ),
-        ],
-    )
-    .await;
+    let rows: Vec<(&str, &str, Tweak)> = vec![
+        (
+            "codex ppid is not the main pid",
+            "is not the jackin-start pid",
+            patched("J07", None, "/facts/processes/codex/0/ppid", json!(1)),
+        ),
+        (
+            "probe and ps disagree",
+            "but ps shows",
+            patched("J07", None, "/facts/processes/codex/0/pid", json!(9999)),
+        ),
+        (
+            "exec did not answer",
+            "did not answer the fixed prompt",
+            patched("J07", None, "/facts/codex_exec/answered", json!(false)),
+        ),
+        (
+            "phase Stopped after quit",
+            "phase after quit is not Ready",
+            Box::new(|s| s.knobs().stopped_after_quit = true),
+        ),
+        (
+            "pid unchanged after restart",
+            "did not start a new codex process",
+            Box::new(|s| s.knobs().restart_same_pid = true),
+        ),
+    ];
+    for (case, needle, tweak) in rows {
+        blocking_fault(case, "J07", needle, &["J11", "J12"], |scenario| {
+            tweak(scenario);
+        })
+        .await;
+    }
 }
 
 #[tokio::test]
@@ -149,19 +153,39 @@ async fn j08_credential_faults() {
             ),
             (
                 "the F3 body holds a needle",
-                "J08 reflection stdout",
+                "J08 reflection response",
                 Box::new(|s| {
-                    s.exec_rule(
-                        "codex sandbox",
-                        0,
-                        &format!("HTTP/1.1 200 OK\r\n\r\n{ACCESS}"),
-                    );
+                    s.knobs().reflect_body = Some(format!("HTTP/1.1 200 OK\r\n\r\n{ACCESS}"));
                 }),
             ),
             (
                 "the F3 check cannot run",
-                "cannot run",
-                Box::new(|s| s.exec_rule("codex sandbox", 127, "")),
+                "the reflection check cannot run",
+                Box::new(|s| s.knobs().reflect_never_done = true),
+            ),
+            (
+                "the F3 command is not a Codex descendant",
+                "is not a descendant of Codex",
+                Box::new(|s| s.knobs().reflect_not_descendant = true),
+            ),
+            (
+                "the F3 request got no HTTP answer",
+                "got no HTTP answer (curl exit 7)",
+                Box::new(|s| s.knobs().reflect_done_code = 7),
+            ),
+            (
+                "auth.json holds a real id token",
+                "auth.json id_token is not a placeholder",
+                Box::new(|s| s.knobs().auth_id_token = Some(ID_TOKEN.to_owned())),
+            ),
+            (
+                "auth.json holds an alg-none token with another signature",
+                "auth.json id_token is not a placeholder",
+                Box::new(|s| {
+                    s.knobs().auth_id_token = Some(
+                        CODEX_PLACEHOLDER_ID_TOKEN.replace(".placeholder", ".other-signature"),
+                    );
+                }),
             ),
             (
                 "the create request holds a real credential",
@@ -298,7 +322,7 @@ fn pty(fault: PtyFault) -> Tweak {
 #[tokio::test]
 async fn j11_detach_faults() {
     let plain = |header: Option<&str>, exit: Option<i32>, never: bool| PtyFault {
-        from: 3,
+        from: 4,
         header: header.map(str::to_owned),
         exit,
         never_exits: never,
@@ -546,4 +570,15 @@ async fn j16_docker_capability_off_faults() {
     )
     .await;
     let _ = Duration::ZERO;
+}
+
+#[tokio::test]
+async fn j08_reflection_survives_an_enter_that_a_busy_codex_swallows() {
+    let scenario = Scenario::new().await;
+    scenario.knobs().reflect_swallow_first_enter = true;
+    let ran = scenario.run().await;
+    ran.expect(
+        "the first Enter is lost, the second one runs the command",
+        &[],
+    );
 }

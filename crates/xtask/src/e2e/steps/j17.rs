@@ -16,14 +16,6 @@ const KINDS: [&str; 6] = [
     "network",
     "provider",
 ];
-const WINDOW_KINDS: [&str; 6] = [
-    "five_hour",
-    "weekly",
-    "monthly",
-    "credits",
-    "spend",
-    "other",
-];
 
 #[derive(Debug)]
 pub(crate) struct UsageRow {
@@ -67,6 +59,44 @@ pub(crate) fn parse_usage(bytes: &[u8]) -> Result<Vec<UsageRow>, String> {
         .collect()
 }
 
+fn rate_problem(window: &Value, kind: &str) -> Option<String> {
+    let used = window.get("used_percent").and_then(Value::as_f64);
+    if !used.is_some_and(|percent| (0.0..=100.0).contains(&percent)) {
+        return Some(format!(
+            "A1 window {kind} has no used percentage between 0 and 100"
+        ));
+    }
+    (!window.get("resets_at").is_some_and(Value::is_number))
+        .then(|| format!("A1 window {kind} has no reset time"))
+}
+
+fn amount_problem(window: &Value, kind: &str) -> Option<String> {
+    let remaining = window.get("remaining");
+    let text = |key: &str| {
+        remaining
+            .and_then(|found| found.get(key))
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+    };
+    let amount = remaining
+        .and_then(|found| found.get("kind"))
+        .and_then(Value::as_str)
+        == Some("amount")
+        && text("value").is_some_and(|value| value.parse::<f64>().is_ok())
+        && text("unit").is_some();
+    (!amount).then(|| format!("A1 window {kind} has no remaining amount"))
+}
+
+fn judge_window(window: &Value) -> Option<String> {
+    let kind = window.get("kind").and_then(Value::as_str).unwrap_or("");
+    match kind {
+        "five_hour" | "weekly" | "monthly" => rate_problem(window, kind),
+        "credits" | "spend" => amount_problem(window, kind),
+        "other" => rate_problem(window, kind).and(amount_problem(window, kind)),
+        _ => Some(format!("A1 window kind {kind:?} is unknown")),
+    }
+}
+
 pub(crate) fn judge_a1(row: Option<&UsageRow>) -> A1Usage {
     let Some(row) = row else {
         return A1Usage::Broken("there is no usage record for the A1 account".to_owned());
@@ -75,21 +105,8 @@ pub(crate) fn judge_a1(row: Option<&UsageRow>) -> A1Usage {
         if windows.is_empty() {
             return A1Usage::Broken("A1 reports no limit window".to_owned());
         }
-        for window in windows {
-            let kind = window.get("kind").and_then(Value::as_str).unwrap_or("");
-            let used = window.get("used_percent").and_then(Value::as_f64);
-            let resets = window.get("resets_at").is_some_and(Value::is_number);
-            if !WINDOW_KINDS.contains(&kind) {
-                return A1Usage::Broken(format!("A1 window kind {kind:?} is unknown"));
-            }
-            if !used.is_some_and(|percent| (0.0..=100.0).contains(&percent)) {
-                return A1Usage::Broken(format!(
-                    "A1 window {kind} has no used percentage between 0 and 100"
-                ));
-            }
-            if !resets {
-                return A1Usage::Broken(format!("A1 window {kind} has no reset time"));
-            }
+        if let Some(problem) = windows.iter().find_map(judge_window) {
+            return A1Usage::Broken(problem);
         }
         return A1Usage::Good;
     }

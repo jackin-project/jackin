@@ -138,6 +138,12 @@ impl ScenarioGateway {
         let model = self.model_of(&run.sandbox).unwrap_or_default();
         let digest = self.world.probe_digest();
         let mut state = self.shared.state();
+        if script == "/usr/bin/env" {
+            return outcome(
+                0,
+                "PATH=/usr/bin\nCODEX_AUTH_ACCESS_TOKEN=openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN\n",
+            );
+        }
         if script.contains("echo uid=") {
             return outcome(0, "uid=1000\nuser=sandbox\ndocker=no\nsudo=no\n");
         }
@@ -363,8 +369,18 @@ impl Gateway for ScenarioGateway {
                         .clone()
                         .unwrap_or_else(|| "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN".to_owned());
                     Some(
-                        serde_json::json!({"auth_mode":"chatgpt","tokens":{"access_token":token,"refresh_token":"","id_token":""}})
+                        serde_json::json!({"auth_mode":"chatgptAuthTokens","tokens":{"access_token":token,"refresh_token":"","id_token":knobs.auth_id_token.clone().unwrap_or_else(|| jackin_core::CODEX_PLACEHOLDER_ID_TOKEN.to_owned())}})
                             .to_string()
+                            .into_bytes(),
+                    )
+                } else if text.ends_with("e2e-reflect.chain") {
+                    Some(if knobs.reflect_not_descendant { " sh bash" } else { " sh codex jackin-start" }.as_bytes().to_vec())
+                } else if text.ends_with("e2e-reflect.out") {
+                    Some(
+                        knobs
+                            .reflect_body
+                            .clone()
+                            .unwrap_or_else(|| "HTTP/1.1 404 Not Found\r\n\r\nnot found".to_owned())
                             .into_bytes(),
                     )
                 } else {

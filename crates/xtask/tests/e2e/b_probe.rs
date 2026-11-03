@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::scenario::world::{ACCESS, ID_TOKEN, REFRESH};
 use super::scenario::{ProbeRaw, Scenario};
-use super::support::fault;
+use super::support::{blocking_fault, fault};
 
 fn request(only: &[&str], docker: bool, mode: ProbeMode) -> ProbeRequest {
     ProbeRequest {
@@ -279,6 +279,8 @@ async fn probe_exit_status_and_stderr_decide_before_the_json_does() {
         ("J08", "FAIL"),
         ("J09", "FAIL"),
         ("J10", "FAIL"),
+        ("J11", "SKIP"),
+        ("J12", "SKIP"),
     ];
     for (case, exit, stdout, needle) in [
         (
@@ -352,10 +354,11 @@ async fn a_probe_skip_in_a_complete_run_is_a_fail_except_the_start_record_case()
         },
     )
     .await;
-    fault(
+    blocking_fault(
         "codex_exec SKIP",
         "J07",
         "probe skipped codex_exec",
+        &["J11", "J12"],
         |scenario| {
             skip_check(scenario, "J07", "codex_exec");
         },

@@ -9,6 +9,7 @@ use crate::e2e::run::{Fail, Res, Run, fail, text_of};
 use crate::e2e::verdict::Verdict;
 
 const PROMPT: &str = "Ask Codex to do anything";
+const EXIT_NOTICE: &str = "codex exited with code";
 const PS: &str = "ps -eo pid,ppid,comm,args";
 
 pub(crate) fn find_header(text: &str, pin: &str) -> Option<(usize, usize)> {
@@ -147,9 +148,15 @@ impl Run<'_> {
         let main = self.projects.main.clone();
         let mut attach = self.open_pty(&["attach", sandbox.as_str()], &main)?;
         let quit_result = self.quit_codex(&mut attach).await;
+        let observed = match quit_result {
+            Ok(()) => Some(self.inspect(&sandbox, "J07 inspect quit").await),
+            Err(_) => None,
+        };
+        let detached_quit = self.detach(&mut attach).await;
         self.finish_pty("J07 attach", &attach);
         quit_result?;
-        let inspected = self.inspect(&sandbox, "J07 inspect quit").await?;
+        let inspected = observed.ok_or_else(|| fail("Codex did not quit"))??;
+        detached_quit?;
         let detail = self.b.gateway.sandbox_detail(&sandbox).await?;
         let quit = Quit {
             supervisor: inspected.supervisor.to_string(),
@@ -186,12 +193,10 @@ impl Run<'_> {
         session.send(&[INTERRUPT])?;
         tokio::time::sleep(self.b.budgets.key_gap).await;
         session.send(&[INTERRUPT])?;
-        let code = session.wait_exit(self.b.budgets.expect).await;
-        match code {
-            Ok(_) => Ok(()),
-            Err(error) => Err(fail(format!(
-                "attach did not end after two Ctrl-C: {error}"
-            ))),
-        }
+        session
+            .expect(EXIT_NOTICE, self.b.budgets.expect)
+            .await
+            .map(drop)
+            .map_err(|error| fail(format!("Codex did not exit after two Ctrl-C: {error}")))
     }
 }

@@ -114,14 +114,7 @@ async fn markers_defeat_the_terminal_echo() {
         screen.run_shell("printf ok", WAIT).await.expect("run"),
         ("ok".to_owned(), 0)
     );
-    assert_eq!(
-        screen
-            .run_shell("sh -c 'exit 3'", WAIT)
-            .await
-            .expect("exit")
-            .1,
-        3
-    );
+    assert_eq!(screen.run_shell("exit 3", WAIT).await.expect("exit").1, 3);
     let (body, code) = screen
         .run_shell("printf 'B42B\\nE43-0E\\n'", WAIT)
         .await

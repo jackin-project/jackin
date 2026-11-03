@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{EnvName, SandboxPath};
+use jackin_core::{CODEX_PLACEHOLDER_ID_TOKEN, EnvName, FileMode, SandboxPath, SecretBytes};
 use serde_json::Value;
 
 use crate::e2e::probe::FactsJ08;
@@ -12,11 +12,28 @@ use crate::e2e::verdict::Verdict;
 
 pub(crate) const PLACEHOLDER: &str = "openshell:resolve:";
 const LEAK_LISTED: usize = 5;
-const CODEX: &str = "/usr/local/bin/codex";
-const REFLECT: &str = "P=$CODEX_AUTH_ACCESS_TOKEN; test -n \"$P\" || exit 90; \
-exec /usr/local/bin/codex sandbox -- /bin/sh -c \
-\"curl -sS -i -m 25 'https://chatgpt.com/backend-api/e2e-reflect/'$P'?token='$P \
--H 'X-E2E-Reflect: '$P -H 'Authorization: Bearer '$P\"";
+const REFLECT_SCRIPT: &str = "/sandbox/.e2e-reflect.sh";
+const REFLECT_OUT: &str = "/sandbox/.e2e-reflect.out";
+const REFLECT_CHAIN: &str = "/sandbox/.e2e-reflect.chain";
+const REFLECT_DONE: &str = "E2E-REFLECT-DONE ";
+const ENTER_ATTEMPTS: u32 = 3;
+
+fn reflect_script(placeholder: &str) -> String {
+    format!(
+        "#!/bin/sh\n\
+         P='{placeholder}'\n\
+         chain=''\n\
+         pid=$$\n\
+         while [ \"$pid\" -gt 1 ]; do\n\
+         chain=\"$chain $(cat /proc/$pid/comm)\"\n\
+         pid=$(sed 's/.*) //' /proc/$pid/stat | cut -d' ' -f2)\n\
+         done\n\
+         echo \"$chain\" > {REFLECT_CHAIN}\n\
+         curl -sS -i -m 25 \"https://chatgpt.com/backend-api/e2e-reflect/$P?token=$P\" \
+         -H \"X-E2E-Reflect: $P\" -H \"Authorization: Bearer $P\" -o {REFLECT_OUT} 2>/dev/null\n\
+         echo \"{REFLECT_DONE}$?\"\n"
+    )
+}
 
 fn credential_name(name: &str) -> bool {
     name.starts_with("CODEX_AUTH_")
@@ -99,7 +116,9 @@ pub(crate) fn judge_auth_text(bytes: &[u8]) -> Vec<String> {
             .pointer(&format!("/tokens/{name}"))
             .and_then(Value::as_str)
             .unwrap_or_default();
-        if !token.is_empty() && !token.starts_with(PLACEHOLDER) {
+        let placeholder = token.starts_with(PLACEHOLDER)
+            || (name == "id_token" && token == CODEX_PLACEHOLDER_ID_TOKEN);
+        if !token.is_empty() && !placeholder {
             problems.push(format!("auth.json {name} is not a placeholder"));
         }
     }
@@ -176,7 +195,12 @@ impl Run<'_> {
         }
         let env = self.exec(&sandbox, "J08 env", "/usr/bin/env").await?;
         problems.extend(judge_env_text(&text_of(&env.stdout)));
-        problems.extend(self.reflection(&sandbox).await);
+        let placeholder = text_of(&env.stdout)
+            .lines()
+            .find_map(|line| line.strip_prefix("CODEX_AUTH_ACCESS_TOKEN="))
+            .filter(|value| value.starts_with(PLACEHOLDER))
+            .map(str::to_owned);
+        problems.extend(self.reflection(&sandbox, placeholder).await);
         if !problems.is_empty() {
             Ok(Verdict::fail(problems.join("; ")))
         } else if let Some(reason) = skip {
@@ -207,25 +231,107 @@ impl Run<'_> {
         }
     }
 
-    async fn reflection(&mut self, sandbox: &jackin_core::SandboxName) -> Vec<String> {
-        let outcome = self
-            .exec_with(
-                sandbox,
-                "J08 reflection",
-                "/bin/sh",
-                vec!["-c".to_owned(), REFLECT.to_owned()],
-                BTreeMap::new(),
-            )
-            .await;
-        match outcome {
-            Ok(done) if done.exit_code == 0 && done.stdout.starts_with(b"HTTP/") => Vec::new(),
-            Ok(done) => vec![format!(
-                "the reflection check ({CODEX} sandbox) cannot run: exit {} {}",
-                done.exit_code,
-                tail_of(&self.redactor, &done.stderr)
-            )],
-            Err(failure) => vec![format!("the reflection check cannot run: {}", failure.0)],
+    async fn reflection(
+        &mut self,
+        sandbox: &jackin_core::SandboxName,
+        placeholder: Option<String>,
+    ) -> Vec<String> {
+        let cannot = |why: String| vec![format!("the reflection check cannot run: {why}")];
+        let Some(placeholder) = placeholder else {
+            return cannot("the sandbox environment holds no placeholder to send".to_owned());
+        };
+        match self.reflect_through_codex(sandbox, &placeholder).await {
+            Ok(problems) => problems,
+            Err(failure) => cannot(failure.0),
         }
+    }
+
+    async fn reflect_through_codex(
+        &mut self,
+        sandbox: &jackin_core::SandboxName,
+        placeholder: &str,
+    ) -> Res<Vec<String>> {
+        let script = SandboxPath::parse(REFLECT_SCRIPT)?;
+        self.exec(
+            sandbox,
+            "J08 reflect clean",
+            "rm -f /sandbox/.e2e-reflect.*",
+        )
+        .await?;
+        self.b
+            .gateway
+            .write_file(
+                sandbox,
+                &jackin_openshell::SandboxFile {
+                    path: script,
+                    mode: FileMode(0o755),
+                    content: SecretBytes::new(reflect_script(placeholder).into_bytes()),
+                },
+            )
+            .await?;
+        let main = self.projects.main.clone();
+        let mut session = self.open_pty(&["attach", sandbox.as_str()], &main)?;
+        let typed = self.type_into_codex(&mut session).await;
+        let detached = self.detach(&mut session).await;
+        self.finish_pty("J08 reflection", &session);
+        let code = typed?;
+        detached?;
+        let paths = [REFLECT_CHAIN, REFLECT_OUT]
+            .map(SandboxPath::parse)
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+        let files = self.b.gateway.read_files(sandbox, &paths).await?;
+        let chain = files[0]
+            .clone()
+            .map(|bytes| text_of(&bytes))
+            .unwrap_or_default();
+        let body = files[1].clone().unwrap_or_default();
+        self.capture("J08 reflection response", &body);
+        let mut problems = Vec::new();
+        if !chain.split_whitespace().any(|name| name == "codex") {
+            problems.push(format!(
+                "the reflection command is not a descendant of Codex (ancestors:{chain})"
+            ));
+        }
+        if code != 0 || !body.starts_with(b"HTTP/") {
+            problems.push(format!(
+                "the reflection request got no HTTP answer (curl exit {code})"
+            ));
+        }
+        Ok(problems)
+    }
+
+    async fn type_into_codex(&self, session: &mut crate::e2e::pty::PtySession) -> Res<i32> {
+        self.expect_codex(session).await?;
+        let gap = self.b.budgets.key_gap;
+        tokio::time::sleep(gap).await;
+        session.send(b"!")?;
+        tokio::time::sleep(gap).await;
+        session.send(format!("sh {REFLECT_SCRIPT}").as_bytes())?;
+        tokio::time::sleep(gap).await;
+        let wait = self.b.budgets.expect / ENTER_ATTEMPTS;
+        let mut last = fail("the command was never submitted");
+        for _ in 0..ENTER_ATTEMPTS {
+            session.send(b"\r")?;
+            let found = session
+                .expect_with("the reflection result", wait, |text| {
+                    let start = text.find(REFLECT_DONE)?;
+                    let rest = &text[start + REFLECT_DONE.len()..];
+                    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+                    (digits > 0).then_some((start, start + REFLECT_DONE.len() + digits))
+                })
+                .await;
+            match found {
+                Ok((_, matched)) => {
+                    return matched
+                        .trim_start_matches(REFLECT_DONE)
+                        .parse()
+                        .map_err(|_| fail("unreadable reflection result"));
+                }
+                Err(error) => last = error.into(),
+            }
+        }
+        Err(last)
     }
 
     pub(crate) fn j08_late(&self, held: Verdict) -> Verdict {

@@ -143,6 +143,12 @@ pub(crate) struct Knobs {
     pub stuck_provider: Option<String>,
     pub create_env_unreadable: bool,
     pub docker_label_off: bool,
+    pub reflect_body: Option<String>,
+    pub reflect_not_descendant: bool,
+    pub reflect_never_done: bool,
+    pub reflect_swallow_first_enter: bool,
+    pub reflect_done_code: i32,
+    pub auth_id_token: Option<String>,
     pub create_env_extra: Option<(String, String)>,
 }
 

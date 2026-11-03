@@ -384,7 +384,7 @@ impl PtySession {
         let (begin, end) = (nonce, nonce + 1);
         self.send(
             format!(
-                "printf 'B%sB\\n' $(({}+7)); {{ {command} ; }}; printf 'E%s-%sE\\n' $(({}+7)) $?\n",
+                "printf 'B%sB\\n' $(({}+7)); ( {command} ); printf 'E%s-%sE\\n' $(({}+7)) $?\n",
                 begin - 7,
                 end - 7
             )

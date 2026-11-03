@@ -49,6 +49,7 @@ struct Link {
     out: VecDeque<Vec<u8>>,
     typed: Vec<u8>,
     interrupts: u32,
+    swallowed: bool,
     exit: Option<i32>,
     open: bool,
 }
@@ -85,6 +86,7 @@ impl PtyHost for ScenarioPty {
             out: VecDeque::new(),
             typed: Vec::new(),
             interrupts: 0,
+            swallowed: false,
             exit: None,
             open: true,
         };
@@ -117,6 +119,10 @@ impl Link {
             Kind::Attach => self.out.push_back(self.header().into_bytes()),
             Kind::Restart => {
                 let same = self.shared.knobs().restart_same_pid;
+                self.gateway.fake.force_phase(
+                    &SandboxName::parse(&self.sandbox).expect("sandbox"),
+                    jackin_core::Phase::Ready,
+                );
                 if let Some(model) = self.shared.state().sandboxes.get_mut(&self.sandbox) {
                     model.supervisor = "running 2".to_owned();
                     if !same {
@@ -154,6 +160,8 @@ impl Link {
         if self.interrupts < 2 {
             return;
         }
+        self.out
+            .push_back(b"\r\njackin-start: codex exited with code 0 (attempt 1)\r\n".to_vec());
         if let Some(model) = self.shared.state().sandboxes.get_mut(&self.sandbox) {
             model.supervisor = "exited 1 0".to_owned();
         }
@@ -163,7 +171,26 @@ impl Link {
                 jackin_core::Phase::Stopped,
             );
         }
-        self.exit = Some(0);
+    }
+
+    fn submit(&mut self) {
+        if self.shared.knobs().reflect_swallow_first_enter && !self.swallowed {
+            self.swallowed = true;
+            return;
+        }
+        if self.typed.starts_with(b"!sh /sandbox/.e2e-reflect.sh") {
+            self.reflect();
+        }
+        self.typed.clear();
+    }
+
+    fn reflect(&mut self) {
+        let knobs = self.shared.knobs().clone();
+        if !knobs.reflect_never_done {
+            self.out.push_back(
+                format!("E2E-REFLECT-DONE {}\r\n", knobs.reflect_done_code).into_bytes(),
+            );
+        }
     }
 
     fn shell_line(&mut self, line: &str) {
@@ -184,8 +211,8 @@ impl Link {
             return;
         };
         let command = line
-            .split_once("{ ")
-            .and_then(|(_, tail)| tail.rsplit_once(" ; }"))
+            .split_once("; ( ")
+            .and_then(|(_, tail)| tail.rsplit_once(" ); printf"))
             .map_or("", |(cmd, _)| cmd)
             .to_owned();
         let (text, code) = self.answer(&command);
@@ -273,7 +300,8 @@ impl PtyLink for Link {
                     match *byte {
                         0x04 => self.detach(),
                         0x03 => self.interrupt(),
-                        _ => {}
+                        b'\r' => self.submit(),
+                        other => self.typed.push(other),
                     }
                 }
             }

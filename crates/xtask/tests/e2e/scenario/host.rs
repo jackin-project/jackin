@@ -387,7 +387,7 @@ impl ScenarioHost {
                 return done(0, &format!("{name}\t{launch}\n"), &stderr);
             }
             let text = knobs.hook_error_text.unwrap_or_else(|| {
-                "launch failed at step preflight: the preflight hook exited with 17: sentinel preflight: SENTINEL_FAIL_PREFLIGHT=1".to_owned()
+                format!("error: launch {launch} failed at step hooks: the preflight hook exited with code 17\nsentinel preflight: SENTINEL_FAIL_PREFLIGHT=1\n")
             });
             stderr.push_str(&format!("{text}\n"));
             return done(1, "", &stderr);
@@ -453,7 +453,10 @@ impl ScenarioHost {
             state.usage_calls
         };
         let scripts = self.shared.knobs().usage.clone();
-        let default = json!({"state": "windows", "windows": [{"kind": "weekly", "label": "Weekly", "used_percent": 12.5, "resets_at": 1_800_000_000}]});
+        let default = json!({"state": "windows", "windows": [
+            {"kind": "weekly", "label": "Weekly", "used_percent": 12.5, "remaining": {"kind": "percent", "value": 87.5}, "resets_at": 1_800_000_000},
+            {"kind": "credits", "label": "credits", "used_percent": null, "remaining": {"kind": "amount", "value": "35348.77", "unit": "credits"}, "resets_at": null},
+        ]});
         let expired = json!({"state": "unavailable", "reason": {"kind": "expired_login"}});
         let mut dropped = None;
         let (a1, fixtures) = scripts.map_or((default.clone(), expired.clone()), |list| {
