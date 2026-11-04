@@ -98,16 +98,43 @@ impl JackinBackend {
             Effect::RemoveRole { role } => self
                 .bridge
                 .spawn(async move { inputs.remove_role(&role).await }),
+            Effect::RefreshAccount { account, .. } => self
+                .bridge
+                .spawn(async move { inputs.refresh_account(&account).await }),
+            Effect::ValidateAccount { account } => self
+                .bridge
+                .spawn(async move { inputs.validate_account(&account).await }),
+            Effect::CheckSource {
+                ticket,
+                provider,
+                source,
+                key,
+            } => self.bridge.spawn(async move {
+                inputs
+                    .check_source(ticket, provider, &source, key.as_ref())
+                    .await
+            }),
+            Effect::ProbeFolder { ticket, path } => self
+                .bridge
+                .spawn(async move { inputs.probe_folder(ticket, &path).await }),
+            Effect::ReadChanges {
+                ticket,
+                instance,
+                unpushed,
+                ..
+            } => self
+                .bridge
+                .spawn(async move { inputs.read_changes(ticket, &instance, unpushed).await }),
+            Effect::LoadOp { ticket, scope } => self.bridge.spawn(async move {
+                Msg::OpLoaded {
+                    ticket,
+                    result: inputs.list_op(&scope).await,
+                }
+            }),
             Effect::Refresh
             | Effect::RunDoctor
             | Effect::Restore { .. }
-            | Effect::Prewarm { .. }
-            | Effect::RefreshAccount { .. }
-            | Effect::ValidateAccount { .. }
-            | Effect::CheckSource { .. }
-            | Effect::ProbeFolder { .. }
-            | Effect::ReadChanges { .. }
-            | Effect::LoadOp { .. } => {}
+            | Effect::Prewarm { .. } => {}
         }
     }
 
@@ -143,14 +170,7 @@ impl Backend for JackinBackend {
                 self.rerun_doctor();
                 None
             }
-            Effect::Restore { .. }
-            | Effect::Prewarm { .. }
-            | Effect::RefreshAccount { .. }
-            | Effect::ValidateAccount { .. }
-            | Effect::CheckSource { .. }
-            | Effect::ProbeFolder { .. }
-            | Effect::ReadChanges { .. }
-            | Effect::LoadOp { .. } => unbuilt::fails(effect, &self.words),
+            Effect::Restore { .. } | Effect::Prewarm { .. } => unbuilt::fails(effect, &self.words),
             _ => {
                 self.settle(effect.clone());
                 None

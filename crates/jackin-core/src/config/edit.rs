@@ -66,7 +66,7 @@ impl Config {
         }
     }
 
-    fn require_account(&self, name: &AccountName) -> Result<&Account, ConfigError> {
+    pub fn require_account(&self, name: &AccountName) -> Result<&Account, ConfigError> {
         self.accounts
             .get(name)
             .ok_or_else(|| missing(KIND_ACCOUNT, name))

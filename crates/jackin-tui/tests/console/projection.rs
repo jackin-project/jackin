@@ -286,31 +286,6 @@ async fn unbuilt_restore_fails_visibly() -> TestResult {
 }
 
 #[tokio::test]
-async fn unbuilt_usage_and_validation_fail_visibly() -> TestResult {
-    guard(async {
-        let (_rig, mut console) = bare().await?;
-        failed_text(
-            &mut console,
-            Effect::RefreshAccount {
-                account: "work".to_owned(),
-                stagger_ms: 0,
-            },
-            Unbuilt::RefreshUsage,
-        );
-        let (_rig2, mut console2) = bare().await?;
-        failed_text(
-            &mut console2,
-            Effect::ValidateAccount {
-                account: "work".to_owned(),
-            },
-            Unbuilt::ValidateAccount,
-        );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
 async fn unbuilt_prewarm_fails_visibly() -> TestResult {
     guard(async {
         let (_rig, mut console) = bare().await?;

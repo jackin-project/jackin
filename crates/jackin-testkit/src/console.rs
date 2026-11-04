@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::num::NonZeroUsize;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
@@ -18,6 +19,7 @@ use jackin_tui::{
     Console, ConsoleDeps, ConsoleLimits, GatewaySessions, GatewayState, SessionConnector,
     SessionSet, build_console,
 };
+use jackin_usage::{HostUsage, UsageDeps};
 use junie_tui::core::event::{Input, Key, Mouse, MouseKind};
 use junie_tui::runtime::Application;
 use junie_tui::theme::{ColorLevel, Theme, Tone};
@@ -33,6 +35,7 @@ use crate::gateway::FakeGateway;
 use crate::host::FakeClock;
 use crate::world::World;
 
+const USAGE_DIR: &str = "usage";
 const SETTLE_CAP: Duration = Duration::from_secs(5);
 const DEFAULT_SIZE: (u16, u16) = (120, 40);
 
@@ -375,6 +378,15 @@ impl ConsoleRigBuilder<'_> {
             );
         }
         self.host.apply(world)?;
+        let server = world.usage.get().await?;
+        let usage = Arc::new(HostUsage::new(UsageDeps {
+            clock: Arc::<FakeClock>::clone(&world.clock),
+            fs: Arc::clone(&world.fs),
+            runner: Arc::<crate::host::TestRunner>::clone(&world.runner),
+            env: EnvSnapshot::from_pairs(self.env.clone()),
+            endpoints: server.endpoints(),
+            state_dir: HostPath::resolve(Path::new(USAGE_DIR), world.cache_dir())?,
+        }));
         let connect = self.connector.unwrap_or_else(|| {
             let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
             connector_over(
@@ -389,6 +401,7 @@ impl ConsoleRigBuilder<'_> {
         let console = build_console(ConsoleDeps {
             config: world.config.clone(),
             desk: world.desk(),
+            usage,
             sessions: SessionSet::new(default, entries),
             connect,
             roles: Arc::clone(&world.roles),
