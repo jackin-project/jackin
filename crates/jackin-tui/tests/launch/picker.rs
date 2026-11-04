@@ -49,6 +49,7 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
                     Provider::Codex,
                     CredentialSource::OnePassword {
                         reference: OpReference::parse("op://vault/item/field")?,
+                        account: None,
                     },
                 )?),
                 env_account("claude-env", Provider::Claude, "ANTHROPIC_KEY")?,

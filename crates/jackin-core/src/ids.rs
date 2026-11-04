@@ -404,6 +404,17 @@ fn check_op_reference(kind: &'static str, text: &str) -> Result<(), IdError> {
     Ok(())
 }
 
+fn check_op_account(kind: &'static str, text: &str) -> Result<(), IdError> {
+    non_empty(kind, text)?;
+    if text.starts_with('-') {
+        return Err(IdError::BadFormat {
+            kind,
+            expected: "an account that does not start with -",
+        });
+    }
+    Ok(())
+}
+
 fn path_separator(run: &[u8]) -> bool {
     matches!(run, b"." | b"_" | b"__") || run.iter().all(|byte| *byte == b'-')
 }
@@ -609,6 +620,7 @@ string_id!(BranchName, "branch name", with check_branch_name);
 string_id!(CommitId, "commit ID", with check_commit_id);
 string_id!(Sha256, "SHA-256 digest", with check_sha256);
 string_id!(OpReference, "1Password reference", with check_op_reference);
+string_id!(OpAccountId, "1Password account", with check_op_account);
 string_id!(ModelName, "model name", rule MODEL);
 string_id!(ImageTag, "image tag", with check_image_tag);
 string_id!(RoleUrl, "role URL", with check_role_url);

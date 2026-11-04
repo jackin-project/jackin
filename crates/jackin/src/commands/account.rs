@@ -49,9 +49,10 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             }
             Ok(CredentialSource::Env { var })
         }
-        Some(Ok(CredentialArg::OnePassword(reference))) => {
-            Ok(CredentialSource::OnePassword { reference })
-        }
+        Some(Ok(CredentialArg::OnePassword(reference))) => Ok(CredentialSource::OnePassword {
+            reference,
+            account: None,
+        }),
         Some(Ok(CredentialArg::File(path))) => {
             let refused = || {
                 CommandError::Argument(

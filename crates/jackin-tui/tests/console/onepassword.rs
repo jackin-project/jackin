@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_console::backend::{OpError, OpSession};
-use jackin_core::{CredentialSource, Program};
+use jackin_console::backend::{Effect, OpError, OpSession};
+use jackin_console::domain::account::CredentialSource as ConsoleSource;
+use jackin_console::domain::onepassword::OpReference;
+use jackin_core::{Account, AccountName, ConfigEdit, CredentialSource, Program, Provider};
 use jackin_testkit::{ProcessReply, ScriptedProgram, TestResult, guard};
 use serde_json::{Value, json};
 
@@ -74,21 +76,39 @@ async fn the_picker_walks_to_a_concealed_field_and_the_form_saves_only_its_refer
         frames.push(loading);
         lab.console.settle().await?;
         let accounts = lab.console.screen();
-        assert!(accounts.contains("acct-1") && accounts.contains("me@example.test"), "{accounts}");
+        assert!(
+            accounts.contains("acct-1") && accounts.contains("me@example.test"),
+            "{accounts}"
+        );
         frames.push(accounts);
         lab.step("enter").await?;
         let vaults = lab.console.screen();
-        assert!(vaults.contains("Private") && vaults.contains("1 items"), "{vaults}");
-        assert!(vaults.contains("Shared") && vaults.contains("no access"), "{vaults}");
+        assert!(
+            vaults.contains("Private") && vaults.contains("1 items"),
+            "{vaults}"
+        );
+        assert!(
+            vaults.contains("Shared") && vaults.contains("no access"),
+            "{vaults}"
+        );
         frames.push(vaults);
         lab.step("enter").await?;
         let items = lab.console.screen();
-        assert!(items.contains("OpenAI") && items.contains("api credential"), "{items}");
+        assert!(
+            items.contains("OpenAI") && items.contains("api credential"),
+            "{items}"
+        );
         frames.push(items);
         lab.step("enter").await?;
         let fields = lab.console.screen();
-        assert!(fields.contains("api key") && fields.contains("concealed"), "{fields}");
-        assert!(fields.contains("endpoint") && fields.contains("url"), "{fields}");
+        assert!(
+            fields.contains("api key") && fields.contains("concealed"),
+            "{fields}"
+        );
+        assert!(
+            fields.contains("endpoint") && fields.contains("url"),
+            "{fields}"
+        );
         frames.push(fields);
         lab.step("enter").await?;
         let chosen = lab.console.screen();
@@ -99,10 +119,14 @@ async fn the_picker_walks_to_a_concealed_field_and_the_form_saves_only_its_refer
         frames.push(lab.console.screen());
 
         let config = lab.config().await?;
-        let saved = config.accounts().find(|a| a.name().as_str() == "spare").ok_or("saved")?;
+        let saved = config
+            .accounts()
+            .find(|a| a.name().as_str() == "spare")
+            .ok_or("saved")?;
         assert!(matches!(
             saved.credential(),
-            CredentialSource::OnePassword { reference } if reference.as_str() == "op://vault-1/item-1/key"
+            CredentialSource::OnePassword { reference, account: Some(account) }
+                if reference.as_str() == "op://vault-1/item-1/key" && account.as_str() == "acct-1"
         ));
 
         let config_text = lab.console.config_text().await?;
@@ -128,6 +152,83 @@ async fn the_picker_walks_to_a_concealed_field_and_the_form_saves_only_its_refer
             assert!(call.args.first().is_some_and(|a| a != "read"), "{call:?}");
         }
         assert!(lab.rig.world.gateway.providers().len() <= 1);
+        Ok(())
+    })
+    .await
+}
+
+async fn op_account(lab: &Lab, account: Option<&str>) -> TestResult {
+    let credential = CredentialSource::OnePassword {
+        reference: "op://vault-1/item-1/key".parse()?,
+        account: account.map(str::parse).transpose()?,
+    };
+    lab.edit(vec![ConfigEdit::AddAccount(Account::new(
+        AccountName::parse("ci")?,
+        Provider::Openrouter,
+        credential,
+    )?)])
+    .await
+}
+
+async fn resave_with_another_field(
+    lab: &mut Lab,
+) -> Result<OpReference, Box<dyn std::error::Error>> {
+    let base = lab.world().accounts.clone();
+    let mut registry = base.clone();
+    let ConsoleSource::OnePassword(reference) = &mut registry
+        .accounts
+        .iter_mut()
+        .find(|a| a.id == "ci")
+        .ok_or("ci")?
+        .source
+    else {
+        return Err("ci is not a 1Password account".into());
+    };
+    let shown = reference.clone();
+    reference.field_id = "other".to_owned();
+    lab.perform(Effect::SaveAccounts {
+        base: Box::new(base),
+        registry: Box::new(registry),
+    })
+    .await?;
+    Ok(shown)
+}
+
+#[tokio::test]
+async fn a_stored_op_account_is_shown_back_and_kept_when_the_reference_changes() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        op_account(&lab, Some("acct-1")).await?;
+        lab.reopen().await?;
+        let shown = resave_with_another_field(&mut lab).await?;
+        assert_eq!(shown.account, "acct-1");
+        let config = lab.config().await?;
+        let saved = config.account(&AccountName::parse("ci")?).ok_or("ci")?;
+        assert!(matches!(
+            saved.credential(),
+            CredentialSource::OnePassword { reference, account: Some(account) }
+                if reference.as_str() == "op://vault-1/item-1/other" && account.as_str() == "acct-1"
+        ));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_default_account_op_reference_stays_without_an_account_when_it_changes() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        op_account(&lab, None).await?;
+        lab.reopen().await?;
+        let shown = resave_with_another_field(&mut lab).await?;
+        assert_eq!(shown.account, "");
+        let config = lab.config().await?;
+        let saved = config.account(&AccountName::parse("ci")?).ok_or("ci")?;
+        assert!(matches!(
+            saved.credential(),
+            CredentialSource::OnePassword { reference, account: None }
+                if reference.as_str() == "op://vault-1/item-1/other"
+        ));
         Ok(())
     })
     .await

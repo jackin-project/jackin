@@ -246,6 +246,7 @@ async fn usage_reads_a_one_password_value_only_to_send_it_as_the_bearer_header()
             Provider::Claude,
             CredentialSource::OnePassword {
                 reference: OpReference::parse("op://vault-1/item-1/key")?,
+                account: None,
             },
         )?;
         lab.edit(vec![ConfigEdit::AddAccount(account)]).await?;

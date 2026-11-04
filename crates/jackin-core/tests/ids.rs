@@ -10,8 +10,8 @@ use std::str::FromStr;
 use jackin_core::{
     AccountName, Agent, AttemptId, BranchName, BuilderName, ChatgptAccountId, CommitId, EnvName,
     GatewayName, IdError, ImageId, ImageLabel, ImageTag, LaunchId, ModelName, NameSuffix,
-    OpReference, OpenShellWorkspace, ProfileId, ProviderName, RoleName, SandboxName, SandboxSlug,
-    Sha256, WorkspaceName,
+    OpAccountId, OpReference, OpenShellWorkspace, ProfileId, ProviderName, RoleName, SandboxName,
+    SandboxSlug, Sha256, WorkspaceName,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -388,6 +388,19 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
             rej("op:///item", Want::Format),
             rej("op://vault//field", Want::Format),
             rej("http://vault/item", Want::Format),
+        ],
+    )?);
+    kinds.push(grammar::<OpAccountId>(
+        &[
+            "acct-1",
+            "me@example.test",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "my.1password.com",
+        ],
+        &[
+            rej("", Want::Empty),
+            rej("-x", Want::Format),
+            rej("--config", Want::Format),
         ],
     )?);
     kinds.push(grammar::<ModelName>(

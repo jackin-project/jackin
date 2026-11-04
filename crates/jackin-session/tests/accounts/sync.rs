@@ -190,6 +190,7 @@ fn accounts(home: &HostPath) -> Result<Vec<Account>, Box<dyn std::error::Error>>
         },
         CredentialSource::OnePassword {
             reference: OpReference::parse("op://Dev/OpenAI/credential")?,
+            account: None,
         },
         CredentialSource::File { path: home.clone() },
     ];
