@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::app::Route;
-use jackin_core::{DockerLabel, DockerRisk};
+use jackin_core::{ConfigEdit, DockerLabel, DockerRisk, WorkspaceName};
 use jackin_openshell::Gateway;
 use jackin_testkit::{ENGINE_PORT, Rig, TestResult, guard};
 
@@ -95,6 +95,7 @@ async fn docker_without_an_engine_fails_and_creates_nothing() -> TestResult {
             shown.contains("the Docker capability is enabled"),
             "{screen}"
         );
+        assert!(!shown.contains("Next step"), "{screen}");
         assert_eq!(
             stage(&screen, "03 Sandbox"),
             Some(Stage::Failed),
@@ -104,6 +105,40 @@ async fn docker_without_an_engine_fails_and_creates_nothing() -> TestResult {
         assert!(rig.gateway().providers().is_empty());
         assert!(rig.world.engine.builds().is_empty());
         assert!(console.console().app().world.instances.is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_docker_launch_warns_though_the_roster_did_not_know() -> TestResult {
+    guard(async {
+        let rig = Rig::builder().engine(ENGINE_PORT).build().await?;
+        rig.write_engine_certs().await?;
+        let mut console = console(&rig).await?;
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::SetWorkspaceDocker {
+                workspace: WorkspaceName::parse("platform-backend")?,
+                docker: true,
+            }])
+            .await?;
+        launch(&mut console).await?;
+        until_shows(&mut console, "Docker is on").await?;
+        let screen = console.screen();
+        assert!(words(&screen).contains("shows all 4 risks"), "{screen}");
+        console.keys("i")?;
+        let info = dialog(&console.screen());
+        for risk in DockerRisk::ALL {
+            assert!(info.contains(risk.label()), "{}\n{info}", risk.label());
+            assert!(info.contains(risk.text()), "{}\n{info}", risk.text());
+        }
+        console.keys("esc")?;
+        until_route(&mut console, Route::Capsule).await?;
+        assert!(matches!(
+            labels(&only(&rig)?)?.docker,
+            DockerLabel::Engine { port, .. } if port.get() == ENGINE_PORT
+        ));
         Ok(())
     })
     .await

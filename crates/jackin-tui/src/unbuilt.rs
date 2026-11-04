@@ -7,7 +7,7 @@ use jackin_console::backend::{
 };
 use jackin_console::domain::instance::AgentState;
 use jackin_console::domain::onepassword::OpReference;
-use jackin_console::domain::vocabulary::{Unbuilt, Vocabulary};
+use jackin_console::domain::vocabulary::{PaneWords, Unbuilt, Vocabulary};
 use jackin_console::panes::{PaneBody, PaneKey, PaneKindTag, PaneNote, PaneSpawn, PasteOutcome};
 use jackin_console::world::{Msg, SaveFailure};
 use junie_tui::core::event::Key;
@@ -32,6 +32,7 @@ pub(crate) fn fails(effect: &Effect, words: &Vocabulary) -> Option<Completion> {
             result: Err(save(Unbuilt::SaveSettings)),
         },
         Effect::SaveAccounts { .. } => Msg::AccountsSaved {
+            added: None,
             result: Err(no(Unbuilt::SaveAccounts)),
         },
         Effect::DeleteWorkspace { id } => Msg::WorkspaceDeleted {
@@ -146,7 +147,7 @@ impl PaneBody for UnbuiltPane {
         None
     }
 
-    fn note(&self) -> Option<PaneNote> {
+    fn note(&self, _words: &PaneWords) -> Option<PaneNote> {
         Some(PaneNote {
             text: self.note.clone(),
             tone: Tone::Error,

@@ -75,6 +75,10 @@ impl Bridge {
         self.handle.spawn(work);
     }
 
+    pub(crate) fn send(&self, msg: Msg) {
+        self.sender.send(Remote::Msg(msg));
+    }
+
     pub(crate) fn spawn(&self, work: impl Future<Output = Msg> + Send + 'static) {
         let ticket = self.inflight.start();
         let sender = self.sender.clone();

@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use jackin_console::app::{App, AppOptions, ClipboardMode, Entry, EntryPage, assemble};
 use jackin_console::arbiter::Arbiter;
+use jackin_console::panes::PanePolicy;
 use jackin_console::world::{Snapshot, WallSource, World, WorldParts};
 use jackin_core::{
     Compatibility, CompatibilityError, ConfigError, ConfigStore, EnvName, EnvSnapshot, HostPath,
@@ -205,6 +206,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
             frame: 0,
             theme,
             clipboard: ClipboardMode::Host(Arc::new(HostClipboard)),
+            panes: PanePolicy::default(),
         },
     )
     .with_external(receiver);

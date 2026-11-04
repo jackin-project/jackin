@@ -514,6 +514,16 @@ fn role_admin(config: &Config, docs: &RoleDocs) -> RoleAdmin {
     }
 }
 
+pub(crate) fn docker_risks() -> Vec<DockerRiskText> {
+    DockerRisk::ALL
+        .into_iter()
+        .map(|risk| DockerRiskText {
+            label: risk.label().to_owned(),
+            text: risk.text().to_owned(),
+        })
+        .collect()
+}
+
 fn docker_setting(
     config: &Config,
     docs: &RoleDocs,
@@ -528,13 +538,7 @@ fn docker_setting(
             },
             None => EngineState::Missing,
         },
-        risks: DockerRisk::ALL
-            .into_iter()
-            .map(|risk| DockerRiskText {
-                label: risk.label().to_owned(),
-                text: risk.text().to_owned(),
-            })
-            .collect(),
+        risks: docker_risks(),
         role_enabled: docs
             .iter()
             .filter(|(_, doc)| doc.as_ref().is_ok_and(|d| d.docker))

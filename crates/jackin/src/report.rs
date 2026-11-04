@@ -3,8 +3,8 @@
 
 use jackin_core::WorkspaceName;
 use jackin_session::{
-    AttachError, ExportError, LaunchFailure, LifecycleError, PlanError, PurgeError, RestartError,
-    env_file_problem, error_chain, hook_failure, main_process_ended, sandbox_missing,
+    AttachError, ExportError, LaunchFailure, LaunchNextStep, LifecycleError, PlanError, PurgeError,
+    RestartError, env_file_problem, error_chain, hook_failure, main_process_ended, sandbox_missing,
 };
 
 use crate::error::CommandError;
@@ -15,8 +15,10 @@ fn workspace_unknown(workspace: &WorkspaceName) -> String {
 
 fn launch_failure(failure: &LaunchFailure) -> String {
     let mut text = failure.summary();
-    if let Some(next) = failure.next_step() {
-        text.push_str(&format!("\n{next}"));
+    if let Some(LaunchNextStep::Retry { sandbox, launch }) = failure.next_step() {
+        text.push_str(&format!(
+            "\nsandbox {sandbox} remains; retry with: jackin load --launch-id {launch}"
+        ));
     }
     text
 }

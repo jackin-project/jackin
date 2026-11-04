@@ -56,13 +56,6 @@ fn a_failure_reads_as_one_summary_and_names_the_retry_when_a_sandbox_remains() -
             launch: launch()?
         })
     );
-    assert_eq!(
-        hook.next_step().map(|next| next.to_string()),
-        Some(
-            "sandbox jackin-proj-0abc remains; retry with: jackin load --launch-id 01hzy3k5m7p9r2t4v6w8x0abcd"
-                .to_owned()
-        )
-    );
 
     let ended = failure(
         LaunchStep::Start,

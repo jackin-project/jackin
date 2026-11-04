@@ -6,12 +6,11 @@ use std::time::Duration;
 
 use jackin_console::app::Route;
 use jackin_core::{ConfigEdit, RoleName, RoleSource, SandboxLabels, sandbox_layout};
-use jackin_testkit::{ConsoleRig, Rig, RoleFixture, SandboxHandle, launch_id};
+use jackin_testkit::{ConsoleRig, Rig, RoleFixture, SandboxHandle};
 
 pub(crate) type Failure = Box<dyn Error>;
 
 const STEPS: usize = 4000;
-const EARLIER: u8 = 1;
 const QUIET_STEPS: usize = 100;
 const FORM: &str = "Values for this launch";
 
@@ -41,6 +40,21 @@ pub(crate) async fn until(
 ) -> Result<(), Failure> {
     for _ in 0..STEPS {
         console.tick(1);
+        console.settle().await?;
+        if done(console) {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    Err(format!("never reached: {what}\n{}", console.screen()).into())
+}
+
+pub(crate) async fn until_untouched(
+    console: &mut ConsoleRig,
+    what: &str,
+    done: impl Fn(&mut ConsoleRig) -> bool,
+) -> Result<(), Failure> {
+    for _ in 0..STEPS {
         console.settle().await?;
         if done(console) {
             return Ok(());
@@ -157,24 +171,9 @@ pub(crate) fn only(rig: &Rig) -> Result<SandboxHandle, Failure> {
     }
 }
 
-pub(crate) fn fresh(rig: &Rig) -> Result<SandboxHandle, Failure> {
-    let earlier = launch_id(EARLIER);
-    let mut all = rig
-        .gateway()
-        .sandboxes()
-        .into_iter()
-        .filter(|handle| labels(handle).is_ok_and(|found| found.planned.launch != earlier))
-        .collect::<Vec<_>>();
-    if all.len() == 1 {
-        Ok(all.remove(0))
-    } else {
-        Err(format!("expected one new sandbox, saw {}", all.len()).into())
-    }
-}
-
-pub(crate) async fn running_console(rig: &Rig) -> Result<ConsoleRig, Failure> {
-    rig.launch(EARLIER).await?;
-    console(rig).await
+pub(crate) fn record_id(handle: &SandboxHandle) -> String {
+    let name = handle.name().to_string();
+    format!("jk-{}", &name[name.len() - 4..])
 }
 
 pub(crate) fn labels(handle: &SandboxHandle) -> Result<SandboxLabels, Failure> {

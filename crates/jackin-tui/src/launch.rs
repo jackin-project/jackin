@@ -8,23 +8,25 @@ use std::sync::{Arc, mpsc};
 
 use jackin_console::backend::{Backend, OnePassword};
 use jackin_console::domain::agent::Agent;
+use jackin_console::domain::docker::DockerCapability;
 use jackin_console::domain::instance::{Instance, RepoRef};
-use jackin_console::domain::launch::{LaunchContent, LaunchFailure};
+use jackin_console::domain::launch::{LaunchContent, LaunchFailure, NextStep, RefusalReason};
 use jackin_console::launch::{
     EnvAnswer, EnvQuestion, FailedLaunch, LaunchEvent, LaunchFeed, LaunchTarget, ReadyInstance,
-    Refusal, TypedKey,
+    TypedKey,
 };
-use jackin_console::world::World;
+use jackin_console::world::{Msg, World};
 use jackin_core::{
     AccountName, Config, ConfigEdit, ConfigError, EntropyError, EnvName, GatewayName, HostPath,
-    IdError, LaunchId, PathError, ProjectRoot, RoleName, Workspace, WorkspaceName,
+    IdError, LaunchId, PathError, ProjectRoot, RoleName, SandboxName, Workspace, WorkspaceName,
 };
 use jackin_image::ImageEvent;
 use jackin_openshell::GatewayError;
 use jackin_session::{
-    AttachTarget, GithubRepo, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
-    LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LineDelivery, PlanError, Prompting,
-    RoleError, Session, StepResult, WorkspaceLookup, error_chain, launch_events, lookup_workspace,
+    AccountError, GithubRepo, LaunchError, LaunchEvent as SessionEvent,
+    LaunchFailure as SessionFailure, LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest,
+    LaunchStep, LaunchWarning, LineDelivery, PlanError, Prompting, RestoreCandidate, RoleError,
+    Session, StepResult, WorkspaceLookup, error_chain, launch_events, lookup_workspace,
     plan_launch,
 };
 use junie_tui::widgets::steps::StepState;
@@ -34,6 +36,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::backend::JackinBackend;
 use crate::fleet::ObservedSandbox;
+use crate::project::docker_risks;
 use crate::sessions::Access;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -105,7 +108,7 @@ fn plain_failure(stage: Stage, error: &dyn Error) -> LaunchFailure {
     LaunchFailure {
         stage: stage.index(),
         summary,
-        next_step: String::new(),
+        next_step: NextStep::None,
         detail,
     }
 }
@@ -122,11 +125,28 @@ fn session_failure(failure: &SessionFailure) -> LaunchFailure {
     LaunchFailure {
         stage: stage_of(failure.step).index(),
         summary,
-        next_step: failure
-            .next_step()
-            .map(|next| next.to_string())
-            .unwrap_or_default(),
+        next_step: next_step(failure),
         detail,
+    }
+}
+
+fn next_step(failure: &SessionFailure) -> NextStep {
+    let credential = match &*failure.error {
+        LaunchError::Credential(_) => true,
+        LaunchError::ProviderUnavailable { source, .. } => {
+            matches!(**source, AccountError::Credential(_))
+        }
+        _ => false,
+    };
+    if credential {
+        return NextStep::FixCredential;
+    }
+    match failure.next_step() {
+        Some(LaunchNextStep::Retry { sandbox, launch }) => NextStep::Retry {
+            sandbox: sandbox.to_string(),
+            launch: launch.to_string(),
+        },
+        None => NextStep::None,
     }
 }
 
@@ -154,7 +174,7 @@ enum Unlaunchable {
 
 #[derive(Debug)]
 enum Stop {
-    Refused(String),
+    Refused(RefusalReason),
     Failed(Box<LaunchFailure>),
     Cancelled,
 }
@@ -208,7 +228,11 @@ impl Rail {
         now_ms: i64,
     ) -> Vec<LaunchEvent> {
         match event {
-            SessionEvent::Warning(_) => Vec::new(),
+            SessionEvent::Warning(LaunchWarning::DockerCapability) => {
+                vec![LaunchEvent::Warning(DockerCapability {
+                    risks: docker_risks(),
+                })]
+            }
             SessionEvent::StepStarted(step) => {
                 let stage = stage_of(step);
                 if self.started.contains_key(&stage) {
@@ -335,14 +359,16 @@ impl Run {
     }
 
     async fn run(mut self) {
+        if self.wanted.agent != Agent::Codex {
+            self.send(LaunchEvent::Refused(RefusalReason::AgentNotLaunchable {
+                agent: self.wanted.agent,
+                launchable: Agent::Codex,
+            }));
+            return;
+        }
         match self.prepare().await {
             Ok(prepared) => self.launch(prepared).await,
-            Err(Stop::Refused(found)) => self.send(LaunchEvent::Refused(Box::new(Refusal {
-                title: String::new(),
-                found,
-                state: self.content.words.unit_missing.clone(),
-                next_step: String::new(),
-            }))),
+            Err(Stop::Refused(reason)) => self.send(LaunchEvent::Refused(reason)),
             Err(Stop::Failed(failure)) => self.report(*failure),
             Err(Stop::Cancelled) => {}
         }
@@ -403,13 +429,10 @@ impl Run {
         {
             Ok(role) => role,
             Err(RoleError::NotAllowed(role)) => {
-                return Err(Stop::Refused(
-                    PlanError::RoleNotAllowed {
-                        workspace: name,
-                        role,
-                    }
-                    .to_string(),
-                ));
+                return Err(Stop::Refused(RefusalReason::RoleNotAllowed {
+                    workspace: name.to_string(),
+                    role: role.to_string(),
+                }));
             }
             Err(RoleError::Cancelled) => return Err(Stop::Cancelled),
             Err(error) => return Err(Stop::at(Stage::Image, &error)),
@@ -443,8 +466,11 @@ impl Run {
                     });
                 }
                 Err(PlanError::EnvNeeded(found)) => values.extend(self.ask(&found).await?),
-                Err(error @ PlanError::RoleNotAllowed { .. }) => {
-                    return Err(Stop::Refused(error.to_string()));
+                Err(PlanError::RoleNotAllowed { workspace, role }) => {
+                    return Err(Stop::Refused(RefusalReason::RoleNotAllowed {
+                        workspace: workspace.to_string(),
+                        role: role.to_string(),
+                    }));
                 }
                 Err(error) => return Err(Stop::at(plan_stage(&error), &error)),
             }
@@ -474,7 +500,7 @@ impl Run {
         match outcome {
             Ok(LaunchOutcome::Ready(target)) => {
                 match self
-                    .ready(&session, &config, &project, &gateway, &target)
+                    .ready(&session, &config, &project, &gateway, &target.sandbox)
                     .await
                 {
                     Ok(instance) => self.send(LaunchEvent::Ready(Box::new(ReadyInstance {
@@ -487,7 +513,9 @@ impl Run {
                     }
                 }
             }
-            Ok(LaunchOutcome::Cancelled(_)) => self.backend.refresh(),
+            Ok(LaunchOutcome::Cancelled(left)) => {
+                self.cancelled(&session, &config, &gateway, left).await;
+            }
             Err(failure) => {
                 if let Some(sandbox) = &failure.sandbox {
                     self.send(LaunchEvent::ContainerReady(sandbox.to_string()));
@@ -510,23 +538,51 @@ impl Run {
         self.backend.refresh();
     }
 
-    async fn ready(
+    async fn cancelled(
         &self,
         session: &Session,
         config: &Config,
-        project: &ProjectRoot,
         gateway: &GatewayName,
-        target: &AttachTarget,
+        left: RestoreCandidate,
+    ) {
+        let Some(sandbox) = left.sandbox else {
+            return;
+        };
+        match self.record(session, config, gateway, &sandbox).await {
+            Ok(instance) => self.backend.bridge.send(Msg::LaunchCancelled {
+                instance: Box::new(instance),
+            }),
+            Err(_) => self.backend.refresh(),
+        }
+    }
+
+    async fn record(
+        &self,
+        session: &Session,
+        config: &Config,
+        gateway: &GatewayName,
+        sandbox: &SandboxName,
     ) -> Result<Instance, jackin_session::LifecycleError> {
-        let inspected = session.inspect(&target.sandbox).await?;
-        let work = session.work_state(config, &target.sandbox).await;
+        let inspected = session.inspect(sandbox).await?;
+        let work = session.work_state(config, sandbox).await;
         let observed = ObservedSandbox {
             gateway: gateway.clone(),
             summary: inspected.summary,
             supervisor: Some(inspected.supervisor),
             work: Some(work),
         };
-        let mut instance = self.backend.inputs.instance_of(config, &observed);
+        Ok(self.backend.inputs.instance_of(config, &observed))
+    }
+
+    async fn ready(
+        &self,
+        session: &Session,
+        config: &Config,
+        project: &ProjectRoot,
+        gateway: &GatewayName,
+        sandbox: &SandboxName,
+    ) -> Result<Instance, jackin_session::LifecycleError> {
+        let mut instance = self.record(session, config, gateway, sandbox).await?;
         if let Ok(Some(origin)) = session.project_origin(project, &self.cancel).await {
             instance.github = Some(repo_ref(&origin.repo));
             instance.default_branch = origin

@@ -1,8 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::time::Duration;
+
 use jackin_console::app::Route;
+use jackin_console::domain::agent::Agent as ConsoleAgent;
+use jackin_console::domain::launch::{LaunchContent, RefusalReason};
 use jackin_console::domain::role::{NO_DEFAULT_ROLE, NO_SAVED_WORKSPACE};
+use jackin_console::launch::{LaunchEvent, LaunchTarget};
 use jackin_core::{
     Account, AccountName, AllowedRoles, ConfigEdit, CredentialSource, EnvName, OpReference,
     Program, Provider, RoleName, WorkspaceName,
@@ -183,11 +188,65 @@ async fn a_role_removed_under_the_picker_is_refused() -> TestResult {
         console.keys("enter")?;
         until_shows(&mut console, "does not allow role sentinel").await?;
         let screen = console.screen();
+        let text = LaunchContent::openshell()
+            .words
+            .refusal(&RefusalReason::RoleNotAllowed {
+                workspace: "platform-backend".to_owned(),
+                role: "sentinel".to_owned(),
+            });
+        assert!(screen.contains(&text.title), "{}\n{screen}", text.title);
+        let shown = dialog(&screen);
+        for part in [&text.found, &text.state, &text.next_step] {
+            assert!(shown.contains(part.as_str()), "{part}\n{screen}");
+        }
+        assert!(rig.gateway().sandboxes().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        console.keys("esc")?;
+        until_route(&mut console, Route::Manager).await?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn another_agent_is_refused_before_any_stage() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut console = console(&rig).await?;
+        let app = console.console().app();
+        let world = &app.world;
+        let workspace = world
+            .workspaces
+            .iter()
+            .find(|found| found.name == "platform-backend")
+            .map(|found| found.id)
+            .ok_or("no platform-backend workspace")?;
+        let mut feed = world.backend.launch(
+            world,
+            &LaunchTarget {
+                workspace: Some(workspace),
+                role: "sentinel".to_owned(),
+                agent: ConsoleAgent::ClaudeCode,
+                account: None,
+            },
+        );
+        let mut events = Vec::new();
+        for _ in 0..400 {
+            events.extend(feed.poll(world));
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
         assert!(
-            dialog(&screen).contains("workspace platform-backend does not allow role sentinel"),
-            "{screen}"
+            matches!(
+                events.as_slice(),
+                [LaunchEvent::Refused(RefusalReason::AgentNotLaunchable {
+                    agent: ConsoleAgent::ClaudeCode,
+                    launchable: ConsoleAgent::Codex,
+                })]
+            ),
+            "{events:?}"
         );
         assert!(rig.gateway().sandboxes().is_empty());
+        assert!(rig.gateway().providers().is_empty());
         assert!(rig.world.engine.builds().is_empty());
         Ok(())
     })
