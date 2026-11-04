@@ -16,6 +16,7 @@ mod launch;
 mod observe;
 mod onepassword;
 mod origin;
+mod panes;
 pub mod persist;
 mod project;
 mod sessions;

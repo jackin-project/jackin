@@ -6,7 +6,8 @@ use std::fmt;
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::time::Duration;
 
 use jackin_console::domain::fixed::Fixed;
@@ -22,6 +23,7 @@ use jackin_tui::{
 use jackin_usage::{HostUsage, UsageDeps};
 use junie_tui::core::event::{Input, Key, Mouse, MouseKind};
 use junie_tui::runtime::Application;
+use junie_tui::shell::NativeClipboard;
 use junie_tui::theme::{ColorLevel, Theme, Tone};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
@@ -37,6 +39,8 @@ use crate::world::World;
 
 const USAGE_DIR: &str = "usage";
 const SETTLE_CAP: Duration = Duration::from_secs(5);
+const WAIT_STEPS: usize = 1000;
+const WAIT_STEP: Duration = Duration::from_millis(5);
 const DEFAULT_SIZE: (u16, u16) = (120, 40);
 
 #[derive(Debug)]
@@ -73,6 +77,32 @@ impl WallSource for FakeWall {
 }
 
 #[derive(Debug)]
+pub struct RecordingClipboard {
+    accepting: AtomicBool,
+    writes: Mutex<Vec<String>>,
+}
+
+impl RecordingClipboard {
+    pub fn new(accepting: bool) -> Arc<RecordingClipboard> {
+        Arc::new(RecordingClipboard {
+            accepting: AtomicBool::new(accepting),
+            writes: Mutex::new(Vec::new()),
+        })
+    }
+
+    pub fn writes(&self) -> Vec<String> {
+        crate::sync::locked(&self.writes).clone()
+    }
+}
+
+impl NativeClipboard for RecordingClipboard {
+    fn write(&self, text: &str) -> bool {
+        crate::sync::locked(&self.writes).push(text.to_owned());
+        self.accepting.load(Ordering::SeqCst)
+    }
+}
+
+#[derive(Debug)]
 pub struct ConsoleRigBuilder<'a> {
     world: &'a World,
     extra: BTreeMap<GatewayName, GatewayState>,
@@ -83,6 +113,8 @@ pub struct ConsoleRigBuilder<'a> {
     deadline: Duration,
     env: Vec<(String, String)>,
     size: (u16, u16),
+    clipboard: Arc<RecordingClipboard>,
+    pane_inbox_bytes: usize,
 }
 
 pub struct ConsoleRig {
@@ -92,6 +124,7 @@ pub struct ConsoleRig {
     gateway: Arc<FakeGateway>,
     size: (u16, u16),
     theme: Theme,
+    clipboard: Arc<RecordingClipboard>,
 }
 
 impl fmt::Debug for ConsoleRig {
@@ -146,6 +179,8 @@ impl ConsoleRig {
             deadline: Duration::from_secs(10),
             env: Vec::new(),
             size: DEFAULT_SIZE,
+            clipboard: RecordingClipboard::new(true),
+            pane_inbox_bytes: 1024 * 1024,
         }
     }
 
@@ -160,6 +195,29 @@ impl ConsoleRig {
 
     pub fn gateway(&self) -> &Arc<FakeGateway> {
         &self.gateway
+    }
+
+    pub fn clipboard(&self) -> &Arc<RecordingClipboard> {
+        &self.clipboard
+    }
+
+    pub async fn wait_for_text(&mut self, text: &str) -> Result<String, FixtureError> {
+        for _ in 0..WAIT_STEPS {
+            let screen = self.screen();
+            if screen.contains(text) {
+                return Ok(screen);
+            }
+            self.tick(1);
+            tokio::time::sleep(WAIT_STEP).await;
+        }
+        Err(format!("{text:?} never appeared:\n{}", self.screen()).into())
+    }
+
+    pub async fn pump(&mut self, ticks: usize) {
+        for _ in 0..ticks {
+            self.tick(1);
+            tokio::time::sleep(WAIT_STEP).await;
+        }
     }
 
     pub fn config(&self) -> &ConfigStore {
@@ -365,6 +423,18 @@ impl ConsoleRigBuilder<'_> {
     }
 
     #[must_use]
+    pub fn clipboard(mut self, clipboard: Arc<RecordingClipboard>) -> Self {
+        self.clipboard = clipboard;
+        self
+    }
+
+    #[must_use]
+    pub fn pane_inbox_bytes(mut self, bytes: usize) -> Self {
+        self.pane_inbox_bytes = bytes;
+        self
+    }
+
+    #[must_use]
     pub fn size(mut self, width: u16, height: u16) -> Self {
         self.size = (width, height);
         self
@@ -406,6 +476,7 @@ impl ConsoleRigBuilder<'_> {
         let wall_port: Arc<dyn WallSource> = Arc::<FakeWall>::clone(&wall);
         let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
         let theme = Theme::for_level(ColorLevel::TrueColor);
+        let sink: Arc<dyn NativeClipboard> = Arc::<RecordingClipboard>::clone(&self.clipboard);
         let console = build_console(ConsoleDeps {
             config: world.config.clone(),
             desk: world.desk(),
@@ -429,7 +500,11 @@ impl ConsoleRigBuilder<'_> {
             limits: ConsoleLimits {
                 connect_deadline: self.deadline,
                 work_reads: NonZeroUsize::MIN.saturating_add(3),
+                pane_inbox_bytes: NonZeroUsize::new(self.pane_inbox_bytes)
+                    .unwrap_or(NonZeroUsize::MIN),
+                supervisor_poll: Duration::from_millis(20),
             },
+            clipboard: sink,
         })
         .await?;
         let mut rig = ConsoleRig {
@@ -439,6 +514,7 @@ impl ConsoleRigBuilder<'_> {
             gateway: Arc::clone(&world.gateway),
             size: self.size,
             theme,
+            clipboard: self.clipboard,
         };
         rig.render();
         Ok(rig)

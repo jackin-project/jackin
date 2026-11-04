@@ -371,6 +371,15 @@ impl Inputs {
             })
     }
 
+    pub(crate) fn pane_target(
+        &self,
+        instance: &InstanceId,
+    ) -> Result<(jackin_session::Session, jackin_core::SandboxName), String> {
+        let (gateway, name) = self.sandbox(instance).map_err(|error| plain(&error))?;
+        let session = self.session(&gateway).map_err(|error| plain(&error))?;
+        Ok((session, name))
+    }
+
     fn session(
         &self,
         gateway: &jackin_core::GatewayName,
