@@ -454,7 +454,7 @@ Jackin has the same screens, the same flows, the same key bindings, and the same
 | `jackin shell <sandbox>` | Opens a new shell in the sandbox. |
 | `jackin ls [--json]` | Lists jackin sandboxes by label. With none, the human output prints `no sandboxes` on stderr and nothing on stdout. The JSON includes `created_at`. |
 | `jackin inspect <sandbox> --json` | Prints the sandbox, labels, OpenShell providers, policy status, and `created_at`. |
-| `jackin export <sandbox>` | Fetches each sandbox branch, the detached HEAD, and detached linked worktrees into `refs/heads/jackin/<sandbox>/...` (D08), and prints `<ref><TAB><tip>` for each ref published; with none published it prints the note on stderr and nothing on stdout. |
+| `jackin export <sandbox>` | Fetches each sandbox branch, the detached HEAD, and detached linked worktrees into `refs/heads/jackin/<sandbox>/...` (D08), and prints `<ref><TAB><tip>` for each ref published; with none published it prints the note on stderr and nothing on stdout; when the sandbox holds only uncommitted work it says that uncommitted work is not exported and must be committed in the sandbox first. |
 | `jackin stop <sandbox>` and `jackin start <sandbox>` | Stops or starts the sandbox. |
 | `jackin purge <sandbox> [--force]` | Deletes the sandbox. It refuses when the work is not exported and `--force` is absent. |
 | `jackin account add <provider> --name <a> [--chatgpt-from <codex-home>] [--credential env:NAME\|op://...\|file:PATH]\|ls\|rm` | Manages accounts of any provider. A Codex account with `--chatgpt-from` (D10) also gets an OpenShell provider. A Codex account with only `--credential` is a usage account with no provider. `rm` first removes the account's OpenShell provider from every configured gateway and stops, naming the gateway, when one cannot be reached; it then removes the account from the config. |
@@ -463,7 +463,7 @@ Jackin has the same screens, the same flows, the same key bindings, and the same
 | `jackin usage [--json]` | Shows the 5-hour, weekly, and other limit windows of each account, with the percentage used and the reset time (D25). |
 | `jackin role add\|ls\|rm` | Manages role sources. |
 | `jackin role check <path>` | Validates a role manifest, its `Dockerfile`, and its policy file. Role repositories use it as their gate. |
-| `jackin workspace add <name> <path> [--docker]\|ls\|rm` | Manages workspaces, including the `docker` setting. |
+| `jackin workspace add <name> <path> [--docker]\|ls\|rm` | Manages workspaces, including the `docker` setting. The path is resolved to its canonical form and must be an existing directory, so the CLI and the console name a workspace the same way. `rm` (and a console delete or rename) is refused while a sandbox labelled with the workspace exists; the error names the sandboxes and says to export and purge them first, because export finds the host project through the workspace. |
 
 ## Launch sequence
 
