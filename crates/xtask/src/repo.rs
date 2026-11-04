@@ -30,6 +30,9 @@ impl FileKind {
         if is_dockerfile_name(name) {
             return Some(Self::Dockerfile);
         }
+        if path == ".cargo/config" || path.ends_with("/.cargo/config") {
+            return Some(Self::Toml);
+        }
         match name.rsplit_once('.')?.1 {
             "rs" => Some(Self::Rust),
             "toml" => Some(Self::Toml),

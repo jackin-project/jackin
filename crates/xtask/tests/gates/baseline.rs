@@ -381,6 +381,52 @@ fn cargo_config_paths_fail() -> TestResult {
     expect(&workspace, &[("R4", ".cargo/config.toml", "paths")])
 }
 
+fn replacing_source(name: &str, url: &str) -> String {
+    format!(
+        "[source.{name}]\ngit = \"{url}\"\nrev = \"{REV}\"\nreplace-with = \"vendored\"\n\n[source.vendored]\ndirectory = \"vendor\"\n"
+    )
+}
+
+#[test]
+fn source_replace_fails() -> TestResult {
+    let cases: [(&str, String); 7] = [
+        (".cargo/config.toml", replacing_source("baseline", URL)),
+        (".cargo/config", replacing_source("baseline", URL)),
+        (
+            "crates/jackin-tui/.cargo/config.toml",
+            replacing_source("baseline", URL),
+        ),
+        (
+            "crates/jackin-tui/.cargo/config",
+            replacing_source("baseline", URL),
+        ),
+        (
+            ".cargo/config.toml",
+            "[source.crates-io]\nreplace-with = \"vendored\"\n\n[source.vendored]\ndirectory = \"vendor\"\n"
+                .to_owned(),
+        ),
+        (
+            ".cargo/config.toml",
+            format!("[source.mirror]\ngit = \"{URL}.git\"\n"),
+        ),
+        (
+            "crates/jackin-tui/.cargo/config.toml",
+            format!("[source.mirror]\ngit = \"{TERMPANE_URL}\"\n"),
+        ),
+    ];
+    for (path, text) in cases {
+        let workspace = green()?;
+        workspace.write(path, &text)?;
+        expect(&workspace, &[("R4", path, "[source.")])?;
+    }
+    let workspace = green()?;
+    workspace.write(
+        ".cargo/config.toml",
+        "[source.vendored]\ndirectory = \"vendor\"\n",
+    )?;
+    expect(&workspace, &[])
+}
+
 #[test]
 fn lock_source_mismatch_fails() -> TestResult {
     let workspace = green()?;
