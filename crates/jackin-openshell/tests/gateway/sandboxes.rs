@@ -5,18 +5,19 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, ImageId, LabelSelector, LaunchId, Phase, ProfileId,
-    ProviderName, SandboxLabels, Secret,
+    ProviderName, SandboxLabels, Secret, Timestamp,
 };
 use jackin_openshell::{
-    ClosedPolicy, Gateway, PolicyDocument, PowerAction, ProviderMaterial, ProviderProfile,
-    ProviderSpec, ProviderState, Provisioning, SandboxQuery,
+    Gateway, PolicyDocument, PowerAction, ProviderMaterial, ProviderProfile, ProviderSpec,
+    ProviderState, Provisioning, SandboxQuery,
 };
 use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 
 use super::harness::{WORKSPACE, connect, env, guard};
+use super::sandbox_rpc::CREATED_MILLIS;
 use super::support::{
-    IMAGE_DIGEST, LAUNCH, POLICY, SANDBOX, add_sandbox, create_spec, planned, sandbox_name,
-    set_conditions,
+    IMAGE_DIGEST, LAUNCH, SANDBOX, add_sandbox, create_spec, planned, policy, policy_text,
+    sandbox_name, set_conditions,
 };
 
 fn managed() -> [(&'static str, &'static str); 1] {
@@ -30,6 +31,7 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
     let spec = create_spec(SANDBOX, LAUNCH);
     let view = guard(gateway.create_sandbox(&spec)).await.unwrap();
     assert_eq!(view.phase, Phase::Provisioning);
+    assert_eq!(view.created_at, Some(Timestamp(CREATED_MILLIS / 1000)));
     {
         let state = env.server.state();
         assert_eq!(state.sandboxes.len(), 1);
@@ -53,8 +55,10 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
             ("jackin.dev/role", "backend"),
             ("jackin.dev/agent", "codex"),
             ("jackin.dev/account", "work"),
+            ("jackin.dev/policy", "823412d1eacb67956220e532959f0104"),
             ("jackin.dev/image", &IMAGE_DIGEST[..32]),
             ("jackin.dev/launch", LAUNCH),
+            ("jackin.dev/docker", "off"),
         ]
         .into_iter()
         .collect();
@@ -86,10 +90,31 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
     .unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].name, sandbox_name(SANDBOX));
+    assert_eq!(found[0].created_at, view.created_at);
     assert_eq!(
         &SandboxLabels::from_labels(&found[0].labels).unwrap(),
         spec.labels()
     );
+}
+
+#[tokio::test]
+async fn a_sandbox_the_server_never_stamped_has_no_creation_time() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    add_sandbox(
+        &mut env.server.state(),
+        WORKSPACE,
+        "jackin-unstamped",
+        SandboxPhase::Ready,
+        None,
+        &managed(),
+    );
+    let found =
+        guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-unstamped"))))
+            .await
+            .unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].created_at, None);
 }
 
 #[tokio::test]
@@ -194,7 +219,7 @@ async fn label_selector_text_is_accepted_by_the_gateway_grammar() {
 async fn phase_and_exit_code_map_to_the_documented_jackin_phase() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
-    let cases: [(i32, Option<i32>, Phase); 16] = [
+    let cases: [(i32, Option<i32>, Phase); 17] = [
         (0, None, Phase::Unknown),
         (1, None, Phase::Provisioning),
         (2, None, Phase::Ready),
@@ -207,6 +232,7 @@ async fn phase_and_exit_code_map_to_the_documented_jackin_phase() {
         (8, None, Phase::Starting),
         (9, Some(0), Phase::Completed { exit_code: 0 }),
         (9, Some(4), Phase::Completed { exit_code: 4 }),
+        (9, None, Phase::Unknown),
         (11, None, Phase::Suspending),
         (12, None, Phase::Suspended),
         (10, None, Phase::Unknown),
@@ -415,7 +441,7 @@ async fn policy_round_trips_through_create_and_detail() {
     let gateway = connect(&env, WORKSPACE).await;
     let spec = create_spec(SANDBOX, LAUNCH);
     guard(gateway.create_sandbox(&spec)).await.unwrap();
-    let sent = openshell_policy::parse_sandbox_policy(POLICY).unwrap();
+    let sent = openshell_policy::parse_sandbox_policy(&policy_text()).unwrap();
     {
         let mut state = env.server.state();
         let key = (WORKSPACE.to_owned(), SANDBOX.to_owned());
@@ -475,7 +501,7 @@ async fn policy_round_trips_through_create_and_detail() {
             .map(str::to_owned)
             .collect::<BTreeSet<_>>()
     );
-    let stored = PolicyDocument::parse_authored(POLICY).unwrap();
+    let stored = PolicyDocument::parse(&policy_text()).unwrap();
     assert_eq!(stored.network_rules().len(), 1);
     add_sandbox(
         &mut env.server.state(),
@@ -504,7 +530,8 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
     let gateway = connect(&env, &workspace).await;
     let long = "a".repeat(63);
     let image = ImageId::parse(&format!("sha256:{IMAGE_DIGEST}")).unwrap();
-    let labels = planned(&long, &long, &"a".repeat(32), LAUNCH).complete(&image);
+    let labels = planned(&long, &long, &"a".repeat(32), LAUNCH)
+        .complete(&image, jackin_core::DockerLabel::Off);
     let base = create_spec(SANDBOX, LAUNCH);
     let name = sandbox_name("jackin-abcdefg-wxyz");
     assert_eq!(name.as_str().len(), 19);
@@ -513,7 +540,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         base.image().clone(),
         labels.clone(),
         Vec::new(),
-        ClosedPolicy::parse(POLICY).unwrap(),
+        policy(),
         base.main().clone(),
     );
     guard(gateway.create_sandbox(&spec)).await.unwrap();
@@ -564,7 +591,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         base.image().clone(),
         labels,
         vec![provider.clone()],
-        ClosedPolicy::parse(POLICY).unwrap(),
+        policy(),
         base.main().clone(),
     );
     guard(gateway.create_sandbox(&with_provider)).await.unwrap();

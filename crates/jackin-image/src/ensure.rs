@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::engine::{EngineError, ImageEngine};
 use crate::error::ImageError;
+use crate::inspect::{ImageInspect, verify_image};
 use crate::plan::{BuildStage, ImagePlan, PlannedBuild};
 use crate::request::{ImageRequest, Rebuild};
 
@@ -37,7 +38,7 @@ pub type ProgressSink = tokio::sync::mpsc::Sender<ImageEvent>;
 
 fn from_engine(error: EngineError) -> ImageError {
     match error {
-        EngineError::Cancelled => ImageError::Cancelled,
+        EngineError::Cancelled { group } => ImageError::Cancelled { group },
         EngineError::LockTimeout { key } => ImageError::LockTimeout { key },
         other => ImageError::Engine(other),
     }
@@ -54,7 +55,7 @@ struct Pipeline<'a> {
 impl Pipeline<'_> {
     fn live(&self) -> Result<(), ImageError> {
         if self.cancel.is_cancelled() {
-            Err(ImageError::Cancelled)
+            Err(ImageError::Cancelled { group: None })
         } else {
             Ok(())
         }
@@ -70,7 +71,32 @@ impl Pipeline<'_> {
 
     async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, ImageError> {
         self.live()?;
-        self.engine.find(tag).await.map_err(from_engine)
+        self.engine
+            .find(tag, self.cancel)
+            .await
+            .map_err(from_engine)
+    }
+
+    async fn inspect(&self, id: &ImageId) -> Result<ImageInspect, ImageError> {
+        self.live()?;
+        self.engine
+            .inspect(id, self.cancel)
+            .await
+            .map_err(from_engine)
+    }
+
+    async fn verify(
+        &self,
+        stage: BuildStage,
+        id: &ImageId,
+        construct: &ImageInspect,
+    ) -> Result<(), ImageError> {
+        let found = self.inspect(id).await?;
+        verify_image(construct, &found).map_err(|rule| ImageError::Rule {
+            stage,
+            image: id.clone(),
+            rule,
+        })
     }
 
     async fn hold(&self, key: &ImageTag) -> Result<Option<FileLock>, ImageError> {
@@ -97,17 +123,17 @@ impl Pipeline<'_> {
     async fn build(
         &mut self,
         build: &PlannedBuild,
-        source: Option<(&ImageTag, &ImageId)>,
+        sources: &[(&ImageTag, &ImageId)],
     ) -> Result<ImageId, ImageError> {
         self.live()?;
         if !self.builder_checked {
             self.engine
-                .check_builder(self.builder)
+                .check_builder(self.builder, self.cancel)
                 .await
                 .map_err(from_engine)?;
             self.builder_checked = true;
         }
-        if let Some((tag, expected)) = source {
+        for (tag, expected) in sources {
             self.require(tag, expected).await?;
         }
         self.emit(ImageEvent::StageStarted(build.stage)).await;
@@ -116,12 +142,23 @@ impl Pipeline<'_> {
             .build(build, self.progress, self.cancel)
             .await
             .map_err(from_engine)?;
-        if let Some((tag, expected)) = source {
+        for (tag, expected) in sources {
             self.require(tag, expected).await?;
         }
         self.emit(ImageEvent::StageFinished(build.stage)).await;
         Ok(id)
     }
+}
+
+#[derive(Debug)]
+pub struct ImageHold {
+    _lock: Option<FileLock>,
+}
+
+#[derive(Debug)]
+pub struct HeldImage {
+    pub image: BuiltImage,
+    pub hold: ImageHold,
 }
 
 pub async fn ensure_image(
@@ -130,6 +167,17 @@ pub async fn ensure_image(
     progress: &ProgressSink,
     cancel: &CancellationToken,
 ) -> Result<BuiltImage, ImageError> {
+    ensure_held(engine, request, progress, cancel)
+        .await
+        .map(|held| held.image)
+}
+
+pub async fn ensure_held(
+    engine: &dyn ImageEngine,
+    request: &ImageRequest,
+    progress: &ProgressSink,
+    cancel: &CancellationToken,
+) -> Result<HeldImage, ImageError> {
     let plan = ImagePlan::new(request)?;
     let mut pipeline = Pipeline {
         engine,
@@ -139,40 +187,61 @@ pub async fn ensure_image(
         builder_checked: false,
     };
     let construct = plan.construct_build();
-    let construct_lock = pipeline.hold(&construct.tag).await?;
-    let cached = match request.rebuild {
+    let mut cached = match request.rebuild {
         Rebuild::No => pipeline.find(&construct.tag).await?,
         Rebuild::Yes => None,
     };
+    let mut construct_lock = None;
+    if cached.is_none() {
+        construct_lock = pipeline.hold(&construct.tag).await?;
+        if request.rebuild == Rebuild::No {
+            cached = pipeline.find(&construct.tag).await?;
+        }
+    }
     let construct_id = if let Some(id) = cached {
         pipeline
             .emit(ImageEvent::StageCached(BuildStage::Construct))
             .await;
         id
     } else {
-        pipeline.build(construct, None).await?
+        pipeline.build(construct, &[]).await?
     };
     drop(construct_lock);
     let final_tag = plan.final_tag(&construct_id);
-    let _final_lock = pipeline.hold(&final_tag).await?;
+    let hold = pipeline.hold(&final_tag).await?;
     if request.rebuild == Rebuild::No
         && let Some(id) = pipeline.find(&final_tag).await?
     {
+        let construct_image = pipeline.inspect(&construct_id).await?;
+        pipeline
+            .verify(BuildStage::Derived, &id, &construct_image)
+            .await?;
         pipeline
             .emit(ImageEvent::StageCached(BuildStage::Derived))
             .await;
-        return Ok(BuiltImage {
-            tag: final_tag,
-            id,
-            source: ImageSource::Cache,
+        return Ok(HeldImage {
+            image: BuiltImage {
+                tag: final_tag,
+                id,
+                source: ImageSource::Cache,
+            },
+            hold: ImageHold { _lock: hold },
         });
     }
     let builds = plan.final_builds(&construct_id);
+    let _reading = pipeline.hold(&construct.tag).await?;
     let role = pipeline
-        .build(&builds.role, Some((&construct.tag, &construct_id)))
+        .build(&builds.role, &[(&construct.tag, &construct_id)])
+        .await?;
+    let construct_image = pipeline.inspect(&construct_id).await?;
+    pipeline
+        .verify(BuildStage::Role, &role, &construct_image)
         .await?;
     let built = pipeline
-        .build(&builds.derived, Some((&builds.role.tag, &role)))
+        .build(
+            &builds.derived,
+            &[(&builds.role.tag, &role), (&construct.tag, &construct_id)],
+        )
         .await?;
     let found = pipeline.find(&builds.derived.tag).await?;
     if found.as_ref() != Some(&built) {
@@ -182,9 +251,15 @@ pub async fn ensure_image(
             found,
         });
     }
-    Ok(BuiltImage {
-        tag: builds.derived.tag,
-        id: built,
-        source: ImageSource::Built,
+    pipeline
+        .verify(BuildStage::Derived, &built, &construct_image)
+        .await?;
+    Ok(HeldImage {
+        image: BuiltImage {
+            tag: builds.derived.tag,
+            id: built,
+            source: ImageSource::Built,
+        },
+        hold: ImageHold { _lock: hold },
     })
 }

@@ -31,9 +31,9 @@ fn sanitize_strips_escape_sequences_and_control_bytes() {
     }
 }
 
-const BIDI: [char; 9] = [
-    '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}', '\u{2066}', '\u{2067}', '\u{2068}',
-    '\u{2069}',
+const BIDI: [char; 12] = [
+    '\u{061c}', '\u{200e}', '\u{200f}', '\u{202a}', '\u{202b}', '\u{202c}', '\u{202d}', '\u{202e}',
+    '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}',
 ];
 
 fn is_clean(text: &str) -> bool {

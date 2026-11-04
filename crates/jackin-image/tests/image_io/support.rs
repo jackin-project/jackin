@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_image::ContextEntry;
 use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::fs;
@@ -10,8 +11,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, BuilderName, CommitId, DockerLayer, DockerSubcommand, HostPath, OutputStream, Platform,
-    ProcessRunner, ProcessStatus, Program, RepoPath, RoleName, Sha256, StdFileSystem,
+    Agent, BuilderName, CommitId, DockerLayer, DockerSubcommand, FileSystem, HostPath,
+    OutputStream, Platform, ProcessRunner, ProcessStatus, Program, RepoPath, RoleName, Sha256,
+    StdFileSystem,
 };
 use jackin_image::{
     BuildStage, BuildxEngine, BuiltImage, HookFiles, ImageError, ImageEvent, ImageRequest, Rebuild,
@@ -36,6 +38,8 @@ pub(crate) const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
 ));
 pub(crate) const JACKIN_START: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
+pub(crate) const SCAN: &[u8] =
+    include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
 pub(crate) const ROLE_DOCKERFILE: &[u8] = b"FROM construct AS role\n";
 
 pub(crate) async fn guarded<F>(future: F) -> TestResult
@@ -49,6 +53,10 @@ where
 
 pub(crate) fn tag_id(tag: &str) -> String {
     format!("sha256:{}", Sha256::of(tag.as_bytes()).as_str())
+}
+
+pub(crate) fn model_construct_layer() -> String {
+    tag_id("the model construct layer")
 }
 
 pub(crate) fn source(path: &str, bytes: &[u8]) -> Result<SourceFile, Box<dyn Error>> {
@@ -79,18 +87,26 @@ impl Fixture {
         })
     }
 
+    fn entry(&self, path: &str) -> Result<ContextEntry, Box<dyn Error>> {
+        Ok(ContextEntry::File {
+            path: RepoPath::parse(path)?,
+            bytes: fs::read(self.role.as_path().join(path))?,
+            executable: false,
+        })
+    }
+
     pub(crate) fn request(&self) -> Result<ImageRequest, Box<dyn Error>> {
         Ok(ImageRequest {
             role: RoleName::parse("sentinel")?,
-            context: self.role.clone(),
-            context_files: vec![RepoPath::parse("Dockerfile")?, RepoPath::parse("src/a.rs")?],
+            context_files: vec![self.entry("Dockerfile")?, self.entry("src/a.rs")?],
             dockerfile: source("Dockerfile", ROLE_DOCKERFILE)?,
             hooks: HookFiles {
                 setup: Some(source("hooks/setup.sh", b"#!/bin/sh\necho setup\n")?),
                 preflight: None,
             },
-            revision: RoleRevision::Clean {
+            revision: RoleRevision {
                 commit: CommitId::parse(&"1".repeat(40))?,
+                digest: Sha256::of(b"clean"),
             },
             agent: Agent::Codex,
             platform: Platform::LinuxArm64,
@@ -136,6 +152,12 @@ pub(crate) enum Delivery {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct Reply {
+    pub(crate) status: i32,
+    pub(crate) stdout: String,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum AfterBuild {
     Retag { tag: String, id: String },
     FailInspect { tag: String },
@@ -163,6 +185,7 @@ struct ModelState {
     images: BTreeMap<String, String>,
     driver: String,
     scripts: HashMap<BuildStage, Script>,
+    bodies: HashMap<BuildStage, Reply>,
     delivery: Delivery,
     after: Vec<(BuildStage, AfterBuild)>,
     broken: Vec<String>,
@@ -200,6 +223,7 @@ impl DockerModel {
                 images: BTreeMap::new(),
                 driver: "docker".to_owned(),
                 scripts: HashMap::new(),
+                bodies: HashMap::new(),
                 delivery: Delivery::Normal,
                 after: Vec::new(),
                 broken: Vec::new(),
@@ -213,12 +237,20 @@ impl DockerModel {
         locked(&self.state).fresh = true;
     }
 
+    pub(crate) fn stable_ids(&self) {
+        locked(&self.state).fresh = false;
+    }
+
     pub(crate) fn driver(&self, driver: &str) {
         driver.clone_into(&mut locked(&self.state).driver);
     }
 
     pub(crate) fn script(&self, stage: BuildStage, script: Script) {
         locked(&self.state).scripts.insert(stage, script);
+    }
+
+    pub(crate) fn inspect_reply(&self, stage: BuildStage, reply: Reply) {
+        locked(&self.state).bodies.insert(stage, reply);
     }
 
     pub(crate) fn delivery(&self, delivery: Delivery) {
@@ -310,8 +342,36 @@ impl DockerModel {
         reply.with_effect(ProcessEffect::CaptureContext)
     }
 
+    fn inspect_body(&self, id: &str) -> ProcessReply {
+        let state = locked(&self.state);
+        let tag = state
+            .images
+            .iter()
+            .find_map(|(tag, found)| (found == id).then_some(tag.as_str()));
+        let stage = tag.map(stage_of);
+        if let Some(reply) = stage.and_then(|stage| state.bodies.get(&stage)) {
+            return ProcessReply::exited(
+                reply.status,
+                reply.stdout.as_bytes(),
+                b"inspect failed\n",
+            );
+        }
+        let mut layers = vec![format!("\"{}\"", model_construct_layer())];
+        if let (Some(tag), Some(BuildStage::Role | BuildStage::Derived)) = (tag, stage) {
+            layers.push(format!("\"{}\"", tag_id(tag)));
+        }
+        let body = format!(
+            "{{\"Id\":\"{id}\",\"Config\":{{\"Env\":[\"PATH=/usr/bin\"],\"OnBuild\":null}},\"RootFS\":{{\"Type\":\"layers\",\"Layers\":[{}]}}}}\n",
+            layers.join(",")
+        );
+        ProcessReply::exited(0, body.as_bytes(), b"")
+    }
+
     fn inspect(&self, call: &SeenCall) -> ProcessReply {
         let tag = call.args.last().map_or("", String::as_str);
+        if call.args.iter().any(|arg| arg == "{{json .}}") {
+            return self.inspect_body(tag);
+        }
         let state = locked(&self.state);
         if state.broken.iter().any(|broken| broken == tag) {
             return ProcessReply::exited(
@@ -348,16 +408,16 @@ pub(crate) struct Stack {
 
 impl Stack {
     pub(crate) fn new() -> Result<Stack, Box<dyn Error>> {
+        Stack::with_fs(Arc::new(StdFileSystem::default()))
+    }
+
+    pub(crate) fn with_fs(fs: Arc<dyn FileSystem>) -> Result<Stack, Box<dyn Error>> {
         let fixture = Fixture::new()?;
         let runner = Arc::new(ScriptedProcessRunner::new());
         let model = DockerModel::new();
         model.install(&runner);
         let shared: Arc<dyn ProcessRunner> = Arc::<ScriptedProcessRunner>::clone(&runner);
-        let engine = BuildxEngine::new(
-            shared,
-            Arc::new(StdFileSystem::default()),
-            fixture.work.clone(),
-        );
+        let engine = BuildxEngine::new(shared, fs, fixture.work.clone());
         Ok(Stack {
             fixture,
             runner,

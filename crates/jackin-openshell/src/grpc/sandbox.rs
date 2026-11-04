@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
-use jackin_core::{Labels, Phase, ProviderName, SandboxName, TerminalText};
+use jackin_core::{EnvName, Labels, Phase, ProviderName, SandboxName, TerminalText, Timestamp};
 use openshell_sdk::raw::proto::GetSandboxConfigRequest;
 use openshell_sdk::raw::proto::{
     CreateSandboxRequest, DeleteSandboxRequest, GetSandboxPolicyStatusRequest, GetSandboxRequest,
@@ -40,9 +40,9 @@ fn phase_of(sandbox: &Sandbox) -> Phase {
         Ok(SandboxPhase::Stopping) => Phase::Stopping,
         Ok(SandboxPhase::Stopped) => Phase::Stopped,
         Ok(SandboxPhase::Starting) => Phase::Starting,
-        Ok(SandboxPhase::Completed) => Phase::Completed {
-            exit_code: exit_code.unwrap_or(0),
-        },
+        Ok(SandboxPhase::Completed) => {
+            exit_code.map_or(Phase::Unknown, |exit_code| Phase::Completed { exit_code })
+        }
         Ok(SandboxPhase::Suspending) => Phase::Suspending,
         Ok(SandboxPhase::Suspended) => Phase::Suspended,
         Ok(SandboxPhase::Unspecified | SandboxPhase::Unknown) | Err(_) => Phase::Unknown,
@@ -75,6 +75,10 @@ pub(super) fn view_of(sandbox: &Sandbox) -> Result<SandboxView, GatewayError> {
         phase: phase_of(sandbox),
         labels,
         provisioning: provisioning_of(sandbox),
+        created_at: metadata
+            .created_time
+            .as_ref()
+            .map(|created| Timestamp(created.seconds)),
     })
 }
 
@@ -161,6 +165,30 @@ impl Inner {
             )
             .await?;
         response_view(response)
+    }
+
+    pub(crate) async fn sandbox_environment(
+        &self,
+        name: &SandboxName,
+    ) -> Result<BTreeMap<EnvName, String>, GatewayError> {
+        let response = self
+            .unary(
+                GatewayOp::Detail,
+                Some(Missing::Sandbox(name.clone())),
+                self.grpc().get_sandbox(GetSandboxRequest {
+                    workspace_scope: Some(self.scope()),
+                    name: name.to_string(),
+                }),
+            )
+            .await?;
+        let spec = response
+            .sandbox
+            .and_then(|sandbox| sandbox.spec)
+            .ok_or_else(|| protocol("the sandbox record has no spec"))?;
+        spec.environment
+            .into_iter()
+            .map(|(key, value)| Ok((EnvName::parse(&key).map_err(protocol)?, value)))
+            .collect()
     }
 
     pub(crate) async fn find_sandboxes(

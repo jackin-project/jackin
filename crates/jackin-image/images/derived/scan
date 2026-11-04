@@ -1,0 +1,309 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+set -u
+
+tools="sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl dockerd containerd containerd-shim containerd-shim-runc-v2 runc crun buildkitd rootlesskit docker-proxy dockerd-rootless.sh"
+client_tools="docker-compose docker-buildx buildctl ctr"
+newline='
+'
+
+usage() {
+    echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... ROOT PROTECTED..." >&2
+    exit 64
+}
+
+show() {
+    printf '%s' "$1" | LC_ALL=C tr -c '[:print:]' '?'
+}
+
+report() {
+    failed=1
+    printf '%s\n' "$1" >&2
+}
+
+list() {
+    [ -n "$2" ] || return 0
+    failed=1
+    while IFS= read -r line; do
+        printf '%s%s\n' "$1" "$(show "${line#"$root"}")" >&2
+    done <<EOF
+$2
+EOF
+}
+
+good_dir() {
+    [ -n "$(find "$1" -maxdepth 0 -type d -uid "$uid" -gid "$gid" ! \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]
+}
+
+good_file() {
+    [ -n "$(find "$1" -maxdepth 0 -type f -uid "$uid" -gid "$gid" ! \( -perm -020 -o -perm -002 \) -perm -100 -print 2>/dev/null)" ]
+}
+
+good_data() {
+    [ -n "$(find "$1" -maxdepth 0 -type f -uid "$uid" -gid "$gid" ! \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]
+}
+
+reason() {
+    if [ -L "$1" ]; then
+        echo "symlink"
+    elif [ ! -e "$1" ]; then
+        echo "missing"
+    elif [ -z "$(find "$1" -maxdepth 0 -type "$2" -print 2>/dev/null)" ]; then
+        echo "wrong type"
+    elif [ -z "$(find "$1" -maxdepth 0 -uid "$uid" -gid "$gid" -print 2>/dev/null)" ]; then
+        echo "not owned by $uid:$gid"
+    elif [ -n "$(find "$1" -maxdepth 0 \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]; then
+        echo "writable by group or others"
+    elif [ "${3:-}" = data ]; then
+        echo "unusable"
+    else
+        echo "not executable"
+    fi
+}
+
+ancestors() {
+    rest=${1#/}
+    acc=
+    while :; do
+        case $rest in
+            */*) ;;
+            *) break ;;
+        esac
+        acc=$acc/${rest%%/*}
+        rest=${rest#*/}
+        printf '%s\n' "$acc"
+    done
+}
+
+check_path() {
+    case " $checked " in
+        *" $1 "*) return 0 ;;
+    esac
+    checked="$checked $1"
+    if [ "$2" = d ]; then
+        good_dir "$root$1" && return 0
+    else
+        good_file "$root$1" && return 0
+    fi
+    report "protected path is not a real root-owned path: $(show "$1") ($(reason "$root$1" "$2"))"
+}
+
+canonical() {
+    case $1 in
+        0) return 0 ;;
+        '' | *[!0-9]* | 0*) return 1 ;;
+    esac
+    [ "${#1}" -le 9 ]
+}
+
+colons() {
+    count=0
+    remainder=$1
+    while :; do
+        case $remainder in
+            *:*)
+                count=$((count + 1))
+                remainder=${remainder#*:}
+                ;;
+            *) break ;;
+        esac
+    done
+}
+
+check_passwd() {
+    seen=0
+    wrong=0
+    number=0
+    while IFS= read -r entry || [ -n "$entry" ]; do
+        number=$((number + 1))
+        colons "$entry"
+        remainder=${entry#*:}
+        remainder=${remainder#*:}
+        entry_uid=${remainder%%:*}
+        remainder=${remainder#*:}
+        entry_gid=${remainder%%:*}
+        if [ "$count" -ne 6 ] || ! canonical "$entry_uid" || ! canonical "$entry_gid"; then
+            report "malformed line $number in /etc/passwd"
+            continue
+        fi
+        entry_name=${entry%%:*}
+        if [ "$entry_name" = sandbox ]; then
+            seen=$((seen + 1))
+            [ "$entry_uid:$entry_gid" = 1000:1000 ] || wrong=1
+        elif [ "$entry_uid" = 0 ] && [ "$entry_name" != root ]; then
+            report "uid 0 account other than root in /etc/passwd: $(show "$entry_name")"
+        fi
+    done <"$root/etc/passwd"
+    [ "$seen" -eq 1 ] || report "sandbox account is missing or duplicated in /etc/passwd"
+    [ "$wrong" -eq 0 ] || report "sandbox account is not 1000:1000 in /etc/passwd"
+}
+
+check_group() {
+    seen=0
+    wrong=0
+    number=0
+    while IFS= read -r entry || [ -n "$entry" ]; do
+        number=$((number + 1))
+        colons "$entry"
+        remainder=${entry#*:}
+        remainder=${remainder#*:}
+        entry_gid=${remainder%%:*}
+        if [ "$count" -ne 3 ] || ! canonical "$entry_gid"; then
+            report "malformed line $number in /etc/group"
+            continue
+        fi
+        if [ "${entry%%:*}" = sandbox ]; then
+            seen=$((seen + 1))
+            [ "$entry_gid" = 1000 ] || wrong=1
+        fi
+    done <"$root/etc/group"
+    [ "$seen" -eq 1 ] || report "sandbox group is missing or duplicated in /etc/group"
+    [ "$wrong" -eq 0 ] || report "sandbox group is not gid 1000 in /etc/group"
+}
+
+check_accounts() {
+    if ! good_dir "$root/etc"; then
+        report "account directory is not a real root-owned directory: /etc ($(reason "$root/etc" d))"
+        return 0
+    fi
+    for account in passwd group; do
+        if good_data "$root/etc/$account"; then
+            if tr -d '\0' <"$root/etc/$account" | cmp -s - "$root/etc/$account"; then
+                "check_$account"
+            else
+                report "account file holds a NUL byte or cannot be read: /etc/$account"
+            fi
+        else
+            report "account file is not a real root-owned file: /etc/$account ($(reason "$root/etc/$account" f data))"
+        fi
+    done
+}
+
+trusted_of() {
+    for pair in $pairs; do
+        if [ "${pair%%=*}" = "$1" ]; then
+            printf '%s' "${pair#*=}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+exempt() {
+    for allowed in $allow; do
+        [ "$1" = "$root$allowed" ] || continue
+        [ -f "$1" ] && [ ! -L "$1" ] && cmp -s "$1" "$(trusted_of "$allowed")" && return 0
+    done
+    return 1
+}
+
+owner=
+pairs=
+allow=
+while [ "$#" -gt 0 ]; do
+    case $1 in
+        --owner)
+            [ "$#" -ge 2 ] || usage
+            owner=$2
+            shift 2
+            ;;
+        --same-as)
+            [ "$#" -ge 2 ] || usage
+            pairs="$pairs $2"
+            shift 2
+            ;;
+        --allow-tool)
+            [ "$#" -ge 2 ] || usage
+            allow="$allow $2"
+            shift 2
+            ;;
+        -*) usage ;;
+        *) break ;;
+    esac
+done
+for allowed in $allow; do
+    case $allowed in
+        /*) ;;
+        *) usage ;;
+    esac
+    case " $pairs " in
+        *" $allowed="*) ;;
+        *) usage ;;
+    esac
+done
+case $owner in
+    '' | *[!0-9:]* | :* | *: | *:*:*) usage ;;
+    *:*) ;;
+    *) usage ;;
+esac
+[ "$#" -ge 2 ] || usage
+uid=${owner%%:*}
+gid=${owner#*:}
+root=${1%/}
+shift
+protected=$*
+[ -d "$root" ] || usage
+
+failed=0
+checked=
+
+found=$(find "$root" -type f \( -perm -4000 -o -perm -2000 \)) || report "find failed while looking for setuid or setgid files"
+list "setuid or setgid file in role image: " "$found"
+
+if command -v getcap >/dev/null 2>&1; then
+    caps=$(getcap -r "$root") || report "getcap failed in role image"
+    list "file capability in role image: " "$caps"
+else
+    report "getcap is missing"
+fi
+
+[ -n "$allow" ] || tools="$tools $client_tools"
+set --
+for tool in $tools; do
+    [ "$#" -eq 0 ] || set -- "$@" -o
+    set -- "$@" -name "$tool"
+done
+hits=$(find "$root" \( -type f \( -perm -100 -o -perm -010 -o -perm -001 \) -o -type l \) \( "$@" \)) || report "find failed while looking for forbidden tools"
+remaining=
+while IFS= read -r hit; do
+    [ -n "$hit" ] || continue
+    exempt "$hit" && continue
+    if [ -z "$remaining" ]; then
+        remaining=$hit
+    else
+        remaining="$remaining
+$hit"
+    fi
+done <<EOF
+$hits
+EOF
+list "forbidden tool in role image: " "$remaining"
+
+nodes=$(find "$root" \( -type b -o -type c \)) || report "find failed while looking for device nodes"
+list "device node in role image: " "$nodes"
+
+control=$(LC_ALL=C find "$root" -name '*[[:cntrl:]]*' && echo x) || report "find failed while looking for control characters in names"
+control=${control%x}
+control=${control%"$newline"}
+[ -z "$control" ] || report "path with a control character in role image: $(show "${control#"$root"}")"
+
+for path in $protected; do
+    for ancestor in $(ancestors "$path"); do
+        check_path "$ancestor" d
+    done
+    check_path "$path" f
+done
+
+for pair in $pairs; do
+    path=${pair%%=*}
+    if [ -f "$root$path" ] && [ ! -L "$root$path" ] && cmp -s "$root$path" "${pair#*=}"; then
+        continue
+    fi
+    report "protected file differs from the trusted copy: $(show "$path")"
+done
+
+check_accounts
+
+[ "$failed" -eq 0 ] || exit 1
+echo "jackin-image-scan 1"

@@ -4,6 +4,7 @@
 mod account;
 mod attach;
 mod build;
+pub(crate) mod console;
 mod doctor;
 mod export;
 mod gateway;
@@ -15,6 +16,7 @@ mod progress;
 mod purge;
 mod role;
 mod shell;
+pub(crate) mod usage;
 mod workspace;
 
 use crate::app::App;
@@ -37,6 +39,7 @@ pub(crate) async fn dispatch(app: &mut App, command: Command) -> Result<(), Comm
         Command::Start(arg) => power::run(app, arg, PowerAction::Start).await,
         Command::Purge(args) => purge::run(app, args).await,
         Command::Ls(arg) => ls::run(app, &arg).await,
+        Command::Usage(arg) => usage::run(app, &arg).await,
         Command::Inspect(args) => inspect::run(app, args).await,
         Command::Role(command) => role::run(app, command).await,
         Command::Workspace(command) => workspace::run(app, command).await,

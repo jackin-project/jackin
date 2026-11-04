@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use async_trait::async_trait;
 use jackin_core::{
     DirEntry, EnvFile, EnvName, EnvSpec, FileKind, FileLock, FileMode, FileSystem, FsError,
-    HookKind, HostPath, ManifestError, RegularFile, RegularFileProblem, RepoPath, RoleManifest,
-    StdFileSystem,
+    HookKind, HostPath, LinkProblem, ManifestError, RegularFile, RegularFileProblem, RepoPath,
+    RoleManifest, StdFileSystem,
 };
 
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
@@ -464,6 +464,9 @@ impl FileSystem for CrashFs {
     async fn stat_following(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.inner.stat_following(p).await
     }
+    async fn canonicalize(&self, p: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(p).await
+    }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
     }
@@ -480,12 +483,26 @@ impl FileSystem for CrashFs {
         self.gate(p)?;
         self.inner.remove_file(p).await
     }
+    async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
     async fn read_regular(
         &self,
         r: &HostPath,
         f: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(r, f).await
+        self.inner.read_regular(r, f, max_bytes).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.inner.lock(p).await

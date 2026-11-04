@@ -8,8 +8,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     DirEntry, EnvValue, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LineSink,
-    ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
-    RegularFile, RegularFileProblem, RepoPath, SecretOutput,
+    LinkProblem, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus,
+    ProcessStdin, Program, RegularFile, RegularFileProblem, RepoPath, SecretOutput,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -72,6 +72,9 @@ impl FileSystem for RegistryFs {
     async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.stat(path).await
     }
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        Ok(self.stat_following(path).await?.map(|_| path.clone()))
+    }
 
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         Ok(self
@@ -130,10 +133,44 @@ impl FileSystem for RegistryFs {
         Ok(())
     }
 
+    async fn read_at(
+        &self,
+        path: &HostPath,
+        _offset: u64,
+        _len: usize,
+    ) -> Result<Vec<u8>, FsError> {
+        Err(FsError::Io {
+            path: path.clone(),
+            kind: std::io::ErrorKind::Unsupported,
+            message: "read_at is unsupported by RegistryFs".to_owned(),
+        })
+    }
+
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        _file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        Err(FsError::Io {
+            path: root.clone(),
+            kind: std::io::ErrorKind::Unsupported,
+            message: "read_link is unsupported by RegistryFs".to_owned(),
+        })
+    }
+
+    async fn write_symlink(&self, path: &HostPath, _target: &str) -> Result<(), FsError> {
+        Err(FsError::Io {
+            path: path.clone(),
+            kind: std::io::ErrorKind::Unsupported,
+            message: "write_symlink is unsupported by RegistryFs".to_owned(),
+        })
+    }
+
     async fn read_regular(
         &self,
         root: &HostPath,
         _file: &RepoPath,
+        _max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         Err(FsError::Io {
             path: root.clone(),

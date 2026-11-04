@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, RegularFile,
-    RegularFileProblem, RepoPath,
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
+    RegularFile, RegularFileProblem, RepoPath,
 };
 
 use crate::sync::locked;
@@ -30,6 +30,7 @@ pub enum FsOp {
     Mode,
     SyncDir,
     Lock,
+    ReadAt,
 }
 
 #[derive(Debug, Default)]
@@ -190,6 +191,14 @@ impl FileSystem for MemFs {
         }
     }
 
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        let state = locked(&self.state);
+        Ok(
+            (state.files.contains_key(path.as_path()) || state.is_dir(path.as_path()))
+                .then(|| path.clone()),
+        )
+    }
+
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         let state = self.enter(FsOp::FileLen)?;
         if state.is_dir(path.as_path()) {
@@ -344,16 +353,59 @@ impl FileSystem for MemFs {
                 bytes: Vec::new(),
                 mode: FileMode(0o600),
             });
-        Ok(FileLock::from_guard(Held {
-            state: Arc::clone(&self.state),
-            path: path.as_path().to_path_buf(),
-        }))
+        Ok(FileLock::from_guard(
+            path.clone(),
+            Held {
+                state: Arc::clone(&self.state),
+                path: path.as_path().to_path_buf(),
+            },
+        ))
+    }
+
+    async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        let state = self.enter(FsOp::ReadAt)?;
+        if state.is_dir(path.as_path()) {
+            return Err(io_error(path, ErrorKind::IsADirectory, "is a directory"));
+        }
+        let Some(file) = state.files.get(path.as_path()) else {
+            return Err(io_error(path, ErrorKind::NotFound, "no such file"));
+        };
+        let start = usize::try_from(offset)
+            .unwrap_or(usize::MAX)
+            .min(file.bytes.len());
+        let end = start.saturating_add(len).min(file.bytes.len());
+        Ok(file
+            .bytes
+            .get(start..end)
+            .map(<[u8]>::to_vec)
+            .unwrap_or_default())
+    }
+
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        _file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        Err(FsError::Io {
+            path: root.clone(),
+            kind: ErrorKind::Unsupported,
+            message: "read_link is unsupported by MemFs".to_owned(),
+        })
+    }
+
+    async fn write_symlink(&self, path: &HostPath, _target: &str) -> Result<(), FsError> {
+        Err(FsError::Io {
+            path: path.clone(),
+            kind: ErrorKind::Unsupported,
+            message: "write_symlink is unsupported by MemFs".to_owned(),
+        })
     }
 
     async fn read_regular(
         &self,
         root: &HostPath,
         file: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         let state = self.enter(FsOp::Read)?;
         let mut current = root.as_path().to_path_buf();
@@ -364,7 +416,12 @@ impl FileSystem for MemFs {
             if let Some(found) = state.files.get(&current) {
                 return Ok(if last {
                     Ok(RegularFile {
-                        bytes: found.bytes.clone(),
+                        bytes: found
+                            .bytes
+                            .iter()
+                            .take(max_bytes.saturating_add(1))
+                            .copied()
+                            .collect(),
                         mode: found.mode,
                     })
                 } else {

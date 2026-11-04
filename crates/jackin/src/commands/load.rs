@@ -3,49 +3,44 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{DockerRisk, EnvName, LaunchId, ProjectRoot};
+use jackin_core::{EnvName, LaunchId, PlainEnvValue, ProjectRoot, TerminalText};
 use jackin_image::Rebuild;
 use jackin_session::{
-    AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchWarning,
-    LineDelivery, PlanError, Prompting, RestoreCandidate, launch_events, plan_launch,
+    AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, PlanError,
+    Prompting, RestoreCandidate, launch_events, lookup_workspace, plan_launch,
 };
 
 use super::progress::launch_event;
 use crate::app::App;
-use crate::cli::LoadArgs;
+use crate::cli::{EnvAssignment, LoadArgs};
 use crate::error::CommandError;
-use crate::paths::absolutize;
+use crate::paths::existing_dir;
 use crate::term;
 
-const DOCKER_WARNING: &str = "warning: the Docker capability is enabled for this sandbox";
-
-fn risk_text(risk: DockerRisk) -> &'static str {
-    match risk {
-        DockerRisk::ClientKeyReadable => "the agent can read the engine client key",
-        DockerRisk::ContainersBypassPolicy => "containers bypass the sandbox network policy",
-        DockerRisk::BindMountsNameEngineHost => {
-            "a bind mount names a path on the engine host, not in the sandbox"
-        }
-        DockerRisk::EngineOutlivesSandbox => {
-            "the engine outlives the sandbox, and sandboxes that use one engine see each other's containers; remove them yourself"
-        }
-    }
-}
-
-async fn answer(app: &mut App, question: &EnvQuestion) -> Result<String, CommandError> {
-    let label = question
-        .prompt
-        .as_deref()
-        .unwrap_or_else(|| question.name.as_str());
+async fn answer(app: &mut App, question: &EnvQuestion) -> Result<PlainEnvValue, CommandError> {
+    let printable = |text: &str| TerminalText::sanitize(text.as_bytes());
+    let label = printable(
+        question
+            .prompt
+            .as_deref()
+            .unwrap_or_else(|| question.name.as_str()),
+    );
     let shown = question
         .default
-        .as_deref()
-        .map(|default| format!(" [{default}]"))
+        .as_ref()
+        .map(|default| format!(" [{}]", printable(default.as_str()).as_str()))
         .unwrap_or_default();
     loop {
-        app.io.ask(&format!("{label}{shown}: "));
+        app.io.ask(&format!("{}{shown}: ", label.as_str()));
         let terminal = app.terminal.as_mut().ok_or(CommandError::NoTerminal)?;
-        let line = terminal.read_line().await.map_err(CommandError::Terminal)?;
+        let line = tokio::select! {
+            biased;
+            () = app.cancel.cancelled() => return Err(CommandError::Cancelled(format!(
+                "cancelled while asking for {}",
+                question.name
+            ))),
+            line = terminal.read_line() => line.map_err(CommandError::Terminal)?,
+        };
         match (line, &question.default) {
             (None, _) => {
                 return Err(CommandError::Cancelled(format!(
@@ -53,7 +48,10 @@ async fn answer(app: &mut App, question: &EnvQuestion) -> Result<String, Command
                     question.name
                 )));
             }
-            (Some(text), _) if !text.is_empty() => return Ok(text),
+            (Some(text), _) if !text.is_empty() => match PlainEnvValue::parse(&text) {
+                Ok(value) => return Ok(value),
+                Err(error) => app.io.note(&format!("{}: {error}", question.name)),
+            },
             (Some(_), Some(default)) => return Ok(default.clone()),
             (Some(_), None) => app.io.note(&format!("{} needs a value", question.name)),
         }
@@ -65,7 +63,7 @@ async fn plan(
     config: &jackin_core::Config,
     role: &jackin_session::LoadedRole,
     request: &LaunchRequest,
-    values: &mut BTreeMap<EnvName, String>,
+    values: &mut BTreeMap<EnvName, PlainEnvValue>,
 ) -> Result<LaunchPlan, CommandError> {
     match plan_launch(config, role, request.clone().env(values.clone())) {
         Err(PlanError::EnvNeeded(questions)) if app.terminal.is_some() => {
@@ -96,14 +94,19 @@ fn cancelled(candidate: &RestoreCandidate) -> CommandError {
 }
 
 pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandError> {
+    let mut values = BTreeMap::new();
+    for text in &args.env {
+        let EnvAssignment { name, value } = EnvAssignment::parse(text)?;
+        values.insert(name, value);
+    }
     let config = app.store.load().await?;
-    let path = absolutize(&args.path, &app.cwd)?;
-    let (_, workspace) = config.workspace_for(&path)?;
+    let path = existing_dir(app, &args.path).await?;
+    let (_, workspace) = lookup_workspace(&config, &path).require_saved()?;
     let project = ProjectRoot::open(app.deps.host.fs.as_ref(), &path).await?;
     let (gateway, _) = config.resolve_gateway(app.gateway.as_ref())?;
     let role = app
         .catalog()
-        .load(&config, args.role.as_ref(), workspace)
+        .load(&config, args.role.as_ref(), &workspace, &app.cancel)
         .await?;
     let launch = match args.launch_id {
         Some(launch) => launch,
@@ -113,18 +116,7 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         .account(args.account)
         .rebuild(Rebuild::from(args.rebuild))
         .prompting(Prompting::for_terminal(app.terminal.is_some()));
-    let mut values: BTreeMap<EnvName, String> = args
-        .env
-        .into_iter()
-        .map(|assignment| (assignment.name, assignment.value))
-        .collect();
     let plan = plan(app, &config, &role, &request, &mut values).await?;
-    if plan.warnings().contains(&LaunchWarning::DockerCapability) {
-        app.io.note(DOCKER_WARNING);
-        for risk in DockerRisk::ALL {
-            app.io.note(&format!("  {}", risk_text(risk)));
-        }
-    }
     let launch = plan.launch_id().clone();
     let session = app.session(&config).await?;
     let (events, mut feed) = launch_events(LineDelivery::Reliable);

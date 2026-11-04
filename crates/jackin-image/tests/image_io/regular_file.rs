@@ -12,8 +12,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, RegularFile,
-    RegularFileProblem, RepoPath, StdFileSystem,
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
+    RegularFile, RegularFileProblem, RepoPath, StdFileSystem,
 };
 use jackin_image::{ContextProblem, EngineError, read_regular_file};
 use tempfile::TempDir;
@@ -183,6 +183,9 @@ impl FileSystem for SwapFs {
         self.swap_after(p)?;
         found
     }
+    async fn canonicalize(&self, p: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(p).await
+    }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
     }
@@ -218,12 +221,26 @@ impl FileSystem for SwapFs {
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.inner.lock(p).await
     }
+    async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
     async fn read_regular(
         &self,
         root: &HostPath,
         file: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        let found = self.inner.read_regular(root, file).await;
+        let found = self.inner.read_regular(root, file, max_bytes).await;
         self.swap_after(
             &HostPath::parse(&root.as_path().join(file.as_str())).map_err(|error| FsError::Io {
                 path: root.clone(),

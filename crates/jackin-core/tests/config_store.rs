@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use jackin_core::{
     Account, AccountName, Clock, Config, ConfigEdit, ConfigError, ConfigStore, CredentialSource,
     DirEntry, EnvName, FileKind, FileLock, FileMode, FileSystem, FsError, GatewayEntry,
-    GatewayName, HostPath, Platform, Provider, RegularFile, RegularFileProblem, RepoPath, RoleName,
-    RoleSource, StdFileSystem, Timestamp,
+    GatewayName, HostPath, LinkProblem, Platform, Provider, RegularFile, RegularFileProblem,
+    RepoPath, RoleName, RoleSource, StdFileSystem, Timestamp, Workspace, WorkspaceName,
 };
 use tokio::sync::{Semaphore, oneshot};
 
@@ -82,6 +82,10 @@ impl StepClock {
 impl Clock for StepClock {
     fn now(&self) -> Timestamp {
         Timestamp(0)
+    }
+
+    fn utc_offset_secs(&self) -> i32 {
+        0
     }
 
     async fn sleep(&self, duration: Duration) {
@@ -212,11 +216,14 @@ async fn a_failing_edit_or_a_corrupt_file_leaves_the_file_untouched_and_the_lock
     assert_eq!(label(&error), "reference:gateway:ghost");
     assert!(!fresh.as_path().exists());
 
+    let limit = 1 << 20;
+    let oversized = format!("#{}", "x".repeat(limit));
     for (bytes, expected) in [
-        ("bogus = 1\n", "unknown:bogus"),
-        ("[gateways.g\n", "syntax@1"),
+        ("bogus = 1\n".to_owned(), "unknown:bogus"),
+        ("[gateways.g\n".to_owned(), "syntax@1"),
+        (oversized, "fs"),
     ] {
-        std::fs::write(path.as_path(), bytes)?;
+        std::fs::write(path.as_path(), &bytes)?;
         let loaded = store.load().await.err().ok_or("load")?;
         let edited = edit_settled(&store, vec![role("x")?])
             .await?
@@ -226,6 +233,24 @@ async fn a_failing_edit_or_a_corrupt_file_leaves_the_file_untouched_and_the_lock
         assert_eq!(label(&edited), expected);
         assert_eq!(std::fs::read(path.as_path())?, bytes.as_bytes());
     }
+    std::fs::write(path.as_path(), format!("#{}", "x".repeat(limit - 1)))?;
+    assert_eq!(store.load().await?, Config::empty());
+
+    std::fs::remove_file(path.as_path())?;
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(path.as_path())
+            .status()?
+            .success()
+    );
+    let loaded = settle(tokio::spawn({
+        let store = store.clone();
+        async move { store.load().await }
+    }))
+    .await?;
+    assert_eq!(label(&loaded.err().ok_or("fifo load")?), "fs");
+    let edited = edit_settled(&store, vec![role("x")?]).await?;
+    assert_eq!(label(&edited.err().ok_or("fifo edit")?), "fs");
     Ok(())
 }
 
@@ -274,6 +299,9 @@ impl FileSystem for CrashFs {
         self.gate(None, p)?;
         self.inner.stat_following(p).await
     }
+    async fn canonicalize(&self, p: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(p).await
+    }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
     }
@@ -293,12 +321,26 @@ impl FileSystem for CrashFs {
         self.gate(None, p)?;
         self.inner.remove_file(p).await
     }
+    async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
     async fn read_regular(
         &self,
         r: &HostPath,
         f: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(r, f).await
+        self.inner.read_regular(r, f, max_bytes).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.gate(None, p)?;
@@ -350,16 +392,17 @@ async fn crash_case(fault: Fault, existing: bool) -> TestResult {
         .await
         .err()
         .ok_or("crash")?;
-    assert!(
-        matches!(
+    let expected = match fault {
+        Fault::SyncDir => matches!(error, ConfigError::Fs(FsError::Unsynced { .. })),
+        _ => matches!(
             error,
             ConfigError::Fs(FsError::Io {
                 kind: ErrorKind::StorageFull,
                 ..
             })
         ),
-        "{fault:?} {existing}: {error:?}"
-    );
+    };
+    assert!(expected, "{fault:?} {existing}: {error:?}");
     let loaded = fresh.load().await?;
     if fault == Fault::SyncDir {
         assert!(loaded == old || loaded == with_new, "{fault:?} {existing}");
@@ -398,24 +441,16 @@ struct GateFs {
 #[async_trait]
 impl FileSystem for GateFs {
     async fn read(&self, p: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
-        let parked = if *p == self.target {
-            self.reads.fetch_add(1, Ordering::SeqCst);
-            self.gate.lock().map_err(|_poisoned| gate_error(p))?.take()
-        } else {
-            None
-        };
-        let bytes = self.inner.read(p).await?;
-        if let Some((entered, release)) = parked {
-            entered.send(()).map_err(|()| gate_error(p))?;
-            release.await.map_err(|_closed| gate_error(p))?;
-        }
-        Ok(bytes)
+        self.inner.read(p).await
     }
     async fn stat(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.inner.stat(p).await
     }
     async fn stat_following(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.inner.stat_following(p).await
+    }
+    async fn canonicalize(&self, p: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(p).await
     }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
@@ -432,12 +467,41 @@ impl FileSystem for GateFs {
     async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
         self.inner.remove_file(p).await
     }
+    async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
     async fn read_regular(
         &self,
         r: &HostPath,
         f: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(r, f).await
+        let target = &self.target;
+        let parked = if r.as_path().join(f.as_str()) == target.as_path() {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            self.gate
+                .lock()
+                .map_err(|_poisoned| gate_error(target))?
+                .take()
+        } else {
+            None
+        };
+        let read = self.inner.read_regular(r, f, max_bytes).await?;
+        if let Some((entered, release)) = parked {
+            entered.send(()).map_err(|()| gate_error(target))?;
+            release.await.map_err(|_closed| gate_error(target))?;
+        }
+        Ok(read)
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.locks.fetch_add(1, Ordering::SeqCst);
@@ -494,6 +558,10 @@ impl TickClock {
 impl Clock for TickClock {
     fn now(&self) -> Timestamp {
         Timestamp(0)
+    }
+
+    fn utc_offset_secs(&self) -> i32 {
+        0
     }
 
     async fn sleep(&self, duration: Duration) {
@@ -620,6 +688,10 @@ impl Clock for HoldingClock {
         Timestamp(0)
     }
 
+    fn utc_offset_secs(&self) -> i32 {
+        0
+    }
+
     async fn sleep(&self, _duration: Duration) {
         let count = {
             let mut slept = self.slept.lock().unwrap_or_else(PoisonError::into_inner);
@@ -710,5 +782,70 @@ async fn edit_through_a_symlinked_config_is_refused_and_leaves_the_target_untouc
     assert!(!missing.exists());
     assert_eq!(std::fs::read_link(&dangling)?, missing);
     assert!(!dir.path().join(".dangling.toml.tmp").exists());
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_edit_sweeps_the_crash_leftovers_of_its_file_and_keeps_every_other_file() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let leftovers = [".config.toml.4242-0.tmp", ".config.toml.7-31.tmp"];
+    let others = [
+        ".config.toml.tmp",
+        ".config.toml.4242-0.tmp.bak",
+        ".config.toml.x-0.tmp",
+        ".config.toml.4242-.tmp",
+        ".config.toml.4242-0.5-6.tmp",
+        "config.toml.4242-0.tmp",
+        ".other.toml.4242-0.tmp",
+        ".config.toml.lock.4242-0.tmp",
+    ];
+    for name in leftovers.iter().chain(&others) {
+        std::fs::write(dir.path().join(name), b"leftover")?;
+    }
+    std::fs::create_dir(dir.path().join(".config.toml.9-9.tmp"))?;
+    plain(&path).edit(vec![role("a")?]).await?;
+    let mut expected: Vec<String> = others.iter().map(ToString::to_string).collect();
+    expected.extend([".config.toml.9-9.tmp", "config.toml", "config.toml.lock"].map(str::to_owned));
+    expected.sort();
+    let mut found: Vec<String> = std::fs::read_dir(dir.path())?
+        .map(|entry| Ok(entry?.file_name().to_string_lossy().into_owned()))
+        .collect::<Result<_, std::io::Error>>()?;
+    found.sort();
+    assert_eq!(found, expected);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_rename_keeps_what_another_handle_wrote_after_the_caller_read() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let store = plain(&path);
+    let other = plain(&path);
+    let from = WorkspaceName::parse("proj")?;
+    let to = WorkspaceName::parse("app")?;
+    store
+        .edit(vec![ConfigEdit::AddWorkspace {
+            name: from.clone(),
+            workspace: Workspace::new(hp(Path::new("/p/proj"))?, false),
+        }])
+        .await?;
+    let stale = store.load().await?;
+    other
+        .edit(vec![ConfigEdit::SetWorkspaceDocker {
+            workspace: from.clone(),
+            docker: true,
+        }])
+        .await?;
+    assert!(stale.workspace(&from).is_some_and(|saved| !saved.docker));
+    let saved = store
+        .edit(vec![ConfigEdit::RenameWorkspace {
+            from: from.clone(),
+            to: to.clone(),
+        }])
+        .await?;
+    assert!(saved.workspace(&from).is_none());
+    assert!(saved.workspace(&to).is_some_and(|moved| moved.docker));
+    assert_eq!(store.load().await?, saved);
     Ok(())
 }

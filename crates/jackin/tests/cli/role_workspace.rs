@@ -77,6 +77,9 @@ async fn workspace_add_stores_the_docker_flag_and_an_absolute_path_and_ls_pins_t
 -> TestResult {
     guard(async {
         let world = World::builder().build()?;
+        std::fs::create_dir_all(world.home().as_path().join("proj/one"))?;
+        let two = world.home().as_path().parent().ok_or("no parent")?.join("two");
+        std::fs::create_dir_all(&two)?;
         let harness = Harness::new(&world);
         harness
             .run(&["workspace", "add", "plain", "proj/one"])
@@ -138,11 +141,105 @@ async fn workspace_add_stores_the_docker_flag_and_an_absolute_path_and_ls_pins_t
 }
 
 #[tokio::test]
+async fn ls_escapes_control_characters_in_stored_paths_and_json_stays_the_stored_path() -> TestResult
+{
+    guard(async {
+        let world = World::builder().build()?;
+        let hostile = "evil\u{1b}[2Jname\nforged\tline";
+        std::fs::create_dir(world.home().as_path().join(hostile))?;
+        std::fs::create_dir(world.home().as_path().join("tame"))?;
+        let harness = Harness::new(&world);
+        for (kind, name) in [("workspace", "hostile"), ("role", "hostile")] {
+            harness.run(&[kind, "add", name, hostile]).await?.ok()?;
+        }
+        harness
+            .run(&["workspace", "add", "tame", "tame"])
+            .await?
+            .ok()?;
+        harness.run(&["role", "add", "tame", "tame"]).await?.ok()?;
+        let home = world.home().as_path();
+        let escaped = format!("{}/evil\\u{{1b}}[2Jname\\nforged\\tline", home.display());
+        let tame = home.join("tame");
+        for kind in ["workspace", "role"] {
+            let ran = harness.run(&[kind, "ls"]).await?;
+            ran.ok()?;
+            assert_eq!(
+                ran.stdout,
+                format!("hostile\t{escaped}\ntame\t{}\n", tame.display()),
+                "{kind}"
+            );
+            let json = harness.run(&[kind, "ls", "--json"]).await?;
+            json.ok()?;
+            assert!(
+                json.stdout.contains(&format!(
+                    "{}/evil\\u001b[2Jname\\nforged\\tline",
+                    home.display()
+                )),
+                "{kind}: {}",
+                json.stdout
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_workspace_or_role_path_is_stored_by_its_real_path_and_must_be_an_existing_directory()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let home = world.home().as_path();
+        let real = home.join("real/proj");
+        std::fs::create_dir_all(&real)?;
+        std::os::unix::fs::symlink(home.join("real"), home.join("link"))?;
+        std::fs::write(home.join("real/file.txt"), b"not a directory")?;
+        let harness = Harness::new(&world);
+
+        harness
+            .run(&["workspace", "add", "w", "link/proj"])
+            .await?
+            .ok()?;
+        harness
+            .run(&["role", "add", "r", "link/proj"])
+            .await?
+            .ok()?;
+        let config = harness.stored().await?;
+        assert_eq!(
+            config
+                .workspace(&workspace("w")?)
+                .ok_or("no w")?
+                .path
+                .as_path(),
+            real
+        );
+        assert_eq!(
+            config.role(&role("r")?).ok_or("no r")?.source,
+            RoleSource::Path(HostPath::parse(&real)?)
+        );
+
+        let before = harness.config_bytes()?;
+        let twin = harness
+            .run(&["workspace", "add", "twin", "real/proj"])
+            .await?;
+        failed(&twin, ExitClass::Failure, &[])?;
+        for missing in ["nowhere", "real/file.txt", "link/absent"] {
+            let ran = harness.run(&["workspace", "add", "ghost", missing]).await?;
+            failed(&ran, ExitClass::Failure, &[missing])?;
+        }
+        assert_eq!(harness.config_bytes()?, before);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn duplicates_shared_paths_and_roles_in_use_fail_and_leave_the_config_bytes_alone()
 -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         std::fs::create_dir(world.home().as_path().join("proj"))?;
+        std::fs::create_dir(world.home().as_path().join("other"))?;
         let harness = Harness::new(&world);
         harness.run(&["role", "add", "remote", URL]).await?.ok()?;
         harness
@@ -187,18 +284,33 @@ async fn duplicates_shared_paths_and_roles_in_use_fail_and_leave_the_config_byte
 }
 
 #[tokio::test]
-async fn an_argument_with_control_characters_is_shown_escaped_in_the_error() -> TestResult {
+async fn a_role_source_that_is_not_a_directory_or_a_url_is_refused_without_echoing_it() -> TestResult
+{
     guard(async {
         let world = World::builder().build()?;
         let harness = Harness::new(&world);
-        let ran = harness
-            .run(&["role", "add", "local", "no\u{1b}[2J\nwhere"])
-            .await?;
-        failed(&ran, ExitClass::Usage, &[])?;
-        assert_eq!(
-            ran.stderr,
-            "error: no\\u{1b}[2J\\nwhere is neither an existing directory nor a Git URL\n"
-        );
+        let sources = [
+            "https://x-access-token:ghp_FAKEf4k3T0k3nValue0123456789abcdef@github.com/org/repo.git",
+            "https://ghp_FAKEf4k3T0k3nValue0123456789abcdef@github.com/org/repo.git",
+            "ssh://user:ghp_FAKEf4k3T0k3nValue0123456789abcdef@host/org/repo.git",
+            "no\u{1b}[2J\nghp_FAKEf4k3T0k3nValue0123456789abcdef",
+            "/ghp_FAKEf4k3T0k3nValue0123456789abcdef/missing",
+        ];
+        for source in sources {
+            let ran = harness.run(&["role", "add", "local", source]).await?;
+            failed(&ran, ExitClass::Usage, &[])?;
+            assert!(
+                !ran.stderr.contains("ghp_FAKE") && !ran.stderr.contains("x-access-token"),
+                "{}",
+                ran.stderr
+            );
+            assert!(
+                ran.stderr.contains("existing directory") && ran.stderr.contains("https"),
+                "{}",
+                ran.stderr
+            );
+            assert_eq!(harness.config_bytes()?, None);
+        }
         Ok(())
     })
     .await

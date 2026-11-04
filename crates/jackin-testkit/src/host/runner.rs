@@ -9,9 +9,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    DockerSubcommand, EnvValue, FileKind, FileMode, FileSystem, FsError, HostPath, LineSink,
-    OutputLine, OutputStream, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec,
-    ProcessStatus, ProcessStdin, Program, SecretBytes, SecretOutput, StdFileSystem, write_atomic,
+    DockerSubcommand, EnvValue, FileKind, FileMode, FileSystem, FsError, GroupFault, HostPath,
+    LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec,
+    ProcessStatus, ProcessStdin, Program, RepoPath, SecretBytes, SecretOutput, StdFileSystem,
+    write_atomic,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -54,8 +55,15 @@ enum ReplyBody {
     UntilCancelled {
         lines: Vec<(OutputStream, String)>,
     },
-    Timeout,
-    Cancelled,
+    Timeout {
+        group: Option<GroupFault>,
+    },
+    Cancelled {
+        group: Option<GroupFault>,
+    },
+    Group {
+        fault: GroupFault,
+    },
     Spawn {
         message: String,
     },
@@ -98,11 +106,23 @@ impl ProcessReply {
     }
 
     pub fn timeout() -> ProcessReply {
-        ProcessReply::of(ReplyBody::Timeout)
+        ProcessReply::of(ReplyBody::Timeout { group: None })
+    }
+
+    pub fn timeout_with(fault: GroupFault) -> ProcessReply {
+        ProcessReply::of(ReplyBody::Timeout { group: Some(fault) })
     }
 
     pub fn cancelled() -> ProcessReply {
-        ProcessReply::of(ReplyBody::Cancelled)
+        ProcessReply::of(ReplyBody::Cancelled { group: None })
+    }
+
+    pub fn cancelled_with(fault: GroupFault) -> ProcessReply {
+        ProcessReply::of(ReplyBody::Cancelled { group: Some(fault) })
+    }
+
+    pub fn group(fault: GroupFault) -> ProcessReply {
+        ProcessReply::of(ReplyBody::Group { fault })
     }
 
     pub fn spawn(message: &str) -> ProcessReply {
@@ -137,6 +157,7 @@ impl fmt::Debug for SeenEnv {
 pub enum SeenStdin {
     Null,
     Bytes(Vec<u8>),
+    File { path: HostPath, offset: u64 },
 }
 
 impl fmt::Debug for SeenStdin {
@@ -144,6 +165,11 @@ impl fmt::Debug for SeenStdin {
         match self {
             SeenStdin::Null => f.write_str("Null"),
             SeenStdin::Bytes(bytes) => write!(f, "Bytes({} bytes)", bytes.len()),
+            SeenStdin::File { path, offset } => f
+                .debug_struct("File")
+                .field("path", path)
+                .field("offset", offset)
+                .finish(),
         }
     }
 }
@@ -180,6 +206,10 @@ impl SeenCall {
             stdin: match &spec.stdin {
                 ProcessStdin::Null => SeenStdin::Null,
                 ProcessStdin::Bytes(bytes) => SeenStdin::Bytes(bytes.expose().to_vec()),
+                ProcessStdin::File { path, offset } => SeenStdin::File {
+                    path: path.clone(),
+                    offset: *offset,
+                },
             },
             timeout: spec.timeout,
         }
@@ -187,9 +217,24 @@ impl SeenCall {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CapturedFile {
-    pub bytes: Vec<u8>,
-    pub mode: FileMode,
+pub enum CapturedFile {
+    File { bytes: Vec<u8>, mode: FileMode },
+    Link { target: String },
+}
+
+impl CapturedFile {
+    pub fn file(bytes: &[u8], mode: u32) -> CapturedFile {
+        CapturedFile::File {
+            bytes: bytes.to_vec(),
+            mode: FileMode(mode),
+        }
+    }
+
+    pub fn link(target: &str) -> CapturedFile {
+        CapturedFile::Link {
+            target: target.to_owned(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -405,6 +450,7 @@ impl ScriptedProcessRunner {
         if cancel.is_cancelled() {
             return Err(ProcessError::Cancelled {
                 program: spec.program,
+                group: None,
             });
         }
         let (call, replier) = self.choose(spec)?;
@@ -445,14 +491,21 @@ impl ScriptedProcessRunner {
                 cancel.cancelled().await;
                 Err(ProcessError::Cancelled {
                     program: spec.program,
+                    group: None,
                 })
             }
-            ReplyBody::Timeout => Err(ProcessError::Timeout {
+            ReplyBody::Timeout { group } => Err(ProcessError::Timeout {
                 program: spec.program,
                 after: spec.timeout,
+                group,
             }),
-            ReplyBody::Cancelled => Err(ProcessError::Cancelled {
+            ReplyBody::Cancelled { group } => Err(ProcessError::Cancelled {
                 program: spec.program,
+                group,
+            }),
+            ReplyBody::Group { fault } => Err(ProcessError::Group {
+                program: spec.program,
+                fault,
             }),
             ReplyBody::Spawn { message } => Err(ProcessError::Spawn {
                 program: spec.program,
@@ -460,6 +513,18 @@ impl ScriptedProcessRunner {
             }),
         }
     }
+}
+
+async fn read_link(fs: &StdFileSystem, root: &HostPath, relative: &str) -> Result<String, FsError> {
+    let invalid = |message: String| FsError::Io {
+        path: root.clone(),
+        kind: std::io::ErrorKind::InvalidInput,
+        message,
+    };
+    let file = RepoPath::parse(relative).map_err(|error| invalid(error.to_string()))?;
+    fs.read_link(root, &file)
+        .await?
+        .map_err(|problem| invalid(format!("{relative}: {problem:?}")))
 }
 
 async fn snapshot(
@@ -482,9 +547,13 @@ async fn snapshot(
                 FileKind::File => {
                     let bytes = fs.read(&path).await?.unwrap_or_default();
                     let mode = fs.mode(&path).await?.unwrap_or(FileMode(0));
-                    files.insert(relative, CapturedFile { bytes, mode });
+                    files.insert(relative, CapturedFile::File { bytes, mode });
                 }
-                FileKind::Symlink | FileKind::Socket => {}
+                FileKind::Symlink => {
+                    let target = read_link(fs, root, &relative).await?;
+                    files.insert(relative, CapturedFile::Link { target });
+                }
+                FileKind::Socket => {}
             }
         }
     }
@@ -607,6 +676,7 @@ impl TestRunner {
         if cancel.is_cancelled() {
             return Err(ProcessError::Cancelled {
                 program: Program::Git,
+                group: None,
             });
         }
         let mut command = HostProgram::Git.command();
@@ -635,6 +705,15 @@ impl TestRunner {
         let stdin = match &spec.stdin {
             ProcessStdin::Null => None,
             ProcessStdin::Bytes(bytes) => Some(bytes.expose().to_vec()),
+            ProcessStdin::File { path, offset } => Some(
+                StdFileSystem::default()
+                    .read_at(path, *offset, usize::MAX)
+                    .await
+                    .map_err(|error| ProcessError::Spawn {
+                        program: Program::Git,
+                        message: error.to_string(),
+                    })?,
+            ),
         };
         match run_command(command, stdin, spec.timeout, cancel).await {
             Ok(finished) => Ok(ProcessOutput {
@@ -649,9 +728,11 @@ impl TestRunner {
             Err(Failure::Timeout) => Err(ProcessError::Timeout {
                 program: Program::Git,
                 after: spec.timeout,
+                group: None,
             }),
             Err(Failure::Cancelled) => Err(ProcessError::Cancelled {
                 program: Program::Git,
+                group: None,
             }),
         }
     }

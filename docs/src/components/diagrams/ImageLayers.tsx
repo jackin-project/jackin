@@ -2,7 +2,7 @@ export function ImageLayers() {
   return (
     <figure
       className="jk-layers not-content"
-      aria-label="jackin❯ image layers: top derived layer owned by jackin❯, middle agent layer from the agent repo, bottom shared construct base"
+      aria-label="jackin❯ image layers: top derived layer owned by jackin❯, middle role layer from the role repo, bottom shared construct base"
     >
       <ol className="jk-layers-stack">
         <li className="jk-layer jk-layer--derived">
@@ -11,20 +11,21 @@ export function ImageLayers() {
             <span className="jk-layer-owner">jackin-managed</span>
           </div>
           <ul className="jk-layer-items">
-            <li>UID/GID remapping</li>
-            <li>Claude Code installation</li>
-            <li>Pre-launch hook</li>
-            <li>Runtime entrypoint</li>
-            <li>Plugin bootstrap</li>
+            <li>Codex, pinned and checksummed</li>
+            <li>jackin-start, the main process</li>
+            <li>Root-owned setup and preflight hooks</li>
+            <li>Image scan</li>
+            <li>Docker client, only when the capability is on</li>
+            <li>User sandbox</li>
           </ul>
         </li>
         <li className="jk-layer jk-layer--agent">
           <div className="jk-layer-title-row">
-            <h4 className="jk-layer-title">Agent layer</h4>
-            <span className="jk-layer-owner">agent repo</span>
+            <h4 className="jk-layer-title">Role layer</h4>
+            <span className="jk-layer-owner">role repo</span>
           </div>
           <ul className="jk-layer-items">
-            <li>Language runtimes</li>
+            <li>Language toolchains</li>
             <li>Development tools</li>
             <li>Custom configuration</li>
           </ul>
@@ -32,14 +33,13 @@ export function ImageLayers() {
         <li className="jk-layer jk-layer--base">
           <div className="jk-layer-title-row">
             <h4 className="jk-layer-title">Construct base</h4>
-            <span className="jk-layer-owner">shared</span>
+            <span className="jk-layer-owner">built by jackin❯</span>
           </div>
           <ul className="jk-layer-items">
-            <li>Debian Trixie</li>
-            <li>Docker CLI + Compose</li>
-            <li>Git, GitHub CLI</li>
-            <li>mise, ripgrep, fd, fzf</li>
-            <li>zsh + Oh My Zsh</li>
+            <li>OpenShell default sandbox image, Ubuntu 24.04</li>
+            <li>User sandbox, uid 1000</li>
+            <li>git, curl, jq, bash</li>
+            <li>No setuid bit, no sudo</li>
           </ul>
         </li>
       </ol>

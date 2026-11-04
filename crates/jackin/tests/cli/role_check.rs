@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin::ExitClass;
-use jackin_testkit::{RoleFixture, TestResult, World, guard};
+use jackin_testkit::{Rig, RoleFixture, TestResult, World, guard};
 
 use super::support::{FixedConnector, Harness, failed};
 
@@ -14,7 +14,7 @@ filesystem_policy:
   read_write:
     - /tmp
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox
@@ -290,6 +290,260 @@ async fn a_symlink_to_a_role_directory_is_checked_like_the_directory() -> TestRe
         let ran = check_path(&world, false, &link).await?;
         ran.ok()?;
         assert!(ran.stderr.is_empty(), "{}", ran.stderr);
+        Ok(())
+    })
+    .await
+}
+
+fn policy_text(paths: &str, landlock: &str, host: &str) -> String {
+    format!(
+        "version: 1\n{paths}{landlock}process:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  r1:\n    name: r1\n    endpoints:\n      - host: '{host}'\n        port: 443\n    binaries:\n      - path: /usr/bin/curl\n"
+    )
+}
+
+const PATHS: &str = "filesystem_policy:\n  read_only:\n    - /bin\n";
+const HARD: &str = "landlock:\n  compatibility: hard_requirement\n";
+
+#[tokio::test]
+async fn a_role_policy_without_landlock_hard_requirement_fails_naming_the_setting() -> TestResult {
+    guard(async {
+        for landlock in [
+            "landlock:\n  compatibility: best_effort\n",
+            "",
+            "landlock: {}\n",
+        ] {
+            let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(
+                PATHS,
+                landlock,
+                "example.com",
+            ));
+            let (ran, _, _) = checked(&role, false).await?;
+            failed(&ran, ExitClass::Failure, &["landlock", "hard_requirement"])?;
+        }
+        let empty = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(
+            "filesystem_policy:\n  read_only: []\n  read_write: []\n",
+            HARD,
+            "example.com",
+        ));
+        let (ran, _, _) = checked(&empty, false).await?;
+        failed(&ran, ExitClass::Failure, &["read_only", "read_write"])?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_role_policy_naming_the_root_fails_role_check_naming_the_path() -> TestResult {
+    guard(async {
+        for (path, names) in [
+            ("/.", vec!["/.", "read_write"]),
+            ("/", vec!["read_write"]),
+            ("//", vec!["//", "read_write"]),
+            ("/proc/self/root", vec!["/proc/self/root", "read_write"]),
+            ("/usr/..", vec!["/usr/.."]),
+        ] {
+            let paths = format!(
+                "filesystem_policy:\n  read_only:\n    - /bin\n  read_write:\n    - '{path}'\n"
+            );
+            let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(
+                &paths,
+                HARD,
+                "example.com",
+            ));
+            let (ran, _, _) = checked(&role, false).await?;
+            failed(&ran, ExitClass::Failure, &names)?;
+        }
+        let read_only = "filesystem_policy:\n  read_only:\n    - /\n    - /proc\n";
+        let role =
+            RoleFixture::new("sentinel")?.policy_yaml(&policy_text(read_only, HARD, "example.com"));
+        let (ran, _, _) = checked(&role, false).await?;
+        ran.ok()?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_role_host_the_sandbox_would_match_to_a_provider_host_fails_in_every_dialect()
+-> TestResult {
+    guard(async {
+        for host in [
+            "[^x]*hatgpt.com",
+            "[^x]*.chatgpt.com",
+            "[^x]*pi.openai.com",
+            "*\\.openai.com",
+            "a\\p*.openai.com",
+            "[^x]*.openai.com",
+        ] {
+            let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, host));
+            let (ran, _, _) = checked(&role, false).await?;
+            failed(&ran, ExitClass::Failure, &[host])?;
+            assert!(!ran.stderr.contains("r1"), "{}", ran.stderr);
+        }
+        for host in ["*.org", "x.a*.com"] {
+            let shape = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, host));
+            let (ran, _, _) = checked(&shape, false).await?;
+            failed(&ran, ExitClass::Failure, &[host])?;
+            assert!(!ran.stderr.contains("r1"), "{}", ran.stderr);
+        }
+
+        let closure =
+            RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, "*.openai.com"));
+        let (ran, _, _) = checked(&closure, false).await?;
+        failed(&ran, ExitClass::Failure, &["r1", "openai.com"])?;
+
+        for host in ["github.com", "*.example.org", "host-1_a.example.com"] {
+            let role = RoleFixture::new("sentinel")?.policy_yaml(&policy_text(PATHS, HARD, host));
+            let (ran, _, _) = checked(&role, false).await?;
+            ran.ok()?;
+            assert!(ran.stdout.is_empty());
+        }
+        Ok(())
+    })
+    .await
+}
+
+const ENGINE_RULE: &str = "version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /bin
+  read_write:
+    - /tmp
+landlock:
+  compatibility: hard_requirement
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+network_policies:
+  engine-peek:
+    name: engine-peek
+    endpoints:
+      - host: HOST
+        port: 8080
+    binaries:
+      - path: /usr/bin/curl
+";
+
+fn engine_rule(host: &str) -> String {
+    ENGINE_RULE.replace("HOST", host)
+}
+
+#[tokio::test]
+async fn role_check_and_load_refuse_a_policy_that_names_a_host_gateway_alias_on_any_port()
+-> TestResult {
+    guard(async {
+        for (host, alias) in [
+            ("host.openshell.internal", "host.openshell.internal"),
+            ("host.containers.internal", "host.containers.internal"),
+            ("host.docker.internal", "host.docker.internal"),
+            ("HOST.Docker.Internal", "host.docker.internal"),
+            ("\"*.docker.internal\"", "host.docker.internal"),
+            ("\"*ost.docker.internal\"", "host.docker.internal"),
+        ] {
+            let rule = RoleFixture::new("sentinel")?.policy_yaml(&engine_rule(host));
+            let (ran, _, _) = checked(&rule, false).await?;
+            failed(&ran, ExitClass::Failure, &["engine-peek", alias])?;
+        }
+        let clean = RoleFixture::new("sentinel")?;
+        let (ran, _, _) = checked(&clean, false).await?;
+        ran.ok()?;
+
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        let good = rig.loaded.root().as_path().display().to_string();
+        let bad = RoleFixture::new("sentinel")?.policy_yaml(&engine_rule("host.docker.internal"));
+        bad.commit().await?;
+        let swapped = rig
+            .config
+            .render()
+            .replace(&good, &bad.root().as_path().display().to_string());
+        harness.write_config(&swapped)?;
+        let ran = harness.run(&["load"]).await?;
+        failed(
+            &ran,
+            ExitClass::Failure,
+            &["engine-peek", "host.docker.internal"],
+        )?;
+        assert!(rig.gateway().sandboxes().is_empty());
+        assert!(rig.gateway().providers().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn role_check_and_load_refuse_a_dockerfile_env_that_names_the_docker_engine_client()
+-> TestResult {
+    guard(async {
+        let docker_env = "FROM construct\nENV A=1 \\\n    DOCKER_HOST=tcp://host.openshell.internal:2376\n";
+        let refused = RoleFixture::new("sentinel")?.dockerfile(docker_env);
+        let (ran, _, _) = checked(&refused, false).await?;
+        failed(&ran, ExitClass::Failure, &[])?;
+        assert_eq!(
+            ran.stderr,
+            "error: line 2: ENV sets DOCKER_HOST, which names the Docker engine client; jackin sets it from the Docker capability\n"
+        );
+        let expanding = RoleFixture::new("sentinel")?.dockerfile("FROM construct\nENV ${NAME}=x\n");
+        let (ran, _, _) = checked(&expanding, false).await?;
+        failed(&ran, ExitClass::Failure, &["NAME", "line 2"])?;
+
+        let allowed = RoleFixture::new("sentinel")?
+            .dockerfile("FROM construct\nENV PATH=/opt/bin:$PATH FOO=1\nARG DOCKER_HOST=x\n");
+        let (ran, _, _) = checked(&allowed, false).await?;
+        ran.ok()?;
+
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        let good = rig.loaded.root().as_path().display().to_string();
+        let bad = RoleFixture::new("sentinel")?.dockerfile(docker_env);
+        bad.commit().await?;
+        let swapped = rig
+            .config
+            .render()
+            .replace(&good, &bad.root().as_path().display().to_string());
+        harness.write_config(&swapped)?;
+        let ran = harness.run(&["load"]).await?;
+        failed(&ran, ExitClass::Failure, &["line 2", "DOCKER_HOST"])?;
+        assert!(rig.gateway().sandboxes().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+fn tcp_rule(host: &str) -> String {
+    ENGINE_RULE.replace("HOST", host).replace(
+        "port: 8080",
+        "port: 2376\n        protocol: tcp\n        tls: skip",
+    )
+}
+
+#[tokio::test]
+async fn role_check_refuses_a_tcp_endpoint_host_that_is_an_ip_literal_as_the_gateway_does()
+-> TestResult {
+    guard(async {
+        let literal = RoleFixture::new("sentinel")?.policy_yaml(&tcp_rule("198.18.0.2"));
+        let (ran, _, _) = checked(&literal, false).await?;
+        failed(&ran, ExitClass::Failure, &[])?;
+        assert_eq!(
+            ran.stderr,
+            "error: the gateway would refuse the policy: network policy 'engine-peek': protocol tcp endpoint '198.18.0.2' must use a DNS hostname, not an IP literal; direct IP connections bypass policy DNS and are blocked\n"
+        );
+        for host in [
+            "\"3323068418\"",
+            "\"0xc6120002\"",
+            "\"198.18.2\"",
+            "example.com",
+            "198.18.0.2.nip.io",
+        ] {
+            let accepted = RoleFixture::new("sentinel")?.policy_yaml(&tcp_rule(host));
+            let (ran, _, _) = checked(&accepted, false).await?;
+            ran.ok()?;
+        }
         Ok(())
     })
     .await

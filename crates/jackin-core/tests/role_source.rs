@@ -91,6 +91,16 @@ fn role_url_accepts_only_https_ssh_and_scp_forms_without_secrets_or_options() ->
         "ssh://git@example.com:/r",
         "https://example.com:abc/r",
         "https://example.com:/r",
+        "https://example.com/org/repo?access_token=x",
+        "https://example.com/org/repo.git?x=1",
+        "https://example.com/org/repo#frag",
+        "https://example.com?x=1",
+        "https://example.com#frag",
+        "https://example.com:8443/org/repo?x",
+        "ssh://git@example.com/org/repo?x=1",
+        "ssh://git@example.com/org/repo#frag",
+        "ssh://example.com?x=1",
+        "ssh://git@example.com:2222/org/repo?x",
     ];
     reject.extend(controlled.iter().map(String::as_str));
     grammar::<RoleUrl>(&accept, &reject)?;

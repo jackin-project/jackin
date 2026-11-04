@@ -9,14 +9,14 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, EnvName, FileMode, GatewayName, HostPath, ImageId, ImageTag, LaunchId,
-    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProjectRoot, ProviderName, RoleName,
-    SandboxName, SandboxPath, SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
+    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel, ProjectRoot, ProviderName,
+    RoleName, SandboxName, SandboxPath, SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
 };
-use jackin_openshell::contract::ContractFixture;
+use jackin_openshell::contract::{ContractFixture, SHELL_END_TIMEOUT};
 use jackin_openshell::{
-    ClosedPolicy, Gateway, InputMode, MainProcess, ProgramOutcome, ProgramRun, ProgramStdin,
-    RepaintPolicy, SandboxCreate, SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalEvent,
-    TerminalKind, TerminalRequest, TerminalSession,
+    AuthoredPolicy, Gateway, InputMode, MainProcess, NetworkRule, ProgramOutcome, ProgramRun,
+    ProgramStdin, RepaintPolicy, SandboxCreate, SandboxFile, SandboxQuery, SandboxView, TermSize,
+    TerminalEvent, TerminalKind, TerminalRequest, TerminalSession,
 };
 use jackin_testkit::{FakeGateway, SandboxHandle};
 use tempfile::TempDir;
@@ -26,7 +26,7 @@ use tokio_util::sync::CancellationToken;
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const IMAGE: &str = "jackin.invalid/contract-base:0123456789abcdef";
-pub(crate) const POLICY: &str = "version: 1
+const AUTHORED_POLICY: &str = "version: 1
 filesystem_policy:
   include_workdir: true
   read_only:
@@ -36,20 +36,10 @@ filesystem_policy:
     - /tmp
     - /sandbox
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox
-network_policies:
-  docker_engine:
-    name: docker_engine
-    endpoints:
-      - host: host.openshell.internal
-        port: 12376
-        protocol: tcp
-        tls: skip
-    binaries:
-      - path: /usr/local/bin/docker
 ";
 
 const GUARD: Duration = Duration::from_secs(10);
@@ -106,6 +96,7 @@ pub(crate) fn spec_with(
         role: RoleName::parse("backend")?,
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
+        policy: PolicyLabel::of("policy"),
         launch: launch.clone(),
     };
     let image_id = ImageId::parse(&format!("sha256:{}", "ba7816bf".repeat(8)))?;
@@ -116,9 +107,13 @@ pub(crate) fn spec_with(
     Ok(SandboxCreate::new(
         name,
         ImageTag::parse(image)?,
-        planned.complete(&image_id),
+        planned.complete(&image_id, jackin_core::DockerLabel::Off),
         providers,
-        ClosedPolicy::parse(POLICY)?,
+        AuthoredPolicy::parse(AUTHORED_POLICY)?
+            .with_rule(NetworkRule::docker_engine(
+                NonZeroU16::new(12376).ok_or("zero port")?,
+            ))?
+            .close()?,
         main,
     ))
 }
@@ -292,13 +287,11 @@ pub(crate) async fn eventually<T: PartialEq + Debug>(
 }
 
 pub(crate) async fn git(dir: &std::path::Path, args: &[&str]) -> TestResult {
-    let status = Command::new("/usr/bin/git")
+    let status = Command::from(jackin_testkit::git_command())
         .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
         .args(["-c", "commit.gpgsign=false"])
         .args(args)
         .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .status()
         .await?;
     if status.success() {
@@ -330,6 +323,7 @@ pub(crate) async fn fixture(
             image,
             project,
             name_prefix: SandboxSlug::parse("ctr")?,
+            shell_end_timeout: SHELL_END_TIMEOUT,
         },
     ))
 }

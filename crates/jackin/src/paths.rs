@@ -5,6 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 use jackin_core::HostPath;
 
+use crate::app::App;
 use crate::error::CommandError;
 
 pub(crate) fn absolutize(path: &Path, cwd: &HostPath) -> Result<HostPath, CommandError> {
@@ -22,4 +23,9 @@ pub(crate) fn absolutize(path: &Path, cwd: &HostPath) -> Result<HostPath, Comman
         }
     }
     Ok(HostPath::parse(&joined)?)
+}
+
+pub(crate) async fn existing_dir(app: &App, path: &Path) -> Result<HostPath, CommandError> {
+    let absolute = absolutize(path, &app.cwd)?;
+    Ok(HostPath::canonical_dir(app.deps.host.fs.as_ref(), &absolute).await?)
 }

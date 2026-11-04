@@ -1,154 +1,96 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_protocol::control::{
-    CanonicalUsedPercent, Money, PercentObservationOrigin, QuotaBucketView, StatusSlot,
-    UsageSeverity, UsageSnapshotStatus,
-};
 use jackin_usage_provider_core::{
-    CLAUDE_CODE_USER_AGENT_FALLBACK, ProviderHttpError, bucket, get_json_bearer, humanize_reason,
-    humanize_window_label, parse_iso_epoch, severity_from_label, timed_bucket, with_used_percent,
+    Bucket, BucketKind, Money, ProviderError, Remaining, json_number, json_text, minor_units,
 };
-use std::collections::BTreeMap;
+use serde_json::Value;
 
-use super::{
-    ClaudeOAuthExtraUsage, ClaudeOAuthMoney, ClaudeOAuthSpend, ClaudeOAuthUsageResponse,
-    ClaudeOAuthUsageWindow,
-};
+const LABEL: &str = "Extra usage";
 
-pub fn push_claude_dollar_windows(
-    buckets: &mut Vec<QuotaBucketView>,
-    other: BTreeMap<String, serde_json::Value>,
-    now: i64,
-) {
-    for (key, value) in other {
-        let Ok(window) = serde_json::from_value::<ClaudeOAuthUsageWindow>(value) else {
-            continue;
-        };
-        let Some(limit) = window.limit_dollars.filter(|limit| *limit > 0.0) else {
-            continue;
-        };
-        let used = window.used_dollars.unwrap_or(0.0).max(0.0);
-        let used_money = Money::new((used * 100.0).round() as i64, "USD", 2);
-        let limit_money = Money::new((limit * 100.0).round() as i64, "USD", 2);
-        let reset_at = window.resets_at.as_deref().and_then(parse_iso_epoch);
-        let mut view = timed_bucket(
-            &humanize_window_label(&key),
-            Some(format!("{used_money} spent")),
-            Some(limit_money.to_string()),
-            None,
-            reset_at,
-            now,
-            None,
-            UsageSnapshotStatus::Fresh,
-        );
-        view.used_money = Some(used_money);
-        view.limit_money = Some(limit_money);
-        buckets.push(view);
-    }
-}
-
-#[derive(Debug)]
-pub struct ClaudeSpend {
-    pub used: Money,
-    pub limit: Option<Money>,
-    pub used_percent: Option<f64>,
-    pub enabled: bool,
-    pub disabled_reason: Option<String>,
-    pub severity: UsageSeverity,
-}
-
-pub fn claude_spend_bucket(
-    spend: Option<ClaudeOAuthSpend>,
-    extra: Option<ClaudeOAuthExtraUsage>,
-) -> Option<QuotaBucketView> {
-    let spend = normalize_claude_spend(spend, extra)?;
-    let used_percent = spend
-        .used_percent
-        .and_then(|used| CanonicalUsedPercent::new(used).ok());
-    let used_label = Some(format!("{} spent", spend.used));
-    let limit_label = spend.limit.as_ref().map(Money::to_string);
-    let pace = if spend.enabled {
-        used_percent.map(CanonicalUsedPercent::label)
-    } else {
-        Some(match &spend.disabled_reason {
-            Some(reason) => format!("disabled · {}", humanize_reason(reason)),
-            None => "disabled".to_owned(),
-        })
-    };
-    let view = bucket(
-        "Extra usage",
-        used_label,
-        limit_label,
-        None,
-        None,
-        pace.as_deref(),
-        UsageSnapshotStatus::Fresh,
-    );
-    let mut view = with_used_percent(
-        view,
-        used_percent.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
-    );
-    view.status_slot = Some(StatusSlot::Spend);
-    view.severity = spend.severity;
-    view.used_money = Some(spend.used);
-    view.limit_money = spend.limit;
-    Some(view)
-}
-
-pub fn normalize_claude_spend(
-    spend: Option<ClaudeOAuthSpend>,
-    extra: Option<ClaudeOAuthExtraUsage>,
-) -> Option<ClaudeSpend> {
+pub(crate) fn bucket(body: &Value) -> Result<Option<Bucket>, ProviderError> {
+    let spend = body.get("spend").filter(|value| value.is_object());
     if let Some(spend) = spend
-        && let Some(used) = spend.used.and_then(ClaudeOAuthMoney::into_money)
+        && let Some(used) = money(spend.get("used"))?
     {
-        return Some(ClaudeSpend {
-            used,
-            limit: spend.limit.and_then(ClaudeOAuthMoney::into_money),
-            used_percent: spend.percent,
-            enabled: spend.enabled.unwrap_or(true),
-            disabled_reason: spend.disabled_reason,
-            severity: severity_from_label(spend.severity.as_deref()),
-        });
+        if spend.get("enabled").and_then(Value::as_bool) == Some(false) {
+            return Ok(None);
+        }
+        let left = left(money(spend.get("limit"))?, &used)?;
+        return Ok(Some(build(
+            spend.get("percent").and_then(json_number),
+            left,
+        )));
     }
-    let extra = extra?;
-    let used_credits = extra.used_credits?;
-    let exponent = extra.decimal_places.unwrap_or(2);
-    let currency = extra.currency.unwrap_or_else(|| "credits".to_owned());
-    let used = Money::new(used_credits.round() as i64, &currency, exponent);
-    let limit = extra
-        .monthly_limit
-        .map(|limit| Money::new(limit.round() as i64, &currency, exponent));
-    Some(ClaudeSpend {
-        used,
-        limit,
-        used_percent: extra
-            .utilization
-            .and_then(|points| CanonicalUsedPercent::new(points).ok())
-            .map(CanonicalUsedPercent::get),
-        enabled: extra.is_enabled.unwrap_or(true),
-        disabled_reason: extra.disabled_reason,
-        severity: UsageSeverity::Normal,
-    })
+    let Some(extra) = body.get("extra_usage").filter(|value| value.is_object()) else {
+        return Ok(None);
+    };
+    if extra.get("is_enabled").and_then(Value::as_bool) == Some(false) {
+        return Ok(None);
+    }
+    let exponent = exponent(extra.get("decimal_places"))?;
+    let unit = extra
+        .get("currency")
+        .and_then(json_text)
+        .unwrap_or("credits");
+    let minor = |key: &str| -> Result<Option<Money>, ProviderError> {
+        let Some(value) = extra.get(key).and_then(Value::as_f64) else {
+            return Ok(None);
+        };
+        let amount = minor_units(value.round()).ok_or(ProviderError::OUT_OF_RANGE)?;
+        Money::new(amount, exponent, unit)
+            .map(Some)
+            .ok_or(ProviderError::OUT_OF_RANGE)
+    };
+    let Some(used) = minor("used_credits")? else {
+        return Ok(None);
+    };
+    let left = left(minor("monthly_limit")?, &used)?;
+    Ok(Some(build(
+        extra.get("utilization").and_then(json_number),
+        left,
+    )))
 }
 
-pub fn fetch_claude_oauth_usage(
-    access_token: &str,
-) -> Result<ClaudeOAuthUsageResponse, ProviderHttpError> {
-    get_json_bearer(
-        jackin_telemetry::schema::enums::ProviderName::Anthropic,
-        "/api/oauth/usage",
-        "Claude OAuth usage",
-        "https://api.anthropic.com/api/oauth/usage",
-        access_token,
-        &[
-            (reqwest::header::CONTENT_TYPE, "application/json"),
-            (
-                reqwest::header::HeaderName::from_static("anthropic-beta"),
-                "oauth-2025-04-20",
-            ),
-            (reqwest::header::USER_AGENT, CLAUDE_CODE_USER_AGENT_FALLBACK),
-        ],
-    )
+fn left(limit: Option<Money>, used: &Money) -> Result<Option<Money>, ProviderError> {
+    limit
+        .map(|limit| {
+            limit
+                .minus(used)
+                .map(|left| left.clamped_at_zero())
+                .ok_or(ProviderError::OUT_OF_RANGE)
+        })
+        .transpose()
+}
+
+fn exponent(value: Option<&Value>) -> Result<u32, ProviderError> {
+    match value {
+        None | Some(Value::Null) => Ok(2),
+        Some(value) => value
+            .as_u64()
+            .and_then(|places| u32::try_from(places).ok())
+            .ok_or(ProviderError::OUT_OF_RANGE),
+    }
+}
+
+fn money(value: Option<&Value>) -> Result<Option<Money>, ProviderError> {
+    let Some(value) = value.filter(|value| value.is_object()) else {
+        return Ok(None);
+    };
+    let Some(minor) = value.get("amount_minor").and_then(Value::as_i64) else {
+        return Ok(None);
+    };
+    let unit = value
+        .get("currency")
+        .and_then(json_text)
+        .unwrap_or("credits");
+    Money::new(minor, exponent(value.get("exponent"))?, unit)
+        .map(Some)
+        .ok_or(ProviderError::OUT_OF_RANGE)
+}
+
+fn build(used: Option<f64>, left: Option<Money>) -> Bucket {
+    Bucket::named(BucketKind::Spend, LABEL)
+        .used(used)
+        .left(left.map(Remaining::Amount))
 }

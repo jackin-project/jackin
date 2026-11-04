@@ -4,6 +4,16 @@ ARG CODEX_VERSION
 ARG CODEX_BIN_DIR
 ARG CODEX_SHA256_ARM64
 ARG CODEX_SHA256_AMD64
+ARG DOCKER_LAYER=absent
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_BUILDX_VERSION
+ARG DOCKER_COMPOSE_VERSION
+ARG DOCKER_CLI_SHA256_ARM64
+ARG DOCKER_CLI_SHA256_AMD64
+ARG DOCKER_BUILDX_SHA256_ARM64
+ARG DOCKER_BUILDX_SHA256_AMD64
+ARG DOCKER_COMPOSE_SHA256_ARM64
+ARG DOCKER_COMPOSE_SHA256_AMD64
 
 FROM scratch AS codex-archive-arm64
 ARG CODEX_VERSION
@@ -17,7 +27,7 @@ ADD --checksum=sha256:${CODEX_SHA256_AMD64} https://github.com/openai/codex/rele
 
 FROM codex-archive-${TARGETARCH} AS codex-archive
 
-FROM role
+FROM construct AS codex
 ARG CODEX_VERSION
 ARG CODEX_BIN_DIR
 
@@ -32,15 +42,133 @@ RUN --mount=type=bind,from=codex-archive,source=/,target=/archive \
     && printf 'check_for_update_on_startup = false\n' > /etc/codex/config.toml \
     && test "$(CODEX_HOME="$work/home" "${CODEX_BIN_DIR}/codex" --version)" = "codex-cli ${CODEX_VERSION}" \
     && rm -rf "$work"
+
+FROM scratch AS docker-cli-archive-arm64
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_CLI_SHA256_ARM64
+ADD --checksum=sha256:${DOCKER_CLI_SHA256_ARM64} https://download.docker.com/linux/static/stable/aarch64/docker-${DOCKER_CLI_VERSION}.tgz /docker.tgz
+
+FROM scratch AS docker-cli-archive-amd64
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_CLI_SHA256_AMD64
+ADD --checksum=sha256:${DOCKER_CLI_SHA256_AMD64} https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz /docker.tgz
+
+FROM docker-cli-archive-${TARGETARCH} AS docker-cli-archive
+
+FROM scratch AS docker-buildx-arm64
+ARG DOCKER_BUILDX_VERSION
+ARG DOCKER_BUILDX_SHA256_ARM64
+ADD --checksum=sha256:${DOCKER_BUILDX_SHA256_ARM64} https://github.com/docker/buildx/releases/download/v${DOCKER_BUILDX_VERSION}/buildx-v${DOCKER_BUILDX_VERSION}.linux-arm64 /docker-buildx
+
+FROM scratch AS docker-buildx-amd64
+ARG DOCKER_BUILDX_VERSION
+ARG DOCKER_BUILDX_SHA256_AMD64
+ADD --checksum=sha256:${DOCKER_BUILDX_SHA256_AMD64} https://github.com/docker/buildx/releases/download/v${DOCKER_BUILDX_VERSION}/buildx-v${DOCKER_BUILDX_VERSION}.linux-amd64 /docker-buildx
+
+FROM docker-buildx-${TARGETARCH} AS docker-buildx
+
+FROM scratch AS docker-compose-arm64
+ARG DOCKER_COMPOSE_VERSION
+ARG DOCKER_COMPOSE_SHA256_ARM64
+ADD --checksum=sha256:${DOCKER_COMPOSE_SHA256_ARM64} https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-linux-aarch64 /docker-compose
+
+FROM scratch AS docker-compose-amd64
+ARG DOCKER_COMPOSE_VERSION
+ARG DOCKER_COMPOSE_SHA256_AMD64
+ADD --checksum=sha256:${DOCKER_COMPOSE_SHA256_AMD64} https://github.com/docker/compose/releases/download/v${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64 /docker-compose
+
+FROM docker-compose-${TARGETARCH} AS docker-compose
+
+FROM construct AS docker-client-build
+ARG DOCKER_CLI_VERSION
+ARG DOCKER_BUILDX_VERSION
+ARG DOCKER_COMPOSE_VERSION
+
+USER root
+RUN --mount=type=bind,from=docker-cli-archive,source=/,target=/cli \
+    --mount=type=bind,from=docker-buildx,source=/,target=/buildx \
+    --mount=type=bind,from=docker-compose,source=/,target=/compose \
+    work="$(mktemp -d -p /root)" \
+    && tar -xzf /cli/docker.tgz --no-same-owner -C "$work" docker/docker \
+    && install -D -m 0755 -o root -g root "$work/docker/docker" /out/usr/local/bin/docker \
+    && install -D -m 0755 -o root -g root /buildx/docker-buildx /out/usr/local/libexec/docker/cli-plugins/docker-buildx \
+    && install -D -m 0755 -o root -g root /compose/docker-compose /out/usr/local/libexec/docker/cli-plugins/docker-compose \
+    && install -D -m 0644 -o root -g root /dev/null /out/usr/local/lib/jackin/docker-layer \
+    && printf 'client\n' > /out/usr/local/lib/jackin/docker-layer \
+    && test "$(/out/usr/local/bin/docker --version | cut -d, -f1)" = "Docker version ${DOCKER_CLI_VERSION}" \
+    && test "$(/out/usr/local/libexec/docker/cli-plugins/docker-buildx version | cut -d' ' -f2)" = "v${DOCKER_BUILDX_VERSION}" \
+    && test "$(/out/usr/local/libexec/docker/cli-plugins/docker-compose version)" = "Docker Compose version v${DOCKER_COMPOSE_VERSION}" \
+    && rm -rf "$work"
+
+FROM scratch AS docker-client-client
+COPY --from=docker-client-build /out/ /
+
+FROM construct AS docker-client-none
+USER root
+RUN install -D -m 0644 -o root -g root /dev/null /out/usr/local/lib/jackin/docker-layer \
+    && printf 'absent\n' > /out/usr/local/lib/jackin/docker-layer
+
+FROM scratch AS docker-client-absent
+COPY --from=docker-client-none /out/ /
+
+FROM docker-client-${DOCKER_LAYER} AS docker-client
+
+FROM construct AS trusted
+ARG CODEX_BIN_DIR
+
+USER root
+COPY --from=codex --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
 COPY --chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start
 COPY --chown=root:root --chmod=0755 hooks/setup hooks/preflight /usr/local/lib/jackin/hooks/
-RUN chown root:root /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks \
-    && chmod 0755 /usr/local/bin /usr/local/lib/jackin /usr/local/lib/jackin/hooks \
-    && for tool in sudo doas su-exec gosu docker podman iptables nft; do \
-        if command -v "$tool" >/dev/null; then echo "forbidden tool in role image: $tool" >&2; exit 1; fi; \
-    done \
-    && command -v getcap >/dev/null \
-    && { caps="$(getcap -r /)" || { echo "getcap failed in role image" >&2; exit 1; }; test -z "$caps" || { printf '%s\n' "$caps" | sed 's/^/file capability in role image: /' >&2; exit 1; }; } \
-    && { found="$(find / -xdev -type f -perm /6000)"; test -z "$found" || { printf '%s\n' "$found" | sed 's/^/setuid or setgid file in role image: /' >&2; exit 1; }; }
+
+FROM construct AS layout
+
+USER root
+RUN install -d -m 0755 -o root -g root /layout/usr /layout/usr/local /layout/usr/local/bin /layout/usr/local/lib /layout/usr/local/lib/jackin /layout/usr/local/lib/jackin/hooks
+
+FROM role AS assembled
+ARG CODEX_BIN_DIR
+
+USER root
+COPY --from=layout --chown=root:root --chmod=0755 /layout/ /
+COPY --from=trusted --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
+COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
+COPY --from=docker-client --chown=root:root --chmod=u=rwX,go=rX / /
+COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/bin/jackin-start /usr/local/bin/jackin-start
+COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/hooks/setup /usr/local/lib/jackin/hooks/preflight /usr/local/lib/jackin/hooks/
+
+FROM construct AS scan
+ARG CODEX_BIN_DIR
+
+USER root
+COPY scan /jackin-scan
+RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
+    --mount=type=bind,from=trusted,source=/,target=/trusted,ro \
+    --mount=type=bind,from=docker-client,source=/,target=/trusted-docker,ro \
+    set -- --owner 0:0 \
+        --same-as /usr/local/bin/jackin-start=/trusted/usr/local/bin/jackin-start \
+        --same-as /usr/local/lib/jackin/hooks/setup=/trusted/usr/local/lib/jackin/hooks/setup \
+        --same-as /usr/local/lib/jackin/hooks/preflight=/trusted/usr/local/lib/jackin/hooks/preflight \
+        --same-as ${CODEX_BIN_DIR}/codex=/trusted${CODEX_BIN_DIR}/codex \
+        --same-as ${CODEX_BIN_DIR}/codex-code-mode-host=/trusted${CODEX_BIN_DIR}/codex-code-mode-host \
+    ; extra= \
+    ; if [ -e /trusted-docker/usr/local/bin/docker ]; then \
+        for path in /usr/local/bin/docker /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-compose; do \
+            set -- "$@" --allow-tool "$path" --same-as "$path=/trusted-docker$path"; \
+            extra="$extra $path"; \
+        done; \
+    fi \
+    ; /bin/sh /jackin-scan "$@" \
+        /image \
+        /usr/local/bin/jackin-start \
+        /usr/local/lib/jackin/hooks/setup \
+        /usr/local/lib/jackin/hooks/preflight \
+        ${CODEX_BIN_DIR}/codex \
+        ${CODEX_BIN_DIR}/codex-code-mode-host \
+        $extra \
+    > /verdict
+
+FROM assembled
+COPY --from=scan --chown=root:root --chmod=0644 /verdict /usr/local/lib/jackin/image-scan
 USER sandbox
 WORKDIR /sandbox

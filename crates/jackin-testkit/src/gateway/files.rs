@@ -9,13 +9,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use jackin_core::{
-    HostPath, ProcessStatus, ProjectRoot, SandboxPath, Sha256, TerminalText,
+    HostPath, OutputStream, ProcessStatus, ProjectRoot, SandboxPath, Sha256, TerminalText,
     sandbox_layout::RUN_START,
 };
 use jackin_openshell::{GatewayError, GatewayOp, SandboxFile, TransferOp};
 use tokio_util::sync::CancellationToken;
 
-use super::exec::host_path;
+use super::exec::{OUTPUT_LIMIT, host_path};
 use super::state::Cell;
 use crate::exec::HostProgram;
 
@@ -37,7 +37,7 @@ pub(super) async fn read_files(
     root: &Path,
     installed: &BTreeMap<SandboxPath, Vec<u8>>,
     paths: &[SandboxPath],
-) -> Vec<Option<Vec<u8>>> {
+) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
     let mut files = Vec::with_capacity(paths.len());
     for path in paths {
         if let Some(bytes) = installed.get(path) {
@@ -51,9 +51,19 @@ pub(super) async fn read_files(
             },
             None => None,
         };
+        if found
+            .as_ref()
+            .is_some_and(|bytes| bytes.len() > OUTPUT_LIMIT)
+        {
+            return Err(GatewayError::OutputTooLarge {
+                op: GatewayOp::ReadFiles,
+                stream: OutputStream::Stdout,
+                limit: OUTPUT_LIMIT,
+            });
+        }
         files.push(found);
     }
-    files
+    Ok(files)
 }
 
 pub(super) async fn write_file(cell: &Arc<Cell>, file: &SandboxFile) -> Result<(), GatewayError> {
@@ -67,7 +77,12 @@ pub(super) async fn write_file(cell: &Arc<Cell>, file: &SandboxFile) -> Result<(
         name.to_string_lossy(),
         TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
-    tokio::fs::create_dir_all(dir).await.map_err(protocol)?;
+    tokio::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .await
+        .map_err(protocol)?;
     tokio::fs::write(&temp, file.content.expose())
         .await
         .map_err(protocol)?;
@@ -195,6 +210,17 @@ fn copy_tree(from: &Path, to: &Path) -> Result<(), CopyFailure> {
     Ok(())
 }
 
+fn through_a_symlink(dest: &Path, relative: &Path) -> bool {
+    relative
+        .ancestors()
+        .skip(1)
+        .filter(|ancestor| !ancestor.as_os_str().is_empty())
+        .any(|ancestor| {
+            std::fs::symlink_metadata(dest.join(ancestor))
+                .is_ok_and(|meta| meta.file_type().is_symlink())
+        })
+}
+
 fn upload_failure(note: &str) -> GatewayError {
     GatewayError::Transfer {
         op: TransferOp::UploadFiltered,
@@ -213,6 +239,7 @@ pub(super) async fn upload_tree(
     if cancel.is_cancelled() {
         return Err(GatewayError::Cancelled {
             op: GatewayOp::UploadTree,
+            group: None,
         });
     }
     let dest = writable(root, dest)?;
@@ -236,10 +263,18 @@ pub(super) async fn upload_tree(
         for relative in &present {
             require_supported(&source.join(relative))?;
         }
+        let mut refused = Vec::new();
         for relative in &present {
-            copy_entry(&source.join(relative), &dest.join(relative))?;
+            if through_a_symlink(&dest, relative) {
+                refused.push(format!(
+                    "tar: {}: Cannot open: Not a directory",
+                    relative.display()
+                ));
+            } else {
+                copy_entry(&source.join(relative), &dest.join(relative))?;
+            }
         }
-        Ok::<(), CopyFailure>(())
+        Ok::<Vec<String>, CopyFailure>(refused)
     })
     .await
     .map_err(protocol)?
@@ -249,6 +284,16 @@ pub(super) async fn upload_tree(
             path.display()
         )),
         CopyFailure::Io(error) => protocol(error),
+    })
+    .and_then(|refused| {
+        if refused.is_empty() {
+            Ok(())
+        } else {
+            Err(upload_failure(&format!(
+                "sandbox upload failed: extraction exited with status 2: {}\ntar: Exiting with failure status due to previous errors",
+                refused.join("\n")
+            )))
+        }
     })
 }
 
@@ -262,6 +307,7 @@ pub(super) async fn upload_file(
     if cancel.is_cancelled() {
         return Err(GatewayError::Cancelled {
             op: GatewayOp::UploadFile,
+            group: None,
         });
     }
     let target = writable(root, dest)?;
@@ -301,17 +347,22 @@ pub(super) async fn upload_file(
     }
 }
 
-pub(super) async fn edit_host(edit: &super::HostEdit) -> Result<(), GatewayError> {
+pub(crate) async fn apply_host_edit(edit: &super::HostEdit) -> std::io::Result<()> {
     match edit {
-        super::HostEdit::Write { path, bytes } => tokio::fs::write(path.as_path(), bytes)
-            .await
-            .map_err(protocol),
+        super::HostEdit::Write { path, bytes } => tokio::fs::write(path.as_path(), bytes).await,
         super::HostEdit::Chmod { path, mode } => {
             tokio::fs::set_permissions(path.as_path(), std::fs::Permissions::from_mode(mode.0))
                 .await
-                .map_err(protocol)
+        }
+        super::HostEdit::Symlink { path, target } => {
+            tokio::fs::remove_file(path.as_path()).await?;
+            tokio::fs::symlink(target.as_path(), path.as_path()).await
         }
     }
+}
+
+pub(super) async fn edit_host(edit: &super::HostEdit) -> Result<(), GatewayError> {
+    apply_host_edit(edit).await.map_err(protocol)
 }
 
 pub(super) fn upload_absent(op: TransferOp) -> GatewayError {

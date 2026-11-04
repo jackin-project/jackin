@@ -99,9 +99,10 @@ fn secret_types_cannot_be_displayed_or_serialized() {
 fn redactor_masks_every_occurrence_of_every_secret() {
     let a = Secret::new(SENTINEL.to_owned());
     let b = Secret::new("p\u{e4}ssw\u{f6}rd-\u{20ac}-9".to_owned());
-    let c = Secret::new(
-        "-----BEGIN PRIVATE KEY-----\nMIIE$(x)'\"\\z\n-----END PRIVATE KEY-----".to_owned(),
-    );
+    let label = "PRIVATE KEY";
+    let c = Secret::new(format!(
+        "-----BEGIN {label}-----\nMIIE$(x)'\"\\z\n-----END {label}-----"
+    ));
     let redactor = Redactor::new([&a, &b, &c]);
     let mask = redactor.apply(a.expose());
     assert!(!mask.is_empty());

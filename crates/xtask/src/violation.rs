@@ -30,6 +30,15 @@ impl Violation {
         }
     }
 
+    pub(crate) fn general(step: CiStep, message: impl Into<String>) -> Self {
+        Self {
+            step,
+            path: None,
+            line: None,
+            message: message.into(),
+        }
+    }
+
     pub(crate) fn at_file(step: CiStep, path: &Path, message: impl Into<String>) -> Self {
         Self {
             step,

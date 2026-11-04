@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_session::{ExportReport, Uncommitted};
+
 use crate::app::App;
 use crate::cli::SandboxArg;
 use crate::error::CommandError;
@@ -11,17 +13,38 @@ pub(crate) async fn run(app: &mut App, arg: SandboxArg) -> Result<(), CommandErr
     let report = session
         .export(&config, &arg.sandbox, app.cancel.clone())
         .await?;
-    for branch in &report.branches {
-        app.io
-            .line(&format!("{}\t{}", branch.host_ref, branch.tip))?;
+    let ExportReport {
+        sandbox,
+        bundle: _,
+        branches,
+        detached,
+        worktrees,
+        uncommitted,
+    } = report;
+    let published = branches
+        .iter()
+        .map(|branch| (&branch.host_ref, &branch.tip))
+        .chain(detached.iter().map(|head| (&head.host_ref, &head.tip)))
+        .chain(
+            worktrees
+                .iter()
+                .map(|worktree| (&worktree.host_ref, &worktree.tip)),
+        );
+    let mut any = false;
+    for (host_ref, tip) in published {
+        app.io.line(&format!("{host_ref}\t{tip}"))?;
+        any = true;
     }
-    if let Some(detached) = &report.detached {
-        app.io
-            .line(&format!("{}\t{}", detached.host_ref, detached.tip))?;
-    }
-    if report.branches.is_empty() && report.detached.is_none() {
-        app.io
-            .note(&format!("sandbox {} has nothing to export", report.sandbox));
+    match uncommitted {
+        Uncommitted::Changes(_) => app.io.note(&format!(
+            "sandbox {sandbox} has uncommitted work; uncommitted work is not exported, so commit it in the sandbox first and export again"
+        )),
+        Uncommitted::Unchecked => app.io.note(&format!(
+            "sandbox {sandbox}: jackin could not check for uncommitted work; uncommitted work is not exported, so commit it in the sandbox first"
+        )),
+        Uncommitted::Clean if !any => app.io
+            .note(&format!("sandbox {sandbox} has nothing to export")),
+        Uncommitted::Clean => {}
     }
     Ok(())
 }

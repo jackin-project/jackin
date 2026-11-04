@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,10 @@ use thiserror::Error;
 
 use crate::agent::Agent;
 use crate::display::plain;
-use crate::ids::{AccountName, IdError, ImageId, ImageLabel, LaunchId, RoleName, WorkspaceName};
+use crate::docker::{CaFingerprint, DockerLabel};
+use crate::ids::{
+    AccountName, IdError, ImageId, ImageLabel, LaunchId, PolicyLabel, RoleName, WorkspaceName,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LabelKey(String);
@@ -26,6 +29,7 @@ pub struct PlannedLabels {
     pub role: RoleName,
     pub agent: Agent,
     pub account: AccountName,
+    pub policy: PolicyLabel,
     pub launch: LaunchId,
 }
 
@@ -33,6 +37,14 @@ pub struct PlannedLabels {
 pub struct SandboxLabels {
     pub planned: PlannedLabels,
     pub image: ImageLabel,
+    pub docker: DockerLabel,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LabelDifference {
+    pub key: LabelKey,
+    pub found: LabelValue,
+    pub wanted: LabelValue,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,8 +71,12 @@ const WORKSPACE: &str = "jackin.dev/workspace";
 const ROLE: &str = "jackin.dev/role";
 const AGENT: &str = "jackin.dev/agent";
 const ACCOUNT: &str = "jackin.dev/account";
+const POLICY: &str = "jackin.dev/policy";
 const IMAGE: &str = "jackin.dev/image";
 const LAUNCH: &str = "jackin.dev/launch";
+const DOCKER: &str = "jackin.dev/docker";
+const ENGINE_PREFIX: &str = "engine-";
+const ABSENT: &str = "(none)";
 
 impl fmt::Display for LabelKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -74,15 +90,26 @@ impl fmt::Display for LabelValue {
     }
 }
 
+impl fmt::Display for LabelDifference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} is {} on the sandbox and {} in this launch",
+            self.key, self.found, self.wanted
+        )
+    }
+}
+
 fn pair(key: &str, value: &str) -> (LabelKey, LabelValue) {
     (LabelKey(key.to_owned()), LabelValue(value.to_owned()))
 }
 
 impl PlannedLabels {
-    pub fn complete(self, image: &ImageId) -> SandboxLabels {
+    pub fn complete(self, image: &ImageId, docker: DockerLabel) -> SandboxLabels {
         SandboxLabels {
             planned: self,
             image: image.label_value(),
+            docker,
         }
     }
 }
@@ -96,8 +123,10 @@ impl SandboxLabels {
             pair(ROLE, planned.role.as_str()),
             pair(AGENT, planned.agent.as_str()),
             pair(ACCOUNT, planned.account.as_str()),
+            pair(POLICY, planned.policy.as_str()),
             pair(IMAGE, self.image.as_str()),
             pair(LAUNCH, planned.launch.as_str()),
+            pair(DOCKER, &docker_value(self.docker)),
         ]))
     }
 
@@ -113,11 +142,41 @@ impl SandboxLabels {
                 role: labels.parsed(ROLE, RoleName::parse)?,
                 agent,
                 account: labels.parsed(ACCOUNT, AccountName::parse)?,
+                policy: labels.parsed(POLICY, PolicyLabel::parse)?,
                 launch: labels.parsed(LAUNCH, LaunchId::parse)?,
             },
             image: labels.parsed(IMAGE, ImageLabel::parse)?,
+            docker: docker_label(labels.value(DOCKER)?)?,
         })
     }
+}
+
+fn docker_value(label: DockerLabel) -> String {
+    match label {
+        DockerLabel::Off => "off".to_owned(),
+        DockerLabel::Engine { port, ca } => format!("{ENGINE_PREFIX}{port}-{ca}"),
+    }
+}
+
+fn docker_label(value: &str) -> Result<DockerLabel, LabelError> {
+    if value == "off" {
+        return Ok(DockerLabel::Off);
+    }
+    let parsed = value
+        .strip_prefix(ENGINE_PREFIX)
+        .and_then(|rest| rest.split_once('-'))
+        .and_then(|(port, ca)| {
+            let canonical =
+                !port.starts_with('0') && port.bytes().all(|byte| byte.is_ascii_digit());
+            Some(DockerLabel::Engine {
+                port: canonical.then(|| port.parse().ok()).flatten()?,
+                ca: CaFingerprint::parse(ca)?,
+            })
+        });
+    parsed.ok_or_else(|| LabelError::InvalidValue {
+        key: DOCKER.to_owned(),
+        reason: "is neither off nor an engine port with a CA fingerprint",
+    })
 }
 
 fn label_name_problem(name: &str) -> Option<&'static str> {
@@ -190,6 +249,23 @@ impl Labels {
             labels.insert(LabelKey(key), LabelValue(value));
         }
         Ok(Labels(labels))
+    }
+
+    pub fn differences(&self, wanted: &SandboxLabels) -> Vec<LabelDifference> {
+        let wanted = wanted.to_labels();
+        let absent = LabelValue(ABSENT.to_owned());
+        let keys: BTreeSet<&LabelKey> = self.0.keys().chain(wanted.0.keys()).collect();
+        keys.into_iter()
+            .filter_map(|key| {
+                let found = self.0.get(key).unwrap_or(&absent);
+                let wanted = wanted.0.get(key).unwrap_or(&absent);
+                (found != wanted).then(|| LabelDifference {
+                    key: key.clone(),
+                    found: found.clone(),
+                    wanted: wanted.clone(),
+                })
+            })
+            .collect()
     }
 
     pub fn is_managed(&self) -> bool {

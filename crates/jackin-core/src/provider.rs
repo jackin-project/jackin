@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::agent::Agent;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
     Amp,
@@ -77,6 +77,25 @@ impl Provider {
             | Provider::Minimax
             | Provider::Muse
             | Provider::Opencode
+            | Provider::Openrouter
+            | Provider::Zai => None,
+        }
+    }
+
+    pub fn login_file(self) -> Option<&'static str> {
+        match self {
+            Provider::Amp => Some("secrets.json"),
+            Provider::Claude => Some(".credentials.json"),
+            Provider::Codex
+            | Provider::Cursor
+            | Provider::Grok
+            | Provider::Muse
+            | Provider::Opencode => Some("auth.json"),
+            Provider::Gemini => Some("oauth_creds.json"),
+            Provider::Kimi => Some("credentials/kimi-code.json"),
+            Provider::Antigravity
+            | Provider::Hermes
+            | Provider::Minimax
             | Provider::Openrouter
             | Provider::Zai => None,
         }

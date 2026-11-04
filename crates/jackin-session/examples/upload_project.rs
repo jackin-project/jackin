@@ -10,18 +10,19 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use jackin_core::{
-    AccountName, Agent, FileMode, FileSystem, GatewayName, HostPath, ImageId, ImageTag, LaunchId,
-    NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, ProcessRunner, ProcessSpec,
-    ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName, SandboxName, SandboxPath,
-    SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
+    AccountName, Agent, ConfigStore, FileMode, FileSystem, GatewayName, HostPath, ImageId,
+    ImageTag, LaunchId, NameSuffix, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel,
+    ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName,
+    SandboxName, SandboxPath, SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
 };
-use jackin_openshell::contract::{ContractFixture, ContractGroup, run};
+use jackin_openshell::contract::{ContractFixture, ContractGroup, SHELL_END_TIMEOUT, run};
 use jackin_openshell::{
     ClosedPolicy, Gateway, GrpcGateway, GrpcGatewayConfig, MainProcess, ProgramRun, ProgramStdin,
     SandboxCreate, SandboxFile, SandboxQuery, resolve_gateway,
 };
 use jackin_session::{
-    DEFAULT_BUNDLE_BYTES, HostPorts, LaunchLimits, Session, SessionDeps, SystemClock,
+    DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
+    DEFAULT_EXPORT_TOTAL_BYTES, HostPorts, LaunchLimits, Session, SessionDeps, SystemClock,
     TokioProcessRunner,
 };
 use jackin_testkit::FakeEngine;
@@ -42,7 +43,7 @@ filesystem_policy:
     - /sandbox
     - /dev/null
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox
@@ -215,6 +216,11 @@ impl Live {
                 runner: Arc::clone(&port),
             },
             cache_dir: HostPath::parse(&work.join("cache"))?,
+            config: ConfigStore::new(
+                Arc::clone(&fs),
+                Arc::new(SystemClock),
+                HostPath::parse(&work.join("config.toml"))?,
+            ),
             limits: LaunchLimits {
                 ready: Duration::from_secs(120),
                 supervisor: Duration::from_secs(60),
@@ -223,6 +229,9 @@ impl Live {
                 upload: Duration::from_secs(3600),
                 create_attempts: NonZeroU8::MIN,
                 bundle_bytes: DEFAULT_BUNDLE_BYTES,
+                export_entry_bytes: DEFAULT_EXPORT_ENTRY_BYTES,
+                export_objects: DEFAULT_EXPORT_OBJECTS,
+                export_total_bytes: DEFAULT_EXPORT_TOTAL_BYTES,
             },
         });
         let project = ProjectRoot::open(
@@ -246,13 +255,14 @@ impl Live {
             role: RoleName::parse("p51b")?,
             agent: Agent::Codex,
             account: AccountName::parse("p51b")?,
+            policy: PolicyLabel::of("policy"),
             launch: launch.clone(),
         };
         let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64)))?;
         let create = SandboxCreate::new(
             name.clone(),
             ImageTag::parse(&self.options.image)?,
-            planned.complete(&image_id),
+            planned.complete(&image_id, jackin_core::DockerLabel::Off),
             Vec::new(),
             ClosedPolicy::parse(POLICY)?,
             MainProcess {
@@ -588,6 +598,7 @@ impl Live {
             image: ImageTag::parse(&self.options.image)?,
             project: self.project.clone(),
             name_prefix: SandboxSlug::parse("ctr")?,
+            shell_end_timeout: SHELL_END_TIMEOUT,
         };
         for (label, group) in [
             ("Core", ContractGroup::Core),

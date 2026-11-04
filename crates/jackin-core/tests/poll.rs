@@ -38,6 +38,10 @@ impl Clock for VirtualClock {
         Timestamp(i64::try_from(self.elapsed().as_secs()).unwrap_or(i64::MAX))
     }
 
+    fn utc_offset_secs(&self) -> i32 {
+        0
+    }
+
     async fn sleep(&self, duration: Duration) {
         *self.elapsed.lock().unwrap_or_else(PoisonError::into_inner) += duration;
     }
@@ -176,6 +180,10 @@ impl GateClock {
 impl Clock for GateClock {
     fn now(&self) -> Timestamp {
         Timestamp(0)
+    }
+
+    fn utc_offset_secs(&self) -> i32 {
+        0
     }
 
     async fn sleep(&self, duration: Duration) {

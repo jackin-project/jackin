@@ -7,13 +7,13 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, CredentialKeys, EnvName, FileMode, HostPath, ImageId,
-    ImageTag, LabelSelector, LaunchId, NameSuffix, Phase, PlannedLabels, ProcessStatus,
-    ProfileAsset, ProfileId, ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath,
-    SandboxSlug, Secret, SecretBytes, Sha256, StdFileSystem, WorkspaceName,
+    ImageTag, LabelSelector, LaunchId, NameSuffix, OutputStream, Phase, PlannedLabels, PolicyLabel,
+    ProcessStatus, ProfileAsset, ProfileId, ProjectRoot, ProviderName, RoleName, SandboxName,
+    SandboxPath, SandboxSlug, Secret, SecretBytes, Sha256, StdFileSystem, WorkspaceName,
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::error::{GatewayError, Missing, TransferOp};
+use crate::error::{GatewayError, GatewayOp, Missing, TransferOp};
 use crate::gateway::{
     Gateway, MainProcess, PowerAction, ProfileSync, ProgramRun, ProgramStdin, ProviderMaterial,
     ProviderSpec, ProviderState, Provisioning, SandboxCreate, SandboxFile, SandboxQuery,
@@ -25,15 +25,18 @@ use crate::terminal::{
     TerminalRequest, TerminalSession,
 };
 
-pub const CORE_CHECKS: [&str; 15] = [
+pub const CORE_CHECKS: [&str; 18] = [
     "create_find_by_label",
+    "created_at_is_reported_and_stable",
     "create_duplicate_name",
+    "sandbox_environment_is_the_create_request",
     "absent_sandbox_is_not_found",
     "provisioning_failed_reported",
     "program_exit_code_and_stdin",
     "touch_on_success",
     "write_file_mode_and_atomicity",
     "read_missing_file",
+    "output_over_the_limit_is_an_error",
     "profile_import_unchanged_updated",
     "provider_put_and_delete",
     "delete_provider_while_attached_is_refused",
@@ -43,7 +46,7 @@ pub const CORE_CHECKS: [&str; 15] = [
     "delete_sandbox",
 ];
 
-pub const TRANSFER_CHECKS: [&str; 7] = [
+pub const TRANSFER_CHECKS: [&str; 8] = [
     "upload_tree",
     "upload_file_with_digest",
     "download_with_digest",
@@ -51,6 +54,7 @@ pub const TRANSFER_CHECKS: [&str; 7] = [
     "download_pre_cancelled_is_cancelled",
     "upload_absent_sandbox_is_a_transfer_error",
     "upload_stopped_sandbox_is_a_transfer_error",
+    "upload_through_a_symlinked_parent_is_a_transfer_error",
 ];
 
 pub const TERMINAL_CHECKS: [&str; 6] = [
@@ -62,9 +66,51 @@ pub const TERMINAL_CHECKS: [&str; 6] = [
     "main_ended_is_refused",
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NudgeCase {
+    pub name: &'static str,
+    pub open: (u16, u16),
+    pub resize_before: &'static [(u16, u16)],
+    pub nudge: bool,
+    pub windows: &'static [(u16, u16)],
+}
+
+pub const NUDGE_CASES: [NudgeCase; 4] = [
+    NudgeCase {
+        name: "the nudge shrinks one row and restores it at the attach size",
+        open: (100, 30),
+        resize_before: &[],
+        nudge: true,
+        windows: &[(100, 29), (100, 30)],
+    },
+    NudgeCase {
+        name: "a resize before the nudge is not overwritten",
+        open: (100, 30),
+        resize_before: &[(80, 20)],
+        nudge: true,
+        windows: &[(80, 20), (80, 19), (80, 20)],
+    },
+    NudgeCase {
+        name: "a one-row terminal is not nudged",
+        open: (100, 1),
+        resize_before: &[],
+        nudge: true,
+        windows: &[],
+    },
+    NudgeCase {
+        name: "a policy of never repaints nothing",
+        open: (100, 30),
+        resize_before: &[(90, 25)],
+        nudge: false,
+        windows: &[(90, 25)],
+    },
+];
+
+const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 const POLL_ATTEMPTS: usize = 240;
 const PROGRAM_TIMEOUT: Duration = Duration::from_secs(60);
+pub const SHELL_END_TIMEOUT: Duration = Duration::from_secs(60);
 const MISSING_IMAGE: &str = "jackin.invalid/contract-missing:0000000000000000";
 const BANNER: &str = "contract-banner";
 const CTRL_C: u8 = 0x03;
@@ -86,7 +132,7 @@ filesystem_policy:
     - /sandbox
     - /dev/null
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox
@@ -157,6 +203,7 @@ pub struct ContractFixture {
     pub image: ImageTag,
     pub project: ProjectRoot,
     pub name_prefix: SandboxSlug,
+    pub shell_end_timeout: Duration,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -220,13 +267,14 @@ impl Ctx<'_> {
             role: RoleName::parse("contract").map_err(text)?,
             agent: Agent::Codex,
             account: AccountName::parse("contract").map_err(text)?,
+            policy: PolicyLabel::of("policy"),
             launch: launch.clone(),
         };
         let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64))).map_err(text)?;
         Ok(SandboxCreate::new(
             name,
             image.clone(),
-            planned.complete(&image_id),
+            planned.complete(&image_id, jackin_core::DockerLabel::Off),
             providers,
             ClosedPolicy::parse(CONTRACT_POLICY).map_err(text)?,
             main,
@@ -333,6 +381,19 @@ impl Ctx<'_> {
         stdin: ProgramStdin,
         touch: Option<SandboxPath>,
     ) -> Outcome<crate::gateway::ProgramOutcome> {
+        self.exec_typed(sandbox, script, arguments, stdin, touch)
+            .await?
+            .map_err(text)
+    }
+
+    async fn exec_typed(
+        &self,
+        sandbox: &SandboxName,
+        script: &str,
+        arguments: &[&str],
+        stdin: ProgramStdin,
+        touch: Option<SandboxPath>,
+    ) -> Outcome<Result<crate::gateway::ProgramOutcome, GatewayError>> {
         let mut args = vec!["-c".to_owned(), script.to_owned(), "contract".to_owned()];
         args.extend(arguments.iter().map(|argument| (*argument).to_owned()));
         let run = ProgramRun {
@@ -345,10 +406,10 @@ impl Ctx<'_> {
             touch_on_success: touch,
             timeout: PROGRAM_TIMEOUT,
         };
-        self.gateway
+        Ok(self
+            .gateway
             .run_program(&run, &CancellationToken::new())
-            .await
-            .map_err(text)
+            .await)
     }
 }
 
@@ -379,6 +440,45 @@ async fn create_find_by_label(ctx: &Ctx<'_>) -> Outcome<()> {
         jackin_core::SandboxLabels::from_labels(&found[0].labels)
             .is_ok_and(|labels| labels == *spec.labels()),
         "the stored labels differ from the requested labels",
+    )
+}
+
+async fn created_at_is_reported_and_stable(ctx: &Ctx<'_>) -> Outcome<()> {
+    let launch = fresh_launch()?;
+    let spec = ctx.spec(
+        &launch,
+        &ctx.fixture.image,
+        Ctx::main("/bin/sh", &["-c", "sleep 3600"])?,
+    )?;
+    let made = ctx.gateway.create_sandbox(&spec).await.map_err(text)?;
+    let ready = ctx
+        .wait_for(spec.name(), "Ready", |view| view.phase == Phase::Ready)
+        .await;
+    ctx.cleanup(spec.name()).await;
+    let ready = ready?;
+    expect(
+        made.created_at.is_some_and(|created| created.0 > 0),
+        "a created sandbox reports no creation time",
+    )?;
+    expect(
+        ready.created_at == made.created_at,
+        "the creation time changed between the create reply and the Ready view",
+    )
+}
+
+async fn sandbox_environment_is_the_create_request(ctx: &Ctx<'_>) -> Outcome<()> {
+    let launch = fresh_launch()?;
+    let spec = ctx.spec(
+        &launch,
+        &ctx.fixture.image,
+        Ctx::main("/bin/sh", &["-c", "sleep 3600"])?,
+    )?;
+    ctx.gateway.create_sandbox(&spec).await.map_err(text)?;
+    let seen = ctx.gateway.sandbox_environment(spec.name()).await;
+    ctx.cleanup(spec.name()).await;
+    expect(
+        seen.map_err(text)? == spec.environment(),
+        "the stored environment differs from the create request",
     )
 }
 
@@ -442,6 +542,10 @@ async fn absent_sandbox_is_not_found(ctx: &Ctx<'_>) -> Outcome<()> {
                 .map(drop),
         ),
         ("write_file", gateway.write_file(&name, &file).await),
+        (
+            "sandbox_environment",
+            gateway.sandbox_environment(&name).await.map(drop),
+        ),
         (
             "open_terminal(Shell)",
             gateway.open_terminal(&shell).await.map(drop),
@@ -596,7 +700,7 @@ async fn write_file_mode_and_atomicity(ctx: &Ctx<'_>) -> Outcome<()> {
         let listing = ctx
             .exec(
                 &sandbox,
-                "find \"$1\" -perm 600 -type f; ls -A \"$1\"",
+                "find \"$1\" -perm 600 -type f; find \"$1\" -maxdepth 0 -perm 700 -type d; ls -A \"$1\"",
                 &["/sandbox/.contract"],
                 ProgramStdin::Closed,
                 None,
@@ -605,12 +709,16 @@ async fn write_file_mode_and_atomicity(ctx: &Ctx<'_>) -> Outcome<()> {
         let listing = String::from_utf8_lossy(&listing.stdout).into_owned();
         expect(listing.contains("secret.json"), "the mode is not 0600")?;
         expect(
+            listing.lines().any(|line| line.ends_with("/.contract")),
+            "the new parent directory is not 0700",
+        )?;
+        expect(
             listing
                 .lines()
                 .filter(|line| line.contains("secret.json"))
                 .count()
                 == 2
-                && listing.lines().count() == 2,
+                && listing.lines().count() == 3,
             "a temporary file is left behind",
         )
     }
@@ -632,6 +740,113 @@ async fn read_missing_file(ctx: &Ctx<'_>) -> Outcome<()> {
         read? == vec![None],
         "a missing file is not reported as None",
     )
+}
+
+fn output_too_large(
+    found: &Result<impl std::fmt::Debug, GatewayError>,
+    op: GatewayOp,
+    stream: OutputStream,
+) -> Outcome<()> {
+    expect(
+        matches!(
+            found,
+            Err(GatewayError::OutputTooLarge { op: seen, stream: seen_stream, limit })
+                if *seen == op && *seen_stream == stream && *limit == OUTPUT_LIMIT
+        ),
+        &format!(
+            "an output over {OUTPUT_LIMIT} bytes is not an OutputTooLarge error of {op:?} on {stream:?}"
+        ),
+    )
+}
+
+async fn output_over_the_limit_is_an_error(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let result = async {
+        let emit = |bytes: usize| format!("yes | head -c {bytes}");
+        let at_limit = ctx
+            .exec(
+                &sandbox,
+                &emit(OUTPUT_LIMIT),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        expect(
+            at_limit.stdout.len() == OUTPUT_LIMIT,
+            "an output of exactly the limit is not returned whole",
+        )?;
+        let over = ctx
+            .exec_typed(
+                &sandbox,
+                &emit(OUTPUT_LIMIT + 1),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        output_too_large(&over, GatewayOp::Program, OutputStream::Stdout)?;
+
+        let emit_err = |bytes: usize| format!("yes | head -c {bytes} >&2");
+        let err_at_limit = ctx
+            .exec(
+                &sandbox,
+                &emit_err(OUTPUT_LIMIT),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        expect(
+            err_at_limit.stderr.len() == OUTPUT_LIMIT,
+            "a stderr of exactly the limit is not returned whole",
+        )?;
+        let err_over = ctx
+            .exec_typed(
+                &sandbox,
+                &emit_err(OUTPUT_LIMIT + 1),
+                &[],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        output_too_large(&err_over, GatewayOp::Program, OutputStream::Stderr)?;
+
+        let big = path("/sandbox/.contract/big")?;
+        ctx.exec(
+            &sandbox,
+            &format!("mkdir -p \"${{1%/*}}\" && {} > \"$1\"", emit(OUTPUT_LIMIT)),
+            &[big.as_str()],
+            ProgramStdin::Closed,
+            None,
+        )
+        .await?;
+        let whole = ctx
+            .gateway
+            .read_files(&sandbox, std::slice::from_ref(&big))
+            .await
+            .map_err(text)?;
+        expect(
+            whole.first().and_then(Option::as_ref).map(Vec::len) == Some(OUTPUT_LIMIT),
+            "a file of exactly the limit is not read whole",
+        )?;
+        ctx.exec(
+            &sandbox,
+            "printf x >> \"$1\"",
+            &[big.as_str()],
+            ProgramStdin::Closed,
+            None,
+        )
+        .await?;
+        let over = ctx
+            .gateway
+            .read_files(&sandbox, std::slice::from_ref(&big))
+            .await;
+        output_too_large(&over, GatewayOp::ReadFiles, OutputStream::Stdout)
+    }
+    .await;
+    ctx.cleanup(&sandbox).await;
+    result
 }
 
 fn contract_profile() -> Outcome<ProfileId> {
@@ -735,6 +950,14 @@ async fn provider_put_and_delete(ctx: &Ctx<'_>) -> Outcome<()> {
         expect(
             provider_state_is(ctx, &name, ProviderState::Absent).await?,
             "the provider is present after a delete",
+        )?;
+        ctx.gateway
+            .delete_provider(&name)
+            .await
+            .map_err(|error| format!("the second delete_provider failed: {error}"))?;
+        expect(
+            provider_state_is(ctx, &name, ProviderState::Absent).await?,
+            "the provider is present after the second delete",
         )
     }
     .await;
@@ -877,12 +1100,15 @@ async fn host_git(dir: &Path, args: &[&str]) -> Outcome<()> {
         args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
     );
     let status = tokio::task::spawn_blocking(move || {
-        std::process::Command::new("/usr/bin/git")
+        let mut command = std::process::Command::new("/usr/bin/git");
+        for (name, _) in std::env::vars_os() {
+            if name.as_encoded_bytes().starts_with(b"GIT_") {
+                command.env_remove(name);
+            }
+        }
+        command
             .args(&args)
             .current_dir(&dir)
-            .env_remove("GIT_DIR")
-            .env_remove("GIT_WORK_TREE")
-            .env_remove("GIT_INDEX_FILE")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .stdin(std::process::Stdio::null())
@@ -1167,6 +1393,75 @@ async fn upload_stopped_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()
     result
 }
 
+async fn symlinked_parent_project(dir: &Path) -> Outcome<ProjectRoot> {
+    let project = dir.join("project");
+    let outside = dir.join("outside");
+    for place in [project.join("d"), outside.clone()] {
+        tokio::fs::create_dir_all(place).await.map_err(text)?;
+    }
+    tokio::fs::write(project.join("d/f.txt"), "inside\n")
+        .await
+        .map_err(text)?;
+    tokio::fs::write(outside.join("f.txt"), "outside\n")
+        .await
+        .map_err(text)?;
+    host_git(&project, &["init", "-q"]).await?;
+    host_git(&project, &["add", "d/f.txt"]).await?;
+    tokio::fs::remove_dir_all(project.join("d"))
+        .await
+        .map_err(text)?;
+    tokio::fs::symlink(&outside, project.join("d"))
+        .await
+        .map_err(text)?;
+    ProjectRoot::open(
+        &StdFileSystem::default(),
+        &HostPath::parse(&project).map_err(text)?,
+    )
+    .await
+    .map_err(text)
+}
+
+async fn upload_through_a_symlinked_parent_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()> {
+    let sandbox = ctx.sleeper().await?;
+    let dir = scratch_dir("symlinked-parent")?;
+    let result = async {
+        let project = symlinked_parent_project(&dir).await?;
+        let uploaded = ctx
+            .gateway
+            .upload_tree(
+                &sandbox,
+                &project,
+                &path("/sandbox/project")?,
+                &CancellationToken::new(),
+            )
+            .await;
+        refused_upload(
+            &uploaded,
+            TransferOp::UploadFiltered,
+            "tar",
+            "ready",
+            "a tree upload through a symlinked parent",
+        )?;
+        let listing = ctx
+            .exec(
+                &sandbox,
+                "find \"$1\" -type f -name f.txt 2>/dev/null",
+                &["/sandbox/project"],
+                ProgramStdin::Closed,
+                None,
+            )
+            .await?;
+        expect(
+            !String::from_utf8_lossy(&listing.stdout).contains("/d/f.txt"),
+            "the file behind the symlinked parent landed in the sandbox",
+        )
+    }
+    .await;
+    drop(tokio::fs::remove_dir_all(&dir).await);
+    ctx.cleanup(&sandbox).await;
+    result
+}
+
 fn scratch_download() -> Outcome<HostPath> {
     let local = std::env::temp_dir().join(format!("jackin-contract-{}.bin", fresh_launch()?));
     HostPath::parse(&local).map_err(text)
@@ -1347,7 +1642,7 @@ async fn shell_exit_code(ctx: &Ctx<'_>) -> Outcome<()> {
         };
         let mut session = ctx.gateway.open_terminal(&request).await.map_err(text)?;
         session.input(b"exit 3\n".to_vec()).await.map_err(text)?;
-        let exit = tokio::time::timeout(PROGRAM_TIMEOUT, async {
+        let exit = tokio::time::timeout(ctx.fixture.shell_end_timeout, async {
             let mut exit = None;
             while let Some(event) = session.next_event().await {
                 if let TerminalEvent::Exited(code) = event {
@@ -1637,7 +1932,19 @@ pub async fn run(
     match group {
         ContractGroup::Core => {
             check!(checks, ctx, "create_find_by_label", create_find_by_label);
+            check!(
+                checks,
+                ctx,
+                "created_at_is_reported_and_stable",
+                created_at_is_reported_and_stable
+            );
             check!(checks, ctx, "create_duplicate_name", create_duplicate_name);
+            check!(
+                checks,
+                ctx,
+                "sandbox_environment_is_the_create_request",
+                sandbox_environment_is_the_create_request
+            );
             check!(
                 checks,
                 ctx,
@@ -1664,6 +1971,12 @@ pub async fn run(
                 write_file_mode_and_atomicity
             );
             check!(checks, ctx, "read_missing_file", read_missing_file);
+            check!(
+                checks,
+                ctx,
+                "output_over_the_limit_is_an_error",
+                output_over_the_limit_is_an_error
+            );
             check!(
                 checks,
                 ctx,
@@ -1724,6 +2037,12 @@ pub async fn run(
                 ctx,
                 "upload_stopped_sandbox_is_a_transfer_error",
                 upload_stopped_sandbox_is_a_transfer_error
+            );
+            check!(
+                checks,
+                ctx,
+                "upload_through_a_symlinked_parent_is_a_transfer_error",
+                upload_through_a_symlinked_parent_is_a_transfer_error
             );
         }
         ContractGroup::Terminal => {

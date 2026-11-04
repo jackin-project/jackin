@@ -425,3 +425,24 @@ e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/ma
 e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:104
 e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_03.rs:generic-credential-uri:18
 d84c40a1677e4e190c11f9994492aab893f8ac4b:crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs:generic-credential-uri:245
+
+# Reason: test fixture or placeholder, no credential, reviewed 2026-11-03
+# History fingerprints for betterleaks git: the jackin placeholder ID token at its first path, and prose in a deleted reconciliation note
+ddd296b40920dc19887107cca29f9204b4f8ae5e:crates/jackin-session/src/files.rs:jwt:7
+6e96df7af2d32cf9ad22b7e19227a0d1f603a46d:rewrite/reconciliation/P9.3.md:generic-password:31
+
+# Reason: prose, no credential, reviewed 2026-11-04
+# Working-tree fingerprint for betterleaks dir: the match is the quoted plan title in item 1 of the P9.3 reconciliation note ("login (plan 7.3, ...)"), which only names Session::sync_account; the same line is already listed above for betterleaks git at its first commit
+rewrite/reconciliation/P9.3.md:generic-password:31
+
+# Reason: test fixture, no credential, reviewed 2026-11-04
+# The match is the malformed-JSON fixture handed to the test helper that writes a fake Codex login in the J3 source-check test; history fingerprint at its first commit and the working-tree fingerprint
+72437ac56b02c25975b34ae0cb0dd0a7f2755ee2:crates/jackin-session/tests/sources/check.rs:generic-password:79
+crates/jackin-session/tests/sources/check.rs:generic-password:79
+
+# Reason: fake userinfo URLs that the P13.3 C2 test feeds to role add to prove the source is never echoed, and the reconciliation record that quotes them; not credentials
+# 4 finding(s); rules: generic-credential-uri; files: crates/jackin/tests/cli/role_workspace.rs (2), rewrite/reconciliation/P13.3.md (2)
+c8c07a6005841df58db667cda7d8228f1c139715:crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:249
+c8c07a6005841df58db667cda7d8228f1c139715:crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:251
+e33179dba95f4086b3752612f69d360c0d2f8a21:rewrite/reconciliation/P13.3.md:generic-credential-uri:151
+e33179dba95f4086b3752612f69d360c0d2f8a21:rewrite/reconciliation/P13.3.md:generic-credential-uri:162

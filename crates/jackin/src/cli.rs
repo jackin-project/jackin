@@ -3,12 +3,11 @@
 
 use std::num::NonZeroU16;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use jackin_core::{
     AccountName, BuilderName, EnvName, GatewayName, LaunchId, OpReference, OpenShellWorkspace,
-    Platform, Provider, RoleName, RoleRev, SandboxName, WorkspaceName,
+    PlainEnvValue, Platform, Provider, RoleName, RoleRev, SandboxName, WorkspaceName,
 };
 
 use crate::error::CommandError;
@@ -48,6 +47,8 @@ pub enum Command {
     Shell(SandboxArg),
     #[command(about = "List the jackin sandboxes")]
     Ls(JsonArg),
+    #[command(about = "Show the limit windows of each account")]
+    Usage(JsonArg),
     #[command(about = "Show a sandbox, its labels, providers, and policy status")]
     Inspect(InspectArgs),
     #[command(subcommand, about = "Manage role sources")]
@@ -63,7 +64,7 @@ pub enum GatewayCommand {
     #[command(about = "List the gateway entries")]
     Ls(JsonArg),
     #[command(about = "Remove a gateway entry")]
-    Rm(GatewayNameArg),
+    Rm(GatewayRmArgs),
 }
 
 #[derive(Debug, Subcommand)]
@@ -126,9 +127,14 @@ pub struct JsonArg {
 }
 
 #[derive(Debug, Args)]
-pub struct GatewayNameArg {
+pub struct GatewayRmArgs {
     #[arg(help = "Gateway name from the jackin config")]
     pub name: GatewayName,
+    #[arg(
+        long,
+        help = "Remove the entry without contacting the gateway; its OpenShell providers stay on it"
+    )]
+    pub offline: bool,
 }
 
 #[derive(Debug, Args)]
@@ -273,37 +279,42 @@ pub enum CredentialArg {
     File(PathBuf),
 }
 
-impl FromStr for CredentialArg {
-    type Err = String;
+const MAX_ENV_NAME: usize = 128;
 
-    fn from_str(text: &str) -> Result<CredentialArg, String> {
+impl CredentialArg {
+    pub fn parse(text: &str) -> Result<CredentialArg, CommandError> {
+        const FORMS: &str = "--credential expects env:NAME, an op:// reference, or file:PATH";
+        let bad = || CommandError::Argument(FORMS.to_owned());
         if let Some(name) = text.strip_prefix("env:") {
+            if name.len() > MAX_ENV_NAME {
+                return Err(bad());
+            }
             return EnvName::parse(name)
                 .map(CredentialArg::Env)
-                .map_err(|error| error.to_string());
+                .map_err(|_| bad());
         }
         if text.starts_with("op://") {
             return OpReference::parse(text)
                 .map(CredentialArg::OnePassword)
-                .map_err(|error| error.to_string());
+                .map_err(|_| bad());
         }
         match text.strip_prefix("file:") {
             Some(path) if !path.is_empty() => Ok(CredentialArg::File(PathBuf::from(path))),
-            _ => Err("expected env:NAME, an op:// reference, or file:PATH".to_owned()),
+            _ => Err(bad()),
         }
     }
 }
 
-fn parse_provider(text: &str) -> Result<Provider, String> {
+pub fn parse_provider(text: &str) -> Result<Provider, CommandError> {
     Provider::ALL
         .into_iter()
         .find(|provider| provider.as_str() == text)
         .ok_or_else(|| {
             let names: Vec<&str> = Provider::ALL.into_iter().map(Provider::as_str).collect();
-            format!(
-                "unknown provider {text}; expected one of {}",
+            CommandError::Argument(format!(
+                "the provider is unknown; expected one of {}",
                 names.join(", ")
-            )
+            ))
         })
 }
 
@@ -315,8 +326,8 @@ fn parse_provider(text: &str) -> Result<Provider, String> {
         .args(["chatgpt_from", "credential"])
 ))]
 pub struct AccountAddArgs {
-    #[arg(value_parser = parse_provider, help = "Provider of the account")]
-    pub provider: Provider,
+    #[arg(help = "Provider of the account")]
+    pub provider: String,
     #[arg(long, help = "Account name")]
     pub name: AccountName,
     #[arg(
@@ -330,26 +341,25 @@ pub struct AccountAddArgs {
         value_name = "SOURCE",
         help = "Credential as env:NAME, an op:// reference, or file:PATH"
     )]
-    pub credential: Option<CredentialArg>,
+    pub credential: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EnvAssignment {
     pub name: EnvName,
-    pub value: String,
+    pub value: PlainEnvValue,
 }
 
-impl FromStr for EnvAssignment {
-    type Err = String;
-
-    fn from_str(text: &str) -> Result<EnvAssignment, String> {
-        let (name, value) = text
-            .split_once('=')
-            .ok_or_else(|| "expected NAME=VALUE".to_owned())?;
-        Ok(EnvAssignment {
-            name: EnvName::parse(name).map_err(|error| error.to_string())?,
-            value: value.to_owned(),
-        })
+impl EnvAssignment {
+    pub fn parse(text: &str) -> Result<EnvAssignment, CommandError> {
+        let bad = || CommandError::Argument("--env expects NAME=VALUE".to_owned());
+        let (name, value) = text.split_once('=').ok_or_else(bad)?;
+        let name = EnvName::parse(name).map_err(|_| bad())?;
+        let value = PlainEnvValue::parse(value).map_err(|source| CommandError::EnvValue {
+            name: name.clone(),
+            source,
+        })?;
+        Ok(EnvAssignment { name, value })
     }
 }
 
@@ -370,7 +380,7 @@ pub struct LoadArgs {
         value_name = "NAME=VALUE",
         help = "Value for a role env entry"
     )]
-    pub env: Vec<EnvAssignment>,
+    pub env: Vec<String>,
 }
 
 #[derive(Debug, Args)]

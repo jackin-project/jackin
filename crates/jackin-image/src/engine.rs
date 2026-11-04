@@ -5,19 +5,33 @@ use std::fmt::Debug;
 
 use async_trait::async_trait;
 use jackin_core::{
-    BuilderName, FileLock, FsError, ImageId, ImageTag, ProcessError, ProcessStatus, TerminalText,
-    plain,
+    BuilderName, FileLock, FsError, GroupFault, ImageId, ImageTag, ProcessError, ProcessStatus,
+    TerminalText, plain,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::ensure::ProgressSink;
+use crate::inspect::ImageInspect;
 use crate::plan::{BuildStage, PlannedBuild};
 
 #[async_trait]
 pub trait ImageEngine: Send + Sync + Debug {
-    async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, EngineError>;
-    async fn check_builder(&self, builder: &BuilderName) -> Result<(), EngineError>;
+    async fn find(
+        &self,
+        tag: &ImageTag,
+        cancel: &CancellationToken,
+    ) -> Result<Option<ImageId>, EngineError>;
+    async fn inspect(
+        &self,
+        id: &ImageId,
+        cancel: &CancellationToken,
+    ) -> Result<ImageInspect, EngineError>;
+    async fn check_builder(
+        &self,
+        builder: &BuilderName,
+        cancel: &CancellationToken,
+    ) -> Result<(), EngineError>;
     async fn hold(
         &self,
         _key: &ImageTag,
@@ -66,6 +80,8 @@ pub enum EngineError {
         status: ProcessStatus,
         output: TerminalText,
     },
+    #[error("cannot read the layers and the configuration of {id}:\n{}", .output.as_str())]
+    InspectUnreadable { id: ImageId, output: TerminalText },
     #[error("the build context cannot hold {}: it {problem}", plain(.path))]
     ContextEntry {
         path: String,
@@ -79,6 +95,6 @@ pub enum EngineError {
     Fs(#[from] FsError),
     #[error("gave up waiting for another process to finish building {key}")]
     LockTimeout { key: ImageTag },
-    #[error("cancelled")]
-    Cancelled,
+    #[error("cancelled{}", GroupFault::note(.group.as_ref()))]
+    Cancelled { group: Option<GroupFault> },
 }

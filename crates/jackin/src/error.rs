@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    CompatibilityError, ConfigError, EntropyError, FsError, HostPath, PathError, plain,
+    CompatibilityError, ConfigError, EntropyError, EnvName, EnvValueError, FsError, GroupFault,
+    HostPath, PathError, plain,
 };
 use jackin_image::ImageError;
 use jackin_openshell::GatewayError;
 use jackin_session::{
-    AccountError, AttachError, CredentialError, ExportError, LaunchFailure, LifecycleError,
-    PlanError, PurgeError, RestartError, RoleError,
+    AccountEditError, AccountError, AttachError, BuildError, ConnectError, CredentialError,
+    ExportError, LaunchFailure, LifecycleError, LockError, PlanError, PurgeError, RestartError,
+    RoleError, WorkspaceGuardError,
 };
 use jackin_tui::ConsoleError;
+use jackin_usage::UsageError;
 use thiserror::Error;
-
-use crate::app::ConnectError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ExitClass {
@@ -40,6 +41,12 @@ impl ExitClass {
 pub enum CommandError {
     #[error("{}", plain(.0))]
     Argument(String),
+    #[error("--env {name} is refused")]
+    EnvValue {
+        name: EnvName,
+        #[source]
+        source: EnvValueError,
+    },
     #[error(transparent)]
     Config(#[from] ConfigError),
     #[error(transparent)]
@@ -68,6 +75,10 @@ pub enum CommandError {
     Purge(#[from] PurgeError),
     #[error(transparent)]
     Account(#[from] AccountError),
+    #[error(transparent)]
+    Accounts(AccountEditError),
+    #[error(transparent)]
+    WorkspaceInUse(#[from] WorkspaceGuardError),
     #[error("cannot import the ChatGPT login from {}", .home.as_path().display())]
     Login {
         home: HostPath,
@@ -87,6 +98,8 @@ pub enum CommandError {
     Json(serde_json::Error),
     #[error(transparent)]
     Console(#[from] ConsoleError),
+    #[error(transparent)]
+    Usage(#[from] UsageError),
     #[error("a terminal is required")]
     NoTerminal,
     #[error("{}", plain(.0))]
@@ -99,12 +112,39 @@ pub enum CommandError {
     Unhealthy,
 }
 
+impl From<AccountEditError> for CommandError {
+    fn from(error: AccountEditError) -> CommandError {
+        match error {
+            AccountEditError::Config(error) => CommandError::Config(error),
+            AccountEditError::Account(error) => CommandError::Account(error),
+            AccountEditError::Connect(error) => CommandError::from(error),
+            other => CommandError::Accounts(other),
+        }
+    }
+}
+
+impl From<BuildError> for CommandError {
+    fn from(error: BuildError) -> CommandError {
+        match error {
+            BuildError::Config(error) => CommandError::Config(error),
+            BuildError::Role(error) => CommandError::Role(error),
+            BuildError::Plan(error) => CommandError::Plan(error),
+            BuildError::Image(error) => CommandError::Image(error),
+        }
+    }
+}
+
 impl From<ConnectError> for CommandError {
     fn from(error: ConnectError) -> CommandError {
-        if error.is_cancelled() {
-            CommandError::Cancelled("cancelled while connecting to the gateway".to_owned())
-        } else {
-            CommandError::Connect(error)
+        let cancelled = error.cancel().map(|group| {
+            format!(
+                "cancelled while connecting to the gateway{}",
+                GroupFault::note(group)
+            )
+        });
+        match cancelled {
+            Some(text) => CommandError::Cancelled(text),
+            None => CommandError::Connect(error),
         }
     }
 }
@@ -112,13 +152,17 @@ impl From<ConnectError> for CommandError {
 impl CommandError {
     pub fn class(&self) -> ExitClass {
         match self {
-            CommandError::Argument(_) => ExitClass::Usage,
+            CommandError::Argument(_) | CommandError::EnvValue { .. } => ExitClass::Usage,
             CommandError::Plan(PlanError::EnvNeeded(_))
             | CommandError::Restart(RestartError::AlreadyRunning { .. })
             | CommandError::Purge(PurgeError::WorkNotExported { .. }) => ExitClass::Refused,
             CommandError::Cancelled(_)
-            | CommandError::Image(ImageError::Cancelled)
-            | CommandError::Export(ExportError::Cancelled)
+            | CommandError::Usage(UsageError::Cancelled)
+            | CommandError::Role(RoleError::Cancelled)
+            | CommandError::Lifecycle(LifecycleError::Cancelled)
+            | CommandError::Image(ImageError::Cancelled { .. })
+            | CommandError::Export(ExportError::Cancelled { .. })
+            | CommandError::Account(AccountError::Lock(LockError::Cancelled))
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. })) => {
                 ExitClass::Cancelled
             }
@@ -136,6 +180,8 @@ impl CommandError {
             | CommandError::Export(_)
             | CommandError::Purge(_)
             | CommandError::Account(_)
+            | CommandError::Accounts(_)
+            | CommandError::WorkspaceInUse(_)
             | CommandError::Login { .. }
             | CommandError::Image(_)
             | CommandError::Connect(_)
@@ -144,6 +190,7 @@ impl CommandError {
             | CommandError::Output(_)
             | CommandError::Json(_)
             | CommandError::Console(_)
+            | CommandError::Usage(_)
             | CommandError::NoTerminal
             | CommandError::Session(_)
             | CommandError::Environment(_)

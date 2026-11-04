@@ -109,7 +109,9 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         );
 
         rig.world.gateway.force_phase(&name, Phase::Ready);
-        session.power(&name, PowerAction::Stop).await?;
+        session
+            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
         let stopped = session.open_shell(request(&name)?).await;
         assert!(
             matches!(

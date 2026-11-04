@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use jackin_core::{
     ChatgptAccountId, CredentialKeys, EnvName, FileMode, GatewayName, HostPath, ImageTag,
     LabelSelector, Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxLabels, SandboxName,
-    SandboxPath, Secret, SecretBytes, Sha256, TerminalText,
+    SandboxPath, Secret, SecretBytes, Sha256, TerminalText, Timestamp,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -32,6 +32,10 @@ pub trait Gateway: Send + Sync + Debug {
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
     async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError>;
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError>;
+    async fn sandbox_environment(
+        &self,
+        name: &SandboxName,
+    ) -> Result<BTreeMap<EnvName, String>, GatewayError>;
     async fn set_power(
         &self,
         name: &SandboxName,
@@ -195,6 +199,7 @@ pub struct SandboxView {
     pub phase: Phase,
     pub labels: Labels,
     pub provisioning: Provisioning,
+    pub created_at: Option<Timestamp>,
 }
 
 #[derive(Clone, Debug)]

@@ -195,3 +195,50 @@ async fn a_partial_clone_is_refused_with_the_git_output_and_a_promisor_config_al
     })
     .await
 }
+
+async fn secret_repository() -> Result<(RepoFixture, String), Box<dyn std::error::Error>> {
+    let other = RepoFixture::new().await?;
+    other.file("private.txt", b"TOP-SECRET-TOKEN\n").await?;
+    other.commit().await?;
+    let head = other.git(&["rev-parse", "HEAD"]).await?.trim().to_owned();
+    Ok((other, head))
+}
+
+#[tokio::test]
+async fn an_object_store_that_borrows_from_another_repository_is_refused() -> TestResult {
+    guard(async {
+        for name in ["alternates", "http-alternates"] {
+            let (other, head) = secret_repository().await?;
+            let repo = base().await?;
+            let git_dir = repo.root().as_path().join(".git");
+            let listed = other.root().as_path().join(".git/objects");
+            let file = git_dir.join("objects/info").join(name);
+            std::fs::write(&file, format!("{}\n", listed.display()))?;
+            std::fs::create_dir_all(git_dir.join("refs/remotes/o"))?;
+            std::fs::write(git_dir.join("refs/remotes/o/x"), format!("{head}\n"))?;
+            let UnsupportedProject::Alternates(named) = refused(repo).await? else {
+                return Err(format!("{name}: expected the Alternates refusal").into());
+            };
+            assert_eq!(named.as_path(), file, "{name}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symlinked_object_store_is_refused_and_an_ordinary_clone_is_not() -> TestResult {
+    guard(async {
+        let repo = base().await?;
+        let objects = repo.root().as_path().join(".git/objects");
+        std::fs::rename(&objects, repo.root().as_path().join(".git/objects.real"))?;
+        std::os::unix::fs::symlink(repo.root().as_path().join(".git/objects.real"), &objects)?;
+        let UnsupportedProject::LinkedObjects(named) = refused(repo).await? else {
+            return Err("expected the LinkedObjects refusal".into());
+        };
+        assert_eq!(named.as_path(), objects);
+
+        proceeds(base().await?.clone_of(&[]).await?, &[]).await
+    })
+    .await
+}

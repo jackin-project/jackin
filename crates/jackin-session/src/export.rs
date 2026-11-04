@@ -1,28 +1,33 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod bundle;
+mod diff;
 mod host;
 mod sandbox;
+
+pub use diff::*;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::Path;
 
 use jackin_core::{
-    BranchName, CommitId, Config, EntropyError, FsError, HostPath, LabelError, LaunchId, PathError,
-    Phase, ProcessError, ProcessStatus, ProjectRoot, SandboxLabels, SandboxName, SandboxPath,
-    Sha256, TerminalText, WorkspaceName, plain, plain_list, sandbox_layout,
+    BranchName, CommitId, Config, EntropyError, FsError, GroupFault, HostPath, LabelError,
+    LaunchId, PathError, Phase, ProcessError, ProcessStatus, ProjectRoot, SandboxLabels,
+    SandboxName, SandboxPath, Sha256, TerminalText, WorkspaceName, plain, plain_list,
+    sandbox_layout,
 };
 use jackin_openshell::GatewayError;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use self::host::{HEAD, Host, HostRefs, exported_prefix};
+pub use self::bundle::{BundleRefusal, EntryKind};
+use self::bundle::{Limits, MAX_HEADS};
+use self::host::{HEAD, Host, HostRefs, Update, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
-use crate::project::host_git;
+use crate::project::{HostProject, HostProjectError, UnsupportedProject};
 use crate::service::Session;
-
-const MAX_HEADS: usize = 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportedBranch {
@@ -51,6 +56,14 @@ pub struct ExportReport {
     pub branches: Vec<ExportedBranch>,
     pub detached: Option<ExportedDetached>,
     pub worktrees: Vec<ExportedWorktree>,
+    pub uncommitted: Uncommitted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Uncommitted {
+    Clean,
+    Changes(usize),
+    Unchecked,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -79,11 +92,17 @@ impl fmt::Display for UnknownReason {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Unexported {
-    pub uncommitted: bool,
+    pub uncommitted: usize,
     pub branches: Vec<BranchName>,
     pub detached: Option<CommitId>,
     pub worktrees: Vec<BranchName>,
     pub unusable: Vec<TerminalText>,
+}
+
+impl Unexported {
+    pub fn unpushed(&self) -> usize {
+        self.branches.len() + self.worktrees.len() + usize::from(self.detached.is_some())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,7 +118,7 @@ impl fmt::Display for WorkState {
             WorkState::Exported => f.write_str("exported"),
             WorkState::Unexported(found) => {
                 let mut parts = Vec::new();
-                if found.uncommitted {
+                if found.uncommitted > 0 {
                     parts.push("uncommitted changes".to_owned());
                 }
                 for branch in &found.branches {
@@ -147,6 +166,8 @@ pub enum ExportError {
     #[error(transparent)]
     Project(#[from] PathError),
     #[error(transparent)]
+    Unsupported(#[from] UnsupportedProject),
+    #[error(transparent)]
     Entropy(#[from] EntropyError),
     #[error("sandbox {sandbox} has no project repository")]
     NoRepository { sandbox: SandboxName },
@@ -186,6 +207,8 @@ pub enum ExportError {
     },
     #[error("{count} heads need export and the limit is {limit}")]
     TooManyHeads { count: usize, limit: usize },
+    #[error("the sandbox bundle was refused: {0}")]
+    BundleRefused(BundleRefusal),
     #[error("the sandbox bundle is {size} bytes and the limit is {limit}")]
     BundleTooLarge { size: u64, limit: u64 },
     #[error("{} expected tip {expected} but found {}", plain(.host_ref), tip_text(.found.as_ref()))]
@@ -194,14 +217,20 @@ pub enum ExportError {
         expected: CommitId,
         found: Option<CommitId>,
     },
-    #[error("cancelled")]
-    Cancelled,
+    #[error("{} changed during the export: it was {}, it is now {}", plain(.host_ref), tip_text(.observed.as_ref()), tip_text(.found.as_ref()))]
+    RefMoved {
+        host_ref: String,
+        observed: Option<CommitId>,
+        found: Option<CommitId>,
+    },
+    #[error("cancelled{}", GroupFault::note(.group.as_ref()))]
+    Cancelled { group: Option<GroupFault> },
 }
 
 impl From<GatewayError> for ExportError {
     fn from(error: GatewayError) -> ExportError {
         match error {
-            GatewayError::Cancelled { .. } => ExportError::Cancelled,
+            GatewayError::Cancelled { group, .. } => ExportError::Cancelled { group },
             other => ExportError::Gateway(other),
         }
     }
@@ -210,8 +239,21 @@ impl From<GatewayError> for ExportError {
 impl From<ProcessError> for ExportError {
     fn from(error: ProcessError) -> ExportError {
         match error {
-            ProcessError::Cancelled { .. } => ExportError::Cancelled,
+            ProcessError::Cancelled { group, .. } => ExportError::Cancelled { group },
             other => ExportError::Process(other),
+        }
+    }
+}
+
+impl From<HostProjectError> for ExportError {
+    fn from(error: HostProjectError) -> ExportError {
+        match error {
+            HostProjectError::Unsupported(error) => ExportError::Unsupported(error),
+            HostProjectError::Fs(error) => ExportError::Fs(error),
+            HostProjectError::Process(error) => error.into(),
+            HostProjectError::Path(error) => ExportError::Project(error),
+            HostProjectError::Git { status, output } => ExportError::HostGit { status, output },
+            HostProjectError::Output { message } => ExportError::HostOutput { message },
         }
     }
 }
@@ -301,7 +343,7 @@ fn pending(repository: &Repository, refs: &HostRefs) -> Vec<(Wanted, CommitId)> 
         .collect()
 }
 
-fn classify(repository: &Repository, uncommitted: bool, refs: &HostRefs) -> WorkState {
+fn classify(repository: &Repository, uncommitted: usize, refs: &HostRefs) -> WorkState {
     let mut state = Unexported {
         uncommitted,
         branches: Vec::new(),
@@ -316,7 +358,7 @@ fn classify(repository: &Repository, uncommitted: bool, refs: &HostRefs) -> Work
             Wanted::Worktree(name) => state.worktrees.push(name),
         }
     }
-    if state.uncommitted
+    if state.uncommitted > 0
         || !state.branches.is_empty()
         || state.detached.is_some()
         || !state.worktrees.is_empty()
@@ -368,6 +410,11 @@ struct Staging {
     bundle: HostPath,
 }
 
+struct Observed<'a, 'git> {
+    host: &'a Host<'git>,
+    refs: &'a HostRefs,
+}
+
 impl Session {
     async fn resolve_project(
         &self,
@@ -397,7 +444,7 @@ impl Session {
         cancel: CancellationToken,
     ) -> Result<ExportReport, ExportError> {
         if cancel.is_cancelled() {
-            return Err(ExportError::Cancelled);
+            return Err(ExportError::Cancelled { group: None });
         }
         let view = self
             .find_managed(sandbox)
@@ -415,6 +462,7 @@ impl Session {
                 source,
             })?;
         let project = self.resolve_project(config, &labels).await?;
+        let authenticated = HostProject::open(&self.deps, &project, &cancel).await?;
         let repository = self
             .remote(sandbox, &cancel)
             .repository()
@@ -425,10 +473,13 @@ impl Session {
                 branch: branch.clone(),
             });
         }
-        let host = Host {
-            git: host_git(&self.deps, project.path(), &cancel),
-        };
+        let host = Host::new(&authenticated);
         let refs = host.refs(sandbox).await?;
+        let uncommitted = match self.remote(sandbox, &cancel).uncommitted(&repository).await {
+            Ok(0) => Uncommitted::Clean,
+            Ok(count) => Uncommitted::Changes(count),
+            Err(_) => Uncommitted::Unchecked,
+        };
         let wanted = changed(&repository, &refs);
         if wanted.is_empty() {
             return Ok(ExportReport {
@@ -437,6 +488,7 @@ impl Session {
                 branches: Vec::new(),
                 detached: None,
                 worktrees: Vec::new(),
+                uncommitted,
             });
         }
         if wanted.len() > MAX_HEADS {
@@ -453,18 +505,25 @@ impl Session {
         guard(&host, &refs, &targets).await?;
         let unique = LaunchId::generate()?;
         let remote_bundle = sandbox_layout::BUNDLE_DIR.join(&format!("export-{unique}.bundle"))?;
+        let observed = Observed {
+            host: &host,
+            refs: &refs,
+        };
         let result = self
-            .ship(&host, sandbox, &unique, &remote_bundle, &items, &cancel)
+            .ship(&observed, sandbox, &unique, &remote_bundle, &items, &cancel)
             .await;
         self.remote(sandbox, &CancellationToken::new())
             .discard(&remote_bundle)
             .await;
-        result
+        result.map(|report| ExportReport {
+            uncommitted,
+            ..report
+        })
     }
 
     async fn ship(
         &self,
-        host: &Host<'_>,
+        observed: &Observed<'_, '_>,
         sandbox: &SandboxName,
         unique: &LaunchId,
         remote_bundle: &SandboxPath,
@@ -478,7 +537,7 @@ impl Session {
             .map_err(|error| ExportError::remote(sandbox, error))?;
         let staging = self.stage(sandbox, unique).await?;
         let result = self
-            .fetch_exported(host, sandbox, remote_bundle, &staging, items, cancel)
+            .import_exported(observed, sandbox, remote_bundle, &staging, items, cancel)
             .await;
         drop(self.deps.host.fs.remove_dir_all(&staging.dir).await);
         result
@@ -496,9 +555,9 @@ impl Session {
         Ok(Staging { dir, bundle })
     }
 
-    async fn fetch_exported(
+    async fn import_exported(
         &self,
-        host: &Host<'_>,
+        observed: &Observed<'_, '_>,
         sandbox: &SandboxName,
         remote_bundle: &SandboxPath,
         staging: &Staging,
@@ -516,16 +575,50 @@ impl Session {
         {
             return Err(ExportError::BundleTooLarge { size, limit });
         }
-        host.verify(&staging.bundle).await?;
-        let heads = host.heads(&staging.bundle).await?;
-        require_heads(&heads, items)?;
-        let refspecs: Vec<String> = items
-            .iter()
-            .map(|item| format!("+{}:{}", item.source(), item.target(sandbox)))
-            .collect();
-        host.fetch(&staging.bundle, &refspecs).await?;
+        let host = observed.host;
+        let format = host.object_format().await?;
+        let header =
+            bundle::header(self.deps.host.fs.as_ref(), &staging.bundle, format, cancel).await?;
+        require_heads(&header.heads, items)?;
+        bundle::walk(
+            self.deps.host.fs.as_ref(),
+            &staging.bundle,
+            header.pack_offset,
+            format,
+            Limits {
+                entry: self.deps.limits.export_entry_bytes,
+                objects: self.deps.limits.export_objects,
+                total: self.deps.limits.export_total_bytes,
+            },
+            cancel,
+        )
+        .await?;
+        let targets: Vec<String> = items.iter().map(|item| item.target(sandbox)).collect();
+        host.import(
+            self.deps.host.fs.as_ref(),
+            &staging.bundle,
+            header.pack_offset,
+            &targets,
+        )
+        .await?;
+        let mut updates = Vec::new();
+        for item in items {
+            let tip = header
+                .heads
+                .get(&item.source())
+                .ok_or_else(|| ExportError::BundleHeads {
+                    extra: Vec::new(),
+                    missing: vec![item.source()],
+                })?;
+            updates.push(Update {
+                target: item.target(sandbox),
+                tip: tip.clone(),
+                observed: observed.refs.exported.get(&item.name()).cloned(),
+            });
+        }
+        host.publish(self.deps.host.fs.as_ref(), updates).await?;
         let landed = host.refs(sandbox).await?;
-        report(sandbox, digest, items, &heads, &landed)
+        report(sandbox, digest, items, &header.heads, &landed)
     }
 }
 
@@ -583,6 +676,7 @@ fn report(
         branches: Vec::new(),
         detached: None,
         worktrees: Vec::new(),
+        uncommitted: Uncommitted::Clean,
     };
     for item in items {
         let host_ref = item.target(sandbox);
@@ -616,6 +710,71 @@ fn report(
         }
     }
     Ok(report)
+}
+
+#[derive(Debug, Error)]
+pub enum ChangesError {
+    #[error(transparent)]
+    Gateway(#[from] GatewayError),
+    #[error("sandbox {0} was not found")]
+    NotFound(SandboxName),
+    #[error("sandbox {sandbox} is not running ({phase})")]
+    NotRunning { sandbox: SandboxName, phase: Phase },
+    #[error("sandbox {sandbox} has no git repository")]
+    NoRepository { sandbox: SandboxName },
+    #[error("git in the sandbox exited with code {exit_code}: {output}")]
+    Git {
+        exit_code: i32,
+        output: TerminalText,
+    },
+    #[error("sandbox {sandbox}: {what}")]
+    Output {
+        sandbox: SandboxName,
+        what: &'static str,
+    },
+}
+
+impl Session {
+    pub async fn changes(
+        &self,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<ChangeSet, ChangesError> {
+        let view = self
+            .find_managed(sandbox)
+            .await?
+            .ok_or_else(|| ChangesError::NotFound(sandbox.clone()))?;
+        if view.phase != Phase::Ready {
+            return Err(ChangesError::NotRunning {
+                sandbox: sandbox.clone(),
+                phase: view.phase,
+            });
+        }
+        let remote = self.remote(sandbox, cancel);
+        let repository = remote
+            .repository()
+            .await
+            .map_err(|error| changes_error(sandbox, error))?;
+        let (files, omitted) = remote
+            .changes(&repository)
+            .await
+            .map_err(|error| changes_error(sandbox, error))?;
+        Ok(ChangeSet { files, omitted })
+    }
+}
+
+fn changes_error(sandbox: &SandboxName, error: RemoteError) -> ChangesError {
+    match error {
+        RemoteError::Gateway(error) => error.into(),
+        RemoteError::NoRepository => ChangesError::NoRepository {
+            sandbox: sandbox.clone(),
+        },
+        RemoteError::Git { exit_code, output } => ChangesError::Git { exit_code, output },
+        RemoteError::Malformed(what) => ChangesError::Output {
+            sandbox: sandbox.clone(),
+            what,
+        },
+    }
 }
 
 impl Session {
@@ -672,9 +831,10 @@ impl Session {
         let project = ProjectRoot::open(self.deps.host.fs.as_ref(), &entry.path)
             .await
             .map_err(|_| UnknownReason::InspectionFailed)?;
-        let host = Host {
-            git: host_git(&self.deps, project.path(), &cancel),
-        };
+        let authenticated = HostProject::open(&self.deps, &project, &cancel)
+            .await
+            .map_err(|_| UnknownReason::InspectionFailed)?;
+        let host = Host::new(&authenticated);
         let refs = host
             .refs(sandbox)
             .await

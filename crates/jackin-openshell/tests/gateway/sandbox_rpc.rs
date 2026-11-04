@@ -17,6 +17,8 @@ use super::server::{
     validate_sandbox_name,
 };
 
+pub(crate) const CREATED_MILLIS: i64 = 1_700_000_000_000;
+
 pub(crate) fn phase_of(sandbox: &Sandbox) -> i32 {
     sandbox.status.as_ref().map_or(0, |status| status.phase)
 }
@@ -124,7 +126,7 @@ impl Fake {
         self.enter("health").await?;
         Ok(Response::new(HealthResponse {
             status: ServiceStatus::Healthy as i32,
-            version: "0.1.6".to_owned(),
+            version: "0.1.7".to_owned(),
         }))
     }
 
@@ -156,9 +158,15 @@ impl Fake {
                 name: request.name.clone(),
                 labels,
                 workspace,
+                created_time: openshell_core::time::timestamp_from_millis(CREATED_MILLIS).ok(),
                 ..ObjectMeta::default()
             }),
-            spec: request.spec.clone(),
+            spec: request.spec.clone().map(|mut spec| {
+                if !state.store_environment {
+                    spec.environment.clear();
+                }
+                spec
+            }),
             status: Some(SandboxStatus {
                 phase: SandboxPhase::Provisioning as i32,
                 ..SandboxStatus::default()

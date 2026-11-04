@@ -57,20 +57,71 @@ pub(crate) enum Pace {
 
 #[derive(Clone, Copy)]
 pub(crate) struct HostGit<'a> {
-    pub(crate) runner: &'a dyn ProcessRunner,
-    pub(crate) root: &'a HostPath,
-    pub(crate) cancel: &'a CancellationToken,
+    runner: &'a dyn ProcessRunner,
+    root: &'a HostPath,
+    cancel: &'a CancellationToken,
+    git_dir: Option<&'a HostPath>,
 }
 
-impl HostGit<'_> {
+impl<'a> HostGit<'a> {
+    pub(super) fn unauthenticated(
+        runner: &'a dyn ProcessRunner,
+        root: &'a HostPath,
+        cancel: &'a CancellationToken,
+    ) -> HostGit<'a> {
+        HostGit {
+            runner,
+            root,
+            cancel,
+            git_dir: None,
+        }
+    }
+
+    pub(super) fn within<'b>(&self, git_dir: &'b HostPath) -> HostGit<'b>
+    where
+        'a: 'b,
+    {
+        HostGit {
+            git_dir: Some(git_dir),
+            ..*self
+        }
+    }
+
+    pub(crate) fn role_checkout(
+        runner: &'a dyn ProcessRunner,
+        root: &'a HostPath,
+        cancel: &'a CancellationToken,
+    ) -> HostGit<'a> {
+        HostGit::unauthenticated(runner, root, cancel)
+    }
+
+    pub(super) fn root(&self) -> &'a HostPath {
+        self.root
+    }
+
     pub(crate) async fn capture(
         &self,
         pace: Pace,
         args: Vec<String>,
+        env: Vec<(String, EnvValue)>,
+    ) -> Result<ProcessOutput, ProcessError> {
+        self.capture_from(pace, args, env, ProcessStdin::Null).await
+    }
+
+    pub(crate) async fn capture_from(
+        &self,
+        pace: Pace,
+        args: Vec<String>,
         mut env: Vec<(String, EnvValue)>,
+        stdin: ProcessStdin,
     ) -> Result<ProcessOutput, ProcessError> {
         env.push(plain("GIT_OPTIONAL_LOCKS", "0"));
+        env.push(plain("GIT_NO_LAZY_FETCH", "1"));
         let mut hardened = words(&HARDENING);
+        if let Some(git_dir) = self.git_dir {
+            hardened.push(format!("--git-dir={}", git_dir.as_path().display()));
+            hardened.push(format!("--work-tree={}", self.root.as_path().display()));
+        }
         hardened.extend(args);
         let spec = ProcessSpec {
             program: Program::Git,
@@ -78,7 +129,7 @@ impl HostGit<'_> {
             cwd: Some(self.root.clone()),
             env,
             env_remove_prefixes: vec!["GIT_".to_owned()],
-            stdin: ProcessStdin::Null,
+            stdin,
             timeout: match pace {
                 Pace::Quick => QUICK,
                 Pace::Long => LONG,

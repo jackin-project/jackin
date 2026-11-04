@@ -6,18 +6,20 @@ use std::num::NonZeroU16;
 use std::path::Path;
 
 use super::{
-    Account, Config, ConfigError, CredentialSource, GatewayEntry, RoleEntry, RoleSource, Workspace,
+    Account, AllowedRoles, Config, ConfigError, CredentialSource, EnvTable, GatewayEntry,
+    PlainEnvValue, RoleEntry, RoleSet, RoleSource, ScopedEnvName, Workspace,
 };
 use crate::agent::Agent;
 use crate::docker::EngineConfig;
 use crate::ids::{
-    AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, IdError, OpReference,
-    OpenShellWorkspace, RoleName, RoleRev, RoleUrl, WorkspaceName,
+    AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, IdError, OpAccountId,
+    OpReference, OpenShellWorkspace, RoleName, RoleRev, RoleUrl, WorkspaceName,
 };
 use crate::paths::{HostPath, PathError};
 use crate::platform::Platform;
 use crate::provider::Provider;
 use crate::tomlkit::{Reader, parse_table};
+use toml::Value;
 
 const HOST_PATH: &str = "expected an absolute path";
 const PARENT_SEGMENT: &str = "expected a path without .. segments";
@@ -80,6 +82,9 @@ impl Config {
         read_defaults(&mut root, &mut config.defaults);
         read_accounts(&mut root, &mut config.accounts, &mut deferred);
         read_roles(&mut root, &mut config.roles);
+        if let Some(mut env) = root.table("env") {
+            config.env = read_env(&mut env);
+        }
         read_workspaces(&mut root, &mut config.workspaces);
         root.finish();
         if let Some(first) = findings.into_iter().next() {
@@ -135,10 +140,15 @@ fn read_engine(entry: &mut Reader<'_, '_>) -> Option<Option<EngineConfig>> {
     };
     let port = engine.required_integer("port").and_then(|number| {
         let port = u16::try_from(number).ok().and_then(NonZeroU16::new);
-        if port.is_none() {
+        let Some(port) = port else {
             engine.report_invalid("port", "expected an integer from 1 to 65535");
+            return None;
+        };
+        if let Some(refusal) = EngineConfig::port_refusal(port) {
+            engine.report_invalid("port", &refusal);
+            return None;
         }
-        port
+        Some(port)
     });
     let client_certs = engine.required_parsed("client_certs", host_path, static_message);
     engine.finish();
@@ -219,9 +229,16 @@ fn read_credential(account: &mut Reader<'_, '_>) -> Option<CredentialSource> {
         "env" => credential
             .required_parsed("var", EnvName::parse, id_message)
             .map(|var| CredentialSource::Env { var }),
-        "op" => credential
-            .required_parsed("reference", OpReference::parse, id_message)
-            .map(|reference| CredentialSource::OnePassword { reference }),
+        "op" => {
+            let reference = credential.required_parsed("reference", OpReference::parse, id_message);
+            let named = credential.contains("account");
+            let account = credential.parsed("account", OpAccountId::parse, id_message);
+            if named && account.is_none() {
+                None
+            } else {
+                reference.map(|reference| CredentialSource::OnePassword { reference, account })
+            }
+        }
         "file" => credential
             .required_parsed("path", host_path, static_message)
             .map(|path| CredentialSource::File { path }),
@@ -315,6 +332,9 @@ fn read_workspaces(root: &mut Reader<'_, '_>, out: &mut BTreeMap<WorkspaceName, 
         let docker = entry.boolean("docker").unwrap_or(false);
         let default_role = entry.parsed("default_role", RoleName::parse, id_message);
         let bindings = read_binding_map(&mut entry, "bindings", provider);
+        let roles = read_allowed_roles(&mut entry);
+        let env = entry.table("env").map(|mut table| read_env(&mut table));
+        let role_env = read_role_env(&mut entry);
         entry.finish();
         if let Some(path) = path {
             out.insert(
@@ -324,8 +344,83 @@ fn read_workspaces(root: &mut Reader<'_, '_>, out: &mut BTreeMap<WorkspaceName, 
                     docker,
                     default_role,
                     bindings,
+                    roles,
+                    env: env.unwrap_or_default(),
+                    role_env,
                 },
             );
         }
     }
+}
+
+fn read_env(table: &mut Reader<'_, '_>) -> EnvTable {
+    let mut out = EnvTable::new();
+    for (key, value) in table.entries() {
+        let name = match EnvName::parse(key) {
+            Ok(name) => name,
+            Err(error) => {
+                table.report_invalid(key, &error.to_string());
+                continue;
+            }
+        };
+        let name = match ScopedEnvName::new(name) {
+            Ok(name) => name,
+            Err(reserved) => {
+                table.report_invalid(key, &reserved.to_string());
+                continue;
+            }
+        };
+        if let Some(text) = table.entry_parsed(key, value, PlainEnvValue::parse, |e| e.to_string())
+        {
+            out.insert(name, text);
+        }
+    }
+    out
+}
+
+fn read_role_env(entry: &mut Reader<'_, '_>) -> BTreeMap<RoleName, EnvTable> {
+    let mut out = BTreeMap::new();
+    let Some(mut roles) = entry.table("role_env") else {
+        return out;
+    };
+    for (key, value) in roles.entries() {
+        let role = match RoleName::parse(key) {
+            Ok(role) => role,
+            Err(error) => {
+                roles.report_invalid(key, &error.to_string());
+                continue;
+            }
+        };
+        if let Some(mut table) = roles.entry_table(key, value) {
+            out.insert(role, read_env(&mut table));
+        }
+    }
+    out
+}
+
+fn read_allowed_roles(entry: &mut Reader<'_, '_>) -> AllowedRoles {
+    const EXPECTED: &str = "expected a list of role names";
+    let Some(value) = entry.value("roles") else {
+        return AllowedRoles::All;
+    };
+    let Value::Array(items) = value else {
+        entry.report_invalid("roles", EXPECTED);
+        return AllowedRoles::All;
+    };
+    let mut roles = Vec::new();
+    for item in items {
+        match item.as_str().map(RoleName::parse) {
+            Some(Ok(role)) => roles.push(role),
+            Some(Err(error)) => entry.report_invalid("roles", &error.to_string()),
+            None => entry.report_invalid("roles", EXPECTED),
+        }
+    }
+    if let Some(set) = RoleSet::new(roles) {
+        return AllowedRoles::Only(set);
+    }
+    entry.report_invalid(
+        "roles",
+        "expected at least one role; leave the key out to allow all roles",
+    );
+    AllowedRoles::All
 }

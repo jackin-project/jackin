@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{EnvName, HookKind, Phase, SupervisorState, sandbox_layout};
+use jackin_core::{EnvName, HookKind, Phase, PlainEnvValue, SupervisorState, sandbox_layout};
 use jackin_openshell::{Gateway, ProgramRun, ProgramStdin};
 use jackin_session::{LaunchError, LaunchStep};
 use tokio_util::sync::CancellationToken;
@@ -134,6 +134,12 @@ async fn hooks_run_with_the_env_file_values_and_a_retry_replaces_them() -> TestR
         let env = |value: &str| -> Result<_, Box<dyn std::error::Error>> {
             Ok(std::collections::BTreeMap::from([(
                 EnvName::parse("GREETING")?,
+                PlainEnvValue::parse(value)?,
+            )]))
+        };
+        let texts = |value: &str| -> Result<_, Box<dyn std::error::Error>> {
+            Ok(std::collections::BTreeMap::from([(
+                EnvName::parse("GREETING")?,
                 value.to_owned(),
             )]))
         };
@@ -151,7 +157,7 @@ async fn hooks_run_with_the_env_file_values_and_a_retry_replaces_them() -> TestR
         let handle = rig.handle(1).await?;
         let setups = handle.runs(&sandbox_layout::hook_path(HookKind::Setup));
         assert_eq!(setups.len(), 1);
-        assert_eq!(setups[0].env, env("first")?);
+        assert_eq!(setups[0].env, texts("first")?);
         assert_eq!(setups[0].workdir, Some(sandbox_layout::PROJECT.clone()));
 
         script(&rig, HookKind::Preflight, 0, b"", b"");
@@ -162,7 +168,7 @@ async fn hooks_run_with_the_env_file_values_and_a_retry_replaces_them() -> TestR
         assert!(String::from_utf8(file)?.contains("second"));
         let preflights = handle.runs(&sandbox_layout::hook_path(HookKind::Preflight));
         assert_eq!(preflights.len(), 2);
-        assert_eq!(preflights[1].env, env("second")?);
+        assert_eq!(preflights[1].env, texts("second")?);
         assert_eq!(
             handle
                 .runs(&sandbox_layout::hook_path(HookKind::Setup))

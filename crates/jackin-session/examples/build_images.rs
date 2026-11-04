@@ -11,11 +11,11 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, BuilderName, CommitId, DockerLayer, FileSystem, HostPath, Platform, ProcessRunner,
-    ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath, RoleName, StdFileSystem,
+    ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath, RoleName, Sha256, StdFileSystem,
 };
 use jackin_image::{
-    BuildxEngine, HookFiles, ImageEvent, ImageRequest, Rebuild, RoleRevision, SourceFile,
-    ensure_image, read_regular_file,
+    BuildxEngine, ContextEntry, HookFiles, ImageEvent, ImageRequest, Rebuild, RoleRevision,
+    SourceFile, ensure_image, read_regular_file,
 };
 use jackin_session::TokioProcessRunner;
 use tokio::sync::mpsc;
@@ -162,17 +162,27 @@ async fn request(
         &["ls-files", "-co", "--exclude-standard", "-z"],
     )
     .await?;
-    let files = String::from_utf8(listing)?
-        .split('\0')
-        .filter(|name| !name.is_empty())
-        .map(RepoPath::parse)
-        .collect::<Result<Vec<_>, _>>()?;
     let head = String::from_utf8(git(runner, dir, &["rev-parse", "HEAD"]).await?)?;
     let root = HostPath::parse(dir)?;
+    let fs = StdFileSystem::default();
+    let mut files = Vec::new();
+    let mut digest_input = Vec::new();
+    for name in String::from_utf8(listing)?
+        .split('\0')
+        .filter(|name| !name.is_empty())
+    {
+        let path = RepoPath::parse(name)?;
+        let file = read_regular_file(&fs, &root, &path).await?;
+        digest_input.extend(name.as_bytes());
+        digest_input.extend(Sha256::of(&file.bytes).as_str().as_bytes());
+        files.push(ContextEntry::File {
+            path,
+            executable: file.mode.0 & 0o111 != 0,
+            bytes: file.bytes,
+        });
+    }
     let dockerfile = RepoPath::parse("Dockerfile")?;
-    let bytes = read_regular_file(&StdFileSystem::default(), &root, &dockerfile)
-        .await?
-        .bytes;
+    let bytes = read_regular_file(&fs, &root, &dockerfile).await?.bytes;
     let name = match &options.role_name {
         Some(name) => name.clone(),
         None => dir
@@ -183,7 +193,6 @@ async fn request(
     };
     Ok(ImageRequest {
         role: RoleName::parse(&name)?,
-        context: root,
         context_files: files,
         dockerfile: SourceFile {
             path: dockerfile,
@@ -193,8 +202,9 @@ async fn request(
             setup: None,
             preflight: None,
         },
-        revision: RoleRevision::Clean {
+        revision: RoleRevision {
             commit: CommitId::parse(head.trim())?,
+            digest: Sha256::of(&digest_input),
         },
         agent: Agent::Codex,
         platform: Platform::host_default(),

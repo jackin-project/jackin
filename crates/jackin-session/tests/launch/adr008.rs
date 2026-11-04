@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 use jackin_core::{
-    AccountName, Agent, NameSuffix, Phase, PlannedLabels, RoleName, SandboxName, SandboxPath,
-    SandboxSlug, SupervisorState, WorkspaceName, sandbox_layout,
+    AccountName, Agent, NameSuffix, Phase, PlannedLabels, PolicyLabel, RoleName, SandboxName,
+    SandboxPath, SandboxSlug, SupervisorState, WorkspaceName, sandbox_layout,
 };
 use jackin_openshell::{ClosedPolicy, Gateway, MainProcess, SandboxCreate, SandboxQuery};
 use jackin_session::{LaunchError, LaunchStep};
@@ -87,9 +87,10 @@ async fn foreign(
         role: RoleName::parse("sentinel")?,
         agent: Agent::Codex,
         account: AccountName::parse("work")?,
+        policy: PolicyLabel::of("policy"),
         launch: launch_id(launch),
     }
-    .complete(&image.id);
+    .complete(&image.id, jackin_core::DockerLabel::Off);
     rig.gateway().add_image(&image.tag);
     rig.gateway()
         .create_sandbox(&SandboxCreate::new(
@@ -97,7 +98,7 @@ async fn foreign(
             image.tag,
             labels,
             Vec::new(),
-            ClosedPolicy::parse(&rig.loaded.policy().render()?)?,
+            ClosedPolicy::parse(&rig.loaded.policy().document().render()?)?,
             MainProcess {
                 program: path("/bin/sh")?,
                 args: vec!["-c".to_owned(), "sleep 3600".to_owned()],

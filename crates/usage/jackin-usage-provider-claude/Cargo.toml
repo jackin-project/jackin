@@ -1,39 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-
 [package]
 name = "jackin-usage-provider-claude"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
-description = "Claude/Anthropic OAuth usage snapshots and spend windows for broker-owned refreshes."
+description = "Claude usage: the OAuth usage windows of a Claude login."
 license.workspace = true
-readme = "README.md"
+repository.workspace = true
 publish = false
 
-repository.workspace = true
-
-[lib]
-name = "jackin_usage_provider_claude"
-path = "src/lib.rs"
-
-[features]
-
 [dependencies]
-jackin-core = { workspace = true }
-jackin-protocol = { workspace = true }
-jackin-telemetry = { workspace = true }
 jackin-usage-provider-core = { workspace = true }
-
-reqwest = { workspace = true, features = ["blocking", "json", "rustls"] }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true, features = ["raw_value"] }
-zeroize = { workspace = true }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-security-framework = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

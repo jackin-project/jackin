@@ -4,7 +4,10 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-use super::{Config, CredentialSource, GatewayEntry, RoleEntry, RoleSource, Workspace};
+use super::{
+    AllowedRoles, Config, CredentialSource, EnvTable, GatewayEntry, RoleEntry, RoleSource,
+    Workspace,
+};
 use crate::agent::Agent;
 use crate::paths::HostPath;
 use crate::provider::Provider;
@@ -30,9 +33,20 @@ fn credential(source: &CredentialSource) -> String {
         CredentialSource::Env { var } => {
             format!("{{ source = \"env\", var = {} }}", quote(var.as_str()))
         }
-        CredentialSource::OnePassword { reference } => format!(
+        CredentialSource::OnePassword {
+            reference,
+            account: None,
+        } => format!(
             "{{ source = \"op\", reference = {} }}",
             quote(reference.as_str())
+        ),
+        CredentialSource::OnePassword {
+            reference,
+            account: Some(account),
+        } => format!(
+            "{{ source = \"op\", reference = {}, account = {} }}",
+            quote(reference.as_str()),
+            quote(account.as_str())
         ),
         CredentialSource::File { path } => {
             format!("{{ source = \"file\", path = {} }}", path_value(path))
@@ -105,13 +119,39 @@ fn workspace_block(name: &str, workspace: &Workspace) -> String {
     if let Some(role) = &workspace.default_role {
         block.push_str(&format!("default_role = {}\n", quote(role.as_str())));
     }
+    if let AllowedRoles::Only(set) = &workspace.roles {
+        let names: Vec<String> = set.iter().map(|role| quote(role.as_str())).collect();
+        block.push_str(&format!("roles = [{}]\n", names.join(", ")));
+    }
     if !workspace.bindings.is_empty() {
         block.push_str(&format!(
             "bindings = {}\n",
             bindings(&workspace.bindings, Provider::as_str)
         ));
     }
+    let table = key(name);
+    if !workspace.env.is_empty() {
+        block.push_str(&format!(
+            "\n[workspaces.{table}.env]\n{}",
+            env_lines(&workspace.env)
+        ));
+    }
+    for (role, vars) in &workspace.role_env {
+        block.push_str(&format!(
+            "\n[workspaces.{table}.role_env.{}]\n{}",
+            key(role.as_str()),
+            env_lines(vars)
+        ));
+    }
     block
+}
+
+fn env_lines(table: &EnvTable) -> String {
+    table
+        .iter()
+        .map(|(name, value)| format!("{} = {}\n", key(name.as_str()), quote(value.as_str())))
+        .collect::<Vec<_>>()
+        .concat()
 }
 
 impl Config {
@@ -122,6 +162,9 @@ impl Config {
         }
         for (name, entry) in &self.gateways {
             gateway_blocks(name.as_str(), entry, &mut blocks);
+        }
+        if !self.env.is_empty() {
+            blocks.push(format!("[env]\n{}", env_lines(&self.env)));
         }
         if !self.defaults.is_empty() {
             let lines: Vec<String> = self

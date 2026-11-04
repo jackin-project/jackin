@@ -33,6 +33,9 @@ pub(crate) fn limits(ready_secs: u64, supervisor_secs: u64) -> LaunchLimits {
         upload: Duration::from_secs(600),
         create_attempts: std::num::NonZeroU8::MIN.saturating_add(2),
         bundle_bytes: jackin_session::DEFAULT_BUNDLE_BYTES,
+        export_entry_bytes: jackin_session::DEFAULT_EXPORT_ENTRY_BYTES,
+        export_objects: jackin_session::DEFAULT_EXPORT_OBJECTS,
+        export_total_bytes: jackin_session::DEFAULT_EXPORT_TOTAL_BYTES,
     }
 }
 

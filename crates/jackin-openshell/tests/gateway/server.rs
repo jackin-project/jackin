@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -79,6 +79,7 @@ pub(crate) enum Broken {
     StopOnStopped,
     DeleteAttachedProviders,
     DeleteAfterRefusal,
+    DeleteAbsentRefused,
 }
 
 pub(crate) type ProfileHook = Box<dyn FnMut(&mut State) + Send>;
@@ -93,6 +94,7 @@ pub(crate) struct State {
     pub(crate) rpc_count: usize,
     pub(crate) page_cap: usize,
     pub(crate) store_labels: bool,
+    pub(crate) store_environment: bool,
     pub(crate) known_images: Option<HashSet<String>>,
     pub(crate) exec_starts: Vec<ExecSandboxRequest>,
     pub(crate) exec_streams: usize,
@@ -109,6 +111,7 @@ pub(crate) struct State {
     pub(crate) auto_advance: bool,
     pub(crate) ssh: Option<Arc<SshModel>>,
     pub(crate) broken: Option<Broken>,
+    pub(crate) deleted_providers: BTreeSet<Key>,
 }
 
 impl std::fmt::Debug for State {
@@ -180,6 +183,7 @@ fn fresh_state() -> State {
         rpc_count: 0,
         page_cap: 2,
         store_labels: true,
+        store_environment: true,
         known_images: None,
         exec_starts: Vec::new(),
         exec_streams: 0,
@@ -196,6 +200,7 @@ fn fresh_state() -> State {
         auto_advance: false,
         ssh: None,
         broken: None,
+        deleted_providers: BTreeSet::new(),
     }
 }
 

@@ -1,49 +1,63 @@
-mod auth;
-mod events;
-mod period;
-mod plan;
-mod requests;
-mod rest;
-mod sand;
-mod snapshot;
-mod summary;
-mod teams;
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
 
-pub use auth::CURSOR_SESSION_BASE;
-pub use auth::{
-    CursorAuth, cursor_auth_from_value, cursor_auth_path, cursor_cli_identity_from_value,
-    cursor_dashboard_base, cursor_dashboard_url_with_base, cursor_default_base,
-    cursor_identity_from_cli_config, cursor_user_id_from_token, load_cursor_auth,
-    load_cursor_cli_identity,
+use jackin_usage_provider_core::{
+    Bucket, Credential, Http, ProviderError, epoch_seconds, json_number, json_text,
 };
-pub use events::{
-    CursorUsageEvents, cursor_events_buckets, fetch_cursor_usage_events, parse_cursor_usage_events,
-};
-pub use period::{
-    CursorPeriodUsage, cursor_dashboard_post, cursor_needs_request_fallback, cursor_period_buckets,
-    fetch_cursor_period_usage, parse_cursor_period_usage,
-};
-pub use plan::{
-    cursor_credits_bucket, fetch_cursor_credit_grants, fetch_cursor_plan_info,
-    parse_cursor_credit_grants, parse_cursor_plan_info,
-};
-pub use requests::{
-    CursorRequestUsage, cursor_request_bucket, fetch_cursor_request_usage,
-    parse_cursor_request_usage,
-};
-pub use rest::{cursor_rest_get, cursor_session_cookie};
-pub use sand::{
-    CursorSandUsage, cursor_sand_bucket, fetch_cursor_sand_usage, parse_cursor_sand_usage,
-};
-pub use snapshot::{
-    cursor_enterprise_snapshot, cursor_profile_snapshot, cursor_snapshot, cursor_snapshot_with_auth,
-};
-pub use summary::{
-    CursorUsageSummary, cursor_summary_buckets, fetch_cursor_stripe_balance,
-    fetch_cursor_usage_summary, parse_cursor_stripe_balance, parse_cursor_usage_summary,
-};
-pub use teams::{
-    CursorEnterpriseScope, CursorMemberSpend, CursorTeamSpend, cursor_team_spend_buckets,
-    cursor_teams_events_url, cursor_teams_spend_url, fetch_cursor_team_spend,
-    parse_cursor_team_spend,
-};
+use serde_json::{Value, json};
+
+const PERIOD_URL: &str =
+    "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage";
+
+pub async fn fetch(http: &Http, credential: Credential<'_>) -> Result<Vec<Bucket>, ProviderError> {
+    let token = match credential {
+        Credential::Token(token) => token.to_owned(),
+        Credential::Login(login) => login_token(login)?,
+    };
+    let body = http
+        .post(
+            PERIOD_URL,
+            &token,
+            &[("connect-protocol-version", "1")],
+            &json!({}),
+        )
+        .await?;
+    let plan = body.get("planUsage").unwrap_or(&Value::Null);
+    let start = body.get("billingCycleStart").and_then(seconds);
+    let end = body.get("billingCycleEnd").and_then(seconds);
+    let length = match start.zip(end) {
+        Some((start, end)) => Some(end.checked_sub(start).ok_or(ProviderError::OUT_OF_RANGE)?),
+        None => None,
+    };
+    Ok([
+        ("totalPercentUsed", None),
+        ("autoPercentUsed", Some("Auto")),
+        ("apiPercentUsed", Some("API")),
+    ]
+    .into_iter()
+    .filter_map(|(key, prefix)| {
+        let used = plan.get(key).and_then(json_number)?;
+        Some(
+            Bucket::timed(prefix, length, None, "Plan usage")
+                .used(Some(used))
+                .resets(end),
+        )
+    })
+    .collect())
+}
+
+fn seconds(value: &Value) -> Option<i64> {
+    json_number(value).and_then(epoch_seconds)
+}
+
+fn login_token(login: &str) -> Result<String, ProviderError> {
+    let value: Value = serde_json::from_str(login)
+        .map_err(|_| ProviderError::Decode("the Cursor login file is not valid JSON"))?;
+    ["accessToken", "access_token"]
+        .into_iter()
+        .find_map(|key| value.get(key).and_then(json_text))
+        .map(str::to_owned)
+        .ok_or(ProviderError::Decode(
+            "the Cursor login file has no access token",
+        ))
+}

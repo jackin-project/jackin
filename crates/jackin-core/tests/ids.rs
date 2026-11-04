@@ -4,14 +4,14 @@
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::{Debug, Display};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::str::FromStr;
 
 use jackin_core::{
     AccountName, Agent, AttemptId, BranchName, BuilderName, ChatgptAccountId, CommitId, EnvName,
     GatewayName, IdError, ImageId, ImageLabel, ImageTag, LaunchId, ModelName, NameSuffix,
-    OpReference, OpenShellWorkspace, ProfileId, ProviderName, RoleName, SandboxName, SandboxSlug,
-    Sha256, WorkspaceName,
+    OpAccountId, OpReference, OpenShellWorkspace, ProfileId, ProviderName, RoleName, SandboxName,
+    SandboxSlug, Sha256, WorkspaceName,
 };
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -390,6 +390,19 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
             rej("http://vault/item", Want::Format),
         ],
     )?);
+    kinds.push(grammar::<OpAccountId>(
+        &[
+            "acct-1",
+            "me@example.test",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "my.1password.com",
+        ],
+        &[
+            rej("", Want::Empty),
+            rej("-x", Want::Format),
+            rej("--config", Want::Format),
+        ],
+    )?);
     kinds.push(grammar::<ModelName>(
         &["gpt-5.1-codex", "o3", "openai/gpt-4:latest"],
         &[
@@ -454,11 +467,9 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
 }
 
 fn git_accepts(candidate: &str, dir: &std::path::Path) -> Result<bool, Box<dyn Error>> {
-    let output = Command::new("git")
+    let output = jackin_testkit::git_command()
         .args(["check-ref-format", "--branch", candidate])
         .current_dir(dir)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?
@@ -720,4 +731,28 @@ fn an_invalid_character_is_shown_as_plain_text_even_when_it_is_a_control_charact
         shown("a\u{202e}b"),
         "provider name has the invalid character \\u{202e} at index 1"
     );
+}
+
+#[test]
+fn engine_client_variables_are_only_names_that_start_with_docker_or_buildx_underscore() -> TestResult
+{
+    for name in ["DOCKER_HOST", "DOCKER_", "BUILDX_BUILDER", "DOCKER_CONFIG"] {
+        assert!(EnvName::is_engine_client(name), "{name}");
+        assert!(EnvName::parse(name)?.is_reserved(), "{name}");
+    }
+    for name in [
+        "DOCKER",
+        "docker_host",
+        "MY_DOCKER_HOST",
+        "BUILDX",
+        "XBUILDX_A",
+        "DOCKERHOST",
+        "PATH",
+        "HOME",
+        "FOO",
+        "",
+    ] {
+        assert!(!EnvName::is_engine_client(name), "{name:?}");
+    }
+    Ok(())
 }

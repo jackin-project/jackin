@@ -1,13 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Compatibility, GatewayName};
-use jackin_openshell::GatewayError;
+use jackin_core::Compatibility;
 use jackin_session::{CheckId, CheckStatus, DoctorInput, DoctorReport, GatewayAccess, doctor};
 
-use crate::app::{App, ConnectError};
+use crate::app::App;
 use crate::error::CommandError;
-use crate::report::chain;
 use crate::system::engine_socket;
 
 fn check_name(id: CheckId) -> &'static str {
@@ -28,16 +26,6 @@ fn status_name(status: CheckStatus) -> &'static str {
         CheckStatus::Warn => "warn",
         CheckStatus::Fail => "fail",
         CheckStatus::Skip => "skip",
-    }
-}
-
-fn gateway_failure(name: &GatewayName, error: ConnectError) -> GatewayError {
-    match error {
-        ConnectError::Gateway(error) => error,
-        discovery @ ConnectError::Discovery { .. } => GatewayError::Unreachable {
-            endpoint: name.to_string(),
-            message: chain(&discovery),
-        },
     }
 }
 
@@ -62,7 +50,7 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
             let report = match connected {
                 Ok(gateway) => inspect(app, GatewayAccess::Connected(gateway.as_ref())).await?,
                 Err(error) => {
-                    let failure = gateway_failure(name, error);
+                    let failure = error.into_failure(name);
                     inspect(
                         app,
                         GatewayAccess::Failed {
@@ -84,8 +72,12 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
     }
     for check in &report.checks {
         let detail = check.detail.replace('\n', " ");
+        let fix = match check.status {
+            CheckStatus::Warn | CheckStatus::Fail => format!("  fix: {}", check.fix),
+            CheckStatus::Pass | CheckStatus::Skip => String::new(),
+        };
         app.io.line(&format!(
-            "{:<4} {:<18} {detail}",
+            "{:<4} {:<18} {detail}{fix}",
             status_name(check.status),
             check_name(check.id)
         ))?;

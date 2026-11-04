@@ -11,14 +11,19 @@ use crate::trap::Trap;
 async fn loading_a_path_role_runs_no_program_named_by_its_repository_config() -> TestResult {
     guard(async {
         let role = RoleFixture::new("sentinel")?;
+        role.file(".gitattributes", b"* filter=evilclean\n").await?;
+        role.file("tracked.txt", b"one\n").await?;
         role.commit().await?;
+        role.file("tracked.txt", b"two\n").await?;
         role.file("notes.txt", b"untracked\n").await?;
         let trap = Trap::new().await?;
-        trap.arm(role.root().as_path()).await?;
+        trap.arm_hostile(role.root().as_path()).await?;
         trap.prove_armed(role.root().as_path()).await?;
         let (cache, _keep) = cache()?;
         let (catalog, _runner) = catalog(&cache);
-        catalog.load_path(role.root()).await?;
+        catalog
+            .load_path(role.root(), &tokio_util::sync::CancellationToken::new())
+            .await?;
         assert_eq!(trap.fired(), "");
         Ok(())
     })

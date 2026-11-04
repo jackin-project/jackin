@@ -1,244 +1,134 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{CodexIndividualLimit, CodexUsageResponse, CodexWindowSnapshot};
-use jackin_protocol::control::{
-    CanonicalRemainingPercent, CanonicalUsedPercent, Money, PercentObservationOrigin,
-    ProviderQuotaState, QuotaBucketView, StatusSlot, UsageSnapshotStatus,
-};
 use jackin_usage_provider_core::{
-    bucket, codex_limit_label, expiry_label, format_amount_with_unit, json_number, parse_iso_epoch,
-    quota_pace_label, timed_bucket, with_status_slot, with_used_percent,
+    Bucket, BucketKind, ProviderError, Remaining, json_integer, json_money, json_number, json_text,
+    title_words,
 };
-use serde::Deserialize;
+use serde_json::Value;
 
-impl CodexUsageResponse {
-    pub(crate) fn individual_limit(&self) -> Option<&CodexIndividualLimit> {
-        self.individual_limit
-            .as_ref()
-            .or_else(|| self.spend_control.as_ref()?.individual_limit.as_ref())
+pub(crate) fn buckets(body: &Value, now: i64) -> Result<Vec<Bucket>, ProviderError> {
+    let mut out = Vec::new();
+    if let Some(limit) = body.get("rate_limit") {
+        out.extend(pair(limit, None, true, now)?);
     }
-
-    pub fn buckets(&self, now: i64) -> Vec<QuotaBucketView> {
-        let mut buckets = Vec::new();
-        if let Some(rate_limit) = &self.rate_limit {
-            let primary = rate_limit.primary_window.as_ref();
-            let secondary = rate_limit.secondary_window.as_ref();
-            let primary_slot = primary.and_then(CodexWindowSnapshot::exact_status_slot);
-            let secondary_slot = secondary
-                .and_then(CodexWindowSnapshot::exact_status_slot)
-                .filter(|slot| Some(*slot) != primary_slot);
-            let primary_slot = primary_slot
-                .or_else(|| preferred_slot(StatusSlot::Session, primary_slot, secondary_slot));
-            let secondary_slot = secondary_slot
-                .or_else(|| preferred_slot(StatusSlot::Weekly, primary_slot, secondary_slot));
-            if let Some(window) = primary {
-                let label = codex_window_display_label(window, primary_slot);
-                push_codex_window(&mut buckets, &label, primary_slot, Some(window), now);
-            }
-            if let Some(window) = secondary {
-                let label = codex_window_display_label(window, secondary_slot);
-                push_codex_window(&mut buckets, &label, secondary_slot, Some(window), now);
-            }
+    let extras = body
+        .get("additional_rate_limits")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten();
+    for extra in extras {
+        let name = extra
+            .get("limit_name")
+            .and_then(json_text)
+            .or_else(|| extra.get("metered_feature").and_then(json_text))
+            .map_or_else(|| "Codex extra".to_owned(), title_words);
+        if let Some(limit) = extra.get("rate_limit") {
+            out.extend(pair(limit, Some(&name), false, now)?);
         }
-        for limit in self.additional_rate_limits.iter().flatten() {
-            let label = limit
-                .limit_name
-                .as_deref()
-                .or(limit.metered_feature.as_deref())
-                .map_or_else(|| "Codex extra limit".to_owned(), codex_limit_label);
-            if let Some(rate_limit) = &limit.rate_limit {
-                push_codex_window(
-                    &mut buckets,
-                    &format!("{label} 5-hour"),
-                    None,
-                    rate_limit.primary_window.as_ref(),
-                    now,
-                );
-                push_codex_window(
-                    &mut buckets,
-                    &format!("{label} Weekly"),
-                    None,
-                    rate_limit.secondary_window.as_ref(),
-                    now,
-                );
-            }
-        }
-        if let Some(reset_credits) = &self.reset_credits
-            && reset_credits.available_count > 0
-        {
-            let detail = reset_credits.detail_label(now);
-            buckets.push(bucket(
-                "Limit Reset Credits",
-                None,
-                None,
-                None,
-                None,
-                Some(detail.as_str()),
-                UsageSnapshotStatus::Fresh,
-            ));
-        }
-        if let Some(credits) = &self.credits
-            && credits.has_credits.unwrap_or(false)
-        {
-            let balance = credits.balance.as_ref().and_then(json_number);
-            let mut credits_bucket = bucket(
-                "Credits",
-                None,
-                balance.map(|value| format_amount_with_unit(value, "credits")),
-                None,
-                None,
-                credits.unlimited.unwrap_or(false).then_some("unlimited"),
-                UsageSnapshotStatus::Fresh,
-            );
-            credits_bucket.provider_quota_state = credits
-                .unlimited
-                .filter(|unlimited| *unlimited)
-                .map(|_| ProviderQuotaState::Unlimited);
-            buckets.push(credits_bucket);
-        }
-        if let Some(limit) = self.individual_limit() {
-            let limit_money = limit.limit.as_ref().and_then(codex_money_value);
-            let used_money = limit.used.as_ref().and_then(codex_money_value);
-            let remaining = limit.remaining_percent.and_then(|points| {
-                CanonicalRemainingPercent::new(points)
-                    .ok()
-                    .map(|percent| (percent, PercentObservationOrigin::ProviderReported))
-            });
-            if used_money.is_some() || limit_money.is_some() || remaining.is_some() {
-                let mut view = timed_bucket(
-                    "Individual limit",
-                    used_money.as_ref().map(ToString::to_string),
-                    limit_money.as_ref().map(ToString::to_string),
-                    remaining,
-                    limit.resets_at,
-                    now,
-                    None,
-                    UsageSnapshotStatus::Fresh,
-                );
-                view.status_slot = Some(StatusSlot::Spend);
-                view.used_money = used_money;
-                view.limit_money = limit_money;
-                buckets.push(view);
-            }
-        }
-        buckets
     }
-}
-
-pub(crate) fn preferred_slot(
-    preferred: StatusSlot,
-    primary: Option<StatusSlot>,
-    secondary: Option<StatusSlot>,
-) -> Option<StatusSlot> {
-    if primary != Some(preferred) && secondary != Some(preferred) {
-        return Some(preferred);
-    }
-    let alternate = match preferred {
-        StatusSlot::Session => StatusSlot::Weekly,
-        StatusSlot::Weekly => StatusSlot::Session,
-        _ => preferred,
-    };
-    (primary != Some(alternate) && secondary != Some(alternate)).then_some(alternate)
-}
-
-pub(crate) fn codex_window_display_label(
-    window: &CodexWindowSnapshot,
-    slot: Option<StatusSlot>,
-) -> String {
-    match slot {
-        Some(StatusSlot::Session) => "Session".to_owned(),
-        Some(StatusSlot::Weekly) => "Weekly".to_owned(),
-        _ => window.window_label().unwrap_or_else(|| "Window".to_owned()),
-    }
-}
-
-pub(crate) fn codex_money_value(value: &serde_json::Value) -> Option<Money> {
-    let amount = match value {
-        serde_json::Value::Number(number) => number.as_f64()?,
-        serde_json::Value::String(string) => string.trim().parse::<f64>().ok()?,
-        _ => return None,
-    };
-    if !amount.is_finite() || amount < 0.0 {
-        return None;
-    }
-    let cents = (amount * 100.0).round() as i64;
-    Some(Money::new(cents, "USD", 2))
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CodexResetCredits {
-    pub credits: Vec<CodexResetCredit>,
-    #[serde(rename = "available_count")]
-    pub available_count: i64,
-}
-
-impl CodexResetCredits {
-    pub(crate) fn detail_label(&self, now: i64) -> String {
-        let count = if self.available_count == 1 {
-            "1 manual reset available".to_owned()
-        } else {
-            format!("{} manual resets available", self.available_count)
-        };
-        let Some(expires_at) = self.next_expiring_available_epoch(now) else {
-            return count;
-        };
-        format!("{count} · Next expires {}", expiry_label(expires_at, now))
-    }
-
-    pub(crate) fn next_expiring_available_epoch(&self, now: i64) -> Option<i64> {
-        self.credits
-            .iter()
-            .filter(|credit| credit.status.as_deref() == Some("available"))
-            .filter_map(|credit| {
-                credit
-                    .expires_at
-                    .as_deref()
-                    .and_then(parse_iso_epoch)
-                    .filter(|epoch| *epoch > now)
-            })
-            .min()
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CodexResetCredit {
-    pub status: Option<String>,
-    #[serde(rename = "expires_at")]
-    pub expires_at: Option<String>,
-}
-
-pub fn push_codex_window(
-    buckets: &mut Vec<QuotaBucketView>,
-    label: &str,
-    slot: Option<StatusSlot>,
-    window: Option<&CodexWindowSnapshot>,
-    now: i64,
-) {
-    let Some(window) = window else {
-        return;
-    };
-    let used = window.used_percent_points();
-    let pace_remaining = used
-        .and_then(|percent| CanonicalRemainingPercent::new((100.0 - percent.get()).max(0.0)).ok());
-    let used_label = used.map(CanonicalUsedPercent::label);
-    let window_seconds = window.window_seconds();
-    let reset_at = window.resets_at(now);
-    let pace = quota_pace_label(pace_remaining, reset_at, window_seconds, now)
-        .or_else(|| window.window_label());
-    let view = timed_bucket(
-        label,
-        used_label,
-        Some("100%".to_owned()),
-        None,
-        reset_at,
+    out.extend(credits(body.get("credits"))?);
+    out.extend(individual(
+        body.pointer("/spend_control/individual_limit"),
         now,
-        pace.as_deref(),
-        UsageSnapshotStatus::Fresh,
-    );
-    let view = with_used_percent(
-        view,
-        used.map(|percent| (percent, PercentObservationOrigin::ProviderReported)),
-    );
-    buckets.push(with_status_slot(view, slot));
+    )?);
+    Ok(out)
+}
+
+fn pair(
+    limit: &Value,
+    prefix: Option<&str>,
+    by_position: bool,
+    now: i64,
+) -> Result<Vec<Bucket>, ProviderError> {
+    let slots = [BucketKind::FiveHour, BucketKind::Weekly];
+    let mut out = Vec::new();
+    for (key, slot) in ["primary_window", "secondary_window"]
+        .into_iter()
+        .zip(slots)
+    {
+        if let Some(window) = limit.get(key).filter(|window| window.is_object()) {
+            out.push(window_bucket(
+                window,
+                prefix,
+                by_position.then_some(slot),
+                now,
+            )?);
+        }
+    }
+    Ok(out)
+}
+
+fn window_bucket(
+    window: &Value,
+    prefix: Option<&str>,
+    slot: Option<BucketKind>,
+    now: i64,
+) -> Result<Bucket, ProviderError> {
+    let seconds = window.get("limit_window_seconds").and_then(json_integer);
+    let slot = if seconds.is_some() { None } else { slot };
+    Ok(
+        Bucket::timed(prefix, seconds, slot, prefix.unwrap_or("Codex"))
+            .used(window.get("used_percent").and_then(json_number))
+            .resets(reset_at(window, now)?),
+    )
+}
+
+fn reset_at(window: &Value, now: i64) -> Result<Option<i64>, ProviderError> {
+    if let Some(at) = window.get("reset_at").and_then(json_integer) {
+        return Ok(Some(at));
+    }
+    let Some(after) = window
+        .get("reset_after_seconds")
+        .and_then(json_integer)
+        .filter(|after| *after >= 0)
+    else {
+        return Ok(None);
+    };
+    now.checked_add(after)
+        .map(Some)
+        .ok_or(ProviderError::OUT_OF_RANGE)
+}
+
+fn credits(credits: Option<&Value>) -> Result<Option<Bucket>, ProviderError> {
+    let Some(credits) = credits else {
+        return Ok(None);
+    };
+    if credits.get("has_credits").and_then(Value::as_bool) != Some(true) {
+        return Ok(None);
+    }
+    let Some(balance) = credits.get("balance") else {
+        return Ok(None);
+    };
+    Ok(json_money(balance, 2, "credits")?.map(|balance| {
+        Bucket::named(BucketKind::Credits, "credits").left(Some(Remaining::Amount(balance)))
+    }))
+}
+
+fn individual(limit: Option<&Value>, now: i64) -> Result<Option<Bucket>, ProviderError> {
+    let Some(limit) = limit else {
+        return Ok(None);
+    };
+    let money = |key: &str| match limit.get(key) {
+        Some(value) => json_money(value, 2, "USD"),
+        None => Ok(None),
+    };
+    let remaining = match (money("remaining")?, money("limit")?, money("used")?) {
+        (Some(left), _, _) => Some(Remaining::Amount(left.clamped_at_zero())),
+        (None, Some(cap), Some(used)) => Some(Remaining::Amount(
+            cap.minus(&used)
+                .ok_or(ProviderError::OUT_OF_RANGE)?
+                .clamped_at_zero(),
+        )),
+        _ => limit
+            .get("remaining_percent")
+            .and_then(json_number)
+            .map(Remaining::Percent),
+    };
+    Ok(Some(
+        Bucket::named(BucketKind::Spend, "Individual limit")
+            .used(limit.get("used_percent").and_then(json_number))
+            .left(remaining)
+            .resets(reset_at(limit, now)?),
+    ))
 }

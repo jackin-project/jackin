@@ -39,6 +39,10 @@ pub enum PathError {
     NotADirectory(HostPath),
     #[error("not a git work tree: {0}")]
     NotAGitWorkTree(HostPath),
+    #[error(
+        "the .git of {0} is a symlink or another kind of file; use a normal repository, a linked worktree, or a submodule checkout"
+    )]
+    UnsupportedGitEntry(HostPath),
     #[error(transparent)]
     Fs(#[from] FsError),
 }
@@ -93,6 +97,18 @@ impl HostPath {
 
     pub fn resolve(path: &Path, cwd: &HostPath) -> Result<HostPath, PathError> {
         normalize_host(&cwd.0.join(path)).map(HostPath)
+    }
+
+    pub async fn canonical_dir(
+        fs: &dyn FileSystem,
+        path: &HostPath,
+    ) -> Result<HostPath, PathError> {
+        let missing = || PathError::NotADirectory(path.clone());
+        let canonical = fs.canonicalize(path).await?.ok_or_else(missing)?;
+        match fs.stat_following(&canonical).await? {
+            Some(FileKind::Dir) => Ok(canonical),
+            _ => Err(missing()),
+        }
     }
 
     pub fn as_path(&self) -> &Path {
@@ -178,10 +194,13 @@ impl ProjectRoot {
         if fs.stat(path).await? != Some(FileKind::Dir) {
             return Err(PathError::NotADirectory(path.clone()));
         }
-        if fs.stat(&path.join_name(".git")).await?.is_none() {
-            return Err(PathError::NotAGitWorkTree(path.clone()));
+        let git = path.join_name(".git");
+        match fs.stat(&git).await? {
+            None => Err(PathError::NotAGitWorkTree(path.clone())),
+            Some(FileKind::Dir) => Ok(ProjectRoot(path.clone())),
+            Some(FileKind::File) => Ok(ProjectRoot(path.clone())),
+            Some(_) => Err(PathError::UnsupportedGitEntry(path.clone())),
         }
-        Ok(ProjectRoot(path.clone()))
     }
 
     pub fn path(&self) -> &HostPath {
@@ -238,6 +257,10 @@ pub mod sandbox_layout {
 
     pub fn env_file(launch: &LaunchId) -> SandboxPath {
         under(&JACKIN_DIR, format!("env-{launch}"))
+    }
+
+    pub fn docker_file(name: &str) -> SandboxPath {
+        under(&DOCKER_DIR, name.to_owned())
     }
 
     pub fn hook_path(kind: HookKind) -> SandboxPath {

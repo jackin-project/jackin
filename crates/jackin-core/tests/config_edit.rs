@@ -4,9 +4,10 @@
 use std::path::Path;
 
 use jackin_core::{
-    Account, AccountName, AccountQuery, Agent, Config, ConfigEdit, ConfigError, ConfigReference,
-    CredentialSource, EngineConfig, EnvName, GatewayEntry, GatewayName, HostPath, Platform,
-    Provider, RoleName, RoleSource, SelectionRule, Workspace, WorkspaceName,
+    Account, AccountName, AccountQuery, Agent, AllowedRoles, ChatgptAccountId, Config, ConfigEdit,
+    ConfigError, ConfigReference, CredentialSource, EngineConfig, EnvName, EnvScope, EnvValueError,
+    GatewayEntry, GatewayName, HostPath, PlainEnvValue, Platform, Provider, ReservedEnvName,
+    RoleName, RoleSet, RoleSource, ScopedEnvName, SelectionRule, Workspace, WorkspaceName,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -239,6 +240,19 @@ fn account_rows() -> Fallible<Vec<Row>> {
             unset(&[&["accounts", "ci"]]),
         ),
         row(
+            "replace an account credential",
+            ConfigEdit::SetAccountCredential {
+                account: acct("work")?,
+                credential: CredentialSource::File {
+                    path: hp("/keys/work")?,
+                },
+            },
+            set(
+                &["accounts", "work", "credential"],
+                "{ source = \"file\", path = \"/keys/work\" }",
+            ),
+        ),
+        row(
             "set default account",
             ConfigEdit::SetDefaultAccount {
                 account: acct("ci")?,
@@ -279,12 +293,76 @@ fn account_rows() -> Fallible<Vec<Row>> {
     ])
 }
 
+fn plain(text: &str) -> Fallible<PlainEnvValue> {
+    Ok(PlainEnvValue::parse(text)?)
+}
+
+fn only(names: &[&str]) -> Fallible<AllowedRoles> {
+    Ok(AllowedRoles::Only(
+        RoleSet::new(
+            names
+                .iter()
+                .map(|name| role(name))
+                .collect::<Fallible<Vec<_>>>()?,
+        )
+        .ok_or("an empty role set")?,
+    ))
+}
+
+fn env_rows() -> Fallible<Vec<Row>> {
+    let set_env = |scope, text: &str| -> Fallible<ConfigEdit> {
+        Ok(ConfigEdit::SetEnv {
+            scope,
+            name: EnvName::parse("REGION")?,
+            value: Some(plain(text)?),
+        })
+    };
+    Ok(vec![
+        row(
+            "set a global variable",
+            set_env(EnvScope::Global, "eu")?,
+            set(&["env", "REGION"], "\"eu\""),
+        ),
+        row(
+            "set a workspace variable",
+            set_env(EnvScope::Workspace(ws("proj")?), "us")?,
+            set(&["workspaces", "proj", "env", "REGION"], "\"us\""),
+        ),
+        row(
+            "set a workspace and role variable",
+            set_env(EnvScope::WorkspaceRole(ws("proj")?, role("smith")?), "ap")?,
+            set(
+                &["workspaces", "proj", "role_env", "smith", "REGION"],
+                "\"ap\"",
+            ),
+        ),
+        row(
+            "allow two roles",
+            ConfigEdit::SetWorkspaceRoles {
+                workspace: ws("other")?,
+                roles: only(&["sentinel", "smith"])?,
+            },
+            set(
+                &["workspaces", "other", "roles"],
+                "[\"sentinel\", \"smith\"]",
+            ),
+        ),
+        row(
+            "allow every role again",
+            ConfigEdit::SetWorkspaceRoles {
+                workspace: ws("proj")?,
+                roles: AllowedRoles::All,
+            },
+            unset(&[]),
+        ),
+    ])
+}
+
 fn entry_rows() -> Fallible<Vec<Row>> {
     let new_workspace = Workspace {
-        path: hp("/p/ws3")?,
-        docker: true,
         default_role: Some(role("smith")?),
         bindings: [(Provider::Claude, acct("spare")?)].into(),
+        ..Workspace::new(hp("/p/ws3")?, true)
     };
     Ok(vec![
         row(
@@ -334,6 +412,22 @@ fn entry_rows() -> Fallible<Vec<Row>> {
             unset(&[&["workspaces", "other"]]),
         ),
         row(
+            "rename workspace",
+            ConfigEdit::RenameWorkspace {
+                from: ws("proj")?,
+                to: ws("renamed")?,
+            },
+            Box::new(|table| {
+                let workspaces = table
+                    .get_mut("workspaces")
+                    .and_then(toml::Value::as_table_mut)
+                    .ok_or("workspaces")?;
+                let moved = workspaces.remove("proj").ok_or("proj")?;
+                workspaces.insert("renamed".to_owned(), moved);
+                Ok(())
+            }),
+        ),
+        row(
             "set docker",
             ConfigEdit::SetWorkspaceDocker {
                 workspace: ws("other")?,
@@ -365,6 +459,7 @@ fn every_edit_changes_only_what_it_names() -> TestResult {
     let mut rows = gateway_rows()?;
     rows.extend(account_rows()?);
     rows.extend(entry_rows()?);
+    rows.extend(env_rows()?);
     for Row {
         label,
         edit,
@@ -432,13 +527,12 @@ fn new_workspace(
     default_role: Option<&str>,
 ) -> Fallible<Workspace> {
     Ok(Workspace {
-        path: hp("/p/new")?,
-        docker: false,
         default_role: default_role.map(role).transpose()?,
         bindings: bindings
             .into_iter()
             .map(|(provider, name)| Ok((provider, acct(name)?)))
             .collect::<Fallible<_>>()?,
+        ..Workspace::new(hp("/p/new")?, false)
     })
 }
 
@@ -514,6 +608,14 @@ fn duplicate_rows() -> Fallible<Vec<RejectedRow>> {
             },
             "duplicate:workspace:proj".to_owned(),
         ),
+        (
+            "rename onto a taken workspace",
+            ConfigEdit::RenameWorkspace {
+                from: ws("proj")?,
+                to: ws("other")?,
+            },
+            "duplicate:workspace:other".to_owned(),
+        ),
     ])
 }
 
@@ -540,8 +642,26 @@ fn missing_rows() -> Fallible<Vec<RejectedRow>> {
             "reference:role:ghost".to_owned(),
         ),
         (
+            "credential of a ghost account",
+            ConfigEdit::SetAccountCredential {
+                account: acct("ghost")?,
+                credential: CredentialSource::File {
+                    path: hp("/keys/ghost")?,
+                },
+            },
+            "reference:account:ghost".to_owned(),
+        ),
+        (
             "remove ghost workspace",
             ConfigEdit::RemoveWorkspace(ws("ghost")?),
+            "reference:workspace:ghost".to_owned(),
+        ),
+        (
+            "rename ghost workspace",
+            ConfigEdit::RenameWorkspace {
+                from: ws("ghost")?,
+                to: ws("renamed")?,
+            },
             "reference:workspace:ghost".to_owned(),
         ),
         (
@@ -623,6 +743,17 @@ fn blocked_rows() -> Fallible<Vec<RejectedRow>> {
             "mismatch:personal:codex:claude".to_owned(),
         ),
         (
+            "a ChatGPT login on a claude account",
+            ConfigEdit::SetAccountCredential {
+                account: acct("personal")?,
+                credential: CredentialSource::CodexLogin {
+                    home: hp("/codex")?,
+                    chatgpt_account_id: ChatgptAccountId::parse("acct-1")?,
+                },
+            },
+            "credential:claude".to_owned(),
+        ),
+        (
             "account in use by three",
             ConfigEdit::RemoveAccount(acct("work")?),
             "account-in-use:work:3".to_owned(),
@@ -659,8 +790,111 @@ fn blocked_rows() -> Fallible<Vec<RejectedRow>> {
     ])
 }
 
+fn env_rejected_rows() -> Fallible<Vec<RejectedRow>> {
+    let var = |text: &str| EnvName::parse(text);
+    Ok(vec![
+        (
+            "a reserved global variable",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::Global,
+                name: var("DOCKER_HOST")?,
+                value: Some(plain("x")?),
+            },
+            "invalid:env.DOCKER_HOST".to_owned(),
+        ),
+        (
+            "a reserved workspace variable",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::Workspace(ws("proj")?),
+                name: var("DOCKER_HOST")?,
+                value: Some(plain("x")?),
+            },
+            "invalid:workspaces.proj.env.DOCKER_HOST".to_owned(),
+        ),
+        (
+            "a reserved workspace role variable",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::WorkspaceRole(ws("proj")?, role("smith")?),
+                name: var("DOCKER_HOST")?,
+                value: Some(plain("x")?),
+            },
+            "invalid:workspaces.proj.role_env.smith.DOCKER_HOST".to_owned(),
+        ),
+        (
+            "unsetting a reserved workspace role variable",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::WorkspaceRole(ws("proj")?, role("smith")?),
+                name: var("PATH")?,
+                value: None,
+            },
+            "invalid:workspaces.proj.role_env.smith.PATH".to_owned(),
+        ),
+        (
+            "unsetting a reserved variable",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::Workspace(ws("proj")?),
+                name: var("JACKIN_LAUNCH_ID")?,
+                value: None,
+            },
+            "invalid:workspaces.proj.env.JACKIN_LAUNCH_ID".to_owned(),
+        ),
+        (
+            "a variable of a ghost workspace",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::Workspace(ws("ghost-ws")?),
+                name: var("REGION")?,
+                value: Some(plain("x")?),
+            },
+            "reference:workspace:ghost-ws".to_owned(),
+        ),
+        (
+            "a variable of a ghost role in a workspace",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::WorkspaceRole(ws("proj")?, role("ghost-role")?),
+                name: var("REGION")?,
+                value: Some(plain("x")?),
+            },
+            "reference:role:ghost-role".to_owned(),
+        ),
+        (
+            "a variable of a role in a ghost workspace",
+            ConfigEdit::SetEnv {
+                scope: EnvScope::WorkspaceRole(ws("ghost-ws")?, role("smith")?),
+                name: var("REGION")?,
+                value: Some(plain("x")?),
+            },
+            "reference:workspace:ghost-ws".to_owned(),
+        ),
+        (
+            "allowed roles naming a ghost role",
+            ConfigEdit::SetWorkspaceRoles {
+                workspace: ws("other")?,
+                roles: only(&["sentinel", "ghost"])?,
+            },
+            "reference:role:ghost".to_owned(),
+        ),
+        (
+            "allowed roles of a ghost workspace",
+            ConfigEdit::SetWorkspaceRoles {
+                workspace: ws("ghost-ws")?,
+                roles: only(&["sentinel"])?,
+            },
+            "reference:workspace:ghost-ws".to_owned(),
+        ),
+        (
+            "allowed roles that leave out the default role",
+            ConfigEdit::SetWorkspaceRoles {
+                workspace: ws("proj")?,
+                roles: only(&["smith"])?,
+            },
+            "invalid:workspaces.proj.default_role".to_owned(),
+        ),
+    ])
+}
+
 fn rejected_rows() -> Fallible<Vec<RejectedRow>> {
-    let mut rows = duplicate_rows()?;
+    let mut rows = env_rejected_rows()?;
+    rows.extend(duplicate_rows()?);
     rows.extend(duplicate_path_rows()?);
     rows.extend(missing_rows()?);
     rows.extend(blocked_rows()?);
@@ -768,5 +1002,288 @@ fn removing_a_bound_account_with_its_bindings_clears_exactly_the_references_it_l
         .err()
         .ok_or("ghost")?;
     assert_eq!(label(&error), "reference:account:ghost");
+    Ok(())
+}
+
+fn var(name: &str) -> Fallible<EnvName> {
+    Ok(EnvName::parse(name)?)
+}
+
+#[test]
+fn env_edits_replace_unset_and_drop_an_emptied_role_table() -> TestResult {
+    let mut config = Config::parse(BASE)?;
+    let sentinel = role("sentinel")?;
+    let scopes = [
+        EnvScope::Global,
+        EnvScope::Workspace(ws("proj")?),
+        EnvScope::WorkspaceRole(ws("proj")?, sentinel.clone()),
+    ];
+    for (scope, text) in scopes.iter().zip(["g", "w", "r"]) {
+        for value in [text, "replaced"] {
+            config.apply(ConfigEdit::SetEnv {
+                scope: scope.clone(),
+                name: var("REGION")?,
+                value: Some(plain(value)?),
+            })?;
+        }
+    }
+    let proj = config.workspace(&ws("proj")?).ok_or("proj")?;
+    assert_eq!(config.env().len(), 1);
+    assert_eq!(proj.env.len(), 1);
+    assert_eq!(
+        proj.role_env
+            .get(&sentinel)
+            .map(std::collections::BTreeMap::len),
+        Some(1)
+    );
+    for table in [config.env(), &proj.env, &proj.role_env[&sentinel]] {
+        assert_eq!(table[&var("REGION")?].as_str(), "replaced");
+    }
+    let rendered = config.render();
+    assert!(
+        rendered.contains("[env]\nREGION = \"replaced\"\n"),
+        "{rendered}"
+    );
+    assert_eq!(Config::parse(&rendered)?, config);
+
+    for scope in scopes {
+        config.apply(ConfigEdit::SetEnv {
+            scope,
+            name: var("REGION")?,
+            value: None,
+        })?;
+    }
+    let proj = config.workspace(&ws("proj")?).ok_or("proj")?;
+    assert!(config.env().is_empty() && proj.env.is_empty());
+    assert!(
+        proj.role_env.is_empty(),
+        "an emptied role table stays behind"
+    );
+    assert_eq!(config.render(), Config::parse(BASE)?.render());
+    Ok(())
+}
+
+#[test]
+fn moving_a_variable_between_scopes_is_an_unset_and_a_set_in_one_edit_list() -> TestResult {
+    let mut config = Config::parse(BASE)?;
+    let from = EnvScope::Workspace(ws("proj")?);
+    let to = EnvScope::WorkspaceRole(ws("proj")?, role("sentinel")?);
+    config.apply(ConfigEdit::SetEnv {
+        scope: from.clone(),
+        name: var("MODE")?,
+        value: Some(plain("fast")?),
+    })?;
+    for edit in [
+        ConfigEdit::SetEnv {
+            scope: from,
+            name: var("MODE")?,
+            value: None,
+        },
+        ConfigEdit::SetEnv {
+            scope: to,
+            name: var("MODE")?,
+            value: Some(plain("fast")?),
+        },
+    ] {
+        config.apply(edit)?;
+    }
+    let proj = config.workspace(&ws("proj")?).ok_or("proj")?;
+    assert!(proj.env.is_empty());
+    assert_eq!(
+        proj.role_env[&role("sentinel")?][&var("MODE")?].as_str(),
+        "fast"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_role_that_a_workspace_allows_or_gives_variables_cannot_be_removed() -> TestResult {
+    let mut config = Config::parse(BASE)?;
+    config.apply(ConfigEdit::SetWorkspaceRoles {
+        workspace: ws("other")?,
+        roles: only(&["smith"])?,
+    })?;
+    let blocked = config.clone().apply(ConfigEdit::RemoveRole(role("smith")?));
+    assert!(
+        matches!(&blocked, Err(ConfigError::RoleInUse { by, .. }) if *by == [ConfigReference::WorkspaceRoles(ws("other")?)]),
+        "{blocked:?}"
+    );
+    config.apply(ConfigEdit::SetWorkspaceRoles {
+        workspace: ws("other")?,
+        roles: AllowedRoles::All,
+    })?;
+    config.apply(ConfigEdit::SetEnv {
+        scope: EnvScope::WorkspaceRole(ws("other")?, role("smith")?),
+        name: var("MODE")?,
+        value: Some(plain("fast")?),
+    })?;
+    let blocked = config.clone().apply(ConfigEdit::RemoveRole(role("smith")?));
+    assert!(
+        matches!(&blocked, Err(ConfigError::RoleInUse { by, .. }) if *by == [ConfigReference::WorkspaceRoleEnv(ws("other")?)]),
+        "{blocked:?}"
+    );
+    config.apply(ConfigEdit::SetEnv {
+        scope: EnvScope::WorkspaceRole(ws("other")?, role("smith")?),
+        name: var("MODE")?,
+        value: None,
+    })?;
+    config.apply(ConfigEdit::RemoveRole(role("smith")?))?;
+    Ok(())
+}
+
+#[test]
+fn the_default_role_must_stay_inside_the_allowed_roles() -> TestResult {
+    let mut config = Config::parse(BASE)?;
+    config.apply(ConfigEdit::SetWorkspaceDefaultRole {
+        workspace: ws("proj")?,
+        role: None,
+    })?;
+    config.apply(ConfigEdit::SetWorkspaceRoles {
+        workspace: ws("proj")?,
+        roles: only(&["sentinel"])?,
+    })?;
+    let outside = config.clone().apply(ConfigEdit::SetWorkspaceDefaultRole {
+        workspace: ws("proj")?,
+        role: Some(role("smith")?),
+    });
+    assert!(
+        matches!(&outside, Err(ConfigError::InvalidValue { key, .. }) if key == "workspaces.proj.default_role"),
+        "{outside:?}"
+    );
+    config.apply(ConfigEdit::SetWorkspaceDefaultRole {
+        workspace: ws("proj")?,
+        role: Some(role("sentinel")?),
+    })?;
+    let mut workspace = Workspace::new(hp("/p/new")?, false);
+    workspace.roles = only(&["sentinel"])?;
+    workspace.default_role = Some(role("smith")?);
+    let added = config.apply(ConfigEdit::AddWorkspace {
+        name: ws("new")?,
+        workspace,
+    });
+    assert!(
+        matches!(&added, Err(ConfigError::InvalidValue { key, .. }) if key == "workspaces.new.default_role"),
+        "{added:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_plain_env_value_refuses_a_1password_reference_and_control_characters() -> TestResult {
+    for (text, expected) in [
+        ("", Ok("")),
+        ("hello world", Ok("hello world")),
+        ("a=b;c", Ok("a=b;c")),
+        ("see op://not-at-start", Ok("see op://not-at-start")),
+        ("op://Dev/Item/field", Err(EnvValueError::OnePassword)),
+        ("op://", Err(EnvValueError::OnePassword)),
+        ("one\ntwo", Err(EnvValueError::Control)),
+        ("nul\0byte", Err(EnvValueError::Control)),
+    ] {
+        let parsed = PlainEnvValue::parse(text);
+        assert_eq!(
+            parsed.as_ref().map(PlainEnvValue::as_str),
+            expected.as_ref().map(|text| *text),
+            "{text:?}"
+        );
+        assert_eq!(
+            parsed.map(|value| value.to_string()),
+            expected.map(str::to_owned)
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_scoped_env_name_is_never_a_name_jackin_reserves() -> TestResult {
+    for reserved in [
+        "PATH",
+        "HOME",
+        "JACKIN_LAUNCH_ID",
+        "DOCKER_HOST",
+        "BUILDX_BUILDER",
+        "OPENSHELL_ENDPOINT",
+        "CODEX_AUTH_ACCESS_TOKEN",
+        "LD_PRELOAD",
+        "OPENAI_API_KEY",
+        "CODEX_HOME",
+    ] {
+        assert_eq!(
+            ScopedEnvName::new(EnvName::parse(reserved)?),
+            Err(ReservedEnvName),
+            "{reserved}"
+        );
+    }
+    for free in ["GITHUB_TOKEN", "path", "REGION", "HOMEPAGE", "MY_PATH"] {
+        let name = ScopedEnvName::new(EnvName::parse(free)?)?;
+        assert_eq!(name.as_str(), free);
+    }
+    Ok(())
+}
+
+#[test]
+fn replacing_a_credential_keeps_the_bindings_and_never_creates_a_default() -> TestResult {
+    let mut config = Config::parse(&BASE.replace("claude = \"personal\"\n", ""))?;
+    assert_eq!(config.default_account(Provider::Claude), None);
+    config.apply(ConfigEdit::SetAccountCredential {
+        account: acct("personal")?,
+        credential: CredentialSource::File {
+            path: hp("/keys/personal")?,
+        },
+    })?;
+    assert_eq!(config.default_account(Provider::Claude), None);
+    assert_eq!(
+        config.default_account(Provider::Codex),
+        Some(&acct("work")?)
+    );
+    let bound = config
+        .workspace(&ws("proj")?)
+        .and_then(|workspace| workspace.bindings.get(&Provider::Claude));
+    assert_eq!(bound, Some(&acct("personal")?));
+    Ok(())
+}
+
+#[test]
+fn a_plain_env_value_refuses_a_credential_reference_in_any_case_after_leading_space() -> TestResult
+{
+    let refused = [
+        ("op://v/i/f", EnvValueError::OnePassword),
+        (" op://v/i/f", EnvValueError::OnePassword),
+        ("\t Op://x", EnvValueError::OnePassword),
+        ("OP://V/I/F", EnvValueError::OnePassword),
+        ("\u{feff}op://x", EnvValueError::OnePassword),
+        (" \u{feff} \u{feff}op://x", EnvValueError::OnePassword),
+        ("openshell:resolve:env:X", EnvValueError::Placeholder),
+        (" OPENSHELL:RESOLVE:x", EnvValueError::Placeholder),
+        (
+            "\u{feff}openshell:resolve:env:X",
+            EnvValueError::Placeholder,
+        ),
+    ];
+    for (text, error) in refused {
+        assert_eq!(PlainEnvValue::parse(text), Err(error), "{text:?}");
+    }
+    for text in [
+        "ghp_abc",
+        "sk-live-1",
+        "-----BEGIN PRIVATE KEY-----",
+        "\"op://x\"",
+        "see op://x",
+        "https://op.example",
+        "o",
+        "é",
+        "",
+        "openshell:resolve",
+        "abcdé",
+        "openshell:resolveé",
+    ] {
+        assert_eq!(
+            PlainEnvValue::parse(text)
+                .as_ref()
+                .map(PlainEnvValue::as_str),
+            Ok(text),
+            "{text:?}"
+        );
+    }
     Ok(())
 }

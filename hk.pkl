@@ -1,15 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-amends "package://github.com/jdx/hk/releases/download/v2.10.0/hk@2.10.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v2.10.0/hk@2.10.0#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v2.11.1/hk@2.11.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.11.1/hk@2.11.1#/Builtins.pkl"
 
 jobs = 2
 fail_fast = false
 
 steps {
   ["mise"] = Builtins.mise
-  ["gitleaks"] = Builtins.gitleaks
+  ["gitleaks"] = (Builtins.gitleaks) {
+    check = "tree=$(mktemp -d) && trap 'rm -rf \"$tree\"' EXIT && git checkout-index --all --prefix=\"$tree/\" && cd \"$tree\" && gitleaks dir --redact --verbose --no-banner ."
+  }
   ["cargo_fmt"] {
     glob = List("**/*.rs", "rustfmt.toml")
     check = "cargo fmt --all --check"
@@ -51,7 +53,7 @@ hooks {
   }
   ["pre-push"] {
     steps {
-      ["betterleaks-history"] { check = "betterleaks git . --redact" }
+      ["betterleaks-history"] { check = "betterleaks git . --redact --log-opts=\"HEAD --not --remotes\"" }
       ["xtask-ci"] { check = "mise run ci:fast" }
     }
   }

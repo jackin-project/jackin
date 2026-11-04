@@ -1,13 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+
 use jackin::ExitClass;
 use jackin_core::{AttemptId, HookKind, Phase, SupervisorState, sandbox_layout};
 use jackin_testkit::{Rig, SandboxHandle, TestResult, guard};
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    Failure, Harness, RawProbe, ScriptedTerminal, Step, failed, term_size, until,
+    Failure, Harness, Ran, RawProbe, ScriptedTerminal, Step, failed, term_size, until,
 };
 
 const DETACH: &[u8] = b"\x10\x11";
@@ -214,6 +217,156 @@ async fn the_terminal_is_restored_after_a_session_error_and_a_cancel_detaches_wi
         assert!(ran.stderr.contains(name.as_str()));
         until(|| handle.attachments() == 0).await?;
         assert_eq!(handle.phase(), Phase::Ready);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn osc52_is_blocked_in_both_directions_while_other_bytes_pass() -> TestResult {
+    guard(async {
+        let (_rig, harness, handle) = running().await?;
+        let name = handle.name();
+        handle.print_main(b"x\x1b]52;c;c2VjcmV0\x07y\x1b]52;c;?\x1b\\z\x1b[1mbold");
+        let (terminal, _) = script(vec![
+            Step::Bytes(b"a\x1b]52;c;c2VjcmV0\x1b\\b\x1b[12;40Rc".to_vec()),
+            Step::Bytes(DETACH.to_vec()),
+        ])?;
+        let ran = harness
+            .command(&["attach", name.as_str()])
+            .terminal(terminal)
+            .run()
+            .await?;
+        ran.ok()?;
+        assert!(ran.stdout.contains("xyz\x1b[1mbold"), "{:?}", ran.stdout);
+        assert!(!ran.stdout.contains("]52"), "{:?}", ran.stdout);
+        assert_eq!(handle.main_input(), b"ab\x1b[12;40Rc");
+        Ok(())
+    })
+    .await
+}
+
+async fn after_ticks(
+    rig: &Rig,
+    harness: &Harness,
+    handle: &SandboxHandle,
+    ticks: usize,
+    act: impl FnOnce(),
+) -> Result<(Ran, RawProbe), Failure> {
+    let gate = Arc::new(Notify::new());
+    let (terminal, probe) = script(vec![
+        Step::Gate(Arc::clone(&gate)),
+        Step::Bytes(DETACH.to_vec()),
+    ])?;
+    let name = handle.name();
+    let cancel = CancellationToken::new();
+    let command = harness
+        .command(&["attach", name.as_str()])
+        .terminal(terminal)
+        .cancel(cancel.clone());
+    let clock = &rig.world.clock;
+    let (ran, driven) = tokio::join!(command.run(), async {
+        let driven = async {
+            until(|| probe.raw()).await?;
+            let before = clock.slept().len();
+            act();
+            until(|| clock.slept().len() >= before + ticks).await?;
+            if handle.attachments() != 1 {
+                return Err(Failure::from("the pump detached by itself"));
+            }
+            gate.notify_one();
+            Ok(())
+        }
+        .await;
+        if driven.is_err() {
+            cancel.cancel();
+        }
+        driven
+    });
+    driven?;
+    Ok((ran?, probe))
+}
+
+fn hints(ran: &Ran) -> usize {
+    ran.stderr.matches("Codex exited with code").count()
+}
+
+#[tokio::test]
+async fn a_codex_exit_while_attached_prints_one_hint_and_the_pump_keeps_running() -> TestResult {
+    guard(async {
+        let (rig, harness, handle) = running().await?;
+        let name = handle.name();
+        let (ran, raw) = after_ticks(&rig, &harness, &handle, 3, || handle.exit_codex(0)).await?;
+        ran.ok()?;
+        assert!(!raw.raw());
+        assert_eq!(hints(&ran), 1, "{:?}", ran.stderr);
+        let hint = format!(
+            "\r\nCodex exited with code 0; Ctrl+D detaches, then jackin attach {name} --restart starts it again\r\n"
+        );
+        assert!(ran.stderr.contains(&hint), "{:?}", ran.stderr);
+        assert!(!ran.stderr.contains('\u{1b}'), "{:?}", ran.stderr);
+        assert!(matches!(
+            handle.supervisor(),
+            Some(SupervisorState::Exited { code: 0, .. })
+        ));
+        assert_eq!(handle.phase(), Phase::Ready);
+        until(|| handle.attachments() == 0).await?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_exit_before_the_attach_is_hinted_once_even_after_polls() -> TestResult {
+    guard(async {
+        let (rig, harness, handle) = running().await?;
+        handle.exit_codex(37);
+        let (ran, raw) = after_ticks(&rig, &harness, &handle, 3, || {}).await?;
+        ran.ok()?;
+        assert!(!raw.raw());
+        assert_eq!(hints(&ran), 1, "{:?}", ran.stderr);
+        assert!(ran.stderr.contains("code 37"), "{:?}", ran.stderr);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_running_codex_never_shows_the_exit_hint() -> TestResult {
+    guard(async {
+        let (rig, harness, handle) = running().await?;
+        let (ran, raw) = after_ticks(&rig, &harness, &handle, 3, || {}).await?;
+        ran.ok()?;
+        assert!(!raw.raw());
+        assert_eq!(hints(&ran), 0, "{:?}", ran.stderr);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_main_stream_that_ends_shows_its_exit_code_and_only_zero_is_a_success() -> TestResult {
+    guard(async {
+        for (code, class) in [(0, ExitClass::Ok), (7, ExitClass::Failure)] {
+            let (_rig, harness, handle) = running().await?;
+            let name = handle.name();
+            let (terminal, raw) = script(vec![])?;
+            let command = harness
+                .command(&["attach", name.as_str()])
+                .terminal(terminal);
+            let (ran, ()) = tokio::join!(command.run(), async {
+                drop(until(|| handle.attachments() == 1).await);
+                handle.exit_main(code);
+            });
+            let ran = ran?;
+            assert_eq!(ran.exit, class, "{}", ran.stderr);
+            assert!(
+                ran.stderr.contains(&format!("exited with code {code}")),
+                "{}",
+                ran.stderr
+            );
+            assert!(!raw.raw());
+        }
         Ok(())
     })
     .await

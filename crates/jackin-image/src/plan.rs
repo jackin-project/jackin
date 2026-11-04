@@ -3,15 +3,13 @@
 
 use std::fmt;
 
-use jackin_core::{
-    FileMode, HookKind, HostPath, ImageId, ImageTag, RepoPath, SandboxPath, Sha256, sandbox_layout,
-};
+use jackin_core::{FileMode, HookKind, ImageId, ImageTag, SandboxPath, Sha256, sandbox_layout};
 
-use crate::assets::{CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, JACKIN_START};
+use crate::assets::{CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, JACKIN_START, SCAN};
 use crate::dockerfile::{DockerfileError, validate_dockerfile};
 use crate::error::ImageError;
 use crate::key::{Fields, ImageKey, derived_arguments};
-use crate::request::{ImageRequest, Rebuild, SourceFile};
+use crate::request::{ContextEntry, ImageRequest, Rebuild, SourceFile};
 
 const CONTEXT_MODE: FileMode = FileMode(0o644);
 
@@ -43,10 +41,7 @@ pub struct PlannedBuild {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ContextSource {
-    Listed {
-        root: HostPath,
-        files: Vec<RepoPath>,
-    },
+    Entries(Vec<ContextEntry>),
     Materialized(Vec<MaterializedFile>),
 }
 
@@ -79,7 +74,7 @@ impl ImagePlan {
         Ok(ImagePlan {
             request: request.clone(),
             construct: construct_build(request),
-            derived_args: derived_arguments(request.agent)?,
+            derived_args: derived_arguments(request.agent, request.docker)?,
         })
     }
 
@@ -104,6 +99,10 @@ impl ImagePlan {
         ));
         let mut derived_args = common_arguments(request, &derived_tag);
         derived_args.push(format!("--build-context=role=docker-image://{role_tag}"));
+        derived_args.push(format!(
+            "--build-context=construct=docker-image://{}",
+            self.construct.tag
+        ));
         derived_args.extend(self.derived_args.iter().cloned());
         FinalBuilds {
             key,
@@ -111,7 +110,7 @@ impl ImagePlan {
                 stage: BuildStage::Role,
                 tag: role_tag,
                 args: role_args,
-                context: listed_context(request),
+                context: entries_context(request),
                 stdin: Some(request.dockerfile.bytes.clone()),
             },
             derived: PlannedBuild {
@@ -173,14 +172,11 @@ fn last_segment(path: &SandboxPath) -> &str {
         .map_or(path.as_str(), |(_, name)| name)
 }
 
-fn listed_context(request: &ImageRequest) -> ContextSource {
-    let mut files = request.context_files.clone();
-    files.sort();
-    files.dedup();
-    ContextSource::Listed {
-        root: request.context.clone(),
-        files,
-    }
+fn entries_context(request: &ImageRequest) -> ContextSource {
+    let mut entries = request.context_files.clone();
+    entries.sort_by(|a, b| a.path().cmp(b.path()));
+    entries.dedup_by(|a, b| a.path() == b.path());
+    ContextSource::Entries(entries)
 }
 
 fn hook_file(kind: HookKind, source: Option<&SourceFile>) -> MaterializedFile {
@@ -195,6 +191,7 @@ fn derived_context(request: &ImageRequest) -> Vec<MaterializedFile> {
     vec![
         file("Dockerfile", DERIVED_DOCKERFILE),
         file("jackin-start", JACKIN_START),
+        file("scan", SCAN),
         hook_file(HookKind::Setup, request.hooks.setup.as_ref()),
         hook_file(HookKind::Preflight, request.hooks.preflight.as_ref()),
     ]

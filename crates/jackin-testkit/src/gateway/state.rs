@@ -1,26 +1,33 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use jackin_core::{
-    ImageTag, Labels, Phase, ProfileId, ProviderName, SandboxName, SandboxPath, TerminalText,
+    Clock, ImageId, ImageTag, Labels, Phase, ProfileId, ProviderName, SandboxName, SandboxPath,
+    TerminalText, Timestamp,
 };
 use jackin_openshell::{
     GatewayError, GatewayOp, NetworkRule, ProviderProfile, Provisioning, SandboxCreate, SandboxView,
 };
 use tempfile::TempDir;
+use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use super::main_process::{Main, MainPlan, PlanEnd};
-use super::{HostEdit, ProgramScript, ProviderRecord, RunRecord, Trigger, UploadKind};
+use super::{
+    HostEdit, ProgramScript, ProviderRecord, RunRecord, ShellWitness, Trigger, UploadKind,
+};
 use crate::engine::FakeEngine;
+use crate::host::FakeClock;
 use crate::supervisor::{Supervisor, SupervisorModel};
 use crate::sync::locked;
 
 pub(super) const SANDBOX_ROOT: &str = "/sandbox";
+pub(super) const MAX_ATTACHMENTS: usize = 20;
 
 #[derive(Debug)]
 pub(super) struct Armed {
@@ -53,6 +60,49 @@ impl ArmedTrigger {
     }
 }
 
+#[derive(Debug, Default)]
+pub(super) struct Gate {
+    reached: AtomicBool,
+    released: AtomicBool,
+    wake: Notify,
+}
+
+impl Gate {
+    pub(super) async fn wait(&self) {
+        loop {
+            let woken = self.wake.notified();
+            tokio::pin!(woken);
+            woken.as_mut().enable();
+            if self.released.load(Ordering::SeqCst) {
+                return;
+            }
+            woken.await;
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct Hold {
+    trigger: Trigger,
+    gate: Arc<Gate>,
+}
+
+impl Hold {
+    pub(super) fn new(trigger: Trigger) -> Hold {
+        Hold {
+            trigger,
+            gate: Arc::new(Gate::default()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum HoldStatus {
+    Absent,
+    Armed,
+    Reached,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Direction {
     Download,
@@ -67,7 +117,10 @@ pub(super) struct Registry {
     pub(super) images: BTreeSet<ImageTag>,
     pub(super) installed: BTreeMap<SandboxPath, Vec<u8>>,
     pub(super) engine: Option<Arc<FakeEngine>>,
+    pub(super) clock: Arc<FakeClock>,
     pub(super) faults: Vec<Armed>,
+    pub(super) holds: Vec<Hold>,
+    pub(super) attachment_cap: usize,
     pub(super) triggers: Vec<ArmedTrigger>,
     pub(super) stale_observations: u32,
     pub(super) scripts: BTreeMap<SandboxPath, ProgramScript>,
@@ -82,6 +135,9 @@ pub(super) struct Registry {
     pub(super) version: String,
     pub(super) host_home: Option<PathBuf>,
     pub(super) host_edits: Vec<(UploadKind, HostEdit)>,
+    pub(super) put_fails_after_write: Option<GatewayError>,
+    pub(super) delete_fails_after_write: Option<GatewayError>,
+    pub(super) calls: HashMap<GatewayOp, u32>,
 }
 
 impl Registry {
@@ -93,7 +149,10 @@ impl Registry {
             images: BTreeSet::new(),
             installed: BTreeMap::new(),
             engine: None,
+            clock: Arc::new(FakeClock::new()),
             faults: Vec::new(),
+            holds: Vec::new(),
+            attachment_cap: MAX_ATTACHMENTS,
             triggers: Vec::new(),
             stale_observations: 0,
             scripts: BTreeMap::new(),
@@ -105,10 +164,55 @@ impl Registry {
             hidden_until_conflict: false,
             start_ignored: false,
             serving: true,
-            version: "0.1.6".to_owned(),
+            version: "0.1.7".to_owned(),
             host_home: None,
             host_edits: Vec::new(),
+            put_fails_after_write: None,
+            delete_fails_after_write: None,
+            calls: HashMap::new(),
         }
+    }
+
+    pub(super) fn now(&self) -> Timestamp {
+        self.clock.now()
+    }
+
+    pub(super) fn arrive(&mut self, op: GatewayOp, special: Option<&Trigger>) -> Option<Arc<Gate>> {
+        let hold = self.holds.iter().find(|hold| {
+            !hold.gate.reached.load(Ordering::SeqCst)
+                && (hold.trigger == Trigger::Op(op) || special == Some(&hold.trigger))
+        })?;
+        hold.gate.reached.store(true, Ordering::SeqCst);
+        Some(Arc::clone(&hold.gate))
+    }
+
+    pub(super) fn release(&mut self, trigger: &Trigger) -> bool {
+        let Some(index) = self.holds.iter().position(|hold| hold.trigger == *trigger) else {
+            return false;
+        };
+        let hold = self.holds.remove(index);
+        hold.gate.released.store(true, Ordering::SeqCst);
+        hold.gate.wake.notify_waiters();
+        true
+    }
+
+    pub(super) fn held(&self) -> Vec<Trigger> {
+        self.holds
+            .iter()
+            .filter(|hold| hold.gate.reached.load(Ordering::SeqCst))
+            .map(|hold| hold.trigger.clone())
+            .collect()
+    }
+
+    pub(super) fn hold_status(&self, trigger: &Trigger) -> HoldStatus {
+        let mut status = HoldStatus::Absent;
+        for hold in self.holds.iter().filter(|hold| hold.trigger == *trigger) {
+            if hold.gate.reached.load(Ordering::SeqCst) {
+                return HoldStatus::Reached;
+            }
+            status = HoldStatus::Armed;
+        }
+        status
     }
 
     pub(super) fn strike(&mut self, op: GatewayOp) -> Result<(), GatewayError> {
@@ -120,6 +224,7 @@ impl Registry {
         op: GatewayOp,
         special: Option<&Trigger>,
     ) -> Result<(), GatewayError> {
+        *self.calls.entry(op).or_default() += 1;
         self.count_down(op)?;
         let matches = |armed: &ArmedTrigger| {
             armed.trigger == Trigger::Op(op) || special == Some(&armed.trigger)
@@ -162,6 +267,8 @@ pub(super) enum Settling {
 
 #[derive(Debug)]
 pub(super) struct Sandbox {
+    pub(super) created_at: Option<Timestamp>,
+    pub(super) image_id: Option<ImageId>,
     pub(super) phase: Phase,
     pub(super) provisioning: Provisioning,
     pub(super) spec: SandboxCreate,
@@ -174,6 +281,9 @@ pub(super) struct Sandbox {
     pub(super) runs: Vec<(SandboxPath, RunRecord)>,
     pub(super) shown: Option<Labels>,
     pub(super) live_rules: Vec<NetworkRule>,
+    pub(super) shells: Vec<Arc<Mutex<ShellWitness>>>,
+    pub(super) stream_status: Option<i32>,
+    pub(super) replay_window: Option<usize>,
 }
 
 impl Cell {
@@ -199,9 +309,12 @@ impl Sandbox {
         polls: u32,
         failure: Option<String>,
         model: SupervisorModel,
+        created_at: Timestamp,
     ) -> Sandbox {
         let supervisor = (plan.end == PlanEnd::Supervised).then(|| Supervisor::new(model));
         Sandbox {
+            created_at: Some(created_at),
+            image_id: None,
             phase: Phase::Provisioning,
             provisioning: Provisioning::Normal,
             spec,
@@ -214,6 +327,9 @@ impl Sandbox {
             runs: Vec::new(),
             shown: None,
             live_rules: Vec::new(),
+            shells: Vec::new(),
+            stream_status: None,
+            replay_window: None,
         }
     }
 
@@ -229,6 +345,7 @@ impl Sandbox {
             phase: self.phase,
             labels: self.all_labels(),
             provisioning: self.provisioning.clone(),
+            created_at: self.created_at,
         }
     }
 
@@ -284,7 +401,7 @@ impl Sandbox {
     pub(super) fn main_exited(&mut self, code: i32) {
         self.phase = ended_phase(code);
         self.settling = Settling::Done;
-        self.main.exit(Some(code));
+        self.main.exit(Some(self.stream_status.unwrap_or(code)));
         if let Some(supervisor) = &mut self.supervisor {
             supervisor.stop();
         }

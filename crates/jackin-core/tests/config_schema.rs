@@ -55,11 +55,23 @@ bindings = { codex = "work" }
 [roles."smith.v2"]
 source = { git = "ssh://git@example.com/smith-repo.git", rev = "feature/x" }
 
+[env]
+REGION = "eu"
+GREETING = "hello world"
+
 [workspaces.myproj]
 path = "/Users/me/Projects/myproj"
 docker = false
 default_role = "sentinel"
+roles = ["sentinel", "smith.v2"]
 bindings = { codex = "work", claude = "personal" }
+
+[workspaces.myproj.env]
+REGION = "us"
+
+[workspaces.myproj.role_env.sentinel]
+REGION = "ap"
+MODE = "fast"
 
 [workspaces."my.project"]
 path = "/Users/me/Projects/my \"quoted\" dir\\α"
@@ -193,7 +205,7 @@ fn config_parses_the_full_documented_file_and_exposes_every_value() -> TestResul
     let ci = by_name("ci")?;
     assert!(matches!(
         ci.credential(),
-        CredentialSource::OnePassword { reference } if reference.to_string() == "op://Dev/OpenAI/credential"
+        CredentialSource::OnePassword { reference, account: None } if reference.to_string() == "op://Dev/OpenAI/credential"
     ));
     assert_eq!(ci.codex_auth_mode(), Some(CodexAuthMode::ApiKey));
     let personal = by_name("personal")?;
@@ -223,6 +235,45 @@ fn config_parses_the_full_documented_file_and_exposes_every_value() -> TestResul
             "{provider:?}"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn env_at_three_scopes_and_the_allowed_roles_parse_into_the_config() -> TestResult {
+    let config = Config::parse(FULL)?;
+    let pairs = |table: &jackin_core::EnvTable| -> Vec<(String, String)> {
+        table
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect()
+    };
+    assert_eq!(
+        pairs(config.env()),
+        [
+            ("GREETING".to_owned(), "hello world".to_owned()),
+            ("REGION".to_owned(), "eu".to_owned())
+        ]
+    );
+    let myproj = config
+        .workspace(&WorkspaceName::parse("myproj")?)
+        .ok_or("myproj")?;
+    assert_eq!(pairs(&myproj.env), [("REGION".to_owned(), "us".to_owned())]);
+    let sentinel = RoleName::parse("sentinel")?;
+    assert_eq!(
+        myproj.role_env.get(&sentinel).map(pairs),
+        Some(vec![
+            ("MODE".to_owned(), "fast".to_owned()),
+            ("REGION".to_owned(), "ap".to_owned())
+        ])
+    );
+    assert!(myproj.roles.allows(&sentinel));
+    assert!(myproj.roles.allows(&RoleName::parse("smith.v2")?));
+    assert!(!myproj.roles.allows(&RoleName::parse("other")?));
+    let quoted = config
+        .workspace(&WorkspaceName::parse("my.project")?)
+        .ok_or("my.project")?;
+    assert_eq!(quoted.roles, jackin_core::AllowedRoles::All);
+    assert!(quoted.env.is_empty() && quoted.role_env.is_empty());
     Ok(())
 }
 
@@ -331,10 +382,9 @@ fn built(forward: bool) -> Result<Config, Box<dyn std::error::Error>> {
     independent.push(ConfigEdit::AddWorkspace {
         name: WorkspaceName::parse("w")?,
         workspace: jackin_core::Workspace {
-            path: hp("/w")?,
-            docker: true,
             default_role: Some(RoleName::parse("r1")?),
             bindings: [(Provider::Claude, AccountName::parse("a2")?)].into(),
+            ..jackin_core::Workspace::new(hp("/w")?, true)
         },
     });
     let mut config = Config::empty();
@@ -492,6 +542,11 @@ fn gateway_invalid_cases() -> Vec<(&'static str, String, String)> {
             "invalid:gateways.g.docker_engine.port",
         ),
         case(
+            "plaintext docker port",
+            engine("port = 2375\nclient_certs = \"/c\"\n"),
+            "invalid:gateways.g.docker_engine.port",
+        ),
+        case(
             "no certs",
             engine("port = 1\n"),
             "missing:gateways.g.docker_engine.client_certs",
@@ -541,6 +596,18 @@ fn other_invalid_cases() -> Vec<(&'static str, String, String)> {
             "bad reference",
             cred("credential.source = \"op\"\ncredential.reference = \"http://x/y\"\n"),
             "invalid:accounts.work.credential.reference",
+        ),
+        case(
+            "empty op account",
+            cred("credential = { source = \"op\", reference = \"op://v/i/f\", account = \"\" }\n"),
+            "invalid:accounts.work.credential.account",
+        ),
+        case(
+            "op account that is an option",
+            cred(
+                "credential = { source = \"op\", reference = \"op://v/i/f\", account = \"--config\" }\n",
+            ),
+            "invalid:accounts.work.credential.account",
         ),
         case(
             "no chatgpt id",
@@ -625,10 +692,127 @@ fn other_invalid_cases() -> Vec<(&'static str, String, String)> {
     ]
 }
 
+fn env_invalid_cases() -> Vec<(&'static str, String, String)> {
+    let ws = |lines: &str| format!("[workspaces.w]\n{lines}");
+    let case = |name, text: String, found: &str| (name, text, found.to_owned());
+    vec![
+        case(
+            "global env value that is a 1Password reference",
+            "[env]\nREGION = \"op://Dev/Region/value\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value that is not text",
+            "[env]\nREGION = 5\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value with a newline",
+            "[env]\nREGION = \"a\\nb\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env name outside the alphabet",
+            "[env]\n\"1BAD\" = \"x\"\n".to_owned(),
+            "invalid:env.1BAD",
+        ),
+        case(
+            "global env name that jackin reserves",
+            "[env]\nDOCKER_HOST = \"x\"\n".to_owned(),
+            "invalid:env.DOCKER_HOST",
+        ),
+        case(
+            "global env value that is an upper-case 1Password reference",
+            "[env]\nREGION = \"OP://Dev/Region/value\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value that is a 1Password reference after a space",
+            "[env]\nREGION = \" op://Dev/Region/value\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env value that is an OpenShell placeholder",
+            "[env]\nREGION = \"openshell:resolve:env:X\"\n".to_owned(),
+            "invalid:env.REGION",
+        ),
+        case(
+            "global env name that jackin reserves, written quoted",
+            "[env]\n\"PATH\" = \"x\"\n".to_owned(),
+            "invalid:env.PATH",
+        ),
+        case(
+            "role env name that jackin reserves",
+            format!("{ROLE}{WS}[workspaces.w.role_env.r]\nPATH = \"x\"\n"),
+            "invalid:workspaces.w.role_env.r.PATH",
+        ),
+        case(
+            "workspace env value that is a 1Password reference",
+            format!("{WS}[workspaces.w.env]\nA = \"op://x/y/z\"\n"),
+            "invalid:workspaces.w.env.A",
+        ),
+        case(
+            "workspace env name that jackin reserves",
+            format!("{WS}[workspaces.w.env]\nJACKIN_LAUNCH_ID = \"x\"\n"),
+            "invalid:workspaces.w.env.JACKIN_LAUNCH_ID",
+        ),
+        case(
+            "role env value that is a 1Password reference",
+            format!("{ROLE}{WS}[workspaces.w.role_env.r]\nA = \"op://x/y/z\"\n"),
+            "invalid:workspaces.w.role_env.r.A",
+        ),
+        case(
+            "role env that is not a table",
+            format!("{ROLE}{WS}[workspaces.w.role_env]\nr = \"x\"\n"),
+            "invalid:workspaces.w.role_env.r",
+        ),
+        case(
+            "allowed roles that are empty",
+            ws("path = \"/p\"\nroles = []\n"),
+            "invalid:workspaces.w.roles",
+        ),
+        case(
+            "allowed roles that are not a list",
+            ws("path = \"/p\"\nroles = \"r\"\n"),
+            "invalid:workspaces.w.roles",
+        ),
+        case(
+            "allowed roles with a bad name",
+            ws("path = \"/p\"\nroles = [\"Bad Role\"]\n"),
+            "invalid:workspaces.w.roles",
+        ),
+        case(
+            "allowed roles with a non-text item",
+            ws("path = \"/p\"\nroles = [3]\n"),
+            "invalid:workspaces.w.roles",
+        ),
+    ]
+}
+
 fn invalid_cases() -> Vec<(&'static str, String, String)> {
     let mut cases = gateway_invalid_cases();
     cases.extend(other_invalid_cases());
+    cases.extend(env_invalid_cases());
     cases
+}
+
+#[test]
+fn config_accepts_every_engine_port_except_the_plaintext_docker_port() -> TestResult {
+    for port in [1, 2374, 2376, 12376, 65535] {
+        let text =
+            format!("{GW}[gateways.g.docker_engine]\nport = {port}\nclient_certs = \"/c\"\n");
+        let config = Config::parse(&text)?;
+        let engine = config
+            .gateways()
+            .find_map(|(_, entry)| entry.docker_engine.as_ref())
+            .ok_or("no engine")?;
+        assert_eq!(engine.port.get(), port);
+    }
+    let (_, shown) = failure(&format!(
+        "{GW}[gateways.g.docker_engine]\nport = 2375\nclient_certs = \"/c\"\n"
+    ))?;
+    assert!(shown.contains("2375"), "{shown}");
+    Ok(())
 }
 
 #[test]
@@ -659,6 +843,21 @@ fn config_parse_enforces_the_cross_reference_invariants() -> TestResult {
         ("role account", role("bindings.codex = \"ghost\""), "reference:account:ghost"),
         ("role mismatch", role("bindings.codex = \"cl\""), "mismatch:cl:codex:claude"),
         ("default role", ws_line("default_role = \"ghost\""), "reference:role:ghost"),
+        (
+            "allowed role that is not configured",
+            format!("{context}[roles.r]\nsource.path = \"/r\"\n[workspaces.w2]\npath = \"/q\"\nroles = [\"r\", \"ghost\"]\n"),
+            "reference:role:ghost",
+        ),
+        (
+            "default role outside the allowed roles",
+            format!("{GW}[roles.r]\nsource.path = \"/r\"\n[roles.s]\nsource.path = \"/s\"\n[workspaces.w]\npath = \"/p\"\ndefault_role = \"s\"\nroles = [\"r\"]\n"),
+            "invalid:workspaces.w.default_role",
+        ),
+        (
+            "role env for a role that is not configured",
+            format!("{context}[workspaces.w.role_env.ghost]\nA = \"x\"\n"),
+            "reference:role:ghost",
+        ),
         (
             "codex login on claude",
             "[accounts.x]\nprovider = \"claude\"\ncredential = { source = \"codex-login\", home = \"/h\", chatgpt_account_id = \"1\" }\n".to_owned(),
@@ -723,7 +922,7 @@ fn config_parse_rejects_workspaces_that_share_a_normalized_path() -> TestResult 
 #[test]
 fn config_git_role_sources_are_typed_and_bad_ones_name_their_key() -> TestResult {
     let git = |source: &str| format!("[roles.r]\nsource = {{ {source} }}\n");
-    let password = "ghp_Zq7Xv9Lm2";
+    let password = "TEST-ONLY-pw-Zq7Xv9Lm2";
     let rejected = [
         (
             git("git = \"-oProxyCommand=x\""),
@@ -764,6 +963,40 @@ fn config_git_role_sources_are_typed_and_bad_ones_name_their_key() -> TestResult
 }
 
 #[test]
+fn a_one_password_credential_keeps_its_account_through_render_and_parse() -> TestResult {
+    let text = |credential: &str| {
+        format!("[accounts.work]\nprovider = \"codex\"\ncredential = {credential}\n")
+    };
+    let reference = "op://v/i/f";
+    let rows = [
+        (
+            format!("{{ source = \"op\", reference = \"{reference}\" }}"),
+            None,
+        ),
+        (
+            format!("{{ source = \"op\", reference = \"{reference}\", account = \"acct-1\" }}"),
+            Some("acct-1"),
+        ),
+    ];
+    for (credential, account) in rows {
+        let config = Config::parse(&text(&credential))?;
+        let saved = config.account(&AccountName::parse("work")?).ok_or("work")?;
+        assert_eq!(
+            *saved.credential(),
+            CredentialSource::OnePassword {
+                reference: reference.parse()?,
+                account: account.map(str::parse).transpose()?,
+            },
+            "{credential}"
+        );
+        let rendered = config.render();
+        assert!(rendered.contains(&credential), "{rendered}");
+        assert_eq!(Config::parse(&rendered)?, config, "{credential}");
+    }
+    Ok(())
+}
+
+#[test]
 fn account_new_allows_codex_login_only_for_codex_and_derives_the_codex_auth_mode() -> TestResult {
     let login = || -> Result<CredentialSource, Box<dyn std::error::Error>> {
         Ok(CredentialSource::CodexLogin {
@@ -778,6 +1011,7 @@ fn account_new_allows_codex_login_only_for_codex_and_derives_the_codex_auth_mode
             },
             CredentialSource::OnePassword {
                 reference: "op://a/b".parse()?,
+                account: None,
             },
             CredentialSource::File { path: hp("/k")? },
         ])

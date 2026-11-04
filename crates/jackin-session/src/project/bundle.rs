@@ -5,7 +5,7 @@ use jackin_core::{HostPath, ProcessStatus, TerminalText};
 
 use crate::launch::LaunchError;
 use crate::project::facts::Head;
-use crate::project::git::{HostGit, Pace, failure, plain, words};
+use crate::project::git::{HostGit, Pace, failure, words};
 use crate::project::{ProjectStep, UnsupportedProject};
 
 async fn has_refs(git: &HostGit<'_>) -> Result<bool, LaunchError> {
@@ -47,9 +47,7 @@ pub(super) async fn create(
         "--tags",
         "--remotes",
     ]));
-    let output = git
-        .capture(Pace::Long, args, vec![plain("GIT_NO_LAZY_FETCH", "1")])
-        .await?;
+    let output = git.capture(Pace::Long, args, Vec::new()).await?;
     match output.status {
         ProcessStatus::Exited(0) => Ok(Some(file.clone())),
         ProcessStatus::Exited(_) => Err(UnsupportedProject::PartialClone {

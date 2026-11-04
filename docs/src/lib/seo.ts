@@ -1,7 +1,5 @@
 import { site } from './shared'
 
-const OG_ALT = 'jackin❯ - isolated AI coding agent containers with scoped access and visible host boundaries'
-
 export function ogImageUrl(slug: string) {
   return new URL(`/og/${slug}.webp`, site.origin).toString()
 }
@@ -75,12 +73,12 @@ export function pageSeo({
       { property: 'og:image', content: image },
       { property: 'og:image:width', content: '1200' },
       { property: 'og:image:height', content: '630' },
-      { property: 'og:image:alt', content: OG_ALT },
+      { property: 'og:image:alt', content: site.ogAlt },
       { name: 'twitter:card', content: 'summary_large_image' },
       { name: 'twitter:title', content: title },
       { name: 'twitter:description', content: desc },
       { name: 'twitter:image', content: image },
-      { name: 'twitter:image:alt', content: OG_ALT },
+      { name: 'twitter:image:alt', content: site.ogAlt },
       ...(section ? [{ property: 'article:section', content: section }] : []),
     ],
     links: [{ rel: 'canonical', href: canonical }],

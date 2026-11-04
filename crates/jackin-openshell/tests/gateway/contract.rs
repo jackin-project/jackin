@@ -8,8 +8,8 @@ use std::time::Duration;
 use jackin_core::{HostPath, ImageTag, ProjectRoot, SandboxSlug, StdFileSystem};
 use jackin_openshell::GrpcGateway;
 use jackin_openshell::contract::{
-    CORE_CHECKS, ContractFixture, ContractGroup, ContractReport, TERMINAL_CHECKS, TRANSFER_CHECKS,
-    run,
+    CORE_CHECKS, ContractFixture, ContractGroup, ContractReport, SHELL_END_TIMEOUT,
+    TERMINAL_CHECKS, TRANSFER_CHECKS, run,
 };
 use openshell_sdk::raw::proto::{ObjectMeta, Provider, ProviderProfile, exec_sandbox_input};
 use tempfile::TempDir;
@@ -17,7 +17,7 @@ use tonic::Code;
 
 use super::exec_rpc::{Step, exit_event, host_shell, host_tools, scripted};
 use super::fakes::{Recorded, ScriptedRunner, exited};
-use super::harness::{Env, WORKSPACE, config, connect, drive_paused, env, guard, resolved};
+use super::harness::{Env, WORKSPACE, config, connect, env, guard, resolved};
 use super::server::{Broken, ExecBackend, ExecCtx, Fault};
 use super::ssh_server::{
     Action, REFUSED_NOTICE, RIGHT_FINGERPRINT, RIGHT_SEED, Script, SshModel, host_key,
@@ -27,7 +27,7 @@ const IMAGE: &str = "jackin.invalid/contract:0123456789abcdef";
 
 async fn fixture() -> (TempDir, ContractFixture) {
     let dir = TempDir::new().unwrap();
-    let status = tokio::process::Command::new("git")
+    let status = tokio::process::Command::from(jackin_testkit::git_command())
         .arg("init")
         .arg("--quiet")
         .arg(dir.path())
@@ -47,6 +47,7 @@ async fn fixture() -> (TempDir, ContractFixture) {
             image: ImageTag::parse(IMAGE).unwrap(),
             project,
             name_prefix: SandboxSlug::parse("ctr").unwrap(),
+            shell_end_timeout: SHELL_END_TIMEOUT,
         },
     )
 }
@@ -210,6 +211,24 @@ async fn a_server_that_drops_labels_fails_the_labels_check_and_runs_the_rest() {
 }
 
 #[tokio::test]
+async fn a_server_that_drops_the_environment_fails_only_the_environment_check() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().store_environment = false;
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Core).await;
+    let failed: Vec<&str> = report
+        .checks
+        .iter()
+        .filter(|check| check.outcome.is_err())
+        .map(|check| check.name)
+        .collect();
+    assert_eq!(failed, ["sandbox_environment_is_the_create_request"]);
+}
+
+#[tokio::test]
 async fn a_sandbox_that_never_reaches_ready_is_deleted_by_the_check() {
     let env = env().await;
     let root = TempDir::new().unwrap();
@@ -265,16 +284,13 @@ async fn shell_exit_code_cannot_hang_the_run() {
     let root = TempDir::new().unwrap();
     prepare(&env, &root);
     env.server.state().exec = Some(hang_after_exit());
-    let (_project, fixture) = fixture().await;
-    let mut settings = config(&env, resolved(&env).await, WORKSPACE, env.runner.clone());
-    settings.call_timeout = Duration::from_secs(300);
-    let gateway = guard(GrpcGateway::connect(settings)).await.unwrap();
+    let (_project, mut fixture) = fixture().await;
+    fixture.shell_end_timeout = Duration::from_secs(1);
+    let gateway = connect(&env, WORKSPACE).await;
     let running =
         tokio::spawn(async move { run(&gateway, &fixture, ContractGroup::Terminal).await });
     guard(env.server.shared.child_started.notified()).await;
-    let report = drive_paused(running, Duration::from_secs(120))
-        .await
-        .expect("the shell_exit_code check did not end");
+    let report = guard(running).await.unwrap();
     let check = report
         .checks
         .iter()
@@ -370,6 +386,31 @@ async fn a_server_that_deletes_a_provider_while_refusing_the_delete_fails_only_t
     );
     assert_others_pass(&report, "delete_provider_while_attached_is_refused");
     assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn a_server_that_refuses_the_second_delete_of_a_provider_fails_the_put_and_delete_check() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root);
+    env.server.state().broken = Some(Broken::DeleteAbsentRefused);
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Core).await;
+    let failed = outcome(&report, "provider_put_and_delete");
+    assert!(
+        failed
+            .as_ref()
+            .is_err_and(|message| message.contains("the second delete_provider failed")),
+        "{failed:?}"
+    );
+    for check in report
+        .checks
+        .iter()
+        .take_while(|check| check.name != "provider_put_and_delete")
+    {
+        assert_eq!(check.outcome, Ok(()), "{}", check.name);
+    }
 }
 
 fn end_with(status: u32) -> Vec<Action> {
@@ -517,6 +558,48 @@ async fn an_upload_to_a_stopped_sandbox_passes_the_check_only_when_the_cli_refus
     }
 }
 
+#[tokio::test]
+async fn an_upload_through_a_symlinked_parent_passes_the_check_only_when_the_cli_exits_1_with_the_tar_text()
+ {
+    const CHECK: &str = "upload_through_a_symlinked_parent_is_a_transfer_error";
+    const TAR: &[u8] = b"Error: sandbox upload failed: extraction exited with status 2: tar: d/f.txt: Cannot open: Not a directory\ntar: Exiting with failure status due to previous errors";
+    let failing = ScriptedRunner::always(exited(1, b"", TAR));
+    let (env, report) = transfer_report(failing).await;
+    let names: Vec<&str> = report.checks.iter().map(|check| check.name).collect();
+    assert_eq!(names, TRANSFER_CHECKS.to_vec());
+    assert_eq!(outcome(&report, CHECK), &Ok(()));
+    assert_no_sandboxes(&env, "a failing CLI on a symlinked parent");
+
+    for (label, runner) in [
+        (
+            "the CLI copies the file behind the link and exits 0",
+            ScriptedRunner::always(exited(0, b"", b"")),
+        ),
+        (
+            "the CLI exits 2 with the tar text",
+            ScriptedRunner::always(exited(2, b"", TAR)),
+        ),
+        (
+            "the CLI exits 1 without the tar text",
+            ScriptedRunner::always(exited(1, b"", b"Error: boom")),
+        ),
+        (
+            "the CLI refuses as not ready",
+            ScriptedRunner::always(exited(1, b"", b"Error: sandbox is not ready")),
+        ),
+    ] {
+        let (env, report) = transfer_report(runner).await;
+        let failed = outcome(&report, CHECK);
+        assert!(
+            failed
+                .as_ref()
+                .is_err_and(|message| message.contains("a symlinked parent")),
+            "{label}: {failed:?}"
+        );
+        assert_no_sandboxes(&env, label);
+    }
+}
+
 fn sandbox_download(root: std::path::PathBuf) -> ScriptedRunner {
     ScriptedRunner::new(move |call: &Recorded| {
         let Some(at) = call.args.iter().position(|arg| arg == "download") else {
@@ -565,7 +648,7 @@ async fn a_gateway_that_finds_a_missing_file_and_fails_later_fails_the_size_chec
     prepare(&env, &root);
     env.server.state().exec = Some(scripted(|start, _| {
         if start.command[0] == "/usr/bin/stat" {
-            vec![Step::Out(b"1\n".to_vec()), Step::Exit(0)]
+            vec![Step::Out(b"regular file 1\n".to_vec()), Step::Exit(0)]
         } else {
             vec![Step::Err(b"no such file".to_vec()), Step::Exit(1)]
         }

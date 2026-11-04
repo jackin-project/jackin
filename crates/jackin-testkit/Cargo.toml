@@ -12,16 +12,26 @@ publish.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+clap = { workspace = true }
+jackin-console = { workspace = true, features = ["demo"] }
 jackin-core = { workspace = true }
 jackin-image = { workspace = true }
 jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
+jackin-tui = { workspace = true }
+jackin-usage = { workspace = true }
+junie-tui = { workspace = true }
+portable-pty = { workspace = true }
+ratatui = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tokio-util = { workspace = true }
 
 [dev-dependencies]
 jackin-openshell = { workspace = true, features = ["contract"] }
+tui-test = { workspace = true }
+tuiscotti = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [lints]

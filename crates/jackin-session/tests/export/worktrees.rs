@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::Path;
 
+use jackin_core::BranchName;
 use jackin_openshell::{GatewayOp, TransferOp};
 use jackin_session::{ExportError, PurgeError, PurgeMode, Unexported, UnknownReason, WorkState};
 use jackin_testkit::{Fault, Rig, SandboxHandle, TestResult, Trigger, guard};
@@ -39,7 +40,7 @@ async fn commit_in(
 
 fn dirty() -> WorkState {
     WorkState::Unexported(Unexported {
-        uncommitted: true,
+        uncommitted: 1,
         branches: Vec::new(),
         detached: None,
         worktrees: Vec::new(),
@@ -106,6 +107,85 @@ async fn work_in_any_linked_worktree_counts_and_a_missing_worktree_does_not() ->
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn a_detached_worktree_whose_directory_moved_keeps_its_unique_commit_in_view() -> TestResult {
+    moved_worktree_keeps_its_unique_commit(false).await
+}
+
+#[tokio::test]
+async fn a_locked_worktree_whose_directory_moved_keeps_its_unique_commit_in_view() -> TestResult {
+    moved_worktree_keeps_its_unique_commit(true).await
+}
+
+async fn moved_worktree_keeps_its_unique_commit(locked: bool) -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let moved = add_detached(&handle, "w2").await?;
+        add_detached(&handle, "w3").await?;
+        let unique = commit_in(&handle, &moved, "only-here.txt").await?;
+        let ids = worktree_ids(&handle)?;
+        let id_of = |path: &str| -> Result<String, Box<dyn Error>> {
+            ids.iter()
+                .find(|(_, at)| at.as_str() == path)
+                .map(|(id, _)| id.clone())
+                .ok_or_else(|| "no worktree id".into())
+        };
+        let id = id_of(&moved)?;
+        let wanted = unexported(&id)?;
+        assert_eq!(state(&rig, &name).await, wanted);
+
+        if locked {
+            handle.git(&["worktree", "lock", &moved]).await?;
+        }
+        std::fs::rename(&moved, handle.root().join("elsewhere"))?;
+        let listed = handle.git(&["worktree", "list", "--porcelain"]).await?;
+        assert_eq!(listed.contains("locked"), locked, "{listed}");
+        assert_eq!(listed.contains("prunable"), !locked, "{listed}");
+        assert_eq!(state(&rig, &name).await, wanted);
+        let before = snapshot(&rig).await?;
+        let refused = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .await;
+        assert!(
+            matches!(&refused, Err(PurgeError::WorkNotExported { state, .. }) if **state == wanted),
+            "{refused:?}"
+        );
+        assert!(rig.world.gateway.sandbox(&name).is_some());
+        assert_eq!(snapshot(&rig).await?.rest, before.rest);
+
+        let report = export(&rig, &name).await?;
+        let landed = exports(&snapshot(&rig).await?);
+        assert_eq!(
+            landed,
+            BTreeMap::from([(ref_of(&name, &format!("worktree/{id}")), unique.clone())])
+        );
+        assert_eq!(report.worktrees.len(), 1);
+        assert_eq!(state(&rig, &name).await, WorkState::Exported);
+        rig.world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .await?;
+        assert!(rig.world.gateway.sandbox(&name).is_none());
+        Ok(())
+    })
+    .await
+}
+
+fn unexported(id: &str) -> Result<WorkState, Box<dyn Error>> {
+    Ok(WorkState::Unexported(Unexported {
+        uncommitted: 0,
+        branches: Vec::new(),
+        detached: None,
+        worktrees: vec![BranchName::parse(id)?],
+        unusable: Vec::new(),
+    }))
 }
 
 fn worktree_ids(handle: &SandboxHandle) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
@@ -227,7 +307,7 @@ async fn a_detached_head_in_a_linked_worktree_is_exported_under_the_unique_workt
         });
         let cancelled = rig.world.session.export(&rig.config, &name, token).await;
         assert!(
-            matches!(cancelled, Err(ExportError::Cancelled)),
+            matches!(cancelled, Err(ExportError::Cancelled { group: None })),
             "{cancelled:?}"
         );
         assert_eq!(sandbox_repository(&handle).await?, sandbox_before);
@@ -300,11 +380,64 @@ async fn colliding_branch_and_worktree(branch: &str) -> TestResult {
 }
 
 #[tokio::test]
-async fn targets_that_collide_or_nest_are_refused_before_any_fetch_and_a_retry_exports_all()
+async fn targets_that_collide_or_nest_are_refused_before_any_import_and_a_retry_exports_all()
 -> TestResult {
     guard(async {
         colliding_branch_and_worktree("worktree/w2").await?;
         colliding_branch_and_worktree("worktree").await?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_linked_worktree_whose_head_is_symbolic_outside_heads_is_unexported_work() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let linked = add_detached(&handle, "w2").await?;
+        handle
+            .git(&["-C", &linked, "update-ref", "refs/remotes/origin/y", "HEAD"])
+            .await?;
+        handle
+            .git(&[
+                "-C",
+                &linked,
+                "symbolic-ref",
+                "HEAD",
+                "refs/remotes/origin/y",
+            ])
+            .await?;
+        assert_eq!(state(&rig, &name).await, WorkState::Exported);
+
+        let commit = commit_in(&handle, &linked, "w.txt").await?;
+
+        let found = state(&rig, &name).await;
+        let WorkState::Unexported(found) = found else {
+            return Err(format!("{found:?}").into());
+        };
+        assert_eq!(found.worktrees.len(), 1, "{found:?}");
+        let purge = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .await;
+        assert!(
+            matches!(purge, Err(PurgeError::WorkNotExported { .. })),
+            "{purge:?}"
+        );
+
+        let report = export(&rig, &name).await?;
+
+        let tips: Vec<&str> = report
+            .worktrees
+            .iter()
+            .map(|worktree| worktree.tip.as_str())
+            .collect();
+        assert_eq!(tips, [commit.as_str()]);
+        assert_eq!(state(&rig, &name).await, WorkState::Exported);
         Ok(())
     })
     .await

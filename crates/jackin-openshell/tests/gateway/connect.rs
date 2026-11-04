@@ -19,7 +19,7 @@ async fn mtls_connect_health_and_debug_hygiene() {
     assert_eq!(
         health,
         GatewayHealth {
-            version: "0.1.6".to_owned(),
+            version: "0.1.7".to_owned(),
             serving: true,
         }
     );

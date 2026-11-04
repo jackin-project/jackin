@@ -1,9 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use jackin_openshell::{
-    EndReason, GatewayError, InputLease, InputMode, MainProcess, TermSize, TerminalCommand,
-    TerminalEvent,
+    EndReason, GatewayError, InputLease, InputMode, MainProcess, RepaintPolicy, TermSize,
+    TerminalCommand, TerminalEvent,
 };
 use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
@@ -106,11 +109,17 @@ struct Attachment {
     input: InputMode,
     lease: InputLease,
     prefix_held: bool,
+    size: TermSize,
+    nudge_pending: bool,
     events: UnboundedSender<TerminalEvent>,
+    pending: Arc<AtomicUsize>,
 }
 
 impl Attachment {
     fn send(&self, event: TerminalEvent) {
+        if let TerminalEvent::Output(bytes) = &event {
+            self.pending.fetch_add(bytes.len(), Ordering::SeqCst);
+        }
         drop(self.events.send(event));
     }
 }
@@ -121,7 +130,9 @@ pub(super) struct Main {
     output: Vec<u8>,
     echo: bool,
     input: Vec<u8>,
+    raw: Vec<u8>,
     pty: Option<TermSize>,
+    resizes: Vec<TermSize>,
     attachments: Vec<Attachment>,
     owner: Option<u64>,
     next: u64,
@@ -134,7 +145,9 @@ impl Main {
             output: plan.output.clone(),
             echo: plan.end == PlanEnd::Cat,
             input: Vec::new(),
+            raw: Vec::new(),
             pty: None,
+            resizes: Vec::new(),
             attachments: Vec::new(),
             owner: None,
             next: 1,
@@ -145,19 +158,55 @@ impl Main {
         self.input.clone()
     }
 
+    pub(super) fn raw(&self) -> Vec<u8> {
+        self.raw.clone()
+    }
+
     pub(super) fn pty(&self) -> Option<TermSize> {
         self.pty
+    }
+
+    pub(super) fn resizes(&self) -> Vec<TermSize> {
+        self.resizes.clone()
+    }
+
+    pub(super) fn advance_repaint(&mut self) {
+        for attachment in &mut self.attachments {
+            if !std::mem::take(&mut attachment.nudge_pending) {
+                continue;
+            }
+            let size = attachment.size;
+            if size.rows.get() > 1
+                && let Some(shorter) = std::num::NonZeroU16::new(size.rows.get() - 1)
+            {
+                self.resizes.push(TermSize {
+                    cols: size.cols,
+                    rows: shorter,
+                });
+                self.resizes.push(size);
+                self.pty = Some(size);
+            }
+        }
     }
 
     pub(super) fn attachments(&self) -> usize {
         self.attachments.len()
     }
 
+    pub(super) fn undelivered(&self) -> usize {
+        self.attachments
+            .iter()
+            .map(|a| a.pending.load(Ordering::SeqCst))
+            .sum()
+    }
+
     pub(super) fn attach(
         &mut self,
         input: InputMode,
         size: TermSize,
-    ) -> (Seat, UnboundedReceiver<TerminalEvent>) {
+        repaint: RepaintPolicy,
+        replay_window: Option<usize>,
+    ) -> (Seat, UnboundedReceiver<TerminalEvent>, Arc<AtomicUsize>) {
         let (events, queued) = mpsc::unbounded_channel();
         let id = self.next;
         self.next += 1;
@@ -168,24 +217,29 @@ impl Main {
             InputLease::ReadOnly
         };
         self.pty = Some(size);
+        let pending = Arc::new(AtomicUsize::new(0));
         let attachment = Attachment {
             id,
             input,
             lease,
             prefix_held: false,
+            size,
+            nudge_pending: matches!(repaint, RepaintPolicy::NudgeAfter(_)),
             events,
+            pending: Arc::clone(&pending),
         };
         attachment.send(TerminalEvent::Attached);
         attachment.send(TerminalEvent::Lease(lease));
-        if !self.output.is_empty() {
-            attachment.send(TerminalEvent::Output(self.output.clone()));
+        let from = replay_window.map_or(0, |window| self.output.len().saturating_sub(window));
+        if from < self.output.len() {
+            attachment.send(TerminalEvent::Output(self.output[from..].to_vec()));
         }
         self.attachments.push(attachment);
         let seat = Seat {
             generation: self.generation,
             id,
         };
-        (seat, queued)
+        (seat, queued, pending)
     }
 
     pub(super) fn command(&mut self, seat: Seat, command: TerminalCommand) {
@@ -193,8 +247,23 @@ impl Main {
             return;
         }
         match command {
-            TerminalCommand::Input(bytes) => self.input_from(seat.id, &bytes),
-            TerminalCommand::Resize(size) => self.pty = Some(size),
+            TerminalCommand::Input(bytes) => {
+                if self
+                    .attachments
+                    .iter()
+                    .any(|a| a.id == seat.id && a.input == InputMode::Owner)
+                {
+                    self.raw.extend_from_slice(&bytes);
+                }
+                self.input_from(seat.id, &bytes);
+            }
+            TerminalCommand::Resize(size) => {
+                self.pty = Some(size);
+                self.resizes.push(size);
+                if let Some(attachment) = self.attachments.iter_mut().find(|a| a.id == seat.id) {
+                    attachment.size = size;
+                }
+            }
             TerminalCommand::Detach => self.end(seat.id, EndReason::Detached),
         }
     }

@@ -2,19 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
     BranchName, CommitId, EnvName, SandboxName, SandboxPath, TerminalText, sandbox_layout,
 };
+
+use super::diff::{ChangedFile, Unread, added_file, parse_patch};
 use jackin_openshell::{Gateway, GatewayError, ProgramOutcome, ProgramRun, ProgramStdin};
 use tokio_util::sync::CancellationToken;
 
 const HEADS: &str = "refs/heads/";
-const STASH: &str = "refs/stash";
 const NOT_A_REPOSITORY: &str = "not a git repository";
 const CLEANUP: Duration = Duration::from_secs(10);
+const UNTRACKED_FILES: usize = 500;
+const UNTRACKED_BYTES: usize = 256 * 1024;
+const NOT_READ: i32 = 66;
+const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; IFS= read -r p < \"$d/gitdir\" || [ -n \"$p\" ]; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
+static SH: SandboxPath = SandboxPath::from_static("/bin/sh");
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
 
@@ -54,8 +59,13 @@ pub(super) struct Repository {
 struct Checkout {
     path: String,
     head: Option<CommitId>,
-    detached: bool,
-    prunable: bool,
+    off_heads: bool,
+}
+
+#[derive(Debug)]
+struct Recorded {
+    id: String,
+    present: bool,
 }
 
 pub(super) struct Remote<'a> {
@@ -77,6 +87,24 @@ fn failure(outcome: &ProgramOutcome) -> RemoteError {
     }
 }
 
+fn lines(output: &[u8]) -> usize {
+    output
+        .split(|byte| *byte == b'\n')
+        .filter(|line| !line.is_empty())
+        .count()
+}
+
+fn hidden(listed: &[u8]) -> usize {
+    listed
+        .split(|byte| *byte == 0)
+        .filter(|entry| {
+            entry
+                .first()
+                .is_some_and(|tag| *tag == b'S' || tag.is_ascii_lowercase())
+        })
+        .count()
+}
+
 fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
     const MALFORMED: RemoteError =
         RemoteError::Malformed("git worktree list printed unreadable output");
@@ -90,8 +118,7 @@ fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
             found.push(Checkout {
                 path: path.to_owned(),
                 head: None,
-                detached: false,
-                prunable: false,
+                off_heads: false,
             });
             continue;
         }
@@ -99,31 +126,15 @@ fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
         if let Some(head) = text.strip_prefix("HEAD ") {
             current.head = CommitId::parse(head).ok();
         } else if text == "detached" {
-            current.detached = true;
-        } else if text == "prunable" || text.starts_with("prunable ") {
-            current.prunable = true;
+            current.off_heads = true;
+        } else if let Some(branch) = text.strip_prefix("branch ") {
+            current.off_heads = !branch.starts_with(HEADS);
         }
     }
     if found.is_empty() {
         return Err(MALFORMED);
     }
     Ok(found)
-}
-
-fn worktree_id(git_dir: &[u8]) -> Result<BranchName, RemoteError> {
-    const MALFORMED: RemoteError =
-        RemoteError::Malformed("git printed an unreadable worktree directory");
-    let text = std::str::from_utf8(git_dir).map_err(|_| MALFORMED)?;
-    let dir = Path::new(text.trim_end());
-    let id = dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or(MALFORMED)?;
-    let parent = dir.parent().and_then(Path::file_name);
-    if parent != Some("worktrees".as_ref()) {
-        return Err(MALFORMED);
-    }
-    BranchName::parse(id).map_err(|_| MALFORMED)
 }
 
 impl Remote<'_> {
@@ -164,7 +175,10 @@ impl Remote<'_> {
     async fn git(&self, args: &[&str]) -> Result<ProgramOutcome, GatewayError> {
         self.exec(
             &sandbox_layout::GIT,
-            args.iter().map(|arg| (*arg).to_owned()).collect(),
+            std::iter::once("--no-optional-locks")
+                .chain(args.iter().copied())
+                .map(str::to_owned)
+                .collect(),
         )
         .await
     }
@@ -190,6 +204,40 @@ impl Remote<'_> {
         }
     }
 
+    async fn recorded_worktrees(&self) -> Result<BTreeMap<String, Recorded>, RemoteError> {
+        const MALFORMED: RemoteError =
+            RemoteError::Malformed("the worktree metadata listing is unreadable");
+        let outcome = self
+            .exec(
+                &SH,
+                vec![
+                    "-c".to_owned(),
+                    RECORDED_WORKTREES.to_owned(),
+                    "jackin-worktrees".to_owned(),
+                ],
+            )
+            .await?;
+        if outcome.exit_code != 0 {
+            return Err(failure(&outcome));
+        }
+        let fields: Vec<&[u8]> = outcome.stdout.split(|byte| *byte == 0).collect();
+        let mut found = BTreeMap::new();
+        for triple in fields.as_chunks::<3>().0 {
+            let id = std::str::from_utf8(triple[0]).map_err(|_| MALFORMED)?;
+            let gitdir = std::str::from_utf8(triple[1]).map_err(|_| MALFORMED)?;
+            if let Some(path) = gitdir.strip_suffix("/.git") {
+                found.insert(
+                    path.to_owned(),
+                    Recorded {
+                        id: id.to_owned(),
+                        present: triple[2] == b"1",
+                    },
+                );
+            }
+        }
+        Ok(found)
+    }
+
     pub(super) async fn repository(&self) -> Result<Repository, RemoteError> {
         self.require_repository().await?;
         let listed = self
@@ -202,27 +250,34 @@ impl Remote<'_> {
             linked: Vec::new(),
             checkouts: Vec::new(),
         };
+        let mut recorded: Option<BTreeMap<String, Recorded>> = None;
         for (index, checkout) in checkouts(&listed)?.into_iter().enumerate() {
-            if checkout.prunable {
-                continue;
+            let entry = if index == 0 {
+                None
+            } else {
+                if recorded.is_none() {
+                    recorded = Some(self.recorded_worktrees().await?);
+                }
+                recorded
+                    .as_ref()
+                    .and_then(|found| found.get(&checkout.path))
+            };
+            if entry.is_none_or(|worktree| worktree.present) {
+                repository.checkouts.push(checkout.path.clone());
             }
-            repository.checkouts.push(checkout.path.clone());
-            if !checkout.detached {
+            if !checkout.off_heads {
                 continue;
             }
             let tip = checkout.head.ok_or(RemoteError::Malformed(
-                "git worktree list printed a detached worktree without a commit",
+                "git worktree list printed a worktree outside refs/heads without a commit",
             ))?;
             if index == 0 {
                 repository.detached = Some(tip);
                 continue;
             }
-            let git_dir = self
-                .require(&["-C", &checkout.path, "rev-parse", "--absolute-git-dir"])
-                .await?;
-            match worktree_id(&git_dir) {
-                Ok(name) => repository.linked.push(LinkedHead { name, tip }),
-                Err(_) => repository.unusable.push(TerminalText::sanitize(
+            match entry.and_then(|worktree| BranchName::parse(&worktree.id).ok()) {
+                Some(name) => repository.linked.push(LinkedHead { name, tip }),
+                None => repository.unusable.push(TerminalText::sanitize(
                     format!("worktree at {}", checkout.path).as_bytes(),
                 )),
             }
@@ -259,22 +314,121 @@ impl Remote<'_> {
         Ok(repository)
     }
 
-    pub(super) async fn uncommitted(&self, repository: &Repository) -> Result<bool, RemoteError> {
+    pub(super) async fn uncommitted(&self, repository: &Repository) -> Result<usize, RemoteError> {
         let stash = self
-            .require(&["for-each-ref", "--format=%(refname)", STASH])
+            .git(&["rev-parse", "--verify", "--quiet", "refs/stash"])
             .await?;
-        if !stash.is_empty() {
-            return Ok(true);
-        }
+        let mut count = match stash.exit_code {
+            0 => lines(&self.require(&["stash", "list"]).await?).max(1),
+            1 => 0,
+            _ => return Err(failure(&stash)),
+        };
         for path in &repository.checkouts {
             let status = self
-                .require(&["-C", path, "--no-optional-locks", "status", "--porcelain"])
+                .require(&[
+                    "-C",
+                    path,
+                    "-c",
+                    "core.fileMode=true",
+                    "-c",
+                    "core.trustctime=true",
+                    "-c",
+                    "core.checkStat=default",
+                    "status",
+                    "--porcelain",
+                    "--untracked-files=all",
+                    "--ignore-submodules=none",
+                ])
                 .await?;
-            if !status.is_empty() {
-                return Ok(true);
-            }
+            count += lines(&status);
+            let flagged = self.require(&["-C", path, "ls-files", "-v", "-z"]).await?;
+            count += hidden(&flagged);
         }
-        Ok(false)
+        Ok(count)
+    }
+
+    pub(super) async fn changes(
+        &self,
+        repository: &Repository,
+    ) -> Result<(Vec<ChangedFile>, usize), RemoteError> {
+        let root = repository.checkouts.first().ok_or(RemoteError::Malformed(
+            "git worktree list printed no checkout",
+        ))?;
+        let head = self
+            .git(&["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"])
+            .await?;
+        let mut files = if head.exit_code == 0 {
+            let patch = self
+                .require(&[
+                    "-C",
+                    root,
+                    "-c",
+                    "core.quotepath=false",
+                    "diff-index",
+                    "-p",
+                    "--no-color",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--find-renames",
+                    "-U3",
+                    "HEAD",
+                    "--",
+                ])
+                .await?;
+            parse_patch(&patch).map_err(RemoteError::Malformed)?
+        } else {
+            Vec::new()
+        };
+        let listed = self
+            .require(&[
+                "-C",
+                root,
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ])
+            .await?;
+        let mut names = listed
+            .split(|byte| *byte == 0)
+            .filter(|name| !name.is_empty())
+            .map(|name| String::from_utf8_lossy(name).into_owned());
+        for name in names.by_ref().take(UNTRACKED_FILES) {
+            let content = self.read_untracked(root, &name).await?;
+            files.push(added_file(
+                &name,
+                content.as_deref().map_err(|unread| *unread),
+            ));
+        }
+        Ok((files, names.count()))
+    }
+
+    async fn read_untracked(
+        &self,
+        root: &str,
+        name: &str,
+    ) -> Result<Result<Vec<u8>, Unread>, RemoteError> {
+        let script = format!(
+            "[ -f \"$1\" ] && [ ! -L \"$1\" ] || exit {NOT_READ}; head -c {} -- \"$1\" 2>/dev/null || exit {NOT_READ}",
+            UNTRACKED_BYTES + 1
+        );
+        let outcome = self
+            .exec(
+                &SH,
+                vec![
+                    "-c".to_owned(),
+                    script,
+                    "jackin-read".to_owned(),
+                    format!("{root}/{name}"),
+                ],
+            )
+            .await?;
+        match outcome.exit_code {
+            0 if outcome.stdout.len() > UNTRACKED_BYTES => Ok(Err(Unread::TooLarge)),
+            0 => Ok(Ok(outcome.stdout)),
+            NOT_READ => Ok(Err(Unread::NotRegular)),
+            _ => Err(failure(&outcome)),
+        }
     }
 
     pub(super) async fn discard(&self, target: &SandboxPath) {

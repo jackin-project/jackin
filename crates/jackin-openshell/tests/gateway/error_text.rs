@@ -4,8 +4,8 @@
 use std::time::Duration;
 
 use jackin_core::{
-    OpenShellWorkspace, OutputStream, Phase, ProcessStatus, ProfileId, ProviderName, SandboxName,
-    TerminalText,
+    GroupFault, OpenShellWorkspace, OutputStream, Phase, ProcessStatus, ProfileId, ProviderName,
+    SandboxName, SandboxPath, TerminalText,
 };
 use jackin_openshell::{
     ClosedPolicyError, ClosureViolation, DiscoveryError, GatewayError, GatewayOp, HostPattern,
@@ -54,6 +54,7 @@ fn operations_phases_and_durations_print_as_words() {
             GatewayError::Timeout {
                 op: GatewayOp::Health,
                 after: Duration::from_secs(30),
+                group: None,
             },
             "health timed out after 30s",
         ),
@@ -61,14 +62,35 @@ fn operations_phases_and_durations_print_as_words() {
             GatewayError::Timeout {
                 op: GatewayOp::ReadFiles,
                 after: Duration::from_millis(250),
+                group: None,
             },
             "read files timed out after 250ms",
         ),
         (
             GatewayError::Cancelled {
                 op: GatewayOp::UploadTree,
+                group: None,
             },
             "upload tree was cancelled",
+        ),
+        (
+            GatewayError::Cancelled {
+                op: GatewayOp::UploadTree,
+                group: Some(GroupFault::Alive {
+                    after: Duration::from_secs(5),
+                }),
+            },
+            "upload tree was cancelled; processes of its group were still alive after 5s",
+        ),
+        (
+            GatewayError::Timeout {
+                op: GatewayOp::Download,
+                after: Duration::from_secs(9),
+                group: Some(GroupFault::Unreachable {
+                    message: "nope\n".to_owned(),
+                }),
+            },
+            "download timed out after 9s; cannot stop the processes of its group: nope\\n",
         ),
         (
             GatewayError::NotReady {
@@ -112,7 +134,7 @@ fn rule(text: &str) -> RuleKey {
 fn registry_and_policy_errors_name_gateways_paths_and_violations_plainly() {
     let overlap = ClosureViolation::Overlap {
         rule: rule("r1"),
-        host: HostPattern::parse("**").unwrap(),
+        host: HostPattern::parse("**.openai.com").unwrap(),
         provider_host: HostPattern::parse("api.openai.com").unwrap(),
     };
     let unparsable = ClosureViolation::UnparsableHost {
@@ -183,7 +205,7 @@ fn registry_and_policy_errors_name_gateways_paths_and_violations_plainly() {
         ),
         (
             ClosedPolicyError::Violations(vec![overlap, unparsable, port]).to_string(),
-            "the policy overlaps provider hosts: rule r1: ** overlaps the provider host api.openai.com, rule r2: the host bad host! cannot be read, rule r3: the port 0 is invalid".to_owned(),
+            "the policy overlaps provider hosts: rule r1: **.openai.com overlaps the provider host api.openai.com, rule r2: the host bad host! cannot be read, rule r3: the port 0 is invalid".to_owned(),
         ),
     ];
     for (shown, expected) in rows {
@@ -271,6 +293,12 @@ fn text_supplied_by_the_gateway_is_shown_without_control_characters() {
         (
             GatewayError::TerminalRefused { reason: hostile() },
             "the terminal was refused: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::UnsafePath {
+                path: SandboxPath::parse(&format!("/sandbox/{}", hostile())).unwrap(),
+            },
+            "refused to write /sandbox/x\\u{1b}[2J\\ny: a directory on its path below /sandbox is a symlink, or the target is a directory",
         ),
         (
             GatewayError::Protocol { message: hostile() },

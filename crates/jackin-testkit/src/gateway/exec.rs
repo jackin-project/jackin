@@ -4,13 +4,15 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use jackin_core::{ProcessStatus, Sha256};
+use jackin_core::{OutputStream, ProcessStatus, Sha256};
 use jackin_openshell::{GatewayError, GatewayOp, ProgramOutcome, ProgramRun, ProgramStdin};
 use tokio_util::sync::CancellationToken;
 
 use super::state::{Cell, SANDBOX_ROOT};
 use super::{ProgramScript, RunRecord};
 use crate::exec::{Failure, HostProgram, run_command};
+
+pub(super) const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 
 pub(super) fn host_path(root: &Path, sandbox_path: &str) -> Option<PathBuf> {
     if sandbox_path == SANDBOX_ROOT {
@@ -110,9 +112,11 @@ async fn run_host(
         Err(Failure::Timeout) => Err(GatewayError::Timeout {
             op: GatewayOp::Program,
             after: run.timeout,
+            group: None,
         }),
         Err(Failure::Cancelled) => Err(GatewayError::Cancelled {
             op: GatewayOp::Program,
+            group: None,
         }),
     }
 }
@@ -137,12 +141,27 @@ async fn sha256sum(root: &Path, run: &ProgramRun) -> ProgramOutcome {
 
 async fn stall(run: &ProgramRun, cancel: &CancellationToken) -> GatewayError {
     tokio::select! {
-        () = cancel.cancelled() => GatewayError::Cancelled { op: GatewayOp::Program },
+        () = cancel.cancelled() => GatewayError::Cancelled { op: GatewayOp::Program, group: None },
         () = tokio::time::sleep(run.timeout) => GatewayError::Timeout {
             op: GatewayOp::Program,
-            after: run.timeout,
-        },
+            after: run.timeout, group: None },
     }
+}
+
+fn within_limit(finished: &ProgramOutcome) -> Result<(), GatewayError> {
+    for (stream, bytes) in [
+        (OutputStream::Stdout, &finished.stdout),
+        (OutputStream::Stderr, &finished.stderr),
+    ] {
+        if bytes.len() > OUTPUT_LIMIT {
+            return Err(GatewayError::OutputTooLarge {
+                op: GatewayOp::Program,
+                stream,
+                limit: OUTPUT_LIMIT,
+            });
+        }
+    }
+    Ok(())
 }
 
 async fn touch(root: &Path, run: &ProgramRun, finished: ProgramOutcome) -> ProgramOutcome {
@@ -178,6 +197,7 @@ pub(super) async fn run_program(
     if cancel.is_cancelled() {
         return Err(GatewayError::Cancelled {
             op: GatewayOp::Program,
+            group: None,
         });
     }
     if stalled {
@@ -202,6 +222,7 @@ pub(super) async fn run_program(
             ),
         }
     };
+    within_limit(&finished)?;
     let finished = touch(&root, run, finished).await;
     cell.state().runs.push((
         run.program.clone(),

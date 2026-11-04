@@ -23,6 +23,14 @@ async fn with_limit(seconds: u64) -> Result<Rig, Box<dyn std::error::Error>> {
     builder().await?.limits(upload_limit(seconds)).build().await
 }
 
+fn ready_outcome(
+    result: Result<jackin_session::LaunchOutcome, jackin_session::LaunchFailure>,
+) -> TestResult {
+    result
+        .map(drop)
+        .map_err(|failure| format!("{failure:?}").into())
+}
+
 #[tokio::test]
 async fn an_upload_that_exceeds_its_limit_fails_with_a_typed_timeout_and_a_retry_converges()
 -> TestResult {
@@ -42,8 +50,7 @@ async fn an_upload_that_exceeds_its_limit_fails_with_a_typed_timeout_and_a_retry
                 *failed.error,
                 LaunchError::Gateway(GatewayError::Timeout {
                     op: GatewayOp::UploadTree,
-                    after
-                }) if after == Duration::from_secs(1)
+                    after, .. }) if after == Duration::from_secs(1)
             ),
             "{:?}",
             failed.error
@@ -61,7 +68,12 @@ async fn an_upload_that_exceeds_its_limit_fails_with_a_typed_timeout_and_a_retry
         assert_eq!(staging, 0);
 
         rig.world.gateway.release_stall(&sandbox_layout::GIT);
-        rig.launch(1).await?;
+        let roomy = rig.session_with(limits(30, 20));
+        ready_outcome(
+            rig.run_on(&roomy, rig.request(1)?, CancellationToken::new())
+                .await?
+                .result,
+        )?;
         Ok(())
     })
     .await

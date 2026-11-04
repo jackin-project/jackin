@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, Provider,
+    Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, read_credential_file,
 };
-use jackin_session::read_chatgpt_login;
+use jackin_session::{AccountPlan, plan_account_edits, read_chatgpt_login};
 
 use crate::app::App;
 use crate::cli::{
     AccountAddArgs, AccountArg, AccountCommand, BindArgs, BindScope, CredentialArg, JsonArg,
+    parse_provider,
 };
 use crate::error::CommandError;
 use crate::paths::absolutize;
@@ -38,14 +39,34 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             chatgpt_account_id: login.account_id,
         });
     }
-    match &args.credential {
-        Some(CredentialArg::Env(var)) => Ok(CredentialSource::Env { var: var.clone() }),
-        Some(CredentialArg::OnePassword(reference)) => Ok(CredentialSource::OnePassword {
-            reference: reference.clone(),
+    match args.credential.as_deref().map(CredentialArg::parse) {
+        Some(Ok(CredentialArg::Env(var))) => {
+            if app.env.get(&var).is_none() {
+                return Err(CommandError::Argument(
+                    "--credential env:NAME needs a variable that is set in this environment"
+                        .to_owned(),
+                ));
+            }
+            Ok(CredentialSource::Env { var })
+        }
+        Some(Ok(CredentialArg::OnePassword(reference))) => Ok(CredentialSource::OnePassword {
+            reference,
+            account: None,
         }),
-        Some(CredentialArg::File(path)) => Ok(CredentialSource::File {
-            path: absolutize(path, &app.cwd)?,
-        }),
+        Some(Ok(CredentialArg::File(path))) => {
+            let refused = || {
+                CommandError::Argument(
+                    "--credential file:PATH needs an existing regular file of at most 1 MiB"
+                        .to_owned(),
+                )
+            };
+            let path = absolutize(&path, &app.cwd).map_err(|_| refused())?;
+            match read_credential_file(app.deps.host.fs.as_ref(), &path).await {
+                Ok(Ok(_)) => Ok(CredentialSource::File { path }),
+                Ok(Err(_)) | Err(_) => Err(refused()),
+            }
+        }
+        Some(Err(error)) => Err(error),
         None => Err(CommandError::Argument(
             "pass --chatgpt-from or --credential".to_owned(),
         )),
@@ -53,15 +74,21 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
 }
 
 async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
-    let config = app.store.load().await?;
-    let account = Account::new(args.name.clone(), args.provider, source(app, &args).await?)?;
-    let add = ConfigEdit::AddAccount(account.clone());
-    config.clone().apply(add.clone())?;
-    if account.provider() == Provider::Codex {
-        let session = app.session(&config).await?;
-        session.sync_account(&account, &app.cancel).await?;
+    let provider = parse_provider(&args.provider)?;
+    let account = Account::new(args.name.clone(), provider, source(app, &args).await?)?;
+    apply(app, vec![ConfigEdit::AddAccount(account)]).await
+}
+
+async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
+    match plan_account_edits(&app.desk(), edits, &app.cancel).await? {
+        AccountPlan::Offline(plan) => {
+            plan.apply().await?;
+        }
+        AccountPlan::Gateway(plan) => {
+            let gateways = app.gateways(plan.config()).await?;
+            plan.apply(&gateways).await?;
+        }
     }
-    app.store.edit(vec![add]).await?;
     Ok(())
 }
 
@@ -89,18 +116,7 @@ fn unknown_account(name: &AccountName) -> CommandError {
 }
 
 async fn rm(app: &App, arg: AccountArg) -> Result<(), CommandError> {
-    let config = app.store.load().await?;
-    let account = config
-        .account(&arg.account)
-        .ok_or_else(|| unknown_account(&arg.account))?;
-    let remove = ConfigEdit::RemoveAccount(arg.account.clone());
-    config.clone().apply(remove.clone())?;
-    if matches!(account.credential(), CredentialSource::CodexLogin { .. }) {
-        let session = app.session(&config).await?;
-        session.forget_account(account, &app.cancel).await?;
-    }
-    app.store.edit(vec![remove]).await?;
-    Ok(())
+    apply(app, vec![ConfigEdit::RemoveAccount(arg.account)]).await
 }
 
 async fn default(app: &App, arg: AccountArg) -> Result<(), CommandError> {

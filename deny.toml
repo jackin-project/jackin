@@ -5,10 +5,11 @@
 all-features = true
 
 [advisories]
-ignore = [
-    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile is unmaintained; reached only through openshell-core in the pinned OpenShell tag." },
-]
 yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz comes through tuiscotti-tui-test, a dev dependency of jackin-testkit for the identity gate (P9.4); the pinned tuiscotti has no replacement." },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser comes through tuiscotti-tui-test, a dev dependency of jackin-testkit for the identity gate (P9.4); the pinned tuiscotti has no replacement." },
+]
 
 [licenses]
 allow = [
@@ -70,6 +71,11 @@ skip = [
     { crate = "syn@2.0.119", reason = "Transitive duplicate from the OpenShell SDK and russh dependency trees; keep the older survivor visible for future drift." },
     { crate = "thiserror@1.0.69", reason = "Transitive duplicate from the OpenShell SDK and russh dependency trees; keep the older survivor visible for future drift." },
     { crate = "thiserror-impl@1.0.69", reason = "Transitive duplicate from the OpenShell SDK and russh dependency trees; keep the older survivor visible for future drift." },
+    { crate = "nix@0.28.0", reason = "portable-pty 0.9.0, the PTY driver of xtask e2e, is the latest stable release and pins nix 0.28; keep the older survivor visible for future drift." },
+    { crate = "bitflags@1.3.2", reason = "portable-pty 0.9.0 (xtask e2e) still depends on bitflags 1; keep the older survivor visible for future drift." },
+    { crate = "cfg_aliases@0.1.1", reason = "nix 0.28.0 under portable-pty 0.9.0 (xtask e2e) builds with cfg_aliases 0.1; keep the older survivor visible for future drift." },
+    { crate = "foldhash@0.1.5", reason = "jsonschema 0.60.2 (xtask e2e) pulls hashbrown 0.17.1 on foldhash 0.2.0 while the OpenShell build tree keeps hashbrown 0.15.5 on foldhash 0.1.5; keep the older survivor visible for future drift." },
+    { crate = "compact_str@0.9.1", reason = "ratatui-core and termpane pin different compact_str generations; keep the older survivor visible for future drift." },
     { crate = "unicode-width@0.1.14", reason = "Transitive duplicate from the OpenShell SDK and russh dependency trees; keep the older survivor visible for future drift." },
     { crate = "untrusted@0.7.1", reason = "Transitive duplicate from the OpenShell SDK and russh dependency trees; keep the older survivor visible for future drift." },
 ]
@@ -83,4 +89,9 @@ unused = "deny"
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = ["https://github.com/NVIDIA/OpenShell"]
+allow-git = [
+    "https://github.com/NVIDIA/OpenShell",
+    "https://github.com/tailrocks/terminal-components-baseline",
+    "https://github.com/tailrocks/tuiscotti",
+    "https://github.com/tailrocks/termpane",
+]

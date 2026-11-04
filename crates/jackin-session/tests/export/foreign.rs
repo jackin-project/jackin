@@ -7,6 +7,7 @@ use jackin_session::{ExportError, LifecycleError, PurgeMode, PurgeOutcome};
 use jackin_testkit::{Rig, TestResult, guard};
 
 use super::support::export;
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn a_sandbox_without_jackin_labels_is_never_purged_stopped_started_or_exported() -> TestResult
@@ -28,7 +29,9 @@ async fn a_sandbox_without_jackin_labels_is_never_purged_stopped_started_or_expo
             }
         );
         for action in [PowerAction::Stop, PowerAction::Start] {
-            let refused = session.power(&foreign, action).await;
+            let refused = session
+                .power(&foreign, action, &CancellationToken::new())
+                .await;
             assert!(matches!(refused, Err(LifecycleError::NotFound(found)) if found == foreign));
         }
         let exported = export(&rig, &foreign).await;

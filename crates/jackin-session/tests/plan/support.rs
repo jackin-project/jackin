@@ -7,12 +7,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Config, EnvName, FileSystem, GatewayName, HostPath, ImageId, LaunchId, ProjectRoot, RoleName,
-    Sha256, StdFileSystem,
+    Config, EnvName, FileSystem, GatewayName, HostPath, ImageId, LaunchId, PlainEnvValue,
+    ProjectRoot, RoleName, Sha256, StdFileSystem,
 };
 use jackin_image::{BuiltImage, ImageSource};
 use jackin_session::{LaunchPlan, LaunchRequest, LoadedRole, PlanError, RoleCatalog, plan_launch};
-use jackin_testkit::{RepoFixture, RoleFixture, TestRunner};
+use jackin_testkit::{FakeClock, RepoFixture, RoleFixture, TestRunner};
 
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
@@ -32,7 +32,12 @@ pub(crate) fn launch_id(byte: u8) -> LaunchId {
 pub(crate) fn catalog(cache: &HostPath) -> (RoleCatalog, Arc<TestRunner>) {
     let runner = Arc::new(TestRunner::new());
     let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
-    let catalog = RoleCatalog::new(fs, Arc::<TestRunner>::clone(&runner), cache.clone());
+    let catalog = RoleCatalog::new(
+        fs,
+        Arc::<TestRunner>::clone(&runner),
+        Arc::new(FakeClock::new()),
+        cache.clone(),
+    );
     (catalog, runner)
 }
 
@@ -51,6 +56,8 @@ pub(crate) struct Spec {
     pub(crate) workspace_bindings: String,
     pub(crate) role_bindings: String,
     pub(crate) gateways: Option<String>,
+    pub(crate) workspace_keys: String,
+    pub(crate) tables: String,
 }
 
 pub(crate) struct Setup {
@@ -75,6 +82,8 @@ impl Spec {
             workspace_bindings: String::new(),
             role_bindings: String::new(),
             gateways: None,
+            workspace_keys: String::new(),
+            tables: String::new(),
         }
     }
 
@@ -94,13 +103,15 @@ impl Spec {
             format!("\n[defaults.accounts]\n{}", self.defaults)
         };
         format!(
-            "{gateways}{defaults}\n{}\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\nbindings = {{ {} }}\n\n[workspaces.platform-backend]\npath = \"{}\"\ndocker = {}\nbindings = {{ {} }}\n",
+            "{gateways}{defaults}\n{}\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\nbindings = {{ {} }}\n\n[workspaces.platform-backend]\npath = \"{}\"\ndocker = {}\n{}bindings = {{ {} }}\n{}",
             self.accounts,
             role.as_path().display(),
             self.role_bindings,
             repo.as_path().display(),
             self.workspace_docker,
+            self.workspace_keys,
             self.workspace_bindings,
+            self.tables,
         )
     }
 
@@ -115,7 +126,12 @@ impl Spec {
         let cache_dir = tempfile::tempdir()?;
         let cache = HostPath::parse(&std::fs::canonicalize(cache_dir.path())?)?;
         let (catalog, _runner) = catalog(&cache);
-        let role = catalog.load_path(role_fixture.root()).await?;
+        let role = catalog
+            .load_path(
+                role_fixture.root(),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await?;
         let config = Config::parse(&self.text(repo.root(), role_fixture.root()))?;
         let project = repo.project().await?;
         Ok(Setup {
@@ -153,6 +169,15 @@ pub(crate) fn built_image(role: &LoadedRole, fill: char) -> Result<BuiltImage, B
         id: ImageId::parse(&format!("sha256:{}", fill.to_string().repeat(64)))?,
         source: ImageSource::Built,
     })
+}
+
+pub(crate) fn plain_values(
+    pairs: &[(&str, &str)],
+) -> Result<BTreeMap<EnvName, PlainEnvValue>, Box<dyn Error>> {
+    pairs
+        .iter()
+        .map(|(name, value)| Ok((EnvName::parse(name)?, PlainEnvValue::parse(value)?)))
+        .collect()
 }
 
 pub(crate) fn env_values(

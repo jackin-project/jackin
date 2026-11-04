@@ -6,8 +6,9 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::boundary::Clock;
+use crate::boundary::{Clock, FileLock, FileSystem, FsError};
 use crate::display::plain_duration;
+use crate::paths::HostPath;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PollPlan {
@@ -76,4 +77,21 @@ where
         }
         elapsed += step;
     }
+}
+
+pub async fn hold_lock(
+    fs: &dyn FileSystem,
+    clock: &dyn Clock,
+    path: &HostPath,
+    plan: PollPlan,
+    cancel: &CancellationToken,
+) -> Result<FileLock, PollError<FsError>> {
+    poll_until(clock, plan, cancel, || async {
+        match fs.lock(path).await {
+            Ok(lock) => Ok(Poll::Ready(lock)),
+            Err(FsError::LockHeld(_)) => Ok(Poll::Pending),
+            Err(error) => Err(error),
+        }
+    })
+    .await
 }

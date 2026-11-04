@@ -23,14 +23,13 @@ const OTHER: &str = "1.0.0";
 enum Dep {
     Normal(&'static str),
     Dev(&'static str),
-    Optional(&'static str),
     Renamed(&'static str, &'static str),
 }
 
 impl Dep {
     fn name(self) -> &'static str {
         match self {
-            Dep::Normal(name) | Dep::Dev(name) | Dep::Optional(name) => name,
+            Dep::Normal(name) | Dep::Dev(name) => name,
             Dep::Renamed(_, package) => package,
         }
     }
@@ -88,11 +87,9 @@ impl Fixture {
     }
 
     fn git(&self, args: &[&str]) -> TestResult {
-        let status = Command::new("git")
+        let status = jackin_testkit::git_command()
             .args(args)
             .current_dir(self.dir.path())
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_NOSYSTEM", "1")
             .status()?;
         if status.success() {
             Ok(())
@@ -175,11 +172,6 @@ fn manifest(name: &str, deps: &[Dep]) -> String {
     for dep in deps {
         match dep {
             Dep::Normal(dep) => normal.push_str(&format!("{dep} = {{ workspace = true }}\n")),
-            Dep::Optional(dep) => {
-                normal.push_str(&format!(
-                    "{dep} = {{ workspace = true, optional = true }}\n"
-                ));
-            }
             Dep::Dev(dep) => dev.push_str(&format!("{dep} = {{ workspace = true }}\n")),
             Dep::Renamed(alias, package) => normal.push_str(&format!(
                 "{alias} = {{ package = \"{package}\", version = \"0.1.0\" }}\n"
@@ -242,16 +234,15 @@ fn add(specs: &mut Specs, member: &str, dep: Dep) {
     }
 }
 
-fn remove(specs: &mut Specs, member: &str, dep_name: &str) {
-    for (name, deps) in specs.iter_mut() {
-        if *name == member {
-            deps.retain(|dep| dep.name() != dep_name);
-        }
-    }
+fn usage_provider() -> Vec<Dep> {
+    vec![
+        Dep::Normal("jackin-usage-provider-core"),
+        Dep::Normal("serde_json"),
+    ]
 }
 
 fn d14() -> Specs {
-    use Dep::{Dev, Normal, Optional};
+    use Dep::{Dev, Normal};
     let core = Normal("jackin-core");
     let image = Normal("jackin-image");
     let openshell = Normal("jackin-openshell");
@@ -284,7 +275,10 @@ fn d14() -> Specs {
                 testkit,
             ],
         ),
-        ("jackin-testkit", vec![core, image, openshell, session, tui]),
+        (
+            "jackin-testkit",
+            vec![core, image, openshell, session, tui, Normal("jackin-usage")],
+        ),
         (
             "jackin",
             vec![
@@ -293,15 +287,40 @@ fn d14() -> Specs {
                 openshell,
                 session,
                 tui,
+                Normal("jackin-usage"),
                 Normal("clap"),
                 testkit,
             ],
         ),
         (
+            "jackin-usage",
+            vec![
+                core,
+                Normal("jackin-usage-provider-core"),
+                Normal("jackin-usage-provider-codex"),
+                Normal("serde"),
+                testkit,
+            ],
+        ),
+        (
+            "jackin-usage-provider-core",
+            vec![Normal("reqwest"), Normal("serde_json"), Normal("thiserror")],
+        ),
+        ("jackin-usage-provider-claude", usage_provider()),
+        ("jackin-usage-provider-codex", usage_provider()),
+        ("jackin-usage-provider-cursor", usage_provider()),
+        ("jackin-usage-provider-gemini", usage_provider()),
+        ("jackin-usage-provider-grok", usage_provider()),
+        ("jackin-usage-provider-kimi", usage_provider()),
+        ("jackin-usage-provider-minimax", usage_provider()),
+        ("jackin-usage-provider-opencode", usage_provider()),
+        ("jackin-usage-provider-openrouter", usage_provider()),
+        ("jackin-usage-provider-zai", usage_provider()),
+        (
             "jackin-xtask",
             vec![
-                Optional("jackin-core"),
-                Optional("jackin-openshell"),
+                Normal("jackin-core"),
+                Normal("jackin-openshell"),
                 Normal("clap"),
                 testkit,
             ],
@@ -343,6 +362,21 @@ mod comments {
         let fixture = Fixture::new(&bare(&["jackin-core"]))?;
         fixture.write("crates/jackin-core/src/lib.rs", &source)?;
         assert_eq!(run(&fixture)?, []);
+        Ok(())
+    }
+
+    #[test]
+    fn a_comment_in_the_usage_subtree_is_reported() -> TestResult {
+        let source = format!("{HEADER}\n// note\nfn f() {{}}\n");
+        let fixture = Fixture::new(&bare(&["jackin-usage"]))?;
+        fixture.write("crates/usage/jackin-usage/src/lib.rs", &source)?;
+        let expected = lines(
+            CiStep::Comments,
+            "crates/usage/jackin-usage/src/lib.rs",
+            &source,
+            &["note"],
+        );
+        assert_eq!(run(&fixture)?, expected);
         Ok(())
     }
 
@@ -642,14 +676,14 @@ mod layers {
 
     #[test]
     fn edges_outside_the_row_are_reported() -> TestResult {
-        use Dep::{Dev, Normal, Optional};
+        use Dep::{Dev, Normal};
         let mut specs = d14();
         add(&mut specs, "jackin-image", Normal("jackin-openshell"));
         add(&mut specs, "jackin-openshell", Normal("jackin-image"));
         add(&mut specs, "jackin-core", Normal("jackin-session"));
         add(&mut specs, "jackin-session", Normal("jackin-usage"));
         add(&mut specs, "jackin", Normal("jackin-usage-provider-codex"));
-        add(&mut specs, "jackin-xtask", Optional("jackin-session"));
+        add(&mut specs, "jackin-xtask", Normal("jackin-tui"));
         add(&mut specs, "jackin-tui", Normal("jackin-testkit"));
         add(&mut specs, "jackin-image", Dev("jackin-session"));
         let violations = run(&specs, &[])?;
@@ -676,7 +710,7 @@ mod layers {
                 &["jackin-openshell", "jackin-image"],
                 &["jackin-session", "jackin-usage"],
                 &["jackin-tui", "jackin-testkit"],
-                &["jackin-xtask", "jackin-session"],
+                &["jackin-xtask", "jackin-tui"],
                 &["jackin", "jackin-usage-provider-codex"],
             ],
         );
@@ -780,26 +814,139 @@ mod layers {
     }
 
     #[test]
-    fn optional_edges_must_be_optional_in_the_manifest() -> TestResult {
-        use Dep::Normal;
+    fn usage_edges_outside_the_rows_are_reported() -> TestResult {
+        use Dep::{Dev, Normal};
         let mut specs = d14();
-        remove(&mut specs, "jackin-xtask", "jackin-openshell");
-        remove(&mut specs, "jackin-xtask", "jackin-core");
-        add(&mut specs, "jackin-xtask", Normal("jackin-openshell"));
-        add(&mut specs, "jackin-xtask", Normal("jackin-core"));
+        add(&mut specs, "jackin-usage", Normal("jackin-openshell"));
+        add(&mut specs, "jackin-usage", Normal("jackin-session"));
+        add(
+            &mut specs,
+            "jackin-usage-provider-codex",
+            Normal("jackin-core"),
+        );
+        add(
+            &mut specs,
+            "jackin-usage-provider-claude",
+            Normal("jackin-usage"),
+        );
+        add(
+            &mut specs,
+            "jackin-usage-provider-core",
+            Normal("jackin-usage-provider-codex"),
+        );
+        add(
+            &mut specs,
+            "jackin-tui",
+            Normal("jackin-usage-provider-core"),
+        );
+        add(&mut specs, "jackin", Normal("jackin-usage-provider-core"));
+        add(
+            &mut specs,
+            "jackin-usage-provider-kimi",
+            Dev("jackin-testkit"),
+        );
+        let violations = run(&specs, &[])?;
+        let expected: Vec<Found> = [
+            "jackin-tui",
+            "jackin-usage-provider-claude",
+            "jackin-usage-provider-codex",
+            "jackin-usage-provider-core",
+            "jackin-usage-provider-kimi",
+            "jackin-usage",
+            "jackin-usage",
+            "jackin",
+        ]
+        .iter()
+        .map(|member| manifest_found(CiStep::Layers, member))
+        .collect();
+        assert_eq!(summary(&violations), expected);
+        assert_messages(
+            &violations,
+            &[
+                &["jackin-tui", "jackin-usage"],
+                &["jackin-usage-provider-claude", "jackin-usage"],
+                &["jackin-usage-provider-codex", "jackin-core"],
+                &["jackin-usage-provider-core", "jackin-usage-provider-codex"],
+                &["jackin-usage-provider-kimi", "jackin-testkit"],
+                &["jackin-usage", "jackin-openshell"],
+                &["jackin-usage", "jackin-session"],
+                &["jackin", "jackin-usage-provider-core"],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn usage_edges_inside_the_rows_pass() -> TestResult {
+        assert_eq!(summary(&run(&d14(), &[])?), []);
+        Ok(())
+    }
+
+    #[test]
+    fn reqwest_in_a_manifest_outside_the_http_owner_is_reported() -> TestResult {
+        use Dep::{Dev, Normal};
+        let mut specs = d14();
+        add(&mut specs, "jackin-session", Normal("reqwest"));
+        add(&mut specs, "jackin-image", Dev("reqwest"));
         let violations = run(&specs, &[])?;
         assert_eq!(
             summary(&violations),
             [
-                manifest_found(CiStep::Layers, "jackin-xtask"),
-                manifest_found(CiStep::Layers, "jackin-xtask"),
+                manifest_found(CiStep::Layers, "jackin-image"),
+                manifest_found(CiStep::Layers, "jackin-session"),
             ]
         );
         assert_messages(
             &violations,
             &[
-                &["jackin-xtask", "jackin-core"],
-                &["jackin-xtask", "jackin-openshell"],
+                &["jackin-image", "reqwest", "jackin-usage-provider-core"],
+                &["jackin-session", "reqwest", "jackin-usage-provider-core"],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn reqwest_imports_in_source_outside_the_http_owner_are_reported() -> TestResult {
+        let group = "use reqwest::{Client, StatusCode};\n";
+        let path = "fn f() {\n    let _client = reqwest::Client::new();\n}\n";
+        let extern_crate = "extern crate reqwest;\n";
+        let in_macro = "fn f() {\n    wrap!(reqwest::get(\"x\"));\n}\n";
+        let owner = "use reqwest::Client;\nfn f() { let _ = reqwest::get(\"x\"); }\n";
+        let quiet = "fn docs() {\n    let text = \"use reqwest::Client;\";\n    let raw = r#\"reqwest::Client\"#;\n    reqwest_helper::run();\n    crate::reqwest_stub::f();\n}\n";
+        let violations = run(
+            &d14(),
+            &[
+                ("crates/jackin-session/src/a.rs", group),
+                ("crates/jackin-image/src/b.rs", path),
+                ("crates/jackin-core/src/c.rs", extern_crate),
+                ("crates/jackin-tui/src/d.rs", in_macro),
+                ("crates/usage/jackin-usage-provider-core/src/lib.rs", owner),
+                ("crates/jackin-testkit/src/q.rs", quiet),
+            ],
+        )?;
+        let expected = vec![
+            at(CiStep::Layers, "crates/jackin-core/src/c.rs", 1),
+            at(
+                CiStep::Layers,
+                "crates/jackin-image/src/b.rs",
+                line_of(path, "reqwest"),
+            ),
+            at(CiStep::Layers, "crates/jackin-session/src/a.rs", 1),
+            at(
+                CiStep::Layers,
+                "crates/jackin-tui/src/d.rs",
+                line_of(in_macro, "reqwest"),
+            ),
+        ];
+        assert_eq!(summary(&violations), expected);
+        assert_messages(
+            &violations,
+            &[
+                &["jackin-core", "reqwest"],
+                &["jackin-image", "reqwest"],
+                &["jackin-session", "reqwest"],
+                &["jackin-tui", "reqwest"],
             ],
         );
         Ok(())
@@ -815,6 +962,61 @@ mod layers {
             [manifest_found(CiStep::Layers, "jackin-newcrate")]
         );
         assert_messages(&violations, &[&["jackin-newcrate"]]);
+        Ok(())
+    }
+}
+
+mod expose {
+    use super::*;
+
+    fn run(files: &[(&str, &str)]) -> Result<Vec<Violation>, Box<dyn Error>> {
+        let fixture = Fixture::new(&d14())?;
+        for (path, text) in files {
+            fixture.write(path, text)?;
+        }
+        Ok(LayersCheck.run(&fixture.repo()?))
+    }
+
+    #[test]
+    fn expose_calls_outside_the_allowlist_are_reported_at_their_line() -> TestResult {
+        let source = "fn f(secret: &Secret) {\n    let _text = secret.expose();\n    let _bytes = SecretBytes::expose(&secret);\n}\n";
+        let path = "crates/usage/jackin-usage/src/cache.rs";
+        let violations = run(&[(path, source)])?;
+        assert_eq!(
+            summary(&violations),
+            [at(CiStep::Layers, path, 2), at(CiStep::Layers, path, 3)]
+        );
+        assert_messages(
+            &violations,
+            &[
+                &["Secret::expose", "allowlist"],
+                &["Secret::expose", "allowlist"],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn expose_calls_in_the_allowlisted_credential_file_pass() -> TestResult {
+        let source = "fn f(secret: &Secret) {\n    let _text = secret.expose();\n    let _bytes = SecretBytes::expose(&secret);\n}\n";
+        let violations = run(&[("crates/usage/jackin-usage/src/credential.rs", source)])?;
+        assert_eq!(summary(&violations), []);
+        Ok(())
+    }
+
+    #[test]
+    fn expose_in_strings_and_definitions_is_not_a_call() -> TestResult {
+        let source = "impl Secret {\n    pub fn expose(&self) -> &str { &self.0 }\n}\nfn docs() {\n    let a = \"secret.expose()\";\n    let b = r#\"secret.expose()\"#;\n    let expose = 1;\n}\n";
+        let violations = run(&[("crates/usage/jackin-usage/src/model.rs", source)])?;
+        assert_eq!(summary(&violations), []);
+        Ok(())
+    }
+
+    #[test]
+    fn expose_calls_under_a_tests_directory_pass() -> TestResult {
+        let source = "fn f(secret: &Secret) {\n    let _text = secret.expose();\n}\n";
+        let violations = run(&[("crates/usage/jackin-usage/tests/usage/secrets.rs", source)])?;
+        assert_eq!(summary(&violations), []);
         Ok(())
     }
 }
@@ -1863,12 +2065,15 @@ mod ci_run {
 
     use super::*;
 
-    const FULL: [&str; 8] = [
+    const FULL: [&str; 11] = [
         "cargo fmt --all --check",
         "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
         "cargo nextest run --workspace --all-features --locked",
         "cargo deny --locked check",
         "cargo shear --deny-warnings",
+        "cargo tree -p jackin -e normal,build -f {p} {f} -i jackin-console",
+        "cargo tree -p jackin-tui -e normal,build -f {p} {f} -i jackin-console",
+        "cargo tree -p jackin -e normal -i clap",
         "reuse lint",
         "bun install --frozen-lockfile @docs",
         "bun run build @docs",
@@ -1960,6 +2165,10 @@ mod ci_run {
         let fixture = Fixture::new(&bare(&["jackin-core"]))?;
         fixture.write_pins(PIN, PIN, PIN, PIN, PIN)?;
         fixture.write("docs/index.md", "# Docs\n")?;
+        fixture.write(
+            "deny.toml",
+            "[sources]\nunknown-git = \"deny\"\nallow-git = [\"https://github.com/NVIDIA/OpenShell\", \"https://github.com/tailrocks/terminal-components-baseline\", \"https://github.com/tailrocks/termpane\", \"https://github.com/tailrocks/tuiscotti\"]\n",
+        )?;
         Ok(fixture)
     }
 
@@ -1977,7 +2186,7 @@ mod ci_run {
         let fixture = green()?;
         for args in [&["--fast"][..], &["--no-docs"], &["--fast", "--no-docs"]] {
             let outcome = spy.run(&fixture, args, "")?;
-            assert_eq!(outcome.log, FULL[..6], "args {args:?}");
+            assert_eq!(outcome.log, FULL[..9], "args {args:?}");
             assert!(outcome.success, "{}", outcome.stderr);
         }
         Ok(())
@@ -1987,11 +2196,13 @@ mod ci_run {
     fn only_runs_the_named_steps_in_plan_order() -> TestResult {
         let spy = Spy::new()?;
         let fixture = green()?;
-        let cases: [(&str, &[&str]); 4] = [
-            ("reuse,fmt", &[FULL[0], FULL[5]]),
-            ("docs", &FULL[6..]),
+        let cases: [(&str, &[&str]); 6] = [
+            ("reuse,fmt", &[FULL[0], FULL[8]]),
+            ("docs", &FULL[9..]),
             ("deny,deny", &[FULL[3]]),
             ("comments,layers,pins,containers", &[]),
+            ("baseline,screen", &[]),
+            ("demo-gate,screen,baseline", &FULL[5..8]),
         ];
         for (selection, expected) in cases {
             let outcome = spy.run(&fixture, &["--only", selection], "")?;
@@ -2005,7 +2216,7 @@ mod ci_run {
     fn a_failing_tool_stops_the_run_and_fails_the_exit_status() -> TestResult {
         let spy = Spy::new()?;
         let fixture = green()?;
-        for (fail_on, count) in [("clippy", 2), ("deny", 4), ("reuse", 6), ("bun", 7)] {
+        for (fail_on, count) in [("clippy", 2), ("deny", 4), ("reuse", 9), ("bun", 10)] {
             let outcome = spy.run(&fixture, &[], fail_on)?;
             assert_eq!(outcome.log, FULL[..count], "FAIL_ON {fail_on}");
             assert!(!outcome.success, "FAIL_ON {fail_on}");
@@ -2037,6 +2248,32 @@ mod ci_run {
             (&pins, "rust-toolchain.toml"),
             (&containers, "crates/jackin-core/src/lib.rs:1"),
             (&errors, "crates/jackin-core/src/lib.rs:1"),
+        ];
+        for (fixture, needle) in cases {
+            let outcome = spy.run(fixture, &[], "")?;
+            assert_eq!(outcome.log, FULL[..5], "{needle}");
+            assert_eq!(outcome.code, Some(1), "{needle}");
+            assert!(outcome.stderr.contains(needle), "{}", outcome.stderr);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_violation_in_baseline_or_screen_stops_before_the_later_tools() -> TestResult {
+        let spy = Spy::new()?;
+        let baseline = green()?;
+        baseline.write(
+            "deny.toml",
+            "[sources]\nunknown-git = \"warn\"\nallow-git = []\n",
+        )?;
+        let screen = green()?;
+        screen.write(
+            "crates/jackin-tui/src/lib.rs",
+            "const NAME: &str = \"Saved\";\n",
+        )?;
+        let cases = [
+            (&baseline, "deny.toml: R6"),
+            (&screen, "crates/jackin-tui/src/lib.rs:1: C2"),
         ];
         for (fixture, needle) in cases {
             let outcome = spy.run(fixture, &[], "")?;

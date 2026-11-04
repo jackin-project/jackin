@@ -1,12 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
-
-use jackin_core::{BuildOutput, Workspace};
-use jackin_image::{BuiltImage, ImageRequest, Rebuild, ensure_image};
-use jackin_session::{LAUNCH_EVENT_CAPACITY, plan_image};
-use tokio::sync::mpsc;
+use jackin_core::BuildOutput;
+use jackin_image::{BuiltImage, Rebuild};
+use jackin_session::{BuildRequest, build_observed};
 
 use super::progress::image_event;
 use crate::app::App;
@@ -16,22 +13,15 @@ use crate::views::VIEW_SCHEMA;
 
 pub(crate) async fn run(app: &mut App, args: BuildArgs) -> Result<(), CommandError> {
     let config = app.store.load().await?;
-    let (gateway, _) = config.resolve_gateway(app.gateway.as_ref())?;
-    let workspace = config.workspace_for(&app.cwd).map_or_else(
-        |_| Workspace {
-            path: app.cwd.clone(),
-            docker: false,
-            default_role: None,
-            bindings: BTreeMap::new(),
-        },
-        |(_, found)| found.clone(),
-    );
-    let role = app
-        .catalog()
-        .load(&config, args.role.as_ref(), &workspace)
-        .await?;
-    let request = plan_image(&config, &role, gateway, None, Rebuild::from(args.rebuild))?;
-    let built = show_build(app, &request).await?;
+    let catalog = app.catalog();
+    let (gateway, path) = (app.gateway.clone(), app.cwd.clone());
+    let request = BuildRequest {
+        gateway: gateway.as_ref(),
+        role: args.role.as_ref(),
+        path: &path,
+        rebuild: Rebuild::from(args.rebuild),
+    };
+    let built = show_build(app, &config, &catalog, &request).await?;
     if args.json {
         app.io.json(&BuildOutput {
             schema: VIEW_SCHEMA,
@@ -43,16 +33,22 @@ pub(crate) async fn run(app: &mut App, args: BuildArgs) -> Result<(), CommandErr
     }
 }
 
-async fn show_build(app: &mut App, request: &ImageRequest) -> Result<BuiltImage, CommandError> {
-    let (progress, mut events) = mpsc::channel(LAUNCH_EVENT_CAPACITY);
+async fn show_build(
+    app: &mut App,
+    config: &jackin_core::Config,
+    catalog: &jackin_session::RoleCatalog,
+    request: &BuildRequest<'_>,
+) -> Result<BuiltImage, CommandError> {
     let engine = std::sync::Arc::clone(&app.deps.engine);
     let cancel = app.cancel.clone();
-    let build = async move { ensure_image(engine.as_ref(), request, &progress, &cancel).await };
-    let render = async {
-        while let Some(event) = events.recv().await {
-            image_event(&mut app.io, &event);
-        }
-    };
-    let (built, ()) = tokio::join!(build, render);
-    Ok(built?)
+    let built = build_observed(
+        engine.as_ref(),
+        catalog,
+        config,
+        request,
+        &cancel,
+        |event| image_event(&mut app.io, event),
+    )
+    .await?;
+    Ok(built)
 }

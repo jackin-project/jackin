@@ -3,10 +3,13 @@
 
 use std::path::Path;
 
-use jackin_core::{FileMode, FileSystem, HostPath, RegularFile, RegularFileProblem, RepoPath};
+use jackin_core::{
+    FileMode, FileSystem, HostPath, RegularFile, RegularFileProblem, RepoPath, UNBOUNDED_READ,
+};
 
 use crate::engine::{ContextProblem, EngineError};
 use crate::plan::{ContextSource, MaterializedFile};
+use crate::request::ContextEntry;
 
 const EXECUTABLE: FileMode = FileMode(0o755);
 const PLAIN: FileMode = FileMode(0o644);
@@ -30,6 +33,18 @@ fn valid_name(name: &str) -> bool {
             .all(|segment| !matches!(segment, "" | "." | ".."))
 }
 
+async fn place(
+    fs: &dyn FileSystem,
+    target: &HostPath,
+    shown: &str,
+) -> Result<HostPath, EngineError> {
+    let file = host(&target.as_path().join(shown), shown)?;
+    if let Some(parent) = file.as_path().parent() {
+        fs.create_dir_all(&host(parent, shown)?).await?;
+    }
+    Ok(file)
+}
+
 async fn put(
     fs: &dyn FileSystem,
     target: &HostPath,
@@ -37,12 +52,43 @@ async fn put(
     bytes: &[u8],
     mode: FileMode,
 ) -> Result<(), EngineError> {
-    let file = host(&target.as_path().join(shown), shown)?;
-    if let Some(parent) = file.as_path().parent() {
-        fs.create_dir_all(&host(parent, shown)?).await?;
-    }
+    let file = place(fs, target, shown).await?;
     fs.write_new(&file, bytes, mode).await?;
     Ok(())
+}
+
+fn regular_problem(problem: RegularFileProblem) -> ContextProblem {
+    match problem {
+        RegularFileProblem::Symlink => ContextProblem::Symlink,
+        RegularFileProblem::NotARegularFile => ContextProblem::NotARegularFile,
+        RegularFileProblem::Missing => ContextProblem::Missing,
+    }
+}
+
+fn stays_in_root(target: &str, depth: usize) -> bool {
+    let mut segments = target.split('/').peekable();
+    let mut ups = 0;
+    while segments.next_if_eq(&"..").is_some() {
+        ups += 1;
+    }
+    let plain: Vec<&str> = segments.collect();
+    ups <= depth
+        && !plain.is_empty()
+        && plain
+            .iter()
+            .all(|segment| !matches!(*segment, "" | "." | ".."))
+}
+
+fn staged_mode(regular: RegularFile) -> RegularFile {
+    let mode = if regular.mode.0 & 0o111 == 0 {
+        PLAIN
+    } else {
+        EXECUTABLE
+    };
+    RegularFile {
+        bytes: regular.bytes,
+        mode,
+    }
 }
 
 pub async fn read_regular_file(
@@ -50,35 +96,36 @@ pub async fn read_regular_file(
     root: &HostPath,
     file: &RepoPath,
 ) -> Result<RegularFile, EngineError> {
-    let shown = file.as_str();
-    let problem = match fs.read_regular(root, file).await? {
-        Ok(regular) => {
-            let mode = if regular.mode.0 & 0o111 == 0 {
-                PLAIN
-            } else {
-                EXECUTABLE
-            };
-            return Ok(RegularFile {
-                bytes: regular.bytes,
-                mode,
-            });
-        }
-        Err(RegularFileProblem::Symlink) => ContextProblem::Symlink,
-        Err(RegularFileProblem::NotARegularFile) => ContextProblem::NotARegularFile,
-        Err(RegularFileProblem::Missing) => ContextProblem::Missing,
-    };
-    Err(refuse(shown, problem))
+    match fs.read_regular(root, file, UNBOUNDED_READ).await? {
+        Ok(regular) => Ok(staged_mode(regular)),
+        Err(problem) => Err(refuse(file.as_str(), regular_problem(problem))),
+    }
 }
 
-async fn stage_listed(
+async fn stage_entries(
     fs: &dyn FileSystem,
-    root: &HostPath,
-    files: &[RepoPath],
+    entries: &[ContextEntry],
     target: &HostPath,
 ) -> Result<(), EngineError> {
-    for file in files {
-        let regular = read_regular_file(fs, root, file).await?;
-        put(fs, target, file.as_str(), &regular.bytes, regular.mode).await?;
+    for entry in entries {
+        match entry {
+            ContextEntry::File {
+                path,
+                bytes,
+                executable,
+            } => {
+                let mode = if *executable { EXECUTABLE } else { PLAIN };
+                put(fs, target, path.as_str(), bytes, mode).await?;
+            }
+            ContextEntry::Link { path, target: text } => {
+                let depth = path.as_str().matches('/').count();
+                if !stays_in_root(text, depth) {
+                    return Err(refuse(path.as_str(), ContextProblem::Escapes));
+                }
+                let link = place(fs, target, path.as_str()).await?;
+                fs.write_symlink(&link, text).await?;
+            }
+        }
     }
     Ok(())
 }
@@ -103,7 +150,7 @@ pub(crate) async fn stage(
     target: &HostPath,
 ) -> Result<(), EngineError> {
     match source {
-        ContextSource::Listed { root, files } => stage_listed(fs, root, files, target).await,
+        ContextSource::Entries(entries) => stage_entries(fs, entries, target).await,
         ContextSource::Materialized(files) => stage_materialized(fs, files, target).await,
     }
 }

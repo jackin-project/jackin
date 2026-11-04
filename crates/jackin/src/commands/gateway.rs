@@ -1,10 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{ConfigEdit, EngineConfig, GatewayEntry, Platform};
+use jackin_core::{ConfigEdit, ConfigError, EngineConfig, GatewayEntry, Platform};
+use jackin_session::{GatewayRemoval, plan_gateway_removal};
 
 use crate::app::App;
-use crate::cli::{GatewayAddArgs, GatewayCommand, GatewayNameArg, JsonArg};
+use crate::cli::{GatewayAddArgs, GatewayCommand, GatewayRmArgs, JsonArg};
 use crate::error::CommandError;
 use crate::paths::absolutize;
 use crate::views::GatewayLs;
@@ -13,7 +14,7 @@ pub(crate) async fn run(app: &mut App, command: GatewayCommand) -> Result<(), Co
     match command {
         GatewayCommand::Add(args) => add(app, args).await,
         GatewayCommand::Ls(arg) => ls(app, &arg).await,
-        GatewayCommand::Rm(arg) => rm(app, arg).await,
+        GatewayCommand::Rm(args) => rm(app, args).await,
     }
 }
 
@@ -65,9 +66,28 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     Ok(())
 }
 
-async fn rm(app: &App, arg: GatewayNameArg) -> Result<(), CommandError> {
-    app.store
-        .edit(vec![ConfigEdit::RemoveGateway(arg.name)])
-        .await?;
+async fn rm(app: &mut App, arg: GatewayRmArgs) -> Result<(), CommandError> {
+    if arg.offline {
+        let edited = app
+            .store
+            .edit(vec![ConfigEdit::RemoveGateway(arg.name.clone())])
+            .await;
+        if edited.as_ref().err().is_none_or(ConfigError::committed) {
+            app.io.note(&format!(
+                "warning: gateway {} was removed without contacting it; its OpenShell providers, which hold account credentials, stay on it until that gateway is reset",
+                arg.name
+            ));
+        }
+        edited?;
+        return Ok(());
+    }
+    match plan_gateway_removal(&app.desk(), &arg.name, &app.cancel).await? {
+        GatewayRemoval::Offline(plan) => {
+            plan.apply().await?;
+        }
+        GatewayRemoval::Online(plan) => {
+            plan.apply(app.deps.connect.as_ref(), &app.cancel).await?;
+        }
+    }
     Ok(())
 }

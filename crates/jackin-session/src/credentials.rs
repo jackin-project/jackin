@@ -3,7 +3,10 @@
 
 use std::path::Path;
 
-use jackin_core::{ChatgptAccountId, FileSystem, FsError, HostPath, Secret, plain};
+use jackin_core::{
+    ChatgptAccountId, CredentialFileProblem, FileSystem, FsError, HostPath, Secret, plain,
+    read_credential_file,
+};
 use serde_json::Value;
 use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
@@ -23,6 +26,10 @@ pub struct ChatgptLogin {
 pub enum CredentialError {
     #[error("cannot read the login at {path}")]
     LoginUnreadable { path: HostPath },
+    #[error("the login at {path} is not a regular file")]
+    LoginNotRegular { path: HostPath },
+    #[error("the login at {path} is larger than the credential file limit")]
+    LoginTooLarge { path: HostPath },
     #[error("auth.json is invalid at {}", plain(.key))]
     AuthJsonInvalid { key: String },
     #[error("auth.json is not a ChatGPT login")]
@@ -31,7 +38,7 @@ pub enum CredentialError {
     Fs(#[from] FsError),
 }
 
-struct Document(Value);
+pub(crate) struct Document(pub(crate) Value);
 
 impl Drop for Document {
     fn drop(&mut self) {
@@ -71,11 +78,18 @@ pub async fn read_chatgpt_login(
 ) -> Result<ChatgptLogin, CredentialError> {
     let path = HostPath::resolve(Path::new(AUTH_FILE), home)
         .map_err(|_| CredentialError::LoginUnreadable { path: home.clone() })?;
-    let bytes = Zeroizing::new(
-        fs.read(&path)
-            .await?
-            .ok_or(CredentialError::LoginUnreadable { path })?,
-    );
+    let bytes = match read_credential_file(fs, &path).await? {
+        Ok(bytes) => Zeroizing::new(bytes),
+        Err(CredentialFileProblem::Missing) => {
+            return Err(CredentialError::LoginUnreadable { path });
+        }
+        Err(CredentialFileProblem::NotARegularFile) => {
+            return Err(CredentialError::LoginNotRegular { path });
+        }
+        Err(CredentialFileProblem::TooLarge) => {
+            return Err(CredentialError::LoginTooLarge { path });
+        }
+    };
     let document = Document(serde_json::from_slice(&bytes).map_err(|_| invalid(AUTH_FILE))?);
     let root = &document.0;
     if text(root, "auth_mode", "auth_mode")? != CHATGPT_MODE {

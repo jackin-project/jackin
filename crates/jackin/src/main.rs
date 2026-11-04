@@ -6,26 +6,19 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use jackin::{
-    AppEnv, Deps, ExitClass, GrpcConnector, SystemTerminal, Terminal, launch_limits, locations,
+    AppEnv, Deps, ExitClass, GrpcConnector, Signals, SystemTerminal, Terminal, launch_limits,
+    locations,
 };
 use jackin_core::{EnvSnapshot, HostPath, StdFileSystem};
 use jackin_image::BuildxEngine;
 use jackin_session::HostPorts;
+use jackin_tui::TerminalConsole;
+use jackin_usage::ProviderEndpoints;
 use tokio_util::sync::CancellationToken;
 
 fn fail(message: &str) -> ExitCode {
     drop(writeln!(std::io::stderr(), "error: {message}"));
     ExitCode::from(ExitClass::Failure.code())
-}
-
-async fn interrupted(cancel: &CancellationToken) {
-    if tokio::signal::ctrl_c().await.is_ok() {
-        cancel.cancel();
-        if tokio::signal::ctrl_c().await.is_ok() {
-            return;
-        }
-    }
-    std::future::pending::<()>().await;
 }
 
 fn main() -> ExitCode {
@@ -39,6 +32,10 @@ fn main() -> ExitCode {
 }
 
 async fn start() -> ExitCode {
+    let signals = match Signals::install() {
+        Ok(signals) => signals,
+        Err(error) => return fail(&error.to_string()),
+    };
     let env =
         EnvSnapshot::from_pairs(std::env::vars_os().filter_map(|(name, value)| {
             Some((name.into_string().ok()?, value.into_string().ok()?))
@@ -78,6 +75,8 @@ async fn start() -> ExitCode {
         )),
         host,
         limits: launch_limits(),
+        usage_endpoints: ProviderEndpoints::real(),
+        console: Arc::new(TerminalConsole),
     };
     let run = jackin::run(
         AppEnv {
@@ -95,7 +94,7 @@ async fn start() -> ExitCode {
     );
     let class = tokio::select! {
         class = run => class,
-        () = interrupted(&cancel) => ExitClass::Cancelled,
+        () = signals.interrupted(&cancel) => ExitClass::Cancelled,
     };
     ExitCode::from(class.code())
 }

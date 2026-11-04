@@ -8,13 +8,13 @@ min_version = "2026.10.18"
 bun = "1.4.4"
 cargo-binstall = "1.26.2"
 cargo-deny = "0.20.2"
-"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.150"
-"cargo:cargo-shear" = "1.14.0"
+"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.151"
+"github:Boshen/cargo-shear" = "1.14.0"
 gh = "2.103.3"
 "aqua:gitleaks/gitleaks" = "8.30.1"
-hk = "2.10.0"
+hk = { version = "2.11.1", workflow = "release.yml" }
 "github:mongodb/kingfisher" = { version = "2.16.0", matching_regex = "^kingfisher-(darwin|linux)-(arm64|x64)\\.tgz$|^kingfisher-windows-x64\\.zip$" }
-mr-boxington = { version = "1.29.1", workflow = "release.yml@refs/heads/main" }
+mr-boxington = { version = "1.29.2", workflow = "release.yml@refs/heads/main" }
 rust = { version = "1.99.1", profile = "minimal", components = [
   "clippy",
   "rustfmt",
@@ -23,13 +23,13 @@ rust = { version = "1.99.1", profile = "minimal", components = [
   "x86_64-unknown-linux-gnu",
 ], mr_boxington = true }
 shellcheck = "0.11.0"
-jactionlint = "2.4.0"
+jactionlint = { version = "2.4.0", workflow = "release.yaml" }
 rumdl = "0.3.2"
-uv = "0.13.6"
+uv = "0.13.7"
 node = "26.13.0"
 python = "3.15.2"
 "pipx:reuse" = { version = "6.3.0", extras = "charset-normalizer" }
-zizmor = "1.31.1"
+zizmor = "1.32.0"
 
 [settings]
 cargo.binstall = true
@@ -46,7 +46,7 @@ run = "cargo shear --deny-warnings"
 
 [tasks."check:repository-steps"]
 description = "Run the repository steps that start no external tool: comments, layers, pins, containers, errors"
-run = "mbx +1.99.1 xtask ci --only comments,layers,pins,containers,errors"
+run = "cargo xtask ci --only comments,layers,pins,containers,errors"
 
 [tasks."ci:fast"]
 description = "Run the repository gates without the docs build"
@@ -55,3 +55,16 @@ run = "mbx +1.99.1 xtask ci --fast"
 [tasks."ci:full"]
 description = "Run the repository gates; the docs build joins at P12.1"
 run = "mbx +1.99.1 xtask ci --no-docs"
+
+[tasks."check:secrets-scan"]
+description = "Scan the tracked tree and the history reachable from HEAD with gitleaks, betterleaks and Kingfisher"
+run = """
+status=0
+gitleaks dir . --redact --no-banner || status=1
+gitleaks git . --redact --no-banner --log-opts=HEAD || status=1
+betterleaks dir . --redact --no-banner || status=1
+betterleaks git . --redact --no-banner --log-opts=HEAD || status=1
+kingfisher scan . --git-history none --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml || status=1
+kingfisher scan . --git-history full --branch HEAD --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml || status=1
+exit "$status"
+"""

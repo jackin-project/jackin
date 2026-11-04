@@ -7,8 +7,9 @@ use std::time::Duration;
 
 use jackin_core::{
     CodexAuthMode, CompatibilityError, ConfigError, DockerSource, DockerSubcommand, FsError,
-    HookKind, HostPath, LabelError, ManifestError, OutputStream, PathError, Platform, ProcessError,
-    ProcessStatus, Program, SupervisorReading, SupervisorState, plain, plain_duration, plain_list,
+    GroupFault, HookKind, HostPath, LabelError, ManifestError, OutputStream, PathError, Platform,
+    ProcessError, ProcessStatus, Program, SupervisorReading, SupervisorState, plain,
+    plain_duration, plain_list,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -95,15 +96,27 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
         ),
         (
             FsError::SymlinkTarget(dir.clone()).to_string(),
-            "refusing to replace the symbolic link /home/me/my project",
+            "refusing the symbolic link /home/me/my project",
+        ),
+        (
+            FsError::Unsynced {
+                path: dir.clone(),
+                message: "no space\n".to_owned(),
+            }
+            .to_string(),
+            "/home/me/my project was replaced, but syncing its directory failed: no space\\n",
         ),
         (
             PathError::NotADirectory(dir.clone()).to_string(),
             "not a directory: /home/me/my project",
         ),
         (
-            PathError::NotAGitWorkTree(dir).to_string(),
+            PathError::NotAGitWorkTree(dir.clone()).to_string(),
             "not a git work tree: /home/me/my project",
+        ),
+        (
+            PathError::UnsupportedGitEntry(dir).to_string(),
+            "the .git of /home/me/my project is a symlink or another kind of file; use a normal repository, a linked worktree, or a submodule checkout",
         ),
         (
             ProcessError::Spawn {
@@ -117,13 +130,59 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
             ProcessError::Timeout {
                 program: git,
                 after: Duration::from_secs(5),
+                group: None,
             }
             .to_string(),
             "git timed out after 5s",
         ),
         (
-            ProcessError::Cancelled { program: git }.to_string(),
+            ProcessError::Cancelled {
+                program: git,
+                group: None,
+            }
+            .to_string(),
             "git was cancelled",
+        ),
+        (
+            ProcessError::Group {
+                program: git,
+                fault: GroupFault::Alive {
+                    after: Duration::from_secs(5),
+                },
+            }
+            .to_string(),
+            "git: processes of its group were still alive after 5s",
+        ),
+        (
+            ProcessError::Group {
+                program: git,
+                fault: GroupFault::Unreachable {
+                    message: "x\ny\u{1b}[31m".to_owned(),
+                },
+            }
+            .to_string(),
+            "git: cannot stop the processes of its group: x\\ny\\u{1b}[31m",
+        ),
+        (
+            ProcessError::Cancelled {
+                program: git,
+                group: Some(GroupFault::Alive {
+                    after: Duration::from_secs(5),
+                }),
+            }
+            .to_string(),
+            "git was cancelled; processes of its group were still alive after 5s",
+        ),
+        (
+            ProcessError::Timeout {
+                program: git,
+                after: Duration::from_secs(5),
+                group: Some(GroupFault::Unreachable {
+                    message: "nope".to_owned(),
+                }),
+            }
+            .to_string(),
+            "git timed out after 5s; cannot stop the processes of its group: nope",
         ),
         (
             ProcessError::OutputTooLarge {

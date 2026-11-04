@@ -1,39 +1,46 @@
-mod credentials;
-mod endpoints;
-mod oauth;
-mod rpc;
-mod rpc_types;
-mod snapshot;
-mod types;
-mod views;
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
 mod windows;
 
-pub use credentials::{
-    CodexOAuthCredentials, codex_account_label_from_id_token, codex_oauth_from_value,
-};
-pub use endpoints::{
-    resolve_codex_base_url, resolve_codex_reset_credits_url, resolve_codex_usage_url,
-};
-pub use oauth::{
-    codex_access_token_from_response, codex_refresh_request_body, fetch_codex_oauth_reset_credits,
-    fetch_codex_oauth_usage, fetch_codex_oauth_usage_refreshing, refresh_codex_access_token,
-};
-pub use rpc::{
-    codex_rpc_notification, codex_rpc_request, decode_codex_rpc_usage, fetch_codex_rpc_usage,
-};
-pub use rpc_types::{
-    CodexAdditionalRateLimit, CodexRpcAccountDetails, CodexRpcAccountResponse, CodexRpcCredits,
-    CodexRpcLimitEntry, CodexRpcRateLimitWindow, CodexRpcRateLimits, CodexRpcRateLimitsResponse,
-    CodexRpcResetCredits, CodexRpcUsage,
-};
-pub use snapshot::{
-    codex_account_identity, codex_auth_candidates, codex_plan_display_name,
-    codex_plan_exact_display, codex_plan_word_display, codex_profile_snapshot,
-    codex_profile_snapshot_with_rate_limit,
-};
-pub use types::{
-    CodexCreditDetails, CodexIndividualLimit, CodexRateLimitDetails, CodexSpendControl,
-    CodexUsageResponse, CodexWindowSnapshot,
-};
-pub use views::codex_snapshot;
-pub use windows::{CodexResetCredit, CodexResetCredits, push_codex_window};
+use jackin_usage_provider_core::{Bucket, Http, ProviderError, json_text};
+use serde_json::Value;
+
+pub const API_KEY_REASON: &str = "OpenAI API keys have no subscription quota";
+
+const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
+
+pub async fn fetch(
+    http: &Http,
+    login: &str,
+    chatgpt_account_id: &str,
+    now: i64,
+) -> Result<Vec<Bucket>, ProviderError> {
+    let token = access_token(login)?;
+    let body = http
+        .get(
+            USAGE_URL,
+            &token,
+            &[("chatgpt-account-id", chatgpt_account_id)],
+        )
+        .await?;
+    windows::buckets(&body, now)
+}
+
+fn access_token(login: &str) -> Result<String, ProviderError> {
+    let value: Value = serde_json::from_str(login)
+        .map_err(|_| ProviderError::Decode("the Codex login file is not valid JSON"))?;
+    let token = value
+        .get("tokens")
+        .and_then(|tokens| tokens.get("access_token"))
+        .and_then(json_text);
+    if let Some(token) = token {
+        return Ok(token.to_owned());
+    }
+    match value.get("OPENAI_API_KEY").and_then(json_text) {
+        Some(_) => Err(ProviderError::Unsupported(API_KEY_REASON)),
+        None => Err(ProviderError::Decode(
+            "the Codex login file has no access token",
+        )),
+    }
+}

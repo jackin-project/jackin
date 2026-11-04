@@ -8,8 +8,8 @@ use noyalib::{Mapping, Value};
 use openshell_sdk::raw::proto::{NetworkTlsMode, SandboxPolicy};
 
 use super::{
-    ClosureViolation, EndpointProtocol, HostPattern, NetworkRule, PolicyDocument, ProfileEndpoint,
-    ProviderProfile, RuleEndpoint, RuleKey, TlsMode,
+    ClosureViolation, DOCKER_ENGINE_RULE, EndpointProtocol, HostPattern, NetworkRule,
+    PolicyDocument, ProfileEndpoint, ProviderProfile, RuleEndpoint, RuleKey, TlsMode,
 };
 use crate::error::PolicyError;
 
@@ -22,7 +22,7 @@ pub(super) enum Source {
 }
 
 pub(super) fn is_reserved(key: &str) -> bool {
-    openshell_policy::is_provider_rule_name(key)
+    key == DOCKER_ENGINE_RULE || openshell_policy::is_provider_rule_name(key)
 }
 
 pub(super) fn provider_rule_name(provider: &str) -> String {
@@ -103,10 +103,51 @@ fn check_shape(root: &Value, source: Source) -> Result<(), PolicyError> {
     Ok(())
 }
 
+fn check_read_write(paths: &[String]) -> Result<(), PolicyError> {
+    for path in paths.iter().filter(|path| path.starts_with('/')) {
+        let mut pieces = path
+            .split('/')
+            .filter(|piece| !piece.is_empty() && *piece != ".");
+        match pieces.next() {
+            None => return Err(PolicyError::ReadWriteRoot { path: path.clone() }),
+            Some("proc" | "sys") => {
+                return Err(PolicyError::ReadWriteAlias { path: path.clone() });
+            }
+            Some(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn check_sandbox(proto: &SandboxPolicy) -> Result<(), PolicyError> {
+    let found = proto
+        .landlock
+        .as_ref()
+        .map(|landlock| landlock.compatibility.as_str());
+    if found != Some("hard_requirement") {
+        return Err(PolicyError::LandlockMode {
+            found: found.map(str::to_owned),
+        });
+    }
+    let Some(filesystem) = proto
+        .filesystem
+        .as_ref()
+        .filter(|filesystem| !filesystem.read_only.is_empty() || !filesystem.read_write.is_empty())
+    else {
+        return Err(PolicyError::NoFilesystemPaths);
+    };
+    check_read_write(&filesystem.read_write)?;
+    openshell_policy::validate_sandbox_policy(proto)
+        .map_err(|violations| PolicyError::Gateway { violations })
+}
+
 pub(super) fn build(text: &str, source: Source) -> Result<PolicyDocument, PolicyError> {
     let value: Value = noyalib::from_str(text).map_err(syntax)?;
     check_shape(&value, source)?;
     let proto = openshell_policy::parse_sandbox_policy(text).map_err(syntax)?;
+    if source == Source::Authored {
+        check_sandbox(&proto)?;
+    }
     Ok(PolicyDocument { value, proto })
 }
 

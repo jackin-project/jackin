@@ -1,10 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_core::DockerRisk;
 use jackin_image::ImageEvent;
-use jackin_session::{LaunchEvent, SkipReason, StepResult};
+use jackin_session::{LaunchEvent, LaunchWarning, SkipReason, StepResult};
 
 use crate::output::Io;
+
+const DOCKER_WARNING: &str = "warning: the Docker capability is enabled for this sandbox";
 
 pub(crate) fn image_event(io: &mut Io, event: &ImageEvent) {
     match event {
@@ -28,7 +31,12 @@ fn skip_text(reason: SkipReason) -> &'static str {
 
 pub(crate) fn launch_event(io: &mut Io, event: &LaunchEvent) {
     match event {
-        LaunchEvent::Warning(_) => {}
+        LaunchEvent::Warning(LaunchWarning::DockerCapability) => {
+            io.note(DOCKER_WARNING);
+            for risk in DockerRisk::ALL {
+                io.note(&format!("  {}", risk.text()));
+            }
+        }
         LaunchEvent::StepStarted(step) => io.note(&format!("{step}...")),
         LaunchEvent::StepFinished { step, result } => match result {
             StepResult::Done => io.note(&format!("{step}: done")),

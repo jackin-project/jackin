@@ -5,9 +5,9 @@ use std::fmt;
 use std::time::Duration;
 
 use jackin_core::{
-    FsError, GatewayName, HostPath, OpenShellWorkspace, OutputStream, Phase, ProcessError,
-    ProcessStatus, ProfileId, ProviderName, SandboxName, TerminalText, plain, plain_duration,
-    plain_list,
+    FsError, GatewayName, GroupFault, HostPath, OpenShellWorkspace, OutputStream, Phase,
+    ProcessError, ProcessStatus, ProfileId, ProviderName, SandboxName, SandboxPath, TerminalText,
+    plain, plain_duration, plain_list,
 };
 use thiserror::Error;
 
@@ -42,10 +42,17 @@ pub enum GatewayError {
     ResourceExhausted { what: String },
     #[error("invalid argument {}: {}", plain(.field), plain(.message))]
     InvalidArgument { field: String, message: String },
-    #[error("{op} timed out after {}", plain_duration(.after))]
-    Timeout { op: GatewayOp, after: Duration },
-    #[error("{op} was cancelled")]
-    Cancelled { op: GatewayOp },
+    #[error("{op} timed out after {}{}", plain_duration(.after), GroupFault::note(.group.as_ref()))]
+    Timeout {
+        op: GatewayOp,
+        after: Duration,
+        group: Option<GroupFault>,
+    },
+    #[error("{op} was cancelled{}", GroupFault::note(.group.as_ref()))]
+    Cancelled {
+        op: GatewayOp,
+        group: Option<GroupFault>,
+    },
     #[error(transparent)]
     Process(#[from] ProcessError),
     #[error("{op} failed with {status}: {tail}")]
@@ -56,6 +63,8 @@ pub enum GatewayError {
     },
     #[error("the remote file has {size} bytes, more than the limit of {limit}")]
     DownloadTooLarge { size: u64, limit: u64 },
+    #[error("the remote path is a {kind}, not a regular file")]
+    NotRegularFile { kind: TerminalText },
     #[error("the {stream} output of {op} is larger than {limit} bytes")]
     OutputTooLarge {
         op: GatewayOp,
@@ -66,6 +75,8 @@ pub enum GatewayError {
     HostKeyMismatch,
     #[error("the terminal was refused: {}", plain(.reason))]
     TerminalRefused { reason: String },
+    #[error("refused to write {}: a directory on its path below /sandbox is a symlink, or the target is a directory", plain(.path.as_str()))]
+    UnsafePath { path: SandboxPath },
     #[error("protocol error: {}", plain(.message))]
     Protocol { message: String },
 }
@@ -178,6 +189,10 @@ pub enum DiscoveryError {
         name: GatewayName,
         scheme: Option<String>,
     },
+    #[error(
+        "gateway {name} has an endpoint with credentials; register it without a user or password"
+    )]
+    EndpointCredentials { name: GatewayName },
     #[error("gateway {name} uses the authentication {}; only mtls is accepted", plain(.auth))]
     UnsupportedAuth { name: GatewayName, auth: String },
     #[error("missing certificate {path}")]
@@ -198,6 +213,18 @@ pub enum PolicyError {
     ReservedRuleName(String),
     #[error("invalid host {}", plain(.0))]
     InvalidHost(String),
+    #[error("landlock.compatibility must be hard_requirement, found {}", plain(.found.as_deref().unwrap_or("no value")))]
+    LandlockMode { found: Option<String> },
+    #[error("filesystem_policy must list at least one path in read_only or read_write")]
+    NoFilesystemPaths,
+    #[error("read_write path {} names the filesystem root", plain(.path))]
+    ReadWriteRoot { path: String },
+    #[error("read_write path {} is /proc, /sys or below them, which alias the filesystem root", plain(.path))]
+    ReadWriteAlias { path: String },
+    #[error("the gateway would refuse the policy: {}", plain_list(.violations))]
+    Gateway {
+        violations: Vec<openshell_policy::PolicyViolation>,
+    },
     #[error("rule {} has the invalid port {port}", plain(.rule))]
     InvalidPort { rule: String, port: i64 },
     #[error("duplicate rule {0}")]
@@ -235,8 +262,10 @@ impl GatewayError {
             | GatewayError::Transfer { .. }
             | GatewayError::OutputTooLarge { .. }
             | GatewayError::DownloadTooLarge { .. }
+            | GatewayError::NotRegularFile { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
+            | GatewayError::UnsafePath { .. }
             | GatewayError::Protocol { .. } => false,
         }
     }

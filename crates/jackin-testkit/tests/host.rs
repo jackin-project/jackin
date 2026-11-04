@@ -3,17 +3,20 @@
 
 use std::convert::Infallible;
 use std::error::Error;
+use std::future::Future;
 use std::io::ErrorKind;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::task::{Context, Wake, Waker};
 use std::time::Duration;
 
 use jackin_core::{
     Clock, DirEntry, DockerSubcommand, EnvValue, FileKind, FileMode, FileSystem, FsError, HostPath,
     OutputLine, OutputStream, Poll, PollError, PollPlan, ProcessError, ProcessRunner, ProcessSpec,
     ProcessStatus, ProcessStdin, Program, RegularFile, RegularFileProblem, RepoPath, Secret,
-    SecretBytes, StdFileSystem, Timestamp, poll_until, write_atomic,
+    SecretBytes, StdFileSystem, Timestamp, UNBOUNDED_READ, poll_until, write_atomic,
 };
 use jackin_testkit::{
     CapturedFile, FakeClock, FsOp, HostSnapshot, HostState, MemFs, ProcessEffect, ProcessReply,
@@ -117,6 +120,35 @@ async fn fs_boundary_extras(fs: &dyn FileSystem, root: &HostPath) -> TestResult 
     assert_eq!(fs.mode(&private).await?, Some(FileMode(0o700)));
     assert_eq!(fs.mode(&child(root, "priv")?).await?, Some(FileMode(0o700)));
     fs.remove_dir_all(&child(root, "priv")?).await?;
+    let ranged = child(root, "range.bin")?;
+    fs.write_new(&ranged, b"0123456789", FileMode(0o600))
+        .await?;
+    for (offset, len, expected) in [
+        (3, 4, "3456"),
+        (0, 100, "0123456789"),
+        (10, 5, ""),
+        (11, 5, ""),
+        (4, 0, ""),
+        (9, usize::MAX, "9"),
+    ] {
+        assert_eq!(
+            fs.read_at(&ranged, offset, len).await?,
+            expected.as_bytes(),
+            "read_at({offset}, {len})"
+        );
+    }
+    assert!(matches!(
+        fs.read_at(&child(root, "none.bin")?, 0, 1).await,
+        Err(FsError::Io {
+            kind: ErrorKind::NotFound,
+            ..
+        })
+    ));
+    assert!(matches!(
+        fs.read_at(root, 0, 1).await,
+        Err(FsError::Io { .. })
+    ));
+    fs.remove_file(&ranged).await?;
     Ok(())
 }
 
@@ -153,7 +185,7 @@ async fn memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_o
         let root = &root;
         let file = RepoPath::parse(name);
         async move {
-            fs.read_regular(root, &file?)
+            fs.read_regular(root, &file?, UNBOUNDED_READ)
                 .await
                 .map_err(Box::<dyn Error>::from)
         }
@@ -172,6 +204,11 @@ async fn memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_o
             mode: FileMode(0o644),
         })
     );
+    let capped = fs
+        .read_regular(&root, &RepoPath::parse("dir/inner.txt")?, 2)
+        .await?
+        .map_err(|problem| format!("{problem:?}"))?;
+    assert_eq!(capped.bytes, b"inn");
     assert_eq!(read("dir").await?, Err(RegularFileProblem::NotARegularFile));
     assert_eq!(read("gone.txt").await?, Err(RegularFileProblem::Missing));
     assert_eq!(
@@ -185,7 +222,7 @@ async fn memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_o
     Ok(())
 }
 
-const OPS: [FsOp; 14] = [
+const OPS: [FsOp; 15] = [
     FsOp::Read,
     FsOp::Stat,
     FsOp::StatFollowing,
@@ -200,6 +237,7 @@ const OPS: [FsOp; 14] = [
     FsOp::Mode,
     FsOp::SyncDir,
     FsOp::Lock,
+    FsOp::ReadAt,
 ];
 
 async fn invoke(fs: &MemFs, op: FsOp, root: &HostPath, round: u32) -> Result<(), FsError> {
@@ -238,6 +276,7 @@ async fn invoke(fs: &MemFs, op: FsOp, root: &HostPath, round: u32) -> Result<(),
         FsOp::Mode => fs.mode(&file).await.map(drop),
         FsOp::SyncDir => fs.sync_dir(root).await,
         FsOp::Lock => fs.lock(&file).await.map(drop),
+        FsOp::ReadAt => fs.read_at(&file, 0, 1).await.map(drop),
     }
 }
 
@@ -300,14 +339,18 @@ async fn crash(faults: &[(FsOp, u32)], expect_new: bool, expect_temp: bool) -> T
     let expected: &[u8] = if expect_new { b"new" } else { b"old" };
     assert_eq!(fs.read(&target).await?.as_deref(), Some(expected));
     let listing = names(&fs, &root).await?;
-    assert_eq!(
-        listing.contains(&".f.tmp".to_owned()),
-        expect_temp,
-        "{listing:?}"
-    );
+    let temps = |listing: &[String]| {
+        listing
+            .iter()
+            .filter(|name| name.starts_with(".f.") && name.rsplit('.').next() == Some("tmp"))
+            .count()
+    };
+    assert_eq!(temps(&listing), usize::from(expect_temp), "{listing:?}");
     if expect_temp {
         write_atomic(&fs, &target, b"new", FileMode(0o600)).await?;
-        assert_eq!(names(&fs, &root).await?, ["f"]);
+        assert_eq!(fs.read(&target).await?.as_deref(), Some(&b"new"[..]));
+        let after = names(&fs, &root).await?;
+        assert_eq!(temps(&after), 1, "{after:?}");
     }
     Ok(())
 }
@@ -319,6 +362,165 @@ async fn write_atomic_crash_at_every_step_keeps_the_old_file_or_the_complete_new
     crash(&[(FsOp::Rename, 1)], false, false).await?;
     crash(&[(FsOp::Rename, 1), (FsOp::RemoveFile, 2)], false, true).await?;
     crash(&[(FsOp::SyncDir, 1)], true, false).await
+}
+
+#[derive(Default)]
+struct Wakes(AtomicUsize);
+
+impl Wake for Wakes {
+    fn wake(self: Arc<Self>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+type Sleeper = Pin<Box<dyn Future<Output = ()> + Send>>;
+
+fn sleeper(clock: &Arc<FakeClock>) -> Sleeper {
+    let clock = Arc::clone(clock);
+    Box::pin(async move { clock.sleep(Duration::from_secs(10)).await })
+}
+
+fn poll_n(future: &mut Sleeper, waker: &Waker, polls: usize) -> Option<usize> {
+    let mut cx = Context::from_waker(waker);
+    (1..=polls).find(|_| future.as_mut().poll(&mut cx).is_ready())
+}
+
+fn polls_to_wake_unheld() -> Option<usize> {
+    let clock = Arc::new(FakeClock::new());
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    poll_n(&mut sleeper(&clock), &waker, 10_000)
+}
+
+#[tokio::test]
+async fn a_guard_taken_one_poll_before_a_sleep_wakes_holds_time_until_it_drops() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let start = clock.now();
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, wake_at - 1),
+        None,
+        "not yet awake"
+    );
+    let guard = clock.working();
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 1_000),
+        None,
+        "woke under a guard"
+    );
+    assert_eq!(clock.now(), start, "time moved under a guard");
+    drop(guard);
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+    assert_eq!(clock.now(), Timestamp(start.0 + 10));
+}
+
+#[tokio::test]
+async fn a_sleep_begun_under_a_guard_stays_asleep_until_the_guard_drops() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let start = clock.now();
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let guard = clock.working();
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 1_000),
+        None,
+        "woke under a guard"
+    );
+    assert_eq!(clock.now(), start, "time moved under a guard");
+    drop(guard);
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+    assert_eq!(clock.now(), Timestamp(start.0 + 10));
+}
+
+#[tokio::test]
+async fn a_sleep_waits_for_the_last_of_two_guards() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let first = clock.working();
+    let second = clock.working();
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 500),
+        None,
+        "woke under two guards"
+    );
+    drop(first);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 1_000),
+        None,
+        "woke under one guard"
+    );
+    drop(second);
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
+}
+
+#[tokio::test]
+async fn a_sleep_interrupted_by_a_guard_counts_its_quiet_yields_again_from_zero() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let waker = Waker::from(Arc::new(Wakes::default()));
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, wake_at - 20),
+        None,
+        "not yet awake"
+    );
+    let guard = clock.working();
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 100),
+        None,
+        "woke under a guard"
+    );
+    drop(guard);
+    assert_eq!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at),
+        Some(wake_at),
+        "the quiet yields before the guard still counted"
+    );
+}
+
+#[tokio::test]
+async fn a_sleep_blocked_by_a_guard_does_not_wake_itself_and_wakes_when_the_guard_drops() {
+    let wake_at = polls_to_wake_unheld().expect("an unheld sleep wakes");
+    let clock = Arc::new(FakeClock::new());
+    let wakes = Arc::new(Wakes::default());
+    let waker = Waker::from(Arc::clone(&wakes));
+    let guard = clock.working();
+    let mut sleeping = sleeper(&clock);
+    assert_eq!(poll_n(&mut sleeping, &waker, 1), None);
+    let settled = wakes.0.load(Ordering::SeqCst);
+    assert_eq!(poll_n(&mut sleeping, &waker, 100), None);
+    tokio::task::yield_now().await;
+    assert_eq!(
+        wakes.0.load(Ordering::SeqCst),
+        settled,
+        "a blocked sleep woke its own task"
+    );
+    drop(guard);
+    assert!(
+        wakes.0.load(Ordering::SeqCst) > settled,
+        "dropping the last guard did not wake the sleep"
+    );
+    assert!(
+        poll_n(&mut sleeping, &waker, 2 * wake_at).is_some(),
+        "never woke"
+    );
 }
 
 #[tokio::test]
@@ -466,12 +668,13 @@ async fn scripted_runner_answers_in_order_records_every_spec_and_returns_each_re
     ));
     assert!(matches!(
         stdout(&runner, &call(Program::Openshell, &["timeout"])).await,
-        Err(ProcessError::Timeout { program: Program::Openshell, after }) if after == Duration::from_secs(5)
+        Err(ProcessError::Timeout { program: Program::Openshell, after, group: None }) if after == Duration::from_secs(5)
     ));
     assert!(matches!(
         stdout(&runner, &call(Program::Openshell, &["cancel"])).await,
         Err(ProcessError::Cancelled {
-            program: Program::Openshell
+            program: Program::Openshell,
+            group: None
         })
     ));
     assert!(matches!(
@@ -643,6 +846,46 @@ fn lines(items: &[(OutputStream, &str)]) -> Vec<(OutputStream, String)> {
 }
 
 #[tokio::test]
+async fn the_captured_context_records_links_as_links_and_never_follows_them() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let context = dir.path().join("ctx");
+    tokio::fs::create_dir_all(context.join("real")).await?;
+    tokio::fs::write(context.join("file.txt"), b"alpha").await?;
+    tokio::fs::write(context.join("real/f.txt"), b"inside").await?;
+    for (name, target) in [
+        ("to_file", "file.txt"),
+        ("dangling", "nowhere.txt"),
+        ("ldir", "real"),
+    ] {
+        tokio::fs::symlink(target, context.join(name)).await?;
+    }
+    let runner = ScriptedProcessRunner::new();
+    runner.expect(
+        ScriptedProgram::Docker,
+        &["build"],
+        ProcessReply::exited(0, b"", b"").with_effect(ProcessEffect::CaptureContext),
+    );
+    let build = spec(
+        Program::Docker(DockerSubcommand::BuildxBuild),
+        &["build", &context.display().to_string()],
+    );
+    runner.run(&build, None, &CancellationToken::new()).await?;
+    let captured = runner.captured_contexts();
+    assert_eq!(captured.len(), 1);
+    let mut expected = std::collections::BTreeMap::new();
+    expected.insert("file.txt".to_owned(), CapturedFile::file(b"alpha", 0o644));
+    expected.insert(
+        "real/f.txt".to_owned(),
+        CapturedFile::file(b"inside", 0o644),
+    );
+    expected.insert("to_file".to_owned(), CapturedFile::link("file.txt"));
+    expected.insert("dangling".to_owned(), CapturedFile::link("nowhere.txt"));
+    expected.insert("ldir".to_owned(), CapturedFile::link("real"));
+    assert_eq!(captured[0].files, expected);
+    Ok(())
+}
+
+#[tokio::test]
 async fn scripted_runner_streams_lines_applies_effects_and_holds_until_cancel() -> TestResult {
     let dir = tempfile::tempdir()?;
     let context = dir.path().join("ctx");
@@ -712,14 +955,17 @@ async fn scripted_runner_streams_lines_applies_effects_and_holds_until_cancel() 
     assert_eq!(tokio::fs::read(&iidfile).await?, b"sha256:abc\n");
     let captured = runner.captured_contexts();
     assert_eq!(captured.len(), 1);
-    assert_eq!(
-        captured[0].files["a.txt"],
-        CapturedFile {
-            bytes: b"alpha".to_vec(),
-            mode: captured[0].files["a.txt"].mode
+    assert!(matches!(
+        &captured[0].files["a.txt"],
+        CapturedFile::File { bytes, .. } if bytes == b"alpha"
+    ));
+    assert!(matches!(
+        &captured[0].files["nested/run.sh"],
+        CapturedFile::File {
+            mode: FileMode(0o755),
+            ..
         }
-    );
-    assert_eq!(captured[0].files["nested/run.sh"].mode, FileMode(0o755));
+    ));
     assert_eq!(captured[0].files.len(), 2);
     let seen = runner.seen();
     assert_eq!(seen[0].stdin, SeenStdin::Bytes(b"FROM scratch\n".to_vec()));
@@ -758,7 +1004,8 @@ async fn scripted_runner_streams_lines_applies_effects_and_holds_until_cancel() 
     assert!(matches!(
         pending.await,
         Err(ProcessError::Cancelled {
-            program: Program::Ssh
+            program: Program::Ssh,
+            group: None
         })
     ));
     Ok(())
@@ -862,7 +1109,8 @@ async fn a_pre_cancelled_git_call_is_cancelled_before_git_is_started() -> TestRe
         matches!(
             plain,
             Err(ProcessError::Cancelled {
-                program: Program::Git
+                program: Program::Git,
+                group: None
             })
         ),
         "{plain:?}"
@@ -872,7 +1120,8 @@ async fn a_pre_cancelled_git_call_is_cancelled_before_git_is_started() -> TestRe
         matches!(
             secret,
             Err(ProcessError::Cancelled {
-                program: Program::Git
+                program: Program::Git,
+                group: None
             })
         ),
         "{secret:?}"
@@ -910,7 +1159,8 @@ async fn a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_eff
         matches!(
             run,
             Err(ProcessError::Cancelled {
-                program: Program::Docker(_)
+                program: Program::Docker(_),
+                group: None
             })
         ),
         "{run:?}"
@@ -920,7 +1170,8 @@ async fn a_pre_cancelled_call_is_cancelled_before_any_reply_is_chosen_or_any_eff
         matches!(
             secret,
             Err(ProcessError::Cancelled {
-                program: Program::Docker(_)
+                program: Program::Docker(_),
+                group: None
             })
         ),
         "{secret:?}"
@@ -1047,5 +1298,74 @@ async fn a_host_snapshot_sees_an_added_dangling_link() -> TestResult {
     assert_changed("after the change", &rest(&repo).await?, &base);
     std::fs::remove_file(root.join("dangling"))?;
     assert_same("after the change is reverted", &rest(&repo).await?, &base);
+    Ok(())
+}
+
+#[tokio::test]
+async fn git_reads_a_file_stdin_from_the_offset_and_a_missing_file_never_starts_it() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let runner = TestRunner::new();
+    let file = HostPath::parse(&dir.path().join("payload.bin"))?;
+    std::fs::write(file.as_path(), b"prefix:slice")?;
+    let hash = |stdin: ProcessStdin| {
+        let mut hash = spec(Program::Git, &["hash-object", "--stdin"]);
+        hash.cwd = Some(HostPath::parse(dir.path()).unwrap());
+        hash.stdin = stdin;
+        hash
+    };
+    let cancel = CancellationToken::new();
+    let tail = runner
+        .run(
+            &hash(ProcessStdin::File {
+                path: file,
+                offset: 7,
+            }),
+            None,
+            &cancel,
+        )
+        .await?;
+    let expected = runner
+        .run(
+            &hash(ProcessStdin::Bytes(SecretBytes::new(b"slice".to_vec()))),
+            None,
+            &cancel,
+        )
+        .await?;
+    assert_eq!(tail.status, ProcessStatus::Exited(0));
+    assert_eq!(tail.stdout, expected.stdout);
+    let missing = HostPath::parse(&dir.path().join("gone.bin"))?;
+    let refused = runner
+        .run(
+            &hash(ProcessStdin::File {
+                path: missing,
+                offset: 0,
+            }),
+            None,
+            &cancel,
+        )
+        .await;
+    assert!(
+        matches!(refused, Err(ProcessError::Spawn { .. })),
+        "{refused:?}"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_scripted_program_records_a_file_stdin_with_its_path_and_offset() -> TestResult {
+    let runner = ScriptedProcessRunner::new();
+    runner.expect(
+        ScriptedProgram::Openshell,
+        &[],
+        ProcessReply::exited(0, b"", b""),
+    );
+    let path = host("/mem/pack.bin")?;
+    let mut call = spec(Program::Openshell, &["x"]);
+    call.stdin = ProcessStdin::File {
+        path: path.clone(),
+        offset: 12,
+    };
+    runner.run(&call, None, &CancellationToken::new()).await?;
+    assert_eq!(runner.seen()[0].stdin, SeenStdin::File { path, offset: 12 });
     Ok(())
 }

@@ -1,14 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
-
-use jackin_core::{ConfigEdit, Workspace};
+use jackin_core::{ConfigEdit, Workspace, plain};
 
 use crate::app::App;
 use crate::cli::{JsonArg, WorkspaceAddArgs, WorkspaceArg, WorkspaceCommand};
 use crate::error::CommandError;
-use crate::paths::absolutize;
+use crate::paths::existing_dir;
 use crate::views::WorkspaceLs;
 
 pub(crate) async fn run(app: &mut App, command: WorkspaceCommand) -> Result<(), CommandError> {
@@ -20,12 +18,7 @@ pub(crate) async fn run(app: &mut App, command: WorkspaceCommand) -> Result<(), 
 }
 
 async fn add(app: &App, args: WorkspaceAddArgs) -> Result<(), CommandError> {
-    let workspace = Workspace {
-        path: absolutize(&args.path, &app.cwd)?,
-        docker: args.docker,
-        default_role: None,
-        bindings: BTreeMap::new(),
-    };
+    let workspace = Workspace::new(existing_dir(app, &args.path).await?, args.docker);
     app.store
         .edit(vec![ConfigEdit::AddWorkspace {
             name: args.name,
@@ -44,12 +37,19 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     for row in &view.workspaces {
         let docker = if row.docker { "\tdocker" } else { "" };
         app.io
-            .line(&format!("{}\t{}{docker}", row.name, row.path))?;
+            .line(&format!("{}\t{}{docker}", row.name, plain(&row.path)))?;
     }
     Ok(())
 }
 
 async fn rm(app: &App, arg: WorkspaceArg) -> Result<(), CommandError> {
+    let config = app.store.load().await?;
+    if config.workspace(&arg.name).is_some() && config.gateways().next().is_some() {
+        app.gateways(&config)
+            .await?
+            .ensure_workspace_unused(&arg.name)
+            .await?;
+    }
     app.store
         .edit(vec![ConfigEdit::RemoveWorkspace(arg.name)])
         .await?;

@@ -7,24 +7,27 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use jackin_core::{
-    CommitId, EnvName, FileMode, Labels, Phase, SandboxName, SandboxPath, SupervisorState,
-    sandbox_layout,
+    CommitId, EnvName, FileMode, ImageId, LabelError, Labels, Phase, SandboxName, SandboxPath,
+    SupervisorState, Timestamp, sandbox_layout,
 };
 use jackin_openshell::TermSize;
 
-use super::RunRecord;
 use super::exec::host_path;
 use super::state::Cell;
+use super::{RunRecord, ShellWitness};
 use crate::fixtures::{FixtureError, git};
+use crate::host::FakeClock;
+use crate::sync::locked;
 
 #[derive(Clone, Debug)]
 pub struct SandboxHandle {
     cell: Arc<Cell>,
+    clock: Arc<FakeClock>,
 }
 
 impl SandboxHandle {
-    pub(super) fn new(cell: Arc<Cell>) -> SandboxHandle {
-        SandboxHandle { cell }
+    pub(super) fn new(cell: Arc<Cell>, clock: Arc<FakeClock>) -> SandboxHandle {
+        SandboxHandle { cell, clock }
     }
 
     pub fn name(&self) -> SandboxName {
@@ -35,12 +38,33 @@ impl SandboxHandle {
         self.cell.root()
     }
 
+    pub fn created_at(&self) -> Option<Timestamp> {
+        self.cell.state().created_at
+    }
+
+    pub fn image_id(&self) -> Option<ImageId> {
+        self.cell.state().image_id.clone()
+    }
+
     pub fn phase(&self) -> Phase {
         self.cell.state().phase
     }
 
     pub fn labels(&self) -> Labels {
         self.cell.state().all_labels()
+    }
+
+    pub fn add_label(&self, key: &str, value: &str) -> Result<(), LabelError> {
+        let mut state = self.cell.state();
+        let extended = Labels::from_pairs(
+            state
+                .all_labels()
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .chain([(key.to_owned(), value.to_owned())]),
+        )?;
+        state.shown = Some(extended);
+        Ok(())
     }
 
     pub fn environment(&self) -> BTreeMap<EnvName, String> {
@@ -96,6 +120,35 @@ impl SandboxHandle {
         self.cell.state().main.pty()
     }
 
+    pub fn resizes(&self) -> Vec<TermSize> {
+        self.cell.state().main.resizes()
+    }
+
+    pub fn raw_input(&self) -> Vec<u8> {
+        self.cell.state().main.raw()
+    }
+
+    pub fn advance_repaint(&self) {
+        self.cell.state().main.advance_repaint();
+    }
+
+    pub fn set_replay_window(&self, bytes: Option<usize>) {
+        self.cell.state().replay_window = bytes;
+    }
+
+    pub fn set_stream_exit_status(&self, status: Option<i32>) {
+        self.cell.state().stream_status = status;
+    }
+
+    pub fn shells(&self) -> Vec<ShellWitness> {
+        self.cell
+            .state()
+            .shells
+            .iter()
+            .map(|shell| locked(shell).clone())
+            .collect()
+    }
+
     pub fn runs(&self, program: &SandboxPath) -> Vec<RunRecord> {
         self.cell
             .state()
@@ -107,6 +160,7 @@ impl SandboxHandle {
     }
 
     pub async fn git(&self, args: &[&str]) -> Result<String, FixtureError> {
+        let _working = FakeClock::working(&self.clock);
         let project = self.root().join("project");
         Ok(String::from_utf8(git(&project, args).await?)?)
     }
@@ -117,6 +171,7 @@ impl SandboxHandle {
         content: &[u8],
         message: &str,
     ) -> Result<CommitId, FixtureError> {
+        let _working = FakeClock::working(&self.clock);
         let target = self.root().join("project").join(file);
         if let Some(parent) = target.parent() {
             tokio::fs::create_dir_all(parent).await?;
@@ -131,6 +186,14 @@ impl SandboxHandle {
 
     pub fn print_main(&self, bytes: &[u8]) {
         self.cell.state().main.emit(bytes);
+    }
+
+    pub fn undelivered_main_output(&self) -> usize {
+        self.cell.state().main.undelivered()
+    }
+
+    pub fn close_main_streams(&self) {
+        self.cell.state().main.exit(None);
     }
 
     pub fn exit_codex(&self, code: i32) {

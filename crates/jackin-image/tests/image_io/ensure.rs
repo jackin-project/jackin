@@ -4,13 +4,20 @@
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 
-use jackin_core::{DockerSubcommand, ImageId, ImageTag, OutputStream, ProcessStatus};
-use jackin_image::{
-    BuildStage, BuiltImage, DockerfileError, EngineError, ImageEngine, ImageError, ImageEvent,
-    ImagePlan, ImageRequest, ImageSource, Rebuild, ensure_image,
+use jackin_core::{
+    DockerSubcommand, GroupFault, ImageId, ImageTag, OutputStream, ProcessError, ProcessRunner,
+    ProcessStatus, StdFileSystem,
 };
-use jackin_testkit::{BuildEffect, EngineMoment, FakeEngine, Retag};
+use jackin_image::{
+    BuildStage, BuildxEngine, BuiltImage, DockerfileError, EngineError, ImageEngine, ImageError,
+    ImageEvent, ImagePlan, ImageRequest, ImageSource, Rebuild, ensure_image,
+};
+use jackin_testkit::{
+    BuildEffect, EngineMoment, FakeEngine, ProcessReply, Retag, ScriptedProcessRunner,
+};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -46,7 +53,7 @@ async fn scenario(
     assert_eq!(first.source, ImageSource::Built);
     let construct_tag = plan.construct_build().tag.clone();
     let construct_id = engine
-        .find(&construct_tag)
+        .find(&construct_tag, &CancellationToken::new())
         .await?
         .ok_or("the construct image is missing")?;
     let finals = plan.final_builds(&construct_id);
@@ -54,7 +61,10 @@ async fn scenario(
     assert_eq!(built(), order, "built tags in order");
     assert_eq!(first.tag, plan.final_tag(&construct_id));
     assert_eq!(first.tag, finals.derived.tag);
-    assert_eq!(engine.find(&first.tag).await?, Some(first.id.clone()));
+    assert_eq!(
+        engine.find(&first.tag, &CancellationToken::new()).await?,
+        Some(first.id.clone())
+    );
     assert_ne!(
         first.id, construct_id,
         "the derived ID is not the construct ID"
@@ -407,7 +417,10 @@ async fn cancel_during_a_build_returns_cancelled_and_stops_the_pipeline() -> Tes
         let driver = cancel_at_first_line(&mut rx, &cancel);
         let (result, mut events) = tokio::join!(run, driver);
         events.extend(drain(&mut rx));
-        assert!(matches!(result, Err(ImageError::Cancelled)), "{result:?}");
+        assert!(
+            matches!(result, Err(ImageError::Cancelled { .. })),
+            "{result:?}"
+        );
         let plan = ImagePlan::new(&request)?;
         let construct = ImageId::parse(&tag_id(plan.construct_build().tag.as_str()))?;
         let derived = plan.final_tag(&construct).to_string();
@@ -692,14 +705,14 @@ async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_s
             effect: BuildEffect::Retag(retag(&tags.construct, Some(other.clone()))),
         });
         let (result, events) = ensure(&engine, &request).await?;
-        let image = result?;
         assert_eq!(
-            (image.tag, image.id, image.source),
+            moved(result)?,
             (
-                tags.derived.clone(),
-                tags.derived_id.clone(),
-                ImageSource::Built
-            )
+                tags.construct.clone(),
+                tags.construct_id.clone(),
+                Some(other.clone())
+            ),
+            "derived build construct fence"
         );
         assert_eq!(
             engine.images().get(&tags.construct),
@@ -707,7 +720,11 @@ async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_s
             "the retag ran"
         );
         assert!(
-            events.contains(&ImageEvent::StageFinished(BuildStage::Derived)),
+            events.contains(&ImageEvent::StageStarted(BuildStage::Derived)),
+            "{events:?}"
+        );
+        assert!(
+            !events.contains(&ImageEvent::StageFinished(BuildStage::Derived)),
             "{events:?}"
         );
         Ok(())
@@ -792,7 +809,7 @@ async fn a_cancelled_token_stops_ensure_image_before_any_engine_work_and_between
             cancel.cancel();
             let result = ensure_image(&engine, &request, &tx, &cancel).await;
             assert!(
-                matches!(result, Err(ImageError::Cancelled)),
+                matches!(result, Err(ImageError::Cancelled { .. })),
                 "{rebuild:?}: {result:?}"
             );
             assert!(engine.builds().is_empty(), "{rebuild:?}: builds");
@@ -812,7 +829,10 @@ async fn a_cancelled_token_stops_ensure_image_before_any_engine_work_and_between
         });
         let (tx, mut rx) = mpsc::channel(256);
         let result = ensure_image(&engine, &request, &tx, &CancellationToken::new()).await;
-        assert!(matches!(result, Err(ImageError::Cancelled)), "{result:?}");
+        assert!(
+            matches!(result, Err(ImageError::Cancelled { .. })),
+            "{result:?}"
+        );
         assert_eq!(built_stages(&engine), [BuildStage::Construct]);
         assert!(!engine.images().contains_key(&tags.role), "role tag stored");
         assert!(
@@ -879,6 +899,63 @@ async fn dropping_ensure_image_mid_build_leaves_no_copy_of_the_context() -> Test
         let mut after = Vec::new();
         staged_copies(stack.fixture.work.as_path(), &mut after)?;
         assert!(after.is_empty(), "copies left after the drop: {after:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_whose_group_stop_failed_reaches_the_image_error_with_its_fault() -> TestResult {
+    guarded(async {
+        let alive = GroupFault::Alive {
+            after: Duration::from_secs(5),
+        };
+        let rows: Vec<(&str, ProcessReply)> = vec![
+            ("plain cancel", ProcessReply::cancelled()),
+            (
+                "cancel with a fault",
+                ProcessReply::cancelled_with(alive.clone()),
+            ),
+            (
+                "timeout with a fault",
+                ProcessReply::timeout_with(alive.clone()),
+            ),
+        ];
+        for (label, reply) in rows {
+            let fixture = Fixture::new()?;
+            let request = fixture.request()?;
+            let runner = Arc::new(ScriptedProcessRunner::new());
+            runner.expect_docker(DockerSubcommand::ImageInspect, &[], reply);
+            let shared: Arc<dyn ProcessRunner> = Arc::<ScriptedProcessRunner>::clone(&runner);
+            let engine = BuildxEngine::new(
+                shared,
+                Arc::new(StdFileSystem::default()),
+                fixture.work.clone(),
+            );
+            let (result, _) = ensure(&engine, &request).await?;
+            let shown = result.as_ref().err().map(ToString::to_string);
+            match (label, result) {
+                ("plain cancel", Err(ImageError::Cancelled { group: None })) => {
+                    assert_eq!(shown.as_deref(), Some("cancelled"), "{label}");
+                }
+                ("cancel with a fault", Err(ImageError::Cancelled { group })) => {
+                    assert_eq!(group, Some(alive.clone()), "{label}");
+                    assert_eq!(
+                        shown.as_deref(),
+                        Some("cancelled; processes of its group were still alive after 5s"),
+                        "{label}"
+                    );
+                }
+                (
+                    "timeout with a fault",
+                    Err(ImageError::Engine(EngineError::Process(ProcessError::Timeout {
+                        group,
+                        ..
+                    }))),
+                ) => assert_eq!(group, Some(alive.clone()), "{label}"),
+                (_, other) => return Err(format!("{label}: got {other:?}").into()),
+            }
+        }
         Ok(())
     })
     .await

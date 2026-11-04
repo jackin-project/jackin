@@ -7,73 +7,69 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use jackin_core::{
-    CommitId, LineSink, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, SandboxName,
-    SecretOutput, sandbox_layout,
+    CommitId, EnvValue, LineSink, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, Program,
+    SandboxName, SecretOutput, sandbox_layout,
 };
 use jackin_session::{ExportError, ExportReport};
 use jackin_testkit::{HostSnapshot, Rig, SandboxHandle, TestRunner};
 use tokio_util::sync::CancellationToken;
 
-#[derive(Debug)]
-pub(crate) struct CancelsOn {
-    inner: Arc<TestRunner>,
-    word: &'static str,
-    token: CancellationToken,
+#[derive(Clone, Debug)]
+pub(crate) struct Call {
+    pub(crate) program: Program,
+    pub(crate) args: Vec<String>,
+    pub(crate) env: Vec<(String, String)>,
 }
 
-impl CancelsOn {
-    pub(crate) fn new(rig: &Rig, word: &'static str, token: &CancellationToken) -> CancelsOn {
-        CancelsOn {
-            inner: Arc::clone(&rig.world.runner),
-            word,
-            token: token.clone(),
+impl Call {
+    pub(crate) fn subcommand(&self) -> Option<&str> {
+        let mut args = self.args.iter();
+        while let Some(arg) = args.next() {
+            if arg == "-c" {
+                args.next();
+            } else if !arg.starts_with('-') {
+                return Some(arg);
+            }
         }
-    }
-}
-
-#[async_trait]
-impl ProcessRunner for CancelsOn {
-    async fn run(
-        &self,
-        spec: &ProcessSpec,
-        lines: Option<&LineSink>,
-        cancel: &CancellationToken,
-    ) -> Result<ProcessOutput, ProcessError> {
-        if spec.args.iter().any(|arg| arg == self.word) {
-            self.token.cancel();
-        }
-        self.inner.run(spec, lines, cancel).await
-    }
-
-    async fn run_secret(
-        &self,
-        spec: &ProcessSpec,
-        cancel: &CancellationToken,
-    ) -> Result<SecretOutput, ProcessError> {
-        self.inner.run_secret(spec, cancel).await
+        None
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct Sees {
     inner: Arc<TestRunner>,
-    args: Mutex<Vec<Vec<String>>>,
+    calls: Mutex<Vec<Call>>,
 }
 
 impl Sees {
     pub(crate) fn new(rig: &Rig) -> Sees {
         Sees {
             inner: Arc::clone(&rig.world.runner),
-            args: Mutex::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
         }
     }
 
-    pub(crate) fn ran(&self, word: &str) -> bool {
-        self.args
+    pub(crate) fn mark(&self) -> usize {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
+
+    pub(crate) fn since(&self, mark: usize) -> Vec<Call> {
+        self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .any(|args| args.iter().any(|arg| arg == word))
+            .skip(mark)
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn ran(&self, word: &str) -> bool {
+        self.since(0)
+            .iter()
+            .any(|call| call.args.iter().any(|arg| arg == word))
     }
 }
 
@@ -85,10 +81,21 @@ impl ProcessRunner for Sees {
         lines: Option<&LineSink>,
         cancel: &CancellationToken,
     ) -> Result<ProcessOutput, ProcessError> {
-        self.args
+        self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(spec.args.clone());
+            .push(Call {
+                program: spec.program,
+                args: spec.args.clone(),
+                env: spec
+                    .env
+                    .iter()
+                    .map(|(name, value)| match value {
+                        EnvValue::Plain(text) => (name.clone(), text.clone()),
+                        EnvValue::Secret(_) => (name.clone(), String::new()),
+                    })
+                    .collect(),
+            });
         self.inner.run(spec, lines, cancel).await
     }
 

@@ -3,14 +3,21 @@
 
 mod adr008;
 mod cancel;
+mod cap_fs;
 mod crash;
 mod credentials;
 mod delivery;
+mod docker;
+mod docker_fence;
+mod docker_support;
 mod events;
 mod exists;
+mod failure_text;
+mod fence;
 mod hooks;
 mod hostile_git;
 mod hostile_launch;
+mod image_handoff;
 mod modes;
 mod phases;
 mod proofs;

@@ -134,3 +134,24 @@ fn docker_risk_all_lists_the_four_d24_warnings_once() {
     seen.sort_unstable();
     assert_eq!(seen, [0, 1, 2, 3]);
 }
+
+#[test]
+fn docker_risk_text_is_the_approved_baseline_wording() {
+    let wanted = [
+        ("Client key", "The agent can read the engine client key."),
+        ("Network", "Containers bypass the sandbox network policy."),
+        (
+            "Bind mounts",
+            "A bind mount names a path on the engine host, not in the sandbox.",
+        ),
+        (
+            "Lifetime",
+            "The engine outlives the sandbox. Sandboxes that share one engine see each other's containers, and you remove them.",
+        ),
+    ];
+    let actual: Vec<(&str, &str)> = DockerRisk::ALL
+        .into_iter()
+        .map(|risk| (risk.label(), risk.text()))
+        .collect();
+    assert_eq!(actual, wanted);
+}

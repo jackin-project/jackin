@@ -7,6 +7,7 @@ use std::fmt::{self, Debug};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -15,8 +16,38 @@ use crate::ids::EnvName;
 use crate::paths::{HostPath, RepoPath};
 use crate::secret::{Secret, SecretBytes};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+const SECONDS_PER_DAY: i64 = 86_400;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
 pub struct Timestamp(pub i64);
+
+impl Timestamp {
+    pub fn rfc3339(self) -> String {
+        let days = self.0.div_euclid(SECONDS_PER_DAY);
+        let seconds = self.0.rem_euclid(SECONDS_PER_DAY);
+        let shifted = days + 719_468;
+        let era = shifted.div_euclid(146_097);
+        let day_of_era = shifted.rem_euclid(146_097);
+        let year_of_era =
+            (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+        let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+        let month_index = (5 * day_of_year + 2) / 153;
+        let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+        let month = if month_index < 10 {
+            month_index + 3
+        } else {
+            month_index - 9
+        };
+        let year = year_of_era + era * 400 + i64::from(month <= 2);
+        format!(
+            "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+            seconds / 3_600,
+            seconds % 3_600 / 60,
+            seconds % 60
+        )
+    }
+}
 
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct EnvSnapshot(BTreeMap<String, String>);
@@ -32,14 +63,18 @@ impl Debug for EnvSnapshot {
 #[async_trait]
 pub trait Clock: Send + Sync + Debug {
     fn now(&self) -> Timestamp;
+    fn utc_offset_secs(&self) -> i32;
     async fn sleep(&self, duration: Duration);
 }
+
+pub const UNBOUNDED_READ: usize = usize::MAX;
 
 #[async_trait]
 pub trait FileSystem: Send + Sync + Debug {
     async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError>;
     async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError>;
     async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError>;
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError>;
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError>;
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError>;
     async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError>;
@@ -56,7 +91,15 @@ pub trait FileSystem: Send + Sync + Debug {
         &self,
         root: &HostPath,
         file: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError>;
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError>;
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError>;
+    async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError>;
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -82,6 +125,14 @@ pub enum RegularFileProblem {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LinkProblem {
+    Symlink,
+    NotALink,
+    Missing,
+    NonUtf8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FileMode(pub u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -100,18 +151,24 @@ pub struct DirEntry {
 
 #[derive(Debug)]
 pub struct FileLock {
+    path: HostPath,
     _guard: Box<dyn Any + Send + Sync>,
 }
 
 impl FileLock {
-    pub fn from_guard<G: Send + Sync + 'static>(guard: G) -> FileLock {
+    pub fn from_guard<G: Send + Sync + 'static>(path: HostPath, guard: G) -> FileLock {
         FileLock {
+            path,
             _guard: Box::new(guard),
         }
     }
 
-    pub(crate) fn new(file: std::fs::File) -> FileLock {
-        FileLock::from_guard(file)
+    pub(crate) fn new(path: HostPath, file: std::fs::File) -> FileLock {
+        FileLock::from_guard(path, file)
+    }
+
+    pub fn path(&self) -> &HostPath {
+        &self.path
     }
 }
 
@@ -215,6 +272,7 @@ pub enum EnvValue {
 pub enum ProcessStdin {
     Null,
     Bytes(SecretBytes),
+    File { path: HostPath, offset: u64 },
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -325,18 +383,44 @@ pub enum FsError {
     AlreadyExists(HostPath),
     #[error("lock held: {0}")]
     LockHeld(HostPath),
-    #[error("refusing to replace the symbolic link {0}")]
+    #[error("the lock {lock} does not guard {target}")]
+    WrongLock { lock: HostPath, target: HostPath },
+    #[error("refusing the symbolic link {0}")]
     SymlinkTarget(HostPath),
+    #[error("{path} was replaced, but syncing its directory failed: {}", plain(.message))]
+    Unsynced { path: HostPath, message: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Error)]
+pub enum GroupFault {
+    #[error("processes of its group were still alive after {}", plain_duration(.after))]
+    Alive { after: Duration },
+    #[error("cannot stop the processes of its group: {}", plain(.message))]
+    Unreachable { message: String },
+}
+
+impl GroupFault {
+    #[must_use]
+    pub fn note(group: Option<&GroupFault>) -> String {
+        group.map_or_else(String::new, |fault| format!("; {fault}"))
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum ProcessError {
     #[error("failed to start {program}: {}", plain(.message))]
     Spawn { program: Program, message: String },
-    #[error("{program} timed out after {}", plain_duration(.after))]
-    Timeout { program: Program, after: Duration },
-    #[error("{program} was cancelled")]
-    Cancelled { program: Program },
+    #[error("{program} timed out after {}{}", plain_duration(.after), GroupFault::note(.group.as_ref()))]
+    Timeout {
+        program: Program,
+        after: Duration,
+        group: Option<GroupFault>,
+    },
+    #[error("{program} was cancelled{}", GroupFault::note(.group.as_ref()))]
+    Cancelled {
+        program: Program,
+        group: Option<GroupFault>,
+    },
     #[error("{program} wrote more than {limit} bytes to {stream}")]
     OutputTooLarge {
         program: Program,
@@ -349,4 +433,6 @@ pub enum ProcessError {
         stream: OutputStream,
         message: String,
     },
+    #[error("{program}: {fault}")]
+    Group { program: Program, fault: GroupFault },
 }

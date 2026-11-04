@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::VecDeque;
-use std::io;
+use std::io::{self, SeekFrom};
 use std::os::unix::process::ExitStatusExt;
 use std::pin::pin;
 use std::process::{ExitStatus, Stdio};
@@ -11,21 +11,23 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Clock, EnvValue, FileSystem, LineSink, OutputLine, OutputStream, ProcessError, ProcessOutput,
-    ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, SecretBytes, SecretOutput, Timestamp,
+    Clock, EnvValue, FileSystem, GroupFault, LineSink, OutputLine, OutputStream, ProcessError,
+    ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, SecretBytes,
+    SecretOutput, Timestamp,
 };
-use rustix::process::{Pid, Signal, kill_process_group};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
+use crate::process_group::ProcessGroup;
 use crate::service::HostPorts;
 
 const TAIL_LIMIT: usize = 65536;
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
 const READ_CHUNK: usize = 8192;
+const FEED_CHUNK: usize = 64 * 1024;
 const LINE_LIMIT: usize = 65536;
 const WHOLE_LIMIT: usize = 16 * 1024 * 1024;
 const LINE_CUT_MARK: &str = " [truncated]";
@@ -40,6 +42,10 @@ impl Clock for SystemClock {
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |elapsed| elapsed.as_secs());
         Timestamp(i64::try_from(seconds).unwrap_or(i64::MAX))
+    }
+
+    fn utc_offset_secs(&self) -> i32 {
+        chrono::Local::now().offset().local_minus_utc()
     }
 
     async fn sleep(&self, duration: Duration) {
@@ -141,26 +147,56 @@ impl Line {
 }
 
 struct GroupGuard {
-    group: Option<Pid>,
+    group: Option<ProcessGroup>,
 }
 
 impl GroupGuard {
-    fn fire(&mut self) {
-        kill_group(self.group.take());
+    fn fire(&mut self) -> Option<ProcessGroup> {
+        let group = self.group.take();
+        if let Some(group) = group {
+            group.strike();
+        }
+        group
     }
 }
 
 impl Drop for GroupGuard {
     fn drop(&mut self) {
-        self.fire();
+        if let Some(group) = self.group.take() {
+            drop(group.sweep());
+        }
     }
 }
 
-fn kill_group(group: Option<Pid>) {
-    if let Some(group) = group {
-        match kill_process_group(group, Signal::KILL) {
-            Ok(()) | Err(_) => {}
-        }
+async fn gone(group: Option<ProcessGroup>) -> Result<(), GroupFault> {
+    match group {
+        Some(group) => group.stop().await,
+        None => Ok(()),
+    }
+}
+
+fn left_running(program: Program) -> impl FnOnce(GroupFault) -> ProcessError {
+    move |fault| ProcessError::Group { program, fault }
+}
+
+fn with_group(error: ProcessError, stopped: Result<(), GroupFault>) -> ProcessError {
+    let Err(fault) = stopped else {
+        return error;
+    };
+    match error {
+        ProcessError::Timeout { program, after, .. } => ProcessError::Timeout {
+            program,
+            after,
+            group: Some(fault),
+        },
+        ProcessError::Cancelled { program, .. } => ProcessError::Cancelled {
+            program,
+            group: Some(fault),
+        },
+        ProcessError::Spawn { program, .. }
+        | ProcessError::OutputTooLarge { program, .. }
+        | ProcessError::Read { program, .. }
+        | ProcessError::Group { program, .. } => ProcessError::Group { program, fault },
     }
 }
 
@@ -195,7 +231,7 @@ fn command_for(spec: &ProcessSpec) -> Command {
     command
         .stdin(match spec.stdin {
             ProcessStdin::Null => Stdio::null(),
-            ProcessStdin::Bytes(_) => Stdio::piped(),
+            ProcessStdin::Bytes(_) | ProcessStdin::File { .. } => Stdio::piped(),
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -256,18 +292,70 @@ where
     Ok(())
 }
 
-async fn feed(stdin: Option<ChildStdin>, bytes: &[u8]) {
-    if let Some(mut pipe) = stdin {
-        drop(pipe.write_all(bytes).await);
-        drop(pipe.shutdown().await);
+enum Input<'a> {
+    None,
+    Bytes(&'a [u8]),
+    File(tokio::fs::File),
+}
+
+async fn open_input(spec: &ProcessSpec) -> Result<Input<'_>, ProcessError> {
+    let refused = |message: String| ProcessError::Spawn {
+        program: spec.program,
+        message,
+    };
+    match &spec.stdin {
+        ProcessStdin::Null => Ok(Input::None),
+        ProcessStdin::Bytes(bytes) => Ok(Input::Bytes(bytes.expose())),
+        ProcessStdin::File { path, offset } => {
+            let mut file = tokio::fs::File::open(path.as_path())
+                .await
+                .map_err(|error| refused(error.to_string()))?;
+            let meta = file
+                .metadata()
+                .await
+                .map_err(|error| refused(error.to_string()))?;
+            if !meta.is_file() {
+                return Err(refused(format!(
+                    "{} is not a file",
+                    path.as_path().display()
+                )));
+            }
+            file.seek(SeekFrom::Start(*offset))
+                .await
+                .map_err(|error| refused(error.to_string()))?;
+            Ok(Input::File(file))
+        }
     }
+}
+
+async fn feed(stdin: Option<ChildStdin>, input: Input<'_>) {
+    let Some(mut pipe) = stdin else {
+        return;
+    };
+    match input {
+        Input::None => {}
+        Input::Bytes(bytes) => drop(pipe.write_all(bytes).await),
+        Input::File(mut file) => {
+            let mut chunk = vec![0_u8; FEED_CHUNK];
+            loop {
+                let count = match file.read(&mut chunk).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(count) => count,
+                };
+                if pipe.write_all(&chunk[..count]).await.is_err() {
+                    break;
+                }
+            }
+        }
+    }
+    drop(pipe.shutdown().await);
 }
 
 struct Pipes<'a> {
     stdin: Option<ChildStdin>,
     stdout: ChildStdout,
     stderr: ChildStderr,
-    input: &'a [u8],
+    input: Input<'a>,
     out: &'a mut Buffer,
     err: &'a mut Buffer,
     lines: Option<&'a LineSink>,
@@ -335,38 +423,39 @@ async fn execute(
     let program = spec.program;
     let spawn_error = |message: String| ProcessError::Spawn { program, message };
     if cancel.is_cancelled() {
-        return Err(ProcessError::Cancelled { program });
+        return Err(ProcessError::Cancelled {
+            program,
+            group: None,
+        });
     }
+    let input = open_input(spec).await?;
     let mut child = command_for(spec)
         .spawn()
         .map_err(|error| spawn_error(error.to_string()))?;
     let mut guard = GroupGuard {
-        group: child
-            .id()
-            .and_then(|id| i32::try_from(id).ok())
-            .and_then(Pid::from_raw),
+        group: child.id().and_then(ProcessGroup::of_leader),
     };
     let timer = sleep(spec.timeout);
     let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
-        guard.fire();
-        return Err(spawn_error("the output pipes are missing".to_owned()));
+        let stopped = gone(guard.fire()).await;
+        return Err(with_group(
+            spawn_error("the output pipes are missing".to_owned()),
+            stopped,
+        ));
     };
     let pipes = Pipes {
         stdin: child.stdin.take(),
         stdout,
         stderr,
-        input: match &spec.stdin {
-            ProcessStdin::Null => &[],
-            ProcessStdin::Bytes(bytes) => bytes.expose(),
-        },
+        input,
         out: &mut out,
         err: &mut err,
         lines,
     };
     let outcome = tokio::select! {
         biased;
-        () = cancel.cancelled() => Err(ProcessError::Cancelled { program }),
-        () = timer => Err(ProcessError::Timeout { program, after: spec.timeout }),
+        () = cancel.cancelled() => Err(ProcessError::Cancelled { program, group: None }),
+        () = timer => Err(ProcessError::Timeout { program, after: spec.timeout, group: None }),
         result = drive(&mut child, pipes) => result.map_err(|fault| match fault {
             DriveFault::Wait(error) => spawn_error(error.to_string()),
             DriveFault::Stream(stream, StreamFault::Read(error)) => ProcessError::Read {
@@ -383,13 +472,13 @@ async fn execute(
     };
     match outcome {
         Ok(status) => {
-            guard.fire();
+            gone(guard.fire()).await.map_err(left_running(program))?;
             Ok((status_of(status), out, err))
         }
         Err(error) => {
-            guard.fire();
+            let group = guard.fire();
             drop(child.kill().await);
-            Err(error)
+            Err(with_group(error, gone(group).await))
         }
     }
 }

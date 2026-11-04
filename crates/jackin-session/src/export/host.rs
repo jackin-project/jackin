@@ -6,24 +6,22 @@ use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
-use jackin_core::{CommitId, EnvValue, HostPath, ProcessStatus, SandboxName, TerminalText};
+use jackin_core::{
+    CommitId, FileSystem, HostPath, ProcessStatus, ProcessStdin, SandboxName, SecretBytes,
+    TerminalText,
+};
 
 use super::ExportError;
 use crate::project::git::{HostGit, Pace, words};
+use crate::project::{HostProject, ObjectFormat};
 
 const HEADS: &str = "refs/heads/";
 const JACKIN: &str = "jackin/";
-const BOUNDS: [&str; 4] = [
-    "-c",
-    "pack.windowMemory=256m",
+const PINS: [&str; 4] = [
     "-c",
     "core.bigFileThreshold=64m",
-];
-const STRICT: [&str; 4] = [
     "-c",
-    "fetch.fsckObjects=true",
-    "-c",
-    "transfer.fsckObjects=true",
+    "core.deltaBaseCacheLimit=96m",
 ];
 
 pub(super) const HEAD: &str = "HEAD";
@@ -37,13 +35,21 @@ pub(super) struct HostRefs {
 }
 
 #[derive(Debug)]
+pub(super) struct Update {
+    pub(super) target: String,
+    pub(super) tip: CommitId,
+    pub(super) observed: Option<CommitId>,
+}
+
+#[derive(Debug)]
 pub(super) struct Worktree {
     pub(super) path: HostPath,
     pub(super) branch: Option<String>,
 }
 
 pub(super) struct Host<'a> {
-    pub(super) git: HostGit<'a>,
+    git: HostGit<'a>,
+    project: &'a HostProject<'a>,
 }
 
 pub(super) fn exported_prefix(sandbox: &SandboxName) -> String {
@@ -56,18 +62,25 @@ fn commit(text: &str) -> Result<CommitId, ExportError> {
     })
 }
 
-impl Host<'_> {
-    async fn run(&self, pace: Pace, args: Vec<String>) -> Result<Vec<u8>, ExportError> {
-        self.run_with(pace, args, Vec::new()).await
+impl<'a> Host<'a> {
+    pub(super) fn new(project: &'a HostProject<'a>) -> Host<'a> {
+        Host {
+            git: project.git(),
+            project,
+        }
     }
 
-    async fn run_with(
+    async fn run(&self, pace: Pace, args: Vec<String>) -> Result<Vec<u8>, ExportError> {
+        self.run_from(pace, args, ProcessStdin::Null).await
+    }
+
+    async fn run_from(
         &self,
         pace: Pace,
         args: Vec<String>,
-        env: Vec<(String, EnvValue)>,
+        stdin: ProcessStdin,
     ) -> Result<Vec<u8>, ExportError> {
-        let output = self.git.capture(pace, args, env).await?;
+        let output = self.git.capture_from(pace, args, Vec::new(), stdin).await?;
         if output.status == ProcessStatus::Exited(0) {
             return Ok(output.stdout);
         }
@@ -98,7 +111,7 @@ impl Host<'_> {
             branches: BTreeMap::new(),
             exported: BTreeMap::new(),
             every: Vec::new(),
-            head: self.head().await?,
+            head: self.resolve(HEAD).await?,
         };
         for line in String::from_utf8_lossy(&listed).lines() {
             let (oid, name) = line.split_once(' ').ok_or(ExportError::HostOutput {
@@ -117,12 +130,12 @@ impl Host<'_> {
         Ok(refs)
     }
 
-    async fn head(&self) -> Result<Option<CommitId>, ExportError> {
+    async fn resolve(&self, name: &str) -> Result<Option<CommitId>, ExportError> {
         let output = self
             .git
             .capture(
                 Pace::Quick,
-                words(&["rev-parse", "-q", "--verify", "HEAD"]),
+                words(&["rev-parse", "-q", "--verify", name]),
                 Vec::new(),
             )
             .await?;
@@ -168,53 +181,89 @@ impl Host<'_> {
         Ok(found)
     }
 
-    pub(super) async fn verify(&self, bundle: &HostPath) -> Result<(), ExportError> {
-        let mut args = words(&BOUNDS);
-        args.extend(words(&["bundle", "verify", "--quiet"]));
-        args.push(bundle.as_path().display().to_string());
-        self.run(Pace::Long, args).await.map(drop)
+    pub(super) async fn object_format(&self) -> Result<ObjectFormat, ExportError> {
+        let printed = self
+            .run(Pace::Quick, words(&["rev-parse", "--show-object-format"]))
+            .await?;
+        ObjectFormat::parse(String::from_utf8_lossy(&printed).trim()).ok_or(
+            ExportError::HostOutput {
+                message: "rev-parse printed an unknown object format".to_owned(),
+            },
+        )
     }
 
-    pub(super) async fn heads(
+    pub(super) async fn import(
         &self,
+        fs: &dyn FileSystem,
         bundle: &HostPath,
-    ) -> Result<BTreeMap<String, CommitId>, ExportError> {
-        let mut args = words(&BOUNDS);
-        args.extend(words(&["bundle", "list-heads"]));
-        args.push(bundle.as_path().display().to_string());
-        let listed = self.run(Pace::Long, args).await?;
-        let mut heads = BTreeMap::new();
-        for line in String::from_utf8_lossy(&listed).lines() {
-            let (oid, name) = line.split_once(' ').ok_or(ExportError::HostOutput {
-                message: "list-heads printed a line without a name".to_owned(),
-            })?;
-            heads.insert(name.to_owned(), commit(oid)?);
-        }
-        Ok(heads)
-    }
-
-    pub(super) async fn fetch(
-        &self,
-        bundle: &HostPath,
-        refspecs: &[String],
+        pack_offset: u64,
+        targets: &[String],
     ) -> Result<(), ExportError> {
-        let mut args = words(&BOUNDS);
-        args.extend(words(&STRICT));
-        args.extend(words(&[
-            "-c",
-            "gc.auto=0",
-            "-c",
-            "maintenance.auto=false",
-            "fetch",
-            "--quiet",
-            "--atomic",
-            "--no-tags",
-            "--no-prune",
-            "--no-write-fetch-head",
-            "--no-recurse-submodules",
-        ]));
-        args.push(bundle.as_path().display().to_string());
-        args.extend_from_slice(refspecs);
-        self.run(Pace::Long, args).await.map(drop)
+        self.project.refuse_foreign_store(fs, targets).await?;
+        let mut args = words(&PINS);
+        args.extend(words(&["index-pack", "--stdin", "--strict", "--threads=1"]));
+        let stdin = ProcessStdin::File {
+            path: bundle.clone(),
+            offset: pack_offset,
+        };
+        self.run_from(Pace::Long, args, stdin).await.map(drop)
+    }
+
+    pub(super) async fn publish(
+        &self,
+        fs: &dyn FileSystem,
+        updates: Vec<Update>,
+    ) -> Result<(), ExportError> {
+        let targets: Vec<String> = updates.iter().map(|update| update.target.clone()).collect();
+        self.project.refuse_foreign_store(fs, &targets).await?;
+        let mut pending = updates;
+        while !pending.is_empty() {
+            let error = match self.transaction(&pending).await {
+                Ok(()) => return Ok(()),
+                Err(error @ ExportError::HostGit { .. }) => error,
+                Err(error) => return Err(error),
+            };
+            let mut unmoved = Vec::new();
+            let mut landed = false;
+            for update in pending {
+                let found = self.resolve(&update.target).await?;
+                if found.as_ref() == Some(&update.tip) {
+                    landed = true;
+                } else if found == update.observed {
+                    unmoved.push(update);
+                } else {
+                    return Err(ExportError::RefMoved {
+                        host_ref: update.target,
+                        observed: update.observed,
+                        found,
+                    });
+                }
+            }
+            if !landed {
+                return Err(error);
+            }
+            pending = unmoved;
+        }
+        Ok(())
+    }
+
+    async fn transaction(&self, updates: &[Update]) -> Result<(), ExportError> {
+        let mut commands = String::new();
+        for Update {
+            target,
+            tip,
+            observed,
+        } in updates
+        {
+            commands.push_str("option no-deref\n");
+            match observed {
+                Some(old) => commands.push_str(&format!("update {target} {tip} {old}\n")),
+                None => commands.push_str(&format!("create {target} {tip}\n")),
+            }
+        }
+        let stdin = ProcessStdin::Bytes(SecretBytes::new(commands.into_bytes()));
+        self.run_from(Pace::Long, words(&["update-ref", "--stdin"]), stdin)
+            .await
+            .map(drop)
     }
 }

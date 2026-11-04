@@ -1,25 +1,27 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{DockerRisk, EnvFile, sandbox_layout};
-use jackin_testkit::{Rig, TestResult, guard, launch_id};
+use jackin_core::{DockerRisk, EngineCert, EnvFile, sandbox_layout};
+use jackin_testkit::{KEY_MARKER, Rig, TestResult, engine_pem, guard, launch_id};
 
-use super::support::{Failure, Harness};
+use jackin::ExitClass;
+
+use super::support::{Failure, Harness, failed};
 
 const WARNING: &str = "warning: the Docker capability is enabled";
 
 const RISKS: [&str; DockerRisk::ALL.len()] = [
-    "  the agent can read the engine client key",
-    "  containers bypass the sandbox network policy",
-    "  a bind mount names a path on the engine host, not in the sandbox",
-    "  the engine outlives the sandbox, and sandboxes that use one engine see each other's containers; remove them yourself",
+    "  The agent can read the engine client key.",
+    "  Containers bypass the sandbox network policy.",
+    "  A bind mount names a path on the engine host, not in the sandbox.",
+    "  The engine outlives the sandbox. Sandboxes that share one engine see each other's containers, and you remove them.",
 ];
 
 fn certs(rig: &Rig) -> Result<String, Failure> {
     let dir = rig.home.as_path().join("engine-certs");
     std::fs::create_dir(&dir)?;
-    for name in ["ca.pem", "cert.pem", "key.pem"] {
-        std::fs::write(dir.join(name), format!("fixture {name}\n"))?;
+    for cert in EngineCert::ALL {
+        std::fs::write(dir.join(cert.file_name()), engine_pem(cert))?;
     }
     Ok(dir.display().to_string())
 }
@@ -80,6 +82,14 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
             .await?;
         ran.ok()?;
         assert_eq!(ran.stderr.matches(WARNING).count(), 1, "{}", ran.stderr);
+        let first_step = ran.stderr.find("image...").ok_or("no step line")?;
+        assert_eq!(ran.stderr.find(WARNING), Some(0), "{}", ran.stderr);
+        assert!(
+            ran.stderr.find(WARNING) < Some(first_step),
+            "{}",
+            ran.stderr
+        );
+        assert!(!ran.stderr.contains(KEY_MARKER) && !ran.stdout.contains(KEY_MARKER));
         let after: Vec<&str> = ran
             .stderr
             .lines()
@@ -100,6 +110,19 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
             );
         }
 
+        let key = std::path::Path::new(&certs).join("key.pem");
+        let valid = rig.home.as_path().join("other-key.pem");
+        std::fs::write(&valid, engine_pem(EngineCert::Key))?;
+        std::fs::remove_file(&key)?;
+        std::os::unix::fs::symlink(&valid, &key)?;
+        let refused = harness
+            .run(&["load", "--launch-id", &launch_id(3).to_string()])
+            .await?;
+        failed(&refused, ExitClass::Failure, &["key.pem"])?;
+        assert!(!refused.stderr.contains(WARNING), "{}", refused.stderr);
+        assert!(!refused.stderr.contains(KEY_MARKER));
+        std::fs::remove_file(&key)?;
+        std::fs::write(&key, engine_pem(EngineCert::Key))?;
         harness.write_config(&rig.config.render())?;
         let plain = harness
             .run(&["load", "--launch-id", &launch_id(2).to_string()])
@@ -111,6 +134,43 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
                 .await?
                 .iter()
                 .all(|name| !name.starts_with("DOCKER_"))
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_refused_stale_retry_prints_the_refusal_and_no_retry_hint() -> TestResult {
+    guard(async {
+        let rig = Rig::builder()
+            .workspace_docker(true)
+            .engine(jackin_testkit::ENGINE_PORT)
+            .build()
+            .await?;
+        rig.write_engine_certs().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        harness.write_config(&rig.config.render())?;
+        let id = launch_id(1).to_string();
+        harness.run(&["load", "--launch-id", &id]).await?.ok()?;
+        let flipped = rig
+            .config
+            .render()
+            .replace("docker = true", "docker = false");
+        assert_ne!(flipped, rig.config.render());
+        harness.write_config(&flipped)?;
+        let refused = harness.run(&["load", "--launch-id", &id]).await?;
+        failed(
+            &refused,
+            ExitClass::Failure,
+            &["cannot continue sandbox", "start a new launch"],
+        )?;
+        assert!(!refused.stderr.contains("retry with"), "{}", refused.stderr);
+        assert!(
+            !refused.stderr.contains("--launch-id"),
+            "{}",
+            refused.stderr
         );
         Ok(())
     })

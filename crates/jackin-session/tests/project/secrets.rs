@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::os::unix::fs::symlink;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use jackin_testkit::RepoFixture;
 
@@ -120,7 +122,8 @@ async fn an_unborn_head_with_only_jackin_branches_launches_unborn_without_a_bund
     .await
 }
 
-const SECRETS: [&str; 5] = [
+const SECRETS: [&str; 6] = [
+    "HOST-REFRESH-TOKEN-DO-NOT-LEAK",
     "SECRETTOKEN-remote",
     "SECRETHEADER-http",
     "SECRETHELPER-credential",
@@ -224,6 +227,92 @@ async fn the_host_exclude_file_travels_into_the_sandbox_repository_byte_for_byte
             }
         }
         Ok(())
+    })
+    .await
+}
+
+const HOST_EXCLUDE: &[u8] =
+    b"local-only.log\n{\"refresh_token\": \"HOST-REFRESH-TOKEN-DO-NOT-LEAK\"}\n";
+const TEN_SECONDS: Duration = Duration::from_secs(10);
+
+fn host_secret(dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let path = dir.join("token");
+    std::fs::write(&path, HOST_EXCLUDE)?;
+    Ok(path)
+}
+
+fn exclude_of(repo: &RepoFixture) -> PathBuf {
+    repo.root().as_path().join(".git/info/exclude")
+}
+
+async fn launch_keeps_the_exclude_home(repo: RepoFixture, label: &str) -> TestResult {
+    let rig = Rig::new(repo).await?;
+    let launched = tokio::time::timeout(TEN_SECONDS, rig.launch(1))
+        .await
+        .map_err(|_| format!("{label}: read blocked, the launch outlived 10 s"))??;
+    ready(launched).map_err(|error| format!("{label}: {error}"))?;
+    let handle = rig.handle(1).await?;
+    let project = handle.root().join("project");
+    scan(&handle.root())?;
+    std::fs::write(project.join("local-only.log"), b"log\n")?;
+    assert_eq!(
+        git(
+            &project,
+            &["status", "--porcelain", "--untracked-files=all"]
+        )?,
+        "?? local-only.log\n",
+        "{label}: the sandbox applied a host exclude rule"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_exclude_file_that_is_a_symlink_never_carries_the_file_behind_it_into_the_sandbox()
+-> TestResult {
+    guard(async {
+        let outside = tempfile::tempdir()?;
+        let secret = host_secret(outside.path())?;
+        for (label, target) in [
+            ("symlink to a file", secret),
+            ("dangling symlink", outside.path().join("absent")),
+        ] {
+            let repo = base().await?;
+            std::fs::remove_file(exclude_of(&repo))?;
+            symlink(&target, exclude_of(&repo))?;
+            launch_keeps_the_exclude_home(repo, label).await?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symlinked_info_directory_never_carries_its_exclude_file_into_the_sandbox() -> TestResult
+{
+    guard(async {
+        let outside = tempfile::tempdir()?;
+        let shared = outside.path().join("info");
+        std::fs::create_dir(&shared)?;
+        std::fs::write(shared.join("exclude"), HOST_EXCLUDE)?;
+        let repo = base().await?;
+        let info = repo.root().as_path().join(".git/info");
+        std::fs::remove_dir_all(&info)?;
+        symlink(&shared, &info)?;
+        launch_keeps_the_exclude_home(repo, "symlinked info directory").await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_linked_worktree_with_a_symlinked_shared_exclude_never_leaks() -> TestResult {
+    guard(async {
+        let outside = tempfile::tempdir()?;
+        let secret = host_secret(outside.path())?;
+        let main = base().await?;
+        std::fs::remove_file(exclude_of(&main))?;
+        symlink(&secret, exclude_of(&main))?;
+        let tree = main.linked_worktree("topic").await?;
+        launch_keeps_the_exclude_home(tree, "linked worktree, symlinked exclude").await
     })
     .await
 }

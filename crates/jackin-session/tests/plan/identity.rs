@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{
-    AccountName, Agent, EnvName, PlannedLabels, ProviderName, RoleName, SandboxLabels, SandboxPath,
-    WorkspaceName,
+    AccountName, Agent, EnvName, PlannedLabels, PolicyLabel, ProviderName, RoleName, SandboxLabels,
+    SandboxPath, WorkspaceName,
 };
 use jackin_openshell::MainProcess;
 use jackin_testkit::RoleFixture;
@@ -28,13 +28,14 @@ async fn the_plan_derives_name_labels_and_draft_from_the_launch_id() -> TestResu
             role: RoleName::parse("sentinel")?,
             agent: Agent::Codex,
             account: AccountName::parse("work")?,
+            policy: PolicyLabel::of(&setup.role.policy().document().render()?),
             launch: launch_id(1),
         };
         assert_eq!(plan.draft().labels(), &expected);
         assert_eq!(plan.draft().name(), plan.sandbox_name());
 
         let built = built_image(&setup.role, '3')?;
-        let create = plan.draft().complete(&built);
+        let create = plan.draft().complete(&built, jackin_core::DockerLabel::Off);
         assert_eq!(create.image(), &built.tag);
         assert_eq!(create.name(), plan.sandbox_name());
         let labels = SandboxLabels::from_labels(&create.labels().to_labels())?;
@@ -58,13 +59,19 @@ async fn the_plan_derives_name_labels_and_draft_from_the_launch_id() -> TestResu
                 args: Agent::Codex.spec().launch_argv(),
             }
         );
-        assert_eq!(create.policy(), setup.role.policy());
+        assert_eq!(create.policy(), setup.role.policy().document());
 
         let again = setup.plan(setup.request(1)?)?;
         assert_eq!(again.sandbox_name(), plan.sandbox_name());
         assert_eq!(again.draft().labels(), plan.draft().labels());
         assert_eq!(again.files(), plan.files());
-        assert_eq!(again.draft().complete(&built).labels(), create.labels());
+        assert_eq!(
+            again
+                .draft()
+                .complete(&built, jackin_core::DockerLabel::Off)
+                .labels(),
+            create.labels()
+        );
         Ok(())
     })
     .await

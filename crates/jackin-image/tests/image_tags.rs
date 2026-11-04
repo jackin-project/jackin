@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_image::ContextEntry;
 use std::collections::HashSet;
 use std::error::Error;
-use std::path::Path;
 
 use jackin_core::{
-    Agent, BuilderName, CommitId, DockerLayer, HostPath, ImageId, ImageTag, Platform, RepoPath,
-    RoleName, Sha256,
+    Agent, BuilderName, CommitId, DockerLayer, ImageId, ImageTag, Platform, RepoPath, RoleName,
+    Sha256,
 };
 use jackin_image::{HookFiles, ImagePlan, ImageRequest, Rebuild, RoleRevision, SourceFile};
 use regex::Regex;
@@ -17,6 +17,14 @@ type TestResult = Result<(), Box<dyn Error>>;
 const ORACLE: &str = "^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$";
 const ALPHABET: [char; 6] = ['a', 'B', '7', '.', '_', '-'];
 const HEX16: &str = "0123456789abcdef";
+
+fn entry(path: &str) -> Result<ContextEntry, Box<dyn Error>> {
+    Ok(ContextEntry::File {
+        path: RepoPath::parse(path)?,
+        bytes: path.as_bytes().to_vec(),
+        executable: false,
+    })
+}
 
 fn oracle(tag: &str) -> Result<bool, Box<dyn Error>> {
     let name_len = tag
@@ -28,8 +36,7 @@ fn oracle(tag: &str) -> Result<bool, Box<dyn Error>> {
 fn request(role: &str) -> Result<ImageRequest, Box<dyn Error>> {
     Ok(ImageRequest {
         role: RoleName::parse(role)?,
-        context: HostPath::parse(Path::new("/work/role"))?,
-        context_files: vec![RepoPath::parse("Dockerfile")?],
+        context_files: vec![entry("Dockerfile")?],
         dockerfile: SourceFile {
             path: RepoPath::parse("Dockerfile")?,
             bytes: b"FROM construct AS role\n".to_vec(),
@@ -38,8 +45,9 @@ fn request(role: &str) -> Result<ImageRequest, Box<dyn Error>> {
             setup: None,
             preflight: None,
         },
-        revision: RoleRevision::Clean {
+        revision: RoleRevision {
             commit: CommitId::parse(&"1".repeat(40))?,
+            digest: Sha256::of(b"clean"),
         },
         agent: Agent::Codex,
         platform: Platform::LinuxArm64,

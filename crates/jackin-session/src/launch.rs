@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod certs;
 mod decide;
 pub(crate) mod hooks;
 pub(crate) mod probe;
@@ -11,9 +12,9 @@ use std::fmt;
 use std::time::Duration;
 
 use jackin_core::{
-    AccountName, AttemptId, FsError, HookKind, LaunchId, PathError, Phase, ProcessError,
-    SandboxName, SupervisorReading, SupervisorState, TerminalText, plain, plain_duration,
-    plain_list,
+    AccountName, AttemptId, EngineCert, EngineCertProblem, FsError, HookKind, HostPath,
+    LabelDifference, LabelError, LaunchId, PathError, Phase, ProcessError, SandboxName,
+    SupervisorReading, SupervisorState, TerminalText, plain, plain_duration, plain_list,
 };
 use jackin_image::{ImageError, ImageEvent};
 use jackin_openshell::GatewayError;
@@ -255,8 +256,30 @@ pub enum LaunchError {
         exit_code: i32,
         output: TerminalText,
     },
+    #[error("the engine certificate {} in {directory} is unusable: {problem}", file.file_name())]
+    EngineCert {
+        file: EngineCert,
+        directory: HostPath,
+        problem: EngineCertProblem,
+    },
+    #[error(
+        "launch {launch} cannot continue sandbox {sandbox}: {}; start a new launch with a new launch ID",
+        plain_list(.differences)
+    )]
+    StaleSandbox {
+        launch: LaunchId,
+        sandbox: SandboxName,
+        differences: Vec<LabelDifference>,
+    },
+    #[error("the labels of sandbox {sandbox} are unreadable: {error}")]
+    SandboxLabels {
+        sandbox: SandboxName,
+        error: LabelError,
+    },
     #[error("the sandbox probe is invalid: {}", plain(.message))]
     ProbeInvalid { message: String },
     #[error("the sandbox {sandbox} has no value for {}", plain(.key))]
     PlaceholderMissing { sandbox: SandboxName, key: String },
+    #[error("the sandbox {sandbox} returned a value for {} that is not a provider placeholder", plain(.key))]
+    PlaceholderInvalid { sandbox: SandboxName, key: String },
 }

@@ -5,51 +5,54 @@ interface Line {
   text: string;
 }
 
-const scripts: Record<string, Line[]> = {
+const tabs = ['load', 'attach', 'export'] as const;
+type Tab = (typeof tabs)[number];
+
+const scripts: Record<Tab, Line[]> = {
   load: [
-    { cls: 'c',      text: '# Load an isolated agent into your current project\n' },
+    { cls: 'c',      text: '# Launch Codex in an OpenShell sandbox\n' },
     { cls: 'cmd',    text: 'j' },
     { cls: 'prompt', text: '❯ ' },
     { cls: 'cmd',    text: 'jackin ' },
     { cls: 'k',      text: 'load' },
     { cls: 'cmd',    text: ' agent-smith\n' },
-    { cls: 'dim',    text: '  \u2192 Pulling construct:trixie     ' },
+    { cls: 'dim',    text: '  → Image        ' },
     { cls: 'ok',     text: 'OK\n' },
-    { cls: 'dim',    text: '  \u2192 Building derived image       ' },
+    { cls: 'dim',    text: '  → Provider     ' },
     { cls: 'ok',     text: 'OK\n' },
-    { cls: 'dim',    text: '  \u2192 Per-agent Docker network     ' },
+    { cls: 'dim',    text: '  → Sandbox      ' },
     { cls: 'ok',     text: 'OK\n' },
-    { cls: 'dim',    text: '  \u2192 Claude Code ready            ' },
+    { cls: 'dim',    text: '  → Upload       ' },
     { cls: 'ok',     text: 'OK\n' },
-    { cls: 'cmd',    text: '\n\u2713 Agent loaded. You\u2019re inside.' },
+    { cls: 'dim',    text: '  → Hooks        ' },
+    { cls: 'ok',     text: 'OK\n' },
+    { cls: 'dim',    text: '  → Codex        ' },
+    { cls: 'ok',     text: 'OK\n' },
+    { cls: 'cmd',    text: '\n✓ Codex is running. You’re inside.' },
   ],
-  hardline: [
-    { cls: 'c',      text: '# Reattach to a running agent session\n' },
+  attach: [
+    { cls: 'c',      text: '# Reattach to a running Codex session\n' },
     { cls: 'cmd',    text: 'j' },
     { cls: 'prompt', text: '❯ ' },
     { cls: 'cmd',    text: 'jackin ' },
-    { cls: 'k',      text: 'hardline' },
-    { cls: 'cmd',    text: ' agent-smith\n' },
-    { cls: 'dim',    text: '  \u2192 Locating container...          ' },
+    { cls: 'k',      text: 'attach' },
+    { cls: 'cmd',    text: ' jackin-my-app-3f9a\n' },
+    { cls: 'dim',    text: '  → Opening session   ' },
     { cls: 'ok',     text: 'OK\n' },
-    { cls: 'dim',    text: '  \u2192 Attaching to session...        ' },
+    { cls: 'dim',    text: '  → Replaying output  ' },
     { cls: 'ok',     text: 'OK\n' },
-    { cls: 'cmd',    text: '\n\u2713 Session restored. History intact.' },
+    { cls: 'cmd',    text: '\n✓ Session restored. Codex kept running.' },
   ],
-  eject: [
-    { cls: 'c',      text: '# Stop an agent cleanly (state persists)\n' },
+  export: [
+    { cls: 'c',      text: '# Fetch the work back as git branches\n' },
     { cls: 'cmd',    text: 'j' },
     { cls: 'prompt', text: '❯ ' },
     { cls: 'cmd',    text: 'jackin ' },
-    { cls: 'k',      text: 'eject' },
-    { cls: 'cmd',    text: ' agent-smith\n' },
-    { cls: 'dim',    text: '  \u2192 Saving agent state...          ' },
-    { cls: 'ok',     text: 'OK\n' },
-    { cls: 'dim',    text: '  \u2192 Stopping container...          ' },
-    { cls: 'ok',     text: 'OK\n' },
-    { cls: 'dim',    text: '  \u2192 Removing network...            ' },
-    { cls: 'ok',     text: 'OK\n' },
-    { cls: 'cmd',    text: '\n\u2713 Ejected. Host clean.' },
+    { cls: 'k',      text: 'export' },
+    { cls: 'cmd',    text: ' jackin-my-app-3f9a\n' },
+    { cls: 'cmd',    text: 'refs/heads/jackin/jackin-my-app-3f9a/main' },
+    { cls: 'dim',    text: '  9f3c2a1\n' },
+    { cls: 'cmd',    text: '\n✓ Exported. Your working tree is untouched.' },
   ],
 };
 
@@ -58,7 +61,7 @@ const typingSpeedLineMs  = 110;
 const holdDurationMs     = 3500;
 
 export function CodePanel() {
-  const [active, setActive] = useState<'load' | 'hardline' | 'eject'>('load');
+  const [active, setActive] = useState<Tab>('load');
   const bodyRef = useRef<HTMLDivElement>(null);
   const tokenRef = useRef(0);
 
@@ -69,14 +72,14 @@ export function CodePanel() {
     const body = bodyRef.current;
     if (!body) return;
 
-    async function run() {
+    async function run(host: HTMLDivElement) {
       while (myToken === tokenRef.current) {
-        while (body!.firstChild) body!.removeChild(body!.firstChild);
+        while (host.firstChild) host.removeChild(host.firstChild);
         for (const line of scripts[active]) {
           if (myToken !== tokenRef.current) return;
           const span = document.createElement('span');
           span.className = line.cls;
-          body!.appendChild(span);
+          host.appendChild(span);
           if (reducedMotion) {
             span.appendChild(document.createTextNode(line.text));
             continue;
@@ -89,12 +92,12 @@ export function CodePanel() {
         }
         const cursor = document.createElement('span');
         cursor.className = 'cursor';
-        body!.appendChild(cursor);
+        host.appendChild(cursor);
         if (reducedMotion) return;
         await new Promise(r => setTimeout(r, holdDurationMs));
       }
     }
-    run();
+    run(body);
 
     return () => { tokenRef.current += 1; };
   }, [active]);
@@ -103,7 +106,7 @@ export function CodePanel() {
     <div className="landing-code-panel">
       <div className="landing-code-head">
         <div className="landing-code-tabs">
-          {(['load', 'hardline', 'eject'] as const).map(k => (
+          {tabs.map(k => (
             <button
               type="button"
               key={k}

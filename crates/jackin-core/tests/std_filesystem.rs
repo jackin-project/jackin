@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    DirEntry, FileKind, FileMode, FileSystem, FsError, HostPath, PathError, StdFileSystem,
+    DirEntry, FileKind, FileMode, FileSystem, FsError, HostPath, PathError, RegularFileProblem,
+    RepoPath, StdFileSystem,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -186,4 +187,94 @@ async fn file_len_reports_the_size_of_a_local_file() -> TestResult {
 
 fn root(dir: &tempfile::TempDir) -> Result<HostPath, PathError> {
     HostPath::parse(dir.path())
+}
+
+#[tokio::test]
+async fn read_at_returns_the_requested_slice_never_pads_and_refuses_a_missing_file_or_a_directory()
+-> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let file = at(&dir, "range.bin")?;
+    fs.write_new(&file, b"0123456789", FileMode(0o600)).await?;
+    for (offset, len, expected) in [
+        (3, 4, "3456"),
+        (0, 100, "0123456789"),
+        (10, 5, ""),
+        (11, 5, ""),
+        (4, 0, ""),
+        (9, usize::MAX, "9"),
+    ] {
+        assert_eq!(
+            fs.read_at(&file, offset, len).await?,
+            expected.as_bytes(),
+            "read_at({offset}, {len})"
+        );
+    }
+    assert!(matches!(
+        fs.read_at(&at(&dir, "none.bin")?, 0, 1).await,
+        Err(FsError::Io {
+            kind: std::io::ErrorKind::NotFound,
+            ..
+        })
+    ));
+    assert!(matches!(
+        fs.read_at(&HostPath::parse(dir.path())?, 0, 1).await,
+        Err(FsError::Io { .. })
+    ));
+    Ok(())
+}
+
+const CAP: usize = 64 * 1024;
+
+#[tokio::test]
+async fn read_regular_returns_at_most_the_cap_plus_one_byte_and_keeps_every_refusal() -> TestResult
+{
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let base = HostPath::parse(&std::fs::canonicalize(dir.path())?)?;
+    std::fs::File::create(dir.path().join("sparse"))?.set_len(10 * 1024 * 1024)?;
+    std::fs::write(dir.path().join("exact"), vec![7_u8; CAP])?;
+    std::fs::write(dir.path().join("over"), vec![7_u8; CAP + 1])?;
+    std::fs::write(dir.path().join("small"), b"abc")?;
+    std::os::unix::fs::symlink("small", dir.path().join("link"))?;
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(dir.path().join("pipe"))
+            .status()?
+            .success()
+    );
+
+    for (name, len) in [
+        ("sparse", CAP + 1),
+        ("exact", CAP),
+        ("over", CAP + 1),
+        ("small", 3),
+    ] {
+        let read = fs.read_regular(&base, &RepoPath::parse(name)?, CAP).await?;
+        assert_eq!(
+            read.map_err(|problem| format!("{problem:?}"))?.bytes.len(),
+            len,
+            "{name}"
+        );
+    }
+    let uncapped = fs
+        .read_regular(&base, &RepoPath::parse("over")?, usize::MAX)
+        .await?;
+    assert_eq!(
+        uncapped
+            .map_err(|problem| format!("{problem:?}"))?
+            .bytes
+            .len(),
+        CAP + 1
+    );
+
+    for (name, problem) in [
+        ("link", RegularFileProblem::Symlink),
+        ("pipe", RegularFileProblem::NotARegularFile),
+        ("absent", RegularFileProblem::Missing),
+    ] {
+        let read = fs.read_regular(&base, &RepoPath::parse(name)?, CAP).await?;
+        assert_eq!(read.err(), Some(problem), "{name}");
+    }
+    Ok(())
 }

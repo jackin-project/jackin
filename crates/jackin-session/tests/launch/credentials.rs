@@ -191,3 +191,50 @@ async fn no_fixture_secret_reaches_a_sandbox_file_an_event_or_an_error() -> Test
     })
     .await
 }
+
+#[tokio::test]
+async fn a_printenv_value_without_the_placeholder_prefix_is_refused_and_never_written_or_named()
+-> TestResult {
+    guard(async {
+        let cases = [
+            ("sk-FAKE-VALUE-123\n", "sk-FAKE-VALUE-123"),
+            ("FAKE-LEAD-openshell:resolve:env:K\n", "FAKE-LEAD"),
+            (
+                "openshell:resolve:env:K\nsk-FAKE-VALUE-123\n",
+                "sk-FAKE-VALUE-123",
+            ),
+        ];
+        for (stdout, secret) in cases {
+            let rig = launch_rig().await?;
+            rig.gateway().script_program(
+                &sandbox_layout::PRINTENV,
+                ProgramScript {
+                    exit_code: 0,
+                    stdout: stdout.as_bytes().to_vec(),
+                    stderr: Vec::new(),
+                },
+            );
+            let outcome = rig.launch_observed(1).await?;
+            assert_outcome_clean(&outcome, secret);
+            let failed = failure(outcome)?;
+            assert_eq!(failed.step, LaunchStep::Credentials, "{stdout:?}");
+            assert!(
+                matches!(&*failed.error, LaunchError::PlaceholderInvalid { .. }),
+                "{stdout:?}: {:?}",
+                failed.error
+            );
+            assert_files_clean(&rig, secret);
+            let handle = rig.handle(1).await?;
+            assert!(
+                !has_file(&handle, &Agent::Codex.spec().auth_file.path),
+                "{stdout:?}"
+            );
+            assert!(
+                !has_file(&handle, &sandbox_layout::uploaded_marker(&launch_id(1))),
+                "{stdout:?}"
+            );
+        }
+        Ok(())
+    })
+    .await
+}

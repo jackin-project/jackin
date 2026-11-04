@@ -2,12 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::ErrorKind;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, RegularFile,
-    RegularFileProblem, RepoPath, StdFileSystem, write_atomic,
+    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
+    RegularFile, RegularFileProblem, RepoPath, StdFileSystem, write_atomic, write_atomic_locked,
 };
+use tokio::sync::Notify;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -19,11 +22,19 @@ enum Fault {
     SyncDir,
 }
 
+#[derive(Debug, Default)]
+struct Gate {
+    taken: AtomicBool,
+    parked: Notify,
+    release: Notify,
+}
+
 #[derive(Debug)]
 struct FaultFs {
     inner: StdFileSystem,
     fault: Fault,
     kind: ErrorKind,
+    gate: Option<Gate>,
 }
 
 impl FaultFs {
@@ -51,6 +62,9 @@ impl FileSystem for FaultFs {
     async fn stat_following(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.inner.stat_following(p).await
     }
+    async fn canonicalize(&self, p: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(p).await
+    }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
     }
@@ -66,12 +80,26 @@ impl FileSystem for FaultFs {
     async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
         self.inner.remove_file(p).await
     }
+    async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
     async fn read_regular(
         &self,
         r: &HostPath,
         f: &RepoPath,
+        max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(r, f).await
+        self.inner.read_regular(r, f, max_bytes).await
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.inner.lock(p).await
@@ -87,6 +115,12 @@ impl FileSystem for FaultFs {
     }
     async fn rename(&self, f: &HostPath, t: &HostPath) -> Result<(), FsError> {
         self.fail(Fault::Rename, f)?;
+        if let Some(gate) = &self.gate
+            && !gate.taken.swap(true, Ordering::SeqCst)
+        {
+            gate.parked.notify_one();
+            gate.release.notified().await;
+        }
         self.inner.rename(f, t).await
     }
     async fn remove_dir_all(&self, p: &HostPath) -> Result<(), FsError> {
@@ -106,7 +140,15 @@ fn faulty(fault: Fault) -> FaultFs {
         inner: StdFileSystem::default(),
         fault,
         kind: ErrorKind::StorageFull,
+        gate: None,
     }
+}
+
+fn gated() -> Arc<FaultFs> {
+    Arc::new(FaultFs {
+        gate: Some(Gate::default()),
+        ..faulty(Fault::None)
+    })
 }
 
 fn names(entries: Vec<DirEntry>) -> Vec<String> {
@@ -152,9 +194,14 @@ async fn write_atomic_failure_keeps_the_old_file_and_leaves_no_temp_file() -> Te
             }
             let fs = faulty(fault);
             let outcome = write_atomic(&fs, &target, b"new bytes", FileMode(0o600)).await;
-            match outcome {
-                Err(FsError::Io { kind, .. }) => assert_eq!(kind, ErrorKind::StorageFull),
-                other => panic!("{fault:?}: {other:?}"),
+            match (fault, outcome) {
+                (Fault::SyncDir, Err(FsError::Unsynced { path, .. })) => {
+                    assert_eq!(path, target);
+                }
+                (Fault::WriteNew | Fault::Rename, Err(FsError::Io { kind, .. })) => {
+                    assert_eq!(kind, ErrorKind::StorageFull);
+                }
+                (_, other) => panic!("{fault:?}: {other:?}"),
             }
             let after = fs.read(&target).await?;
             let listed = names(fs.list(&root).await?);
@@ -217,5 +264,65 @@ async fn write_atomic_refuses_a_symlink_target_and_replaces_a_regular_file() -> 
     std::os::unix::fs::symlink(root.join("real_dir"), root.join("link_dir"))?;
     write_atomic(&fs, &at("link_dir/config.toml")?, b"in", FileMode(0o600)).await?;
     assert_eq!(std::fs::read(root.join("real_dir/config.toml"))?, b"in");
+    Ok(())
+}
+
+#[tokio::test]
+async fn two_writers_of_one_target_both_succeed_and_leave_one_whole_file() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let root = HostPath::parse(dir.path())?;
+    let target = HostPath::parse(&dir.path().join("usage.json"))?;
+    let fs = gated();
+    let (a_bytes, b_bytes) = (vec![b'a'; 4096], vec![b'b'; 8192]);
+
+    let mut first = tokio::spawn({
+        let (fs, target, bytes) = (Arc::clone(&fs), target.clone(), a_bytes.clone());
+        async move { write_atomic(&*fs, &target, &bytes, FileMode(0o600)).await }
+    });
+    let gate = fs.gate.as_ref().ok_or("no gate")?;
+    tokio::select! {
+        () = gate.parked.notified() => {}
+        done = &mut first => return Err(format!("the first writer ended before its rename: {done:?}").into()),
+    }
+    let second = write_atomic(&*fs, &target, &b_bytes, FileMode(0o600)).await;
+    gate.release.notify_one();
+    let first = first.await?;
+
+    assert!(second.is_ok(), "second writer: {second:?}");
+    assert!(first.is_ok(), "first writer: {first:?}");
+    assert_eq!(names(fs.list(&root).await?), ["usage.json"]);
+    let after = fs.read(&target).await?;
+    assert!(
+        after == Some(a_bytes) || after == Some(b_bytes),
+        "the file is neither writer's bytes"
+    );
+
+    write_atomic(&*fs, &target, b"third", FileMode(0o600)).await?;
+    assert_eq!(fs.read(&target).await?, Some(b"third".to_vec()));
+    assert_eq!(names(fs.list(&root).await?), ["usage.json"]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_locked_write_refuses_a_lock_that_is_not_the_targets_own() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let root = dir.path();
+    let fs = StdFileSystem::default();
+    let target = HostPath::parse(&root.join("data.json"))?;
+    let foreign_path = HostPath::parse(&root.join("other.json.lock"))?;
+    let foreign = fs.lock(&foreign_path).await?;
+
+    let outcome = write_atomic_locked(&fs, &target, b"new", FileMode(0o600), &foreign).await;
+    assert!(
+        matches!(&outcome, Err(FsError::WrongLock { lock, target: refused }) if *lock == foreign_path && *refused == target),
+        "{outcome:?}"
+    );
+    assert!(!root.join("data.json").exists());
+
+    let own = fs
+        .lock(&HostPath::parse(&root.join("data.json.lock"))?)
+        .await?;
+    write_atomic_locked(&fs, &target, b"new", FileMode(0o600), &own).await?;
+    assert_eq!(std::fs::read(root.join("data.json"))?, b"new");
     Ok(())
 }

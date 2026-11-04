@@ -6,45 +6,37 @@ name = "jackin-usage"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-authors = ["Alexey Zhokhov <alexey@zhokhov.com>"]
-description = "Usage, pricing, telemetry, and token-monitor subsystem for the jackin-capsule in-container daemon."
+description = "Account usage on the host: credential resolution, provider dispatch, the cache, and the report types."
 license.workspace = true
 repository.workspace = true
 publish = false
 
-[lib]
-name = "jackin_usage"
-path = "src/lib.rs"
-
-[features]
-default = []
-
 [dependencies]
-jackin-usage-provider-zai = { workspace = true }
-jackin-usage-provider-kimi = { workspace = true }
-jackin-usage-provider-amp = { workspace = true }
-jackin-usage-provider-minimax = { workspace = true }
-jackin-usage-provider-openrouter = { workspace = true }
-jackin-usage-provider-grok = { workspace = true }
-jackin-usage-provider-antigravity = { workspace = true }
-jackin-usage-provider-cursor = { workspace = true }
+futures = { workspace = true }
+jackin-core = { workspace = true }
+jackin-usage-provider-claude = { workspace = true }
 jackin-usage-provider-codex = { workspace = true }
-jackin-usage-provider-hermes = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+jackin-usage-provider-cursor = { workspace = true }
 jackin-usage-provider-gemini = { workspace = true }
-jackin-usage-provider-muse = { workspace = true }
-jackin-usage-output = { workspace = true }
-jackin-usage-coordinator = { workspace = true }
-jackin-usage-store-backend = { workspace = true }
-jackin-usage-snapshot-store = { workspace = true }
-jackin-usage-token-monitor = { workspace = true }
-jackin-usage-capsule-telemetry = { workspace = true }
-jackin-usage-credential-resolver = { workspace = true }
-jackin-usage-host-runtime = { workspace = true }
+jackin-usage-provider-grok = { workspace = true }
+jackin-usage-provider-kimi = { workspace = true }
+jackin-usage-provider-minimax = { workspace = true }
+jackin-usage-provider-opencode = { workspace = true }
+jackin-usage-provider-openrouter = { workspace = true }
+jackin-usage-provider-zai = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+tokio-util = { workspace = true }
 
 [dev-dependencies]
-criterion = { workspace = true, features = ["html_reports"] }
+jackin-testkit = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true }
-jackin-protocol = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
 [lints]
 workspace = true

@@ -3,12 +3,12 @@
 
 use std::path::Path;
 
-use jackin_core::{ConfigEdit, FileKind, RoleSource, RoleUrl};
+use jackin_core::{ConfigEdit, PathError, RoleSource, RoleUrl, plain};
 
 use crate::app::App;
 use crate::cli::{JsonArg, RoleAddArgs, RoleArg, RoleCheckArgs, RoleCommand};
 use crate::error::CommandError;
-use crate::paths::absolutize;
+use crate::paths::{absolutize, existing_dir};
 use crate::views::{RoleLs, RoleSourceRow};
 
 pub(crate) async fn run(app: &mut App, command: RoleCommand) -> Result<(), CommandError> {
@@ -21,19 +21,21 @@ pub(crate) async fn run(app: &mut App, command: RoleCommand) -> Result<(), Comma
 }
 
 async fn source(app: &App, args: &RoleAddArgs) -> Result<RoleSource, CommandError> {
-    let path = absolutize(Path::new(&args.source), &app.cwd)?;
-    if app.deps.host.fs.stat(&path).await? == Some(FileKind::Dir) {
-        if args.rev.is_some() {
-            return Err(CommandError::Argument(
-                "--rev applies only to a Git source".to_owned(),
-            ));
+    match existing_dir(app, Path::new(&args.source)).await {
+        Ok(path) => {
+            if args.rev.is_some() {
+                return Err(CommandError::Argument(
+                    "--rev applies only to a Git source".to_owned(),
+                ));
+            }
+            return Ok(RoleSource::Path(path));
         }
-        return Ok(RoleSource::Path(path));
+        Err(CommandError::Path(PathError::NotADirectory(_))) => {}
+        Err(other) => return Err(other),
     }
-    let url = RoleUrl::parse(&args.source).map_err(|_| {
+    let url = RoleUrl::parse(&args.source).map_err(|error| {
         CommandError::Argument(format!(
-            "{} is neither an existing directory nor a Git URL",
-            args.source
+            "the source must be an existing directory or a Git URL ({error})"
         ))
     })?;
     Ok(RoleSource::Git {
@@ -61,7 +63,7 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     }
     for row in &view.roles {
         let source = match &row.source {
-            RoleSourceRow::Path { path } => path.clone(),
+            RoleSourceRow::Path { path } => plain(path),
             RoleSourceRow::Git { url, rev } => match rev {
                 Some(rev) => format!("{url}@{rev}"),
                 None => url.to_string(),

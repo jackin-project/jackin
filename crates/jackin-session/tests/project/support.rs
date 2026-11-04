@@ -3,17 +3,25 @@
 
 use std::error::Error;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use jackin_core::{
-    Config, HostPath, LabelSelector, LaunchId, ProjectRoot, RoleName, SandboxPath, sandbox_layout,
+    Clock, Config, HostPath, LabelSelector, LaunchId, LineSink, ProcessError, ProcessOutput,
+    ProcessRunner, ProcessSpec, ProjectRoot, RoleName, SandboxPath, SecretOutput, StdFileSystem,
+    sandbox_layout,
 };
+use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, SandboxQuery};
 use jackin_session::{
-    LaunchError, LaunchFailure, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, LoadedRole,
-    TreeMismatch, UnsupportedProject, launch_events, plan_launch,
+    HostPorts, LaunchError, LaunchFailure, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery,
+    LoadedRole, Session, SessionDeps, TreeMismatch, UnsupportedProject, launch_events, plan_launch,
 };
-use jackin_testkit::{RepoFixture, RoleFixture, SandboxHandle, World};
+use jackin_testkit::{
+    FakeClock, FakeEngine, FakeGateway, RepoFixture, RoleFixture, SandboxHandle, TestRunner, World,
+};
 use serde_json::json;
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
@@ -28,6 +36,105 @@ pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult 
     tokio::time::timeout(GUARD, work)
         .await
         .map_err(|_| "the test hung for 60 s")?
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Point {
+    AfterOpen,
+    AfterBundle(usize),
+}
+
+type Action = Box<dyn FnOnce() -> std::io::Result<()> + Send>;
+
+pub(crate) struct Tamper {
+    inner: Arc<TestRunner>,
+    point: Point,
+    action: Mutex<Option<Action>>,
+    outcome: Mutex<Option<Result<(), String>>>,
+    opened: AtomicBool,
+    bundles: AtomicUsize,
+}
+
+impl std::fmt::Debug for Tamper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tamper").finish_non_exhaustive()
+    }
+}
+
+impl Tamper {
+    pub(crate) fn new(
+        rig: &Rig,
+        point: Point,
+        action: impl FnOnce() -> std::io::Result<()> + Send + 'static,
+    ) -> Arc<Tamper> {
+        Arc::new(Tamper {
+            inner: Arc::clone(&rig.world.runner),
+            point,
+            action: Mutex::new(Some(Box::new(action))),
+            outcome: Mutex::new(None),
+            opened: AtomicBool::new(false),
+            bundles: AtomicUsize::new(0),
+        })
+    }
+
+    pub(crate) fn done(&self) -> TestResult {
+        match self
+            .outcome
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            Some(Ok(())) => Ok(()),
+            Some(Err(error)) => Err(error.into()),
+            None => Err("the tampering never ran".into()),
+        }
+    }
+
+    fn act(&self) {
+        let taken = self
+            .action
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(action) = taken {
+            *self.outcome.lock().unwrap_or_else(PoisonError::into_inner) =
+                Some(action().map_err(|error| error.to_string()));
+        }
+    }
+}
+
+#[async_trait]
+impl ProcessRunner for Tamper {
+    async fn run(
+        &self,
+        spec: &ProcessSpec,
+        lines: Option<&LineSink>,
+        cancel: &CancellationToken,
+    ) -> Result<ProcessOutput, ProcessError> {
+        let names = |word: &str| spec.args.iter().any(|arg| arg == word);
+        if names("--git-common-dir") {
+            self.opened.store(true, Ordering::SeqCst);
+        } else if matches!(self.point, Point::AfterOpen) && self.opened.load(Ordering::SeqCst) {
+            self.act();
+        }
+        let output = self.inner.run(spec, lines, cancel).await;
+        if let Point::AfterBundle(occurrence) = self.point
+            && names("bundle")
+            && names("create")
+            && self.bundles.fetch_add(1, Ordering::SeqCst) + 1 == occurrence
+        {
+            self.act();
+        }
+        output
+    }
+
+    async fn run_secret(
+        &self,
+        spec: &ProcessSpec,
+        cancel: &CancellationToken,
+    ) -> Result<SecretOutput, ProcessError> {
+        self.inner.run_secret(spec, cancel).await
+    }
 }
 
 pub(crate) fn launch_id(byte: u8) -> LaunchId {
@@ -54,10 +161,18 @@ pub(crate) struct Rig {
 
 impl Rig {
     pub(crate) async fn new(repo: RepoFixture) -> Result<Rig, Box<dyn Error>> {
+        let at = repo.root().clone();
+        Rig::new_at(repo, &at).await
+    }
+
+    pub(crate) async fn new_at(repo: RepoFixture, at: &HostPath) -> Result<Rig, Box<dyn Error>> {
         let world = World::builder().build()?;
         let role = RoleFixture::new("sentinel")?;
         role.commit().await?;
-        let loaded = world.roles.load_path(role.root()).await?;
+        let loaded = world
+            .roles
+            .load_path(role.root(), &CancellationToken::new())
+            .await?;
         let home_dir = tempfile::tempdir()?;
         let home = HostPath::parse(&std::fs::canonicalize(home_dir.path())?)?;
         let login = json!({
@@ -81,9 +196,10 @@ impl Rig {
             "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n",
             home.as_path().display(),
             role.root().as_path().display(),
-            repo.root().as_path().display(),
+            at.as_path().display(),
         ))?;
-        let project = repo.project().await?;
+        world.seed_config(&config).await?;
+        let project = ProjectRoot::open(&StdFileSystem::default(), at).await?;
         world.gateway.script_program(
             &sandbox_layout::PRINTENV,
             jackin_testkit::ProgramScript {
@@ -133,6 +249,35 @@ impl Rig {
         let (events, mut feed) = launch_events(LineDelivery::Reliable);
         let drain = async { while feed.recv().await.is_some() {} };
         let (result, ()) = tokio::join!(self.world.session.launch(plan, events, cancel), drain);
+        Ok(Outcome { result })
+    }
+
+    pub(crate) async fn launch_over(
+        &self,
+        id: u8,
+        runner: Arc<dyn ProcessRunner>,
+        cancel: CancellationToken,
+    ) -> Result<Outcome, Box<dyn Error>> {
+        let world = &self.world;
+        let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
+        let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
+        let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
+        let session = Session::new(SessionDeps {
+            gateway,
+            engine,
+            host: HostPorts {
+                clock,
+                fs: Arc::clone(&world.fs),
+                runner,
+            },
+            cache_dir: world.cache_dir().clone(),
+            config: world.config.clone(),
+            limits: jackin_testkit::default_limits(),
+        });
+        let plan = self.plan(id)?;
+        let (events, mut feed) = launch_events(LineDelivery::Reliable);
+        let drain = async { while feed.recv().await.is_some() {} };
+        let (result, ()) = tokio::join!(session.launch(plan, events, cancel), drain);
         Ok(Outcome { result })
     }
 

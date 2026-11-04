@@ -130,10 +130,19 @@ fn sandbox_tool(root: &Path, command: &[String]) -> Option<Vec<Step>> {
         "/usr/bin/stat" => {
             let file = target(command.last()?);
             Some(match std::fs::metadata(&file) {
-                Ok(meta) => vec![
-                    Step::Out(format!("{}\n", meta.len()).into_bytes()),
-                    Step::Exit(0),
-                ],
+                Ok(meta) => {
+                    let kind = if meta.is_dir() {
+                        "directory"
+                    } else if meta.len() == 0 {
+                        "regular empty file"
+                    } else {
+                        "regular file"
+                    };
+                    vec![
+                        Step::Out(format!("{kind} {}\n", meta.len()).into_bytes()),
+                        Step::Exit(0),
+                    ]
+                }
                 Err(error) => vec![Step::Err(error.to_string().into_bytes()), Step::Exit(1)],
             })
         }

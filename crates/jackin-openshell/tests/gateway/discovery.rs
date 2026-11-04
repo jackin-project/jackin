@@ -115,6 +115,7 @@ async fn registered_gateways_failure_modes() {
         ProcessError::Timeout {
             program: Program::Openshell,
             after: Duration::from_secs(1),
+            group: None,
         },
     ] {
         let failure = std::sync::Mutex::new(Some(failure));
@@ -275,4 +276,48 @@ async fn resolve_gateway_refuses_a_plaintext_or_non_mtls_entry() {
             GatewayAuth::Other("oidc".to_owned())
         )]
     );
+}
+
+#[tokio::test]
+async fn resolve_gateway_refuses_an_https_endpoint_with_credentials_without_echoing_them() {
+    let cancel = CancellationToken::new();
+    let home = host("/home/test/.config/openshell");
+    let fs = RegistryFs::default();
+    for file in ["ca.crt", "tls.crt", "tls.key"] {
+        fs.put(
+            &host(&format!(
+                "/home/test/.config/openshell/gateways/{GATEWAY}/mtls/{file}"
+            )),
+            file.as_bytes(),
+        );
+    }
+    for endpoint in [
+        "https://admin:ghp_FAKEf4k3@gateway.example:17670",
+        "https://ghp_FAKEf4k3@gateway.example",
+        "https://admin:ghp_FAKEf4k3@gateway.example/path?x=1",
+    ] {
+        let runner = ScriptedRunner::always(exited(0, single(endpoint, "mtls").as_bytes(), b""));
+        let error = resolve_gateway(&runner, &fs, &home, &name(GATEWAY), &cancel)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, DiscoveryError::EndpointCredentials { name: named } if named.as_str() == GATEWAY),
+            "{endpoint}: {error:?}"
+        );
+        let shown = format!("{error} {error:?}");
+        assert!(
+            !shown.contains("ghp_FAKE")
+                && !shown.contains("admin")
+                && !shown.contains("gateway.example"),
+            "{shown}"
+        );
+    }
+    let accepted = ScriptedRunner::always(exited(
+        0,
+        single("https://gateway.example:17670/a@b", "mtls").as_bytes(),
+        b"",
+    ));
+    resolve_gateway(&accepted, &fs, &home, &name(GATEWAY), &cancel)
+        .await
+        .unwrap();
 }

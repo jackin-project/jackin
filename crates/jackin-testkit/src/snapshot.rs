@@ -92,6 +92,36 @@ fn walk(root: &Path, dir: &Path, found: &mut Tree) {
     }
 }
 
+fn object_files(dir: &Path, found: &mut BTreeSet<String>, root: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(kind) if kind.is_dir() => object_files(&path, found, root),
+            Ok(_) => {
+                if let Ok(relative) = path.strip_prefix(root) {
+                    found.insert(relative.to_string_lossy().into_owned());
+                }
+            }
+            Err(_) => {}
+        }
+    }
+}
+
+pub async fn object_store_files(project: &HostPath) -> Result<BTreeSet<String>, FixtureError> {
+    let printed = text(
+        project.as_path(),
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )
+    .await?;
+    let objects = PathBuf::from(printed.trim_end()).join("objects");
+    let mut found = BTreeSet::new();
+    object_files(&objects, &mut found, &objects);
+    Ok(found)
+}
+
 impl HostSnapshot {
     pub async fn take(project: &HostPath) -> Result<HostSnapshot, FixtureError> {
         let root = project.as_path();

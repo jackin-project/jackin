@@ -5,7 +5,7 @@ use jackin::ExitClass;
 use jackin_core::BuildOutput;
 use jackin_image::BuildStage;
 use jackin_session::LAUNCH_EVENT_CAPACITY;
-use jackin_testkit::{Rig, RoleFixture, TestResult, World, guard};
+use jackin_testkit::{ENGINE_PORT, Rig, RoleFixture, TestResult, World, guard, launch_id};
 
 use super::support::{FixedConnector, Harness, failed, keys, names};
 
@@ -83,6 +83,38 @@ async fn a_role_whose_final_stage_is_not_construct_fails_naming_the_base_and_bui
         let ran = harness.run(&["build"]).await?;
         failed(&ran, ExitClass::Failure, &["zzz-unique-base", "3"])?;
         assert!(world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_load_after_a_build_in_a_docker_workspace_finds_the_image_already_built() -> TestResult {
+    guard(async {
+        let rig = Rig::builder()
+            .workspace_docker(true)
+            .engine(ENGINE_PORT)
+            .build()
+            .await?;
+        rig.write_engine_certs().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        harness.write_config(&rig.config.render())?;
+        assert!(rig.world.engine.builds().is_empty());
+
+        let made = harness.run(&["build", "--json"]).await?;
+        made.ok()?;
+        let typed: BuildOutput = made.json()?;
+        let builds = rig.world.engine.builds().len();
+        assert!(builds > 0);
+        assert_eq!(rig.world.engine.images().get(&typed.image), Some(&typed.id));
+
+        harness
+            .run(&["load", "--launch-id", &launch_id(1).to_string()])
+            .await?
+            .ok()?;
+        assert!(rig.sandbox(1).await?.is_some());
+        assert_eq!(rig.world.engine.builds().len(), builds);
         Ok(())
     })
     .await

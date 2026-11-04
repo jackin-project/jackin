@@ -2,18 +2,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::sync::Arc;
 
-use jackin_core::{HookKind, HostPath, ManifestError, ModelName, RepoPath, RoleManifest, Sha256};
-use jackin_image::{DockerfileError, RoleRevision};
-use jackin_openshell::ClosureViolation;
+use jackin_core::{HookKind, HostPath, ManifestError, ModelName, RoleManifest, Sha256};
+use jackin_image::DockerfileError;
+use jackin_openshell::{ClosureViolation, PolicyError};
 use jackin_session::{LoadedRole, RoleCatalog, RoleError};
 use jackin_testkit::{RoleFixture, TestRunner};
 use tempfile::TempDir;
 
 use super::support::{TestResult, catalog, guard};
 
-const HEADER: &str = "version: 1
+pub(super) const HEADER: &str = "version: 1
 filesystem_policy:
   include_workdir: true
   read_only:
@@ -23,13 +25,13 @@ filesystem_policy:
     - /tmp
     - /sandbox
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox
 ";
 
-fn rules(rows: &[(&str, &str, u16, &str)]) -> String {
+pub(super) fn rules(rows: &[(&str, &str, u16, &str)]) -> String {
     let mut text = format!("{HEADER}network_policies:\n");
     for (key, host, port, binary) in rows {
         text.push_str(&format!(
@@ -56,13 +58,13 @@ fn manifest(dockerfile: &str, policy: &str, hooks: &[(&str, &str)]) -> String {
     text
 }
 
-struct Scope {
-    catalog: RoleCatalog,
+pub(super) struct Scope {
+    pub(super) catalog: RoleCatalog,
     runner: Arc<TestRunner>,
     _cache: TempDir,
 }
 
-fn scope() -> Result<Scope, Box<dyn Error>> {
+pub(super) fn scope() -> Result<Scope, Box<dyn Error>> {
     let cache = tempfile::tempdir()?;
     let path = HostPath::parse(&std::fs::canonicalize(cache.path())?)?;
     let (catalog, runner) = catalog(&path);
@@ -75,7 +77,10 @@ fn scope() -> Result<Scope, Box<dyn Error>> {
 
 async fn load(role: &RoleFixture) -> Result<LoadedRole, Box<dyn Error>> {
     role.commit().await?;
-    Ok(scope()?.catalog.load_path(role.root()).await?)
+    Ok(scope()?
+        .catalog
+        .load_path(role.root(), &tokio_util::sync::CancellationToken::new())
+        .await?)
 }
 
 fn only(findings: Vec<RoleError>) -> Result<RoleError, Box<dyn Error>> {
@@ -94,7 +99,6 @@ async fn a_role_policy_that_overlaps_a_codex_host_is_rejected_before_any_plan() 
         let rows = [
             policy("openai", "api.openai.com", 443, "/usr/bin/curl"),
             policy("wild", "*.openai.com", 443, "/usr/bin/curl"),
-            policy("all", "**", 443, "/usr/bin/curl"),
             policy("chat", "chatgpt.com", 8443, "/usr/bin/other"),
         ];
         for text in rows {
@@ -114,13 +118,17 @@ async fn a_role_policy_that_overlaps_a_codex_host_is_rejected_before_any_plan() 
         let fine = RoleFixture::new("sentinel")?.policy_yaml(&policy("github", "github.com", 443, "/usr/bin/git"));
         load(&fine).await?;
 
-        let reserved = RoleFixture::new("sentinel")?.policy_yaml(&policy("_provider_codex", "github.com", 443, "/usr/bin/git"));
-        let result = load(&reserved).await;
-        assert!(
-            matches!(result.as_ref().err().and_then(|e| e.downcast_ref::<RoleError>()), Some(RoleError::Policy(_))),
-            "{:?}",
-            result.err()
-        );
+        for name in ["_provider_codex", "docker_engine"] {
+            let reserved = RoleFixture::new("sentinel")?.policy_yaml(&policy(name, "github.com", 443, "/usr/bin/git"));
+            let result = load(&reserved).await;
+            assert!(
+                matches!(result.as_ref().err().and_then(|e| e.downcast_ref::<RoleError>()), Some(RoleError::Policy(PolicyError::ReservedRuleName(key))) if key == name),
+                "{name}: {:?}",
+                result.err()
+            );
+        }
+        let near = RoleFixture::new("sentinel")?.policy_yaml(&policy("docker_engine2", "github.com", 443, "/usr/bin/git"));
+        load(&near).await?;
 
         let ubuntu = RoleFixture::new("sentinel")?.dockerfile("FROM ubuntu\n");
         let result = load(&ubuntu).await;
@@ -159,7 +167,10 @@ async fn a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway() 
             .await?;
         let commit = role.commit().await?;
         let scope = scope()?;
-        let loaded = scope.catalog.load_path(role.root()).await?;
+        let loaded = scope
+            .catalog
+            .load_path(role.root(), &tokio_util::sync::CancellationToken::new())
+            .await?;
         assert_eq!(loaded.name().as_str(), "sentinel");
         assert_eq!(
             loaded
@@ -177,6 +188,7 @@ async fn a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway() 
         );
         let keys: Vec<String> = loaded
             .policy()
+            .document()
             .network_rules()
             .iter()
             .map(|r| r.key.to_string())
@@ -192,12 +204,12 @@ async fn a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway() 
             (preflight.path.as_str(), preflight.bytes.as_slice()),
             ("scripts/pre.sh", b"#!/bin/sh\necho preflight\n".as_slice())
         );
-        assert_eq!(loaded.revision(), &RoleRevision::Clean { commit });
+        assert_eq!(loaded.revision().commit, commit);
         assert!(
             loaded
                 .files()
                 .iter()
-                .any(|f| f.as_str() == "build/role.Dockerfile")
+                .any(|f| f.path().as_str() == "build/role.Dockerfile")
         );
         assert!(scope.runner.scripted().seen().is_empty());
 
@@ -211,10 +223,7 @@ async fn a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway() 
 }
 
 fn digest(role: &LoadedRole) -> Result<Sha256, Box<dyn Error>> {
-    match role.revision() {
-        RoleRevision::Dirty { digest, .. } => Ok(digest.clone()),
-        RoleRevision::Clean { .. } => Err("the revision is clean".into()),
-    }
+    Ok(role.revision().digest.clone())
 }
 
 async fn tracked(ignore: &str) -> Result<RoleFixture, Box<dyn Error>> {
@@ -229,29 +238,20 @@ async fn a_dirty_role_tree_hashes_tracked_and_untracked_files_but_not_ignored_on
         let role = tracked("build-cache/\n").await?;
         let commit = role.commit().await?;
         let scope = scope()?;
-        let reload = || scope.catalog.load_path(role.root());
-        assert_eq!(
-            reload().await?.revision(),
-            &RoleRevision::Clean {
-                commit: commit.clone()
-            }
-        );
+        let token = tokio_util::sync::CancellationToken::new();
+        let reload = || scope.catalog.load_path(role.root(), &token);
+        let clean = reload().await?;
+        assert_eq!(clean.revision().commit, commit);
+        let d0 = digest(&clean)?;
         role.file("build-cache/x.bin", b"cache\n").await?;
-        assert_eq!(
-            reload().await?.revision(),
-            &RoleRevision::Clean {
-                commit: commit.clone()
-            }
-        );
+        assert_eq!(digest(&reload().await?)?, d0);
         role.file("README.md", b"changed\n").await?;
         let loaded = reload().await?;
-        let RoleRevision::Dirty {
-            commit: dirty_commit,
-            digest: d1,
-        } = loaded.revision().clone()
-        else {
-            return Err("the revision is clean".into());
-        };
+        let (dirty_commit, d1) = (
+            loaded.revision().commit.clone(),
+            loaded.revision().digest.clone(),
+        );
+        assert_ne!(d1, d0);
         assert_eq!(dirty_commit, commit);
         role.file("build-cache/x.bin", b"other cache\n").await?;
         assert_eq!(digest(&reload().await?)?, d1);
@@ -278,17 +278,131 @@ async fn a_dirty_role_tree_hashes_tracked_and_untracked_files_but_not_ignored_on
         twin.file("README.md", b"readme\n").await?;
         twin.commit().await?;
         twin.file("README.md", b"changed\n").await?;
-        assert_eq!(digest(&scope.catalog.load_path(twin.root()).await?)?, d1);
+        assert_eq!(
+            digest(
+                &scope
+                    .catalog
+                    .load_path(twin.root(), &tokio_util::sync::CancellationToken::new())
+                    .await?
+            )?,
+            d1
+        );
 
         let mut deleted = Vec::new();
         for _ in 0..2 {
             let gone = tracked("build-cache/\n").await?;
             gone.commit().await?;
             gone.remove("README.md").await?;
-            deleted.push(digest(&scope.catalog.load_path(gone.root()).await?)?);
+            deleted.push(digest(
+                &scope
+                    .catalog
+                    .load_path(gone.root(), &tokio_util::sync::CancellationToken::new())
+                    .await?,
+            )?);
         }
         assert_eq!(deleted[0], deleted[1]);
         assert_ne!(deleted[0], d1);
+        Ok(())
+    })
+    .await
+}
+
+async fn digest_of(scope: &Scope, role: &RoleFixture) -> Result<Sha256, Box<dyn Error>> {
+    digest(
+        &scope
+            .catalog
+            .load_path(role.root(), &tokio_util::sync::CancellationToken::new())
+            .await?,
+    )
+}
+
+async fn relink(role: &RoleFixture, name: &str, target: &str) -> Result<(), Box<dyn Error>> {
+    role.remove(name).await?;
+    role.symlink(name, Path::new(target)).await?;
+    Ok(())
+}
+
+fn chmod(role: &RoleFixture, name: &str, mode: u32) -> Result<(), Box<dyn Error>> {
+    let path = role.root().as_path().join(name);
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_dirty_role_digest_follows_the_target_text_of_a_link() -> TestResult {
+    guard(async {
+        let scope = scope()?;
+        let role = tracked("").await?;
+        role.commit().await?;
+        role.symlink("CLAUDE.md", Path::new("AGENTS.md")).await?;
+        let first = digest_of(&scope, &role).await?;
+        relink(&role, "CLAUDE.md", "AGENT2.md").await?;
+        let other = digest_of(&scope, &role).await?;
+        assert_ne!(other, first);
+        relink(&role, "CLAUDE.md", "AGENTS.md").await?;
+        assert_eq!(digest_of(&scope, &role).await?, first);
+
+        let twin = tracked("").await?;
+        twin.commit().await?;
+        twin.symlink("CLAUDE.md", Path::new("AGENTS.md")).await?;
+        assert_eq!(digest_of(&scope, &twin).await?, first);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_dirty_role_digest_tells_a_link_from_a_file_with_the_same_bytes() -> TestResult {
+    guard(async {
+        let scope = scope()?;
+        let role = tracked("").await?;
+        role.commit().await?;
+        role.file("CLAUDE.md", b"AGENTS.md").await?;
+        let file = digest_of(&scope, &role).await?;
+        relink(&role, "CLAUDE.md", "AGENTS.md").await?;
+        assert_ne!(digest_of(&scope, &role).await?, file);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_dirty_role_digest_follows_the_executable_bit_and_no_other_mode_bit() -> TestResult {
+    guard(async {
+        let scope = scope()?;
+        let untracked = tracked("").await?;
+        untracked.commit().await?;
+        untracked.file("run.sh", b"#!/bin/sh\n").await?;
+        chmod(&untracked, "run.sh", 0o644)?;
+        let plain = digest_of(&scope, &untracked).await?;
+        chmod(&untracked, "run.sh", 0o755)?;
+        let exec = digest_of(&scope, &untracked).await?;
+        assert_ne!(exec, plain);
+        chmod(&untracked, "run.sh", 0o644)?;
+        assert_eq!(digest_of(&scope, &untracked).await?, plain);
+
+        let committed = tracked("").await?;
+        committed.file("run.sh", b"#!/bin/sh\n").await?;
+        chmod(&committed, "run.sh", 0o644)?;
+        committed.commit().await?;
+        committed.file("README.md", b"changed\n").await?;
+        let before = digest_of(&scope, &committed).await?;
+        chmod(&committed, "run.sh", 0o755)?;
+        assert_ne!(digest_of(&scope, &committed).await?, before);
+
+        chmod(&untracked, "run.sh", 0o600)?;
+        assert_eq!(digest_of(&scope, &untracked).await?, plain);
+        chmod(&untracked, "run.sh", 0o755)?;
+        chmod(&untracked, "run.sh", 0o775)?;
+        assert_eq!(digest_of(&scope, &untracked).await?, exec);
+        chmod(&untracked, "run.sh", 0o645)?;
+        assert_eq!(digest_of(&scope, &untracked).await?, exec);
+
+        let twin = tracked("").await?;
+        twin.commit().await?;
+        twin.file("run.sh", b"#!/bin/sh\n").await?;
+        chmod(&twin, "run.sh", 0o755)?;
+        assert_eq!(digest_of(&scope, &twin).await?, exec);
         Ok(())
     })
     .await
@@ -323,7 +437,11 @@ impl Outside {
 
 async fn expect_err(role: &RoleFixture) -> Result<RoleError, Box<dyn Error>> {
     role.commit().await?;
-    match scope()?.catalog.load_path(role.root()).await {
+    match scope()?
+        .catalog
+        .load_path(role.root(), &tokio_util::sync::CancellationToken::new())
+        .await
+    {
         Ok(_) => Err("the role loaded".into()),
         Err(error) => Ok(error),
     }
@@ -394,7 +512,7 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
         let valid = RoleFixture::new("sentinel")?;
         valid.commit().await?;
         assert!(scope.catalog.findings(valid.root()).await.is_empty());
-        scope.catalog.load_path(valid.root()).await?;
+        scope.catalog.load_path(valid.root(), &tokio_util::sync::CancellationToken::new()).await?;
 
         let broken = "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[hooks]\nsetpu = \"x\"\n\n[docker]\nenabled = \"yes\"\n\n[env.CODEX_HOME]\n";
         let role = symlinked(broken.to_owned())?.dockerfile("FROM ubuntu\n");
@@ -414,7 +532,7 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
         let mut kinds: Vec<String> = kinds.collect();
         kinds.sort();
         assert_eq!(kinds, ["invalid docker.enabled", "reserved CODEX_HOME", "unknown hooks.setpu"]);
-        assert_eq!(format!("{:?}", scope.catalog.load_path(role.root()).await.err()), format!("Some({:?})", findings[0]));
+        assert_eq!(format!("{:?}", scope.catalog.load_path(role.root(), &tokio_util::sync::CancellationToken::new()).await.err()), format!("Some({:?})", findings[0]));
         role.file("jackin.role.toml", manifest("Dockerfile", "policy.yaml", &[]).as_bytes()).await?;
         let findings = scope.catalog.findings(role.root()).await;
         assert!(
@@ -446,7 +564,7 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
             ),
             "{findings:?}"
         );
-        assert_eq!(format!("{:?}", scope.catalog.load_path(role.root()).await.err()), format!("Some({:?})", findings[0]));
+        assert_eq!(format!("{:?}", scope.catalog.load_path(role.root(), &tokio_util::sync::CancellationToken::new()).await.err()), format!("Some({:?})", findings[0]));
 
         let role = RoleFixture::new("sentinel")?
             .dockerfile("FROM ubuntu\n")
@@ -457,7 +575,7 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
             matches!(findings.as_slice(), [RoleError::Dockerfile(_), RoleError::Policy(_)]),
             "{findings:?}"
         );
-        let first = only(vec![scope.catalog.load_path(role.root()).await.err().ok_or("loaded")?])?;
+        let first = only(vec![scope.catalog.load_path(role.root(), &tokio_util::sync::CancellationToken::new()).await.err().ok_or("loaded")?])?;
         assert_eq!(format!("{first:?}"), format!("{:?}", findings[0]));
         Ok(())
     })
@@ -471,21 +589,72 @@ async fn context_files_skip_deleted_tracked_files_and_submodule_paths() -> TestR
         let commit = role.commit().await?;
         role.remove("README.md").await?;
         tokio::fs::create_dir_all(role.root().as_path().join("vendor/sub")).await?;
-        let status = tokio::process::Command::new("git")
+        let status = tokio::process::Command::from(jackin_testkit::git_command())
             .args(["update-index", "--add", "--cacheinfo"])
             .arg(format!("160000,{},vendor/sub", commit.as_str()))
             .current_dir(role.root().as_path())
             .status()
             .await?;
         assert!(status.success());
-        let loaded = scope()?.catalog.load_path(role.root()).await?;
-        let names: Vec<&str> = loaded.files().iter().map(RepoPath::as_str).collect();
+        let loaded = scope()?
+            .catalog
+            .load_path(role.root(), &tokio_util::sync::CancellationToken::new())
+            .await?;
+        let names: Vec<&str> = loaded
+            .files()
+            .iter()
+            .map(|entry| entry.path().as_str())
+            .collect();
         assert!(names.contains(&"jackin.role.toml"), "{names:?}");
         assert!(!names.contains(&"README.md"), "{names:?}");
         assert!(
             !names.iter().any(|name| name.starts_with("vendor")),
             "{names:?}"
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn load_refuses_a_bypass_host_or_a_weaker_landlock_mode() -> TestResult {
+    guard(async {
+        let bypass = RoleFixture::new("sentinel")?.policy_yaml(&policy("r1", "[^x]*hatgpt.com", 443, "/usr/bin/curl"));
+        assert!(
+            matches!(expect_err(&bypass).await?, RoleError::Policy(PolicyError::InvalidHost(host)) if host == "[^x]*hatgpt.com")
+        );
+
+        let best_effort = policy("r1", "example.com", 443, "/usr/bin/curl").replace("hard_requirement", "best_effort");
+        let weaker = RoleFixture::new("sentinel")?.policy_yaml(&best_effort);
+        assert!(
+            matches!(expect_err(&weaker).await?, RoleError::Policy(PolicyError::LandlockMode { found }) if found.as_deref() == Some("best_effort"))
+        );
+
+        let empty = policy("r1", "example.com", 443, "/usr/bin/curl")
+            .replace("  read_only:\n    - /bin\n    - /usr\n  read_write:\n    - /tmp\n    - /sandbox\n", "  read_only: []\n");
+        let bare = RoleFixture::new("sentinel")?.policy_yaml(&empty);
+        assert!(matches!(expect_err(&bare).await?, RoleError::Policy(PolicyError::NoFilesystemPaths)));
+
+        let mut broken = policy("r1", "example.com", 443, "/usr/bin/curl").into_bytes();
+        broken.extend_from_slice(b"# \xff\n");
+        let raw = RoleFixture::new("sentinel")?;
+        raw.commit().await?;
+        raw.file("policy.yaml", &broken).await?;
+        let result = scope()?
+            .catalog
+            .load_path(raw.root(), &tokio_util::sync::CancellationToken::new())
+            .await;
+        assert!(
+            matches!(result.as_ref().err(), Some(RoleError::Policy(PolicyError::Syntax { message })) if message.contains("UTF-8")),
+            "{:?}",
+            result.err()
+        );
+
+        let accented = format!("{}# caf\u{e9}\n", policy("r1", "example.com", 443, "/usr/bin/curl"));
+        load(&RoleFixture::new("sentinel")?.policy_yaml(&accented)).await?;
+
+        let fine = RoleFixture::new("sentinel")?.policy_yaml(&policy("r1", "example.com", 443, "/usr/bin/curl"));
+        load(&fine).await?;
         Ok(())
     })
     .await

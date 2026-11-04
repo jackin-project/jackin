@@ -343,7 +343,7 @@ async fn call_timeouts_report_the_operation_and_the_configured_duration() {
         .unwrap_err();
     assert!(matches!(
         error,
-        GatewayError::Timeout { op: GatewayOp::Detail, after } if after == Duration::from_secs(60)
+        GatewayError::Timeout { op: GatewayOp::Detail, after, .. } if after == Duration::from_secs(60)
     ));
 
     let short = {
@@ -365,7 +365,7 @@ async fn call_timeouts_report_the_operation_and_the_configured_duration() {
     let error = call.await.unwrap().unwrap_err();
     assert!(matches!(
         error,
-        GatewayError::Timeout { op: GatewayOp::Create, after } if after == SHORT
+        GatewayError::Timeout { op: GatewayOp::Create, after, .. } if after == SHORT
     ));
 }
 
@@ -412,9 +412,11 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
         GatewayError::Timeout {
             op: GatewayOp::Health,
             after: Duration::ZERO,
+            group: None,
         },
         GatewayError::Cancelled {
             op: GatewayOp::Health,
+            group: None,
         },
         GatewayError::Process(ProcessError::Spawn {
             program: Program::Openshell,
@@ -431,9 +433,15 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             limit: 0,
         },
         GatewayError::DownloadTooLarge { size: 1, limit: 0 },
+        GatewayError::NotRegularFile {
+            kind: TerminalText::sanitize(b"directory"),
+        },
         GatewayError::HostKeyMismatch,
         GatewayError::TerminalRefused {
             reason: String::new(),
+        },
+        GatewayError::UnsafePath {
+            path: SandboxPath::parse("/sandbox/a").unwrap(),
         },
         GatewayError::Protocol {
             message: String::new(),
@@ -459,11 +467,13 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             | GatewayError::Transfer { .. }
             | GatewayError::OutputTooLarge { .. }
             | GatewayError::DownloadTooLarge { .. }
+            | GatewayError::NotRegularFile { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
+            | GatewayError::UnsafePath { .. }
             | GatewayError::Protocol { .. } => false,
         };
         assert_eq!(error.is_retryable(), expected, "{}", kind(error));
     }
-    assert_eq!(errors.len(), 21);
+    assert_eq!(errors.len(), 23);
 }

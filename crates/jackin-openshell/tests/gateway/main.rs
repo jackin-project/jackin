@@ -13,6 +13,7 @@ mod attach_ssh;
 mod connect;
 mod contract;
 mod discovery;
+mod download_bound;
 mod ended;
 mod error_text;
 mod exec;

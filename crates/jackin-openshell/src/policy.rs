@@ -5,7 +5,10 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::num::NonZeroU16;
 
-use jackin_core::{Agent, ProfileAsset, ProfileId, ProviderName, SandboxPath, plain};
+use jackin_core::{
+    Agent, ENGINE_HOST, HOST_GATEWAY_ALIASES, ProfileAsset, ProfileId, ProviderName, SandboxPath,
+    plain,
+};
 use openshell_core::host_pattern;
 use openshell_sdk::raw::proto::SandboxPolicy;
 
@@ -104,16 +107,27 @@ impl fmt::Display for ClosureViolation {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EngineHostViolation {
+    pub rule: RuleKey,
+    pub aliases: Vec<&'static str>,
+}
+
+impl fmt::Display for EngineHostViolation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.rule, self.aliases.join(", "))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AuthoredPolicy(PolicyDocument);
+
 #[derive(Clone, Debug)]
 pub struct ClosedPolicy(PolicyDocument);
 
 impl PolicyDocument {
     pub fn parse(text: &str) -> Result<PolicyDocument, PolicyError> {
         yaml::build(text, yaml::Source::Live)
-    }
-
-    pub fn parse_authored(text: &str) -> Result<PolicyDocument, PolicyError> {
-        yaml::build(text, yaml::Source::Authored)
     }
 
     pub fn network_rules(&self) -> Vec<NetworkRule> {
@@ -151,6 +165,29 @@ impl PolicyDocument {
         found.into_iter().collect()
     }
 
+    pub fn engine_host_violations(&self) -> Vec<EngineHostViolation> {
+        yaml::scan(&self.proto)
+            .into_iter()
+            .filter_map(|scanned| {
+                let aliases: Vec<&'static str> = HOST_GATEWAY_ALIASES
+                    .into_iter()
+                    .filter(|alias| {
+                        let alias = HostPattern((*alias).to_owned());
+                        scanned
+                            .rule
+                            .endpoints
+                            .iter()
+                            .any(|endpoint| endpoint.host.overlaps(&alias))
+                    })
+                    .collect();
+                (!aliases.is_empty()).then_some(EngineHostViolation {
+                    rule: scanned.rule.key,
+                    aliases,
+                })
+            })
+            .collect()
+    }
+
     pub fn with_rule(&self, rule: NetworkRule) -> Result<PolicyDocument, PolicyError> {
         yaml::with_rule(&self.value, &rule)
     }
@@ -168,16 +205,33 @@ impl PolicyDocument {
     }
 }
 
-impl ClosedPolicy {
-    pub fn parse(text: &str) -> Result<ClosedPolicy, ClosedPolicyError> {
+impl AuthoredPolicy {
+    pub fn parse(text: &str) -> Result<AuthoredPolicy, PolicyError> {
+        yaml::build(text, yaml::Source::Authored).map(AuthoredPolicy)
+    }
+
+    pub fn with_rule(&self, rule: NetworkRule) -> Result<AuthoredPolicy, PolicyError> {
+        self.0.with_rule(rule).map(AuthoredPolicy)
+    }
+
+    pub fn document(&self) -> &PolicyDocument {
+        &self.0
+    }
+
+    pub fn close(self) -> Result<ClosedPolicy, ClosedPolicyError> {
         let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
-        let document = PolicyDocument::parse_authored(text)?;
-        let violations = document.closure_violations(&profile, &[]);
+        let violations = self.0.closure_violations(&profile, &[]);
         if violations.is_empty() {
-            Ok(ClosedPolicy(document))
+            Ok(ClosedPolicy(self.0))
         } else {
             Err(ClosedPolicyError::Violations(violations))
         }
+    }
+}
+
+impl ClosedPolicy {
+    pub fn parse(text: &str) -> Result<ClosedPolicy, ClosedPolicyError> {
+        AuthoredPolicy::parse(text)?.close()
     }
 
     pub fn document(&self) -> &PolicyDocument {
@@ -196,6 +250,8 @@ impl ProviderProfile {
         yaml::profile_to_proto(self)
     }
 }
+
+const DOCKER_ENGINE_RULE: &str = "docker_engine";
 
 impl RuleKey {
     pub fn provider_rule(provider: &ProviderName) -> RuleKey {
@@ -223,8 +279,11 @@ impl fmt::Display for RuleKey {
 
 impl HostPattern {
     pub fn parse(text: &str) -> Result<HostPattern, PolicyError> {
-        host_pattern::HostPattern::new(text)
-            .map_err(|_| PolicyError::InvalidHost(text.to_owned()))?;
+        let invalid = || PolicyError::InvalidHost(text.to_owned());
+        if !text.split('.').all(label_in_alphabet) || gateway_refuses_shape(text) {
+            return Err(invalid());
+        }
+        host_pattern::HostPattern::new(text).map_err(|_| invalid())?;
         Ok(HostPattern(text.to_ascii_lowercase()))
     }
 
@@ -237,6 +296,31 @@ impl HostPattern {
     }
 }
 
+fn label_in_alphabet(label: &str) -> bool {
+    label == "**"
+        || label
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'*'))
+}
+
+fn gateway_refuses_shape(host: &str) -> bool {
+    if host == "*" || host == "**" {
+        return true;
+    }
+    if !host.contains('*') {
+        return false;
+    }
+    let labels: Vec<&str> = host.split('.').collect();
+    let tld_wildcard = (host.starts_with("*.") || host.starts_with("**.")) && labels.len() <= 2;
+    let first = labels.first().copied().unwrap_or_default();
+    let first_invalid = first.contains("**") && first != "**";
+    let later_invalid = labels
+        .iter()
+        .skip(1)
+        .any(|label| label.contains("**") || (label.contains('*') && *label != "*"));
+    tld_wildcard || first_invalid || later_invalid
+}
+
 impl fmt::Display for HostPattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
@@ -246,9 +330,9 @@ impl fmt::Display for HostPattern {
 impl NetworkRule {
     pub fn docker_engine(port: NonZeroU16) -> NetworkRule {
         NetworkRule {
-            key: RuleKey("docker_engine".to_owned()),
+            key: RuleKey(DOCKER_ENGINE_RULE.to_owned()),
             endpoints: vec![RuleEndpoint {
-                host: HostPattern("host.openshell.internal".to_owned()),
+                host: HostPattern(ENGINE_HOST.to_owned()),
                 port: port.get(),
                 protocol: EndpointProtocol::Tcp,
                 tls: TlsMode::Skip,

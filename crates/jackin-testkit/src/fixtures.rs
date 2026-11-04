@@ -9,6 +9,8 @@ use jackin_core::{CommitId, FileSystem, HookKind, HostPath, ProjectRoot, StdFile
 use tempfile::TempDir;
 use tokio::process::Command;
 
+use crate::git::git_command;
+
 pub type FixtureError = Box<dyn Error>;
 
 const DOCKERFILE: &str = "FROM construct\n";
@@ -22,7 +24,7 @@ filesystem_policy:
     - /tmp
     - /sandbox
 landlock:
-  compatibility: best_effort
+  compatibility: hard_requirement
 process:
   run_as_user: sandbox
   run_as_group: sandbox
@@ -73,18 +75,13 @@ pub struct RepoFixture {
 }
 
 pub(crate) async fn git(dir: &Path, args: &[&str]) -> Result<Vec<u8>, FixtureError> {
-    let output = Command::new("/usr/bin/git")
+    let output = Command::from(git_command())
         .args(["-c", "user.name=jackin-test"])
         .args(["-c", "user.email=test@example.invalid"])
         .args(["-c", "commit.gpgsign=false"])
         .args(["-c", "init.defaultBranch=main"])
         .args(args)
         .current_dir(dir)
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
-        .env_remove("GIT_INDEX_FILE")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
         .stdin(std::process::Stdio::null())
         .output()
         .await?;
@@ -123,7 +120,17 @@ fn temp_root(prefix: &str) -> Result<(Arc<TempDir>, HostPath, PathBuf), FixtureE
 }
 
 fn quote(text: &str) -> String {
-    format!("\"{}\"", text.replace('\\', "\\\\").replace('"', "\\\""))
+    let mut out = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", u32::from(c))),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 impl RoleFixture {
@@ -325,6 +332,18 @@ impl RoleFixture {
 impl RepoFixture {
     pub async fn new() -> Result<RepoFixture, FixtureError> {
         RepoFixture::init(&["init", "-q"]).await
+    }
+
+    pub async fn new_named(name: &str) -> Result<RepoFixture, FixtureError> {
+        let (dir, _, canonical) = temp_root("jackin-project-")?;
+        let repo = canonical.join(name);
+        tokio::fs::create_dir(&repo).await?;
+        git(&repo, &["init", "-q"]).await?;
+        Ok(RepoFixture {
+            dir,
+            root: HostPath::parse(&repo)?,
+            keep: Vec::new(),
+        })
     }
 
     pub async fn new_sha256() -> Result<RepoFixture, FixtureError> {

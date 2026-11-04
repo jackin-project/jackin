@@ -17,15 +17,8 @@ const BASE32: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
 const BASE36: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
 const SUFFIX_MODULUS: u64 = 36 * 36 * 36 * 36;
 const LAUNCH_ID_LEN: usize = 26;
-const RESERVED_PREFIXES: [&str; 7] = [
-    "JACKIN_",
-    "OPENAI_",
-    "CODEX_",
-    "DOCKER_",
-    "BUILDX_",
-    "LD_",
-    "OPENSHELL_",
-];
+const ENGINE_CLIENT_PREFIXES: [&str; 2] = ["DOCKER_", "BUILDX_"];
+const RESERVED_PREFIXES: [&str; 5] = ["JACKIN_", "OPENAI_", "CODEX_", "LD_", "OPENSHELL_"];
 const RESERVED_NAMES: [&str; 6] = [
     "PATH",
     "HOME",
@@ -42,7 +35,7 @@ const IMAGE_TAG_PREFIX: &str = "jackin.invalid/";
 const OP_PREFIX: &str = "op://";
 const IMAGE_TAG_HEX_LEN: usize = 16;
 const IMAGE_NAME_MAX: usize = 255;
-const IMAGE_LABEL_HEX_LEN: usize = 32;
+const DIGEST_LABEL_HEX_LEN: usize = 32;
 const SHA256_HEX_LEN: usize = 64;
 const SLUG_FALLBACK: &str = "ws";
 
@@ -177,8 +170,10 @@ fn base36_char(c: char) -> bool {
     c.is_ascii_digit() || c.is_ascii_lowercase()
 }
 
+const SANITIZED_FALLBACK: &str = "workspace";
+const LABEL_MAX: usize = 63;
 const LABEL_VALUE: Rule = Rule {
-    max: 63,
+    max: LABEL_MAX,
     accepts: label_char,
     edge: Edge::Both,
     single_hyphen: false,
@@ -352,10 +347,10 @@ fn check_role_url(kind: &'static str, text: &str) -> Result<(), IdError> {
     let accepted = plain_text(text)
         && !text.starts_with('-')
         && if let Some(rest) = text.strip_prefix("https://") {
-            let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
-            !authority.contains('@') && url_host(authority)
+            let authority = rest.split('/').next().unwrap_or_default();
+            !rest.contains(['?', '#']) && !authority.contains('@') && url_host(authority)
         } else if let Some(rest) = text.strip_prefix("ssh://") {
-            ssh_authority(rest.split(['/', '?', '#']).next().unwrap_or_default())
+            !rest.contains(['?', '#']) && ssh_authority(rest.split('/').next().unwrap_or_default())
         } else {
             !text.contains("://") && scp_form(text)
         };
@@ -364,7 +359,7 @@ fn check_role_url(kind: &'static str, text: &str) -> Result<(), IdError> {
     } else {
         Err(IdError::BadFormat {
             kind,
-            expected: "an https URL without credentials, an ssh URL, or scp-style text, with a real host and no option, password or control character",
+            expected: "an https URL without credentials, an ssh URL, or scp-style text, with a real host and no option, password, query, fragment or control character",
         })
     }
 }
@@ -405,6 +400,17 @@ fn check_op_reference(kind: &'static str, text: &str) -> Result<(), IdError> {
     let segments: Vec<&str> = rest.split('/').collect();
     if segments.len() < 2 || segments.iter().any(|s| s.is_empty()) {
         return Err(bad);
+    }
+    Ok(())
+}
+
+fn check_op_account(kind: &'static str, text: &str) -> Result<(), IdError> {
+    non_empty(kind, text)?;
+    if text.starts_with('-') {
+        return Err(IdError::BadFormat {
+            kind,
+            expected: "an account that does not start with -",
+        });
     }
     Ok(())
 }
@@ -598,6 +604,7 @@ string_id!(WorkspaceName, "workspace name", rule LABEL_VALUE);
 string_id!(RoleName, "role name", rule LABEL_VALUE);
 string_id!(LaunchId, "launch ID", rule LABEL_VALUE);
 string_id!(ImageLabel, "image label", rule LABEL_VALUE);
+string_id!(PolicyLabel, "policy label", rule LABEL_VALUE);
 string_id!(AccountName, "account name", rule ACCOUNT);
 string_id!(OpenShellWorkspace, "OpenShell workspace", rule DNS_19);
 string_id!(SandboxName, "sandbox name", with check_sandbox_name);
@@ -613,6 +620,7 @@ string_id!(BranchName, "branch name", with check_branch_name);
 string_id!(CommitId, "commit ID", with check_commit_id);
 string_id!(Sha256, "SHA-256 digest", with check_sha256);
 string_id!(OpReference, "1Password reference", with check_op_reference);
+string_id!(OpAccountId, "1Password account", with check_op_account);
 string_id!(ModelName, "model name", rule MODEL);
 string_id!(ImageTag, "image tag", with check_image_tag);
 string_id!(RoleUrl, "role URL", with check_role_url);
@@ -627,6 +635,31 @@ pub struct ImageId(Sha256);
 pub struct AttemptId(NonZeroU64);
 
 impl WorkspaceName {
+    pub const MAX_LEN: usize = LABEL_MAX;
+
+    pub fn sanitized(text: &str) -> Result<WorkspaceName, IdError> {
+        let mut name = String::new();
+        let mut pending = false;
+        for c in text.chars() {
+            if label_char(c) {
+                if pending {
+                    name.push('-');
+                    pending = false;
+                }
+                name.push(c.to_ascii_lowercase());
+            } else {
+                pending = true;
+            }
+        }
+        name.truncate(WorkspaceName::MAX_LEN);
+        let trimmed = name.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+        WorkspaceName::parse(if trimmed.is_empty() {
+            SANITIZED_FALLBACK
+        } else {
+            trimmed
+        })
+    }
+
     pub fn slug(&self) -> SandboxSlug {
         let mut slug = String::new();
         let mut pending_hyphen = false;
@@ -783,6 +816,12 @@ impl Sha256 {
     }
 }
 
+impl PolicyLabel {
+    pub fn of(document: &str) -> PolicyLabel {
+        PolicyLabel(Sha256::of(document.as_bytes()).0[..DIGEST_LABEL_HEX_LEN].to_owned())
+    }
+}
+
 impl ImageId {
     const KIND: &'static str = "image ID";
 
@@ -792,7 +831,7 @@ impl ImageId {
     }
 
     pub fn label_value(&self) -> ImageLabel {
-        ImageLabel(self.0.0[..IMAGE_LABEL_HEX_LEN].to_owned())
+        ImageLabel(self.0.0[..DIGEST_LABEL_HEX_LEN].to_owned())
     }
 
     pub fn full(&self) -> &str {
@@ -873,23 +912,18 @@ impl EnvName {
         EnvName(name.to_owned())
     }
 
-    pub fn is_reserved(&self) -> bool {
-        let name = self.as_str();
-        RESERVED_PREFIXES
+    pub fn is_engine_client(name: &str) -> bool {
+        ENGINE_CLIENT_PREFIXES
             .iter()
             .any(|prefix| name.starts_with(prefix))
+    }
+
+    pub fn is_reserved(&self) -> bool {
+        let name = self.as_str();
+        Self::is_engine_client(name)
+            || RESERVED_PREFIXES
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
             || RESERVED_NAMES.contains(&name)
-            || Agent::ALL.iter().any(|agent| {
-                let spec = agent.spec();
-                let keys = &spec.openshell.keys;
-                spec.reserved_env.contains(&name)
-                    || [
-                        keys.access_token,
-                        keys.refresh_token,
-                        keys.account_id,
-                        keys.id_token,
-                    ]
-                    .contains(&name)
-            })
     }
 }
