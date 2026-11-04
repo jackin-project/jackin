@@ -110,5 +110,22 @@ fn a_name_taken_by_another_path_gets_a_stable_hash_suffix() -> Fallible<()> {
     assert!(name.as_str().len() <= 63, "{name}");
     assert!(name.as_str().starts_with("yyyyyy"), "{name}");
     assert_ne!(name.as_str(), "y".repeat(63));
+
+    let first = adhoc_workspace_name(&config, &here)?;
+    let mut taken = CONFIG.to_owned();
+    let mut expected = Vec::new();
+    for round in 0..3 {
+        taken.push_str(&format!(
+            "\n[workspaces.{}]\npath = \"/p/taken{round}\"\n",
+            expected.last().unwrap_or(&first)
+        ));
+        let crowded = Config::parse(&taken)?;
+        let next = adhoc_workspace_name(&crowded, &here)?;
+        assert!(crowded.workspace(&next).is_none(), "{next}");
+        assert!(next.as_str().starts_with(first.as_str()), "{next}");
+        assert!(!expected.contains(&next), "{next}");
+        assert_eq!(next, adhoc_workspace_name(&crowded, &here)?);
+        expected.push(next);
+    }
     Ok(())
 }

@@ -630,6 +630,24 @@ async fn load_refuses_a_bypass_host_or_a_weaker_landlock_mode() -> TestResult {
         let bare = RoleFixture::new("sentinel")?.policy_yaml(&empty);
         assert!(matches!(expect_err(&bare).await?, RoleError::Policy(PolicyError::NoFilesystemPaths)));
 
+        let mut broken = policy("r1", "example.com", 443, "/usr/bin/curl").into_bytes();
+        broken.extend_from_slice(b"# \xff\n");
+        let raw = RoleFixture::new("sentinel")?;
+        raw.commit().await?;
+        raw.file("policy.yaml", &broken).await?;
+        let result = scope()?
+            .catalog
+            .load_path(raw.root(), &tokio_util::sync::CancellationToken::new())
+            .await;
+        assert!(
+            matches!(result.as_ref().err(), Some(RoleError::Policy(PolicyError::Syntax { message })) if message.contains("UTF-8")),
+            "{:?}",
+            result.err()
+        );
+
+        let accented = format!("{}# caf\u{e9}\n", policy("r1", "example.com", 443, "/usr/bin/curl"));
+        load(&RoleFixture::new("sentinel")?.policy_yaml(&accented)).await?;
+
         let fine = RoleFixture::new("sentinel")?.policy_yaml(&policy("r1", "example.com", 443, "/usr/bin/curl"));
         load(&fine).await?;
         Ok(())

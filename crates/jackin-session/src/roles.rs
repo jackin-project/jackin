@@ -338,7 +338,11 @@ impl RoleCatalog {
             .read_checked(root, &manifest.role.policy, &mut findings)
             .await;
         let policy = policy_bytes.and_then(|bytes| {
-            let parsed = PolicyDocument::parse_authored(&String::from_utf8_lossy(&bytes));
+            let parsed = std::str::from_utf8(&bytes)
+                .map_err(|_| PolicyError::Syntax {
+                    message: "the file is not valid UTF-8".to_owned(),
+                })
+                .and_then(PolicyDocument::parse_authored);
             match parsed {
                 Ok(policy) => Some(policy),
                 Err(error) => {
