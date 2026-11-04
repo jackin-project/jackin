@@ -31,7 +31,7 @@ use crate::bridge::Settled;
 use crate::changes::read_changes;
 use crate::observe::{Inputs, Observation, locked};
 use crate::persist::{self, Folder, PersistError, Resolved, sentence};
-use crate::project::{manifest_doc, sandbox_id};
+use crate::project::manifest_doc;
 use crate::sessions::{Access, Home};
 
 #[derive(Debug, Error)]
@@ -379,11 +379,8 @@ impl Inputs {
         &self,
         instance: &InstanceId,
     ) -> Result<(jackin_core::GatewayName, jackin_core::SandboxName), Refused> {
-        locked(&self.fleet)
-            .sandboxes
-            .iter()
-            .find(|observed| &sandbox_id(&observed.summary.name) == instance)
-            .map(|observed| (observed.gateway.clone(), observed.summary.name.clone()))
+        self.locate(instance)
+            .map(|observed| (observed.gateway, observed.summary.name))
             .ok_or_else(|| {
                 Refused::Rejected(Rejection::NotInRoster {
                     instance: instance.clone(),

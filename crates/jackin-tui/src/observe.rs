@@ -9,7 +9,7 @@ use futures::future::join_all;
 use jackin_console::domain::doctor::{
     DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
 };
-use jackin_console::domain::instance::Instance;
+use jackin_console::domain::instance::{Instance, InstanceId};
 use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
@@ -33,6 +33,7 @@ use crate::project::{
     Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, instance as project_instance,
     manifest_doc, project,
 };
+use crate::readings::Readings;
 use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
 
 #[derive(Debug)]
@@ -79,8 +80,9 @@ pub(crate) struct Inputs {
     work: WorkCache,
     pub(crate) ids: Mutex<IdTable>,
     pub(crate) docs: Mutex<DocCache>,
-    pub(crate) fleet: Mutex<Fleet>,
+    fleet: Mutex<Fleet>,
     pub(crate) checks: Mutex<RoleChecks>,
+    pub(crate) readings: Mutex<Readings>,
     origins: OriginCache,
 }
 
@@ -164,6 +166,7 @@ impl Inputs {
             docs: Mutex::new(DocCache::new()),
             fleet: Mutex::new(Fleet::default()),
             checks: Mutex::new(RoleChecks::new()),
+            readings: Mutex::new(Readings::default()),
             origins: OriginCache::default(),
         }
     }
@@ -201,6 +204,7 @@ impl Inputs {
             },
             &mut locked(&self.ids),
         );
+        locked(&self.readings).overlay(config, &mut snapshot.accounts);
         snapshot.surfaces.doctor = Some(DoctorSurface {
             noun: snapshot.surfaces.vocabulary.health_noun.clone(),
             state: self.doctor.state(),
@@ -250,19 +254,25 @@ impl Inputs {
             .unwrap_or_default()
     }
 
-    pub(crate) fn instance_of(
+    pub(crate) fn admit(
         &self,
         config: &Config,
-        observed: &ObservedSandbox,
+        observed: ObservedSandbox,
         origins: &Origins,
     ) -> Instance {
-        project_instance(
-            observed,
+        let instance = project_instance(
+            &observed,
             config,
             origins,
             &locked(&self.ids),
             self.host.clock.now().0,
-        )
+        );
+        locked(&self.fleet).admit(observed);
+        instance
+    }
+
+    pub(crate) fn locate(&self, instance: &InstanceId) -> Option<ObservedSandbox> {
+        locked(&self.fleet).locate(instance).cloned()
     }
 
     pub(crate) async fn run_doctor(&self, reconnect: bool) -> Result<DoctorReport, DoctorFailure> {

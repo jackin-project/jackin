@@ -461,3 +461,72 @@ async fn validate_words_its_rows_with_the_vocabulary() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn a_roster_refresh_keeps_the_last_read_of_every_account() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        serve(&lab, &body(Some(12.5), 0.4)).await?;
+        refresh(&mut lab).await?;
+        let read = lab.world().accounts.get("work").cloned().ok_or("work")?;
+        assert_eq!(read.usage.freshness.phase, Freshness::Current);
+        assert!(read.last_refresh_secs.is_some());
+        for _ in 0..12 {
+            lab.console.elapse(1);
+            lab.console.tick(1);
+            lab.console.settle().await?;
+        }
+        let kept = lab.world().accounts.get("work").cloned().ok_or("work")?;
+        assert_eq!(kept.usage, read.usage);
+        assert_eq!(kept.issue, read.issue);
+        assert_eq!(kept.last_refresh_secs, read.last_refresh_secs);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_roster_refresh_keeps_the_last_validation_and_drops_a_reading_of_an_edited_login()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        serve(&lab, &body(Some(20.0), 5.0)).await?;
+        lab.step("c").await?;
+        lab.step("down").await?;
+        lab.step("down").await?;
+        lab.step("down").await?;
+        lab.step("v").await?;
+        let checked = lab.world().accounts.get("work").cloned().ok_or("work")?;
+        assert_eq!(
+            checked.validation,
+            ValidationState::Valid(ValidationLevel::QuotaReadable)
+        );
+        for _ in 0..12 {
+            lab.console.elapse(1);
+            lab.console.tick(1);
+            lab.console.settle().await?;
+        }
+        let kept = lab.world().accounts.get("work").cloned().ok_or("work")?;
+        assert_eq!(kept.validation, checked.validation);
+        assert_eq!(kept.usage, checked.usage);
+        assert_eq!(kept.lifecycle, checked.lifecycle);
+        lab.edit(vec![ConfigEdit::SetAccountCredential {
+            account: AccountName::parse("work")?,
+            credential: CredentialSource::CodexLogin {
+                home: lab.rig.home.clone(),
+                chatgpt_account_id: ChatgptAccountId::parse("another-login")?,
+            },
+        }])
+        .await?;
+        for _ in 0..12 {
+            lab.console.elapse(1);
+            lab.console.tick(1);
+            lab.console.settle().await?;
+        }
+        let edited = lab.world().accounts.get("work").cloned().ok_or("work")?;
+        assert_eq!(edited.validation, ValidationState::NeverValidated);
+        assert!(edited.usage.windows.is_empty());
+        Ok(())
+    })
+    .await
+}

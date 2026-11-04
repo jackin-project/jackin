@@ -460,3 +460,53 @@ async fn an_add_publishes_nothing_when_the_home_gateway_left_the_config() -> Tes
     })
     .await
 }
+
+async fn cli_adds_an_account(lab: &Lab, name: &str) -> Out {
+    lab.edit(vec![ConfigEdit::AddAccount(CoreAccount::new(
+        account(name)?,
+        CoreProvider::Codex,
+        Credential::Env {
+            var: jackin_core::EnvName::parse("SPARE_KEY")?,
+        },
+    )?)])
+    .await?;
+    Ok(())
+}
+
+async fn after_refresh(lab: &mut Lab, secs: u64) -> TestResult {
+    for _ in 0..secs {
+        lab.console.elapse(1);
+        lab.console.tick(1);
+        lab.console.settle().await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_account_added_by_the_cli_shows_on_the_visible_accounts_view() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        lab.step("c").await?;
+        let before = lab.console.screen();
+        assert!(!before.contains("spare"), "{before}");
+        cli_adds_an_account(&lab, "spare").await?;
+        after_refresh(&mut lab, 12).await?;
+        let screen = lab.console.screen();
+        assert!(screen.contains("spare"), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_account_added_by_the_cli_shows_on_the_manager() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        cli_adds_an_account(&lab, "spare").await?;
+        after_refresh(&mut lab, 12).await?;
+        let world = &lab.world().accounts.accounts;
+        assert!(world.iter().any(|a| a.display_name == "spare"));
+        Ok(())
+    })
+    .await
+}

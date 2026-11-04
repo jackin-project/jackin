@@ -21,7 +21,7 @@ use jackin_usage::{
 
 use crate::bridge::Settled;
 use crate::checks::{found_of, skipped};
-use crate::observe::Inputs;
+use crate::observe::{Inputs, locked};
 use crate::project::{provider, source};
 
 fn category(kind: WindowKind) -> WindowCategory {
@@ -257,6 +257,7 @@ pub(crate) fn validation(
 struct Read {
     found: jackin_usage::AccountUsage,
     source: CredentialSource,
+    account: UsageAccount,
     now: i64,
 }
 
@@ -269,25 +270,40 @@ impl Inputs {
         let core = config
             .require_account(&name)
             .map_err(|error| said(&error))?;
+        let account = UsageAccount::from_account(core);
+        let found = match self.report_of(&account).await {
+            Ok(found) => found,
+            Err(error) => {
+                locked(&self.readings).missed(account, error.clone(), self.host.clock.now().0);
+                return Err(error);
+            }
+        };
+        Ok(Read {
+            found,
+            source: source(core.credential(), provider(core.provider())),
+            account,
+            now: self.host.clock.now().0,
+        })
+    }
+
+    async fn report_of(
+        &self,
+        account: &UsageAccount,
+    ) -> Result<jackin_usage::AccountUsage, String> {
         let request = UsageRequest {
-            accounts: vec![UsageAccount::from_account(core)],
+            accounts: vec![account.clone()],
             refresh: Cache::Force,
         };
         let report = self
             .usage
             .report(&request, &self.cancel)
             .await
-            .map_err(|error| said(&error))?;
-        let found = report
+            .map_err(|error| error_chain(&error))?;
+        report
             .accounts
             .into_iter()
-            .find(|found| found.account == name)
-            .ok_or_else(|| said(&jackin_usage::UsageError::Cancelled))?;
-        Ok(Read {
-            found,
-            source: source(core.credential(), provider(core.provider())),
-            now: self.host.clock.now().0,
-        })
+            .find(|found| found.account == account.name)
+            .ok_or_else(|| error_chain(&jackin_usage::UsageError::Cancelled))
     }
 
     pub(crate) async fn refresh_account(&self, account: &str) -> Settled {
@@ -297,12 +313,14 @@ impl Inputs {
                 issue,
                 outcome,
             } = mapped(&read.found, read.now);
-            Box::new(Refresh {
+            let refresh = Refresh {
                 outcome,
                 usage,
                 issue,
                 last_refresh_secs: read.now,
-            })
+            };
+            locked(&self.readings).read(read.account, refresh.clone());
+            Box::new(refresh)
         });
         Msg::AccountRefreshed {
             account: account.to_owned(),
@@ -313,7 +331,9 @@ impl Inputs {
 
     pub(crate) async fn validate_account(&self, account: &str) -> Settled {
         let result = self.read_usage(account).await.map(|read| {
-            Validation::Checked(Box::new(validation(&read.found, &read.source, read.now)))
+            let outcome = validation(&read.found, &read.source, read.now);
+            locked(&self.readings).checked(read.account, outcome.clone(), read.now);
+            Validation::Checked(Box::new(outcome))
         });
         Msg::AccountValidated {
             account: account.to_owned(),
