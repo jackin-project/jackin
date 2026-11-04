@@ -483,12 +483,7 @@ impl Inputs {
             .cloned()
             .ok_or_else(|| Refused::Text(id.to_string()))?;
         let config = self.config.load().await?;
-        let workspace = config
-            .workspace(&name)
-            .ok_or_else(|| ConfigError::MissingReference {
-                kind: "workspace",
-                name: name.to_string(),
-            })?;
+        let workspace = config.require_workspace(&name)?;
         let session = match self.sessions.default_access() {
             Access::Up(session) => *session,
             Access::Down { error, .. } => return Err(Refused::Text(text(&*error))),
