@@ -17,7 +17,8 @@
     "check:links": "lychee --config lychee.toml --include-fragments --remap \"https://jackin.tailrocks.com/(.*) file://$PWD/.output/public/\\$1\" --remap \"https://github.com/jackin-project/jackin/edit/main/(.*) file://$PWD/../\\$1\" --remap \"https://github.com/jackin-project/jackin/blob/main/(.*) file://$PWD/../\\$1\" --remap \"https://github.com/jackin-project/jackin/issues https://api.github.com/repos/jackin-project/jackin/issues\" --remap \"https://github.com/([^/]+)/([^/]+)/blob/([^/]+)/(.*) https://api.github.com/repos/\\$1/\\$2/contents/\\$4?ref=\\$3\" --remap \"https://github.com/([^/]+)/([^/]+)/tree/([^/]+)/(.*) https://api.github.com/repos/\\$1/\\$2/contents/\\$4?ref=\\$3\" --root-dir \"$PWD/.output/public\" '.output/public/**/*.html'",
     "check:links:fresh": "cargo xtask docs repo-links && bun run build && bun run check:links",
     "test": "bun test",
-    "gen:crates": "bun run scripts/gen-crate-pages.ts"
+    "gen:crates": "bun run scripts/gen-crate-pages.ts",
+    "gen:cli": "bun run scripts/gen-cli-reference.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
