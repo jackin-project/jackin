@@ -660,7 +660,7 @@ P11.1 and P11.2 run in parallel.
 ### P13.1 Run the full gate
 
 - **Owner:** `verifier`. **Depends:** P13.0 and the tasks that it added.
-- **Steps:** Run G-FULL. Run `rg -l -i 'bollard|dind' --glob '!rewrite/**' --glob '!docs/content/**/adr*/**'` and verify that it prints nothing (`capsule` is no longer forbidden: D28 makes Jackin Capsule the host multiplexer).
+- **Steps:** Run G-FULL. Run `rg -l -i -w 'bollard|dind' --glob '!rewrite/**' --glob '!docs/content/**/adr*/**' --glob '!deny.toml'` and verify that it prints nothing (`deny.toml` bans the `bollard` crates, which is the D01 rule itself) (`capsule` is no longer forbidden: D28 makes Jackin Capsule the host multiplexer).
 - **Proof:** G-FULL passes on the head of jackin. G-ROLE passes in each role repository. The full baseline suite passes in terminal-components-baseline, and every approved baseline file that differs from `95bbcbb` is a re-take or addition recorded with its UX review in `docs/P9.3-red-green.md`.
 - [ ] P13.1 done
 
