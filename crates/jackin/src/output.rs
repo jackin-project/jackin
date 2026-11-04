@@ -53,6 +53,11 @@ impl Io {
             .map_err(CommandError::Output)
     }
 
+    pub(crate) fn raw_note(&mut self, text: &str) {
+        drop(self.stderr.write_all(format!("\r\n{text}\r\n").as_bytes()));
+        drop(self.stderr.flush());
+    }
+
     pub(crate) fn note(&mut self, text: &str) {
         drop(self.stderr.write_all(format!("{text}\n").as_bytes()));
         drop(self.stderr.flush());

@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::pin::pin;
+use std::time::Duration;
+
 use jackin_core::{SandboxName, SupervisorReading, SupervisorState};
 use jackin_openshell::{EndReason, SessionClosed, TermSize, TerminalEvent, TerminalSession};
 use jackin_session::{AttachRequest, AttachedTerminal, ClipboardGuard, Session, ShellRequest};
@@ -8,6 +11,8 @@ use jackin_session::{AttachRequest, AttachedTerminal, ClipboardGuard, Session, S
 use crate::app::App;
 use crate::error::CommandError;
 use crate::terminal::TerminalInput;
+
+const WATCH: Duration = Duration::from_secs(1);
 
 pub(crate) enum Remote {
     Main(AttachedTerminal),
@@ -42,6 +47,26 @@ impl Remote {
             Remote::Shell(terminal) => terminal.next_event().await,
         }
     }
+
+    fn watches_codex(&self) -> bool {
+        matches!(self, Remote::Main(_))
+    }
+
+    async fn codex_state(&self) -> Option<SupervisorState> {
+        match self {
+            Remote::Main(terminal) => match terminal.supervisor().await {
+                SupervisorReading::Reported(state) => Some(state),
+                SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => None,
+            },
+            Remote::Shell(_) => None,
+        }
+    }
+}
+
+fn exited_note(sandbox: &SandboxName, code: i32) -> String {
+    format!(
+        "Codex exited with code {code}; Ctrl+D detaches, then jackin attach {sandbox} --restart starts it again"
+    )
 }
 
 #[derive(Debug)]
@@ -51,17 +76,32 @@ pub(crate) struct Ended {
     pub(crate) interrupted: bool,
 }
 
-pub(crate) async fn pump(app: &mut App, remote: &mut Remote) -> Result<Ended, CommandError> {
+pub(crate) async fn pump(
+    app: &mut App,
+    remote: &mut Remote,
+    sandbox: &SandboxName,
+) -> Result<Ended, CommandError> {
     let App {
         io,
         terminal,
         cancel,
+        deps,
         ..
     } = app;
+    let clock = &deps.host.clock;
     let terminal = terminal.as_mut().ok_or(CommandError::NoTerminal)?;
     let raw = terminal.enter_raw().map_err(CommandError::Terminal)?;
     let mut exit = None;
     let mut clipboard = ClipboardGuard::default();
+    let watching = remote.watches_codex();
+    let mut codex = match remote {
+        Remote::Main(attached) => match attached.supervisor_at_attach() {
+            SupervisorReading::Reported(state) => Some(*state),
+            SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => None,
+        },
+        Remote::Shell(_) => None,
+    };
+    let mut tick = pin!(clock.sleep(WATCH));
     let (reason, interrupted) = loop {
         tokio::select! {
             input = terminal.next_input() => match input {
@@ -89,11 +129,22 @@ pub(crate) async fn pump(app: &mut App, remote: &mut Remote) -> Result<Ended, Co
                         io.bytes(&bytes)?;
                     }
                 }
-                Some(TerminalEvent::Notice(text)) => io.note(&text),
+                Some(TerminalEvent::Notice(text)) => io.raw_note(&text),
                 Some(TerminalEvent::Ended(reason)) => break (reason, false),
                 Some(TerminalEvent::Exited(code)) => exit = code,
                 Some(TerminalEvent::Attached | TerminalEvent::Lease(_)) => {}
             },
+            () = &mut tick, if watching => {
+                tick.set(clock.sleep(WATCH));
+                if let Some(state) = remote.codex_state().await {
+                    if let SupervisorState::Exited { code, .. } = state
+                        && codex != Some(state)
+                    {
+                        io.raw_note(&exited_note(sandbox, code));
+                    }
+                    codex = Some(state);
+                }
+            }
             () = cancel.cancelled() => {
                 remote.detach().await;
                 break (EndReason::Detached, true);
@@ -118,12 +169,10 @@ pub(crate) async fn attach(
     if let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
         attached.supervisor_at_attach()
     {
-        app.io.note(&format!(
-            "Codex exited with code {code}; run jackin attach {sandbox} --restart to start it again"
-        ));
+        app.io.note(&exited_note(&sandbox, *code));
     }
     let mut remote = Remote::Main(attached);
-    let ended = pump(app, &mut remote).await?;
+    let ended = pump(app, &mut remote, &sandbox).await?;
     finish(app, &sandbox, ended)
 }
 
@@ -140,9 +189,20 @@ fn finish(app: &mut App, sandbox: &SandboxName, ended: Ended) -> Result<(), Comm
             ));
             Ok(())
         }
-        EndReason::StreamClosed => Err(CommandError::Session(format!(
-            "the terminal stream of sandbox {sandbox} closed"
-        ))),
+        EndReason::StreamClosed => match ended.exit {
+            Some(0) => {
+                app.io.note(&format!(
+                    "the main process of sandbox {sandbox} exited with code 0"
+                ));
+                Ok(())
+            }
+            Some(code) => Err(CommandError::Session(format!(
+                "the main process of sandbox {sandbox} exited with code {code}"
+            ))),
+            None => Err(CommandError::Session(format!(
+                "the terminal stream of sandbox {sandbox} closed"
+            ))),
+        },
         EndReason::Refused(text) | EndReason::Failed(text) => {
             Err(CommandError::Session(format!("sandbox {sandbox}: {text}")))
         }
@@ -156,7 +216,7 @@ pub(crate) async fn shell(
 ) -> Result<(), CommandError> {
     let sandbox = request.sandbox.clone();
     let mut remote = Remote::Shell(session.open_shell(request).await?);
-    let ended = pump(app, &mut remote).await?;
+    let ended = pump(app, &mut remote, &sandbox).await?;
     if ended.interrupted {
         return Err(CommandError::Cancelled(format!(
             "cancelled; closed the shell in sandbox {sandbox}"
