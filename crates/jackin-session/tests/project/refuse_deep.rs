@@ -62,6 +62,39 @@ async fn an_untracked_directory_that_holds_only_a_repository_is_refused() -> Tes
 }
 
 #[tokio::test]
+async fn an_untracked_repository_inside_a_directory_the_outer_repository_tracks_is_refused()
+-> TestResult {
+    guard(async {
+        for (nested, name) in [("lib/dep", "lib/dep"), ("lib/dep/deeper", "lib/dep/deeper")] {
+            let repo = base().await?;
+            repo.file("lib/dep/tracked.txt", b"tracked\n").await?;
+            repo.commit().await?;
+            repo.git(&["init", "-q", nested]).await?;
+            repo.file(&format!("{nested}/secret.txt"), b"nested work\n")
+                .await?;
+            let UnsupportedProject::NestedRepositories(paths) = refused(repo).await? else {
+                return Err(format!("{nested}: not a nested repository refusal").into());
+            };
+            assert_eq!(names(&paths), [name], "{nested}");
+        }
+
+        let plain = base().await?;
+        plain.file("lib/dep/tracked.txt", b"tracked\n").await?;
+        plain.commit().await?;
+        plain.file("lib/dep/new.txt", b"new\n").await?;
+        let rig = Rig::new(plain).await?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        arrived(
+            rig.repo.root().as_path(),
+            &handle.root(),
+            &["?? lib/dep/new.txt"],
+        )
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_bare_repository_stored_as_project_files_is_project_content() -> TestResult {
     guard(async {
         let repo = base().await?;

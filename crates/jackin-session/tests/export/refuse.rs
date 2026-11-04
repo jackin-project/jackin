@@ -81,6 +81,7 @@ fn listing(dir: &Path) -> Result<BTreeSet<String>, Box<dyn Error>> {
 enum Plant {
     LinkedObjects,
     LinkedReferences,
+    LinkedReflog,
     Alternates,
 }
 
@@ -90,6 +91,7 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
         for plant in [
             Plant::LinkedObjects,
             Plant::LinkedReferences,
+            Plant::LinkedReflog,
             Plant::Alternates,
         ] {
             let rig = Rig::new().await?;
@@ -115,6 +117,17 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
                 Plant::LinkedReferences => {
                     std::os::unix::fs::symlink(attacker.path(), git_dir.join("refs/heads/jackin"))?;
                 }
+                Plant::LinkedReflog => {
+                    std::fs::create_dir_all(git_dir.join("logs/refs/heads"))?;
+                    std::fs::rename(
+                        git_dir.join("logs/refs/heads"),
+                        attacker.path().join("heads"),
+                    )?;
+                    std::os::unix::fs::symlink(
+                        attacker.path().join("heads"),
+                        git_dir.join("logs/refs/heads"),
+                    )?;
+                }
                 Plant::Alternates => {
                     std::fs::create_dir(attacker.path().join("objects"))?;
                     std::fs::write(
@@ -133,7 +146,7 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
                     Err(ExportError::Unsupported(UnsupportedProject::LinkedObjects(_))),
                 )
                 | (
-                    Plant::LinkedReferences,
+                    Plant::LinkedReferences | Plant::LinkedReflog,
                     Err(ExportError::Unsupported(UnsupportedProject::LinkedReferences(_))),
                 )
                 | (

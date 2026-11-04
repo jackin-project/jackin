@@ -147,7 +147,7 @@ async fn identity_key(git: &HostGit<'_>, key: &str) -> Result<Option<String>, La
     }
 }
 
-pub(super) async fn metadata(
+async fn metadata(
     fs: &dyn FileSystem,
     git_dir: &HostPath,
     name: &str,
