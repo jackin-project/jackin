@@ -119,7 +119,7 @@ Run every cargo command from the jackin repository root through mise and mbx.
 | G0 | `mise exec -- mbx +1.99.1 check --workspace --locked` | P2.2 only, before `xtask` exists |
 | G-FAST | `mise exec -- mbx +1.99.1 xtask ci --fast` | After each unit, from P2.3 |
 | G-FULL | `mise exec -- mbx +1.99.1 xtask ci --no-docs` until P12.1, then `mise exec -- mbx +1.99.1 xtask ci` | At the end of each phase |
-| G-E2E | `mise exec -- mbx +1.99.1 xtask e2e --gateway jackin-local --role ../jackin-sentinel` | From P8, at the end of each later phase |
+| G-E2E | `mise exec -- mbx +1.99.1 xtask e2e --gateway jackin-local --role ../jackin-sentinel --builder orbstack --platform linux/arm64 --engine-port 2376 --engine-certs ~/.local/share/jackin-e2e-engine/client` | From P8, at the end of each later phase |
 | G-ROLE | `/Users/donbeave/Projects/jackin-project/jackin/target/debug/jackin role check .` in the role repository, after `mise exec -- mbx +1.99.1 build -p jackin` in jackin | Each role task, from P6.1 |
 
 If D02 changes the Rust version, change `+1.99.1` in this table, in `COMMITS.md`, and in `mise.toml`. Make all three changes in the same commit.
