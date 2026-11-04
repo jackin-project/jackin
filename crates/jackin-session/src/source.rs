@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use crate::credentials::{CredentialError, read_chatgpt_login};
 use crate::op::{OnePasswordCli, OpFault, OpFieldKind};
 
-const AUTH_FILE: &str = "auth.json";
+pub const AUTH_FILE: &str = "auth.json";
 const OP_SCHEME: &str = "op://";
 
 #[derive(Clone, Copy, Debug)]

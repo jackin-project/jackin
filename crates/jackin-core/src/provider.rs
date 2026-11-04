@@ -81,4 +81,23 @@ impl Provider {
             | Provider::Zai => None,
         }
     }
+
+    pub fn login_file(self) -> Option<&'static str> {
+        match self {
+            Provider::Amp => Some("secrets.json"),
+            Provider::Claude => Some(".credentials.json"),
+            Provider::Codex
+            | Provider::Cursor
+            | Provider::Grok
+            | Provider::Muse
+            | Provider::Opencode => Some("auth.json"),
+            Provider::Gemini => Some("oauth_creds.json"),
+            Provider::Kimi => Some("credentials/kimi-code.json"),
+            Provider::Antigravity
+            | Provider::Hermes
+            | Provider::Minimax
+            | Provider::Openrouter
+            | Provider::Zai => None,
+        }
+    }
 }

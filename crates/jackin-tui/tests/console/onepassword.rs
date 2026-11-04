@@ -241,3 +241,40 @@ async fn a_field_that_is_not_concealed_is_refused_with_the_baseline_wording() ->
     })
     .await
 }
+
+#[tokio::test]
+async fn an_item_row_has_no_field_count_and_a_known_single_account_starts_the_picker_at_its_vaults()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        script(&lab);
+        picker(&mut lab).await?;
+        lab.console.settle().await?;
+        lab.step("enter").await?;
+        lab.step("enter").await?;
+        let items = lab.console.screen();
+        let row = items
+            .lines()
+            .find(|line| line.contains("OpenAI"))
+            .ok_or("the OpenAI row")?;
+        assert!(row.contains("api credential"), "{items}");
+        assert!(!row.contains("fields"), "{items}");
+        let known = jackin_console::backend::OnePassword::accounts(lab.world().op.as_ref());
+        assert_eq!(
+            known.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            ["acct-1"]
+        );
+
+        lab.step("esc esc").await?;
+        script(&lab);
+        lab.step("enter").await?;
+        let again = lab.console.screen();
+        assert!(
+            again.contains("Private") && again.contains("Shared"),
+            "{again}"
+        );
+        assert!(!again.contains("me@example.test"), "{again}");
+        Ok(())
+    })
+    .await
+}

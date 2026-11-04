@@ -1,6 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::path::Path;
+
+use jackin_console::domain::account::AccountForm;
+use jackin_console::domain::reason::{Found, IssueReason};
+use jackin_console::domain::vocabulary::{Rejection, Vocabulary};
 use jackin_core::{CredentialSource, Provider};
 use jackin_testkit::{ACCOUNT_ID, ProcessReply, ScriptedProgram, TestResult, guard};
 
@@ -84,7 +89,11 @@ async fn validate_waits_and_then_reports_a_codex_folder_row_by_row() -> TestResu
         assert!(!pending.contains("✓ material"), "{pending}");
         lab.console.settle().await?;
         let done = lab.console.screen();
-        assert!(done.contains("✓ material   Codex auth.json"), "{done}");
+        let login = Vocabulary::openshell().found(&Found::Login {
+            account: ACCOUNT_ID.to_owned(),
+        });
+        let shown: String = login.chars().take(40).collect();
+        assert!(done.contains(&format!("✓ material   {shown}")), "{done}");
         assert!(!done.contains("checking"), "{done}");
         Ok(())
     })
@@ -175,7 +184,8 @@ async fn a_locked_op_fails_the_check_with_the_baseline_text_and_a_retry_passes()
         assert!(!locked.contains(CANARY), "{locked}");
         lab.step("enter").await?;
         let passed = lab.console.screen();
-        assert!(passed.contains("✓ material   Private › OpenAI › api key"), "{passed}");
+        let resolved = Vocabulary::openshell().found(&Found::ReferenceResolved);
+        assert!(passed.contains(&format!("✓ material   {resolved}")), "{passed}");
         assert!(!passed.contains("1Password locked"), "{passed}");
         assert!(!passed.contains(CANARY), "{passed}");
         Ok(())
@@ -213,6 +223,147 @@ async fn an_env_account_shows_as_a_host_variable_and_its_edit_is_refused_with_th
         let reason = jackin_console::domain::openshell::env_edit_block("CLAUDE_HOST_KEY");
         assert!(refused.contains(&reason.text), "{refused}");
         assert!(!refused.contains("Edit account"), "{refused}");
+        Ok(())
+    })
+    .await
+}
+
+async fn material_row(lab: &mut Lab, folder: &str) -> Result<String, Box<dyn std::error::Error>> {
+    lab.reopen().await?;
+    codex_folder_form(lab, folder).await?;
+    lab.step("tab tab enter").await?;
+    Ok(lab.console.screen())
+}
+
+#[tokio::test]
+async fn a_failed_folder_check_is_worded_by_the_vocabulary_from_the_fault() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let words = Vocabulary::openshell();
+        let broken = lab.code.join("broken");
+        tokio::fs::create_dir_all(&broken).await?;
+        tokio::fs::write(broken.join("auth.json"), "{").await?;
+        let apikey = lab.code.join("apikey");
+        tokio::fs::create_dir_all(&apikey).await?;
+        tokio::fs::write(apikey.join("auth.json"), r#"{"auth_mode":"apikey"}"#).await?;
+        let invalid = IssueReason::LoginInvalid {
+            file: "auth.json".to_owned(),
+        };
+        let cases = [
+            (
+                lab.code.join("nowhere"),
+                IssueReason::FolderMissing {
+                    path: "nowhere".to_owned(),
+                },
+            ),
+            (
+                lab.code.join("alpha"),
+                IssueReason::LoginMissing {
+                    path: "alpha".to_owned(),
+                    file: "auth.json".to_owned(),
+                },
+            ),
+            (broken, invalid.clone()),
+            (apikey, invalid),
+        ];
+        for (folder, reason) in cases {
+            let shown = material_row(&mut lab, &folder.display().to_string()).await?;
+            let row = format!("! material   {}", words.check(&reason));
+            assert!(shown.contains(&row), "{reason:?}: {shown}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+async fn plant_login(lab: &Lab, folder: &Path, core: Provider) -> TestResult {
+    tokio::fs::create_dir_all(folder).await?;
+    let Some(file) = core.login_file() else {
+        return Ok(());
+    };
+    let path = folder.join(file);
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    if core == Provider::Codex {
+        tokio::fs::copy(lab.rig.home.as_path().join("auth.json"), path).await?;
+    } else {
+        tokio::fs::write(path, "login").await?;
+    }
+    Ok(())
+}
+
+fn assert_stored(
+    label: &str,
+    core: Provider,
+    file: &str,
+    name: &str,
+    source: &CredentialSource,
+) -> TestResult {
+    match source {
+        CredentialSource::CodexLogin { home, .. } => {
+            assert_eq!(core, Provider::Codex, "{label}");
+            assert!(home.as_path().ends_with(name), "{label}: {home}");
+        }
+        CredentialSource::File { path } => {
+            assert!(path.as_path().ends_with(file), "{label}: {path}");
+        }
+        other => return Err(format!("{label}: {other:?}").into()),
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_form_lists_every_provider_and_saves_each_one_that_has_a_login_file() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let form = AccountForm::openshell();
+        assert_eq!(form.providers.len(), Provider::ALL.len());
+        for (index, choice) in form.providers.iter().enumerate() {
+            let core = jackin_tui::core_provider(choice.provider);
+            let name = format!("acct{index}");
+            plant_login(&lab, &lab.code.join(&name), core).await?;
+            lab.reopen().await?;
+            let typed = format!("~/code/{name}");
+            lab.folder_form(&name, index, &typed).await?;
+            let filled = lab.console.screen();
+            assert!(filled.contains(&choice.label), "{}: {filled}", choice.label);
+            lab.save_form().await?;
+            let config = lab.config().await?;
+            let saved = config.accounts().find(|a| a.name().as_str() == name);
+            let Some(file) = core.login_file() else {
+                assert!(saved.is_none(), "{} has no login file", choice.label);
+                let refused =
+                    Vocabulary::openshell().rejection(&Rejection::NotAFolder { folder: typed });
+                let screen = lab.console.screen();
+                assert!(screen.contains(&refused), "{}: {screen}", choice.label);
+                continue;
+            };
+            let account = saved.ok_or_else(|| format!("{} was not saved", choice.label))?;
+            assert_eq!(account.provider(), core, "{}", choice.label);
+            assert_stored(&choice.label, core, file, &name, account.credential())?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_folder_without_the_providers_login_file_is_refused_on_save() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let empty = lab.code.join("claude-empty");
+        tokio::fs::create_dir_all(&empty).await?;
+        let before = lab.console.config_text().await?;
+        lab.folder_form("claudette", 0, "~/code/claude-empty")
+            .await?;
+        lab.save_form().await?;
+        assert_eq!(lab.console.config_text().await?, before);
+        let refused = Vocabulary::openshell().rejection(&Rejection::NotAFolder {
+            folder: "~/code/claude-empty".to_owned(),
+        });
+        let screen = lab.console.screen();
+        assert!(screen.contains(&refused), "{screen}");
         Ok(())
     })
     .await

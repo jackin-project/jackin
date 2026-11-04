@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::domain::account::{IssueCode, Lifecycle, ValidationLevel, ValidationState};
+use jackin_console::domain::reason::{Found, IssueReason, RefreshOutcome, UsageReason};
 use jackin_console::domain::usage::{Freshness, QuotaStatus, WindowCategory};
+use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_core::{
     Account, AccountName, ChatgptAccountId, ConfigEdit, CredentialSource, EnvName, OpReference,
     Provider,
@@ -150,9 +152,12 @@ async fn a_rejected_login_and_an_unsupported_provider_show_their_reasons_beside_
             Some(IssueCode::Unauthorized)
         );
         assert_eq!(spare.usage.windows.len(), 1);
+        let words = Vocabulary::openshell();
+        let expired = IssueReason::Usage(UsageReason::ExpiredLogin);
+        assert_eq!(spare.issue.as_ref().map(|i| &i.reason), Some(&expired));
         assert_eq!(
             spare.usage.windows[0].note.as_deref(),
-            Some("login expired or rejected")
+            Some(words.reason(&expired).as_str())
         );
         let tool = lab.world().accounts.get("tool").cloned().ok_or("tool")?;
         assert_eq!(
@@ -160,8 +165,12 @@ async fn a_rejected_login_and_an_unsupported_provider_show_their_reasons_beside_
             Some(IssueCode::QuotaUnsupported)
         );
         assert_eq!(tool.usage.windows[0].status, QuotaStatus::Unsupported);
-        let amp_note = tool.usage.windows[0].note.clone().unwrap_or_default();
-        assert!(amp_note.starts_with("not supported"), "{amp_note}");
+        let unsupported = IssueReason::Usage(UsageReason::Unsupported);
+        assert_eq!(tool.issue.as_ref().map(|i| &i.reason), Some(&unsupported));
+        assert_eq!(
+            tool.usage.windows[0].note.as_deref(),
+            Some(words.reason(&unsupported).as_str())
+        );
         Ok(())
     })
     .await
@@ -280,6 +289,174 @@ async fn usage_reads_a_one_password_value_only_to_send_it_as_the_bearer_header()
         for call in lab.rig.world.runner.scripted().seen() {
             assert!(!format!("{call:?}").contains(CANARY), "{call:?}");
         }
+        Ok(())
+    })
+    .await
+}
+
+const CLAUDE_TOKEN: &str = "SECRET_TOKEN_CLAUDE";
+const CLAUDE_LOGIN: &str = r#"{"claudeAiOauth":{"accessToken":"SECRET_TOKEN_CLAUDE","refreshToken":"SECRET_TOKEN_CLAUDE_REFRESH","expiresAt":4102444800000,"scopes":["user:inference","user:profile"]}}"#;
+
+#[tokio::test]
+async fn a_claude_folder_account_saved_from_the_console_reads_usage() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let folder = lab.code.join("claude-home");
+        tokio::fs::create_dir_all(&folder).await?;
+        tokio::fs::write(folder.join(".credentials.json"), CLAUDE_LOGIN).await?;
+        lab.rig.world.usage.get().await?.replace(
+            Provider::Claude,
+            Method::Get,
+            CLAUDE_PATH,
+            Route::json(200, CLAUDE_BODY)
+                .requires_header("authorization", &format!("Bearer {CLAUDE_TOKEN}"))
+                .requires_header("anthropic-beta", "oauth-2025-04-20"),
+        );
+        lab.folder_form("claudette", 0, "~/code/claude-home")
+            .await?;
+        lab.save_form().await?;
+        let config = lab.config().await?;
+        let saved = config
+            .accounts()
+            .find(|account| account.name().as_str() == "claudette")
+            .ok_or("the account was not saved")?;
+        assert_eq!(saved.provider(), Provider::Claude);
+        refresh(&mut lab).await?;
+        assert_eq!(
+            windows(&mut lab, "claudette"),
+            [
+                ("five_hour", Some(12), WindowCategory::Session),
+                ("weekly", Some(34), WindowCategory::LongRange)
+            ]
+        );
+        let account = lab
+            .world()
+            .accounts
+            .get("claudette")
+            .cloned()
+            .ok_or("claudette")?;
+        assert!(account.issue.is_none(), "{:?}", account.issue);
+        Ok(())
+    })
+    .await
+}
+
+async fn refresh_codex(lab: &mut Lab) -> Result<String, Box<dyn std::error::Error>> {
+    lab.step("r").await?;
+    Ok(lab.console.screen())
+}
+
+#[tokio::test]
+async fn a_good_and_a_stale_refresh_name_their_outcome_in_the_vocabulary_words() -> TestResult {
+    guard(async {
+        let words = Vocabulary::openshell();
+        let mut lab = Lab::open().await?;
+        serve(&lab, &body(Some(40.0), 10.0)).await?;
+        lab.step("c down down").await?;
+        let current = refresh_codex(&mut lab).await?;
+        let word = words.refresh_outcome(RefreshOutcome::Current);
+        assert!(
+            current.contains(&format!("Refreshed Codex · work · {word} · 2 windows")),
+            "{current}"
+        );
+        lab.rig.world.usage.get().await?.replace(
+            Provider::Codex,
+            Method::Get,
+            PATH,
+            Route::status(500),
+        );
+        let stale = refresh_codex(&mut lab).await?;
+        let word = words.refresh_outcome(RefreshOutcome::Stale);
+        assert!(
+            stale.contains(&format!("Refreshed Codex · work · {word} · 2 windows")),
+            "{stale}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_refresh_that_never_read_usage_is_named_failed_with_the_provider_reason() -> TestResult {
+    guard(async {
+        let words = Vocabulary::openshell();
+        let mut lab = Lab::open().await?;
+        lab.rig.world.usage.get().await?.replace(
+            Provider::Codex,
+            Method::Get,
+            PATH,
+            Route::status(500),
+        );
+        lab.step("c down down").await?;
+        let failed = refresh_codex(&mut lab).await?;
+        let word = words.refresh_outcome(RefreshOutcome::Failed);
+        assert!(
+            failed.contains(&format!("Refreshed Codex · work · {word} ·")),
+            "{failed}"
+        );
+        let work = lab.world().accounts.get("work").cloned().ok_or("work")?;
+        assert!(
+            matches!(
+                work.issue.as_ref().map(|i| &i.reason),
+                Some(IssueReason::Usage(UsageReason::Provider { .. }))
+            ),
+            "{:?}",
+            work.issue
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_rate_limit_reaches_the_issue_as_a_wait_and_the_note_in_the_vocabulary_words()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        lab.rig.world.usage.get().await?.replace(
+            Provider::Codex,
+            Method::Get,
+            PATH,
+            Route::status(429).reply_header("retry-after", "120"),
+        );
+        refresh(&mut lab).await?;
+        let work = lab.world().accounts.get("work").cloned().ok_or("work")?;
+        let reason = IssueReason::Usage(UsageReason::RateLimited {
+            retry_in_secs: Some(120),
+        });
+        assert_eq!(work.issue.as_ref().map(|i| &i.reason), Some(&reason));
+        assert_eq!(
+            work.usage.windows[0].note.as_deref(),
+            Some(Vocabulary::openshell().reason(&reason).as_str())
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn validate_words_its_rows_with_the_vocabulary() -> TestResult {
+    guard(async {
+        let words = Vocabulary::openshell();
+        let mut lab = Lab::open().await?;
+        rejected_and_unsupported(&lab).await?;
+        lab.reopen().await?;
+        serve(&lab, &body(Some(20.0), 5.0)).await?;
+        lab.step("c down down down v").await?;
+        let rejected = lab.console.screen();
+        let expired = words.check(&IssueReason::Usage(UsageReason::ExpiredLogin));
+        let start: String = expired.chars().take(13).collect();
+        assert!(
+            rejected.contains(&format!("quota access · {start}")),
+            "{rejected}"
+        );
+        lab.step("down v").await?;
+        let readable = lab.console.screen();
+        let quota = words.found(&Found::Level(ValidationLevel::QuotaReadable));
+        assert!(
+            readable.contains(&format!("✓ quota access · {quota}")),
+            "{readable}"
+        );
         Ok(())
     })
     .await

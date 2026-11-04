@@ -6,9 +6,11 @@ use jackin_console::domain::account::{
     AccountIdentity, Confidence, CredentialSource, IssueCode, Lifecycle, Recoverability,
     RecoverableIssue, ValidationLevel,
 };
+use jackin_console::domain::reason::{Found, IssueReason, RefreshOutcome, UsageReason};
 use jackin_console::domain::usage::{
     AccountUsage, Freshness, FreshnessInfo, QuotaStatus, QuotaWindow, WindowCategory,
 };
+use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_console::world::Msg;
 use jackin_core::AccountName;
 use jackin_session::error_chain;
@@ -18,6 +20,7 @@ use jackin_usage::{
 };
 
 use crate::bridge::Settled;
+use crate::checks::{found_of, skipped};
 use crate::observe::Inputs;
 use crate::project::{provider, source};
 
@@ -49,13 +52,31 @@ fn window(found: &LimitWindow) -> QuotaWindow {
 
 struct Reason {
     code: IssueCode,
+    usage: UsageReason,
     status: QuotaStatus,
     recoverability: Recoverability,
     retry_secs: Option<i64>,
     failed: bool,
 }
 
-fn reason_of(reason: &UnavailableReason) -> Reason {
+fn usage_reason(reason: &UnavailableReason, now: i64) -> UsageReason {
+    match reason {
+        UnavailableReason::NoCredentials => UsageReason::NoCredentials,
+        UnavailableReason::ExpiredLogin => UsageReason::ExpiredLogin,
+        UnavailableReason::Unsupported { .. } => UsageReason::Unsupported,
+        UnavailableReason::RateLimited { retry_at } => UsageReason::RateLimited {
+            retry_in_secs: retry_at.map(|at| at.0 - now),
+        },
+        UnavailableReason::Network(detail) => UsageReason::Network {
+            detail: detail.clone(),
+        },
+        UnavailableReason::Provider(detail) => UsageReason::Provider {
+            detail: detail.clone(),
+        },
+    }
+}
+
+fn reason_of(reason: &UnavailableReason, now: i64) -> Reason {
     let (code, status, recoverability, failed) = match reason {
         UnavailableReason::ExpiredLogin => (
             IssueCode::Unauthorized,
@@ -90,6 +111,7 @@ fn reason_of(reason: &UnavailableReason) -> Reason {
     };
     Reason {
         code,
+        usage: usage_reason(reason, now),
         status,
         recoverability,
         retry_secs: match reason {
@@ -103,6 +125,14 @@ fn reason_of(reason: &UnavailableReason) -> Reason {
 pub(crate) struct Mapped {
     pub(crate) usage: AccountUsage,
     pub(crate) issue: Option<RecoverableIssue>,
+    pub(crate) outcome: RefreshOutcome,
+}
+
+fn refresh_outcome(freshness: jackin_usage::Freshness) -> RefreshOutcome {
+    match freshness {
+        jackin_usage::Freshness::Fresh => RefreshOutcome::Current,
+        jackin_usage::Freshness::Stale { .. } => RefreshOutcome::Stale,
+    }
 }
 
 pub(crate) fn mapped(found: &jackin_usage::AccountUsage, now: i64) -> Mapped {
@@ -116,6 +146,7 @@ pub(crate) fn mapped(found: &jackin_usage::AccountUsage, now: i64) -> Mapped {
     };
     match &found.outcome {
         UsageOutcome::Windows(windows) => Mapped {
+            outcome: refresh_outcome(found.freshness),
             usage: AccountUsage {
                 freshness,
                 windows: windows.iter().map(window).collect(),
@@ -125,21 +156,27 @@ pub(crate) fn mapped(found: &jackin_usage::AccountUsage, now: i64) -> Mapped {
         UsageOutcome::Unavailable(reason) => {
             let Reason {
                 code,
+                usage: why,
                 status,
                 recoverability,
                 retry_secs,
                 failed,
-            } = reason_of(reason);
-            let note = reason.to_string();
+            } = reason_of(reason, now);
+            let why = IssueReason::Usage(why);
             let sentinel = QuotaWindow::sentinel(
                 WindowKind::Other.id(),
                 provider(found.provider).usage_surface().surface_name(),
                 status,
-                &note,
+                &Vocabulary::openshell().reason(&why),
             );
-            let mut issue = RecoverableIssue::new(code, note, recoverability);
+            let mut issue = RecoverableIssue::new(code, why, recoverability);
             issue.retry_secs = retry_secs;
             Mapped {
+                outcome: if failed {
+                    RefreshOutcome::Failed
+                } else {
+                    refresh_outcome(found.freshness)
+                },
                 usage: AccountUsage {
                     freshness: if failed {
                         FreshnessInfo::failed(None, retry_secs)
@@ -154,17 +191,13 @@ pub(crate) fn mapped(found: &jackin_usage::AccountUsage, now: i64) -> Mapped {
     }
 }
 
-fn row(text: &str) -> CheckRow {
-    CheckRow::Ok(text.to_owned())
-}
-
 pub(crate) fn validation(
     found: &jackin_usage::AccountUsage,
     source: &CredentialSource,
     now: i64,
 ) -> ValidationOutcome {
-    let Mapped { usage, issue } = mapped(found, now);
-    let material = row(&source.safe_detail());
+    let Mapped { usage, issue, .. } = mapped(found, now);
+    let material = CheckRow::Ok(found_of(source));
     match &found.outcome {
         UsageOutcome::Windows(_) => ValidationOutcome {
             level: Some(ValidationLevel::QuotaReadable),
@@ -174,36 +207,32 @@ pub(crate) fn validation(
             issue,
             usage: Some(usage),
             material,
-            identity_row: CheckRow::Skipped(String::new()),
-            quota_row: row(ValidationLevel::QuotaReadable.label()),
+            identity_row: skipped(),
+            quota_row: CheckRow::Ok(Found::Level(ValidationLevel::QuotaReadable)),
         },
         UsageOutcome::Unavailable(reason) => {
-            let note = reason.to_string();
+            let why = IssueReason::Usage(usage_reason(reason, now));
             let (level, lifecycle, identity_row) = match reason {
-                UnavailableReason::NoCredentials => (
-                    None,
-                    Lifecycle::NeedsSecret,
-                    CheckRow::Skipped(String::new()),
-                ),
+                UnavailableReason::NoCredentials => (None, Lifecycle::NeedsSecret, skipped()),
                 UnavailableReason::ExpiredLogin => (
                     Some(ValidationLevel::MaterialDiscovered),
                     Lifecycle::NeedsLogin,
-                    CheckRow::Failed(note.clone()),
+                    CheckRow::Failed(why.clone()),
                 ),
                 UnavailableReason::Unsupported { .. } => (
                     Some(ValidationLevel::MaterialDiscovered),
                     Lifecycle::Available,
-                    CheckRow::Skipped(String::new()),
+                    skipped(),
                 ),
                 UnavailableReason::RateLimited { .. } => (
                     Some(ValidationLevel::IdentityAuthenticated),
                     Lifecycle::Available,
-                    CheckRow::Skipped(String::new()),
+                    skipped(),
                 ),
                 UnavailableReason::Network(_) | UnavailableReason::Provider(_) => (
                     Some(ValidationLevel::MaterialDiscovered),
                     Lifecycle::Unavailable,
-                    CheckRow::Skipped(String::new()),
+                    skipped(),
                 ),
             };
             ValidationOutcome {
@@ -216,10 +245,10 @@ pub(crate) fn validation(
                 material: if level.is_some() {
                     material
                 } else {
-                    CheckRow::Failed(note.clone())
+                    CheckRow::Failed(why.clone())
                 },
                 identity_row,
-                quota_row: CheckRow::Failed(note),
+                quota_row: CheckRow::Failed(why),
             }
         }
     }
@@ -263,9 +292,13 @@ impl Inputs {
 
     pub(crate) async fn refresh_account(&self, account: &str) -> Settled {
         let result = self.read_usage(account).await.map(|read| {
-            let Mapped { usage, issue } = mapped(&read.found, read.now);
+            let Mapped {
+                usage,
+                issue,
+                outcome,
+            } = mapped(&read.found, read.now);
             Box::new(Refresh {
-                outcome: usage.freshness.phase.label().to_owned(),
+                outcome,
                 usage,
                 issue,
                 last_refresh_secs: read.now,
