@@ -8,12 +8,13 @@ use std::time::Duration;
 
 use jackin_console::domain::instance::InstanceStatus;
 use jackin_console::domain::vocabulary::{PaneWords, fill_in};
-use jackin_console::panes::{PaneKind, PaneRequest};
+use jackin_console::panes::{PaneKind, PaneRefusal, PaneRequest};
 use jackin_console::screens::Go;
 use jackin_core::{AttemptId, SupervisorState};
+use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_openshell::{InputMode, TermSize};
 use jackin_session::AttachRequest;
-use jackin_testkit::{ConsoleRig, Rig, SandboxHandle, TestResult, guard};
+use jackin_testkit::{ConsoleRig, Fault, Rig, SandboxHandle, TestResult, guard};
 
 use super::support::Lab;
 
@@ -449,6 +450,12 @@ async fn a_refused_attach_is_failed_with_its_reason_and_enter_retries() -> TestR
             "{}",
             lab.console.screen()
         );
+        let step: String = words.next_doctor.chars().take(8).collect();
+        assert!(
+            !lab.console.screen().contains(&step),
+            "{}",
+            lab.console.screen()
+        );
         lab.rig.world.gateway.set_attachment_cap(20);
         lab.console.keys("enter")?;
         let handle = lab.rig.handle(1).await?;
@@ -745,7 +752,12 @@ async fn a_running_sandbox_opens_one_codex_pane_and_a_second_codex_is_refused() 
             agent: instance.agent,
             account: None,
         };
-        assert!(backend.spawnable(world, &instance, &codex).is_err());
+        assert_eq!(
+            backend.spawnable(world, &instance, &codex),
+            Err(PaneRefusal::MainProcessOpen {
+                agent: instance.agent
+            })
+        );
         assert_eq!(
             backend.spawnable(world, &instance, &PaneKind::Shell),
             Ok(())
@@ -815,6 +827,64 @@ async fn a_paste_reaches_codex_wrapped_when_codex_asked_for_brackets() -> TestRe
         capsule.sync().await?;
         capsule.console().paste("one\ntwo");
         assert_eq!(capsule.sync().await?, b"\x1b[200~one\ntwo\x1b[201~");
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn pane_output_reaches_the_screen_with_no_tick() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        capsule.handle.print_main(b"WAKEMARK");
+        for _ in 0..200 {
+            capsule.lab.console.settle().await?;
+            if capsule.lab.console.screen().contains("WAKEMARK") {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        Err(format!("no wake:\n{}", capsule.lab.console.screen()).into())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn going_to_the_manager_detaches_codex_once() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        capsule.lab.console.console().app().go(Go::Manager);
+        capsule
+            .pump_until(|handle| handle.attachments() == 0)
+            .await?;
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn an_unreachable_gateway_fails_the_pane_with_the_doctor_step() -> TestResult {
+    guard(Box::pin(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let mut lab = Lab::with(rig).await?;
+        let id = lab.world().instances[0].id.clone();
+        lab.rig.world.gateway.inject(Fault::FailNext {
+            op: GatewayOp::Find,
+            error: GatewayError::Unreachable {
+                endpoint: "10.0.0.9:8080".to_owned(),
+                message: "connection refused".to_owned(),
+            },
+        });
+        lab.console.console().app().go(Go::Attach {
+            instance: id,
+            pane: None,
+        });
+        let words = PaneWords::openshell();
+        let step: String = words.next_doctor.chars().take(8).collect();
+        lab.console.wait_for_text(&format!("· {step}")).await?;
+        let screen = lab.console.screen();
+        assert!(screen.contains("connection refused"), "{screen}");
         Ok(())
     }))
     .await

@@ -173,7 +173,7 @@ async fn a_locked_op_shows_the_baseline_text_and_a_retry_after_unlocking_lists_a
 
 #[tokio::test]
 async fn authorization_and_a_denied_vault_each_show_their_text() -> TestResult {
-    guard(async {
+    guard(Box::pin(async {
         let mut lab = Lab::open().await?;
         let op = lab.rig.world.runner.scripted();
         op.expect(
@@ -201,7 +201,7 @@ async fn authorization_and_a_denied_vault_each_show_their_text() -> TestResult {
         assert!(denied.contains("No access to vault vault-2"), "{denied}");
         assert!(!denied.contains(CANARY), "{denied}");
         Ok(())
-    })
+    }))
     .await
 }
 

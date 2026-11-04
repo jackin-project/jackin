@@ -11,6 +11,7 @@ use jackin_console::domain::instance::InstanceId;
 use jackin_console::domain::role::{FindingArea, RoleFinding, RoleManifestDoc};
 use jackin_console::domain::vocabulary::{Rejection, SaveField, Unbuilt, Vocabulary};
 use jackin_console::domain::workspace::{MountSource, Workspace, WorkspaceId};
+use jackin_console::panes::{FailNext, LinkFault};
 use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
 use jackin_core::plain;
 use jackin_core::{
@@ -393,10 +394,17 @@ impl Inputs {
     pub(crate) fn pane_target(
         &self,
         instance: &InstanceId,
-    ) -> Result<(jackin_session::Session, jackin_core::SandboxName), String> {
-        let (gateway, name) = self.sandbox(instance).map_err(|error| plain(&error))?;
-        let session = self.session(&gateway).map_err(|error| plain(&error))?;
-        Ok((session, name))
+    ) -> Result<(jackin_session::Session, jackin_core::SandboxName), LinkFault> {
+        let (gateway, name) = self
+            .sandbox(instance)
+            .map_err(|error| LinkFault::new(plain(&error)))?;
+        match self.sessions.access(&gateway) {
+            Access::Up(session) => Ok((*session, name)),
+            Access::Down { error, .. } => {
+                Err(LinkFault::new(text(&*error)).then(FailNext::RunDoctor))
+            }
+            Access::NotChosen => Err(LinkFault::new(text(&ConfigError::UnknownGateway(gateway)))),
+        }
     }
 
     fn session(

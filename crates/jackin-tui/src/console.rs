@@ -185,15 +185,17 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     let first = inputs.observe().await?;
     let (sender, receiver) = external_channel();
     let inflight = InFlight::new();
+    let bridge = Bridge::new(sender, inflight.clone(), handle.clone());
     let panes = PaneHub::new(
         Arc::clone(&inputs),
-        handle.clone(),
+        handle,
+        bridge.clone(),
         limits.pane_inbox_bytes.get(),
         limits.supervisor_poll,
     );
     let backend = Arc::new(JackinBackend::new(
         Arc::clone(&inputs),
-        Bridge::new(sender, inflight.clone(), handle),
+        bridge,
         first.snapshot.surfaces.vocabulary.clone(),
         panes.clone(),
     ));

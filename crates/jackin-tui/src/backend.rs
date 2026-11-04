@@ -10,10 +10,11 @@ use jackin_console::domain::instance::{Instance, InstanceStatus};
 use jackin_console::domain::launch::LaunchContent;
 use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_console::launch::{LaunchFeed, LaunchTarget};
-use jackin_console::panes::{PaneBody, PaneKind, PaneRequest, PaneSpawn, PaneTiming, TerminalPane};
+use jackin_console::panes::{
+    PaneBody, PaneKind, PaneRefusal, PaneRequest, PaneSpawn, PaneTiming, TerminalPane,
+};
 use jackin_console::world::{Msg, World};
 use jackin_session::REPAINT_NUDGE;
-use junie_tui::core::refusal::Reason;
 
 use crate::bridge::Bridge;
 use crate::files::HostFiles;
@@ -208,7 +209,7 @@ impl Backend for JackinBackend {
         Box::new(TerminalPane::new(
             spawn.id,
             request.clone(),
-            self.panes.links(),
+            self.panes.links(spawn.id),
             self.pane_timing(),
             spawn.now_ms,
         ))
@@ -225,15 +226,26 @@ impl Backend for JackinBackend {
         )]
     }
 
-    fn spawnable(&self, world: &World, instance: &Instance, kind: &PaneKind) -> Result<(), Reason> {
+    fn spawnable(
+        &self,
+        world: &World,
+        instance: &Instance,
+        kind: &PaneKind,
+    ) -> Result<(), PaneRefusal> {
         let has_agent = world
             .daemons
             .get(&instance.id)
             .is_some_and(|daemon| daemon.panes.iter().any(|pane| pane.agent.is_some()));
         match kind {
-            PaneKind::Agent { .. } if has_agent => Err(Reason::new(<&str>::default())),
+            PaneKind::Agent { agent, .. } if has_agent => {
+                Err(PaneRefusal::MainProcessOpen { agent: *agent })
+            }
             PaneKind::Agent { .. } | PaneKind::Shell => Ok(()),
         }
+    }
+
+    fn capsule_left(&self, _world: &World, instance: &str) {
+        self.panes.leave(instance);
     }
 
     fn pane_timing(&self) -> PaneTiming {
@@ -242,14 +254,5 @@ impl Backend for JackinBackend {
             nudge_ms: i64::try_from(REPAINT_NUDGE.as_millis()).unwrap_or(defaults.nudge_ms),
             ..defaults
         }
-    }
-
-    fn due(&self, world: &World) -> Vec<Msg> {
-        for (instance, daemon) in &world.daemons {
-            if daemon.attached_by.is_none() {
-                self.panes.leave(instance);
-            }
-        }
-        Vec::new()
     }
 }
