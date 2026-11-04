@@ -254,7 +254,13 @@ async fn another_agent_is_refused_before_any_stage() -> TestResult {
 }
 
 async fn elsewhere(rig: &Rig) -> Result<(ConsoleRig, String, RepoFixture), Failure> {
-    let repo = RepoFixture::new().await?;
+    elsewhere_in(rig, RepoFixture::new().await?).await
+}
+
+async fn elsewhere_in(
+    rig: &Rig,
+    repo: RepoFixture,
+) -> Result<(ConsoleRig, String, RepoFixture), Failure> {
     repo.file("README.md", b"readme\n").await?;
     repo.commit().await?;
     let base = repo
@@ -291,6 +297,24 @@ async fn the_current_directory_launches_with_the_only_role() -> TestResult {
         assert_eq!(found.workspace.as_str(), base);
         assert_eq!(found.role.as_str(), "sentinel");
         assert_eq!(found.account.as_str(), "work");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_directory_whose_name_is_not_a_workspace_name_launches_under_a_derived_name() -> TestResult
+{
+    guard(async {
+        let rig = Rig::new().await?;
+        let (mut console, _, _repo) =
+            elsewhere_in(&rig, RepoFixture::new_named("My App").await?).await?;
+        console.skip_intro();
+        console.keys("enter enter")?;
+        answer(&mut console, None).await?;
+        until_route(&mut console, Route::Capsule).await?;
+        let found = labels(&only(&rig)?)?.planned;
+        assert_eq!(found.workspace.as_str(), "my-app");
         Ok(())
     })
     .await

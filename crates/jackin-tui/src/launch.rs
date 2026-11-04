@@ -27,7 +27,8 @@ use jackin_session::{
     AccountError, LaunchError, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
     LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LaunchWarning,
     LineDelivery, PlanError, Prompting, RestoreCandidate, RoleError, Session, StepResult,
-    WorkspaceLookup, error_chain, launch_events, lookup_workspace, plan_launch,
+    WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events, lookup_workspace,
+    plan_launch,
 };
 use junie_tui::widgets::steps::StepState;
 use thiserror::Error;
@@ -331,12 +332,7 @@ fn resolve(
             match lookup_workspace(config, &path) {
                 WorkspaceLookup::Saved { name, workspace } => Ok((config.clone(), name, workspace)),
                 WorkspaceLookup::Unsaved { path } => {
-                    let base = path
-                        .as_path()
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    let name = WorkspaceName::parse(&base)?;
+                    let name = adhoc_workspace_name(config, &path)?;
                     let workspace = Workspace::new(path, false);
                     let mut adhoc = config.clone();
                     adhoc.apply(ConfigEdit::AddWorkspace {

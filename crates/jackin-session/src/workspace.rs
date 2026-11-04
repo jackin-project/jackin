@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Config, ConfigError, HostPath, Workspace, WorkspaceName};
+use jackin_core::{Config, ConfigError, HostPath, IdError, Workspace, WorkspaceName};
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkspaceLookup {
@@ -38,4 +39,29 @@ impl WorkspaceLookup {
             WorkspaceLookup::Unsaved { path } => Err(ConfigError::NoWorkspaceForPath(path)),
         }
     }
+}
+
+fn suffix(path: &HostPath) -> String {
+    let digest = Sha256::digest(path.as_path().as_os_str().as_encoded_bytes());
+    format!(
+        "{:06x}",
+        u32::from_be_bytes([0, digest[0], digest[1], digest[2]])
+    )
+}
+
+pub fn adhoc_workspace_name(config: &Config, path: &HostPath) -> Result<WorkspaceName, IdError> {
+    let base = path
+        .as_path()
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let name = WorkspaceName::parse(&base).or_else(|_| WorkspaceName::sanitized(&base))?;
+    if config.workspace(&name).is_none() {
+        return Ok(name);
+    }
+    let suffix = suffix(path);
+    let keep = WorkspaceName::MAX_LEN - suffix.len() - 1;
+    let head: String = name.as_str().chars().take(keep).collect();
+    let head = head.trim_end_matches(|c: char| !c.is_ascii_alphanumeric());
+    WorkspaceName::parse(&format!("{head}-{suffix}"))
 }

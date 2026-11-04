@@ -170,8 +170,10 @@ fn base36_char(c: char) -> bool {
     c.is_ascii_digit() || c.is_ascii_lowercase()
 }
 
+const SANITIZED_FALLBACK: &str = "workspace";
+const LABEL_MAX: usize = 63;
 const LABEL_VALUE: Rule = Rule {
-    max: 63,
+    max: LABEL_MAX,
     accepts: label_char,
     edge: Edge::Both,
     single_hyphen: false,
@@ -621,6 +623,31 @@ pub struct ImageId(Sha256);
 pub struct AttemptId(NonZeroU64);
 
 impl WorkspaceName {
+    pub const MAX_LEN: usize = LABEL_MAX;
+
+    pub fn sanitized(text: &str) -> Result<WorkspaceName, IdError> {
+        let mut name = String::new();
+        let mut pending = false;
+        for c in text.chars() {
+            if label_char(c) {
+                if pending {
+                    name.push('-');
+                    pending = false;
+                }
+                name.push(c.to_ascii_lowercase());
+            } else {
+                pending = true;
+            }
+        }
+        name.truncate(WorkspaceName::MAX_LEN);
+        let trimmed = name.trim_matches(|c: char| !c.is_ascii_alphanumeric());
+        WorkspaceName::parse(if trimmed.is_empty() {
+            SANITIZED_FALLBACK
+        } else {
+            trimmed
+        })
+    }
+
     pub fn slug(&self) -> SandboxSlug {
         let mut slug = String::new();
         let mut pending_hyphen = false;
