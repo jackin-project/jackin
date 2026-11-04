@@ -688,3 +688,4 @@ P11.1 and P11.2 run in parallel.
   - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/jackin-project/jackin-agent-smith/pull/217"}`
   - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/jackin-project/jackin-the-architect/pull/481"}`
   - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/tailrocks/terminal-components-baseline/pull/1"}`
+  - The operator then asked to merge the baseline pull request once it was ready. After its 121 review threads and a second review round were closed, it was merged on 2026-11-04 with a merge commit (`2e9e60f`), so the baseline commit jackin pins (`6eb201c`) is reachable from baseline `main`.
