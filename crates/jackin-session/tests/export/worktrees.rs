@@ -111,6 +111,15 @@ async fn work_in_any_linked_worktree_counts_and_a_missing_worktree_does_not() ->
 
 #[tokio::test]
 async fn a_detached_worktree_whose_directory_moved_keeps_its_unique_commit_in_view() -> TestResult {
+    moved_worktree_keeps_its_unique_commit(false).await
+}
+
+#[tokio::test]
+async fn a_locked_worktree_whose_directory_moved_keeps_its_unique_commit_in_view() -> TestResult {
+    moved_worktree_keeps_its_unique_commit(true).await
+}
+
+async fn moved_worktree_keeps_its_unique_commit(locked: bool) -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
@@ -130,9 +139,13 @@ async fn a_detached_worktree_whose_directory_moved_keeps_its_unique_commit_in_vi
         let wanted = unexported(&id)?;
         assert_eq!(state(&rig, &name).await, wanted);
 
+        if locked {
+            handle.git(&["worktree", "lock", &moved]).await?;
+        }
         std::fs::rename(&moved, handle.root().join("elsewhere"))?;
         let listed = handle.git(&["worktree", "list", "--porcelain"]).await?;
-        assert!(listed.contains("prunable"), "{listed}");
+        assert_eq!(listed.contains("locked"), locked, "{listed}");
+        assert_eq!(listed.contains("prunable"), !locked, "{listed}");
         assert_eq!(state(&rig, &name).await, wanted);
         let before = snapshot(&rig).await?;
         let refused = rig
