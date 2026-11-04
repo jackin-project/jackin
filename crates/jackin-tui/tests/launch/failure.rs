@@ -5,7 +5,7 @@ use jackin_console::app::Route;
 use jackin_console::domain::launch::{LaunchContent, NextStep};
 use jackin_core::{HookKind, SupervisorState, sandbox_layout};
 use jackin_openshell::GatewayOp;
-use jackin_testkit::{Fault, ProgramScript, Rig, TestResult, Trigger, guard};
+use jackin_testkit::{ConsoleRig, Fault, ProgramScript, Rig, TestResult, Trigger, guard};
 
 use super::support::{
     Stage, answer, begin, console, dialog, env_file, labels, launch, only, quiet, record_id, stage,
@@ -52,6 +52,37 @@ async fn provisioning_failure_keeps_the_sandbox() -> TestResult {
             "{:?}",
             world.instances.iter().map(|i| &i.id).collect::<Vec<_>>()
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_launch_with_no_gateway_selected_fails_before_any_stage_and_says_to_run_the_doctor()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.world.seed_all(&rig.config).await?;
+        let mut console = ConsoleRig::builder(&rig.world)
+            .size(160, 44)
+            .unchosen()
+            .build()
+            .await?;
+        console.skip_intro();
+        begin(&mut console)?;
+        until_shows(&mut console, "Run id").await?;
+        let screen = console.screen();
+        assert_eq!(stage(&screen, "01 Image"), Some(Stage::Failed), "{screen}");
+        assert_eq!(stage(&screen, SANDBOX), Some(Stage::Queued), "{screen}");
+        let doctor = LaunchContent::openshell()
+            .words
+            .next_step(&NextStep::RunDoctor)
+            .ok_or("the doctor step has no words")?;
+        assert!(dialog(&screen).contains(&doctor), "{doctor}\n{screen}");
+        assert!(!words(&screen).contains("unknown gateway"), "{screen}");
+        assert!(rig.gateway().sandboxes().is_empty());
+        assert!(rig.gateway().providers().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
         Ok(())
     })
     .await

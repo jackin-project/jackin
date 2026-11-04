@@ -16,7 +16,7 @@ use super::support::{Failure, GATEWAY_CONFIG, Harness, ScriptedTerminal};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Run {
-    pub(crate) default: GatewayName,
+    pub(crate) default: Option<GatewayName>,
     pub(crate) reached: Vec<String>,
     pub(crate) workspaces: usize,
     pub(crate) cwd: HostPath,
@@ -71,7 +71,7 @@ impl ConsoleHost for ScriptedConsole {
             })
             .cloned()
             .collect();
-        let default = deps.sessions.default_name().clone();
+        let default = deps.sessions.default_name().cloned();
         let (cwd, home) = (deps.cwd.clone(), deps.home.clone());
         let (connect_deadline, supervisor_poll) =
             (deps.limits.connect_deadline, deps.limits.supervisor_poll);
@@ -132,7 +132,7 @@ async fn a_bare_run_on_a_terminal_opens_the_console_over_the_config_and_quit_is_
         assert_eq!(
             harness.console.runs(),
             vec![Run {
-                default: GatewayName::parse("fake-gateway")?,
+                default: Some(GatewayName::parse("fake-gateway")?),
                 reached: vec!["fake-gateway".to_owned()],
                 workspaces: 2,
                 cwd: harness.cwd.clone(),
@@ -238,6 +238,7 @@ async fn a_config_without_a_gateway_still_opens_the_console() -> TestResult {
         let runs = harness.console.runs();
         assert_eq!(runs.len(), 1);
         assert!(runs[0].reached.is_empty());
+        assert_eq!(runs[0].default, None);
         Ok(())
     })
     .await
@@ -258,7 +259,7 @@ async fn the_gateway_flag_picks_the_default_and_an_unknown_one_stops_before_the_
         assert_eq!(chosen.exit, ExitClass::Ok, "{}", chosen.stderr);
         assert_eq!(
             harness.console.runs()[0].default,
-            GatewayName::parse("refused")?
+            Some(GatewayName::parse("refused")?)
         );
         let unknown = harness
             .command(&["--gateway", "nowhere"])
@@ -268,6 +269,32 @@ async fn the_gateway_flag_picks_the_default_and_an_unknown_one_stops_before_the_
         assert_eq!(unknown.exit, ExitClass::Failure);
         assert!(unknown.stderr.contains("nowhere"), "{}", unknown.stderr);
         assert_eq!(harness.console.calls(), 1);
+        Ok(())
+    })
+    .await
+}
+
+const TWO_WITHOUT_DEFAULT: &str = "
+[gateways.first]
+openshell_workspace = \"default\"
+builder = \"b\"
+platform = \"linux/arm64\"
+
+[gateways.second]
+openshell_workspace = \"default\"
+builder = \"b\"
+platform = \"linux/arm64\"
+";
+
+#[tokio::test]
+async fn several_gateways_with_no_default_open_the_console_with_none_selected() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        harness.write_config(TWO_WITHOUT_DEFAULT)?;
+        let ran = harness.command(&[]).terminal(terminal()?).run().await?;
+        assert_eq!(ran.exit, ExitClass::Ok, "{}", ran.stderr);
+        assert_eq!(harness.console.runs()[0].default, None);
         Ok(())
     })
     .await

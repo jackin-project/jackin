@@ -15,17 +15,14 @@ use crate::app::App;
 use crate::error::CommandError;
 use crate::system::{console_limits, engine_socket, home};
 
-const UNCHOSEN: &str = "none";
-
 fn default_gateway(
     config: &Config,
     requested: Option<&GatewayName>,
-) -> Result<GatewayName, CommandError> {
+) -> Result<Option<GatewayName>, CommandError> {
     match config.resolve_gateway(requested) {
-        Ok((name, _)) => Ok(name.clone()),
+        Ok((name, _)) => Ok(Some(name.clone())),
         Err(error @ ConfigError::UnknownGateway(_)) => Err(error.into()),
-        Err(_) => GatewayName::parse(UNCHOSEN)
-            .map_err(|error| CommandError::Environment(error.to_string())),
+        Err(_) => Ok(None),
     }
 }
 

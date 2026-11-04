@@ -401,7 +401,16 @@ impl Run {
             .map_err(|error| Stop::at(Stage::Image, &error))?;
         let (config, name, workspace) =
             resolve(&saved, &self.wanted.place).map_err(|error| Stop::at(Stage::Image, &error))?;
-        let gateway = inputs.sessions.default_name().clone();
+        let Some(gateway) = inputs.sessions.default_name().cloned() else {
+            let error = saved
+                .resolve_gateway(None)
+                .err()
+                .unwrap_or(ConfigError::NoGateway);
+            return Err(Stop::failed(LaunchFailure {
+                next_step: NextStep::RunDoctor,
+                ..plain_failure(Stage::Image, &error)
+            }));
+        };
         let session = match inputs.sessions.access(&gateway) {
             Access::Up(session) => *session,
             Access::Down { error, .. } => {
