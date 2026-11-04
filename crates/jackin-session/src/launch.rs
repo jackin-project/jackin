@@ -280,4 +280,6 @@ pub enum LaunchError {
     ProbeInvalid { message: String },
     #[error("the sandbox {sandbox} has no value for {}", plain(.key))]
     PlaceholderMissing { sandbox: SandboxName, key: String },
+    #[error("the sandbox {sandbox} returned a value for {} that is not a provider placeholder", plain(.key))]
+    PlaceholderInvalid { sandbox: SandboxName, key: String },
 }
