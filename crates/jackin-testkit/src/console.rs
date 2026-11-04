@@ -441,6 +441,34 @@ impl ConsoleRigBuilder<'_> {
     }
 
     pub async fn build(self) -> Result<ConsoleRig, FixtureError> {
+        let Prepared {
+            deps,
+            wall,
+            config,
+            gateway,
+            size,
+            theme,
+            clipboard,
+        } = self.prepare().await?;
+        let console = build_console(deps).await?;
+        let mut rig = ConsoleRig {
+            console,
+            wall,
+            config,
+            gateway,
+            size,
+            theme,
+            clipboard,
+        };
+        rig.render();
+        Ok(rig)
+    }
+
+    pub async fn deps(self) -> Result<ConsoleDeps, FixtureError> {
+        Ok(self.prepare().await?.deps)
+    }
+
+    async fn prepare(self) -> Result<Prepared, FixtureError> {
         let world = self.world;
         let config = world.config.load().await?;
         let default = match config.resolve_gateway(None) {
@@ -477,7 +505,7 @@ impl ConsoleRigBuilder<'_> {
         let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
         let theme = Theme::for_level(ColorLevel::TrueColor);
         let sink: Arc<dyn NativeClipboard> = Arc::<RecordingClipboard>::clone(&self.clipboard);
-        let console = build_console(ConsoleDeps {
+        let deps = ConsoleDeps {
             config: world.config.clone(),
             desk: world.desk(),
             usage,
@@ -505,20 +533,27 @@ impl ConsoleRigBuilder<'_> {
                 supervisor_poll: Duration::from_millis(20),
             },
             clipboard: sink,
-        })
-        .await?;
-        let mut rig = ConsoleRig {
-            console,
+        };
+        Ok(Prepared {
+            deps,
             wall,
             config: world.config.clone(),
             gateway: Arc::clone(&world.gateway),
             size: self.size,
             theme,
             clipboard: self.clipboard,
-        };
-        rig.render();
-        Ok(rig)
+        })
     }
+}
+
+struct Prepared {
+    deps: ConsoleDeps,
+    wall: Arc<FakeWall>,
+    config: ConfigStore,
+    gateway: Arc<FakeGateway>,
+    size: (u16, u16),
+    theme: Theme,
+    clipboard: Arc<RecordingClipboard>,
 }
 
 fn parse_key(word: &str) -> Option<Key> {

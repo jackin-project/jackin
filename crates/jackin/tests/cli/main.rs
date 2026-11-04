@@ -8,6 +8,7 @@ mod build;
 mod cancel;
 mod config_io;
 mod connect;
+mod console;
 mod docker;
 mod doctor;
 mod env;

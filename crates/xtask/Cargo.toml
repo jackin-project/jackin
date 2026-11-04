@@ -19,7 +19,7 @@ jackin-core = { workspace = true }
 jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
 jsonschema = { version = "0.60.2", default-features = false }
-portable-pty = "0.9.0"
+portable-pty = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

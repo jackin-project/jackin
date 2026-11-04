@@ -89,7 +89,7 @@ impl WorkCache {
 }
 
 #[derive(Debug)]
-struct Waited(Duration);
+pub(crate) struct Waited(pub(crate) Duration);
 
 impl fmt::Display for Waited {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -99,9 +99,9 @@ impl fmt::Display for Waited {
 
 #[derive(Debug, Error)]
 #[error("no answer within {0}")]
-struct TimedOut(Waited);
+pub(crate) struct TimedOut(pub(crate) Waited);
 
-async fn within<T>(deadline: Duration, work: impl Future<Output = T>) -> Option<T> {
+pub(crate) async fn within<T>(deadline: Duration, work: impl Future<Output = T>) -> Option<T> {
     tokio::time::timeout(deadline, work).await.ok()
 }
 

@@ -14,7 +14,7 @@ use crate::app::App;
 use crate::cli::JsonArg;
 use crate::error::CommandError;
 
-const STATE_DIR: &str = "usage";
+pub(crate) const STATE_DIR: &str = "usage";
 
 pub(crate) async fn run(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     let config = app.store.load().await?;

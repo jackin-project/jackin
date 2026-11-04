@@ -6,7 +6,9 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-use jackin_xtask::{Check, CommandRunner, DemoGateCheck, ToolOutput, Violation};
+use jackin_xtask::{
+    Check, CommandRunner, DEMO_CANARIES, DemoGateCheck, ProductCheck, ToolOutput, Violation,
+};
 
 use crate::workspace::{TestResult, Workspace, green, member_manifest};
 
@@ -19,6 +21,7 @@ const TREE_JACKIN: &str = "-p jackin -e normal,build -f {p} {f} -i jackin-consol
 const TREE_TUI: &str = "-p jackin-tui -e normal,build -f {p} {f} -i jackin-console";
 const TREE_CLAP: &str = "-p jackin -e normal -i clap";
 const BUILD: &str = "-p jackin-tui --message-format=json";
+const RELEASE: &str = "--release -p jackin --message-format=json";
 
 struct Script {
     replies: BTreeMap<String, io::Result<ToolOutput>>,
@@ -84,9 +87,31 @@ fn nm_clean_llvm_nm_21() -> String {
     "0000000000000560 T <alloc::collections::btree::node::NodeRef<alloc::collections::btree::node::marker::Mut, jackin_console::domain::agent::Agent, alloc::string::String, alloc::collections::btree::node::marker::LeafOrInternal>>::fix_node_through_parent::<alloc::alloc::Global>\n0000000000001c14 T jackin_console::domain::workspace::Workspace::new\n".to_owned()
 }
 
+fn release_json_cargo_1_99_1(binary: &str, library_file: &str) -> String {
+    let library = format!(
+        "{{\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///work/crates/jackin#0.1.0\",\"manifest_path\":\"/work/crates/jackin/Cargo.toml\",\"target\":{{\"kind\":[\"lib\"],\"crate_types\":[\"lib\"],\"name\":\"jackin\",\"src_path\":\"/work/crates/jackin/src/lib.rs\",\"edition\":\"2024\",\"doc\":true,\"doctest\":true,\"test\":true}},\"profile\":{{\"opt_level\":\"3\",\"debuginfo\":0,\"debug_assertions\":false,\"overflow_checks\":false,\"test\":false}},\"features\":[],\"filenames\":[\"{library_file}\",\"{library_file}.rmeta\"],\"executable\":null,\"fresh\":false}}"
+    );
+    let bin = format!(
+        "{{\"reason\":\"compiler-artifact\",\"package_id\":\"path+file:///work/crates/jackin#0.1.0\",\"manifest_path\":\"/work/crates/jackin/Cargo.toml\",\"target\":{{\"kind\":[\"bin\"],\"crate_types\":[\"bin\"],\"name\":\"jackin\",\"src_path\":\"/work/crates/jackin/src/main.rs\",\"edition\":\"2024\",\"doc\":true,\"doctest\":false,\"test\":true}},\"profile\":{{\"opt_level\":\"3\",\"debuginfo\":0,\"debug_assertions\":false,\"overflow_checks\":false,\"test\":false}},\"features\":[],\"filenames\":[\"{binary}\"],\"executable\":\"{binary}\",\"fresh\":false}}"
+    );
+    let finished = "{\"reason\":\"build-finished\",\"success\":true}";
+    format!("{library}\n{bin}\n{finished}\n")
+}
+
+fn case_library(workspace: &Workspace) -> Result<String, Box<dyn std::error::Error>> {
+    let library = workspace
+        .root()
+        .join("target/release/deps/libjackin-cccc.rlib");
+    fs::create_dir_all(library.parent().ok_or("no parent")?)?;
+    fs::write(&library, b"payments-platform")?;
+    Ok(library.to_string_lossy().into_owned())
+}
+
 struct Case {
     workspace: Workspace,
     rlib: String,
+    binary: String,
+    library: String,
     replies: BTreeMap<String, io::Result<ToolOutput>>,
 }
 
@@ -97,9 +122,16 @@ impl Case {
             .root()
             .join("target/debug/deps/libjackin_console-aaaa.rlib");
         let rlib = rlib.to_string_lossy().into_owned();
+        let binary = workspace.root().join("target/release/jackin");
+        fs::create_dir_all(binary.parent().ok_or("no parent")?)?;
+        fs::write(&binary, b"jackin\0roster\0About\0")?;
+        let binary = binary.to_string_lossy().into_owned();
+        let library = case_library(&workspace)?;
         let mut case = Self {
             workspace,
             rlib,
+            binary,
+            library,
             replies: BTreeMap::new(),
         };
         case.reply(format!("cargo tree {TREE_JACKIN}"), ok(clean_tree()));
@@ -121,6 +153,8 @@ impl Case {
             format!("strings -a {}", case.rlib),
             ok("Workspace\nroster\nAbout\n"),
         );
+        let json = release_json_cargo_1_99_1(&case.binary, &case.library);
+        case.reply(format!("cargo build {RELEASE}"), ok(json));
         Ok(case)
     }
 
@@ -128,9 +162,28 @@ impl Case {
         self.replies.insert(key, reply);
     }
 
+    fn write_binary(&self, bytes: &[u8]) -> TestResult {
+        fs::write(&self.binary, bytes)?;
+        Ok(())
+    }
+
+    fn forget(&mut self, key: &str) {
+        self.replies.remove(key);
+    }
+
     fn run(self) -> Result<Vec<Violation>, Box<dyn std::error::Error>> {
         let repo = self.workspace.repo()?;
         let gate = DemoGateCheck::new(Script {
+            replies: self.replies,
+        });
+        Ok(gate.run(&repo))
+    }
+}
+
+impl Case {
+    fn run_product(self) -> Result<Vec<Violation>, Box<dyn std::error::Error>> {
+        let repo = self.workspace.repo()?;
+        let gate = ProductCheck::new(Script {
             replies: self.replies,
         });
         Ok(gate.run(&repo))
@@ -312,5 +365,117 @@ fn canary_in_rlib_fails() -> TestResult {
     case.reply(key, ok("roster\norg.jackin.workspace=payments-platform\n"));
     let violations = case.run()?;
     expect_one(&violations, "payments-platform");
+    Ok(())
+}
+
+#[test]
+fn product_clean_binary_passes() -> TestResult {
+    let violations = Case::new()?.run_product()?;
+    assert!(violations.is_empty(), "{violations:#?}");
+    Ok(())
+}
+
+#[test]
+fn canary_in_binary_fails() -> TestResult {
+    let case = Case::new()?;
+    case.write_binary(b"roster\0org.jackin.workspace=payments-platform\0")?;
+    let binary = case.binary.clone();
+    let violations = case.run_product()?;
+    expect_one(&violations, "payments-platform");
+    assert!(violations[0].message.contains(&binary), "{violations:#?}");
+    Ok(())
+}
+
+#[test]
+fn each_canary_in_binary_fails_by_name() -> TestResult {
+    for canary in DEMO_CANARIES {
+        let case = Case::new()?;
+        case.write_binary(format!("roster\0before {canary} after\0").as_bytes())?;
+        let violations = case.run_product()?;
+        expect_one(&violations, canary);
+    }
+    Ok(())
+}
+
+#[test]
+fn only_the_executable_is_scanned() -> TestResult {
+    let case = Case::new()?;
+    assert_eq!(fs::read(&case.library)?, b"payments-platform");
+    let violations = case.run_product()?;
+    assert!(violations.is_empty(), "{violations:#?}");
+    Ok(())
+}
+
+#[test]
+fn a_release_build_failure_is_an_error() -> TestResult {
+    let mut case = Case::new()?;
+    case.reply(
+        format!("cargo build {RELEASE}"),
+        failed("error[E0432]: unresolved import `crate::missing`\n"),
+    );
+    let violations = case.run_product()?;
+    expect_one(&violations, "unresolved import");
+    Ok(())
+}
+
+#[test]
+fn a_build_without_an_executable_is_an_error() -> TestResult {
+    let mut case = Case::new()?;
+    case.reply(
+        format!("cargo build {RELEASE}"),
+        ok("{\"reason\":\"build-finished\",\"success\":true}\n"),
+    );
+    let violations = case.run_product()?;
+    expect_one(&violations, "names no executable");
+    Ok(())
+}
+
+#[test]
+fn a_demo_feature_stops_the_product_check_before_the_release_build() -> TestResult {
+    let mut case = Case::new()?;
+    case.forget(&format!("cargo build {RELEASE}"));
+    case.reply(
+        format!("cargo tree {TREE_JACKIN}"),
+        ok(tree_cargo_1_99_1(
+            "default,demo",
+            &[
+                "jackin-tui v0.1.0 (/work/crates/jackin-tui) ",
+                "jackin v0.1.0 (/work/crates/jackin) ",
+            ],
+        )),
+    );
+    let violations = case.run_product()?;
+    expect_one(
+        &violations,
+        "cargo tree -p jackin builds jackin-console with the feature demo",
+    );
+    Ok(())
+}
+
+#[test]
+fn a_demo_symbol_in_the_rlib_stops_the_product_check() -> TestResult {
+    let mut case = Case::new()?;
+    case.forget(&format!("cargo build {RELEASE}"));
+    let key = format!("nm -C {}", case.rlib);
+    case.reply(
+        key,
+        ok(format!(
+            "{}0000000000003664 T jackin_console::sim::SimBackend::perform\n",
+            nm_clean_llvm_nm_21()
+        )),
+    );
+    let violations = case.run_product()?;
+    expect_one(&violations, "jackin_console::sim::SimBackend::perform");
+    Ok(())
+}
+
+#[test]
+fn an_executable_that_cannot_be_read_is_an_error() -> TestResult {
+    let case = Case::new()?;
+    fs::remove_file(&case.binary)?;
+    let binary = case.binary.clone();
+    let violations = case.run_product()?;
+    expect_one(&violations, "cannot read");
+    assert!(violations[0].message.contains(&binary), "{violations:#?}");
     Ok(())
 }

@@ -27,6 +27,8 @@ use serde_json::Value;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 
+use super::console::ScriptedConsole;
+
 pub(crate) type Failure = Box<dyn std::error::Error>;
 
 #[derive(Clone, Debug, Default)]
@@ -287,6 +289,7 @@ pub(crate) struct Harness {
     pub(crate) cache_dir: HostPath,
     pub(crate) env: Vec<(String, String)>,
     pub(crate) usage_endpoints: ProviderEndpoints,
+    pub(crate) console: Arc<ScriptedConsole>,
     host: HostPorts,
     engine: Arc<dyn ImageEngine>,
 }
@@ -316,6 +319,7 @@ impl Harness {
                 world.home().as_path().display().to_string(),
             )],
             usage_endpoints: closed_endpoints(),
+            console: Arc::new(ScriptedConsole::default()),
             host: HostPorts {
                 clock,
                 fs: Arc::clone(&world.fs),
@@ -334,6 +338,7 @@ impl Harness {
             cache_dir: self.cache_dir.clone(),
             env: self.env.clone(),
             usage_endpoints: self.usage_endpoints.clone(),
+            console: Arc::clone(&self.console),
             host: HostPorts {
                 clock: Arc::clone(&self.host.clock),
                 fs,
@@ -352,6 +357,7 @@ impl Harness {
             cache_dir: self.cache_dir.clone(),
             env: self.env.clone(),
             usage_endpoints: self.usage_endpoints.clone(),
+            console: Arc::clone(&self.console),
             host: HostPorts {
                 clock: Arc::clone(&self.host.clock),
                 fs: Arc::clone(&self.host.fs),
@@ -446,6 +452,7 @@ impl Invocation<'_> {
             connect,
             limits: default_limits(),
             usage_endpoints: harness.usage_endpoints.clone(),
+            console: Arc::<ScriptedConsole>::clone(&harness.console),
         };
         let exit = jackin::run(env, deps).await;
         Ok(Ran {

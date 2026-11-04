@@ -21,6 +21,7 @@ jackin-session = { workspace = true }
 jackin-tui = { workspace = true }
 jackin-usage = { workspace = true }
 junie-tui = { workspace = true }
+portable-pty = { workspace = true }
 ratatui = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

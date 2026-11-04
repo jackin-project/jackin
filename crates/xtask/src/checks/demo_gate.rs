@@ -31,6 +31,7 @@ const SYMBOL_EXCERPT: usize = 160;
 const NO_MATCH: &str = "did not match any packages";
 const TREE_MEMBERS: [&str; 2] = ["jackin", "jackin-tui"];
 const BUILD_MEMBER: &str = "jackin-tui";
+const ARTIFACT_MEMBER: &str = "jackin";
 
 #[derive(Clone, Debug)]
 pub struct ToolOutput {
@@ -234,6 +235,96 @@ impl<R: CommandRunner + Sync> Check for DemoGateCheck<R> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct ProductCheck<R = SystemRunner> {
+    gate: DemoGateCheck<R>,
+}
+
+impl ProductCheck {
+    #[must_use]
+    pub const fn production() -> Self {
+        Self::new(SystemRunner)
+    }
+}
+
+impl<R> ProductCheck<R> {
+    #[must_use]
+    pub const fn new(runner: R) -> Self {
+        Self {
+            gate: DemoGateCheck::new(runner),
+        }
+    }
+}
+
+impl<R: CommandRunner> ProductCheck<R> {
+    fn artifact(&self, repo: &Repo, violations: &mut Vec<Violation>) {
+        let args = [
+            "build",
+            "--release",
+            "-p",
+            ARTIFACT_MEMBER,
+            "--message-format=json",
+        ];
+        let text = match self.gate.call(repo, "cargo", &args) {
+            Ok(Reply::Text(text)) => text,
+            Ok(Reply::NoMatch) => {
+                violations.push(Violation::general(
+                    CiStep::DemoGate,
+                    format!("cargo build --release -p {ARTIFACT_MEMBER} matched no package"),
+                ));
+                return;
+            }
+            Err(violation) => {
+                violations.push(violation);
+                return;
+            }
+        };
+        let executables = executables(&text);
+        if executables.is_empty() {
+            violations.push(Violation::general(
+                CiStep::DemoGate,
+                format!("cargo build --release -p {ARTIFACT_MEMBER} names no executable"),
+            ));
+        }
+        for executable in executables {
+            match std::fs::read(&executable) {
+                Ok(bytes) => {
+                    let text = String::from_utf8_lossy(&bytes);
+                    for canary in DEMO_CANARIES
+                        .iter()
+                        .filter(|canary| text.contains(**canary))
+                    {
+                        violations.push(Violation::general(
+                            CiStep::DemoGate,
+                            format!("{executable} holds the demo canary {canary:?}"),
+                        ));
+                    }
+                }
+                Err(error) => violations.push(Violation::general(
+                    CiStep::DemoGate,
+                    format!("cannot read {executable}: {}", plain(error)),
+                )),
+            }
+        }
+    }
+}
+
+impl<R: CommandRunner + Sync> Check for ProductCheck<R> {
+    fn step(&self) -> CiStep {
+        CiStep::DemoGate
+    }
+
+    fn run(&self, repo: &Repo) -> Vec<Violation> {
+        let violations = self.gate.run(repo);
+        if !violations.is_empty() {
+            return violations;
+        }
+        let mut violations = Vec::new();
+        self.artifact(repo, &mut violations);
+        sorted(violations)
+    }
+}
+
 fn console_lines(text: &str) -> impl Iterator<Item = TreeLine<'_>> {
     text.lines()
         .filter_map(tree_line)
@@ -265,12 +356,26 @@ struct BuildMessage {
     target: Option<BuildTarget>,
     #[serde(default)]
     filenames: Vec<String>,
+    executable: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct BuildTarget {
     name: String,
     kind: Vec<String>,
+}
+
+fn executables(json: &str) -> Vec<String> {
+    json.lines()
+        .filter_map(|line| serde_json::from_str::<BuildMessage>(line).ok())
+        .filter(|message| message.reason == "compiler-artifact")
+        .filter(|message| {
+            message.target.as_ref().is_some_and(|target| {
+                target.name == ARTIFACT_MEMBER && target.kind.iter().any(|kind| kind == "bin")
+            })
+        })
+        .filter_map(|message| message.executable)
+        .collect()
 }
 
 fn console_rlibs(json: &str) -> Vec<String> {
