@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::join_all;
-use jackin_core::{Config, GatewayEntry, GatewayName};
+use jackin_core::{Config, ConfigError, GatewayEntry, GatewayName};
 use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::{
     ConnectError, GatewayAccess, GatewayConnector, Gateways, Session, UnreachableGateway,
@@ -142,10 +142,74 @@ async fn dial(
     (name.clone(), state)
 }
 
+#[derive(Clone, Debug)]
+pub enum DefaultGateway {
+    Pinned(GatewayName),
+    Followed(Option<GatewayName>),
+}
+
+impl DefaultGateway {
+    fn choose(
+        config: &Config,
+        requested: Option<GatewayName>,
+    ) -> Result<DefaultGateway, ConfigError> {
+        match requested {
+            Some(name) => {
+                config.resolve_gateway(Some(&name))?;
+                Ok(DefaultGateway::Pinned(name))
+            }
+            None => Ok(DefaultGateway::follow(config)),
+        }
+    }
+
+    fn follow(config: &Config) -> DefaultGateway {
+        DefaultGateway::Followed(
+            config
+                .resolve_gateway(None)
+                .ok()
+                .map(|(name, _)| name.clone()),
+        )
+    }
+
+    fn settle(&self, config: &Config) -> DefaultGateway {
+        match self {
+            DefaultGateway::Pinned(name) if config.gateway(name).is_some() => self.clone(),
+            DefaultGateway::Pinned(_) | DefaultGateway::Followed(_) => {
+                DefaultGateway::follow(config)
+            }
+        }
+    }
+
+    fn name(&self) -> Option<&GatewayName> {
+        match self {
+            DefaultGateway::Pinned(name) => Some(name),
+            DefaultGateway::Followed(name) => name.as_ref(),
+        }
+    }
+}
+
+#[derive(Debug)]
+struct State {
+    default: DefaultGateway,
+    slots: BTreeMap<GatewayName, Slot>,
+}
+
+impl State {
+    fn access(&self, name: &GatewayName) -> Access {
+        match self.slots.get(name) {
+            None => Access::NotChosen,
+            Some(Slot::Up(session)) => Access::Up(session.clone()),
+            Some(Slot::Down(error)) => Access::Down {
+                name: name.clone(),
+                error: Arc::clone(error),
+            },
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct SessionSet {
-    default: Mutex<Option<GatewayName>>,
-    slots: Mutex<BTreeMap<GatewayName, Slot>>,
+    state: Mutex<State>,
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -154,31 +218,35 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl SessionSet {
     pub fn new(
-        default: Option<GatewayName>,
+        default: DefaultGateway,
         entries: BTreeMap<GatewayName, GatewayState>,
     ) -> SessionSet {
         SessionSet {
-            default: Mutex::new(default),
-            slots: Mutex::new(
-                entries
+            state: Mutex::new(State {
+                default,
+                slots: entries
                     .into_iter()
                     .map(|(n, s)| (n, Slot::from(s)))
                     .collect(),
-            ),
+            }),
         }
     }
 
     pub async fn connect(
         config: &Config,
-        default: Option<GatewayName>,
+        requested: Option<GatewayName>,
         connector: &dyn SessionConnector,
         deadline: Duration,
         cancel: &CancellationToken,
-    ) -> SessionSet {
+    ) -> Result<SessionSet, ConfigError> {
+        let default = DefaultGateway::choose(config, requested)?;
         let attempts = config
             .gateways()
             .map(|(name, entry)| dial(name, entry, connector, deadline, cancel));
-        SessionSet::new(default, join_all(attempts).await.into_iter().collect())
+        Ok(SessionSet::new(
+            default,
+            join_all(attempts).await.into_iter().collect(),
+        ))
     }
 
     pub(crate) async fn reconcile(
@@ -189,11 +257,11 @@ impl SessionSet {
         cancel: &CancellationToken,
     ) {
         let missing: Vec<(&GatewayName, &GatewayEntry)> = {
-            let mut slots = locked(&self.slots);
-            slots.retain(|name, _| config.gateway(name).is_some());
+            let mut state = locked(&self.state);
+            state.slots.retain(|name, _| config.gateway(name).is_some());
             config
                 .gateways()
-                .filter(|(name, _)| !slots.contains_key(*name))
+                .filter(|(name, _)| !state.slots.contains_key(*name))
                 .collect()
         };
         let dialed = join_all(
@@ -202,40 +270,36 @@ impl SessionSet {
                 .map(|(name, entry)| dial(name, entry, connector, deadline, cancel)),
         )
         .await;
-        let mut slots = locked(&self.slots);
-        for (name, state) in dialed {
-            slots.entry(name).or_insert_with(|| Slot::from(state));
+        let mut state = locked(&self.state);
+        for (name, gateway) in dialed {
+            state
+                .slots
+                .entry(name)
+                .or_insert_with(|| Slot::from(gateway));
         }
-        let mut default = locked(&self.default);
-        if default
-            .as_ref()
-            .is_none_or(|name| config.gateway(name).is_none())
-        {
-            *default = config
-                .resolve_gateway(None)
-                .ok()
-                .map(|(name, _)| name.clone());
-        }
+        state.default = state.default.settle(config);
     }
 
     pub fn get(&self, name: &GatewayName) -> Option<Session> {
-        match locked(&self.slots).get(name)? {
+        match locked(&self.state).slots.get(name)? {
             Slot::Up(session) => Some(Session::clone(session)),
             Slot::Down(_) => None,
         }
     }
 
     pub fn default_name(&self) -> Option<GatewayName> {
-        locked(&self.default).clone()
+        locked(&self.state).default.name().cloned()
     }
 
-    pub(crate) fn default_access(&self) -> Access {
-        self.default_name()
-            .map_or(Access::NotChosen, |name| self.access(&name))
+    pub(crate) fn default_target(&self) -> Option<(GatewayName, Access)> {
+        let state = locked(&self.state);
+        let name = state.default.name()?;
+        Some((name.clone(), state.access(name)))
     }
 
     pub(crate) fn reached(&self) -> Vec<(GatewayName, Reached)> {
-        locked(&self.slots)
+        locked(&self.state)
+            .slots
             .iter()
             .map(|(name, slot)| {
                 let reached = match slot {
@@ -253,17 +317,18 @@ impl SessionSet {
         connector: &dyn SessionConnector,
         cancel: &CancellationToken,
     ) -> Home {
-        let Some(default) = self.default_name() else {
-            return Home::NotChosen;
-        };
-        let (home, known) = {
-            let slots = locked(&self.slots);
-            let home = match slots.get(&default) {
+        let (default, home, known) = {
+            let state = locked(&self.state);
+            let Some(default) = state.default.name().cloned() else {
+                return Home::NotChosen;
+            };
+            let home = match state.slots.get(&default) {
                 None => return Home::NotChosen,
                 Some(Slot::Down(error)) => return Home::Down(Arc::clone(error)),
                 Some(Slot::Up(session)) => Session::clone(session),
             };
-            let known: BTreeMap<GatewayName, Reached> = slots
+            let known: BTreeMap<GatewayName, Reached> = state
+                .slots
                 .iter()
                 .map(|(name, slot)| {
                     let reached = match slot {
@@ -273,7 +338,7 @@ impl SessionSet {
                     (name.clone(), reached)
                 })
                 .collect();
-            (home, known)
+            (default, home, known)
         };
         let unreachable = |name: &GatewayName, error: &GatewayError| {
             UnreachableGateway::new(
@@ -299,14 +364,7 @@ impl SessionSet {
     }
 
     pub(crate) fn access(&self, name: &GatewayName) -> Access {
-        match locked(&self.slots).get(name) {
-            None => Access::NotChosen,
-            Some(Slot::Up(session)) => Access::Up(session.clone()),
-            Some(Slot::Down(error)) => Access::Down {
-                name: name.clone(),
-                error: Arc::clone(error),
-            },
-        }
+        locked(&self.state).access(name)
     }
 
     pub(crate) async fn reconnect(
@@ -315,7 +373,8 @@ impl SessionSet {
         config: &Config,
         cancel: &CancellationToken,
     ) {
-        let failed: Vec<GatewayName> = locked(&self.slots)
+        let failed: Vec<GatewayName> = locked(&self.state)
+            .slots
             .iter()
             .filter(|(_, slot)| matches!(slot, Slot::Down(_)))
             .map(|(name, _)| name.clone())
@@ -325,13 +384,13 @@ impl SessionSet {
             Some(async move { (name, connector.connect(name, entry, cancel).await) })
         });
         let outcomes = join_all(attempts).await;
-        let mut slots = locked(&self.slots);
+        let mut state = locked(&self.state);
         for (name, outcome) in outcomes {
             let slot = match outcome {
                 Ok(session) => Slot::Up(Box::new(session)),
                 Err(error) => Slot::Down(Arc::new(error)),
             };
-            slots.insert(name.clone(), slot);
+            state.slots.insert(name.clone(), slot);
         }
     }
 }

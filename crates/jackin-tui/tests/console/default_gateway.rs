@@ -8,11 +8,12 @@ use jackin_console::app::Route;
 use jackin_console::backend::Effect;
 use jackin_console::domain::account::{Account, CredentialSource, DetectedKind, UNSAVED_ID};
 use jackin_console::domain::agent::Provider;
+use jackin_console::world::DaemonHealth;
 use jackin_core::{
     AccountName, Agent, ConfigEdit, GatewayName, HookKind, OpenShellWorkspace, ProviderName,
     sandbox_layout,
 };
-use jackin_openshell::Gateway;
+use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::CheckId;
 use jackin_testkit::{
     ConsoleRig, FakeGateway, PLACEHOLDER, ProgramScript, ScriptedConnector, TestResult,
@@ -32,7 +33,30 @@ struct Pair {
     connector: Arc<ScriptedConnector>,
 }
 
-async fn pair(primed: bool) -> Out<Box<Pair>> {
+#[derive(Clone, Copy)]
+enum Peer {
+    Absent,
+    Connected,
+    Failed,
+    ConnectedRefusingRedial,
+}
+
+fn refused() -> GatewayError {
+    GatewayError::Unreachable {
+        endpoint: "10.0.0.9:8080".to_owned(),
+        message: "connection refused".to_owned(),
+    }
+}
+
+async fn pair(peer: Peer) -> Out<Box<Pair>> {
+    assemble(peer, false).await
+}
+
+async fn pinned_pair() -> Out<Box<Pair>> {
+    assemble(Peer::Connected, true).await
+}
+
+async fn assemble(peer: Peer, pinned: bool) -> Out<Box<Pair>> {
     let mut lab = Lab::open().await?;
     let world = &lab.rig.world;
     let first = world.gateway.name().clone();
@@ -78,15 +102,19 @@ async fn pair(primed: bool) -> Out<Box<Pair>> {
         .account(&AccountName::parse("work")?)
         .cloned()
         .ok_or("the work account is missing")?;
-    let peer: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&second);
-    session_over(&lab.rig.world, Arc::clone(&peer))
+    let link: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&second);
+    session_over(&lab.rig.world, Arc::clone(&link))
         .sync_account(&login, &CancellationToken::new())
         .await?;
     let home: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&lab.rig.world.gateway);
+    let redial = match peer {
+        Peer::ConnectedRefusingRedial => vec![Some(refused())],
+        Peer::Absent | Peer::Connected | Peer::Failed => Vec::new(),
+    };
     let connector = Arc::new(
         ScriptedConnector::new()
             .gateway(home, Vec::new())
-            .gateway(Arc::clone(&peer), Vec::new()),
+            .gateway(Arc::clone(&link), redial),
     );
     let mut builder = ConsoleRig::builder(&lab.rig.world)
         .connector(connector_over(
@@ -94,11 +122,16 @@ async fn pair(primed: bool) -> Out<Box<Pair>> {
             Arc::<ScriptedConnector>::clone(&connector),
         ))
         .size(200, 44);
-    if primed {
-        builder = builder.gateway(
+    builder = match peer {
+        Peer::Absent => builder,
+        Peer::Connected | Peer::ConnectedRefusingRedial => builder.gateway(
             name,
-            GatewayState::Connected(Box::new(session_over(&lab.rig.world, peer))),
-        );
+            GatewayState::Connected(Box::new(session_over(&lab.rig.world, link))),
+        ),
+        Peer::Failed => builder.gateway(name, GatewayState::Failed(refused())),
+    };
+    if pinned {
+        builder = builder.pinned(first.clone());
     }
     lab.console = builder.build().await?;
     lab.console.skip_intro();
@@ -139,7 +172,7 @@ fn provider_of(name: &str) -> Out<ProviderName> {
 #[tokio::test]
 async fn doctor_checks_the_new_default_after_the_default_left_the_config() -> TestResult {
     guard(async {
-        let mut pair = pair(true).await?;
+        let mut pair = pair(Peer::Connected).await?;
         pair.second.set_serving(false);
         pair.lab
             .edit(vec![ConfigEdit::RemoveGateway(pair.first.clone())])
@@ -155,7 +188,7 @@ async fn doctor_checks_the_new_default_after_the_default_left_the_config() -> Te
 #[tokio::test]
 async fn doctor_keeps_the_default_while_it_stays_configured() -> TestResult {
     guard(async {
-        let mut pair = pair(true).await?;
+        let mut pair = pair(Peer::Connected).await?;
         pair.lab.rig.world.gateway.set_serving(false);
         refresh(&mut pair.lab).await?;
         let row = health_row(&mut pair.lab).await?;
@@ -168,7 +201,7 @@ async fn doctor_keeps_the_default_while_it_stays_configured() -> TestResult {
 #[tokio::test]
 async fn an_unchanged_config_reconnects_nothing() -> TestResult {
     guard(async {
-        let mut pair = pair(true).await?;
+        let mut pair = pair(Peer::Connected).await?;
         refresh(&mut pair.lab).await?;
         refresh(&mut pair.lab).await?;
         let second = pair.second.name().clone();
@@ -183,7 +216,7 @@ async fn an_unchanged_config_reconnects_nothing() -> TestResult {
 async fn an_account_add_publishes_to_the_new_default_after_the_default_left_the_config()
 -> TestResult {
     guard(async {
-        let mut pair = pair(false).await?;
+        let mut pair = pair(Peer::Absent).await?;
         pair.lab
             .edit(vec![ConfigEdit::RemoveGateway(pair.first.clone())])
             .await?;
@@ -223,7 +256,7 @@ async fn an_account_add_publishes_to_the_new_default_after_the_default_left_the_
 #[tokio::test]
 async fn a_launch_runs_on_the_new_default_after_the_default_left_the_config() -> TestResult {
     guard(async {
-        let mut pair = pair(true).await?;
+        let mut pair = pair(Peer::Connected).await?;
         pair.lab
             .edit(vec![ConfigEdit::RemoveGateway(pair.first.clone())])
             .await?;
@@ -250,6 +283,150 @@ async fn a_launch_runs_on_the_new_default_after_the_default_left_the_config() ->
         );
         assert_eq!(pair.second.sandboxes().len(), 1);
         assert!(pair.lab.rig.world.gateway.sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_followed_default_moves_with_the_config_while_the_old_default_stays_configured()
+-> TestResult {
+    guard(async {
+        let mut pair = pair(Peer::Connected).await?;
+        pair.second.set_serving(false);
+        pair.lab
+            .edit(vec![ConfigEdit::SetDefaultGateway(Some(
+                pair.second.name().clone(),
+            ))])
+            .await?;
+        refresh(&mut pair.lab).await?;
+        let row = health_row(&mut pair.lab).await?;
+        assert!(row.contains("fail"), "{row}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_pinned_default_stays_while_the_config_default_moves_to_another_gateway() -> TestResult {
+    guard(async {
+        let mut pair = pinned_pair().await?;
+        pair.lab.rig.world.gateway.set_serving(false);
+        pair.lab
+            .edit(vec![ConfigEdit::SetDefaultGateway(Some(
+                pair.second.name().clone(),
+            ))])
+            .await?;
+        refresh(&mut pair.lab).await?;
+        let row = health_row(&mut pair.lab).await?;
+        assert!(row.contains("fail"), "{row}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_pinned_default_that_leaves_the_config_gives_way_to_the_config_default() -> TestResult {
+    guard(async {
+        let mut pair = pinned_pair().await?;
+        pair.second.set_serving(false);
+        pair.lab
+            .edit(vec![ConfigEdit::RemoveGateway(pair.first.clone())])
+            .await?;
+        refresh(&mut pair.lab).await?;
+        let row = health_row(&mut pair.lab).await?;
+        assert!(row.contains("fail"), "{row}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_default_that_could_not_be_resolved_follows_the_first_gateway_added() -> TestResult {
+    guard(async {
+        let mut pair = pair(Peer::Absent).await?;
+        let entry = pair
+            .lab
+            .config()
+            .await?
+            .gateway(&pair.first)
+            .cloned()
+            .ok_or("the first gateway has no entry")?;
+        pair.lab
+            .edit(vec![
+                ConfigEdit::RemoveGateway(pair.first.clone()),
+                ConfigEdit::RemoveGateway(pair.second.name().clone()),
+            ])
+            .await?;
+        refresh(&mut pair.lab).await?;
+        let before = health_row(&mut pair.lab).await?;
+        pair.lab.rig.world.gateway.set_serving(false);
+        pair.lab
+            .edit(vec![ConfigEdit::AddGateway {
+                name: pair.first.clone(),
+                entry,
+            }])
+            .await?;
+        refresh(&mut pair.lab).await?;
+        let after = health_row(&mut pair.lab).await?;
+        assert!(!before.contains("fail"), "{before}");
+        assert!(after.contains("fail"), "{after}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_down_gateway_stays_down_across_a_refresh_that_changes_nothing() -> TestResult {
+    guard(async {
+        let mut pair = pair(Peer::Failed).await?;
+        refresh(&mut pair.lab).await?;
+        refresh(&mut pair.lab).await?;
+        assert_eq!(pair.lab.world().daemon_health, DaemonHealth::Stale);
+        assert_eq!(pair.connector.calls(pair.second.name()), 0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_gateway_removed_and_added_again_is_dialed_afresh() -> TestResult {
+    guard(async {
+        let mut pair = pair(Peer::ConnectedRefusingRedial).await?;
+        let name = pair.second.name().clone();
+        let entry = pair
+            .lab
+            .config()
+            .await?
+            .gateway(&name)
+            .cloned()
+            .ok_or("the second gateway has no entry")?;
+        pair.lab
+            .edit(vec![ConfigEdit::RemoveGateway(name.clone())])
+            .await?;
+        refresh(&mut pair.lab).await?;
+        pair.lab
+            .edit(vec![ConfigEdit::AddGateway { name, entry }])
+            .await?;
+        refresh(&mut pair.lab).await?;
+        assert_eq!(pair.lab.world().daemon_health, DaemonHealth::Stale);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_doctor_rerun_checks_the_default_the_config_holds_now() -> TestResult {
+    guard(async {
+        let mut pair = pair(Peer::Connected).await?;
+        pair.second.set_serving(false);
+        pair.lab
+            .edit(vec![ConfigEdit::SetDefaultGateway(Some(
+                pair.second.name().clone(),
+            ))])
+            .await?;
+        let row = health_row(&mut pair.lab).await?;
+        assert!(row.contains("fail"), "{row}");
         Ok(())
     })
     .await
