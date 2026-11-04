@@ -268,6 +268,10 @@ impl Labels {
             .collect()
     }
 
+    pub fn workspace(&self) -> Option<WorkspaceName> {
+        self.parsed(WORKSPACE, WorkspaceName::parse).ok()
+    }
+
     pub fn is_managed(&self) -> bool {
         self.0
             .get(&LabelKey(MANAGED.to_owned()))

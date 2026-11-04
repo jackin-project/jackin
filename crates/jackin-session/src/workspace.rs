@@ -102,6 +102,11 @@ pub enum WorkspaceGuardError {
         workspace: WorkspaceName,
         sandboxes: Vec<SandboxName>,
     },
+    #[error(
+        "cannot tell which workspace {} uses (jackin purge --force)",
+        plain_list(.0)
+    )]
+    Unattributable(Vec<SandboxName>),
     #[error("{}", unreachable_text(.0))]
     Unreachable(Vec<UnreachableGateway>),
     #[error("cannot list the sandboxes of gateway {gateway}")]
@@ -118,6 +123,7 @@ impl Gateways {
     ) -> Result<(), WorkspaceGuardError> {
         let sessions = self.every().map_err(WorkspaceGuardError::Unreachable)?;
         let mut sandboxes = Vec::new();
+        let mut unattributable = Vec::new();
         for session in sessions {
             let listing = session
                 .list()
@@ -133,9 +139,20 @@ impl Gateways {
                     .filter(|sandbox| sandbox.labels.planned.workspace == *workspace)
                     .map(|sandbox| sandbox.name),
             );
+            for broken in listing.unreadable {
+                match broken.workspace {
+                    Some(found) if found == *workspace => sandboxes.push(broken.name),
+                    Some(_) => {}
+                    None => unattributable.push(broken.name),
+                }
+            }
         }
         if sandboxes.is_empty() {
-            return Ok(());
+            if unattributable.is_empty() {
+                return Ok(());
+            }
+            unattributable.sort();
+            return Err(WorkspaceGuardError::Unattributable(unattributable));
         }
         sandboxes.sort();
         Err(WorkspaceGuardError::InUse {
