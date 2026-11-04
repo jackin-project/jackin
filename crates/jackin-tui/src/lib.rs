@@ -7,6 +7,7 @@ mod changes;
 mod checks;
 mod clipboard;
 mod console;
+mod crashed;
 mod doctor;
 mod effects;
 mod files;

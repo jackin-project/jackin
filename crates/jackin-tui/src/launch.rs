@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
 use jackin_console::backend::{Backend, OnePassword};
@@ -34,6 +35,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio_util::sync::CancellationToken;
 
 use crate::backend::JackinBackend;
+use crate::crashed::STOPPED;
 use crate::fleet::ObservedSandbox;
 use crate::project::{Origins, docker_risks};
 use crate::sessions::Access;
@@ -286,8 +288,17 @@ struct Run {
     wanted: Wanted,
     launch: LaunchId,
     out: mpsc::Sender<LaunchEvent>,
+    stage: Arc<AtomicUsize>,
     answers: UnboundedReceiver<Vec<EnvAnswer>>,
     cancel: CancellationToken,
+}
+
+fn announce(out: &mpsc::Sender<LaunchEvent>, failure: LaunchFailure) {
+    drop(out.send(LaunchEvent::StageChanged(failure.stage, StepState::Failed)));
+    drop(out.send(LaunchEvent::Failed(Box::new(FailedLaunch {
+        failure,
+        instance: None,
+    }))));
 }
 
 fn question(found: &jackin_session::EnvQuestion) -> EnvQuestion {
@@ -341,6 +352,9 @@ fn resolve(
 
 impl Run {
     fn send(&self, event: LaunchEvent) {
+        if let LaunchEvent::StageChanged(stage, StepState::Running) = &event {
+            self.stage.store(*stage, Ordering::Relaxed);
+        }
         drop(self.out.send(event));
     }
 
@@ -525,11 +539,7 @@ impl Run {
     }
 
     fn report(&self, failure: LaunchFailure) {
-        self.send(LaunchEvent::StageChanged(failure.stage, StepState::Failed));
-        self.send(LaunchEvent::Failed(Box::new(FailedLaunch {
-            failure,
-            instance: None,
-        })));
+        announce(&self.out, failure);
     }
 
     fn fail(&self, failure: LaunchFailure) {
@@ -660,6 +670,8 @@ pub(crate) fn start(
         Ok(launch) => launch,
         Err(error) => return unlaunched(world, &error, out, events, answer, cancel),
     };
+    let stage = Arc::new(AtomicUsize::new(Stage::Image.index()));
+    let crashed = (out.clone(), Arc::clone(&stage), backend.clone());
     let run = Run {
         backend: backend.clone(),
         content: backend.launch_content(),
@@ -671,10 +683,23 @@ pub(crate) fn start(
         },
         launch: launch.clone(),
         out,
+        stage,
         answers,
         cancel: cancel.clone(),
     };
-    backend.bridge.detach(run.run());
+    backend.bridge.detach(run.run(), move || {
+        let (out, stage, backend) = crashed;
+        announce(
+            &out,
+            LaunchFailure {
+                stage: stage.load(Ordering::Relaxed),
+                summary: STOPPED.to_owned(),
+                next_step: NextStep::None,
+                detail: Vec::new(),
+            },
+        );
+        backend.refresh();
+    });
     Box::new(SessionLaunch {
         run_id: launch.to_string(),
         events,
@@ -692,11 +717,7 @@ fn unlaunched(
     cancel: CancellationToken,
 ) -> Box<dyn LaunchFeed> {
     let failure = plain_failure(Stage::Image, error);
-    drop(out.send(LaunchEvent::StageChanged(failure.stage, StepState::Failed)));
-    drop(out.send(LaunchEvent::Failed(Box::new(FailedLaunch {
-        failure,
-        instance: None,
-    }))));
+    announce(&out, failure);
     Box::new(SessionLaunch {
         run_id: world.now_secs().to_string(),
         events,
