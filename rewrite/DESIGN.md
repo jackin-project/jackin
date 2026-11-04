@@ -37,8 +37,8 @@ Use the latest stable release of every tool and every dependency. Do not use a p
 | OpenShell | 0.1.7 (`5d25211b25a8fc887e8d5c606d57d6ab22f1d76c`, 2026-11-03) | Homebrew `openshell`, git tag `v0.1.7` |
 | Codex CLI | 0.166.0 (2026-10-29) | `@openai/codex` |
 | cargo-nextest | 0.9.151 (P8.0a) | mise aqua |
-| Docker CLI (D24 client layer) | 29.9.2 | `download.docker.com` static archive, hash fixed on first fetch (no published checksum file) |
-| docker-buildx | 0.38.1 | GitHub release, published checksum |
+| Docker CLI (D24 client layer) | 29.9.3 | `download.docker.com` static archive, hash fixed on first fetch (no published checksum file) |
+| docker-buildx | 0.38.2 | GitHub release, published checksum |
 | docker-compose | 5.7.0 | GitHub release, published checksum |
 
 The operator set the global toolchain with this command:
