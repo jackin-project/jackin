@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
-    FileLock, FileSystem, FsError, GatewayEntry, GatewayName, HostPath, Provider, ProviderName,
+    FileLock, FileSystem, GatewayEntry, GatewayName, HostPath, Provider, ProviderName,
 };
 use jackin_openshell::{
     Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile,
@@ -403,10 +403,7 @@ impl Undo<'_> {
 }
 
 fn committed(error: &AccountEditError) -> bool {
-    matches!(
-        error,
-        AccountEditError::Config(ConfigError::Fs(FsError::Unsynced { .. }))
-    )
+    matches!(error, AccountEditError::Config(config) if config.committed())
 }
 
 async fn roll_back(original: AccountEditError, journal: Vec<Undo<'_>>) -> AccountEditError {

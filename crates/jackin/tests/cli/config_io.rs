@@ -7,7 +7,7 @@ use jackin::ExitClass;
 use jackin_core::{FileMode, FileSystem, FsError};
 use jackin_testkit::{FsOp, MemFs, TestResult, World, guard};
 
-use super::support::{Harness, failed};
+use super::support::{GATEWAY_CONFIG, Harness, failed};
 
 const LISTS: &[&[&str]] = &[
     &["gateway", "ls"],
@@ -87,6 +87,44 @@ async fn a_failed_write_surfaces_as_a_failure_with_the_old_bytes_intact() -> Tes
         let ran = harness.run(&["gateway", "add", "fresh"]).await?;
         failed(&ran, ExitClass::Failure, &["rename refused"])?;
         assert_eq!(memory.read_string(&path).as_deref(), Some(old));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_gateway_removal_that_committed_before_its_directory_sync_failed_still_warns()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let memory = Arc::new(MemFs::new());
+        let harness = Harness::new(&world).fs(Arc::<MemFs>::clone(&memory));
+        let path = harness.config_path.clone();
+        let dir = path.as_path().parent().ok_or("no parent")?;
+        memory.create_dir_all(&jackin_core::HostPath::parse(dir)?).await?;
+        let text = format!(
+            "{GATEWAY_CONFIG}\n[gateways.second]\nopenshell_workspace = \"default\"\nbuilder = \"b\"\nplatform = \"linux/arm64\"\n"
+        );
+        memory.write_new(&path, text.as_bytes(), FileMode(0o600)).await?;
+        memory.fail_at(
+            FsOp::SyncDir,
+            1,
+            FsError::Io {
+                path: path.clone(),
+                kind: std::io::ErrorKind::PermissionDenied,
+                message: "sync refused".to_owned(),
+            },
+        );
+        let ran = harness
+            .run(&["gateway", "rm", "second", "--offline"])
+            .await?;
+        failed(
+            &ran,
+            ExitClass::Failure,
+            &["sync refused", "warning: gateway second", "OpenShell providers"],
+        )?;
+        let stored = memory.read_string(&path).ok_or("no config")?;
+        assert!(!stored.contains("gateways.second"), "{stored}");
         Ok(())
     })
     .await
