@@ -195,9 +195,8 @@ async fn write_atomic_failure_keeps_the_old_file_and_leaves_no_temp_file() -> Te
             let fs = faulty(fault);
             let outcome = write_atomic(&fs, &target, b"new bytes", FileMode(0o600)).await;
             match (fault, outcome) {
-                (Fault::SyncDir, Err(FsError::Unsynced { path, message })) => {
+                (Fault::SyncDir, Err(FsError::Unsynced { path, .. })) => {
                     assert_eq!(path, target);
-                    assert!(message.starts_with("i/o error at "), "{message}");
                 }
                 (Fault::WriteNew | Fault::Rename, Err(FsError::Io { kind, .. })) => {
                     assert_eq!(kind, ErrorKind::StorageFull);

@@ -70,7 +70,7 @@ async fn an_untracked_repository_inside_a_directory_the_outer_repository_tracks_
             repo.file("lib/dep/tracked.txt", b"tracked\n").await?;
             repo.commit().await?;
             repo.git(&["init", "-q", nested]).await?;
-            repo.file(&format!("{nested}/secret.txt"), b"nested work\n")
+            repo.file(&format!("{nested}/sub/secret.txt"), b"nested work\n")
                 .await?;
             let UnsupportedProject::NestedRepositories(paths) = refused(repo).await? else {
                 return Err(format!("{nested}: not a nested repository refusal").into());

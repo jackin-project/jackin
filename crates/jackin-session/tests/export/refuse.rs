@@ -81,6 +81,7 @@ fn listing(dir: &Path) -> Result<BTreeSet<String>, Box<dyn Error>> {
 enum Plant {
     LinkedObjects,
     LinkedReferences,
+    LinkedLogs,
     LinkedReflog,
     LinkedReflogLeaf,
     LinkedReferenceLeaf,
@@ -93,6 +94,7 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
         for plant in [
             Plant::LinkedObjects,
             Plant::LinkedReferences,
+            Plant::LinkedLogs,
             Plant::LinkedReflog,
             Plant::LinkedReflogLeaf,
             Plant::LinkedReferenceLeaf,
@@ -131,6 +133,11 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
                 }
                 Plant::LinkedReferences => {
                     std::os::unix::fs::symlink(attacker.path(), git_dir.join("refs/heads/jackin"))?;
+                }
+                Plant::LinkedLogs => {
+                    std::fs::create_dir_all(git_dir.join("logs"))?;
+                    std::fs::rename(git_dir.join("logs"), attacker.path().join("logs"))?;
+                    std::os::unix::fs::symlink(attacker.path().join("logs"), git_dir.join("logs"))?;
                 }
                 Plant::LinkedReflog => {
                     std::fs::create_dir_all(git_dir.join("logs/refs/heads"))?;
@@ -173,6 +180,7 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
                 )
                 | (
                     Plant::LinkedReferences
+                    | Plant::LinkedLogs
                     | Plant::LinkedReflog
                     | Plant::LinkedReflogLeaf
                     | Plant::LinkedReferenceLeaf,

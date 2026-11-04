@@ -329,6 +329,7 @@ fn a1_lock_never_follows_or_truncates_what_it_finds_at_its_path() {
 
     let elsewhere = tempfile::tempdir().expect("tempdir");
     let other = tempfile::tempdir().expect("tempdir");
+    fs::set_permissions(elsewhere.path(), fs::Permissions::from_mode(0o700)).expect("chmod");
     symlink(elsewhere.path(), other.path().join(a1_lock_dir())).expect("link");
     denied(A1Lock::acquire(other.path()));
     assert!(
