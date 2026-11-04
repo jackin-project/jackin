@@ -33,6 +33,7 @@ use crate::project::{
     Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, instance as project_instance,
     manifest_doc, project,
 };
+use crate::readings::Readings;
 use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
 
 #[derive(Debug)]
@@ -81,6 +82,7 @@ pub(crate) struct Inputs {
     pub(crate) docs: Mutex<DocCache>,
     fleet: Mutex<Fleet>,
     pub(crate) checks: Mutex<RoleChecks>,
+    pub(crate) readings: Mutex<Readings>,
     origins: OriginCache,
 }
 
@@ -164,6 +166,7 @@ impl Inputs {
             docs: Mutex::new(DocCache::new()),
             fleet: Mutex::new(Fleet::default()),
             checks: Mutex::new(RoleChecks::new()),
+            readings: Mutex::new(Readings::default()),
             origins: OriginCache::default(),
         }
     }
@@ -201,6 +204,7 @@ impl Inputs {
             },
             &mut locked(&self.ids),
         );
+        locked(&self.readings).overlay(config, &mut snapshot.accounts);
         snapshot.surfaces.doctor = Some(DoctorSurface {
             noun: snapshot.surfaces.vocabulary.health_noun.clone(),
             state: self.doctor.state(),
