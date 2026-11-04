@@ -7,7 +7,7 @@ use jackin_testkit::{TestResult, default_limits, guard};
 use super::lab::{Check, Lab, family, refusal};
 use super::pack::{
     BLOB, COMMIT, Hash, TAG, TREE, assemble, assemble_open, blob, copies, delta_stream, entry,
-    header_len, ref_delta, zeros,
+    header_len, ofs_delta, ref_delta, typed_size, zeros,
 };
 
 const CAP: u64 = 65_536;
@@ -209,6 +209,53 @@ async fn a_delta_instruction_stream_is_capped_and_must_match_its_declared_size()
 }
 
 #[tokio::test]
+async fn a_delta_stream_is_charged_to_the_total_before_it_is_inflated() -> TestResult {
+    guard(async {
+        let limits = LaunchLimits {
+            export_total_bytes: 80_000,
+            ..default_limits()
+        };
+        let (mut lab, header) = lab_with(limits).await?;
+        let stream = delta_stream(0, 1, &zeros(59_990));
+        assert_eq!(stream.len(), 59_992);
+        let size = stream.len() as u64;
+        let over: Check = refusal(BundleRefusal::TooMuchContent {
+            total: 2 * size + 1,
+            limit: 80_000,
+        });
+        for (name, ofs) in [("ref delta", false), ("ofs delta", true)] {
+            let each = if ofs {
+                ofs_delta(size, &stream)
+            } else {
+                ref_delta(HASH, size, &stream)
+            };
+            lab.passes_the_walker(&format!("{name}: one stream"), |header| {
+                assemble(header, std::slice::from_ref(&each), 1, HASH)
+            })
+            .await?;
+            lab.refuses(
+                &format!("{name}: two streams"),
+                assemble(&header, &[each.clone(), each], 2, HASH),
+                &over,
+            )
+            .await?;
+        }
+        let unread = [typed_size(7, 60_000), zeros(HASH.len()), vec![0xff; 8]].concat();
+        let first = ref_delta(HASH, size, &stream);
+        lab.refuses(
+            "a second stream that never inflates",
+            assemble(&header, &[first, unread], 2, HASH),
+            &refusal(BundleRefusal::TooMuchContent {
+                total: size + 1 + 60_000,
+                limit: 80_000,
+            }),
+        )
+        .await
+    })
+    .await
+}
+
+#[tokio::test]
 async fn the_object_count_is_checked_from_the_pack_header_before_any_entry() -> TestResult {
     guard(async {
         let limits = LaunchLimits {
@@ -265,13 +312,18 @@ async fn the_sum_of_declared_results_is_capped_for_blobs_and_for_deltas() -> Tes
             .await?;
         lab.passes_the_walker("four blobs", |header| assemble(header, &five[..4], 4, HASH))
             .await?;
-        let stream = delta_stream(0, 20_000, &[]);
+        let stream = delta_stream(0, 19_996, &[]);
+        assert_eq!(stream.len(), 4);
         let small = ref_delta(HASH, stream.len() as u64, &stream);
         let mixed = [vec![big], vec![small; 4]].concat();
+        let streamed: Check = refusal(BundleRefusal::TooMuchContent {
+            total: 80_004,
+            limit: 80_000,
+        });
         lab.refuses(
             "one blob and four deltas",
             assemble(&header, &mixed, 5, HASH),
-            &over,
+            &streamed,
         )
         .await?;
         lab.passes_the_walker("deltas at the limit", |header| {

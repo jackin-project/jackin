@@ -186,6 +186,13 @@ pub(crate) fn ref_delta(hash: Hash, size_field: u64, stream: &[u8]) -> Vec<u8> {
     ref_delta_on(&zeros(hash.len()), size_field, stream)
 }
 
+pub(crate) fn ofs_delta(size_field: u64, stream: &[u8]) -> Vec<u8> {
+    let mut bytes = typed_size(OFS_DELTA, size_field);
+    bytes.push(1);
+    bytes.extend(zlib(stream));
+    bytes
+}
+
 pub(crate) fn ref_delta_on(base: &[u8], size_field: u64, stream: &[u8]) -> Vec<u8> {
     let mut bytes = typed_size(REF_DELTA, size_field);
     bytes.extend_from_slice(base);
