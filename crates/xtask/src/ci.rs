@@ -9,7 +9,10 @@ use std::process::Command;
 use clap::{Args, ValueEnum};
 use thiserror::Error;
 
-use crate::checks::{Check, CommentsCheck, ContainersCheck, ErrorsCheck, LayersCheck, PinsCheck};
+use crate::checks::{
+    BaselineCheck, Check, CommentsCheck, ContainersCheck, DemoGateCheck, ErrorsCheck, LayersCheck,
+    PinsCheck, ScreenCheck,
+};
 use crate::repo::{Repo, cargo_program};
 use crate::text::plain;
 use crate::violation::Violation;
@@ -81,12 +84,19 @@ pub enum CiStep {
     Pins,
     Containers,
     Errors,
+    Baseline,
+    Screen,
+    DemoGate,
     Reuse,
     Docs,
 }
 
+static SCREEN: ScreenCheck = ScreenCheck::production();
+
+static DEMO_GATE: DemoGateCheck = DemoGateCheck::production();
+
 impl CiStep {
-    pub const ALL: [CiStep; 12] = [
+    pub const ALL: [CiStep; 15] = [
         CiStep::Fmt,
         CiStep::Clippy,
         CiStep::Nextest,
@@ -97,6 +107,9 @@ impl CiStep {
         CiStep::Pins,
         CiStep::Containers,
         CiStep::Errors,
+        CiStep::Baseline,
+        CiStep::Screen,
+        CiStep::DemoGate,
         CiStep::Reuse,
         CiStep::Docs,
     ];
@@ -133,6 +146,9 @@ impl CiStep {
             CiStep::Pins => Action::Check(&PinsCheck),
             CiStep::Containers => Action::Check(&ContainersCheck),
             CiStep::Errors => Action::Check(&ErrorsCheck),
+            CiStep::Baseline => Action::Check(&BaselineCheck),
+            CiStep::Screen => Action::Check(&SCREEN),
+            CiStep::DemoGate => Action::Check(&DEMO_GATE),
             CiStep::Reuse => Action::Tools(vec![ToolCall::named("reuse", &["lint"])]),
             CiStep::Docs => Action::Tools(vec![
                 ToolCall::named("bun", &["install", "--frozen-lockfile"]).in_dir("docs"),
@@ -155,6 +171,9 @@ impl fmt::Display for CiStep {
             CiStep::Pins => "pins",
             CiStep::Containers => "containers",
             CiStep::Errors => "errors",
+            CiStep::Baseline => "baseline",
+            CiStep::Screen => "screen",
+            CiStep::DemoGate => "demo-gate",
             CiStep::Reuse => "reuse",
             CiStep::Docs => "docs",
         })

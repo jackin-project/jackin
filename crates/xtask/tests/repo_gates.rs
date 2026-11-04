@@ -834,7 +834,11 @@ mod layers {
             "jackin-usage-provider-core",
             Normal("jackin-usage-provider-codex"),
         );
-        add(&mut specs, "jackin-tui", Normal("jackin-usage"));
+        add(
+            &mut specs,
+            "jackin-tui",
+            Normal("jackin-usage-provider-core"),
+        );
         add(&mut specs, "jackin", Normal("jackin-usage-provider-core"));
         add(
             &mut specs,
@@ -2061,12 +2065,15 @@ mod ci_run {
 
     use super::*;
 
-    const FULL: [&str; 8] = [
+    const FULL: [&str; 11] = [
         "cargo fmt --all --check",
         "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
         "cargo nextest run --workspace --all-features --locked",
         "cargo deny --locked check",
         "cargo shear --deny-warnings",
+        "cargo tree -p jackin -e normal,build -f {p} {f} -i jackin-console",
+        "cargo tree -p jackin-tui -e normal,build -f {p} {f} -i jackin-console",
+        "cargo tree -p jackin -e normal -i clap",
         "reuse lint",
         "bun install --frozen-lockfile @docs",
         "bun run build @docs",
@@ -2158,6 +2165,10 @@ mod ci_run {
         let fixture = Fixture::new(&bare(&["jackin-core"]))?;
         fixture.write_pins(PIN, PIN, PIN, PIN, PIN)?;
         fixture.write("docs/index.md", "# Docs\n")?;
+        fixture.write(
+            "deny.toml",
+            "[sources]\nunknown-git = \"deny\"\nallow-git = [\"https://github.com/NVIDIA/OpenShell\", \"https://github.com/tailrocks/terminal-components-baseline\", \"https://github.com/tailrocks/termpane\"]\n",
+        )?;
         Ok(fixture)
     }
 
@@ -2175,7 +2186,7 @@ mod ci_run {
         let fixture = green()?;
         for args in [&["--fast"][..], &["--no-docs"], &["--fast", "--no-docs"]] {
             let outcome = spy.run(&fixture, args, "")?;
-            assert_eq!(outcome.log, FULL[..6], "args {args:?}");
+            assert_eq!(outcome.log, FULL[..9], "args {args:?}");
             assert!(outcome.success, "{}", outcome.stderr);
         }
         Ok(())
@@ -2185,11 +2196,13 @@ mod ci_run {
     fn only_runs_the_named_steps_in_plan_order() -> TestResult {
         let spy = Spy::new()?;
         let fixture = green()?;
-        let cases: [(&str, &[&str]); 4] = [
-            ("reuse,fmt", &[FULL[0], FULL[5]]),
-            ("docs", &FULL[6..]),
+        let cases: [(&str, &[&str]); 6] = [
+            ("reuse,fmt", &[FULL[0], FULL[8]]),
+            ("docs", &FULL[9..]),
             ("deny,deny", &[FULL[3]]),
             ("comments,layers,pins,containers", &[]),
+            ("baseline,screen", &[]),
+            ("demo-gate,screen,baseline", &FULL[5..8]),
         ];
         for (selection, expected) in cases {
             let outcome = spy.run(&fixture, &["--only", selection], "")?;
@@ -2203,7 +2216,7 @@ mod ci_run {
     fn a_failing_tool_stops_the_run_and_fails_the_exit_status() -> TestResult {
         let spy = Spy::new()?;
         let fixture = green()?;
-        for (fail_on, count) in [("clippy", 2), ("deny", 4), ("reuse", 6), ("bun", 7)] {
+        for (fail_on, count) in [("clippy", 2), ("deny", 4), ("reuse", 9), ("bun", 10)] {
             let outcome = spy.run(&fixture, &[], fail_on)?;
             assert_eq!(outcome.log, FULL[..count], "FAIL_ON {fail_on}");
             assert!(!outcome.success, "FAIL_ON {fail_on}");
@@ -2235,6 +2248,32 @@ mod ci_run {
             (&pins, "rust-toolchain.toml"),
             (&containers, "crates/jackin-core/src/lib.rs:1"),
             (&errors, "crates/jackin-core/src/lib.rs:1"),
+        ];
+        for (fixture, needle) in cases {
+            let outcome = spy.run(fixture, &[], "")?;
+            assert_eq!(outcome.log, FULL[..5], "{needle}");
+            assert_eq!(outcome.code, Some(1), "{needle}");
+            assert!(outcome.stderr.contains(needle), "{}", outcome.stderr);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn a_violation_in_baseline_or_screen_stops_before_the_later_tools() -> TestResult {
+        let spy = Spy::new()?;
+        let baseline = green()?;
+        baseline.write(
+            "deny.toml",
+            "[sources]\nunknown-git = \"warn\"\nallow-git = []\n",
+        )?;
+        let screen = green()?;
+        screen.write(
+            "crates/jackin-tui/src/lib.rs",
+            "const NAME: &str = \"Saved\";\n",
+        )?;
+        let cases = [
+            (&baseline, "deny.toml: R6"),
+            (&screen, "crates/jackin-tui/src/lib.rs:1: C2"),
         ];
         for (fixture, needle) in cases {
             let outcome = spy.run(fixture, &[], "")?;

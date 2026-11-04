@@ -35,6 +35,8 @@ pub const EXPOSE_ALLOWLIST: &[&str] = &[
     "crates/xtask/src/e2e/redact.rs",
 ];
 
+pub const TERMINAL_ENGINE_CRATES: &[&str] = &["termpane", "vt100"];
+
 pub const HTTP_CLIENT_CRATE: &str = "reqwest";
 
 pub const HTTP_CLIENT_OWNER: &str = "jackin-usage-provider-core";
@@ -89,10 +91,12 @@ pub const LAYERS: &[LayerRule] = &[
     LayerRule {
         member: "jackin-tui",
         depends: &[
+            "jackin-console",
             "jackin-core",
             "jackin-image",
             "jackin-openshell",
             "jackin-session",
+            "jackin-usage",
         ],
         dev_depends: &["jackin-testkit"],
         imports: &[],
@@ -100,6 +104,7 @@ pub const LAYERS: &[LayerRule] = &[
     LayerRule {
         member: "jackin-testkit",
         depends: &[
+            "jackin-console",
             "jackin-core",
             "jackin-image",
             "jackin-openshell",
@@ -242,6 +247,11 @@ fn dependency_problem(
     if name == HTTP_CLIENT_CRATE {
         return (member.name() != HTTP_CLIENT_OWNER)
             .then(|| format!("{subject}; only {HTTP_CLIENT_OWNER} may use the HTTP client crate"));
+    }
+    if TERMINAL_ENGINE_CRATES.contains(&name) {
+        return Some(format!(
+            "{subject}; only the baseline crates junie-tui and jackin-console may use a terminal engine crate (D27)"
+        ));
     }
     if let Some(family) = gateway_family(name) {
         return (!rule.imports.contains(&family))

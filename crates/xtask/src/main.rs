@@ -7,7 +7,9 @@ use std::io::{self, Write};
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use jackin_xtask::{CiArgs, CiFailure, E2eArgs, Repo, e2e_command, production, run_ci};
+use jackin_xtask::{
+    CiArgs, CiFailure, E2eArgs, GhCompare, Repo, baseline_branch, e2e_command, production, run_ci,
+};
 
 const E2E_HELP: &str = "J15 and J16 need the operator's D24 test engine: a rootless dockerd at \
 host.openshell.internal:2376 (localhost:2376 on the Mac) with client certificates in \
@@ -28,6 +30,11 @@ enum Command {
     #[command(about = "Run the repository gates in order and stop at the first failure")]
     Ci(CiArgs),
     #[command(
+        name = "baseline-branch",
+        about = "Check that the pinned baseline rev is on feature/openshell-native (needs gh and the network)"
+    )]
+    BaselineBranch,
+    #[command(
         about = "Run the sentinel journey J00 to J17 against a gateway",
         after_help = E2E_HELP
     )]
@@ -38,6 +45,7 @@ enum Command {
 async fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Ci(args) => ci(args),
+        Command::BaselineBranch => branch(),
         Command::E2e(args) => e2e(&args).await,
     }
 }
@@ -66,6 +74,29 @@ fn ci(args: CiArgs) -> ExitCode {
             }
             drop(stderr);
             fail(format!("{step} reported {} violations", violations.len()))
+        }
+        Err(error) => fail_chain(&error),
+    }
+}
+
+fn branch() -> ExitCode {
+    let root = match std::env::current_dir() {
+        Ok(root) => root,
+        Err(error) => return fail_chain(&error),
+    };
+    let repo = match Repo::open(root) {
+        Ok(repo) => repo,
+        Err(error) => return fail_chain(&error),
+    };
+    match baseline_branch(&repo, &GhCompare) {
+        Ok(pins) => {
+            let mut stdout = io::stdout().lock();
+            for pin in pins {
+                if writeln!(stdout, "{} {}", pin.rev, pin.status).is_err() {
+                    return ExitCode::FAILURE;
+                }
+            }
+            ExitCode::SUCCESS
         }
         Err(error) => fail_chain(&error),
     }
