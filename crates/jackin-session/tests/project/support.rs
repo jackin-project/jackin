@@ -3,12 +3,15 @@
 
 use std::error::Error;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use jackin_core::{
-    Clock, Config, HostPath, LabelSelector, LaunchId, ProcessRunner, ProjectRoot, RoleName,
-    SandboxPath, StdFileSystem, sandbox_layout,
+    Clock, Config, HostPath, LabelSelector, LaunchId, LineSink, ProcessError, ProcessOutput,
+    ProcessRunner, ProcessSpec, ProjectRoot, RoleName, SandboxPath, SecretOutput, StdFileSystem,
+    sandbox_layout,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, SandboxQuery};
@@ -17,7 +20,7 @@ use jackin_session::{
     LoadedRole, Session, SessionDeps, TreeMismatch, UnsupportedProject, launch_events, plan_launch,
 };
 use jackin_testkit::{
-    FakeClock, FakeEngine, FakeGateway, RepoFixture, RoleFixture, SandboxHandle, World,
+    FakeClock, FakeEngine, FakeGateway, RepoFixture, RoleFixture, SandboxHandle, TestRunner, World,
 };
 use serde_json::json;
 use tempfile::TempDir;
@@ -33,6 +36,99 @@ pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult 
     tokio::time::timeout(GUARD, work)
         .await
         .map_err(|_| "the test hung for 60 s")?
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Point {
+    AfterOpen,
+    AfterBundle,
+}
+
+type Action = Box<dyn FnOnce() -> std::io::Result<()> + Send>;
+
+pub(crate) struct Tamper {
+    inner: Arc<TestRunner>,
+    point: Point,
+    action: Mutex<Option<Action>>,
+    outcome: Mutex<Option<Result<(), String>>>,
+    opened: AtomicBool,
+}
+
+impl std::fmt::Debug for Tamper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Tamper").finish_non_exhaustive()
+    }
+}
+
+impl Tamper {
+    pub(crate) fn new(
+        rig: &Rig,
+        point: Point,
+        action: impl FnOnce() -> std::io::Result<()> + Send + 'static,
+    ) -> Arc<Tamper> {
+        Arc::new(Tamper {
+            inner: Arc::clone(&rig.world.runner),
+            point,
+            action: Mutex::new(Some(Box::new(action))),
+            outcome: Mutex::new(None),
+            opened: AtomicBool::new(false),
+        })
+    }
+
+    pub(crate) fn done(&self) -> TestResult {
+        match self
+            .outcome
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            Some(Ok(())) => Ok(()),
+            Some(Err(error)) => Err(error.into()),
+            None => Err("the tampering never ran".into()),
+        }
+    }
+
+    fn act(&self) {
+        let taken = self
+            .action
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(action) = taken {
+            *self.outcome.lock().unwrap_or_else(PoisonError::into_inner) =
+                Some(action().map_err(|error| error.to_string()));
+        }
+    }
+}
+
+#[async_trait]
+impl ProcessRunner for Tamper {
+    async fn run(
+        &self,
+        spec: &ProcessSpec,
+        lines: Option<&LineSink>,
+        cancel: &CancellationToken,
+    ) -> Result<ProcessOutput, ProcessError> {
+        let names = |word: &str| spec.args.iter().any(|arg| arg == word);
+        if names("--git-common-dir") {
+            self.opened.store(true, Ordering::SeqCst);
+        } else if matches!(self.point, Point::AfterOpen) && self.opened.load(Ordering::SeqCst) {
+            self.act();
+        }
+        let output = self.inner.run(spec, lines, cancel).await;
+        if matches!(self.point, Point::AfterBundle) && names("bundle") && names("create") {
+            self.act();
+        }
+        output
+    }
+
+    async fn run_secret(
+        &self,
+        spec: &ProcessSpec,
+        cancel: &CancellationToken,
+    ) -> Result<SecretOutput, ProcessError> {
+        self.inner.run_secret(spec, cancel).await
+    }
 }
 
 pub(crate) fn launch_id(byte: u8) -> LaunchId {

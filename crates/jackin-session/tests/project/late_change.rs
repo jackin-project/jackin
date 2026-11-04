@@ -166,6 +166,8 @@ enum UploadChange {
     Remove,
     EditContent,
     AddIgnored,
+    EmptyCommit,
+    Deepen,
 }
 
 async fn upload_base() -> Result<RepoFixture, Box<dyn Error>> {
@@ -193,6 +195,14 @@ async fn during_the_upload(rig: &Rig, change: UploadChange) -> Result<Outcome, B
             UploadChange::Remove => std::fs::remove_file(root.join("b.txt"))?,
             UploadChange::EditContent => std::fs::write(root.join("a.txt"), b"edited\n")?,
             UploadChange::AddIgnored => std::fs::write(root.join("debug.log"), b"noise\n")?,
+            UploadChange::EmptyCommit => {
+                rig.repo
+                    .git(&["commit", "-q", "--allow-empty", "-m", "moved"])
+                    .await?;
+            }
+            UploadChange::Deepen => {
+                rig.repo.git(&["fetch", "-q", "--deepen=1"]).await?;
+            }
         }
         rig.world.gateway.release(&trigger);
         Ok::<(), Box<dyn Error>>(())
@@ -262,6 +272,50 @@ async fn an_edit_or_an_ignored_file_during_the_upload_does_not_fail_the_launch()
             assert!(!handle.root().join("project/debug.log").exists());
         }
         Ok(())
+    })
+    .await
+}
+
+async fn refused_for_history(rig: &Rig, change: UploadChange) -> TestResult {
+    let failed = failure(during_the_upload(rig, change).await?)?;
+    assert_eq!(failed.step, LaunchStep::Upload);
+    assert!(
+        matches!(
+            *failed.error,
+            LaunchError::Unsupported(UnsupportedProject::HistoryChangedDuringUpload)
+        ),
+        "{:?}",
+        failed.error
+    );
+    let handle = rig.handle(1).await?;
+    assert!(
+        handle
+            .file(&sandbox_layout::uploaded_marker(&launch_id(1)))
+            .is_none()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_commit_made_during_the_upload_fails_the_launch() -> TestResult {
+    guard(async {
+        let rig = Rig::new(upload_base().await?).await?;
+        refused_for_history(&rig, UploadChange::EmptyCommit).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_shallow_boundary_moved_during_the_upload_fails_the_launch() -> TestResult {
+    guard(async {
+        let source = upload_base().await?;
+        source.file("c.txt", b"gamma\n").await?;
+        source.commit().await?;
+        source.file("d.txt", b"delta\n").await?;
+        source.commit().await?;
+        let shallow = source.clone_of(&["--depth", "1"]).await?;
+        let rig = Rig::new(shallow).await?;
+        refused_for_history(&rig, UploadChange::Deepen).await
     })
     .await
 }

@@ -59,6 +59,31 @@ async fn every_host_git_call_is_hardened_and_the_import_carries_its_memory_pins(
                 call.args
             );
         }
+        let root = rig.repo.root().as_path();
+        let home = format!("--git-dir={}", root.join(".git").display());
+        let tree = format!("--work-tree={}", root.display());
+        let scoped: Vec<&Call> = calls
+            .iter()
+            .filter(|call| {
+                call.program == Program::Git
+                    && call.args != ["--version"]
+                    && !call.args.iter().any(|arg| arg == "--git-common-dir")
+            })
+            .collect();
+        assert!(!scoped.is_empty());
+        for call in scoped {
+            assert!(call.args.contains(&tree), "no {tree} on {:?}", call.args);
+            let dirs: Vec<&String> = call
+                .args
+                .iter()
+                .filter(|arg| arg.starts_with("--git-dir="))
+                .collect();
+            assert!(
+                matches!(dirs.as_slice(), [dir] if **dir == home || dir.ends_with("/shadow")),
+                "git directory not pinned on {:?}",
+                call.args
+            );
+        }
         let import: Vec<&Call> = calls
             .iter()
             .filter(|call| call.args.iter().any(|arg| arg == "index-pack"))
