@@ -16,8 +16,16 @@ use crate::plan::{BuildStage, PlannedBuild};
 
 #[async_trait]
 pub trait ImageEngine: Send + Sync + Debug {
-    async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, EngineError>;
-    async fn check_builder(&self, builder: &BuilderName) -> Result<(), EngineError>;
+    async fn find(
+        &self,
+        tag: &ImageTag,
+        cancel: &CancellationToken,
+    ) -> Result<Option<ImageId>, EngineError>;
+    async fn check_builder(
+        &self,
+        builder: &BuilderName,
+        cancel: &CancellationToken,
+    ) -> Result<(), EngineError>;
     async fn hold(
         &self,
         _key: &ImageTag,

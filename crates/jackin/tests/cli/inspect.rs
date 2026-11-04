@@ -10,6 +10,7 @@ use jackin_testkit::{Rig, TestResult, guard};
 use serde_json::json;
 
 use super::support::{Failure, Harness, failed, keys, names};
+use tokio_util::sync::CancellationToken;
 
 fn codex_host_rule() -> Result<NetworkRule, Failure> {
     Ok(NetworkRule {
@@ -77,8 +78,14 @@ async fn inspect_json_pins_every_key_set_and_reports_the_live_closure_violation(
         assert_eq!(violations[0]["rule"], "_provider_other");
         assert_eq!(violations[0]["host"], "api.openai.com");
 
-        rig.world.session.power(&name, PowerAction::Stop).await?;
-        rig.world.session.power(&name, PowerAction::Start).await?;
+        rig.world
+            .session
+            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
+        rig.world
+            .session
+            .power(&name, PowerAction::Start, &CancellationToken::new())
+            .await?;
         let waiting = harness.run(&["inspect", name.as_str(), "--json"]).await?;
         assert_eq!(
             waiting.value()?["supervisor"],

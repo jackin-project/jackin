@@ -17,6 +17,7 @@ mod fence;
 mod hooks;
 mod hostile_git;
 mod hostile_launch;
+mod image_handoff;
 mod modes;
 mod phases;
 mod proofs;

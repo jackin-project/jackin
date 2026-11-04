@@ -9,6 +9,7 @@ use jackin_openshell::{
 };
 use jackin_session::LifecycleError;
 use jackin_testkit::{Rig, TestResult, guard};
+use tokio_util::sync::CancellationToken;
 
 fn codex_host_rule(provider: &str) -> Result<NetworkRule, Box<dyn std::error::Error>> {
     Ok(NetworkRule {
@@ -62,7 +63,9 @@ async fn inspect_reports_the_sandbox_and_flags_only_a_foreign_rule_on_a_codex_ho
             .collect();
         assert_eq!(rules, vec![("_provider_other", "api.openai.com")]);
 
-        session.power(&name, PowerAction::Stop).await?;
+        session
+            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
         assert_eq!(
             session.inspect(&name).await?.supervisor,
             SupervisorReading::Unreadable

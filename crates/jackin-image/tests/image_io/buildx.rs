@@ -15,10 +15,12 @@ use jackin_core::{
     ProcessError, ProcessRunner, ProcessStatus, Program, RepoPath, StdFileSystem,
 };
 use jackin_image::{
-    BuildStage, BuildxEngine, ContextProblem, ContextSource, EngineError, ImageEngine, ImageEvent,
-    ImagePlan, MaterializedFile, PlannedBuild,
+    BuildStage, BuildxEngine, ContextEntry, ContextProblem, ContextSource, EngineError,
+    ImageEngine, ImageEvent, ImagePlan, MaterializedFile, PlannedBuild,
 };
-use jackin_testkit::{CapturedFile, ProcessReply, ScriptedProcessRunner, SeenCall, SeenStdin};
+use jackin_testkit::{
+    CancelsOn, CapturedFile, ProcessReply, ScriptedProcessRunner, SeenCall, SeenStdin,
+};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -165,8 +167,14 @@ async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() 
         let mut request = stack.fixture.request()?;
         request.context_files = modes
             .iter()
-            .map(|(name, _, _)| RepoPath::parse(name))
-            .collect::<Result<_, _>>()?;
+            .map(|(name, mode, _)| {
+                Ok(ContextEntry::File {
+                    path: RepoPath::parse(name)?,
+                    bytes: format!("body of {name}").into_bytes(),
+                    executable: mode & 0o111 != 0,
+                })
+            })
+            .collect::<Result<_, Box<dyn Error>>>()?;
         let plan = ImagePlan::new(&request)?;
         let finals = plan.final_builds(&ImageId::parse(&tag_id("construct"))?);
         let (tx, _rx) = mpsc::channel(256);
@@ -269,17 +277,12 @@ async fn buildx_refuses_unsafe_context_entries_before_docker_runs() -> TestResul
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect();
         let (_, finals) = plan_for(&stack)?;
-        let listed = |name: &str| -> Result<ContextSource, Box<dyn Error>> {
-            Ok(ContextSource::Listed {
-                root: stack.fixture.role.clone(),
-                files: vec![RepoPath::parse(name)?],
-            })
-        };
+        let link = ContextSource::Entries(vec![ContextEntry::Link {
+            path: RepoPath::parse("link")?,
+            target: "/etc/hosts".to_owned(),
+        }]);
         let rows: Vec<(String, ContextSource, ContextProblem)> = vec![
-            ("link".into(), listed("link")?, ContextProblem::Escapes),
-            ("dir/x".into(), listed("dir/x")?, ContextProblem::Symlink),
-            ("d".into(), listed("d")?, ContextProblem::NotARegularFile),
-            ("gone".into(), listed("gone")?, ContextProblem::Missing),
+            ("link".into(), link, ContextProblem::Escapes),
             (
                 "../escape".into(),
                 materialized("../escape"),
@@ -674,7 +677,7 @@ async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence
         ];
         for (label, reply) in rows {
             let (engine, runner) = standalone(reply, sub)?;
-            let result = engine.find(&tag).await;
+            let result = engine.find(&tag, &CancellationToken::new()).await;
             let shown = result.as_ref().err().map(ToString::to_string);
             let call = only_call(&runner, sub)?;
             assert_eq!(
@@ -744,7 +747,7 @@ async fn buildx_check_builder_reads_the_driver_line_of_the_inspect_output() -> T
         ];
         for (label, reply) in rows {
             let (engine, runner) = standalone(reply, sub)?;
-            let result = engine.check_builder(&builder).await;
+            let result = engine.check_builder(&builder, &CancellationToken::new()).await;
             let call = only_call(&runner, sub)?;
             assert_eq!(call.args.last(), Some(&builder.to_string()), "{label}: builder position");
             match (label, result) {
@@ -762,6 +765,71 @@ async fn buildx_check_builder_reads_the_driver_line_of_the_inspect_output() -> T
                 (_, other) => return Err(format!("{label}: got {other:?}").into()),
             }
         }
+        Ok(())
+    })
+    .await
+}
+
+fn cancelling(
+    reply: ProcessReply,
+    sub: DockerSubcommand,
+    word: &'static str,
+    token: &CancellationToken,
+) -> Result<BuildxEngine, Box<dyn Error>> {
+    let runner = Arc::new(ScriptedProcessRunner::new());
+    runner.expect_docker(sub, &[], reply);
+    let wrapped: Arc<dyn ProcessRunner> = Arc::new(CancelsOn::new(&runner, word, token));
+    Ok(BuildxEngine::new(
+        wrapped,
+        Arc::new(StdFileSystem::default()),
+        HostPath::parse(Path::new("/nonexistent-work"))?,
+    ))
+}
+
+#[tokio::test]
+async fn buildx_find_and_check_builder_end_when_the_callers_token_is_cancelled() -> TestResult {
+    guarded(async {
+        const TAG: &str = "jackin.invalid/sentinel:0123456789abcdef";
+        const BUILDER: &str = "orbstack";
+        let tag = ImageTag::parse(TAG)?;
+        let builder = BuilderName::parse(BUILDER)?;
+        let id = format!("sha256:{}", "a".repeat(64));
+        let found = || ProcessReply::exited(0, format!("{id}\n").as_bytes(), b"");
+        let inspected = || ProcessReply::exited(0, b"Driver:        docker\n", b"");
+
+        let token = CancellationToken::new();
+        let engine = cancelling(found(), DockerSubcommand::ImageInspect, TAG, &token)?;
+        let seen = engine.find(&tag, &token).await;
+        assert!(
+            matches!(seen, Err(EngineError::Cancelled { .. })),
+            "find: {seen:?}"
+        );
+        let token = CancellationToken::new();
+        let engine = cancelling(
+            inspected(),
+            DockerSubcommand::BuildxInspect,
+            BUILDER,
+            &token,
+        )?;
+        let seen = engine.check_builder(&builder, &token).await;
+        assert!(
+            matches!(seen, Err(EngineError::Cancelled { .. })),
+            "check_builder: {seen:?}"
+        );
+
+        let quiet = CancellationToken::new();
+        let engine = cancelling(found(), DockerSubcommand::ImageInspect, "unrelated", &quiet)?;
+        assert_eq!(
+            engine.find(&tag, &quiet).await?.map(|id| id.to_string()),
+            Some(id.clone())
+        );
+        let engine = cancelling(
+            inspected(),
+            DockerSubcommand::BuildxInspect,
+            "unrelated",
+            &quiet,
+        )?;
+        engine.check_builder(&builder, &quiet).await?;
         Ok(())
     })
     .await

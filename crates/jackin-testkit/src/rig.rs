@@ -381,7 +381,10 @@ impl RigBuilder {
         }
         .docker(self.role_docker);
         role.commit().await?;
-        let loaded = world.roles.load_path(role.root()).await?;
+        let loaded = world
+            .roles
+            .load_path(role.root(), &CancellationToken::new())
+            .await?;
         let home_dir = tempfile::tempdir()?;
         let home = HostPath::parse(&std::fs::canonicalize(home_dir.path())?)?;
         if self.login {

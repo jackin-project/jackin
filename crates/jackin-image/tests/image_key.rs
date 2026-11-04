@@ -1,13 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_image::ContextEntry;
 use std::collections::HashSet;
 use std::error::Error;
-use std::path::Path;
 
 use jackin_core::{
-    Agent, BuilderName, CommitId, DockerLayer, HostPath, ImageId, Platform, RepoPath, RoleName,
-    Sha256,
+    Agent, BuilderName, CommitId, DockerLayer, ImageId, Platform, RepoPath, RoleName, Sha256,
 };
 use jackin_image::{
     HookFiles, ImageKey, ImagePlan, ImageRequest, Rebuild, RoleRevision, SourceFile,
@@ -32,6 +31,14 @@ const SCAN: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/
 const DOCKERFILE: &[u8] = b"FROM construct AS role\n";
 const SETUP: &[u8] = b"#!/bin/sh\necho setup\n";
 
+fn entry(path: &str) -> Result<ContextEntry, Box<dyn Error>> {
+    Ok(ContextEntry::File {
+        path: RepoPath::parse(path)?,
+        bytes: path.as_bytes().to_vec(),
+        executable: false,
+    })
+}
+
 fn c1() -> String {
     format!("sha256:{}", "1".repeat(64))
 }
@@ -50,15 +57,15 @@ fn source(path: &str, bytes: &[u8]) -> Result<SourceFile, Box<dyn Error>> {
 fn base() -> Result<ImageRequest, Box<dyn Error>> {
     Ok(ImageRequest {
         role: RoleName::parse("sentinel")?,
-        context: HostPath::parse(Path::new("/work/role"))?,
-        context_files: vec![RepoPath::parse("Dockerfile")?],
+        context_files: vec![entry("Dockerfile")?],
         dockerfile: source("Dockerfile", DOCKERFILE)?,
         hooks: HookFiles {
             setup: Some(source("hooks/setup.sh", SETUP)?),
             preflight: None,
         },
-        revision: RoleRevision::Clean {
+        revision: RoleRevision {
             commit: CommitId::parse(&"1".repeat(40))?,
+            digest: Sha256::of(b"clean"),
         },
         agent: Agent::Codex,
         platform: Platform::LinuxArm64,
@@ -97,27 +104,28 @@ fn changing_rows() -> Vec<Changing> {
             Ok(())
         }),
         changing("clean commit", |r| {
-            r.revision = RoleRevision::Clean {
+            r.revision = RoleRevision {
                 commit: commit("2")?,
+                digest: Sha256::of(b"clean"),
             };
             Ok(())
         }),
         changing("dirty with the same commit", |r| {
-            r.revision = RoleRevision::Dirty {
+            r.revision = RoleRevision {
                 commit: commit("1")?,
                 digest: Sha256::of(b"d1"),
             };
             Ok(())
         }),
         changing("dirty with another digest", |r| {
-            r.revision = RoleRevision::Dirty {
+            r.revision = RoleRevision {
                 commit: commit("1")?,
                 digest: Sha256::of(b"d2"),
             };
             Ok(())
         }),
         changing("dirty with another commit", |r| {
-            r.revision = RoleRevision::Dirty {
+            r.revision = RoleRevision {
                 commit: commit("2")?,
                 digest: Sha256::of(b"d1"),
             };
@@ -167,10 +175,6 @@ fn changing_rows() -> Vec<Changing> {
 fn equal_rows() -> Vec<(&'static str, Mutation)> {
     vec![
         ("clone", |_| Ok(())),
-        ("context", |r| {
-            r.context = HostPath::parse(Path::new("/other/checkout"))?;
-            Ok(())
-        }),
         ("builder", |r| {
             r.builder = BuilderName::parse("other")?;
             Ok(())
@@ -180,10 +184,7 @@ fn equal_rows() -> Vec<(&'static str, Mutation)> {
             Ok(())
         }),
         ("context files", |r| {
-            r.context_files = vec![
-                RepoPath::parse("src/other.rs")?,
-                RepoPath::parse("src/more.rs")?,
-            ];
+            r.context_files = vec![entry("src/other.rs")?, entry("src/more.rs")?];
             Ok(())
         }),
         ("dockerfile path", |r| {
@@ -234,7 +235,7 @@ fn field(out: &mut Vec<u8>, bytes: &[u8]) {
 
 struct Expect<'a> {
     role: &'a str,
-    revision: (&'a str, &'a str, &'a str),
+    revision: (&'a str, &'a str),
     dockerfile: &'a [u8],
     construct: &'a str,
     build_args: &'a [String],
@@ -249,7 +250,6 @@ fn expected_key(expect: &Expect<'_>) -> String {
     field(&mut out, b"codex");
     field(&mut out, expect.revision.0.as_bytes());
     field(&mut out, expect.revision.1.as_bytes());
-    field(&mut out, expect.revision.2.as_bytes());
     field(&mut out, hex(expect.dockerfile).as_bytes());
     field(&mut out, expect.construct.as_bytes());
     field(&mut out, expect.build_args.len().to_string().as_bytes());
@@ -290,7 +290,7 @@ fn planned_build_args(request: &ImageRequest) -> Result<Vec<String>, Box<dyn Err
 fn second_request() -> Result<ImageRequest, Box<dyn Error>> {
     let mut request = base()?;
     request.role = RoleName::parse("Agent-Smith")?;
-    request.revision = RoleRevision::Dirty {
+    request.revision = RoleRevision {
         commit: commit("2")?,
         digest: Sha256::of(b"dirty"),
     };
@@ -322,7 +322,7 @@ fn key_is_the_documented_sha256_encoding_including_the_embedded_digests() -> Tes
     assert_eq!(first_args.len(), 4, "derived build args");
     let first = Expect {
         role: "sentinel",
-        revision: ("clean", &"1".repeat(40), ""),
+        revision: (&"1".repeat(40), &Sha256::of(b"clean").to_string()),
         dockerfile: DOCKERFILE,
         construct: &c1(),
         build_args: &first_args,
@@ -341,7 +341,7 @@ fn key_is_the_documented_sha256_encoding_including_the_embedded_digests() -> Tes
     assert!(second_args.contains(&"--build-arg=DOCKER_LAYER=client".to_owned()));
     let second = Expect {
         role: "Agent-Smith",
-        revision: ("dirty", &"2".repeat(40), &dirty),
+        revision: (&"2".repeat(40), &dirty),
         dockerfile: DOCKERFILE,
         construct: &construct,
         build_args: &second_args,
@@ -399,7 +399,7 @@ fn construct_tag_depends_on_the_platform_only() -> TestResult {
             Ok(())
         }),
         ("revision", |r| {
-            r.revision = RoleRevision::Dirty {
+            r.revision = RoleRevision {
                 commit: commit("2")?,
                 digest: Sha256::of(b"x"),
             };

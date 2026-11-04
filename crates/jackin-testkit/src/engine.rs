@@ -271,7 +271,11 @@ impl FakeEngine {
 
 #[async_trait]
 impl ImageEngine for FakeEngine {
-    async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, EngineError> {
+    async fn find(
+        &self,
+        tag: &ImageTag,
+        _cancel: &CancellationToken,
+    ) -> Result<Option<ImageId>, EngineError> {
         let mut state = locked(&self.state);
         let fails = state
             .take(|moment| matches!(moment, EngineMoment::FindFails(found) if found == tag))
@@ -292,7 +296,11 @@ impl ImageEngine for FakeEngine {
         Ok(answer)
     }
 
-    async fn check_builder(&self, builder: &BuilderName) -> Result<(), EngineError> {
+    async fn check_builder(
+        &self,
+        builder: &BuilderName,
+        _cancel: &CancellationToken,
+    ) -> Result<(), EngineError> {
         let fails = locked(&self.state)
             .take(|moment| matches!(moment, EngineMoment::CheckBuilderFails))
             .is_some();

@@ -53,7 +53,7 @@ async fn scenario(
     assert_eq!(first.source, ImageSource::Built);
     let construct_tag = plan.construct_build().tag.clone();
     let construct_id = engine
-        .find(&construct_tag)
+        .find(&construct_tag, &CancellationToken::new())
         .await?
         .ok_or("the construct image is missing")?;
     let finals = plan.final_builds(&construct_id);
@@ -61,7 +61,10 @@ async fn scenario(
     assert_eq!(built(), order, "built tags in order");
     assert_eq!(first.tag, plan.final_tag(&construct_id));
     assert_eq!(first.tag, finals.derived.tag);
-    assert_eq!(engine.find(&first.tag).await?, Some(first.id.clone()));
+    assert_eq!(
+        engine.find(&first.tag, &CancellationToken::new()).await?,
+        Some(first.id.clone())
+    );
     assert_ne!(
         first.id, construct_id,
         "the derived ID is not the construct ID"

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_core::Sha256;
 use std::error::Error;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -14,7 +15,7 @@ use jackin_core::{
 };
 use jackin_image::{
     BuildStage, BuildxEngine, BuiltImage, ImageEngine, ImageError, ImageEvent, ImagePlan,
-    ImageRequest, ImageSource, RoleRevision, ensure_image,
+    ImageRequest, ImageSource, Rebuild, RoleRevision, ensure_held, ensure_image,
 };
 use jackin_testkit::ScriptedProcessRunner;
 use tokio::sync::{mpsc, oneshot, watch};
@@ -303,14 +304,102 @@ async fn two_calls_for_one_final_key_build_once_and_the_second_is_served_from_ca
 }
 
 #[tokio::test]
-async fn different_final_keys_do_not_wait_for_each_other() -> TestResult {
+async fn a_peer_rebuild_waits_while_the_role_and_derived_builds_read_the_construct() -> TestResult {
+    guarded(async {
+        let mut rig = Rig::new()?;
+        rig.close();
+        let request = rig.fixture.request()?;
+        let mut rebuild = request.clone();
+        rebuild.rebuild = Rebuild::Yes;
+        let (first, second) = (rig.engine(), rig.engine());
+        let cancel = CancellationToken::new();
+        let a = call(&first, &request, &cancel);
+        let driver = async {
+            rig.arrivals
+                .recv()
+                .await
+                .ok_or("the first call never reached the role build")?;
+            let mut b = Box::pin(call(&second, &rebuild, &cancel));
+            let waited = tokio::select! {
+                finished = b.as_mut() => Err(finished),
+                held = rig.contended.recv() => Ok(held),
+            };
+            let constructs = rig.builds_of(CONSTRUCT_TAGS);
+            rig.release();
+            match waited {
+                Err(finished) => Err(format!(
+                    "the rebuild did not wait for the role build: {:?} after {constructs} construct builds",
+                    finished.map(|built| built.source)
+                )
+                .into()),
+                Ok(held) => {
+                    held.ok_or("the signal closed")?;
+                    Ok::<_, Box<dyn Error>>((constructs, b.await))
+                }
+            }
+        };
+        let (a, driver) = tokio::join!(a, driver);
+        let (constructs, b) = driver?;
+        assert_eq!(constructs, 1, "construct builds while the role build ran");
+        assert_eq!(a?.source, ImageSource::Built);
+        assert_eq!(b?.source, ImageSource::Built);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_rebuild_of_the_same_key_waits_until_the_caller_drops_the_returned_hold() -> TestResult {
+    guarded(async {
+        let mut rig = Rig::new()?;
+        rig.model.stable_ids();
+        let request = rig.fixture.request()?;
+        let mut rebuild = request.clone();
+        rebuild.rebuild = Rebuild::Yes;
+        let (first, second) = (rig.engine(), rig.engine());
+        let cancel = CancellationToken::new();
+        let (tx, mut rx) = mpsc::channel::<ImageEvent>(256);
+        let held = ensure_held(&first, &request, &tx, &cancel).await?;
+        rx.close();
+        assert_eq!(held.image.source, ImageSource::Built);
+        assert_eq!(rig.builds_of(ROLE_TAGS), 1);
+
+        let mut again = Box::pin(call(&second, &rebuild, &cancel));
+        let waited = tokio::select! {
+            result = again.as_mut() => Err(result),
+            contended = rig.contended.recv() => Ok(contended),
+        };
+        let during = rig.builds_of(ROLE_TAGS);
+        drop(held);
+        match waited {
+            Err(result) => {
+                return Err(format!(
+                    "the rebuild did not wait for the hold: {:?} after {during} role builds",
+                    result.map(|built| built.source)
+                )
+                .into());
+            }
+            Ok(contended) => contended.ok_or("the signal closed")?,
+        }
+        assert_eq!(during, 1, "role builds while the first caller held the key");
+        let rebuilt = again.await?;
+        assert_eq!(rebuilt.source, ImageSource::Built);
+        assert_eq!(rig.builds_of(ROLE_TAGS), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn different_final_keys_share_only_the_construct_lock_and_both_build() -> TestResult {
     guarded(async {
         let mut rig = Rig::new()?;
         rig.close();
         let first_request = rig.fixture.request()?;
         let mut second_request = first_request.clone();
-        second_request.revision = RoleRevision::Clean {
+        second_request.revision = RoleRevision {
             commit: CommitId::parse(&"2".repeat(40))?,
+            digest: Sha256::of(b"clean"),
         };
         let (first, second) = (rig.engine(), rig.engine());
         let cancel = CancellationToken::new();
@@ -320,19 +409,81 @@ async fn different_final_keys_do_not_wait_for_each_other() -> TestResult {
                 .recv()
                 .await
                 .ok_or("the first call never built")?;
-            let b = call(&second, &second_request, &cancel);
+            let mut b = Box::pin(call(&second, &second_request, &cancel));
             let waited = tokio::select! {
-                result = b => Ok(result),
-                _held = rig.contended.recv() => Err("the second call waited for the first"),
+                result = b.as_mut() => Err(result),
+                held = rig.contended.recv() => Ok(held),
             };
             rig.release();
-            Ok::<_, Box<dyn Error>>(waited?)
+            match waited {
+                Err(result) => Err(format!(
+                    "the second call did not wait for the construct: {:?}",
+                    result.map(|built| built.source)
+                )
+                .into()),
+                Ok(held) => {
+                    held.ok_or("the signal closed")?;
+                    Ok::<_, Box<dyn Error>>(b.await)
+                }
+            }
         };
         let (a, b) = tokio::join!(a, driver);
         let (a, b) = (a?, b??);
         assert_eq!(a.source, ImageSource::Built);
         assert_eq!(b.source, ImageSource::Built);
         assert_ne!(a.tag, b.tag);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cached_role_is_served_without_waiting_for_a_peers_role_build() -> TestResult {
+    guarded(async {
+        let mut rig = Rig::new()?;
+        let cached_request = rig.fixture.request()?;
+        let mut building_request = cached_request.clone();
+        building_request.revision = RoleRevision {
+            commit: CommitId::parse(&"2".repeat(40))?,
+            digest: Sha256::of(b"clean"),
+        };
+        let cancel = CancellationToken::new();
+        let warm = call(&rig.engine(), &cached_request, &cancel).await?;
+        assert_eq!(warm.source, ImageSource::Built);
+        rig.close();
+        let (first, second) = (rig.engine(), rig.engine());
+        let a = call(&first, &building_request, &cancel);
+        let driver = async {
+            rig.arrivals
+                .recv()
+                .await
+                .ok_or("the first call never reached the role build")?;
+            let mut b = Box::pin(call(&second, &cached_request, &cancel));
+            let verdict = tokio::select! {
+                finished = b.as_mut() => Ok(finished),
+                held = rig.contended.recv() => Err(held),
+            };
+            let role_builds = rig.builds_of(ROLE_TAGS);
+            rig.release();
+            match verdict {
+                Ok(finished) => Ok::<_, Box<dyn Error>>((role_builds, finished)),
+                Err(_) => Err(format!(
+                    "the cached role waited on a lock while the peer built; {:?}",
+                    b.await.map(|built| built.source)
+                )
+                .into()),
+            }
+        };
+        let (a, driver) = tokio::join!(a, driver);
+        let (role_builds, b) = driver?;
+        assert_eq!(a?.source, ImageSource::Built);
+        let b = b?;
+        assert_eq!(b.source, ImageSource::Cache);
+        assert_eq!(b.id, warm.id);
+        assert_eq!(
+            role_builds, 1,
+            "role builds begun when the cached call finished"
+        );
         Ok(())
     })
     .await

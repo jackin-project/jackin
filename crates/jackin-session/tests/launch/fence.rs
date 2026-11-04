@@ -178,7 +178,11 @@ async fn a_retry_under_another_policy_is_refused_even_when_the_image_id_is_uncha
         let old = rig.final_image()?;
 
         revoke(&rig)?;
-        let changed = rig.world.roles.load_path(rig.loaded.root()).await?;
+        let changed = rig
+            .world
+            .roles
+            .load_path(rig.loaded.root(), &CancellationToken::new())
+            .await?;
         let plan = plan_launch(&rig.config, &changed, rig.request(1)?)?;
         let (events, _receiver) = tokio::sync::mpsc::channel(256);
         let built = ensure_image(
@@ -257,7 +261,11 @@ async fn second(rig: &Rig) -> Result<Second, Box<dyn Error>> {
     repo.commit().await?;
     let role = RoleFixture::new("second")?;
     role.commit().await?;
-    let loaded = rig.world.roles.load_path(role.root()).await?;
+    let loaded = rig
+        .world
+        .roles
+        .load_path(role.root(), &CancellationToken::new())
+        .await?;
     let config = Config::parse(&format!(
         "{}\n[workspaces.elsewhere]\npath = \"{}\"\n\n[roles.second]\nsource = {{ path = \"{}\" }}\n",
         rig.config.render(),

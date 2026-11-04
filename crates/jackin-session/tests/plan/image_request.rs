@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{DockerLayer, HookKind, ImageId, Platform, WorkspaceName};
-use jackin_image::{ImagePlan, Rebuild, RoleRevision};
+use jackin_image::{ImagePlan, Rebuild};
 use jackin_session::plan_image;
 use jackin_testkit::RoleFixture;
 
@@ -47,7 +47,6 @@ async fn the_image_request_follows_gateway_role_and_workspace_inputs() -> TestRe
         assert_eq!(setup_hook.path.as_str(), "hooks/setup.sh");
         assert!(for_arm.hooks.preflight.is_none());
         assert_eq!(&for_arm.revision, setup.role.revision());
-        assert!(matches!(for_arm.revision, RoleRevision::Clean { .. }));
         assert_eq!(for_arm.rebuild, Rebuild::Yes);
         assert_eq!(for_arm.docker, DockerLayer::Client);
 
@@ -62,9 +61,14 @@ async fn the_image_request_follows_gateway_role_and_workspace_inputs() -> TestRe
 
         setup.role_fixture.file("notes.txt", b"dirty\n").await?;
         let (catalog, _runner) = super::support::catalog(&setup.cache);
-        let dirty = catalog.load_path(setup.role_fixture.root()).await?;
+        let dirty = catalog
+            .load_path(
+                setup.role_fixture.root(),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await?;
         let request = plan_image(&setup.config, &dirty, &arm, None, Rebuild::No)?;
-        assert!(matches!(request.revision, RoleRevision::Dirty { .. }));
+        assert_ne!(request.revision.digest, setup.role.revision().digest);
         assert_eq!(&request.revision, dirty.revision());
         Ok(())
     })

@@ -7,6 +7,7 @@ use jackin_session::{AttachError, AttachRequest};
 use jackin_testkit::{Rig, TestResult, guard};
 
 use super::support::{events, owner, set_state, size, target, until};
+use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn attach_opens_the_main_terminal_reads_the_state_at_attach_and_detach_leaves_the_sandbox()
@@ -96,7 +97,9 @@ async fn attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_witho
         assert!(matches!(ghost, Err(AttachError::NotFound(found)) if found == foreign));
 
         let request = AttachRequest::owner(target(&rig, 1).await?, size()?);
-        session.power(&name, PowerAction::Stop).await?;
+        session
+            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
         let stopped = session.attach(request.clone()).await;
         assert!(matches!(
             stopped,

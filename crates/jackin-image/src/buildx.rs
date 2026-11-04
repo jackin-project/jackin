@@ -179,9 +179,13 @@ impl BuildxEngine {
         }
     }
 
-    async fn query(&self, spec: &ProcessSpec) -> Result<ProcessOutput, EngineError> {
+    async fn query(
+        &self,
+        spec: &ProcessSpec,
+        cancel: &CancellationToken,
+    ) -> Result<ProcessOutput, EngineError> {
         self.runner
-            .run(spec, None, &CancellationToken::new())
+            .run(spec, None, cancel)
             .await
             .map_err(from_process)
     }
@@ -207,7 +211,7 @@ impl BuildxEngine {
         self.fs.remove_dir_all(call).await?;
         let context = child(call, "context")?;
         let iid = child(call, "iid")?;
-        self.fs.create_dir_all(&context).await?;
+        self.fs.create_private_dir_all(&context).await?;
         stage(self.fs.as_ref(), &build.context, &context).await?;
         let mut args = build.args.clone();
         args.push(format!("--iidfile={}", path_text(&iid)?));
@@ -238,7 +242,11 @@ impl BuildxEngine {
 
 #[async_trait]
 impl ImageEngine for BuildxEngine {
-    async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, EngineError> {
+    async fn find(
+        &self,
+        tag: &ImageTag,
+        cancel: &CancellationToken,
+    ) -> Result<Option<ImageId>, EngineError> {
         let args = vec!["--format".to_owned(), "{{.Id}}".to_owned(), tag.to_string()];
         let spec = spec(
             DockerSubcommand::ImageInspect,
@@ -246,7 +254,7 @@ impl ImageEngine for BuildxEngine {
             ProcessStdin::Null,
             QUERY_TIMEOUT,
         );
-        let output = self.query(&spec).await?;
+        let output = self.query(&spec, cancel).await?;
         let unreadable = || EngineError::DigestUnreadable {
             tag: tag.clone(),
             output: combined(&output),
@@ -263,14 +271,18 @@ impl ImageEngine for BuildxEngine {
         }
     }
 
-    async fn check_builder(&self, builder: &BuilderName) -> Result<(), EngineError> {
+    async fn check_builder(
+        &self,
+        builder: &BuilderName,
+        cancel: &CancellationToken,
+    ) -> Result<(), EngineError> {
         let spec = spec(
             DockerSubcommand::BuildxInspect,
             vec![builder.to_string()],
             ProcessStdin::Null,
             QUERY_TIMEOUT,
         );
-        let output = self.query(&spec).await?;
+        let output = self.query(&spec, cancel).await?;
         let unreadable = || EngineError::BuilderUnreadable {
             builder: builder.clone(),
             status: output.status,

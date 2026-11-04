@@ -7,7 +7,7 @@ use jackin_session::{
     BuildError, BuildRequest, LAUNCH_EVENT_CAPACITY, RoleError, build_for_workspace, plan_image,
     plan_launch,
 };
-use jackin_testkit::{ENGINE_PORT, Rig, TestResult, guard};
+use jackin_testkit::{ENGINE_PORT, Rig, RoleFixture, TestResult, guard};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -81,7 +81,9 @@ async fn the_role_comes_from_the_request_then_the_workspace_default_then_the_onl
 -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
-        let root = rig.loaded.root().as_path().display().to_string();
+        let second = RoleFixture::new("second")?;
+        second.commit().await?;
+        let root = second.root().as_path().display().to_string();
         let saved = rig.project.path().as_path().display().to_string();
         let two_roles = Config::parse(&format!(
             "{}\n[roles.second]\nsource = {{ path = \"{root}\" }}\n",
@@ -221,7 +223,9 @@ async fn a_build_makes_the_image_that_a_launch_of_the_same_workspace_finds_alrea
 async fn a_role_the_workspace_does_not_allow_is_refused_before_anything_is_built() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
-        let root = rig.loaded.root().as_path().display().to_string();
+        let second = RoleFixture::new("second")?;
+        second.commit().await?;
+        let root = second.root().as_path().display().to_string();
         let saved = rig.project.path().as_path().display().to_string();
         let restricted = Config::parse(&format!(
             "{}\n[roles.second]\nsource = {{ path = \"{root}\" }}\n",

@@ -3,14 +3,17 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use jackin_core::{
     Agent, Clock, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, LinkProblem,
-    ManifestError, PathError, ProcessError, ProcessOutput, ProcessRunner, ProcessStatus, RepoPath,
-    RoleManifest, RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace,
-    plain_list,
+    ManifestError, PathError, PollError, PollPlan, ProcessError, ProcessOutput, ProcessRunner,
+    ProcessStatus, RegularFileProblem, RepoPath, RoleManifest, RoleName, RoleRev, RoleSource,
+    RoleUrl, Sha256, TerminalText, Workspace, hold_lock, lock_path, plain_list,
 };
-use jackin_image::{DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile};
+use jackin_image::{
+    ContextEntry, DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile,
+};
 use jackin_openshell::{
     ClosureViolation, EngineHostViolation, PolicyDocument, PolicyError, ProviderProfile,
 };
@@ -23,15 +26,17 @@ const MANIFEST_FILE: &str = "jackin.role.toml";
 const KIND_FILE: u8 = b'f';
 const KIND_LINK: u8 = b'l';
 const KIND_OTHER: u8 = b'o';
+const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+const LOCK_PLAN: PollPlan = PollPlan {
+    interval: Duration::from_millis(50),
+    timeout: Duration::from_mins(10),
+};
 
 #[derive(Clone, Debug)]
 pub struct RoleCatalog {
     fs: Arc<dyn FileSystem>,
     runner: Arc<dyn ProcessRunner>,
-    #[expect(
-        dead_code,
-        reason = "the role cache lock of the next change waits on it"
-    )]
     clock: Arc<dyn Clock>,
     cache_dir: HostPath,
 }
@@ -45,7 +50,7 @@ pub struct LoadedRole {
     dockerfile: SourceFile,
     hooks: HookFiles,
     revision: RoleRevision,
-    files: Vec<RepoPath>,
+    files: Vec<ContextEntry>,
 }
 
 #[derive(Debug, Error)]
@@ -73,6 +78,21 @@ pub enum RoleError {
     FileNotRegular { path: RepoPath },
     #[error("path escapes the repository: {path}")]
     EscapesRepository { path: RepoPath },
+    #[error("{path} is larger than {limit} bytes")]
+    FileTooLarge { path: RepoPath, limit: usize },
+    #[error("the role files are larger than {limit} bytes together")]
+    FilesTooLarge { limit: usize },
+    #[error("the manifest names role {manifest}, but the configuration calls it {configured}")]
+    NameMismatch {
+        configured: RoleName,
+        manifest: RoleName,
+    },
+    #[error("a role file name is not valid UTF-8: {0}")]
+    NonUtf8Path(TerminalText),
+    #[error("cancelled while loading the role")]
+    Cancelled,
+    #[error("timed out waiting for the lock {path}")]
+    LockTimeout { path: HostPath },
     #[error(transparent)]
     Dockerfile(#[from] DockerfileError),
     #[error(transparent)]
@@ -91,7 +111,7 @@ pub enum RoleError {
     #[error(transparent)]
     Fs(#[from] FsError),
     #[error(transparent)]
-    Process(#[from] ProcessError),
+    Process(ProcessError),
 }
 
 struct Inspected {
@@ -130,13 +150,20 @@ impl LoadedRole {
         &self.revision
     }
 
-    pub fn files(&self) -> &[RepoPath] {
+    pub fn files(&self) -> &[ContextEntry] {
         &self.files
     }
 }
 
 fn join(base: &HostPath, segment: &str) -> Result<HostPath, PathError> {
     HostPath::resolve(Path::new(segment), base)
+}
+
+fn process_failure(error: ProcessError) -> RoleError {
+    match error {
+        ProcessError::Cancelled { .. } => RoleError::Cancelled,
+        other => RoleError::Process(other),
+    }
 }
 
 fn git_failure(status: ProcessStatus, stderr: &[u8]) -> RoleError {
@@ -166,6 +193,7 @@ impl RoleCatalog {
         config: &Config,
         role: Option<&RoleName>,
         workspace: &Workspace,
+        cancel: &CancellationToken,
     ) -> Result<LoadedRole, RoleError> {
         let name = if let Some(name) = role.or(workspace.default_role.as_ref()) {
             name.clone()
@@ -184,19 +212,29 @@ impl RoleCatalog {
         if !workspace.roles.allows(&name) {
             return Err(RoleError::NotAllowed(name));
         }
-        let root = match &entry.source {
-            RoleSource::Path(path) => path.clone(),
-            RoleSource::Git { url, rev } => self.checkout(&name, url, rev.as_ref()).await?,
+        let loaded = match &entry.source {
+            RoleSource::Path(path) => self.load_path(path, cancel).await?,
+            RoleSource::Git { url, rev } => self.load_git(&name, url, rev.as_ref(), cancel).await?,
         };
-        self.load_path(&root).await
+        if loaded.name() != &name {
+            return Err(RoleError::NameMismatch {
+                configured: name,
+                manifest: loaded.name().clone(),
+            });
+        }
+        Ok(loaded)
     }
 
-    pub async fn load_path(&self, root: &HostPath) -> Result<LoadedRole, RoleError> {
+    pub async fn load_path(
+        &self,
+        root: &HostPath,
+        cancel: &CancellationToken,
+    ) -> Result<LoadedRole, RoleError> {
         let inspected = match self.inspect(root).await {
             Ok(inspected) => inspected,
             Err(mut findings) => return Err(findings.remove(0)),
         };
-        let (revision, files) = self.revision(root).await?;
+        let (revision, files) = self.snapshot(root, cancel).await?;
         Ok(LoadedRole {
             name: inspected.manifest.role.name.clone(),
             root: root.clone(),
@@ -207,6 +245,28 @@ impl RoleCatalog {
             revision,
             files,
         })
+    }
+
+    async fn load_git(
+        &self,
+        name: &RoleName,
+        url: &RoleUrl,
+        rev: Option<&RoleRev>,
+        cancel: &CancellationToken,
+    ) -> Result<LoadedRole, RoleError> {
+        let parent = join(&self.cache_dir, "roles")?;
+        self.fs.create_private_dir_all(&parent).await?;
+        let dir = join(&parent, name.as_str())?;
+        let lock = lock_path(&dir)?;
+        let _held = hold_lock(&*self.fs, &*self.clock, &lock, LOCK_PLAN, cancel)
+            .await
+            .map_err(|error| match error {
+                PollError::Cancelled => RoleError::Cancelled,
+                PollError::Timeout { .. } => RoleError::LockTimeout { path: lock.clone() },
+                PollError::Probe(error) => RoleError::Fs(error),
+            })?;
+        self.checkout(&parent, &dir, name, url, rev, cancel).await?;
+        self.load_path(&dir, cancel).await
     }
 
     pub async fn findings(&self, root: &HostPath) -> Vec<RoleError> {
@@ -281,17 +341,12 @@ impl RoleCatalog {
             }
         }
         let manifest_missing = || vec![RoleError::ManifestMissing { root: root.clone() }];
-        let path = match self.check_file(root, &name).await {
-            Ok(path) => path,
+        let path = join_repo(root, &name).map_err(|error| vec![RoleError::from(error)])?;
+        let bytes = match self.read_input(root, &name).await {
+            Ok(bytes) => bytes,
             Err(RoleError::FileMissing { .. }) => return Err(manifest_missing()),
             Err(error) => return Err(vec![error]),
         };
-        let bytes = self
-            .fs
-            .read(&path)
-            .await
-            .map_err(|error| vec![RoleError::from(error)])?
-            .ok_or_else(manifest_missing)?;
         let text = String::from_utf8(bytes).map_err(|_| {
             vec![RoleError::Manifest {
                 path: path.clone(),
@@ -315,27 +370,33 @@ impl RoleCatalog {
         RoleManifest::parse(&text).map_err(|source| vec![RoleError::Manifest { path, source }])
     }
 
+    async fn read_input(&self, root: &HostPath, path: &RepoPath) -> Result<Vec<u8>, RoleError> {
+        match self.fs.read_regular(root, path, MAX_FILE_BYTES).await? {
+            Ok(file) if file.bytes.len() > MAX_FILE_BYTES => Err(RoleError::FileTooLarge {
+                path: path.clone(),
+                limit: MAX_FILE_BYTES,
+            }),
+            Ok(file) => Ok(file.bytes),
+            Err(RegularFileProblem::Missing) => Err(RoleError::FileMissing { path: path.clone() }),
+            Err(RegularFileProblem::Symlink) => {
+                Err(RoleError::EscapesRepository { path: path.clone() })
+            }
+            Err(RegularFileProblem::NotARegularFile) => {
+                Err(RoleError::FileNotRegular { path: path.clone() })
+            }
+        }
+    }
+
     async fn read_checked(
         &self,
         root: &HostPath,
         path: &RepoPath,
         findings: &mut Vec<RoleError>,
     ) -> Option<Vec<u8>> {
-        let host = match self.check_file(root, path).await {
-            Ok(host) => host,
+        match self.read_input(root, path).await {
+            Ok(bytes) => Some(bytes),
             Err(error) => {
                 findings.push(error);
-                return None;
-            }
-        };
-        match self.fs.read(&host).await {
-            Ok(Some(bytes)) => Some(bytes),
-            Ok(None) => {
-                findings.push(RoleError::FileMissing { path: path.clone() });
-                None
-            }
-            Err(error) => {
-                findings.push(RoleError::Fs(error));
                 None
             }
         }
@@ -382,37 +443,25 @@ impl RoleCatalog {
         }
     }
 
-    async fn check_file(&self, root: &HostPath, path: &RepoPath) -> Result<HostPath, RoleError> {
-        let segments: Vec<&str> = path.as_str().split('/').collect();
-        let mut current = root.clone();
-        for (index, segment) in segments.iter().enumerate() {
-            current = join(&current, segment)?;
-            let kind = self.fs.stat(&current).await?;
-            let last = index + 1 == segments.len();
-            match (kind, last) {
-                (None, _) | (Some(FileKind::File | FileKind::Socket), false) => {
-                    return Err(RoleError::FileMissing { path: path.clone() });
-                }
-                (Some(FileKind::Symlink), _) => {
-                    return Err(RoleError::EscapesRepository { path: path.clone() });
-                }
-                (Some(FileKind::Dir | FileKind::Socket), true) => {
-                    return Err(RoleError::FileNotRegular { path: path.clone() });
-                }
-                (Some(FileKind::Dir), false) | (Some(FileKind::File), true) => {}
-            }
-        }
-        Ok(current)
+    async fn capture(
+        &self,
+        root: &HostPath,
+        cancel: &CancellationToken,
+        args: &[&str],
+    ) -> Result<ProcessOutput, RoleError> {
+        let git = HostGit::role_checkout(self.runner.as_ref(), root, cancel);
+        git.capture(Pace::Quick, words(args), Vec::new())
+            .await
+            .map_err(process_failure)
     }
 
-    async fn capture(&self, root: &HostPath, args: &[&str]) -> Result<ProcessOutput, RoleError> {
-        let cancel = CancellationToken::new();
-        let git = HostGit::role_checkout(self.runner.as_ref(), root, &cancel);
-        Ok(git.capture(Pace::Quick, words(args), Vec::new()).await?)
-    }
-
-    async fn git(&self, root: &HostPath, args: &[&str]) -> Result<Vec<u8>, RoleError> {
-        let output = self.capture(root, args).await?;
+    async fn git(
+        &self,
+        root: &HostPath,
+        cancel: &CancellationToken,
+        args: &[&str],
+    ) -> Result<Vec<u8>, RoleError> {
+        let output = self.capture(root, cancel, args).await?;
         if output.status == ProcessStatus::Exited(0) {
             Ok(output.stdout)
         } else {
@@ -420,19 +469,36 @@ impl RoleCatalog {
         }
     }
 
-    async fn resolves(&self, root: &HostPath, reference: &str) -> Result<bool, RoleError> {
+    async fn resolves(
+        &self,
+        root: &HostPath,
+        cancel: &CancellationToken,
+        reference: &str,
+    ) -> Result<bool, RoleError> {
         let output = self
-            .capture(root, &["rev-parse", "--verify", "--quiet", reference])
+            .capture(
+                root,
+                cancel,
+                &["rev-parse", "--verify", "--quiet", reference],
+            )
             .await?;
         Ok(output.status == ProcessStatus::Exited(0))
     }
 
-    async fn revision(&self, root: &HostPath) -> Result<(RoleRevision, Vec<RepoPath>), RoleError> {
-        let head = self.git(root, &["rev-parse", "HEAD"]).await?;
+    async fn snapshot(
+        &self,
+        root: &HostPath,
+        cancel: &CancellationToken,
+    ) -> Result<(RoleRevision, Vec<ContextEntry>), RoleError> {
+        let head = self.git(root, cancel, &["rev-parse", "HEAD"]).await?;
         let commit = CommitId::parse(String::from_utf8_lossy(&head).trim())
             .map_err(|_| git_failure(ProcessStatus::Exited(0), &head))?;
         let listing = self
-            .git(root, &["ls-files", "-z", "-co", "--exclude-standard"])
+            .git(
+                root,
+                cancel,
+                &["ls-files", "-z", "-co", "--exclude-standard"],
+            )
             .await?;
         let mut names: Vec<&[u8]> = listing
             .split(|byte| *byte == 0)
@@ -441,83 +507,137 @@ impl RoleCatalog {
         names.sort_unstable();
         names.dedup();
         let mut digest_input = Vec::new();
-        let mut files = Vec::new();
+        let mut entries = Vec::new();
+        let mut total = 0usize;
         for name in names {
-            let text = String::from_utf8_lossy(name).into_owned();
-            let path = RepoPath::parse(&text)?;
-            let host = join_repo(root, &path)?;
-            let (kind, exec, content, listed) = match self.fs.stat(&host).await? {
-                None => continue,
-                Some(FileKind::File) => {
-                    let Some(mode) = self.fs.mode(&host).await? else {
-                        continue;
-                    };
-                    let bytes = self.fs.read(&host).await?.unwrap_or_default();
-                    (KIND_FILE, u8::from(mode.0 & 0o111 != 0), bytes, true)
+            let text = std::str::from_utf8(name)
+                .map_err(|_| RoleError::NonUtf8Path(TerminalText::sanitize(name)))?;
+            let path = RepoPath::parse(text)?;
+            let (kind, exec, content) = match self
+                .fs
+                .read_regular(root, &path, MAX_FILE_BYTES)
+                .await?
+            {
+                Ok(file) => {
+                    if file.bytes.len() > MAX_FILE_BYTES {
+                        return Err(RoleError::FileTooLarge {
+                            path,
+                            limit: MAX_FILE_BYTES,
+                        });
+                    }
+                    total += file.bytes.len();
+                    if total > MAX_TOTAL_BYTES {
+                        return Err(RoleError::FilesTooLarge {
+                            limit: MAX_TOTAL_BYTES,
+                        });
+                    }
+                    let executable = file.mode.0 & 0o111 != 0;
+                    let content = Sha256::of(&file.bytes);
+                    entries.push(ContextEntry::File {
+                        path,
+                        bytes: file.bytes,
+                        executable,
+                    });
+                    (KIND_FILE, u8::from(executable), content)
                 }
-                Some(FileKind::Symlink) => match self.fs.read_link(root, &path).await? {
-                    Ok(target) => (KIND_LINK, 0, target.into_bytes(), true),
+                Err(RegularFileProblem::Missing) => continue,
+                Err(RegularFileProblem::Symlink) => match self.fs.read_link(root, &path).await? {
+                    Ok(target) => {
+                        let content = Sha256::of(target.as_bytes());
+                        entries.push(ContextEntry::Link { path, target });
+                        (KIND_LINK, 0, content)
+                    }
                     Err(LinkProblem::Missing | LinkProblem::NotALink) => continue,
                     Err(LinkProblem::Symlink | LinkProblem::NonUtf8) => {
-                        (KIND_LINK, 0, Vec::new(), true)
+                        return Err(RoleError::EscapesRepository { path });
                     }
                 },
-                Some(FileKind::Dir | FileKind::Socket) => (KIND_OTHER, 0, Vec::new(), false),
+                Err(RegularFileProblem::NotARegularFile) => {
+                    match self.fs.stat(&join_repo(root, &path)?).await? {
+                        None => continue,
+                        Some(FileKind::Dir | FileKind::Socket) => (KIND_OTHER, 0, Sha256::of(b"")),
+                        Some(FileKind::File | FileKind::Symlink) => {
+                            return Err(RoleError::FileNotRegular { path });
+                        }
+                    }
+                }
             };
             digest_input.extend([kind, exec]);
             digest_input.extend((name.len() as u64).to_be_bytes());
             digest_input.extend(name);
-            digest_input.extend((content.len() as u64).to_be_bytes());
-            digest_input.extend(content);
-            if listed {
-                files.push(path);
-            }
+            digest_input.extend(content.as_str().as_bytes());
         }
-        let status = self.git(root, &["status", "--porcelain"]).await?;
-        let revision = if status.is_empty() {
-            RoleRevision::Clean { commit }
-        } else {
-            RoleRevision::Dirty {
-                commit,
-                digest: Sha256::of(&digest_input),
-            }
+        let revision = RoleRevision {
+            commit,
+            digest: Sha256::of(&digest_input),
         };
-        Ok((revision, files))
+        Ok((revision, entries))
+    }
+
+    async fn origin_url(
+        &self,
+        dir: &HostPath,
+        cancel: &CancellationToken,
+    ) -> Result<Option<String>, RoleError> {
+        if self.fs.stat(&join(dir, ".git")?).await?.is_none() {
+            return Ok(None);
+        }
+        let output = self
+            .capture(dir, cancel, &["config", "--get", "remote.origin.url"])
+            .await?;
+        Ok((output.status == ProcessStatus::Exited(0))
+            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned()))
     }
 
     async fn checkout(
         &self,
+        parent: &HostPath,
+        dir: &HostPath,
         name: &RoleName,
         url: &RoleUrl,
         rev: Option<&RoleRev>,
-    ) -> Result<HostPath, RoleError> {
-        let parent = join(&self.cache_dir, "roles")?;
-        self.fs.create_dir_all(&parent).await?;
-        let dir = join(&parent, name.as_str())?;
-        if self.fs.stat(&join(&dir, ".git")?).await?.is_none() {
+        cancel: &CancellationToken,
+    ) -> Result<(), RoleError> {
+        if self.origin_url(dir, cancel).await?.as_deref() == Some(url.as_str()) {
             self.git(
-                &parent,
+                dir,
+                cancel,
+                &[
+                    "fetch",
+                    "--quiet",
+                    "--prune",
+                    "--prune-tags",
+                    "--tags",
+                    "--force",
+                    "origin",
+                ],
+            )
+            .await?;
+            self.git(dir, cancel, &["remote", "set-head", "origin", "--auto"])
+                .await?;
+        } else {
+            self.fs.remove_dir_all(dir).await?;
+            self.git(
+                parent,
+                cancel,
                 &["clone", "--quiet", "--", url.as_str(), name.as_str()],
             )
             .await?;
-        } else {
-            self.git(&dir, &["fetch", "--quiet", "--tags", "--force", "origin"])
-                .await?;
         }
         let target = match rev {
             None => "origin/HEAD".to_owned(),
             Some(rev) => {
                 let branch = format!("origin/{}^{{commit}}", rev.as_str());
-                if self.resolves(&dir, &branch).await? {
+                if self.resolves(dir, cancel, &branch).await? {
                     format!("origin/{}", rev.as_str())
                 } else {
                     format!("{}^{{commit}}", rev.as_str())
                 }
             }
         };
-        self.git(&dir, &["checkout", "--quiet", "--detach", &target])
+        self.git(dir, cancel, &["checkout", "--quiet", "--detach", &target])
             .await?;
-        Ok(dir)
+        Ok(())
     }
 }
 

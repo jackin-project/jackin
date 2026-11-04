@@ -12,6 +12,7 @@ use jackin_openshell::{
     SandboxQuery, SandboxView,
 };
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
 
 use crate::export::WorkState;
 use crate::service::{POLL, Session};
@@ -77,6 +78,8 @@ pub enum LifecycleError {
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     #[error(transparent)]
     Profile(#[from] PolicyError),
+    #[error("cancelled")]
+    Cancelled,
 }
 
 const INSPECT_SCHEMA: u32 = 1;
@@ -229,6 +232,7 @@ impl Session {
         &self,
         sandbox: &SandboxName,
         action: PowerAction,
+        cancel: &CancellationToken,
     ) -> Result<SandboxSummary, LifecycleError> {
         let found = self.find_managed(sandbox).await?;
         let view = found.ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
@@ -260,7 +264,11 @@ impl Session {
                     after: waited,
                 });
             }
-            self.deps.host.clock.sleep(POLL).await;
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => return Err(LifecycleError::Cancelled),
+                () = self.deps.host.clock.sleep(POLL) => {}
+            }
             waited += POLL;
             view = self
                 .find_managed(sandbox)

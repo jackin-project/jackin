@@ -1,12 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_core::Sha256;
+use jackin_image::ContextEntry;
 use std::error::Error;
-use std::path::Path;
 
-use jackin_core::{
-    Agent, BuilderName, CommitId, DockerLayer, HostPath, Platform, RepoPath, RoleName,
-};
+use jackin_core::{Agent, BuilderName, CommitId, DockerLayer, Platform, RepoPath, RoleName};
 use jackin_image::{
     DockerfileError, HookFiles, ImageError, ImagePlan, ImageRequest, Rebuild, RoleRevision,
     SourceFile, validate_dockerfile,
@@ -33,6 +32,14 @@ struct Row {
     label: &'static str,
     text: String,
     want: Verdict,
+}
+
+fn entry(path: &str) -> Result<ContextEntry, Box<dyn Error>> {
+    Ok(ContextEntry::File {
+        path: RepoPath::parse(path)?,
+        bytes: path.as_bytes().to_vec(),
+        executable: false,
+    })
 }
 
 fn row(label: &'static str, text: &str, want: Verdict) -> Row {
@@ -835,8 +842,7 @@ fn directive_parsing_follows_buildkit_whitespace_and_bom_rules() -> TestResult {
 fn request(dockerfile: &[u8]) -> Result<ImageRequest, Box<dyn Error>> {
     Ok(ImageRequest {
         role: RoleName::parse("sentinel")?,
-        context: HostPath::parse(Path::new("/work/role"))?,
-        context_files: vec![RepoPath::parse("Dockerfile")?],
+        context_files: vec![entry("Dockerfile")?],
         dockerfile: SourceFile {
             path: RepoPath::parse("Dockerfile")?,
             bytes: dockerfile.to_vec(),
@@ -845,8 +851,9 @@ fn request(dockerfile: &[u8]) -> Result<ImageRequest, Box<dyn Error>> {
             setup: None,
             preflight: None,
         },
-        revision: RoleRevision::Clean {
+        revision: RoleRevision {
             commit: CommitId::parse(&"1".repeat(40))?,
+            digest: Sha256::of(b"clean"),
         },
         agent: Agent::Codex,
         platform: Platform::LinuxArm64,

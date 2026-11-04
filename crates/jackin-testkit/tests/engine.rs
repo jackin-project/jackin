@@ -74,13 +74,19 @@ async fn a_scripted_find_failure_hits_one_call_of_one_tag_and_then_clears() -> T
     let engine = FakeEngine::new();
     let (hit, other) = (tag("hit")?, tag("other")?);
     engine.at(EngineMoment::FindFails(hit.clone()));
-    assert!(matches!(engine.find(&other).await, Ok(None)));
-    let failed = engine.find(&hit).await;
+    assert!(matches!(
+        engine.find(&other, &CancellationToken::new()).await,
+        Ok(None)
+    ));
+    let failed = engine.find(&hit, &CancellationToken::new()).await;
     assert!(
         matches!(&failed, Err(EngineError::DigestUnreadable { tag, .. }) if *tag == hit),
         "{failed:?}"
     );
-    assert!(matches!(engine.find(&hit).await, Ok(None)));
+    assert!(matches!(
+        engine.find(&hit, &CancellationToken::new()).await,
+        Ok(None)
+    ));
     Ok(())
 }
 
@@ -88,14 +94,20 @@ async fn a_scripted_find_failure_hits_one_call_of_one_tag_and_then_clears() -> T
 async fn a_scripted_builder_check_failure_hits_one_call_and_then_clears() -> TestResult {
     let engine = FakeEngine::new();
     let builder = BuilderName::parse("jackin-builder")?;
-    engine.check_builder(&builder).await?;
+    engine
+        .check_builder(&builder, &CancellationToken::new())
+        .await?;
     engine.at(EngineMoment::CheckBuilderFails);
-    let failed = engine.check_builder(&builder).await;
+    let failed = engine
+        .check_builder(&builder, &CancellationToken::new())
+        .await;
     assert!(
         matches!(&failed, Err(EngineError::BuilderUnreadable { builder: named, .. }) if *named == builder),
         "{failed:?}"
     );
-    engine.check_builder(&builder).await?;
+    engine
+        .check_builder(&builder, &CancellationToken::new())
+        .await?;
     Ok(())
 }
 
@@ -229,12 +241,21 @@ async fn a_new_id_effect_changes_the_id_of_the_next_build_of_its_stage_only() ->
     });
     let untouched = engine.build(&role, &sink, &token).await?;
     assert_ne!(untouched, other, "another stage took the effect");
-    assert_eq!(engine.find(&derived.tag).await?, Some(original.clone()));
+    assert_eq!(
+        engine.find(&derived.tag, &CancellationToken::new()).await?,
+        Some(original.clone())
+    );
 
     let rebuilt = engine.build(&derived, &sink, &token).await?;
     assert_eq!(rebuilt, other);
-    assert_eq!(engine.find(&derived.tag).await?, Some(other));
+    assert_eq!(
+        engine.find(&derived.tag, &CancellationToken::new()).await?,
+        Some(other)
+    );
     assert_eq!(engine.build(&derived, &sink, &token).await?, original);
-    assert_eq!(engine.find(&derived.tag).await?, Some(original));
+    assert_eq!(
+        engine.find(&derived.tag, &CancellationToken::new()).await?,
+        Some(original)
+    );
     Ok(())
 }

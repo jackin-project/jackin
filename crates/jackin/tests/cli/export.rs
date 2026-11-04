@@ -9,6 +9,7 @@ use jackin_openshell::PowerAction;
 use jackin_testkit::{HostSnapshot, Rig, SandboxHandle, TestResult, guard};
 
 use super::support::{Failure, Harness, failed};
+use tokio_util::sync::CancellationToken;
 
 async fn work() -> Result<(Rig, Harness, SandboxHandle, String), Failure> {
     let rig = Rig::new().await?;
@@ -71,13 +72,19 @@ async fn export_of_a_stopped_unknown_or_unregistered_sandbox_fails_and_writes_no
         let (rig, harness, handle, _tip) = work().await?;
         let name = handle.name();
         let before = HostSnapshot::take(rig.repo.root()).await?;
-        rig.world.session.power(&name, PowerAction::Stop).await?;
+        rig.world
+            .session
+            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
         let stopped = harness.run(&["export", name.as_str()]).await?;
         failed(&stopped, ExitClass::Failure, &[name.as_str()])?;
         let unknown = harness.run(&["export", "jackin-absent-0009"]).await?;
         failed(&unknown, ExitClass::Failure, &["jackin-absent-0009"])?;
 
-        rig.world.session.power(&name, PowerAction::Start).await?;
+        rig.world
+            .session
+            .power(&name, PowerAction::Start, &CancellationToken::new())
+            .await?;
         let mut config = rig.config.clone();
         let workspace = WorkspaceName::parse("platform-backend")?;
         config.apply(ConfigEdit::RemoveWorkspace(workspace))?;

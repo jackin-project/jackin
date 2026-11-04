@@ -8,13 +8,10 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use jackin_core::{
-    DirEntry, DockerSubcommand, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
-    ImageId, LinkProblem, RegularFile, RegularFileProblem, RepoPath, StdFileSystem,
-};
+use jackin_core::{DockerSubcommand, FileSystem, ImageId, RepoPath, StdFileSystem};
 use jackin_image::{
-    BuildStage, ContextProblem, ContextSource, EngineError, ImageEngine, ImagePlan, PlannedBuild,
+    BuildStage, ContextEntry, ContextProblem, ContextSource, EngineError, ImageEngine, ImagePlan,
+    PlannedBuild,
 };
 use jackin_testkit::CapturedFile;
 use tempfile::TempDir;
@@ -88,15 +85,25 @@ impl Lab {
     fn build(&self, names: &[&str]) -> Result<PlannedBuild, Box<dyn Error>> {
         let plan = ImagePlan::new(&self.stack.fixture.request()?)?;
         let finals = plan.final_builds(&ImageId::parse(&tag_id("construct"))?);
-        let files = names
-            .iter()
-            .map(|name| RepoPath::parse(name))
-            .collect::<Result<_, _>>()?;
+        let mut entries = Vec::new();
+        for name in names {
+            let path = self.root().join(name);
+            let repo = RepoPath::parse(name)?;
+            if fs::symlink_metadata(&path)?.is_symlink() {
+                entries.push(ContextEntry::Link {
+                    path: repo,
+                    target: fs::read_link(&path)?.to_string_lossy().into_owned(),
+                });
+            } else {
+                entries.push(ContextEntry::File {
+                    path: repo,
+                    bytes: fs::read(&path)?,
+                    executable: fs::metadata(&path)?.permissions().mode() & 0o111 != 0,
+                });
+            }
+        }
         Ok(PlannedBuild {
-            context: ContextSource::Listed {
-                root: self.stack.fixture.role.clone(),
-                files,
-            },
+            context: ContextSource::Entries(entries),
             ..finals.role
         })
     }
@@ -233,85 +240,6 @@ async fn buildx_refuses_a_link_whose_text_can_leave_the_role_root() -> TestResul
     .await
 }
 
-#[derive(Debug)]
-struct ProblemFs {
-    inner: StdFileSystem,
-    problem: LinkProblem,
-}
-
-#[async_trait]
-impl FileSystem for ProblemFs {
-    async fn read(&self, p: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
-        self.inner.read(p).await
-    }
-    async fn stat(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
-        self.inner.stat(p).await
-    }
-    async fn stat_following(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
-        self.inner.stat_following(p).await
-    }
-    async fn canonicalize(&self, p: &HostPath) -> Result<Option<HostPath>, FsError> {
-        self.inner.canonicalize(p).await
-    }
-    async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
-        self.inner.file_len(p).await
-    }
-    async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
-        self.inner.list(d).await
-    }
-    async fn create_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
-        self.inner.create_dir_all(d).await
-    }
-    async fn create_private_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
-        self.inner.create_private_dir_all(d).await
-    }
-    async fn write_new(&self, p: &HostPath, b: &[u8], m: FileMode) -> Result<(), FsError> {
-        self.inner.write_new(p, b, m).await
-    }
-    async fn rename(&self, f: &HostPath, t: &HostPath) -> Result<(), FsError> {
-        self.inner.rename(f, t).await
-    }
-    async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
-        self.inner.remove_file(p).await
-    }
-    async fn remove_dir_all(&self, p: &HostPath) -> Result<(), FsError> {
-        self.inner.remove_dir_all(p).await
-    }
-    async fn mode(&self, p: &HostPath) -> Result<Option<FileMode>, FsError> {
-        self.inner.mode(p).await
-    }
-    async fn sync_dir(&self, d: &HostPath) -> Result<(), FsError> {
-        self.inner.sync_dir(d).await
-    }
-    async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
-        self.inner.lock(p).await
-    }
-    async fn read_regular(
-        &self,
-        root: &HostPath,
-        file: &RepoPath,
-        max_bytes: usize,
-    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(root, file, max_bytes).await
-    }
-    async fn read_link(
-        &self,
-        root: &HostPath,
-        file: &RepoPath,
-    ) -> Result<Result<String, LinkProblem>, FsError> {
-        match self.inner.read_link(root, file).await? {
-            Ok(_) => Ok(Err(self.problem)),
-            Err(problem) => Ok(Err(problem)),
-        }
-    }
-    async fn write_symlink(&self, p: &HostPath, target: &str) -> Result<(), FsError> {
-        self.inner.write_symlink(p, target).await
-    }
-    async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
-        self.inner.read_at(p, offset, len).await
-    }
-}
-
 #[tokio::test]
 async fn buildx_checks_each_listed_link_on_its_own_text_and_never_resolves_chains() -> TestResult {
     guarded(async {
@@ -327,55 +255,6 @@ async fn buildx_checks_each_listed_link_on_its_own_text_and_never_resolves_chain
         pair.link("pair_x", "d1/up/../../outside")?;
         pair.refuses(&["d1/up", "pair_x"], "d1/up", ContextProblem::Escapes)
             .await?;
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn buildx_maps_each_problem_found_while_reading_a_link_to_its_context_problem() -> TestResult
-{
-    guarded(async {
-        let rows = [
-            (LinkProblem::NonUtf8, ContextProblem::Escapes),
-            (LinkProblem::NotALink, ContextProblem::NotARegularFile),
-            (LinkProblem::Missing, ContextProblem::Missing),
-        ];
-        for (found, expected) in rows {
-            let lab = Lab::new(Arc::new(ProblemFs {
-                inner: StdFileSystem::default(),
-                problem: found,
-            }))?;
-            lab.link("bad", "target.txt")?;
-            lab.refuses(&["bad"], "bad", expected).await?;
-        }
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn buildx_never_follows_a_linked_directory_to_read_a_listed_link() -> TestResult {
-    guarded(async {
-        let through = std_lab()?;
-        symlink("secret.txt", through.outside.path().join("x"))?;
-        through.link("dir", through.outside.path())?;
-        through
-            .refuses(&["dir/x"], "dir/x", ContextProblem::Symlink)
-            .await
-    })
-    .await
-}
-
-#[tokio::test]
-async fn buildx_refuses_a_listed_path_below_a_linked_directory_in_either_order() -> TestResult {
-    guarded(async {
-        for names in [["d", "d/f"], ["d/f", "d"]] {
-            let lab = std_lab()?;
-            lab.file("real_dir/f", b"inside", 0o644)?;
-            lab.link("d", "real_dir")?;
-            lab.refuses(&names, "d/f", ContextProblem::Symlink).await?;
-        }
         Ok(())
     })
     .await

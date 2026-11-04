@@ -121,3 +121,45 @@ async fn a_git_role_loads_the_new_commit_when_origin_moves_a_tag() -> TestResult
     })
     .await
 }
+
+#[tokio::test]
+async fn a_git_role_whose_branch_was_deleted_at_the_origin_no_longer_loads() -> TestResult {
+    guard(async {
+        let origin = Origin::new().await?;
+        let (cache, _keep) = cache()?;
+        let (_, model) = origin
+            .load(&cache, Some("dev"))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(model.as_deref(), Some("model-dev"));
+        git(origin.role.root().as_path(), &["branch", "-D", "dev"]).await?;
+        let gone = origin.load(&cache, Some("dev")).await?;
+        assert!(
+            matches!(gone, Err(RoleError::Git { .. })),
+            "the deleted branch still loads: {gone:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_git_role_whose_tag_was_deleted_at_the_origin_no_longer_loads() -> TestResult {
+    guard(async {
+        let origin = Origin::new().await?;
+        let (cache, _keep) = cache()?;
+        let (_, model) = origin
+            .load(&cache, Some("v1"))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(model.as_deref(), Some("model-1"));
+        git(origin.role.root().as_path(), &["tag", "-d", "v1"]).await?;
+        let gone = origin.load(&cache, Some("v1")).await?;
+        assert!(
+            matches!(gone, Err(RoleError::Git { .. })),
+            "the deleted tag still loads: {gone:?}"
+        );
+        Ok(())
+    })
+    .await
+}
