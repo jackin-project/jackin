@@ -612,7 +612,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 
 - **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P10.1.
 - **Proof:** the verdicts in the chat. No open blocking finding.
-- [ ] P10.2 done
+- [x] P10.2 done. Proof: security-reviewer APPROVE (/private/tmp/claude-501/plans/P10.2-security.md; F1 echoed values, F2 placeholder check, F3 sync lock fixed in 9a2042556); pstack interrogate with three adversaries (sonnet, opus, haiku), every finding rerun by the orchestrator (/private/tmp/claude-501/plans/P10.2-interrogate.md: account edits planned before the lock, value echo outside --credential, secret-shaped env and file credentials), all fixed at 5af16cf6c with red and green in rewrite/reconciliation/P10.2.md; G-FAST 1567 passed; no open blocking finding.
 
 ## Phase P11. Rewrite Agent Smith and The Architect
 
