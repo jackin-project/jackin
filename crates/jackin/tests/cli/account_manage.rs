@@ -556,3 +556,45 @@ async fn add_publishes_nothing_to_a_gateway_that_was_removed_while_it_waited_for
     })
     .await
 }
+
+#[tokio::test]
+async fn ctrl_c_while_an_account_edit_waits_for_the_host_lock_exits_130() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let harness = Harness::new(&rig.world);
+        harness.write_config(&rig.config.render())?;
+        let held = hold(&rig, "work").await?;
+        let already = rig.world.clock.slept().len();
+        let token = CancellationToken::new();
+
+        let removal = harness
+            .command(&["account", "rm", "work"])
+            .cancel(token.clone())
+            .run();
+        let meanwhile = async {
+            until_polling(&rig, already).await;
+            token.cancel();
+        };
+        let (ran, ()) = tokio::join!(removal, meanwhile);
+        let ran = ran?;
+        drop(held);
+
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(ran.stdout.is_empty());
+        assert!(
+            ran.stderr
+                .contains("cancelled while waiting for a host lock"),
+            "{}",
+            ran.stderr
+        );
+        assert!(
+            harness
+                .stored()
+                .await?
+                .account(&AccountName::parse("work")?)
+                .is_some()
+        );
+        Ok(())
+    })
+    .await
+}

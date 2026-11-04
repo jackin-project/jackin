@@ -8,7 +8,8 @@ use jackin_image::ImageError;
 use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountEditError, AccountError, AttachError, BuildError, ConnectError, CredentialError,
-    ExportError, LaunchFailure, LifecycleError, PlanError, PurgeError, RestartError, RoleError,
+    ExportError, LaunchFailure, LifecycleError, LockError, PlanError, PurgeError, RestartError,
+    RoleError,
 };
 use jackin_tui::ConsoleError;
 use jackin_usage::UsageError;
@@ -152,6 +153,7 @@ impl CommandError {
             | CommandError::Lifecycle(LifecycleError::Cancelled)
             | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
+            | CommandError::Account(AccountError::Lock(LockError::Cancelled))
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. })) => {
                 ExitClass::Cancelled
             }
