@@ -583,7 +583,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
   8. Capsule (J5): the D28 session tabs and panes with the P0.6 transport, the byte path through `termpane`, replies, scrollback, selection and copy, the clipboard policy, export. `jackin attach` and `jackin shell` use the same sessions (D03).
   9. Entry (J6): `jackin` with no arguments opens the console on a terminal. `xtask product-check` passes on the release build.
 - **Proof:** G-FAST passes at each step. Tests drive key sequences and assert the resulting jackin config and session state. Each test has an independent red run and green run.
-- [ ] P9.3 done
+- [x] P9.3 done. Proof: baseline feature/openshell-native at 912b0a8 (steps B1b, B2c, B3b, B4a-B4c, B5, B5b, B6, B7a, B7b, B8-0, B8-1, B8a, B8b, BG, BG2, BG3, BG4, BG5, each red and green in docs/P9.3-red-green.md, batch code reviews, red/green reviews and UX reviews with one fix round each; full baseline suite and the product shape pass, approved baselines unchanged except the reviewed re-takes); jackin at 0405be170 (J1a, J1, J1b, JBG, J2, J3, J4, J5, JBG4, J6 and the J1, J2-J4 fix rounds, red and green in rewrite/reconciliation/P9.3.md; batch reviews P9.3-J1-review.md, P9.3-J2-J4-review.md, red/green P9.3-J1-redgreen.md and P9.3-J2-J5-redgreen.md APPROVED); G-FAST 1761 passed (pre-push); xtask product-check exit 0 on the release build, no demo canary in target/release/jackin; `jackin` with no arguments opens the console on a TTY.
 
 ### P9.4 Prove that the console is identical to the baseline
 
