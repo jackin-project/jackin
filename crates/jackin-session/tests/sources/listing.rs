@@ -57,13 +57,14 @@ async fn the_four_listings_parse_and_the_value_never_survives_the_item_read() ->
                 OpFieldKind::Concealed
             ]
         );
-        assert_eq!(detail.fields[0].tail, "d2e8");
+        assert_eq!(detail.fields[0].tail.as_str(), "d2e8");
         assert_eq!(detail.fields[2].label, "f3");
         assert_eq!(detail.fields[3].section.as_deref(), Some("sec-1"));
         assert!(detail.fields[3].empty);
         assert!(!detail.fields[0].empty);
         let shown = format!("{accounts:?}{vaults:?}{items:?}{detail:?}");
         assert!(!shown.contains(CANARY), "{shown}");
+        assert!(!shown.contains("d2e8"), "{shown}");
         Ok(())
     })
     .await
@@ -182,7 +183,7 @@ async fn a_concealed_value_of_eight_characters_or_fewer_shows_no_tail() -> TestR
         assert_eq!(tails, ["", "", "6789", ""]);
         let shown = format!("{detail:?}");
         assert!(
-            !shown.contains("abc") && !shown.contains("12345678"),
+            !shown.contains("abc") && !shown.contains("12345678") && !shown.contains("6789"),
             "{shown}"
         );
         Ok(())
