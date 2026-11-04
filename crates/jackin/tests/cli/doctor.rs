@@ -93,7 +93,7 @@ fn fixture_with_git(
 }
 
 fn healthy() -> Result<Fixture, Failure> {
-    fixture(true, ProcessReply::exited(0, b"openshell 0.1.6\n", b""))
+    fixture(true, ProcessReply::exited(0, b"openshell 0.1.7\n", b""))
 }
 
 #[tokio::test]
@@ -120,7 +120,7 @@ async fn a_missing_engine_socket_is_only_a_warning() -> TestResult {
         let Fixture {
             harness,
             world: _world,
-        } = fixture(false, ProcessReply::exited(0, b"openshell 0.1.6\n", b""))?;
+        } = fixture(false, ProcessReply::exited(0, b"openshell 0.1.7\n", b""))?;
         let ran = harness.run(&["doctor"]).await?;
         ran.ok()?;
         assert!(ran.stderr.is_empty(), "{}", ran.stderr);
@@ -221,7 +221,7 @@ async fn a_git_that_is_too_old_prints_the_upgrade_fix_and_not_the_install_fix() 
             world: _world,
         } = fixture_with_git(
             true,
-            ProcessReply::exited(0, b"openshell 0.1.6\n", b""),
+            ProcessReply::exited(0, b"openshell 0.1.7\n", b""),
             ProcessReply::exited(0, b"git version 2.0.0\n", b""),
         )?;
         let ran = harness.run(&["doctor"]).await?;

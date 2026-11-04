@@ -26,7 +26,7 @@ pub struct DoctorHost {
 impl DoctorHost {
     pub fn healthy() -> DoctorHost {
         DoctorHost {
-            openshell: ProcessReply::exited(0, b"openshell 0.1.6\n", b""),
+            openshell: ProcessReply::exited(0, b"openshell 0.1.7\n", b""),
             ssh: ProcessReply::exited(0, b"", b"OpenSSH_9.9p1\n"),
             git: ProcessReply::exited(0, b"git version 2.50.1 (Apple Git-155)\n", b""),
             registered: true,

@@ -60,13 +60,13 @@ pub(crate) struct Setup {
 impl Setup {
     pub(crate) fn healthy() -> Setup {
         Setup {
-            openshell: ProcessReply::exited(0, b"openshell 0.1.6\n", b""),
+            openshell: ProcessReply::exited(0, b"openshell 0.1.7\n", b""),
             ssh: ProcessReply::exited(0, b"", b"OpenSSH_9.9p1\n"),
             git: ProcessReply::exited(0, b"git version 2.50.1 (Apple Git-155)\n", b""),
             listed: true,
             access: Access::Connected,
-            pinned: "0.1.6".to_owned(),
-            gateway_version: "0.1.6".to_owned(),
+            pinned: "0.1.7".to_owned(),
+            gateway_version: "0.1.7".to_owned(),
             socket: Socket::Live,
             health: Health::Serving,
         }

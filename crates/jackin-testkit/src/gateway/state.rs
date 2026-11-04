@@ -163,7 +163,7 @@ impl Registry {
             hidden_until_conflict: false,
             start_ignored: false,
             serving: true,
-            version: "0.1.6".to_owned(),
+            version: "0.1.7".to_owned(),
             host_home: None,
             host_edits: Vec::new(),
             put_fails_after_write: None,
