@@ -3,7 +3,7 @@
 
 use jackin::ExitClass;
 use jackin_core::{AccountName, Agent, CredentialSource, ProfileId, ProviderName};
-use jackin_testkit::{ACCESS, ACCOUNT_ID, Rig, TestResult, guard};
+use jackin_testkit::{ACCESS, ACCOUNT_ID, Rig, TestResult, World, guard};
 
 use super::support::{FixedConnector, Harness, failed};
 
@@ -71,6 +71,9 @@ async fn a_chatgpt_account_syncs_the_provider_first_and_other_providers_never_co
         assert_eq!(rig.gateway().profiles(), vec![ProfileId::parse("codex")?]);
 
         harness.connector = FixedConnector::empty();
+        harness
+            .env
+            .push(("CLAUDE_KEY".to_owned(), "fake-value".to_owned()));
         harness
             .run(&[
                 "account",
@@ -157,6 +160,9 @@ async fn a_codex_account_without_a_chatgpt_login_is_stored_for_usage_and_never_r
     guard(async {
         let (rig, mut harness, _home) = rigged().await?;
         harness.connector = FixedConnector::empty();
+        harness
+            .env
+            .push(("OPENAI_KEY".to_owned(), "fake-value".to_owned()));
         for (name, credential) in [("api", "env:OPENAI_KEY"), ("vault", "op://Dev/OpenAI/key")] {
             harness
                 .run(&[
@@ -216,6 +222,71 @@ async fn adding_the_same_account_twice_fails_before_the_gateway_is_touched() -> 
         failed(&harness.run(&args).await?, ExitClass::Failure, &["work"])?;
         assert_eq!(harness.config_bytes()?, before);
         assert_eq!(rig.gateway().provider(&provider("work")?), record);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_credential_source_must_exist_where_the_account_is_added_and_a_refusal_never_echoes_it()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let mut harness = Harness::new(&world);
+        let long = "A".repeat(129);
+        harness.env.push((long.clone(), "fake-value".to_owned()));
+        harness
+            .env
+            .push(("SET_VAR".to_owned(), "fake-value".to_owned()));
+        let home = world.home().as_path();
+        std::fs::write(home.join("present.key"), "fake-key")?;
+        std::fs::create_dir(home.join("sk-FAKE-dir"))?;
+        let long_env = format!("env:{long}");
+        let refused: [(&str, &str); 4] = [
+            ("env:sk_FAKE_1", "needs a variable that is set"),
+            (&long_env, "expects env:NAME"),
+            ("file:sk-FAKE-missing.key", "needs an existing regular file"),
+            ("file:sk-FAKE-dir", "needs an existing regular file"),
+        ];
+        for (credential, expected) in refused {
+            let before = harness.config_bytes()?;
+            let ran = harness
+                .run(&[
+                    "account",
+                    "add",
+                    "codex",
+                    "--name",
+                    "x",
+                    "--credential",
+                    credential,
+                ])
+                .await?;
+            assert_eq!(ran.exit, ExitClass::Usage, "{credential}");
+            assert!(
+                ran.stderr.contains(expected),
+                "{credential}: {}",
+                ran.stderr
+            );
+            assert!(!ran.stderr.contains("sk_FAKE"), "{}", ran.stderr);
+            assert!(!ran.stderr.contains("sk-FAKE"), "{}", ran.stderr);
+            assert!(!ran.stderr.contains(&long), "{}", ran.stderr);
+            assert_eq!(harness.config_bytes()?, before, "{credential}");
+        }
+        for (name, credential) in [("by-env", "env:SET_VAR"), ("by-file", "file:present.key")] {
+            harness
+                .run(&[
+                    "account",
+                    "add",
+                    "codex",
+                    "--name",
+                    name,
+                    "--credential",
+                    credential,
+                ])
+                .await?
+                .ok()?;
+            assert!(harness.stored().await?.account(&account(name)?).is_some());
+        }
         Ok(())
     })
     .await

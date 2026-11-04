@@ -279,11 +279,16 @@ pub enum CredentialArg {
     File(PathBuf),
 }
 
+const MAX_ENV_NAME: usize = 128;
+
 impl CredentialArg {
     pub fn parse(text: &str) -> Result<CredentialArg, CommandError> {
         const FORMS: &str = "--credential expects env:NAME, an op:// reference, or file:PATH";
         let bad = || CommandError::Argument(FORMS.to_owned());
         if let Some(name) = text.strip_prefix("env:") {
+            if name.len() > MAX_ENV_NAME {
+                return Err(bad());
+            }
             return EnvName::parse(name)
                 .map(CredentialArg::Env)
                 .map_err(|_| bad());
@@ -300,16 +305,16 @@ impl CredentialArg {
     }
 }
 
-fn parse_provider(text: &str) -> Result<Provider, String> {
+pub fn parse_provider(text: &str) -> Result<Provider, CommandError> {
     Provider::ALL
         .into_iter()
         .find(|provider| provider.as_str() == text)
         .ok_or_else(|| {
             let names: Vec<&str> = Provider::ALL.into_iter().map(Provider::as_str).collect();
-            format!(
-                "unknown provider {text}; expected one of {}",
+            CommandError::Argument(format!(
+                "the provider is unknown; expected one of {}",
                 names.join(", ")
-            )
+            ))
         })
 }
 
@@ -321,8 +326,8 @@ fn parse_provider(text: &str) -> Result<Provider, String> {
         .args(["chatgpt_from", "credential"])
 ))]
 pub struct AccountAddArgs {
-    #[arg(value_parser = parse_provider, help = "Provider of the account")]
-    pub provider: Provider,
+    #[arg(help = "Provider of the account")]
+    pub provider: String,
     #[arg(long, help = "Account name")]
     pub name: AccountName,
     #[arg(

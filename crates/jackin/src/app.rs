@@ -10,7 +10,8 @@ use jackin_core::{Config, ConfigStore, EnvSnapshot, GatewayName, HostPath};
 use jackin_image::ImageEngine;
 use jackin_openshell::Gateway;
 use jackin_session::{
-    GatewayConnector, Gateways, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
+    AccountDesk, GatewayConnector, Gateways, HostPorts, LaunchLimits, RoleCatalog, Session,
+    SessionDeps,
 };
 use jackin_usage::ProviderEndpoints;
 use tokio_util::sync::CancellationToken;
@@ -78,6 +79,14 @@ impl App {
 }
 
 impl App {
+    pub(crate) fn desk(&self) -> AccountDesk {
+        AccountDesk::new(
+            self.deps.host.clone(),
+            self.cache_dir.clone(),
+            self.store.clone(),
+        )
+    }
+
     pub(crate) async fn session(&self, config: &Config) -> Result<Session, CommandError> {
         let (name, entry) = config.resolve_gateway(self.gateway.as_ref())?;
         let gateway = self.deps.connect.connect(name, entry, &self.cancel).await?;

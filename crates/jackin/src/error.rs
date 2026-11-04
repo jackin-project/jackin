@@ -107,6 +107,7 @@ impl From<AccountEditError> for CommandError {
         match error {
             AccountEditError::Config(error) => CommandError::Config(error),
             AccountEditError::Account(error) => CommandError::Account(error),
+            AccountEditError::Connect(error) => CommandError::from(error),
             other => CommandError::Accounts(other),
         }
     }
