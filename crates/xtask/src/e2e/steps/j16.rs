@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::e2e::probe::FactsJ16;
+use crate::e2e::probe::{CURL_COULD_NOT_RESOLVE, Egress, FactsJ16, Outcome};
 use crate::e2e::run::{Fail, Res, Run, fail};
 use crate::e2e::verdict::Verdict;
 
@@ -16,12 +16,20 @@ pub(crate) fn judge_off(facts: &FactsJ16) -> Vec<String> {
             facts.docker_variables.join(", ")
         ));
     }
-    match (facts.connection.attempted, facts.connection.curl_exit) {
-        (true, Some(6 | 7)) => {}
-        (true, other) => problems.push(format!(
-            "the engine endpoint was reachable (curl exit {other:?})"
-        )),
-        (false, _) => problems.push("the probe did not try the engine endpoint".to_owned()),
+    if !facts.connection.attempted {
+        problems.push("the probe did not try the engine endpoint".to_owned());
+        return problems;
+    }
+    match facts.connection.reply.outcome() {
+        Outcome::Unresolved => {
+            let control = facts.resolver_control.as_ref().map(Egress::outcome);
+            if control != Some(Outcome::Refused) {
+                problems.push(format!(
+                    "the engine endpoint did not resolve (curl exit {CURL_COULD_NOT_RESOLVE}) and the control name example.com was not refused ({control:?}): a resolver fault cannot be told from a policy denial"
+                ));
+            }
+        }
+        other => problems.extend(other.fault("engine endpoint")),
     }
     problems
 }

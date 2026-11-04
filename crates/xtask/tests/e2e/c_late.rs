@@ -17,6 +17,10 @@ fn patched(step: &'static str, call: Option<u32>, pointer: &'static str, value: 
     Box::new(move |s: &Scenario| s.patch(step, call, pointer, value.clone()))
 }
 
+fn curl_missing() -> Value {
+    json!({"url": "https://example.invalid/", "curl_found": false, "curl_exit": null, "http_code": 0})
+}
+
 fn canonical_role(scenario: &Scenario) -> String {
     let path = std::fs::canonicalize(&scenario.world.role).expect("role");
     format!("role check {}", path.display())
@@ -363,6 +367,36 @@ async fn j09_egress_faults() {
                 patched("J09", None, "/facts/metadata_host/http_code", json!(200)),
             ),
             (
+                "outside host fails to resolve",
+                "outside host did not resolve (curl exit 6)",
+                patched("J09", None, "/facts/outside_host/curl_exit", json!(6)),
+            ),
+            (
+                "metadata host fails to resolve",
+                "metadata host did not resolve (curl exit 6)",
+                patched("J09", None, "/facts/metadata_host/curl_exit", json!(6)),
+            ),
+            (
+                "outside host times out",
+                "outside host gave curl exit 28",
+                patched("J09", None, "/facts/outside_host/curl_exit", json!(28)),
+            ),
+            (
+                "curl is missing for the outside host",
+                "outside host was not tested",
+                patched("J09", None, "/facts/outside_host", curl_missing()),
+            ),
+            (
+                "curl is missing for the metadata host",
+                "metadata host was not tested",
+                patched("J09", None, "/facts/metadata_host", curl_missing()),
+            ),
+            (
+                "curl is missing for the provider host",
+                "provider host was not tested",
+                patched("J09", None, "/facts/provider_host", curl_missing()),
+            ),
+            (
                 "provider host answers 204",
                 "answered HTTP 204",
                 patched("J09", None, "/facts/provider_host/http_code", json!(204)),
@@ -670,14 +704,64 @@ async fn j15_docker_capability_faults() {
 }
 
 #[tokio::test]
+async fn j16_engine_name_refused_while_the_resolver_works_passes() {
+    let scenario = Scenario::new().await;
+    scenario.patch("J16", None, "/facts/connection/curl_exit", json!(6));
+    let ran = scenario.run().await;
+    ran.expect("engine name refused, control refused", &[]);
+}
+
+#[tokio::test]
 async fn j16_docker_capability_off_faults() {
     table(
         "J16",
         vec![
             (
-                "the engine is reachable",
-                "reachable",
+                "the engine gives curl exit 0 and no HTTP code",
+                "gave curl exit 0",
                 patched("J16", None, "/facts/connection/curl_exit", json!(0)),
+            ),
+            (
+                "the engine answers HTTP 200",
+                "answered HTTP 200",
+                Box::new(|s| {
+                    s.patch("J16", None, "/facts/connection/curl_exit", json!(0));
+                    s.patch("J16", None, "/facts/connection/http_code", json!(200));
+                }),
+            ),
+            (
+                "the engine connection times out",
+                "gave curl exit 28",
+                patched("J16", None, "/facts/connection/curl_exit", json!(28)),
+            ),
+            (
+                "the engine name fails to resolve and the control fails too",
+                "resolver fault",
+                Box::new(|s| {
+                    s.patch("J16", None, "/facts/connection/curl_exit", json!(6));
+                    s.patch("J16", None, "/facts/resolver_control/curl_exit", json!(6));
+                }),
+            ),
+            (
+                "the engine name fails to resolve and no control ran",
+                "control name example.com was not refused",
+                Box::new(|s| {
+                    s.patch("J16", None, "/facts/connection/curl_exit", json!(6));
+                    s.patch("J16", None, "/facts/resolver_control", Value::Null);
+                }),
+            ),
+            (
+                "curl is missing for the engine",
+                "engine endpoint was not tested",
+                Box::new(|s| {
+                    s.patch(
+                        "J16",
+                        None,
+                        "/facts/connection",
+                        json!({"attempted": true, "curl_found": false, "curl_exit": null, "http_code": 0}),
+                    );
+                    s.patch("J16", None, "/facts/resolver_control", curl_missing());
+                }),
             ),
             (
                 "a docker binary exists",
