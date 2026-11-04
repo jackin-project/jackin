@@ -55,6 +55,10 @@ pub(crate) fn tag_id(tag: &str) -> String {
     format!("sha256:{}", Sha256::of(tag.as_bytes()).as_str())
 }
 
+pub(crate) fn model_construct_layer() -> String {
+    tag_id("the model construct layer")
+}
+
 pub(crate) fn source(path: &str, bytes: &[u8]) -> Result<SourceFile, Box<dyn Error>> {
     Ok(SourceFile {
         path: RepoPath::parse(path)?,
@@ -148,6 +152,12 @@ pub(crate) enum Delivery {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct Reply {
+    pub(crate) status: i32,
+    pub(crate) stdout: String,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum AfterBuild {
     Retag { tag: String, id: String },
     FailInspect { tag: String },
@@ -175,6 +185,7 @@ struct ModelState {
     images: BTreeMap<String, String>,
     driver: String,
     scripts: HashMap<BuildStage, Script>,
+    bodies: HashMap<BuildStage, Reply>,
     delivery: Delivery,
     after: Vec<(BuildStage, AfterBuild)>,
     broken: Vec<String>,
@@ -212,6 +223,7 @@ impl DockerModel {
                 images: BTreeMap::new(),
                 driver: "docker".to_owned(),
                 scripts: HashMap::new(),
+                bodies: HashMap::new(),
                 delivery: Delivery::Normal,
                 after: Vec::new(),
                 broken: Vec::new(),
@@ -235,6 +247,10 @@ impl DockerModel {
 
     pub(crate) fn script(&self, stage: BuildStage, script: Script) {
         locked(&self.state).scripts.insert(stage, script);
+    }
+
+    pub(crate) fn inspect_reply(&self, stage: BuildStage, reply: Reply) {
+        locked(&self.state).bodies.insert(stage, reply);
     }
 
     pub(crate) fn delivery(&self, delivery: Delivery) {
@@ -326,8 +342,36 @@ impl DockerModel {
         reply.with_effect(ProcessEffect::CaptureContext)
     }
 
+    fn inspect_body(&self, id: &str) -> ProcessReply {
+        let state = locked(&self.state);
+        let tag = state
+            .images
+            .iter()
+            .find_map(|(tag, found)| (found == id).then_some(tag.as_str()));
+        let stage = tag.map(stage_of);
+        if let Some(reply) = stage.and_then(|stage| state.bodies.get(&stage)) {
+            return ProcessReply::exited(
+                reply.status,
+                reply.stdout.as_bytes(),
+                b"inspect failed\n",
+            );
+        }
+        let mut layers = vec![format!("\"{}\"", model_construct_layer())];
+        if let (Some(tag), Some(BuildStage::Role | BuildStage::Derived)) = (tag, stage) {
+            layers.push(format!("\"{}\"", tag_id(tag)));
+        }
+        let body = format!(
+            "{{\"Id\":\"{id}\",\"Config\":{{\"Env\":[\"PATH=/usr/bin\"],\"OnBuild\":null}},\"RootFS\":{{\"Type\":\"layers\",\"Layers\":[{}]}}}}\n",
+            layers.join(",")
+        );
+        ProcessReply::exited(0, body.as_bytes(), b"")
+    }
+
     fn inspect(&self, call: &SeenCall) -> ProcessReply {
         let tag = call.args.last().map_or("", String::as_str);
+        if call.args.iter().any(|arg| arg == "{{json .}}") {
+            return self.inspect_body(tag);
+        }
         let state = locked(&self.state);
         if state.broken.iter().any(|broken| broken == tag) {
             return ProcessReply::exited(

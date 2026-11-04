@@ -6,6 +6,8 @@ use thiserror::Error;
 
 use crate::dockerfile::DockerfileError;
 use crate::engine::EngineError;
+use crate::inspect::ImageRule;
+use crate::plan::BuildStage;
 
 #[derive(Debug, Error)]
 pub enum ImageError {
@@ -20,6 +22,12 @@ pub enum ImageError {
         tag: ImageTag,
         built: ImageId,
         found: Option<ImageId>,
+    },
+    #[error("the {stage} image {image} breaks an image rule: {rule}")]
+    Rule {
+        stage: BuildStage,
+        image: ImageId,
+        rule: ImageRule,
     },
     #[error("the tag {tag} was expected to hold {expected} but holds {}", found_text(.found.as_ref()))]
     SourceMoved {

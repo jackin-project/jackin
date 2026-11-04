@@ -123,6 +123,14 @@ fn env_problem(instruction: &Instruction) -> Option<DockerfileError> {
     None
 }
 
+pub(crate) fn defers_engine_client_env(trigger: &str) -> bool {
+    env_problem(&Instruction {
+        line: 0,
+        text: trigger.to_owned(),
+    })
+    .is_some()
+}
+
 fn env_keys(arguments: &str) -> Vec<String> {
     let words = split_shell_words(arguments);
     let keyed = words.first().is_some_and(|word| word.contains('='));
