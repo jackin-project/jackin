@@ -682,4 +682,9 @@ P11.1 and P11.2 run in parallel.
 - **Owner:** orchestrator. **Depends:** P13.3.
 - **Steps:** Open one ready pull request for each repository from `feature/openshell-native` to `main`. The title is `feat!: rebuild jackin on OpenShell`, or the equivalent for the role or the baseline. The body opens with the goal and names the evidence files. After all five exist, edit each body to link the other four. Do not merge (A3).
 - **Proof:** the output of `gh pr view <url> --json url,state,isDraft,baseRefName,headRefName` for each of the five pull requests, in the chat.
-- [ ] P13.4 done
+- [x] P13.4 done. Proof: each of the five pull requests is open and ready, from `feature/openshell-native` to `main`, and its body opens with the goal, names the evidence files and links the other four (edited 2026-11-04). `gh pr view <url> --json url,state,isDraft,baseRefName,headRefName`:
+  - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/jackin-project/jackin/pull/1264"}`
+  - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/jackin-project/jackin-sentinel/pull/158"}`
+  - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/jackin-project/jackin-agent-smith/pull/217"}`
+  - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/jackin-project/jackin-the-architect/pull/481"}`
+  - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/tailrocks/terminal-components-baseline/pull/1"}`
