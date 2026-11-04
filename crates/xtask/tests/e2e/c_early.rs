@@ -143,7 +143,7 @@ async fn j01_doctor_faults() {
                 } else {
                     "pass"
                 };
-                format!("{status} {name:<18} 0.1.6")
+                format!("{status} {name:<18} 0.1.7")
             })
             .collect()
     };

@@ -212,7 +212,7 @@ async fn version_details_carry_no_terminal_control_or_bidi_characters() -> TestR
     guard(async {
         let hostile = |text: &str| format!("\u{1b}]0;x\u{7}\u{202e}{text}\u{9b}\u{202e}\n");
         let outcome = run(Setup {
-            openshell: ProcessReply::exited(0, hostile("openshell 0.1.6").as_bytes(), b""),
+            openshell: ProcessReply::exited(0, hostile("openshell 0.1.7").as_bytes(), b""),
             ssh: ProcessReply::exited(0, b"", hostile("OpenSSH_9.9p1").as_bytes()),
             ..Setup::healthy()
         })
@@ -220,7 +220,7 @@ async fn version_details_carry_no_terminal_control_or_bidi_characters() -> TestR
         assert_eq!(statuses(&outcome.report), expected([Pass; 7]));
         assert_eq!(
             detail(&outcome, CheckId::OpenshellBinary)?,
-            "openshell 0.1.6"
+            "openshell 0.1.7"
         );
         assert_eq!(detail(&outcome, CheckId::SshBinary)?, "OpenSSH_9.9p1");
         Ok(())
@@ -231,7 +231,7 @@ async fn version_details_carry_no_terminal_control_or_bidi_characters() -> TestR
 #[tokio::test]
 async fn the_gateway_version_detail_carries_no_terminal_control_or_bidi_characters() -> TestResult {
     guard(async {
-        let hostile = "\u{1b}]0;x\u{7}\u{202e}0.1.6\u{9b}\u{202e}".to_owned();
+        let hostile = "\u{1b}]0;x\u{7}\u{202e}0.1.7\u{9b}\u{202e}".to_owned();
 
         let matching = run(Setup {
             gateway_version: hostile.clone(),
@@ -240,7 +240,7 @@ async fn the_gateway_version_detail_carries_no_terminal_control_or_bidi_characte
         })
         .await?;
         assert_eq!(statuses(&matching.report), expected([Pass; 7]));
-        assert_eq!(detail(&matching, CheckId::PinnedVersion)?, "0.1.6");
+        assert_eq!(detail(&matching, CheckId::PinnedVersion)?, "0.1.7");
 
         let differing = run(Setup {
             gateway_version: hostile,
@@ -253,7 +253,7 @@ async fn the_gateway_version_detail_carries_no_terminal_control_or_bidi_characte
         );
         assert_eq!(
             detail(&differing, CheckId::PinnedVersion)?,
-            "the gateway runs 0.1.6, jackin is pinned to 0.1.6"
+            "the gateway runs 0.1.7, jackin is pinned to 0.1.7"
         );
         Ok(())
     })
