@@ -82,6 +82,8 @@ enum Plant {
     LinkedObjects,
     LinkedReferences,
     LinkedReflog,
+    LinkedReflogLeaf,
+    LinkedReferenceLeaf,
     Alternates,
 }
 
@@ -92,6 +94,8 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
             Plant::LinkedObjects,
             Plant::LinkedReferences,
             Plant::LinkedReflog,
+            Plant::LinkedReflogLeaf,
+            Plant::LinkedReferenceLeaf,
             Plant::Alternates,
         ] {
             let rig = Rig::new().await?;
@@ -106,6 +110,17 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
             branch_with_commit(&handle, "work", "w.txt").await?;
             let attacker = tempfile::tempdir()?;
             let git_dir = rig.repo.root().as_path().join(".git");
+            let reflog = git_dir.join(format!("logs/{}", ref_of(&handle.name(), "work")));
+            let leaf = git_dir.join(ref_of(&handle.name(), "work"));
+            if matches!(plant, Plant::LinkedReflogLeaf | Plant::LinkedReferenceLeaf) {
+                session
+                    .export(&rig.config, &handle.name(), CancellationToken::new())
+                    .await?;
+                handle
+                    .commit_in_project("more.txt", b"more", "more")
+                    .await?;
+                assert!(reflog.is_file());
+            }
             match plant {
                 Plant::LinkedObjects => {
                     std::fs::rename(git_dir.join("objects"), attacker.path().join("objects"))?;
@@ -128,6 +143,16 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
                         git_dir.join("logs/refs/heads"),
                     )?;
                 }
+                Plant::LinkedReflogLeaf => {
+                    std::fs::write(attacker.path().join("victim"), b"keep me\n")?;
+                    std::fs::remove_file(&reflog)?;
+                    std::os::unix::fs::symlink(attacker.path().join("victim"), &reflog)?;
+                }
+                Plant::LinkedReferenceLeaf => {
+                    std::fs::write(attacker.path().join("victim"), b"keep me\n")?;
+                    std::fs::remove_file(&leaf)?;
+                    std::os::unix::fs::symlink(attacker.path().join("victim"), &leaf)?;
+                }
                 Plant::Alternates => {
                     std::fs::create_dir(attacker.path().join("objects"))?;
                     std::fs::write(
@@ -137,6 +162,7 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
                 }
             }
             let before = listing(attacker.path())?;
+            let mark = sees.mark();
             let refused = session
                 .export(&rig.config, &handle.name(), CancellationToken::new())
                 .await;
@@ -146,7 +172,10 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
                     Err(ExportError::Unsupported(UnsupportedProject::LinkedObjects(_))),
                 )
                 | (
-                    Plant::LinkedReferences | Plant::LinkedReflog,
+                    Plant::LinkedReferences
+                    | Plant::LinkedReflog
+                    | Plant::LinkedReflogLeaf
+                    | Plant::LinkedReferenceLeaf,
                     Err(ExportError::Unsupported(UnsupportedProject::LinkedReferences(_))),
                 )
                 | (
@@ -155,9 +184,17 @@ async fn a_store_tampered_with_after_launch_fails_the_export_before_index_pack()
                 ) => {}
                 _ => return Err(format!("unexpected export result {refused:?}").into()),
             }
-            assert!(!sees.ran("index-pack"));
-            assert!(!sees.ran("update-ref"));
+            let ran_since = |word: &str| {
+                sees.since(mark)
+                    .iter()
+                    .any(|call| call.args.iter().any(|arg| arg == word))
+            };
+            assert!(!ran_since("index-pack"));
+            assert!(!ran_since("update-ref"));
             assert_eq!(listing(attacker.path())?, before);
+            if matches!(plant, Plant::LinkedReflogLeaf | Plant::LinkedReferenceLeaf) {
+                assert_eq!(std::fs::read(attacker.path().join("victim"))?, b"keep me\n");
+            }
             assert_eq!(staging_left(&rig)?, Vec::<String>::new());
         }
         Ok(())

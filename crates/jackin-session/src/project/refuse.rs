@@ -189,6 +189,14 @@ pub(super) async fn own_store(
             return Err(UnsupportedProject::LinkedReferences(path).into());
         }
     }
+    for reference in references {
+        for leaf in [reference.clone(), format!("logs/{reference}")] {
+            let path = HostPath::resolve(Path::new(&leaf), git_dir)?;
+            if !matches!(fs.stat(&path).await?, None | Some(FileKind::File)) {
+                return Err(UnsupportedProject::LinkedReferences(path).into());
+            }
+        }
+    }
     Ok(())
 }
 
