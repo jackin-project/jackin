@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_session::ExportReport;
+use jackin_session::{ExportReport, Uncommitted};
 
 use crate::app::App;
 use crate::cli::SandboxArg;
@@ -19,6 +19,7 @@ pub(crate) async fn run(app: &mut App, arg: SandboxArg) -> Result<(), CommandErr
         branches,
         detached,
         worktrees,
+        uncommitted,
     } = report;
     let published = branches
         .iter()
@@ -34,9 +35,16 @@ pub(crate) async fn run(app: &mut App, arg: SandboxArg) -> Result<(), CommandErr
         app.io.line(&format!("{host_ref}\t{tip}"))?;
         any = true;
     }
-    if !any {
-        app.io
-            .note(&format!("sandbox {sandbox} has nothing to export"));
+    match uncommitted {
+        Uncommitted::Changes(_) => app.io.note(&format!(
+            "sandbox {sandbox} has uncommitted work; uncommitted work is not exported, so commit it in the sandbox first and export again"
+        )),
+        Uncommitted::Unchecked => app.io.note(&format!(
+            "sandbox {sandbox}: jackin could not check for uncommitted work; uncommitted work is not exported, so commit it in the sandbox first"
+        )),
+        Uncommitted::Clean if !any => app.io
+            .note(&format!("sandbox {sandbox} has nothing to export")),
+        Uncommitted::Clean => {}
     }
     Ok(())
 }
