@@ -40,6 +40,7 @@ pub struct Route {
     require_headers: Vec<(String, String)>,
     require_body: Option<Value>,
     delay: Option<Duration>,
+    framed: bool,
 }
 
 impl Route {
@@ -51,6 +52,7 @@ impl Route {
             require_headers: Vec::new(),
             require_body: None,
             delay: None,
+            framed: true,
         }
     }
 
@@ -74,6 +76,12 @@ impl Route {
     #[must_use]
     pub fn requires_json_body(mut self, body: Value) -> Route {
         self.require_body = Some(body);
+        self
+    }
+
+    #[must_use]
+    pub fn unframed(mut self) -> Route {
+        self.framed = false;
         self
     }
 
@@ -281,12 +289,11 @@ fn unmet_requirement(route: &Route, request: &Request) -> Option<String> {
 }
 
 fn render(route: &Route) -> Vec<u8> {
-    let mut head = format!(
-        "HTTP/1.1 {} {}\r\nContent-Length: {}\r\nConnection: close\r\nContent-Type: application/json\r\n",
-        route.status,
-        reason(route.status),
-        route.body.len()
-    );
+    let mut head = format!("HTTP/1.1 {} {}\r\n", route.status, reason(route.status));
+    if route.framed {
+        head.push_str(&format!("Content-Length: {}\r\n", route.body.len()));
+    }
+    head.push_str("Connection: close\r\nContent-Type: application/json\r\n");
     for (name, value) in &route.headers {
         head.push_str(&format!("{name}: {value}\r\n"));
     }

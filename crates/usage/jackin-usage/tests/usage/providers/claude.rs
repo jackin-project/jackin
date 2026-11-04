@@ -167,6 +167,16 @@ async fn a_spend_object_gives_the_extra_usage_window_port_fidelity() -> TestResu
 }
 
 #[tokio::test]
+async fn a_currency_code_carrying_terminal_controls_is_shown_without_them() -> TestResult {
+    guard(async {
+        let body = SPEND.replace("USD", "\\u001b[2JUS\\u202eD\\u0007");
+        assert_windows(&windows_for(&body).await?, &[EXTRA_USAGE]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_fractional_spend_percent_is_kept_port_fidelity() -> TestResult {
     guard(async {
         let fractional = want(
