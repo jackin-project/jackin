@@ -10,19 +10,21 @@ use futures::future::join_all;
 use jackin_console::domain::doctor::{DoctorReport, DoctorSurface};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
-    AccountName, Compatibility, Config, ConfigError, ConfigStore, GatewayName, HostPath, RoleName,
-    RoleSource as CoreRoleSource,
+    AccountName, Compatibility, Config, ConfigError, ConfigStore, GatewayName, HostPath,
+    RoleManifest, RoleName, RoleSource as CoreRoleSource,
 };
-use jackin_session::{DoctorInput, HostPorts, RoleCatalog, doctor};
+use jackin_session::{DoctorInput, HostPorts, MANIFEST_FILE, RoleCatalog, doctor};
 use tokio_util::sync::CancellationToken;
 
 use crate::doctor::{self, DoctorCell};
 use crate::fleet::{Fleet, GatewayReading, read_fleet};
 use crate::ids::IdTable;
+use crate::origin::OriginCache;
 use crate::project::{
-    Facts, ProjectInput, RoleDocError, RoleDocs, manifest_doc, project, unmapped_accounts,
+    Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, manifest_doc, project,
+    unmapped_accounts,
 };
-use crate::sessions::{Access, SessionConnector, SessionSet};
+use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Note {
@@ -82,7 +84,7 @@ impl Observation {
     }
 }
 
-type DocCache = BTreeMap<
+pub(crate) type DocCache = BTreeMap<
     RoleName,
     (
         CoreRoleSource,
@@ -105,8 +107,11 @@ pub(crate) struct Inputs {
     pub(crate) home: String,
     pub(crate) config_path: String,
     pub(crate) deadline: Duration,
-    ids: Mutex<IdTable>,
-    docs: Mutex<DocCache>,
+    pub(crate) ids: Mutex<IdTable>,
+    pub(crate) docs: Mutex<DocCache>,
+    pub(crate) fleet: Mutex<Fleet>,
+    pub(crate) checks: Mutex<RoleChecks>,
+    origins: OriginCache,
 }
 
 impl fmt::Debug for Inputs {
@@ -115,7 +120,7 @@ impl fmt::Debug for Inputs {
     }
 }
 
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
@@ -170,6 +175,9 @@ impl Inputs {
             deadline,
             ids: Mutex::new(IdTable::new()),
             docs: Mutex::new(DocCache::new()),
+            fleet: Mutex::new(Fleet::default()),
+            checks: Mutex::new(RoleChecks::new()),
+            origins: OriginCache::default(),
         }
     }
 
@@ -192,7 +200,19 @@ impl Inputs {
                         .collect(),
                 },
             };
-        let docs = self.role_docs(&config).await;
+        Ok(self.observation(&config, fleet).await)
+    }
+
+    pub(crate) async fn current(&self, config: &Config) -> Observation {
+        let fleet = locked(&self.fleet).clone();
+        self.observation(config, fleet).await
+    }
+
+    async fn observation(&self, config: &Config, fleet: Fleet) -> Observation {
+        *locked(&self.fleet) = fleet.clone();
+        let docs = self.role_docs(config).await;
+        let origins = self.origins(config).await;
+        let checks = locked(&self.checks).clone();
         let facts = Facts {
             version: self.version.clone(),
             config_path: self.config_path.clone(),
@@ -201,10 +221,12 @@ impl Inputs {
         };
         let mut snapshot = project(
             &ProjectInput {
-                config: &config,
+                config,
                 fleet: &fleet,
                 facts: &facts,
                 roles: &docs,
+                checks: &checks,
+                origins: &origins,
             },
             &mut locked(&self.ids),
         );
@@ -223,15 +245,40 @@ impl Inputs {
             notes.push(Note::UnreadableLabels(fleet.unreadable));
         }
         notes.extend(
-            unmapped_accounts(&config)
+            unmapped_accounts(config)
                 .into_iter()
                 .map(Note::AccountNotShown),
         );
-        Ok(Observation {
+        Observation {
             snapshot,
             healthy: fleet.failed().next().is_none(),
             notes,
-        })
+        }
+    }
+
+    async fn origins(&self, config: &Config) -> Origins {
+        let session = self.sessions.get(self.sessions.default_name()).or_else(|| {
+            self.sessions
+                .reached()
+                .into_iter()
+                .find_map(|(_, reached)| match reached {
+                    Reached::Up(session) => Some(*session),
+                    Reached::Down(_) => None,
+                })
+        });
+        let Some(session) = session else {
+            return Origins::new();
+        };
+        let read = self.origins.read(
+            &session,
+            self.host.fs.as_ref(),
+            config,
+            self.host.clock.now().0,
+            &self.cancel,
+        );
+        tokio::time::timeout(self.deadline, read)
+            .await
+            .unwrap_or_default()
     }
 
     pub(crate) async fn run_doctor(&self, reconnect: bool) -> DoctorReport {
@@ -266,6 +313,12 @@ impl Inputs {
         }
     }
 
+    async fn manifest_only(&self, root: &HostPath) -> Option<RoleManifest> {
+        let file = HostPath::resolve(std::path::Path::new(MANIFEST_FILE), root).ok()?;
+        let bytes = self.host.fs.read(&file).await.ok().flatten()?;
+        RoleManifest::parse(&String::from_utf8_lossy(&bytes)).ok()
+    }
+
     async fn role_docs(&self, config: &Config) -> RoleDocs {
         let wanted: Vec<(RoleName, CoreRoleSource)> = {
             let cache = locked(&self.docs);
@@ -280,7 +333,10 @@ impl Inputs {
                 CoreRoleSource::Path(path) => {
                     match self.roles.load_path(path, &CancellationToken::new()).await {
                         Ok(role) => Ok(manifest_doc(role.manifest())),
-                        Err(error) => Err(RoleDocError::Unreadable(error.to_string())),
+                        Err(error) => match self.manifest_only(path).await {
+                            Some(manifest) => Ok(manifest_doc(&manifest)),
+                            None => Err(RoleDocError::Unreadable(error.to_string())),
+                        },
                     }
                 }
                 CoreRoleSource::Git { .. } => Err(RoleDocError::NotLoaded),

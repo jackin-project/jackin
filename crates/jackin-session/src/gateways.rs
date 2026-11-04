@@ -73,6 +73,19 @@ impl Gateways {
         Ok(Gateways { home, peers })
     }
 
+    pub fn assemble(home: Session, peers: Vec<Result<Session, UnreachableGateway>>) -> Gateways {
+        Gateways {
+            home,
+            peers: peers
+                .into_iter()
+                .map(|peer| match peer {
+                    Ok(session) => Peer::Up(Box::new(session)),
+                    Err(gateway) => Peer::Down(gateway),
+                })
+                .collect(),
+        }
+    }
+
     pub fn home(&self) -> &Session {
         &self.home
     }

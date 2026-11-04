@@ -10,27 +10,28 @@ use jackin_console::domain::account::{
 };
 use jackin_console::domain::agent::{Agent, AuthMode, Provider};
 use jackin_console::domain::docker::{DockerRiskText, DockerSetting, EngineState};
+use jackin_console::domain::instance::RepoRef;
 use jackin_console::domain::instance::{
     DaemonSnapshot, Instance, InstanceStatus, SessionRecord, SessionStatus,
 };
 use jackin_console::domain::onepassword::OpReference;
 use jackin_console::domain::openshell as normalize;
 use jackin_console::domain::role::{
-    AccountOrder, RoleAdmin, RoleCheckState, RoleEnvEntry, RoleManifestDoc, RoleRecord,
+    AccountOrder, RoleAdmin, RoleCheckState, RoleEnvEntry, RoleFinding, RoleManifestDoc, RoleRecord,
 };
 use jackin_console::domain::surfaces::{LiveFacts, Surfaces};
 use jackin_console::domain::workspace::{
     AllowedRoles as ConsoleAllowedRoles, EnvVar, RoleEntry, RolePolicy, RoleSource,
     Workspace as ConsoleWorkspace,
 };
-use jackin_console::world::{GlobalConfig, Snapshot, TrustRow};
+use jackin_console::world::{GithubRepo, GlobalConfig, Snapshot, TrustRow};
 use jackin_core::{
     AccountName, AllowedRoles, Config, CredentialSource as CoreCredential, DockerRisk, EnvTable,
-    GatewayName, Phase, RoleName, RoleSource as CoreRoleSource, SandboxSummary, SupervisorReading,
-    SupervisorState, WorkspaceName,
+    GatewayName, Phase, RoleName, RoleSource as CoreRoleSource, SandboxName, SandboxSummary,
+    SupervisorReading, SupervisorState, WorkspaceName,
 };
 use jackin_core::{Agent as CoreAgent, NameSuffix, Provider as CoreProvider, plain};
-use jackin_session::WorkState;
+use jackin_session::{GithubOrigin, WorkState};
 use thiserror::Error;
 
 use crate::fleet::{Fleet, ObservedSandbox};
@@ -49,6 +50,10 @@ pub enum RoleDocError {
 
 pub type RoleDocs = BTreeMap<RoleName, Result<RoleManifestDoc, RoleDocError>>;
 
+pub type RoleChecks = BTreeMap<RoleName, Vec<RoleFinding>>;
+
+pub type Origins = BTreeMap<WorkspaceName, GithubOrigin>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Facts {
     pub version: String,
@@ -63,6 +68,8 @@ pub struct ProjectInput<'a> {
     pub fleet: &'a Fleet,
     pub facts: &'a Facts,
     pub roles: &'a RoleDocs,
+    pub checks: &'a RoleChecks,
+    pub origins: &'a Origins,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -112,6 +119,22 @@ pub fn provider(provider: CoreProvider) -> Option<Provider> {
         CoreProvider::Openrouter => Some(Provider::Openrouter),
         CoreProvider::Zai => Some(Provider::Zai),
         CoreProvider::Antigravity | CoreProvider::Hermes | CoreProvider::Muse => None,
+    }
+}
+
+pub fn core_provider(provider: Provider) -> CoreProvider {
+    match provider {
+        Provider::Amp => CoreProvider::Amp,
+        Provider::Anthropic => CoreProvider::Claude,
+        Provider::OpenAi => CoreProvider::Codex,
+        Provider::Cursor => CoreProvider::Cursor,
+        Provider::Gemini => CoreProvider::Gemini,
+        Provider::XAi => CoreProvider::Grok,
+        Provider::Moonshot => CoreProvider::Kimi,
+        Provider::MiniMax => CoreProvider::Minimax,
+        Provider::OpenCode => CoreProvider::Opencode,
+        Provider::Openrouter => CoreProvider::Openrouter,
+        Provider::Zai => CoreProvider::Zai,
     }
 }
 
@@ -443,17 +466,72 @@ fn session_record(
     }]
 }
 
-fn instance(observed: &ObservedSandbox, config: &Config, ids: &IdTable, now_secs: i64) -> Instance {
+fn split_name(name: &str) -> (&str, &str) {
+    let split = name.len().saturating_sub(NameSuffix::LEN);
+    name.split_at_checked(split).unwrap_or((name, name))
+}
+
+pub fn instance_id(name: &SandboxName) -> String {
+    InstanceId(split_name(name.as_str()).1).to_string()
+}
+
+struct FullName<'a>(&'a GithubOrigin);
+
+impl fmt::Display for FullName<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.0.repo.owner(), self.0.repo.name())
+    }
+}
+
+fn repo_ref(origin: &GithubOrigin) -> RepoRef {
+    RepoRef {
+        full_name: FullName(origin).to_string(),
+        url: origin.repo.to_string(),
+    }
+}
+
+fn github_repos(origins: &Origins) -> Vec<GithubRepo> {
+    let mut seen = BTreeSet::new();
+    origins
+        .values()
+        .filter_map(|origin| {
+            let repo = repo_ref(origin);
+            let default_branch = origin
+                .default_branch
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default();
+            seen.insert(repo.full_name.clone()).then(|| GithubRepo {
+                full_name: repo.full_name,
+                branches: origin
+                    .default_branch
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                default_branch,
+                updated: String::new(),
+                url: repo.url,
+            })
+        })
+        .collect()
+}
+
+fn instance(
+    observed: &ObservedSandbox,
+    config: &Config,
+    origins: &Origins,
+    ids: &IdTable,
+    now_secs: i64,
+) -> Instance {
     let ObservedSandbox {
         gateway: _,
         summary,
         supervisor,
         work,
     } = observed;
-    let name = summary.name.as_str();
-    let split = name.len().saturating_sub(NameSuffix::LEN);
-    let (head, suffix) = name.split_at_checked(split).unwrap_or((name, name));
+    let (head, suffix) = split_name(summary.name.as_str());
     let labels = &summary.labels.planned;
+    let origin = origins.get(&labels.workspace);
     let status = preserved(status_of(summary.phase, supervisor.as_ref()), work.as_ref());
     let (uncommitted, unpushed, branch) = match work {
         Some(WorkState::Unexported(left)) => (
@@ -480,8 +558,11 @@ fn instance(observed: &ObservedSandbox, config: &Config, ids: &IdTable, now_secs
         daemon: DaemonSnapshot::NoTabs,
         branch,
         pr: None,
-        default_branch: String::new(),
-        github: None,
+        default_branch: origin
+            .and_then(|o| o.default_branch.as_ref())
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+        github: origin.map(repo_ref),
         uncommitted,
         unpushed,
         account: Some(labels.account.to_string()),
@@ -512,7 +593,7 @@ pub fn manifest_doc(doc: &jackin_core::RoleManifest) -> RoleManifestDoc {
     }
 }
 
-fn role_admin(config: &Config, docs: &RoleDocs) -> RoleAdmin {
+fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmin {
     RoleAdmin {
         agents: vec![Agent::Codex],
         order: AccountOrder::Jackin,
@@ -526,7 +607,9 @@ fn role_admin(config: &Config, docs: &RoleDocs) -> RoleAdmin {
                     Some(Err(error)) => Err(error.to_string()),
                     None => Err(RoleDocError::NotLoaded.to_string()),
                 },
-                check: RoleCheckState::Unchecked,
+                check: checks.get(name).map_or(RoleCheckState::Unchecked, |found| {
+                    RoleCheckState::Done(found.clone())
+                }),
                 bindings: entry
                     .bindings
                     .iter()
@@ -580,6 +663,8 @@ fn surfaces(input: &ProjectInput<'_>) -> Surfaces {
         fleet: _,
         facts,
         roles,
+        checks,
+        origins: _,
     } = input;
     let gateway = gateway_name(config);
     let mut about = vec![(AboutLabel::Product.to_string(), facts.version.clone())];
@@ -591,7 +676,7 @@ fn surfaces(input: &ProjectInput<'_>) -> Surfaces {
         version: facts.version.clone(),
         config_path: facts.config_path.clone(),
     })
-    .roles(role_admin(config, roles))
+    .roles(role_admin(config, roles, checks))
     .docker(docker_setting(config, roles, gateway.as_ref()))
     .about(about)
 }
@@ -602,6 +687,8 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
         fleet,
         facts,
         roles: _,
+        checks: _,
+        origins,
     } = *input;
     let accounts = registry(config);
     let workspaces = config
@@ -611,7 +698,7 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
     let instances = fleet
         .sandboxes
         .iter()
-        .map(|observed| instance(observed, config, ids, facts.now_secs))
+        .map(|observed| instance(observed, config, origins, ids, facts.now_secs))
         .collect();
     Snapshot {
         workspaces,
@@ -620,7 +707,7 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
         global: global(config),
         accounts,
         surfaces: surfaces(input),
-        github: Vec::new(),
+        github: github_repos(origins),
         index_error: fleet
             .all_failed()
             .then_some(DiscoveryError::IndexUnreadable),

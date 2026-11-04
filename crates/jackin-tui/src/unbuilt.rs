@@ -4,16 +4,17 @@
 use std::fmt;
 
 use jackin_console::backend::{
-    ChangeSet, CheckRow, Completion, Effect, FieldDescriptor, FolderProbe, OnePassword, OpAccount,
-    OpError, OpField, OpItem, OpSession, OpVault, SecretClass, ValidationOutcome,
+    ChangeSet, CheckRow, Completion, FieldDescriptor, FolderProbe, OnePassword, OpAccount, OpError,
+    OpField, OpItem, OpSession, OpVault, SecretClass, ValidationOutcome,
 };
 use jackin_console::domain::account::{
-    AccountIdentity, Confidence, IssueCode, Lifecycle, Recoverability, RecoverableIssue,
+    AccountId, AccountIdentity, Confidence, IssueCode, Lifecycle, Recoverability, RecoverableIssue,
 };
-use jackin_console::domain::instance::{AgentState, Instance, InstanceStatus};
+use jackin_console::domain::instance::{AgentState, Instance, InstanceId, InstanceStatus};
 use jackin_console::domain::launch::LaunchFailure;
 use jackin_console::domain::onepassword::OpReference;
 use jackin_console::domain::openshell as normalize;
+use jackin_console::domain::workspace::WorkspaceId;
 use jackin_console::launch::{FailedLaunch, LaunchEvent, LaunchFeed, LaunchTarget, TypedKey};
 use jackin_console::panes::{PaneBody, PaneKey, PaneKindTag, PaneNote, PaneSpawn, PasteOutcome};
 use jackin_console::world::{Msg, World};
@@ -27,23 +28,11 @@ use ratatui::layout::Rect;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unbuilt {
-    SaveWorkspace,
-    SaveSettings,
-    SaveAccounts,
-    DeleteWorkspace,
     RestoreSandbox,
-    TrustRole,
     PrewarmImage,
-    StopSandbox,
-    PurgeSandbox,
     RefreshUsage,
     ValidateAccount,
-    LoadRole,
-    CheckRole,
-    SaveRole,
-    BindRole,
-    AddRole,
-    RemoveRole,
+    AddGitRole,
     Launch,
     Pane,
 }
@@ -51,23 +40,11 @@ pub enum Unbuilt {
 impl fmt::Display for Unbuilt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let what = match self {
-            Unbuilt::SaveWorkspace => "Saving a workspace",
-            Unbuilt::SaveSettings => "Saving settings",
-            Unbuilt::SaveAccounts => "Saving accounts",
-            Unbuilt::DeleteWorkspace => "Deleting a workspace",
             Unbuilt::RestoreSandbox => "Restoring a sandbox",
-            Unbuilt::TrustRole => "Trusting a role source",
             Unbuilt::PrewarmImage => "Building an image",
-            Unbuilt::StopSandbox => "Stopping a sandbox",
-            Unbuilt::PurgeSandbox => "Purging a sandbox",
             Unbuilt::RefreshUsage => "Reading usage",
             Unbuilt::ValidateAccount => "Validating an account",
-            Unbuilt::LoadRole => "Loading a role",
-            Unbuilt::CheckRole => "Checking a role",
-            Unbuilt::SaveRole => "Saving a role",
-            Unbuilt::BindRole => "Binding a role",
-            Unbuilt::AddRole => "Adding a role",
-            Unbuilt::RemoveRole => "Removing a role",
+            Unbuilt::AddGitRole => "Adding a role from a Git URL",
             Unbuilt::Launch => "Launching a sandbox",
             Unbuilt::Pane => "A terminal pane",
         };
@@ -81,78 +58,44 @@ impl Unbuilt {
     }
 }
 
-pub(crate) fn fails(effect: &Effect) -> Option<Completion> {
-    let msg = match effect {
-        Effect::SaveWorkspace { id, .. } => Msg::WorkspaceSaved {
-            id: *id,
-            result: Err(Unbuilt::SaveWorkspace.text()),
-        },
-        Effect::SaveGlobal { .. } => Msg::GlobalSaved {
-            result: Err(Unbuilt::SaveSettings.text()),
-        },
-        Effect::SaveAccounts { .. } => Msg::AccountsSaved {
-            result: Err(Unbuilt::SaveAccounts.text()),
-        },
-        Effect::DeleteWorkspace { id } => Msg::WorkspaceDeleted {
-            id: *id,
-            result: Err(Unbuilt::DeleteWorkspace.text()),
-        },
-        Effect::Restore { instance } => Msg::Restored {
+pub(crate) fn restore(instance: &InstanceId) -> Option<Completion> {
+    Some(Completion::ready(
+        0,
+        Msg::Restored {
             instance: instance.clone(),
             result: Err(Unbuilt::RestoreSandbox.text()),
         },
-        Effect::TrustRole { role } => Msg::RoleTrusted {
-            role: role.clone(),
-            result: Err(Unbuilt::TrustRole.text()),
-        },
-        Effect::Prewarm { workspace } => Msg::Prewarmed {
-            workspace: *workspace,
+    ))
+}
+
+pub(crate) fn prewarm(workspace: WorkspaceId) -> Option<Completion> {
+    Some(Completion::ready(
+        0,
+        Msg::Prewarmed {
+            workspace,
             result: Err(Unbuilt::PrewarmImage.text()),
         },
-        Effect::Stop { instance } => Msg::Stopped {
-            instance: instance.clone(),
-            result: Err(Unbuilt::StopSandbox.text()),
-        },
-        Effect::Purge { instance } => Msg::Purged {
-            instance: instance.clone(),
-            result: Err(Unbuilt::PurgeSandbox.text()),
-        },
-        Effect::RefreshAccount { account, .. } => Msg::AccountRefreshed {
+    ))
+}
+
+pub(crate) fn refresh_account(account: &AccountId) -> Option<Completion> {
+    Some(Completion::ready(
+        0,
+        Msg::AccountRefreshed {
             account: account.clone(),
             result: Err(Unbuilt::RefreshUsage.text()),
         },
-        Effect::ValidateAccount { account } => Msg::AccountValidated {
+    ))
+}
+
+pub(crate) fn validate_account(account: &AccountId) -> Option<Completion> {
+    Some(Completion::ready(
+        0,
+        Msg::AccountValidated {
             account: account.clone(),
             result: Err(Unbuilt::ValidateAccount.text()),
         },
-        Effect::LoadRole { role } => Msg::RoleLoaded {
-            role: role.clone(),
-            result: Err(Unbuilt::LoadRole.text()),
-        },
-        Effect::CheckRole { role, .. } => Msg::RoleChecked {
-            role: role.clone(),
-            result: Err(Unbuilt::CheckRole.text()),
-        },
-        Effect::SaveRole { role, .. } => Msg::RoleSaved {
-            role: role.clone(),
-            result: Err(Unbuilt::SaveRole.text()),
-        },
-        Effect::BindRole { role, agent, .. } => Msg::RoleBound {
-            role: role.clone(),
-            agent: *agent,
-            result: Err(Unbuilt::BindRole.text()),
-        },
-        Effect::AddRole { location } => Msg::RoleAdded {
-            location: location.clone(),
-            result: Err(Unbuilt::AddRole.text()),
-        },
-        Effect::RemoveRole { role } => Msg::RoleRemoved {
-            role: role.clone(),
-            result: Err(Unbuilt::RemoveRole.text()),
-        },
-        Effect::Refresh | Effect::RunDoctor => return None,
-    };
-    Some(Completion::ready(0, msg))
+    ))
 }
 
 pub(crate) fn validation() -> ValidationOutcome {
