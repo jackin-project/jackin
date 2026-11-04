@@ -24,7 +24,7 @@ use crate::launch::{AttachTarget, LaunchEvent, LaunchEvents, LaunchStep, StepRes
 use crate::service::{POLL, Session};
 use crate::state::{EnvReadError, env_file, run_state};
 
-const REPAINT_NUDGE: Duration = Duration::from_millis(600);
+pub const REPAINT_NUDGE: Duration = Duration::from_millis(600);
 const REQUEST_MODE: jackin_core::FileMode = jackin_core::FileMode(0o600);
 const ESC: u8 = 0x1b;
 const BEL: u8 = 0x07;
@@ -211,6 +211,13 @@ impl AttachedTerminal {
         self.session.input(send).await
     }
 
+    pub async fn reply(&mut self, bytes: Vec<u8>) -> Result<(), SessionClosed> {
+        if bytes.is_empty() || !self.running().await {
+            return Ok(());
+        }
+        self.session.input(bytes).await
+    }
+
     pub async fn resize(&self, size: TermSize) -> Result<(), SessionClosed> {
         self.session.resize(size).await
     }
@@ -223,10 +230,16 @@ impl AttachedTerminal {
         self.session.next_event().await
     }
 
+    pub async fn supervisor(&self) -> SupervisorReading {
+        run_state(self.gateway.as_ref(), &self.sandbox)
+            .await
+            .unwrap_or(SupervisorReading::Unreadable)
+    }
+
     async fn running(&self) -> bool {
         matches!(
-            run_state(self.gateway.as_ref(), &self.sandbox).await,
-            Ok(SupervisorReading::Reported(SupervisorState::Running { .. }))
+            self.supervisor().await,
+            SupervisorReading::Reported(SupervisorState::Running { .. })
         )
     }
 }
