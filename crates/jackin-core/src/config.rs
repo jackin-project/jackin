@@ -161,7 +161,7 @@ pub enum EnvValueError {
 }
 
 const OP_SCHEME: &str = "op://";
-const PLACEHOLDER_SCHEME: &str = "openshell:resolve:";
+pub const PLACEHOLDER_SCHEME: &str = "openshell:resolve:";
 
 fn starts_with_scheme(text: &str, scheme: &str) -> bool {
     text.get(..scheme.len())

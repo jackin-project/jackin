@@ -3,7 +3,6 @@
 
 use std::num::NonZeroU16;
 use std::path::PathBuf;
-use std::str::FromStr;
 
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use jackin_core::{
@@ -280,23 +279,23 @@ pub enum CredentialArg {
     File(PathBuf),
 }
 
-impl FromStr for CredentialArg {
-    type Err = String;
-
-    fn from_str(text: &str) -> Result<CredentialArg, String> {
+impl CredentialArg {
+    pub fn parse(text: &str) -> Result<CredentialArg, CommandError> {
+        const FORMS: &str = "--credential expects env:NAME, an op:// reference, or file:PATH";
+        let bad = || CommandError::Argument(FORMS.to_owned());
         if let Some(name) = text.strip_prefix("env:") {
             return EnvName::parse(name)
                 .map(CredentialArg::Env)
-                .map_err(|error| error.to_string());
+                .map_err(|_| bad());
         }
         if text.starts_with("op://") {
             return OpReference::parse(text)
                 .map(CredentialArg::OnePassword)
-                .map_err(|error| error.to_string());
+                .map_err(|_| bad());
         }
         match text.strip_prefix("file:") {
             Some(path) if !path.is_empty() => Ok(CredentialArg::File(PathBuf::from(path))),
-            _ => Err("expected env:NAME, an op:// reference, or file:PATH".to_owned()),
+            _ => Err(bad()),
         }
     }
 }
@@ -337,7 +336,7 @@ pub struct AccountAddArgs {
         value_name = "SOURCE",
         help = "Credential as env:NAME, an op:// reference, or file:PATH"
     )]
-    pub credential: Option<CredentialArg>,
+    pub credential: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -346,15 +345,12 @@ pub struct EnvAssignment {
     pub value: String,
 }
 
-impl FromStr for EnvAssignment {
-    type Err = String;
-
-    fn from_str(text: &str) -> Result<EnvAssignment, String> {
-        let (name, value) = text
-            .split_once('=')
-            .ok_or_else(|| "expected NAME=VALUE".to_owned())?;
+impl EnvAssignment {
+    pub fn parse(text: &str) -> Result<EnvAssignment, CommandError> {
+        let bad = || CommandError::Argument("--env expects NAME=VALUE".to_owned());
+        let (name, value) = text.split_once('=').ok_or_else(bad)?;
         Ok(EnvAssignment {
-            name: EnvName::parse(name).map_err(|error| error.to_string())?,
+            name: EnvName::parse(name).map_err(|_| bad())?,
             value: value.to_owned(),
         })
     }
@@ -377,7 +373,7 @@ pub struct LoadArgs {
         value_name = "NAME=VALUE",
         help = "Value for a role env entry"
     )]
-    pub env: Vec<EnvAssignment>,
+    pub env: Vec<String>,
 }
 
 #[derive(Debug, Args)]

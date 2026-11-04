@@ -210,3 +210,60 @@ async fn malformed_invocations_exit_usage_with_a_stderr_message_and_change_nothi
     })
     .await
 }
+
+const FAKE: &str = "sk-FAKE-VALUE-123";
+
+async fn never_echoed(cases: &[(&[&str], &str)]) -> TestResult {
+    let world = World::builder().build()?;
+    let harness = Harness::new(&world);
+    for (args, expected) in cases {
+        let before = harness.config_bytes()?;
+        let ran = harness.run(args).await?;
+        assert_eq!(ran.exit, ExitClass::Usage, "{args:?}");
+        assert!(ran.stdout.is_empty(), "{args:?}");
+        assert!(ran.stderr.contains(expected), "{args:?}: {}", ran.stderr);
+        assert!(!ran.stderr.contains("sk-"), "{args:?}: {}", ran.stderr);
+        assert_eq!(harness.config_bytes()?, before, "{args:?}");
+        assert!(world.gateway.providers().is_empty(), "{args:?}");
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_rejected_credential_is_never_echoed_and_the_error_names_the_expected_forms() -> TestResult
+{
+    guard(async {
+        let variable = format!("env:{FAKE}");
+        let reference = format!("op://{FAKE}");
+        let forms = [FAKE, &variable, &reference];
+        for form in forms {
+            let args = [
+                "account",
+                "add",
+                "codex",
+                "--name",
+                "x",
+                "--credential",
+                form,
+            ];
+            never_echoed(&[(&args, "env:NAME, an op:// reference, or file:PATH")]).await?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_rejected_env_assignment_is_never_echoed_and_the_error_names_the_expected_form()
+-> TestResult {
+    guard(async {
+        let bad_name = format!("1{FAKE}=x");
+        let bad_value = format!("1BAD={FAKE}");
+        let forms = [FAKE, &bad_name, &bad_value];
+        for form in forms {
+            never_echoed(&[(&["load", "--env", form], "NAME=VALUE")]).await?;
+        }
+        Ok(())
+    })
+    .await
+}

@@ -324,7 +324,7 @@ impl Session {
         account: &Account,
         cancel: &CancellationToken,
     ) -> Result<AccountSync, AccountError> {
-        let _held = self.hold_account(account.name(), cancel).await?;
+        let _held = self.hold_current(account, cancel).await?;
         self.sync_locked(account).await
     }
 
