@@ -668,14 +668,14 @@ P11.1 and P11.2 run in parallel.
 
 - **Owner:** orchestrator runs `pstack:swarm` with three `verifier` lanes, as in P8.3. Each lane starts with an empty image cache. **Depends:** P13.1.
 - **Proof:** three PASS outputs in `evidence/P13.2-lanes.md` and in the chat.
-- [ ] P13.2 done
+- [x] P13.2 done. Proof: `rewrite/evidence/P13.2-lanes.md`: three lanes from fresh GitHub clones of jackin `e4fd71f18` and jackin-sentinel `ad4776d` ran G-E2E one after the other on the real gateway `jackin-local` (OpenShell 0.1.7); each lane gave J00 to J17 and CLEAN, 19 PASS, 0 FAIL, 0 SKIP, with no sandbox before the lane, the A1 host login unchanged and no token-shaped output. The commits after `e4fd71f18` change only scanner baselines and documents.
 
 ### P13.3 Review the whole change
 
 - **Owner:** one `code-reviewer` for each repository on `origin/main..feature/openshell-native`. One `security-reviewer` across all five. Then the orchestrator runs `pstack:interrogate` on the credential, policy, and image diffs. **Depends:** P13.2.
 - **Steps:** Fix each accepted finding through the code task pipeline. Write the evidence for each rejected finding.
 - **Proof:** every verdict in the chat. No open blocking finding.
-- [ ] P13.3 done
+- [x] P13.3 done. Proof: `rewrite/evidence/P13.3-reviews.md` gives every verdict: code review APPROVE for the three roles and CHANGES then fixed for jackin (`bda1988fd`) and the baseline (`a4e81a4`); security review APPROVE for the three roles and CHANGES then fixed for jackin and the baseline (feed guard `a4e81a4`); interrogate A1 HIGH, A2, C1, C2 and C3 MEDIUM fixed (`3a038b688`, `de31dcf57`, `c8c07a600`, `d80a66fb0`) and the policy adversary found nothing. Four PR review rounds followed, every thread resolved. No blocking finding is open, and the D27 identity gate passed in G-FULL on the jackin head `81b1a8dfb`.
 
 ### P13.4 Open the pull requests
 
