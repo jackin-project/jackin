@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::project::git::{HostGit, Pace, words};
 
-const MANIFEST_FILE: &str = "jackin.role.toml";
+pub const MANIFEST_FILE: &str = "jackin.role.toml";
 const KIND_FILE: u8 = b'f';
 const KIND_LINK: u8 = b'l';
 const KIND_OTHER: u8 = b'o';

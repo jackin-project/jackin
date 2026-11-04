@@ -95,6 +95,10 @@ impl GithubRepo {
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    pub fn full_name(&self) -> String {
+        format!("{}/{}", self.owner, self.name)
+    }
 }
 
 impl fmt::Display for GithubRepo {

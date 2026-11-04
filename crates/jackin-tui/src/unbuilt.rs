@@ -11,7 +11,7 @@ use jackin_console::domain::onepassword::OpReference;
 use jackin_console::domain::vocabulary::{Unbuilt, Vocabulary};
 use jackin_console::launch::{EnvAnswer, FailedLaunch, LaunchEvent, LaunchFeed, TypedKey};
 use jackin_console::panes::{PaneBody, PaneKey, PaneKindTag, PaneNote, PaneSpawn, PasteOutcome};
-use jackin_console::world::{Msg, SaveFailure, World};
+use jackin_console::world::{Msg, World};
 use jackin_openshell::GatewayError;
 use junie_tui::core::event::Key;
 use junie_tui::core::id::WidgetId;
@@ -22,44 +22,14 @@ use ratatui::layout::Rect;
 
 pub(crate) fn fails(effect: &Effect, words: &Vocabulary) -> Option<Completion> {
     let no = |what: Unbuilt| words.unbuilt(what);
-    let save = |what: Unbuilt| SaveFailure {
-        error: no(what),
-        next: None,
-    };
     let msg = match effect {
-        Effect::SaveWorkspace { id, .. } => Msg::WorkspaceSaved {
-            id: *id,
-            result: Err(save(Unbuilt::SaveWorkspace)),
-        },
-        Effect::SaveGlobal { .. } => Msg::GlobalSaved {
-            result: Err(save(Unbuilt::SaveSettings)),
-        },
-        Effect::SaveAccounts { .. } => Msg::AccountsSaved {
-            result: Err(no(Unbuilt::SaveAccounts)),
-        },
-        Effect::DeleteWorkspace { id } => Msg::WorkspaceDeleted {
-            id: *id,
-            result: Err(no(Unbuilt::DeleteWorkspace)),
-        },
         Effect::Restore { instance } => Msg::Restored {
             instance: instance.clone(),
             result: Err(no(Unbuilt::RestoreSandbox)),
         },
-        Effect::TrustRole { role } => Msg::RoleTrusted {
-            role: role.clone(),
-            result: Err(no(Unbuilt::TrustRole)),
-        },
         Effect::Prewarm { workspace } => Msg::Prewarmed {
             workspace: *workspace,
             result: Err(no(Unbuilt::PrewarmImage)),
-        },
-        Effect::Stop { instance } => Msg::Stopped {
-            instance: instance.clone(),
-            result: Err(no(Unbuilt::StopSandbox)),
-        },
-        Effect::Purge { instance } => Msg::Purged {
-            instance: instance.clone(),
-            result: Err(no(Unbuilt::PurgeSandbox)),
         },
         Effect::RefreshAccount { account, .. } => Msg::AccountRefreshed {
             account: account.clone(),
@@ -68,31 +38,6 @@ pub(crate) fn fails(effect: &Effect, words: &Vocabulary) -> Option<Completion> {
         Effect::ValidateAccount { account } => Msg::AccountValidated {
             account: account.clone(),
             result: Err(no(Unbuilt::ValidateAccount)),
-        },
-        Effect::LoadRole { role } => Msg::RoleLoaded {
-            role: role.clone(),
-            result: Err(no(Unbuilt::LoadRole)),
-        },
-        Effect::CheckRole { role, .. } => Msg::RoleChecked {
-            role: role.clone(),
-            result: Err(no(Unbuilt::CheckRole)),
-        },
-        Effect::SaveRole { role, .. } => Msg::RoleSaved {
-            role: role.clone(),
-            result: Err(no(Unbuilt::SaveRole)),
-        },
-        Effect::BindRole { role, agent, .. } => Msg::RoleBound {
-            role: role.clone(),
-            agent: *agent,
-            result: Err(no(Unbuilt::BindRole)),
-        },
-        Effect::AddRole { location } => Msg::RoleAdded {
-            location: location.clone(),
-            result: Err(no(Unbuilt::AddRole)),
-        },
-        Effect::RemoveRole { role } => Msg::RoleRemoved {
-            role: role.clone(),
-            result: Err(no(Unbuilt::RemoveRole)),
         },
         Effect::CheckSource { ticket, .. } => Msg::SourceChecked {
             ticket: *ticket,
@@ -115,7 +60,7 @@ pub(crate) fn fails(effect: &Effect, words: &Vocabulary) -> Option<Completion> {
             ticket: *ticket,
             result: Err(OpError::NotAvailable),
         },
-        Effect::Refresh | Effect::RunDoctor => return None,
+        _ => return None,
     };
     Some(Completion::ready(0, msg))
 }
