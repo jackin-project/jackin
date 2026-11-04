@@ -5,10 +5,10 @@ use std::error::Error;
 use std::time::Duration;
 
 use jackin_core::{
-    Account, AccountName, ChatgptAccountId, CredentialSource, FileMode, FileSystem, HostPath,
-    Provider,
+    Account, AccountName, ChatgptAccountId, Config, ConfigEdit, CredentialSource, FileMode,
+    FileSystem, HostPath, Provider,
 };
-use jackin_testkit::MemFs;
+use jackin_testkit::{MemFs, World};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -46,6 +46,17 @@ pub(crate) fn login_json() -> Value {
         },
         "last_refresh": "2026-11-02T10:11:12.123456789Z",
     })
+}
+
+pub(crate) const GATEWAY: &str = "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n";
+
+pub(crate) async fn register(world: &World, account: &Account) -> TestResult {
+    world.seed_all(&Config::parse(GATEWAY)?).await?;
+    world
+        .config
+        .edit(vec![ConfigEdit::AddAccount(account.clone())])
+        .await?;
+    Ok(())
 }
 
 pub(crate) fn chatgpt(id: &str) -> Result<ChatgptAccountId, Box<dyn Error>> {
