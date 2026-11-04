@@ -125,9 +125,10 @@ pub(crate) fn deny_text(allow_git: &[&str], unknown_git: &str) -> String {
 
 pub(crate) const OPENSHELL_URL: &str = "https://github.com/NVIDIA/OpenShell";
 pub(crate) const TERMPANE_URL: &str = "https://github.com/tailrocks/termpane";
+pub(crate) const TUISCOTTI_URL: &str = "https://github.com/tailrocks/tuiscotti";
 
 pub(crate) fn green_deny() -> String {
-    deny_text(&[OPENSHELL_URL, URL, TERMPANE_URL], "deny")
+    deny_text(&[OPENSHELL_URL, URL, TERMPANE_URL, TUISCOTTI_URL], "deny")
 }
 
 pub(crate) fn green_lock() -> String {

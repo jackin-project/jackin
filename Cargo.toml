@@ -89,6 +89,8 @@ tokio = { version = "1.54.1", default-features = false, features = ["sync"] }
 toml = { version = "1.1.8", default-features = false, features = ["display", "parse", "serde"] }
 tokio-stream = "0.1.19"
 tokio-util = "0.7.20"
+tui-test = { package = "tuiscotti-tui-test", version = "=0.2.1" }
+tuiscotti = { git = "https://github.com/tailrocks/tuiscotti", rev = "d8d54155947f6303a41dfd6079b53c0abc16f29a", version = "0.4.0" }
 tonic = { version = "0.14.9", features = ["tls-aws-lc"] }
 tonic-types = "0.14.9"
 zeroize = { version = "1.9.1", features = ["derive"] }

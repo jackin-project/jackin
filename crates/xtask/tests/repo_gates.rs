@@ -2167,7 +2167,7 @@ mod ci_run {
         fixture.write("docs/index.md", "# Docs\n")?;
         fixture.write(
             "deny.toml",
-            "[sources]\nunknown-git = \"deny\"\nallow-git = [\"https://github.com/NVIDIA/OpenShell\", \"https://github.com/tailrocks/terminal-components-baseline\", \"https://github.com/tailrocks/termpane\"]\n",
+            "[sources]\nunknown-git = \"deny\"\nallow-git = [\"https://github.com/NVIDIA/OpenShell\", \"https://github.com/tailrocks/terminal-components-baseline\", \"https://github.com/tailrocks/termpane\", \"https://github.com/tailrocks/tuiscotti\"]\n",
         )?;
         Ok(fixture)
     }

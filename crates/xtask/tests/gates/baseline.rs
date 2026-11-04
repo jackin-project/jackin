@@ -4,9 +4,9 @@
 use std::path::Path;
 
 use crate::workspace::{
-    OPENSHELL_URL, OTHER_REV, REV, TERMPANE_URL, TestResult, URL, Workspace, add_member,
-    console_line, deny_text, green, junie_line, lock_source, lock_text, member_manifest, pin,
-    testkit_manifest, workspace_manifest,
+    OPENSHELL_URL, OTHER_REV, REV, TERMPANE_URL, TUISCOTTI_URL, TestResult, URL, Workspace,
+    add_member, console_line, deny_text, green, junie_line, lock_source, lock_text,
+    member_manifest, pin, testkit_manifest, workspace_manifest,
 };
 use jackin_xtask::{BaselineCheck, Check, Repo, Violation};
 
@@ -389,7 +389,7 @@ fn replacing_source(name: &str, url: &str) -> String {
 
 #[test]
 fn source_replace_fails() -> TestResult {
-    let cases: [(&str, String); 7] = [
+    let cases: [(&str, String); 8] = [
         (".cargo/config.toml", replacing_source("baseline", URL)),
         (".cargo/config", replacing_source("baseline", URL)),
         (
@@ -412,6 +412,10 @@ fn source_replace_fails() -> TestResult {
         (
             "crates/jackin-tui/.cargo/config.toml",
             format!("[source.mirror]\ngit = \"{TERMPANE_URL}\"\n"),
+        ),
+        (
+            "crates/jackin-tui/.cargo/config.toml",
+            format!("[source.mirror]\ngit = \"{TUISCOTTI_URL}\"\n"),
         ),
     ];
     for (path, text) in cases {
@@ -454,10 +458,12 @@ fn allow_git_exact() -> TestResult {
             OPENSHELL_URL,
             URL,
             TERMPANE_URL,
+            TUISCOTTI_URL,
             "https://github.com/someone/else",
         ],
-        vec![OPENSHELL_URL, TERMPANE_URL],
-        vec![OPENSHELL_URL, URL],
+        vec![OPENSHELL_URL, URL, TERMPANE_URL],
+        vec![OPENSHELL_URL, TERMPANE_URL, TUISCOTTI_URL],
+        vec![OPENSHELL_URL, URL, TUISCOTTI_URL],
     ];
     for urls in cases {
         let workspace = green()?;
@@ -467,7 +473,7 @@ fn allow_git_exact() -> TestResult {
     let workspace = green()?;
     workspace.write(
         "deny.toml",
-        &deny_text(&[TERMPANE_URL, URL, OPENSHELL_URL], "deny"),
+        &deny_text(&[TUISCOTTI_URL, TERMPANE_URL, URL, OPENSHELL_URL], "deny"),
     )?;
     expect(&workspace, &[])
 }
@@ -477,7 +483,7 @@ fn unknown_git_must_deny() -> TestResult {
     let workspace = green()?;
     workspace.write(
         "deny.toml",
-        &deny_text(&[OPENSHELL_URL, URL, TERMPANE_URL], "warn"),
+        &deny_text(&[OPENSHELL_URL, URL, TERMPANE_URL, TUISCOTTI_URL], "warn"),
     )?;
     expect(&workspace, &[("R6", "deny.toml", "unknown-git")])
 }
