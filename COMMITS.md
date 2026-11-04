@@ -79,13 +79,15 @@ To skip the docs build, run `--fast` or `--no-docs` (both skip only that step):
 mise exec -- mbx +1.99.1 xtask ci --fast
 ```
 
-To run named steps only, once each in plan order, use `--only` with a comma-delimited list from `fmt clippy nextest deny shear comments layers pins containers reuse docs`. `--only` cannot combine with `--fast` or `--no-docs`. A usage error exits with status 2, and a failed step exits with status 1:
+To run named steps only, once each in plan order, use `--only` with a comma-delimited list from `fmt clippy nextest deny shear comments layers pins containers errors baseline screen demo-gate reuse docs`. `--only` cannot combine with `--fast` or `--no-docs`. A usage error exits with status 2, and a failed step exits with status 1:
 
 ```sh
 mise exec -- mbx +1.99.1 xtask ci --only comments,layers,pins,containers
 ```
 
 `xtask e2e` runs the live journey against a gateway. It is not part of `xtask ci`.
+
+`xtask baseline-branch` checks with `gh` that the pinned `terminal-components-baseline` rev is on `feature/openshell-native` (`ahead` or `identical`). It needs the network, so it is not part of `xtask ci`. Run it at every pin bump.
 
 Set `JACKIN_TOOLCHAIN_GUARD` to an absolute executable path when local policy requires a guard for toolchain commands. The shared xtask command launcher prefixes Cargo and mbx commands with that executable and `-- mise exec --`, including commands launched by nested xtasks. The guard must admit the requested commands; workspace doctests use `mbx test --doc --workspace --locked`.
 

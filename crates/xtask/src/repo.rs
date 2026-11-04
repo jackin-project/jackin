@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
@@ -76,11 +77,33 @@ pub enum DependencyKind {
     Build,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GitReference {
+    Rev(String),
+    Branch(String),
+    Tag(String),
+    Default,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DependencySource {
+    Registry,
+    Path,
+    Git {
+        url: String,
+        reference: GitReference,
+    },
+}
+
 #[derive(Clone, Debug)]
 pub struct Dependency {
     name: String,
+    alias: String,
     kind: DependencyKind,
     optional: bool,
+    source: DependencySource,
+    features: Vec<String>,
+    uses_default_features: bool,
 }
 
 impl Dependency {
@@ -95,8 +118,28 @@ impl Dependency {
     }
 
     #[must_use]
+    pub fn alias(&self) -> &str {
+        &self.alias
+    }
+
+    #[must_use]
     pub fn optional(&self) -> bool {
         self.optional
+    }
+
+    #[must_use]
+    pub fn source(&self) -> &DependencySource {
+        &self.source
+    }
+
+    #[must_use]
+    pub fn features(&self) -> &[String] {
+        &self.features
+    }
+
+    #[must_use]
+    pub fn uses_default_features(&self) -> bool {
+        self.uses_default_features
     }
 }
 
@@ -106,6 +149,7 @@ pub struct Member {
     manifest: PathBuf,
     dir: PathBuf,
     dependencies: Vec<Dependency>,
+    features: Vec<(String, Vec<String>)>,
 }
 
 impl Member {
@@ -127,6 +171,11 @@ impl Member {
     #[must_use]
     pub fn dependencies(&self) -> &[Dependency] {
         &self.dependencies
+    }
+
+    #[must_use]
+    pub fn features(&self) -> &[(String, Vec<String>)] {
+        &self.features
     }
 }
 
@@ -169,7 +218,7 @@ pub(crate) fn cargo_program() -> OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into())
 }
 
-fn capture(command: &mut Command) -> io::Result<Output> {
+pub(crate) fn capture(command: &mut Command) -> io::Result<Output> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -189,13 +238,18 @@ struct MetaPackage {
     name: String,
     manifest_path: PathBuf,
     dependencies: Vec<MetaDependency>,
+    features: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Deserialize)]
 struct MetaDependency {
     name: String,
+    rename: Option<String>,
     kind: Option<String>,
     optional: bool,
+    source: Option<String>,
+    features: Vec<String>,
+    uses_default_features: bool,
 }
 
 fn read_members(path: &Path) -> Result<(PathBuf, Vec<Member>), CiError> {
@@ -244,10 +298,15 @@ fn member_of(package: MetaPackage, workspace_root: &Path) -> Result<Member, CiEr
                     )));
                 }
             };
+            let source = source_of(&dependency.name, dependency.source.as_deref())?;
             Ok(Dependency {
+                alias: dependency.rename.unwrap_or_else(|| dependency.name.clone()),
                 name: dependency.name,
                 kind,
                 optional: dependency.optional,
+                source,
+                features: dependency.features,
+                uses_default_features: dependency.uses_default_features,
             })
         })
         .collect::<Result<Vec<_>, CiError>>()?;
@@ -256,7 +315,35 @@ fn member_of(package: MetaPackage, workspace_root: &Path) -> Result<Member, CiEr
         manifest,
         dir,
         dependencies,
+        features: package.features.into_iter().collect(),
     })
+}
+
+fn source_of(dependency: &str, source: Option<&str>) -> Result<DependencySource, CiError> {
+    let Some(source) = source else {
+        return Ok(DependencySource::Path);
+    };
+    if source.starts_with("registry+") || source.starts_with("sparse+") {
+        return Ok(DependencySource::Registry);
+    }
+    let Some(git) = source.strip_prefix("git+") else {
+        return Err(CiError::Metadata(format!(
+            "unknown source {source:?} for dependency {dependency}"
+        )));
+    };
+    let (url, query) = git.split_once('?').unwrap_or((git, ""));
+    let url = url.split('#').next().unwrap_or(url).to_owned();
+    let query = query.split('#').next().unwrap_or(query);
+    let mut reference = GitReference::Default;
+    for pair in query.split('&') {
+        match pair.split_once('=') {
+            Some(("rev", value)) => reference = GitReference::Rev(value.to_owned()),
+            Some(("branch", value)) => reference = GitReference::Branch(value.to_owned()),
+            Some(("tag", value)) => reference = GitReference::Tag(value.to_owned()),
+            _ => {}
+        }
+    }
+    Ok(DependencySource::Git { url, reference })
 }
 
 fn relative(path: &Path, root: &Path) -> Result<PathBuf, CiError> {
