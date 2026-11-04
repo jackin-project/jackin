@@ -12,7 +12,7 @@ use jackin_session::{AccountEditError, AccountPlan, Gateways, plan_account_edits
 use jackin_testkit::{Fault, World};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Home, TestResult, codex_account, guard, login_json};
+use super::support::{Home, TestResult, codex_account, guard, login_json, registered};
 
 fn name(text: &str) -> Result<AccountName, Box<dyn std::error::Error>> {
     Ok(AccountName::parse(text)?)
@@ -43,20 +43,15 @@ fn file(path: &str) -> Result<CredentialSource, Box<dyn std::error::Error>> {
 }
 
 async fn run(world: &World, edits: Vec<ConfigEdit>) -> Result<Config, AccountEditError> {
-    let config = world.config.load().await?;
-    let plan = plan_account_edits(&config, edits)?;
-    plan.apply(
-        &Gateways::single(world.session.clone()),
-        &world.config,
-        &CancellationToken::new(),
-    )
-    .await
+    let cancel = CancellationToken::new();
+    let plan = plan_account_edits(&world.desk(), edits, &cancel).await?;
+    plan.apply(&Gateways::single(world.session.clone())).await
 }
 
 #[tokio::test]
 async fn a_chatgpt_login_account_gets_its_provider_before_it_reaches_the_config() -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let home = Home::new(&login_json()).await?;
         let work = codex_account(&home.path, super::support::ACCOUNT_ID)?;
         let config = run(
@@ -102,7 +97,7 @@ async fn a_chatgpt_login_account_gets_its_provider_before_it_reaches_the_config(
 #[tokio::test]
 async fn accounts_without_a_chatgpt_login_never_need_the_gateway() -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let edits = vec![
             ConfigEdit::AddAccount(account("claude", Provider::Claude, env("CLAUDE_KEY")?)?),
             ConfigEdit::AddAccount(account("api", Provider::Codex, env("OPENAI_KEY")?)?),
@@ -114,12 +109,12 @@ async fn accounts_without_a_chatgpt_login_never_need_the_gateway() -> TestResult
                 },
             )?),
         ];
-        let plan = plan_account_edits(&world.config.load().await?, edits)?;
+        let plan = plan_account_edits(&world.desk(), edits, &CancellationToken::new()).await?;
         assert!(!plan.needs_gateway());
         let AccountPlan::Offline(offline) = plan else {
             return Err("a plan without providers needs the gateway".into());
         };
-        let config = offline.apply(&world.config).await?;
+        let config = offline.apply().await?;
         assert_eq!(config.accounts().count(), 3);
         assert!(world.gateway.providers().is_empty());
         assert!(world.gateway.profiles().is_empty());
@@ -131,27 +126,36 @@ async fn accounts_without_a_chatgpt_login_never_need_the_gateway() -> TestResult
 #[tokio::test]
 async fn an_invalid_edit_is_refused_while_planning_and_nothing_is_written() -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let home = Home::new(&login_json()).await?;
         let work = codex_account(&home.path, super::support::ACCOUNT_ID)?;
         run(&world, vec![ConfigEdit::AddAccount(work.clone())]).await?;
         let config = world.config.load().await?;
-        let refused = plan_account_edits(&config, vec![ConfigEdit::AddAccount(work)]);
+        let cancel = CancellationToken::new();
+        let refused =
+            plan_account_edits(&world.desk(), vec![ConfigEdit::AddAccount(work)], &cancel).await;
         assert!(matches!(
             refused,
-            Err(ConfigError::DuplicateName {
+            Err(AccountEditError::Config(ConfigError::DuplicateName {
                 kind: "account",
                 ..
-            })
+            }))
         ));
         let ghost = plan_account_edits(
-            &config,
+            &world.desk(),
             vec![ConfigEdit::SetAccountCredential {
                 account: name("ghost")?,
                 credential: file("/keys/ghost")?,
             }],
-        );
-        assert!(matches!(ghost, Err(ConfigError::MissingReference { .. })));
+            &cancel,
+        )
+        .await;
+        assert!(matches!(
+            ghost,
+            Err(AccountEditError::Config(
+                ConfigError::MissingReference { .. }
+            ))
+        ));
         assert_eq!(world.gateway.providers(), [provider()?]);
         assert_eq!(world.config.load().await?, config);
         Ok(())
@@ -163,7 +167,7 @@ async fn an_invalid_edit_is_refused_while_planning_and_nothing_is_written() -> T
 async fn removing_a_login_account_deletes_its_provider_first_and_a_refusal_keeps_the_config()
 -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let home = Home::new(&login_json()).await?;
         let work = codex_account(&home.path, super::support::ACCOUNT_ID)?;
         run(
@@ -213,7 +217,7 @@ async fn removing_a_login_account_deletes_its_provider_first_and_a_refusal_keeps
 async fn a_new_credential_re_syncs_forgets_or_creates_the_provider_as_its_kind_changes()
 -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let home = Home::new(&login_json()).await?;
         let work = codex_account(&home.path, super::support::ACCOUNT_ID)?;
         let login = work.credential().clone();
@@ -329,7 +333,7 @@ async fn after_two_edits(
     first: Kind,
     second: Kind,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let world = World::builder().build()?;
+    let world = registered().await?;
     run(
         &world,
         vec![
@@ -347,17 +351,12 @@ async fn after_two_edits(
     let case = format!("{target}: {first:?} then {second:?}");
 
     let edits = vec![edit(first, target, home)?, edit(second, target, home)?];
-    let Ok(plan) = plan_account_edits(&start, edits) else {
+    let Ok(plan) = plan_account_edits(&world.desk(), edits, &CancellationToken::new()).await else {
         assert_eq!(world.config.load().await?, start, "{case}");
         assert_eq!(providers_of(&world), start_providers, "{case}");
         return Ok(false);
     };
-    plan.apply(
-        &Gateways::single(world.session.clone()),
-        &world.config,
-        &CancellationToken::new(),
-    )
-    .await?;
+    plan.apply(&Gateways::single(world.session.clone())).await?;
     let finished = world.config.load().await?;
     assert_eq!(providers_of(&world), logins_of(&finished), "{case}");
     Ok(true)
@@ -393,7 +392,7 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_or_loses_a_cha
 -> TestResult {
     guard(async {
         let home = Home::new(&login_json()).await?;
-        let world = World::builder().build()?;
+        let world = registered().await?;
         world
             .config
             .edit(vec![
@@ -409,7 +408,6 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_or_loses_a_cha
                 ConfigEdit::AddAccount(account("claude", Provider::Claude, env("CLAUDE_KEY")?)?),
             ])
             .await?;
-        let config = world.config.load().await?;
         let table = [
             ("add a login", true, edit(Kind::AddLogin, "second", &home)?),
             ("remove a login", true, edit(Kind::Remove, "chat", &home)?),
@@ -446,7 +444,8 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_or_loses_a_cha
             ),
         ];
         for (label, gateway, change) in table {
-            let plan = plan_account_edits(&config, vec![change])?;
+            let cancel = CancellationToken::new();
+            let plan = plan_account_edits(&world.desk(), vec![change], &cancel).await?;
             assert_eq!(plan.needs_gateway(), gateway, "{label}");
             assert_eq!(matches!(plan, AccountPlan::Gateway(_)), gateway, "{label}");
         }

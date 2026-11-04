@@ -9,41 +9,50 @@ use jackin_console::domain::account::{
 };
 use jackin_console::domain::agent::{Agent, AuthMode, Provider};
 use jackin_console::domain::docker::{DockerRiskText, DockerSetting, EngineEndpoint, EngineState};
+use jackin_console::domain::instance::RepoRef;
 use jackin_console::domain::instance::{
-    DaemonSnapshot, Instance, InstanceStatus, SessionRecord, SessionStatus, instance_id,
+    DaemonSnapshot, Instance, InstanceId, InstanceStatus, SessionRecord, SessionStatus, instance_id,
 };
 use jackin_console::domain::onepassword::OpReference;
 use jackin_console::domain::openshell as normalize;
 use jackin_console::domain::role::{
-    AccountOrder, RoleAdmin, RoleCheckState, RoleEnvEntry, RoleManifestDoc, RoleRecord,
+    AccountOrder, RoleAdmin, RoleCheckState, RoleEnvEntry, RoleFinding, RoleManifestDoc, RoleRecord,
 };
 use jackin_console::domain::surfaces::{LiveFacts, Surfaces};
+use jackin_console::domain::vocabulary::Rejection;
 use jackin_console::domain::workspace::{
     AllowedRoles as ConsoleAllowedRoles, EnvVar, RoleEntry, RolePolicy, RoleSource,
     Workspace as ConsoleWorkspace,
 };
-use jackin_console::world::{DaemonHealth, GlobalConfig, Snapshot, TrustKind, TrustRow};
+use jackin_console::world::{
+    DaemonHealth, GithubRepo, GlobalConfig, Snapshot, TrustKind, TrustRow,
+};
 use jackin_core::{Agent as CoreAgent, NameSuffix, Provider as CoreProvider, plain};
 use jackin_core::{
     AllowedRoles, Config, CredentialSource as CoreCredential, DockerRisk, EnvTable, GatewayName,
-    Phase, RoleName, RoleSource as CoreRoleSource, SandboxSummary, SupervisorReading,
+    Phase, RoleName, RoleSource as CoreRoleSource, SandboxName, SandboxSummary, SupervisorReading,
     SupervisorState, WorkspaceName,
 };
-use jackin_session::WorkState;
+use jackin_session::{GithubOrigin, WorkState};
 use thiserror::Error;
 
 use crate::fleet::{Fleet, ObservedSandbox};
 use crate::ids::IdTable;
+use crate::persist::sentence;
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum RoleDocError {
-    #[error("the role manifest is read when the role is loaded")]
-    NotLoaded,
+    #[error("{}", sentence(.0))]
+    Rejected(Rejection),
     #[error("{}", plain(.0))]
     Unreadable(String),
 }
 
 pub type RoleDocs = BTreeMap<RoleName, Result<RoleManifestDoc, RoleDocError>>;
+
+pub type RoleChecks = BTreeMap<RoleName, Vec<RoleFinding>>;
+
+pub type Origins = BTreeMap<WorkspaceName, GithubOrigin>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Facts {
@@ -59,6 +68,8 @@ pub struct ProjectInput<'a> {
     pub fleet: &'a Fleet,
     pub facts: &'a Facts,
     pub roles: &'a RoleDocs,
+    pub checks: &'a RoleChecks,
+    pub origins: &'a Origins,
 }
 
 pub fn provider(provider: CoreProvider) -> Provider {
@@ -77,6 +88,25 @@ pub fn provider(provider: CoreProvider) -> Provider {
         CoreProvider::Opencode => Provider::OpenCode,
         CoreProvider::Openrouter => Provider::Openrouter,
         CoreProvider::Zai => Provider::Zai,
+    }
+}
+
+pub fn core_provider(provider: Provider) -> CoreProvider {
+    match provider {
+        Provider::Amp => CoreProvider::Amp,
+        Provider::Antigravity => CoreProvider::Antigravity,
+        Provider::Anthropic => CoreProvider::Claude,
+        Provider::OpenAi => CoreProvider::Codex,
+        Provider::Cursor => CoreProvider::Cursor,
+        Provider::Gemini => CoreProvider::Gemini,
+        Provider::XAi => CoreProvider::Grok,
+        Provider::Hermes => CoreProvider::Hermes,
+        Provider::Moonshot => CoreProvider::Kimi,
+        Provider::MiniMax => CoreProvider::Minimax,
+        Provider::Muse => CoreProvider::Muse,
+        Provider::OpenCode => CoreProvider::Opencode,
+        Provider::Openrouter => CoreProvider::Openrouter,
+        Provider::Zai => CoreProvider::Zai,
     }
 }
 
@@ -146,7 +176,7 @@ fn file_kind(provider: Provider) -> DetectedKind {
     }
 }
 
-fn source(credential: &CoreCredential, provider: Provider) -> CredentialSource {
+pub(crate) fn source(credential: &CoreCredential, provider: Provider) -> CredentialSource {
     match credential {
         CoreCredential::Env { var } => CredentialSource::HostEnv {
             var: var.as_str().to_owned(),
@@ -226,6 +256,7 @@ fn workspace(
     name: &WorkspaceName,
     core: &jackin_core::Workspace,
     accounts: &AccountRegistry,
+    origin: Option<&GithubOrigin>,
 ) -> ConsoleWorkspace {
     let mut ws = ConsoleWorkspace::new(id, name.as_str(), normalize::PROJECT_DIR);
     ws.roles = role_policy(&core.roles, core.default_role.as_ref());
@@ -236,6 +267,7 @@ fn workspace(
         .map(|(role, table)| (role.to_string(), env_vars(table)))
         .collect();
     ws.docker = core.docker;
+    ws.github = origin.map(repo_ref);
     ws.accounts.preferred = core
         .bindings
         .iter()
@@ -414,9 +446,52 @@ fn session_record(
     }]
 }
 
+fn split_name(name: &str) -> (&str, &str) {
+    let split = name.len().saturating_sub(NameSuffix::LEN);
+    name.split_at_checked(split).unwrap_or((name, name))
+}
+
+pub fn sandbox_id(name: &SandboxName) -> InstanceId {
+    instance_id(split_name(name.as_str()).1)
+}
+
+fn repo_ref(origin: &GithubOrigin) -> RepoRef {
+    RepoRef {
+        full_name: origin.repo.full_name(),
+        url: origin.repo.to_string(),
+    }
+}
+
+fn github_repos(origins: &Origins) -> Vec<GithubRepo> {
+    let mut seen = BTreeSet::new();
+    origins
+        .values()
+        .filter_map(|origin| {
+            let repo = repo_ref(origin);
+            let default_branch = origin
+                .default_branch
+                .as_ref()
+                .map(ToString::to_string)
+                .unwrap_or_default();
+            seen.insert(repo.full_name.clone()).then(|| GithubRepo {
+                full_name: repo.full_name,
+                branches: origin
+                    .default_branch
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect(),
+                default_branch,
+                updated: String::new(),
+                url: repo.url,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn instance(
     observed: &ObservedSandbox,
     config: &Config,
+    origins: &Origins,
     ids: &IdTable,
     now_secs: i64,
 ) -> Instance {
@@ -426,10 +501,9 @@ pub(crate) fn instance(
         supervisor,
         work,
     } = observed;
-    let name = summary.name.as_str();
-    let split = name.len().saturating_sub(NameSuffix::LEN);
-    let (head, suffix) = name.split_at_checked(split).unwrap_or((name, name));
+    let (head, suffix) = split_name(summary.name.as_str());
     let labels = &summary.labels.planned;
+    let origin = origins.get(&labels.workspace);
     let status = preserved(status_of(summary.phase, supervisor.as_ref()), work.as_ref());
     let (uncommitted, unpushed, branch) = match work {
         Some(WorkState::Unexported(left)) => (
@@ -456,8 +530,11 @@ pub(crate) fn instance(
         daemon: DaemonSnapshot::NoTabs,
         branch,
         pr: None,
-        default_branch: String::new(),
-        github: None,
+        default_branch: origin
+            .and_then(|o| o.default_branch.as_ref())
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+        github: origin.map(repo_ref),
         uncommitted,
         unpushed,
         account: Some(labels.account.to_string()),
@@ -488,7 +565,7 @@ pub fn manifest_doc(doc: &jackin_core::RoleManifest) -> RoleManifestDoc {
     }
 }
 
-fn role_admin(config: &Config, docs: &RoleDocs) -> RoleAdmin {
+fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmin {
     RoleAdmin {
         agents: vec![Agent::Codex],
         order: AccountOrder::Jackin,
@@ -500,9 +577,11 @@ fn role_admin(config: &Config, docs: &RoleDocs) -> RoleAdmin {
                 manifest: match docs.get(name) {
                     Some(Ok(doc)) => Ok(doc.clone()),
                     Some(Err(error)) => Err(error.to_string()),
-                    None => Err(RoleDocError::NotLoaded.to_string()),
+                    None => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded).to_string()),
                 },
-                check: RoleCheckState::Unchecked,
+                check: checks.get(name).map_or(RoleCheckState::Unchecked, |found| {
+                    RoleCheckState::Done(found.clone())
+                }),
                 bindings: entry
                     .bindings
                     .iter()
@@ -560,6 +639,8 @@ fn surfaces(input: &ProjectInput<'_>) -> Surfaces {
         fleet: _,
         facts,
         roles,
+        checks,
+        origins: _,
     } = input;
     let gateway = gateway_name(config);
     Surfaces::openshell(LiveFacts {
@@ -567,7 +648,7 @@ fn surfaces(input: &ProjectInput<'_>) -> Surfaces {
         config_path: facts.config_path.clone(),
         gateway: gateway.as_ref().map(ToString::to_string),
     })
-    .roles(role_admin(config, roles))
+    .roles(role_admin(config, roles, checks))
     .docker(docker_setting(config, roles, gateway.as_ref()))
 }
 
@@ -577,16 +658,18 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
         fleet,
         facts,
         roles: _,
+        checks: _,
+        origins,
     } = *input;
     let accounts = registry(config);
     let workspaces = config
         .workspaces()
-        .map(|(name, core)| workspace(ids.id(name), name, core, &accounts))
+        .map(|(name, core)| workspace(ids.id(name), name, core, &accounts, origins.get(name)))
         .collect();
     let instances = fleet
         .sandboxes
         .iter()
-        .map(|observed| instance(observed, config, ids, facts.now_secs))
+        .map(|observed| instance(observed, config, origins, ids, facts.now_secs))
         .collect();
     Snapshot {
         workspaces,
@@ -595,7 +678,7 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
         global: global(config),
         accounts,
         surfaces: surfaces(input),
-        github: Vec::new(),
+        github: github_repos(origins),
         index_error: fleet
             .all_failed()
             .then_some(DiscoveryError::IndexUnreadable),

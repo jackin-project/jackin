@@ -1,21 +1,24 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::Path;
 use std::sync::Arc;
 
 use jackin_core::{
-    Account, AccountName, Clock, Config, ConfigEdit, ConfigStore, FileMode, FileSystem,
-    GatewayName, HostPath, OpenShellWorkspace, ProviderName,
+    Account, AccountName, Config, ConfigEdit, ConfigStore, GatewayName, OpenShellWorkspace,
+    ProviderName,
 };
 use jackin_openshell::{Gateway, GatewayError, GatewayOp};
 use jackin_session::{
-    AccountEditError, Gateways, HostPorts, Session, SessionDeps, plan_account_edits,
+    AccountEditError, AccountError, AccountPlan, ConnectError, Gateways, HostPorts, Session,
+    SessionDeps, plan_account_edits,
 };
-use jackin_testkit::{FakeGateway, Fault, MemFs, ScriptedConnector, World, default_limits};
+use jackin_testkit::{FakeGateway, Fault, ScriptedConnector, World, default_limits};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, guard, login_json};
+use super::support::{
+    ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, guard, hold_account, login_json,
+    until_polling,
+};
 
 const ROTATED: &str = "REFRESH-ROTATED-2c8f61";
 
@@ -63,25 +66,12 @@ fn config_text(home: &Home, gateways: &[&str]) -> String {
     text
 }
 
-async fn store_of(world: &World, text: &str) -> Result<ConfigStore, Box<dyn std::error::Error>> {
-    let fs = Arc::new(MemFs::new());
-    let port: Arc<dyn FileSystem> = Arc::<MemFs>::clone(&fs);
-    let dir = HostPath::parse(Path::new("/config/jackin"))?;
-    port.create_dir_all(&dir).await?;
-    let path = HostPath::parse(Path::new("/config/jackin/config.toml"))?;
-    port.write_new(&path, text.as_bytes(), FileMode(0o600))
-        .await?;
-    let clock: Arc<dyn Clock> = Arc::<jackin_testkit::FakeClock>::clone(&world.clock);
-    Ok(ConfigStore::new(port, clock, path))
-}
-
 struct Fleet {
     world: World,
     home: Home,
     second: Arc<FakeGateway>,
     third: Arc<FakeGateway>,
     store: ConfigStore,
-    config: Config,
     account: Account,
 }
 
@@ -91,7 +81,7 @@ async fn fleet(holding: [bool; 3]) -> Result<Fleet, Box<dyn std::error::Error>> 
     let account = codex_account(&home.path, ACCOUNT_ID)?;
     let text = config_text(&home, &["fake-gateway", "second", "third"]);
     let config = Config::parse(&text)?;
-    let store = store_of(&world, &text).await?;
+    let store = world.config.clone();
     let second = peer("second")?;
     let third = peer("third")?;
     world.seed_config(&config).await?;
@@ -115,39 +105,44 @@ async fn fleet(holding: [bool; 3]) -> Result<Fleet, Box<dyn std::error::Error>> 
         second,
         third,
         store,
-        config,
         account,
     })
 }
 
 impl Fleet {
-    async fn gateways(
+    async fn dial(
         &self,
+        config: &Config,
         reachable: &[&Arc<FakeGateway>],
-    ) -> Result<Gateways, Box<dyn std::error::Error>> {
+    ) -> Result<Gateways, ConnectError> {
         let mut connector = ScriptedConnector::new();
         for gateway in reachable {
             let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(gateway);
             connector = connector.gateway(port, Vec::new());
         }
-        Ok(Gateways::with_peers(
+        Gateways::with_peers(
             self.world.session.clone(),
-            &self.config,
+            config,
             &connector,
             &CancellationToken::new(),
         )
-        .await?)
+        .await
     }
 
     async fn apply(
         &self,
-        gateways: &Gateways,
+        reachable: &[&Arc<FakeGateway>],
         edits: Vec<ConfigEdit>,
     ) -> Result<Config, AccountEditError> {
-        let config = self.store.load().await?;
-        plan_account_edits(&config, edits)?
-            .apply(gateways, &self.store, &CancellationToken::new())
-            .await
+        let plan = plan_account_edits(&self.world.desk(), edits, &CancellationToken::new()).await?;
+        let gateways = match &plan {
+            AccountPlan::Gateway(gateway) => self
+                .dial(gateway.config(), reachable)
+                .await
+                .map_err(AccountEditError::Connect)?,
+            AccountPlan::Offline(_) => Gateways::single(self.world.session.clone()),
+        };
+        plan.apply(&gateways).await
     }
 
     fn holders(&self) -> Result<[bool; 3], Box<dyn std::error::Error>> {
@@ -164,10 +159,9 @@ impl Fleet {
 async fn removing_a_login_account_forgets_its_provider_on_every_gateway() -> TestResult {
     guard(async {
         let fleet = fleet([true, true, false]).await?;
-        let gateways = fleet.gateways(&[&fleet.second, &fleet.third]).await?;
         let after = fleet
             .apply(
-                &gateways,
+                &[&fleet.second, &fleet.third],
                 vec![ConfigEdit::RemoveAccountClearingBindings(name("work")?)],
             )
             .await?;
@@ -182,13 +176,12 @@ async fn removing_a_login_account_forgets_its_provider_on_every_gateway() -> Tes
 async fn taking_the_login_off_an_account_forgets_its_provider_on_every_gateway() -> TestResult {
     guard(async {
         let fleet = fleet([true, true, true]).await?;
-        let gateways = fleet.gateways(&[&fleet.second, &fleet.third]).await?;
         let key = jackin_core::CredentialSource::Env {
             var: jackin_core::EnvName::parse("OPENAI_KEY")?,
         };
         fleet
             .apply(
-                &gateways,
+                &[&fleet.second, &fleet.third],
                 vec![ConfigEdit::SetAccountCredential {
                     account: name("work")?,
                     credential: key,
@@ -206,14 +199,13 @@ async fn a_renewed_login_reaches_every_gateway_that_holds_the_provider_and_no_ot
 {
     guard(async {
         let fleet = fleet([true, true, false]).await?;
-        let gateways = fleet.gateways(&[&fleet.second, &fleet.third]).await?;
         let mut rotated = login_json();
         rotated["tokens"]["refresh_token"] = serde_json::json!(ROTATED);
         fleet.home.write(&rotated).await?;
 
         fleet
             .apply(
-                &gateways,
+                &[&fleet.second, &fleet.third],
                 vec![ConfigEdit::SetAccountCredential {
                     account: name("work")?,
                     credential: fleet.account.credential().clone(),
@@ -244,12 +236,11 @@ async fn a_renewed_login_reaches_every_gateway_that_holds_the_provider_and_no_ot
 async fn a_plan_that_must_reach_a_gateway_it_cannot_reach_changes_nothing() -> TestResult {
     guard(async {
         let fleet = fleet([true, true, false]).await?;
-        let gateways = fleet.gateways(&[&fleet.third]).await?;
         let before = fleet.store.load().await?;
 
         let removal = fleet
             .apply(
-                &gateways,
+                &[&fleet.third],
                 vec![ConfigEdit::RemoveAccountClearingBindings(name("work")?)],
             )
             .await;
@@ -264,7 +255,7 @@ async fn a_plan_that_must_reach_a_gateway_it_cannot_reach_changes_nothing() -> T
 
         let renewal = fleet
             .apply(
-                &gateways,
+                &[&fleet.third],
                 vec![ConfigEdit::SetAccountCredential {
                     account: name("work")?,
                     credential: fleet.account.credential().clone(),
@@ -287,7 +278,6 @@ async fn a_plan_that_must_reach_a_gateway_it_cannot_reach_changes_nothing() -> T
 async fn a_new_login_account_needs_only_the_home_gateway() -> TestResult {
     guard(async {
         let fleet = fleet([false, false, false]).await?;
-        let gateways = fleet.gateways(&[]).await?;
         let other = Home::new(&login_json()).await?;
         let added = Account::new(
             name("other")?,
@@ -296,7 +286,7 @@ async fn a_new_login_account_needs_only_the_home_gateway() -> TestResult {
         )?;
 
         fleet
-            .apply(&gateways, vec![ConfigEdit::AddAccount(added)])
+            .apply(&[], vec![ConfigEdit::AddAccount(added)])
             .await?;
 
         let other_provider = ProviderName::parse("jackin-other-codex")?;
@@ -312,7 +302,6 @@ async fn a_new_login_account_needs_only_the_home_gateway() -> TestResult {
 async fn a_refusal_on_a_peer_names_that_gateway_and_a_retry_finishes_the_removal() -> TestResult {
     guard(async {
         let fleet = fleet([true, true, false]).await?;
-        let gateways = fleet.gateways(&[&fleet.second, &fleet.third]).await?;
         fleet.second.inject(Fault::FailNext {
             op: GatewayOp::Provider,
             error: GatewayError::FailedPrecondition {
@@ -323,7 +312,7 @@ async fn a_refusal_on_a_peer_names_that_gateway_and_a_retry_finishes_the_removal
 
         let refused = fleet
             .apply(
-                &gateways,
+                &[&fleet.second, &fleet.third],
                 vec![ConfigEdit::RemoveAccountClearingBindings(name("work")?)],
             )
             .await;
@@ -336,12 +325,122 @@ async fn a_refusal_on_a_peer_names_that_gateway_and_a_retry_finishes_the_removal
 
         fleet
             .apply(
-                &gateways,
+                &[&fleet.second, &fleet.third],
                 vec![ConfigEdit::RemoveAccountClearingBindings(name("work")?)],
             )
             .await?;
         assert_eq!(fleet.holders()?, [false, false, false]);
         assert_eq!(fleet.store.load().await?.accounts().count(), 0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached() -> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let third = GatewayName::parse("third")?;
+        let entry = fleet
+            .store
+            .load()
+            .await?
+            .gateway(&third)
+            .ok_or("the fleet has no third gateway")?
+            .clone();
+        fleet
+            .store
+            .edit(vec![ConfigEdit::RemoveGateway(third.clone())])
+            .await?;
+        let held = hold_account(&fleet.world, "work").await?;
+
+        let reachable = [&fleet.second, &fleet.third];
+        let removal = fleet.apply(
+            &reachable,
+            vec![ConfigEdit::RemoveAccountClearingBindings(name("work")?)],
+        );
+        let meanwhile = async {
+            until_polling(&fleet.world, 1).await;
+            fleet
+                .store
+                .edit(vec![ConfigEdit::AddGateway { name: third, entry }])
+                .await?;
+            drop(held);
+            Ok::<(), Box<dyn std::error::Error>>(())
+        };
+        let (after, done) = tokio::join!(removal, meanwhile);
+        done?;
+
+        assert_eq!(after?.accounts().count(), 0);
+        assert_eq!(fleet.holders()?, [false, false, false]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn gateways_connected_before_a_gateway_was_added_are_refused_and_nothing_changes()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let stale = Config::parse(&config_text(&fleet.home, &["fake-gateway", "second"]))?;
+        let gateways = fleet.dial(&stale, &[&fleet.second]).await?;
+        let plan = plan_account_edits(
+            &fleet.world.desk(),
+            vec![ConfigEdit::RemoveAccountClearingBindings(name("work")?)],
+            &CancellationToken::new(),
+        )
+        .await?;
+
+        let refused = plan.apply(&gateways).await;
+
+        assert!(
+            matches!(
+                &refused,
+                Err(AccountEditError::Account(AccountError::GatewayAdded { gateway }))
+                    if gateway.as_str() == "third"
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(fleet.holders()?, [true, true, true]);
+        assert_eq!(fleet.store.load().await?.accounts().count(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publishes_nothing()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([false, false, false]).await?;
+        fleet
+            .store
+            .edit(vec![
+                ConfigEdit::RemoveGateway(GatewayName::parse("second")?),
+                ConfigEdit::RemoveAccountClearingBindings(name("work")?),
+            ])
+            .await?;
+        let gateways = Gateways::single(session_on(&fleet.world, &fleet.second));
+        let plan = plan_account_edits(
+            &fleet.world.desk(),
+            vec![ConfigEdit::AddAccount(fleet.account.clone())],
+            &CancellationToken::new(),
+        )
+        .await?;
+
+        let refused = plan.apply(&gateways).await;
+
+        assert!(
+            matches!(
+                &refused,
+                Err(AccountEditError::Account(AccountError::GatewayRemoved { gateway }))
+                    if gateway.as_str() == "second"
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(fleet.holders()?, [false, false, false]);
+        assert!(fleet.store.load().await?.account(&name("work")?).is_none());
         Ok(())
     })
     .await

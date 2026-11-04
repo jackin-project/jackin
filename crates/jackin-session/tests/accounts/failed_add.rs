@@ -9,7 +9,7 @@ use jackin_session::{
 use jackin_testkit::{Fault, Rig, World};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{ACCOUNT_ID, Home, TestResult, codex_account, guard, login_json};
+use super::support::{ACCOUNT_ID, Home, TestResult, codex_account, guard, login_json, registered};
 
 fn work() -> Result<AccountName, Box<dyn std::error::Error>> {
     Ok(AccountName::parse("work")?)
@@ -29,14 +29,9 @@ fn reset() -> GatewayError {
 }
 
 async fn apply(world: &World, edit: ConfigEdit) -> Result<jackin_core::Config, AccountEditError> {
-    let store = &world.config;
-    let plan = plan_account_edits(&store.load().await?, vec![edit])?;
-    plan.apply(
-        &Gateways::single(world.session.clone()),
-        store,
-        &CancellationToken::new(),
-    )
-    .await
+    let cancel = CancellationToken::new();
+    let plan = plan_account_edits(&world.desk(), vec![edit], &cancel).await?;
+    plan.apply(&Gateways::single(world.session.clone())).await
 }
 
 async fn login_account() -> Result<(Home, Account), Box<dyn std::error::Error>> {
@@ -48,7 +43,7 @@ async fn login_account() -> Result<(Home, Account), Box<dyn std::error::Error>> 
 #[tokio::test]
 async fn an_add_whose_provider_write_fails_after_it_landed_leaves_no_provider() -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let (_home, account) = login_account().await?;
         world
             .gateway
@@ -81,7 +76,7 @@ async fn an_add_whose_provider_write_fails_after_it_landed_leaves_no_provider() 
 async fn an_add_whose_provider_write_fails_before_it_landed_leaves_nothing_and_reports_that_error()
 -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let (_home, account) = login_account().await?;
         world.gateway.inject(Fault::FailNext {
             op: GatewayOp::Provider,
@@ -111,7 +106,7 @@ async fn an_add_whose_provider_write_fails_before_it_landed_leaves_nothing_and_r
 async fn a_renewal_whose_provider_write_fails_keeps_the_provider_of_the_account_in_the_config()
 -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let (_home, account) = login_account().await?;
         apply(&world, ConfigEdit::AddAccount(account.clone())).await?;
         assert_eq!(world.gateway.providers(), [provider()?]);

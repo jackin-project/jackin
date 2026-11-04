@@ -10,24 +10,30 @@ use jackin_console::domain::doctor::{
     DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
 };
 use jackin_console::domain::instance::Instance;
-use jackin_console::domain::vocabulary::{Notice, Vocabulary};
+use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
-    Compatibility, Config, ConfigError, ConfigStore, HostPath, RoleName,
+    Compatibility, Config, ConfigError, ConfigStore, EnvSnapshot, HostPath, RoleManifest, RoleName,
     RoleSource as CoreRoleSource,
 };
-use jackin_session::{DoctorInput, HostPorts, RoleCatalog, doctor};
+use jackin_session::{
+    AccountDesk, DoctorInput, HostPorts, MANIFEST_FILE, OnePasswordCli, RoleCatalog, SourceDesk,
+    doctor,
+};
+use jackin_usage::HostUsage;
 use tokio_util::sync::CancellationToken;
 
 use crate::console::ConsoleLimits;
 use crate::doctor::{self, DoctorCell};
-use crate::fleet::{ObservedSandbox, WorkCache, read_fleet};
+use crate::fleet::{Fleet, ObservedSandbox, WorkCache, read_fleet};
 use crate::ids::IdTable;
+use crate::onepassword::OpSnapshot;
+use crate::origin::OriginCache;
 use crate::project::{
-    Facts, ProjectInput, RoleDocError, RoleDocs, instance as project_instance, manifest_doc,
-    project,
+    Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, instance as project_instance,
+    manifest_doc, project,
 };
-use crate::sessions::{Access, SessionConnector, SessionSet};
+use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
 
 #[derive(Debug)]
 pub(crate) struct Observation {
@@ -41,7 +47,7 @@ impl Observation {
     }
 }
 
-type DocCache = BTreeMap<
+pub(crate) type DocCache = BTreeMap<
     RoleName,
     (
         CoreRoleSource,
@@ -51,6 +57,12 @@ type DocCache = BTreeMap<
 
 pub(crate) struct Inputs {
     pub(crate) config: ConfigStore,
+    pub(crate) desk: AccountDesk,
+    pub(crate) usage: Arc<HostUsage>,
+    pub(crate) usage_gate: tokio::sync::Mutex<()>,
+    pub(crate) op: OpSnapshot,
+    pub(crate) op_cli: OnePasswordCli,
+    pub(crate) sources: SourceDesk,
     pub(crate) sessions: SessionSet,
     pub(crate) roles: Arc<RoleCatalog>,
     pub(crate) host: HostPorts,
@@ -65,8 +77,11 @@ pub(crate) struct Inputs {
     pub(crate) config_path: String,
     pub(crate) limits: ConsoleLimits,
     work: WorkCache,
-    ids: Mutex<IdTable>,
-    docs: Mutex<DocCache>,
+    pub(crate) ids: Mutex<IdTable>,
+    pub(crate) docs: Mutex<DocCache>,
+    pub(crate) fleet: Mutex<Fleet>,
+    pub(crate) checks: Mutex<RoleChecks>,
+    origins: OriginCache,
 }
 
 impl fmt::Debug for Inputs {
@@ -75,13 +90,17 @@ impl fmt::Debug for Inputs {
     }
 }
 
-fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+pub(crate) fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 #[derive(Debug)]
 pub(crate) struct InputsParts {
     pub config: ConfigStore,
+    pub desk: AccountDesk,
+    pub usage: Arc<HostUsage>,
+    pub op: OpSnapshot,
+    pub env: EnvSnapshot,
     pub sessions: SessionSet,
     pub roles: Arc<RoleCatalog>,
     pub host: HostPorts,
@@ -100,6 +119,10 @@ impl Inputs {
     pub(crate) fn new(parts: InputsParts) -> Inputs {
         let InputsParts {
             config,
+            desk,
+            usage,
+            op,
+            env,
             sessions,
             roles,
             host,
@@ -113,8 +136,16 @@ impl Inputs {
             config_path,
             limits,
         } = parts;
+        let op_cli = OnePasswordCli::new(Arc::clone(&host.runner));
+        let sources = SourceDesk::new(Arc::clone(&host.fs), env, op_cli.clone());
         Inputs {
             config,
+            desk,
+            usage,
+            usage_gate: tokio::sync::Mutex::new(()),
+            op,
+            op_cli,
+            sources,
             sessions,
             roles,
             host,
@@ -131,13 +162,28 @@ impl Inputs {
             work: WorkCache::default(),
             ids: Mutex::new(IdTable::new()),
             docs: Mutex::new(DocCache::new()),
+            fleet: Mutex::new(Fleet::default()),
+            checks: Mutex::new(RoleChecks::new()),
+            origins: OriginCache::default(),
         }
     }
 
     pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
         let config = self.config.load().await?;
         let fleet = read_fleet(&self.sessions, &config, self.limits, &self.work).await;
-        let docs = self.role_docs(&config).await;
+        Ok(self.observation(&config, fleet).await)
+    }
+
+    pub(crate) async fn current(&self, config: &Config) -> Observation {
+        let fleet = locked(&self.fleet).clone();
+        self.observation(config, fleet).await
+    }
+
+    async fn observation(&self, config: &Config, fleet: Fleet) -> Observation {
+        *locked(&self.fleet) = fleet.clone();
+        let docs = self.role_docs(config).await;
+        let origins = self.origins(config).await;
+        let checks = locked(&self.checks).clone();
         let facts = Facts {
             version: self.version.clone(),
             config_path: self.config_path.clone(),
@@ -146,10 +192,12 @@ impl Inputs {
         };
         let mut snapshot = project(
             &ProjectInput {
-                config: &config,
+                config,
                 fleet: &fleet,
                 facts: &facts,
                 roles: &docs,
+                checks: &checks,
+                origins: &origins,
             },
             &mut locked(&self.ids),
         );
@@ -170,13 +218,44 @@ impl Inputs {
                 count: fleet.unreadable,
             });
         }
-        Ok(Observation { snapshot, notices })
+        Observation { snapshot, notices }
     }
 
-    pub(crate) fn instance_of(&self, config: &Config, observed: &ObservedSandbox) -> Instance {
+    async fn origins(&self, config: &Config) -> Origins {
+        let session = self.sessions.get(self.sessions.default_name()).or_else(|| {
+            self.sessions
+                .reached()
+                .into_iter()
+                .find_map(|(_, reached)| match reached {
+                    Reached::Up(session) => Some(*session),
+                    Reached::Down(_) => None,
+                })
+        });
+        let Some(session) = session else {
+            return Origins::new();
+        };
+        let read = self.origins.read(
+            &session,
+            self.host.fs.as_ref(),
+            config,
+            self.host.clock.now().0,
+            &self.cancel,
+        );
+        tokio::time::timeout(self.limits.connect_deadline, read)
+            .await
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn instance_of(
+        &self,
+        config: &Config,
+        observed: &ObservedSandbox,
+        origins: &Origins,
+    ) -> Instance {
         project_instance(
             observed,
             config,
+            origins,
             &locked(&self.ids),
             self.host.clock.now().0,
         )
@@ -216,6 +295,12 @@ impl Inputs {
         drop(self.run_doctor(false).await);
     }
 
+    async fn manifest_only(&self, root: &HostPath) -> Option<RoleManifest> {
+        let file = HostPath::resolve(std::path::Path::new(MANIFEST_FILE), root).ok()?;
+        let bytes = self.host.fs.read(&file).await.ok().flatten()?;
+        RoleManifest::parse(&String::from_utf8_lossy(&bytes)).ok()
+    }
+
     async fn role_docs(&self, config: &Config) -> RoleDocs {
         let wanted: Vec<(RoleName, CoreRoleSource)> = {
             let cache = locked(&self.docs);
@@ -230,10 +315,13 @@ impl Inputs {
                 CoreRoleSource::Path(path) => {
                     match self.roles.load_path(path, &CancellationToken::new()).await {
                         Ok(role) => Ok(manifest_doc(role.manifest())),
-                        Err(error) => Err(RoleDocError::Unreadable(error.to_string())),
+                        Err(error) => match self.manifest_only(path).await {
+                            Some(manifest) => Ok(manifest_doc(&manifest)),
+                            None => Err(RoleDocError::Unreadable(error.to_string())),
+                        },
                     }
                 }
-                CoreRoleSource::Git { .. } => Err(RoleDocError::NotLoaded),
+                CoreRoleSource::Git { .. } => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
             };
             (name, (source, doc))
         }))

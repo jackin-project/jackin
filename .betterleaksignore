@@ -434,3 +434,8 @@ ddd296b40920dc19887107cca29f9204b4f8ae5e:crates/jackin-session/src/files.rs:jwt:
 # Reason: prose, no credential, reviewed 2026-11-04
 # Working-tree fingerprint for betterleaks dir: the match is the quoted plan title in item 1 of the P9.3 reconciliation note ("login (plan 7.3, ...)"), which only names Session::sync_account; the same line is already listed above for betterleaks git at its first commit
 rewrite/reconciliation/P9.3.md:generic-password:31
+
+# Reason: test fixture, no credential, reviewed 2026-11-04
+# The match is the malformed-JSON fixture handed to the test helper that writes a fake Codex login in the J3 source-check test; history fingerprint at its first commit and the working-tree fingerprint
+72437ac56b02c25975b34ae0cb0dd0a7f2755ee2:crates/jackin-session/tests/sources/check.rs:generic-password:79
+crates/jackin-session/tests/sources/check.rs:generic-password:79

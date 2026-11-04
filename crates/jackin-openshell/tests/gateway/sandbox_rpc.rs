@@ -126,7 +126,7 @@ impl Fake {
         self.enter("health").await?;
         Ok(Response::new(HealthResponse {
             status: ServiceStatus::Healthy as i32,
-            version: "0.1.6".to_owned(),
+            version: "0.1.7".to_owned(),
         }))
     }
 

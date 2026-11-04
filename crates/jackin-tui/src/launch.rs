@@ -9,7 +9,7 @@ use std::sync::{Arc, mpsc};
 use jackin_console::backend::{Backend, OnePassword};
 use jackin_console::domain::agent::Agent;
 use jackin_console::domain::docker::DockerCapability;
-use jackin_console::domain::instance::{Instance, RepoRef};
+use jackin_console::domain::instance::Instance;
 use jackin_console::domain::launch::{LaunchContent, LaunchFailure, NextStep, RefusalReason};
 use jackin_console::launch::{
     EnvAnswer, EnvQuestion, FailedLaunch, LaunchEvent, LaunchFeed, LaunchTarget, ReadyInstance,
@@ -23,11 +23,10 @@ use jackin_core::{
 use jackin_image::ImageEvent;
 use jackin_openshell::GatewayError;
 use jackin_session::{
-    AccountError, GithubRepo, LaunchError, LaunchEvent as SessionEvent,
-    LaunchFailure as SessionFailure, LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest,
-    LaunchStep, LaunchWarning, LineDelivery, PlanError, Prompting, RestoreCandidate, RoleError,
-    Session, StepResult, WorkspaceLookup, error_chain, launch_events, lookup_workspace,
-    plan_launch,
+    AccountError, LaunchError, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
+    LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LaunchWarning,
+    LineDelivery, PlanError, Prompting, RestoreCandidate, RoleError, Session, StepResult,
+    WorkspaceLookup, error_chain, launch_events, lookup_workspace, plan_launch,
 };
 use junie_tui::widgets::steps::StepState;
 use thiserror::Error;
@@ -36,7 +35,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::backend::JackinBackend;
 use crate::fleet::ObservedSandbox;
-use crate::project::docker_risks;
+use crate::project::{Origins, docker_risks};
 use crate::sessions::Access;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -147,16 +146,6 @@ fn next_step(failure: &SessionFailure) -> NextStep {
             launch: launch.to_string(),
         },
         None => NextStep::None,
-    }
-}
-
-fn repo_ref(repo: &GithubRepo) -> RepoRef {
-    let mut full_name = repo.owner().to_owned();
-    full_name.push('/');
-    full_name.push_str(repo.name());
-    RepoRef {
-        full_name,
-        url: repo.to_string(),
     }
 }
 
@@ -287,6 +276,7 @@ struct Prepared {
     session: Session,
     project: ProjectRoot,
     config: Config,
+    name: WorkspaceName,
     gateway: GatewayName,
 }
 
@@ -462,6 +452,7 @@ impl Run {
                         session,
                         project,
                         config,
+                        name,
                         gateway,
                     });
                 }
@@ -483,6 +474,7 @@ impl Run {
             session,
             project,
             config,
+            name,
             gateway,
         } = prepared;
         let account = plan.account().account.clone();
@@ -500,7 +492,14 @@ impl Run {
         match outcome {
             Ok(LaunchOutcome::Ready(target)) => {
                 match self
-                    .ready(&session, &config, &project, &gateway, &target.sandbox)
+                    .ready(
+                        &session,
+                        &config,
+                        &project,
+                        &name,
+                        &gateway,
+                        &target.sandbox,
+                    )
                     .await
                 {
                     Ok(instance) => self.send(LaunchEvent::Ready(Box::new(ReadyInstance {
@@ -548,7 +547,10 @@ impl Run {
         let Some(sandbox) = left.sandbox else {
             return;
         };
-        match self.record(session, config, gateway, &sandbox).await {
+        match self
+            .record(session, config, gateway, &sandbox, &Origins::new())
+            .await
+        {
             Ok(instance) => self.backend.bridge.send(Msg::LaunchCancelled {
                 instance: Box::new(instance),
             }),
@@ -562,6 +564,7 @@ impl Run {
         config: &Config,
         gateway: &GatewayName,
         sandbox: &SandboxName,
+        origins: &Origins,
     ) -> Result<Instance, jackin_session::LifecycleError> {
         let inspected = session.inspect(sandbox).await?;
         let work = session.work_state(config, sandbox).await;
@@ -571,7 +574,7 @@ impl Run {
             supervisor: Some(inspected.supervisor),
             work: Some(work),
         };
-        Ok(self.backend.inputs.instance_of(config, &observed))
+        Ok(self.backend.inputs.instance_of(config, &observed, origins))
     }
 
     async fn ready(
@@ -579,18 +582,20 @@ impl Run {
         session: &Session,
         config: &Config,
         project: &ProjectRoot,
+        name: &WorkspaceName,
         gateway: &GatewayName,
         sandbox: &SandboxName,
     ) -> Result<Instance, jackin_session::LifecycleError> {
-        let mut instance = self.record(session, config, gateway, sandbox).await?;
-        if let Ok(Some(origin)) = session.project_origin(project, &self.cancel).await {
-            instance.github = Some(repo_ref(&origin.repo));
-            instance.default_branch = origin
-                .default_branch
-                .map(|branch| branch.to_string())
-                .unwrap_or_default();
-        }
-        Ok(instance)
+        let origins: Origins = session
+            .project_origin(project, &self.cancel)
+            .await
+            .ok()
+            .flatten()
+            .map(|origin| (name.clone(), origin))
+            .into_iter()
+            .collect();
+        self.record(session, config, gateway, sandbox, &origins)
+            .await
     }
 }
 

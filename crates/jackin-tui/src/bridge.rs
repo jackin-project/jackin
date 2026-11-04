@@ -5,7 +5,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use jackin_console::app::Remote;
-use jackin_console::world::Msg;
+use jackin_console::world::{Msg, Snapshot};
 use junie_tui::runtime::ExternalSender;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
@@ -55,6 +55,30 @@ impl Drop for Ticket {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct Settled {
+    reply: Msg,
+    reload: Option<Box<Snapshot>>,
+}
+
+impl Settled {
+    pub(crate) fn reverted(reply: Msg, saved: Option<Snapshot>) -> Settled {
+        Settled {
+            reply,
+            reload: saved.map(Box::new),
+        }
+    }
+}
+
+impl From<Msg> for Settled {
+    fn from(reply: Msg) -> Settled {
+        Settled {
+            reply,
+            reload: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct Bridge {
     sender: ExternalSender,
@@ -79,12 +103,19 @@ impl Bridge {
         self.sender.send(Remote::Msg(msg));
     }
 
-    pub(crate) fn spawn(&self, work: impl Future<Output = Msg> + Send + 'static) {
+    pub(crate) fn handle(&self) -> &Handle {
+        &self.handle
+    }
+
+    pub(crate) fn spawn<T: Into<Settled>>(&self, work: impl Future<Output = T> + Send + 'static) {
         let ticket = self.inflight.start();
         let sender = self.sender.clone();
         self.handle.spawn(async move {
-            let msg = work.await;
-            sender.send(Remote::Msg(msg));
+            let settled = work.await.into();
+            sender.send(Remote::Msg(settled.reply));
+            if let Some(saved) = settled.reload {
+                sender.send(Remote::Reloaded(saved));
+            }
             drop(ticket);
         });
     }

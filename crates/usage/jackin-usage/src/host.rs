@@ -56,10 +56,11 @@ impl HostUsage {
             .iter()
             .map(|account| (account, cache.entry(account)))
             .collect();
-        let work = stream::iter(jobs)
+        let pending: Vec<_> = jobs
+            .into_iter()
             .map(|(account, entry)| self.settle(account, entry, request.refresh, now.0, cancel))
-            .buffered(FAN_OUT)
-            .collect::<Vec<_>>();
+            .collect();
+        let work = stream::iter(pending).buffered(FAN_OUT).collect::<Vec<_>>();
         let settled = tokio::select! {
             biased;
             () = cancel.cancelled() => return Err(UsageError::Cancelled),

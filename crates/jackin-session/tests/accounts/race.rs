@@ -9,12 +9,12 @@ use jackin_core::{
     FileSystem, FsError, HostPath, ProviderName,
 };
 use jackin_openshell::GatewayOp;
-use jackin_session::{AccountEditError, Gateways, Session, plan_account_edits};
+use jackin_session::{AccountDesk, AccountEditError, Gateways, Session, plan_account_edits};
 use jackin_testkit::{Fault, FsOp, MemFs, Trigger, World};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Home, TestResult, codex_account, guard, login_json};
+use super::support::{Home, TestResult, codex_account, guard, login_json, registered};
 
 const FIRST_REFRESH: &str = "REFRESH-FIRST-4b1d70";
 const SECOND_REFRESH: &str = "REFRESH-SECOND-9e3a52";
@@ -43,24 +43,23 @@ async fn candidate(
 
 async fn add(
     session: Session,
-    store: ConfigStore,
-    planned_from: Config,
+    desk: AccountDesk,
     account: Account,
 ) -> Result<Config, AccountEditError> {
-    let plan = plan_account_edits(&planned_from, vec![ConfigEdit::AddAccount(account)])?;
-    plan.apply(
-        &Gateways::single(session),
-        &store,
+    let plan = plan_account_edits(
+        &desk,
+        vec![ConfigEdit::AddAccount(account)],
         &CancellationToken::new(),
     )
-    .await
+    .await?;
+    plan.apply(&Gateways::single(session)).await
 }
 
 #[tokio::test]
 async fn two_adds_of_one_name_leave_the_config_and_the_provider_on_the_winning_login() -> TestResult
 {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let (first_home, first) = candidate(FIRST_REFRESH, FIRST_ID).await?;
         let (_second_home, second) = candidate(SECOND_REFRESH, SECOND_ID).await?;
         let trigger = Trigger::Op(GatewayOp::Provider);
@@ -70,24 +69,13 @@ async fn two_adds_of_one_name_leave_the_config_and_the_provider_on_the_winning_l
         world.gateway.inject(Fault::HoldAt {
             trigger: trigger.clone(),
         });
-        let planned_from = world.config.load().await?;
 
-        let winner = tokio::spawn(add(
-            world.session.clone(),
-            world.config.clone(),
-            planned_from.clone(),
-            first,
-        ));
+        let winner = tokio::spawn(add(world.session.clone(), world.desk(), first));
         assert!(
             world.gateway.until_held(&trigger).await,
             "the first add never reached the gateway"
         );
-        let loser = tokio::spawn(add(
-            world.session.clone(),
-            world.config.clone(),
-            planned_from,
-            second,
-        ));
+        let loser = tokio::spawn(add(world.session.clone(), world.desk(), second));
         while world.clock.sleepers() == 0 && !loser.is_finished() {
             tokio::task::yield_now().await;
         }
@@ -130,12 +118,24 @@ async fn two_adds_of_one_name_leave_the_config_and_the_provider_on_the_winning_l
     .await
 }
 
-fn failing_store(world: &World) -> Result<(Arc<MemFs>, ConfigStore), Box<dyn std::error::Error>> {
+async fn failing_store(
+    world: &World,
+) -> Result<(Arc<MemFs>, ConfigStore), Box<dyn std::error::Error>> {
     let fs = Arc::new(MemFs::new());
     let port: Arc<dyn FileSystem> = Arc::<MemFs>::clone(&fs);
     let clock: Arc<dyn Clock> = Arc::<jackin_testkit::FakeClock>::clone(&world.clock);
     let path = HostPath::parse(Path::new("/config/jackin/config.toml"))?;
-    Ok((fs, ConfigStore::new(port, clock, path)))
+    let store = ConfigStore::new(port, clock, path);
+    let gateway = Config::parse(super::support::GATEWAY)?;
+    let edits = gateway
+        .gateways()
+        .map(|(name, entry)| ConfigEdit::AddGateway {
+            name: name.clone(),
+            entry: entry.clone(),
+        })
+        .collect();
+    store.edit(edits).await?;
+    Ok((fs, store))
 }
 
 fn io_failure(store_path: &str) -> Result<FsError, Box<dyn std::error::Error>> {
@@ -149,15 +149,14 @@ fn io_failure(store_path: &str) -> Result<FsError, Box<dyn std::error::Error>> {
 #[tokio::test]
 async fn a_failed_config_write_removes_the_provider_that_this_add_created() -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let (_home, account) = candidate(FIRST_REFRESH, FIRST_ID).await?;
-        let (fs, store) = failing_store(&world)?;
+        let (fs, store) = failing_store(&world).await?;
         fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
 
         let failed = add(
             world.session.clone(),
-            store.clone(),
-            store.load().await?,
+            world.desk_over(store.clone()),
             account,
         )
         .await;
@@ -179,33 +178,25 @@ async fn a_failed_config_write_removes_the_provider_that_this_add_created() -> T
 #[tokio::test]
 async fn a_failed_config_write_keeps_a_provider_that_existed_before_the_edit() -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
+        let world = registered().await?;
         let (_home, account) = candidate(FIRST_REFRESH, FIRST_ID).await?;
-        let (fs, store) = failing_store(&world)?;
-        let added = add(
-            world.session.clone(),
-            store.clone(),
-            store.load().await?,
-            account.clone(),
-        )
-        .await?;
+        let (fs, store) = failing_store(&world).await?;
+        let desk = world.desk_over(store.clone());
+        add(world.session.clone(), desk.clone(), account.clone()).await?;
         assert_eq!(world.gateway.providers(), [provider()?]);
 
         fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
-        let plan = plan_account_edits(
-            &added,
+        let failed = plan_account_edits(
+            &desk,
             vec![ConfigEdit::SetAccountCredential {
                 account: work()?,
                 credential: account.credential().clone(),
             }],
-        )?;
-        let failed = plan
-            .apply(
-                &Gateways::single(world.session.clone()),
-                &store,
-                &CancellationToken::new(),
-            )
-            .await;
+            &CancellationToken::new(),
+        )
+        .await?
+        .apply(&Gateways::single(world.session.clone()))
+        .await;
 
         assert!(
             matches!(failed, Err(AccountEditError::Config(ConfigError::Fs(_)))),

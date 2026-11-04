@@ -255,168 +255,30 @@ async fn bare() -> Result<(Rig, ConsoleRig), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-async fn unbuilt_workspace_save_fails_visibly() -> TestResult {
-    guard(async {
-        let (rig, mut console) = bare().await?;
-        let before = console.config_text().await?;
-        console.keys("down e enter x ctrl+s right enter")?;
-        console.settle().await?;
-        let screen = console.screen();
-        assert!(screen.contains(&words(Unbuilt::SaveWorkspace)), "{screen}");
-        assert_eq!(console.config_text().await?, before);
-        drop(rig);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn unbuilt_workspace_delete_fails_visibly() -> TestResult {
-    guard(async {
-        let (rig, mut console) = bare().await?;
-        let before = console.config_text().await?;
-        console.keys("down d right enter")?;
-        console.settle().await?;
-        let screen = console.screen();
-        assert!(
-            screen.contains(&words(Unbuilt::DeleteWorkspace)),
-            "{screen}"
-        );
-        assert_eq!(console.config_text().await?, before);
-        drop(rig);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn unbuilt_settings_save_fails_visibly() -> TestResult {
+async fn unbuilt_restore_fails_visibly() -> TestResult {
     guard(async {
         let (_rig, mut console) = bare().await?;
-        let base = console.console().app().world.global.clone();
-        let mut global = base.clone();
-        global.coauthor_trailer = true;
         failed_text(
             &mut console,
-            Effect::SaveGlobal {
-                base: Box::new(base),
-                global: Box::new(global),
+            Effect::Restore {
+                instance: "jk-0000".to_owned(),
             },
-            Unbuilt::SaveSettings,
-        );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn unbuilt_accounts_save_fails_visibly() -> TestResult {
-    guard(async {
-        let (_rig, mut console) = bare().await?;
-        let base = console.console().app().world.accounts.clone();
-        failed_text(
-            &mut console,
-            Effect::SaveAccounts {
-                base: Box::new(base.clone()),
-                registry: Box::new(base),
-            },
-            Unbuilt::SaveAccounts,
-        );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn unbuilt_stop_purge_and_restore_fail_visibly() -> TestResult {
-    guard(async {
-        let (_rig, mut console) = bare().await?;
-        let id = "jk-0000".to_owned();
-        failed_text(
-            &mut console,
-            Effect::Stop {
-                instance: id.clone(),
-            },
-            Unbuilt::StopSandbox,
-        );
-        let (rig2, mut console2) = bare().await?;
-        failed_text(
-            &mut console2,
-            Effect::Purge {
-                instance: id.clone(),
-            },
-            Unbuilt::PurgeSandbox,
-        );
-        let (_rig3, mut console3) = bare().await?;
-        failed_text(
-            &mut console3,
-            Effect::Restore { instance: id },
             Unbuilt::RestoreSandbox,
         );
-        drop(rig2);
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn unbuilt_usage_and_validation_fail_visibly() -> TestResult {
+async fn unbuilt_prewarm_fails_visibly() -> TestResult {
     guard(async {
         let (_rig, mut console) = bare().await?;
         failed_text(
             &mut console,
-            Effect::RefreshAccount {
-                account: "work".to_owned(),
-                stagger_ms: 0,
-            },
-            Unbuilt::RefreshUsage,
+            Effect::Prewarm { workspace: 1 },
+            Unbuilt::PrewarmImage,
         );
-        let (_rig2, mut console2) = bare().await?;
-        failed_text(
-            &mut console2,
-            Effect::ValidateAccount {
-                account: "work".to_owned(),
-            },
-            Unbuilt::ValidateAccount,
-        );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn unbuilt_role_effects_fail_visibly() -> TestResult {
-    guard(async {
-        for (effect, expected) in [
-            (
-                Effect::AddRole {
-                    location: "/tmp/role".to_owned(),
-                },
-                Unbuilt::AddRole,
-            ),
-            (
-                Effect::RemoveRole {
-                    role: "sentinel".to_owned(),
-                },
-                Unbuilt::RemoveRole,
-            ),
-            (
-                Effect::LoadRole {
-                    role: "sentinel".to_owned(),
-                },
-                Unbuilt::LoadRole,
-            ),
-            (
-                Effect::TrustRole {
-                    role: "sentinel".to_owned(),
-                },
-                Unbuilt::TrustRole,
-            ),
-            (Effect::Prewarm { workspace: 1 }, Unbuilt::PrewarmImage),
-        ] {
-            let (_rig, mut console) = bare().await?;
-            failed_text(&mut console, effect, expected);
-        }
         Ok(())
     })
     .await

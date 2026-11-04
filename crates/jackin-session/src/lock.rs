@@ -8,7 +8,7 @@ use jackin_core::{FileLock, FsError, HostPath, PathError};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::service::SessionDeps;
+use crate::service::HostPorts;
 
 const LOCK_POLL: Duration = Duration::from_millis(100);
 
@@ -23,20 +23,21 @@ pub enum LockError {
 }
 
 pub(crate) async fn hold(
-    deps: &SessionDeps,
+    host: &HostPorts,
+    cache_dir: &HostPath,
     file: &str,
     cancel: &CancellationToken,
 ) -> Result<FileLock, LockError> {
-    let path = HostPath::resolve(Path::new(file), &deps.cache_dir)?;
-    deps.host.fs.create_private_dir_all(&deps.cache_dir).await?;
+    let path = HostPath::resolve(Path::new(file), cache_dir)?;
+    host.fs.create_private_dir_all(cache_dir).await?;
     loop {
-        match deps.host.fs.lock(&path).await {
+        match host.fs.lock(&path).await {
             Ok(lock) => return Ok(lock),
             Err(FsError::LockHeld(_)) => {
                 tokio::select! {
                     biased;
                     () = cancel.cancelled() => return Err(LockError::Cancelled),
-                    () = deps.host.clock.sleep(LOCK_POLL) => {}
+                    () = host.clock.sleep(LOCK_POLL) => {}
                 }
             }
             Err(error) => return Err(error.into()),

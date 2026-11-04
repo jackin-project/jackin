@@ -31,7 +31,7 @@ pub enum CredentialError {
     Fs(#[from] FsError),
 }
 
-struct Document(Value);
+pub(crate) struct Document(pub(crate) Value);
 
 impl Drop for Document {
     fn drop(&mut self) {

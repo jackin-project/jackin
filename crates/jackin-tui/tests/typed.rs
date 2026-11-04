@@ -8,7 +8,9 @@ use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_console::domain::workspace::RoleSource;
 use jackin_console::world::{DaemonHealth, Snapshot};
 use jackin_core::Config;
-use jackin_tui::{Facts, Fleet, GatewayReading, IdTable, ProjectInput, RoleDocs, project};
+use jackin_tui::{
+    Facts, Fleet, GatewayReading, IdTable, Origins, ProjectInput, RoleChecks, RoleDocs, project,
+};
 
 const CONFIG_PATH: &str = "/home/dev/.config/jackin/config.toml";
 
@@ -32,6 +34,8 @@ fn projected(text: &str, fleet: &Fleet) -> Result<Snapshot, Box<dyn std::error::
                 now_secs: 0,
             },
             roles: &RoleDocs::new(),
+            checks: &RoleChecks::new(),
+            origins: &Origins::new(),
         },
         &mut IdTable::new(),
     ))

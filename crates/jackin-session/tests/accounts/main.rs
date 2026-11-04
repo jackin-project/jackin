@@ -4,6 +4,7 @@
 mod edit;
 mod failed_add;
 mod lock;
+mod locked_view;
 mod login;
 mod peers;
 mod race;

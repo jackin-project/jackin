@@ -14,7 +14,7 @@ use jackin_console::domain::workspace::{DirtyExitPolicy, Isolation, WizardDefaul
 use jackin_console::fixtures::{Scenario, world_for};
 use jackin_console::world::Snapshot;
 use jackin_core::Config;
-use jackin_tui::{Facts, Fleet, IdTable, ProjectInput, RoleDocs, project};
+use jackin_tui::{Facts, Fleet, IdTable, Origins, ProjectInput, RoleChecks, RoleDocs, project};
 
 const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
 
@@ -90,6 +90,8 @@ fn projected(text: &str) -> Result<(Config, Snapshot), Box<dyn std::error::Error
                 now_secs: 0,
             },
             roles: &RoleDocs::new(),
+            checks: &RoleChecks::new(),
+            origins: &Origins::new(),
         },
         &mut IdTable::new(),
     );

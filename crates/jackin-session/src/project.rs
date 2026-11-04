@@ -217,17 +217,22 @@ pub(crate) async fn hold(
     launch: &LaunchId,
     cancel: &CancellationToken,
 ) -> Result<FileLock, LaunchError> {
-    lock::hold(deps, &format!("upload-{launch}.lock"), cancel)
-        .await
-        .map_err(|error| match error {
-            LockError::Cancelled => GatewayError::Cancelled {
-                op: GatewayOp::UploadTree,
-                group: None,
-            }
-            .into(),
-            LockError::Fs(error) => LaunchError::Fs(error),
-            LockError::Path(error) => LaunchError::Path(error),
-        })
+    lock::hold(
+        &deps.host,
+        &deps.cache_dir,
+        &format!("upload-{launch}.lock"),
+        cancel,
+    )
+    .await
+    .map_err(|error| match error {
+        LockError::Cancelled => GatewayError::Cancelled {
+            op: GatewayOp::UploadTree,
+            group: None,
+        }
+        .into(),
+        LockError::Fs(error) => LaunchError::Fs(error),
+        LockError::Path(error) => LaunchError::Path(error),
+    })
 }
 
 pub(crate) async fn precheck(

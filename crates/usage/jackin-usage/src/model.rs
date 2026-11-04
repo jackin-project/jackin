@@ -91,7 +91,26 @@ pub enum UsageError {
     Internal(String),
 }
 
+impl WindowKind {
+    pub fn id(self) -> &'static str {
+        match self {
+            WindowKind::FiveHour => "five_hour",
+            WindowKind::Weekly => "weekly",
+            WindowKind::Monthly => "monthly",
+            WindowKind::Credits => "credits",
+            WindowKind::Spend => "spend",
+            WindowKind::Other => "other",
+        }
+    }
+}
+
 impl Percent {
+    pub fn rounded(self) -> u8 {
+        (0..=100u8)
+            .find(|whole| self.0 < f64::from(*whole) + 0.5)
+            .unwrap_or(100)
+    }
+
     pub fn new(value: f64) -> Result<Percent, UsageError> {
         if value.is_finite() && (0.0..=100.0).contains(&value) {
             Ok(Percent(value))

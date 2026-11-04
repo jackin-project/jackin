@@ -370,13 +370,16 @@ impl Harness {
         Ok(())
     }
 
-    pub(crate) async fn stored(&self) -> Result<Config, Failure> {
-        let store = ConfigStore::new(
+    pub(crate) fn store(&self) -> ConfigStore {
+        ConfigStore::new(
             Arc::clone(&self.host.fs),
             Arc::clone(&self.host.clock),
             self.config_path.clone(),
-        );
-        Ok(store.load().await?)
+        )
+    }
+
+    pub(crate) async fn stored(&self) -> Result<Config, Failure> {
+        Ok(self.store().load().await?)
     }
 
     pub(crate) fn config_bytes(&self) -> Result<Option<String>, Failure> {

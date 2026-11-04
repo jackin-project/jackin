@@ -25,7 +25,21 @@ impl IdTable {
         self.next
     }
 
+    pub fn name(&self, id: u32) -> Option<&WorkspaceName> {
+        self.assigned
+            .iter()
+            .find_map(|(name, assigned)| (*assigned == id).then_some(name))
+    }
+
     pub fn lookup(&self, name: &WorkspaceName) -> Option<u32> {
         self.assigned.get(name).copied()
+    }
+}
+
+impl IdTable {
+    pub fn rename(&mut self, from: &WorkspaceName, to: &WorkspaceName) {
+        if let Some(id) = self.assigned.remove(from) {
+            self.assigned.insert(to.clone(), id);
+        }
     }
 }

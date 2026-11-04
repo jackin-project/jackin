@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{ConfigEdit, EngineConfig, GatewayEntry, Platform};
-use jackin_session::{AccountEditError, UnreachableGateway, gateway_holds_providers};
+use jackin_session::{GatewayRemoval, plan_gateway_removal};
 
 use crate::app::App;
 use crate::cli::{GatewayAddArgs, GatewayCommand, GatewayRmArgs, JsonArg};
@@ -77,33 +77,13 @@ async fn rm(app: &mut App, arg: GatewayRmArgs) -> Result<(), CommandError> {
         ));
         return Ok(());
     }
-    let config = app.store.load().await?;
-    let entry = config
-        .gateway(&arg.name)
-        .filter(|_| gateway_holds_providers(&config));
-    let Some(entry) = entry else {
-        app.store
-            .edit(vec![ConfigEdit::RemoveGateway(arg.name)])
-            .await?;
-        return Ok(());
-    };
-    let gateway = match app
-        .deps
-        .connect
-        .connect(&arg.name, entry, &app.cancel)
-        .await
-    {
-        Ok(gateway) => gateway,
-        Err(error) if error.is_cancelled() => return Err(error.into()),
-        Err(error) => {
-            return Err(AccountEditError::Unreachable(vec![UnreachableGateway::new(
-                arg.name, error,
-            )])
-            .into());
+    match plan_gateway_removal(&app.desk(), &arg.name, &app.cancel).await? {
+        GatewayRemoval::Offline(plan) => {
+            plan.apply().await?;
         }
-    };
-    app.session_of(gateway)
-        .remove_gateway(&app.store, &app.cancel)
-        .await?;
+        GatewayRemoval::Online(plan) => {
+            plan.apply(app.deps.connect.as_ref(), &app.cancel).await?;
+        }
+    }
     Ok(())
 }

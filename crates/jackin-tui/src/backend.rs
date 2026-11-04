@@ -5,7 +5,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use jackin_console::backend::{Backend, Completion, Effect};
+use jackin_console::backend::{Backend, Completion, Effect, FileSource};
 use jackin_console::domain::instance::Instance;
 use jackin_console::domain::launch::LaunchContent;
 use jackin_console::domain::vocabulary::Vocabulary;
@@ -14,6 +14,7 @@ use jackin_console::panes::{PaneBody, PaneRequest, PaneSpawn};
 use jackin_console::world::{Msg, World};
 
 use crate::bridge::Bridge;
+use crate::files::HostFiles;
 use crate::launch;
 use crate::observe::Inputs;
 use crate::unbuilt::{self, UnbuiltPane};
@@ -48,6 +49,95 @@ impl JackinBackend {
             .spawn(async move { Msg::DoctorFinished(inputs.run_doctor(true).await) });
     }
 
+    fn settle(&self, effect: Effect) {
+        let inputs = Arc::clone(&self.inputs);
+        match effect {
+            Effect::SaveWorkspace {
+                base, workspace, ..
+            } => self
+                .bridge
+                .spawn(async move { inputs.save_workspace(base.as_deref(), &workspace).await }),
+            Effect::SaveGlobal { base, global } => self
+                .bridge
+                .spawn(async move { inputs.save_global(&base, &global).await }),
+            Effect::SaveAccounts { base, registry } => self
+                .bridge
+                .spawn(async move { inputs.save_accounts(&base, &registry).await }),
+            Effect::DeleteWorkspace { id } => self
+                .bridge
+                .spawn(async move { inputs.delete_workspace(id).await }),
+            Effect::Stop { instance } => self
+                .bridge
+                .spawn(async move { inputs.stop(&instance).await }),
+            Effect::Purge { instance } => self
+                .bridge
+                .spawn(async move { inputs.purge(&instance).await }),
+            Effect::TrustRole { role } => self
+                .bridge
+                .spawn(async move { inputs.trust_role(&role).await }),
+            Effect::LoadRole { role } => self
+                .bridge
+                .spawn(async move { inputs.load_role(&role).await }),
+            Effect::CheckRole { role, doc } => self
+                .bridge
+                .spawn(async move { inputs.check_role(&role, &doc).await }),
+            Effect::SaveRole { role, base, doc } => self
+                .bridge
+                .spawn(async move { inputs.save_role(&role, &base, &doc).await }),
+            Effect::BindRole {
+                role,
+                agent,
+                account,
+                ..
+            } => self
+                .bridge
+                .spawn(async move { inputs.bind_role(&role, agent, account.as_ref()).await }),
+            Effect::AddRole { location } => self
+                .bridge
+                .spawn(async move { inputs.add_role(&location).await }),
+            Effect::RemoveRole { role } => self
+                .bridge
+                .spawn(async move { inputs.remove_role(&role).await }),
+            Effect::RefreshAccount { account, .. } => self
+                .bridge
+                .spawn(async move { inputs.refresh_account(&account).await }),
+            Effect::ValidateAccount { account } => self
+                .bridge
+                .spawn(async move { inputs.validate_account(&account).await }),
+            Effect::CheckSource {
+                ticket,
+                provider,
+                source,
+                key,
+            } => self.bridge.spawn(async move {
+                inputs
+                    .check_source(ticket, provider, &source, key.as_ref())
+                    .await
+            }),
+            Effect::ProbeFolder { ticket, path } => self
+                .bridge
+                .spawn(async move { inputs.probe_folder(ticket, &path).await }),
+            Effect::ReadChanges {
+                ticket,
+                instance,
+                unpushed,
+                ..
+            } => self
+                .bridge
+                .spawn(async move { inputs.read_changes(ticket, &instance, unpushed).await }),
+            Effect::LoadOp { ticket, scope } => self.bridge.spawn(async move {
+                Msg::OpLoaded {
+                    ticket,
+                    result: inputs.list_op(&scope).await,
+                }
+            }),
+            Effect::Refresh
+            | Effect::RunDoctor
+            | Effect::Restore { .. }
+            | Effect::Prewarm { .. } => {}
+        }
+    }
+
     pub(crate) fn refresh(&self) {
         if self.refreshing.swap(true, Ordering::SeqCst) {
             return;
@@ -80,8 +170,20 @@ impl Backend for JackinBackend {
                 self.rerun_doctor();
                 None
             }
-            _ => unbuilt::fails(effect, &self.words),
+            Effect::Restore { .. } | Effect::Prewarm { .. } => unbuilt::fails(effect, &self.words),
+            _ => {
+                self.settle(effect.clone());
+                None
+            }
         }
+    }
+
+    fn file_source(&self, _world: &World) -> Box<dyn FileSource> {
+        Box::new(HostFiles::new(
+            Arc::clone(&self.inputs.host.fs),
+            self.bridge.handle().clone(),
+            self.inputs.home.clone(),
+        ))
     }
 
     fn launch_content(&self) -> Arc<LaunchContent> {

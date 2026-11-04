@@ -192,7 +192,9 @@ async fn malformed_invocations_exit_usage_with_a_stderr_message_and_change_nothi
 -> TestResult {
     guard(async {
         let world = World::builder().build()?;
-        let harness = Harness::new(&world);
+        let mut harness = Harness::new(&world);
+        harness.env.push(("K".to_owned(), "fake-value".to_owned()));
+        std::fs::write(world.home().as_path().join("key.txt"), "fake-key")?;
         for (bad, good) in CASES {
             let before = harness.config_bytes()?;
             let ran = harness.run(bad).await?;
@@ -213,19 +215,25 @@ async fn malformed_invocations_exit_usage_with_a_stderr_message_and_change_nothi
 
 const FAKE: &str = "sk-FAKE-VALUE-123";
 
-async fn never_echoed(cases: &[(&[&str], &str)]) -> TestResult {
+async fn never_echoed(cases: &[(&[&str], &str)], canary: &str) -> TestResult {
     let world = World::builder().build()?;
     let harness = Harness::new(&world);
+    let mut wrong = Vec::new();
     for (args, expected) in cases {
         let before = harness.config_bytes()?;
         let ran = harness.run(args).await?;
-        assert_eq!(ran.exit, ExitClass::Usage, "{args:?}");
-        assert!(ran.stdout.is_empty(), "{args:?}");
-        assert!(ran.stderr.contains(expected), "{args:?}: {}", ran.stderr);
-        assert!(!ran.stderr.contains("sk-"), "{args:?}: {}", ran.stderr);
-        assert_eq!(harness.config_bytes()?, before, "{args:?}");
-        assert!(world.gateway.providers().is_empty(), "{args:?}");
+        let echoed = ran.stderr.to_lowercase().contains(&canary.to_lowercase());
+        if ran.exit != ExitClass::Usage
+            || !ran.stdout.is_empty()
+            || !ran.stderr.contains(expected)
+            || echoed
+            || harness.config_bytes()? != before
+            || !world.gateway.providers().is_empty()
+        {
+            wrong.push(format!("{args:?} -> {:?}: {}", ran.exit, ran.stderr));
+        }
     }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     Ok(())
 }
 
@@ -246,7 +254,11 @@ async fn a_rejected_credential_is_never_echoed_and_the_error_names_the_expected_
                 "--credential",
                 form,
             ];
-            never_echoed(&[(&args, "env:NAME, an op:// reference, or file:PATH")]).await?;
+            never_echoed(
+                &[(&args, "env:NAME, an op:// reference, or file:PATH")],
+                "sk-",
+            )
+            .await?;
         }
         Ok(())
     })
@@ -261,9 +273,103 @@ async fn a_rejected_env_assignment_is_never_echoed_and_the_error_names_the_expec
         let bad_value = format!("1BAD={FAKE}");
         let forms = [FAKE, &bad_name, &bad_value];
         for form in forms {
-            never_echoed(&[(&["load", "--env", form], "NAME=VALUE")]).await?;
+            never_echoed(&[(&["load", "--env", form], "NAME=VALUE")], "sk-").await?;
         }
         Ok(())
     })
     .await
+}
+
+const ECHO_CASES: &[(&[&str], &str)] = &[
+    (
+        &[
+            "account",
+            "add",
+            "sk-FAKE-1",
+            "--name",
+            "x",
+            "--credential",
+            "env:A",
+        ],
+        "codex, cursor",
+    ),
+    (
+        &[
+            "account",
+            "add",
+            "codex",
+            "--name",
+            "x",
+            "--credential",
+            "--sk-FAKE-2",
+        ],
+        "Usage: jackin account add",
+    ),
+    (
+        &[
+            "account",
+            "add",
+            "codex",
+            "--name",
+            "x",
+            "--credential",
+            "env:A",
+            "sk-FAKE-3",
+        ],
+        "Usage: jackin account add",
+    ),
+    (
+        &[
+            "account",
+            "add",
+            "codex",
+            "--name",
+            "sk-FAKE-4",
+            "--credential",
+            "env:A",
+        ],
+        "for '--name <NAME>'",
+    ),
+    (
+        &["--gateway", "sk-FAKE-5 x", "doctor"],
+        "for '--gateway <GATEWAY>'",
+    ),
+    (&["sk-FAKE-6"], "unrecognized subcommand"),
+    (
+        &["gateway", "add", "gw", "--platform", "sk-FAKE-7"],
+        "expected one of: linux/arm64, linux/amd64",
+    ),
+    (&["--sk-FAKE-8", "doctor"], "Usage: jackin"),
+    (&["-sk-FAKE-9", "doctor"], "Usage: jackin"),
+    (&["usage", "sk-FAKE-10"], "Usage: jackin usage"),
+    (
+        &["load", "--launch-id", "sk-FAKE-11 x"],
+        "for '--launch-id <LAUNCH_ID>'",
+    ),
+    (
+        &["account", "add", "codex", "--name=sk-FAKE-12"],
+        "for '--name <NAME>'",
+    ),
+    (
+        &[
+            "account",
+            "bind",
+            "sk-fake-13",
+            "--role",
+            "r",
+            "--workspace",
+            "w",
+        ],
+        "conflicting arguments",
+    ),
+    (
+        &["workspace", "add", "sk-FAKE-14"],
+        "missing required arguments",
+    ),
+];
+
+#[tokio::test]
+async fn no_parse_error_prints_a_value_the_user_typed_and_each_names_the_expected_form()
+-> TestResult {
+    guard(never_echoed(ECHO_CASES, "sk-FAKE")).await
 }
