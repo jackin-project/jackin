@@ -3,6 +3,7 @@
 
 use std::future::Future;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use jackin_console::app::Remote;
 use jackin_console::world::{Msg, Snapshot};
@@ -83,7 +84,23 @@ impl From<Msg> for Settled {
 pub(crate) struct Bridge {
     sender: ExternalSender,
     inflight: InFlight,
+    detached: Arc<AtomicUsize>,
     handle: Handle,
+}
+
+struct Detached(Arc<AtomicUsize>);
+
+impl Detached {
+    fn start(count: &Arc<AtomicUsize>) -> Detached {
+        count.fetch_add(1, Ordering::SeqCst);
+        Detached(Arc::clone(count))
+    }
+}
+
+impl Drop for Detached {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Bridge {
@@ -91,8 +108,13 @@ impl Bridge {
         Bridge {
             sender,
             inflight,
+            detached: Arc::new(AtomicUsize::new(0)),
             handle,
         }
+    }
+
+    pub(crate) fn has_detached_work(&self) -> bool {
+        self.detached.load(Ordering::SeqCst) > 0
     }
 
     pub(crate) fn detach(
@@ -100,7 +122,11 @@ impl Bridge {
         work: impl Future<Output = ()> + Send + 'static,
         failed: impl FnOnce() + Send + 'static,
     ) {
-        let task = self.handle.spawn(work);
+        let held = Detached::start(&self.detached);
+        let task = self.handle.spawn(async move {
+            let _held = held;
+            work.await;
+        });
         self.handle.spawn(async move {
             if task.await.is_err() {
                 failed();

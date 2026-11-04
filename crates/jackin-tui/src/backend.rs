@@ -3,7 +3,7 @@
 
 use std::fmt;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 use jackin_console::backend::{Backend, Completion, Effect, FileSource};
 use jackin_console::domain::instance::{Instance, InstanceStatus};
@@ -24,6 +24,9 @@ use crate::observe::Inputs;
 use crate::panes::PaneHub;
 use crate::unbuilt;
 
+const REFRESH_EVERY_SECS: i64 = 5;
+const NEVER: i64 = i64::MIN;
+
 #[derive(Clone)]
 pub(crate) struct JackinBackend {
     pub(crate) inputs: Arc<Inputs>,
@@ -31,6 +34,7 @@ pub(crate) struct JackinBackend {
     words: Vocabulary,
     panes: PaneHub,
     refreshing: Arc<AtomicBool>,
+    refreshed_at: Arc<AtomicI64>,
 }
 
 impl fmt::Debug for JackinBackend {
@@ -52,6 +56,7 @@ impl JackinBackend {
             words,
             panes,
             refreshing: Arc::new(AtomicBool::new(false)),
+            refreshed_at: Arc::new(AtomicI64::new(NEVER)),
         }
     }
 
@@ -196,9 +201,10 @@ impl Drop for Refreshing {
 }
 
 impl Backend for JackinBackend {
-    fn perform(&self, effect: &Effect, _world: &World) -> Option<Completion> {
+    fn perform(&self, effect: &Effect, world: &World) -> Option<Completion> {
         match effect {
             Effect::Refresh => {
+                self.refreshed_at.store(world.now_secs(), Ordering::SeqCst);
                 self.refresh();
                 None
             }
@@ -212,6 +218,19 @@ impl Backend for JackinBackend {
                 None
             }
         }
+    }
+
+    fn due(&self, world: &World) -> Vec<Msg> {
+        let now = world.now_secs();
+        let last = self.refreshed_at.load(Ordering::SeqCst);
+        if last == NEVER {
+            self.refreshed_at.store(now, Ordering::SeqCst);
+        } else if now.saturating_sub(last) >= REFRESH_EVERY_SECS && !self.bridge.has_detached_work()
+        {
+            self.refreshed_at.store(now, Ordering::SeqCst);
+            self.refresh();
+        }
+        Vec::new()
     }
 
     fn file_source(&self, _world: &World) -> Box<dyn FileSource> {
