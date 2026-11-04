@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fmt::{self, Write};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use jackin_console::domain::doctor::{DoctorCheck, DoctorReport, DoctorState};
 use jackin_core::GatewayName;
@@ -58,66 +58,22 @@ pub(crate) fn report(
 }
 
 #[derive(Debug, Default)]
-struct Cell {
-    report: Option<DoctorReport>,
-    running: bool,
-}
-
-fn locked(cell: &Mutex<Cell>) -> MutexGuard<'_, Cell> {
-    cell.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-#[derive(Debug, Default)]
 pub(crate) struct DoctorCell {
-    cell: Arc<Mutex<Cell>>,
+    last: Mutex<Option<DoctorReport>>,
 }
 
 impl DoctorCell {
+    fn last(&self) -> MutexGuard<'_, Option<DoctorReport>> {
+        self.last.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     pub(crate) fn state(&self) -> DoctorState {
-        let cell = locked(&self.cell);
-        match (&cell.report, cell.running) {
-            (previous, true) => DoctorState::Running {
-                previous: previous.clone(),
-            },
-            (Some(report), false) => DoctorState::Done(report.clone()),
-            (None, false) => DoctorState::NeverRun,
-        }
+        self.last()
+            .clone()
+            .map_or(DoctorState::NeverRun, DoctorState::Done)
     }
 
-    pub(crate) fn begin(&self) -> Option<Run> {
-        let mut cell = locked(&self.cell);
-        if cell.running {
-            return None;
-        }
-        cell.running = true;
-        Some(Run {
-            cell: Arc::clone(&self.cell),
-        })
-    }
-
-    pub(crate) fn due(&self, now_secs: i64) -> bool {
-        let cell = locked(&self.cell);
-        !cell.running
-            && cell
-                .report
-                .as_ref()
-                .is_none_or(|report| report.stale(now_secs))
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct Run {
-    cell: Arc<Mutex<Cell>>,
-}
-
-impl Run {
-    pub(crate) fn finish(self, report: DoctorReport) {
-        locked(&self.cell).report = Some(report);
-    }
-}
-
-impl Drop for Run {
-    fn drop(&mut self) {
-        locked(&self.cell).running = false;
+    pub(crate) fn record(&self, report: DoctorReport) {
+        *self.last() = Some(report);
     }
 }

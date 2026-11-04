@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use jackin_console::app::{App, AppOptions, ClipboardMode, Entry, EntryPage, assemble};
 use jackin_console::arbiter::Arbiter;
-use jackin_console::world::{DaemonHealth, Snapshot, WallSource, World, WorldParts};
+use jackin_console::world::{Snapshot, WallSource, World, WorldParts};
 use jackin_core::{
     Compatibility, CompatibilityError, ConfigError, ConfigStore, EnvName, EnvSnapshot, HostPath,
 };
@@ -159,9 +159,9 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     let backend = Arc::new(JackinBackend::new(
         Arc::clone(&inputs),
         Bridge::new(sender, inflight.clone(), handle),
+        first.snapshot.surfaces.vocabulary.clone(),
     ));
-    let status = first.status();
-    let healthy = first.healthy;
+    let status = first.status(&first.snapshot.surfaces.vocabulary);
     let Snapshot {
         workspaces,
         roles,
@@ -171,6 +171,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         surfaces,
         github,
         index_error,
+        daemon_health,
     } = first.snapshot;
     let mut parts = WorldParts::new(
         SimClock::new(0, 0),
@@ -192,9 +193,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         parts.arbiter.discovery = Err(error);
     }
     let mut world = World::new(parts);
-    if !healthy {
-        world.daemon_health = DaemonHealth::Stale;
-    }
+    world.daemon_health = daemon_health;
     let mut app = assemble(
         world,
         Entry {

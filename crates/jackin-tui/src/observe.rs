@@ -6,10 +6,13 @@ use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::future::join_all;
-use jackin_console::domain::doctor::{DoctorReport, DoctorSurface};
+use jackin_console::domain::doctor::{
+    DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
+};
+use jackin_console::domain::vocabulary::{Notice, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
-    AccountName, Compatibility, Config, ConfigError, ConfigStore, GatewayName, HostPath, RoleName,
+    Compatibility, Config, ConfigError, ConfigStore, HostPath, RoleName,
     RoleSource as CoreRoleSource,
 };
 use jackin_session::{DoctorInput, HostPorts, RoleCatalog, doctor};
@@ -19,58 +22,18 @@ use crate::console::ConsoleLimits;
 use crate::doctor::{self, DoctorCell};
 use crate::fleet::{WorkCache, read_fleet};
 use crate::ids::IdTable;
-use crate::project::{
-    Facts, ProjectInput, RoleDocError, RoleDocs, manifest_doc, project, unmapped_accounts,
-};
+use crate::project::{Facts, ProjectInput, RoleDocError, RoleDocs, manifest_doc, project};
 use crate::sessions::{Access, SessionConnector, SessionSet};
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Note {
-    GatewayUnreachable { gateway: GatewayName, error: String },
-    UnreadableLabels(usize),
-    AccountNotShown(AccountName),
-}
-
-impl fmt::Display for Note {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Note::GatewayUnreachable { gateway, error } => {
-                write!(f, "Could not list sandboxes on {gateway}: {error}")
-            }
-            Note::UnreadableLabels(count) => {
-                write!(f, "{count} sandboxes have labels jackin cannot read")
-            }
-            Note::AccountNotShown(name) => {
-                write!(f, "Account {name} has a provider the console cannot show")
-            }
-        }
-    }
-}
-
-struct Notes<'a>(&'a [Note]);
-
-impl fmt::Display for Notes<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (index, note) in self.0.iter().enumerate() {
-            if index > 0 {
-                f.write_str(" · ")?;
-            }
-            write!(f, "{note}")?;
-        }
-        Ok(())
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct Observation {
     pub(crate) snapshot: Snapshot,
-    pub(crate) notes: Vec<Note>,
-    pub(crate) healthy: bool,
+    pub(crate) notices: Vec<Notice>,
 }
 
 impl Observation {
-    pub(crate) fn status(&self) -> Option<String> {
-        (!self.notes.is_empty()).then(|| Notes(&self.notes).to_string())
+    pub(crate) fn status(&self, words: &Vocabulary) -> Option<String> {
+        (!self.notices.is_empty()).then(|| words.notices(&self.notices))
     }
 }
 
@@ -189,61 +152,55 @@ impl Inputs {
         snapshot.surfaces.doctor = Some(DoctorSurface {
             noun: snapshot.surfaces.vocabulary.health_noun.clone(),
             state: self.doctor.state(),
+            rerun_secs: Some(STALE_AFTER_SECS),
         });
-        let mut notes: Vec<Note> = fleet
+        let mut notices: Vec<Notice> = fleet
             .failed()
-            .map(|g| Note::GatewayUnreachable {
-                gateway: g.name.clone(),
-                error: g.failure.clone().unwrap_or_default(),
+            .map(|g| Notice::GatewayUnreachable {
+                gateway: g.name.to_string(),
+                reason: g.failure.clone().unwrap_or_default(),
             })
             .collect();
         if fleet.unreadable > 0 {
-            notes.push(Note::UnreadableLabels(fleet.unreadable));
+            notices.push(Notice::UnreadableLabels {
+                count: fleet.unreadable,
+            });
         }
-        notes.extend(
-            unmapped_accounts(&config)
-                .into_iter()
-                .map(Note::AccountNotShown),
-        );
-        Ok(Observation {
-            snapshot,
-            healthy: fleet.failed().next().is_none(),
-            notes,
-        })
+        Ok(Observation { snapshot, notices })
     }
 
-    pub(crate) async fn run_doctor(&self, reconnect: bool) -> DoctorReport {
-        if reconnect && let Ok(config) = self.config.load().await {
-            self.sessions
-                .reconnect(self.connect.as_ref(), &config, &self.cancel)
-                .await;
-        }
-        let name = self.sessions.default_name();
-        let access = self.sessions.access(name);
-        let input = DoctorInput {
-            runner: self.host.runner.as_ref(),
-            fs: self.host.fs.as_ref(),
-            gateway: access.borrowed(),
-            engine_socket: self.engine_socket.clone(),
-            pinned: &self.pinned,
+    pub(crate) async fn run_doctor(&self, reconnect: bool) -> Result<DoctorReport, DoctorFailure> {
+        let run = async {
+            if reconnect && let Ok(config) = self.config.load().await {
+                self.sessions
+                    .reconnect(self.connect.as_ref(), &config, &self.cancel)
+                    .await;
+            }
+            let name = self.sessions.default_name();
+            let access = self.sessions.access(name);
+            let input = DoctorInput {
+                runner: self.host.runner.as_ref(),
+                fs: self.host.fs.as_ref(),
+                gateway: access.borrowed(),
+                engine_socket: self.engine_socket.clone(),
+                pinned: &self.pinned,
+            };
+            let checked = doctor(&input, &self.cancel).await;
+            doctor::report(
+                &checked,
+                (!matches!(access, Access::NotChosen)).then_some(name),
+                self.wall.epoch_millis().div_euclid(1000),
+            )
         };
-        let checked = doctor(&input, &self.cancel).await;
-        doctor::report(
-            &checked,
-            (!matches!(access, Access::NotChosen)).then_some(name),
-            self.wall.epoch_millis().div_euclid(1000),
-        )
+        let report = tokio::time::timeout(self.limits.connect_deadline, run)
+            .await
+            .map_err(|_| DoctorFailure::TimedOut)?;
+        self.doctor.record(report.clone());
+        Ok(report)
     }
 
     pub(crate) async fn doctor_at_start(&self) {
-        let Some(run) = self.doctor.begin() else {
-            return;
-        };
-        if let Ok(report) =
-            tokio::time::timeout(self.limits.connect_deadline, self.run_doctor(false)).await
-        {
-            run.finish(report);
-        }
+        drop(self.run_doctor(false).await);
     }
 
     async fn role_docs(&self, config: &Config) -> RoleDocs {

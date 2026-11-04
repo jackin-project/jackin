@@ -13,6 +13,7 @@ use jackin_core::{
     Timestamp,
 };
 use jackin_session::{Session, WorkState};
+use thiserror::Error;
 use tokio::sync::Semaphore;
 
 use crate::console::ConsoleLimits;
@@ -87,13 +88,18 @@ impl WorkCache {
     }
 }
 
-struct TimedOut(Duration);
+#[derive(Debug)]
+struct Waited(Duration);
 
-impl fmt::Display for TimedOut {
+impl fmt::Display for Waited {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "no answer within {:?}", self.0)
+        fmt::Debug::fmt(&self.0, f)
     }
 }
+
+#[derive(Debug, Error)]
+#[error("no answer within {0}")]
+struct TimedOut(Waited);
 
 async fn within<T>(deadline: Duration, work: impl Future<Output = T>) -> Option<T> {
     tokio::time::timeout(deadline, work).await.ok()
@@ -177,7 +183,7 @@ async fn read_gateway(
     let listing = match within(deadline, session.list()).await {
         Some(Ok(listing)) => listing,
         Some(Err(error)) => return unreadable(name, error.to_string()),
-        None => return unreadable(name, TimedOut(deadline).to_string()),
+        None => return unreadable(name, TimedOut(Waited(deadline)).to_string()),
     };
     let unreadable = listing.unreadable.len();
     let inspected = join_all(
