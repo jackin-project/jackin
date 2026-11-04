@@ -95,8 +95,17 @@ impl Bridge {
         }
     }
 
-    pub(crate) fn detach(&self, work: impl Future<Output = ()> + Send + 'static) {
-        self.handle.spawn(work);
+    pub(crate) fn detach(
+        &self,
+        work: impl Future<Output = ()> + Send + 'static,
+        failed: impl FnOnce() + Send + 'static,
+    ) {
+        let task = self.handle.spawn(work);
+        self.handle.spawn(async move {
+            if task.await.is_err() {
+                failed();
+            }
+        });
     }
 
     pub(crate) fn send(&self, msg: Msg) {
@@ -107,16 +116,97 @@ impl Bridge {
         &self.handle
     }
 
-    pub(crate) fn spawn<T: Into<Settled>>(&self, work: impl Future<Output = T> + Send + 'static) {
+    pub(crate) fn spawn<T: Into<Settled> + Send + 'static>(
+        &self,
+        failure: Msg,
+        work: impl Future<Output = T> + Send + 'static,
+    ) {
         let ticket = self.inflight.start();
         let sender = self.sender.clone();
+        let task = self.handle.spawn(work);
         self.handle.spawn(async move {
-            let settled = work.await.into();
+            let settled: Settled = match task.await {
+                Ok(done) => done.into(),
+                Err(_) => failure.into(),
+            };
             sender.send(Remote::Msg(settled.reply));
             if let Some(saved) = settled.reload {
                 sender.send(Remote::Reloaded(saved));
             }
             drop(ticket);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use junie_tui::runtime::{ExternalReceiver, external_channel};
+
+    use super::*;
+    use crate::crashed;
+
+    const WAIT: Duration = Duration::from_secs(5);
+
+    fn crash() -> Msg {
+        panic!("the work crashed")
+    }
+
+    async fn reply(receiver: &ExternalReceiver) -> Option<Remote> {
+        tokio::time::timeout(WAIT, async {
+            loop {
+                if let Some(found) = receiver
+                    .drain()
+                    .iter()
+                    .find_map(|external| external.downcast_ref::<Remote>().cloned())
+                {
+                    return found;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .ok()
+    }
+
+    #[tokio::test]
+    async fn a_panic_in_spawned_work_sends_a_reply_and_frees_the_count() {
+        let (sender, receiver) = external_channel();
+        let inflight = InFlight::new();
+        let bridge = Bridge::new(sender, inflight.clone(), Handle::current());
+        bridge.spawn(crashed::refresh(), async { crash() });
+        let got = reply(&receiver).await;
+        assert!(
+            matches!(&got, Some(Remote::Msg(Msg::Refreshed { result: Err(_) }))),
+            "{got:?}"
+        );
+        let mut count = inflight.subscribe();
+        let freed = tokio::time::timeout(WAIT, count.wait_for(|n| *n == 0)).await;
+        assert!(freed.is_ok(), "the in-flight count stayed above zero");
+    }
+
+    #[tokio::test]
+    async fn a_panic_in_detached_work_runs_the_failure_and_a_clean_finish_does_not() {
+        let (sender, _receiver) = external_channel();
+        let bridge = Bridge::new(sender, InFlight::new(), Handle::current());
+        let (told, heard) = tokio::sync::oneshot::channel();
+        bridge.detach(
+            async {
+                crash();
+            },
+            move || assert!(told.send(()).is_ok()),
+        );
+        assert!(
+            tokio::time::timeout(WAIT, heard)
+                .await
+                .is_ok_and(|sent| sent.is_ok())
+        );
+        let (told, mut heard) = tokio::sync::oneshot::channel();
+        bridge.detach(async {}, move || assert!(told.send(()).is_ok()));
+        for _ in 0..100 {
+            tokio::task::yield_now().await;
+        }
+        assert!(heard.try_recv().is_err());
     }
 }

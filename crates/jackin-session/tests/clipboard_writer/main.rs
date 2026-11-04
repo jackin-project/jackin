@@ -4,6 +4,7 @@
 use std::error::Error;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+use std::time::Duration;
 
 use jackin_core::EnvSnapshot;
 use jackin_session::{ClipboardTool, ClipboardWriter, HostOs};
@@ -32,7 +33,9 @@ fn recording(dir: &Path, name: &str) -> TestResult {
 }
 
 fn writer(dir: &TempDir, tools: Vec<ClipboardTool>) -> ClipboardWriter {
-    ClipboardWriter::using(tools).searching(dir.path().as_os_str().to_owned())
+    ClipboardWriter::using(tools)
+        .searching(dir.path().as_os_str().to_owned())
+        .within(Duration::from_secs(60))
 }
 
 #[test]
@@ -72,6 +75,15 @@ fn a_tool_that_fails_or_is_absent_is_not_a_write() -> TestResult {
     assert!(!writer(&dir, vec![ClipboardTool::Pbcopy]).write("Hello"));
     assert!(!writer(&dir, vec![ClipboardTool::Xsel]).write("Hello"));
     assert!(!writer(&dir, Vec::new()).write("Hello"));
+    Ok(())
+}
+
+#[test]
+fn a_tool_that_hangs_past_the_deadline_is_not_a_write() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    tool(dir.path(), "pbcopy", "/bin/cat > /dev/null\n/bin/sleep 3")?;
+    let hung = writer(&dir, vec![ClipboardTool::Pbcopy]).within(Duration::from_millis(300));
+    assert!(!hung.write("Hello"));
     Ok(())
 }
 

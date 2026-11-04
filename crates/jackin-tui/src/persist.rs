@@ -245,7 +245,7 @@ fn fixed(base: &Workspace, payload: &Workspace) -> Result<(), PersistError> {
 }
 
 fn role_edits(
-    config: &Config,
+    saved_default: bool,
     target: &WorkspaceName,
     base: &Workspace,
     payload: &Workspace,
@@ -268,10 +268,7 @@ fn role_edits(
         .transpose()?;
     let mut edits = Vec::new();
     if roles_changed && default_changed {
-        if config
-            .workspace(target)
-            .is_some_and(|saved| saved.default_role.is_some())
-        {
+        if saved_default {
             edits.push(default(None));
         }
         edits.push(ConfigEdit::SetWorkspaceRoles {
@@ -301,15 +298,11 @@ fn updated(
     let old = WorkspaceName::parse(&base.name)?;
     let target = WorkspaceName::parse(&payload.name)?;
     let mut edits = Vec::new();
-    let renamed = old != target;
-    if renamed {
-        edits.push(ConfigEdit::RemoveWorkspace(old.clone()));
-        if let Some(saved) = config.workspace(&old) {
-            edits.push(ConfigEdit::AddWorkspace {
-                name: target.clone(),
-                workspace: saved.clone(),
-            });
-        }
+    if old != target {
+        edits.push(ConfigEdit::RenameWorkspace {
+            from: old.clone(),
+            to: target.clone(),
+        });
     }
     if payload.docker != base.docker {
         edits.push(ConfigEdit::SetWorkspaceDocker {
@@ -317,7 +310,10 @@ fn updated(
             docker: payload.docker,
         });
     }
-    edits.extend(role_edits(config, &target, base, payload)?);
+    let saved_default = config
+        .workspace(&old)
+        .is_some_and(|saved| saved.default_role.is_some());
+    edits.extend(role_edits(saved_default, &target, base, payload)?);
     edits.extend(env_edits(
         &EnvScope::Workspace(target.clone()),
         &base.env,

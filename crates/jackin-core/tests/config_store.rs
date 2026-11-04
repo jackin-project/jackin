@@ -12,7 +12,7 @@ use jackin_core::{
     Account, AccountName, Clock, Config, ConfigEdit, ConfigError, ConfigStore, CredentialSource,
     DirEntry, EnvName, FileKind, FileLock, FileMode, FileSystem, FsError, GatewayEntry,
     GatewayName, HostPath, LinkProblem, Platform, Provider, RegularFile, RegularFileProblem,
-    RepoPath, RoleName, RoleSource, StdFileSystem, Timestamp,
+    RepoPath, RoleName, RoleSource, StdFileSystem, Timestamp, Workspace, WorkspaceName,
 };
 use tokio::sync::{Semaphore, oneshot};
 
@@ -787,5 +787,39 @@ async fn an_edit_sweeps_the_crash_leftovers_of_its_file_and_keeps_every_other_fi
         .collect::<Result<_, std::io::Error>>()?;
     found.sort();
     assert_eq!(found, expected);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_rename_keeps_what_another_handle_wrote_after_the_caller_read() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let store = plain(&path);
+    let other = plain(&path);
+    let from = WorkspaceName::parse("proj")?;
+    let to = WorkspaceName::parse("app")?;
+    store
+        .edit(vec![ConfigEdit::AddWorkspace {
+            name: from.clone(),
+            workspace: Workspace::new(hp(Path::new("/p/proj"))?, false),
+        }])
+        .await?;
+    let stale = store.load().await?;
+    other
+        .edit(vec![ConfigEdit::SetWorkspaceDocker {
+            workspace: from.clone(),
+            docker: true,
+        }])
+        .await?;
+    assert!(stale.workspace(&from).is_some_and(|saved| !saved.docker));
+    let saved = store
+        .edit(vec![ConfigEdit::RenameWorkspace {
+            from: from.clone(),
+            to: to.clone(),
+        }])
+        .await?;
+    assert!(saved.workspace(&from).is_none());
+    assert!(saved.workspace(&to).is_some_and(|moved| moved.docker));
+    assert_eq!(store.load().await?, saved);
     Ok(())
 }

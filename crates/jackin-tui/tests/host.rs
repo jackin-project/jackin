@@ -160,7 +160,7 @@ async fn connect_cuts_the_silent_gateway() -> TestResult {
     let default = GatewayName::parse("fake-gateway")?;
     let sessions = SessionSet::connect(
         &config,
-        default.clone(),
+        Some(default.clone()),
         &connector,
         DEADLINE,
         &CancellationToken::new(),
@@ -170,6 +170,6 @@ async fn connect_cuts_the_silent_gateway() -> TestResult {
     assert!(sessions.get(&default).is_some());
     assert!(sessions.get(&GatewayName::parse("refuses")?).is_none());
     assert!(sessions.get(&GatewayName::parse("hangs")?).is_none());
-    assert_eq!(sessions.default_name(), &default);
+    assert_eq!(sessions.default_name(), Some(&default));
     Ok(())
 }

@@ -222,15 +222,19 @@ impl Inputs {
     }
 
     async fn origins(&self, config: &Config) -> Origins {
-        let session = self.sessions.get(self.sessions.default_name()).or_else(|| {
-            self.sessions
-                .reached()
-                .into_iter()
-                .find_map(|(_, reached)| match reached {
-                    Reached::Up(session) => Some(*session),
-                    Reached::Down(_) => None,
-                })
-        });
+        let session = self
+            .sessions
+            .default_name()
+            .and_then(|name| self.sessions.get(name))
+            .or_else(|| {
+                self.sessions
+                    .reached()
+                    .into_iter()
+                    .find_map(|(_, reached)| match reached {
+                        Reached::Up(session) => Some(*session),
+                        Reached::Down(_) => None,
+                    })
+            });
         let Some(session) = session else {
             return Origins::new();
         };
@@ -269,7 +273,7 @@ impl Inputs {
                     .await;
             }
             let name = self.sessions.default_name();
-            let access = self.sessions.access(name);
+            let access = self.sessions.default_access();
             let input = DoctorInput {
                 runner: self.host.runner.as_ref(),
                 fs: self.host.fs.as_ref(),
@@ -280,7 +284,7 @@ impl Inputs {
             let checked = doctor(&input, &self.cancel).await;
             doctor::report(
                 &checked,
-                (!matches!(access, Access::NotChosen)).then_some(name),
+                name.filter(|_| !matches!(access, Access::NotChosen)),
                 self.wall.epoch_millis().div_euclid(1000),
             )
         };

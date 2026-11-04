@@ -215,3 +215,62 @@ fn the_unsaved_account_is_named_for_the_reply() -> Out {
     assert_eq!(persist::added(&registry)?, Some("spare".to_owned()));
     Ok(())
 }
+
+#[test]
+fn a_rename_with_new_roles_and_a_new_default_applies_cleanly() -> Out {
+    let mut config = Config::parse(&shapes()[1])?;
+    let shown = snapshot(&config);
+    let base = shown.workspaces[0].clone();
+    assert_eq!(base.name, "alpha");
+    let mut payload = base.clone();
+    payload.name = "alpha2".to_owned();
+    payload.roles.allowed =
+        jackin_console::domain::workspace::AllowedRoles::Custom(vec!["other".to_owned()]);
+    payload.roles.default = Some("other".to_owned());
+    let edits = persist::workspace(&config, Some(&base), &payload, &Resolved::default())?;
+    for edit in edits {
+        config.apply(edit)?;
+    }
+    assert!(config.workspace(&WorkspaceName::parse("alpha")?).is_none());
+    let moved = config
+        .workspace(&WorkspaceName::parse("alpha2")?)
+        .ok_or("alpha2")?;
+    assert_eq!(moved.default_role, Some(RoleName::parse("other")?));
+    assert!(
+        matches!(&moved.roles, jackin_core::AllowedRoles::Only(set) if set.iter().map(ToString::to_string).collect::<Vec<_>>() == ["other"])
+    );
+    Ok(())
+}
+
+#[test]
+fn a_rename_keeps_what_another_handle_wrote_after_the_read() -> Out {
+    let stale = Config::parse(&shapes()[1])?;
+    let shown = snapshot(&stale);
+    let base = shown.workspaces[0].clone();
+    let mut payload = base.clone();
+    payload.name = "alpha2".to_owned();
+    let edits = persist::workspace(&stale, Some(&base), &payload, &Resolved::default())?;
+    let alpha = WorkspaceName::parse("alpha")?;
+    let mut newer = stale.clone();
+    newer.apply(ConfigEdit::SetWorkspaceDocker {
+        workspace: alpha.clone(),
+        docker: false,
+    })?;
+    newer.apply(ConfigEdit::SetEnv {
+        scope: EnvScope::Workspace(alpha),
+        name: jackin_core::EnvName::parse("LATE")?,
+        value: Some(jackin_core::PlainEnvValue::parse("1")?),
+    })?;
+    for edit in edits {
+        newer.apply(edit)?;
+    }
+    let moved = newer
+        .workspace(&WorkspaceName::parse("alpha2")?)
+        .ok_or("alpha2")?;
+    assert!(!moved.docker, "the other handle's docker was overwritten");
+    assert!(
+        moved.env.keys().any(|key| key.as_str() == "LATE"),
+        "the other handle's env was dropped"
+    );
+    Ok(())
+}

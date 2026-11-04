@@ -16,6 +16,8 @@ use crate::credentials::Document;
 
 const OP_TIMEOUT: Duration = Duration::from_secs(30);
 const TAIL_CHARS: usize = 4;
+const TAIL_MIN_CHARS: usize = 8;
+const END_OF_FLAGS: &str = "--";
 const FORMAT: [&str; 2] = ["--format", "json"];
 const ACCOUNT: &str = "--account";
 const LOCKED: [&str; 3] = [
@@ -52,6 +54,8 @@ pub enum OpFault {
     MissingItem { item: String, vault: String },
     #[error("1Password field {} not found in item {}", plain(.field), plain(.item))]
     MissingField { field: String, item: String },
+    #[error("the 1Password name {} starts with a dash", plain(.name))]
+    FlagLikeName { name: String },
     #[error("the 1Password command line tool printed something unexpected")]
     Malformed,
     #[error("the 1Password command line tool failed")]
@@ -128,15 +132,7 @@ fn contains_any(text: &str, markers: &[&str]) -> bool {
 fn classify(stderr: &[u8], scope: OpScope<'_>) -> OpFault {
     let text = Zeroizing::new(String::from_utf8_lossy(stderr).to_lowercase());
     let vault = || scope.vault.unwrap_or_default().to_owned();
-    if contains_any(&text, &LOCKED) {
-        OpFault::Locked
-    } else if contains_any(&text, &UNAUTHORIZED) {
-        OpFault::AuthorizationRequired {
-            account: scope.account.to_owned(),
-        }
-    } else if contains_any(&text, &FORBIDDEN) {
-        OpFault::PermissionDenied { vault: vault() }
-    } else if text.contains(NO_VAULT) {
+    if text.contains(NO_VAULT) {
         OpFault::MissingVault { vault: vault() }
     } else if text.contains(NO_ITEM) {
         OpFault::MissingItem {
@@ -147,9 +143,24 @@ fn classify(stderr: &[u8], scope: OpScope<'_>) -> OpFault {
         OpFault::MissingAccount {
             account: scope.account.to_owned(),
         }
+    } else if contains_any(&text, &LOCKED) {
+        OpFault::Locked
+    } else if contains_any(&text, &UNAUTHORIZED) {
+        OpFault::AuthorizationRequired {
+            account: scope.account.to_owned(),
+        }
+    } else if contains_any(&text, &FORBIDDEN) {
+        OpFault::PermissionDenied { vault: vault() }
     } else {
         OpFault::Failed
     }
+}
+
+fn flag_like(scope: OpScope<'_>) -> Option<&str> {
+    [Some(scope.account), scope.vault, scope.item]
+        .into_iter()
+        .flatten()
+        .find(|name| name.starts_with('-'))
 }
 
 fn text_of<'a>(object: &'a Value, key: &str) -> Result<&'a str, OpFault> {
@@ -173,6 +184,9 @@ fn kind_of(kind: &str) -> OpFieldKind {
 
 fn tail_of(value: &str) -> String {
     let count = value.chars().count();
+    if count <= TAIL_MIN_CHARS {
+        return String::new();
+    }
     value
         .chars()
         .skip(count.saturating_sub(TAIL_CHARS))
@@ -215,14 +229,24 @@ impl OnePasswordCli {
     async fn run(
         &self,
         arguments: &[&str],
+        positional: &[&str],
         scope: OpScope<'_>,
         cancel: &CancellationToken,
     ) -> Result<Document, OpFault> {
+        if let Some(name) = flag_like(scope) {
+            return Err(OpFault::FlagLikeName {
+                name: name.to_owned(),
+            });
+        }
         let mut args: Vec<String> = arguments.iter().map(|arg| (*arg).to_owned()).collect();
         if !scope.account.is_empty() {
             args.extend([ACCOUNT.to_owned(), scope.account.to_owned()]);
         }
         args.extend(FORMAT.map(str::to_owned));
+        if !positional.is_empty() {
+            args.push(END_OF_FLAGS.to_owned());
+            args.extend(positional.iter().map(|arg| (*arg).to_owned()));
+        }
         let spec = ProcessSpec {
             program: Program::Op,
             args,
@@ -257,7 +281,7 @@ impl OnePasswordCli {
             vault: None,
             item: None,
         };
-        let document = self.run(&["account", "list"], scope, cancel).await?;
+        let document = self.run(&["account", "list"], &[], scope, cancel).await?;
         rows(&document)?
             .iter()
             .map(|raw| {
@@ -279,7 +303,7 @@ impl OnePasswordCli {
             vault: None,
             item: None,
         };
-        let document = self.run(&["vault", "list"], scope, cancel).await?;
+        let document = self.run(&["vault", "list"], &[], scope, cancel).await?;
         rows(&document)?
             .iter()
             .map(|raw| {
@@ -303,7 +327,7 @@ impl OnePasswordCli {
             item: None,
         };
         let document = self
-            .run(&["item", "list", "--vault", vault], scope, cancel)
+            .run(&["item", "list", "--vault", vault], &[], scope, cancel)
             .await?;
         rows(&document)?
             .iter()
@@ -334,7 +358,7 @@ impl OnePasswordCli {
             item: Some(item),
         };
         let document = self
-            .run(&["item", "get", item, "--vault", vault], scope, cancel)
+            .run(&["item", "get", "--vault", vault], &[item], scope, cancel)
             .await?;
         let raw = &document.0;
         let fields = raw

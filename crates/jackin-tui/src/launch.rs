@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
 use jackin_console::backend::{Backend, OnePassword};
@@ -26,7 +27,8 @@ use jackin_session::{
     AccountError, LaunchError, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
     LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LaunchWarning,
     LineDelivery, PlanError, Prompting, RestoreCandidate, RoleError, Session, StepResult,
-    WorkspaceLookup, error_chain, launch_events, lookup_workspace, plan_launch,
+    WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events, lookup_workspace,
+    plan_launch,
 };
 use junie_tui::widgets::steps::StepState;
 use thiserror::Error;
@@ -34,6 +36,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio_util::sync::CancellationToken;
 
 use crate::backend::JackinBackend;
+use crate::crashed::Stopped;
 use crate::fleet::ObservedSandbox;
 use crate::project::{Origins, docker_risks};
 use crate::sessions::Access;
@@ -286,8 +289,17 @@ struct Run {
     wanted: Wanted,
     launch: LaunchId,
     out: mpsc::Sender<LaunchEvent>,
+    stage: Arc<AtomicUsize>,
     answers: UnboundedReceiver<Vec<EnvAnswer>>,
     cancel: CancellationToken,
+}
+
+fn announce(out: &mpsc::Sender<LaunchEvent>, failure: LaunchFailure) {
+    drop(out.send(LaunchEvent::StageChanged(failure.stage, StepState::Failed)));
+    drop(out.send(LaunchEvent::Failed(Box::new(FailedLaunch {
+        failure,
+        instance: None,
+    }))));
 }
 
 fn question(found: &jackin_session::EnvQuestion) -> EnvQuestion {
@@ -320,12 +332,7 @@ fn resolve(
             match lookup_workspace(config, &path) {
                 WorkspaceLookup::Saved { name, workspace } => Ok((config.clone(), name, workspace)),
                 WorkspaceLookup::Unsaved { path } => {
-                    let base = path
-                        .as_path()
-                        .file_name()
-                        .map(|name| name.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    let name = WorkspaceName::parse(&base)?;
+                    let name = adhoc_workspace_name(config, &path)?;
                     let workspace = Workspace::new(path, false);
                     let mut adhoc = config.clone();
                     adhoc.apply(ConfigEdit::AddWorkspace {
@@ -341,6 +348,9 @@ fn resolve(
 
 impl Run {
     fn send(&self, event: LaunchEvent) {
+        if let LaunchEvent::StageChanged(stage, StepState::Running) = &event {
+            self.stage.store(*stage, Ordering::Relaxed);
+        }
         drop(self.out.send(event));
     }
 
@@ -391,7 +401,16 @@ impl Run {
             .map_err(|error| Stop::at(Stage::Image, &error))?;
         let (config, name, workspace) =
             resolve(&saved, &self.wanted.place).map_err(|error| Stop::at(Stage::Image, &error))?;
-        let gateway = inputs.sessions.default_name().clone();
+        let Some(gateway) = inputs.sessions.default_name().cloned() else {
+            let error = saved
+                .resolve_gateway(None)
+                .err()
+                .unwrap_or(ConfigError::NoGateway);
+            return Err(Stop::failed(LaunchFailure {
+                next_step: NextStep::RunDoctor,
+                ..plain_failure(Stage::Image, &error)
+            }));
+        };
         let session = match inputs.sessions.access(&gateway) {
             Access::Up(session) => *session,
             Access::Down { error, .. } => {
@@ -525,11 +544,7 @@ impl Run {
     }
 
     fn report(&self, failure: LaunchFailure) {
-        self.send(LaunchEvent::StageChanged(failure.stage, StepState::Failed));
-        self.send(LaunchEvent::Failed(Box::new(FailedLaunch {
-            failure,
-            instance: None,
-        })));
+        announce(&self.out, failure);
     }
 
     fn fail(&self, failure: LaunchFailure) {
@@ -660,6 +675,8 @@ pub(crate) fn start(
         Ok(launch) => launch,
         Err(error) => return unlaunched(world, &error, out, events, answer, cancel),
     };
+    let stage = Arc::new(AtomicUsize::new(Stage::Image.index()));
+    let crashed = (out.clone(), Arc::clone(&stage), backend.clone());
     let run = Run {
         backend: backend.clone(),
         content: backend.launch_content(),
@@ -671,10 +688,23 @@ pub(crate) fn start(
         },
         launch: launch.clone(),
         out,
+        stage,
         answers,
         cancel: cancel.clone(),
     };
-    backend.bridge.detach(run.run());
+    backend.bridge.detach(run.run(), move || {
+        let (out, stage, backend) = crashed;
+        announce(
+            &out,
+            LaunchFailure {
+                stage: stage.load(Ordering::Relaxed),
+                summary: Stopped.to_string(),
+                next_step: NextStep::None,
+                detail: Vec::new(),
+            },
+        );
+        backend.refresh();
+    });
     Box::new(SessionLaunch {
         run_id: launch.to_string(),
         events,
@@ -692,11 +722,7 @@ fn unlaunched(
     cancel: CancellationToken,
 ) -> Box<dyn LaunchFeed> {
     let failure = plain_failure(Stage::Image, error);
-    drop(out.send(LaunchEvent::StageChanged(failure.stage, StepState::Failed)));
-    drop(out.send(LaunchEvent::Failed(Box::new(FailedLaunch {
-        failure,
-        instance: None,
-    }))));
+    announce(&out, failure);
     Box::new(SessionLaunch {
         run_id: world.now_secs().to_string(),
         events,

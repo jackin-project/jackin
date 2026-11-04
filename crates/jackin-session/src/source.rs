@@ -15,6 +15,7 @@ use crate::credentials::{CredentialError, read_chatgpt_login};
 use crate::op::{OnePasswordCli, OpFault, OpFieldKind};
 
 pub const AUTH_FILE: &str = "auth.json";
+pub const CHATGPT_LOGIN: &str = "ChatGPT login in auth.json";
 const OP_SCHEME: &str = "op://";
 
 #[derive(Clone, Copy, Debug)]
@@ -109,6 +110,9 @@ fn field_path(reference: &str) -> Result<FieldPath<'_>, SourceFault> {
     OpReference::parse(reference).map_err(|_| bad())?;
     let rest = reference.strip_prefix(OP_SCHEME).ok_or_else(bad)?;
     let segments: Vec<&str> = rest.split('/').collect();
+    if segments.iter().any(|segment| segment.starts_with('-')) {
+        return Err(bad());
+    }
     match segments.as_slice() {
         [vault, item, field] => Ok(FieldPath {
             vault,

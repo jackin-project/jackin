@@ -308,6 +308,10 @@ pub enum ConfigEdit {
         workspace: Workspace,
     },
     RemoveWorkspace(WorkspaceName),
+    RenameWorkspace {
+        from: WorkspaceName,
+        to: WorkspaceName,
+    },
     SetWorkspaceDocker {
         workspace: WorkspaceName,
         docker: bool,

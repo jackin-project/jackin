@@ -334,6 +334,18 @@ impl RepoFixture {
         RepoFixture::init(&["init", "-q"]).await
     }
 
+    pub async fn new_named(name: &str) -> Result<RepoFixture, FixtureError> {
+        let (dir, _, canonical) = temp_root("jackin-project-")?;
+        let repo = canonical.join(name);
+        tokio::fs::create_dir(&repo).await?;
+        git(&repo, &["init", "-q"]).await?;
+        Ok(RepoFixture {
+            dir,
+            root: HostPath::parse(&repo)?,
+            keep: Vec::new(),
+        })
+    }
+
     pub async fn new_sha256() -> Result<RepoFixture, FixtureError> {
         RepoFixture::init(&["init", "-q", "--object-format=sha256"]).await
     }

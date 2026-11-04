@@ -14,7 +14,8 @@ use jackin_console::domain::vocabulary::{Rejection, SaveField};
 use jackin_console::world::Msg;
 use jackin_core::HostPath;
 use jackin_session::{
-    AUTH_FILE, FolderFacts, Source, SourceDesk, SourceFault, SourceFound, error_chain,
+    AUTH_FILE, CHATGPT_LOGIN, FolderFacts, Source, SourceDesk, SourceFault, SourceFound,
+    error_chain,
 };
 
 use crate::bridge::Settled;
@@ -135,11 +136,14 @@ fn failure_of(source: &CredentialSource, fault: &SourceFault) -> Failure {
             action,
             login_invalid(),
         ),
-        SourceFault::NotChatgpt(_) => failure(
+        SourceFault::NotChatgpt(path) => failure(
             IssueCode::FolderWrongProvider,
             Lifecycle::Error,
             action,
-            login_invalid(),
+            IssueReason::LoginMissing {
+                path: path.to_string(),
+                file: CHATGPT_LOGIN.to_owned(),
+            },
         ),
         SourceFault::FolderMissing(path) => failure(
             IssueCode::FolderMissing,

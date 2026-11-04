@@ -126,7 +126,7 @@ pub(crate) enum Home {
 
 #[derive(Debug)]
 pub struct SessionSet {
-    default: GatewayName,
+    default: Option<GatewayName>,
     slots: Mutex<BTreeMap<GatewayName, Slot>>,
 }
 
@@ -135,7 +135,10 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl SessionSet {
-    pub fn new(default: GatewayName, entries: BTreeMap<GatewayName, GatewayState>) -> SessionSet {
+    pub fn new(
+        default: Option<GatewayName>,
+        entries: BTreeMap<GatewayName, GatewayState>,
+    ) -> SessionSet {
         SessionSet {
             default,
             slots: Mutex::new(
@@ -149,7 +152,7 @@ impl SessionSet {
 
     pub async fn connect(
         config: &Config,
-        default: GatewayName,
+        default: Option<GatewayName>,
         connector: &dyn SessionConnector,
         deadline: Duration,
         cancel: &CancellationToken,
@@ -175,8 +178,14 @@ impl SessionSet {
         }
     }
 
-    pub fn default_name(&self) -> &GatewayName {
-        &self.default
+    pub fn default_name(&self) -> Option<&GatewayName> {
+        self.default.as_ref()
+    }
+
+    pub(crate) fn default_access(&self) -> Access {
+        self.default
+            .as_ref()
+            .map_or(Access::NotChosen, |name| self.access(name))
     }
 
     pub(crate) fn reached(&self) -> Vec<(GatewayName, Reached)> {
@@ -200,7 +209,10 @@ impl SessionSet {
     ) -> Home {
         let (home, known) = {
             let slots = locked(&self.slots);
-            let home = match slots.get(&self.default) {
+            let Some(default) = &self.default else {
+                return Home::NotChosen;
+            };
+            let home = match slots.get(default) {
                 None => return Home::NotChosen,
                 Some(Slot::Down(error)) => return Home::Down(Arc::clone(error)),
                 Some(Slot::Up(session)) => Session::clone(session),
@@ -227,7 +239,10 @@ impl SessionSet {
             )
         };
         let mut peers = Vec::new();
-        for (name, entry) in config.gateways().filter(|(name, _)| **name != self.default) {
+        for (name, entry) in config
+            .gateways()
+            .filter(|(name, _)| Some(*name) != self.default.as_ref())
+        {
             peers.push(match known.get(name) {
                 Some(Reached::Up(session)) => Ok(Session::clone(session)),
                 Some(Reached::Down(error)) => Err(unreachable(name, error)),

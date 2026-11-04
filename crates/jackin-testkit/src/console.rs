@@ -115,6 +115,7 @@ pub struct ConsoleRigBuilder<'a> {
     size: (u16, u16),
     clipboard: Arc<RecordingClipboard>,
     pane_inbox_bytes: usize,
+    unchosen: bool,
 }
 
 pub struct ConsoleRig {
@@ -181,6 +182,7 @@ impl ConsoleRig {
             size: DEFAULT_SIZE,
             clipboard: RecordingClipboard::new(true),
             pane_inbox_bytes: 1024 * 1024,
+            unchosen: false,
         }
     }
 
@@ -411,6 +413,12 @@ impl ConsoleRigBuilder<'_> {
     }
 
     #[must_use]
+    pub fn unchosen(mut self) -> Self {
+        self.unchosen = true;
+        self
+    }
+
+    #[must_use]
     pub fn deadline(mut self, deadline: Duration) -> Self {
         self.deadline = deadline;
         self
@@ -471,10 +479,10 @@ impl ConsoleRigBuilder<'_> {
     async fn prepare(self) -> Result<Prepared, FixtureError> {
         let world = self.world;
         let config = world.config.load().await?;
-        let default = match config.resolve_gateway(None) {
+        let default = (!self.unchosen).then(|| match config.resolve_gateway(None) {
             Ok((name, _)) => name.clone(),
             Err(_) => world.gateway.name().clone(),
-        };
+        });
         let mut entries = self.extra;
         if !entries.contains_key(world.gateway.name()) {
             let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
