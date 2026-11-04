@@ -32,3 +32,4 @@ mod shell;
 mod signals;
 mod support;
 mod usage;
+mod workspace_in_use;

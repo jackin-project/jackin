@@ -16,12 +16,12 @@ use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
 use jackin_core::plain;
 use jackin_core::{
     Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath, ModelName,
-    RepoPath, RoleManifest, RoleName, RoleSource, WorkspaceName,
+    PathError, RepoPath, RoleManifest, RoleName, RoleSource, WorkspaceName,
 };
 use jackin_core::{EnvSpec, ManifestError, Workspace as CoreWorkspace};
 use jackin_openshell::PowerAction;
 use jackin_session::{
-    AccountPlan, MANIFEST_FILE, PurgeMode, RoleError, error_chain, plan_account_edits,
+    AccountPlan, Gateways, MANIFEST_FILE, PurgeMode, RoleError, error_chain, plan_account_edits,
     read_chatgpt_login,
 };
 use thiserror::Error;
@@ -123,7 +123,7 @@ impl Inputs {
         Box::new(snapshot)
     }
 
-    pub(crate) fn expanded(&self, text: &str) -> Result<HostPath, jackin_core::PathError> {
+    pub(crate) fn expanded(&self, text: &str) -> Result<HostPath, PathError> {
         let expanded = match text.strip_prefix('~') {
             Some(rest) if rest.is_empty() || rest.starts_with('/') => {
                 Path::new(&self.home).join(rest.trim_start_matches('/'))
@@ -135,15 +135,11 @@ impl Inputs {
 
     async fn folder(&self, text: &str) -> Result<HostPath, PersistError> {
         let path = self.expanded(text)?;
-        let folder = || {
-            PersistError::from(Rejection::NotAFolder {
+        match HostPath::canonical_dir(self.host.fs.as_ref(), &path).await {
+            Err(PathError::NotADirectory(_)) => Err(PersistError::from(Rejection::NotAFolder {
                 folder: text.to_owned(),
-            })
-        };
-        let canonical = self.host.fs.canonicalize(&path).await?.ok_or_else(folder)?;
-        match self.host.fs.stat_following(&canonical).await? {
-            Some(FileKind::Dir) => Ok(canonical),
-            _ => Err(folder()),
+            })),
+            other => Ok(other?),
         }
     }
 
@@ -193,6 +189,10 @@ impl Inputs {
         workspace: &Workspace,
     ) -> Result<(WorkspaceId, Box<Snapshot>), Refused> {
         let config = self.config.load().await?;
+        if let Some(old) = base.filter(|b| b.name != workspace.name) {
+            let old = WorkspaceName::parse(&old.name).map_err(PersistError::from)?;
+            self.ensure_unused(&config, &old).await?;
+        }
         let project = match base {
             None => {
                 let source = workspace.mounts.first().map(|mount| &mount.source);
@@ -246,6 +246,8 @@ impl Inputs {
             .name(id)
             .cloned()
             .ok_or_else(|| Refused::Text(id.to_string()))?;
+        let config = self.config.load().await?;
+        self.ensure_unused(&config, &name).await?;
         let saved = self
             .config
             .edit(vec![ConfigEdit::RemoveWorkspace(name)])
@@ -312,20 +314,35 @@ impl Inputs {
         match plan {
             AccountPlan::Offline(plan) => Ok(plan.apply().await?),
             AccountPlan::Gateway(plan) => {
-                let home = self
-                    .sessions
-                    .home(plan.config(), self.connect.as_ref(), &self.cancel)
-                    .await;
-                match home {
-                    Home::Ready(gateways) => plan
-                        .apply(&gateways)
-                        .await
-                        .map_err(|error| Refused::Text(text(&error))),
-                    Home::Down(error) => Err(Refused::Text(text(&*error))),
-                    Home::NotChosen => Err(ConfigError::NoGateway.into()),
-                }
+                let gateways = self.gateways(plan.config()).await?;
+                plan.apply(&gateways)
+                    .await
+                    .map_err(|error| Refused::Text(text(&error)))
             }
         }
+    }
+
+    async fn gateways(&self, config: &Config) -> Result<Box<Gateways>, Refused> {
+        let home = self
+            .sessions
+            .home(config, self.connect.as_ref(), &self.cancel)
+            .await;
+        match home {
+            Home::Ready(gateways) => Ok(gateways),
+            Home::Down(error) => Err(Refused::Text(text(&*error))),
+            Home::NotChosen => Err(ConfigError::NoGateway.into()),
+        }
+    }
+
+    async fn ensure_unused(&self, config: &Config, name: &WorkspaceName) -> Result<(), Refused> {
+        if config.gateways().next().is_none() {
+            return Ok(());
+        }
+        self.gateways(config)
+            .await?
+            .ensure_workspace_unused(name)
+            .await
+            .map_err(|error| Refused::Text(text(&error)))
     }
 
     pub(crate) async fn save_accounts(

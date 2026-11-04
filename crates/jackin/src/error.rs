@@ -9,7 +9,7 @@ use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountEditError, AccountError, AttachError, BuildError, ConnectError, CredentialError,
     ExportError, LaunchFailure, LifecycleError, LockError, PlanError, PurgeError, RestartError,
-    RoleError,
+    RoleError, WorkspaceGuardError,
 };
 use jackin_tui::ConsoleError;
 use jackin_usage::UsageError;
@@ -70,6 +70,8 @@ pub enum CommandError {
     Account(#[from] AccountError),
     #[error(transparent)]
     Accounts(AccountEditError),
+    #[error(transparent)]
+    WorkspaceInUse(#[from] WorkspaceGuardError),
     #[error("cannot import the ChatGPT login from {}", .home.as_path().display())]
     Login {
         home: HostPath,
@@ -172,6 +174,7 @@ impl CommandError {
             | CommandError::Purge(_)
             | CommandError::Account(_)
             | CommandError::Accounts(_)
+            | CommandError::WorkspaceInUse(_)
             | CommandError::Login { .. }
             | CommandError::Image(_)
             | CommandError::Connect(_)

@@ -100,7 +100,7 @@ fn login_accounts(config: &Config) -> BTreeSet<AccountName> {
         .collect()
 }
 
-fn unreachable_text(gateways: &[UnreachableGateway]) -> String {
+pub(crate) fn unreachable_text(gateways: &[UnreachableGateway]) -> String {
     gateways
         .iter()
         .map(|gateway| {

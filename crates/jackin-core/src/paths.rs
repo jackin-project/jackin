@@ -99,6 +99,18 @@ impl HostPath {
         normalize_host(&cwd.0.join(path)).map(HostPath)
     }
 
+    pub async fn canonical_dir(
+        fs: &dyn FileSystem,
+        path: &HostPath,
+    ) -> Result<HostPath, PathError> {
+        let missing = || PathError::NotADirectory(path.clone());
+        let canonical = fs.canonicalize(path).await?.ok_or_else(missing)?;
+        match fs.stat_following(&canonical).await? {
+            Some(FileKind::Dir) => Ok(canonical),
+            _ => Err(missing()),
+        }
+    }
+
     pub fn as_path(&self) -> &Path {
         &self.0
     }

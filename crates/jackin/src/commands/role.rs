@@ -3,12 +3,12 @@
 
 use std::path::Path;
 
-use jackin_core::{ConfigEdit, FileKind, RoleSource, RoleUrl};
+use jackin_core::{ConfigEdit, PathError, RoleSource, RoleUrl};
 
 use crate::app::App;
 use crate::cli::{JsonArg, RoleAddArgs, RoleArg, RoleCheckArgs, RoleCommand};
 use crate::error::CommandError;
-use crate::paths::absolutize;
+use crate::paths::{absolutize, existing_dir};
 use crate::views::{RoleLs, RoleSourceRow};
 
 pub(crate) async fn run(app: &mut App, command: RoleCommand) -> Result<(), CommandError> {
@@ -21,14 +21,17 @@ pub(crate) async fn run(app: &mut App, command: RoleCommand) -> Result<(), Comma
 }
 
 async fn source(app: &App, args: &RoleAddArgs) -> Result<RoleSource, CommandError> {
-    let path = absolutize(Path::new(&args.source), &app.cwd)?;
-    if app.deps.host.fs.stat(&path).await? == Some(FileKind::Dir) {
-        if args.rev.is_some() {
-            return Err(CommandError::Argument(
-                "--rev applies only to a Git source".to_owned(),
-            ));
+    match existing_dir(app, Path::new(&args.source)).await {
+        Ok(path) => {
+            if args.rev.is_some() {
+                return Err(CommandError::Argument(
+                    "--rev applies only to a Git source".to_owned(),
+                ));
+            }
+            return Ok(RoleSource::Path(path));
         }
-        return Ok(RoleSource::Path(path));
+        Err(CommandError::Path(PathError::NotADirectory(_))) => {}
+        Err(other) => return Err(other),
     }
     let url = RoleUrl::parse(&args.source).map_err(|_| {
         CommandError::Argument(format!(

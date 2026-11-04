@@ -77,6 +77,9 @@ async fn workspace_add_stores_the_docker_flag_and_an_absolute_path_and_ls_pins_t
 -> TestResult {
     guard(async {
         let world = World::builder().build()?;
+        std::fs::create_dir_all(world.home().as_path().join("proj/one"))?;
+        let two = world.home().as_path().parent().ok_or("no parent")?.join("two");
+        std::fs::create_dir_all(&two)?;
         let harness = Harness::new(&world);
         harness
             .run(&["workspace", "add", "plain", "proj/one"])
@@ -138,11 +141,61 @@ async fn workspace_add_stores_the_docker_flag_and_an_absolute_path_and_ls_pins_t
 }
 
 #[tokio::test]
+async fn a_workspace_or_role_path_is_stored_by_its_real_path_and_must_be_an_existing_directory()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let home = world.home().as_path();
+        let real = home.join("real/proj");
+        std::fs::create_dir_all(&real)?;
+        std::os::unix::fs::symlink(home.join("real"), home.join("link"))?;
+        std::fs::write(home.join("real/file.txt"), b"not a directory")?;
+        let harness = Harness::new(&world);
+
+        harness
+            .run(&["workspace", "add", "w", "link/proj"])
+            .await?
+            .ok()?;
+        harness
+            .run(&["role", "add", "r", "link/proj"])
+            .await?
+            .ok()?;
+        let config = harness.stored().await?;
+        assert_eq!(
+            config
+                .workspace(&workspace("w")?)
+                .ok_or("no w")?
+                .path
+                .as_path(),
+            real
+        );
+        assert_eq!(
+            config.role(&role("r")?).ok_or("no r")?.source,
+            RoleSource::Path(HostPath::parse(&real)?)
+        );
+
+        let before = harness.config_bytes()?;
+        let twin = harness
+            .run(&["workspace", "add", "twin", "real/proj"])
+            .await?;
+        failed(&twin, ExitClass::Failure, &[])?;
+        for missing in ["nowhere", "real/file.txt", "link/absent"] {
+            let ran = harness.run(&["workspace", "add", "ghost", missing]).await?;
+            failed(&ran, ExitClass::Failure, &[missing])?;
+        }
+        assert_eq!(harness.config_bytes()?, before);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn duplicates_shared_paths_and_roles_in_use_fail_and_leave_the_config_bytes_alone()
 -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         std::fs::create_dir(world.home().as_path().join("proj"))?;
+        std::fs::create_dir(world.home().as_path().join("other"))?;
         let harness = Harness::new(&world);
         harness.run(&["role", "add", "remote", URL]).await?.ok()?;
         harness
