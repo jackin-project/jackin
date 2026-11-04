@@ -64,12 +64,23 @@ fn provisioning_of(sandbox: &Sandbox) -> Provisioning {
 }
 
 pub(super) fn view_of(sandbox: &Sandbox) -> Result<SandboxView, GatewayError> {
+    view_with(sandbox, |pairs| Labels::from_pairs(pairs).map_err(protocol))
+}
+
+fn listed_view_of(sandbox: &Sandbox) -> Result<SandboxView, GatewayError> {
+    view_with(sandbox, |pairs| Ok(Labels::from_valid_pairs(pairs)))
+}
+
+fn view_with(
+    sandbox: &Sandbox,
+    labels: impl FnOnce(HashMap<String, String>) -> Result<Labels, GatewayError>,
+) -> Result<SandboxView, GatewayError> {
     let metadata = sandbox
         .metadata
         .as_ref()
         .ok_or_else(|| protocol("a sandbox has no metadata"))?;
     let name = SandboxName::parse(&metadata.name).map_err(protocol)?;
-    let labels = Labels::from_pairs(metadata.labels.clone()).map_err(protocol)?;
+    let labels = labels(metadata.labels.clone())?;
     Ok(SandboxView {
         name,
         phase: phase_of(sandbox),
@@ -221,11 +232,9 @@ impl Inner {
                     }),
                 )
                 .await?;
-            views.extend(
-                page.sandboxes
-                    .iter()
-                    .filter_map(|sandbox| view_of(sandbox).ok()),
-            );
+            for sandbox in &page.sandboxes {
+                views.push(listed_view_of(sandbox)?);
+            }
             if page.next_page_token.is_empty() {
                 return Ok(views);
             }

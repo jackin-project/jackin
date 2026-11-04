@@ -327,10 +327,21 @@ impl FakeGateway {
         }
     }
 
-    pub fn replace_live_policy(&self, name: &SandboxName, policy: PolicyDocument) {
-        if let Some(cell) = self.registry().sandboxes.get(name) {
-            cell.state().live_policy = Some(policy);
-        }
+    pub fn replace_live_policy(
+        &self,
+        name: &SandboxName,
+        policy: PolicyDocument,
+    ) -> Result<(), GatewayError> {
+        let cell = self
+            .registry()
+            .sandboxes
+            .get(name)
+            .cloned()
+            .ok_or_else(|| GatewayError::NotFound {
+                what: Missing::Sandbox(name.clone()),
+            })?;
+        cell.state().live_policy = Some(policy);
+        Ok(())
     }
 
     pub fn install_file(&self, path: &SandboxPath, bytes: Vec<u8>) {

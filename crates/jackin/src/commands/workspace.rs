@@ -47,7 +47,7 @@ async fn rm(app: &App, arg: WorkspaceArg) -> Result<(), CommandError> {
     if config.workspace(&arg.name).is_some() && config.gateways().next().is_some() {
         app.gateways(&config)
             .await?
-            .ensure_workspace_unused(&arg.name)
+            .ensure_workspace_unused(&config, &arg.name)
             .await?;
     }
     app.store

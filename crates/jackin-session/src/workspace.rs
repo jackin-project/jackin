@@ -3,7 +3,6 @@
 
 use jackin_core::{
     Config, ConfigError, GatewayName, HostPath, IdError, SandboxName, Workspace, WorkspaceName,
-    plain_list,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -83,30 +82,75 @@ pub fn adhoc_workspace_name(config: &Config, path: &HostPath) -> Result<Workspac
     }
 }
 
-fn noun(sandboxes: &[SandboxName]) -> &'static str {
-    if sandboxes.len() == 1 {
-        "that sandbox (jackin export, then jackin purge)"
-    } else {
-        "those sandboxes (jackin export, then jackin purge)"
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Holder {
+    pub gateway: GatewayName,
+    pub sandbox: SandboxName,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkspaceHolders {
+    pub readable: Vec<Holder>,
+    pub unreadable: Vec<Holder>,
+    pub unattributable: Vec<Holder>,
+    pub default_gateway: Option<GatewayName>,
+}
+
+impl WorkspaceHolders {
+    fn is_empty(&self) -> bool {
+        self.readable.is_empty() && self.unreadable.is_empty() && self.unattributable.is_empty()
     }
+
+    fn command(&self, holder: &Holder, verb: &str, force: &str) -> String {
+        let gateway = if self.default_gateway.as_ref() == Some(&holder.gateway) {
+            String::new()
+        } else {
+            format!(" --gateway {}", holder.gateway)
+        };
+        format!("`jackin {verb} {}{gateway}{force}`", holder.sandbox)
+    }
+
+    fn lines(&self, workspace: &WorkspaceName) -> Vec<String> {
+        let readable = self.readable.iter().map(|holder| {
+            format!(
+                "export and purge {} first (gateway {}, workspace {workspace}): run {}, then {}",
+                holder.sandbox,
+                holder.gateway,
+                self.command(holder, "export", ""),
+                self.command(holder, "purge", "")
+            )
+        });
+        let unreadable = self.unreadable.iter().map(|holder| {
+            format!(
+                "purge {} first (gateway {}, workspace {workspace}): its labels are unreadable, so unexported work in it cannot be exported; run {} to delete it",
+                holder.sandbox,
+                holder.gateway,
+                self.command(holder, "purge", " --force")
+            )
+        });
+        let unattributable = self.unattributable.iter().map(|holder| {
+            format!(
+                "purge {} first (gateway {}): cannot tell which workspace it uses, and unexported work in it cannot be exported because its labels are unreadable; run {} to delete it",
+                holder.sandbox,
+                holder.gateway,
+                self.command(holder, "purge", " --force")
+            )
+        });
+        readable.chain(unreadable).chain(unattributable).collect()
+    }
+}
+
+fn holders_text(workspace: &WorkspaceName, holders: &WorkspaceHolders) -> String {
+    holders.lines(workspace).join("; ")
 }
 
 #[derive(Debug, Error)]
 pub enum WorkspaceGuardError {
-    #[error(
-        "export and purge {} first: workspace {workspace} still has {}",
-        plain_list(.sandboxes),
-        noun(.sandboxes)
-    )]
+    #[error("{}", holders_text(.workspace, .holders))]
     InUse {
         workspace: WorkspaceName,
-        sandboxes: Vec<SandboxName>,
+        holders: WorkspaceHolders,
     },
-    #[error(
-        "cannot tell which workspace {} uses (jackin purge --force)",
-        plain_list(.0)
-    )]
-    Unattributable(Vec<SandboxName>),
     #[error("{}", unreachable_text(.0))]
     Unreachable(Vec<UnreachableGateway>),
     #[error("cannot list the sandboxes of gateway {gateway}")]
@@ -119,45 +163,59 @@ pub enum WorkspaceGuardError {
 impl Gateways {
     pub async fn ensure_workspace_unused(
         &self,
+        config: &Config,
         workspace: &WorkspaceName,
     ) -> Result<(), WorkspaceGuardError> {
         let sessions = self.every().map_err(WorkspaceGuardError::Unreachable)?;
-        let mut sandboxes = Vec::new();
-        let mut unattributable = Vec::new();
+        let mut holders = WorkspaceHolders {
+            readable: Vec::new(),
+            unreadable: Vec::new(),
+            unattributable: Vec::new(),
+            default_gateway: config.default_gateway().cloned(),
+        };
         for session in sessions {
+            let gateway = session.gateway_name().clone();
             let listing = session
                 .list()
                 .await
                 .map_err(|source| WorkspaceGuardError::Listing {
-                    gateway: session.gateway_name().clone(),
+                    gateway: gateway.clone(),
                     source,
                 })?;
-            sandboxes.extend(
+            let holder = |sandbox: SandboxName| Holder {
+                gateway: gateway.clone(),
+                sandbox,
+            };
+            holders.readable.extend(
                 listing
                     .sandboxes
                     .into_iter()
                     .filter(|sandbox| sandbox.labels.planned.workspace == *workspace)
-                    .map(|sandbox| sandbox.name),
+                    .map(|sandbox| holder(sandbox.name)),
             );
             for broken in listing.unreadable {
                 match broken.workspace {
-                    Some(found) if found == *workspace => sandboxes.push(broken.name),
+                    Some(found) if found == *workspace => {
+                        holders.unreadable.push(holder(broken.name));
+                    }
                     Some(_) => {}
-                    None => unattributable.push(broken.name),
+                    None => holders.unattributable.push(holder(broken.name)),
                 }
             }
         }
-        if sandboxes.is_empty() {
-            if unattributable.is_empty() {
-                return Ok(());
-            }
-            unattributable.sort();
-            return Err(WorkspaceGuardError::Unattributable(unattributable));
+        if holders.is_empty() {
+            return Ok(());
         }
-        sandboxes.sort();
+        for group in [
+            &mut holders.readable,
+            &mut holders.unreadable,
+            &mut holders.unattributable,
+        ] {
+            group.sort_by(|a, b| (&a.gateway, &a.sandbox).cmp(&(&b.gateway, &b.sandbox)));
+        }
         Err(WorkspaceGuardError::InUse {
             workspace: workspace.clone(),
-            sandboxes,
+            holders,
         })
     }
 }

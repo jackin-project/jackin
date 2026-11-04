@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{InspectView, SupervisorReading, plain};
+use jackin_core::{InspectView, SupervisorReading};
 
 use crate::app::App;
 use crate::cli::InspectArgs;
@@ -46,12 +46,7 @@ fn human(app: &mut App, view: &InspectView) -> Result<(), CommandError> {
         app.io.line(&line)?;
     }
     for violation in &view.closure_violations {
-        app.io.line(&format!(
-            "violation\t{} reaches {} (provider host {})",
-            plain(&violation.rule),
-            plain(&violation.host),
-            plain(&violation.provider_host)
-        ))?;
+        app.io.line(&format!("violation\t{violation}"))?;
     }
     Ok(())
 }

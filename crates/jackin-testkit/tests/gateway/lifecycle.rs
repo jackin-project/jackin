@@ -10,8 +10,8 @@ use jackin_core::{
     LaunchId, Phase, ProfileId, ProviderName, SandboxLabels, SandboxName, Secret,
 };
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayOp, Missing, ProfileSync, ProviderMaterial, ProviderProfile,
-    ProviderSpec, ProviderState, Provisioning, SandboxQuery,
+    Gateway, GatewayError, GatewayOp, Missing, PolicyDocument, ProfileSync, ProviderMaterial,
+    ProviderProfile, ProviderSpec, ProviderState, Provisioning, SandboxQuery,
 };
 use jackin_testkit::{FakeEngine, FakeGateway, Fault};
 
@@ -423,6 +423,29 @@ async fn a_sandbox_keeps_the_image_id_its_tag_resolved_to_when_it_was_created() 
             None,
             "an image the engine never built"
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn replacing_the_live_policy_of_an_unknown_sandbox_fails_loudly() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let policy = PolicyDocument::parse(
+            "version: 1\nfilesystem_policy:\n  read_only:\n    - /bin\nlandlock:\n  compatibility: hard_requirement\nnetwork_policies: {}\n",
+        )?;
+        let unknown = SandboxName::parse("jackin-nobody-0001")?;
+        match fake.replace_live_policy(&unknown, policy.clone()) {
+            Err(GatewayError::NotFound {
+                what: Missing::Sandbox(found),
+            }) => assert_eq!(found, unknown),
+            other => return Err(format!("expected NotFound, got {other:?}").into()),
+        }
+
+        let spec = spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), sh("sleep 3600")?)?;
+        fake.create_sandbox(&spec).await?;
+        fake.replace_live_policy(spec.name(), policy)?;
         Ok(())
     })
     .await

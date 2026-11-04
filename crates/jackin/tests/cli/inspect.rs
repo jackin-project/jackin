@@ -139,7 +139,7 @@ async fn inspect_escapes_an_unparsable_live_policy_host_in_the_human_output() ->
             "version: 1\nfilesystem_policy:\n  read_only:\n    - /bin\nlandlock:\n  compatibility: hard_requirement\nnetwork_policies:\n  hostile:\n    name: hostile\n    endpoints:\n      - host: \"{}\"\n        port: 443\n    binaries:\n      - path: /usr/bin/curl\n",
             hostile.replace('\u{1b}', "\\e").replace('\n', "\\n")
         ))?;
-        rig.world.gateway.replace_live_policy(&name, policy);
+        rig.world.gateway.replace_live_policy(&name, policy)?;
 
         let ran = harness.run(&["inspect", name.as_str()]).await?;
         ran.ok()?;

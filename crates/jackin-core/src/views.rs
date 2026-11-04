@@ -51,6 +51,18 @@ pub struct ClosureViolationView {
     pub provider_host: String,
 }
 
+impl fmt::Display for ClosureViolationView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} reaches {} (provider host {})",
+            plain(&self.rule),
+            plain(&self.host),
+            plain(&self.provider_host)
+        )
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SupervisorReading {
     Unreadable,
