@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::ErrorKind;
+use std::os::unix::fs::symlink;
+use std::process::Command;
 
-use jackin_core::FsError;
+use jackin_core::{CREDENTIAL_FILE_MAX_BYTES, FsError, HostPath, StdFileSystem};
 use jackin_session::{CredentialError, read_chatgpt_login};
 use jackin_testkit::{FsOp, MemFs};
 use serde_json::{Value, json};
@@ -132,6 +134,53 @@ async fn a_missing_unreadable_or_malformed_login_is_a_typed_secret_free_error() 
         let error = read_error(api).await?;
         assert!(matches!(error, CredentialError::NotAChatgptLogin), "{error:?}");
         assert_clean(&format!("{error} {error:?}"));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_linked_login_is_read_and_a_pipe_or_oversized_login_is_refused_without_reading_it()
+-> TestResult {
+    guard(async {
+        let dir = tempfile::tempdir()?;
+        let base = std::fs::canonicalize(dir.path())?;
+        let fs = StdFileSystem::default();
+        let real = base.join("real.json");
+        std::fs::write(&real, login_json().to_string())?;
+        let linked = base.join("linked");
+        std::fs::create_dir(&linked)?;
+        symlink(&real, linked.join("auth.json"))?;
+        let login = read_chatgpt_login(&fs, &HostPath::parse(&linked)?).await?;
+        assert_eq!(login.account_id.as_str(), ACCOUNT_ID);
+
+        let piped = base.join("piped");
+        std::fs::create_dir(&piped)?;
+        assert!(
+            Command::new("mkfifo")
+                .arg(piped.join("auth.json"))
+                .status()?
+                .success()
+        );
+        let error = read_chatgpt_login(&fs, &HostPath::parse(&piped)?)
+            .await
+            .err();
+        assert!(
+            matches!(error, Some(CredentialError::LoginNotRegular { .. })),
+            "{error:?}"
+        );
+
+        let big = base.join("big");
+        std::fs::create_dir(&big)?;
+        std::fs::write(
+            big.join("auth.json"),
+            vec![b' '; CREDENTIAL_FILE_MAX_BYTES + 1],
+        )?;
+        let error = read_chatgpt_login(&fs, &HostPath::parse(&big)?).await.err();
+        assert!(
+            matches!(error, Some(CredentialError::LoginTooLarge { .. })),
+            "{error:?}"
+        );
         Ok(())
     })
     .await

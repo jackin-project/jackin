@@ -5,7 +5,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
-    CredentialSource, HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret,
+    CredentialFileProblem, CredentialSource, HostPath, ProcessSpec, ProcessStatus, ProcessStdin,
+    Program, Secret, read_credential_file,
 };
 use jackin_usage_provider_core::Credential;
 use tokio_util::sync::CancellationToken;
@@ -67,10 +68,15 @@ pub(crate) async fn resolve(
             .and_then(non_empty)
             .map(Material::token)
             .ok_or(Unresolved::Missing),
-        CredentialSource::OnePassword { reference } => {
+        CredentialSource::OnePassword { reference, account } => {
+            let mut args = vec!["read".to_owned()];
+            if let Some(account) = account {
+                args.extend(["--account".to_owned(), account.as_str().to_owned()]);
+            }
+            args.push(reference.as_str().to_owned());
             let spec = ProcessSpec {
                 program: Program::Op,
-                args: vec!["read".to_owned(), reference.as_str().to_owned()],
+                args,
                 cwd: None,
                 env: Vec::new(),
                 env_remove_prefixes: Vec::new(),
@@ -101,19 +107,30 @@ pub(crate) async fn resolve(
         }
         CredentialSource::CodexLogin { home, .. } => {
             let path = HostPath::resolve(Path::new(CODEX_LOGIN_FILE), home)
-                .map_err(|_| Unresolved::Unreadable("the Codex home is not a usable path"))?;
+                .map_err(|_| Unresolved::Unreadable("the Codex login file name is not usable"))?;
             Ok(Material::login(read_text(deps, &path).await?))
         }
     }
 }
 
 async fn read_text(deps: &UsageDeps, path: &HostPath) -> Result<String, Unresolved> {
-    let bytes = deps
-        .fs
-        .read(path)
-        .await
-        .map_err(|_| Unresolved::Unreadable("the credential file could not be read"))?
-        .ok_or(Unresolved::Missing)?;
+    let bytes = match read_credential_file(deps.fs.as_ref(), path).await {
+        Err(_) => {
+            return Err(Unresolved::Unreadable(
+                "the credential file could not be read",
+            ));
+        }
+        Ok(Err(CredentialFileProblem::Missing)) => return Err(Unresolved::Missing),
+        Ok(Err(CredentialFileProblem::NotARegularFile)) => {
+            return Err(Unresolved::Unreadable(
+                "the credential file is not a regular file",
+            ));
+        }
+        Ok(Err(CredentialFileProblem::TooLarge)) => {
+            return Err(Unresolved::Unreadable("the credential file is too large"));
+        }
+        Ok(Ok(bytes)) => bytes,
+    };
     let text = String::from_utf8(bytes)
         .map_err(|_| Unresolved::Unreadable("the credential file is not text"))?;
     non_empty(&text)

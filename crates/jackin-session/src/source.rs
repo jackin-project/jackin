@@ -1,12 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::Path;
 use std::sync::Arc;
 
 use jackin_core::{
-    ChatgptAccountId, EnvName, EnvSnapshot, FileKind, FileSystem, FsError, HostPath, OpReference,
-    plain,
+    ChatgptAccountId, CredentialFileProblem, EnvName, EnvSnapshot, FileKind, FileSystem, FsError,
+    HostPath, OpReference, plain, read_credential_file,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -67,6 +66,8 @@ pub enum SourceFault {
     FileMissing(HostPath),
     #[error("{0} is not a regular file")]
     FileNotRegular(HostPath),
+    #[error("{0} is larger than the credential file limit")]
+    FileTooLarge(HostPath),
     #[error("cannot read {0}")]
     Unreadable(HostPath),
     #[error("no folder at {0}")]
@@ -160,15 +161,16 @@ impl SourceDesk {
     }
 
     async fn file(&self, path: &HostPath) -> Result<SourceFound, SourceFault> {
-        match self
-            .fs
-            .stat_following(path)
+        match read_credential_file(self.fs.as_ref(), path)
             .await
             .map_err(SourceFault::Fs)?
         {
-            None => Err(SourceFault::FileMissing(path.clone())),
-            Some(FileKind::File) => Ok(SourceFound::File),
-            Some(_) => Err(SourceFault::FileNotRegular(path.clone())),
+            Ok(_) => Ok(SourceFound::File),
+            Err(CredentialFileProblem::Missing) => Err(SourceFault::FileMissing(path.clone())),
+            Err(CredentialFileProblem::NotARegularFile) => {
+                Err(SourceFault::FileNotRegular(path.clone()))
+            }
+            Err(CredentialFileProblem::TooLarge) => Err(SourceFault::FileTooLarge(path.clone())),
         }
     }
 
@@ -202,19 +204,16 @@ impl SourceDesk {
         ) {
             return FolderFacts::Unreadable;
         }
-        let Ok(file) = HostPath::resolve(Path::new(AUTH_FILE), &folder) else {
-            return FolderFacts::Unreadable;
-        };
-        match self.fs.stat_following(&file).await {
-            Ok(None) => FolderFacts::NoCredential,
-            Ok(Some(FileKind::File)) => match read_chatgpt_login(self.fs.as_ref(), &folder).await {
-                Ok(_) => FolderFacts::CodexLogin,
-                Err(CredentialError::NotAChatgptLogin) => FolderFacts::Unrecognised,
-                Err(CredentialError::AuthJsonInvalid { .. }) => FolderFacts::Malformed,
-                Err(CredentialError::LoginUnreadable { .. }) => FolderFacts::NoCredential,
-                Err(CredentialError::Fs(_)) => FolderFacts::Unreadable,
-            },
-            Ok(Some(_)) | Err(_) => FolderFacts::Unreadable,
+        match read_chatgpt_login(self.fs.as_ref(), &folder).await {
+            Ok(_) => FolderFacts::CodexLogin,
+            Err(CredentialError::NotAChatgptLogin) => FolderFacts::Unrecognised,
+            Err(CredentialError::AuthJsonInvalid { .. }) => FolderFacts::Malformed,
+            Err(CredentialError::LoginUnreadable { .. }) => FolderFacts::NoCredential,
+            Err(
+                CredentialError::LoginNotRegular { .. }
+                | CredentialError::LoginTooLarge { .. }
+                | CredentialError::Fs(_),
+            ) => FolderFacts::Unreadable,
         }
     }
 

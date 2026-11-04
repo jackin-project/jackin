@@ -116,7 +116,10 @@ fn agent(agent: CoreAgent) -> Agent {
     }
 }
 
-fn op_reference(reference: &jackin_core::OpReference) -> OpReference {
+fn op_reference(
+    reference: &jackin_core::OpReference,
+    account: Option<&jackin_core::OpAccountId>,
+) -> OpReference {
     let mut parts = reference.as_str().split('/').skip(2).map(str::to_owned);
     let vault = parts.next().unwrap_or_default();
     let item = parts.next().unwrap_or_default();
@@ -127,7 +130,7 @@ fn op_reference(reference: &jackin_core::OpReference) -> OpReference {
         [] => (None, String::new()),
     };
     OpReference {
-        account: String::new(),
+        account: account.map(ToString::to_string).unwrap_or_default(),
         vault_id: vault.clone(),
         vault_name: vault,
         item_id: item.clone(),
@@ -182,8 +185,8 @@ pub(crate) fn source(credential: &CoreCredential, provider: Provider) -> Credent
             var: var.as_str().to_owned(),
             detected: env_kind(provider),
         },
-        CoreCredential::OnePassword { reference } => {
-            CredentialSource::OnePassword(op_reference(reference))
+        CoreCredential::OnePassword { reference, account } => {
+            CredentialSource::OnePassword(op_reference(reference, account.as_ref()))
         }
         CoreCredential::File { path } => CredentialSource::LocalFolder {
             path: path.as_path().display().to_string(),

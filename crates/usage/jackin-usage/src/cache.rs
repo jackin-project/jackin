@@ -132,7 +132,11 @@ fn store(path: &HostPath, error: &FsError) -> UsageError {
 pub(crate) fn fingerprint(account: &UsageAccount) -> String {
     let source = match &account.credential {
         CredentialSource::Env { var } => format!("env:{}", var.as_str()),
-        CredentialSource::OnePassword { reference } => format!("op:{}", reference.as_str()),
+        CredentialSource::OnePassword { reference, account } => format!(
+            "op:{}\0{}",
+            account.as_ref().map_or("", |account| account.as_str()),
+            reference.as_str()
+        ),
         CredentialSource::File { path } => format!("file:{}", path.as_path().display()),
         CredentialSource::CodexLogin {
             home,

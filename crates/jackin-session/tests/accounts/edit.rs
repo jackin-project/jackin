@@ -106,6 +106,7 @@ async fn accounts_without_a_chatgpt_login_never_need_the_gateway() -> TestResult
                 Provider::Codex,
                 CredentialSource::OnePassword {
                     reference: OpReference::parse("op://Dev/OpenAI/key")?,
+                    account: None,
                 },
             )?),
         ];
@@ -400,6 +401,7 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_or_loses_a_cha
                     Provider::Codex,
                     CredentialSource::OnePassword {
                         reference: OpReference::parse("op://Dev/OpenAI/key")?,
+                        account: None,
                     },
                 )?),
                 ConfigEdit::AddAccount(account("claude", Provider::Claude, env("CLAUDE_KEY")?)?),

@@ -118,6 +118,12 @@ fn failure_of(source: &CredentialSource, fault: &SourceFault) -> Failure {
                 path: path.to_string(),
             },
         ),
+        SourceFault::FileTooLarge(path) => failure(
+            IssueCode::CredentialMalformed,
+            Lifecycle::Error,
+            action,
+            unreadable(path.to_string()),
+        ),
         SourceFault::Unreadable(path) => failure(
             IssueCode::FolderUnreadable,
             Lifecycle::Error,
@@ -190,13 +196,17 @@ pub(crate) fn found_of(source: &CredentialSource) -> Found {
 }
 
 fn found_material(source: &CredentialSource, found: &SourceFound) -> Found {
-    match found {
-        SourceFound::Login { account } => Found::Login {
+    match (found, source) {
+        (SourceFound::Login { account }, _) => Found::Login {
             account: account.to_string(),
         },
-        SourceFound::Env | SourceFound::File | SourceFound::Folder | SourceFound::OnePassword => {
-            found_of(source)
+        (SourceFound::File, CredentialSource::LocalFolder { path, .. }) => {
+            Found::FileFound { path: path.clone() }
         }
+        (
+            SourceFound::Env | SourceFound::File | SourceFound::Folder | SourceFound::OnePassword,
+            _,
+        ) => found_of(source),
     }
 }
 
@@ -271,7 +281,6 @@ impl Inputs {
         source: &CredentialSource,
     ) -> Result<Box<ValidationOutcome>, String> {
         let reference;
-        let folder;
         let checked = match source {
             CredentialSource::PlainApiKey { .. } => {
                 return Err(sentence(&Rejection::CannotSave(SaveField::ApiKey)));
@@ -280,19 +289,12 @@ impl Inputs {
                 self.sources.check(Source::Env { var }, &self.cancel).await
             }
             CredentialSource::LocalFolder { path, .. } => {
-                folder = match self.expanded(path) {
-                    Ok(folder) => folder,
+                let kind = match self.local_kind(path).await {
+                    Ok(kind) => kind,
                     Err(error) => return Err(error_chain(&error)),
                 };
-                self.sources
-                    .check(
-                        Source::Folder {
-                            path: &folder,
-                            login: core_provider(provider) == jackin_core::Provider::Codex,
-                        },
-                        &self.cancel,
-                    )
-                    .await
+                let login = core_provider(provider) == jackin_core::Provider::Codex;
+                self.sources.check(kind.source(login), &self.cancel).await
             }
             CredentialSource::OnePassword(found) => {
                 reference = found.canonical();

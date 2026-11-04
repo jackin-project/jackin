@@ -6,7 +6,7 @@ use std::path::Path;
 
 use jackin_console::backend::Ticket;
 use jackin_console::domain::account::{AccountId, AccountRegistry};
-use jackin_console::domain::agent::Agent;
+use jackin_console::domain::agent::{Agent, Provider};
 use jackin_console::domain::instance::InstanceId;
 use jackin_console::domain::role::{FindingArea, RoleFinding, RoleManifestDoc};
 use jackin_console::domain::vocabulary::{Rejection, SaveField};
@@ -17,13 +17,14 @@ use jackin_core::plain;
 use jackin_core::{
     Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath, ModelName,
     PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
+    read_credential_file,
 };
 use jackin_core::{EnvSpec, ManifestError, Workspace as CoreWorkspace};
 use jackin_image::Rebuild;
 use jackin_openshell::PowerAction;
 use jackin_session::{
-    AccountPlan, BuildRequest, Gateways, MANIFEST_FILE, PurgeMode, RoleError, build_observed,
-    error_chain, plan_account_edits, read_chatgpt_login,
+    AccountPlan, BuildRequest, Gateways, MANIFEST_FILE, PurgeMode, RoleError, Source,
+    build_observed, error_chain, plan_account_edits, read_chatgpt_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -102,6 +103,20 @@ fn finding(error: &RoleError, doc: &RoleManifestDoc) -> RoleFinding {
     }
 }
 
+pub(crate) enum LocalKind {
+    File(HostPath),
+    Folder(HostPath),
+}
+
+impl LocalKind {
+    pub(crate) fn source(&self, login: bool) -> Source<'_> {
+        match self {
+            LocalKind::File(path) => Source::File { path },
+            LocalKind::Folder(path) => Source::Folder { path, login },
+        }
+    }
+}
+
 impl Inputs {
     async fn saved_snapshot(&self) -> Option<Snapshot> {
         let config = self.config.load().await.ok()?;
@@ -134,6 +149,14 @@ impl Inputs {
         HostPath::parse(&expanded)
     }
 
+    pub(crate) async fn local_kind(&self, text: &str) -> Result<LocalKind, PathError> {
+        let path = self.expanded(text)?;
+        Ok(match self.host.fs.stat_following(&path).await {
+            Ok(Some(FileKind::File)) => LocalKind::File(path),
+            _ => LocalKind::Folder(path),
+        })
+    }
+
     async fn folder(&self, text: &str) -> Result<HostPath, PersistError> {
         let path = self.expanded(text)?;
         match HostPath::canonical_dir(self.host.fs.as_ref(), &path).await {
@@ -157,9 +180,9 @@ impl Inputs {
         };
         let name = provider.login_file().ok_or_else(unusable)?;
         let file = HostPath::resolve(Path::new(name), folder)?;
-        match self.host.fs.stat_following(&file).await? {
-            Some(FileKind::File) => Ok(file),
-            _ => Err(unusable()),
+        match read_credential_file(self.host.fs.as_ref(), &file).await? {
+            Ok(_) => Ok(file),
+            Err(_) => Err(unusable()),
         }
     }
 
@@ -285,24 +308,39 @@ impl Inputs {
     ) -> Result<Resolved, Refused> {
         let mut resolved = Resolved::default();
         for (provider, path) in persist::folders(registry, base) {
-            let folder = self.folder(&path).await?;
-            let provider = crate::project::core_provider(provider);
-            let resolved_folder = if provider == jackin_core::Provider::Codex {
-                let found = read_chatgpt_login(self.host.fs.as_ref(), &folder)
-                    .await
-                    .map_err(|error| Refused::Text(text(&error)))?;
-                Folder::Chatgpt {
-                    home: folder,
-                    account: found.account_id,
-                }
-            } else {
-                Folder::Login {
-                    file: self.login_file(provider, &folder, &path).await?,
-                }
-            };
-            resolved.folders.insert(path, resolved_folder);
+            let folder = self.local_source(provider, &path).await?;
+            resolved.folders.insert((provider, path), folder);
         }
         Ok(resolved)
+    }
+
+    async fn local_source(
+        &self,
+        console_provider: Provider,
+        path: &str,
+    ) -> Result<Folder, Refused> {
+        let kind = self.local_kind(path).await.map_err(PersistError::from)?;
+        if let LocalKind::File(file) = &kind {
+            self.sources
+                .check(kind.source(false), &self.cancel)
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?;
+            return Ok(Folder::Login { file: file.clone() });
+        }
+        let folder = self.folder(path).await?;
+        let provider = crate::project::core_provider(console_provider);
+        if provider == jackin_core::Provider::Codex {
+            let found = read_chatgpt_login(self.host.fs.as_ref(), &folder)
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?;
+            return Ok(Folder::Chatgpt {
+                home: folder,
+                account: found.account_id,
+            });
+        }
+        Ok(Folder::Login {
+            file: self.login_file(provider, &folder, path).await?,
+        })
     }
 
     async fn apply_accounts(&self, edits: Vec<ConfigEdit>) -> Result<Config, Refused> {
@@ -666,13 +704,15 @@ impl Inputs {
             let config = self.config.load().await?;
             let name = RoleName::parse(role).map_err(PersistError::from)?;
             let root = self.role_root(&config, &name).await?;
-            let found: Vec<RoleFinding> = self
-                .roles
-                .findings(&root)
-                .await
-                .iter()
-                .map(|error| finding(error, doc))
-                .collect();
+            let errors = match self.roles.read_manifest(&root).await {
+                Err(errors) => errors,
+                Ok(mut manifest) => {
+                    let base = manifest_doc(&manifest);
+                    merge_manifest(&mut manifest, &base, doc)?;
+                    self.roles.findings_of(&root, manifest).await
+                }
+            };
+            let found: Vec<RoleFinding> = errors.iter().map(|error| finding(error, doc)).collect();
             locked(&self.checks).insert(name, found);
             Ok::<_, Refused>(self.snapshot_of(&config).await)
         }

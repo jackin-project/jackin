@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, FileKind,
+    Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, read_credential_file,
 };
 use jackin_session::{AccountPlan, plan_account_edits, read_chatgpt_login};
 
@@ -49,19 +49,21 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             }
             Ok(CredentialSource::Env { var })
         }
-        Some(Ok(CredentialArg::OnePassword(reference))) => {
-            Ok(CredentialSource::OnePassword { reference })
-        }
+        Some(Ok(CredentialArg::OnePassword(reference))) => Ok(CredentialSource::OnePassword {
+            reference,
+            account: None,
+        }),
         Some(Ok(CredentialArg::File(path))) => {
             let refused = || {
                 CommandError::Argument(
-                    "--credential file:PATH needs an existing regular file".to_owned(),
+                    "--credential file:PATH needs an existing regular file of at most 1 MiB"
+                        .to_owned(),
                 )
             };
             let path = absolutize(&path, &app.cwd).map_err(|_| refused())?;
-            match app.deps.host.fs.stat_following(&path).await {
-                Ok(Some(FileKind::File)) => Ok(CredentialSource::File { path }),
-                Ok(_) | Err(_) => Err(refused()),
+            match read_credential_file(app.deps.host.fs.as_ref(), &path).await {
+                Ok(Ok(_)) => Ok(CredentialSource::File { path }),
+                Ok(Err(_)) | Err(_) => Err(refused()),
             }
         }
         Some(Err(error)) => Err(error),

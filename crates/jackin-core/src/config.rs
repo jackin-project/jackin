@@ -18,7 +18,7 @@ use crate::boundary::FsError;
 use crate::display::plain;
 use crate::docker::EngineConfig;
 use crate::ids::{
-    AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, OpReference,
+    AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, OpAccountId, OpReference,
     OpenShellWorkspace, RoleName, RoleRev, RoleUrl, WorkspaceName,
 };
 use crate::paths::HostPath;
@@ -73,6 +73,7 @@ pub enum CredentialSource {
     },
     OnePassword {
         reference: OpReference,
+        account: Option<OpAccountId>,
     },
     File {
         path: HostPath,

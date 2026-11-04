@@ -699,3 +699,45 @@ async fn a_save_sweeps_the_crash_leftovers_of_the_cache_file_and_keeps_every_oth
     })
     .await
 }
+
+const OP_REFERENCE: &str = "op://v/i/f";
+
+fn router_through(harness: &UsageHarness, account: &str, token: &str) -> UsageAccount {
+    harness.runner.expect(
+        jackin_testkit::ScriptedProgram::Op,
+        &["read", "--account", account, OP_REFERENCE],
+        jackin_testkit::ProcessReply::exited(0, format!("{token}\n").as_bytes(), b""),
+    );
+    crate::support::account(
+        "router",
+        Provider::Openrouter,
+        crate::support::op_source_in(OP_REFERENCE, account),
+    )
+}
+
+#[tokio::test]
+async fn two_one_password_accounts_of_one_name_do_not_share_a_cached_entry() -> TestResult {
+    guard(async {
+        let harness = UsageHarness::new().await?;
+        crate::providers::openrouter_serve(&harness, ROUTER_KEY);
+        let first = router_through(&harness, "acct-1", ROUTER_KEY);
+        let second = router_through(&harness, "acct-2", ROUTER_KEY);
+        let fetched = harness.one(&first, Refresh::Cached).await?;
+        assert!(matches!(fetched.outcome, UsageOutcome::Windows(_)));
+        for path in [OPENROUTER_KEY_PATH, "/api/v1/credits"] {
+            harness
+                .server
+                .replace(Provider::Openrouter, Method::Get, path, Route::status(401));
+        }
+        harness.advance(1);
+        let same = harness.one(&first, Refresh::Cached).await?;
+        assert!(matches!(same.outcome, UsageOutcome::Windows(_)));
+        let other = harness.one(&second, Refresh::Cached).await?;
+        assert_eq!(
+            unavailable(&other.outcome),
+            &UnavailableReason::ExpiredLogin
+        );
+        Ok(())
+    })
+    .await
+}

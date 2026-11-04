@@ -15,7 +15,7 @@ use jackin_console::world::GlobalConfig;
 use jackin_core::{
     Account as CoreAccount, AccountName, AllowedRoles, ChatgptAccountId, Config, ConfigEdit,
     ConfigError, CredentialSource, EnvName, EnvScope, EnvValueError, FsError, HostPath, IdError,
-    OpReference, PathError, PlainEnvValue, ReservedEnvName, RoleName, RoleSet,
+    OpAccountId, OpReference, PathError, PlainEnvValue, ReservedEnvName, RoleName, RoleSet,
     Workspace as CoreWorkspace, WorkspaceName,
 };
 use thiserror::Error;
@@ -64,7 +64,7 @@ pub enum Folder {
 #[derive(Clone, Debug, Default)]
 pub struct Resolved {
     pub project: Option<HostPath>,
-    pub folders: BTreeMap<String, Folder>,
+    pub folders: BTreeMap<(Provider, String), Folder>,
 }
 
 fn same_set(a: &[String], b: &[String]) -> bool {
@@ -380,27 +380,33 @@ pub fn global(
 }
 
 fn credential(
+    provider: Provider,
     source: &ConsoleSource,
     resolved: &Resolved,
 ) -> Result<CredentialSource, PersistError> {
     match source {
         ConsoleSource::OnePassword(reference) => Ok(CredentialSource::OnePassword {
             reference: OpReference::parse(&reference.canonical())?,
+            account: (!reference.account.is_empty())
+                .then(|| OpAccountId::parse(&reference.account))
+                .transpose()?,
         }),
         ConsoleSource::HostEnv { var, .. } => Ok(CredentialSource::Env {
             var: EnvName::parse(var)?,
         }),
-        ConsoleSource::LocalFolder { path, .. } => match resolved.folders.get(path) {
-            Some(Folder::Chatgpt { home, account }) => Ok(CredentialSource::CodexLogin {
-                home: home.clone(),
-                chatgpt_account_id: account.clone(),
-            }),
-            Some(Folder::Login { file }) => Ok(CredentialSource::File { path: file.clone() }),
-            None => Err(Rejection::NotAFolder {
-                folder: path.clone(),
+        ConsoleSource::LocalFolder { path, .. } => {
+            match resolved.folders.get(&(provider, path.clone())) {
+                Some(Folder::Chatgpt { home, account }) => Ok(CredentialSource::CodexLogin {
+                    home: home.clone(),
+                    chatgpt_account_id: account.clone(),
+                }),
+                Some(Folder::Login { file }) => Ok(CredentialSource::File { path: file.clone() }),
+                None => Err(Rejection::NotAFolder {
+                    folder: path.clone(),
+                }
+                .into()),
             }
-            .into()),
-        },
+        }
         ConsoleSource::PlainApiKey { .. } => Err(Rejection::CannotSave(SaveField::ApiKey).into()),
     }
 }
@@ -482,7 +488,7 @@ pub fn accounts(
                 added.push(ConfigEdit::AddAccount(CoreAccount::new(
                     account_name(display_name)?,
                     core_provider(*provider),
-                    credential(source, resolved)?,
+                    credential(*provider, source, resolved)?,
                 )?));
             }
             Some(before) => {
@@ -493,7 +499,7 @@ pub fn accounts(
                 if source != &before.source {
                     changed.push(ConfigEdit::SetAccountCredential {
                         account: account_name(id)?,
-                        credential: credential(source, resolved)?,
+                        credential: credential(*provider, source, resolved)?,
                     });
                 }
             }

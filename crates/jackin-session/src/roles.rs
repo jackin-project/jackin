@@ -318,8 +318,23 @@ impl RoleCatalog {
         self.inspect(root).await.err().unwrap_or_default()
     }
 
+    pub async fn findings_of(&self, root: &HostPath, manifest: RoleManifest) -> Vec<RoleError> {
+        self.inspect_manifest(root, manifest)
+            .await
+            .err()
+            .unwrap_or_default()
+    }
+
     async fn inspect(&self, root: &HostPath) -> Result<Inspected, Vec<RoleError>> {
         let manifest = self.read_manifest(root).await?;
+        self.inspect_manifest(root, manifest).await
+    }
+
+    async fn inspect_manifest(
+        &self,
+        root: &HostPath,
+        manifest: RoleManifest,
+    ) -> Result<Inspected, Vec<RoleError>> {
         let mut findings = Vec::new();
         let dockerfile = self
             .read_checked(root, &manifest.role.dockerfile, &mut findings)
@@ -375,7 +390,7 @@ impl RoleCatalog {
         }
     }
 
-    async fn read_manifest(&self, root: &HostPath) -> Result<RoleManifest, Vec<RoleError>> {
+    pub async fn read_manifest(&self, root: &HostPath) -> Result<RoleManifest, Vec<RoleError>> {
         let name = RepoPath::parse(MANIFEST_FILE).map_err(|error| vec![RoleError::from(error)])?;
         match self
             .fs
