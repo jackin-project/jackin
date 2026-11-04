@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::backend::Effect;
+use jackin_console::domain::fixed::Fixed;
+use jackin_console::domain::vocabulary::fill_in;
 use jackin_core::{
     AccountName, AllowedRoles, ConfigEdit, EnvName, EnvScope, HostPath, PlainEnvValue, RoleName,
     RoleSet, Workspace, WorkspaceName,
@@ -617,6 +619,58 @@ async fn docker_toggle_writes_the_setting() -> TestResult {
         lab.save().await?;
         let config = lab.config().await?;
         assert!(!config.workspace(&origin).ok_or("workspace")?.docker);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn editor_save_status_asks_for_a_default_role() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        lab.add_role("other").await?;
+        lab.edit(vec![ConfigEdit::SetWorkspaceDefaultRole {
+            workspace: name("platform-backend")?,
+            role: None,
+        }])
+        .await?;
+        lab.reopen().await?;
+        lab.console.keys("down e 3 down space")?;
+        lab.save().await?;
+        let hint = fill_in(
+            &Fixed::openshell().save_hint,
+            &[("name", "platform-backend")],
+        );
+        let screen = lab.console.screen();
+        assert!(screen.contains(&hint), "{hint}\n{screen}");
+        let config = lab.config().await?;
+        let saved = config
+            .workspace(&name("platform-backend")?)
+            .ok_or("workspace")?;
+        assert_eq!(saved.default_role, None);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn editor_save_status_is_plain_with_a_default_role() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        lab.add_role("other").await?;
+        lab.edit(vec![ConfigEdit::SetWorkspaceDefaultRole {
+            workspace: name("platform-backend")?,
+            role: Some(RoleName::parse("sentinel")?),
+        }])
+        .await?;
+        lab.reopen().await?;
+        lab.console.keys("down e 3 down space")?;
+        lab.save().await?;
+        let screen = lab.console.screen();
+        assert!(
+            screen.contains("Workspace platform-backend saved"),
+            "{screen}"
+        );
         Ok(())
     })
     .await

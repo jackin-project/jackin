@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::backend::Effect;
-use jackin_console::domain::account::{Account, CredentialSource, DetectedKind};
+use jackin_console::domain::account::{Account, CredentialSource, DetectedKind, UNSAVED_ID};
 use jackin_console::domain::agent::Provider;
 use jackin_core::{
     Account as CoreAccount, AccountName, Agent, ConfigEdit, CredentialSource as Credential,
@@ -107,7 +107,7 @@ async fn a_new_codex_account_syncs_its_provider() -> TestResult {
         let base = lab.world().accounts.clone();
         let mut registry = base.clone();
         let mut added = Account::registered(
-            "acct-new",
+            UNSAVED_ID,
             "newlogin",
             Provider::OpenAi,
             CredentialSource::LocalFolder {
@@ -153,7 +153,7 @@ async fn a_folder_without_a_login_writes_nothing() -> TestResult {
         let base = lab.world().accounts.clone();
         let mut registry = base.clone();
         registry.accounts.push(Account::registered(
-            "acct-new",
+            UNSAVED_ID,
             "newlogin",
             Provider::OpenAi,
             CredentialSource::LocalFolder {

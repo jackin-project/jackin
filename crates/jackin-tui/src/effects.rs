@@ -8,6 +8,7 @@ use jackin_console::domain::account::{AccountId, AccountRegistry};
 use jackin_console::domain::agent::Agent;
 use jackin_console::domain::instance::InstanceId;
 use jackin_console::domain::role::{FindingArea, RoleFinding, RoleManifestDoc};
+use jackin_console::domain::vocabulary::{Rejection, SaveField, Unbuilt, Vocabulary};
 use jackin_console::domain::workspace::{MountSource, Workspace, WorkspaceId};
 use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
 use jackin_core::plain;
@@ -26,20 +27,16 @@ use tokio_util::sync::CancellationToken;
 
 use crate::bridge::Settled;
 use crate::observe::{Inputs, Observation, locked};
-use crate::persist::{self, Field, Folder, PersistError, Resolved};
+use crate::persist::{self, Folder, PersistError, Resolved, sentence};
 use crate::project::{manifest_doc, sandbox_id};
 use crate::sessions::{Access, Home};
 
 #[derive(Debug, Error)]
 enum Refused {
-    #[error("{0} is not in the roster")]
-    NotInRoster(InstanceId),
+    #[error("{}", sentence(.0))]
+    Rejected(Rejection),
     #[error("{}", plain(.0))]
     Text(String),
-    #[error("unknown role {0}")]
-    UnknownRole(RoleName),
-    #[error("Adding a role from a Git URL is not available in this build yet")]
-    GitRole,
     #[error(transparent)]
     Persist(#[from] PersistError),
     #[error(transparent)]
@@ -61,9 +58,7 @@ fn core_agent(agent: Agent) -> Result<CoreAgent, PersistError> {
     match agent {
         Agent::Codex => Ok(CoreAgent::Codex),
         Agent::ClaudeCode | Agent::Amp | Agent::KimiCode | Agent::OpenCode | Agent::GrokBuild => {
-            Err(PersistError::Unrepresentable {
-                field: Field::Agent,
-            })
+            Err(Rejection::CannotSave(SaveField::Agent).into())
         }
     }
 }
@@ -99,7 +94,7 @@ fn finding(error: &RoleError, doc: &RoleManifestDoc) -> RoleFinding {
         area,
         key: None,
         message: text(error),
-        fix: String::new(),
+        fix: None,
     }
 }
 
@@ -133,8 +128,10 @@ impl Inputs {
             _ => Path::new(text).to_path_buf(),
         };
         let path = HostPath::parse(&expanded)?;
-        let folder = || PersistError::Folder {
-            folder: text.to_owned(),
+        let folder = || {
+            PersistError::from(Rejection::NotAFolder {
+                folder: text.to_owned(),
+            })
         };
         let canonical = self.host.fs.canonicalize(&path).await?.ok_or_else(folder)?;
         match self.host.fs.stat_following(&canonical).await? {
@@ -175,7 +172,9 @@ impl Inputs {
                 let source = workspace.mounts.first().map(|mount| &mount.source);
                 match source {
                     Some(MountSource::Host(path)) => Some(self.folder(path).await?),
-                    Some(MountSource::Git(_)) | None => return Err(PersistError::NoProject.into()),
+                    Some(MountSource::Git(_)) | None => {
+                        return Err(PersistError::from(Rejection::NoProject).into());
+                    }
                 }
             }
             Some(_) => None,
@@ -307,17 +306,20 @@ impl Inputs {
             let config = self.config.load().await?;
             let resolved = self.resolve_accounts(base, registry).await?;
             let edits = persist::accounts(base, registry, &resolved)?;
+            let added = persist::added(registry)?;
             let saved = self.apply_accounts(&config, edits).await?;
-            Ok::<_, Refused>(self.snapshot_of(&saved).await)
+            Ok::<_, Refused>((self.snapshot_of(&saved).await, added))
         }
         .await;
         match result {
-            Ok(snapshot) => Msg::AccountsSaved {
+            Ok((snapshot, added)) => Msg::AccountsSaved {
+                added,
                 result: Ok(snapshot),
             }
             .into(),
             Err(error) => {
                 let reply = Msg::AccountsSaved {
+                    added: None,
                     result: Err(text(&error)),
                 };
                 self.failed(reply).await
@@ -334,7 +336,11 @@ impl Inputs {
             .iter()
             .find(|observed| &sandbox_id(&observed.summary.name) == instance)
             .map(|observed| (observed.gateway.clone(), observed.summary.name.clone()))
-            .ok_or_else(|| Refused::NotInRoster(instance.clone()))
+            .ok_or_else(|| {
+                Refused::Rejected(Rejection::NotInRoster {
+                    instance: instance.clone(),
+                })
+            })
     }
 
     fn session(
@@ -449,7 +455,9 @@ impl Inputs {
 
     async fn try_add_role(&self, location: &str) -> Result<(String, Box<Snapshot>), Refused> {
         if jackin_core::RoleUrl::parse(location).is_ok() {
-            return Err(Refused::GitRole);
+            return Err(Refused::Text(
+                Vocabulary::openshell().unbuilt(Unbuilt::AddGitRole),
+            ));
         }
         let root = self.folder(location).await?;
         let loaded = self
@@ -469,9 +477,11 @@ impl Inputs {
     }
 
     async fn role_root(&self, config: &Config, name: &RoleName) -> Result<HostPath, Refused> {
-        let entry = config
-            .role(name)
-            .ok_or_else(|| Refused::UnknownRole(name.clone()))?;
+        let entry = config.role(name).ok_or_else(|| {
+            Refused::Rejected(Rejection::UnknownRole {
+                role: name.to_string(),
+            })
+        })?;
         match &entry.source {
             RoleSource::Path(path) => Ok(path.clone()),
             RoleSource::Git { .. } => {
@@ -545,14 +555,15 @@ impl Inputs {
         let result = async {
             let config = self.config.load().await?;
             let name = RoleName::parse(role).map_err(PersistError::from)?;
-            let entry = config
-                .role(&name)
-                .ok_or_else(|| Refused::UnknownRole(name.clone()))?;
+            let entry = config.role(&name).ok_or_else(|| {
+                Refused::Rejected(Rejection::UnknownRole {
+                    role: name.to_string(),
+                })
+            })?;
             let RoleSource::Path(root) = &entry.source else {
-                return Err(PersistError::Unrepresentable {
-                    field: Field::RoleSource,
-                }
-                .into());
+                return Err(
+                    PersistError::from(Rejection::CannotSave(SaveField::RoleSource)).into(),
+                );
             };
             let file =
                 HostPath::resolve(Path::new(MANIFEST_FILE), root).map_err(PersistError::from)?;
@@ -584,9 +595,11 @@ impl Inputs {
         let result = async {
             let config = self.config.load().await?;
             let name = RoleName::parse(role).map_err(PersistError::from)?;
-            config
-                .role(&name)
-                .ok_or_else(|| Refused::UnknownRole(name.clone()))?;
+            config.role(&name).ok_or_else(|| {
+                Refused::Rejected(Rejection::UnknownRole {
+                    role: name.to_string(),
+                })
+            })?;
             Ok::<_, Refused>(self.snapshot_of(&config).await)
         }
         .await;
@@ -604,10 +617,7 @@ fn merge_manifest(
 ) -> Result<(), Refused> {
     let repo = |value: &str| RepoPath::parse(value).map_err(PersistError::from);
     if doc.name != base.name {
-        return Err(PersistError::Unrepresentable {
-            field: Field::RoleName,
-        }
-        .into());
+        return Err(PersistError::from(Rejection::CannotSave(SaveField::RoleName)).into());
     }
     if doc.dockerfile != base.dockerfile {
         manifest.role.dockerfile = repo(&doc.dockerfile)?;

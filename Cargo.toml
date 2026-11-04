@@ -62,8 +62,8 @@ flate2 = "1.1.10"
 futures = "0.3.34"
 getrandom = "0.4.3"
 globset = { version = "0.4.21", default-features = false }
-jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "516d5228adf694e220182bceb999c4156bf7b22d", default-features = false }
-junie-tui = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "516d5228adf694e220182bceb999c4156bf7b22d", default-features = false, features = ["terminal"] }
+jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "59d2a19b69aaade3481bdf966dd861b95d04e62b", default-features = false }
+junie-tui = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "59d2a19b69aaade3481bdf966dd861b95d04e62b", default-features = false, features = ["terminal"] }
 noyalib = { version = "0.0.53", default-features = false, features = ["std", "lossless-u64"] }
 openshell-core = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
 openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }

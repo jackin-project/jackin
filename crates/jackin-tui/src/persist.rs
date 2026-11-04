@@ -4,14 +4,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_console::domain::account::{
-    Account, AccountRegistry, CredentialSource as ConsoleSource,
+    Account, AccountId, AccountRegistry, CredentialSource as ConsoleSource,
 };
 use jackin_console::domain::agent::Provider;
+use jackin_console::domain::vocabulary::{Rejection, SaveField, Vocabulary};
 use jackin_console::domain::workspace::{
     AllowedRoles as ConsoleAllowed, EnvValue, EnvVar, Workspace,
 };
 use jackin_console::world::GlobalConfig;
-use jackin_core::plain;
 use jackin_core::{
     Account as CoreAccount, AccountName, AllowedRoles, ChatgptAccountId, Config, ConfigEdit,
     ConfigError, CredentialSource, EnvName, EnvScope, EnvValueError, FsError, HostPath, IdError,
@@ -22,66 +22,20 @@ use thiserror::Error;
 
 use crate::project::core_provider;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
-pub enum Field {
-    #[error("workdir")]
-    Workdir,
-    #[error("mounts")]
-    Mounts,
-    #[error("keep_awake")]
-    KeepAwake,
-    #[error("git_pull")]
-    GitPull,
-    #[error("dirty_policy")]
-    DirtyPolicy,
-    #[error("disabled_defaults")]
-    DisabledDefaults,
-    #[error("enabled accounts")]
-    EnabledAccounts,
-    #[error("role accounts")]
-    RoleAccounts,
-    #[error("coauthor_trailer")]
-    CoauthorTrailer,
-    #[error("dco_signoff")]
-    DcoSignoff,
-    #[error("global mounts")]
-    GlobalMounts,
-    #[error("global role variables")]
-    GlobalRoleVariables,
-    #[error("agent modes")]
-    AgentModes,
-    #[error("trust")]
-    Trust,
-    #[error("account name")]
-    AccountName,
-    #[error("account provider")]
-    AccountProvider,
-    #[error("purpose")]
-    Purpose,
-    #[error("endpoint")]
-    Endpoint,
-    #[error("env source")]
-    EnvSource,
-    #[error("api key")]
-    ApiKey,
-    #[error("agent")]
-    Agent,
-    #[error("role source")]
-    RoleSource,
-    #[error("role name")]
-    RoleName,
+pub(crate) fn sentence(rejection: &Rejection) -> String {
+    Vocabulary::openshell().rejection(rejection)
+}
+
+impl From<Rejection> for PersistError {
+    fn from(rejection: Rejection) -> PersistError {
+        PersistError::Rejected(rejection)
+    }
 }
 
 #[derive(Debug, Error)]
 pub enum PersistError {
-    #[error("{field} cannot be saved")]
-    Unrepresentable { field: Field },
-    #[error("a workspace needs a project folder")]
-    NoProject,
-    #[error("{} is not a folder jackin can use", plain(.folder))]
-    Folder { folder: String },
-    #[error("no allowed role is left")]
-    NoRoles,
+    #[error("{}", sentence(.0))]
+    Rejected(Rejection),
     #[error(transparent)]
     Reserved(#[from] ReservedEnvName),
     #[error(transparent)]
@@ -114,20 +68,20 @@ fn same_set(a: &[String], b: &[String]) -> bool {
     a == b
 }
 
-fn keep<T: PartialEq>(payload: &T, base: &T, field: Field) -> Result<(), PersistError> {
+fn keep<T: PartialEq>(payload: &T, base: &T, field: SaveField) -> Result<(), PersistError> {
     if payload == base {
         Ok(())
     } else {
-        Err(PersistError::Unrepresentable { field })
+        Err(Rejection::CannotSave(field).into())
     }
 }
 
 fn plain_value(value: &EnvValue) -> Result<PlainEnvValue, PersistError> {
     match value {
         EnvValue::Plain(text) => Ok(PlainEnvValue::parse(text)?),
-        EnvValue::OnePassword(_) | EnvValue::HostEnv(_) => Err(PersistError::Unrepresentable {
-            field: Field::EnvSource,
-        }),
+        EnvValue::OnePassword(_) | EnvValue::HostEnv(_) => {
+            Err(Rejection::CannotSave(SaveField::EnvSource).into())
+        }
     }
 }
 
@@ -172,7 +126,7 @@ fn core_roles(allowed: &ConsoleAllowed) -> Result<AllowedRoles, PersistError> {
                 .collect::<Result<Vec<_>, _>>()?;
             RoleSet::new(names)
                 .map(AllowedRoles::Only)
-                .ok_or(PersistError::NoRoles)
+                .ok_or(PersistError::from(Rejection::NoRoleLeft))
         }
     }
 }
@@ -222,8 +176,12 @@ fn created(
         docker,
         accounts,
         dirty_policy: _,
+        github: _,
     } = payload;
-    let path = resolved.project.clone().ok_or(PersistError::NoProject)?;
+    let path = resolved
+        .project
+        .clone()
+        .ok_or(PersistError::from(Rejection::NoProject))?;
     let mut workspace = CoreWorkspace::new(path, *docker);
     workspace.roles = core_roles(&roles.allowed)?;
     workspace.default_role = roles.default.as_deref().map(RoleName::parse).transpose()?;
@@ -255,29 +213,29 @@ fn scoped(key: &str) -> Result<jackin_core::ScopedEnvName, PersistError> {
 }
 
 fn fixed(base: &Workspace, payload: &Workspace) -> Result<(), PersistError> {
-    keep(&payload.workdir, &base.workdir, Field::Workdir)?;
-    keep(&payload.mounts, &base.mounts, Field::Mounts)?;
-    keep(&payload.keep_awake, &base.keep_awake, Field::KeepAwake)?;
-    keep(&payload.git_pull, &base.git_pull, Field::GitPull)?;
+    keep(&payload.workdir, &base.workdir, SaveField::Workdir)?;
+    keep(&payload.mounts, &base.mounts, SaveField::Mounts)?;
+    keep(&payload.keep_awake, &base.keep_awake, SaveField::KeepAwake)?;
+    keep(&payload.git_pull, &base.git_pull, SaveField::GitPull)?;
     keep(
         &payload.dirty_policy,
         &base.dirty_policy,
-        Field::DirtyPolicy,
+        SaveField::DirtyPolicy,
     )?;
     keep(
         &payload.accounts.disabled_defaults,
         &base.accounts.disabled_defaults,
-        Field::DisabledDefaults,
+        SaveField::DisabledDefaults,
     )?;
     keep(
         &payload.accounts.enabled,
         &base.accounts.enabled,
-        Field::EnabledAccounts,
+        SaveField::EnabledAccounts,
     )?;
     keep(
         &payload.accounts.role_preferred,
         &base.accounts.role_preferred,
-        Field::RoleAccounts,
+        SaveField::RoleAccounts,
     )
 }
 
@@ -410,13 +368,13 @@ pub fn global(
     keep(
         coauthor_trailer,
         &base.coauthor_trailer,
-        Field::CoauthorTrailer,
+        SaveField::CoauthorTrailer,
     )?;
-    keep(dco_signoff, &base.dco_signoff, Field::DcoSignoff)?;
-    keep(mounts, &base.mounts, Field::GlobalMounts)?;
-    keep(role_env, &base.role_env, Field::GlobalRoleVariables)?;
-    keep(agent_modes, &base.agent_modes, Field::AgentModes)?;
-    keep(trust, &base.trust, Field::Trust)?;
+    keep(dco_signoff, &base.dco_signoff, SaveField::DcoSignoff)?;
+    keep(mounts, &base.mounts, SaveField::GlobalMounts)?;
+    keep(role_env, &base.role_env, SaveField::GlobalRoleVariables)?;
+    keep(agent_modes, &base.agent_modes, SaveField::AgentModes)?;
+    keep(trust, &base.trust, SaveField::Trust)?;
     env_edits(&EnvScope::Global, &base.env, env)
 }
 
@@ -433,17 +391,17 @@ fn credential(
             var: EnvName::parse(var)?,
         }),
         ConsoleSource::LocalFolder { path, .. } => {
-            let folder = resolved
-                .folders
-                .get(path)
-                .ok_or_else(|| PersistError::Folder {
+            let folder = resolved.folders.get(path).ok_or_else(|| {
+                PersistError::from(Rejection::NotAFolder {
                     folder: path.clone(),
-                })?;
+                })
+            })?;
             if core_provider(provider) == CoreProvider::Codex {
-                let chatgpt_account_id =
-                    folder.login.clone().ok_or_else(|| PersistError::Folder {
+                let chatgpt_account_id = folder.login.clone().ok_or_else(|| {
+                    PersistError::from(Rejection::NotAFolder {
                         folder: path.clone(),
-                    })?;
+                    })
+                })?;
                 Ok(CredentialSource::CodexLogin {
                     home: folder.path.clone(),
                     chatgpt_account_id,
@@ -454,10 +412,17 @@ fn credential(
                 })
             }
         }
-        ConsoleSource::PlainApiKey { .. } => Err(PersistError::Unrepresentable {
-            field: Field::ApiKey,
-        }),
+        ConsoleSource::PlainApiKey { .. } => Err(Rejection::CannotSave(SaveField::ApiKey).into()),
     }
+}
+
+pub fn added(registry: &AccountRegistry) -> Result<Option<AccountId>, PersistError> {
+    registry
+        .accounts
+        .iter()
+        .find(|a| a.is_unsaved())
+        .map(|a| account_name(&a.display_name).map(|name| name.to_string()))
+        .transpose()
 }
 
 pub fn folders(registry: &AccountRegistry, base: &AccountRegistry) -> Vec<(Provider, String)> {
@@ -520,14 +485,10 @@ pub fn accounts(
         match base.get(id) {
             None => {
                 if purpose.is_some() {
-                    return Err(PersistError::Unrepresentable {
-                        field: Field::Purpose,
-                    });
+                    return Err(Rejection::CannotSave(SaveField::Purpose).into());
                 }
                 if endpoint.is_some() {
-                    return Err(PersistError::Unrepresentable {
-                        field: Field::Endpoint,
-                    });
+                    return Err(Rejection::CannotSave(SaveField::Endpoint).into());
                 }
                 added.push(ConfigEdit::AddAccount(CoreAccount::new(
                     account_name(display_name)?,
@@ -536,10 +497,10 @@ pub fn accounts(
                 )?));
             }
             Some(before) => {
-                keep(display_name, &before.display_name, Field::AccountName)?;
-                keep(provider, &before.provider, Field::AccountProvider)?;
-                keep(purpose, &before.purpose, Field::Purpose)?;
-                keep(endpoint, &before.endpoint, Field::Endpoint)?;
+                keep(display_name, &before.display_name, SaveField::AccountName)?;
+                keep(provider, &before.provider, SaveField::AccountProvider)?;
+                keep(purpose, &before.purpose, SaveField::Purpose)?;
+                keep(endpoint, &before.endpoint, SaveField::Endpoint)?;
                 if source != &before.source {
                     changed.push(ConfigEdit::SetAccountCredential {
                         account: account_name(id)?,

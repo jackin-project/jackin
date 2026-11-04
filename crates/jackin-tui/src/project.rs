@@ -19,6 +19,7 @@ use jackin_console::domain::role::{
     AccountOrder, RoleAdmin, RoleCheckState, RoleEnvEntry, RoleFinding, RoleManifestDoc, RoleRecord,
 };
 use jackin_console::domain::surfaces::{LiveFacts, Surfaces};
+use jackin_console::domain::vocabulary::Rejection;
 use jackin_console::domain::workspace::{
     AllowedRoles as ConsoleAllowedRoles, EnvVar, RoleEntry, RolePolicy, RoleSource,
     Workspace as ConsoleWorkspace,
@@ -37,11 +38,12 @@ use thiserror::Error;
 
 use crate::fleet::{Fleet, ObservedSandbox};
 use crate::ids::IdTable;
+use crate::persist::sentence;
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum RoleDocError {
-    #[error("the role manifest is read when the role is loaded")]
-    NotLoaded,
+    #[error("{}", sentence(.0))]
+    Rejected(Rejection),
     #[error("{}", plain(.0))]
     Unreadable(String),
 }
@@ -254,6 +256,7 @@ fn workspace(
     name: &WorkspaceName,
     core: &jackin_core::Workspace,
     accounts: &AccountRegistry,
+    origin: Option<&GithubOrigin>,
 ) -> ConsoleWorkspace {
     let mut ws = ConsoleWorkspace::new(id, name.as_str(), normalize::PROJECT_DIR);
     ws.roles = role_policy(&core.roles, core.default_role.as_ref());
@@ -264,6 +267,7 @@ fn workspace(
         .map(|(role, table)| (role.to_string(), env_vars(table)))
         .collect();
     ws.docker = core.docker;
+    ws.github = origin.map(repo_ref);
     ws.accounts.preferred = core
         .bindings
         .iter()
@@ -573,7 +577,7 @@ fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmi
                 manifest: match docs.get(name) {
                     Some(Ok(doc)) => Ok(doc.clone()),
                     Some(Err(error)) => Err(error.to_string()),
-                    None => Err(RoleDocError::NotLoaded.to_string()),
+                    None => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded).to_string()),
                 },
                 check: checks.get(name).map_or(RoleCheckState::Unchecked, |found| {
                     RoleCheckState::Done(found.clone())
@@ -656,7 +660,7 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
     let accounts = registry(config);
     let workspaces = config
         .workspaces()
-        .map(|(name, core)| workspace(ids.id(name), name, core, &accounts))
+        .map(|(name, core)| workspace(ids.id(name), name, core, &accounts, origins.get(name)))
         .collect();
     let instances = fleet
         .sandboxes

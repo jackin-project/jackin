@@ -1,10 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_console::domain::account::{Account, CredentialSource, DetectedKind, UNSAVED_ID};
 use jackin_console::domain::agent::Provider;
+use jackin_console::domain::vocabulary::{Rejection, SaveField};
 use jackin_console::domain::workspace::EnvVar;
 use jackin_core::{Config, ConfigEdit, EnvScope, RoleName, WorkspaceName};
-use jackin_tui::persist::{self, Field, PersistError, Resolved};
+use jackin_tui::persist::{self, PersistError, Resolved};
 use jackin_tui::{Facts, Fleet, IdTable, Origins, ProjectInput, RoleChecks, RoleDocs, project};
 
 const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
@@ -79,9 +81,9 @@ fn unrepresentable_field_is_named() -> Out {
     assert!(
         matches!(
             result,
-            Err(PersistError::Unrepresentable {
-                field: Field::KeepAwake
-            })
+            Err(PersistError::Rejected(Rejection::CannotSave(
+                SaveField::KeepAwake
+            )))
         ),
         "{result:?}"
     );
@@ -91,9 +93,9 @@ fn unrepresentable_field_is_named() -> Out {
     assert!(
         matches!(
             result,
-            Err(PersistError::Unrepresentable {
-                field: Field::CoauthorTrailer
-            })
+            Err(PersistError::Rejected(Rejection::CannotSave(
+                SaveField::CoauthorTrailer
+            )))
         ),
         "{result:?}"
     );
@@ -103,9 +105,9 @@ fn unrepresentable_field_is_named() -> Out {
     assert!(
         matches!(
             result,
-            Err(PersistError::Unrepresentable {
-                field: Field::Purpose
-            })
+            Err(PersistError::Rejected(Rejection::CannotSave(
+                SaveField::Purpose
+            )))
         ),
         "{result:?}"
     );
@@ -192,5 +194,24 @@ fn accounts_diff_per_account() -> Out {
         ]
     );
     assert_eq!(Provider::OpenAi, registry.accounts[0].provider);
+    Ok(())
+}
+
+#[test]
+fn the_unsaved_account_is_named_for_the_reply() -> Out {
+    let config = Config::parse(&shapes()[1])?;
+    let shown = snapshot(&config);
+    assert_eq!(persist::added(&shown.accounts)?, None);
+    let mut registry = shown.accounts.clone();
+    registry.accounts.push(Account::registered(
+        UNSAVED_ID,
+        "spare",
+        Provider::OpenAi,
+        CredentialSource::HostEnv {
+            var: "SPARE_KEY".to_owned(),
+            detected: DetectedKind::ClaudeApiKeyEnv,
+        },
+    ));
+    assert_eq!(persist::added(&registry)?, Some("spare".to_owned()));
     Ok(())
 }

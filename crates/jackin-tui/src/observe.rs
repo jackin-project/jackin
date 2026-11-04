@@ -9,7 +9,7 @@ use futures::future::join_all;
 use jackin_console::domain::doctor::{
     DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
 };
-use jackin_console::domain::vocabulary::{Notice, Vocabulary};
+use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
     Compatibility, Config, ConfigError, ConfigStore, HostPath, RoleManifest, RoleName,
@@ -277,7 +277,7 @@ impl Inputs {
                         },
                     }
                 }
-                CoreRoleSource::Git { .. } => Err(RoleDocError::NotLoaded),
+                CoreRoleSource::Git { .. } => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
             };
             (name, (source, doc))
         }))
