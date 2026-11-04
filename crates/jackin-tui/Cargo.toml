@@ -18,7 +18,6 @@ jackin-core = { workspace = true }
 jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
 junie-tui = { workspace = true }
-ratatui = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 tokio-util = { workspace = true }
@@ -27,6 +26,7 @@ tokio-util = { workspace = true }
 clap = { workspace = true }
 jackin-console = { workspace = true, features = ["demo"] }
 jackin-testkit = { workspace = true }
+ratatui = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "test-util", "time"] }
 
 [lints]

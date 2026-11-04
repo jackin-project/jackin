@@ -400,7 +400,8 @@ impl Run {
                 .map_err(|error| plain(error_chain(&error)));
         }
         if self.attempt == Attempt::Restart {
-            let (events, _unread) = launch_events(LineDelivery::BestEffort);
+            let (events, feed) = launch_events(LineDelivery::BestEffort);
+            drop(feed);
             self.session
                 .restart_agent(&self.sandbox, events, self.gone.clone())
                 .await

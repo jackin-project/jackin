@@ -11,7 +11,8 @@ use jackin_console::domain::vocabulary::{PaneWords, fill_in};
 use jackin_console::panes::{PaneKind, PaneRequest};
 use jackin_console::screens::Go;
 use jackin_core::{AttemptId, SupervisorState};
-use jackin_openshell::TermSize;
+use jackin_openshell::{InputMode, TermSize};
+use jackin_session::AttachRequest;
 use jackin_testkit::{ConsoleRig, Rig, SandboxHandle, TestResult, guard};
 
 use super::support::Lab;
@@ -96,7 +97,7 @@ impl Capsule {
         let waiting = fill_in(&words.attaching_title, &[("agent", "Codex")]);
         for _ in 0..80 {
             self.lab.console.pump(1).await;
-            if self.handle.attachments() == 1 && !self.lab.console.screen().contains(&waiting) {
+            if self.handle.attachments() >= 1 && !self.lab.console.screen().contains(&waiting) {
                 return Ok(());
             }
         }
@@ -116,6 +117,16 @@ impl Capsule {
         raw.pop();
         self.seen = self.handle.raw_input().len();
         Ok(raw)
+    }
+
+    async fn feed(&mut self, bytes: &[u8]) -> TestResult {
+        self.marks += 1;
+        let mark = format!("FEDMARK{}", self.marks);
+        self.handle.print_main(bytes);
+        self.handle.print_main(mark.as_bytes());
+        self.lab.console.wait_for_text(&mark).await?;
+        self.lab.console.pump(2).await;
+        Ok(())
     }
 
     async fn pump_until(&mut self, done: impl Fn(&SandboxHandle) -> bool) -> TestResult {
@@ -204,6 +215,10 @@ async fn ctrl_d_never_reaches_codex_and_ctrl_b_ctrl_b_sends_the_prefix() -> Test
     guard(Box::pin(async {
         let mut capsule = Capsule::open().await?;
         capsule.console().keys("a ctrl+d ctrl+b ctrl+b b")?;
+        capsule
+            .pump_until(|handle| handle.raw_input().len() >= 3 || handle.raw_input().contains(&4))
+            .await?;
+        assert_eq!(capsule.handle.raw_input(), b"a\x02b");
         let raw = capsule.sync().await?;
         assert_eq!(raw, b"a\x02b");
         assert_eq!(capsule.handle.attachments(), 1);
@@ -523,8 +538,7 @@ async fn a_codex_clipboard_write_after_a_key_is_copied_and_says_so() -> TestResu
     guard(Box::pin(async {
         let mut capsule = Capsule::open().await?;
         capsule.console().keys("a")?;
-        capsule.handle.print_main(&osc52(b"Hello"));
-        capsule.console().pump(6).await;
+        capsule.feed(&osc52(b"Hello")).await?;
         assert_eq!(capsule.console().clipboard().writes(), vec!["Hello"]);
         let words = PaneWords::openshell();
         let what = fill_in(
@@ -536,8 +550,7 @@ async fn a_codex_clipboard_write_after_a_key_is_copied_and_says_so() -> TestResu
             "{}",
             capsule.console().status_line()
         );
-        capsule.handle.print_main(&osc52(b"Again"));
-        capsule.console().pump(6).await;
+        capsule.feed(&osc52(b"Again")).await?;
         assert_eq!(
             capsule.console().clipboard().writes(),
             vec!["Hello", "Again"]
@@ -551,8 +564,7 @@ async fn a_codex_clipboard_write_after_a_key_is_copied_and_says_so() -> TestResu
 async fn a_clipboard_write_is_refused_without_a_gesture_or_after_the_window() -> TestResult {
     guard(Box::pin(async {
         let mut capsule = Capsule::open().await?;
-        capsule.handle.print_main(&osc52(b"Early"));
-        capsule.console().pump(6).await;
+        capsule.feed(&osc52(b"Early")).await?;
         assert_eq!(capsule.console().clipboard().writes(), Vec::<String>::new());
         let words = PaneWords::openshell();
         let blocked = fill_in(&words.clip_write_blocked, &[("source", "Codex")]);
@@ -560,9 +572,13 @@ async fn a_clipboard_write_is_refused_without_a_gesture_or_after_the_window() ->
         capsule.console().keys("a")?;
         capsule.console().elapse(6);
         capsule.console().pump(1).await;
-        capsule.handle.print_main(&osc52(b"Late"));
-        capsule.console().pump(6).await;
+        capsule.feed(&osc52(b"Late")).await?;
         assert_eq!(capsule.console().clipboard().writes(), Vec::<String>::new());
+        capsule.console().keys("a")?;
+        capsule.console().elapse(2);
+        capsule.console().pump(1).await;
+        capsule.feed(&osc52(b"Inside")).await?;
+        assert_eq!(capsule.console().clipboard().writes(), vec!["Inside"]);
         Ok(())
     }))
     .await
@@ -573,16 +589,14 @@ async fn a_clipboard_read_is_never_answered_and_the_cap_is_on_decoded_bytes() ->
     guard(Box::pin(async {
         let mut capsule = Capsule::open().await?;
         capsule.console().keys("a")?;
-        capsule.handle.print_main(b"\x1b]52;c;?\x07");
+        capsule.feed(b"\x1b]52;c;?\x07").await?;
         assert_eq!(capsule.sync().await?, b"a");
         assert_eq!(capsule.console().clipboard().writes(), Vec::<String>::new());
         capsule.console().keys("a")?;
-        capsule.handle.print_main(&osc52(&vec![b'x'; 100_000]));
-        capsule.console().pump(10).await;
+        capsule.feed(&osc52(&vec![b'x'; 100_000])).await?;
         assert_eq!(capsule.console().clipboard().writes().len(), 1);
         capsule.console().keys("a")?;
-        capsule.handle.print_main(&osc52(&vec![b'y'; 100_001]));
-        capsule.console().pump(10).await;
+        capsule.feed(&osc52(&vec![b'y'; 100_001])).await?;
         assert_eq!(capsule.console().clipboard().writes().len(), 1);
         Ok(())
     }))
@@ -607,17 +621,20 @@ async fn a_shell_pane_never_writes_the_clipboard() -> TestResult {
             .console()
             .type_text("printf '\\033]52;c;SGVsbG8=\\007'");
         capsule.console().keys("ctrl+j")?;
-        capsule.console().pump(20).await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        capsule.console().pump(10).await;
-        assert_eq!(capsule.console().clipboard().writes(), Vec::<String>::new());
         let words = PaneWords::openshell();
         let blocked = fill_in(&words.clip_write_blocked, &[("source", &words.shell_label)]);
+        for _ in 0..400 {
+            if capsule.console().status_line().contains(&blocked) {
+                break;
+            }
+            capsule.console().pump(1).await;
+        }
         assert!(
             capsule.console().status_line().contains(&blocked),
             "{}",
             capsule.console().status_line()
         );
+        assert_eq!(capsule.console().clipboard().writes(), Vec::<String>::new());
         Ok(())
     }))
     .await
@@ -742,6 +759,56 @@ async fn a_stopped_sandbox_has_no_initial_pane() -> TestResult {
         instance.status = InstanceStatus::RestoreAvailable;
         let backend = Arc::clone(&lab.world().backend);
         assert_eq!(backend.initial_panes(&instance), Vec::<PaneRequest>::new());
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn a_second_client_leaves_the_pane_read_only_until_the_owner_goes() -> TestResult {
+    guard(Box::pin(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.handle(1).await?.name();
+        let held = rig
+            .world
+            .session
+            .attach(AttachRequest {
+                sandbox: name,
+                size: size(100, 30)?,
+                input: InputMode::Owner,
+            })
+            .await?;
+        let mut capsule = Capsule::attach(rig, |_| {}).await?;
+        let words = PaneWords::openshell();
+        capsule.console().wait_for_text(&words.viewing).await?;
+        drop(held);
+        capsule
+            .pump_until(|handle| handle.attachments() == 1)
+            .await?;
+        capsule.console().keys("y")?;
+        capsule
+            .pump_until(|handle| handle.main_input() == b"y")
+            .await?;
+        for _ in 0..400 {
+            if !capsule.console().screen().contains(&words.viewing) {
+                return Ok(());
+            }
+            capsule.console().pump(1).await;
+        }
+        Err(format!("still read-only:\n{}", capsule.console().screen()).into())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn a_paste_reaches_codex_wrapped_when_codex_asked_for_brackets() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        capsule.handle.print_main(b"\x1b[?2004h");
+        capsule.sync().await?;
+        capsule.console().paste("one\ntwo");
+        assert_eq!(capsule.sync().await?, b"\x1b[200~one\ntwo\x1b[201~");
         Ok(())
     }))
     .await
