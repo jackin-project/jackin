@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jackin_core::{
@@ -8,10 +9,12 @@ use jackin_core::{
 };
 use jackin_openshell::GatewayOp;
 use jackin_session::{
-    AccountEditError, AccountError, Gateways, LaunchError, LaunchOutcome, LaunchStep,
-    plan_account_edits,
+    AccountEditError, AccountError, GatewayRemoval, Gateways, LaunchError, LaunchOutcome,
+    LaunchStep, plan_account_edits, plan_gateway_removal,
 };
-use jackin_testkit::{Fault, FixtureError, Outcome, Rig, TestResult, Trigger, guard};
+use jackin_testkit::{
+    FakeGateway, Fault, FixtureError, Outcome, Rig, ScriptedConnector, TestResult, Trigger, guard,
+};
 use tokio_util::sync::CancellationToken;
 
 fn work() -> Result<AccountName, FixtureError> {
@@ -19,14 +22,10 @@ fn work() -> Result<AccountName, FixtureError> {
 }
 
 async fn edit(rig: &Rig, edit: ConfigEdit) -> Result<Config, AccountEditError> {
-    let store = &rig.world.config;
-    let plan = plan_account_edits(&store.load().await?, vec![edit])?;
-    plan.apply(
-        &Gateways::single(rig.world.session.clone()),
-        store,
-        &CancellationToken::new(),
-    )
-    .await
+    let cancel = CancellationToken::new();
+    let plan = plan_account_edits(&rig.world.desk(), vec![edit], &cancel).await?;
+    plan.apply(&Gateways::single(rig.world.session.clone()))
+        .await
 }
 
 async fn launch(rig: &Rig, plan: jackin_session::LaunchPlan) -> Outcome {
@@ -85,20 +84,18 @@ async fn a_launch_waiting_on_the_lock_of_a_running_account_rm_fails_and_creates_
         rig.gateway().inject(Fault::HoldAt {
             trigger: trigger.clone(),
         });
-        let store = rig.world.config.clone();
-        let removal = plan_account_edits(
-            &store.load().await?,
-            vec![ConfigEdit::RemoveAccount(work()?)],
-        )?;
+        let desk = rig.world.desk();
         let session = rig.world.session.clone();
+        let account = work()?;
         let removal = tokio::spawn(async move {
-            removal
-                .apply(
-                    &Gateways::single(session),
-                    &store,
-                    &CancellationToken::new(),
-                )
-                .await
+            plan_account_edits(
+                &desk,
+                vec![ConfigEdit::RemoveAccount(account)],
+                &CancellationToken::new(),
+            )
+            .await?
+            .apply(&Gateways::single(session))
+            .await
         });
         assert!(
             rig.gateway().until_held(&trigger).await,
@@ -190,12 +187,16 @@ async fn a_launch_waiting_on_the_lock_of_a_running_gateway_rm_fails_and_creates_
         rig.gateway().inject(Fault::HoldAt {
             trigger: trigger.clone(),
         });
-        let store = rig.world.config.clone();
-        let session = rig.world.session.clone();
+        let desk = rig.world.desk();
+        let connector =
+            ScriptedConnector::new().gateway(Arc::<FakeGateway>::clone(rig.gateway()), Vec::new());
+        let name = GatewayName::parse("fake-gateway")?;
         let removal = tokio::spawn(async move {
-            session
-                .remove_gateway(&store, &CancellationToken::new())
-                .await
+            let cancel = CancellationToken::new();
+            match plan_gateway_removal(&desk, &name, &cancel).await? {
+                GatewayRemoval::Online(plan) => plan.apply(&connector, &cancel).await,
+                GatewayRemoval::Offline(plan) => Ok::<_, AccountEditError>(plan.apply().await?),
+            }
         });
         assert!(
             rig.gateway().until_held(&trigger).await,

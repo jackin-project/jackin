@@ -5,8 +5,8 @@ use std::error::Error;
 use std::time::Duration;
 
 use jackin_core::{
-    Account, AccountName, ChatgptAccountId, Config, ConfigEdit, CredentialSource, FileMode,
-    FileSystem, HostPath, Provider,
+    Account, AccountName, ChatgptAccountId, Config, ConfigEdit, CredentialSource, FileLock,
+    FileMode, FileSystem, HostPath, Provider,
 };
 use jackin_testkit::{MemFs, World};
 use serde_json::{Value, json};
@@ -57,6 +57,27 @@ pub(crate) async fn register(world: &World, account: &Account) -> TestResult {
         .edit(vec![ConfigEdit::AddAccount(account.clone())])
         .await?;
     Ok(())
+}
+
+pub(crate) async fn hold_account(world: &World, name: &str) -> Result<FileLock, Box<dyn Error>> {
+    world.fs.create_dir_all(world.cache_dir()).await?;
+    let lock = HostPath::resolve(
+        std::path::Path::new(&format!("account-{name}.lock")),
+        world.cache_dir(),
+    )?;
+    Ok(world.fs.lock(&lock).await?)
+}
+
+pub(crate) async fn until_polling(world: &World, polls: usize) {
+    while world.clock.slept().len() < polls {
+        tokio::task::yield_now().await;
+    }
+}
+
+pub(crate) async fn registered() -> Result<World, Box<dyn Error>> {
+    let world = World::builder().build()?;
+    world.seed_all(&Config::parse(GATEWAY)?).await?;
+    Ok(world)
 }
 
 pub(crate) fn chatgpt(id: &str) -> Result<ChatgptAccountId, Box<dyn Error>> {

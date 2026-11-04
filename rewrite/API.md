@@ -2351,17 +2351,23 @@ pub enum OriginError { Process(ProcessError), Git { exit_code: i32, output: Term
 impl Session { pub async fn project_origin(&self, project: &ProjectRoot, cancel: &CancellationToken) -> Result<Option<GithubOrigin>, OriginError> }
 
 // accounts.rs: one account add, remove and credential-change sequence for the CLI and the console
-pub enum AccountPlan { Offline(OfflinePlan), Gateway(GatewayPlan) }
+pub struct AccountDesk { }                             // host ports, cache_dir and the ConfigStore: what an edit needs to take account locks
+impl AccountDesk { pub fn new(host: HostPorts, cache_dir: HostPath, store: ConfigStore) -> AccountDesk }
+pub enum AccountPlan { Offline(OfflinePlan), Gateway(GatewayPlan) }   // only built under the account locks; holds them until applied or dropped
 pub struct OfflinePlan { }
 pub struct GatewayPlan { }
-pub fn plan_account_edits(config: &Config, edits: Vec<ConfigEdit>) -> Result<AccountPlan, ConfigError>;
+pub async fn plan_account_edits(desk: &AccountDesk, edits: Vec<ConfigEdit>, cancel: &CancellationToken) -> Result<AccountPlan, AccountEditError>;
 impl AccountPlan {
     pub fn needs_gateway(&self) -> bool;
-    pub async fn apply(self, session: &Session, store: &ConfigStore, cancel: &CancellationToken) -> Result<Config, AccountEditError>;
+    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError>;
 }
-impl OfflinePlan { pub async fn apply(self, store: &ConfigStore) -> Result<Config, ConfigError> }
-impl GatewayPlan { pub async fn apply(self, session: &Session, store: &ConfigStore, cancel: &CancellationToken) -> Result<Config, AccountEditError> }
-pub enum AccountEditError { Config(ConfigError), Account(AccountError) }
+impl OfflinePlan { pub async fn apply(self) -> Result<Config, ConfigError> }
+impl GatewayPlan { pub fn config(&self) -> &Config; pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> }   // build `gateways` from config()
+pub async fn plan_gateway_removal(desk: &AccountDesk, name: &GatewayName, cancel: &CancellationToken) -> Result<GatewayRemoval, AccountEditError>;
+pub enum GatewayRemoval { Offline(OfflinePlan), Online(RemovalPlan) }
+impl RemovalPlan { pub fn gateway(&self) -> &GatewayName; pub async fn apply(self, connector: &dyn GatewayConnector, cancel: &CancellationToken) -> Result<Config, AccountEditError> }
+pub enum AccountEditError { Config(ConfigError), Account(AccountError), OnGateway { gateway: GatewayName, source: GatewayError },
+                            Unreachable(Vec<UnreachableGateway>), Connect(ConnectError), RollbackFailed { .. } }
 
 // build.rs: the `jackin build` path, shared with the console
 pub struct BuildRequest<'a> { pub gateway: Option<&'a GatewayName>, pub role: Option<&'a RoleName>, pub path: &'a HostPath, pub rebuild: Rebuild }
@@ -2395,7 +2401,7 @@ pub fn hook_failure(hook: HookKind, exit_code: i32, output: &TerminalText) -> St
 - `Unexported.uncommitted` is a count: the entries of `git status --porcelain --untracked-files=all` in every checkout plus the entries of `git stash list`, at least one when `refs/stash` exists (the reflog can be expired; the ref is the evidence). `Display` still reads `uncommitted changes` when the count is above zero, so the CLI text does not change.
 - `Session::changes` needs a `Ready` sandbox with a repository. It reads the main checkout: `git diff HEAD` for tracked files (renames detected, no external diff or textconv), and each untracked file that is not ignored, as an added file with one hunk. Each file is read with one bounded `head -c` (256 KiB plus one byte), so one huge file never fails the call: a file over 256 KiB is `unread: Some(TooLarge)`, a link, FIFO or vanished file is `unread: Some(NotRegular)`, and a binary file has no hunks and no `unread`. At most 500 untracked files are listed; `ChangeSet.omitted` counts the rest. Every sandbox git call runs with `--no-optional-locks` so it never takes the index lock beside the agent's own git. Counts of unexported refs come from `WorkState`, not from `ChangeSet`.
 - `Session::project_origin` asks git for the URL it fetches (`git ls-remote --get-url origin`, so `url.<base>.insteadOf` applies and the first URL wins) and reads `refs/remotes/origin/HEAD`, with the D08 host git runner. A config with more than one `remote.origin.url` gives `None`. Only `origin` counts. A URL is GitHub when it is `git@github.com:o/r`, `https://github.com/o/r`, or `ssh://git@github.com/o/r`, with an optional `.git`; any other host, including `github.com.evil.example`, gives `None`. An absent `origin/HEAD` gives `default_branch: None`.
-- `plan_account_edits` applies the whole edit list to a copy of the config and compares each touched account before and after: it forgets the provider of an account that had one and has none now, and syncs the provider of an account that has one now. The result does not depend on the order of the edits, so no edit list leaves an orphan provider. A plan with no provider work is `AccountPlan::Offline` and never needs a `Session`; `AccountPlan::Gateway` takes one by type. The config is written last. An account with no ChatGPT login (any other Codex source, or any other provider) has no OpenShell provider, so the plan does not need a gateway and `jackin account add codex --credential ...` stores it as a usage-only account (it was `AccountError::Unsupported` before).
+- `plan_account_edits` applies the whole edit list to a copy of the config and compares each touched account before and after: it forgets the provider of an account that had one and has none now, and syncs the provider of an account that has one now. The result does not depend on the order of the edits, so no edit list leaves an orphan provider. A plan with no provider work is `AccountPlan::Offline` and never connects a gateway. `plan_account_edits` takes the lock of each touched account first, reads the config under the locks, and only then chooses Offline or Gateway, so a stale read cannot choose the path. `GatewayPlan::config` is the config under the locks; the caller builds `Gateways` from it, and `GatewayPlan::apply` refuses a set that names a gateway the config lacks (`AccountError::GatewayRemoved`, the home gateway first) or lacks one it has (`AccountError::GatewayAdded`). `plan_gateway_removal` locks every login account (and locks again until the set is stable), then returns `Offline` when no account has a provider and `Online` when the gateway being removed must be reached. The config is written last. An account with no ChatGPT login (any other Codex source, or any other provider) has no OpenShell provider, so the plan does not need a gateway and `jackin account add codex --credential ...` stores it as a usage-only account (it was `AccountError::Unsupported` before).
 - `jackin ls --json` and `jackin inspect --json` print `created_at` in each summary when the gateway recorded one.
 - `CheckId::label` and `fix` are the texts of the console doctor panel. `jackin doctor` appends `  fix: <Check.fix>` to each `warn` and `fail` line; the fix of a git that is too old reads `Upgrade git to the required version`.
 - `Clock::utc_offset_secs` is the local UTC offset in seconds. `SystemClock` reads it from `chrono::Local`; `FakeClock::set_utc_offset` sets it for tests.

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use jackin::{AccountLs, ExitClass};
 use jackin_core::{
-    AccountName, Agent, Config, ConfigEdit, GatewayName, OpenShellWorkspace, Provider,
-    ProviderName, RoleName, WorkspaceName,
+    AccountName, Agent, Config, ConfigEdit, FileLock, GatewayName, HostPath, OpenShellWorkspace,
+    Provider, ProviderName, RoleName, WorkspaceName,
 };
 use jackin_session::{HostPorts, Session, SessionDeps};
 use jackin_testkit::{FakeGateway, Rig, TestResult, World, default_limits, guard};
@@ -419,6 +419,139 @@ async fn rm_fails_closed_naming_a_gateway_it_cannot_reach_and_changes_nothing() 
             "the reachable gateway lost its provider although the account stays"
         );
         assert!(fleet.second.provider(&fleet.provider).is_some());
+        Ok(())
+    })
+    .await
+}
+
+const THIRD_GATEWAY: &str = "
+[gateways.third]
+openshell_workspace = \"default\"
+builder = \"jackin-builder\"
+platform = \"linux/arm64\"
+";
+
+async fn hold(rig: &Rig, account: &str) -> Result<FileLock, Failure> {
+    rig.world.fs.create_dir_all(rig.world.cache_dir()).await?;
+    let lock = HostPath::resolve(
+        std::path::Path::new(&format!("account-{account}.lock")),
+        rig.world.cache_dir(),
+    )?;
+    Ok(rig.world.fs.lock(&lock).await?)
+}
+
+async fn until_polling(rig: &Rig, already: usize) {
+    while rig.world.clock.slept().len() <= already {
+        tokio::task::yield_now().await;
+    }
+}
+
+#[tokio::test]
+async fn rm_reaches_a_gateway_that_was_added_while_it_waited_for_the_account_lock() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut fleet = on_two_gateways(&rig, true).await?;
+        let third_name = GatewayName::parse("third")?;
+        let third = Arc::new(FakeGateway::new(
+            third_name.clone(),
+            OpenShellWorkspace::parse("default")?,
+        ));
+        let entry = Config::parse(&format!("{}{THIRD_GATEWAY}", rig.config.render()))?
+            .gateway(&third_name)
+            .cloned()
+            .ok_or("no third entry")?;
+        let work = rig
+            .config
+            .account(&AccountName::parse("work")?)
+            .ok_or("no work account")?;
+        let add = ConfigEdit::AddGateway {
+            name: third_name.clone(),
+            entry,
+        };
+        rig.world.config.edit(vec![add.clone()]).await?;
+        session_on(&rig, &third)
+            .sync_account(work, &CancellationToken::new())
+            .await?;
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::RemoveGateway(third_name.clone())])
+            .await?;
+        fleet.harness.connector = fleet
+            .harness
+            .connector
+            .clone()
+            .with(Arc::<FakeGateway>::clone(&third));
+        let held = hold(&rig, "work").await?;
+        let already = rig.world.clock.slept().len();
+
+        let removal = fleet.harness.run(&["account", "rm", "work"]);
+        let meanwhile = async {
+            until_polling(&rig, already).await;
+            fleet.harness.store().edit(vec![add]).await?;
+            drop(held);
+            Ok::<(), Failure>(())
+        };
+        let (ran, done) = tokio::join!(removal, meanwhile);
+        done?;
+
+        ran?.ok()?;
+        assert!(rig.gateway().provider(&fleet.provider).is_none());
+        assert!(fleet.second.provider(&fleet.provider).is_none());
+        assert!(
+            third.provider(&fleet.provider).is_none(),
+            "the gateway added while the removal waited still holds {}",
+            fleet.provider
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn add_publishes_nothing_to_a_gateway_that_was_removed_while_it_waited_for_the_lock()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let fleet = on_two_gateways(&rig, false).await?;
+        let home = rig.home.as_path().display().to_string();
+        let held = hold(&rig, "extra").await?;
+        let already = rig.world.clock.slept().len();
+
+        let args = [
+            "--gateway",
+            "second",
+            "account",
+            "add",
+            "codex",
+            "--name",
+            "extra",
+            "--chatgpt-from",
+            &home,
+        ];
+        let adding = fleet.harness.run(&args);
+        let meanwhile = async {
+            until_polling(&rig, already).await;
+            fleet
+                .harness
+                .store()
+                .edit(vec![ConfigEdit::RemoveGateway(GatewayName::parse(
+                    "second",
+                )?)])
+                .await?;
+            drop(held);
+            Ok::<(), Failure>(())
+        };
+        let (ran, done) = tokio::join!(adding, meanwhile);
+        done?;
+
+        failed(&ran?, ExitClass::Failure, &["second"])?;
+        let extra = AccountName::parse("extra")?;
+        assert!(
+            fleet.second.providers().is_empty(),
+            "{:?}",
+            fleet.second.providers()
+        );
+        assert!(fleet.harness.stored().await?.account(&extra).is_none());
         Ok(())
     })
     .await

@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
-    FileLock, GatewayName, Provider, ProviderName,
+    FileLock, GatewayEntry, GatewayName, HostPath, Provider, ProviderName,
 };
 use jackin_openshell::{
     GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
@@ -14,11 +14,12 @@ use jackin_openshell::{
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+use crate::connect::{ConnectError, GatewayConnector};
 use crate::credentials::{CredentialError, read_chatgpt_login};
 use crate::gateways::{Gateways, UnreachableGateway};
 use crate::lock::{self, LockError};
 use crate::report::error_chain;
-use crate::service::Session;
+use crate::service::{HostPorts, Session};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AccountSync {
@@ -54,8 +55,10 @@ pub enum AccountError {
     Removed { account: AccountName },
     #[error("account {account} changed after the launch was planned")]
     Changed { account: AccountName },
-    #[error("gateway {gateway} was removed after the launch was planned")]
+    #[error("gateway {gateway} is not in the config any more")]
     GatewayRemoved { gateway: GatewayName },
+    #[error("gateway {gateway} was added to the config after the gateways were connected")]
+    GatewayAdded { gateway: GatewayName },
     #[error("account {account} uses {mode}, which is not supported yet")]
     Unsupported {
         account: AccountName,
@@ -78,6 +81,8 @@ pub enum AccountEditError {
     },
     #[error("{}", unreachable_text(.0))]
     Unreachable(Vec<UnreachableGateway>),
+    #[error(transparent)]
+    Connect(ConnectError),
     #[error("{original}; the provider of account {account} stays on gateway {gateway}")]
     RollbackFailed {
         account: AccountName,
@@ -85,10 +90,6 @@ pub enum AccountEditError {
         original: Box<AccountEditError>,
         rollback: AccountError,
     },
-}
-
-pub fn gateway_holds_providers(config: &Config) -> bool {
-    !login_accounts(config).is_empty()
 }
 
 fn login_accounts(config: &Config) -> BTreeSet<AccountName> {
@@ -114,19 +115,88 @@ fn unreachable_text(gateways: &[UnreachableGateway]) -> String {
 }
 
 #[derive(Clone, Debug)]
+pub struct AccountDesk {
+    host: HostPorts,
+    cache_dir: HostPath,
+    store: ConfigStore,
+}
+
+#[derive(Debug)]
+struct Locked {
+    desk: AccountDesk,
+    config: Config,
+    _held: Vec<FileLock>,
+}
+
+fn account_lock(name: &AccountName) -> String {
+    format!("account-{name}.lock")
+}
+
+impl AccountDesk {
+    pub fn new(host: HostPorts, cache_dir: HostPath, store: ConfigStore) -> AccountDesk {
+        AccountDesk {
+            host,
+            cache_dir,
+            store,
+        }
+    }
+
+    async fn lock(
+        &self,
+        names_of: impl Fn(&Config) -> BTreeSet<AccountName>,
+        cancel: &CancellationToken,
+    ) -> Result<Locked, AccountError> {
+        loop {
+            let names = names_of(&self.store.load().await?);
+            let mut held = Vec::with_capacity(names.len());
+            for name in &names {
+                held.push(
+                    lock::hold(&self.host, &self.cache_dir, &account_lock(name), cancel).await?,
+                );
+            }
+            let config = self.store.load().await?;
+            if names_of(&config).is_subset(&names) {
+                return Ok(Locked {
+                    desk: self.clone(),
+                    config,
+                    _held: held,
+                });
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum AccountPlan {
     Offline(OfflinePlan),
     Gateway(GatewayPlan),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct OfflinePlan {
+    locked: Locked,
     edits: Vec<ConfigEdit>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct GatewayPlan {
+    locked: Locked,
     edits: Vec<ConfigEdit>,
+    effects: Effects,
+}
+
+#[derive(Debug)]
+pub enum GatewayRemoval {
+    Offline(OfflinePlan),
+    Online(RemovalPlan),
+}
+
+#[derive(Debug)]
+pub struct RemovalPlan {
+    locked: Locked,
+    name: GatewayName,
+    entry: GatewayEntry,
+    forget: Vec<Account>,
 }
 
 #[derive(Debug)]
@@ -186,14 +256,51 @@ fn effects(config: &Config, edits: &[ConfigEdit]) -> Result<Effects, ConfigError
     Ok(Effects { forget, publish })
 }
 
-pub fn plan_account_edits(
-    config: &Config,
+pub async fn plan_account_edits(
+    desk: &AccountDesk,
     edits: Vec<ConfigEdit>,
-) -> Result<AccountPlan, ConfigError> {
-    Ok(if effects(config, &edits)?.is_empty() {
-        AccountPlan::Offline(OfflinePlan { edits })
+    cancel: &CancellationToken,
+) -> Result<AccountPlan, AccountEditError> {
+    let names: BTreeSet<AccountName> = edits.iter().filter_map(touched).cloned().collect();
+    let locked = desk.lock(|_| names.clone(), cancel).await?;
+    let effects = effects(&locked.config, &edits)?;
+    Ok(if effects.is_empty() {
+        AccountPlan::Offline(OfflinePlan { locked, edits })
     } else {
-        AccountPlan::Gateway(GatewayPlan { edits })
+        AccountPlan::Gateway(GatewayPlan {
+            locked,
+            edits,
+            effects,
+        })
+    })
+}
+
+pub async fn plan_gateway_removal(
+    desk: &AccountDesk,
+    name: &GatewayName,
+    cancel: &CancellationToken,
+) -> Result<GatewayRemoval, AccountEditError> {
+    let locked = desk.lock(login_accounts, cancel).await?;
+    let edit = ConfigEdit::RemoveGateway(name.clone());
+    locked.config.clone().apply(edit.clone())?;
+    let forget: Vec<Account> = locked
+        .config
+        .accounts()
+        .filter(|account| account.has_provider())
+        .cloned()
+        .collect();
+    let entry = locked.config.gateway(name).cloned();
+    Ok(match entry {
+        Some(entry) if !forget.is_empty() => GatewayRemoval::Online(RemovalPlan {
+            locked,
+            name: name.clone(),
+            entry,
+            forget,
+        }),
+        _ => GatewayRemoval::Offline(OfflinePlan {
+            locked,
+            edits: vec![edit],
+        }),
     })
 }
 
@@ -202,22 +309,50 @@ impl AccountPlan {
         matches!(self, AccountPlan::Gateway(_))
     }
 
-    pub async fn apply(
-        self,
-        gateways: &Gateways,
-        store: &ConfigStore,
-        cancel: &CancellationToken,
-    ) -> Result<Config, AccountEditError> {
+    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
         match self {
-            AccountPlan::Offline(plan) => Ok(plan.apply(store).await?),
-            AccountPlan::Gateway(plan) => plan.apply(gateways, store, cancel).await,
+            AccountPlan::Offline(plan) => Ok(plan.apply().await?),
+            AccountPlan::Gateway(plan) => plan.apply(gateways).await,
         }
     }
 }
 
 impl OfflinePlan {
-    pub async fn apply(self, store: &ConfigStore) -> Result<Config, ConfigError> {
-        store.edit(self.edits).await
+    pub async fn apply(self) -> Result<Config, ConfigError> {
+        self.locked.desk.store.edit(self.edits).await
+    }
+}
+
+impl RemovalPlan {
+    pub fn gateway(&self) -> &GatewayName {
+        &self.name
+    }
+
+    pub async fn apply(
+        self,
+        connector: &dyn GatewayConnector,
+        cancel: &CancellationToken,
+    ) -> Result<Config, AccountEditError> {
+        let gateway = match connector.connect(&self.name, &self.entry, cancel).await {
+            Ok(gateway) => gateway,
+            Err(error) if error.is_cancelled() => return Err(AccountEditError::Connect(error)),
+            Err(error) => {
+                return Err(AccountEditError::Unreachable(vec![
+                    UnreachableGateway::new(self.name, error),
+                ]));
+            }
+        };
+        for account in &self.forget {
+            let provider = ProviderName::for_account(account.name(), Agent::Codex);
+            gateway.delete_provider(&provider).await.map_err(|source| {
+                AccountEditError::OnGateway {
+                    gateway: self.name.clone(),
+                    source,
+                }
+            })?;
+        }
+        let edit = ConfigEdit::RemoveGateway(self.name);
+        Ok(self.locked.desk.store.edit(vec![edit]).await?)
     }
 }
 
@@ -231,20 +366,38 @@ fn on_gateway(session: &Session, error: AccountError) -> AccountEditError {
     }
 }
 
+fn check_gateways(config: &Config, gateways: &Gateways) -> Result<(), AccountError> {
+    let connected = gateways.names();
+    if let Some(gone) = connected.iter().find(|name| config.gateway(name).is_none()) {
+        return Err(AccountError::GatewayRemoved {
+            gateway: (*gone).clone(),
+        });
+    }
+    match config
+        .gateways()
+        .find(|(name, _)| !connected.contains(name))
+    {
+        Some((added, _)) => Err(AccountError::GatewayAdded {
+            gateway: added.clone(),
+        }),
+        None => Ok(()),
+    }
+}
+
 impl GatewayPlan {
-    pub async fn apply(
-        self,
-        gateways: &Gateways,
-        store: &ConfigStore,
-        cancel: &CancellationToken,
-    ) -> Result<Config, AccountEditError> {
+    pub fn config(&self) -> &Config {
+        &self.locked.config
+    }
+
+    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
+        let GatewayPlan {
+            locked,
+            edits,
+            effects,
+        } = self;
+        check_gateways(&locked.config, gateways)?;
+        let store = &locked.desk.store;
         let home = gateways.home();
-        let names: BTreeSet<&AccountName> = self.edits.iter().filter_map(touched).collect();
-        let _held = home.hold_accounts(names, cancel).await?;
-        let effects = effects(&store.load().await?, &self.edits)?;
-        if effects.is_empty() {
-            return Ok(store.edit(self.edits).await?);
-        }
         let sessions = if effects.needs_every_gateway() {
             gateways.every().map_err(AccountEditError::Unreachable)?
         } else {
@@ -260,7 +413,7 @@ impl GatewayPlan {
         }
         let mut created = Vec::new();
         let written = match publish(&sessions, &effects.publish, &mut created).await {
-            Ok(()) => store.edit(self.edits).await.map_err(AccountEditError::from),
+            Ok(()) => store.edit(edits).await.map_err(AccountEditError::from),
             Err(error) => Err(error),
         };
         match written {
@@ -383,42 +536,18 @@ impl Session {
         }
     }
 
-    pub async fn remove_gateway(
-        &self,
-        store: &ConfigStore,
-        cancel: &CancellationToken,
-    ) -> Result<Config, AccountEditError> {
-        let edit = ConfigEdit::RemoveGateway(self.gateway_name().clone());
-        let named = login_accounts(&store.load().await?);
-        let _held = self.hold_accounts(named.iter().collect(), cancel).await?;
-        let config = store.load().await?;
-        config.clone().apply(edit.clone())?;
-        for account in config.accounts().filter(|account| account.has_provider()) {
-            self.forget_locked(account)
-                .await
-                .map_err(|error| on_gateway(self, error))?;
-        }
-        Ok(store.edit(vec![edit]).await?)
-    }
-
-    async fn hold_accounts(
-        &self,
-        names: BTreeSet<&AccountName>,
-        cancel: &CancellationToken,
-    ) -> Result<Vec<FileLock>, AccountError> {
-        let mut held = Vec::new();
-        for name in names {
-            held.push(self.hold_account(name, cancel).await?);
-        }
-        Ok(held)
-    }
-
     async fn hold_account(
         &self,
         name: &AccountName,
         cancel: &CancellationToken,
     ) -> Result<FileLock, AccountError> {
-        Ok(lock::hold(&self.deps, &format!("account-{name}.lock"), cancel).await?)
+        Ok(lock::hold(
+            &self.deps.host,
+            &self.deps.cache_dir,
+            &account_lock(name),
+            cancel,
+        )
+        .await?)
     }
 
     async fn sync_locked(&self, account: &Account) -> Result<AccountSync, AccountError> {

@@ -12,7 +12,7 @@ use jackin_core::{
 use jackin_image::ImageEngine;
 use jackin_openshell::Gateway;
 use jackin_session::{
-    DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
+    AccountDesk, DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
     DEFAULT_EXPORT_TOTAL_BYTES, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
 };
 use tempfile::TempDir;
@@ -72,6 +72,22 @@ impl World {
 
     pub fn home(&self) -> &HostPath {
         &self.home
+    }
+
+    pub fn desk(&self) -> AccountDesk {
+        self.desk_over(self.config.clone())
+    }
+
+    pub fn desk_over(&self, store: ConfigStore) -> AccountDesk {
+        AccountDesk::new(
+            HostPorts {
+                clock: Arc::<FakeClock>::clone(&self.clock),
+                fs: Arc::clone(&self.fs),
+                runner: Arc::<TestRunner>::clone(&self.runner),
+            },
+            self.cache_dir.clone(),
+            store,
+        )
     }
 
     pub async fn seed_config(&self, config: &Config) -> Result<(), ConfigError> {

@@ -1,12 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Account, AccountName, Agent, Config, ConfigEdit, ConfigError, CredentialSource};
+use jackin_core::{
+    Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, FileKind,
+};
 use jackin_session::{AccountPlan, plan_account_edits, read_chatgpt_login};
 
 use crate::app::App;
 use crate::cli::{
     AccountAddArgs, AccountArg, AccountCommand, BindArgs, BindScope, CredentialArg, JsonArg,
+    parse_provider,
 };
 use crate::error::CommandError;
 use crate::paths::absolutize;
@@ -37,13 +40,30 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
         });
     }
     match args.credential.as_deref().map(CredentialArg::parse) {
-        Some(Ok(CredentialArg::Env(var))) => Ok(CredentialSource::Env { var }),
+        Some(Ok(CredentialArg::Env(var))) => {
+            if app.env.get(&var).is_none() {
+                return Err(CommandError::Argument(
+                    "--credential env:NAME needs a variable that is set in this environment"
+                        .to_owned(),
+                ));
+            }
+            Ok(CredentialSource::Env { var })
+        }
         Some(Ok(CredentialArg::OnePassword(reference))) => {
             Ok(CredentialSource::OnePassword { reference })
         }
-        Some(Ok(CredentialArg::File(path))) => Ok(CredentialSource::File {
-            path: absolutize(&path, &app.cwd)?,
-        }),
+        Some(Ok(CredentialArg::File(path))) => {
+            let refused = || {
+                CommandError::Argument(
+                    "--credential file:PATH needs an existing regular file".to_owned(),
+                )
+            };
+            let path = absolutize(&path, &app.cwd).map_err(|_| refused())?;
+            match app.deps.host.fs.stat_following(&path).await {
+                Ok(Some(FileKind::File)) => Ok(CredentialSource::File { path }),
+                Ok(_) | Err(_) => Err(refused()),
+            }
+        }
         Some(Err(error)) => Err(error),
         None => Err(CommandError::Argument(
             "pass --chatgpt-from or --credential".to_owned(),
@@ -52,19 +72,19 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
 }
 
 async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
-    let config = app.store.load().await?;
-    let account = Account::new(args.name.clone(), args.provider, source(app, &args).await?)?;
-    apply(app, &config, vec![ConfigEdit::AddAccount(account)]).await
+    let provider = parse_provider(&args.provider)?;
+    let account = Account::new(args.name.clone(), provider, source(app, &args).await?)?;
+    apply(app, vec![ConfigEdit::AddAccount(account)]).await
 }
 
-async fn apply(app: &App, config: &Config, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
-    match plan_account_edits(config, edits)? {
+async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
+    match plan_account_edits(&app.desk(), edits, &app.cancel).await? {
         AccountPlan::Offline(plan) => {
-            plan.apply(&app.store).await?;
+            plan.apply().await?;
         }
         AccountPlan::Gateway(plan) => {
-            let gateways = app.gateways(config).await?;
-            plan.apply(&gateways, &app.store, &app.cancel).await?;
+            let gateways = app.gateways(plan.config()).await?;
+            plan.apply(&gateways).await?;
         }
     }
     Ok(())
@@ -94,8 +114,7 @@ fn unknown_account(name: &AccountName) -> CommandError {
 }
 
 async fn rm(app: &App, arg: AccountArg) -> Result<(), CommandError> {
-    let config = app.store.load().await?;
-    apply(app, &config, vec![ConfigEdit::RemoveAccount(arg.account)]).await
+    apply(app, vec![ConfigEdit::RemoveAccount(arg.account)]).await
 }
 
 async fn default(app: &App, arg: AccountArg) -> Result<(), CommandError> {
