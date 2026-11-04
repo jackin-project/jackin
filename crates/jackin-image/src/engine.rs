@@ -12,6 +12,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::ensure::ProgressSink;
+use crate::inspect::ImageInspect;
 use crate::plan::{BuildStage, PlannedBuild};
 
 #[async_trait]
@@ -21,6 +22,11 @@ pub trait ImageEngine: Send + Sync + Debug {
         tag: &ImageTag,
         cancel: &CancellationToken,
     ) -> Result<Option<ImageId>, EngineError>;
+    async fn inspect(
+        &self,
+        id: &ImageId,
+        cancel: &CancellationToken,
+    ) -> Result<ImageInspect, EngineError>;
     async fn check_builder(
         &self,
         builder: &BuilderName,
@@ -74,6 +80,8 @@ pub enum EngineError {
         status: ProcessStatus,
         output: TerminalText,
     },
+    #[error("cannot read the layers and the configuration of {id}:\n{}", .output.as_str())]
+    InspectUnreadable { id: ImageId, output: TerminalText },
     #[error("the build context cannot hold {}: it {problem}", plain(.path))]
     ContextEntry {
         path: String,

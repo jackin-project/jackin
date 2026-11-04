@@ -87,6 +87,7 @@ fn plan_verdict(result: Result<ImagePlan, ImageError>) -> Verdict {
             ImageError::MissingInstallTarget { .. }
             | ImageError::Engine(_)
             | ImageError::NotDelivered { .. }
+            | ImageError::Rule { .. }
             | ImageError::SourceMoved { .. }
             | ImageError::LockTimeout { .. }
             | ImageError::Cancelled { .. },
@@ -292,6 +293,35 @@ fn noise_rejected() -> Vec<Row> {
     ]
 }
 
+fn not_a_continuation() -> Vec<Row> {
+    let stage = |label, text| row(label, text, not_construct(3, "ubuntu:24.04"));
+    vec![
+        stage(
+            "a doubled escape ends the instruction",
+            "FROM construct\nRUN true \\\\\nFROM ubuntu:24.04\n",
+        ),
+        stage(
+            "a vertical tab after the escape ends the instruction",
+            "FROM construct\nRUN true \\\x0b\nFROM ubuntu:24.04\n",
+        ),
+        stage(
+            "a form feed after the escape ends the instruction",
+            "FROM construct\nRUN true \\\x0c\nFROM ubuntu:24.04\n",
+        ),
+        row(
+            "a doubled backtick ends the instruction",
+            "# escape=`\nFROM construct\nRUN true ``\nFROM ubuntu:24.04\n",
+            not_construct(4, "ubuntu:24.04"),
+        ),
+    ]
+}
+
+#[test]
+fn only_an_unescaped_escape_followed_by_blanks_continues_a_line() -> TestResult {
+    check(&not_a_continuation());
+    Ok(())
+}
+
 fn env_rows() -> Vec<Row> {
     let ok = |label, text: &str| row(label, text, Verdict::Accepted);
     let client = |label, text: &str, line, name: &str| {
@@ -399,6 +429,24 @@ fn env_rows() -> Vec<Row> {
             "FROM construct AS a\nENV X=1\nFROM construct\nENV Y=1\nENV DOCKER_HOST=x\n",
             5,
             "DOCKER_HOST",
+        ),
+        client(
+            "an escaped equals sign in the first word",
+            "FROM construct\nENV D\\=X DOCKER_HOST=tcp://evil.example:2375\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        client(
+            "an escaped equals sign at the end of the first word",
+            "FROM construct\nENV A\\= DOCKER_CONFIG=/sandbox/c\n",
+            2,
+            "DOCKER_CONFIG",
+        ),
+        client(
+            "an escaped equals sign alone",
+            "FROM construct\nENV \\=X BUILDX_BUILDER=x\n",
+            2,
+            "BUILDX_BUILDER",
         ),
         expands("expanding key", "FROM construct\nENV $NAME=x\n", 2, "$NAME"),
         expands(
@@ -524,6 +572,24 @@ fn onbuild_env_refused() -> Vec<Row> {
             "FROM construct\nONBUILD RUN <<EOF\nx\nEOF\nONBUILD ENV DOCKER_HOST=x\n",
             5,
             "DOCKER_HOST",
+        ),
+        engine_client(
+            "an escaped equals sign in the first word",
+            "FROM construct\nONBUILD ENV D\\=X DOCKER_HOST=tcp://evil.example:2375\n",
+            2,
+            "DOCKER_HOST",
+        ),
+        engine_client(
+            "an escaped equals sign at the end of the first word",
+            "FROM construct\nONBUILD ENV A\\= DOCKER_CONFIG=/sandbox/c\n",
+            2,
+            "DOCKER_CONFIG",
+        ),
+        engine_client(
+            "an escaped equals sign alone",
+            "FROM construct\nONBUILD ENV \\=X BUILDX_BUILDER=x\n",
+            2,
+            "BUILDX_BUILDER",
         ),
         expands(
             "expanding key",

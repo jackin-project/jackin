@@ -123,13 +123,19 @@ fn env_problem(instruction: &Instruction) -> Option<DockerfileError> {
     None
 }
 
+pub(crate) fn defers_engine_client_env(trigger: &str) -> bool {
+    env_problem(&Instruction {
+        line: 0,
+        text: trigger.to_owned(),
+    })
+    .is_some()
+}
+
 fn env_keys(arguments: &str) -> Vec<String> {
     let words = split_shell_words(arguments);
-    let keyed = words
-        .first()
-        .is_some_and(|word| unquoted_equals(word).is_some());
-    let keys = words.iter().map(|word| match unquoted_equals(word) {
-        Some(at) => word[..at].to_owned(),
+    let keyed = words.first().is_some_and(|word| word.contains('='));
+    let keys = words.iter().map(|word| match word.split_once('=') {
+        Some((key, _)) => key.to_owned(),
         None => word.clone(),
     });
     if keyed {
@@ -137,27 +143,6 @@ fn env_keys(arguments: &str) -> Vec<String> {
     } else {
         keys.take(1).collect()
     }
-}
-
-fn unquoted_equals(word: &str) -> Option<usize> {
-    let mut quote: Option<char> = None;
-    let mut skip = false;
-    for (index, c) in word.char_indices() {
-        if skip {
-            skip = false;
-            continue;
-        }
-        match quote {
-            Some(open) if c == open => quote = None,
-            Some('"') if c == '\\' => skip = true,
-            Some(_) => {}
-            None if c == '"' || c == '\'' => quote = Some(c),
-            None if c == '\\' => skip = true,
-            None if c == '=' => return Some(index),
-            None => {}
-        }
-    }
-    None
 }
 
 fn is_blank(c: char) -> bool {
@@ -312,10 +297,7 @@ impl<'a> Reader<'a> {
             } else {
                 physical
             };
-            let Some(body) = physical
-                .trim_end_matches(is_blank)
-                .strip_suffix(self.escape)
-            else {
+            let Some(body) = self.continued(physical) else {
                 text.push_str(physical);
                 break;
             };
@@ -324,6 +306,16 @@ impl<'a> Reader<'a> {
         }
         self.skip_heredocs(&text);
         Some(Instruction { line, text })
+    }
+
+    fn continued<'l>(&self, physical: &'l str) -> Option<&'l str> {
+        let body = physical
+            .trim_end_matches([' ', '\t'])
+            .strip_suffix(self.escape)?;
+        body.chars()
+            .next_back()
+            .filter(|before| *before != self.escape)
+            .map(|_| body)
     }
 
     fn skip_heredocs(&mut self, text: &str) {

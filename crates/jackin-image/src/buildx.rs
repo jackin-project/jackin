@@ -22,6 +22,7 @@ use tokio_util::sync::CancellationToken;
 use crate::context::stage;
 use crate::engine::{EngineError, ImageEngine};
 use crate::ensure::{ImageEvent, ProgressSink};
+use crate::inspect::ImageInspect;
 use crate::plan::{BuildStage, PlannedBuild};
 
 const BUILD_TIMEOUT: Duration = Duration::from_secs(3600);
@@ -269,6 +270,34 @@ impl ImageEngine for BuildxEngine {
             ProcessStatus::Exited(1) if mentions(&output.stderr, "No such image") => Ok(None),
             _ => Err(unreadable()),
         }
+    }
+
+    async fn inspect(
+        &self,
+        id: &ImageId,
+        cancel: &CancellationToken,
+    ) -> Result<ImageInspect, EngineError> {
+        let args = vec![
+            "--format".to_owned(),
+            "{{json .}}".to_owned(),
+            id.to_string(),
+        ];
+        let spec = spec(
+            DockerSubcommand::ImageInspect,
+            args,
+            ProcessStdin::Null,
+            QUERY_TIMEOUT,
+        );
+        let output = self.query(&spec, cancel).await?;
+        let unreadable = |text: TerminalText| EngineError::InspectUnreadable {
+            id: id.clone(),
+            output: text,
+        };
+        if output.status != ProcessStatus::Exited(0) {
+            return Err(unreadable(combined(&output)));
+        }
+        ImageInspect::parse(&output.stdout)
+            .map_err(|error| unreadable(TerminalText::sanitize(error.to_string().as_bytes())))
     }
 
     async fn check_builder(

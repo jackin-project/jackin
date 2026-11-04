@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::engine::{EngineError, ImageEngine};
 use crate::error::ImageError;
+use crate::inspect::{ImageInspect, verify_image};
 use crate::plan::{BuildStage, ImagePlan, PlannedBuild};
 use crate::request::{ImageRequest, Rebuild};
 
@@ -74,6 +75,28 @@ impl Pipeline<'_> {
             .find(tag, self.cancel)
             .await
             .map_err(from_engine)
+    }
+
+    async fn inspect(&self, id: &ImageId) -> Result<ImageInspect, ImageError> {
+        self.live()?;
+        self.engine
+            .inspect(id, self.cancel)
+            .await
+            .map_err(from_engine)
+    }
+
+    async fn verify(
+        &self,
+        stage: BuildStage,
+        id: &ImageId,
+        construct: &ImageInspect,
+    ) -> Result<(), ImageError> {
+        let found = self.inspect(id).await?;
+        verify_image(construct, &found).map_err(|rule| ImageError::Rule {
+            stage,
+            image: id.clone(),
+            rule,
+        })
     }
 
     async fn hold(&self, key: &ImageTag) -> Result<Option<FileLock>, ImageError> {
@@ -189,6 +212,10 @@ pub async fn ensure_held(
     if request.rebuild == Rebuild::No
         && let Some(id) = pipeline.find(&final_tag).await?
     {
+        let construct_image = pipeline.inspect(&construct_id).await?;
+        pipeline
+            .verify(BuildStage::Derived, &id, &construct_image)
+            .await?;
         pipeline
             .emit(ImageEvent::StageCached(BuildStage::Derived))
             .await;
@@ -206,6 +233,10 @@ pub async fn ensure_held(
     let role = pipeline
         .build(&builds.role, &[(&construct.tag, &construct_id)])
         .await?;
+    let construct_image = pipeline.inspect(&construct_id).await?;
+    pipeline
+        .verify(BuildStage::Role, &role, &construct_image)
+        .await?;
     let built = pipeline
         .build(
             &builds.derived,
@@ -220,6 +251,9 @@ pub async fn ensure_held(
             found,
         });
     }
+    pipeline
+        .verify(BuildStage::Derived, &built, &construct_image)
+        .await?;
     Ok(HeldImage {
         image: BuiltImage {
             tag: builds.derived.tag,

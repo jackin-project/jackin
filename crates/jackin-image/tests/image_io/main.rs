@@ -7,4 +7,5 @@ mod env_file;
 mod links;
 mod lock;
 mod regular_file;
+mod rules;
 mod support;

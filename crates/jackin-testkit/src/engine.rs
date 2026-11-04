@@ -9,7 +9,9 @@ use async_trait::async_trait;
 use jackin_core::{
     BuilderName, FileLock, HostPath, ImageId, ImageTag, ProcessStatus, Sha256, TerminalText,
 };
-use jackin_image::{BuildStage, EngineError, ImageEngine, ImageEvent, PlannedBuild, ProgressSink};
+use jackin_image::{
+    BuildStage, EngineError, ImageEngine, ImageEvent, ImageInspect, PlannedBuild, ProgressSink,
+};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
@@ -24,6 +26,8 @@ struct EngineState {
     failures: Vec<BuildStage>,
     script: Vec<EngineMoment>,
     lines: BTreeMap<BuildStageKey, Vec<String>>,
+    crafted: BTreeMap<BuildStageKey, ImageInspect>,
+    inspects: BTreeMap<ImageId, ImageInspect>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -195,10 +199,36 @@ impl FakeEngine {
         locked(&self.state).script.push(moment);
     }
 
+    pub fn craft_inspect(&self, stage: BuildStage, inspect: ImageInspect) {
+        locked(&self.state)
+            .crafted
+            .insert(BuildStageKey::of(stage), inspect);
+    }
+
     pub fn script_lines(&self, stage: BuildStage, lines: Vec<String>) {
         locked(&self.state)
             .lines
             .insert(BuildStageKey::of(stage), lines);
+    }
+}
+
+fn layer_of(text: &str) -> String {
+    format!("sha256:{}", Sha256::of(text.as_bytes()).as_str())
+}
+
+pub fn construct_layer() -> String {
+    layer_of("the fake construct layer")
+}
+
+fn honest_inspect(stage: BuildStage, tag: &ImageTag) -> ImageInspect {
+    let mut layers = vec![construct_layer()];
+    if stage != BuildStage::Construct {
+        layers.push(layer_of(tag.as_str()));
+    }
+    ImageInspect {
+        layers,
+        env: vec!["PATH=/usr/local/bin:/usr/bin".to_owned()],
+        on_build: Vec::new(),
     }
 }
 
@@ -257,6 +287,12 @@ impl FakeEngine {
                 BuildEffect::EditHost(found) => edit = Some(found),
             }
         }
+        let inspect = state
+            .crafted
+            .get(&BuildStageKey::of(build.stage))
+            .cloned()
+            .unwrap_or_else(|| honest_inspect(build.stage, &build.tag));
+        state.inspects.insert(id.clone(), inspect);
         state.images.insert(build.tag.clone(), id.clone());
         state.builds.push(BuildRecord {
             stage: build.stage,
@@ -294,6 +330,22 @@ impl ImageEngine for FakeEngine {
             state.retag(retag);
         }
         Ok(answer)
+    }
+
+    async fn inspect(
+        &self,
+        id: &ImageId,
+        _cancel: &CancellationToken,
+    ) -> Result<ImageInspect, EngineError> {
+        Ok(locked(&self.state)
+            .inspects
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| ImageInspect {
+                layers: vec![construct_layer()],
+                env: Vec::new(),
+                on_build: Vec::new(),
+            }))
     }
 
     async fn check_builder(
