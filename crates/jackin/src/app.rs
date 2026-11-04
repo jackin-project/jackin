@@ -13,6 +13,7 @@ use jackin_session::{
     AccountDesk, GatewayConnector, Gateways, HostPorts, LaunchLimits, RoleCatalog, Session,
     SessionDeps,
 };
+use jackin_tui::ConsoleHost;
 use jackin_usage::ProviderEndpoints;
 use tokio_util::sync::CancellationToken;
 
@@ -27,6 +28,7 @@ pub struct Deps {
     pub connect: Arc<dyn GatewayConnector>,
     pub limits: LaunchLimits,
     pub usage_endpoints: ProviderEndpoints,
+    pub console: Arc<dyn ConsoleHost>,
 }
 
 pub struct AppEnv {
@@ -94,14 +96,27 @@ impl App {
     }
 
     pub(crate) fn session_of(&self, gateway: Arc<dyn Gateway>) -> Session {
-        Session::new(SessionDeps {
-            gateway,
-            engine: Arc::clone(&self.deps.engine),
-            host: self.deps.host.clone(),
-            cache_dir: self.cache_dir.clone(),
-            config: self.store.clone(),
-            limits: self.deps.limits,
-        })
+        self.session_maker()(gateway)
+    }
+
+    pub(crate) fn session_maker(
+        &self,
+    ) -> impl Fn(Arc<dyn Gateway>) -> Session + Send + Sync + use<> {
+        let engine = Arc::clone(&self.deps.engine);
+        let host = self.deps.host.clone();
+        let cache_dir = self.cache_dir.clone();
+        let config = self.store.clone();
+        let limits = self.deps.limits;
+        move |gateway| {
+            Session::new(SessionDeps {
+                gateway,
+                engine: Arc::clone(&engine),
+                host: host.clone(),
+                cache_dir: cache_dir.clone(),
+                config: config.clone(),
+                limits,
+            })
+        }
     }
 
     pub(crate) async fn gateways(&self, config: &Config) -> Result<Gateways, CommandError> {

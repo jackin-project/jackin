@@ -65,6 +65,7 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
     };
     let result = match cli.command {
         Some(command) => commands::dispatch(&mut app, command).await,
+        None if app.terminal.is_some() => commands::console::run(&mut app).await,
         None => app.io.data(&Cli::command().render_help().to_string()),
     };
     match result {

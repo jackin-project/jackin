@@ -4,6 +4,7 @@
 mod account;
 mod attach;
 mod build;
+pub(crate) mod console;
 mod doctor;
 mod export;
 mod gateway;
@@ -15,7 +16,7 @@ mod progress;
 mod purge;
 mod role;
 mod shell;
-mod usage;
+pub(crate) mod usage;
 mod workspace;
 
 use crate::app::App;
