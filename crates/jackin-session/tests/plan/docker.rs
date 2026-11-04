@@ -33,7 +33,7 @@ async fn docker_is_off_by_default_and_adds_exactly_one_rule_one_layer_and_one_wa
             let setup = spec.build().await?;
             let plan = setup.plan(setup.request(1)?)?;
             let created = plan.draft().complete(&built_image(&setup.role, '4')?, jackin_core::DockerLabel::Off);
-            let role_rules = setup.role.policy().network_rules();
+            let role_rules = setup.role.policy().document().network_rules();
             let rules = created.policy().network_rules();
             match source {
                 None => {

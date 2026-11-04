@@ -14,9 +14,9 @@ use jackin_core::{
 };
 use jackin_openshell::contract::{ContractFixture, SHELL_END_TIMEOUT};
 use jackin_openshell::{
-    Gateway, InputMode, MainProcess, PolicyDocument, ProgramOutcome, ProgramRun, ProgramStdin,
-    RepaintPolicy, SandboxCreate, SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalEvent,
-    TerminalKind, TerminalRequest, TerminalSession,
+    AuthoredPolicy, Gateway, InputMode, MainProcess, NetworkRule, ProgramOutcome, ProgramRun,
+    ProgramStdin, RepaintPolicy, SandboxCreate, SandboxFile, SandboxQuery, SandboxView, TermSize,
+    TerminalEvent, TerminalKind, TerminalRequest, TerminalSession,
 };
 use jackin_testkit::{FakeGateway, SandboxHandle};
 use tempfile::TempDir;
@@ -26,7 +26,7 @@ use tokio_util::sync::CancellationToken;
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const IMAGE: &str = "jackin.invalid/contract-base:0123456789abcdef";
-pub(crate) const POLICY: &str = "version: 1
+const AUTHORED_POLICY: &str = "version: 1
 filesystem_policy:
   include_workdir: true
   read_only:
@@ -40,16 +40,6 @@ landlock:
 process:
   run_as_user: sandbox
   run_as_group: sandbox
-network_policies:
-  docker_engine:
-    name: docker_engine
-    endpoints:
-      - host: host.openshell.internal
-        port: 12376
-        protocol: tcp
-        tls: skip
-    binaries:
-      - path: /usr/local/bin/docker
 ";
 
 const GUARD: Duration = Duration::from_secs(10);
@@ -119,7 +109,11 @@ pub(crate) fn spec_with(
         ImageTag::parse(image)?,
         planned.complete(&image_id, jackin_core::DockerLabel::Off),
         providers,
-        PolicyDocument::parse(POLICY)?.close()?,
+        AuthoredPolicy::parse(AUTHORED_POLICY)?
+            .with_rule(NetworkRule::docker_engine(
+                NonZeroU16::new(12376).ok_or("zero port")?,
+            ))?
+            .close()?,
         main,
     ))
 }

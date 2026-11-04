@@ -16,8 +16,8 @@ use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 use super::harness::{WORKSPACE, connect, env, guard};
 use super::sandbox_rpc::CREATED_MILLIS;
 use super::support::{
-    IMAGE_DIGEST, LAUNCH, POLICY, SANDBOX, add_sandbox, create_spec, planned, sandbox_name,
-    set_conditions,
+    IMAGE_DIGEST, LAUNCH, SANDBOX, add_sandbox, create_spec, planned, policy, policy_text,
+    sandbox_name, set_conditions,
 };
 
 fn managed() -> [(&'static str, &'static str); 1] {
@@ -441,7 +441,7 @@ async fn policy_round_trips_through_create_and_detail() {
     let gateway = connect(&env, WORKSPACE).await;
     let spec = create_spec(SANDBOX, LAUNCH);
     guard(gateway.create_sandbox(&spec)).await.unwrap();
-    let sent = openshell_policy::parse_sandbox_policy(POLICY).unwrap();
+    let sent = openshell_policy::parse_sandbox_policy(&policy_text()).unwrap();
     {
         let mut state = env.server.state();
         let key = (WORKSPACE.to_owned(), SANDBOX.to_owned());
@@ -501,7 +501,7 @@ async fn policy_round_trips_through_create_and_detail() {
             .map(str::to_owned)
             .collect::<BTreeSet<_>>()
     );
-    let stored = PolicyDocument::parse(POLICY).unwrap();
+    let stored = PolicyDocument::parse(&policy_text()).unwrap();
     assert_eq!(stored.network_rules().len(), 1);
     add_sandbox(
         &mut env.server.state(),
@@ -540,7 +540,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         base.image().clone(),
         labels.clone(),
         Vec::new(),
-        PolicyDocument::parse(POLICY).unwrap().close().unwrap(),
+        policy(),
         base.main().clone(),
     );
     guard(gateway.create_sandbox(&spec)).await.unwrap();
@@ -591,7 +591,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         base.image().clone(),
         labels,
         vec![provider.clone()],
-        PolicyDocument::parse(POLICY).unwrap().close().unwrap(),
+        policy(),
         base.main().clone(),
     );
     guard(gateway.create_sandbox(&with_provider)).await.unwrap();

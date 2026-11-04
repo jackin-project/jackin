@@ -145,6 +145,7 @@ async fn a_role_input_swapped_for_a_symlink_after_it_was_checked_never_yields_ou
         if let Ok(loaded) = found {
             let keys: Vec<String> = loaded
                 .policy()
+                .document()
                 .network_rules()
                 .iter()
                 .map(|rule| rule.key.to_string())

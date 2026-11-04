@@ -119,16 +119,15 @@ impl fmt::Display for EngineHostViolation {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct AuthoredPolicy(PolicyDocument);
+
 #[derive(Clone, Debug)]
 pub struct ClosedPolicy(PolicyDocument);
 
 impl PolicyDocument {
     pub fn parse(text: &str) -> Result<PolicyDocument, PolicyError> {
         yaml::build(text, yaml::Source::Live)
-    }
-
-    pub fn parse_authored(text: &str) -> Result<PolicyDocument, PolicyError> {
-        yaml::build(text, yaml::Source::Authored)
     }
 
     pub fn network_rules(&self) -> Vec<NetworkRule> {
@@ -197,16 +196,6 @@ impl PolicyDocument {
         yaml::render(&self.value)
     }
 
-    pub fn close(self) -> Result<ClosedPolicy, ClosedPolicyError> {
-        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
-        let violations = self.closure_violations(&profile, &[]);
-        if violations.is_empty() {
-            Ok(ClosedPolicy(self))
-        } else {
-            Err(ClosedPolicyError::Violations(violations))
-        }
-    }
-
     pub(crate) fn proto(&self) -> &SandboxPolicy {
         &self.proto
     }
@@ -216,9 +205,33 @@ impl PolicyDocument {
     }
 }
 
+impl AuthoredPolicy {
+    pub fn parse(text: &str) -> Result<AuthoredPolicy, PolicyError> {
+        yaml::build(text, yaml::Source::Authored).map(AuthoredPolicy)
+    }
+
+    pub fn with_rule(&self, rule: NetworkRule) -> Result<AuthoredPolicy, PolicyError> {
+        self.0.with_rule(rule).map(AuthoredPolicy)
+    }
+
+    pub fn document(&self) -> &PolicyDocument {
+        &self.0
+    }
+
+    pub fn close(self) -> Result<ClosedPolicy, ClosedPolicyError> {
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let violations = self.0.closure_violations(&profile, &[]);
+        if violations.is_empty() {
+            Ok(ClosedPolicy(self.0))
+        } else {
+            Err(ClosedPolicyError::Violations(violations))
+        }
+    }
+}
+
 impl ClosedPolicy {
     pub fn parse(text: &str) -> Result<ClosedPolicy, ClosedPolicyError> {
-        PolicyDocument::parse_authored(text)?.close()
+        AuthoredPolicy::parse(text)?.close()
     }
 
     pub fn document(&self) -> &PolicyDocument {

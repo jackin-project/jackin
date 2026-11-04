@@ -98,7 +98,7 @@ async fn foreign(
             image.tag,
             labels,
             Vec::new(),
-            ClosedPolicy::parse(&rig.loaded.policy().render()?)?,
+            ClosedPolicy::parse(&rig.loaded.policy().document().render()?)?,
             MainProcess {
                 program: path("/bin/sh")?,
                 args: vec!["-c".to_owned(), "sleep 3600".to_owned()],

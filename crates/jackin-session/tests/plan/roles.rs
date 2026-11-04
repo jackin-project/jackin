@@ -188,6 +188,7 @@ async fn a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway() 
         );
         let keys: Vec<String> = loaded
             .policy()
+            .document()
             .network_rules()
             .iter()
             .map(|r| r.key.to_string())
