@@ -6,7 +6,8 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, DockerCapability, DockerLabel, EngineCert, FileMode, HookKind, HostPath, LabelSelector,
-    SandboxLabels, SandboxName, SandboxPath, SecretBytes, StartRequest, sandbox_layout,
+    PLACEHOLDER_SCHEME, SandboxLabels, SandboxName, SandboxPath, SecretBytes, StartRequest,
+    sandbox_layout,
 };
 use jackin_image::{BuiltImage, ImageHold, ImageSource, ensure_held};
 use jackin_openshell::{
@@ -496,6 +497,15 @@ impl Run<'_> {
             return Err(failed(
                 STEP,
                 LaunchError::PlaceholderMissing {
+                    sandbox: sandbox.clone(),
+                    key: key.to_owned(),
+                },
+            ));
+        }
+        if !placeholder.starts_with(PLACEHOLDER_SCHEME) || placeholder.contains(['\n', '\r']) {
+            return Err(failed(
+                STEP,
+                LaunchError::PlaceholderInvalid {
                     sandbox: sandbox.clone(),
                     key: key.to_owned(),
                 },

@@ -6,8 +6,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
-    Account, AccountName, Agent, ChatgptAccountId, CredentialSource, FileLock, HostPath, Provider,
-    ProviderName, Secret,
+    Account, AccountName, Agent, ChatgptAccountId, ConfigEdit, CredentialSource, FileLock,
+    HostPath, Provider, ProviderName, Secret,
 };
 use jackin_openshell::{Gateway, ProviderMaterial, ProviderProfile, ProviderSpec};
 use jackin_session::LaunchOutcome;
@@ -96,6 +96,10 @@ async fn the_lock_is_per_account_and_a_cancelled_wait_ends_the_launch() -> TestR
                 chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
             },
         )?;
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::AddAccount(personal.clone())])
+            .await?;
         rig.world
             .session
             .sync_account(&personal, &CancellationToken::new())

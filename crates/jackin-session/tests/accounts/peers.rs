@@ -94,6 +94,7 @@ async fn fleet(holding: [bool; 3]) -> Result<Fleet, Box<dyn std::error::Error>> 
     let store = store_of(&world, &text).await?;
     let second = peer("second")?;
     let third = peer("third")?;
+    world.seed_config(&config).await?;
     let cancel = CancellationToken::new();
     if holding[0] {
         world.session.sync_account(&account, &cancel).await?;
