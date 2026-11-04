@@ -15,7 +15,7 @@ use jackin_core::{
     Compatibility, Config, ConfigError, ConfigStore, HostPath, RoleManifest, RoleName,
     RoleSource as CoreRoleSource,
 };
-use jackin_session::{DoctorInput, HostPorts, MANIFEST_FILE, RoleCatalog, doctor};
+use jackin_session::{AccountDesk, DoctorInput, HostPorts, MANIFEST_FILE, RoleCatalog, doctor};
 use tokio_util::sync::CancellationToken;
 
 use crate::console::ConsoleLimits;
@@ -50,6 +50,7 @@ pub(crate) type DocCache = BTreeMap<
 
 pub(crate) struct Inputs {
     pub(crate) config: ConfigStore,
+    pub(crate) desk: AccountDesk,
     pub(crate) sessions: SessionSet,
     pub(crate) roles: Arc<RoleCatalog>,
     pub(crate) host: HostPorts,
@@ -84,6 +85,7 @@ pub(crate) fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 #[derive(Debug)]
 pub(crate) struct InputsParts {
     pub config: ConfigStore,
+    pub desk: AccountDesk,
     pub sessions: SessionSet,
     pub roles: Arc<RoleCatalog>,
     pub host: HostPorts,
@@ -102,6 +104,7 @@ impl Inputs {
     pub(crate) fn new(parts: InputsParts) -> Inputs {
         let InputsParts {
             config,
+            desk,
             sessions,
             roles,
             host,
@@ -117,6 +120,7 @@ impl Inputs {
         } = parts;
         Inputs {
             config,
+            desk,
             sessions,
             roles,
             host,

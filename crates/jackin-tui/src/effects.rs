@@ -276,24 +276,29 @@ impl Inputs {
         Ok(resolved)
     }
 
-    async fn apply_accounts(
-        &self,
-        config: &Config,
-        edits: Vec<ConfigEdit>,
-    ) -> Result<Config, Refused> {
+    async fn apply_accounts(&self, edits: Vec<ConfigEdit>) -> Result<Config, Refused> {
         if edits.is_empty() {
-            return Ok(config.clone());
+            return Ok(self.config.load().await?);
         }
-        match plan_account_edits(config, edits)? {
-            AccountPlan::Offline(plan) => Ok(plan.apply(&self.config).await?),
-            AccountPlan::Gateway(plan) => match self.sessions.home() {
-                Home::Ready(gateways) => plan
-                    .apply(&gateways, &self.config, &self.cancel)
-                    .await
-                    .map_err(|error| Refused::Text(text(&error))),
-                Home::Down(error) => Err(Refused::Text(text(&*error))),
-                Home::NotChosen => Err(ConfigError::NoGateway.into()),
-            },
+        let plan = plan_account_edits(&self.desk, edits, &self.cancel)
+            .await
+            .map_err(|error| Refused::Text(text(&error)))?;
+        match plan {
+            AccountPlan::Offline(plan) => Ok(plan.apply().await?),
+            AccountPlan::Gateway(plan) => {
+                let home = self
+                    .sessions
+                    .home(plan.config(), self.connect.as_ref(), &self.cancel)
+                    .await;
+                match home {
+                    Home::Ready(gateways) => plan
+                        .apply(&gateways)
+                        .await
+                        .map_err(|error| Refused::Text(text(&error))),
+                    Home::Down(error) => Err(Refused::Text(text(&*error))),
+                    Home::NotChosen => Err(ConfigError::NoGateway.into()),
+                }
+            }
         }
     }
 
@@ -303,11 +308,10 @@ impl Inputs {
         registry: &AccountRegistry,
     ) -> Settled {
         let result = async {
-            let config = self.config.load().await?;
             let resolved = self.resolve_accounts(base, registry).await?;
             let edits = persist::accounts(base, registry, &resolved)?;
             let added = persist::added(registry)?;
-            let saved = self.apply_accounts(&config, edits).await?;
+            let saved = self.apply_accounts(edits).await?;
             Ok::<_, Refused>((self.snapshot_of(&saved).await, added))
         }
         .await;

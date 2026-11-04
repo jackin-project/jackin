@@ -12,7 +12,7 @@ use jackin_console::world::{Snapshot, WallSource, World, WorldParts};
 use jackin_core::{
     Compatibility, CompatibilityError, ConfigError, ConfigStore, EnvName, EnvSnapshot, HostPath,
 };
-use jackin_session::{HostPorts, RoleCatalog};
+use jackin_session::{AccountDesk, HostPorts, RoleCatalog};
 use junie_tui::clock::SimClock;
 use junie_tui::core::event::Input;
 use junie_tui::motion::Motion;
@@ -39,6 +39,7 @@ pub struct ConsoleLimits {
 #[derive(Debug)]
 pub struct ConsoleDeps {
     pub config: ConfigStore,
+    pub desk: AccountDesk,
     pub sessions: SessionSet,
     pub connect: Arc<dyn SessionConnector>,
     pub roles: Arc<RoleCatalog>,
@@ -121,6 +122,7 @@ fn reduced_motion(env: &EnvSnapshot) -> bool {
 pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     let ConsoleDeps {
         config,
+        desk,
         sessions,
         connect,
         roles,
@@ -139,6 +141,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     let cancel = CancellationToken::new();
     let inputs = Arc::new(Inputs::new(InputsParts {
         config,
+        desk,
         sessions,
         roles,
         host,
