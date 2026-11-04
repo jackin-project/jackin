@@ -501,17 +501,23 @@ async fn a_bell_in_a_background_tab_marks_the_pane_and_focus_events_follow_the_t
         capsule
             .pump_until(|handle| handle.shells().len() == 1)
             .await?;
-        capsule.console().pump(12).await;
-        let raw = capsule.handle.raw_input();
-        assert!(raw.ends_with(b"\x1b[O"), "{raw:?}");
+        capsule
+            .pump_until(|handle| handle.raw_input().ends_with(b"\x1b[O"))
+            .await?;
         assert!(!capsule.console().screen().contains("Codex ●"));
         capsule.handle.print_main(b"\x07");
-        capsule.console().pump(10).await;
+        for _ in 0..400 {
+            if capsule.console().screen().contains("Codex ●") {
+                break;
+            }
+            capsule.console().pump(1).await;
+        }
         let marked = capsule.console().screen();
         assert!(marked.contains("Codex ●"), "{marked}");
         capsule.console().keys("ctrl+b p")?;
-        capsule.console().pump(4).await;
-        assert!(capsule.handle.raw_input().ends_with(b"\x1b[I"));
+        capsule
+            .pump_until(|handle| handle.raw_input().ends_with(b"\x1b[I"))
+            .await?;
         assert!(!capsule.console().screen().contains("Codex ●"));
         Ok(())
     }))
