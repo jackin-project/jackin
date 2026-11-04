@@ -266,7 +266,9 @@ async fn a_launch_runs_on_the_new_default_after_the_default_left_the_config() ->
         for _ in 0..4000 {
             pair.lab.console.tick(1);
             pair.lab.console.settle().await?;
-            if pair.lab.console.console().app().route() == Route::Capsule {
+            if pair.lab.console.console().app().route() == Route::Capsule
+                || pair.lab.console.screen().contains("Launch failed")
+            {
                 break;
             }
             if !asked && pair.lab.console.screen().contains("Values for this launch") {
