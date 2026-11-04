@@ -49,6 +49,7 @@ async fn no_account_kind_puts_a_credential_value_into_a_projected_field_or_a_scr
                 "vault",
                 CredentialSource::OnePassword {
                     reference: OpReference::parse(OP_REFERENCE)?,
+                    account: None,
                 },
             ),
             (

@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::Path;
+use std::io::ErrorKind;
 use std::time::Duration;
 
 use jackin_core::{
-    CredentialSource, HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret,
+    CredentialSource, FsError, HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    RegularFileProblem, RepoPath, Secret,
 };
 use jackin_usage_provider_core::Credential;
 use tokio_util::sync::CancellationToken;
@@ -15,6 +16,7 @@ use crate::request::UsageAccount;
 
 const OP_TIMEOUT: Duration = Duration::from_secs(30);
 const CODEX_LOGIN_FILE: &str = "auth.json";
+const CREDENTIAL_FILE_MAX_BYTES: usize = 1 << 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Shape {
@@ -67,10 +69,15 @@ pub(crate) async fn resolve(
             .and_then(non_empty)
             .map(Material::token)
             .ok_or(Unresolved::Missing),
-        CredentialSource::OnePassword { reference } => {
+        CredentialSource::OnePassword { reference, account } => {
+            let mut args = vec!["read".to_owned()];
+            if let Some(account) = account {
+                args.extend(["--account".to_owned(), account.as_str().to_owned()]);
+            }
+            args.push(reference.as_str().to_owned());
             let spec = ProcessSpec {
                 program: Program::Op,
-                args: vec!["read".to_owned(), reference.as_str().to_owned()],
+                args,
                 cwd: None,
                 env: Vec::new(),
                 env_remove_prefixes: Vec::new(),
@@ -92,7 +99,19 @@ pub(crate) async fn resolve(
                 .ok_or(Unresolved::Missing)
         }
         CredentialSource::File { path } => {
-            let text = read_text(deps, path).await?;
+            let unusable = || Unresolved::Unreadable("the credential file is not a usable path");
+            let root = path
+                .as_path()
+                .parent()
+                .and_then(|parent| HostPath::parse(parent).ok())
+                .ok_or_else(unusable)?;
+            let name = path
+                .as_path()
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| RepoPath::parse(name).ok())
+                .ok_or_else(unusable)?;
+            let text = read_text(deps, &root, &name).await?;
             Ok(if text.starts_with('{') {
                 Material::login(text)
             } else {
@@ -100,21 +119,52 @@ pub(crate) async fn resolve(
             })
         }
         CredentialSource::CodexLogin { home, .. } => {
-            let path = HostPath::resolve(Path::new(CODEX_LOGIN_FILE), home)
-                .map_err(|_| Unresolved::Unreadable("the Codex home is not a usable path"))?;
-            Ok(Material::login(read_text(deps, &path).await?))
+            let name = RepoPath::parse(CODEX_LOGIN_FILE)
+                .map_err(|_| Unresolved::Unreadable("the Codex login file name is not usable"))?;
+            Ok(Material::login(read_text(deps, home, &name).await?))
         }
     }
 }
 
-async fn read_text(deps: &UsageDeps, path: &HostPath) -> Result<String, Unresolved> {
-    let bytes = deps
+async fn read_text(
+    deps: &UsageDeps,
+    root: &HostPath,
+    name: &RepoPath,
+) -> Result<String, Unresolved> {
+    let read = match deps
         .fs
-        .read(path)
+        .read_regular(root, name, CREDENTIAL_FILE_MAX_BYTES)
         .await
-        .map_err(|_| Unresolved::Unreadable("the credential file could not be read"))?
-        .ok_or(Unresolved::Missing)?;
-    let text = String::from_utf8(bytes)
+    {
+        Err(FsError::Io {
+            kind: ErrorKind::NotFound,
+            ..
+        }) => return Err(Unresolved::Missing),
+        Err(_) => {
+            return Err(Unresolved::Unreadable(
+                "the credential file could not be read",
+            ));
+        }
+        Ok(read) => read,
+    };
+    let file = match read {
+        Ok(file) => file,
+        Err(RegularFileProblem::Missing) => return Err(Unresolved::Missing),
+        Err(RegularFileProblem::Symlink) => {
+            return Err(Unresolved::Unreadable(
+                "the credential file is a symbolic link",
+            ));
+        }
+        Err(RegularFileProblem::NotARegularFile) => {
+            return Err(Unresolved::Unreadable(
+                "the credential file is not a regular file",
+            ));
+        }
+    };
+    if file.bytes.len() > CREDENTIAL_FILE_MAX_BYTES {
+        return Err(Unresolved::Unreadable("the credential file is too large"));
+    }
+    let text = String::from_utf8(file.bytes)
         .map_err(|_| Unresolved::Unreadable("the credential file is not text"))?;
     non_empty(&text)
         .map(str::to_owned)

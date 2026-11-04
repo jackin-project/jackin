@@ -187,7 +187,7 @@ async fn a_codex_account_without_a_chatgpt_login_is_stored_for_usage_and_never_r
                 .account(&account("vault")?)
                 .ok_or("no vault")?
                 .credential(),
-            CredentialSource::OnePassword { .. }
+            CredentialSource::OnePassword { account: None, .. }
         ));
         assert!(rig.gateway().providers().is_empty());
         assert!(rig.gateway().profiles().is_empty());

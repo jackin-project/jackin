@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, ChatgptAccountId, Clock, CredentialSource, EnvName, EnvSnapshot, FileKind,
-    FileMode, FileSystem, HostPath, OpReference, ProcessRunner, Provider,
+    FileMode, FileSystem, HostPath, OpAccountId, OpReference, ProcessRunner, Provider,
 };
 use jackin_testkit::{FakeClock, MemFs, Method, Route, ScriptedProcessRunner, UsageServer};
 use jackin_usage::{
@@ -71,6 +71,19 @@ impl UsageHarness {
 
     fn build(&self, endpoints: ProviderEndpoints, state_dir: HostPath) -> HostUsage {
         let fs: Arc<dyn FileSystem> = Arc::<MemFs>::clone(&self.fs);
+        self.build_over(fs, endpoints, state_dir)
+    }
+
+    pub(crate) fn host_over(&self, fs: Arc<dyn FileSystem>, state_dir: HostPath) -> HostUsage {
+        self.build_over(fs, self.server.endpoints(), state_dir)
+    }
+
+    fn build_over(
+        &self,
+        fs: Arc<dyn FileSystem>,
+        endpoints: ProviderEndpoints,
+        state_dir: HostPath,
+    ) -> HostUsage {
         let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&self.clock);
         let runner: Arc<dyn ProcessRunner> = Arc::<ScriptedProcessRunner>::clone(&self.runner);
         HostUsage::new(UsageDeps {
@@ -170,6 +183,14 @@ pub(crate) fn env_source(var: &str) -> CredentialSource {
 pub(crate) fn op_source(reference: &str) -> CredentialSource {
     CredentialSource::OnePassword {
         reference: OpReference::parse(reference).expect("op reference"),
+        account: None,
+    }
+}
+
+pub(crate) fn op_source_in(reference: &str, account: &str) -> CredentialSource {
+    CredentialSource::OnePassword {
+        reference: OpReference::parse(reference).expect("op reference"),
+        account: Some(OpAccountId::parse(account).expect("op account")),
     }
 }
 

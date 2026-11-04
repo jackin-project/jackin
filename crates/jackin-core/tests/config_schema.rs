@@ -205,7 +205,7 @@ fn config_parses_the_full_documented_file_and_exposes_every_value() -> TestResul
     let ci = by_name("ci")?;
     assert!(matches!(
         ci.credential(),
-        CredentialSource::OnePassword { reference } if reference.to_string() == "op://Dev/OpenAI/credential"
+        CredentialSource::OnePassword { reference, account: None } if reference.to_string() == "op://Dev/OpenAI/credential"
     ));
     assert_eq!(ci.codex_auth_mode(), Some(CodexAuthMode::ApiKey));
     let personal = by_name("personal")?;
@@ -598,6 +598,18 @@ fn other_invalid_cases() -> Vec<(&'static str, String, String)> {
             "invalid:accounts.work.credential.reference",
         ),
         case(
+            "empty op account",
+            cred("credential = { source = \"op\", reference = \"op://v/i/f\", account = \"\" }\n"),
+            "invalid:accounts.work.credential.account",
+        ),
+        case(
+            "op account that is an option",
+            cred(
+                "credential = { source = \"op\", reference = \"op://v/i/f\", account = \"--config\" }\n",
+            ),
+            "invalid:accounts.work.credential.account",
+        ),
+        case(
             "no chatgpt id",
             cred("credential = { source = \"codex-login\", home = \"/h\" }\n"),
             "missing:accounts.work.credential.chatgpt_account_id",
@@ -951,6 +963,40 @@ fn config_git_role_sources_are_typed_and_bad_ones_name_their_key() -> TestResult
 }
 
 #[test]
+fn a_one_password_credential_keeps_its_account_through_render_and_parse() -> TestResult {
+    let text = |credential: &str| {
+        format!("[accounts.work]\nprovider = \"codex\"\ncredential = {credential}\n")
+    };
+    let reference = "op://v/i/f";
+    let rows = [
+        (
+            format!("{{ source = \"op\", reference = \"{reference}\" }}"),
+            None,
+        ),
+        (
+            format!("{{ source = \"op\", reference = \"{reference}\", account = \"acct-1\" }}"),
+            Some("acct-1"),
+        ),
+    ];
+    for (credential, account) in rows {
+        let config = Config::parse(&text(&credential))?;
+        let saved = config.account(&AccountName::parse("work")?).ok_or("work")?;
+        assert_eq!(
+            *saved.credential(),
+            CredentialSource::OnePassword {
+                reference: reference.parse()?,
+                account: account.map(str::parse).transpose()?,
+            },
+            "{credential}"
+        );
+        let rendered = config.render();
+        assert!(rendered.contains(&credential), "{rendered}");
+        assert_eq!(Config::parse(&rendered)?, config, "{credential}");
+    }
+    Ok(())
+}
+
+#[test]
 fn account_new_allows_codex_login_only_for_codex_and_derives_the_codex_auth_mode() -> TestResult {
     let login = || -> Result<CredentialSource, Box<dyn std::error::Error>> {
         Ok(CredentialSource::CodexLogin {
@@ -965,6 +1011,7 @@ fn account_new_allows_codex_login_only_for_codex_and_derives_the_codex_auth_mode
             },
             CredentialSource::OnePassword {
                 reference: "op://a/b".parse()?,
+                account: None,
             },
             CredentialSource::File { path: hp("/k")? },
         ])

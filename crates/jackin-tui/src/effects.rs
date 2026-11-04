@@ -6,7 +6,7 @@ use std::path::Path;
 
 use jackin_console::backend::Ticket;
 use jackin_console::domain::account::{AccountId, AccountRegistry};
-use jackin_console::domain::agent::Agent;
+use jackin_console::domain::agent::{Agent, Provider};
 use jackin_console::domain::instance::InstanceId;
 use jackin_console::domain::role::{FindingArea, RoleFinding, RoleManifestDoc};
 use jackin_console::domain::vocabulary::{Rejection, SaveField};
@@ -132,6 +132,13 @@ impl Inputs {
             _ => Path::new(text).to_path_buf(),
         };
         HostPath::parse(&expanded)
+    }
+
+    pub(crate) async fn is_regular_file(&self, path: &HostPath) -> bool {
+        matches!(
+            self.host.fs.stat_following(path).await,
+            Ok(Some(FileKind::File))
+        )
     }
 
     async fn folder(&self, text: &str) -> Result<HostPath, PersistError> {
@@ -285,24 +292,35 @@ impl Inputs {
     ) -> Result<Resolved, Refused> {
         let mut resolved = Resolved::default();
         for (provider, path) in persist::folders(registry, base) {
-            let folder = self.folder(&path).await?;
-            let provider = crate::project::core_provider(provider);
-            let resolved_folder = if provider == jackin_core::Provider::Codex {
-                let found = read_chatgpt_login(self.host.fs.as_ref(), &folder)
-                    .await
-                    .map_err(|error| Refused::Text(text(&error)))?;
-                Folder::Chatgpt {
-                    home: folder,
-                    account: found.account_id,
-                }
-            } else {
-                Folder::Login {
-                    file: self.login_file(provider, &folder, &path).await?,
-                }
-            };
-            resolved.folders.insert(path, resolved_folder);
+            let folder = self.local_source(provider, &path).await?;
+            resolved.folders.insert((provider, path), folder);
         }
         Ok(resolved)
+    }
+
+    async fn local_source(
+        &self,
+        console_provider: Provider,
+        path: &str,
+    ) -> Result<Folder, Refused> {
+        let file = self.expanded(path).map_err(PersistError::from)?;
+        if self.is_regular_file(&file).await {
+            return Ok(Folder::Login { file });
+        }
+        let folder = self.folder(path).await?;
+        let provider = crate::project::core_provider(console_provider);
+        if provider == jackin_core::Provider::Codex {
+            let found = read_chatgpt_login(self.host.fs.as_ref(), &folder)
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?;
+            return Ok(Folder::Chatgpt {
+                home: folder,
+                account: found.account_id,
+            });
+        }
+        Ok(Folder::Login {
+            file: self.login_file(provider, &folder, path).await?,
+        })
     }
 
     async fn apply_accounts(&self, edits: Vec<ConfigEdit>) -> Result<Config, Refused> {
@@ -666,13 +684,15 @@ impl Inputs {
             let config = self.config.load().await?;
             let name = RoleName::parse(role).map_err(PersistError::from)?;
             let root = self.role_root(&config, &name).await?;
-            let found: Vec<RoleFinding> = self
-                .roles
-                .findings(&root)
-                .await
-                .iter()
-                .map(|error| finding(error, doc))
-                .collect();
+            let errors = match self.roles.read_manifest(&root).await {
+                Err(errors) => errors,
+                Ok(mut manifest) => {
+                    let base = manifest_doc(&manifest);
+                    merge_manifest(&mut manifest, &base, doc)?;
+                    self.roles.findings_of(&root, manifest).await
+                }
+            };
+            let found: Vec<RoleFinding> = errors.iter().map(|error| finding(error, doc)).collect();
             locked(&self.checks).insert(name, found);
             Ok::<_, Refused>(self.snapshot_of(&config).await)
         }

@@ -3,7 +3,12 @@
 
 use std::path::Path;
 
-use jackin_console::domain::account::AccountForm;
+use jackin_console::backend::Effect;
+use jackin_console::domain::account::{
+    Account as ConsoleAccount, AccountForm, CredentialSource as ConsoleSource, DetectedKind,
+    UNSAVED_ID,
+};
+use jackin_console::domain::agent::Provider as ConsoleProvider;
 use jackin_console::domain::reason::{Found, IssueReason};
 use jackin_console::domain::vocabulary::{Rejection, Vocabulary};
 use jackin_core::{CredentialSource, Provider};
@@ -370,6 +375,169 @@ async fn a_folder_without_the_providers_login_file_is_refused_on_save() -> TestR
         });
         let screen = lab.console.screen();
         assert!(screen.contains(&refused), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+async fn cli_file_account(
+    lab: &Lab,
+    name: &str,
+) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    let keys = lab.code.join("keys");
+    tokio::fs::create_dir_all(&keys).await?;
+    let file = keys.join(format!("{name}-login"));
+    tokio::fs::write(&file, "login").await?;
+    let account = jackin_core::Account::new(
+        jackin_core::AccountName::parse(name)?,
+        Provider::Claude,
+        CredentialSource::File {
+            path: jackin_core::HostPath::parse(&file)?,
+        },
+    )?;
+    lab.edit(vec![jackin_core::ConfigEdit::AddAccount(account)])
+        .await?;
+    Ok(file)
+}
+
+async fn validate_edit_form(lab: &mut Lab) -> Result<String, Box<dyn std::error::Error>> {
+    lab.step("c down down").await?;
+    lab.step("e").await?;
+    lab.step("tab tab tab tab").await?;
+    lab.step("tab tab enter").await?;
+    Ok(lab.console.screen())
+}
+
+#[tokio::test]
+async fn a_cli_file_account_validates_as_a_file_and_a_file_path_saves_as_a_file() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let file = cli_file_account(&lab, "filed").await?;
+        lab.reopen().await?;
+        let before = lab.console.config_text().await?;
+        let validated = validate_edit_form(&mut lab).await?;
+        assert!(
+            validated.contains("✓ material   File found at"),
+            "{validated}"
+        );
+        assert!(!validated.contains("! material"), "{validated}");
+        lab.step("tab tab enter").await?;
+        assert_eq!(lab.console.config_text().await?, before);
+
+        let other = file.with_file_name("other-login");
+        tokio::fs::write(&other, "login").await?;
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        let filed = registry
+            .accounts
+            .iter_mut()
+            .find(|a| a.id == "filed")
+            .ok_or("filed")?;
+        filed.source = ConsoleSource::LocalFolder {
+            path: other.display().to_string(),
+            detected: DetectedKind::Unknown,
+        };
+        lab.perform(Effect::SaveAccounts {
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        let config = lab.config().await?;
+        let saved = config
+            .account(&jackin_core::AccountName::parse("filed")?)
+            .ok_or("filed")?;
+        assert_eq!(
+            *saved.credential(),
+            CredentialSource::File {
+                path: jackin_core::HostPath::parse(&other)?
+            }
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cli_file_account_whose_file_is_gone_fails_the_check_and_the_save() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let file = cli_file_account(&lab, "filed").await?;
+        lab.reopen().await?;
+        let before = lab.console.config_text().await?;
+        tokio::fs::remove_file(&file).await?;
+        let validated = validate_edit_form(&mut lab).await?;
+        assert!(validated.contains("! material"), "{validated}");
+        assert!(!validated.contains("✓ material"), "{validated}");
+
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        let filed = registry
+            .accounts
+            .iter_mut()
+            .find(|a| a.id == "filed")
+            .ok_or("filed")?;
+        filed.source = ConsoleSource::LocalFolder {
+            path: file.display().to_string(),
+            detected: DetectedKind::Unknown,
+        };
+        lab.perform(Effect::SaveAccounts {
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        assert_eq!(lab.console.config_text().await?, before);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn two_providers_on_one_folder_save_independently() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let shared = lab.code.join("shared");
+        plant_login(&lab, &shared, Provider::Codex).await?;
+        plant_login(&lab, &shared, Provider::Claude).await?;
+        let folder = shared.display().to_string();
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        for (name, provider) in [
+            ("claude-shared", ConsoleProvider::Anthropic),
+            ("codex-shared", ConsoleProvider::OpenAi),
+        ] {
+            registry.accounts.push(ConsoleAccount::registered(
+                UNSAVED_ID,
+                name,
+                provider,
+                ConsoleSource::LocalFolder {
+                    path: folder.clone(),
+                    detected: DetectedKind::Unknown,
+                },
+            ));
+        }
+        lab.perform(Effect::SaveAccounts {
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        let config = lab.config().await?;
+        let stored = |name: &str| -> Result<CredentialSource, Box<dyn std::error::Error>> {
+            Ok(config
+                .account(&jackin_core::AccountName::parse(name)?)
+                .ok_or(name.to_owned())?
+                .credential()
+                .clone())
+        };
+        let claude = stored("claude-shared")?;
+        assert!(
+            matches!(&claude, CredentialSource::File { path } if path.as_path().ends_with("shared/.credentials.json")),
+            "{claude:?}"
+        );
+        let codex = stored("codex-shared")?;
+        assert!(
+            matches!(&codex, CredentialSource::CodexLogin { home, .. } if home.as_path().ends_with("shared")),
+            "{codex:?}"
+        );
         Ok(())
     })
     .await

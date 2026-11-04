@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::backend::Effect;
+
 use jackin_core::{ConfigEdit, RoleManifest, RoleName, RoleSource, WorkspaceName};
 use jackin_testkit::{RoleFixture, TestResult, guard};
 
@@ -104,6 +105,94 @@ async fn saving_the_manifest_rewrites_only_the_edited_fields() -> TestResult {
         );
         assert_eq!(manifest.hooks.setup.map(|p| p.to_string()), base.hook_setup);
         assert_eq!(manifest.env.len(), base.env.len());
+        Ok(())
+    })
+    .await
+}
+
+async fn edited_check(
+    lab: &mut Lab,
+    to_field: &str,
+    text: &str,
+) -> Result<(String, String), Box<dyn std::error::Error>> {
+    lab.step("R e").await?;
+    if !to_field.is_empty() {
+        lab.step(to_field).await?;
+        lab.console.type_text(text);
+        lab.console.settle().await?;
+        lab.step("enter").await?;
+    }
+    lab.step("F5").await?;
+    Ok((lab.console.status_line(), lab.console.screen()))
+}
+
+const DOCKERFILE: &str = "enter tab";
+const POLICY: &str = "enter tab tab tab";
+const SETUP: &str = "] enter";
+const PREFLIGHT: &str = "] enter tab tab";
+
+#[tokio::test]
+async fn check_reports_what_is_wrong_with_the_edited_manifest_not_the_saved_one() -> TestResult {
+    guard(async {
+        let rows = [
+            (
+                DOCKERFILE,
+                "Missing.Dockerfile",
+                "missing file Missing.Dockerfile",
+            ),
+            (DOCKERFILE, "Bad.Dockerfile", "the Dockerfile has no stages"),
+            (
+                POLICY,
+                "missing-policy.yaml",
+                "missing file missing-policy.yaml",
+            ),
+            (SETUP, "hooks/missing.sh", "missing file hooks/missing.sh"),
+            (
+                PREFLIGHT,
+                "hooks/missing.sh",
+                "missing file hooks/missing.sh",
+            ),
+        ];
+        for (field, text, finding) in rows {
+            let mut lab = Lab::open().await?;
+            let root = lab.rig.loaded.root().as_path().to_path_buf();
+            tokio::fs::write(root.join("Bad.Dockerfile"), "RUN true\n").await?;
+            let manifest = tokio::fs::read(root.join("jackin.role.toml")).await?;
+            let (status, screen) = edited_check(&mut lab, field, text).await?;
+            assert_eq!(status, "1 error", "{text}: {screen}");
+            assert!(screen.contains(finding), "{text}: {screen}");
+            assert!(!screen.contains("Check passed"), "{text}: {screen}");
+            assert_eq!(
+                tokio::fs::read(root.join("jackin.role.toml")).await?,
+                manifest
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn check_passes_a_manifest_that_was_not_edited() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (status, screen) = edited_check(&mut lab, "", "").await?;
+        assert_eq!(status, "Check passed", "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn check_passes_an_edit_that_points_at_a_good_file_when_the_saved_file_is_gone() -> TestResult
+{
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let root = lab.rig.loaded.root().as_path().to_path_buf();
+        tokio::fs::copy(root.join("Dockerfile"), root.join("Alt.Dockerfile")).await?;
+        tokio::fs::remove_file(root.join("Dockerfile")).await?;
+        let (status, screen) = edited_check(&mut lab, DOCKERFILE, "Alt.Dockerfile").await?;
+        assert_eq!(status, "Check passed", "{screen}");
         Ok(())
     })
     .await

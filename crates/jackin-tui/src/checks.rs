@@ -190,13 +190,17 @@ pub(crate) fn found_of(source: &CredentialSource) -> Found {
 }
 
 fn found_material(source: &CredentialSource, found: &SourceFound) -> Found {
-    match found {
-        SourceFound::Login { account } => Found::Login {
+    match (found, source) {
+        (SourceFound::Login { account }, _) => Found::Login {
             account: account.to_string(),
         },
-        SourceFound::Env | SourceFound::File | SourceFound::Folder | SourceFound::OnePassword => {
-            found_of(source)
+        (SourceFound::File, CredentialSource::LocalFolder { path, .. }) => {
+            Found::FileFound { path: path.clone() }
         }
+        (
+            SourceFound::Env | SourceFound::File | SourceFound::Folder | SourceFound::OnePassword,
+            _,
+        ) => found_of(source),
     }
 }
 
@@ -284,15 +288,15 @@ impl Inputs {
                     Ok(folder) => folder,
                     Err(error) => return Err(error_chain(&error)),
                 };
-                self.sources
-                    .check(
-                        Source::Folder {
-                            path: &folder,
-                            login: core_provider(provider) == jackin_core::Provider::Codex,
-                        },
-                        &self.cancel,
-                    )
-                    .await
+                let local = if self.is_regular_file(&folder).await {
+                    Source::File { path: &folder }
+                } else {
+                    Source::Folder {
+                        path: &folder,
+                        login: core_provider(provider) == jackin_core::Provider::Codex,
+                    }
+                };
+                self.sources.check(local, &self.cancel).await
             }
             CredentialSource::OnePassword(found) => {
                 reference = found.canonical();

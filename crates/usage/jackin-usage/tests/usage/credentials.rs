@@ -7,8 +7,8 @@ use jackin_usage::{Refresh, UnavailableReason, UsageAccount};
 
 use crate::providers::openrouter_serve;
 use crate::support::{
-    TestResult, UsageHarness, account, env_source, file_source, guard, op_source, unavailable,
-    windows_of,
+    TestResult, UsageHarness, account, env_source, file_source, guard, op_source, op_source_in,
+    unavailable, windows_of,
 };
 
 const VAR: &str = "OPENROUTER_TEST_KEY";
@@ -102,6 +102,57 @@ async fn a_one_password_value_is_the_bearer_token_without_its_trailing_newline()
             .one(&router(op_source(REFERENCE)), Refresh::Cached)
             .await?;
         assert_eq!(windows_of(&usage.outcome).len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_one_password_account_is_read_through_that_account_and_another_script_is_not_used()
+-> TestResult {
+    guard(async {
+        let harness = serving("SECRET_TOKEN_OP").await?;
+        script_op(
+            &harness,
+            &["read", "--account", "other-account", REFERENCE],
+            ProcessReply::exited(0, b"WRONG_TOKEN\n", b""),
+        );
+        script_op(
+            &harness,
+            &["read", "--account", "work-account", REFERENCE],
+            ProcessReply::exited(0, b"SECRET_TOKEN_OP\n", b""),
+        );
+        let usage = harness
+            .one(
+                &router(op_source_in(REFERENCE, "work-account")),
+                Refresh::Cached,
+            )
+            .await?;
+        assert_eq!(windows_of(&usage.outcome).len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_one_password_account_is_not_read_by_the_script_of_the_default_account() -> TestResult {
+    guard(async {
+        let harness = serving("SECRET_TOKEN_OP").await?;
+        script_op(
+            &harness,
+            &["read", REFERENCE],
+            ProcessReply::exited(0, b"SECRET_TOKEN_OP\n", b""),
+        );
+        let usage = harness
+            .one(
+                &router(op_source_in(REFERENCE, "work-account")),
+                Refresh::Cached,
+            )
+            .await?;
+        assert_eq!(
+            unavailable(&usage.outcome),
+            &UnavailableReason::NoCredentials
+        );
         Ok(())
     })
     .await

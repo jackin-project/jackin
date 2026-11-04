@@ -385,6 +385,7 @@ Every type below is `Clone + Debug + Eq + Ord + Hash + Display + FromStr + Seria
 | `BranchName` | valid per `git check-ref-format --branch`, no leading `-`, not `HEAD`, no leading `jackin/`, and no Unicode control character or format character (general category Cf) |
 | `CommitId`, `Sha256` | 40 or 64 hex, and 64 lowercase hex |
 | `OpReference` | `op://` followed by at least two non-empty segments |
+| `OpAccountId` | non-empty, and no leading `-` (the value is an `op --account` argument) |
 | `ImageTag` | `jackin.invalid/<name>:<16 hex>` |
 | `AttemptId` | decimal integer of 1 to 18 digits, no leading zero, at least 1 |
 | `ModelName` | 1 to 64 characters of `[A-Za-z0-9._:/-]`, first alphanumeric (it is written into TOML unescaped) |
@@ -835,7 +836,7 @@ pub struct GatewayEntry {
 pub struct Account { }
 pub enum CredentialSource {
     Env { var: EnvName },
-    OnePassword { reference: OpReference },
+    OnePassword { reference: OpReference, account: Option<OpAccountId> },
     File { path: HostPath },
     CodexLogin { home: HostPath, chatgpt_account_id: ChatgptAccountId },
 }
@@ -3479,7 +3480,7 @@ Source of acceptance: the approved test plan `P3.2-test-plan.md` (preconditions 
 - Q1. `ConfigEdit::RemoveAccountClearingBindings(AccountName)` exists. It removes the account, the default that names it, every workspace binding and every role binding that names it, and nothing else (not `default_role`). An unknown account gives `MissingReference { kind: "account" }`. `ConfigEdit::RemoveAccount` stays strict (`AccountInUse`, listing defaults, then workspace bindings, then role bindings). The API.md section 6 row "shows `AccountInUse` and leaves the config unchanged" is stale; the console follows the P9.2 row.
 - Q2. `ConfigError` gains `InvalidValue { key, message }` and `MissingField { key }`. `Syntax { line, column, message }` is only for TOML syntax; `line` and `column` are 1-based and come from the offending token. A `key` is the full dotted path, and a map key is the last segment. A file that is not UTF-8 is a `Syntax` error at the line of the first bad byte.
 - Q3. Kinds are exactly `gateway`, `account`, `role`, `workspace` (`KIND_*` constants, crate private). An `Add*` of an existing name gives `DuplicateName`. Any edit or reference that names an absent entry gives `MissingReference`, including `default_gateway`, `default_role`, and every `Bind*`/`Unbind*`/`Set*` edit. A key under `defaults.accounts` or `workspaces.*.bindings` that is not a `Provider::as_str()` spelling, and a key under `roles.*.bindings` that is not an `Agent::as_str()` spelling, is `UnknownField` with the full path.
-- Q4. `source = { git = "<url>", rev = "<rev>" }` (`rev` optional, only with `git`) or `source = { path = "<abs>" }`; giving both or neither is `InvalidValue` at `roles.<r>.source`. Credentials are `env` (`var`), `op` (`reference`), `file` (`path`), and `codex-login` (`home`, `chatgpt_account_id`). `platform` is `linux/arm64` or `linux/amd64`. Every `home`, `path`, and `client_certs` must be absolute. Messages for path errors never quote the input. Id errors quote no input text, except that the label-grammar ids keep `InvalidChar { ch, index }` (U5 R7).
+- Q4. `source = { git = "<url>", rev = "<rev>" }` (`rev` optional, only with `git`) or `source = { path = "<abs>" }`; giving both or neither is `InvalidValue` at `roles.<r>.source`. Credentials are `env` (`var`), `op` (`reference`, optional `account`), `file` (`path`), and `codex-login` (`home`, `chatgpt_account_id`). `platform` is `linux/arm64` or `linux/amd64`. Every `home`, `path`, and `client_certs` must be absolute. Messages for path errors never quote the input. Id errors quote no input text, except that the label-grammar ids keep `InvalidChar { ch, index }` (U5 R7).
 - Q5. Required: gateway `openshell_workspace`, `builder`, `platform`; engine `port` and `client_certs`; account `provider` and `credential`; role `source`; workspace `path`. Optional: everything else (`docker` defaults to false). An empty file is `Config::empty()`. `render` always writes `docker`, and omits empty `bindings`, empty `defaults`, and absent options. An empty config renders as the empty string.
 - Q6. A missing file loads as `Config::empty()`. `ConfigStore::edit` creates the parent directory with `create_dir_all`. A present file that fails to parse is an error from `load` and from `edit`, and `edit` never overwrites it.
 - Q7. `edit` retries a `LockHeld` on a fixed interval through `Clock::sleep` and gives up with `LockHeld` after a total bound (U5 R2). The lock is a `FileLock` guard, so every exit path releases it. The lock file is `config.toml.lock` next to the config.

@@ -12,8 +12,8 @@ use super::{
 use crate::agent::Agent;
 use crate::docker::EngineConfig;
 use crate::ids::{
-    AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, IdError, OpReference,
-    OpenShellWorkspace, RoleName, RoleRev, RoleUrl, WorkspaceName,
+    AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, IdError, OpAccountId,
+    OpReference, OpenShellWorkspace, RoleName, RoleRev, RoleUrl, WorkspaceName,
 };
 use crate::paths::{HostPath, PathError};
 use crate::platform::Platform;
@@ -229,9 +229,16 @@ fn read_credential(account: &mut Reader<'_, '_>) -> Option<CredentialSource> {
         "env" => credential
             .required_parsed("var", EnvName::parse, id_message)
             .map(|var| CredentialSource::Env { var }),
-        "op" => credential
-            .required_parsed("reference", OpReference::parse, id_message)
-            .map(|reference| CredentialSource::OnePassword { reference }),
+        "op" => {
+            let reference = credential.required_parsed("reference", OpReference::parse, id_message);
+            let named = credential.contains("account");
+            let account = credential.parsed("account", OpAccountId::parse, id_message);
+            if named && account.is_none() {
+                None
+            } else {
+                reference.map(|reference| CredentialSource::OnePassword { reference, account })
+            }
+        }
         "file" => credential
             .required_parsed("path", host_path, static_message)
             .map(|path| CredentialSource::File { path }),

@@ -33,9 +33,20 @@ fn credential(source: &CredentialSource) -> String {
         CredentialSource::Env { var } => {
             format!("{{ source = \"env\", var = {} }}", quote(var.as_str()))
         }
-        CredentialSource::OnePassword { reference } => format!(
+        CredentialSource::OnePassword {
+            reference,
+            account: None,
+        } => format!(
             "{{ source = \"op\", reference = {} }}",
             quote(reference.as_str())
+        ),
+        CredentialSource::OnePassword {
+            reference,
+            account: Some(account),
+        } => format!(
+            "{{ source = \"op\", reference = {}, account = {} }}",
+            quote(reference.as_str()),
+            quote(account.as_str())
         ),
         CredentialSource::File { path } => {
             format!("{{ source = \"file\", path = {} }}", path_value(path))
