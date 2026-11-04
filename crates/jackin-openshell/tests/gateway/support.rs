@@ -10,7 +10,7 @@ use jackin_core::{
     RoleName, SandboxLabels, SandboxName, SandboxPath, WorkspaceName,
 };
 use jackin_openshell::{
-    ClosedPolicy, GatewayError, InputMode, MainProcess, RepaintPolicy, SandboxCreate, TermSize,
+    GatewayError, InputMode, MainProcess, PolicyDocument, RepaintPolicy, SandboxCreate, TermSize,
     TerminalKind, TerminalRequest,
 };
 use openshell_sdk::raw::proto::{ObjectMeta, Sandbox, SandboxPhase, SandboxStatus};
@@ -104,7 +104,7 @@ pub(crate) fn create_spec(name: &str, launch: &str) -> SandboxCreate {
         ImageTag::parse("jackin.invalid/backend:0123456789abcdef").unwrap(),
         labels_for(launch),
         vec![ProviderName::parse("jackin-work-codex").unwrap()],
-        ClosedPolicy::parse(POLICY).unwrap(),
+        PolicyDocument::parse(POLICY).unwrap().close().unwrap(),
         MainProcess {
             program: SandboxPath::parse("/usr/local/bin/jackin-start").unwrap(),
             args: vec!["codex".to_owned(), "--sandbox".to_owned()],

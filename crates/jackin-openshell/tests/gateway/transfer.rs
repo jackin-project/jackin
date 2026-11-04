@@ -779,8 +779,18 @@ fn download_backend(plan: &Arc<Mutex<Download>>) -> super::server::ExecBackend {
         let plan = plan.lock().unwrap();
         if start.command[0] == STAT {
             if plan.stat_exit == 0 {
+                let kind = if start.environment.get("LC_ALL").map(String::as_str) == Some("C") {
+                    plan.kind
+                } else {
+                    match plan.kind {
+                        "regular file" => "regul\u{e4}re Datei",
+                        "directory" => "Verzeichnis",
+                        "socket" => "Socket",
+                        other => other,
+                    }
+                };
                 vec![
-                    Step::Out(format!("{} {}\n", plan.kind, plan.size).into_bytes()),
+                    Step::Out(format!("{kind} {}\n", plan.size).into_bytes()),
                     Step::Exit(0),
                 ]
             } else {

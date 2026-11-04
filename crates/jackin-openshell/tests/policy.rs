@@ -51,10 +51,18 @@ fn authored_policies_reject_reserved_keys_while_the_live_parse_accepts_them() {
     assert_eq!(live.network_rules()[0].key.as_str(), "_provider_x");
     assert!(live.network_rules()[0].key.is_reserved());
     assert!(
-        !NetworkRule::docker_engine(NonZeroU16::new(1).unwrap())
+        NetworkRule::docker_engine(NonZeroU16::new(1).unwrap())
             .key
             .is_reserved()
     );
+    let engine = rule_doc(&[("docker_engine", "api.example.com", 443)]);
+    assert!(matches!(
+        PolicyDocument::parse_authored(&engine),
+        Err(PolicyError::ReservedRuleName(ref key)) if key == "docker_engine"
+    ));
+    let near = rule_doc(&[("docker_engine2", "api.example.com", 443)]);
+    PolicyDocument::parse_authored(&near).unwrap();
+    assert!(!key_of("docker_engine2").is_reserved());
 
     assert!(matches!(
         PolicyDocument::parse_authored(&with_header("network_policies: 3\n")),
@@ -397,8 +405,10 @@ fn with_rule_adds_exactly_one_docker_rule_and_keeps_every_other_node() {
     assert_eq!(keys(after), expected);
 
     let rendered = updated.render().unwrap();
-    let reparsed = ClosedPolicy::parse(&rendered).unwrap();
-    assert_eq!(reparsed.document().network_rules(), updated.network_rules());
+    assert!(matches!(
+        ClosedPolicy::parse(&rendered),
+        Err(ClosedPolicyError::Policy(PolicyError::ReservedRuleName(ref key))) if key == "docker_engine"
+    ));
     let rendered: noyalib::Value = noyalib::from_str(&rendered).unwrap();
     assert_eq!(
         rendered

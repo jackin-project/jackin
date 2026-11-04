@@ -197,6 +197,16 @@ impl PolicyDocument {
         yaml::render(&self.value)
     }
 
+    pub fn close(self) -> Result<ClosedPolicy, ClosedPolicyError> {
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let violations = self.closure_violations(&profile, &[]);
+        if violations.is_empty() {
+            Ok(ClosedPolicy(self))
+        } else {
+            Err(ClosedPolicyError::Violations(violations))
+        }
+    }
+
     pub(crate) fn proto(&self) -> &SandboxPolicy {
         &self.proto
     }
@@ -208,14 +218,7 @@ impl PolicyDocument {
 
 impl ClosedPolicy {
     pub fn parse(text: &str) -> Result<ClosedPolicy, ClosedPolicyError> {
-        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
-        let document = PolicyDocument::parse_authored(text)?;
-        let violations = document.closure_violations(&profile, &[]);
-        if violations.is_empty() {
-            Ok(ClosedPolicy(document))
-        } else {
-            Err(ClosedPolicyError::Violations(violations))
-        }
+        PolicyDocument::parse_authored(text)?.close()
     }
 
     pub fn document(&self) -> &PolicyDocument {
@@ -234,6 +237,8 @@ impl ProviderProfile {
         yaml::profile_to_proto(self)
     }
 }
+
+const DOCKER_ENGINE_RULE: &str = "docker_engine";
 
 impl RuleKey {
     pub fn provider_rule(provider: &ProviderName) -> RuleKey {
@@ -312,7 +317,7 @@ impl fmt::Display for HostPattern {
 impl NetworkRule {
     pub fn docker_engine(port: NonZeroU16) -> NetworkRule {
         NetworkRule {
-            key: RuleKey("docker_engine".to_owned()),
+            key: RuleKey(DOCKER_ENGINE_RULE.to_owned()),
             endpoints: vec![RuleEndpoint {
                 host: HostPattern(ENGINE_HOST.to_owned()),
                 port: port.get(),
