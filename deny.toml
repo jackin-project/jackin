@@ -5,9 +5,6 @@
 all-features = true
 
 [advisories]
-ignore = [
-    { id = "RUSTSEC-2025-0134", reason = "rustls-pemfile is unmaintained; reached only through openshell-core in the pinned OpenShell tag." },
-]
 yanked = "deny"
 
 [licenses]
