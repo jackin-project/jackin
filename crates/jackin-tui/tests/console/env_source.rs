@@ -37,7 +37,13 @@ async fn a_set_variable_validates_and_saving_stores_only_its_name() -> TestResul
     guard(async {
         let mut lab = lab().await?;
         env_form(&mut lab, "envy", VAR).await?;
+        let form = lab.console.screen();
+        assert!(
+            form.contains("(●) Environment variable  (usage only)"),
+            "{form}"
+        );
         let checked = validate(&mut lab).await?;
+        assert_eq!(checked.matches(VAR).count(), 1, "{checked}");
         let set = Vocabulary::openshell().found(&Found::EnvSet {
             name: VAR.to_owned(),
         });
@@ -101,6 +107,7 @@ async fn an_unset_and_an_empty_variable_fail_the_check_and_block_the_save() -> T
             let row = format!("! material   {}", words.check(&reason));
             assert!(failed.contains(&row), "{reason:?}: {failed}");
             assert!(!failed.contains("✓ material"), "{reason:?}: {failed}");
+            assert_eq!(failed.matches(name).count(), 1, "{reason:?}: {failed}");
             lab.step("tab tab enter").await?;
             assert_eq!(lab.console.config_text().await?, before, "{reason:?}");
         }
