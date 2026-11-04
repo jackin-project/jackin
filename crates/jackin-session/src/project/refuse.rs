@@ -11,7 +11,9 @@ use jackin_core::{
 };
 
 use crate::launch::LaunchError;
+use crate::project::facts::Facts;
 use crate::project::git::{HostGit, Pace, failure, words};
+use crate::project::home::HostProjectError;
 use crate::project::listing::Listing as UploadListing;
 use crate::project::{ProjectStep, UnsupportedProject};
 
@@ -104,12 +106,10 @@ pub(super) async fn check(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<(), 
 pub(super) async fn borrowed_objects(
     fs: &dyn FileSystem,
     git_dir: &HostPath,
-) -> Result<(), LaunchError> {
-    let at = |name: &str| {
-        HostPath::resolve(Path::new(name), git_dir).map_err(|error| malformed(&error.to_string()))
-    };
+) -> Result<(), HostProjectError> {
+    let at = |name: &str| HostPath::resolve(Path::new(name), git_dir);
     let objects = at("objects")?;
-    if fs.stat(&objects).await? == Some(FileKind::Symlink) {
+    if fs.stat(&objects).await? != Some(FileKind::Dir) {
         return Err(UnsupportedProject::LinkedObjects(objects).into());
     }
     for name in ["objects/info/alternates", "objects/info/http-alternates"] {
@@ -125,8 +125,7 @@ pub(super) async fn borrowed_objects(
     let mut pending = vec![objects];
     while let Some(dir) = pending.pop() {
         for entry in fs.list(&dir).await? {
-            let path = HostPath::resolve(Path::new(&entry.name), &dir)
-                .map_err(|error| malformed(&error.to_string()))?;
+            let path = HostPath::resolve(Path::new(&entry.name), &dir)?;
             match entry.kind {
                 FileKind::Dir => pending.push(path),
                 FileKind::File => {}
@@ -137,6 +136,35 @@ pub(super) async fn borrowed_objects(
         }
     }
     Ok(())
+}
+
+pub(super) async fn own_store(
+    fs: &dyn FileSystem,
+    git_dir: &HostPath,
+    references: &[String],
+) -> Result<(), HostProjectError> {
+    borrowed_objects(fs, git_dir).await?;
+    let mut dirs = BTreeSet::new();
+    for reference in references {
+        for (index, _) in reference.match_indices('/') {
+            dirs.insert(&reference[..index]);
+        }
+    }
+    for dir in dirs {
+        let path = HostPath::resolve(Path::new(dir), git_dir)?;
+        if !matches!(fs.stat(&path).await?, None | Some(FileKind::Dir)) {
+            return Err(UnsupportedProject::LinkedReferences(path).into());
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn unmoved(staged: &Facts, now: &Facts) -> Result<(), LaunchError> {
+    if staged.head == now.head && staged.shallow == now.shallow {
+        Ok(())
+    } else {
+        Err(UnsupportedProject::HistoryChangedDuringUpload.into())
+    }
 }
 
 pub(super) fn unchanged(staged: &UploadListing, now: &UploadListing) -> Result<(), LaunchError> {

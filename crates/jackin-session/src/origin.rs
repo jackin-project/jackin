@@ -113,7 +113,8 @@ impl Session {
         project: &ProjectRoot,
         cancel: &CancellationToken,
     ) -> Result<Option<GithubOrigin>, OriginError> {
-        let git = HostProject::open(&self.deps, project, cancel).await?.git();
+        let authenticated = HostProject::open(&self.deps, project, cancel).await?;
+        let git = authenticated.git();
         let configured = git
             .capture(
                 Pace::Quick,

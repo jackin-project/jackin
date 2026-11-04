@@ -60,6 +60,7 @@ pub(crate) struct HostGit<'a> {
     runner: &'a dyn ProcessRunner,
     root: &'a HostPath,
     cancel: &'a CancellationToken,
+    git_dir: Option<&'a HostPath>,
 }
 
 impl<'a> HostGit<'a> {
@@ -72,6 +73,17 @@ impl<'a> HostGit<'a> {
             runner,
             root,
             cancel,
+            git_dir: None,
+        }
+    }
+
+    pub(super) fn within<'b>(&self, git_dir: &'b HostPath) -> HostGit<'b>
+    where
+        'a: 'b,
+    {
+        HostGit {
+            git_dir: Some(git_dir),
+            ..*self
         }
     }
 
@@ -106,6 +118,10 @@ impl<'a> HostGit<'a> {
         env.push(plain("GIT_OPTIONAL_LOCKS", "0"));
         env.push(plain("GIT_NO_LAZY_FETCH", "1"));
         let mut hardened = words(&HARDENING);
+        if let Some(git_dir) = self.git_dir {
+            hardened.push(format!("--git-dir={}", git_dir.as_path().display()));
+            hardened.push(format!("--work-tree={}", self.root.as_path().display()));
+        }
         hardened.extend(args);
         let spec = ProcessSpec {
             program: Program::Git,

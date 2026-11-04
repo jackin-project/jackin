@@ -128,6 +128,20 @@ pub enum UnsupportedProject {
         "the object store entry {0} is a symlink or not a regular file or directory, so its objects can come from another repository; replace it with a real file or directory"
     )]
     LinkedObjects(HostPath),
+    #[error(
+        "the reference directory {0} is a symlink or not a directory, so refs written below it would land outside the repository; replace it with a real directory"
+    )]
+    LinkedReferences(HostPath),
+    #[error(
+        "the shallow file {0} is a symlink or not a regular file, so the sandbox would receive bytes from elsewhere; replace it with a regular file"
+    )]
+    LinkedShallow(HostPath),
+    #[error("the git metadata file {file} is larger than {limit} bytes; shorten it or remove it")]
+    OversizedMetadata { file: HostPath, limit: usize },
+    #[error(
+        "the project HEAD or its shallow history changed while the upload ran; run the launch again once the project is quiet"
+    )]
+    HistoryChangedDuringUpload,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -275,6 +289,7 @@ pub(crate) async fn stage(
     fs.create_private_dir_all(dir).await?;
     let file = HostPath::resolve(Path::new("upload.bundle"), dir)?;
     let bundle = bundle::create(&git, &facts.head, &file).await?;
+    host.refuse_foreign_store(fs, &[]).await?;
     Ok(Staged {
         dir: dir.clone(),
         bundle,
@@ -308,6 +323,8 @@ impl Staged {
             .await?;
         let authenticated = HostProject::open(deps, project, cancel).await?;
         refuse::unchanged(&self.listing, &listing::read(&authenticated.git()).await?)?;
+        let now = facts::read(&authenticated, deps.host.fs.as_ref()).await?;
+        refuse::unmoved(&self.facts, &now)?;
         let landed = self.send_bundle(deps, sandbox, launch, cancel).await?;
         remote.repository(&self.facts, landed.as_ref()).await?;
         self.verify(deps, project, &remote, launch, cancel).await
@@ -347,12 +364,12 @@ impl Staged {
             .fs
             .write_new(&paths, self.listing.as_bytes(), FileMode(0o600))
             .await?;
-        let git = HostProject::open(deps, project, cancel).await?.git();
+        let authenticated = HostProject::open(deps, project, cancel).await?;
+        let git = authenticated.git();
         let shadow = shadow::create(&git, deps.host.fs.as_ref(), &self.dir, &self.facts).await?;
         let host = HostGate {
             git,
             shadow,
-            work_tree: project.path(),
             index: HostPath::resolve(Path::new("gate-index"), &self.dir)?,
             objects,
             paths,

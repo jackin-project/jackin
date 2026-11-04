@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use jackin_core::{FileMode, FileSystem, HostPath, RepoPath, UNBOUNDED_READ};
+use jackin_core::{FileMode, FileSystem, HostPath};
 
 use crate::launch::LaunchError;
 use crate::project::ProjectStep;
@@ -123,16 +123,8 @@ pub(super) async fn create(
         .await?;
     fs.write_new(&at("HEAD")?, b"ref: refs/heads/main\n", FileMode(0o600))
         .await?;
-    let attributes =
-        RepoPath::parse("info/attributes").map_err(|error| LaunchError::ProjectOutput {
-            step: ProjectStep::HostTree,
-            message: error.to_string(),
-        })?;
-    if let Ok(file) = fs
-        .read_regular(&facts.git_dir, &attributes, UNBOUNDED_READ)
-        .await?
-    {
-        fs.write_new(&at("info/attributes")?, &file.bytes, FileMode(0o600))
+    if let Some(bytes) = &facts.attributes {
+        fs.write_new(&at("info/attributes")?, bytes, FileMode(0o600))
             .await?;
     }
     Ok(dir)
