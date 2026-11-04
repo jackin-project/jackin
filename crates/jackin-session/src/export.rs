@@ -473,9 +473,7 @@ impl Session {
                 branch: branch.clone(),
             });
         }
-        let host = Host {
-            git: authenticated.git(),
-        };
+        let host = Host::new(&authenticated);
         let refs = host.refs(sandbox).await?;
         let uncommitted = match self.remote(sandbox, &cancel).uncommitted(&repository).await {
             Ok(0) => Uncommitted::Clean,
@@ -595,7 +593,14 @@ impl Session {
             cancel,
         )
         .await?;
-        host.import(&staging.bundle, header.pack_offset).await?;
+        let targets: Vec<String> = items.iter().map(|item| item.target(sandbox)).collect();
+        host.import(
+            self.deps.host.fs.as_ref(),
+            &staging.bundle,
+            header.pack_offset,
+            &targets,
+        )
+        .await?;
         let mut updates = Vec::new();
         for item in items {
             let tip = header
@@ -611,7 +616,7 @@ impl Session {
                 observed: observed.refs.exported.get(&item.name()).cloned(),
             });
         }
-        host.publish(updates).await?;
+        host.publish(self.deps.host.fs.as_ref(), updates).await?;
         let landed = host.refs(sandbox).await?;
         report(sandbox, digest, items, &header.heads, &landed)
     }
@@ -829,9 +834,7 @@ impl Session {
         let authenticated = HostProject::open(&self.deps, &project, &cancel)
             .await
             .map_err(|_| UnknownReason::InspectionFailed)?;
-        let host = Host {
-            git: authenticated.git(),
-        };
+        let host = Host::new(&authenticated);
         let refs = host
             .refs(sandbox)
             .await

@@ -14,7 +14,6 @@ type Entries = BTreeMap<Vec<u8>, Vec<u8>>;
 pub(super) struct HostGate<'a> {
     pub(super) git: HostGit<'a>,
     pub(super) shadow: HostPath,
-    pub(super) work_tree: &'a HostPath,
     pub(super) index: HostPath,
     pub(super) objects: HostPath,
     pub(super) paths: HostPath,
@@ -24,11 +23,6 @@ pub(super) struct HostGate<'a> {
 impl HostGate<'_> {
     fn env(&self) -> Vec<(String, EnvValue)> {
         vec![
-            plain("GIT_DIR", self.shadow.as_path().display().to_string()),
-            plain(
-                "GIT_WORK_TREE",
-                self.work_tree.as_path().display().to_string(),
-            ),
             plain("GIT_CONFIG_NOSYSTEM", "1"),
             plain("GIT_CONFIG_GLOBAL", "/dev/null"),
             plain("GIT_INDEX_FILE", self.index.as_path().display().to_string()),
@@ -53,11 +47,11 @@ impl HostGate<'_> {
     }
 
     pub(super) async fn tree(&self) -> Result<TreeId, LaunchError> {
-        self.git
+        let shadow = self.git.within(&self.shadow);
+        shadow
             .require(ProjectStep::HostTree, Pace::Long, self.add(), self.env())
             .await?;
-        let written = self
-            .git
+        let written = shadow
             .require(
                 ProjectStep::HostTree,
                 Pace::Quick,
@@ -75,6 +69,7 @@ impl HostGate<'_> {
 
     pub(super) async fn entries(&self, tree: &TreeId) -> Result<Vec<u8>, LaunchError> {
         self.git
+            .within(&self.shadow)
             .require(
                 ProjectStep::TreeList,
                 Pace::Long,

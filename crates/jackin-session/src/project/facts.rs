@@ -1,19 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::ffi::OsStr;
 use std::fmt;
-use std::os::unix::ffi::OsStrExt;
-use std::path::PathBuf;
+use std::path::Path;
 
-use jackin_core::{CommitId, FileSystem, HostPath, ProcessStatus, RepoPath, UNBOUNDED_READ};
+use jackin_core::{CommitId, FileSystem, HostPath, ProcessStatus, RegularFileProblem, RepoPath};
 
 use crate::launch::LaunchError;
-use crate::project::ProjectStep;
 use crate::project::git::{HostGit, Pace, failure, words};
 use crate::project::home::HostProject;
+use crate::project::{ProjectStep, UnsupportedProject};
 
 const JACKIN_HEADS: &str = "refs/heads/jackin/";
+const SHALLOW_LIMIT: usize = 4 << 20;
+const EXCLUDE_LIMIT: usize = 1 << 20;
+const ATTRIBUTES_LIMIT: usize = 8 << 20;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ObjectFormat {
@@ -70,6 +71,7 @@ pub(super) struct Facts {
     pub(super) shallow: Option<Vec<u8>>,
     pub(super) identity: Identity,
     pub(super) exclude: Option<Vec<u8>>,
+    pub(super) attributes: Option<Vec<u8>>,
     pub(super) objects: HostPath,
     pub(super) git_dir: HostPath,
 }
@@ -79,11 +81,6 @@ fn malformed(step: ProjectStep, message: &str) -> LaunchError {
         step,
         message: message.to_owned(),
     }
-}
-
-fn host_path(step: ProjectStep, bytes: &[u8]) -> Result<HostPath, LaunchError> {
-    HostPath::parse(&PathBuf::from(OsStr::from_bytes(bytes)))
-        .map_err(|error| malformed(step, &error.to_string()))
 }
 
 async fn head(git: &HostGit<'_>) -> Result<Head, LaunchError> {
@@ -150,17 +147,37 @@ async fn identity_key(git: &HostGit<'_>, key: &str) -> Result<Option<String>, La
     }
 }
 
-async fn regular_exclude(
+pub(super) async fn metadata(
     fs: &dyn FileSystem,
     git_dir: &HostPath,
-) -> Result<Option<Vec<u8>>, LaunchError> {
-    let relative = RepoPath::parse("info/exclude")
+    name: &str,
+    limit: usize,
+) -> Result<Result<Vec<u8>, RegularFileProblem>, LaunchError> {
+    let relative = RepoPath::parse(name)
         .map_err(|error| malformed(ProjectStep::Describe, &error.to_string()))?;
-    Ok(fs
-        .read_regular(git_dir, &relative, UNBOUNDED_READ)
-        .await?
-        .ok()
-        .map(|file| file.bytes))
+    match fs.read_regular(git_dir, &relative, limit).await? {
+        Ok(file) if file.bytes.len() > limit => Err(UnsupportedProject::OversizedMetadata {
+            file: HostPath::resolve(Path::new(name), git_dir)?,
+            limit,
+        }
+        .into()),
+        Ok(file) => Ok(Ok(file.bytes)),
+        Err(problem) => Ok(Err(problem)),
+    }
+}
+
+async fn shallow_commits(fs: &dyn FileSystem, git_dir: &HostPath) -> Result<Vec<u8>, LaunchError> {
+    match metadata(fs, git_dir, "shallow", SHALLOW_LIMIT).await? {
+        Ok(bytes) => Ok(bytes),
+        Err(RegularFileProblem::Missing) => Err(malformed(
+            ProjectStep::Describe,
+            "the repository is shallow but its shallow file is missing",
+        )),
+        Err(RegularFileProblem::Symlink | RegularFileProblem::NotARegularFile) => Err(
+            UnsupportedProject::LinkedShallow(HostPath::resolve(Path::new("shallow"), git_dir)?)
+                .into(),
+        ),
+    }
 }
 
 pub(super) async fn read(
@@ -174,19 +191,14 @@ pub(super) async fn read(
             Pace::Quick,
             words(&[
                 "rev-parse",
-                "--path-format=absolute",
                 "--show-object-format",
                 "--is-shallow-repository",
-                "--git-path",
-                "objects",
-                "--git-path",
-                "shallow",
             ]),
             Vec::new(),
         )
         .await?;
     let lines: Vec<&[u8]> = described.split(|byte| *byte == b'\n').collect();
-    let [format, shallow, objects, shallow_file, ..] = lines.as_slice() else {
+    let [format, shallow, ..] = lines.as_slice() else {
         return Err(malformed(
             ProjectStep::Describe,
             "rev-parse printed too few lines",
@@ -194,14 +206,18 @@ pub(super) async fn read(
     };
     let format = ObjectFormat::parse(&String::from_utf8_lossy(format))
         .ok_or_else(|| malformed(ProjectStep::Describe, "unknown object format"))?;
+    let git_dir = project.location.git_dir.clone();
     let shallow = if *shallow == b"true" {
-        fs.read(&host_path(ProjectStep::Describe, shallow_file)?)
-            .await?
+        Some(shallow_commits(fs, &git_dir).await?)
     } else {
         None
     };
-    let git_dir = project.location.git_dir.clone();
-    let exclude = regular_exclude(fs, &git_dir).await?;
+    let exclude = metadata(fs, &git_dir, "info/exclude", EXCLUDE_LIMIT)
+        .await?
+        .ok();
+    let attributes = metadata(fs, &git_dir, "info/attributes", ATTRIBUTES_LIMIT)
+        .await?
+        .ok();
     Ok(Facts {
         head: head(git).await?,
         format,
@@ -211,7 +227,8 @@ pub(super) async fn read(
             email: identity_key(git, "user.email").await?,
         },
         exclude,
-        objects: host_path(ProjectStep::Describe, objects)?,
+        attributes,
+        objects: HostPath::resolve(Path::new("objects"), &git_dir)?,
         git_dir,
     })
 }

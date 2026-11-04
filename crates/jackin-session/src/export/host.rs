@@ -7,12 +7,13 @@ use std::os::unix::ffi::OsStrExt;
 use std::path::PathBuf;
 
 use jackin_core::{
-    CommitId, HostPath, ProcessStatus, ProcessStdin, SandboxName, SecretBytes, TerminalText,
+    CommitId, FileSystem, HostPath, ProcessStatus, ProcessStdin, SandboxName, SecretBytes,
+    TerminalText,
 };
 
 use super::ExportError;
-use crate::project::ObjectFormat;
 use crate::project::git::{HostGit, Pace, words};
+use crate::project::{HostProject, ObjectFormat};
 
 const HEADS: &str = "refs/heads/";
 const JACKIN: &str = "jackin/";
@@ -47,7 +48,8 @@ pub(super) struct Worktree {
 }
 
 pub(super) struct Host<'a> {
-    pub(super) git: HostGit<'a>,
+    git: HostGit<'a>,
+    project: &'a HostProject<'a>,
 }
 
 pub(super) fn exported_prefix(sandbox: &SandboxName) -> String {
@@ -60,7 +62,14 @@ fn commit(text: &str) -> Result<CommitId, ExportError> {
     })
 }
 
-impl Host<'_> {
+impl<'a> Host<'a> {
+    pub(super) fn new(project: &'a HostProject<'a>) -> Host<'a> {
+        Host {
+            git: project.git(),
+            project,
+        }
+    }
+
     async fn run(&self, pace: Pace, args: Vec<String>) -> Result<Vec<u8>, ExportError> {
         self.run_from(pace, args, ProcessStdin::Null).await
     }
@@ -185,9 +194,12 @@ impl Host<'_> {
 
     pub(super) async fn import(
         &self,
+        fs: &dyn FileSystem,
         bundle: &HostPath,
         pack_offset: u64,
+        targets: &[String],
     ) -> Result<(), ExportError> {
+        self.project.refuse_foreign_store(fs, targets).await?;
         let mut args = words(&PINS);
         args.extend(words(&["index-pack", "--stdin", "--strict", "--threads=1"]));
         let stdin = ProcessStdin::File {
@@ -197,7 +209,13 @@ impl Host<'_> {
         self.run_from(Pace::Long, args, stdin).await.map(drop)
     }
 
-    pub(super) async fn publish(&self, updates: Vec<Update>) -> Result<(), ExportError> {
+    pub(super) async fn publish(
+        &self,
+        fs: &dyn FileSystem,
+        updates: Vec<Update>,
+    ) -> Result<(), ExportError> {
+        let targets: Vec<String> = updates.iter().map(|update| update.target.clone()).collect();
+        self.project.refuse_foreign_store(fs, &targets).await?;
         let mut pending = updates;
         while !pending.is_empty() {
             let error = match self.transaction(&pending).await {

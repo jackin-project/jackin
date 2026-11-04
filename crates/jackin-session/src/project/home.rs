@@ -14,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::launch::LaunchError;
 use crate::project::git::{HostGit, Pace, exit_code, words};
+use crate::project::refuse;
 use crate::project::{ProjectStep, UnsupportedProject};
 use crate::service::SessionDeps;
 
@@ -82,7 +83,7 @@ pub(super) struct Location {
 }
 
 pub(crate) struct HostProject<'a> {
-    git: HostGit<'a>,
+    discovered: HostGit<'a>,
     pub(super) location: Location,
 }
 
@@ -230,10 +231,27 @@ impl<'a> HostProject<'a> {
         let fs = deps.host.fs.as_ref();
         let location = locate(&git, fs).await?;
         belongs(&git, fs, project.path(), &location).await?;
-        Ok(HostProject { git, location })
+        Ok(HostProject {
+            discovered: git,
+            location,
+        })
     }
 
-    pub(crate) fn git(&self) -> HostGit<'a> {
-        self.git
+    pub(crate) fn git(&self) -> HostGit<'_> {
+        self.discovered.within(&self.location.own_dir)
+    }
+
+    pub(crate) async fn refuse_foreign_store(
+        &self,
+        fs: &dyn FileSystem,
+        references: &[String],
+    ) -> Result<(), HostProjectError> {
+        let own = &self.location.own_dir;
+        let intact = fs.stat(own).await? == Some(FileKind::Dir)
+            && fs.canonicalize(own).await?.as_ref() == Some(own);
+        if !intact {
+            return Err(UnsupportedProject::ForeignGit(self.discovered.root().clone()).into());
+        }
+        refuse::own_store(fs, &self.location.git_dir, references).await
     }
 }

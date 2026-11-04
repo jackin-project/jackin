@@ -3,11 +3,14 @@
 
 use std::error::Error;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use jackin_core::ProcessRunner;
 use jackin_session::UnsupportedProject;
 use jackin_testkit::RepoFixture;
+use tokio_util::sync::CancellationToken;
 
-use super::support::{Rig, TestResult, assert_nothing_created, guard, unsupported};
+use super::support::{Point, Rig, Tamper, TestResult, assert_nothing_created, guard, unsupported};
 
 async fn base() -> Result<RepoFixture, Box<dyn Error>> {
     let repo = RepoFixture::new().await?;
@@ -133,6 +136,32 @@ async fn a_linked_worktree_of_a_repository_that_borrows_objects_is_refused() -> 
         std::fs::write(git_dir.join("refs/remotes/o/x"), format!("{head}\n"))?;
         let rig = Rig::new(tree).await?;
         match unsupported(rig.launch(1).await?)? {
+            UnsupportedProject::Alternates(named) => assert_eq!(named.as_path(), file),
+            other => return Err(format!("expected Alternates, saw {other:?}").into()),
+        }
+        assert_nothing_created(&rig)
+    })
+    .await
+}
+
+#[tokio::test]
+async fn alternates_added_during_staging_fail_the_launch() -> TestResult {
+    guard(async {
+        let other = RepoFixture::new().await?;
+        other.file("private.txt", b"TOP-SECRET-TOKEN\n").await?;
+        other.commit().await?;
+        let repo = base().await?;
+        let file = repo.root().as_path().join(".git/objects/info/alternates");
+        let listed = other.root().as_path().join(".git/objects");
+        let rig = Rig::new(repo).await?;
+        let tamper = Tamper::new(&rig, Point::AfterBundle, {
+            let file = file.clone();
+            move || std::fs::write(&file, format!("{}\n", listed.display()))
+        });
+        let runner: Arc<dyn ProcessRunner> = Arc::<Tamper>::clone(&tamper);
+        let outcome = rig.launch_over(1, runner, CancellationToken::new()).await?;
+        tamper.done()?;
+        match unsupported(outcome)? {
             UnsupportedProject::Alternates(named) => assert_eq!(named.as_path(), file),
             other => return Err(format!("expected Alternates, saw {other:?}").into()),
         }

@@ -4,15 +4,19 @@
 use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_core::HostPath;
+use jackin_core::{HostPath, ProcessRunner};
 use jackin_session::UnsupportedProject;
 use jackin_testkit::RepoFixture;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
+use tokio_util::sync::CancellationToken;
 
-use super::support::{Rig, TestResult, assert_nothing_created, guard, ready, unsupported};
+use super::support::{
+    Point, Rig, Tamper, TestResult, assert_nothing_created, failure, guard, ready, unsupported,
+};
 
 async fn base() -> Result<RepoFixture, Box<dyn Error>> {
     let repo = RepoFixture::new().await?;
@@ -226,6 +230,130 @@ async fn a_linked_worktree_or_submodule_below_a_symlinked_directory_is_accepted(
         std::os::unix::fs::symlink(outer, base_dir.join("via-module"))?;
         let at = HostPath::parse(&base_dir.join("via-module/lib"))?;
         ready(Rig::new_at(checkout, &at).await?.launch(1).await?)
+    })
+    .await
+}
+
+fn swap_git_directory(root: &Path, victim_git: &Path, gitfile: bool) -> std::io::Result<()> {
+    std::fs::rename(root.join(".git"), root.join(".jg"))?;
+    if gitfile {
+        std::fs::write(
+            root.join(".git"),
+            format!("gitdir: {}\n", victim_git.display()),
+        )
+    } else {
+        std::os::unix::fs::symlink(victim_git, root.join(".git"))
+    }
+}
+
+#[tokio::test]
+async fn a_git_directory_swapped_after_open_is_not_followed() -> TestResult {
+    guard(async {
+        for gitfile in [true, false] {
+            let (_victim, victim_git) = victim().await?;
+            let repo = base().await?;
+            let root = repo.root().as_path().to_path_buf();
+            let rig = Rig::new(repo).await?;
+            let tamper = Tamper::new(&rig, Point::AfterOpen, move || {
+                swap_git_directory(&root, &victim_git, gitfile)
+            });
+            let runner: Arc<dyn ProcessRunner> = Arc::<Tamper>::clone(&tamper);
+            let outcome = rig.launch_over(1, runner, CancellationToken::new()).await?;
+            tamper.done()?;
+            let failed = failure(outcome)?;
+            assert!(failed.sandbox.is_none(), "gitfile {gitfile}: {failed:?}");
+            assert_nothing_created(&rig)?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+async fn shallow_clone() -> Result<RepoFixture, Box<dyn Error>> {
+    let source = base().await?;
+    source.file("a.txt", b"second\n").await?;
+    source.commit().await?;
+    source.clone_of(&["--depth", "1"]).await
+}
+
+#[tokio::test]
+async fn a_shallow_file_that_is_a_symlink_is_refused_and_a_regular_one_arrives() -> TestResult {
+    guard(async {
+        let regular = Rig::new(shallow_clone().await?).await?;
+        ready(regular.launch(1).await?)?;
+        let handle = regular.handle(1).await?;
+        assert_eq!(
+            std::fs::read(handle.root().join("project/.git/shallow"))?,
+            std::fs::read(regular.repo.root().as_path().join(".git/shallow"))?
+        );
+
+        let repo = shallow_clone().await?;
+        let shallow = repo.root().as_path().join(".git/shallow");
+        let outside = tempfile::tempdir()?;
+        std::fs::copy(&shallow, outside.path().join("shallow"))?;
+        std::fs::remove_file(&shallow)?;
+        std::os::unix::fs::symlink(outside.path().join("shallow"), &shallow)?;
+        let rig = Rig::new(repo).await?;
+        match unsupported(rig.launch(1).await?)? {
+            UnsupportedProject::LinkedShallow(named) => assert_eq!(named.as_path(), shallow),
+            other => return Err(format!("expected LinkedShallow, saw {other:?}").into()),
+        }
+        assert_nothing_created(&rig)
+    })
+    .await
+}
+
+const OVER_ANY_CAP: u64 = 64 << 20;
+
+fn overfill(file: &Path, name: &str) -> Result<u64, Box<dyn Error>> {
+    if name == "shallow" {
+        let line = std::fs::read(file)?;
+        let bytes = line.repeat(130_000);
+        std::fs::write(file, &bytes)?;
+        Ok(u64::try_from(bytes.len())?)
+    } else {
+        drop(std::fs::remove_file(file));
+        std::fs::File::create(file)?.set_len(OVER_ANY_CAP)?;
+        Ok(OVER_ANY_CAP)
+    }
+}
+
+#[tokio::test]
+async fn an_oversized_info_exclude_or_attributes_is_refused_and_a_small_exclude_is_honored()
+-> TestResult {
+    guard(async {
+        for name in ["info/exclude", "info/attributes", "shallow"] {
+            let repo = if name == "shallow" {
+                shallow_clone().await?
+            } else {
+                base().await?
+            };
+            let file = repo.root().as_path().join(".git").join(name);
+            let size = overfill(&file, name)?;
+            let rig = Rig::new(repo).await?;
+            match unsupported(rig.launch(1).await?)? {
+                UnsupportedProject::OversizedMetadata { file: named, limit } => {
+                    assert_eq!(named.as_path(), file, "{name}");
+                    assert!(
+                        u64::try_from(limit)? < size,
+                        "{name}: the cap {limit} is not a cap"
+                    );
+                }
+                other => {
+                    return Err(format!("{name}: expected OversizedMetadata, saw {other:?}").into());
+                }
+            }
+            assert_nothing_created(&rig)?;
+        }
+
+        let repo = base().await?;
+        repo.file("noise.log", b"noise\n").await?;
+        std::fs::write(repo.root().as_path().join(".git/info/exclude"), "*.log\n")?;
+        let rig = Rig::new(repo).await?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        assert!(!handle.root().join("project/noise.log").exists());
+        Ok(())
     })
     .await
 }
