@@ -6,10 +6,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, Clock, CommitId, Config, FileKind, FileSystem, FsError, HookKind, HostPath, LinkProblem,
-    ManifestError, PathError, PollError, PollPlan, ProcessError, ProcessOutput, ProcessRunner,
-    ProcessStatus, RegularFileProblem, RepoPath, RoleManifest, RoleName, RoleRev, RoleSource,
-    RoleUrl, Sha256, TerminalText, Workspace, hold_lock, lock_path, plain_list,
+    Agent, Clock, CommitId, Config, FileKind, FileLock, FileSystem, FsError, HookKind, HostPath,
+    LinkProblem, ManifestError, PathError, PollError, PollPlan, ProcessError, ProcessOutput,
+    ProcessRunner, ProcessStatus, RegularFileProblem, RepoPath, RoleManifest, RoleName, RoleRev,
+    RoleSource, RoleUrl, Sha256, TerminalText, Workspace, hold_lock, lock_path, plain_list,
 };
 use jackin_image::{
     ContextEntry, DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile,
@@ -254,19 +254,64 @@ impl RoleCatalog {
         rev: Option<&RoleRev>,
         cancel: &CancellationToken,
     ) -> Result<LoadedRole, RoleError> {
+        let parent = self.cache_parent().await?;
+        let dir = join(&parent, name.as_str())?;
+        let _held = self.hold_dir(&dir, cancel).await?;
+        self.checkout(&parent, &dir, name.as_str(), url, rev, cancel)
+            .await?;
+        self.load_path(&dir, cancel).await
+    }
+
+    pub async fn fetch_git(
+        &self,
+        url: &RoleUrl,
+        rev: Option<&RoleRev>,
+        cancel: &CancellationToken,
+    ) -> Result<LoadedRole, RoleError> {
+        let parent = self.cache_parent().await?;
+        let digest = Sha256::of(url.as_str().as_bytes());
+        let staging = format!(".incoming-{}", &digest.as_str()[..16]);
+        let incoming = join(&parent, &staging)?;
+        let _staged = self.hold_dir(&incoming, cancel).await?;
+        let found = async {
+            self.checkout(&parent, &incoming, &staging, url, rev, cancel)
+                .await?;
+            self.load_path(&incoming, cancel).await
+        }
+        .await;
+        let loaded = match found {
+            Ok(loaded) => loaded,
+            Err(error) => {
+                drop(self.fs.remove_dir_all(&incoming).await);
+                return Err(error);
+            }
+        };
+        let dir = join(&parent, loaded.name().as_str())?;
+        let _held = self.hold_dir(&dir, cancel).await?;
+        self.fs.remove_dir_all(&dir).await?;
+        self.fs.rename(&incoming, &dir).await?;
+        self.load_path(&dir, cancel).await
+    }
+
+    async fn cache_parent(&self) -> Result<HostPath, RoleError> {
         let parent = join(&self.cache_dir, "roles")?;
         self.fs.create_private_dir_all(&parent).await?;
-        let dir = join(&parent, name.as_str())?;
-        let lock = lock_path(&dir)?;
-        let _held = hold_lock(&*self.fs, &*self.clock, &lock, LOCK_PLAN, cancel)
+        Ok(parent)
+    }
+
+    async fn hold_dir(
+        &self,
+        dir: &HostPath,
+        cancel: &CancellationToken,
+    ) -> Result<FileLock, RoleError> {
+        let lock = lock_path(dir)?;
+        hold_lock(&*self.fs, &*self.clock, &lock, LOCK_PLAN, cancel)
             .await
             .map_err(|error| match error {
                 PollError::Cancelled => RoleError::Cancelled,
                 PollError::Timeout { .. } => RoleError::LockTimeout { path: lock.clone() },
                 PollError::Probe(error) => RoleError::Fs(error),
-            })?;
-        self.checkout(&parent, &dir, name, url, rev, cancel).await?;
-        self.load_path(&dir, cancel).await
+            })
     }
 
     pub async fn findings(&self, root: &HostPath) -> Vec<RoleError> {
@@ -593,7 +638,7 @@ impl RoleCatalog {
         &self,
         parent: &HostPath,
         dir: &HostPath,
-        name: &RoleName,
+        leaf: &str,
         url: &RoleUrl,
         rev: Option<&RoleRev>,
         cancel: &CancellationToken,
@@ -620,7 +665,7 @@ impl RoleCatalog {
             self.git(
                 parent,
                 cancel,
-                &["clone", "--quiet", "--", url.as_str(), name.as_str()],
+                &["clone", "--quiet", "--", url.as_str(), leaf],
             )
             .await?;
         }

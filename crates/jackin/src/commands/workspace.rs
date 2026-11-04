@@ -6,7 +6,7 @@ use jackin_core::{ConfigEdit, Workspace};
 use crate::app::App;
 use crate::cli::{JsonArg, WorkspaceAddArgs, WorkspaceArg, WorkspaceCommand};
 use crate::error::CommandError;
-use crate::paths::absolutize;
+use crate::paths::existing_dir;
 use crate::views::WorkspaceLs;
 
 pub(crate) async fn run(app: &mut App, command: WorkspaceCommand) -> Result<(), CommandError> {
@@ -18,7 +18,7 @@ pub(crate) async fn run(app: &mut App, command: WorkspaceCommand) -> Result<(), 
 }
 
 async fn add(app: &App, args: WorkspaceAddArgs) -> Result<(), CommandError> {
-    let workspace = Workspace::new(absolutize(&args.path, &app.cwd)?, args.docker);
+    let workspace = Workspace::new(existing_dir(app, &args.path).await?, args.docker);
     app.store
         .edit(vec![ConfigEdit::AddWorkspace {
             name: args.name,
@@ -43,6 +43,13 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
 }
 
 async fn rm(app: &App, arg: WorkspaceArg) -> Result<(), CommandError> {
+    let config = app.store.load().await?;
+    if config.workspace(&arg.name).is_some() && config.gateways().next().is_some() {
+        app.gateways(&config)
+            .await?
+            .ensure_workspace_unused(&arg.name)
+            .await?;
+    }
     app.store
         .edit(vec![ConfigEdit::RemoveWorkspace(arg.name)])
         .await?;

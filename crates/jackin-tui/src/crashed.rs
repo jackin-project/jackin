@@ -24,9 +24,9 @@ pub(crate) fn doctor() -> Msg {
     Msg::DoctorFinished(Err(DoctorFailure::Failed(stopped())))
 }
 
-pub(crate) fn reply(effect: &Effect) -> Option<Msg> {
+pub(crate) fn reply(effect: &Effect) -> Msg {
     let error = stopped();
-    let msg = match effect {
+    match effect {
         Effect::SaveWorkspace { .. } => Msg::WorkspaceSaved {
             id: None,
             result: Err(SaveFailure { error, next: None }),
@@ -105,9 +105,15 @@ pub(crate) fn reply(effect: &Effect) -> Option<Msg> {
         },
         Effect::Refresh => refresh(),
         Effect::RunDoctor => doctor(),
-        Effect::Restore { .. } | Effect::Prewarm { .. } => return None,
-    };
-    Some(msg)
+        Effect::Restore { instance } => Msg::Restored {
+            instance: instance.clone(),
+            result: Err(error),
+        },
+        Effect::Prewarm { workspace } => Msg::Prewarmed {
+            workspace: *workspace,
+            result: Err(error),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -124,10 +130,10 @@ mod tests {
         };
         assert_eq!(
             reply(&load),
-            Some(Msg::OpLoaded {
+            Msg::OpLoaded {
                 ticket: 7,
                 result: Err(OpError::NotAvailable),
-            })
+            }
         );
         let probe = Effect::ProbeFolder {
             ticket: 8,
@@ -135,11 +141,11 @@ mod tests {
         };
         assert_eq!(
             reply(&probe),
-            Some(Msg::FolderProbed {
+            Msg::FolderProbed {
                 ticket: 8,
                 result: Err(Stopped.to_string()),
-            })
+            }
         );
-        assert_eq!(reply(&Effect::Refresh), Some(refresh()));
+        assert_eq!(reply(&Effect::Refresh), refresh());
     }
 }

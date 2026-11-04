@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{Config, ConfigError, GatewayName, HostPath, RoleName};
-use jackin_image::{BuiltImage, ImageEngine, ImageError, ProgressSink, Rebuild, ensure_image};
+use jackin_image::{
+    BuiltImage, ImageEngine, ImageError, ImageEvent, ProgressSink, Rebuild, ensure_image,
+};
 use thiserror::Error;
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::launch::LAUNCH_EVENT_CAPACITY;
 use crate::plan::{PlanError, plan_image};
 use crate::roles::{RoleCatalog, RoleError};
 use crate::workspace::lookup_workspace;
@@ -45,4 +49,25 @@ pub async fn build_for_workspace(
         .await?;
     let image = plan_image(config, &role, gateway, Some(&workspace), request.rebuild)?;
     Ok(ensure_image(engine, &image, progress, cancel).await?)
+}
+
+pub async fn build_observed(
+    engine: &dyn ImageEngine,
+    catalog: &RoleCatalog,
+    config: &Config,
+    request: &BuildRequest<'_>,
+    cancel: &CancellationToken,
+    mut observe: impl FnMut(&ImageEvent),
+) -> Result<BuiltImage, BuildError> {
+    let (progress, mut events) = mpsc::channel(LAUNCH_EVENT_CAPACITY);
+    let build = async move {
+        build_for_workspace(engine, catalog, config, request, &progress, cancel).await
+    };
+    let render = async {
+        while let Some(event) = events.recv().await {
+            observe(&event);
+        }
+    };
+    let (built, ()) = tokio::join!(build, render);
+    built
 }

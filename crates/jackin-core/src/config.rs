@@ -572,6 +572,11 @@ impl Config {
         self.workspaces.get(name)
     }
 
+    pub fn require_workspace(&self, name: &WorkspaceName) -> Result<&Workspace, ConfigError> {
+        self.workspace(name)
+            .ok_or_else(|| missing("workspace", name))
+    }
+
     pub fn workspaces(&self) -> impl Iterator<Item = (&WorkspaceName, &Workspace)> {
         self.workspaces.iter()
     }

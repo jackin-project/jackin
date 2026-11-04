@@ -3,8 +3,7 @@
 
 use jackin_core::BuildOutput;
 use jackin_image::{BuiltImage, Rebuild};
-use jackin_session::{BuildRequest, LAUNCH_EVENT_CAPACITY, build_for_workspace};
-use tokio::sync::mpsc;
+use jackin_session::{BuildRequest, build_observed};
 
 use super::progress::image_event;
 use crate::app::App;
@@ -40,25 +39,16 @@ async fn show_build(
     catalog: &jackin_session::RoleCatalog,
     request: &BuildRequest<'_>,
 ) -> Result<BuiltImage, CommandError> {
-    let (progress, mut events) = mpsc::channel(LAUNCH_EVENT_CAPACITY);
     let engine = std::sync::Arc::clone(&app.deps.engine);
     let cancel = app.cancel.clone();
-    let build = async move {
-        build_for_workspace(
-            engine.as_ref(),
-            catalog,
-            config,
-            request,
-            &progress,
-            &cancel,
-        )
-        .await
-    };
-    let render = async {
-        while let Some(event) = events.recv().await {
-            image_event(&mut app.io, &event);
-        }
-    };
-    let (built, ()) = tokio::join!(build, render);
-    Ok(built?)
+    let built = build_observed(
+        engine.as_ref(),
+        catalog,
+        config,
+        request,
+        &cancel,
+        |event| image_event(&mut app.io, event),
+    )
+    .await?;
+    Ok(built)
 }

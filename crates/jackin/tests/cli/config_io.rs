@@ -26,6 +26,7 @@ async fn a_missing_file_reads_as_empty_without_creating_anything_and_an_edit_lea
             harness.run(args).await?.ok()?;
             assert_eq!(harness.config_bytes()?, None, "{args:?}");
         }
+        std::fs::create_dir(world.home().as_path().join("proj"))?;
         harness
             .run(&["workspace", "add", "w", "proj"])
             .await?

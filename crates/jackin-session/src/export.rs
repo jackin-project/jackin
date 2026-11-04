@@ -56,6 +56,14 @@ pub struct ExportReport {
     pub branches: Vec<ExportedBranch>,
     pub detached: Option<ExportedDetached>,
     pub worktrees: Vec<ExportedWorktree>,
+    pub uncommitted: Uncommitted,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Uncommitted {
+    Clean,
+    Changes(usize),
+    Unchecked,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -469,6 +477,11 @@ impl Session {
             git: authenticated.git(),
         };
         let refs = host.refs(sandbox).await?;
+        let uncommitted = match self.remote(sandbox, &cancel).uncommitted(&repository).await {
+            Ok(0) => Uncommitted::Clean,
+            Ok(count) => Uncommitted::Changes(count),
+            Err(_) => Uncommitted::Unchecked,
+        };
         let wanted = changed(&repository, &refs);
         if wanted.is_empty() {
             return Ok(ExportReport {
@@ -477,6 +490,7 @@ impl Session {
                 branches: Vec::new(),
                 detached: None,
                 worktrees: Vec::new(),
+                uncommitted,
             });
         }
         if wanted.len() > MAX_HEADS {
@@ -503,7 +517,10 @@ impl Session {
         self.remote(sandbox, &CancellationToken::new())
             .discard(&remote_bundle)
             .await;
-        result
+        result.map(|report| ExportReport {
+            uncommitted,
+            ..report
+        })
     }
 
     async fn ship(
@@ -654,6 +671,7 @@ fn report(
         branches: Vec::new(),
         detached: None,
         worktrees: Vec::new(),
+        uncommitted: Uncommitted::Clean,
     };
     for item in items {
         let host_ref = item.target(sandbox);

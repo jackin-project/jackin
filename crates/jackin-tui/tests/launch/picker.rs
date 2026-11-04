@@ -15,7 +15,8 @@ use jackin_core::{
 use jackin_testkit::{ConsoleRig, RepoFixture, Rig, TestResult, guard};
 
 use super::support::{
-    Stage, answer, begin, console, dialog, labels, only, stage, two_roles, until_route, until_shows,
+    Stage, answer, begin, console, dialog, labels, only, stage, two_roles, until, until_route,
+    until_shows,
 };
 
 type Failure = Box<dyn std::error::Error>;
@@ -297,6 +298,78 @@ async fn the_current_directory_launches_with_the_only_role() -> TestResult {
         assert_eq!(found.workspace.as_str(), base);
         assert_eq!(found.role.as_str(), "sentinel");
         assert_eq!(found.account.as_str(), "work");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn launching_an_unsaved_directory_saves_its_workspace_first() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let (mut console, base, repo) = elsewhere(&rig).await?;
+        console.skip_intro();
+        let name = WorkspaceName::parse(&base)?;
+        assert!(rig.world.config.load().await?.workspace(&name).is_none());
+        console.keys("enter enter")?;
+        answer(&mut console, None).await?;
+        until_route(&mut console, Route::Capsule).await?;
+        let saved = rig.world.config.load().await?;
+        let workspace = saved
+            .workspace(&name)
+            .ok_or("the workspace was not saved")?;
+        assert_eq!(&workspace.path, repo.root());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_current_directory_reached_through_a_symlink_finds_the_saved_workspace() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let repo = RepoFixture::new().await?;
+        repo.file("README.md", b"readme\n").await?;
+        repo.commit().await?;
+        let alias = rig.world.home().as_path().join("alias");
+        std::os::unix::fs::symlink(repo.root().as_path(), &alias)?;
+        rig.world.seed_all(&rig.config).await?;
+        rig.world
+            .config
+            .edit(vec![
+                ConfigEdit::SetDefaultAccount {
+                    account: AccountName::parse("work")?,
+                },
+                ConfigEdit::AddWorkspace {
+                    name: WorkspaceName::parse("saved")?,
+                    workspace: jackin_core::Workspace::new(repo.root().clone(), false),
+                },
+            ])
+            .await?;
+        let mut console = ConsoleRig::builder(&rig.world)
+            .size(160, 44)
+            .cwd(jackin_core::HostPath::parse(&alias)?)
+            .build()
+            .await?;
+        console.skip_intro();
+        console.keys("enter enter")?;
+        until(
+            &mut console,
+            "the values form or a failed image stage",
+            |c| {
+                let screen = c.screen();
+                screen.contains("Values for this launch")
+                    || stage(&screen, "01 Image build") == Some(Stage::Failed)
+            },
+        )
+        .await?;
+        let screen = console.screen();
+        assert!(screen.contains("Values for this launch"), "{screen}");
+        answer(&mut console, None).await?;
+        until_route(&mut console, Route::Capsule).await?;
+        assert_eq!(labels(&only(&rig)?)?.planned.workspace.as_str(), "saved");
+        let saved = rig.world.config.load().await?;
+        assert_eq!(saved.workspaces().count(), 2);
         Ok(())
     })
     .await

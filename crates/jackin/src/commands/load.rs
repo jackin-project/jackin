@@ -14,7 +14,7 @@ use super::progress::launch_event;
 use crate::app::App;
 use crate::cli::{EnvAssignment, LoadArgs};
 use crate::error::CommandError;
-use crate::paths::absolutize;
+use crate::paths::existing_dir;
 use crate::term;
 
 async fn answer(app: &mut App, question: &EnvQuestion) -> Result<String, CommandError> {
@@ -97,7 +97,7 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         values.insert(name, value);
     }
     let config = app.store.load().await?;
-    let path = absolutize(&args.path, &app.cwd)?;
+    let path = existing_dir(app, &args.path).await?;
     let (_, workspace) = lookup_workspace(&config, &path).require_saved()?;
     let project = ProjectRoot::open(app.deps.host.fs.as_ref(), &path).await?;
     let (gateway, _) = config.resolve_gateway(app.gateway.as_ref())?;

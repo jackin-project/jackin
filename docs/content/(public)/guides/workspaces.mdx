@@ -13,7 +13,11 @@ jackin workspace ls
 jackin workspace rm my-app
 ```
 
-Launch from the saved directory, or pass it as the `PATH` argument of `jackin load`. The path must equal the saved path.
+`workspace add` requires an existing directory and resolves symlinks. A workspace added as `/tmp/proj` is saved as `/private/tmp/proj` on macOS, where `/tmp` is a symlink. The console saves a workspace the same way.
+
+Launch from the saved directory, or pass it as the `PATH` argument of `jackin load`. The resolved path must equal the saved path.
+
+`jackin workspace rm` and a rename in the console refuse while any sandbox on any configured gateway carries the workspace label. Export and purge those sandboxes first, because export finds your repository through the saved workspace. When a gateway cannot be reached, the command stops and names it. When you launch the current directory from the console and it is not a saved workspace, the console saves it first.
 
 To turn on the [Docker capability](/guides/docker-capability/) for every launch of a workspace, add `--docker`:
 

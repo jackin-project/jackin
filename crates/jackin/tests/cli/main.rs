@@ -29,5 +29,7 @@ mod role_check;
 mod role_workspace;
 mod secrets;
 mod shell;
+mod signals;
 mod support;
 mod usage;
+mod workspace_in_use;

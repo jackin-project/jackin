@@ -51,7 +51,7 @@ Jackin treats the bundle from the sandbox as untrusted input. It parses the bund
 
 ## Terminal and clipboard
 
-`jackin attach` and `jackin shell` pass terminal output through a filter. It forwards only titles, hyperlinks, and colour queries and replies. It drops every other escape string, including the clipboard escape OSC 52, so the command line never reads or writes your clipboard.
+`jackin attach` and `jackin shell` pass terminal output through a filter. It forwards only titles, hyperlinks, and colour queries and replies. It drops every other escape string, including the clipboard escape OSC 52, so the command line never reads or writes your clipboard. It also drops device control, application command, privacy message and start-of-string sequences, and the window operations of the form `CSI … t`, so the sandbox cannot make your terminal read a host file or resize its window. All other control sequences, such as colours and cursor movement, pass.
 
 ## Limits
 

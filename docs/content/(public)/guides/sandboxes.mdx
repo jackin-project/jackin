@@ -72,7 +72,7 @@ jackin export <sandbox>
 
 Jackin creates a git bundle for each sandbox branch whose tip differs from your branch of the same name. It downloads the bundle, checks it, and writes the branches into your repository as `refs/heads/jackin/<sandbox>/<branch>`. A detached `HEAD` is written as `refs/heads/jackin/<sandbox>/HEAD`.
 
-For each ref it published, jackin prints the ref and the commit, separated by a tab. If there is nothing to export, it prints a note on stderr and nothing on stdout.
+For each ref it published, jackin prints the ref and the commit, separated by a tab. If there is nothing to export, it prints a note on stderr and nothing on stdout. Export never ships uncommitted work. When the sandbox has uncommitted changes, the note on stderr says so and tells you to commit them in the sandbox first.
 
 Merge or cherry-pick from those branches as you would from any other:
 

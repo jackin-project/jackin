@@ -48,6 +48,10 @@ impl Session {
     pub fn gateway(&self) -> &dyn Gateway {
         self.deps.gateway.as_ref()
     }
+
+    pub fn engine(&self) -> &dyn ImageEngine {
+        self.deps.engine.as_ref()
+    }
 }
 
 impl Session {

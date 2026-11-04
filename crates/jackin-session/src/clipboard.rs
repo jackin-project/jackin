@@ -11,7 +11,10 @@ const DEL: u8 = 0x7f;
 const C1_LEAD: u8 = 0xc2;
 const C1_ST: u8 = 0x9c;
 const C1_OSC: u8 = 0x9d;
+const C1_CSI: u8 = 0x9b;
+const C1_STRINGS: [u8; 4] = [0x90, 0x98, 0x9e, 0x9f];
 const MAX_OSC: usize = 4096;
+const MAX_CSI: usize = 256;
 const MAX_REPLY: usize = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,6 +89,35 @@ impl Osc {
     }
 }
 
+#[derive(Debug)]
+struct Csi {
+    introducer: Symbol,
+    body: Vec<u8>,
+    dead: bool,
+}
+
+impl Csi {
+    fn new(introducer: Symbol) -> Self {
+        Self {
+            introducer,
+            body: Vec::new(),
+            dead: false,
+        }
+    }
+
+    fn push(&mut self, byte: u8) {
+        if self.dead {
+            return;
+        }
+        if self.body.len() >= MAX_CSI {
+            self.dead = true;
+            self.body = Vec::new();
+        } else {
+            self.body.push(byte);
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 enum State {
     #[default]
@@ -93,6 +125,9 @@ enum State {
     Escape,
     Osc(Osc),
     OscEscape(Osc),
+    Csi(Csi),
+    Skip,
+    SkipEscape,
 }
 
 #[derive(Debug)]
@@ -202,13 +237,26 @@ impl Stream {
             State::Escape => self.escape(symbol, out),
             State::Osc(osc) => self.osc(osc, symbol, out),
             State::OscEscape(osc) => self.osc_escape(osc, symbol, out),
+            State::Csi(csi) => self.csi(csi, symbol, out),
+            State::Skip => self.skip(symbol),
+            State::SkipEscape => self.skip_escape(symbol, out),
         }
+    }
+
+    fn filters_sandbox(&self) -> bool {
+        self.direction == Direction::Sandbox
     }
 
     fn ground(&mut self, symbol: Symbol, out: &mut Vec<u8>) {
         match symbol {
             Symbol::Byte(ESC) => self.state = State::Escape,
             Symbol::C1 { code: C1_OSC, .. } => self.state = State::Osc(Osc::new(false)),
+            Symbol::C1 { code: C1_CSI, .. } if self.filters_sandbox() => {
+                self.state = State::Csi(Csi::new(symbol));
+            }
+            Symbol::C1 { code, .. } if self.filters_sandbox() && C1_STRINGS.contains(&code) => {
+                self.state = State::Skip;
+            }
             other => other.push(out),
         }
     }
@@ -217,6 +265,18 @@ impl Stream {
         match symbol {
             Symbol::Byte(b']') => self.state = State::Osc(Osc::new(true)),
             Symbol::C1 { code: C1_OSC, .. } => self.state = State::Osc(Osc::new(false)),
+            Symbol::Byte(b'[') if self.filters_sandbox() => {
+                self.state = State::Csi(Csi::new(Symbol::Byte(ESC)));
+            }
+            Symbol::C1 { code: C1_CSI, .. } if self.filters_sandbox() => {
+                self.state = State::Csi(Csi::new(symbol));
+            }
+            Symbol::Byte(b'P' | b'X' | b'^' | b'_') if self.filters_sandbox() => {
+                self.state = State::Skip;
+            }
+            Symbol::C1 { code, .. } if self.filters_sandbox() && C1_STRINGS.contains(&code) => {
+                self.state = State::Skip;
+            }
             Symbol::Byte(ESC) => self.state = State::Escape,
             Symbol::Byte(CAN | SUB) => self.escape_sent = false,
             Symbol::Byte(DEL) => self.state = State::Escape,
@@ -250,6 +310,49 @@ impl Stream {
                 osc.push(byte);
                 self.state = State::Osc(osc);
             }
+        }
+    }
+
+    fn csi(&mut self, mut csi: Csi, symbol: Symbol, out: &mut Vec<u8>) {
+        match symbol {
+            Symbol::Byte(ESC) => self.state = State::Escape,
+            Symbol::Byte(CAN | SUB) => {}
+            Symbol::Byte(byte @ 0x20..=0x3f) => {
+                csi.push(byte);
+                self.state = State::Csi(csi);
+            }
+            Symbol::Byte(byte @ 0x40..=0x7e) => {
+                if byte != b't' && !csi.dead {
+                    csi.introducer.push(out);
+                    if matches!(csi.introducer, Symbol::Byte(_)) {
+                        out.push(b'[');
+                    }
+                    out.extend_from_slice(&csi.body);
+                    out.push(byte);
+                }
+            }
+            Symbol::Byte(DEL) => self.state = State::Csi(csi),
+            Symbol::Byte(control) if control < 0x20 => {
+                out.push(control);
+                self.state = State::Csi(csi);
+            }
+            other => self.ground(other, out),
+        }
+    }
+
+    fn skip(&mut self, symbol: Symbol) {
+        match symbol {
+            Symbol::Byte(ESC) => self.state = State::SkipEscape,
+            Symbol::Byte(CAN | SUB) => {}
+            Symbol::C1 { code: C1_ST, .. } => {}
+            _ => self.state = State::Skip,
+        }
+    }
+
+    fn skip_escape(&mut self, symbol: Symbol, out: &mut Vec<u8>) {
+        match symbol {
+            Symbol::Byte(b'\\') => {}
+            other => self.escape(other, out),
         }
     }
 

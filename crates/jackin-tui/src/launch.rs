@@ -38,6 +38,7 @@ use tokio_util::sync::CancellationToken;
 use crate::backend::JackinBackend;
 use crate::crashed::Stopped;
 use crate::fleet::ObservedSandbox;
+use crate::observe::Inputs;
 use crate::project::{Origins, docker_risks};
 use crate::sessions::Access;
 
@@ -313,8 +314,9 @@ fn question(found: &jackin_session::EnvQuestion) -> EnvQuestion {
     }
 }
 
-fn resolve(
-    config: &Config,
+async fn resolve(
+    inputs: &Inputs,
+    config: Config,
     place: &Place,
 ) -> Result<(Config, WorkspaceName, Workspace), Unlaunchable> {
     match place {
@@ -325,21 +327,24 @@ fn resolve(
                 .workspace(&name)
                 .cloned()
                 .ok_or(Unlaunchable::WorkspaceGone)?;
-            Ok((config.clone(), name, workspace))
+            Ok((config, name, workspace))
         }
         Place::Directory(text) => {
-            let path = HostPath::parse(std::path::Path::new(text))?;
-            match lookup_workspace(config, &path) {
-                WorkspaceLookup::Saved { name, workspace } => Ok((config.clone(), name, workspace)),
+            let given = HostPath::parse(std::path::Path::new(text))?;
+            let path = HostPath::canonical_dir(inputs.host.fs.as_ref(), &given).await?;
+            match lookup_workspace(&config, &path) {
+                WorkspaceLookup::Saved { name, workspace } => Ok((config, name, workspace)),
                 WorkspaceLookup::Unsaved { path } => {
-                    let name = adhoc_workspace_name(config, &path)?;
+                    let name = adhoc_workspace_name(&config, &path)?;
                     let workspace = Workspace::new(path, false);
-                    let mut adhoc = config.clone();
-                    adhoc.apply(ConfigEdit::AddWorkspace {
-                        name: name.clone(),
-                        workspace: workspace.clone(),
-                    })?;
-                    Ok((adhoc, name, workspace))
+                    let saved = inputs
+                        .config
+                        .edit(vec![ConfigEdit::AddWorkspace {
+                            name: name.clone(),
+                            workspace: workspace.clone(),
+                        }])
+                        .await?;
+                    Ok((saved, name, workspace))
                 }
             }
         }
@@ -399,8 +404,9 @@ impl Run {
             .load()
             .await
             .map_err(|error| Stop::at(Stage::Image, &error))?;
-        let (config, name, workspace) =
-            resolve(&saved, &self.wanted.place).map_err(|error| Stop::at(Stage::Image, &error))?;
+        let (config, name, workspace) = resolve(&inputs, saved.clone(), &self.wanted.place)
+            .await
+            .map_err(|error| Stop::at(Stage::Image, &error))?;
         let Some(gateway) = inputs.sessions.default_name().cloned() else {
             let error = saved
                 .resolve_gateway(None)

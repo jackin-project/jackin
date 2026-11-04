@@ -99,6 +99,69 @@ async fn export_of_a_stopped_unknown_or_unregistered_sandbox_fails_and_writes_no
     .await
 }
 
+#[tokio::test]
+async fn export_of_a_sandbox_with_only_uncommitted_work_says_that_work_is_not_exported()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        harness.write_config(&rig.config.render())?;
+        std::fs::write(handle.root().join("project/draft.txt"), b"draft\n")?;
+
+        let ran = harness.run(&["export", name.as_str()]).await?;
+        ran.ok()?;
+        assert_eq!(ran.stdout, "");
+        assert!(!ran.stderr.contains("nothing to export"), "{}", ran.stderr);
+        assert!(
+            ran.stderr.contains("uncommitted")
+                && ran.stderr.contains("not exported")
+                && ran.stderr.contains("commit it in the sandbox first"),
+            "{}",
+            ran.stderr
+        );
+        assert!(ran.stderr.contains(name.as_str()), "{}", ran.stderr);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn export_that_cannot_read_the_uncommitted_state_still_publishes_and_says_it_did_not_check()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        harness.write_config(&rig.config.render())?;
+        handle.commit_in_project("a.txt", b"a", "work").await?;
+        std::fs::write(handle.root().join("project/.git/index"), b"not an index")?;
+
+        let ran = harness.run(&["export", name.as_str()]).await?;
+        ran.ok()?;
+        assert!(
+            ran.stdout
+                .contains(&format!("refs/heads/jackin/{name}/main")),
+            "{}",
+            ran.stdout
+        );
+        assert!(
+            ran.stderr.contains("could not check for uncommitted work")
+                && ran.stderr.contains("not exported"),
+            "{}",
+            ran.stderr
+        );
+        Ok(())
+    })
+    .await
+}
+
 async fn linked_commit(handle: &SandboxHandle, name: &str) -> Result<String, Failure> {
     let path = handle.root().join(name).display().to_string();
     handle

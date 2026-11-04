@@ -3,7 +3,7 @@
 
 use jackin_console::backend::Effect;
 use jackin_console::domain::instance::InstanceStatus;
-use jackin_core::Phase;
+use jackin_core::{Phase, WorkspaceName};
 use jackin_testkit::{TestResult, guard};
 
 use super::support::Lab;
@@ -82,6 +82,55 @@ async fn purge_deletes_a_sandbox_with_nothing_to_export() -> TestResult {
         assert!(lab.rig.world.gateway.sandbox(&name).is_none());
         assert!(lab.world().instances.is_empty());
         Ok(())
+    })
+    .await
+}
+
+const WORKSPACE: &str = "platform-backend";
+
+async fn refused_with(lab: &mut Lab, name: &str) -> TestResult {
+    let screen = lab.console.screen();
+    let flat = screen.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(name) && flat.contains("export and purge"),
+        "{screen}"
+    );
+    let config = lab.config().await?;
+    assert!(
+        config
+            .workspace(&WorkspaceName::parse(WORKSPACE)?)
+            .is_some()
+    );
+    assert!(
+        config
+            .workspace(&WorkspaceName::parse("renamed")?)
+            .is_none()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn deleting_a_workspace_with_a_sandbox_is_refused_and_names_the_sandbox() -> TestResult {
+    guard(async {
+        let (mut lab, _) = launched().await?;
+        let name = lab.rig.handle(1).await?.name();
+        let id = lab.workspace(WORKSPACE).ok_or("no workspace")?.id;
+        lab.perform(Effect::DeleteWorkspace { id }).await?;
+        refused_with(&mut lab, name.as_str()).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn renaming_a_workspace_with_a_sandbox_is_refused_and_names_the_sandbox() -> TestResult {
+    guard(async {
+        let (mut lab, _) = launched().await?;
+        let name = lab.rig.handle(1).await?.name();
+        lab.console.keys("down e enter")?;
+        lab.console.type_text("renamed");
+        lab.console.keys("enter")?;
+        lab.save().await?;
+        refused_with(&mut lab, name.as_str()).await
     })
     .await
 }
