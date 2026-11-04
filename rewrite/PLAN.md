@@ -597,7 +597,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 - **Owner:** `verifier` at `model: sonnet, effort: high`, with the `run` skill. **Depends:** P9.4.
 - **Steps:** Start the console in a PTY against `jackin-local`. Follow the demo flows with real data. Create a workspace. Add a Codex account and an account of one other provider. Set a default account. Bind accounts to the sentinel role and to the workspace. Open the usage panel. Launch the sentinel role with the Codex login from --chatgpt-from. Open a shell pane next to the Codex pane. Detach. Attach again from the list. Purge.
 - **Proof:** terminal captures in `evidence/P9.5-console.md`.
-- [ ] P9.5 done
+- [x] P9.5 done. Proof: evidence/P9.5-console.md (run 2 at 1f04feb8c against jackin-local on OpenShell 0.1.7: all 12 steps PASS with no retry, Codex ChatGPT login and an env-source Claude account, launch with the Codex pane attached, shell pane `echo p95-shell-ok`, Ctrl+B d detach with the sandbox kept, reattach with both panes, purge; cleanup left no sandbox and no provider). Run 1 failed steps 8 and 9 (panes could not attach after a launch); the P9.5 fix round fixed the cause.
 
 ## Phase P10. Add the ChatGPT login mode
 
