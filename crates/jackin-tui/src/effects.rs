@@ -699,7 +699,12 @@ impl Inputs {
         }
     }
 
-    pub(crate) async fn check_role(&self, role: &str, doc: &RoleManifestDoc) -> Msg {
+    pub(crate) async fn check_role(
+        &self,
+        ticket: Ticket,
+        role: &str,
+        doc: &RoleManifestDoc,
+    ) -> Msg {
         let result = async {
             let config = self.config.load().await?;
             let name = RoleName::parse(role).map_err(PersistError::from)?;
@@ -718,6 +723,7 @@ impl Inputs {
         }
         .await;
         Msg::RoleChecked {
+            ticket,
             role: role.to_owned(),
             result: result.map_err(|error| text(&error)),
         }
