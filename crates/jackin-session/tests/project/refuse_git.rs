@@ -15,7 +15,7 @@ use tokio::io::AsyncWriteExt;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    Point, Rig, Tamper, TestResult, assert_nothing_created, failure, guard, ready, unsupported,
+    Point, Rig, Tamper, TestResult, assert_nothing_created, guard, ready, unsupported,
 };
 
 async fn base() -> Result<RepoFixture, Box<dyn Error>> {
@@ -234,37 +234,26 @@ async fn a_linked_worktree_or_submodule_below_a_symlinked_directory_is_accepted(
     .await
 }
 
-fn swap_git_directory(root: &Path, victim_git: &Path, gitfile: bool) -> std::io::Result<()> {
-    std::fs::rename(root.join(".git"), root.join(".jg"))?;
-    if gitfile {
-        std::fs::write(
-            root.join(".git"),
-            format!("gitdir: {}\n", victim_git.display()),
-        )
-    } else {
-        std::os::unix::fs::symlink(victim_git, root.join(".git"))
-    }
-}
-
 #[tokio::test]
-async fn a_git_directory_swapped_after_open_is_not_followed() -> TestResult {
+async fn a_git_directory_replaced_by_a_symlink_after_open_is_refused_before_anything_is_created()
+-> TestResult {
     guard(async {
-        for gitfile in [true, false] {
-            let (_victim, victim_git) = victim().await?;
-            let repo = base().await?;
-            let root = repo.root().as_path().to_path_buf();
-            let rig = Rig::new(repo).await?;
-            let tamper = Tamper::new(&rig, Point::AfterOpen, move || {
-                swap_git_directory(&root, &victim_git, gitfile)
-            });
-            let runner: Arc<dyn ProcessRunner> = Arc::<Tamper>::clone(&tamper);
-            let outcome = rig.launch_over(1, runner, CancellationToken::new()).await?;
-            tamper.done()?;
-            let failed = failure(outcome)?;
-            assert!(failed.sandbox.is_none(), "gitfile {gitfile}: {failed:?}");
-            assert_nothing_created(&rig)?;
-        }
-        Ok(())
+        let (_victim, victim_git) = victim().await?;
+        let repo = base().await?;
+        let root = repo.root().as_path().to_path_buf();
+        let rig = Rig::new(repo).await?;
+        let tamper = Tamper::new(&rig, Point::AfterOpen, move || {
+            std::fs::rename(root.join(".git"), root.join(".jg"))?;
+            std::os::unix::fs::symlink(&victim_git, root.join(".git"))
+        });
+        let runner: Arc<dyn ProcessRunner> = Arc::<Tamper>::clone(&tamper);
+        let outcome = rig.launch_over(1, runner, CancellationToken::new()).await?;
+        tamper.done()?;
+        assert!(matches!(
+            unsupported(outcome)?,
+            UnsupportedProject::ForeignGit(_)
+        ));
+        assert_nothing_created(&rig)
     })
     .await
 }

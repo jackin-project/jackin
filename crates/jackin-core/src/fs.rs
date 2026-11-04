@@ -522,5 +522,8 @@ pub async fn write_atomic(
         let _cleanup = fs.remove_file(&temp).await;
         return Err(error);
     }
-    fs.sync_dir(&dir).await
+    fs.sync_dir(&dir).await.map_err(|error| FsError::Unsynced {
+        path: path.clone(),
+        message: error.to_string(),
+    })
 }

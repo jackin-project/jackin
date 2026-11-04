@@ -24,6 +24,7 @@ struct Listing {
     skipped: bool,
     gitlinks: Vec<Vec<u8>>,
     untracked_dirs: Vec<Vec<u8>>,
+    untracked_parents: BTreeSet<Vec<u8>>,
 }
 
 fn parse(bytes: &[u8]) -> Listing {
@@ -35,6 +36,10 @@ fn parse(bytes: &[u8]) -> Listing {
         if let Some(path) = entry.strip_prefix(b"? ") {
             if let Some(dir) = path.strip_suffix(b"/") {
                 listing.untracked_dirs.push(dir.to_vec());
+            } else {
+                for (index, _) in path.iter().enumerate().filter(|(_, byte)| **byte == b'/') {
+                    listing.untracked_parents.insert(path[..index].to_vec());
+                }
             }
         } else if let Some(tab) = entry.iter().position(|byte| *byte == b'\t') {
             let mut fields = entry[..tab].split(|byte| *byte == b' ');
@@ -71,6 +76,26 @@ async fn populated(
     Ok(found)
 }
 
+async fn repositories(
+    fs: &dyn FileSystem,
+    root: &HostPath,
+    parents: &BTreeSet<Vec<u8>>,
+) -> Result<Vec<RepoPath>, LaunchError> {
+    let mut found = Vec::new();
+    for name in parents {
+        let marker = [name.as_slice(), b"/.git"].concat();
+        let path = HostPath::resolve(Path::new(OsStr::from_bytes(&marker)), root)
+            .map_err(|error| malformed(&error.to_string()))?;
+        if fs.stat(&path).await?.is_some() {
+            found.push(
+                RepoPath::parse(&String::from_utf8_lossy(name))
+                    .map_err(|error| malformed(&error.to_string()))?,
+            );
+        }
+    }
+    Ok(found)
+}
+
 fn malformed(message: &str) -> LaunchError {
     LaunchError::ProjectOutput {
         step: ProjectStep::Listing,
@@ -95,7 +120,10 @@ pub(super) async fn check(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<(), 
     if !submodules.is_empty() {
         return Err(UnsupportedProject::PopulatedSubmodules(submodules).into());
     }
-    let nested = populated(fs, git.root(), &listing.untracked_dirs).await?;
+    let mut nested = populated(fs, git.root(), &listing.untracked_dirs).await?;
+    nested.extend(repositories(fs, git.root(), &listing.untracked_parents).await?);
+    nested.sort();
+    nested.dedup();
     if nested.is_empty() {
         Ok(())
     } else {
@@ -150,10 +178,23 @@ pub(super) async fn own_store(
             dirs.insert(&reference[..index]);
         }
     }
+    let mut owned: Vec<String> = vec!["logs".to_owned()];
     for dir in dirs {
-        let path = HostPath::resolve(Path::new(dir), git_dir)?;
+        owned.push(dir.to_owned());
+        owned.push(format!("logs/{dir}"));
+    }
+    for dir in owned {
+        let path = HostPath::resolve(Path::new(&dir), git_dir)?;
         if !matches!(fs.stat(&path).await?, None | Some(FileKind::Dir)) {
             return Err(UnsupportedProject::LinkedReferences(path).into());
+        }
+    }
+    for reference in references {
+        for leaf in [reference.clone(), format!("logs/{reference}")] {
+            let path = HostPath::resolve(Path::new(&leaf), git_dir)?;
+            if !matches!(fs.stat(&path).await?, None | Some(FileKind::File)) {
+                return Err(UnsupportedProject::LinkedReferences(path).into());
+            }
         }
     }
     Ok(())

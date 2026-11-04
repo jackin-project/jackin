@@ -287,3 +287,134 @@ async fn a_failed_config_write_after_a_gateway_rm_deleted_the_providers_restores
     })
     .await
 }
+
+fn sync_failure() -> Result<FsError, Box<dyn std::error::Error>> {
+    Ok(FsError::Io {
+        path: HostPath::parse(Path::new("/config/jackin"))?,
+        kind: std::io::ErrorKind::StorageFull,
+        message: "the directory cannot be synced".to_owned(),
+    })
+}
+
+fn unsynced(result: &Result<Config, AccountEditError>) -> bool {
+    matches!(
+        result,
+        Err(AccountEditError::Config(ConfigError::Fs(
+            FsError::Unsynced { .. }
+        )))
+    )
+}
+
+#[tokio::test]
+async fn a_config_write_that_committed_before_its_directory_sync_failed_is_not_undone() -> TestResult
+{
+    guard(async {
+        let world = registered().await?;
+        let (_first_home, account) = candidate(FIRST_REFRESH, FIRST_ID).await?;
+        let (_second_home, renewed) = candidate(SECOND_REFRESH, FIRST_ID).await?;
+        let (fs, store) = failing_store(&world).await?;
+        let desk = world.desk_over(store.clone());
+        let sessions = Gateways::single(world.session.clone());
+        add(world.session.clone(), desk.clone(), account.clone()).await?;
+
+        fs.fail_at(FsOp::SyncDir, 1, sync_failure()?);
+        let removed = plan_account_edits(
+            &desk,
+            vec![ConfigEdit::RemoveAccount(work()?)],
+            &CancellationToken::new(),
+        )
+        .await?
+        .apply(&sessions)
+        .await;
+        assert!(unsynced(&removed), "{removed:?}");
+        assert!(store.load().await?.account(&work()?).is_none());
+        assert!(
+            world.gateway.providers().is_empty(),
+            "the removed account's login came back on the gateway"
+        );
+
+        add(world.session.clone(), desk.clone(), account.clone()).await?;
+        fs.fail_at(FsOp::SyncDir, 1, sync_failure()?);
+        let renewal = plan_account_edits(
+            &desk,
+            vec![ConfigEdit::SetAccountCredential {
+                account: work()?,
+                credential: renewed.credential().clone(),
+            }],
+            &CancellationToken::new(),
+        )
+        .await?
+        .apply(&sessions)
+        .await;
+        assert!(unsynced(&renewal), "{renewal:?}");
+        assert_eq!(store.load().await?.account(&work()?), Some(&renewed));
+        let record = world.gateway.provider(&provider()?).ok_or("no provider")?;
+        assert_eq!(record.refresh_token, SECOND_REFRESH);
+
+        let name = GatewayName::parse("fake-gateway")?;
+        let connector =
+            ScriptedConnector::new().gateway(Arc::<FakeGateway>::clone(&world.gateway), Vec::new());
+        let cancel = CancellationToken::new();
+        let GatewayRemoval::Online(plan) = plan_gateway_removal(&desk, &name, &cancel).await?
+        else {
+            return Err("a login account needs the gateway".into());
+        };
+        fs.fail_at(FsOp::SyncDir, 1, sync_failure()?);
+        let dropped = plan.apply(&connector, &cancel).await;
+        assert!(unsynced(&dropped), "{dropped:?}");
+        assert!(store.load().await?.gateway(&name).is_none());
+        assert!(
+            world.gateway.providers().is_empty(),
+            "the removed gateway's login came back"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_provider_delete_that_landed_and_then_failed_is_restored() -> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let (_home, account) = candidate(FIRST_REFRESH, FIRST_ID).await?;
+        let (_fs, store) = failing_store(&world).await?;
+        let desk = world.desk_over(store.clone());
+        add(world.session.clone(), desk.clone(), account.clone()).await?;
+        let late = || Fault::DeleteProviderFailsAfterWrite {
+            error: jackin_openshell::GatewayError::FailedPrecondition {
+                message: "the delete was cut off".to_owned(),
+            },
+        };
+
+        world.gateway.inject(late());
+        let failed = plan_account_edits(
+            &desk,
+            vec![ConfigEdit::RemoveAccount(work()?)],
+            &CancellationToken::new(),
+        )
+        .await?
+        .apply(&Gateways::single(world.session.clone()))
+        .await;
+        assert!(failed.is_err(), "{failed:?}");
+        assert_eq!(store.load().await?.account(&work()?), Some(&account));
+        let record = world.gateway.provider(&provider()?).ok_or("no provider")?;
+        assert_eq!(record.refresh_token, FIRST_REFRESH);
+
+        let name = GatewayName::parse("fake-gateway")?;
+        let connector =
+            ScriptedConnector::new().gateway(Arc::<FakeGateway>::clone(&world.gateway), Vec::new());
+        let cancel = CancellationToken::new();
+        let GatewayRemoval::Online(plan) = plan_gateway_removal(&desk, &name, &cancel).await?
+        else {
+            return Err("a login account needs the gateway".into());
+        };
+        world.gateway.inject(late());
+        let failed = plan.apply(&connector, &cancel).await;
+        assert!(failed.is_err(), "{failed:?}");
+        assert!(store.load().await?.gateway(&name).is_some());
+        let record = world.gateway.provider(&provider()?).ok_or("no provider")?;
+        assert_eq!(record.refresh_token, FIRST_REFRESH);
+        Ok(())
+    })
+    .await
+}

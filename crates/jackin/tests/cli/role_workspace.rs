@@ -141,6 +141,50 @@ async fn workspace_add_stores_the_docker_flag_and_an_absolute_path_and_ls_pins_t
 }
 
 #[tokio::test]
+async fn ls_escapes_control_characters_in_stored_paths_and_json_stays_the_stored_path() -> TestResult
+{
+    guard(async {
+        let world = World::builder().build()?;
+        let hostile = "evil\u{1b}[2Jname\nforged\tline";
+        std::fs::create_dir(world.home().as_path().join(hostile))?;
+        std::fs::create_dir(world.home().as_path().join("tame"))?;
+        let harness = Harness::new(&world);
+        for (kind, name) in [("workspace", "hostile"), ("role", "hostile")] {
+            harness.run(&[kind, "add", name, hostile]).await?.ok()?;
+        }
+        harness
+            .run(&["workspace", "add", "tame", "tame"])
+            .await?
+            .ok()?;
+        harness.run(&["role", "add", "tame", "tame"]).await?.ok()?;
+        let home = world.home().as_path();
+        let escaped = format!("{}/evil\\u{{1b}}[2Jname\\nforged\\tline", home.display());
+        let tame = home.join("tame");
+        for kind in ["workspace", "role"] {
+            let ran = harness.run(&[kind, "ls"]).await?;
+            ran.ok()?;
+            assert_eq!(
+                ran.stdout,
+                format!("hostile\t{escaped}\ntame\t{}\n", tame.display()),
+                "{kind}"
+            );
+            let json = harness.run(&[kind, "ls", "--json"]).await?;
+            json.ok()?;
+            assert!(
+                json.stdout.contains(&format!(
+                    "{}/evil\\u001b[2Jname\\nforged\\tline",
+                    home.display()
+                )),
+                "{kind}: {}",
+                json.stdout
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_workspace_or_role_path_is_stored_by_its_real_path_and_must_be_an_existing_directory()
 -> TestResult {
     guard(async {

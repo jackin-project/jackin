@@ -437,6 +437,13 @@ pub enum ConfigError {
     Fs(#[from] FsError),
 }
 
+impl ConfigError {
+    #[must_use]
+    pub const fn committed(&self) -> bool {
+        matches!(self, ConfigError::Fs(FsError::Unsynced { .. }))
+    }
+}
+
 impl From<Finding> for ConfigError {
     fn from(finding: Finding) -> ConfigError {
         match finding {

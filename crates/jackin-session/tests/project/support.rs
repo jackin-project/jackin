@@ -3,7 +3,7 @@
 
 use std::error::Error;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -41,7 +41,7 @@ pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult 
 #[derive(Clone, Copy)]
 pub(crate) enum Point {
     AfterOpen,
-    AfterBundle,
+    AfterBundle(usize),
 }
 
 type Action = Box<dyn FnOnce() -> std::io::Result<()> + Send>;
@@ -52,6 +52,7 @@ pub(crate) struct Tamper {
     action: Mutex<Option<Action>>,
     outcome: Mutex<Option<Result<(), String>>>,
     opened: AtomicBool,
+    bundles: AtomicUsize,
 }
 
 impl std::fmt::Debug for Tamper {
@@ -72,6 +73,7 @@ impl Tamper {
             action: Mutex::new(Some(Box::new(action))),
             outcome: Mutex::new(None),
             opened: AtomicBool::new(false),
+            bundles: AtomicUsize::new(0),
         })
     }
 
@@ -116,7 +118,11 @@ impl ProcessRunner for Tamper {
             self.act();
         }
         let output = self.inner.run(spec, lines, cancel).await;
-        if matches!(self.point, Point::AfterBundle) && names("bundle") && names("create") {
+        if let Point::AfterBundle(occurrence) = self.point
+            && names("bundle")
+            && names("create")
+            && self.bundles.fetch_add(1, Ordering::SeqCst) + 1 == occurrence
+        {
             self.act();
         }
         output

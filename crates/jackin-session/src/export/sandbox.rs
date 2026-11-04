@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
@@ -19,6 +18,7 @@ const CLEANUP: Duration = Duration::from_secs(10);
 const UNTRACKED_FILES: usize = 500;
 const UNTRACKED_BYTES: usize = 256 * 1024;
 const NOT_READ: i32 = 66;
+const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; IFS= read -r p < \"$d/gitdir\" || [ -n \"$p\" ]; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
 static SH: SandboxPath = SandboxPath::from_static("/bin/sh");
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
@@ -60,7 +60,12 @@ struct Checkout {
     path: String,
     head: Option<CommitId>,
     off_heads: bool,
-    prunable: bool,
+}
+
+#[derive(Debug)]
+struct Recorded {
+    id: String,
+    present: bool,
 }
 
 pub(super) struct Remote<'a> {
@@ -114,7 +119,6 @@ fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
                 path: path.to_owned(),
                 head: None,
                 off_heads: false,
-                prunable: false,
             });
             continue;
         }
@@ -125,30 +129,12 @@ fn checkouts(listed: &[u8]) -> Result<Vec<Checkout>, RemoteError> {
             current.off_heads = true;
         } else if let Some(branch) = text.strip_prefix("branch ") {
             current.off_heads = !branch.starts_with(HEADS);
-        } else if text == "prunable" || text.starts_with("prunable ") {
-            current.prunable = true;
         }
     }
     if found.is_empty() {
         return Err(MALFORMED);
     }
     Ok(found)
-}
-
-fn worktree_id(git_dir: &[u8]) -> Result<BranchName, RemoteError> {
-    const MALFORMED: RemoteError =
-        RemoteError::Malformed("git printed an unreadable worktree directory");
-    let text = std::str::from_utf8(git_dir).map_err(|_| MALFORMED)?;
-    let dir = Path::new(text.trim_end());
-    let id = dir
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or(MALFORMED)?;
-    let parent = dir.parent().and_then(Path::file_name);
-    if parent != Some("worktrees".as_ref()) {
-        return Err(MALFORMED);
-    }
-    BranchName::parse(id).map_err(|_| MALFORMED)
 }
 
 impl Remote<'_> {
@@ -218,6 +204,40 @@ impl Remote<'_> {
         }
     }
 
+    async fn recorded_worktrees(&self) -> Result<BTreeMap<String, Recorded>, RemoteError> {
+        const MALFORMED: RemoteError =
+            RemoteError::Malformed("the worktree metadata listing is unreadable");
+        let outcome = self
+            .exec(
+                &SH,
+                vec![
+                    "-c".to_owned(),
+                    RECORDED_WORKTREES.to_owned(),
+                    "jackin-worktrees".to_owned(),
+                ],
+            )
+            .await?;
+        if outcome.exit_code != 0 {
+            return Err(failure(&outcome));
+        }
+        let fields: Vec<&[u8]> = outcome.stdout.split(|byte| *byte == 0).collect();
+        let mut found = BTreeMap::new();
+        for triple in fields.as_chunks::<3>().0 {
+            let id = std::str::from_utf8(triple[0]).map_err(|_| MALFORMED)?;
+            let gitdir = std::str::from_utf8(triple[1]).map_err(|_| MALFORMED)?;
+            if let Some(path) = gitdir.strip_suffix("/.git") {
+                found.insert(
+                    path.to_owned(),
+                    Recorded {
+                        id: id.to_owned(),
+                        present: triple[2] == b"1",
+                    },
+                );
+            }
+        }
+        Ok(found)
+    }
+
     pub(super) async fn repository(&self) -> Result<Repository, RemoteError> {
         self.require_repository().await?;
         let listed = self
@@ -230,11 +250,21 @@ impl Remote<'_> {
             linked: Vec::new(),
             checkouts: Vec::new(),
         };
+        let mut recorded: Option<BTreeMap<String, Recorded>> = None;
         for (index, checkout) in checkouts(&listed)?.into_iter().enumerate() {
-            if checkout.prunable {
-                continue;
+            let entry = if index == 0 {
+                None
+            } else {
+                if recorded.is_none() {
+                    recorded = Some(self.recorded_worktrees().await?);
+                }
+                recorded
+                    .as_ref()
+                    .and_then(|found| found.get(&checkout.path))
+            };
+            if entry.is_none_or(|worktree| worktree.present) {
+                repository.checkouts.push(checkout.path.clone());
             }
-            repository.checkouts.push(checkout.path.clone());
             if !checkout.off_heads {
                 continue;
             }
@@ -245,12 +275,9 @@ impl Remote<'_> {
                 repository.detached = Some(tip);
                 continue;
             }
-            let git_dir = self
-                .require(&["-C", &checkout.path, "rev-parse", "--absolute-git-dir"])
-                .await?;
-            match worktree_id(&git_dir) {
-                Ok(name) => repository.linked.push(LinkedHead { name, tip }),
-                Err(_) => repository.unusable.push(TerminalText::sanitize(
+            match entry.and_then(|worktree| BranchName::parse(&worktree.id).ok()) {
+                Some(name) => repository.linked.push(LinkedHead { name, tip }),
+                None => repository.unusable.push(TerminalText::sanitize(
                     format!("worktree at {}", checkout.path).as_bytes(),
                 )),
             }

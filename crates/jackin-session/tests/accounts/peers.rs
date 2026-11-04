@@ -584,6 +584,14 @@ async fn a_restore_that_cannot_read_the_old_login_names_the_account_and_the_gate
             ),
             "{failed:?}"
         );
+        let shown = failed.map(drop).err().map(|error| error.to_string());
+        let shown = shown.ok_or("the edit succeeded")?;
+        assert!(
+            shown.starts_with("gateway second failed")
+                && shown.contains("refused")
+                && shown.contains("rolling back account work on gateway second failed"),
+            "{shown}"
+        );
         Ok(())
     })
     .await

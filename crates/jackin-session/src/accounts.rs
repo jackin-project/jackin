@@ -83,7 +83,7 @@ pub enum AccountEditError {
     Unreachable(Vec<UnreachableGateway>),
     #[error(transparent)]
     Connect(ConnectError),
-    #[error("{original}; rolling back account {account} on gateway {gateway} failed")]
+    #[error("{}; rolling back account {account} on gateway {gateway} failed", error_chain(.original.as_ref()))]
     RollbackFailed {
         account: AccountName,
         gateway: GatewayName,
@@ -352,7 +352,7 @@ impl RemovalPlan {
         let mut journal = Vec::new();
         let written = async {
             for account in &self.forget {
-                let held = forget_held(gateway.as_ref(), account)
+                let held = holds(gateway.as_ref(), account)
                     .await
                     .map_err(|error| on_gateway(&self.name, error))?;
                 if held {
@@ -363,6 +363,9 @@ impl RemovalPlan {
                         action: Action::Restore,
                     });
                 }
+                forget_login(gateway.as_ref(), account)
+                    .await
+                    .map_err(|error| on_gateway(&self.name, error))?;
             }
             Ok(self.locked.desk.store.edit(vec![edit]).await?)
         }
@@ -399,7 +402,14 @@ impl Undo<'_> {
     }
 }
 
+fn committed(error: &AccountEditError) -> bool {
+    matches!(error, AccountEditError::Config(config) if config.committed())
+}
+
 async fn roll_back(original: AccountEditError, journal: Vec<Undo<'_>>) -> AccountEditError {
+    if committed(&original) {
+        return original;
+    }
     let mut failure = None;
     for undo in journal.iter().rev() {
         if let Err(rollback) = undo.run().await
@@ -487,12 +497,15 @@ async fn forget<'a>(
 ) -> Result<(), AccountEditError> {
     for account in accounts {
         for &session in sessions {
-            let held = forget_held(session.deps.gateway.as_ref(), account)
+            let held = holds(session.deps.gateway.as_ref(), account)
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error))?;
             if held {
                 journal.push(session.undo(Action::Restore, account));
             }
+            forget_login(session.deps.gateway.as_ref(), account)
+                .await
+                .map_err(|error| on_gateway(session.gateway_name(), error))?;
         }
     }
     Ok(())
@@ -642,11 +655,9 @@ async fn forget_login(gateway: &dyn Gateway, account: &Account) -> Result<(), Ac
     Ok(())
 }
 
-async fn forget_held(gateway: &dyn Gateway, account: &Account) -> Result<bool, AccountError> {
+async fn holds(gateway: &dyn Gateway, account: &Account) -> Result<bool, AccountError> {
     let provider = ProviderName::for_account(account.name(), Agent::Codex);
-    let held = gateway.provider_state(&provider).await? == ProviderState::Present;
-    forget_login(gateway, account).await?;
-    Ok(held)
+    Ok(gateway.provider_state(&provider).await? == ProviderState::Present)
 }
 
 async fn sync_login(

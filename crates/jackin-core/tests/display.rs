@@ -99,6 +99,14 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
             "refusing the symbolic link /home/me/my project",
         ),
         (
+            FsError::Unsynced {
+                path: dir.clone(),
+                message: "no space\n".to_owned(),
+            }
+            .to_string(),
+            "/home/me/my project was replaced, but syncing its directory failed: no space\\n",
+        ),
+        (
             PathError::NotADirectory(dir.clone()).to_string(),
             "not a directory: /home/me/my project",
         ),

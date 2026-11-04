@@ -485,11 +485,13 @@ impl Pack<'_> {
             }
             OFS_DELTA => {
                 self.within_entry(EntryKind::DeltaStream, declared)?;
+                self.add_content(declared)?;
                 self.skip_offset().await?;
                 true
             }
             REF_DELTA => {
                 self.within_entry(EntryKind::DeltaStream, declared)?;
+                self.add_content(declared)?;
                 let width = hash_len(self.format);
                 self.take(width).await?;
                 true

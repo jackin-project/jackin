@@ -6,7 +6,9 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Instant;
 
-use jackin_xtask::{A1Error, A1Lock, A1Login, Redactor, fixture_login, host_login_state};
+use jackin_xtask::{
+    A1_LOCK_FILE, A1Error, A1Lock, A1Login, Redactor, a1_lock_dir, fixture_login, host_login_state,
+};
 use regex::Regex;
 use serde_json::{Value, json};
 
@@ -300,6 +302,77 @@ fn a1_lock_is_exclusive_and_fails_fast() {
         A1Lock::acquire(dir.path()).is_ok(),
         "released with the first handle"
     );
+}
+
+#[test]
+fn a1_lock_never_follows_or_truncates_what_it_finds_at_its_path() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let denied = |result: Result<A1Lock, A1Error>| {
+        assert!(matches!(result, Err(A1Error::LockIo { .. })), "{result:?}");
+    };
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let victim = dir.path().join("victim.txt");
+    fs::write(&victim, b"keep me").expect("victim");
+    let lock_dir = dir.path().join(a1_lock_dir());
+    let held = A1Lock::acquire(dir.path()).expect("a fresh directory");
+    assert_eq!(
+        fs::metadata(&lock_dir).expect("dir").permissions().mode() & 0o777,
+        0o700
+    );
+    drop(held);
+    fs::remove_file(lock_dir.join(A1_LOCK_FILE)).expect("remove the lock file");
+    symlink(&victim, lock_dir.join(A1_LOCK_FILE)).expect("link");
+    denied(A1Lock::acquire(dir.path()));
+    assert_eq!(fs::read(&victim).expect("victim"), b"keep me");
+
+    let elsewhere = tempfile::tempdir().expect("tempdir");
+    let other = tempfile::tempdir().expect("tempdir");
+    fs::set_permissions(elsewhere.path(), fs::Permissions::from_mode(0o700)).expect("chmod");
+    symlink(elsewhere.path(), other.path().join(a1_lock_dir())).expect("link");
+    denied(A1Lock::acquire(other.path()));
+    assert!(
+        fs::read_dir(elsewhere.path())
+            .expect("list")
+            .next()
+            .is_none()
+    );
+
+    let open = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(open.path().join(a1_lock_dir())).expect("dir");
+    fs::set_permissions(
+        open.path().join(a1_lock_dir()),
+        fs::Permissions::from_mode(0o755),
+    )
+    .expect("chmod");
+    denied(A1Lock::acquire(open.path()));
+    assert!(!open.path().join(a1_lock_dir()).join(A1_LOCK_FILE).exists());
+
+    let kept = tempfile::tempdir().expect("tempdir");
+    let private = kept.path().join(a1_lock_dir());
+    fs::create_dir(&private).expect("dir");
+    fs::set_permissions(&private, fs::Permissions::from_mode(0o700)).expect("chmod");
+    fs::write(private.join(A1_LOCK_FILE), b"owner note").expect("lock file");
+    drop(A1Lock::acquire(kept.path()).expect("an existing private lock"));
+    assert_eq!(
+        fs::read(private.join(A1_LOCK_FILE)).expect("lock file"),
+        b"owner note"
+    );
+}
+
+#[test]
+fn a_directory_pre_created_at_a_shared_name_does_not_block_the_lock() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let squat = dir.path().join("jackin-e2e-a1");
+    fs::create_dir(&squat).expect("dir");
+    fs::set_permissions(&squat, fs::Permissions::from_mode(0o777)).expect("chmod");
+    let held = A1Lock::acquire(dir.path()).expect("the per-user directory is free");
+    assert!(dir.path().join(a1_lock_dir()).join(A1_LOCK_FILE).exists());
+    assert!(!squat.join(A1_LOCK_FILE).exists());
+    drop(held);
 }
 
 #[tokio::test]

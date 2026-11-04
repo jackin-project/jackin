@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{ConfigEdit, EngineConfig, GatewayEntry, Platform};
+use jackin_core::{ConfigEdit, ConfigError, EngineConfig, GatewayEntry, Platform};
 use jackin_session::{GatewayRemoval, plan_gateway_removal};
 
 use crate::app::App;
@@ -68,13 +68,17 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
 
 async fn rm(app: &mut App, arg: GatewayRmArgs) -> Result<(), CommandError> {
     if arg.offline {
-        app.store
+        let edited = app
+            .store
             .edit(vec![ConfigEdit::RemoveGateway(arg.name.clone())])
-            .await?;
-        app.io.note(&format!(
-            "warning: gateway {} was removed without contacting it; its OpenShell providers, which hold account credentials, stay on it until that gateway is reset",
-            arg.name
-        ));
+            .await;
+        if edited.as_ref().err().is_none_or(ConfigError::committed) {
+            app.io.note(&format!(
+                "warning: gateway {} was removed without contacting it; its OpenShell providers, which hold account credentials, stay on it until that gateway is reset",
+                arg.name
+            ));
+        }
+        edited?;
         return Ok(());
     }
     match plan_gateway_removal(&app.desk(), &arg.name, &app.cancel).await? {

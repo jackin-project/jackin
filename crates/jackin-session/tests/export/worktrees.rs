@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::path::Path;
 
+use jackin_core::BranchName;
 use jackin_openshell::{GatewayOp, TransferOp};
 use jackin_session::{ExportError, PurgeError, PurgeMode, Unexported, UnknownReason, WorkState};
 use jackin_testkit::{Fault, Rig, SandboxHandle, TestResult, Trigger, guard};
@@ -106,6 +107,85 @@ async fn work_in_any_linked_worktree_counts_and_a_missing_worktree_does_not() ->
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn a_detached_worktree_whose_directory_moved_keeps_its_unique_commit_in_view() -> TestResult {
+    moved_worktree_keeps_its_unique_commit(false).await
+}
+
+#[tokio::test]
+async fn a_locked_worktree_whose_directory_moved_keeps_its_unique_commit_in_view() -> TestResult {
+    moved_worktree_keeps_its_unique_commit(true).await
+}
+
+async fn moved_worktree_keeps_its_unique_commit(locked: bool) -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let moved = add_detached(&handle, "w2").await?;
+        add_detached(&handle, "w3").await?;
+        let unique = commit_in(&handle, &moved, "only-here.txt").await?;
+        let ids = worktree_ids(&handle)?;
+        let id_of = |path: &str| -> Result<String, Box<dyn Error>> {
+            ids.iter()
+                .find(|(_, at)| at.as_str() == path)
+                .map(|(id, _)| id.clone())
+                .ok_or_else(|| "no worktree id".into())
+        };
+        let id = id_of(&moved)?;
+        let wanted = unexported(&id)?;
+        assert_eq!(state(&rig, &name).await, wanted);
+
+        if locked {
+            handle.git(&["worktree", "lock", &moved]).await?;
+        }
+        std::fs::rename(&moved, handle.root().join("elsewhere"))?;
+        let listed = handle.git(&["worktree", "list", "--porcelain"]).await?;
+        assert_eq!(listed.contains("locked"), locked, "{listed}");
+        assert_eq!(listed.contains("prunable"), !locked, "{listed}");
+        assert_eq!(state(&rig, &name).await, wanted);
+        let before = snapshot(&rig).await?;
+        let refused = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .await;
+        assert!(
+            matches!(&refused, Err(PurgeError::WorkNotExported { state, .. }) if **state == wanted),
+            "{refused:?}"
+        );
+        assert!(rig.world.gateway.sandbox(&name).is_some());
+        assert_eq!(snapshot(&rig).await?.rest, before.rest);
+
+        let report = export(&rig, &name).await?;
+        let landed = exports(&snapshot(&rig).await?);
+        assert_eq!(
+            landed,
+            BTreeMap::from([(ref_of(&name, &format!("worktree/{id}")), unique.clone())])
+        );
+        assert_eq!(report.worktrees.len(), 1);
+        assert_eq!(state(&rig, &name).await, WorkState::Exported);
+        rig.world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .await?;
+        assert!(rig.world.gateway.sandbox(&name).is_none());
+        Ok(())
+    })
+    .await
+}
+
+fn unexported(id: &str) -> Result<WorkState, Box<dyn Error>> {
+    Ok(WorkState::Unexported(Unexported {
+        uncommitted: 0,
+        branches: Vec::new(),
+        detached: None,
+        worktrees: vec![BranchName::parse(id)?],
+        unusable: Vec::new(),
+    }))
 }
 
 fn worktree_ids(handle: &SandboxHandle) -> Result<BTreeMap<String, String>, Box<dyn Error>> {

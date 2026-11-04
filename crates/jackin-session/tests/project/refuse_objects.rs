@@ -5,12 +5,14 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use jackin_core::ProcessRunner;
-use jackin_session::UnsupportedProject;
+use jackin_core::{ProcessRunner, sandbox_layout};
+use jackin_session::{LaunchError, LaunchStep, UnsupportedProject};
 use jackin_testkit::RepoFixture;
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Point, Rig, Tamper, TestResult, assert_nothing_created, guard, unsupported};
+use super::support::{
+    Point, Rig, Tamper, TestResult, assert_nothing_created, failure, guard, launch_id, unsupported,
+};
 
 async fn base() -> Result<RepoFixture, Box<dyn Error>> {
     let repo = RepoFixture::new().await?;
@@ -145,27 +147,50 @@ async fn a_linked_worktree_of_a_repository_that_borrows_objects_is_refused() -> 
 }
 
 #[tokio::test]
-async fn alternates_added_during_staging_fail_the_launch() -> TestResult {
+async fn alternates_added_while_staging_are_refused() -> TestResult {
     guard(async {
-        let other = RepoFixture::new().await?;
-        other.file("private.txt", b"TOP-SECRET-TOKEN\n").await?;
-        other.commit().await?;
-        let repo = base().await?;
-        let file = repo.root().as_path().join(".git/objects/info/alternates");
-        let listed = other.root().as_path().join(".git/objects");
-        let rig = Rig::new(repo).await?;
-        let tamper = Tamper::new(&rig, Point::AfterBundle, {
-            let file = file.clone();
-            move || std::fs::write(&file, format!("{}\n", listed.display()))
-        });
-        let runner: Arc<dyn ProcessRunner> = Arc::<Tamper>::clone(&tamper);
-        let outcome = rig.launch_over(1, runner, CancellationToken::new()).await?;
-        tamper.done()?;
-        match unsupported(outcome)? {
-            UnsupportedProject::Alternates(named) => assert_eq!(named.as_path(), file),
-            other => return Err(format!("expected Alternates, saw {other:?}").into()),
+        for occurrence in [1, 2] {
+            let other = RepoFixture::new().await?;
+            other.file("private.txt", b"TOP-SECRET-TOKEN\n").await?;
+            other.commit().await?;
+            let repo = base().await?;
+            let file = repo.root().as_path().join(".git/objects/info/alternates");
+            let listed = other.root().as_path().join(".git/objects");
+            let rig = Rig::new(repo).await?;
+            let tamper = Tamper::new(&rig, Point::AfterBundle(occurrence), {
+                let file = file.clone();
+                move || std::fs::write(&file, format!("{}\n", listed.display()))
+            });
+            let runner: Arc<dyn ProcessRunner> = Arc::<Tamper>::clone(&tamper);
+            let outcome = rig.launch_over(1, runner, CancellationToken::new()).await?;
+            tamper.done()?;
+            let failed = failure(outcome)?;
+            match *failed.error {
+                LaunchError::Unsupported(UnsupportedProject::Alternates(named)) => {
+                    assert_eq!(named.as_path(), file, "bundle {occurrence}");
+                }
+                other => {
+                    return Err(
+                        format!("bundle {occurrence}: expected Alternates, saw {other:?}").into(),
+                    );
+                }
+            }
+            if occurrence == 1 {
+                assert_nothing_created(&rig)?;
+            } else {
+                assert_eq!(failed.step, LaunchStep::Upload);
+                let handle = rig.handle(1).await?;
+                assert!(
+                    handle
+                        .file(&sandbox_layout::uploaded_marker(&launch_id(1)))
+                        .is_none()
+                );
+                let bundle =
+                    sandbox_layout::BUNDLE_DIR.join(&format!("upload-{}.bundle", launch_id(1)))?;
+                assert!(handle.file(&bundle).is_none());
+            }
         }
-        assert_nothing_created(&rig)
+        Ok(())
     })
     .await
 }

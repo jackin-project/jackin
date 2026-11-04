@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use jackin_core::{ConfigEdit, PathError, RoleSource, RoleUrl};
+use jackin_core::{ConfigEdit, PathError, RoleSource, RoleUrl, plain};
 
 use crate::app::App;
 use crate::cli::{JsonArg, RoleAddArgs, RoleArg, RoleCheckArgs, RoleCommand};
@@ -63,7 +63,7 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     }
     for row in &view.roles {
         let source = match &row.source {
-            RoleSourceRow::Path { path } => path.clone(),
+            RoleSourceRow::Path { path } => plain(path),
             RoleSourceRow::Git { url, rev } => match rev {
                 Some(rev) => format!("{url}@{rev}"),
                 None => url.to_string(),

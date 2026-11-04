@@ -155,6 +155,7 @@ async fn each_limit_at_its_exact_value_lands_and_one_under_is_refused_with_its_v
 -> TestResult {
     guard(async {
         let mut lab = Lab::armed().await?;
+        lab.handle.git(&["config", "pack.window", "0"]).await?;
         lab.handle
             .commit_in_project("data.bin", &noise(4000), "data")
             .await?;
