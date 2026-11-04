@@ -6,11 +6,14 @@ use std::sync::Arc;
 
 use jackin_core::{
     Account, AccountName, Clock, Config, ConfigEdit, ConfigError, ConfigStore, CredentialSource,
-    FileSystem, FsError, HostPath, ProviderName,
+    FileSystem, FsError, GatewayName, HostPath, ProviderName,
 };
 use jackin_openshell::GatewayOp;
-use jackin_session::{AccountDesk, AccountEditError, Gateways, Session, plan_account_edits};
-use jackin_testkit::{Fault, FsOp, MemFs, Trigger, World};
+use jackin_session::{
+    AccountDesk, AccountEditError, GatewayRemoval, Gateways, Session, plan_account_edits,
+    plan_gateway_removal,
+};
+use jackin_testkit::{FakeGateway, Fault, FsOp, MemFs, ScriptedConnector, Trigger, World};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -204,6 +207,82 @@ async fn a_failed_config_write_keeps_a_provider_that_existed_before_the_edit() -
         );
         assert_eq!(store.load().await?.account(&work()?), Some(&account));
         assert_eq!(world.gateway.providers(), [provider()?]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_failed_config_write_after_a_changed_credential_restores_the_old_material() -> TestResult
+{
+    guard(async {
+        let world = registered().await?;
+        let (_first_home, account) = candidate(FIRST_REFRESH, FIRST_ID).await?;
+        let (_second_home, renewed) = candidate(SECOND_REFRESH, FIRST_ID).await?;
+        let (fs, store) = failing_store(&world).await?;
+        let desk = world.desk_over(store.clone());
+        add(world.session.clone(), desk.clone(), account.clone()).await?;
+
+        fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
+        let failed = plan_account_edits(
+            &desk,
+            vec![ConfigEdit::SetAccountCredential {
+                account: work()?,
+                credential: renewed.credential().clone(),
+            }],
+            &CancellationToken::new(),
+        )
+        .await?
+        .apply(&Gateways::single(world.session.clone()))
+        .await;
+
+        assert!(
+            matches!(failed, Err(AccountEditError::Config(ConfigError::Fs(_)))),
+            "{failed:?}"
+        );
+        assert_eq!(store.load().await?.account(&work()?), Some(&account));
+        let record = world.gateway.provider(&provider()?).ok_or("no provider")?;
+        assert_eq!(record.refresh_token, FIRST_REFRESH);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_failed_config_write_after_a_gateway_rm_deleted_the_providers_restores_them() -> TestResult
+{
+    guard(async {
+        let world = registered().await?;
+        let (_home, work_account) = candidate(FIRST_REFRESH, FIRST_ID).await?;
+        let other = Account::new(
+            AccountName::parse("other")?,
+            jackin_core::Provider::Codex,
+            work_account.credential().clone(),
+        )?;
+        let (fs, store) = failing_store(&world).await?;
+        let desk = world.desk_over(store.clone());
+        add(world.session.clone(), desk.clone(), work_account).await?;
+        add(world.session.clone(), desk.clone(), other).await?;
+        let held = world.gateway.providers();
+        assert_eq!(held.len(), 2);
+        let name = GatewayName::parse("fake-gateway")?;
+        let connector =
+            ScriptedConnector::new().gateway(Arc::<FakeGateway>::clone(&world.gateway), Vec::new());
+        let cancel = CancellationToken::new();
+        let GatewayRemoval::Online(plan) = plan_gateway_removal(&desk, &name, &cancel).await?
+        else {
+            return Err("two login accounts need the gateway".into());
+        };
+
+        fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
+        let failed = plan.apply(&connector, &cancel).await;
+
+        assert!(
+            matches!(failed, Err(AccountEditError::Config(ConfigError::Fs(_)))),
+            "{failed:?}"
+        );
+        assert_eq!(world.gateway.providers(), held);
+        assert!(store.load().await?.gateway(&name).is_some());
         Ok(())
     })
     .await

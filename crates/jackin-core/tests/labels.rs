@@ -208,3 +208,39 @@ fn from_pairs_keeps_foreign_labels_that_the_gateway_grammar_allows_and_rejects_t
     }
     Ok(())
 }
+
+#[test]
+fn differences_compare_the_whole_label_set_in_both_directions() -> TestResult {
+    let image = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
+    let wanted = planned()?.complete(&image, DockerLabel::Off);
+    let set = wanted.to_labels();
+    assert!(set.differences(&wanted).is_empty());
+
+    let pairs = || {
+        set.iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+    };
+    let extended =
+        Labels::from_pairs(pairs().chain([("example.com/owner".to_owned(), "x".to_owned())]))?;
+    let shown: Vec<String> = extended
+        .differences(&wanted)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        shown,
+        ["example.com/owner is x on the sandbox and (none) in this launch"]
+    );
+
+    let reduced = Labels::from_pairs(pairs().filter(|(key, _)| key != "jackin.dev/managed"))?;
+    let shown: Vec<String> = reduced
+        .differences(&wanted)
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        shown,
+        ["jackin.dev/managed is (none) on the sandbox and true in this launch"]
+    );
+    Ok(())
+}
