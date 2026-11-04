@@ -88,19 +88,21 @@ async fn only_a_github_origin_counts() -> TestResult {
         .await?;
         rig.launch(1).await?;
         let lab = Lab::with(rig).await?;
-        extra(
-            &lab,
-            "lookalike",
-            Some(("origin", "https://notgithub.com/acme/widgets")),
-        )
-        .await?;
-        extra(
-            &lab,
-            "upstream-only",
-            Some(("upstream", "git@github.com:acme/widgets.git")),
-        )
-        .await?;
-        extra(&lab, "no-remote", None).await?;
+        let _kept = [
+            extra(
+                &lab,
+                "lookalike",
+                Some(("origin", "https://notgithub.com/acme/widgets")),
+            )
+            .await?,
+            extra(
+                &lab,
+                "upstream-only",
+                Some(("upstream", "git@github.com:acme/widgets.git")),
+            )
+            .await?,
+            extra(&lab, "no-remote", None).await?,
+        ];
         let mut lab = lab;
         lab.reopen().await?;
         let world = lab.world();
