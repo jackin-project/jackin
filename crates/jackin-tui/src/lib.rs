@@ -5,6 +5,7 @@ mod backend;
 mod bridge;
 mod clipboard;
 mod console;
+mod doctor;
 mod fleet;
 mod ids;
 mod observe;

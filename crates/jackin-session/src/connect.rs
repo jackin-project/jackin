@@ -7,6 +7,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use jackin_core::{GatewayEntry, GatewayName, GroupFault, ProcessError};
 use jackin_openshell::{DiscoveryError, Gateway, GatewayError};
+
+use crate::report::error_chain;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -22,6 +24,16 @@ pub enum ConnectError {
 }
 
 impl ConnectError {
+    pub fn into_failure(self, name: &GatewayName) -> GatewayError {
+        match self {
+            ConnectError::Gateway(error) => error,
+            discovery @ ConnectError::Discovery { .. } => GatewayError::Unreachable {
+                endpoint: name.to_string(),
+                message: error_chain(&discovery),
+            },
+        }
+    }
+
     pub fn is_cancelled(&self) -> bool {
         self.cancel().is_some()
     }

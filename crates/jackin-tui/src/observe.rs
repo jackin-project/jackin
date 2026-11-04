@@ -7,20 +7,22 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use futures::future::join_all;
-use jackin_console::world::Snapshot;
+use jackin_console::domain::doctor::{DoctorReport, DoctorSurface};
+use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
-    AccountName, Clock, Config, ConfigError, ConfigStore, GatewayName, RoleName,
+    AccountName, Compatibility, Config, ConfigError, ConfigStore, GatewayName, HostPath, RoleName,
     RoleSource as CoreRoleSource,
 };
-use jackin_session::RoleCatalog;
+use jackin_session::{DoctorInput, HostPorts, RoleCatalog, doctor};
 use tokio_util::sync::CancellationToken;
 
+use crate::doctor::{self, DoctorCell};
 use crate::fleet::{Fleet, GatewayReading, read_fleet};
 use crate::ids::IdTable;
 use crate::project::{
     Facts, ProjectInput, RoleDocError, RoleDocs, manifest_doc, project, unmapped_accounts,
 };
-use crate::sessions::SessionSet;
+use crate::sessions::{Access, SessionConnector, SessionSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Note {
@@ -92,7 +94,13 @@ pub(crate) struct Inputs {
     pub(crate) config: ConfigStore,
     pub(crate) sessions: SessionSet,
     pub(crate) roles: Arc<RoleCatalog>,
-    pub(crate) clock: Arc<dyn Clock>,
+    pub(crate) host: HostPorts,
+    pub(crate) connect: Arc<dyn SessionConnector>,
+    pub(crate) wall: Arc<dyn WallSource>,
+    pub(crate) engine_socket: HostPath,
+    pub(crate) pinned: Compatibility,
+    pub(crate) cancel: CancellationToken,
+    pub(crate) doctor: DoctorCell,
     pub(crate) version: String,
     pub(crate) home: String,
     pub(crate) config_path: String,
@@ -116,7 +124,12 @@ pub(crate) struct InputsParts {
     pub config: ConfigStore,
     pub sessions: SessionSet,
     pub roles: Arc<RoleCatalog>,
-    pub clock: Arc<dyn Clock>,
+    pub host: HostPorts,
+    pub connect: Arc<dyn SessionConnector>,
+    pub wall: Arc<dyn WallSource>,
+    pub engine_socket: HostPath,
+    pub pinned: Compatibility,
+    pub cancel: CancellationToken,
     pub version: String,
     pub home: String,
     pub config_path: String,
@@ -129,7 +142,12 @@ impl Inputs {
             config,
             sessions,
             roles,
-            clock,
+            host,
+            connect,
+            wall,
+            engine_socket,
+            pinned,
+            cancel,
             version,
             home,
             config_path,
@@ -139,7 +157,13 @@ impl Inputs {
             config,
             sessions,
             roles,
-            clock,
+            host,
+            connect,
+            wall,
+            engine_socket,
+            pinned,
+            cancel,
+            doctor: DoctorCell::default(),
             version,
             home,
             config_path,
@@ -159,9 +183,10 @@ impl Inputs {
                     unreadable: 0,
                     gateways: self
                         .sessions
-                        .entries()
+                        .reached()
+                        .into_iter()
                         .map(|(name, _)| GatewayReading {
-                            name: name.clone(),
+                            name,
                             failure: Some(TimedOut(self.deadline).to_string()),
                         })
                         .collect(),
@@ -172,9 +197,9 @@ impl Inputs {
             version: self.version.clone(),
             config_path: self.config_path.clone(),
             home: self.home.clone(),
-            now_secs: self.clock.now().0,
+            now_secs: self.host.clock.now().0,
         };
-        let snapshot = project(
+        let mut snapshot = project(
             &ProjectInput {
                 config: &config,
                 fleet: &fleet,
@@ -183,6 +208,10 @@ impl Inputs {
             },
             &mut locked(&self.ids),
         );
+        snapshot.surfaces.doctor = Some(DoctorSurface {
+            noun: snapshot.surfaces.vocabulary.health_noun.clone(),
+            state: self.doctor.state(),
+        });
         let mut notes: Vec<Note> = fleet
             .failed()
             .map(|g| Note::GatewayUnreachable {
@@ -203,6 +232,38 @@ impl Inputs {
             healthy: fleet.failed().next().is_none(),
             notes,
         })
+    }
+
+    pub(crate) async fn run_doctor(&self, reconnect: bool) -> DoctorReport {
+        if reconnect && let Ok(config) = self.config.load().await {
+            self.sessions
+                .reconnect(self.connect.as_ref(), &config, &self.cancel)
+                .await;
+        }
+        let name = self.sessions.default_name();
+        let access = self.sessions.access(name);
+        let input = DoctorInput {
+            runner: self.host.runner.as_ref(),
+            fs: self.host.fs.as_ref(),
+            gateway: access.borrowed(),
+            engine_socket: self.engine_socket.clone(),
+            pinned: &self.pinned,
+        };
+        let checked = doctor(&input, &self.cancel).await;
+        doctor::report(
+            &checked,
+            (!matches!(access, Access::NotChosen)).then_some(name),
+            self.wall.epoch_millis().div_euclid(1000),
+        )
+    }
+
+    pub(crate) async fn doctor_at_start(&self) {
+        let Some(run) = self.doctor.begin() else {
+            return;
+        };
+        if let Ok(report) = tokio::time::timeout(self.deadline, self.run_doctor(false)).await {
+            run.finish(report);
+        }
     }
 
     async fn role_docs(&self, config: &Config) -> RoleDocs {

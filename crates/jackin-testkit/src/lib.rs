@@ -4,6 +4,7 @@
 mod connector;
 mod console;
 mod console_fixture;
+mod doctor_host;
 mod engine;
 mod exec;
 mod fixtures;
@@ -20,6 +21,7 @@ mod world;
 pub use connector::*;
 pub use console::*;
 pub use console_fixture::*;
+pub use doctor_host::*;
 pub use engine::*;
 pub use fixtures::*;
 pub use gateway::*;

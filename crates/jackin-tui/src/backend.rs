@@ -18,6 +18,7 @@ use jackin_console::world::{Msg, World};
 
 use crate::bridge::Bridge;
 use crate::observe::Inputs;
+use crate::sessions::Access;
 use crate::unbuilt::{self, UnbuiltLaunch, UnbuiltPane};
 
 #[derive(Clone)]
@@ -40,6 +41,18 @@ impl JackinBackend {
             bridge,
             refreshing: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    fn rerun_doctor(&self) {
+        let Some(run) = self.inputs.doctor.begin() else {
+            return;
+        };
+        let inputs = Arc::clone(&self.inputs);
+        self.bridge.spawn(async move {
+            let report = inputs.run_doctor(true).await;
+            run.finish(report.clone());
+            Msg::DoctorFinished(report)
+        });
     }
 
     fn refresh(&self) {
@@ -79,11 +92,24 @@ impl Backend for JackinBackend {
     }
 
     fn perform(&self, effect: &Effect, _world: &World) -> Option<Completion> {
-        if matches!(effect, Effect::Refresh) {
-            self.refresh();
-            return None;
+        match effect {
+            Effect::Refresh => {
+                self.refresh();
+                None
+            }
+            Effect::RunDoctor => {
+                self.rerun_doctor();
+                None
+            }
+            _ => unbuilt::fails(effect),
         }
-        unbuilt::fails(effect)
+    }
+
+    fn due(&self, world: &World) -> Vec<Msg> {
+        if self.inputs.doctor.due(world.now_secs()) {
+            self.rerun_doctor();
+        }
+        Vec::new()
     }
 
     fn changes(
@@ -101,7 +127,14 @@ impl Backend for JackinBackend {
     }
 
     fn launch(&self, world: &World, target: &LaunchTarget) -> Box<dyn LaunchFeed> {
-        Box::new(UnbuiltLaunch::new(world, target))
+        let sessions = &self.inputs.sessions;
+        let failure = match sessions.access(sessions.default_name()) {
+            Access::Down { error, .. } => {
+                unbuilt::gateway_failure(&LaunchContent::openshell().network_failure, &error)
+            }
+            Access::Up(_) | Access::NotChosen => unbuilt::launch_failure(),
+        };
+        Box::new(UnbuiltLaunch::new(world, target, failure))
     }
 
     fn spawn_pane(&self, _request: &PaneRequest, spawn: PaneSpawn) -> Box<dyn PaneBody> {
