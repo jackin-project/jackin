@@ -268,6 +268,13 @@ async fn the_builder_is_checked_once_before_the_first_build_and_never_on_a_cache
         let request = hit.fixture.request()?;
         let plan = ImagePlan::new(&request)?;
         let construct = ImageId::parse(&hit.model.preload(plan.construct_build().tag.as_str()))?;
+        hit.engine
+            .attest(
+                &plan.construct_build().tag,
+                &construct,
+                &CancellationToken::new(),
+            )
+            .await?;
         hit.model.preload(plan.final_tag(&construct).as_str());
         let (result, _) = ensure(&hit.engine, &request).await?;
         assert_eq!(result?.source, ImageSource::Cache);
@@ -956,6 +963,73 @@ async fn a_cancel_whose_group_stop_failed_reaches_the_image_error_with_its_fault
                 (_, other) => return Err(format!("{label}: got {other:?}").into()),
             }
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_construct_tag_that_jackin_did_not_build_is_rebuilt_not_trusted() -> TestResult {
+    guarded(async {
+        let request = Fixture::new()?.request()?;
+        let engine = FakeEngine::new();
+        let plan = ImagePlan::new(&request)?;
+        let construct_tag = plan.construct_build().tag.clone();
+        let planted = ImageId::parse(&tag_id("a retagged poisoned image"))?;
+        engine.plant(&construct_tag, planted.clone());
+
+        let (result, events) = ensure(&engine, &request).await?;
+        let built = result?;
+        assert_eq!(built.source, ImageSource::Built);
+        assert_eq!(
+            stages(&engine, 0),
+            [BuildStage::Construct, BuildStage::Role, BuildStage::Derived]
+        );
+        assert!(
+            !events.contains(&ImageEvent::StageCached(BuildStage::Construct)),
+            "{events:?}"
+        );
+        let held = engine
+            .find(&construct_tag, &CancellationToken::new())
+            .await?
+            .ok_or("the construct tag is empty")?;
+        assert_ne!(held, planted, "the planted image still holds the tag");
+        assert_ne!(built.tag, plan.final_tag(&planted));
+
+        let (again, _) = ensure(&engine, &request).await?;
+        assert_eq!(again?.source, ImageSource::Cache);
+        assert_eq!(stages(&engine, 0).len(), 3, "the second call built nothing");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn buildx_rebuilds_a_construct_whose_image_moved_after_jackin_recorded_it() -> TestResult {
+    guarded(async {
+        let stack = Stack::new()?;
+        let request = stack.fixture.request()?;
+        let plan = ImagePlan::new(&request)?;
+        let construct_tag = plan.construct_build().tag.clone();
+        let (warm, _) = ensure(&stack.engine, &request).await?;
+        assert_eq!(warm?.source, ImageSource::Built);
+        assert_eq!(stack.built_tags().len(), 3);
+
+        let (cached, _) = ensure(&stack.engine, &request).await?;
+        assert_eq!(cached?.source, ImageSource::Cache);
+        assert_eq!(stack.built_tags().len(), 3);
+
+        stack
+            .model
+            .plant(construct_tag.as_str(), &tag_id("a retagged poisoned image"));
+        stack.model.fresh_ids();
+        let (rebuilt, _) = ensure(&stack.engine, &request).await?;
+        assert_eq!(rebuilt?.source, ImageSource::Built);
+        assert_eq!(
+            stack.built_tags().first().map(String::as_str),
+            Some(construct_tag.as_str())
+        );
+        assert_eq!(stack.built_tags().len(), 6);
         Ok(())
     })
     .await

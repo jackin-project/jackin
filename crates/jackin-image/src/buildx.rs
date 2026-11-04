@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    BuilderName, DockerSubcommand, FileLock, FileSystem, FsError, HostPath, ImageId, ImageTag,
-    OutputLine, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus,
-    ProcessStdin, Program, SecretBytes, Sha256, TerminalText,
+    BuilderName, DockerSubcommand, FileLock, FileMode, FileSystem, FsError, HostPath, ImageId,
+    ImageTag, OutputLine, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus,
+    ProcessStdin, Program, SecretBytes, Sha256, TerminalText, write_atomic,
 };
 use rustix::io::Errno;
 use rustix::process::{Pid, test_kill_process};
@@ -31,6 +31,8 @@ const TAIL_LINES: usize = 40;
 const LINE_BUFFER: usize = 64;
 const LOCK_POLL: Duration = Duration::from_millis(100);
 const LOCKS_DIR: &str = "locks";
+const ATTESTED_DIR: &str = "attested";
+const ATTESTED_MODE: FileMode = FileMode(0o600);
 
 static CALLS: AtomicU64 = AtomicU64::new(0);
 
@@ -191,6 +193,12 @@ impl BuildxEngine {
             .map_err(from_process)
     }
 
+    fn attestation(&self, tag: &ImageTag) -> Result<(HostPath, HostPath), EngineError> {
+        let dir = child(&self.work_dir, ATTESTED_DIR)?;
+        let record = child(&dir, Sha256::of(tag.to_string().as_bytes()).as_str())?;
+        Ok((dir, record))
+    }
+
     async fn read_id(&self, iid: &HostPath, tag: &ImageTag) -> Result<ImageId, EngineError> {
         let unreadable = |bytes: &[u8]| EngineError::DigestUnreadable {
             tag: tag.clone(),
@@ -339,6 +347,36 @@ impl ImageEngine for BuildxEngine {
             }),
             None => Err(unreadable()),
         }
+    }
+
+    async fn attested(
+        &self,
+        tag: &ImageTag,
+        _cancel: &CancellationToken,
+    ) -> Result<Option<ImageId>, EngineError> {
+        let (_, record) = self.attestation(tag)?;
+        let Some(bytes) = self.fs.read(&record).await? else {
+            return Ok(None);
+        };
+        Ok(ImageId::parse(String::from_utf8_lossy(&bytes).trim()).ok())
+    }
+
+    async fn attest(
+        &self,
+        tag: &ImageTag,
+        id: &ImageId,
+        _cancel: &CancellationToken,
+    ) -> Result<(), EngineError> {
+        let (dir, record) = self.attestation(tag)?;
+        self.fs.create_private_dir_all(&dir).await?;
+        write_atomic(
+            self.fs.as_ref(),
+            &record,
+            id.to_string().as_bytes(),
+            ATTESTED_MODE,
+        )
+        .await?;
+        Ok(())
     }
 
     async fn build(
