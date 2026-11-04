@@ -20,12 +20,23 @@ impl Lab {
     }
 
     pub(crate) async fn with(rig: Rig) -> Result<Lab, Box<dyn std::error::Error>> {
+        Lab::with_env(rig, &[]).await
+    }
+
+    pub(crate) async fn with_env(
+        rig: Rig,
+        env: &[(&str, &str)],
+    ) -> Result<Lab, Box<dyn std::error::Error>> {
         let code = rig.world.home().as_path().join("code");
         for name in ["alpha", "beta"] {
             tokio::fs::create_dir_all(code.join(name)).await?;
         }
         rig.world.seed_all(&rig.config).await?;
-        let mut console = ConsoleRig::new(&rig.world).await?;
+        let mut builder = ConsoleRig::builder(&rig.world);
+        for (name, value) in env {
+            builder = builder.env(name, value);
+        }
+        let mut console = builder.build().await?;
         console.skip_intro();
         Ok(Lab { rig, console, code })
     }

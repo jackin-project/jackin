@@ -2396,7 +2396,7 @@ dependencies = [
 [[package]]
 name = "jackin-console"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=912b0a8b7bb35c78fe4e643008fcfe7c68073198#912b0a8b7bb35c78fe4e643008fcfe7c68073198"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=adbbfe8d6cf1fd333aa1ee55be54335bfe483281#adbbfe8d6cf1fd333aa1ee55be54335bfe483281"
 dependencies = [
  "clap",
  "junie-tui",
@@ -2860,7 +2860,7 @@ dependencies = [
 [[package]]
 name = "junie-tui"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=912b0a8b7bb35c78fe4e643008fcfe7c68073198#912b0a8b7bb35c78fe4e643008fcfe7c68073198"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=adbbfe8d6cf1fd333aa1ee55be54335bfe483281#adbbfe8d6cf1fd333aa1ee55be54335bfe483281"
 dependencies = [
  "clap",
  "libc",
