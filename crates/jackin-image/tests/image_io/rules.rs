@@ -230,7 +230,11 @@ async fn a_final_image_that_breaks_a_rule_is_never_delivered_and_is_not_served_f
                 (BuildStage::Derived, rule),
                 "{label}: cache"
             );
-            assert_eq!(built_stages(&engine).len(), builds, "{label}: no rebuild");
+            assert_eq!(
+                built_stages(&engine).len(),
+                builds + 2,
+                "{label}: an image that failed the scan is rebuilt, never trusted"
+            );
         }
         Ok(())
     })

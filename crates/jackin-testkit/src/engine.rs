@@ -193,7 +193,6 @@ impl FakeEngine {
     pub fn pin_id(&self, tag: &ImageTag, id: ImageId) {
         let mut state = locked(&self.state);
         state.pinned.insert(tag.clone(), id.clone());
-        state.attested.insert(tag.clone(), id.clone());
         state.images.insert(tag.clone(), id);
     }
 
