@@ -2079,16 +2079,17 @@ mod ci_run {
         "bun run build @docs",
     ];
 
-    const CARGO_SCRIPT: &str = "#!/bin/sh\nif [ \"$1\" = metadata ]; then exec \"$REAL_CARGO\" \"$@\"; fi\nprintf 'cargo %s\\n' \"$*\" >> \"$XTASK_LOG\"\nif [ \"$1\" = \"$FAIL_ON\" ]; then exit 7; fi\nexit 0\n";
+    const CARGO_SCRIPT: &str = "#!/bin/sh\nif [ \"$1\" = metadata ]; then exec \"$REAL_CARGO\" \"$@\"; fi\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nprintf 'cargo %s\\n' \"$*\" >> \"$XTASK_LOG\"\nif [ \"$1\" = \"$FAIL_ON\" ]; then exit 7; fi\nexit 0\n";
 
-    const REUSE_SCRIPT: &str = "#!/bin/sh\nprintf 'reuse %s\\n' \"$*\" >> \"$XTASK_LOG\"\nif [ \"$FAIL_ON\" = reuse ]; then exit 7; fi\nexit 0\n";
+    const REUSE_SCRIPT: &str = "#!/bin/sh\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nprintf 'reuse %s\\n' \"$*\" >> \"$XTASK_LOG\"\nif [ \"$FAIL_ON\" = reuse ]; then exit 7; fi\nexit 0\n";
 
-    const BUN_SCRIPT: &str = "#!/bin/sh\nprintf 'bun %s @%s\\n' \"$*\" \"$(basename \"$(pwd -P)\")\" >> \"$XTASK_LOG\"\nif [ \"$FAIL_ON\" = bun ]; then exit 7; fi\nexit 0\n";
+    const BUN_SCRIPT: &str = "#!/bin/sh\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nprintf 'bun %s @%s\\n' \"$*\" \"$(basename \"$(pwd -P)\")\" >> \"$XTASK_LOG\"\nif [ \"$FAIL_ON\" = bun ]; then exit 7; fi\nexit 0\n";
 
     struct Outcome {
         code: Option<i32>,
         success: bool,
         log: Vec<String>,
+        git_env: Vec<String>,
         stderr: String,
     }
 
@@ -2121,9 +2122,12 @@ mod ci_run {
         ) -> Result<Outcome, Box<dyn Error>> {
             fixture.prepare()?;
             let log = self.dir.path().join("log");
+            let git_env = self.dir.path().join("git_env");
             let stderr = self.dir.path().join("stderr");
-            if log.exists() {
-                fs::remove_file(&log)?;
+            for stale in [&log, &git_env] {
+                if stale.exists() {
+                    fs::remove_file(stale)?;
+                }
             }
             let inherited = std::env::var_os("PATH").unwrap_or_default();
             let path = std::env::join_paths(
@@ -2141,6 +2145,10 @@ mod ci_run {
                     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()),
                 )
                 .env("XTASK_LOG", &log)
+                .env("XTASK_GIT_ENV", &git_env)
+                .env("GIT_DIR", "/nonexistent/jackin-test-git-dir")
+                .env("GIT_WORK_TREE", "/nonexistent/jackin-test-work-tree")
+                .env("GIT_INDEX_FILE", "/nonexistent/jackin-test-index")
                 .env("FAIL_ON", fail_on)
                 .env("GIT_CONFIG_GLOBAL", "/dev/null")
                 .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -2152,6 +2160,11 @@ mod ci_run {
                 code: status.code(),
                 success: status.success(),
                 log: fs::read_to_string(&log)
+                    .unwrap_or_default()
+                    .lines()
+                    .map(str::to_owned)
+                    .collect(),
+                git_env: fs::read_to_string(&git_env)
                     .unwrap_or_default()
                     .lines()
                     .map(str::to_owned)
@@ -2177,6 +2190,15 @@ mod ci_run {
         let outcome = Spy::new()?.run(&green()?, &[], "")?;
         assert_eq!(outcome.log, FULL);
         assert!(outcome.success, "{}", outcome.stderr);
+        Ok(())
+    }
+
+    #[test]
+    fn no_tool_inherits_a_git_variable_from_the_parent() -> TestResult {
+        let outcome = Spy::new()?.run(&green()?, &[], "")?;
+        assert_eq!(outcome.log, FULL);
+        assert!(outcome.success, "{}", outcome.stderr);
+        assert_eq!(outcome.git_env, Vec::<String>::new());
         Ok(())
     }
 

@@ -13,7 +13,7 @@ use crate::checks::{
     BaselineCheck, Check, CommentsCheck, ContainersCheck, DemoGateCheck, ErrorsCheck, LayersCheck,
     PinsCheck, ScreenCheck,
 };
-use crate::repo::{Repo, cargo_program};
+use crate::repo::{Repo, cargo_program, without_git_env};
 use crate::text::plain;
 use crate::violation::Violation;
 
@@ -266,7 +266,7 @@ pub fn run_ci(steps: &[CiStep], repo: &Repo) -> Result<(), CiFailure> {
 
 fn run_tool(step: CiStep, call: &ToolCall, repo: &Repo) -> Result<(), CiError> {
     let program = call.program();
-    let status = Command::new(&program)
+    let status = without_git_env(&mut Command::new(&program))
         .args(call.args)
         .current_dir(repo.root().join(call.dir))
         .status()
