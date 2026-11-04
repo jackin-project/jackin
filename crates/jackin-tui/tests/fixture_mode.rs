@@ -4,6 +4,7 @@
 use clap::Parser;
 use jackin_console::app::Route;
 use jackin_console::fixtures::Scenario;
+use jackin_core::Program;
 use jackin_testkit::{ConsoleRig, FixtureArgs, Rig, TestResult, fixture_app, guard};
 
 #[test]
@@ -60,6 +61,13 @@ async fn idle_console_is_quiet() -> TestResult {
                 console.status_line()
             );
         }
+        let seen = rig.world.runner.scripted().seen();
+        let versions = seen
+            .iter()
+            .filter(|call| call.program == Program::Openshell && call.args == ["--version"])
+            .count();
+        assert_eq!(versions, 2, "one doctor run at start and one after 60 s");
+        assert_eq!(seen.len(), 8, "{seen:?}");
         let app = console.console().app();
         assert!(app.world.daemons.is_empty(), "no pane exists");
         assert!(app.world.jobs.is_empty(), "no reply is waiting");

@@ -5,7 +5,7 @@ use futures::future::join_all;
 use jackin_core::{Config, GatewayName, Phase, SandboxSummary, SupervisorReading};
 use jackin_session::{Session, WorkState};
 
-use crate::sessions::{GatewayState, SessionSet};
+use crate::sessions::{Reached, SessionSet};
 
 #[derive(Clone, Debug)]
 pub struct ObservedSandbox {
@@ -39,19 +39,24 @@ impl Fleet {
 }
 
 pub async fn read_fleet(sessions: &SessionSet, config: &Config) -> Fleet {
-    let readings = join_all(sessions.entries().map(|(name, state)| async move {
-        match state {
-            GatewayState::Failed(error) => (
-                GatewayReading {
-                    name: name.clone(),
-                    failure: Some(error.to_string()),
-                },
-                Vec::new(),
-                0,
-            ),
-            GatewayState::Connected(session) => read_gateway(name, session, config).await,
-        }
-    }))
+    let readings = join_all(
+        sessions
+            .reached()
+            .into_iter()
+            .map(|(name, reached)| async move {
+                match reached {
+                    Reached::Down(error) => (
+                        GatewayReading {
+                            name,
+                            failure: Some(error.to_string()),
+                        },
+                        Vec::new(),
+                        0,
+                    ),
+                    Reached::Up(session) => read_gateway(&name, &session, config).await,
+                }
+            }),
+    )
     .await;
     let mut fleet = Fleet::default();
     for (reading, sandboxes, unreadable) in readings {

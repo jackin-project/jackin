@@ -1,12 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Compatibility, GatewayName};
-use jackin_openshell::GatewayError;
-use jackin_session::{
-    CheckId, CheckStatus, ConnectError, DoctorInput, DoctorReport, GatewayAccess, doctor,
-    error_chain,
-};
+use jackin_core::Compatibility;
+use jackin_session::{CheckId, CheckStatus, DoctorInput, DoctorReport, GatewayAccess, doctor};
 
 use crate::app::App;
 use crate::error::CommandError;
@@ -33,16 +29,6 @@ fn status_name(status: CheckStatus) -> &'static str {
     }
 }
 
-fn gateway_failure(name: &GatewayName, error: ConnectError) -> GatewayError {
-    match error {
-        ConnectError::Gateway(error) => error,
-        discovery @ ConnectError::Discovery { .. } => GatewayError::Unreachable {
-            endpoint: name.to_string(),
-            message: error_chain(&discovery),
-        },
-    }
-}
-
 async fn inspect(app: &App, access: GatewayAccess<'_>) -> Result<DoctorReport, CommandError> {
     let pinned = Compatibility::pinned()?;
     let input = DoctorInput {
@@ -64,7 +50,7 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
             let report = match connected {
                 Ok(gateway) => inspect(app, GatewayAccess::Connected(gateway.as_ref())).await?,
                 Err(error) => {
-                    let failure = gateway_failure(name, error);
+                    let failure = error.into_failure(name);
                     inspect(
                         app,
                         GatewayAccess::Failed {
