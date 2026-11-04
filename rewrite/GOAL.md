@@ -22,7 +22,7 @@ The goal is met only when all of these are true and the proof is in this chat:
 1. Every task box in rewrite/PLAN.md is marked with its proof. A task can stay BLOCKED only if it has a blocker report and an independent reviewer subagent has confirmed in this chat that no way inside DESIGN.md exists.
 2. The G-FULL gate of PLAN.md passes on the head of jackin feature/openshell-native. Its output is in this chat.
 3. The G-E2E gate runs the sentinel journey against a real OpenShell gateway. Every journey step from J00 to J17 prints PASS. The output is in this chat. J15 can be SKIP only when task P0.5 is BLOCKED under rule 1. Three independent swarm lanes repeat the journey with PASS (task P13.2).
-4. The final code-reviewer and security-reviewer verdicts for all five repositories have no open blocking finding. The D27 identity gate passes.
+4. The final `tailrocks-code-reviewer` and `tailrocks-security-reviewer` verdicts for all five repositories have no open blocking finding. The D27 identity gate passes.
 5. One open pull request exists for each of the five repositories from feature/openshell-native to main. The output of gh pr view --json url,state,isDraft,baseRefName,headRefName for each one is in this chat. Do not merge.
 After 1500 turns, if the goal is not met, stop and report the state.
 ```

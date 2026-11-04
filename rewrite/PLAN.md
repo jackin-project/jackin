@@ -81,13 +81,13 @@ You are the orchestrator. You run as Opus 5.5 at effort `high`. You own the plan
 
 ### Run each code task through this pipeline
 
-1. If the task creates a new public API, `architect` designs it first.
-2. `test-reviewer` approves the test plan before anyone writes a test.
+1. If the task creates a new public API, @"tailrocks-architect (agent)" designs it first.
+2. @"tailrocks-test-reviewer (agent)" approves the test plan before anyone writes a test.
 3. The implementer writes the code and the tests in its own worktree.
-4. `verifier` runs the gate and reports PASS or FAIL.
-5. `test-reviewer` proves each new test red, then green, at the committed SHA.
-6. At the end of each phase, one `code-reviewer` reviews `<phase start SHA>..HEAD`. Add `security-reviewer` when the phase touches credentials, policy, images, or the gateway connection.
-7. A fresh implementer fixes the findings. You verify each fix against its finding. `verifier` runs the gate again.
+4. @"tailrocks-verifier (agent)" runs the gate and reports PASS or FAIL.
+5. @"tailrocks-test-reviewer (agent)" proves each new test red, then green, at the committed SHA.
+6. At the end of each phase, one @"tailrocks-code-reviewer (agent)" reviews `<phase start SHA>..HEAD`. Add @"tailrocks-security-reviewer (agent)" when the phase touches credentials, policy, images, or the gateway connection.
+7. A fresh implementer fixes the findings. You verify each fix against its finding. @"tailrocks-verifier (agent)" runs the gate again.
 
 ### Keep one remote branch
 
@@ -130,7 +130,7 @@ The program depends on facts that only a real run can prove. Prove them before y
 
 ### P0.1 Pin the latest stable tools
 
-- **Repo:** jackin. **Owner:** `docs-researcher` finds the versions. `mechanic` at `model: sonnet, effort: high` applies them. **Depends:** none.
+- **Repo:** jackin. **Owner:** @"tailrocks-docs-researcher (agent)" finds the versions. @"tailrocks-mechanic (agent)" at `model: sonnet, effort: high` applies them. **Depends:** none.
 - **Scope:** `mise.toml`, `mise.lock`, `rust-toolchain.toml`, `COMMITS.md`, new `compatibility.lock.toml`.
 - **Steps:**
   1. Find the latest stable version of Rust, mr-boxington, OpenShell, Codex CLI, cargo-nextest, cargo-deny, and cargo-shear.
@@ -141,7 +141,7 @@ The program depends on facts that only a real run can prove. Prove them before y
 
 ### P0.2 Run a local OpenShell gateway
 
-- **Repo:** jackin. **Owner:** `openshell-specialist`. **Depends:** none.
+- **Repo:** jackin. **Owner:** @"tailrocks-docs-researcher (agent)". **Depends:** none.
 - **Scope:** new `rewrite/evidence/P0.2-gateway.md` and a new draft of a `docs/content/` how-to page in `rewrite/drafts/gateway.md`.
 - **Steps:**
   1. Start `openshell-gateway` with the `vm` compute driver. Register it as `jackin-local`.
@@ -158,7 +158,7 @@ The program depends on facts that only a real run can prove. Prove them before y
 
 ### P0.3 Run Codex in a sandbox with an OpenShell provider
 
-- **Repo:** jackin. **Owner:** `openshell-specialist`. **Depends:** P0.2, A1.
+- **Repo:** jackin. **Owner:** @"tailrocks-docs-researcher (agent)". **Depends:** P0.2, A1.
 - **Scope:** `rewrite/evidence/P0.3-codex.md`, `rewrite/drafts/construct.Dockerfile`, `rewrite/drafts/role.Dockerfile`, `rewrite/drafts/derived.Dockerfile`, `rewrite/drafts/codex-provider.yaml`.
 - **Steps:**
   1. Write draft construct, role, and derived Dockerfiles (D05, D06). Build them by hand with `docker buildx build`, in the same order that jackin uses. Give the construct image to the role build as the named build context `construct`.
@@ -179,7 +179,7 @@ The program depends on facts that only a real run can prove. Prove them before y
 
 ### P0.5 Prove a Docker engine for sandboxes
 
-- **Repo:** jackin. **Owner:** `openshell-specialist` and `agent-sandbox-engineer`, in parallel, with the same brief. **Depends:** P0.2.
+- **Repo:** jackin. **Owner:** @"tailrocks-docs-researcher (agent)" and @"tailrocks-sandbox-engineer (agent)", in parallel, with the same brief. **Depends:** P0.2.
 - **Scope:** `rewrite/evidence/P0.5-docker.md`, `rewrite/drafts/docker-*`.
 - **Steps:** Try each D24 engine source in order, on the P0.2 driver:
   1. An engine inside the sandbox. Find which OpenShell policy, process settings, and driver let `dockerd` or rootless Docker run as the sandbox user. Run `docker run --rm hello-world` in the sandbox.
@@ -191,7 +191,7 @@ The program depends on facts that only a real run can prove. Prove them before y
 
 ### P0.6 Prove a terminal session in a console pane
 
-- **Repo:** jackin. **Owner:** `openshell-specialist`, with `rust-cli-tui-engineer` for the prototype. **Depends:** P0.2.
+- **Repo:** jackin. **Owner:** @"tailrocks-docs-researcher (agent)", with @"tailrocks-systems-engineer (agent)" for the prototype. **Depends:** P0.2.
 - **Scope:** `rewrite/evidence/P0.6-panes.md`, a prototype on a local worktree branch that you do not merge.
 - **Steps:**
   1. In a Rust prototype, open an `ExecSandboxInteractive` session and render it in a ratatui pane. Send keys and a resize.
@@ -206,7 +206,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P1.1 Delete the old code and assets
 
-- **Repo:** jackin. **Owner:** `mechanic` at `model: sonnet, effort: high`. **Depends:** P0.4.
+- **Repo:** jackin. **Owner:** @"tailrocks-mechanic (agent)" at `model: sonnet, effort: high`. **Depends:** P0.4.
 - **Steps:**
   1. Move the D25 usage crates to `crates/usage/`. Delete their tests and keep them out of the workspace members until P6.3.
   2. Delete the rest of `crates/`, and delete `native/`, `docker/`, `docker-bake.hcl`, `vendor/`, `fuzz/`, `policy/`, `plans/`, `examples/`, `scripts/`, `release.toml`, `ratchet.toml`, `container-path-allowlist.toml`, `code-health-baseline.toml`, `.alint.yml`, `.codebook.toml`, `.xcode-version`, and `Cargo.lock`.
@@ -219,7 +219,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P1.2 Rewrite the glossary
 
-- **Repo:** jackin. **Owner:** `docs-writer`. **Depends:** P1.1.
+- **Repo:** jackin. **Owner:** @"tailrocks-docs-writer (agent)". **Depends:** P1.1.
 - **Scope:** `CONTEXT.md`.
 - **Steps:** Write the glossary for these terms only: operator, role, workspace, provider, agent, account, default account, binding, usage, gateway, sandbox, OpenShell provider, policy, image, construct, Docker capability, launch, attach, shell, export, purge. Use the DESIGN.md meaning for each term.
 - **Proof:** the diff, and proof that no other term from the old glossary remains.
@@ -229,15 +229,15 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P2.1 Design the crate APIs
 
-- **Repo:** jackin. **Owner:** orchestrator runs `pstack:architect` with `architect` runners. **Depends:** P1.1.
+- **Repo:** jackin. **Owner:** orchestrator runs `pstack:architect` with @"tailrocks-architect (agent)" runners. **Depends:** P1.1.
 - **Scope:** new `rewrite/API.md`.
 - **Steps:** Write the public types and function signatures of each D14 crate. Include the `Gateway` trait, `AgentSpec`, the config schema, the role manifest schema, `LaunchPlan`, the launch steps, and the error enums. Include the test plan outline for each crate.
-- **Proof:** `rewrite/API.md`, reviewed by a second `architect` run on a different AI model.
+- **Proof:** `rewrite/API.md`, reviewed by a second @"tailrocks-architect (agent)" run on a different AI model.
 - [x] P2.1 done — a27464d6, rewrite/API.md (arena: Sonnet and Opus runners, Sonnet cross-judge picked candidate 1; Opus second-model review CHANGES REQUIRED with 4 blocking findings, all fixed in one round and checked by the orchestrator)
 
 ### P2.2 Create the workspace and the eight crates
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P2.1.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P2.1.
 - **Scope:** root `Cargo.toml`, `Cargo.lock`, `crates/*` except `crates/usage/`, `.cargo/config.toml`, `deny.toml`, `clippy.toml`, `rustfmt.toml`, `.config/nextest.toml`. The xtask package name is `jackin-xtask`, so the `.cargo/config.toml` alias works.
 - **Steps:**
   1. Create the eight crates from D14 with the API.md signatures and no logic.
@@ -249,7 +249,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P2.3 Write the repository gates in xtask
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P2.2.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P2.2.
 - **Scope:** `crates/xtask/`.
 - **Steps:** `xtask ci` runs these steps in order and stops at the first failure:
   1. `fmt --check`
@@ -265,12 +265,12 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
   11. the docs build. `--fast` and `--no-docs` skip this step. `--only <step>[,<step>]` runs only the named steps in this order.
 
   `xtask e2e` is a stub that P8.1 fills.
-- **Proof:** G-FAST passes. For each of steps 6, 7, and 8, `test-reviewer` records a red run and a green run. Add a forbidden comment, a forbidden dependency, and a forbidden `docker run` call. Verify that each step fails.
+- **Proof:** G-FAST passes. For each of steps 6, 7, and 8, @"tailrocks-test-reviewer (agent)" records a red run and a green run. Add a forbidden comment, a forbidden dependency, and a forbidden `docker run` call. Verify that each step fails.
 - [x] P2.3 done — 8ead8ba7, G-FAST exit 0 (`18 tests run: 18 passed`; reuse compliant); test-reviewer red/green for all 18 tests and live red/green for steps 6, 7, 8
 
 ### P2.4 Update the tool config and the generated CI
 
-- **Repo:** jackin. **Owner:** `cicd-architect`. **Depends:** P2.3.
+- **Repo:** jackin. **Owner:** @"tailrocks-cicd-engineer (agent)". **Depends:** P2.3.
 - **Scope:** `mise.toml`, `hk.pkl`, `renovate.json`, `.velnor/config.toml`, `.github/` through `velnor-actions generate` only.
 - **Steps:**
   1. Remove the Swift, weaver, boltffi, and xcodegen tools from `mise.toml`.
@@ -284,7 +284,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P3.1 Build the ids, the agent table, and redaction
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P2.3.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P2.3.
 - **Scope:** `crates/jackin-core/src/{ids,agent,redact}.rs`.
 - **Steps:** Build the branded ids, `Agent::Codex`, the `AgentSpec` row (D04, D06, D10, D12), the `ProcessRunner` trait, and the redaction of secret values. Take the Codex row values from `rewrite/drafts/agentspec-codex.toml` when P7.1 has written it.
 - **Proof:** G-FAST passes. Tests show that the code rejects each invalid id with its reason. Tests show that a secret value never appears in a rendered error.
@@ -292,7 +292,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P3.2 Build the config schema and the role manifest
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.1.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P3.1.
 - **Scope:** `crates/jackin-core/src/{config,manifest}/`.
 - **Steps:** Build the D15 config with atomic writes and the D11 manifest parser, including the D24 `docker` settings and the D26 account bindings. Reject each unknown field and name the key.
 - **Proof:** G-FAST passes. Tests show a round trip of a valid file. Tests show the rejection of each invalid case. Tests show that a crash during a write leaves the old file intact.
@@ -300,7 +300,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P3.3 Build the image plan
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.2.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P3.2.
 - **Scope:** `crates/jackin-image/src/plan/`.
 - **Steps:** Build the pure part of D05 and D06: the `Dockerfile` validation, the derived layer from the Codex `AgentSpec` row, the cache key, and the buildx argument list with an explicit builder and the named context `construct`.
 - **Proof:** G-FAST passes. Tests show that the code rejects a final stage without `FROM construct`. Tests show that each cache key input changes the key. Tests show that the derived layer uses the `AgentSpec` binary path.
@@ -310,7 +310,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P4.1 Build the Gateway trait and the SDK adapter
 
-- **Repo:** jackin. **Owner:** `rust-engineer`, with `openshell-specialist` as reviewer. **Depends:** P3.1.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)", with @"tailrocks-docs-researcher (agent)" as reviewer. **Depends:** P3.1.
 - **Scope:** `crates/jackin-openshell/`.
 - **Steps:**
   1. Build the `Gateway` trait from API.md.
@@ -324,15 +324,15 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P4.2 Build the fake gateway
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P4.1.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P4.1.
 - **Scope:** `crates/jackin-testkit/`.
 - **Steps:** Build an in-process fake that implements `Gateway` with sandboxes, labels, OpenShell providers, and injectable failures.
-- **Proof:** G-FAST passes. The `code-reviewer` of phase P4 confirms that the fake obeys the same contract as `GrpcGateway`.
+- **Proof:** G-FAST passes. The @"tailrocks-code-reviewer (agent)" of phase P4 confirms that the fake obeys the same contract as `GrpcGateway`.
 - [x] P4.2 done — 561d0644 and e1f9f07f, fixed in P4.4 batch F2 (deae699e, b94d8dbc); G-FAST exit 0; code-reviewer confirmation CONFIRMED on b94d8dbc: all 11 phase P4 testkit findings closed, the shared contract suite (24 checks) passes on FakeGateway and live on jackin-local; remaining divergences recorded as fake limits in API.md, download cancel and missing-file class scheduled in P5.2
 
 ### P4.3 Build the image builder and the delivery
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.3, P0.3, P7.1, P7.4.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P3.3, P0.3, P7.1, P7.4.
 - **Scope:** `crates/jackin-image/src/{buildx,context,engine,ensure}.rs`, the derived `Dockerfile`, `crates/jackin-image/images/construct/Dockerfile`, the `FakeEngine` in `crates/jackin-testkit`, and the host process runner `TokioProcessRunner` in `crates/jackin-session/src/host.rs`, moved forward from P5.2 so the live build proof runs through `BuildxEngine`.
 - **Steps:**
   1. Run the buildx plan through the `ProcessRunner` trait of `jackin-core`. Stream the build output as typed progress events.
@@ -344,7 +344,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P4.4 Review phase P4
 
-- **Owner:** `code-reviewer` and `security-reviewer` on `<P4 start>..HEAD`. **Depends:** P4.2, P4.3.
+- **Owner:** @"tailrocks-code-reviewer (agent)" and @"tailrocks-security-reviewer (agent)" on `<P4 start>..HEAD`. **Depends:** P4.2, P4.3.
 - **Proof:** both verdicts in the chat, the fix round, and G-FULL.
 - [x] P4.4 done — b94d8dbc, G-FULL exit 0 (`xtask ci --no-docs`: Fmt, Clippy, Nextest 428 run: 428 passed, Deny, Shear, Comments, Layers, Pins, Containers, Reuse compliant); verdicts: code review A CHANGES (1 blocking), B CHANGES (1 blocking), C CHANGES (0 blocking), security CHANGES (1 high, 3 medium); fix batches F1 (31d0a2d4), F3 (55be1a3d), F2 (deae699e, b94d8dbc), each red/green KEEP; live contract Core 15, Transfer 3, Terminal 6 (`evidence/P4.4-live.md`)
 
@@ -352,7 +352,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P5.1 Build the launch planner and executor
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P3.2, P4.2, P4.3.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P3.2, P4.2, P4.3.
 - **Scope:** `crates/jackin-session/src/launch/`.
 - **Steps:** Build the pure planner and the idempotent executor from the DESIGN.md launch sequence. Support cancel.
 - **Proof:** G-FAST passes. Tests against the fake gateway prove these behaviors:
@@ -364,7 +364,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P5.1b Upload the project as a working tree and a git bundle
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P5.1, P4.4.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P5.1, P4.4.
 - **Scope:** `crates/jackin-openshell` (replace `upload_project` with a tree upload and a single-file upload; delete the `.git` copy, `git_config.rs`, the sanitizer and `UnsupportedGitDirectory`), a new project module in `crates/jackin-session`, the launch upload step, the testkit fake, `jackin doctor`'s git check.
 - **Steps:** Build D08 as written: host checks and refusals, the bundle, the emptied project directory, the two uploads with the digest check, the sandbox repository, the tree-id gate, the marker last. Delete the superseded code in the same change.
 - **Proof:** G-FAST passes. Tests with real host git show a normal repository, a linked worktree, a submodule checkout as the root, a SHA-256 repository, a shallow clone, an unborn branch with other branches, and a detached HEAD each arrive with the same HEAD and tree. Tests show each refusal before any gateway call, a host edit during the upload fails with `ProjectMismatch`, a retry after a host deletion succeeds, and no `refs/heads/jackin/*` ref and no host credential reach the sandbox. `evidence/P5.1b-upload.md` shows the live upload from a linked worktree, the bundle digest, and an export back.
@@ -372,7 +372,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P5.2 Build attach, shell, export, list, stop, start, and purge
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P5.1b.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P5.1b.
 - **Scope:** `crates/jackin-session/src/{attach,export,lifecycle,doctor}.rs` (the host runner landed in P4.3), with `restart`, `inspect`, and `doctor` (API.md U10), and the fake download fixes scheduled in P4.2.
 - **Steps:** Build each operation from DESIGN.md. `purge` refuses unexported work without `--force` (ADR-010).
 - **Proof:** G-FAST passes. Tests show that an export writes only `refs/heads/jackin/<sandbox>` and never the working tree. Tests show that purge refuses unexported work. Tests show that list finds sandboxes by label only.
@@ -380,13 +380,13 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P5.3 Review phase P5
 
-- **Owner:** `code-reviewer` and `security-reviewer` on `<P5 start>..HEAD`. **Depends:** P5.2.
+- **Owner:** @"tailrocks-code-reviewer (agent)" and @"tailrocks-security-reviewer (agent)" on `<P5 start>..HEAD`. **Depends:** P5.2.
 - **Proof:** both verdicts in the chat, the fix round, and G-FULL.
 - [x] P5.3 done. Proof: code-reviewer A/B/C and security-reviewer verdicts (/private/tmp/claude-501/plans/P5.3-review-A.md, -B.md, -C.md, P5.3-security.md) with the G1 G2 G3 fix round (acead3eb); pstack interrogate (Sonnet, Opus, Haiku; four verified findings V1-V4, V1 a live leak) with the int fix round merged at 9cc24701 and red/green APPROVE after R1-R4; live contract Core 15/15, Transfer 8/8, Terminal 6/6 and export scenario on jackin-local; G-FULL `xtask ci --no-docs` 773 passed, exit 0 on 9cc24701.
 
 ### P5.4 Build the Docker capability
 
-- **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P5.3, P0.5.
+- **Repo:** jackin. **Owner:** @"tailrocks-sandbox-engineer (agent)". **Depends:** P5.3, P0.5.
 - **Scope:** the D24 parts of `crates/jackin-core/`, `crates/jackin-image/`, and `crates/jackin-session/`.
 - **Steps:** If P0.5 is `BLOCKED`, build only the settings and a launch error that names the blocker. Otherwise, build D24 with the engine source that P0.5 chose. Resolve the capability from the role and the workspace. Add the Docker layer to the derived image only when the capability is enabled. Add the engine policy rule only when the capability is enabled. Show the D24 warning.
 - **Proof:** G-FAST passes. Tests show that the capability is disabled by default. Tests show that the role or the workspace can enable it. Tests show that the cache key changes with it.
@@ -394,7 +394,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P5.5 Review the Docker capability
 
-- **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P5.4.
+- **Owner:** @"tailrocks-security-reviewer (agent)", then the orchestrator runs `pstack:interrogate`. **Depends:** P5.4.
 - **Proof:** the verdicts in the chat. No open blocking finding.
 - [x] P5.5 done. Proof: security-reviewer CHANGES_REQUIRED (/private/tmp/claude-501/plans/P5.5-security.md, F1 high) fixed and red/green APPROVE (816ef7d14); pstack interrogate (Sonnet, Opus, Haiku; seven verified findings V1-V7, /private/tmp/claude-501/plans/P5.5-interrogate.md) fixed on wt/P5.5-int with red/green KEEP and the four review edits proven red, merged at 28164db91; G-FAST 1187 passed; live IP-literal check in evidence/P5.4-docker.md.
 
@@ -402,7 +402,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P6.1 Build the clap commands
 
-- **Repo:** jackin. **Owner:** `rust-cli-tui-engineer`. **Depends:** P5.2.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P5.2.
 - **Scope:** `crates/jackin/`.
 - **Steps:** Build each command in the DESIGN.md CLI table. Write help text with clap attributes, not doc comments (D17). `--json` output is stable and has a typed schema.
 - **Proof:** G-FAST passes. Tests run the binary against the fake gateway and assert the exit code, the JSON output, and the resulting fake state.
@@ -410,7 +410,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P6.1b Name identifiers plainly in user-facing errors
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P6.1.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P6.1.
 - **Scope:** every `thiserror` message in `jackin-core`, `jackin-image`, `jackin-openshell`, `jackin-session`, and `jackin`.
 - **Steps:** Replace each `{x:?}` of an identifier or a path in an error message with its `Display` form, so the user reads `jackin-work-codex`, not `Provider(ProviderName("jackin-work-codex"))`. Add a repo gate that refuses `:?}` in an `#[error(...)]` attribute. Fix the P6.2 defects: a manifest error that repeats its cause (`unknown field x: unknown field x`); `role check` on a missing directory, which must name the directory; `jackin ls` on an empty gateway, which must print that there are no sandboxes.
 - **Proof:** G-FAST passes; the new gate goes red on a reintroduced `:?}`.
@@ -418,7 +418,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P6.3 Port the usage crates
 
-- **Repo:** jackin. **Owner:** `rust-engineer`, with `mechanic` for the comment removal. **Depends:** P6.1.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)", with @"tailrocks-mechanic (agent)" for the comment removal. **Depends:** P6.1.
 - **Scope:** `crates/usage/`, the workspace members, the `jackin usage` command.
 - **Steps:**
   1. Apply D25. Remove each dependency on a deleted crate.
@@ -431,7 +431,7 @@ Between P1 and P2.2 the workspace does not build. This break is planned. P2.2 en
 
 ### P6.2 Run the CLI against the real gateway
 
-- **Owner:** `verifier` at `model: sonnet, effort: high`. **Depends:** P6.1, P0.2.
+- **Owner:** @"tailrocks-verifier (agent)" at `model: sonnet, effort: high`. **Depends:** P6.1, P0.2.
 - **Steps:** Run `jackin doctor`, `jackin ls --json`, and `jackin role check` on a valid and an invalid manifest against `jackin-local`.
 - **Proof:** `evidence/P6.2-cli.md`.
 - [x] P6.2 done. Proof: evidence/P6.2-cli.md (doctor 7/7 pass against jackin-local; `ls --json` matches `openshell sandbox list`; role check exits 0 on a valid manifest and 1 on an unknown key, a missing field, and a bad stage). Defects moved to P6.1b.
@@ -442,7 +442,7 @@ P7.1 can start after P0.3. It runs in parallel with P2 to P6. The image drafts t
 
 ### P7.1 Write the construct image and the derived layer
 
-- **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P0.3, A2.
+- **Repo:** jackin. **Owner:** @"tailrocks-sandbox-engineer (agent)". **Depends:** P0.3, A2.
 - **Scope:** `rewrite/drafts/construct.Dockerfile`, `rewrite/drafts/derived.Dockerfile`, `rewrite/drafts/jackin-start`, `rewrite/drafts/agentspec-codex.toml`.
 - **Steps:** Finish the D06 construct image, the D05 derived layer, and the D09 `jackin-start` launcher from the P0.3 drafts. Write the Codex `AgentSpec` row values in `agentspec-codex.toml`. P4.3 moves them into `jackin-image`.
 - **Proof:** `evidence/P7.1-image.md` shows the output of `id` and `codex --version`. It shows that a derived image has no `sudo` and no `docker`.
@@ -450,7 +450,7 @@ P7.1 can start after P0.3. It runs in parallel with P2 to P6. The image drafts t
 
 ### P7.2 Rewrite the sentinel role
 
-- **Repo:** jackin-sentinel. **Owner:** `agent-sandbox-engineer`. **Depends:** P7.1, P7.4, P6.1, P0.4.
+- **Repo:** jackin-sentinel. **Owner:** @"tailrocks-sandbox-engineer (agent)". **Depends:** P7.1, P7.4, P6.1, P0.4.
 - **Steps:**
   1. Delete every Claude file, old hook, old script, and the old manifest.
   2. Write a `Dockerfile` whose final stage starts `FROM construct`. It installs `jackin-sentinel-probe` in a `RUN` layer, so the build output is visible.
@@ -462,13 +462,13 @@ P7.1 can start after P0.3. It runs in parallel with P2 to P6. The image drafts t
 
 ### P7.3 Review the images, the OpenShell provider profile, and the policy
 
-- **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P7.2.
+- **Owner:** @"tailrocks-security-reviewer (agent)", then the orchestrator runs `pstack:interrogate`. **Depends:** P7.2.
 - **Proof:** the verdicts in the chat. No open blocking finding.
 - [x] P7.3 done. Proof: security-reviewer CHANGES_REQUIRED (/private/tmp/claude-501/plans/P7.3-security.md, F1 blocking) with the policy fix (66602557) and the image fix (b3087a4e), each red/green KEEP; pstack interrogate (Sonnet, Opus; Haiku stopped) with five verified findings I1-I5 (/private/tmp/claude-501/plans/P7.3-interrogate.md) fixed at bdedc47b with red/green KEEP after R1 and R2; the role-context symlink fix (32f89501); live BuildKit proofs and the real sentinel build in evidence/P7.3-image.md; G-FAST 1054 passed.
 
 ### P7.4 Prove the jackin-start supervisor
 
-- **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P0.4, P7.1.
+- **Repo:** jackin. **Owner:** @"tailrocks-sandbox-engineer (agent)". **Depends:** P0.4, P7.1.
 - **Scope:** `rewrite/drafts/jackin-start`, `rewrite/drafts/derived.Dockerfile`, `rewrite/drafts/agentspec-codex.toml`, new `rewrite/evidence/P7.4-supervisor.md`.
 - **Steps:** Rewrite `jackin-start` to the D09 supervisor. Remove the hooks from it. Prove each fact on `jackin-local` with the derived image:
   1. The state goes `waiting`, then `running <attempt>` after jackin writes the attempt ID, then `exited <attempt> <code>` after Codex quits. The sandbox stays `Ready` after Codex exits with 0 and with a non-zero code. Exec and `git bundle` still work.
@@ -486,14 +486,14 @@ This phase is the first end-to-end proof.
 
 ### P8.0 Look for newer stable releases
 
-- **Owner:** `docs-researcher`. **Depends:** P7.3.
+- **Owner:** @"tailrocks-docs-researcher (agent)". **Depends:** P7.3.
 - **Steps:** Look for newer stable releases of the D02 tools. For each newer release, add a task that updates the pin and runs the affected live proofs again.
 - **Proof:** a trail row with the versions found.
 - [x] P8.0 done. Proof: decisions.tsv row 2026-11-06 P8.0 and /private/tmp/claude-501/plans/P8.0-releases.md (newer: cargo-nextest 0.9.151, hk 2.11.0, baseline velnor-actions 0.1.72, zizmor 1.32.0; OpenShell has no stable release after 0.1.6). Task P8.0a bumps them.
 
 ### P8.0a Bump the pins that P8.0 found
 
-- **Owner:** `cicd-architect`. **Depends:** P8.0.
+- **Owner:** @"tailrocks-cicd-engineer (agent)". **Depends:** P8.0.
 - **Scope:** the pins in jackin, jackin-sentinel, and terminal-components-baseline (`mise.toml`, `mise.lock`, `hk.pkl`, the nextest pin, the D02 table row by the orchestrator) and the Velnor-generated workflows.
 - **Steps:** Bump cargo-nextest to 0.9.151 in every repository, hk to 2.11.0 with the `hk.pkl` package URLs, velnor-actions to 0.1.72 in the baseline with regenerated workflows, and zizmor to 1.32.0 where it is pinned. Run each repository's gate.
 - **Proof:** each repository's gate passes on the bumped pins; regenerated workflows show no diff on a second run.
@@ -501,7 +501,7 @@ This phase is the first end-to-end proof.
 
 ### P8.1 Build xtask e2e
 
-- **Repo:** jackin. **Owner:** `rust-engineer`. **Depends:** P6.1, P7.2, P8.0.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P6.1, P7.2, P8.0.
 - **Scope:** `crates/xtask/src/e2e/`. Drive the PTY steps J11 and J12 with the `portable-pty` crate. Validate the probe output against `rewrite/probe-schema.json`.
 - **Steps:** Run each journey step in order. Compare the host observation with the probe output. Print one line for each step. The line has the ID, `PASS`, `FAIL`, or `SKIP`, and the reason. Exit non-zero if a step fails.
 - **Proof:** a run against `jackin-local`.
@@ -516,7 +516,7 @@ This phase is the first end-to-end proof.
 
 ### P8.3 Repeat the journey independently
 
-- **Owner:** orchestrator runs `pstack:swarm` with three `verifier` lanes. **Depends:** P8.2.
+- **Owner:** orchestrator runs `pstack:swarm` with three @"tailrocks-verifier (agent)" lanes. **Depends:** P8.2.
 - **Steps:** Each lane starts from a fresh clone of the head SHA, a new workspace name, and no old sandboxes. Each lane runs G-E2E. With A1 source 3, the lanes run one after the other.
 - **Proof:** three PASS outputs in `evidence/P8.3-lanes.md`.
 - [x] P8.3 done. Proof: evidence/P8.3-lanes.md, three verifier lanes from fresh clones of 8c1f604b0, each RESULT PASS=19 FAIL=0 SKIP=0 and exit 0 (181.1 s, 183.2 s, 182.6 s).
@@ -550,7 +550,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 
 ### P9.1 Move the jackin-preview screens into baseline blocks
 
-- **Repo:** terminal-components-baseline. **Owner:** `rust-cli-tui-engineer`. **Depends:** P2.1.
+- **Repo:** terminal-components-baseline. **Owner:** @"tailrocks-systems-engineer (agent)". **Depends:** P2.1.
 - **Scope:** the baseline `src/` and the `jackin-preview` binary. Never the files under `tests/functional/baselines/`.
 - **Steps:**
   1. Run the full baseline suite and record the result as the before state.
@@ -562,19 +562,19 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 
 ### P9.2 Add the new jackin screens to the baseline
 
-- **Repo:** terminal-components-baseline. **Owner:** `ux-specialist` writes the screen specs. `rust-cli-tui-engineer` builds them. **Depends:** P9.1.
+- **Repo:** terminal-components-baseline. **Owner:** @"tailrocks-ux-specialist (agent)" writes the screen specs. @"tailrocks-systems-engineer (agent)" builds them. **Depends:** P9.1.
 - **Steps:** Specify and build the role editor, the role binding, the Docker setting, and the doctor panel with baseline components. Follow the demo navigation and key bindings (D28). Add them to `jackin-preview`. Approve one new tuiscotti baseline for each new screen.
 - **Proof:** the full baseline suite passes. The existing baseline files have no diff. `jackin/rewrite/evidence/P9.2-baseline.md` lists the new baseline files.
 - [x] P9.2 done — baseline 0734f95, evidence/P9.2-baseline.md (8 new baselines; 106/106; no existing baseline changed)
 
 ### P9.3 Wire the console to jackin data
 
-- **Repos:** terminal-components-baseline (the baseline steps), then jackin (the jackin steps). **Owner:** `rust-cli-tui-engineer`. `ux-specialist` reviews every new baseline look. `test-reviewer` approves each test plan and records the red and green runs. **Depends:** P8.2, P9.2.
+- **Repos:** terminal-components-baseline (the baseline steps), then jackin (the jackin steps). **Owner:** @"tailrocks-systems-engineer (agent)". @"tailrocks-ux-specialist (agent)" reviews every new baseline look. @"tailrocks-test-reviewer (agent)" approves each test plan and records the red and green runs. **Depends:** P8.2, P9.2.
 - **Rule (D27, D28):** jackin has one console application, `jackin-console`, from `https://github.com/tailrocks/terminal-components-baseline`, branch `feature/openshell-native`. It runs as the demo `jackin-preview` and as the jackin product. Jackin depends on `junie-tui` and `jackin-console` only as git dependencies with that URL, a full `rev` on that branch and `default-features = false`. A path dependency, a copy, another URL, a branch or tag reference, and a `[patch]` of these crates are errors, and the `baseline` step of `xtask` fails on each. The demo data, `SimBackend`, the scripted sessions, the fixtures and every demo-only code path stay in the baseline behind the Cargo feature `demo`, which is off by default. No demo data and no demo symbol reaches the jackin build, and the `demo-gate` step of `xtask` fails if one does. No screen code, pixel or screen text is written in jackin: a missing screen, control, word or behavior is added to the baseline. Jackin Capsule runs on the host, and its panes use `termpane` through `junie-tui`.
 - **Scope:** the baseline `apps/jackin` and `src/` for the baseline steps. In jackin: `crates/jackin-tui/`, the console entry in `crates/jackin/`, `crates/jackin-testkit/`, `crates/xtask/`, `deny.toml`. The design is `P9.3-design-v7`.
 - **Steps:**
   1. Baseline, one app in two modes (B1b, B2c, B3b, B5b, B8a, B6, B7a): the feature `demo`, `default = []`, the bin `jackin-preview`; `Entry` and `AppOptions` instead of `Scenario`; the live-data constructor `Surfaces::openshell`; the demo literals, the scripted pane player, the simulated outcomes and the simulated launch move into `fixtures` and `sim`; effects carry a payload with its base and failure replies, and a successful reply carries the new snapshot, so no screen writes `World` after an effect. Proof: the full baseline suite with `--all-features` and the product-shape job with `--no-default-features --features product` pass, and `git diff --stat -- tests/functional/baselines apps/jackin/tests/functional/baselines` prints nothing.
-  2. Baseline Fixed controls (B4a, B4b, B4c): every control is live, mapped, or fixed with a visible reason. Each new look has one new baseline reviewed by `ux-specialist`.
+  2. Baseline Fixed controls (B4a, B4b, B4c): every control is live, mapped, or fixed with a visible reason. Each new look has one new baseline reviewed by @"tailrocks-ux-specialist (agent)".
   3. Baseline terminal block (B8-0, B8-1, B8b, B5, B7b): `termpane` replaces `vt100` under `junie_tui::terminal`; `showcase_page_terminalpane` and `showcase_terminal_replay_mid_sequence` leave the baselines byte-identical; the terminal viewport (selection, copy, scroll); the terminal pane with its seven link states, focus events and attention; pending results; the launch views.
   4. Jackin prerequisites and the testkit (J0a, J0b): the session, core and testkit changes in `API.md` sections 1 to 4 and 7 that the console needs.
   5. Pin and wire (J1, J1b): the two dependency lines of D27, the `baseline`, `screen` and `demo-gate` steps, `deny.toml`, `build_console` and `run_console`, the read-only projection of config, fleet and gateway health, and the doctor panel.
@@ -587,14 +587,14 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 
 ### P9.4 Prove that the console is identical to the baseline
 
-- **Repo:** jackin. **Owner:** `rust-cli-tui-engineer`, with `test-reviewer` for the red and green record. **Depends:** P9.3.
+- **Repo:** jackin. **Owner:** @"tailrocks-systems-engineer (agent)", with @"tailrocks-test-reviewer (agent)" for the red and green record. **Depends:** P9.3.
 - **Steps:** Add the D27 identity gate to the nextest suite. The gate runs the `console-fixture` binary of `jackin-testkit`, which builds the pinned `jackin-console` through `assemble`, the same path the product's `build_console` takes (design 4.2, G16), with the baseline feature demo enabled only in that test binary; `build_console` itself projects live jackin data and cannot show the fixture worlds. It runs the jackin console in a PTY on the baseline fixture data. It drives each demo scenario and each key-driven demo state with the demo key sequence (D28). It verifies each result against its `jackin-preview` tuiscotti baseline.
-- **Proof:** G-FAST passes. `test-reviewer` records a red run after a one-cell color change and a green run after the revert. xtask demo-gate passes.
+- **Proof:** G-FAST passes. @"tailrocks-test-reviewer (agent)" records a red run after a one-cell color change and a green run after the revert. xtask demo-gate passes.
 - [x] P9.4 done. Proof: identity target in crates/jackin-testkit/tests/identity compares 41 journeys and 54 approved jackin-preview files of the pinned baseline (adbbfe8) through tuiscotti; test-reviewer red after a one-cell colour change (`1 changed cells ... fields ["fg"]`) and green after revert (/private/tmp/claude-501/plans/P9.4-redgreen.md), its FIX (colour test bypassing the visual path) fixed with the weakening break red; load flake fixed (0 of 160 under 24 burners); xtask demo-gate exit 0; G-FAST passes.
 
 ### P9.5 Drive the console live
 
-- **Owner:** `verifier` at `model: sonnet, effort: high`, with the `run` skill. **Depends:** P9.4.
+- **Owner:** @"tailrocks-verifier (agent)" at `model: sonnet, effort: high`, with the `run` skill. **Depends:** P9.4.
 - **Steps:** Start the console in a PTY against `jackin-local`. Follow the demo flows with real data. Create a workspace. Add a Codex account and an account of one other provider. Set a default account. Bind accounts to the sentinel role and to the workspace. Open the usage panel. Launch the sentinel role with the Codex login from --chatgpt-from. Open a shell pane next to the Codex pane. Detach. Attach again from the list. Purge.
 - **Proof:** terminal captures in `evidence/P9.5-console.md`.
 - [x] P9.5 done. Proof: evidence/P9.5-console.md (run 2 at 1f04feb8c against jackin-local on OpenShell 0.1.7: all 12 steps PASS with no retry, Codex ChatGPT login and an env-source Claude account, launch with the Codex pane attached, shell pane `echo p95-shell-ok`, Ctrl+B d detach with the sandbox kept, reattach with both panes, purge; cleanup left no sandbox and no provider). Run 1 failed steps 8 and 9 (panes could not attach after a launch); the P9.5 fix round fixed the cause.
@@ -603,14 +603,14 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 
 ### P10.1 Prove credential mode B
 
-- **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
+- **Repo:** jackin. **Owner:** @"tailrocks-sandbox-engineer (agent)". **Depends:** P8.2.
 - **Steps:** P4.1, P5.1, and P6.1 build mode B, because the journey in P8.2 needs it (D10). This task proves it in isolation and hardens it. Prove D10 mode B. `jackin account add codex --chatgpt-from <codex-home>` imports the login into the OpenShell provider. The sandbox gets a placeholder `auth.json`. Device login is interactive only and is not part of the proof.
 - **Proof:** G-FAST passes. J07 and J08 pass with a mode B account. `evidence/P10.1-chatgpt.md` shows the output.
 - [x] P10.1 done. Proof: evidence/P10.1-chatgpt.md; G-E2E at bec2f810b with the mode B ChatGPT account: J00-J17 PASS, RESULT PASS=19 FAIL=0 SKIP=0, a1_host_login=unchanged, exit 0; G-FAST 1542 passed at d0219aac4 (pre-push gate).
 
 ### P10.2 Review mode B
 
-- **Owner:** `security-reviewer`, then the orchestrator runs `pstack:interrogate`. **Depends:** P10.1.
+- **Owner:** @"tailrocks-security-reviewer (agent)", then the orchestrator runs `pstack:interrogate`. **Depends:** P10.1.
 - **Proof:** the verdicts in the chat. No open blocking finding.
 - [x] P10.2 done. Proof: security-reviewer APPROVE (/private/tmp/claude-501/plans/P10.2-security.md; F1 echoed values, F2 placeholder check, F3 sync lock fixed in 9a2042556); pstack interrogate with three adversaries (sonnet, opus, haiku), every finding rerun by the orchestrator (/private/tmp/claude-501/plans/P10.2-interrogate.md: account edits planned before the lock, value echo outside --credential, secret-shaped env and file credentials), all fixed at 5af16cf6c with red and green in rewrite/reconciliation/P10.2.md; G-FAST 1567 passed; no open blocking finding.
 
@@ -620,14 +620,14 @@ P11.1 and P11.2 run in parallel.
 
 ### P11.1 Rewrite Agent Smith
 
-- **Repo:** jackin-agent-smith. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
+- **Repo:** jackin-agent-smith. **Owner:** @"tailrocks-sandbox-engineer (agent)". **Depends:** P8.2.
 - **Steps:** Apply D20. Delete every Claude file and the marketplace scripts. Write the Dockerfile, manifest, policy, review instructions for Codex, and README.
 - **Proof:** G-ROLE passes. `evidence/P11.1-smith.md` shows that `jackin load agent-smith` builds the image and starts Codex.
 - [x] P11.1 done. Proof: jackin-agent-smith feature/openshell-native (Codex role, FROM construct, github.com-only git policy, review AGENTS.md installed by preflight); G-ROLE exit 0; repo gates pass; evidence/P11.1-smith.md shows `jackin load agent-smith` building the image and starting Codex 0.166.0, instructions loaded, A1 login unchanged.
 
 ### P11.2 Rewrite The Architect
 
-- **Repo:** jackin-the-architect. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
+- **Repo:** jackin-the-architect. **Owner:** @"tailrocks-sandbox-engineer (agent)". **Depends:** P8.2.
 - **Steps:** Apply D20. Delete `jackin-toolchain/`, `scripts/update-jackin-toolchain.rs`, `AGENTS.md.d/`, `docs/pr-workflow.md`, `caveman-config.json`, and every Claude file. Install the D02 Rust toolchain and mr-boxington in the image. Write the policy for crates.io, GitHub, and the mise download hosts.
 - **Proof:** G-ROLE passes. In a sandbox of this role, G-FAST passes on a clone of jackin. Record it in `evidence/P11.2-architect.md`.
 - [x] P11.2 done. Proof: jackin-the-architect feature/openshell-native fe88f07 (role ffc8735: Codex role, locked toolchain under root-owned /usr/local with jackin's pins, egress crates.io read-only and github.com git fetch only); G-ROLE exit 0 (`jackin role check .`, `mise run test`); live G-FAST in a sandbox of this role on jackin 24d77b490: exit 0, 1215/1215 passed; code-reviewer fixed, security-reviewer APPROVE; evidence/P11.2-architect.md.
@@ -636,7 +636,7 @@ P11.1 and P11.2 run in parallel.
 
 ### P12.1 Rewrite the jackin documents
 
-- **Repo:** jackin. **Owner:** `docs-writer`. **Depends:** P9.5.
+- **Repo:** jackin. **Owner:** @"tailrocks-docs-writer (agent)". **Depends:** P9.5.
 - **Scope:** `README.md`, `CONTRIBUTING.md`, `COMMITS.md`, `docs/content/`.
 - **Steps:** Write the install guide, the gateway how-to from `rewrite/drafts/gateway.md`, the role author guide, the CLI reference, and the console guide. Mark ADR-005, ADR-007, and ADR-011 as superseded by DESIGN.md.
 - **Proof:** the docs build in G-FULL passes. No page mentions a Docker or Apple runtime for agents.
@@ -644,7 +644,7 @@ P11.1 and P11.2 run in parallel.
 
 ### P12.2 Rewrite the role documents and the project note
 
-- **Owner:** `docs-writer` for the role READMEs. The orchestrator updates `~/.claude/project-notes/jackin.md` and the index row for the three role repositories. **Depends:** P11.1, P11.2.
+- **Owner:** @"tailrocks-docs-writer (agent)" for the role READMEs. The orchestrator updates `~/.claude/project-notes/jackin.md` and the index row for the three role repositories. **Depends:** P11.1, P11.2.
 - **Proof:** the diffs.
 - [x] P12.2 done. Proof: role READMEs rewritten and pushed (jackin-sentinel 1e3c5c1, jackin-agent-smith 79f5e13, jackin-the-architect f9ff481; each repo's `mise run test` and `jackin role check .` exit 0); `~/.claude/project-notes/jackin.md` updated (console git dependencies, full G-E2E command, backlog and red/green records, signed merges); the index row in `~/.claude/project-notes/README.md` already covers the three role repositories.
 
@@ -652,27 +652,27 @@ P11.1 and P11.2 run in parallel.
 
 ### P13.0 Look for newer stable releases
 
-- **Owner:** `docs-researcher`. **Depends:** all tasks of P0 to P12.
+- **Owner:** @"tailrocks-docs-researcher (agent)". **Depends:** all tasks of P0 to P12.
 - **Steps:** Do the P8.0 steps again.
 - **Proof:** a trail row with the versions found.
 - [x] P13.0 done. Proof: /private/tmp/claude-501/plans/P13.0-releases.md (checked 2026-11-04) and decisions rows 2026-11-08T23:30 and 2026-11-09T10:30: OpenShell 0.1.7, velnor-actions 0.1.73, Docker CLI 29.9.3, buildx 0.38.2, russh 0.65.1, toml 1.2.0, mr-boxington 1.29.2, uv 0.13.7, prek 0.5.10, mise 2026.11.0, rustup 1.29.3, jactionlint 2.4.0 landed in every repo (jackin ad7d09824, sentinel f8a254d, agent-smith e852386, architect f040d07, baseline 916de2c); reqwest 0.12 and noyalib 0.0.53 held by OpenShell 0.1.7's requirements; termpane held at its git rev until 0.1.1 is published.
 
 ### P13.1 Run the full gate
 
-- **Owner:** `verifier`. **Depends:** P13.0 and the tasks that it added.
+- **Owner:** @"tailrocks-verifier (agent)". **Depends:** P13.0 and the tasks that it added.
 - **Steps:** Run G-FULL. Run `rg -l -i -w 'bollard|dind' --glob '!rewrite/**' --glob '!docs/content/**/adr*/**' --glob '!deny.toml'` and verify that it prints nothing (`deny.toml` bans the `bollard` crates, which is the D01 rule itself) (`capsule` is no longer forbidden: D28 makes Jackin Capsule the host multiplexer).
 - **Proof:** G-FULL passes on the head of jackin. G-ROLE passes in each role repository. The full baseline suite passes in terminal-components-baseline, and every approved baseline file that differs from `95bbcbb` is a re-take or addition recorded with its UX review in `docs/P9.3-red-green.md`.
 - [x] P13.1 done. Proof: G-FULL (`xtask ci`) passed on jackin e0776e988 (1937 of 1937 tests, then deny, shear, comments, layers, pins, containers, errors, baseline, screen, demo-gate, reuse and docs; exit 0; log /private/tmp/claude-501/plans/gfull.log); the `rg -l -i -w 'bollard|dind'` check printed nothing; G-ROLE (`jackin role check .`) exit 0 in jackin-sentinel 96c530a, jackin-agent-smith e852386 and jackin-the-architect f040d07; the full baseline suite passed in terminal-components-baseline a4e81a4 (nextest 776 of 776, clippy, fmt; log /private/tmp/claude-501/plans/baseline-final.log); since `95bbcbb` no approved baseline file is modified (9 renames with identical content, 56 additions, each recorded with its UX review in `docs/P9.3-red-green.md` or, for the five P9.2 new screens, in `docs/specs/jackin-console-new-screens-review.md` and `rewrite/evidence/P9.2-baseline.md`).
 
 ### P13.2 Repeat the journey from fresh resources
 
-- **Owner:** orchestrator runs `pstack:swarm` with three `verifier` lanes, as in P8.3. Each lane starts with an empty image cache. **Depends:** P13.1.
+- **Owner:** orchestrator runs `pstack:swarm` with three @"tailrocks-verifier (agent)" lanes, as in P8.3. Each lane starts with an empty image cache. **Depends:** P13.1.
 - **Proof:** three PASS outputs in `evidence/P13.2-lanes.md` and in the chat.
 - [x] P13.2 done. Proof: `rewrite/evidence/P13.2-lanes.md`: three lanes from fresh GitHub clones of jackin `e4fd71f18` and jackin-sentinel `ad4776d` ran G-E2E one after the other on the real gateway `jackin-local` (OpenShell 0.1.7); each lane gave J00 to J17 and CLEAN, 19 PASS, 0 FAIL, 0 SKIP, with no sandbox before the lane, the A1 host login unchanged and no token-shaped output. The commits after `e4fd71f18` change only scanner baselines and documents.
 
 ### P13.3 Review the whole change
 
-- **Owner:** one `code-reviewer` for each repository on `origin/main..feature/openshell-native`. One `security-reviewer` across all five. Then the orchestrator runs `pstack:interrogate` on the credential, policy, and image diffs. **Depends:** P13.2.
+- **Owner:** one @"tailrocks-code-reviewer (agent)" for each repository on `origin/main..feature/openshell-native`. One @"tailrocks-security-reviewer (agent)" across all five. Then the orchestrator runs `pstack:interrogate` on the credential, policy, and image diffs. **Depends:** P13.2.
 - **Steps:** Fix each accepted finding through the code task pipeline. Write the evidence for each rejected finding.
 - **Proof:** every verdict in the chat. No open blocking finding.
 - [x] P13.3 done. Proof: `rewrite/evidence/P13.3-reviews.md` gives every verdict: code review APPROVE for the three roles and CHANGES then fixed for jackin (`bda1988fd`) and the baseline (`a4e81a4`); security review APPROVE for the three roles and CHANGES then fixed for jackin and the baseline (feed guard `a4e81a4`); interrogate A1 HIGH, A2, C1, C2 and C3 MEDIUM fixed (`3a038b688`, `de31dcf57`, `c8c07a600`, `d80a66fb0`) and the policy adversary found nothing. Four PR review rounds followed, every thread resolved. No blocking finding is open, and the D27 identity gate passed in G-FULL on the jackin head `81b1a8dfb`.
