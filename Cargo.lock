@@ -2397,8 +2397,9 @@ dependencies = [
 [[package]]
 name = "jackin-console"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=74244972a1183db85111332ddab7eeabcbae81cb#74244972a1183db85111332ddab7eeabcbae81cb"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=93949cf19e81d070582ecaf8895434c3cb5d2c05#93949cf19e81d070582ecaf8895434c3cb5d2c05"
 dependencies = [
+ "clap",
  "junie-tui",
  "ratatui",
 ]
@@ -2497,11 +2498,16 @@ name = "jackin-testkit"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "clap",
+ "jackin-console",
  "jackin-core",
  "jackin-image",
  "jackin-openshell",
  "jackin-session",
+ "jackin-tui",
  "jackin-usage",
+ "junie-tui",
+ "ratatui",
  "serde_json",
  "tempfile",
  "tokio",
@@ -2512,12 +2518,18 @@ dependencies = [
 name = "jackin-tui"
 version = "0.1.0"
 dependencies = [
+ "clap",
+ "futures",
  "jackin-console",
  "jackin-core",
  "jackin-openshell",
  "jackin-session",
+ "jackin-testkit",
  "junie-tui",
+ "ratatui",
  "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -2844,8 +2856,9 @@ dependencies = [
 [[package]]
 name = "junie-tui"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=74244972a1183db85111332ddab7eeabcbae81cb#74244972a1183db85111332ddab7eeabcbae81cb"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=93949cf19e81d070582ecaf8895434c3cb5d2c05#93949cf19e81d070582ecaf8895434c3cb5d2c05"
 dependencies = [
+ "clap",
  "libc",
  "ratatui",
  "termpane",
