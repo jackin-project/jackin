@@ -14,7 +14,7 @@ use jackin_core::{
 };
 use jackin_openshell::contract::{ContractFixture, SHELL_END_TIMEOUT};
 use jackin_openshell::{
-    ClosedPolicy, Gateway, InputMode, MainProcess, ProgramOutcome, ProgramRun, ProgramStdin,
+    Gateway, InputMode, MainProcess, PolicyDocument, ProgramOutcome, ProgramRun, ProgramStdin,
     RepaintPolicy, SandboxCreate, SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalEvent,
     TerminalKind, TerminalRequest, TerminalSession,
 };
@@ -119,7 +119,7 @@ pub(crate) fn spec_with(
         ImageTag::parse(image)?,
         planned.complete(&image_id, jackin_core::DockerLabel::Off),
         providers,
-        ClosedPolicy::parse(POLICY)?,
+        PolicyDocument::parse(POLICY)?.close()?,
         main,
     ))
 }
