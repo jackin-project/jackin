@@ -303,35 +303,35 @@ impl DockerPart {
 
 pub static DOCKER_CLIENT: DockerClientSpec = DockerClientSpec {
     cli: DockerPart {
-        version: "29.9.2",
+        version: "29.9.3",
         url_template: "https://download.docker.com/linux/static/stable/{triple}/docker-{version}.tgz",
         targets: &[
             DockerTarget {
                 platform: Platform::LinuxArm64,
                 triple: "aarch64",
-                sha256: "873b3e0207857c3b2f28392fb922f3ea6efe37620c16d4d4aaf2fef409c90b73",
+                sha256: "1b27fd739378ef938401e81ce5afb73b7ad7432d4f598814a9ff5f826bb464d2",
             },
             DockerTarget {
                 platform: Platform::LinuxAmd64,
                 triple: "x86_64",
-                sha256: "9ac225999fd5e863f7694c728ef23d480616b1e5639328fa309befd4243d69eb",
+                sha256: "3fb5d1f13014c18cc54945bc177c58a9056a482dada031e17d12cf2e6922c973",
             },
         ],
     },
     cli_members: &["docker/docker"],
     buildx: DockerPart {
-        version: "0.38.1",
+        version: "0.38.2",
         url_template: "https://github.com/docker/buildx/releases/download/v{version}/buildx-v{version}.linux-{triple}",
         targets: &[
             DockerTarget {
                 platform: Platform::LinuxArm64,
                 triple: "arm64",
-                sha256: "3b83b3731916ba433feccaaa689fe5bcdc81c641d92c8e6c2ea865dfa141c97a",
+                sha256: "46c0f334772de3cb0b341cc415caf7339fb5cfc8b8438ebcb5a10e7f23800d36",
             },
             DockerTarget {
                 platform: Platform::LinuxAmd64,
                 triple: "amd64",
-                sha256: "e25d5cd675092bb5d1d03632fdc46cdf3fede7b514dc5f023a105e00d3ce5ad4",
+                sha256: "7992ec09413b80ff57ba4e081f56fc833d7bac1d5e71143c6c809e7e6065f6d6",
             },
         ],
     },

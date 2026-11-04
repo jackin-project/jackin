@@ -74,7 +74,7 @@ ratatui = { version = "0.30.2", features = ["crossterm_0_29"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-native-roots-no-provider"] }
-russh = { version = "0.65.0", default-features = false, features = ["aws-lc-rs", "flate2"] }
+russh = { version = "0.65.1", default-features = false, features = ["aws-lc-rs", "flate2"] }
 rustix = { version = "1.1.6", features = ["fs", "process"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -86,7 +86,7 @@ tempfile = "3.27.0"
 termwiz = { version = "0.23.3", default-features = false }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", default-features = false, features = ["sync"] }
-toml = { version = "1.1.8", default-features = false, features = ["display", "parse", "serde"] }
+toml = { version = "1.2.0", default-features = false, features = ["display", "parse", "serde"] }
 tokio-stream = "0.1.19"
 tokio-util = "0.7.20"
 tonic = { version = "0.14.9", features = ["tls-aws-lc"] }
