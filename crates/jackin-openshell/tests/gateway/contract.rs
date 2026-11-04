@@ -648,7 +648,7 @@ async fn a_gateway_that_finds_a_missing_file_and_fails_later_fails_the_size_chec
     prepare(&env, &root);
     env.server.state().exec = Some(scripted(|start, _| {
         if start.command[0] == "/usr/bin/stat" {
-            vec![Step::Out(b"1\n".to_vec()), Step::Exit(0)]
+            vec![Step::Out(b"regular file 1\n".to_vec()), Step::Exit(0)]
         } else {
             vec![Step::Err(b"no such file".to_vec()), Step::Exit(1)]
         }

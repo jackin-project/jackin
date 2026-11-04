@@ -103,8 +103,12 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
             "not a directory: /home/me/my project",
         ),
         (
-            PathError::NotAGitWorkTree(dir).to_string(),
+            PathError::NotAGitWorkTree(dir.clone()).to_string(),
             "not a git work tree: /home/me/my project",
+        ),
+        (
+            PathError::UnsupportedGitEntry(dir).to_string(),
+            "the .git of /home/me/my project is a symlink or another kind of file; use a normal repository, a linked worktree, or a submodule checkout",
         ),
         (
             ProcessError::Spawn {

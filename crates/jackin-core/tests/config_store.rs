@@ -278,6 +278,9 @@ impl FileSystem for CrashFs {
         self.gate(None, p)?;
         self.inner.stat_following(p).await
     }
+    async fn canonicalize(&self, p: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(p).await
+    }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
     }
@@ -434,6 +437,9 @@ impl FileSystem for GateFs {
     }
     async fn stat_following(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.inner.stat_following(p).await
+    }
+    async fn canonicalize(&self, p: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(p).await
     }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await

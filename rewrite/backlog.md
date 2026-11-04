@@ -19,3 +19,15 @@ Each row is a LOW finding that a review raised and the orchestrator deferred. A 
 | Baseline B3b | `command_unavailable` is unreachable through the app; pinned as data only. | Remove it or reach it. |
 | Velnor | velnor-actions 0.1.72 hard-codes jactionlint 2.3.0; has no grouped-job option; accepts directory check inputs. | Upstream fixes in tailrocks/velnor-new. |
 | Architect role | The `task-jackin-pins` CI job follows a mutable jackin branch, so a jackin tool bump turns role PRs red until the pins are copied. | Accept; bump role pins with jackin bumps. |
+| PR 1264 N6, N19, N23 | Non-UTF-8 paths and branch names are decoded lossily (`config/render.rs:17`, `facts.rs:98`, `export/host.rs:159`, `export/sandbox.rs:340`); Linux only. | Refuse non-UTF-8 in `HostPath::parse` and the branch parsers. |
+| PR 1264 N7, N16 | `Session::power`, `write_file`, `read_files` and `work_state_of` (`export.rs`) mint their own `CancellationToken`, so the console cannot cancel them. | Thread the caller token; add an xtask check against `CancellationToken::new()` in non-test source. |
+| PR 1264 N8 | Two concurrent `load --launch-id X` can both run `setup`; D11 idempotence limits the harm. | Hold `lock::hold` around the hook step. |
+| PR 1264 N10 | A failed provider update leaves the provider without refresh. | Make the Present check read the refresh status so the next launch repairs it. |
+| PR 1264 N14 | `list_by_selector` drops malformed sandbox records. | Return the parse error. |
+| PR 1264 N15 | `EngineCert::check` is syntactic (P5.4 design); a mismatched cert fails at the first `docker` call. | Parse X.509 and match the key. |
+| PR 1264 N24 | `read_chatgpt_login` uses an unbounded read. | `read_regular` with a credential-sized cap. |
+| PR 1264 N29 | An in-image symlink on a `read_write` path is not refused by the derived scan. | Pass the policy `read_write` list to the scan. |
+| PR 1264 N30 | `--env` and manifest defaults may hold `op://` or `openshell:resolve:` values. | Run `PlainEnvValue` validation in `resolve_env`. |
+| PR 1264 wave 2 LOW-1 | U4b tests have no `refs/headsx/...` target, so a prefix check without the slash passes. | Add the row. |
+| PR 1264 wave 2 LOW-2, LOW-3, LOW-4 | U8: the recheck-before-bundle order is not pinned; no linked-worktree-with-alternates row; the hostile tests drop the alternates. | Add the rows; keep the alternates in `hostile_launch`. |
+| PR 1264 wave 2 LOW-5 | U10: no CLI row sends a lone Esc key. | Add a CLI row that expects `\x1b` in the main input. |

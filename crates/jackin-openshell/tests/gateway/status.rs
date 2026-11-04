@@ -433,6 +433,9 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             limit: 0,
         },
         GatewayError::DownloadTooLarge { size: 1, limit: 0 },
+        GatewayError::NotRegularFile {
+            kind: TerminalText::sanitize(b"directory"),
+        },
         GatewayError::HostKeyMismatch,
         GatewayError::TerminalRefused {
             reason: String::new(),
@@ -464,6 +467,7 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             | GatewayError::Transfer { .. }
             | GatewayError::OutputTooLarge { .. }
             | GatewayError::DownloadTooLarge { .. }
+            | GatewayError::NotRegularFile { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
             | GatewayError::UnsafePath { .. }
@@ -471,5 +475,5 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
         };
         assert_eq!(error.is_retryable(), expected, "{}", kind(error));
     }
-    assert_eq!(errors.len(), 22);
+    assert_eq!(errors.len(), 23);
 }

@@ -449,11 +449,7 @@ impl RoleCatalog {
         cancel: &CancellationToken,
         args: &[&str],
     ) -> Result<ProcessOutput, RoleError> {
-        let git = HostGit {
-            runner: self.runner.as_ref(),
-            root,
-            cancel,
-        };
+        let git = HostGit::role_checkout(self.runner.as_ref(), root, cancel);
         git.capture(Pace::Quick, words(args), Vec::new())
             .await
             .map_err(process_failure)

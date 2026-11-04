@@ -93,3 +93,32 @@ async fn a_sandbox_whose_launch_never_wrote_the_env_file_gets_no_shell() -> Test
     })
     .await
 }
+
+#[tokio::test]
+async fn osc52_is_blocked_in_both_directions_of_a_shell() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let (harness, handle) = prepared(&rig).await?;
+        let name = handle.name();
+        let script = vec![
+            Step::Bytes(
+                b"read line; printf '%s' \"$line\" > f; printf 'x\\033]52;c;c2VjcmV0\\007y\\033]52;c;?\\033\\\\z'; exit\n"
+                    .to_vec(),
+            ),
+            Step::Bytes(b"a\x1b]52;c;c2VjcmV0\x07b\n".to_vec()),
+        ];
+        let ran = harness
+            .command(&["shell", name.as_str()])
+            .terminal(ScriptedTerminal::new(script)?.0)
+            .run()
+            .await?;
+        ran.ok()?;
+        assert!(ran.stdout.contains("xyz"), "{:?}", ran.stdout);
+        assert!(!ran.stdout.contains("]52"), "{:?}", ran.stdout);
+        let written = handle.file(&SandboxPath::parse("/sandbox/project/f")?);
+        assert_eq!(written, Some(b"ab".to_vec()));
+        Ok(())
+    })
+    .await
+}

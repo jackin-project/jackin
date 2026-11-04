@@ -63,6 +63,8 @@ pub enum GatewayError {
     },
     #[error("the remote file has {size} bytes, more than the limit of {limit}")]
     DownloadTooLarge { size: u64, limit: u64 },
+    #[error("the remote path is a {kind}, not a regular file")]
+    NotRegularFile { kind: TerminalText },
     #[error("the {stream} output of {op} is larger than {limit} bytes")]
     OutputTooLarge {
         op: GatewayOp,
@@ -256,6 +258,7 @@ impl GatewayError {
             | GatewayError::Transfer { .. }
             | GatewayError::OutputTooLarge { .. }
             | GatewayError::DownloadTooLarge { .. }
+            | GatewayError::NotRegularFile { .. }
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
             | GatewayError::UnsafePath { .. }

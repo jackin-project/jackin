@@ -191,6 +191,14 @@ impl FileSystem for MemFs {
         }
     }
 
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        let state = locked(&self.state);
+        Ok(
+            (state.files.contains_key(path.as_path()) || state.is_dir(path.as_path()))
+                .then(|| path.clone()),
+        )
+    }
+
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         let state = self.enter(FsOp::FileLen)?;
         if state.is_dir(path.as_path()) {
