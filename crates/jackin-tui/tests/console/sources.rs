@@ -653,7 +653,9 @@ async fn unreadable_codex_folders(
 ) -> Result<[std::path::PathBuf; 2], Box<dyn std::error::Error>> {
     let big = lab.code.join("codex-big");
     tokio::fs::create_dir_all(&big).await?;
-    tokio::fs::write(big.join("auth.json"), vec![b'x'; (1 << 20) + 1]).await?;
+    let mut login = tokio::fs::read(lab.rig.home.as_path().join("auth.json")).await?;
+    login.resize((1 << 20) + 1, b' ');
+    tokio::fs::write(big.join("auth.json"), login).await?;
     let piped = lab.code.join("codex-piped");
     tokio::fs::create_dir_all(&piped).await?;
     make_pipe(&piped.join("auth.json"))?;
