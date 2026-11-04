@@ -414,7 +414,12 @@ fn session_record(
     }]
 }
 
-fn instance(observed: &ObservedSandbox, config: &Config, ids: &IdTable, now_secs: i64) -> Instance {
+pub(crate) fn instance(
+    observed: &ObservedSandbox,
+    config: &Config,
+    ids: &IdTable,
+    now_secs: i64,
+) -> Instance {
     let ObservedSandbox {
         gateway: _,
         summary,

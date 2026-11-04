@@ -15,6 +15,7 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 jackin-console = { workspace = true }
 jackin-core = { workspace = true }
+jackin-image = { workspace = true }
 jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
 junie-tui = { workspace = true }

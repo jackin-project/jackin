@@ -314,8 +314,14 @@ async fn launch_on_failed_gateway() -> TestResult {
             .build()
             .await?;
         console.keys("down enter enter")?;
-        console.tick(3);
-        console.settle().await?;
+        for _ in 0..400 {
+            console.tick(1);
+            console.settle().await?;
+            if console.screen().contains("connection refused") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
         let screen = console.screen();
         assert!(screen.contains("connection refused"), "{screen}");
         assert!(screen.contains("jackin doctor"), "{screen}");

@@ -5,14 +5,11 @@ use jackin_console::backend::{
     ChangeSet, Completion, Effect, FieldDescriptor, FolderProbe, OnePassword, OpAccount, OpError,
     OpField, OpItem, OpSession, OpVault, SecretClass,
 };
-use jackin_console::domain::instance::{AgentState, Instance};
-use jackin_console::domain::launch::LaunchFailure;
+use jackin_console::domain::instance::AgentState;
 use jackin_console::domain::onepassword::OpReference;
 use jackin_console::domain::vocabulary::{Unbuilt, Vocabulary};
-use jackin_console::launch::{EnvAnswer, FailedLaunch, LaunchEvent, LaunchFeed, TypedKey};
 use jackin_console::panes::{PaneBody, PaneKey, PaneKindTag, PaneNote, PaneSpawn, PasteOutcome};
-use jackin_console::world::{Msg, SaveFailure, World};
-use jackin_openshell::GatewayError;
+use jackin_console::world::{Msg, SaveFailure};
 use junie_tui::core::event::Key;
 use junie_tui::core::id::WidgetId;
 use junie_tui::theme::Tone;
@@ -118,66 +115,6 @@ pub(crate) fn fails(effect: &Effect, words: &Vocabulary) -> Option<Completion> {
         Effect::Refresh | Effect::RunDoctor => return None,
     };
     Some(Completion::ready(0, msg))
-}
-
-pub(crate) fn launch_failure(words: &Vocabulary) -> LaunchFailure {
-    LaunchFailure {
-        stage: 0,
-        summary: words.unbuilt(Unbuilt::Launch),
-        next_step: String::new(),
-        detail: Vec::new(),
-    }
-}
-
-pub(crate) fn gateway_failure(base: &LaunchFailure, error: &GatewayError) -> LaunchFailure {
-    LaunchFailure {
-        detail: vec![error.to_string()],
-        ..base.clone()
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct UnbuiltLaunch {
-    run_id: String,
-    failed: Option<Box<FailedLaunch>>,
-}
-
-impl UnbuiltLaunch {
-    pub(crate) fn new(world: &World, failure: LaunchFailure) -> UnbuiltLaunch {
-        UnbuiltLaunch {
-            run_id: world.now_secs().to_string(),
-            failed: Some(Box::new(FailedLaunch {
-                failure,
-                instance: None,
-            })),
-        }
-    }
-}
-
-impl LaunchFeed for UnbuiltLaunch {
-    fn run_id(&self) -> &str {
-        &self.run_id
-    }
-
-    fn poll(&mut self, _world: &World) -> Vec<LaunchEvent> {
-        self.failed
-            .take()
-            .map(LaunchEvent::Failed)
-            .into_iter()
-            .collect()
-    }
-
-    fn retry_credentials(&mut self, _op: &mut dyn OnePassword) {}
-
-    fn use_plain_text(&mut self) -> Option<TypedKey> {
-        None
-    }
-
-    fn answer_env(&mut self, _answers: Vec<EnvAnswer>) {}
-
-    fn cancel(&mut self, _world: &World) -> Option<Instance> {
-        None
-    }
 }
 
 #[derive(Debug)]

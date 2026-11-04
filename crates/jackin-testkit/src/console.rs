@@ -76,6 +76,7 @@ pub struct ConsoleRigBuilder<'a> {
     connector: Option<Arc<dyn SessionConnector>>,
     host: DoctorHost,
     engine_socket: Option<HostPath>,
+    cwd: Option<HostPath>,
     deadline: Duration,
     env: Vec<(String, String)>,
     size: (u16, u16),
@@ -138,6 +139,7 @@ impl ConsoleRig {
             connector: None,
             host: DoctorHost::healthy(),
             engine_socket: None,
+            cwd: None,
             deadline: Duration::from_secs(10),
             env: Vec::new(),
             size: DEFAULT_SIZE,
@@ -342,6 +344,12 @@ impl ConsoleRigBuilder<'_> {
     }
 
     #[must_use]
+    pub fn cwd(mut self, path: HostPath) -> Self {
+        self.cwd = Some(path);
+        self
+    }
+
+    #[must_use]
     pub fn deadline(mut self, deadline: Duration) -> Self {
         self.deadline = deadline;
         self
@@ -398,7 +406,7 @@ impl ConsoleRigBuilder<'_> {
             },
             wall: wall_port,
             env: EnvSnapshot::from_pairs(self.env),
-            cwd: world.home().clone(),
+            cwd: self.cwd.unwrap_or_else(|| world.home().clone()),
             home: world.home().clone(),
             engine_socket: self.engine_socket.unwrap_or_else(|| world.home().clone()),
             version: "0.0.0-test".to_owned(),

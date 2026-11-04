@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
+use std::fmt;
 
 use jackin_core::{HookKind, LaunchId, Phase, SandboxName, TerminalText};
 
@@ -14,6 +15,17 @@ pub enum LaunchNextStep {
         sandbox: SandboxName,
         launch: LaunchId,
     },
+}
+
+impl fmt::Display for LaunchNextStep {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LaunchNextStep::Retry { sandbox, launch } => write!(
+                f,
+                "sandbox {sandbox} remains; retry with: jackin load --launch-id {launch}"
+            ),
+        }
+    }
 }
 
 pub fn error_chain(error: &dyn Error) -> String {

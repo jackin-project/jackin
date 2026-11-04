@@ -9,6 +9,7 @@ use futures::future::join_all;
 use jackin_console::domain::doctor::{
     DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
 };
+use jackin_console::domain::instance::Instance;
 use jackin_console::domain::vocabulary::{Notice, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
@@ -20,9 +21,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::console::ConsoleLimits;
 use crate::doctor::{self, DoctorCell};
-use crate::fleet::{WorkCache, read_fleet};
+use crate::fleet::{ObservedSandbox, WorkCache, read_fleet};
 use crate::ids::IdTable;
-use crate::project::{Facts, ProjectInput, RoleDocError, RoleDocs, manifest_doc, project};
+use crate::project::{
+    Facts, ProjectInput, RoleDocError, RoleDocs, instance as project_instance, manifest_doc,
+    project,
+};
 use crate::sessions::{Access, SessionConnector, SessionSet};
 
 #[derive(Debug)]
@@ -167,6 +171,15 @@ impl Inputs {
             });
         }
         Ok(Observation { snapshot, notices })
+    }
+
+    pub(crate) fn instance_of(&self, config: &Config, observed: &ObservedSandbox) -> Instance {
+        project_instance(
+            observed,
+            config,
+            &locked(&self.ids),
+            self.host.clock.now().0,
+        )
     }
 
     pub(crate) async fn run_doctor(&self, reconnect: bool) -> Result<DoctorReport, DoctorFailure> {

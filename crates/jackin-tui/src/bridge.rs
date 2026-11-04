@@ -71,6 +71,10 @@ impl Bridge {
         }
     }
 
+    pub(crate) fn detach(&self, work: impl Future<Output = ()> + Send + 'static) {
+        self.handle.spawn(work);
+    }
+
     pub(crate) fn spawn(&self, work: impl Future<Output = Msg> + Send + 'static) {
         let ticket = self.inflight.start();
         let sender = self.sender.clone();

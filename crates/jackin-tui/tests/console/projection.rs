@@ -290,21 +290,6 @@ async fn unbuilt_workspace_delete_fails_visibly() -> TestResult {
 }
 
 #[tokio::test]
-async fn unbuilt_launch_fails_visibly() -> TestResult {
-    guard(async {
-        let (rig, mut console) = bare().await?;
-        console.keys("down enter enter")?;
-        console.tick(3);
-        console.settle().await?;
-        let screen = console.screen();
-        assert!(screen.contains(&words(Unbuilt::Launch)), "{screen}");
-        assert!(rig.world.gateway.sandboxes().is_empty());
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
 async fn unbuilt_settings_save_fails_visibly() -> TestResult {
     guard(async {
         let (_rig, mut console) = bare().await?;

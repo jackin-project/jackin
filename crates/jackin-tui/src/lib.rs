@@ -8,6 +8,7 @@ mod console;
 mod doctor;
 mod fleet;
 mod ids;
+mod launch;
 mod observe;
 mod project;
 mod sessions;

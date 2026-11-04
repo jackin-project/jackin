@@ -14,14 +14,14 @@ use jackin_console::panes::{PaneBody, PaneRequest, PaneSpawn};
 use jackin_console::world::{Msg, World};
 
 use crate::bridge::Bridge;
+use crate::launch;
 use crate::observe::Inputs;
-use crate::sessions::Access;
-use crate::unbuilt::{self, UnbuiltLaunch, UnbuiltPane};
+use crate::unbuilt::{self, UnbuiltPane};
 
 #[derive(Clone)]
 pub(crate) struct JackinBackend {
-    inputs: Arc<Inputs>,
-    bridge: Bridge,
+    pub(crate) inputs: Arc<Inputs>,
+    pub(crate) bridge: Bridge,
     words: Vocabulary,
     refreshing: Arc<AtomicBool>,
 }
@@ -48,7 +48,7 @@ impl JackinBackend {
             .spawn(async move { Msg::DoctorFinished(inputs.run_doctor(true).await) });
     }
 
-    fn refresh(&self) {
+    pub(crate) fn refresh(&self) {
         if self.refreshing.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -88,15 +88,8 @@ impl Backend for JackinBackend {
         Arc::new(LaunchContent::openshell())
     }
 
-    fn launch(&self, world: &World, _target: &LaunchTarget) -> Box<dyn LaunchFeed> {
-        let sessions = &self.inputs.sessions;
-        let failure = match sessions.access(sessions.default_name()) {
-            Access::Down { error, .. } => {
-                unbuilt::gateway_failure(&LaunchContent::openshell().network_failure, &error)
-            }
-            Access::Up(_) | Access::NotChosen => unbuilt::launch_failure(&self.words),
-        };
-        Box::new(UnbuiltLaunch::new(world, failure))
+    fn launch(&self, world: &World, target: &LaunchTarget) -> Box<dyn LaunchFeed> {
+        launch::start(self, world, target)
     }
 
     fn spawn_pane(&self, _request: &PaneRequest, spawn: PaneSpawn) -> Box<dyn PaneBody> {
