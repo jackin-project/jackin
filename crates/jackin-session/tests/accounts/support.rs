@@ -23,7 +23,9 @@ pub(crate) const SECRETS: [&str; 3] = [ACCESS, REFRESH, API_KEY];
 const OWNER: &str = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
 const GUARD: Duration = Duration::from_secs(10);
 
-pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
+pub(crate) async fn guard<T>(
+    work: impl Future<Output = Result<T, Box<dyn Error>>>,
+) -> Result<T, Box<dyn Error>> {
     tokio::time::timeout(GUARD, work)
         .await
         .map_err(|_| "the test hung for 10 s")?

@@ -365,26 +365,23 @@ async fn after_two_edits(
 #[tokio::test]
 async fn after_any_two_account_edits_the_gateway_holds_a_provider_for_exactly_the_login_accounts()
 -> TestResult {
-    guard(async {
-        let home = Home::new(&login_json()).await?;
-        let pairs: Vec<(&str, Kind, Kind)> = ["existing-login", "existing-file", "fresh"]
-            .into_iter()
-            .flat_map(|target| {
-                KINDS.into_iter().flat_map(move |first| {
-                    KINDS.into_iter().map(move |second| (target, first, second))
-                })
-            })
-            .collect();
-        let mut applied = 0;
-        for (target, first, second) in pairs {
-            if after_two_edits(&home, target, first, second).await? {
-                applied += 1;
-            }
+    let home = guard(Home::new(&login_json())).await?;
+    let pairs: Vec<(&str, Kind, Kind)> = ["existing-login", "existing-file", "fresh"]
+        .into_iter()
+        .flat_map(|target| {
+            KINDS
+                .into_iter()
+                .flat_map(move |first| KINDS.into_iter().map(move |second| (target, first, second)))
+        })
+        .collect();
+    let mut applied = 0;
+    for (target, first, second) in pairs {
+        if guard(after_two_edits(&home, target, first, second)).await? {
+            applied += 1;
         }
-        assert_eq!(applied, 22, "the table plans 22 of its 75 pairs");
-        Ok(())
-    })
-    .await
+    }
+    assert_eq!(applied, 22, "the table plans 22 of its 75 pairs");
+    Ok(())
 }
 
 #[tokio::test]
