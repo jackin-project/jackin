@@ -606,7 +606,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 - **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
 - **Steps:** P4.1, P5.1, and P6.1 build mode B, because the journey in P8.2 needs it (D10). This task proves it in isolation and hardens it. Prove D10 mode B. `jackin account add codex --chatgpt-from <codex-home>` imports the login into the OpenShell provider. The sandbox gets a placeholder `auth.json`. Device login is interactive only and is not part of the proof.
 - **Proof:** G-FAST passes. J07 and J08 pass with a mode B account. `evidence/P10.1-chatgpt.md` shows the output.
-- [ ] P10.1 done
+- [x] P10.1 done. Proof: evidence/P10.1-chatgpt.md; G-E2E at bec2f810b with the mode B ChatGPT account: J00-J17 PASS, RESULT PASS=19 FAIL=0 SKIP=0, a1_host_login=unchanged, exit 0; G-FAST 1542 passed at d0219aac4 (pre-push gate).
 
 ### P10.2 Review mode B
 
