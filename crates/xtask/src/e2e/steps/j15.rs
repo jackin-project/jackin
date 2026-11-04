@@ -16,6 +16,8 @@ const RISKS: [&str; 4] = [
     "bind mount names a path on the engine host",
     "engine outlives the sandbox",
 ];
+const HELLO_WORLD: &str =
+    "hello-world@sha256:c567b231f65614688711a75f31518a064258a51d442117a3e771a3a8fdba78ef";
 const CERTS: [&str; 3] = ["ca.pem", "cert.pem", "key.pem"];
 
 #[derive(Debug)]
@@ -212,11 +214,14 @@ impl Run<'_> {
         }
         let mut shell = Vec::new();
         let steps: [(&'static str, String); 6] = [
-            ("run", format!("docker run --name {container} hello-world")),
+            (
+                "run",
+                format!("docker run --name {container} {HELLO_WORLD}"),
+            ),
             (
                 "build",
                 format!(
-                    "rm -rf /tmp/e2e-ctx && mkdir -p /tmp/e2e-ctx && printf 'FROM hello-world\\nLABEL e2e=1\\n' > /tmp/e2e-ctx/Dockerfile && docker build -q -t {container}-img /tmp/e2e-ctx"
+                    "rm -rf /tmp/e2e-ctx && mkdir -p /tmp/e2e-ctx && printf 'FROM {HELLO_WORLD}\\nLABEL e2e=1\\n' > /tmp/e2e-ctx/Dockerfile && docker build -q -t {container}-img /tmp/e2e-ctx"
                 ),
             ),
             (
