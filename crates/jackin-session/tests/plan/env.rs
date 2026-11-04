@@ -1,21 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{EnvFile, EnvName};
+use jackin_core::{EnvFile, EnvName, PlainEnvValue};
 use jackin_session::{EnvQuestion, PlanError, Prompting};
 use jackin_testkit::RoleFixture;
 
-use super::support::{Spec, TestResult, env_values, guard};
+use super::support::{Spec, TestResult, env_values, guard, plain_values};
 
 fn question(
     name: &str,
     prompt: Option<&str>,
     default: Option<&str>,
-) -> Result<EnvQuestion, jackin_core::IdError> {
+) -> Result<EnvQuestion, Box<dyn std::error::Error>> {
     Ok(EnvQuestion {
         name: EnvName::parse(name)?,
         prompt: prompt.map(str::to_owned),
-        default: default.map(str::to_owned),
+        default: default.map(PlainEnvValue::parse).transpose()?,
     })
 }
 
@@ -37,7 +37,7 @@ async fn env_values_follow_flags_defaults_and_prompts() -> TestResult {
             never.err()
         );
 
-        let given = setup.plan(setup.request(1)?.env(env_values(&[("TOKEN_MODE", "x")])?))?;
+        let given = setup.plan(setup.request(1)?.env(plain_values(&[("TOKEN_MODE", "x")])?))?;
         assert_eq!(
             values(&given)?,
             env_values(&[("GREETING", "hello"), ("TOKEN_MODE", "x")])?
@@ -58,7 +58,7 @@ async fn env_values_follow_flags_defaults_and_prompts() -> TestResult {
             setup
                 .request(1)?
                 .prompting(Prompting::Interactive)
-                .env(env_values(&[("GREETING", "hey"), ("TOKEN_MODE", "y")])?),
+                .env(plain_values(&[("GREETING", "hey"), ("TOKEN_MODE", "y")])?),
         )?;
         assert_eq!(
             values(&answered)?,
@@ -68,14 +68,14 @@ async fn env_values_follow_flags_defaults_and_prompts() -> TestResult {
         let overridden = setup.plan(
             setup
                 .request(1)?
-                .env(env_values(&[("GREETING", "hi"), ("TOKEN_MODE", "z")])?),
+                .env(plain_values(&[("GREETING", "hi"), ("TOKEN_MODE", "z")])?),
         )?;
         assert_eq!(
             values(&overridden)?,
             env_values(&[("GREETING", "hi"), ("TOKEN_MODE", "z")])?
         );
 
-        let undeclared = setup.plan(setup.request(1)?.env(env_values(&[("NOPE", "1")])?));
+        let undeclared = setup.plan(setup.request(1)?.env(plain_values(&[("NOPE", "1")])?));
         assert!(
             matches!(&undeclared, Err(PlanError::EnvUndeclared(names)) if *names == [EnvName::parse("NOPE")?]),
             "{:?}",

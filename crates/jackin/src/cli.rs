@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use jackin_core::{
     AccountName, BuilderName, EnvName, GatewayName, LaunchId, OpReference, OpenShellWorkspace,
-    Platform, Provider, RoleName, RoleRev, SandboxName, WorkspaceName,
+    PlainEnvValue, Platform, Provider, RoleName, RoleRev, SandboxName, WorkspaceName,
 };
 
 use crate::error::CommandError;
@@ -347,17 +347,19 @@ pub struct AccountAddArgs {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EnvAssignment {
     pub name: EnvName,
-    pub value: String,
+    pub value: PlainEnvValue,
 }
 
 impl EnvAssignment {
     pub fn parse(text: &str) -> Result<EnvAssignment, CommandError> {
         let bad = || CommandError::Argument("--env expects NAME=VALUE".to_owned());
         let (name, value) = text.split_once('=').ok_or_else(bad)?;
-        Ok(EnvAssignment {
-            name: EnvName::parse(name).map_err(|_| bad())?,
-            value: value.to_owned(),
-        })
+        let name = EnvName::parse(name).map_err(|_| bad())?;
+        let value = PlainEnvValue::parse(value).map_err(|source| CommandError::EnvValue {
+            name: name.clone(),
+            source,
+        })?;
+        Ok(EnvAssignment { name, value })
     }
 }
 

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    CompatibilityError, ConfigError, EntropyError, FsError, GroupFault, HostPath, PathError, plain,
+    CompatibilityError, ConfigError, EntropyError, EnvName, EnvValueError, FsError, GroupFault,
+    HostPath, PathError, plain,
 };
 use jackin_image::ImageError;
 use jackin_openshell::GatewayError;
@@ -40,6 +41,12 @@ impl ExitClass {
 pub enum CommandError {
     #[error("{}", plain(.0))]
     Argument(String),
+    #[error("--env {name} is refused")]
+    EnvValue {
+        name: EnvName,
+        #[source]
+        source: EnvValueError,
+    },
     #[error(transparent)]
     Config(#[from] ConfigError),
     #[error(transparent)]
@@ -145,7 +152,7 @@ impl From<ConnectError> for CommandError {
 impl CommandError {
     pub fn class(&self) -> ExitClass {
         match self {
-            CommandError::Argument(_) => ExitClass::Usage,
+            CommandError::Argument(_) | CommandError::EnvValue { .. } => ExitClass::Usage,
             CommandError::Plan(PlanError::EnvNeeded(_))
             | CommandError::Restart(RestartError::AlreadyRunning { .. })
             | CommandError::Purge(PurgeError::WorkNotExported { .. }) => ExitClass::Refused,
