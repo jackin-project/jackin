@@ -175,6 +175,14 @@ impl SandboxHandle {
         self.cell.state().main.emit(bytes);
     }
 
+    pub fn undelivered_main_output(&self) -> usize {
+        self.cell.state().main.undelivered()
+    }
+
+    pub fn close_main_streams(&self) {
+        self.cell.state().main.exit(None);
+    }
+
     pub fn exit_codex(&self, code: i32) {
         let root = self.cell.root();
         let mut state = self.cell.state();

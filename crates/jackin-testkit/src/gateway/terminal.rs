@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use jackin_core::ProcessStatus;
@@ -38,7 +39,7 @@ pub(super) fn attach_main(
         });
     };
     let (session, driver) = TerminalSession::pair(CAPACITY, kind);
-    let (seat, queued) = {
+    let (seat, queued, pending) = {
         let mut state = cell.state();
         if state.main.attachments() >= cap {
             return Err(GatewayError::ResourceExhausted {
@@ -48,7 +49,7 @@ pub(super) fn attach_main(
         let window = state.replay_window;
         state.main.attach(input, size, repaint, window)
     };
-    tokio::spawn(pump_main(Arc::clone(cell), seat, driver, queued));
+    tokio::spawn(pump_main(Arc::clone(cell), seat, driver, queued, pending));
     Ok(session)
 }
 
@@ -68,6 +69,7 @@ async fn pump_main(
     seat: Seat,
     driver: TerminalDriver,
     mut queued: UnboundedReceiver<TerminalEvent>,
+    pending: Arc<AtomicUsize>,
 ) {
     let TerminalDriver {
         mut commands,
@@ -83,9 +85,14 @@ async fn pump_main(
             event = queued.recv() => match event {
                 Some(event) => {
                     let ended = matches!(event, TerminalEvent::Ended(_));
+                    let length = match &event {
+                        TerminalEvent::Output(bytes) => bytes.len(),
+                        _ => 0,
+                    };
                     if events.send(event).await.is_err() || ended {
                         break;
                     }
+                    pending.fetch_sub(length, Ordering::SeqCst);
                 }
                 None => break,
             },
