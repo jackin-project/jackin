@@ -11,6 +11,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = { workspace = true }
 futures = { workspace = true }
 jackin-console = { workspace = true }
 jackin-core = { workspace = true }

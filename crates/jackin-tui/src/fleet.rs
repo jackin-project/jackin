@@ -16,7 +16,7 @@ use jackin_session::{Session, WorkState};
 use tokio::sync::Semaphore;
 
 use crate::console::ConsoleLimits;
-use crate::sessions::{GatewayState, SessionSet};
+use crate::sessions::{Reached, SessionSet};
 
 #[derive(Clone, Debug)]
 pub struct ObservedSandbox {
@@ -128,14 +128,19 @@ pub async fn read_fleet(
     limits: ConsoleLimits,
     cache: &WorkCache,
 ) -> Fleet {
-    let readings = join_all(sessions.entries().map(|(name, state)| async move {
-        match state {
-            GatewayState::Failed(error) => unreadable(name, error.to_string()),
-            GatewayState::Connected(session) => {
-                read_gateway(name, session, config, limits, cache).await
-            }
-        }
-    }))
+    let readings = join_all(
+        sessions
+            .reached()
+            .into_iter()
+            .map(|(name, reached)| async move {
+                match reached {
+                    Reached::Down(error) => unreadable(&name, error.to_string()),
+                    Reached::Up(session) => {
+                        read_gateway(&name, &session, config, limits, cache).await
+                    }
+                }
+            }),
+    )
     .await;
     let mut fleet = Fleet::default();
     for (reading, sandboxes, unreadable) in readings {

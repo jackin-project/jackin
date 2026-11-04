@@ -9,7 +9,9 @@ use std::time::Duration;
 use jackin_console::app::{App, AppOptions, ClipboardMode, Entry, EntryPage, assemble};
 use jackin_console::arbiter::Arbiter;
 use jackin_console::world::{DaemonHealth, Snapshot, WallSource, World, WorldParts};
-use jackin_core::{ConfigError, ConfigStore, EnvName, EnvSnapshot, HostPath};
+use jackin_core::{
+    Compatibility, CompatibilityError, ConfigError, ConfigStore, EnvName, EnvSnapshot, HostPath,
+};
 use jackin_session::{HostPorts, RoleCatalog};
 use junie_tui::clock::SimClock;
 use junie_tui::core::event::Input;
@@ -17,12 +19,13 @@ use junie_tui::motion::Motion;
 use junie_tui::runtime::{Application, ExternalReceiver, external_channel};
 use junie_tui::theme::{Theme, Tone};
 use thiserror::Error;
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 use crate::backend::JackinBackend;
 use crate::bridge::{Bridge, InFlight};
 use crate::clipboard::HostClipboard;
 use crate::observe::{Inputs, InputsParts};
-use crate::sessions::SessionSet;
+use crate::sessions::{SessionConnector, SessionSet};
 use crate::unbuilt::SignedInOnly;
 
 const NO_MOTION: &str = "JACKIN_NO_MOTION";
@@ -37,6 +40,7 @@ pub struct ConsoleLimits {
 pub struct ConsoleDeps {
     pub config: ConfigStore,
     pub sessions: SessionSet,
+    pub connect: Arc<dyn SessionConnector>,
     pub roles: Arc<RoleCatalog>,
     pub host: HostPorts,
     pub wall: Arc<dyn WallSource>,
@@ -58,6 +62,7 @@ pub enum ConsoleExit {
 pub struct Console {
     app: App,
     inflight: InFlight,
+    _cancel: DropGuard,
 }
 
 impl fmt::Debug for Console {
@@ -72,6 +77,8 @@ pub enum ConsoleError {
     Terminal(std::io::Error),
     #[error(transparent)]
     Config(#[from] ConfigError),
+    #[error(transparent)]
+    Pinned(#[from] CompatibilityError),
 }
 
 impl Console {
@@ -115,29 +122,37 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     let ConsoleDeps {
         config,
         sessions,
+        connect,
         roles,
         host,
         wall,
         env,
         cwd,
         home,
-        engine_socket: _,
+        engine_socket,
         version,
         theme,
         handle,
         limits,
     } = deps;
     let config_path = config.path().as_path().display().to_string();
+    let cancel = CancellationToken::new();
     let inputs = Arc::new(Inputs::new(InputsParts {
         config,
         sessions,
         roles,
-        clock: Arc::clone(&host.clock),
+        host,
+        connect,
+        wall: Arc::clone(&wall),
+        engine_socket,
+        pinned: Compatibility::pinned()?,
+        cancel: cancel.clone(),
         version,
         home: home.as_path().display().to_string(),
         config_path,
         limits,
     }));
+    inputs.doctor_at_start().await;
     let first = inputs.observe().await?;
     let (sender, receiver) = external_channel();
     let inflight = InFlight::new();
@@ -199,5 +214,9 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     {
         app.set_status(&text, Tone::Warning);
     }
-    Ok(Console { app, inflight })
+    Ok(Console {
+        app,
+        inflight,
+        _cancel: cancel.drop_guard(),
+    })
 }

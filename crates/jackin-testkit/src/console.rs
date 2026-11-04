@@ -10,11 +10,14 @@ use std::time::Duration;
 
 use jackin_console::domain::fixed::Fixed;
 use jackin_console::world::WallSource;
-use jackin_core::{Clock, ConfigStore, EnvSnapshot, GatewayName};
+use jackin_core::{Clock, ConfigStore, EnvSnapshot, GatewayName, HostPath, ProcessRunner};
 use jackin_image::ImageEngine;
 use jackin_openshell::Gateway;
-use jackin_session::{HostPorts, Session, SessionDeps};
-use jackin_tui::{Console, ConsoleDeps, ConsoleLimits, GatewayState, SessionSet, build_console};
+use jackin_session::{GatewayConnector, HostPorts, Session, SessionDeps};
+use jackin_tui::{
+    Console, ConsoleDeps, ConsoleLimits, GatewaySessions, GatewayState, SessionConnector,
+    SessionSet, build_console,
+};
 use junie_tui::core::event::{Input, Key, Mouse, MouseKind};
 use junie_tui::runtime::Application;
 use junie_tui::theme::{ColorLevel, Theme, Tone};
@@ -23,6 +26,8 @@ use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::Position;
 
+use crate::connector::ScriptedConnector;
+use crate::doctor_host::DoctorHost;
 use crate::fixtures::FixtureError;
 use crate::gateway::FakeGateway;
 use crate::host::FakeClock;
@@ -68,6 +73,9 @@ impl WallSource for FakeWall {
 pub struct ConsoleRigBuilder<'a> {
     world: &'a World,
     extra: BTreeMap<GatewayName, GatewayState>,
+    connector: Option<Arc<dyn SessionConnector>>,
+    host: DoctorHost,
+    engine_socket: Option<HostPath>,
     deadline: Duration,
     env: Vec<(String, String)>,
     size: (u16, u16),
@@ -89,20 +97,37 @@ impl fmt::Debug for ConsoleRig {
 }
 
 pub fn session_over(world: &World, gateway: Arc<dyn Gateway>) -> Session {
+    session_maker(world)(gateway)
+}
+
+pub fn session_maker(world: &World) -> impl Fn(Arc<dyn Gateway>) -> Session + Send + Sync + use<> {
     let engine: Arc<dyn ImageEngine> = Arc::<crate::engine::FakeEngine>::clone(&world.engine);
     let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
-    Session::new(SessionDeps {
-        gateway,
-        engine,
-        host: HostPorts {
-            clock,
-            fs: Arc::clone(&world.fs),
-            runner: Arc::<crate::host::TestRunner>::clone(&world.runner),
-        },
-        cache_dir: world.cache_dir().clone(),
-        config: world.config.clone(),
-        limits: crate::world::default_limits(),
-    })
+    let fs = Arc::clone(&world.fs);
+    let runner: Arc<dyn ProcessRunner> = Arc::<crate::host::TestRunner>::clone(&world.runner);
+    let cache_dir = world.cache_dir().clone();
+    let config = world.config.clone();
+    move |gateway| {
+        Session::new(SessionDeps {
+            gateway,
+            engine: Arc::clone(&engine),
+            host: HostPorts {
+                clock: Arc::clone(&clock),
+                fs: Arc::clone(&fs),
+                runner: Arc::clone(&runner),
+            },
+            cache_dir: cache_dir.clone(),
+            config: config.clone(),
+            limits: crate::world::default_limits(),
+        })
+    }
+}
+
+pub fn connector_over(
+    world: &World,
+    gateways: Arc<dyn GatewayConnector>,
+) -> Arc<dyn SessionConnector> {
+    Arc::new(GatewaySessions::new(gateways, session_maker(world)))
 }
 
 impl ConsoleRig {
@@ -110,6 +135,9 @@ impl ConsoleRig {
         ConsoleRigBuilder {
             world,
             extra: BTreeMap::new(),
+            connector: None,
+            host: DoctorHost::healthy(),
+            engine_socket: None,
             deadline: Duration::from_secs(10),
             env: Vec::new(),
             size: DEFAULT_SIZE,
@@ -296,6 +324,24 @@ impl ConsoleRigBuilder<'_> {
     }
 
     #[must_use]
+    pub fn connector(mut self, connector: Arc<dyn SessionConnector>) -> Self {
+        self.connector = Some(connector);
+        self
+    }
+
+    #[must_use]
+    pub fn host(mut self, host: DoctorHost) -> Self {
+        self.host = host;
+        self
+    }
+
+    #[must_use]
+    pub fn engine_socket(mut self, path: HostPath) -> Self {
+        self.engine_socket = Some(path);
+        self
+    }
+
+    #[must_use]
     pub fn deadline(mut self, deadline: Duration) -> Self {
         self.deadline = deadline;
         self
@@ -328,6 +374,14 @@ impl ConsoleRigBuilder<'_> {
                 GatewayState::Connected(Box::new(session_over(world, gateway))),
             );
         }
+        self.host.apply(world)?;
+        let connect = self.connector.unwrap_or_else(|| {
+            let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
+            connector_over(
+                world,
+                Arc::new(ScriptedConnector::new().gateway(gateway, Vec::new())),
+            )
+        });
         let wall = Arc::new(FakeWall::new(Arc::clone(&world.clock)));
         let wall_port: Arc<dyn WallSource> = Arc::<FakeWall>::clone(&wall);
         let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
@@ -335,6 +389,7 @@ impl ConsoleRigBuilder<'_> {
         let console = build_console(ConsoleDeps {
             config: world.config.clone(),
             sessions: SessionSet::new(default, entries),
+            connect,
             roles: Arc::clone(&world.roles),
             host: HostPorts {
                 clock,
@@ -345,7 +400,7 @@ impl ConsoleRigBuilder<'_> {
             env: EnvSnapshot::from_pairs(self.env),
             cwd: world.home().clone(),
             home: world.home().clone(),
-            engine_socket: world.home().clone(),
+            engine_socket: self.engine_socket.unwrap_or_else(|| world.home().clone()),
             version: "0.0.0-test".to_owned(),
             theme,
             handle: tokio::runtime::Handle::current(),

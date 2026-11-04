@@ -10,7 +10,6 @@ use jackin_console::backend::{
 use jackin_console::domain::account::{
     AccountIdentity, Confidence, IssueCode, Lifecycle, Recoverability, RecoverableIssue,
 };
-use jackin_console::domain::doctor::{DoctorCheck, DoctorReport};
 use jackin_console::domain::instance::{AgentState, Instance, InstanceStatus};
 use jackin_console::domain::launch::LaunchFailure;
 use jackin_console::domain::onepassword::OpReference;
@@ -18,9 +17,10 @@ use jackin_console::domain::openshell as normalize;
 use jackin_console::launch::{FailedLaunch, LaunchEvent, LaunchFeed, LaunchTarget, TypedKey};
 use jackin_console::panes::{PaneBody, PaneKey, PaneKindTag, PaneNote, PaneSpawn, PasteOutcome};
 use jackin_console::world::{Msg, World};
+use jackin_openshell::GatewayError;
 use junie_tui::core::event::Key;
 use junie_tui::core::id::WidgetId;
-use junie_tui::theme::{StatusKind, Tone};
+use junie_tui::theme::Tone;
 use junie_tui::widgets::viewport::TextViewport;
 use junie_tui::widgets::viewport_ops::ViewportOps;
 use ratatui::layout::Rect;
@@ -44,7 +44,6 @@ pub enum Unbuilt {
     BindRole,
     AddRole,
     RemoveRole,
-    Doctor,
     Launch,
     Pane,
 }
@@ -69,7 +68,6 @@ impl fmt::Display for Unbuilt {
             Unbuilt::BindRole => "Binding a role",
             Unbuilt::AddRole => "Adding a role",
             Unbuilt::RemoveRole => "Removing a role",
-            Unbuilt::Doctor => "The doctor",
             Unbuilt::Launch => "Launching a sandbox",
             Unbuilt::Pane => "A terminal pane",
         };
@@ -152,19 +150,7 @@ pub(crate) fn fails(effect: &Effect) -> Option<Completion> {
             role: role.clone(),
             result: Err(Unbuilt::RemoveRole.text()),
         },
-        Effect::RunDoctor => Msg::DoctorFinished(DoctorReport {
-            checks: vec![DoctorCheck {
-                label: Unbuilt::Doctor.text(),
-                status: StatusKind::Fail,
-                summary: Unbuilt::Doctor.text(),
-                found: None,
-                expected: None,
-                fix: None,
-            }],
-            at_secs: 0,
-            gateway: None,
-        }),
-        Effect::Refresh => return None,
+        Effect::Refresh | Effect::RunDoctor => return None,
     };
     Some(Completion::ready(0, msg))
 }
@@ -199,6 +185,22 @@ pub(crate) fn changes(unpushed: usize) -> ChangeSet {
     }
 }
 
+pub(crate) fn launch_failure() -> LaunchFailure {
+    LaunchFailure {
+        stage: 0,
+        summary: Unbuilt::Launch.text(),
+        next_step: String::new(),
+        detail: Vec::new(),
+    }
+}
+
+pub(crate) fn gateway_failure(base: &LaunchFailure, error: &GatewayError) -> LaunchFailure {
+    LaunchFailure {
+        detail: vec![error.to_string()],
+        ..base.clone()
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct UnbuiltLaunch {
     run_id: String,
@@ -206,8 +208,11 @@ pub(crate) struct UnbuiltLaunch {
 }
 
 impl UnbuiltLaunch {
-    pub(crate) fn new(world: &World, target: &LaunchTarget) -> UnbuiltLaunch {
-        let text = Unbuilt::Launch.text();
+    pub(crate) fn new(
+        world: &World,
+        target: &LaunchTarget,
+        failure: LaunchFailure,
+    ) -> UnbuiltLaunch {
         let workspace = target.workspace.and_then(|id| world.workspace(id));
         let run_id = world.now_secs().to_string();
         let instance = Instance {
@@ -236,15 +241,7 @@ impl UnbuiltLaunch {
         normalize::instance(&mut instance);
         UnbuiltLaunch {
             run_id,
-            failed: Some(Box::new(FailedLaunch {
-                failure: LaunchFailure {
-                    stage: 0,
-                    summary: text,
-                    next_step: String::new(),
-                    detail: Vec::new(),
-                },
-                instance,
-            })),
+            failed: Some(Box::new(FailedLaunch { failure, instance })),
         }
     }
 }

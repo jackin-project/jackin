@@ -2518,6 +2518,7 @@ dependencies = [
 name = "jackin-tui"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "clap",
  "futures",
  "jackin-console",
