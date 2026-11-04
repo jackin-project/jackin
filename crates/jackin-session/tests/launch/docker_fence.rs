@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{
-    CaFingerprint, Config, ConfigEdit, DockerLabel, EngineCert, HostPath, ImageId, Phase,
-    SandboxLabels, SandboxPath, WorkspaceName, sandbox_layout,
+    CaFingerprint, Config, ConfigEdit, DockerLabel, EngineCert, EngineCertProblem, HostPath,
+    ImageId, Phase, SandboxLabels, SandboxPath, WorkspaceName, sandbox_layout,
 };
 use jackin_image::{BuildStage, Rebuild};
 use jackin_openshell::GatewayOp;
@@ -19,7 +19,7 @@ use jackin_testkit::{
 use tokio_util::sync::CancellationToken;
 
 use super::docker_support::{Engine, docker_files, docker_rig, rule_keys, split_failure};
-use super::support::{TestResult, guard, ready, write};
+use super::support::{TestResult, failure, guard, ready, write};
 
 type Snapshot = (
     BTreeMap<SandboxPath, Vec<u8>>,
@@ -293,6 +293,22 @@ async fn a_ca_changed_during_the_build_never_reaches_the_sandbox_under_the_old_f
                 bytes: OTHER_CA.as_bytes().to_vec(),
             }),
         });
+        let failed = failure(rig.launch_observed(1).await?)?;
+        assert_eq!(failed.step, LaunchStep::Credentials);
+        assert!(
+            matches!(
+                &*failed.error,
+                LaunchError::EngineCert {
+                    file: EngineCert::Ca,
+                    problem: EngineCertProblem::Changed,
+                    ..
+                }
+            ),
+            "{:?}",
+            failed.error
+        );
+        assert!(docker_files(&rig.handle(1).await?).is_empty());
+        std::fs::write(&ca, &original)?;
         ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         let delivered = docker_files(&handle)

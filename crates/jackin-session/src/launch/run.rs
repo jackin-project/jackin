@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, DockerCapability, DockerLabel, EngineCert, FileMode, HookKind, HostPath, LabelSelector,
+    Agent, DockerCapability, DockerLabel, FileMode, HookKind, HostPath, LabelSelector,
     PLACEHOLDER_SCHEME, SandboxLabels, SandboxName, SandboxPath, SecretBytes, StartRequest,
     sandbox_layout,
 };
@@ -550,24 +550,9 @@ impl Run<'_> {
         else {
             return Ok(());
         };
-        let mut files = Vec::new();
-        for cert in EngineCert::ALL {
-            let read = match cert {
-                EngineCert::Ca => Ok(ca.clone()),
-                EngineCert::Cert | EngineCert::Key => {
-                    certs::read(self.session.deps.host.fs.as_ref(), access, cert).await
-                }
-            };
-            match read {
-                Ok(bytes) => files.push((cert, bytes)),
-                Err(error) => {
-                    for (_, bytes) in files {
-                        drop(SecretBytes::new(bytes));
-                    }
-                    return Err(failed(STEP, error));
-                }
-            }
-        }
+        let files = certs::read_set(self.session.deps.host.fs.as_ref(), access, *ca)
+            .await
+            .map_err(|error| failed(STEP, error))?;
         for (cert, bytes) in files {
             self.write(STEP, sandbox, &cert.sandbox_path(), cert.mode(), bytes)
                 .await?;

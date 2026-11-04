@@ -10,8 +10,8 @@ use jackin_core::{
     RoleName, SandboxLabels, SandboxName, SandboxPath, WorkspaceName,
 };
 use jackin_openshell::{
-    ClosedPolicy, GatewayError, InputMode, MainProcess, RepaintPolicy, SandboxCreate, TermSize,
-    TerminalKind, TerminalRequest,
+    AuthoredPolicy, ClosedPolicy, GatewayError, InputMode, MainProcess, NetworkRule, RepaintPolicy,
+    SandboxCreate, TermSize, TerminalKind, TerminalRequest,
 };
 use openshell_sdk::raw::proto::{ObjectMeta, Sandbox, SandboxPhase, SandboxStatus};
 
@@ -22,7 +22,7 @@ pub(crate) const LAUNCH: &str = "01hzy3k5m7p9r2t4v6w8x0abcd";
 pub(crate) const IMAGE_DIGEST: &str =
     "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 pub(crate) const SANDBOX: &str = "jackin-ws-ab12";
-pub(crate) const POLICY: &str = "version: 1
+const AUTHORED_POLICY: &str = "version: 1
 filesystem_policy:
   include_workdir: true
   read_only:
@@ -37,17 +37,20 @@ landlock:
 process:
   run_as_user: sandbox
   run_as_group: sandbox
-network_policies:
-  docker_engine:
-    name: docker_engine
-    endpoints:
-      - host: host.openshell.internal
-        port: 12376
-        protocol: tcp
-        tls: skip
-    binaries:
-      - path: /usr/local/bin/docker
 ";
+
+pub(crate) fn policy() -> ClosedPolicy {
+    AuthoredPolicy::parse(AUTHORED_POLICY)
+        .unwrap()
+        .with_rule(NetworkRule::docker_engine(NonZeroU16::new(12376).unwrap()))
+        .unwrap()
+        .close()
+        .unwrap()
+}
+
+pub(crate) fn policy_text() -> String {
+    policy().document().render().unwrap()
+}
 
 fn size() -> TermSize {
     TermSize {
@@ -104,7 +107,7 @@ pub(crate) fn create_spec(name: &str, launch: &str) -> SandboxCreate {
         ImageTag::parse("jackin.invalid/backend:0123456789abcdef").unwrap(),
         labels_for(launch),
         vec![ProviderName::parse("jackin-work-codex").unwrap()],
-        ClosedPolicy::parse(POLICY).unwrap(),
+        policy(),
         MainProcess {
             program: SandboxPath::parse("/usr/local/bin/jackin-start").unwrap(),
             args: vec!["codex".to_owned(), "--sandbox".to_owned()],

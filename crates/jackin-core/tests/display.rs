@@ -96,7 +96,7 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
         ),
         (
             FsError::SymlinkTarget(dir.clone()).to_string(),
-            "refusing to replace the symbolic link /home/me/my project",
+            "refusing the symbolic link /home/me/my project",
         ),
         (
             PathError::NotADirectory(dir.clone()).to_string(),

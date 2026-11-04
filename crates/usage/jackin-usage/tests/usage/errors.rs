@@ -3,7 +3,7 @@
 
 use jackin_core::Provider;
 use jackin_testkit::{Method, Route};
-use jackin_usage::{Refresh, UnavailableReason};
+use jackin_usage::{Refresh, UnavailableReason, UsageOutcome};
 
 use crate::support::{
     CODEX_PATH, TestResult, UsageHarness, codex_route, guard, unavailable, windows_of,
@@ -67,13 +67,16 @@ async fn http_500_is_a_provider_error() -> TestResult {
 
 const SENTINEL: &str = "SECRET_TEXT_BODY";
 
-async fn broken(body: &str) -> Result<UnavailableReason, Box<dyn std::error::Error>> {
+async fn answered(route: Route) -> Result<UsageOutcome, Box<dyn std::error::Error>> {
     let (harness, account) = UsageHarness::with_codex(FULL).await?;
     harness
         .server
-        .replace(Provider::Codex, Method::Get, CODEX_PATH, codex_route(body));
-    let usage = harness.one(&account, Refresh::Cached).await?;
-    Ok(unavailable(&usage.outcome).clone())
+        .replace(Provider::Codex, Method::Get, CODEX_PATH, route);
+    Ok(harness.one(&account, Refresh::Cached).await?.outcome)
+}
+
+async fn broken(body: &str) -> Result<UnavailableReason, Box<dyn std::error::Error>> {
+    Ok(unavailable(&answered(codex_route(body)).await?).clone())
 }
 
 fn assert_provider_without_the_body(reason: &UnavailableReason) {
@@ -167,6 +170,39 @@ async fn an_individual_limit_beyond_the_integers_is_a_provider_error() -> TestRe
             broken(body).await?,
             UnavailableReason::Provider(_)
         ));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_body_over_one_mebibyte_is_a_provider_error_and_one_at_the_limit_decodes() -> TestResult {
+    guard(async {
+        let limit = 1 << 20;
+        let at_limit = format!("{FULL}{}", " ".repeat(limit - FULL.len()));
+        let (harness, account) = UsageHarness::with_codex(&at_limit).await?;
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert!(!windows_of(&usage.outcome).is_empty());
+
+        let over = format!("{at_limit} ");
+        assert_provider_without_the_body(&broken(&over).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_unframed_body_over_one_mebibyte_is_a_provider_error_and_one_at_the_limit_decodes()
+-> TestResult {
+    guard(async {
+        let limit = 1 << 20;
+        let at_limit = format!("{FULL}{}", " ".repeat(limit - FULL.len()));
+        let decoded = answered(codex_route(&at_limit).unframed()).await?;
+        assert!(!windows_of(&decoded).is_empty());
+
+        let over = format!("{at_limit} ");
+        let refused = answered(codex_route(&over).unframed()).await?;
+        assert_provider_without_the_body(unavailable(&refused));
         Ok(())
     })
     .await

@@ -8,8 +8,8 @@ use noyalib::{Mapping, Value};
 use openshell_sdk::raw::proto::{NetworkTlsMode, SandboxPolicy};
 
 use super::{
-    ClosureViolation, EndpointProtocol, HostPattern, NetworkRule, PolicyDocument, ProfileEndpoint,
-    ProviderProfile, RuleEndpoint, RuleKey, TlsMode,
+    ClosureViolation, DOCKER_ENGINE_RULE, EndpointProtocol, HostPattern, NetworkRule,
+    PolicyDocument, ProfileEndpoint, ProviderProfile, RuleEndpoint, RuleKey, TlsMode,
 };
 use crate::error::PolicyError;
 
@@ -22,7 +22,7 @@ pub(super) enum Source {
 }
 
 pub(super) fn is_reserved(key: &str) -> bool {
-    openshell_policy::is_provider_rule_name(key)
+    key == DOCKER_ENGINE_RULE || openshell_policy::is_provider_rule_name(key)
 }
 
 pub(super) fn provider_rule_name(provider: &str) -> String {

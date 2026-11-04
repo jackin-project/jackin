@@ -230,43 +230,85 @@ async fn directory_symlink_and_symlinked_parent_shapes_are_refused_or_accepted_a
     .await
 }
 
+fn certificate(body: &str) -> String {
+    format!("-----BEGIN CERTIFICATE-----\n{body}\n-----END CERTIFICATE-----\n")
+}
+
+#[derive(Clone, Copy)]
+enum Swap {
+    KeyLink,
+    KeyGarbage,
+    NewCert,
+}
+
 #[tokio::test]
 async fn a_certificate_changed_during_the_build_is_refused_at_the_write_and_the_retry_continues()
 -> TestResult {
     guard(async {
-        for symlink in [true, false] {
+        let rotated_cert = certificate("TkVXQ0VSVE5FV0NFUlRORVdDRVJU");
+        let rows = [
+            (
+                Swap::KeyLink,
+                Some((EngineCert::Key, EngineCertProblem::Symlink)),
+            ),
+            (
+                Swap::KeyGarbage,
+                Some((EngineCert::Key, EngineCertProblem::NotPem)),
+            ),
+            (Swap::NewCert, None),
+        ];
+        for (swap, expected) in rows {
             let rig = docker_rig(true, false, Engine::WithCerts).await?;
-            let key = rig.engine_certs()?.as_path().join("key.pem");
+            let directory = rig.engine_certs()?;
             let other = rig.home.as_path().join("other-key.pem");
             std::fs::write(&other, engine_pem(EngineCert::Key))?;
-            let edit = if symlink {
-                HostEdit::Symlink {
-                    path: HostPath::parse(&key)?,
-                    target: HostPath::parse(&other)?,
-                }
-            } else {
-                HostEdit::Write {
-                    path: HostPath::parse(&key)?,
-                    bytes: b"not pem".to_vec(),
-                }
+            let (edited, edit) = match swap {
+                Swap::KeyLink => (
+                    EngineCert::Key,
+                    HostEdit::Symlink {
+                        path: HostPath::parse(&directory.as_path().join("key.pem"))?,
+                        target: HostPath::parse(&other)?,
+                    },
+                ),
+                Swap::KeyGarbage => (
+                    EngineCert::Key,
+                    HostEdit::Write {
+                        path: HostPath::parse(&directory.as_path().join("key.pem"))?,
+                        bytes: b"not pem".to_vec(),
+                    },
+                ),
+                Swap::NewCert => (
+                    EngineCert::Cert,
+                    HostEdit::Write {
+                        path: HostPath::parse(&directory.as_path().join("cert.pem"))?,
+                        bytes: rotated_cert.clone().into_bytes(),
+                    },
+                ),
             };
             rig.world.engine.at(EngineMoment::BuildFinished {
                 stage: BuildStage::Derived,
                 effect: BuildEffect::EditHost(edit),
             });
-            let failed = failure(rig.launch_observed(1).await?)?;
+            let outcome = rig.launch_observed(1).await?;
+            let Some(wanted) = expected else {
+                ready(outcome)?;
+                let handle = rig.handle(1).await?;
+                assert_eq!(
+                    docker_files(&handle).get(&edited.sandbox_path()),
+                    Some(&rotated_cert.clone().into_bytes())
+                );
+                assert_eq!(docker_files(&handle).len(), 3);
+                continue;
+            };
+            let failed = failure(outcome)?;
             assert_eq!(failed.step, LaunchStep::Credentials);
             let (file, problem, _) = engine_error(&failed)?;
-            let expected = if symlink {
-                EngineCertProblem::Symlink
-            } else {
-                EngineCertProblem::NotPem
-            };
-            assert_eq!((file, problem), (EngineCert::Key, expected));
+            assert_eq!((file, problem), wanted);
             assert!(failed.sandbox.is_some());
             assert!(docker_files(&rig.handle(1).await?).is_empty());
-            std::fs::remove_file(&key)?;
-            std::fs::write(&key, engine_pem(EngineCert::Key))?;
+            let path = directory.as_path().join(edited.file_name());
+            std::fs::remove_file(&path)?;
+            std::fs::write(&path, engine_pem(edited))?;
             ready(rig.launch_observed(1).await?)?;
             assert_eq!(rig.gateway().sandboxes().len(), 1);
             assert_eq!(docker_files(&rig.handle(1).await?).len(), 3);

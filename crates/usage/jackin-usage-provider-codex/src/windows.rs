@@ -114,11 +114,11 @@ fn individual(limit: Option<&Value>, now: i64) -> Result<Option<Bucket>, Provide
         None => Ok(None),
     };
     let remaining = match (money("remaining")?, money("limit")?, money("used")?) {
-        (Some(left), _, _) => Some(Remaining::Amount(
-            left.magnitude().ok_or(ProviderError::OUT_OF_RANGE)?,
-        )),
+        (Some(left), _, _) => Some(Remaining::Amount(left.clamped_at_zero())),
         (None, Some(cap), Some(used)) => Some(Remaining::Amount(
-            cap.minus(&used).ok_or(ProviderError::OUT_OF_RANGE)?,
+            cap.minus(&used)
+                .ok_or(ProviderError::OUT_OF_RANGE)?
+                .clamped_at_zero(),
         )),
         _ => limit
             .get("remaining_percent")

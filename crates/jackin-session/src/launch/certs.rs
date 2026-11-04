@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::ErrorKind;
+use std::num::NonZeroU16;
 
 use jackin_core::{
     CaFingerprint, DockerCapability, DockerLabel, ENGINE_CERT_MAX_BYTES, EngineAccess, EngineCert,
@@ -50,16 +51,23 @@ pub(super) async fn read(
 
 pub(super) enum Bound {
     Off,
-    Engine { label: DockerLabel, ca: Vec<u8> },
+    Engine { port: NonZeroU16, ca: CaFingerprint },
 }
 
 impl Bound {
     pub(super) fn label(&self) -> DockerLabel {
         match self {
             Bound::Off => DockerLabel::Off,
-            Bound::Engine { label, .. } => *label,
+            Bound::Engine { port, ca } => DockerLabel::Engine {
+                port: *port,
+                ca: *ca,
+            },
         }
     }
+}
+
+fn wipe(bytes: Vec<u8>) {
+    drop(SecretBytes::new(bytes));
 }
 
 pub(super) async fn bind(
@@ -76,13 +84,51 @@ pub(super) async fn bind(
         problem,
     })?;
     for cert in [EngineCert::Cert, EngineCert::Key] {
-        drop(SecretBytes::new(read(fs, access, cert).await?));
+        wipe(read(fs, access, cert).await?);
     }
     Ok(Bound::Engine {
-        label: DockerLabel::Engine {
-            port: access.engine.port,
-            ca: fingerprint,
-        },
-        ca,
+        port: access.engine.port,
+        ca: fingerprint,
+    })
+}
+
+pub(super) async fn read_set(
+    fs: &dyn FileSystem,
+    access: &EngineAccess,
+    bound: CaFingerprint,
+) -> Result<[(EngineCert, Vec<u8>); 3], LaunchError> {
+    let cert = read(fs, access, EngineCert::Cert).await?;
+    let key = match read(fs, access, EngineCert::Key).await {
+        Ok(key) => key,
+        Err(error) => {
+            wipe(cert);
+            return Err(error);
+        }
+    };
+    let ca = match read(fs, access, EngineCert::Ca).await {
+        Ok(ca) => ca,
+        Err(error) => {
+            wipe(cert);
+            wipe(key);
+            return Err(error);
+        }
+    };
+    let problem = match CaFingerprint::of_ca(&ca) {
+        Ok(found) if found == bound => {
+            return Ok([
+                (EngineCert::Ca, ca),
+                (EngineCert::Cert, cert),
+                (EngineCert::Key, key),
+            ]);
+        }
+        Ok(_) => EngineCertProblem::Changed,
+        Err(problem) => problem,
+    };
+    wipe(cert);
+    wipe(key);
+    Err(LaunchError::EngineCert {
+        file: EngineCert::Ca,
+        directory: access.engine.client_certs.clone(),
+        problem,
     })
 }

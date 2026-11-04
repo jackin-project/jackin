@@ -40,9 +40,9 @@ fn phase_of(sandbox: &Sandbox) -> Phase {
         Ok(SandboxPhase::Stopping) => Phase::Stopping,
         Ok(SandboxPhase::Stopped) => Phase::Stopped,
         Ok(SandboxPhase::Starting) => Phase::Starting,
-        Ok(SandboxPhase::Completed) => Phase::Completed {
-            exit_code: exit_code.unwrap_or(0),
-        },
+        Ok(SandboxPhase::Completed) => {
+            exit_code.map_or(Phase::Unknown, |exit_code| Phase::Completed { exit_code })
+        }
         Ok(SandboxPhase::Suspending) => Phase::Suspending,
         Ok(SandboxPhase::Suspended) => Phase::Suspended,
         Ok(SandboxPhase::Unspecified | SandboxPhase::Unknown) | Err(_) => Phase::Unknown,

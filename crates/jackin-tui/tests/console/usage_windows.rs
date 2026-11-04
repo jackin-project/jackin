@@ -122,6 +122,34 @@ async fn refresh_maps_windows_rounds_half_away_from_zero_and_takes_a_new_reading
 }
 
 #[tokio::test]
+async fn a_window_with_only_a_remaining_percent_takes_its_used_percent_from_it() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        for (left, used, status) in [
+            (70, 30, QuotaStatus::Available),
+            (0, 100, QuotaStatus::Exhausted),
+        ] {
+            serve(
+                &lab,
+                &format!(
+                    "{{\"spend_control\":{{\"individual_limit\":{{\"remaining_percent\":{left},\"reset_at\":1767312000}}}}}}"
+                ),
+            )
+            .await?;
+            refresh(&mut lab).await?;
+            assert_eq!(
+                windows(&mut lab, "work"),
+                [("spend", Some(used), WindowCategory::Other)]
+            );
+            let work = lab.world().accounts.get("work").cloned().ok_or("work")?;
+            assert_eq!(work.usage.windows[0].status, status);
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_weekly_only_report_has_no_five_hour_row() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;

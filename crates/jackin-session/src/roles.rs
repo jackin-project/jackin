@@ -15,7 +15,7 @@ use jackin_image::{
     ContextEntry, DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile,
 };
 use jackin_openshell::{
-    ClosureViolation, EngineHostViolation, PolicyDocument, PolicyError, ProviderProfile,
+    AuthoredPolicy, ClosureViolation, EngineHostViolation, PolicyError, ProviderProfile,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -46,7 +46,7 @@ pub struct LoadedRole {
     name: RoleName,
     root: HostPath,
     manifest: RoleManifest,
-    policy: PolicyDocument,
+    policy: AuthoredPolicy,
     dockerfile: SourceFile,
     hooks: HookFiles,
     revision: RoleRevision,
@@ -116,7 +116,7 @@ pub enum RoleError {
 
 struct Inspected {
     manifest: RoleManifest,
-    policy: PolicyDocument,
+    policy: AuthoredPolicy,
     dockerfile: SourceFile,
     hooks: HookFiles,
 }
@@ -134,7 +134,7 @@ impl LoadedRole {
         &self.manifest
     }
 
-    pub fn policy(&self) -> &PolicyDocument {
+    pub fn policy(&self) -> &AuthoredPolicy {
         &self.policy
     }
 
@@ -338,7 +338,11 @@ impl RoleCatalog {
             .read_checked(root, &manifest.role.policy, &mut findings)
             .await;
         let policy = policy_bytes.and_then(|bytes| {
-            let parsed = PolicyDocument::parse_authored(&String::from_utf8_lossy(&bytes));
+            let parsed = std::str::from_utf8(&bytes)
+                .map_err(|_| PolicyError::Syntax {
+                    message: "the file is not valid UTF-8".to_owned(),
+                })
+                .and_then(AuthoredPolicy::parse);
             match parsed {
                 Ok(policy) => Some(policy),
                 Err(error) => {
@@ -462,8 +466,8 @@ impl RoleCatalog {
         })
     }
 
-    fn check_engine_host(policy: &PolicyDocument, findings: &mut Vec<RoleError>) {
-        let mut violations = policy.engine_host_violations();
+    fn check_engine_host(policy: &AuthoredPolicy, findings: &mut Vec<RoleError>) {
+        let mut violations = policy.document().engine_host_violations();
         violations.sort();
         violations.dedup();
         if !violations.is_empty() {
@@ -471,12 +475,14 @@ impl RoleCatalog {
         }
     }
 
-    fn check_closure(policy: &PolicyDocument, findings: &mut Vec<RoleError>) {
+    fn check_closure(policy: &AuthoredPolicy, findings: &mut Vec<RoleError>) {
         let mut violations = Vec::new();
         for agent in Agent::ALL {
             for asset in agent.spec().profiles() {
                 match ProviderProfile::parse(asset) {
-                    Ok(profile) => violations.extend(policy.closure_violations(&profile, &[])),
+                    Ok(profile) => {
+                        violations.extend(policy.document().closure_violations(&profile, &[]));
+                    }
                     Err(error) => findings.push(RoleError::Policy(error)),
                 }
             }

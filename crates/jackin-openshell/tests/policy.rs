@@ -11,8 +11,8 @@ use std::num::NonZeroU16;
 
 use jackin_core::ProviderName;
 use jackin_openshell::{
-    ClosedPolicy, ClosedPolicyError, ClosureViolation, EndpointProtocol, HostPattern, NetworkRule,
-    PolicyDocument, PolicyError, RuleKey, TlsMode,
+    AuthoredPolicy, ClosedPolicy, ClosedPolicyError, ClosureViolation, EndpointProtocol,
+    HostPattern, NetworkRule, PolicyDocument, PolicyError, RuleKey, TlsMode,
 };
 use openshell_core::host_pattern::host_matches;
 use openshell_policy::{
@@ -44,20 +44,28 @@ fn key_of(text: &str) -> RuleKey {
 fn authored_policies_reject_reserved_keys_while_the_live_parse_accepts_them() {
     let reserved = rule_doc(&[("_provider_x", "api.example.com", 443)]);
     assert!(matches!(
-        PolicyDocument::parse_authored(&reserved),
+        AuthoredPolicy::parse(&reserved),
         Err(PolicyError::ReservedRuleName(ref key)) if key == "_provider_x"
     ));
     let live = PolicyDocument::parse(&reserved).unwrap();
     assert_eq!(live.network_rules()[0].key.as_str(), "_provider_x");
     assert!(live.network_rules()[0].key.is_reserved());
     assert!(
-        !NetworkRule::docker_engine(NonZeroU16::new(1).unwrap())
+        NetworkRule::docker_engine(NonZeroU16::new(1).unwrap())
             .key
             .is_reserved()
     );
+    let engine = rule_doc(&[("docker_engine", "api.example.com", 443)]);
+    assert!(matches!(
+        AuthoredPolicy::parse(&engine),
+        Err(PolicyError::ReservedRuleName(ref key)) if key == "docker_engine"
+    ));
+    let near = rule_doc(&[("docker_engine2", "api.example.com", 443)]);
+    AuthoredPolicy::parse(&near).unwrap();
+    assert!(!key_of("docker_engine2").is_reserved());
 
     assert!(matches!(
-        PolicyDocument::parse_authored(&with_header("network_policies: 3\n")),
+        AuthoredPolicy::parse(&with_header("network_policies: 3\n")),
         Err(PolicyError::NotAMapping { ref key }) if key == "network_policies"
     ));
     for port in [0_i64, 70_000] {
@@ -65,7 +73,7 @@ fn authored_policies_reject_reserved_keys_while_the_live_parse_accepts_them() {
             "network_policies:\n  r1:\n    name: r1\n    endpoints:\n      - host: api.example.com\n        port: {port}\n"
         ));
         assert!(matches!(
-            PolicyDocument::parse_authored(&text),
+            AuthoredPolicy::parse(&text),
             Err(PolicyError::InvalidPort { ref rule, port: got }) if rule == "r1" && got == port
         ));
     }
@@ -73,11 +81,11 @@ fn authored_policies_reject_reserved_keys_while_the_live_parse_accepts_them() {
         "network_policies:\n  r1:\n    name: r1\n    endpoints:\n      - host: ''\n        port: 443\n",
     );
     assert!(matches!(
-        PolicyDocument::parse_authored(&empty_host),
+        AuthoredPolicy::parse(&empty_host),
         Err(PolicyError::InvalidHost(_))
     ));
     assert!(matches!(
-        PolicyDocument::parse_authored("a: [unclosed"),
+        AuthoredPolicy::parse("a: [unclosed"),
         Err(PolicyError::Syntax { .. })
     ));
 }
@@ -121,20 +129,18 @@ fn closure_violations_follow_d10_for_hosts_ports_and_binaries() {
         )]
     );
 
-    let wildcard =
-        PolicyDocument::parse_authored(&rule_doc(&[("r1", "*.openai.com", 443)])).unwrap();
+    let wildcard = AuthoredPolicy::parse(&rule_doc(&[("r1", "*.openai.com", 443)])).unwrap();
     assert_eq!(
-        wildcard.closure_violations(&profile, &[]),
+        wildcard.document().closure_violations(&profile, &[]),
         vec![
             violation("r1", "*.openai.com", "api.openai.com"),
             violation("r1", "*.openai.com", "auth.openai.com"),
         ]
     );
 
-    let other_port =
-        PolicyDocument::parse_authored(&rule_doc(&[("r2", "api.openai.com", 8080)])).unwrap();
+    let other_port = AuthoredPolicy::parse(&rule_doc(&[("r2", "api.openai.com", 8080)])).unwrap();
     assert_eq!(
-        other_port.closure_violations(&profile, &[]),
+        other_port.document().closure_violations(&profile, &[]),
         vec![violation("r2", "api.openai.com", "api.openai.com")]
     );
 
@@ -149,12 +155,17 @@ fn closure_violations_follow_d10_for_hosts_ports_and_binaries() {
         )]
     );
 
-    let unrelated = PolicyDocument::parse_authored(&rule_doc(&[
+    let unrelated = AuthoredPolicy::parse(&rule_doc(&[
         ("r4", "example.com", 443),
         ("r5", "*.example.com", 443),
     ]))
     .unwrap();
-    assert!(unrelated.closure_violations(&profile, &[]).is_empty());
+    assert!(
+        unrelated
+            .document()
+            .closure_violations(&profile, &[])
+            .is_empty()
+    );
 }
 
 #[test]
@@ -244,7 +255,7 @@ fn assert_refused_in_both_parses(form: &str) {
     let text = rule_doc(&[("r1", form, 443)]);
     assert!(
         matches!(
-            PolicyDocument::parse_authored(&text),
+            AuthoredPolicy::parse(&text),
             Err(PolicyError::InvalidHost(ref host)) if host == form
         ),
         "parse_authored must refuse {form:?}"
@@ -290,13 +301,44 @@ fn hosts_the_upstream_matcher_rejects_are_unparsable_in_both_parses() {
 }
 
 #[test]
+fn only_an_authored_policy_can_be_closed_and_a_live_parse_cannot_stand_in_for_it() {
+    let hostile = landlock_doc(
+        "landlock:\n  compatibility: best_effort\n",
+        "network_policies:\n  docker_engine:\n    name: docker_engine\n    endpoints:\n      - host: attacker.example.com\n        port: 443\n    binaries:\n      - path: /usr/bin/curl\n",
+    );
+    let live = PolicyDocument::parse(&hostile).unwrap();
+    assert_eq!(live.network_rules()[0].key.as_str(), "docker_engine");
+    assert!(matches!(
+        ClosedPolicy::parse(&hostile),
+        Err(ClosedPolicyError::Policy(PolicyError::ReservedRuleName(ref key))) if key == "docker_engine"
+    ));
+
+    let engine = NetworkRule::docker_engine(NonZeroU16::new(12376).unwrap());
+    let closed = AuthoredPolicy::parse(&rule_doc(&[("r1", "example.com", 443)]))
+        .unwrap()
+        .with_rule(engine.clone())
+        .unwrap()
+        .close()
+        .unwrap();
+    let keys: Vec<String> = closed
+        .document()
+        .network_rules()
+        .into_iter()
+        .map(|rule| rule.key.as_str().to_owned())
+        .collect();
+    assert_eq!(keys, ["docker_engine", "r1"]);
+    assert!(closed.document().network_rules().contains(&engine));
+}
+
+#[test]
 fn a_closed_policy_exists_only_for_an_authored_policy_that_passes_the_closure_check() {
     let clean = rule_doc(&[("r1", "example.com", 443), ("r2", "*.example.org", 8443)]);
     let closed = ClosedPolicy::parse(&clean).unwrap();
     assert_eq!(
         closed.document().network_rules(),
-        PolicyDocument::parse_authored(&clean)
+        AuthoredPolicy::parse(&clean)
             .unwrap()
+            .document()
             .network_rules()
     );
 
@@ -370,12 +412,12 @@ network_policies:
 
 #[test]
 fn with_rule_adds_exactly_one_docker_rule_and_keeps_every_other_node() {
-    let original = PolicyDocument::parse_authored(BASE).unwrap();
+    let original = AuthoredPolicy::parse(BASE).unwrap();
     let engine = NetworkRule::docker_engine(NonZeroU16::new(12376).unwrap());
     let updated = original.with_rule(engine.clone()).unwrap();
 
     let before: noyalib::Value = noyalib::from_str(BASE).unwrap();
-    let after: noyalib::Value = noyalib::from_str(&updated.render().unwrap()).unwrap();
+    let after: noyalib::Value = noyalib::from_str(&updated.document().render().unwrap()).unwrap();
     let (before, after) = (before.as_mapping().unwrap(), after.as_mapping().unwrap());
     for (key, value) in before {
         if key != "network_policies" {
@@ -396,9 +438,11 @@ fn with_rule_adds_exactly_one_docker_rule_and_keeps_every_other_node() {
     expected.insert("docker_engine".to_owned());
     assert_eq!(keys(after), expected);
 
-    let rendered = updated.render().unwrap();
-    let reparsed = ClosedPolicy::parse(&rendered).unwrap();
-    assert_eq!(reparsed.document().network_rules(), updated.network_rules());
+    let rendered = updated.document().render().unwrap();
+    assert!(matches!(
+        ClosedPolicy::parse(&rendered),
+        Err(ClosedPolicyError::Policy(PolicyError::ReservedRuleName(ref key))) if key == "docker_engine"
+    ));
     let rendered: noyalib::Value = noyalib::from_str(&rendered).unwrap();
     assert_eq!(
         rendered
@@ -409,6 +453,7 @@ fn with_rule_adds_exactly_one_docker_rule_and_keeps_every_other_node() {
     );
 
     let added = updated
+        .document()
         .network_rules()
         .into_iter()
         .find(|rule| rule.key.as_str() == "docker_engine")
@@ -425,10 +470,10 @@ fn with_rule_adds_exactly_one_docker_rule_and_keeps_every_other_node() {
         Err(PolicyError::DuplicateRule(ref key)) if key.as_str() == "docker_engine"
     ));
     assert_eq!(
-        PolicyDocument::parse(&updated.render().unwrap())
+        PolicyDocument::parse(&updated.document().render().unwrap())
             .unwrap()
             .network_rules(),
-        updated.network_rules()
+        updated.document().network_rules()
     );
 }
 
@@ -451,9 +496,9 @@ const ACCEPTED_HOSTS: [&str; 12] = [
 fn hosts_inside_the_alphabet_keep_their_d10_outcomes() {
     let profile = profile();
     for host in ACCEPTED_HOSTS {
-        let document = PolicyDocument::parse_authored(&rule_doc(&[("r1", host, 443)])).unwrap();
+        let document = AuthoredPolicy::parse(&rule_doc(&[("r1", host, 443)])).unwrap();
         assert_eq!(
-            document.closure_violations(&profile, &[]),
+            document.document().closure_violations(&profile, &[]),
             Vec::new(),
             "{host}"
         );
@@ -474,8 +519,9 @@ fn hosts_inside_the_alphabet_keep_their_d10_outcomes() {
         ("a*i.openai.com", &["api.openai.com"]),
     ];
     for (host, expected) in covers {
-        let document = PolicyDocument::parse_authored(&rule_doc(&[("r1", host, 443)])).unwrap();
+        let document = AuthoredPolicy::parse(&rule_doc(&[("r1", host, 443)])).unwrap();
         let found: BTreeSet<String> = document
+            .document()
             .closure_violations(&profile, &[])
             .into_iter()
             .map(|found| match found {
@@ -579,7 +625,7 @@ fn role_check_refuses_every_host_shape_the_gateway_refuses() {
     for host in label_sets() {
         let gateway = gateway_refuses_shape(&host);
         let text = rule_doc(&[("r1", &host, 443)]);
-        let jackin = PolicyDocument::parse_authored(&text).is_err();
+        let jackin = AuthoredPolicy::parse(&text).is_err();
         assert_eq!(
             jackin, gateway,
             "host {host}: gateway refuses {gateway}, jackin refuses {jackin}"
@@ -587,7 +633,7 @@ fn role_check_refuses_every_host_shape_the_gateway_refuses() {
         if jackin {
             both_refused += 1;
             assert!(matches!(
-                PolicyDocument::parse_authored(&text),
+                AuthoredPolicy::parse(&text),
                 Err(PolicyError::InvalidHost(ref got)) if *got == host
             ));
         } else {
@@ -625,7 +671,7 @@ fn landlock_doc(landlock: &str, network: &str) -> String {
 fn assert_landlock_refused(text: &str, found: Option<&str>) {
     assert!(
         matches!(
-            PolicyDocument::parse_authored(text),
+            AuthoredPolicy::parse(text),
             Err(PolicyError::LandlockMode { found: ref got }) if got.as_deref() == found
         ),
         "parse_authored accepted:\n{text}"
@@ -660,15 +706,15 @@ fn an_authored_policy_must_set_landlock_hard_requirement() {
         let text = landlock_doc(syntax, NETWORK);
         assert!(
             matches!(
-                PolicyDocument::parse_authored(&text),
+                AuthoredPolicy::parse(&text),
                 Err(PolicyError::Syntax { .. })
             ),
             "{syntax}"
         );
     }
     let hard = "landlock:\n  compatibility: hard_requirement\n";
-    PolicyDocument::parse_authored(&landlock_doc(hard, NETWORK)).unwrap();
-    PolicyDocument::parse_authored(&landlock_doc(hard, "")).unwrap();
+    AuthoredPolicy::parse(&landlock_doc(hard, NETWORK)).unwrap();
+    AuthoredPolicy::parse(&landlock_doc(hard, "")).unwrap();
     ClosedPolicy::parse(&landlock_doc(hard, NETWORK)).unwrap();
 
     let message = PolicyError::LandlockMode { found: None }.to_string();
@@ -706,7 +752,7 @@ fn an_authored_policy_with_no_filesystem_paths_is_refused() {
         let text = doc(paths);
         assert!(
             matches!(
-                PolicyDocument::parse_authored(&text),
+                AuthoredPolicy::parse(&text),
                 Err(PolicyError::NoFilesystemPaths)
             ),
             "parse_authored accepted the filesystem section {paths:?}"
@@ -724,7 +770,7 @@ fn an_authored_policy_with_no_filesystem_paths_is_refused() {
         "filesystem_policy:\n  read_write:\n    - /tmp\n",
         "filesystem_policy:\n  include_workdir: true\n  read_only:\n    - /bin\n  read_write:\n    - /tmp\n",
     ] {
-        PolicyDocument::parse_authored(&doc(paths)).unwrap();
+        AuthoredPolicy::parse(&doc(paths)).unwrap();
     }
     let message = PolicyError::NoFilesystemPaths.to_string();
     assert!(message.contains("read_only") && message.contains("read_write"));
@@ -778,7 +824,7 @@ fn an_authored_read_write_list_refuses_every_path_that_names_the_root_or_aliases
         let text = path_doc("read_write", path);
         assert!(
             matches!(
-                PolicyDocument::parse_authored(&text),
+                AuthoredPolicy::parse(&text),
                 Err(PolicyError::ReadWriteRoot { path: ref got }) if got == path
             ),
             "read_write {path}"
@@ -802,29 +848,29 @@ fn an_authored_read_write_list_refuses_every_path_that_names_the_root_or_aliases
     ] {
         assert!(
             matches!(
-                PolicyDocument::parse_authored(&path_doc("read_write", path)),
+                AuthoredPolicy::parse(&path_doc("read_write", path)),
                 Err(PolicyError::ReadWriteAlias { path: ref got }) if got == path
             ),
             "read_write {path}"
         );
     }
     assert!(matches!(
-        PolicyDocument::parse_authored(&path_doc("read_write", "/usr/..")),
+        AuthoredPolicy::parse(&path_doc("read_write", "/usr/..")),
         Err(PolicyError::Gateway { .. })
     ));
     for path in [
         "/tmp", "/tmp/", "/tmp/.", "/./tmp", "/.hidden", "/..x", "/...", "/a/./b", "/sandbox",
         "/procfs", "/proc2", "/sysroot", "/system", "/a/proc", "/PROC",
     ] {
-        PolicyDocument::parse_authored(&path_doc("read_write", path))
+        AuthoredPolicy::parse(&path_doc("read_write", path))
             .unwrap_or_else(|error| panic!("read_write {path}: {error}"));
     }
     for path in ["/", "//", "/.", "/./", "/proc", "/sys", "/tmp"] {
-        PolicyDocument::parse_authored(&path_doc("read_only", path))
+        AuthoredPolicy::parse(&path_doc("read_only", path))
             .unwrap_or_else(|error| panic!("read_only {path}: {error}"));
     }
     assert!(matches!(
-        PolicyDocument::parse_authored(&path_doc("read_only", "/usr/..")),
+        AuthoredPolicy::parse(&path_doc("read_only", "/usr/..")),
         Err(PolicyError::Gateway { .. })
     ));
 }
@@ -839,7 +885,7 @@ fn role_check_refuses_every_filesystem_path_shape_the_gateway_refuses() {
             let text = path_doc(list, path);
             let gateway = gateway_refuses_text(&text);
             let lexical = list == "read_write" && is_root_form(path);
-            let jackin = PolicyDocument::parse_authored(&text).is_err();
+            let jackin = AuthoredPolicy::parse(&text).is_err();
             assert_eq!(
                 jackin,
                 gateway || lexical,
@@ -867,9 +913,9 @@ fn read_write_refuses_every_path_equal_or_below_proc_and_sys() {
     for path in &universe {
         let text = path_doc("read_write", path);
         let expected = gateway_refuses_text(&text) || is_root_form(path) || alias_form(path);
-        let jackin = PolicyDocument::parse_authored(&text).is_err();
+        let jackin = AuthoredPolicy::parse(&text).is_err();
         assert_eq!(jackin, expected, "read_write {path}");
-        let read_only = PolicyDocument::parse_authored(&path_doc("read_only", path)).is_err();
+        let read_only = AuthoredPolicy::parse(&path_doc("read_only", path)).is_err();
         assert_eq!(
             read_only,
             gateway_refuses_text(&path_doc("read_only", path)),
@@ -978,7 +1024,7 @@ fn role_check_refuses_each_gateway_violation_class() {
         assert!(gateway_refuses_text(text), "{label}: the gateway accepts");
         assert!(
             matches!(
-                PolicyDocument::parse_authored(text),
+                AuthoredPolicy::parse(text),
                 Err(PolicyError::Gateway { .. } | PolicyError::InvalidHost(_))
             ),
             "{label}: parse_authored accepted"
@@ -990,7 +1036,7 @@ fn role_check_refuses_each_gateway_violation_class() {
             "version: 1\n{}{HARD}process:\n  run_as_user: {identity}\n  run_as_group: sandbox\n",
             fs("")
         );
-        PolicyDocument::parse_authored(&text).unwrap();
+        AuthoredPolicy::parse(&text).unwrap();
     }
 }
 
@@ -1001,7 +1047,7 @@ fn policy_errors_print_no_control_sequences() {
         ("read_write", "/\\u001b[31m/.."),
     ] {
         let text = format!("version: 1\nfilesystem_policy:\n  {list}:\n    - \"{path}\"\n{HARD}");
-        let error = PolicyDocument::parse_authored(&text).unwrap_err();
+        let error = AuthoredPolicy::parse(&text).unwrap_err();
         assert!(
             matches!(error, PolicyError::Gateway { .. }),
             "{list}: {error:?}"
@@ -1043,17 +1089,17 @@ fn every_read_write_entry_is_checked_not_only_the_first() {
         });
         format!("version: 1\nfilesystem_policy:\n  read_write:\n{list}{HARD}")
     };
-    PolicyDocument::parse_authored(&doc(&["/tmp", "/sandbox"])).unwrap();
+    AuthoredPolicy::parse(&doc(&["/tmp", "/sandbox"])).unwrap();
     assert!(matches!(
-        PolicyDocument::parse_authored(&doc(&["/tmp", "/."])),
+        AuthoredPolicy::parse(&doc(&["/tmp", "/."])),
         Err(PolicyError::ReadWriteRoot { ref path }) if path == "/."
     ));
     assert!(matches!(
-        PolicyDocument::parse_authored(&doc(&["/tmp", "/proc"])),
+        AuthoredPolicy::parse(&doc(&["/tmp", "/proc"])),
         Err(PolicyError::ReadWriteAlias { ref path }) if path == "/proc"
     ));
     assert!(matches!(
-        PolicyDocument::parse_authored(&doc(&["/tmp", "/sandbox", "/./sys/kernel"])),
+        AuthoredPolicy::parse(&doc(&["/tmp", "/sandbox", "/./sys/kernel"])),
         Err(PolicyError::ReadWriteAlias { .. })
     ));
 }
@@ -1138,10 +1184,10 @@ fn role_check_gives_the_policy_crate_verdict_of_the_gateway_create_check_for_eve
     for (label, text, refused) in &rows {
         let violations = gateway_create_violations(text);
         assert_eq!(!violations.is_empty(), *refused, "{label}: the gateway");
-        let jackin = PolicyDocument::parse_authored(text);
+        let jackin = AuthoredPolicy::parse(text);
         assert_eq!(jackin.is_err(), *refused, "{label}: role check");
     }
-    let literal = PolicyDocument::parse_authored(&endpoint_doc("198.18.0.2", tcp));
+    let literal = AuthoredPolicy::parse(&endpoint_doc("198.18.0.2", tcp));
     let Err(PolicyError::Gateway { violations }) = literal else {
         panic!("{literal:?}");
     };

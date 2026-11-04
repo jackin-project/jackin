@@ -380,6 +380,8 @@ pub enum EngineCertProblem {
     WrongKind,
     #[error("the private key is encrypted")]
     EncryptedKey,
+    #[error("it changed after the launch bound its fingerprint")]
+    Changed,
 }
 
 impl EngineCert {

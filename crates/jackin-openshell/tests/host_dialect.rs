@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 
 use globset::{GlobBuilder, GlobMatcher};
 use jackin_core::ProviderName;
-use jackin_openshell::{ClosureViolation, HostPattern, PolicyDocument, RuleKey};
+use jackin_openshell::{AuthoredPolicy, ClosureViolation, HostPattern, RuleKey};
 use openshell_core::host_pattern::host_patterns_overlap;
 
 mod common;
@@ -283,9 +283,9 @@ fn closure_covers_every_glob_form_that_reaches_a_provider_host() {
                 .any(|endpoint| sandbox_matches(form, endpoint.host.as_str())),
             "{form} reaches no profile host, so it is not a bypass"
         );
-        let document = PolicyDocument::parse_authored(&rule_doc(&[("r1", form, 443)])).unwrap();
+        let document = AuthoredPolicy::parse(&rule_doc(&[("r1", form, 443)])).unwrap();
         for generated in [&[][..], std::slice::from_ref(&foreign)] {
-            let violations = document.closure_violations(&profile, generated);
+            let violations = document.document().closure_violations(&profile, generated);
             assert!(
                 !violations.is_empty()
                     && violations.iter().all(|found| matches!(
@@ -307,9 +307,9 @@ fn closure_covers_every_glob_form_that_reaches_a_provider_host() {
                 .all(|endpoint| !sandbox_matches(form, endpoint.host.as_str())),
             "{form} reaches a profile host"
         );
-        let document = PolicyDocument::parse_authored(&rule_doc(&[("r1", form, 443)])).unwrap();
+        let document = AuthoredPolicy::parse(&rule_doc(&[("r1", form, 443)])).unwrap();
         assert_eq!(
-            document.closure_violations(&profile, &[]),
+            document.document().closure_violations(&profile, &[]),
             Vec::new(),
             "{form}"
         );

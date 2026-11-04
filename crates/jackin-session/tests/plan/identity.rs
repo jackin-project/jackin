@@ -28,7 +28,7 @@ async fn the_plan_derives_name_labels_and_draft_from_the_launch_id() -> TestResu
             role: RoleName::parse("sentinel")?,
             agent: Agent::Codex,
             account: AccountName::parse("work")?,
-            policy: PolicyLabel::of(&setup.role.policy().render()?),
+            policy: PolicyLabel::of(&setup.role.policy().document().render()?),
             launch: launch_id(1),
         };
         assert_eq!(plan.draft().labels(), &expected);
@@ -59,7 +59,7 @@ async fn the_plan_derives_name_labels_and_draft_from_the_launch_id() -> TestResu
                 args: Agent::Codex.spec().launch_argv(),
             }
         );
-        assert_eq!(create.policy(), setup.role.policy());
+        assert_eq!(create.policy(), setup.role.policy().document());
 
         let again = setup.plan(setup.request(1)?)?;
         assert_eq!(again.sandbox_name(), plan.sandbox_name());

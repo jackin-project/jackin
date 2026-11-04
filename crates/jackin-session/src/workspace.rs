@@ -68,10 +68,19 @@ pub fn adhoc_workspace_name(config: &Config, path: &HostPath) -> Result<Workspac
         return Ok(name);
     }
     let suffix = suffix(path);
-    let keep = WorkspaceName::MAX_LEN - suffix.len() - 1;
-    let head: String = name.as_str().chars().take(keep).collect();
-    let head = head.trim_end_matches(|c: char| !c.is_ascii_alphanumeric());
-    WorkspaceName::parse(&format!("{head}-{suffix}"))
+    let mut tail = suffix.clone();
+    let mut attempt = 1_u32;
+    loop {
+        let keep = WorkspaceName::MAX_LEN - tail.len() - 1;
+        let head: String = name.as_str().chars().take(keep).collect();
+        let head = head.trim_end_matches(|c: char| !c.is_ascii_alphanumeric());
+        let candidate = WorkspaceName::parse(&format!("{head}-{tail}"))?;
+        if config.workspace(&candidate).is_none() {
+            return Ok(candidate);
+        }
+        attempt += 1;
+        tail = format!("{suffix}-{attempt}");
+    }
 }
 
 fn noun(sandboxes: &[SandboxName]) -> &'static str {

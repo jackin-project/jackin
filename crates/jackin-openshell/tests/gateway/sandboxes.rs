@@ -8,16 +8,16 @@ use jackin_core::{
     ProviderName, SandboxLabels, Secret, Timestamp,
 };
 use jackin_openshell::{
-    ClosedPolicy, Gateway, PolicyDocument, PowerAction, ProviderMaterial, ProviderProfile,
-    ProviderSpec, ProviderState, Provisioning, SandboxQuery,
+    Gateway, PolicyDocument, PowerAction, ProviderMaterial, ProviderProfile, ProviderSpec,
+    ProviderState, Provisioning, SandboxQuery,
 };
 use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 
 use super::harness::{WORKSPACE, connect, env, guard};
 use super::sandbox_rpc::CREATED_MILLIS;
 use super::support::{
-    IMAGE_DIGEST, LAUNCH, POLICY, SANDBOX, add_sandbox, create_spec, planned, sandbox_name,
-    set_conditions,
+    IMAGE_DIGEST, LAUNCH, SANDBOX, add_sandbox, create_spec, planned, policy, policy_text,
+    sandbox_name, set_conditions,
 };
 
 fn managed() -> [(&'static str, &'static str); 1] {
@@ -219,7 +219,7 @@ async fn label_selector_text_is_accepted_by_the_gateway_grammar() {
 async fn phase_and_exit_code_map_to_the_documented_jackin_phase() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
-    let cases: [(i32, Option<i32>, Phase); 16] = [
+    let cases: [(i32, Option<i32>, Phase); 17] = [
         (0, None, Phase::Unknown),
         (1, None, Phase::Provisioning),
         (2, None, Phase::Ready),
@@ -232,6 +232,7 @@ async fn phase_and_exit_code_map_to_the_documented_jackin_phase() {
         (8, None, Phase::Starting),
         (9, Some(0), Phase::Completed { exit_code: 0 }),
         (9, Some(4), Phase::Completed { exit_code: 4 }),
+        (9, None, Phase::Unknown),
         (11, None, Phase::Suspending),
         (12, None, Phase::Suspended),
         (10, None, Phase::Unknown),
@@ -440,7 +441,7 @@ async fn policy_round_trips_through_create_and_detail() {
     let gateway = connect(&env, WORKSPACE).await;
     let spec = create_spec(SANDBOX, LAUNCH);
     guard(gateway.create_sandbox(&spec)).await.unwrap();
-    let sent = openshell_policy::parse_sandbox_policy(POLICY).unwrap();
+    let sent = openshell_policy::parse_sandbox_policy(&policy_text()).unwrap();
     {
         let mut state = env.server.state();
         let key = (WORKSPACE.to_owned(), SANDBOX.to_owned());
@@ -500,7 +501,7 @@ async fn policy_round_trips_through_create_and_detail() {
             .map(str::to_owned)
             .collect::<BTreeSet<_>>()
     );
-    let stored = PolicyDocument::parse_authored(POLICY).unwrap();
+    let stored = PolicyDocument::parse(&policy_text()).unwrap();
     assert_eq!(stored.network_rules().len(), 1);
     add_sandbox(
         &mut env.server.state(),
@@ -539,7 +540,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         base.image().clone(),
         labels.clone(),
         Vec::new(),
-        ClosedPolicy::parse(POLICY).unwrap(),
+        policy(),
         base.main().clone(),
     );
     guard(gateway.create_sandbox(&spec)).await.unwrap();
@@ -590,7 +591,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         base.image().clone(),
         labels,
         vec![provider.clone()],
-        ClosedPolicy::parse(POLICY).unwrap(),
+        policy(),
         base.main().clone(),
     );
     guard(gateway.create_sandbox(&with_provider)).await.unwrap();
