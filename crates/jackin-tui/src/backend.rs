@@ -17,6 +17,7 @@ use jackin_console::world::{Msg, World};
 use jackin_session::REPAINT_NUDGE;
 
 use crate::bridge::Bridge;
+use crate::crashed;
 use crate::files::HostFiles;
 use crate::launch;
 use crate::observe::Inputs;
@@ -56,87 +57,103 @@ impl JackinBackend {
 
     fn rerun_doctor(&self) {
         let inputs = Arc::clone(&self.inputs);
-        self.bridge
-            .spawn(async move { Msg::DoctorFinished(inputs.run_doctor(true).await) });
+        self.bridge.spawn(crashed::doctor(), async move {
+            Msg::DoctorFinished(inputs.run_doctor(true).await)
+        });
     }
 
     fn settle(&self, effect: Effect) {
+        let Some(failure) = crashed::reply(&effect) else {
+            return;
+        };
         let inputs = Arc::clone(&self.inputs);
         match effect {
             Effect::SaveWorkspace {
                 base, workspace, ..
-            } => self
-                .bridge
-                .spawn(async move { inputs.save_workspace(base.as_deref(), &workspace).await }),
-            Effect::SaveGlobal { base, global } => self
-                .bridge
-                .spawn(async move { inputs.save_global(&base, &global).await }),
-            Effect::SaveAccounts { base, registry } => self
-                .bridge
-                .spawn(async move { inputs.save_accounts(&base, &registry).await }),
+            } => self.bridge.spawn(failure, async move {
+                inputs.save_workspace(base.as_deref(), &workspace).await
+            }),
+            Effect::SaveGlobal { base, global } => {
+                self.bridge.spawn(
+                    failure,
+                    async move { inputs.save_global(&base, &global).await },
+                );
+            }
+            Effect::SaveAccounts { base, registry } => self.bridge.spawn(failure, async move {
+                inputs.save_accounts(&base, &registry).await
+            }),
             Effect::DeleteWorkspace { id } => self
                 .bridge
-                .spawn(async move { inputs.delete_workspace(id).await }),
+                .spawn(failure, async move { inputs.delete_workspace(id).await }),
             Effect::Stop { instance } => self
                 .bridge
-                .spawn(async move { inputs.stop(&instance).await }),
+                .spawn(failure, async move { inputs.stop(&instance).await }),
             Effect::Purge { instance } => self
                 .bridge
-                .spawn(async move { inputs.purge(&instance).await }),
+                .spawn(failure, async move { inputs.purge(&instance).await }),
             Effect::TrustRole { role } => self
                 .bridge
-                .spawn(async move { inputs.trust_role(&role).await }),
+                .spawn(failure, async move { inputs.trust_role(&role).await }),
             Effect::LoadRole { role } => self
                 .bridge
-                .spawn(async move { inputs.load_role(&role).await }),
+                .spawn(failure, async move { inputs.load_role(&role).await }),
             Effect::CheckRole { role, doc } => self
                 .bridge
-                .spawn(async move { inputs.check_role(&role, &doc).await }),
-            Effect::SaveRole { role, base, doc } => self
-                .bridge
-                .spawn(async move { inputs.save_role(&role, &base, &doc).await }),
+                .spawn(failure, async move { inputs.check_role(&role, &doc).await }),
+            Effect::SaveRole { role, base, doc } => self.bridge.spawn(failure, async move {
+                inputs.save_role(&role, &base, &doc).await
+            }),
             Effect::BindRole {
                 role,
                 agent,
                 account,
                 ..
-            } => self
-                .bridge
-                .spawn(async move { inputs.bind_role(&role, agent, account.as_ref()).await }),
+            } => self.bridge.spawn(failure, async move {
+                inputs.bind_role(&role, agent, account.as_ref()).await
+            }),
             Effect::AddRole { location } => self
                 .bridge
-                .spawn(async move { inputs.add_role(&location).await }),
+                .spawn(failure, async move { inputs.add_role(&location).await }),
             Effect::RemoveRole { role } => self
                 .bridge
-                .spawn(async move { inputs.remove_role(&role).await }),
-            Effect::RefreshAccount { account, .. } => self
-                .bridge
-                .spawn(async move { inputs.refresh_account(&account).await }),
-            Effect::ValidateAccount { account } => self
-                .bridge
-                .spawn(async move { inputs.validate_account(&account).await }),
+                .spawn(failure, async move { inputs.remove_role(&role).await }),
+            Effect::RefreshAccount { account, .. } => {
+                self.bridge.spawn(
+                    failure,
+                    async move { inputs.refresh_account(&account).await },
+                );
+            }
+            Effect::ValidateAccount { account } => {
+                self.bridge.spawn(
+                    failure,
+                    async move { inputs.validate_account(&account).await },
+                );
+            }
             Effect::CheckSource {
                 ticket,
                 provider,
                 source,
                 key,
-            } => self.bridge.spawn(async move {
+            } => self.bridge.spawn(failure, async move {
                 inputs
                     .check_source(ticket, provider, &source, key.as_ref())
                     .await
             }),
-            Effect::ProbeFolder { ticket, path } => self
-                .bridge
-                .spawn(async move { inputs.probe_folder(ticket, &path).await }),
+            Effect::ProbeFolder { ticket, path } => {
+                self.bridge.spawn(
+                    failure,
+                    async move { inputs.probe_folder(ticket, &path).await },
+                );
+            }
             Effect::ReadChanges {
                 ticket,
                 instance,
                 unpushed,
                 ..
-            } => self
-                .bridge
-                .spawn(async move { inputs.read_changes(ticket, &instance, unpushed).await }),
-            Effect::LoadOp { ticket, scope } => self.bridge.spawn(async move {
+            } => self.bridge.spawn(failure, async move {
+                inputs.read_changes(ticket, &instance, unpushed).await
+            }),
+            Effect::LoadOp { ticket, scope } => self.bridge.spawn(failure, async move {
                 Msg::OpLoaded {
                     ticket,
                     result: inputs.list_op(&scope).await,
@@ -154,9 +171,10 @@ impl JackinBackend {
             return;
         }
         let inputs = Arc::clone(&self.inputs);
-        let refreshing = Arc::clone(&self.refreshing);
+        let refreshing = Refreshing(Arc::clone(&self.refreshing));
         let words = self.words.clone();
-        self.bridge.spawn(async move {
+        self.bridge.spawn(crashed::refresh(), async move {
+            let _refreshing = refreshing;
             let result = match inputs.observe().await {
                 Ok(observation) if observation.snapshot.index_error.is_some() => {
                     Err(observation.status(&words).unwrap_or_default())
@@ -164,9 +182,16 @@ impl JackinBackend {
                 Ok(observation) => Ok(Box::new(observation.snapshot)),
                 Err(error) => Err(error.to_string()),
             };
-            refreshing.store(false, Ordering::SeqCst);
             Msg::Refreshed { result }
         });
+    }
+}
+
+struct Refreshing(Arc<AtomicBool>);
+
+impl Drop for Refreshing {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
     }
 }
 
@@ -254,5 +279,22 @@ impl Backend for JackinBackend {
             nudge_ms: i64::try_from(REPAINT_NUDGE.as_millis()).unwrap_or(defaults.nudge_ms),
             ..defaults
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_panic_while_refreshing_lets_the_next_refresh_start() {
+        let flag = Arc::new(AtomicBool::new(true));
+        let held = Refreshing(Arc::clone(&flag));
+        let task = tokio::spawn(async move {
+            let _held = held;
+            panic!("observe crashed");
+        });
+        assert!(task.await.is_err_and(|error| error.is_panic()));
+        assert!(!flag.load(Ordering::SeqCst));
     }
 }

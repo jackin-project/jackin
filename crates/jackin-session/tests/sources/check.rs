@@ -200,6 +200,38 @@ async fn a_reference_that_is_not_a_field_path_never_reaches_op() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_reference_with_a_segment_that_starts_with_a_dash_never_reaches_op() -> TestResult {
+    guard(async {
+        let bench = Bench::new();
+        let desk = bench.desk();
+        let cancel = token();
+        for reference in [
+            "op://v/--reveal/f1",
+            "op://-v/item/f1",
+            "op://v/item/-s/f1",
+            "op://v/item/s/--f",
+        ] {
+            let result = desk
+                .check(
+                    Source::OnePassword {
+                        account: "acct-1",
+                        reference,
+                    },
+                    &cancel,
+                )
+                .await;
+            assert!(
+                matches!(&result, Err(SourceFault::Reference(text)) if text == reference),
+                "{reference}: {result:?}"
+            );
+        }
+        assert!(bench.op_calls().is_empty(), "{:?}", bench.op_calls());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_reference_is_checked_against_the_item_op_reads() -> TestResult {
     guard(async {
         let fields = json!([

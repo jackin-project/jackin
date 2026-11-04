@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use jackin_core::{EnvName, EnvSnapshot};
 
-const ACCEPT: Duration = Duration::from_millis(500);
+const ACCEPT: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClipboardTool {
@@ -61,6 +61,7 @@ impl ClipboardTool {
 pub struct ClipboardWriter {
     tools: Vec<ClipboardTool>,
     search: Option<OsString>,
+    deadline: Duration,
 }
 
 fn set(env: &EnvSnapshot, name: &str) -> bool {
@@ -88,6 +89,7 @@ impl ClipboardWriter {
         ClipboardWriter {
             tools,
             search: None,
+            deadline: ACCEPT,
         }
     }
 
@@ -96,12 +98,19 @@ impl ClipboardWriter {
         ClipboardWriter {
             tools,
             search: None,
+            deadline: ACCEPT,
         }
     }
 
     #[must_use]
     pub fn searching(mut self, path: OsString) -> ClipboardWriter {
         self.search = Some(path);
+        self
+    }
+
+    #[must_use]
+    pub fn within(mut self, deadline: Duration) -> ClipboardWriter {
+        self.deadline = deadline;
         self
     }
 
@@ -117,7 +126,7 @@ impl ClipboardWriter {
             done.send(writer.tools.iter().any(|tool| writer.run(*tool, &text)))
                 .unwrap_or(());
         });
-        spawned.is_ok() && answer.recv_timeout(ACCEPT).unwrap_or(false)
+        spawned.is_ok() && answer.recv_timeout(self.deadline).unwrap_or(false)
     }
 
     fn run(&self, tool: ClipboardTool, text: &str) -> bool {

@@ -52,6 +52,7 @@ impl Config {
             ConfigEdit::RemoveRole(name) => self.remove_role(&name),
             ConfigEdit::AddWorkspace { name, workspace } => self.add_workspace(name, workspace),
             ConfigEdit::RemoveWorkspace(name) => self.remove_workspace(&name),
+            ConfigEdit::RenameWorkspace { from, to } => self.rename_workspace(&from, to),
             ConfigEdit::SetWorkspaceDocker { workspace, docker } => {
                 self.workspace_mut(&workspace)?.docker = docker;
                 Ok(())
@@ -297,6 +298,23 @@ impl Config {
             .remove(name)
             .map(|_removed| ())
             .ok_or_else(|| missing(KIND_WORKSPACE, name))
+    }
+
+    fn rename_workspace(
+        &mut self,
+        from: &WorkspaceName,
+        to: WorkspaceName,
+    ) -> Result<(), ConfigError> {
+        if !self.workspaces.contains_key(from) {
+            return Err(missing(KIND_WORKSPACE, from));
+        }
+        if self.workspaces.contains_key(&to) {
+            return Err(duplicate(KIND_WORKSPACE, &to));
+        }
+        if let Some(workspace) = self.workspaces.remove(from) {
+            self.workspaces.insert(to, workspace);
+        }
+        Ok(())
     }
 
     fn set_workspace_default_role(
