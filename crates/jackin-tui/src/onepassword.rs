@@ -27,6 +27,7 @@ pub struct OpSnapshot {
 #[derive(Debug, Default)]
 struct Loaded {
     session: Option<OpSession>,
+    accounts: Vec<OpAccount>,
     vaults: BTreeMap<Vault, String>,
     items: BTreeMap<Item, String>,
     fields: BTreeMap<Item, Vec<OpFieldInfo>>,
@@ -113,8 +114,8 @@ impl OnePassword for OpSnapshot {
         OpSnapshot::set_session(self, session);
     }
 
-    fn accounts(&self) -> &[OpAccount] {
-        &[]
+    fn accounts(&self) -> Vec<OpAccount> {
+        locked(&self.loaded).accounts.clone()
     }
 
     fn latency_ms(&self) -> i64 {
@@ -224,6 +225,15 @@ impl Inputs {
         match scope {
             OpScope::Accounts => {
                 let accounts = cli.accounts(cancel).await.map_err(fault)?;
+                locked(&self.op.loaded).accounts = accounts
+                    .iter()
+                    .map(|account| OpAccount {
+                        id: account.id.clone(),
+                        email: account.email.clone(),
+                        state: OpAccountState::Available,
+                        vaults: Vec::new(),
+                    })
+                    .collect();
                 Ok(OpListing::Accounts(
                     accounts
                         .into_iter()
@@ -240,8 +250,8 @@ impl Inputs {
                 let mut rows = Vec::with_capacity(vaults.len());
                 for vault in vaults {
                     let (items, access) = match cli.items(account, &vault.id, cancel).await {
-                        Ok(items) => (items.len(), VaultAccess::ReadWrite),
-                        Err(OpFault::PermissionDenied { .. }) => (0, VaultAccess::Denied),
+                        Ok(items) => (items.len(), None),
+                        Err(OpFault::PermissionDenied { .. }) => (0, Some(VaultAccess::Denied)),
                         Err(other) => return Err(op_error(&other)),
                     };
                     locked(&self.op.loaded)
@@ -272,7 +282,7 @@ impl Inputs {
                             id: item.id,
                             title: item.title,
                             category: category_label(&item.category),
-                            fields: 0,
+                            fields: None,
                         })
                         .collect(),
                 ))

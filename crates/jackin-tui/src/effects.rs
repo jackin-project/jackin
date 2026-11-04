@@ -11,6 +11,7 @@ use jackin_console::domain::instance::InstanceId;
 use jackin_console::domain::role::{FindingArea, RoleFinding, RoleManifestDoc};
 use jackin_console::domain::vocabulary::{Rejection, SaveField, Unbuilt, Vocabulary};
 use jackin_console::domain::workspace::{MountSource, Workspace, WorkspaceId};
+use jackin_console::panes::{FailNext, LinkFault};
 use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
 use jackin_core::plain;
 use jackin_core::{
@@ -146,6 +147,25 @@ impl Inputs {
         }
     }
 
+    async fn login_file(
+        &self,
+        provider: jackin_core::Provider,
+        folder: &HostPath,
+        text: &str,
+    ) -> Result<HostPath, PersistError> {
+        let unusable = || {
+            PersistError::from(Rejection::NotAFolder {
+                folder: text.to_owned(),
+            })
+        };
+        let name = provider.login_file().ok_or_else(unusable)?;
+        let file = HostPath::resolve(Path::new(name), folder)?;
+        match self.host.fs.stat_following(&file).await? {
+            Some(FileKind::File) => Ok(file),
+            _ => Err(unusable()),
+        }
+    }
+
     pub(crate) async fn save_workspace(
         &self,
         base: Option<&Workspace>,
@@ -263,21 +283,21 @@ impl Inputs {
         let mut resolved = Resolved::default();
         for (provider, path) in persist::folders(registry, base) {
             let folder = self.folder(&path).await?;
-            let login = if crate::project::core_provider(provider) == jackin_core::Provider::Codex {
+            let provider = crate::project::core_provider(provider);
+            let resolved_folder = if provider == jackin_core::Provider::Codex {
                 let found = read_chatgpt_login(self.host.fs.as_ref(), &folder)
                     .await
                     .map_err(|error| Refused::Text(text(&error)))?;
-                Some(found.account_id)
+                Folder::Chatgpt {
+                    home: folder,
+                    account: found.account_id,
+                }
             } else {
-                None
+                Folder::Login {
+                    file: self.login_file(provider, &folder, &path).await?,
+                }
             };
-            resolved.folders.insert(
-                path,
-                Folder {
-                    path: folder,
-                    login,
-                },
-            );
+            resolved.folders.insert(path, resolved_folder);
         }
         Ok(resolved)
     }
@@ -374,10 +394,17 @@ impl Inputs {
     pub(crate) fn pane_target(
         &self,
         instance: &InstanceId,
-    ) -> Result<(jackin_session::Session, jackin_core::SandboxName), String> {
-        let (gateway, name) = self.sandbox(instance).map_err(|error| plain(&error))?;
-        let session = self.session(&gateway).map_err(|error| plain(&error))?;
-        Ok((session, name))
+    ) -> Result<(jackin_session::Session, jackin_core::SandboxName), LinkFault> {
+        let (gateway, name) = self
+            .sandbox(instance)
+            .map_err(|error| LinkFault::new(plain(&error)))?;
+        match self.sessions.access(&gateway) {
+            Access::Up(session) => Ok((*session, name)),
+            Access::Down { error, .. } => {
+                Err(LinkFault::new(text(&*error)).then(FailNext::RunDoctor))
+            }
+            Access::NotChosen => Err(LinkFault::new(text(&ConfigError::UnknownGateway(gateway)))),
+        }
     }
 
     fn session(

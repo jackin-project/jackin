@@ -9,10 +9,13 @@ use jackin_console::domain::account::{
     Recoverability, RecoverableIssue, ValidationLevel,
 };
 use jackin_console::domain::agent::Provider;
+use jackin_console::domain::reason::{Found, IssueReason};
 use jackin_console::domain::vocabulary::{Rejection, SaveField};
 use jackin_console::world::Msg;
 use jackin_core::HostPath;
-use jackin_session::{FolderFacts, Source, SourceDesk, SourceFault, SourceFound, error_chain};
+use jackin_session::{
+    AUTH_FILE, FolderFacts, Source, SourceDesk, SourceFault, SourceFound, error_chain,
+};
 
 use crate::bridge::Settled;
 use crate::observe::Inputs;
@@ -24,25 +27,25 @@ struct Failure {
     code: IssueCode,
     lifecycle: Lifecycle,
     recoverability: Recoverability,
-    text: String,
+    reason: IssueReason,
 }
 
 fn failure(
     code: IssueCode,
     lifecycle: Lifecycle,
     recoverability: Recoverability,
-    text: String,
+    reason: IssueReason,
 ) -> Failure {
     Failure {
         code,
         lifecycle,
         recoverability,
-        text,
+        reason,
     }
 }
 
-fn op_failure(error: &OpError) -> Failure {
-    let (code, recoverability) = match error {
+fn op_failure(error: OpError) -> Failure {
+    let (code, recoverability) = match &error {
         OpError::Locked => (IssueCode::OpLocked, Recoverability::Retryable),
         OpError::NotAvailable => (IssueCode::ProviderUnavailable, Recoverability::Retryable),
         OpError::AuthorizationRequired { .. } => (
@@ -65,85 +68,136 @@ fn op_failure(error: &OpError) -> Failure {
         code,
         Lifecycle::NeedsSecret,
         recoverability,
-        error.message(),
+        IssueReason::OnePassword(error),
     )
 }
 
-fn failure_of(fault: &SourceFault) -> Failure {
-    let said = || error_chain(fault);
+fn failure_of(source: &CredentialSource, fault: &SourceFault) -> Failure {
     let action = Recoverability::ActionRequired;
+    let chosen = source.safe_detail();
+    let login_invalid = || IssueReason::LoginInvalid {
+        file: AUTH_FILE.to_owned(),
+    };
+    let unreadable = |path: String| IssueReason::FolderUnreadable {
+        path,
+        detail: error_chain(fault),
+    };
     match fault {
-        SourceFault::EnvName(_) | SourceFault::EnvUnset(_) | SourceFault::FileMissing(_) => {
-            failure(
-                IssueCode::CredentialFileMissing,
-                Lifecycle::NeedsSecret,
-                action,
-                said(),
-            )
-        }
-        SourceFault::EnvEmpty(_) => failure(
+        SourceFault::EnvName(name) => failure(
+            IssueCode::CredentialFileMissing,
+            Lifecycle::NeedsSecret,
+            action,
+            IssueReason::EnvInvalid { name: name.clone() },
+        ),
+        SourceFault::EnvUnset(name) => failure(
+            IssueCode::CredentialFileMissing,
+            Lifecycle::NeedsSecret,
+            action,
+            IssueReason::EnvMissing { name: name.clone() },
+        ),
+        SourceFault::EnvEmpty(name) => failure(
             IssueCode::ApiKeyEmpty,
             Lifecycle::NeedsSecret,
             action,
-            said(),
+            IssueReason::EnvEmpty { name: name.clone() },
         ),
-        SourceFault::FileNotRegular(_)
-        | SourceFault::LoginInvalid(_)
-        | SourceFault::Login(_)
-        | SourceFault::Fs(_) => failure(
+        SourceFault::FileMissing(path) => failure(
+            IssueCode::CredentialFileMissing,
+            Lifecycle::NeedsSecret,
+            action,
+            IssueReason::FileMissing {
+                path: path.to_string(),
+            },
+        ),
+        SourceFault::FileNotRegular(path) => failure(
             IssueCode::CredentialMalformed,
             Lifecycle::Error,
             action,
-            said(),
+            IssueReason::FileNotRegular {
+                path: path.to_string(),
+            },
         ),
-        SourceFault::Unreadable(_) => failure(
+        SourceFault::Unreadable(path) => failure(
             IssueCode::FolderUnreadable,
             Lifecycle::Error,
             action,
-            said(),
+            unreadable(path.to_string()),
         ),
-        SourceFault::FolderMissing(_) => {
-            failure(IssueCode::FolderMissing, Lifecycle::Error, action, said())
-        }
-        SourceFault::NoLogin(_) => failure(
-            IssueCode::CredentialFileMissing,
-            Lifecycle::NeedsLogin,
+        SourceFault::Login(_) | SourceFault::Fs(_) => failure(
+            IssueCode::CredentialMalformed,
+            Lifecycle::Error,
             action,
-            said(),
+            unreadable(chosen),
+        ),
+        SourceFault::LoginInvalid(_) => failure(
+            IssueCode::CredentialMalformed,
+            Lifecycle::Error,
+            action,
+            login_invalid(),
         ),
         SourceFault::NotChatgpt(_) => failure(
             IssueCode::FolderWrongProvider,
             Lifecycle::Error,
             action,
-            said(),
+            login_invalid(),
         ),
-        SourceFault::Reference(_) => failure(
+        SourceFault::FolderMissing(path) => failure(
+            IssueCode::FolderMissing,
+            Lifecycle::Error,
+            action,
+            IssueReason::FolderMissing {
+                path: path.to_string(),
+            },
+        ),
+        SourceFault::NoLogin(path) => failure(
+            IssueCode::CredentialFileMissing,
+            Lifecycle::NeedsLogin,
+            action,
+            IssueReason::LoginMissing {
+                path: path.to_string(),
+                file: AUTH_FILE.to_owned(),
+            },
+        ),
+        SourceFault::Reference(reference) => failure(
             IssueCode::OpFieldMissing,
             Lifecycle::NeedsSecret,
             action,
-            said(),
+            IssueReason::BadReference {
+                reference: reference.clone(),
+            },
         ),
-        SourceFault::Op(fault) => op_failure(&op_error(fault)),
-        SourceFault::NotConcealed(field) => op_failure(&OpError::WrongFieldShape {
+        SourceFault::Op(fault) => op_failure(op_error(fault)),
+        SourceFault::NotConcealed(field) => op_failure(OpError::WrongFieldShape {
             field: field.clone(),
         }),
-        SourceFault::EmptyField(field) => op_failure(&OpError::EmptyMaterial {
+        SourceFault::EmptyField(field) => op_failure(OpError::EmptyMaterial {
             field: field.clone(),
         }),
     }
 }
 
-fn found_material(source: &CredentialSource, found: &SourceFound) -> String {
+pub(crate) fn found_of(source: &CredentialSource) -> Found {
+    match source {
+        CredentialSource::HostEnv { var, .. } => Found::EnvSet { name: var.clone() },
+        CredentialSource::LocalFolder { path, .. } => Found::FolderFound { path: path.clone() },
+        CredentialSource::OnePassword(_) => Found::ReferenceResolved,
+        CredentialSource::PlainApiKey { .. } => Found::KeyPresent,
+    }
+}
+
+fn found_material(source: &CredentialSource, found: &SourceFound) -> Found {
     match found {
-        SourceFound::Login { .. } => DetectedKind::CodexAuthJson.label().to_owned(),
+        SourceFound::Login { account } => Found::Login {
+            account: account.to_string(),
+        },
         SourceFound::Env | SourceFound::File | SourceFound::Folder | SourceFound::OnePassword => {
-            source.safe_detail()
+            found_of(source)
         }
     }
 }
 
-fn skipped() -> CheckRow {
-    CheckRow::Skipped(String::new())
+pub(crate) fn skipped() -> CheckRow {
+    CheckRow::Skipped(IssueReason::Skipped)
 }
 
 pub(crate) fn outcome(
@@ -167,16 +221,16 @@ pub(crate) fn outcome(
                 code,
                 lifecycle,
                 recoverability,
-                text,
-            } = failure_of(fault);
+                reason,
+            } = failure_of(source, fault);
             ValidationOutcome {
                 level: None,
                 identity: AccountIdentity::default(),
                 confidence: Confidence::None,
                 lifecycle,
-                issue: Some(RecoverableIssue::new(code, text.clone(), recoverability)),
+                issue: Some(RecoverableIssue::new(code, reason.clone(), recoverability)),
                 usage: None,
-                material: CheckRow::Failed(text),
+                material: CheckRow::Failed(reason),
                 identity_row: skipped(),
                 quota_row: skipped(),
             }

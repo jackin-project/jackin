@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use jackin_console::backend::{DiffLine, DiffStatus, FolderProbe};
+use jackin_console::backend::{DiffLine, DiffStatus, FolderProbe, UnreadFile};
 use jackin_console::domain::account::DetectedKind;
 use jackin_core::{EnvSnapshot, FileSystem, HostPath, ProcessRunner, SandboxName};
 use jackin_session::{OnePasswordCli, SourceDesk};
@@ -134,6 +134,40 @@ async fn read_changes_of_a_sandbox_that_is_gone_is_an_error_text() -> TestResult
         assert!(refused.is_err());
         let text = refused.err().unwrap_or_default();
         assert!(text.contains("jackin-gone"), "{text}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn read_changes_carries_the_omitted_count_and_lists_an_unread_file_apart() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let project = handle.root().join("project");
+        tokio::fs::write(project.join("big.bin"), vec![b'b'; 300 * 1024]).await?;
+        for index in 0..501 {
+            tokio::fs::write(project.join(format!("f{index:03}.txt")), "x\n").await?;
+        }
+        let found = jackin_tui::read_changes(
+            &rig.world.session,
+            &handle.name(),
+            0,
+            &CancellationToken::new(),
+        )
+        .await?;
+        assert_eq!(found.omitted, 2);
+        assert_eq!(
+            found.unread,
+            [UnreadFile {
+                path: "big.bin".to_owned(),
+                status: DiffStatus::Added,
+            }]
+        );
+        assert_eq!(found.files.len(), 499);
+        assert!(found.files.iter().all(|file| file.path != "big.bin"));
+        assert!(!found.is_empty());
         Ok(())
     })
     .await

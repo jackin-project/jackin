@@ -173,7 +173,7 @@ async fn a_locked_op_shows_the_baseline_text_and_a_retry_after_unlocking_lists_a
 
 #[tokio::test]
 async fn authorization_and_a_denied_vault_each_show_their_text() -> TestResult {
-    guard(async {
+    guard(Box::pin(async {
         let mut lab = Lab::open().await?;
         let op = lab.rig.world.runner.scripted();
         op.expect(
@@ -201,7 +201,7 @@ async fn authorization_and_a_denied_vault_each_show_their_text() -> TestResult {
         assert!(denied.contains("No access to vault vault-2"), "{denied}");
         assert!(!denied.contains(CANARY), "{denied}");
         Ok(())
-    })
+    }))
     .await
 }
 
@@ -237,6 +237,43 @@ async fn a_field_that_is_not_concealed_is_refused_with_the_baseline_wording() ->
             refused.err().map(|e| e.message()),
             Some("Field endpoint is not a credential: choose a concealed field".to_owned())
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_item_row_has_no_field_count_and_a_known_single_account_starts_the_picker_at_its_vaults()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        script(&lab);
+        picker(&mut lab).await?;
+        lab.console.settle().await?;
+        lab.step("enter").await?;
+        lab.step("enter").await?;
+        let items = lab.console.screen();
+        let row = items
+            .lines()
+            .find(|line| line.contains("OpenAI"))
+            .ok_or("the OpenAI row")?;
+        assert!(row.contains("api credential"), "{items}");
+        assert!(!row.contains("fields"), "{items}");
+        let known = jackin_console::backend::OnePassword::accounts(lab.world().op.as_ref());
+        assert_eq!(
+            known.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(),
+            ["acct-1"]
+        );
+
+        lab.step("esc esc").await?;
+        script(&lab);
+        lab.step("enter").await?;
+        let again = lab.console.screen();
+        assert!(
+            again.contains("Private") && again.contains("Shared"),
+            "{again}"
+        );
+        assert!(!again.contains("me@example.test"), "{again}");
         Ok(())
     })
     .await

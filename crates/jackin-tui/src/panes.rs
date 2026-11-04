@@ -10,20 +10,24 @@ use std::time::Duration;
 
 use jackin_console::domain::instance::InstanceId;
 use jackin_console::panes::{
-    EndKind, Lease, LinkEvent, LinkSource, PaneCommand, PaneLink, PaneRequest, PaneSize, Sent,
+    EndKind, FailNext, Lease, LinkEvent, LinkFault, LinkSource, PaneCommand, PaneId, PaneLink,
+    PaneRequest, PaneSize, Sent,
 };
+use jackin_console::world::Msg;
 use jackin_core::{SandboxName, SupervisorReading, SupervisorState, plain};
 use jackin_openshell::{
-    EndReason, InputLease, InputMode, SessionClosed, TermSize, TerminalEvent, TerminalSession,
+    EndReason, GatewayError, InputLease, InputMode, SessionClosed, TermSize, TerminalEvent,
+    TerminalSession,
 };
 use jackin_session::{
-    AttachRequest, AttachedTerminal, LineDelivery, Session, ShellRequest, error_chain,
-    launch_events,
+    AttachError, AttachRequest, AttachedTerminal, LineDelivery, RestartError, Session,
+    ShellRequest, error_chain, launch_events,
 };
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, mpsc, watch};
 use tokio_util::sync::{CancellationToken, DropGuard};
 
+use crate::bridge::Bridge;
 use crate::observe::Inputs;
 
 const COMMANDS: usize = 64;
@@ -34,11 +38,17 @@ struct InboxState {
     output_bytes: usize,
 }
 
-#[derive(Debug)]
 struct Inbox {
     state: Mutex<InboxState>,
     cap: usize,
     room: Notify,
+    wake: Box<dyn Fn() + Send + Sync>,
+}
+
+impl fmt::Debug for Inbox {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Inbox").finish_non_exhaustive()
+    }
 }
 
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -46,11 +56,12 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl Inbox {
-    fn new(cap: usize) -> Inbox {
+    fn new(cap: usize, wake: Box<dyn Fn() + Send + Sync>) -> Inbox {
         Inbox {
             state: Mutex::new(InboxState::default()),
             cap,
             room: Notify::new(),
+            wake,
         }
     }
 
@@ -60,6 +71,8 @@ impl Inbox {
             state.output_bytes += bytes.len();
         }
         state.events.push_back(event);
+        drop(state);
+        (self.wake)();
     }
 
     fn has_room(&self) -> bool {
@@ -110,6 +123,7 @@ struct Registered {
 struct Shared {
     inputs: Arc<Inputs>,
     handle: Handle,
+    bridge: Bridge,
     inbox_bytes: usize,
     supervisor_poll: Duration,
     next: AtomicU64,
@@ -138,6 +152,7 @@ impl PaneHub {
     pub(crate) fn new(
         inputs: Arc<Inputs>,
         handle: Handle,
+        bridge: Bridge,
         inbox_bytes: usize,
         supervisor_poll: Duration,
     ) -> PaneHub {
@@ -145,6 +160,7 @@ impl PaneHub {
             shared: Arc::new(Shared {
                 inputs,
                 handle,
+                bridge,
                 inbox_bytes,
                 supervisor_poll,
                 next: AtomicU64::new(1),
@@ -154,8 +170,11 @@ impl PaneHub {
         }
     }
 
-    pub(crate) fn links(&self) -> Arc<dyn LinkSource> {
-        Arc::new(HubLinks { hub: self.clone() })
+    pub(crate) fn links(&self, pane: PaneId) -> Arc<dyn LinkSource> {
+        Arc::new(HubLinks {
+            hub: self.clone(),
+            pane,
+        })
     }
 
     pub(crate) fn live(&self) -> usize {
@@ -183,12 +202,23 @@ impl PaneHub {
     fn open(
         &self,
         request: &PaneRequest,
+        pane: PaneId,
         size: PaneSize,
         attempt: Attempt,
-    ) -> Result<Box<dyn PaneLink>, String> {
+    ) -> Result<Box<dyn PaneLink>, LinkFault> {
         let (session, sandbox) = self.shared.inputs.pane_target(&request.instance)?;
         let id = self.shared.next.fetch_add(1, Ordering::SeqCst);
-        let inbox = Arc::new(Inbox::new(self.shared.inbox_bytes));
+        let bridge = self.shared.bridge.clone();
+        let instance = request.instance.clone();
+        let inbox = Arc::new(Inbox::new(
+            self.shared.inbox_bytes,
+            Box::new(move || {
+                bridge.send(Msg::PaneWake {
+                    instance: instance.clone(),
+                    pane,
+                });
+            }),
+        ));
         let (commands, receiver) = mpsc::channel(COMMANDS);
         let (size_tx, size_rx) = watch::channel(size);
         let detach = CancellationToken::new();
@@ -238,15 +268,20 @@ impl PaneHub {
 #[derive(Debug)]
 struct HubLinks {
     hub: PaneHub,
+    pane: PaneId,
 }
 
 impl LinkSource for HubLinks {
-    fn open(&self, request: &PaneRequest, size: PaneSize) -> Result<Box<dyn PaneLink>, String> {
-        self.hub.open(request, size, Attempt::Open)
+    fn open(&self, request: &PaneRequest, size: PaneSize) -> Result<Box<dyn PaneLink>, LinkFault> {
+        self.hub.open(request, self.pane, size, Attempt::Open)
     }
 
-    fn restart(&self, request: &PaneRequest, size: PaneSize) -> Result<Box<dyn PaneLink>, String> {
-        self.hub.open(request, size, Attempt::Restart)
+    fn restart(
+        &self,
+        request: &PaneRequest,
+        size: PaneSize,
+    ) -> Result<Box<dyn PaneLink>, LinkFault> {
+        self.hub.open(request, self.pane, size, Attempt::Restart)
     }
 }
 
@@ -345,6 +380,41 @@ impl Terminal {
     }
 }
 
+fn gateway_down(error: &GatewayError) -> bool {
+    matches!(
+        error,
+        GatewayError::Unreachable { .. }
+            | GatewayError::SandboxUnreachable { .. }
+            | GatewayError::Tls { .. }
+            | GatewayError::Unauthenticated
+    )
+}
+
+fn fault(error: &dyn std::error::Error, gateway: Option<&GatewayError>) -> LinkFault {
+    let fault = LinkFault::new(plain(error_chain(error)));
+    if gateway.is_some_and(gateway_down) {
+        fault.then(FailNext::RunDoctor)
+    } else {
+        fault
+    }
+}
+
+fn attach_fault(error: &AttachError) -> LinkFault {
+    match error {
+        AttachError::Gateway(gateway) => fault(error, Some(gateway)),
+        AttachError::NotFound(_)
+        | AttachError::MainProcessEnded { .. }
+        | AttachError::EnvFile { .. } => fault(error, None),
+    }
+}
+
+fn restart_fault(error: &RestartError) -> LinkFault {
+    match error {
+        RestartError::Gateway(gateway) => fault(error, Some(gateway)),
+        _ => fault(error, None),
+    }
+}
+
 fn link_event(event: TerminalEvent) -> LinkEvent {
     match event {
         TerminalEvent::Attached => LinkEvent::Attached,
@@ -356,8 +426,8 @@ fn link_event(event: TerminalEvent) -> LinkEvent {
         TerminalEvent::Ended(reason) => LinkEvent::Ended(match reason {
             EndReason::Detached => EndKind::Detached,
             EndReason::StreamClosed => EndKind::StreamClosed,
-            EndReason::Refused(text) => EndKind::Refused(text),
-            EndReason::Failed(text) => EndKind::Failed(text),
+            EndReason::Refused(text) => EndKind::Refused(LinkFault::new(text)),
+            EndReason::Failed(text) => EndKind::Failed(LinkFault::new(text)),
         }),
     }
 }
@@ -386,7 +456,7 @@ impl Run {
         hub.ended(id);
     }
 
-    async fn start(&self) -> Result<Terminal, String> {
+    async fn start(&self) -> Result<Terminal, LinkFault> {
         let size = term_size(self.initial);
         if !self.agent {
             return self
@@ -397,7 +467,7 @@ impl Run {
                 })
                 .await
                 .map(Terminal::Shell)
-                .map_err(|error| plain(error_chain(&error)));
+                .map_err(|error| attach_fault(&error));
         }
         if self.attempt == Attempt::Restart {
             let (events, feed) = launch_events(LineDelivery::BestEffort);
@@ -405,7 +475,7 @@ impl Run {
             self.session
                 .restart_agent(&self.sandbox, events, self.gone.clone())
                 .await
-                .map_err(|error| plain(error_chain(&error)))?;
+                .map_err(|error| restart_fault(&error))?;
         }
         self.session
             .attach(AttachRequest {
@@ -415,7 +485,7 @@ impl Run {
             })
             .await
             .map(Terminal::Main)
-            .map_err(|error| plain(error_chain(&error)))
+            .map_err(|error| attach_fault(&error))
     }
 
     async fn drive(&mut self) {
@@ -530,7 +600,7 @@ mod tests {
 
     #[test]
     fn a_drain_splits_output_at_the_budget_and_loses_and_reorders_nothing() {
-        let inbox = Inbox::new(1 << 20);
+        let inbox = Inbox::new(1 << 20, Box::new(|| {}));
         inbox.push(LinkEvent::Attached);
         inbox.push(output(5, 1));
         inbox.push(output(7, 2));
@@ -562,8 +632,26 @@ mod tests {
     }
 
     #[test]
+    fn every_push_wakes_the_console_once() {
+        let wakes = Arc::new(AtomicU64::new(0));
+        let counted = Arc::clone(&wakes);
+        let inbox = Inbox::new(
+            10,
+            Box::new(move || {
+                counted.fetch_add(1, Ordering::SeqCst);
+            }),
+        );
+        inbox.push(LinkEvent::Attached);
+        inbox.push(output(3, 1));
+        inbox.push(LinkEvent::Exited(None));
+        assert_eq!(wakes.load(Ordering::SeqCst), 3);
+        inbox.drain(10);
+        assert_eq!(wakes.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
     fn the_inbox_has_room_until_its_output_reaches_the_cap_and_again_after_a_drain() {
-        let inbox = Inbox::new(10);
+        let inbox = Inbox::new(10, Box::new(|| {}));
         assert!(inbox.has_room());
         inbox.push(output(10, 1));
         assert!(!inbox.has_room());

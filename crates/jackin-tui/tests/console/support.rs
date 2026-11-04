@@ -115,3 +115,27 @@ impl Lab {
         self.step("space").await
     }
 }
+
+impl Lab {
+    pub(crate) async fn folder_form(
+        &mut self,
+        name: &str,
+        provider: usize,
+        folder: &str,
+    ) -> TestResult {
+        self.open_form(name).await?;
+        self.step("enter").await?;
+        for _ in 0..provider {
+            self.step("down").await?;
+        }
+        self.step("enter").await?;
+        self.step("tab").await?;
+        self.step("tab").await?;
+        self.console.type_text(folder);
+        self.console.settle().await
+    }
+
+    pub(crate) async fn save_form(&mut self) -> TestResult {
+        self.step("tab tab tab tab enter").await
+    }
+}
