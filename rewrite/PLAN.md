@@ -662,7 +662,7 @@ P11.1 and P11.2 run in parallel.
 - **Owner:** @"tailrocks-verifier (agent)". **Depends:** P13.0 and the tasks that it added.
 - **Steps:** Run G-FULL. Run `rg -l -i -w 'bollard|dind' --glob '!rewrite/**' --glob '!docs/content/**/adr*/**' --glob '!deny.toml'` and verify that it prints nothing (`deny.toml` bans the `bollard` crates, which is the D01 rule itself) (`capsule` is no longer forbidden: D28 makes Jackin Capsule the host multiplexer).
 - **Proof:** G-FULL passes on the head of jackin. G-ROLE passes in each role repository. The full baseline suite passes in terminal-components-baseline, and every approved baseline file that differs from `95bbcbb` is a re-take or addition recorded with its UX review in `docs/P9.3-red-green.md`.
-- [ ] P13.1 done
+- [x] P13.1 done. Proof: G-FULL (`xtask ci`) passed on jackin e0776e988 (1937 of 1937 tests, then deny, shear, comments, layers, pins, containers, errors, baseline, screen, demo-gate, reuse and docs; exit 0; log /private/tmp/claude-501/plans/gfull.log); the `rg -l -i -w 'bollard|dind'` check printed nothing; G-ROLE (`jackin role check .`) exit 0 in jackin-sentinel 96c530a, jackin-agent-smith e852386 and jackin-the-architect f040d07; the full baseline suite passed in terminal-components-baseline a4e81a4 (nextest 776 of 776, clippy, fmt; log /private/tmp/claude-501/plans/baseline-final.log); since `95bbcbb` no approved baseline file is modified (9 renames with identical content, 56 additions, each recorded with its UX review in `docs/P9.3-red-green.md` or, for the five P9.2 new screens, in `docs/specs/jackin-console-new-screens-review.md` and `rewrite/evidence/P9.2-baseline.md`).
 
 ### P13.2 Repeat the journey from fresh resources
 

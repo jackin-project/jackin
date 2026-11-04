@@ -415,7 +415,7 @@ impl Run {
         let (config, name, workspace) = resolve(&inputs, saved.clone(), &self.wanted.place)
             .await
             .map_err(|error| Stop::at(Stage::Image, &error))?;
-        let Some(gateway) = inputs.sessions.default_name().cloned() else {
+        let Some((gateway, access)) = inputs.sessions.default_target() else {
             let error = saved
                 .resolve_gateway(None)
                 .err()
@@ -425,7 +425,7 @@ impl Run {
                 ..plain_failure(Stage::Image, &error)
             }));
         };
-        let session = match inputs.sessions.access(&gateway) {
+        let session = match access {
             Access::Up(session) => *session,
             Access::Down { error, .. } => {
                 return Err(Stop::failed(gateway_failure(

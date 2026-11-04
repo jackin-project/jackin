@@ -125,9 +125,23 @@ async fn list_failure_on_one_gateway() -> TestResult {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
         rig.world.seed_all(&rig.config).await?;
+        let lost = jackin_core::GatewayName::parse("lost")?;
+        let entry = rig
+            .config
+            .gateways()
+            .next()
+            .map(|(_, entry)| entry.clone())
+            .ok_or("the rig has no gateway")?;
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::AddGateway {
+                name: lost.clone(),
+                entry,
+            }])
+            .await?;
         let mut console = ConsoleRig::builder(&rig.world)
             .gateway(
-                jackin_core::GatewayName::parse("lost")?,
+                lost,
                 GatewayState::Failed(GatewayError::Unreachable {
                     endpoint: "10.0.0.9:8080".to_owned(),
                     message: "connection refused".to_owned(),

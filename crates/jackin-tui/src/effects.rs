@@ -522,13 +522,13 @@ impl Inputs {
             .ok_or_else(|| Refused::Text(id.to_string()))?;
         let config = self.config.load().await?;
         let workspace = config.require_workspace(&name)?;
-        let session = match self.sessions.default_access() {
-            Access::Up(session) => *session,
-            Access::Down { error, .. } => return Err(Refused::Text(text(&*error))),
-            Access::NotChosen => return Err(ConfigError::NoGateway.into()),
+        let (gateway, session) = match self.sessions.default_target() {
+            Some((gateway, Access::Up(session))) => (gateway, *session),
+            Some((_, Access::Down { error, .. })) => return Err(Refused::Text(text(&*error))),
+            Some((_, Access::NotChosen)) | None => return Err(ConfigError::NoGateway.into()),
         };
         let request = BuildRequest {
-            gateway: self.sessions.default_name(),
+            gateway: Some(&gateway),
             role: None,
             path: &workspace.path,
             rebuild: Rebuild::No,

@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use jackin_core::{Config, ConfigError, GatewayName, HostPath};
+use jackin_core::HostPath;
 use jackin_tui::{
     ConsoleDeps, ConsoleExit, GatewaySessions, HostClipboard, SessionSet, SystemWall, system_theme,
 };
@@ -15,20 +15,8 @@ use crate::app::App;
 use crate::error::CommandError;
 use crate::system::{console_limits, engine_socket, home};
 
-fn default_gateway(
-    config: &Config,
-    requested: Option<&GatewayName>,
-) -> Result<Option<GatewayName>, CommandError> {
-    match config.resolve_gateway(requested) {
-        Ok((name, _)) => Ok(Some(name.clone())),
-        Err(error @ ConfigError::UnknownGateway(_)) => Err(error.into()),
-        Err(_) => Ok(None),
-    }
-}
-
 pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
     let config = app.store.load().await?;
-    let default = default_gateway(&config, app.gateway.as_ref())?;
     let limits = console_limits();
     let connect = Arc::new(GatewaySessions::new(
         Arc::clone(&app.deps.connect),
@@ -36,12 +24,12 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
     ));
     let sessions = SessionSet::connect(
         &config,
-        default,
+        app.gateway.clone(),
         connect.as_ref(),
         limits.connect_deadline,
         &app.cancel,
     )
-    .await;
+    .await?;
     let usage = HostUsage::new(UsageDeps {
         clock: Arc::clone(&app.deps.host.clock),
         fs: Arc::clone(&app.deps.host.fs),

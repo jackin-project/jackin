@@ -165,11 +165,11 @@ async fn connect_cuts_the_silent_gateway() -> TestResult {
         DEADLINE,
         &CancellationToken::new(),
     )
-    .await;
+    .await?;
     assert_eq!(started.elapsed(), DEADLINE);
     assert!(sessions.get(&default).is_some());
     assert!(sessions.get(&GatewayName::parse("refuses")?).is_none());
     assert!(sessions.get(&GatewayName::parse("hangs")?).is_none());
-    assert_eq!(sessions.default_name(), Some(&default));
+    assert_eq!(sessions.default_name(), Some(default));
     Ok(())
 }
