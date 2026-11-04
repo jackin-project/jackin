@@ -527,8 +527,9 @@ impl Inputs {
             Access::Down { error, .. } => return Err(Refused::Text(text(&*error))),
             Access::NotChosen => return Err(ConfigError::NoGateway.into()),
         };
+        let gateway = self.sessions.default_name();
         let request = BuildRequest {
-            gateway: self.sessions.default_name(),
+            gateway: gateway.as_ref(),
             role: None,
             path: &workspace.path,
             rebuild: Rebuild::No,

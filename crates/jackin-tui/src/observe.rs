@@ -173,6 +173,14 @@ impl Inputs {
 
     pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
         let config = self.config.load().await?;
+        self.sessions
+            .reconcile(
+                &config,
+                self.connect.as_ref(),
+                self.limits.connect_deadline,
+                &self.cancel,
+            )
+            .await;
         let fleet = read_fleet(&self.sessions, &config, self.limits, &self.work).await;
         Ok(self.observation(&config, fleet).await)
     }
@@ -229,7 +237,7 @@ impl Inputs {
         let session = self
             .sessions
             .default_name()
-            .and_then(|name| self.sessions.get(name))
+            .and_then(|name| self.sessions.get(&name))
             .or_else(|| {
                 self.sessions
                     .reached()
@@ -294,7 +302,8 @@ impl Inputs {
             let checked = doctor(&input, &self.cancel).await;
             doctor::report(
                 &checked,
-                name.filter(|_| !matches!(access, Access::NotChosen)),
+                name.as_ref()
+                    .filter(|_| !matches!(access, Access::NotChosen)),
                 self.wall.epoch_millis().div_euclid(1000),
             )
         };

@@ -415,7 +415,7 @@ impl Run {
         let (config, name, workspace) = resolve(&inputs, saved.clone(), &self.wanted.place)
             .await
             .map_err(|error| Stop::at(Stage::Image, &error))?;
-        let Some(gateway) = inputs.sessions.default_name().cloned() else {
+        let Some(gateway) = inputs.sessions.default_name() else {
             let error = saved
                 .resolve_gateway(None)
                 .err()

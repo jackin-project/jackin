@@ -124,9 +124,27 @@ pub(crate) enum Home {
     Ready(Box<Gateways>),
 }
 
+async fn dial(
+    name: &GatewayName,
+    entry: &GatewayEntry,
+    connector: &dyn SessionConnector,
+    deadline: Duration,
+    cancel: &CancellationToken,
+) -> (GatewayName, GatewayState) {
+    let state = match within(deadline, connector.connect(name, entry, cancel)).await {
+        Some(Ok(session)) => GatewayState::Connected(Box::new(session)),
+        Some(Err(error)) => GatewayState::Failed(error),
+        None => GatewayState::Failed(GatewayError::Unreachable {
+            endpoint: name.to_string(),
+            message: TimedOut(Waited(deadline)).to_string(),
+        }),
+    };
+    (name.clone(), state)
+}
+
 #[derive(Debug)]
 pub struct SessionSet {
-    default: Option<GatewayName>,
+    default: Mutex<Option<GatewayName>>,
     slots: Mutex<BTreeMap<GatewayName, Slot>>,
 }
 
@@ -140,7 +158,7 @@ impl SessionSet {
         entries: BTreeMap<GatewayName, GatewayState>,
     ) -> SessionSet {
         SessionSet {
-            default,
+            default: Mutex::new(default),
             slots: Mutex::new(
                 entries
                     .into_iter()
@@ -157,18 +175,47 @@ impl SessionSet {
         deadline: Duration,
         cancel: &CancellationToken,
     ) -> SessionSet {
-        let attempts = config.gateways().map(|(name, entry)| async move {
-            let state = match within(deadline, connector.connect(name, entry, cancel)).await {
-                Some(Ok(session)) => GatewayState::Connected(Box::new(session)),
-                Some(Err(error)) => GatewayState::Failed(error),
-                None => GatewayState::Failed(GatewayError::Unreachable {
-                    endpoint: name.to_string(),
-                    message: TimedOut(Waited(deadline)).to_string(),
-                }),
-            };
-            (name.clone(), state)
-        });
+        let attempts = config
+            .gateways()
+            .map(|(name, entry)| dial(name, entry, connector, deadline, cancel));
         SessionSet::new(default, join_all(attempts).await.into_iter().collect())
+    }
+
+    pub(crate) async fn reconcile(
+        &self,
+        config: &Config,
+        connector: &dyn SessionConnector,
+        deadline: Duration,
+        cancel: &CancellationToken,
+    ) {
+        let missing: Vec<(&GatewayName, &GatewayEntry)> = {
+            let mut slots = locked(&self.slots);
+            slots.retain(|name, _| config.gateway(name).is_some());
+            config
+                .gateways()
+                .filter(|(name, _)| !slots.contains_key(*name))
+                .collect()
+        };
+        let dialed = join_all(
+            missing
+                .into_iter()
+                .map(|(name, entry)| dial(name, entry, connector, deadline, cancel)),
+        )
+        .await;
+        let mut slots = locked(&self.slots);
+        for (name, state) in dialed {
+            slots.entry(name).or_insert_with(|| Slot::from(state));
+        }
+        let mut default = locked(&self.default);
+        if default
+            .as_ref()
+            .is_none_or(|name| config.gateway(name).is_none())
+        {
+            *default = config
+                .resolve_gateway(None)
+                .ok()
+                .map(|(name, _)| name.clone());
+        }
     }
 
     pub fn get(&self, name: &GatewayName) -> Option<Session> {
@@ -178,14 +225,13 @@ impl SessionSet {
         }
     }
 
-    pub fn default_name(&self) -> Option<&GatewayName> {
-        self.default.as_ref()
+    pub fn default_name(&self) -> Option<GatewayName> {
+        locked(&self.default).clone()
     }
 
     pub(crate) fn default_access(&self) -> Access {
-        self.default
-            .as_ref()
-            .map_or(Access::NotChosen, |name| self.access(name))
+        self.default_name()
+            .map_or(Access::NotChosen, |name| self.access(&name))
     }
 
     pub(crate) fn reached(&self) -> Vec<(GatewayName, Reached)> {
@@ -207,12 +253,12 @@ impl SessionSet {
         connector: &dyn SessionConnector,
         cancel: &CancellationToken,
     ) -> Home {
+        let Some(default) = self.default_name() else {
+            return Home::NotChosen;
+        };
         let (home, known) = {
             let slots = locked(&self.slots);
-            let Some(default) = &self.default else {
-                return Home::NotChosen;
-            };
-            let home = match slots.get(default) {
+            let home = match slots.get(&default) {
                 None => return Home::NotChosen,
                 Some(Slot::Down(error)) => return Home::Down(Arc::clone(error)),
                 Some(Slot::Up(session)) => Session::clone(session),
@@ -239,10 +285,7 @@ impl SessionSet {
             )
         };
         let mut peers = Vec::new();
-        for (name, entry) in config
-            .gateways()
-            .filter(|(name, _)| Some(*name) != self.default.as_ref())
-        {
+        for (name, entry) in config.gateways().filter(|(name, _)| **name != default) {
             peers.push(match known.get(name) {
                 Some(Reached::Up(session)) => Ok(Session::clone(session)),
                 Some(Reached::Down(error)) => Err(unreachable(name, error)),

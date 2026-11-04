@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_console::domain::instance::InstanceStatus;
-use jackin_core::{GatewayName, OpenShellWorkspace};
+use jackin_core::{ConfigEdit, GatewayName, OpenShellWorkspace};
 use jackin_openshell::{Gateway, GatewayError, GatewayOp, PowerAction};
 use jackin_testkit::{
     ConsoleRig, FakeGateway, Fault, Rig, TestResult, Trigger, guard, session_over,
@@ -47,6 +47,23 @@ fn second_gateway(
     Ok((name, gateway))
 }
 
+async fn configure(rig: &Rig, name: &GatewayName) -> TestResult {
+    let entry = rig
+        .config
+        .gateways()
+        .next()
+        .map(|(_, entry)| entry.clone())
+        .ok_or("the rig has no gateway")?;
+    rig.world
+        .config
+        .edit(vec![ConfigEdit::AddGateway {
+            name: name.clone(),
+            entry,
+        }])
+        .await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn slow_gateway_keeps_the_fast_listing() -> TestResult {
     guard(async {
@@ -54,6 +71,7 @@ async fn slow_gateway_keeps_the_fast_listing() -> TestResult {
         rig.launch(1).await?;
         rig.world.seed_all(&rig.config).await?;
         let (name, slow) = second_gateway("slow-gateway")?;
+        configure(&rig, &name).await?;
         slow.inject(Fault::HoldAt {
             trigger: Trigger::Op(GatewayOp::Find),
         });
@@ -205,6 +223,7 @@ async fn with_second_gateway(
     rig.launch(1).await?;
     rig.world.seed_all(&rig.config).await?;
     let (name, second) = second_gateway("second-gateway")?;
+    configure(&rig, &name).await?;
     if failing_at_start {
         second.inject(Fault::FailNext {
             op: GatewayOp::Find,

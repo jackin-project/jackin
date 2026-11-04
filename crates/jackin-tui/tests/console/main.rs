@@ -4,6 +4,7 @@
 mod accounts;
 mod allowed_roles;
 mod controls;
+mod default_gateway;
 mod env_source;
 mod fixed;
 mod github;
