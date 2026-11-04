@@ -136,6 +136,7 @@ pub(super) struct Registry {
     pub(super) host_home: Option<PathBuf>,
     pub(super) host_edits: Vec<(UploadKind, HostEdit)>,
     pub(super) put_fails_after_write: Option<GatewayError>,
+    pub(super) delete_fails_after_write: Option<GatewayError>,
     pub(super) calls: HashMap<GatewayOp, u32>,
 }
 
@@ -167,6 +168,7 @@ impl Registry {
             host_home: None,
             host_edits: Vec::new(),
             put_fails_after_write: None,
+            delete_fails_after_write: None,
             calls: HashMap::new(),
         }
     }

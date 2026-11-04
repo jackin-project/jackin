@@ -371,16 +371,17 @@ async fn crash_case(fault: Fault, existing: bool) -> TestResult {
         .await
         .err()
         .ok_or("crash")?;
-    assert!(
-        matches!(
+    let expected = match fault {
+        Fault::SyncDir => matches!(error, ConfigError::Fs(FsError::Unsynced { .. })),
+        _ => matches!(
             error,
             ConfigError::Fs(FsError::Io {
                 kind: ErrorKind::StorageFull,
                 ..
             })
         ),
-        "{fault:?} {existing}: {error:?}"
-    );
+    };
+    assert!(expected, "{fault:?} {existing}: {error:?}");
     let loaded = fresh.load().await?;
     if fault == Fault::SyncDir {
         assert!(loaded == old || loaded == with_new, "{fault:?} {existing}");

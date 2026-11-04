@@ -159,6 +159,9 @@ pub enum Fault {
     PutProviderFailsAfterWrite {
         error: GatewayError,
     },
+    DeleteProviderFailsAfterWrite {
+        error: GatewayError,
+    },
 }
 
 fn protocol(message: impl ToString) -> GatewayError {
@@ -210,6 +213,9 @@ impl FakeGateway {
             Fault::HoldAt { trigger } => registry.holds.push(Hold::new(trigger)),
             Fault::PutProviderFailsAfterWrite { error } => {
                 registry.put_fails_after_write = Some(error);
+            }
+            Fault::DeleteProviderFailsAfterWrite { error } => {
+                registry.delete_fails_after_write = Some(error);
             }
         }
     }
@@ -680,7 +686,10 @@ impl Gateway for FakeGateway {
             });
         }
         registry.providers.remove(name);
-        Ok(())
+        match registry.delete_fails_after_write.take() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError> {

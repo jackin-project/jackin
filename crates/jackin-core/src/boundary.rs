@@ -387,6 +387,8 @@ pub enum FsError {
     WrongLock { lock: HostPath, target: HostPath },
     #[error("refusing to replace the symbolic link {0}")]
     SymlinkTarget(HostPath),
+    #[error("{path} was replaced, but syncing its directory failed: {}", plain(.message))]
+    Unsynced { path: HostPath, message: String },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Error)]
