@@ -93,38 +93,42 @@ async fn a_failed_write_surfaces_as_a_failure_with_the_old_bytes_intact() -> Tes
 }
 
 #[tokio::test]
-async fn a_gateway_removal_that_committed_before_its_directory_sync_failed_still_warns()
+async fn a_gateway_removal_warns_about_the_left_behind_providers_only_when_it_committed()
 -> TestResult {
     guard(async {
-        let world = World::builder().build()?;
-        let memory = Arc::new(MemFs::new());
-        let harness = Harness::new(&world).fs(Arc::<MemFs>::clone(&memory));
-        let path = harness.config_path.clone();
-        let dir = path.as_path().parent().ok_or("no parent")?;
-        memory.create_dir_all(&jackin_core::HostPath::parse(dir)?).await?;
-        let text = format!(
-            "{GATEWAY_CONFIG}\n[gateways.second]\nopenshell_workspace = \"default\"\nbuilder = \"b\"\nplatform = \"linux/arm64\"\n"
-        );
-        memory.write_new(&path, text.as_bytes(), FileMode(0o600)).await?;
-        memory.fail_at(
-            FsOp::SyncDir,
-            1,
-            FsError::Io {
-                path: path.clone(),
-                kind: std::io::ErrorKind::PermissionDenied,
-                message: "sync refused".to_owned(),
-            },
-        );
-        let ran = harness
-            .run(&["gateway", "rm", "second", "--offline"])
-            .await?;
-        failed(
-            &ran,
-            ExitClass::Failure,
-            &["sync refused", "warning: gateway second", "OpenShell providers"],
-        )?;
-        let stored = memory.read_string(&path).ok_or("no config")?;
-        assert!(!stored.contains("gateways.second"), "{stored}");
+        for (op, committed) in [(FsOp::SyncDir, true), (FsOp::Rename, false)] {
+            let world = World::builder().build()?;
+            let memory = Arc::new(MemFs::new());
+            let harness = Harness::new(&world).fs(Arc::<MemFs>::clone(&memory));
+            let path = harness.config_path.clone();
+            let dir = path.as_path().parent().ok_or("no parent")?;
+            memory.create_dir_all(&jackin_core::HostPath::parse(dir)?).await?;
+            let text = format!(
+                "{GATEWAY_CONFIG}\n[gateways.second]\nopenshell_workspace = \"default\"\nbuilder = \"b\"\nplatform = \"linux/arm64\"\n"
+            );
+            memory.write_new(&path, text.as_bytes(), FileMode(0o600)).await?;
+            memory.fail_at(
+                op,
+                1,
+                FsError::Io {
+                    path: path.clone(),
+                    kind: std::io::ErrorKind::PermissionDenied,
+                    message: "refused".to_owned(),
+                },
+            );
+            let ran = harness
+                .run(&["gateway", "rm", "second", "--offline"])
+                .await?;
+            failed(&ran, ExitClass::Failure, &["refused"])?;
+            assert_eq!(
+                ran.stderr.contains("warning: gateway second"),
+                committed,
+                "{}",
+                ran.stderr
+            );
+            let stored = memory.read_string(&path).ok_or("no config")?;
+            assert_eq!(!stored.contains("gateways.second"), committed, "{stored}");
+        }
         Ok(())
     })
     .await
