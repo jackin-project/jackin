@@ -640,7 +640,7 @@ P11.1 and P11.2 run in parallel.
 - **Scope:** `README.md`, `CONTRIBUTING.md`, `COMMITS.md`, `docs/content/`.
 - **Steps:** Write the install guide, the gateway how-to from `rewrite/drafts/gateway.md`, the role author guide, the CLI reference, and the console guide. Mark ADR-005, ADR-007, and ADR-011 as superseded by DESIGN.md.
 - **Proof:** the docs build in G-FULL passes. No page mentions a Docker or Apple runtime for agents.
-- [ ] P12.1 done
+- [x] P12.1 done. Proof: install guide, gateway how-to (with the 0.1.7 upgrade section), role author guide, generated CLI reference, console guide from the P9.5 live captures, README, CONTRIBUTING, COMMITS; ADR-005, ADR-007, ADR-011 marked superseded; the landing page, diagrams, og image and brand page describe jackin on OpenShell; the stale docs/PULL_REQUEST_TEMPLATE.md is deleted; G-FULL docs step exit 0 (99 static routes), docs bun test 19 pass, `rg -i -w 'dind|bollard' docs/src` prints nothing.
 
 ### P12.2 Rewrite the role documents and the project note
 
