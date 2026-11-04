@@ -385,7 +385,7 @@ pub enum FsError {
     LockHeld(HostPath),
     #[error("the lock {lock} does not guard {target}")]
     WrongLock { lock: HostPath, target: HostPath },
-    #[error("refusing to replace the symbolic link {0}")]
+    #[error("refusing the symbolic link {0}")]
     SymlinkTarget(HostPath),
 }
 

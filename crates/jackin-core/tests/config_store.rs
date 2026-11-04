@@ -216,11 +216,14 @@ async fn a_failing_edit_or_a_corrupt_file_leaves_the_file_untouched_and_the_lock
     assert_eq!(label(&error), "reference:gateway:ghost");
     assert!(!fresh.as_path().exists());
 
+    let limit = 1 << 20;
+    let oversized = format!("#{}", "x".repeat(limit));
     for (bytes, expected) in [
-        ("bogus = 1\n", "unknown:bogus"),
-        ("[gateways.g\n", "syntax@1"),
+        ("bogus = 1\n".to_owned(), "unknown:bogus"),
+        ("[gateways.g\n".to_owned(), "syntax@1"),
+        (oversized, "fs"),
     ] {
-        std::fs::write(path.as_path(), bytes)?;
+        std::fs::write(path.as_path(), &bytes)?;
         let loaded = store.load().await.err().ok_or("load")?;
         let edited = edit_settled(&store, vec![role("x")?])
             .await?
@@ -230,6 +233,24 @@ async fn a_failing_edit_or_a_corrupt_file_leaves_the_file_untouched_and_the_lock
         assert_eq!(label(&edited), expected);
         assert_eq!(std::fs::read(path.as_path())?, bytes.as_bytes());
     }
+    std::fs::write(path.as_path(), format!("#{}", "x".repeat(limit - 1)))?;
+    assert_eq!(store.load().await?, Config::empty());
+
+    std::fs::remove_file(path.as_path())?;
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(path.as_path())
+            .status()?
+            .success()
+    );
+    let loaded = settle(tokio::spawn({
+        let store = store.clone();
+        async move { store.load().await }
+    }))
+    .await?;
+    assert_eq!(label(&loaded.err().ok_or("fifo load")?), "fs");
+    let edited = edit_settled(&store, vec![role("x")?]).await?;
+    assert_eq!(label(&edited.err().ok_or("fifo edit")?), "fs");
     Ok(())
 }
 
@@ -419,18 +440,7 @@ struct GateFs {
 #[async_trait]
 impl FileSystem for GateFs {
     async fn read(&self, p: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
-        let parked = if *p == self.target {
-            self.reads.fetch_add(1, Ordering::SeqCst);
-            self.gate.lock().map_err(|_poisoned| gate_error(p))?.take()
-        } else {
-            None
-        };
-        let bytes = self.inner.read(p).await?;
-        if let Some((entered, release)) = parked {
-            entered.send(()).map_err(|()| gate_error(p))?;
-            release.await.map_err(|_closed| gate_error(p))?;
-        }
-        Ok(bytes)
+        self.inner.read(p).await
     }
     async fn stat(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
         self.inner.stat(p).await
@@ -475,7 +485,22 @@ impl FileSystem for GateFs {
         f: &RepoPath,
         max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        self.inner.read_regular(r, f, max_bytes).await
+        let target = &self.target;
+        let parked = if r.as_path().join(f.as_str()) == target.as_path() {
+            self.reads.fetch_add(1, Ordering::SeqCst);
+            self.gate
+                .lock()
+                .map_err(|_poisoned| gate_error(target))?
+                .take()
+        } else {
+            None
+        };
+        let read = self.inner.read_regular(r, f, max_bytes).await?;
+        if let Some((entered, release)) = parked {
+            entered.send(()).map_err(|()| gate_error(target))?;
+            release.await.map_err(|_closed| gate_error(target))?;
+        }
+        Ok(read)
     }
     async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
         self.locks.fetch_add(1, Ordering::SeqCst);
