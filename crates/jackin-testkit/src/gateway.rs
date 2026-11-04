@@ -220,6 +220,10 @@ impl FakeGateway {
         released
     }
 
+    pub fn calls(&self, op: GatewayOp) -> u32 {
+        self.registry().calls.get(&op).copied().unwrap_or(0)
+    }
+
     pub fn held(&self) -> Vec<Trigger> {
         self.registry().held()
     }
@@ -773,6 +777,7 @@ impl Gateway for FakeGateway {
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Detail, None, None).await?;
         let cell = self.cell(GatewayOp::Detail, name)?;
         let view = observed(&cell);
         let (spec, ready, live) = {

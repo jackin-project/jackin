@@ -1,10 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use futures::future::join_all;
-use jackin_core::{Config, GatewayName, Phase, SandboxSummary, SupervisorReading};
-use jackin_session::{Session, WorkState};
+use std::collections::BTreeMap;
+use std::fmt;
+use std::future::Future;
+use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
+use futures::future::join_all;
+use jackin_core::{
+    Config, GatewayName, Phase, SandboxName, SandboxSummary, SupervisorReading, SupervisorState,
+    Timestamp,
+};
+use jackin_session::{Session, WorkState};
+use tokio::sync::Semaphore;
+
+use crate::console::ConsoleLimits;
 use crate::sessions::{GatewayState, SessionSet};
 
 #[derive(Clone, Debug)]
@@ -38,18 +49,91 @@ impl Fleet {
     }
 }
 
-pub async fn read_fleet(sessions: &SessionSet, config: &Config) -> Fleet {
+#[derive(Debug, Default)]
+pub struct WorkCache {
+    entries: Mutex<BTreeMap<(GatewayName, SandboxName), (WorkKey, WorkState)>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WorkKey {
+    phase: Phase,
+    created_at: Option<Timestamp>,
+    supervisor: Option<SupervisorReading>,
+}
+
+impl WorkCache {
+    fn get(&self, at: &(GatewayName, SandboxName), key: &WorkKey) -> Option<WorkState> {
+        let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+        entries
+            .get(at)
+            .filter(|(cached, _)| cached == key)
+            .map(|(_, state)| state.clone())
+    }
+
+    fn put(&self, at: (GatewayName, SandboxName), key: WorkKey, state: WorkState) {
+        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+        entries.insert(at, (key, state));
+    }
+
+    fn keep_seen(&self, fleet: &Fleet) {
+        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+        entries.retain(|(gateway, sandbox), _| {
+            fleet.failed().any(|g| g.name == *gateway)
+                || fleet
+                    .sandboxes
+                    .iter()
+                    .any(|seen| seen.gateway == *gateway && seen.summary.name == *sandbox)
+        });
+    }
+}
+
+struct TimedOut(Duration);
+
+impl fmt::Display for TimedOut {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "no answer within {:?}", self.0)
+    }
+}
+
+async fn within<T>(deadline: Duration, work: impl Future<Output = T>) -> Option<T> {
+    tokio::time::timeout(deadline, work).await.ok()
+}
+
+struct Inspected {
+    summary: SandboxSummary,
+    supervisor: Option<SupervisorReading>,
+}
+
+impl Inspected {
+    fn needs_work(&self) -> bool {
+        self.summary.phase == Phase::Ready
+            && !matches!(
+                self.supervisor,
+                Some(SupervisorReading::Reported(SupervisorState::Running { .. }))
+            )
+    }
+
+    fn work_key(&self) -> WorkKey {
+        WorkKey {
+            phase: self.summary.phase,
+            created_at: self.summary.created_at,
+            supervisor: self.supervisor.clone(),
+        }
+    }
+}
+
+pub async fn read_fleet(
+    sessions: &SessionSet,
+    config: &Config,
+    limits: ConsoleLimits,
+    cache: &WorkCache,
+) -> Fleet {
     let readings = join_all(sessions.entries().map(|(name, state)| async move {
         match state {
-            GatewayState::Failed(error) => (
-                GatewayReading {
-                    name: name.clone(),
-                    failure: Some(error.to_string()),
-                },
-                Vec::new(),
-                0,
-            ),
-            GatewayState::Connected(session) => read_gateway(name, session, config).await,
+            GatewayState::Failed(error) => unreadable(name, error.to_string()),
+            GatewayState::Connected(session) => {
+                read_gateway(name, session, config, limits, cache).await
+            }
         }
     }))
     .await;
@@ -59,35 +143,70 @@ pub async fn read_fleet(sessions: &SessionSet, config: &Config) -> Fleet {
         fleet.sandboxes.extend(sandboxes);
         fleet.unreadable += unreadable;
     }
+    cache.keep_seen(&fleet);
     fleet
+}
+
+fn unreadable(
+    name: &GatewayName,
+    failure: String,
+) -> (GatewayReading, Vec<ObservedSandbox>, usize) {
+    (
+        GatewayReading {
+            name: name.clone(),
+            failure: Some(failure),
+        },
+        Vec::new(),
+        0,
+    )
 }
 
 async fn read_gateway(
     name: &GatewayName,
     session: &Session,
     config: &Config,
+    limits: ConsoleLimits,
+    cache: &WorkCache,
 ) -> (GatewayReading, Vec<ObservedSandbox>, usize) {
-    let listing = match session.list().await {
-        Ok(listing) => listing,
-        Err(error) => {
-            return (
-                GatewayReading {
-                    name: name.clone(),
-                    failure: Some(error.to_string()),
-                },
-                Vec::new(),
-                0,
-            );
-        }
+    let deadline = limits.connect_deadline;
+    let listing = match within(deadline, session.list()).await {
+        Some(Ok(listing)) => listing,
+        Some(Err(error)) => return unreadable(name, error.to_string()),
+        None => return unreadable(name, TimedOut(deadline).to_string()),
     };
     let unreadable = listing.unreadable.len();
-    let sandboxes = join_all(
+    let inspected = join_all(
         listing
             .sandboxes
             .into_iter()
-            .map(|summary| observe(name, session, config, summary)),
+            .map(|summary| inspect(session, summary, deadline)),
     )
     .await;
+    let slots = Semaphore::new(limits.work_reads.get());
+    let works = join_all(
+        inspected
+            .iter()
+            .map(|sandbox| read_work(name, session, config, sandbox, deadline, (cache, &slots))),
+    )
+    .await;
+    let sandboxes = inspected
+        .into_iter()
+        .zip(works)
+        .map(
+            |(
+                Inspected {
+                    summary,
+                    supervisor,
+                },
+                work,
+            )| ObservedSandbox {
+                gateway: name.clone(),
+                summary,
+                supervisor,
+                work,
+            },
+        )
+        .collect();
     (
         GatewayReading {
             name: name.clone(),
@@ -98,37 +217,41 @@ async fn read_gateway(
     )
 }
 
-async fn observe(
-    gateway: &GatewayName,
-    session: &Session,
-    config: &Config,
-    summary: SandboxSummary,
-) -> ObservedSandbox {
-    let ready = summary.phase == Phase::Ready;
-    let supervisor = if ready {
-        session
-            .inspect(&summary.name)
+async fn inspect(session: &Session, summary: SandboxSummary, deadline: Duration) -> Inspected {
+    let supervisor = if summary.phase == Phase::Ready {
+        within(deadline, session.inspect(&summary.name))
             .await
-            .ok()
+            .and_then(Result::ok)
             .map(|view| view.supervisor)
     } else {
         None
     };
-    let running = matches!(
-        supervisor,
-        Some(SupervisorReading::Reported(
-            jackin_core::SupervisorState::Running { .. }
-        ))
-    );
-    let work = if ready && !running {
-        Some(session.work_state(config, &summary.name).await)
-    } else {
-        None
-    };
-    ObservedSandbox {
-        gateway: gateway.clone(),
+    Inspected {
         summary,
         supervisor,
-        work,
     }
+}
+
+async fn read_work(
+    gateway: &GatewayName,
+    session: &Session,
+    config: &Config,
+    sandbox: &Inspected,
+    deadline: Duration,
+    (cache, slots): (&WorkCache, &Semaphore),
+) -> Option<WorkState> {
+    if !sandbox.needs_work() {
+        return None;
+    }
+    let at = (gateway.clone(), sandbox.summary.name.clone());
+    let key = sandbox.work_key();
+    if let Some(state) = cache.get(&at, &key) {
+        return Some(state);
+    }
+    let _slot = slots.acquire().await.ok()?;
+    let state = within(deadline, session.work_state(config, &sandbox.summary.name)).await?;
+    if !matches!(state, WorkState::Unknown(_)) {
+        cache.put(at, key, state.clone());
+    }
+    Some(state)
 }

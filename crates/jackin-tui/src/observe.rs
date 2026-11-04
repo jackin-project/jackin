@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
 
 use futures::future::join_all;
 use jackin_console::world::Snapshot;
@@ -15,7 +14,8 @@ use jackin_core::{
 use jackin_session::RoleCatalog;
 use tokio_util::sync::CancellationToken;
 
-use crate::fleet::{Fleet, GatewayReading, read_fleet};
+use crate::console::ConsoleLimits;
+use crate::fleet::{WorkCache, read_fleet};
 use crate::ids::IdTable;
 use crate::project::{
     Facts, ProjectInput, RoleDocError, RoleDocs, manifest_doc, project, unmapped_accounts,
@@ -59,14 +59,6 @@ impl fmt::Display for Notes<'_> {
     }
 }
 
-struct TimedOut(Duration);
-
-impl fmt::Display for TimedOut {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "no answer within {} s", self.0.as_secs())
-    }
-}
-
 #[derive(Debug)]
 pub(crate) struct Observation {
     pub(crate) snapshot: Snapshot,
@@ -96,7 +88,8 @@ pub(crate) struct Inputs {
     pub(crate) version: String,
     pub(crate) home: String,
     pub(crate) config_path: String,
-    pub(crate) deadline: Duration,
+    pub(crate) limits: ConsoleLimits,
+    work: WorkCache,
     ids: Mutex<IdTable>,
     docs: Mutex<DocCache>,
 }
@@ -120,7 +113,7 @@ pub(crate) struct InputsParts {
     pub version: String,
     pub home: String,
     pub config_path: String,
-    pub deadline: Duration,
+    pub limits: ConsoleLimits,
 }
 
 impl Inputs {
@@ -133,7 +126,7 @@ impl Inputs {
             version,
             home,
             config_path,
-            deadline,
+            limits,
         } = parts;
         Inputs {
             config,
@@ -143,7 +136,8 @@ impl Inputs {
             version,
             home,
             config_path,
-            deadline,
+            limits,
+            work: WorkCache::default(),
             ids: Mutex::new(IdTable::new()),
             docs: Mutex::new(DocCache::new()),
         }
@@ -151,22 +145,7 @@ impl Inputs {
 
     pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
         let config = self.config.load().await?;
-        let fleet =
-            match tokio::time::timeout(self.deadline, read_fleet(&self.sessions, &config)).await {
-                Ok(fleet) => fleet,
-                Err(_) => Fleet {
-                    sandboxes: Vec::new(),
-                    unreadable: 0,
-                    gateways: self
-                        .sessions
-                        .entries()
-                        .map(|(name, _)| GatewayReading {
-                            name: name.clone(),
-                            failure: Some(TimedOut(self.deadline).to_string()),
-                        })
-                        .collect(),
-                },
-            };
+        let fleet = read_fleet(&self.sessions, &config, self.limits, &self.work).await;
         let docs = self.role_docs(&config).await;
         let facts = Facts {
             version: self.version.clone(),

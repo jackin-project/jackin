@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -29,6 +30,7 @@ const NO_MOTION: &str = "JACKIN_NO_MOTION";
 #[derive(Clone, Copy, Debug)]
 pub struct ConsoleLimits {
     pub connect_deadline: Duration,
+    pub work_reads: NonZeroUsize,
 }
 
 #[derive(Debug)]
@@ -134,7 +136,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         version,
         home: home.as_path().display().to_string(),
         config_path,
-        deadline: limits.connect_deadline,
+        limits,
     }));
     let first = inputs.observe().await?;
     let (sender, receiver) = external_channel();
