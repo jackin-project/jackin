@@ -692,3 +692,27 @@ repositories:
     line: 1922
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
+  - path: rewrite/reconciliation/P13.3.md
+    fingerprint: '8965963314725187051'
+    rule_id: betterleaks.generic-credential-uri
+    line: 151
+    first_seen_at: 2026-11-04T18:55:00+00:00
+    last_updated_at: 2026-11-04T18:55:00+00:00
+  - path: rewrite/reconciliation/P13.3.md
+    fingerprint: '12182408407750016531'
+    rule_id: betterleaks.generic-credential-uri
+    line: 151
+    first_seen_at: 2026-11-04T18:55:00+00:00
+    last_updated_at: 2026-11-04T18:55:00+00:00
+  - path: ./rewrite/reconciliation/P13.3.md
+    fingerprint: '15293903854739224969'
+    rule_id: betterleaks.generic-credential-uri
+    line: 151
+    first_seen_at: 2026-11-04T18:55:00+00:00
+    last_updated_at: 2026-11-04T18:55:00+00:00
+  - path: ./rewrite/reconciliation/P13.3.md
+    fingerprint: '14703636204504340946'
+    rule_id: betterleaks.generic-credential-uri
+    line: 151
+    first_seen_at: 2026-11-04T18:55:00+00:00
+    last_updated_at: 2026-11-04T18:55:00+00:00
