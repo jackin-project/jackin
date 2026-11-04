@@ -5,11 +5,11 @@ use std::collections::BTreeSet;
 
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
-    FileLock, GatewayEntry, GatewayName, HostPath, Provider, ProviderName,
+    FileLock, FileSystem, GatewayEntry, GatewayName, HostPath, Provider, ProviderName,
 };
 use jackin_openshell::{
-    GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
-    ProviderState,
+    Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile,
+    ProviderSpec, ProviderState,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -83,11 +83,12 @@ pub enum AccountEditError {
     Unreachable(Vec<UnreachableGateway>),
     #[error(transparent)]
     Connect(ConnectError),
-    #[error("{original}; the provider of account {account} stays on gateway {gateway}")]
+    #[error("{original}; rolling back account {account} on gateway {gateway} failed")]
     RollbackFailed {
         account: AccountName,
         gateway: GatewayName,
         original: Box<AccountEditError>,
+        #[source]
         rollback: AccountError,
     },
 }
@@ -202,7 +203,7 @@ pub struct RemovalPlan {
 #[derive(Debug)]
 struct Publish {
     account: Account,
-    renew: bool,
+    previous: Option<Account>,
 }
 
 #[derive(Debug)]
@@ -217,7 +218,11 @@ impl Effects {
     }
 
     fn needs_every_gateway(&self) -> bool {
-        !self.forget.is_empty() || self.publish.iter().any(|publish| publish.renew)
+        !self.forget.is_empty()
+            || self
+                .publish
+                .iter()
+                .any(|publish| publish.previous.is_some())
     }
 }
 
@@ -247,7 +252,7 @@ fn effects(config: &Config, edits: &[ConfigEdit]) -> Result<Effects, ConfigError
         match (before, now) {
             (before, Some(account)) => publish.push(Publish {
                 account: account.clone(),
-                renew: before.is_some(),
+                previous: before.cloned(),
             }),
             (Some(account), None) => forget.push(account.clone()),
             (None, None) => {}
@@ -342,24 +347,82 @@ impl RemovalPlan {
                 ]));
             }
         };
-        for account in &self.forget {
-            let provider = ProviderName::for_account(account.name(), Agent::Codex);
-            gateway.delete_provider(&provider).await.map_err(|source| {
-                AccountEditError::OnGateway {
-                    gateway: self.name.clone(),
-                    source,
+        let host = &self.locked.desk.host;
+        let edit = ConfigEdit::RemoveGateway(self.name.clone());
+        let mut journal = Vec::new();
+        let written = async {
+            for account in &self.forget {
+                let held = forget_held(gateway.as_ref(), account)
+                    .await
+                    .map_err(|error| on_gateway(&self.name, error))?;
+                if held {
+                    journal.push(Undo {
+                        fs: host.fs.as_ref(),
+                        gateway: gateway.as_ref(),
+                        account,
+                        action: Action::Restore,
+                    });
                 }
-            })?;
+            }
+            Ok(self.locked.desk.store.edit(vec![edit]).await?)
         }
-        let edit = ConfigEdit::RemoveGateway(self.name);
-        Ok(self.locked.desk.store.edit(vec![edit]).await?)
+        .await;
+        match written {
+            Ok(config) => Ok(config),
+            Err(original) => Err(roll_back(original, journal).await),
+        }
     }
 }
 
-fn on_gateway(session: &Session, error: AccountError) -> AccountEditError {
+#[derive(Debug)]
+enum Action {
+    Remove,
+    Restore,
+}
+
+#[derive(Debug)]
+struct Undo<'a> {
+    fs: &'a dyn FileSystem,
+    gateway: &'a dyn Gateway,
+    account: &'a Account,
+    action: Action,
+}
+
+impl Undo<'_> {
+    async fn run(&self) -> Result<(), AccountError> {
+        match self.action {
+            Action::Remove => forget_login(self.gateway, self.account).await,
+            Action::Restore => sync_login(self.fs, self.gateway, self.account)
+                .await
+                .map(drop),
+        }
+    }
+}
+
+async fn roll_back(original: AccountEditError, journal: Vec<Undo<'_>>) -> AccountEditError {
+    let mut failure = None;
+    for undo in journal.iter().rev() {
+        if let Err(rollback) = undo.run().await
+            && failure.is_none()
+        {
+            failure = Some((undo, rollback));
+        }
+    }
+    match failure {
+        None => original,
+        Some((undo, rollback)) => AccountEditError::RollbackFailed {
+            account: undo.account.name().clone(),
+            gateway: undo.gateway.name().clone(),
+            original: Box::new(original),
+            rollback,
+        },
+    }
+}
+
+fn on_gateway(gateway: &GatewayName, error: AccountError) -> AccountEditError {
     match error {
         AccountError::Gateway(source) => AccountEditError::OnGateway {
-            gateway: session.gateway_name().clone(),
+            gateway: gateway.clone(),
             source,
         },
         other => AccountEditError::Account(other),
@@ -403,75 +466,90 @@ impl GatewayPlan {
         } else {
             vec![home]
         };
-        for account in &effects.forget {
-            for session in &sessions {
-                session
-                    .forget_locked(account)
-                    .await
-                    .map_err(|error| on_gateway(session, error))?;
-            }
+        let mut journal = Vec::new();
+        let written = async {
+            forget(&sessions, &effects.forget, &mut journal).await?;
+            publish(&sessions, &effects.publish, &mut journal).await?;
+            store.edit(edits).await.map_err(AccountEditError::from)
         }
-        let mut created = Vec::new();
-        let written = match publish(&sessions, &effects.publish, &mut created).await {
-            Ok(()) => store.edit(edits).await.map_err(AccountEditError::from),
-            Err(error) => Err(error),
-        };
+        .await;
         match written {
             Ok(config) => Ok(config),
-            Err(original) => {
-                for account in created {
-                    if let Err(rollback) = home.forget_locked(account).await {
-                        return Err(AccountEditError::RollbackFailed {
-                            account: account.name().clone(),
-                            gateway: home.gateway_name().clone(),
-                            original: Box::new(original),
-                            rollback,
-                        });
-                    }
-                }
-                Err(original)
-            }
+            Err(original) => Err(roll_back(original, journal).await),
         }
     }
 }
 
-async fn publish<'a>(
-    sessions: &[&Session],
-    publish: &'a [Publish],
-    created: &mut Vec<&'a Account>,
+async fn forget<'a>(
+    sessions: &[&'a Session],
+    accounts: &'a [Account],
+    journal: &mut Vec<Undo<'a>>,
 ) -> Result<(), AccountEditError> {
-    let Some((home, peers)) = sessions.split_first() else {
-        return Ok(());
-    };
-    for entry in publish {
-        if !entry.renew {
-            created.push(&entry.account);
-        }
-        home.sync_locked(&entry.account)
-            .await
-            .map_err(|error| on_gateway(home, error))?;
-        if !entry.renew {
-            continue;
-        }
-        let provider = ProviderName::for_account(entry.account.name(), Agent::Codex);
-        for peer in peers {
-            let state = peer
-                .deps
-                .gateway
-                .provider_state(&provider)
+    for account in accounts {
+        for &session in sessions {
+            let held = forget_held(session.deps.gateway.as_ref(), account)
                 .await
-                .map_err(|error| on_gateway(peer, error.into()))?;
-            if state == ProviderState::Present {
-                peer.sync_locked(&entry.account)
-                    .await
-                    .map_err(|error| on_gateway(peer, error))?;
+                .map_err(|error| on_gateway(session.gateway_name(), error))?;
+            if held {
+                journal.push(session.undo(Action::Restore, account));
             }
         }
     }
     Ok(())
 }
 
+async fn publish<'a>(
+    sessions: &[&'a Session],
+    publish: &'a [Publish],
+    journal: &mut Vec<Undo<'a>>,
+) -> Result<(), AccountEditError> {
+    let Some((home, _)) = sessions.split_first() else {
+        return Ok(());
+    };
+    for entry in publish {
+        let Some(previous) = &entry.previous else {
+            journal.push(home.undo(Action::Remove, &entry.account));
+            home.sync_locked(&entry.account)
+                .await
+                .map_err(|error| on_gateway(home.gateway_name(), error))?;
+            continue;
+        };
+        let provider = ProviderName::for_account(entry.account.name(), Agent::Codex);
+        for (index, &session) in sessions.iter().enumerate() {
+            let state = session
+                .deps
+                .gateway
+                .provider_state(&provider)
+                .await
+                .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
+            let held = state == ProviderState::Present;
+            if !held && index > 0 {
+                continue;
+            }
+            journal.push(if held {
+                session.undo(Action::Restore, previous)
+            } else {
+                session.undo(Action::Remove, &entry.account)
+            });
+            session
+                .sync_locked(&entry.account)
+                .await
+                .map_err(|error| on_gateway(session.gateway_name(), error))?;
+        }
+    }
+    Ok(())
+}
+
 impl Session {
+    fn undo<'a>(&'a self, action: Action, account: &'a Account) -> Undo<'a> {
+        Undo {
+            fs: self.deps.host.fs.as_ref(),
+            gateway: self.deps.gateway.as_ref(),
+            account,
+            action,
+        }
+    }
+
     pub async fn sync_account(
         &self,
         account: &Account,
@@ -482,12 +560,7 @@ impl Session {
     }
 
     async fn forget_locked(&self, account: &Account) -> Result<(), AccountError> {
-        if !account.has_provider() {
-            return Ok(());
-        }
-        let provider = ProviderName::for_account(account.name(), Agent::Codex);
-        self.deps.gateway.delete_provider(&provider).await?;
-        Ok(())
+        forget_login(self.deps.gateway.as_ref(), account).await
     }
 
     pub(crate) async fn sync_if_absent(
@@ -551,42 +624,70 @@ impl Session {
     }
 
     async fn sync_locked(&self, account: &Account) -> Result<AccountSync, AccountError> {
-        if account.provider() != Provider::Codex {
-            return Ok(AccountSync::HostOnly);
-        }
-        let spec = Agent::Codex.spec();
-        let Some(stored) = account.chatgpt_login() else {
-            return Err(AccountError::Unsupported {
-                account: account.name().clone(),
-                mode: CodexAuthMode::ApiKey,
-            });
-        };
-        let login = read_chatgpt_login(self.deps.host.fs.as_ref(), stored.home).await?;
-        if login.account_id != *stored.account_id {
-            return Err(AccountError::AccountIdMismatch {
-                account: account.name().clone(),
-            });
-        }
-        let profile = ProviderProfile::parse(&spec.openshell.chatgpt_profile)?;
-        let synced = self.deps.gateway.ensure_profile(&profile).await?;
-        let name = ProviderName::for_account(account.name(), Agent::Codex);
-        self.deps
-            .gateway
-            .put_provider(&ProviderSpec {
-                name: name.clone(),
-                profile: profile.id,
-                keys: spec.openshell.keys,
-                material: ProviderMaterial::ChatgptLogin {
-                    access_token: login.access_token,
-                    refresh_token: login.refresh_token,
-                    client_id: login.client_id,
-                    chatgpt_account_id: login.account_id,
-                },
-            })
-            .await?;
-        Ok(AccountSync::ProviderReady {
-            provider: name,
-            profile: synced,
-        })
+        sync_login(
+            self.deps.host.fs.as_ref(),
+            self.deps.gateway.as_ref(),
+            account,
+        )
+        .await
     }
+}
+
+async fn forget_login(gateway: &dyn Gateway, account: &Account) -> Result<(), AccountError> {
+    if !account.has_provider() {
+        return Ok(());
+    }
+    let provider = ProviderName::for_account(account.name(), Agent::Codex);
+    gateway.delete_provider(&provider).await?;
+    Ok(())
+}
+
+async fn forget_held(gateway: &dyn Gateway, account: &Account) -> Result<bool, AccountError> {
+    let provider = ProviderName::for_account(account.name(), Agent::Codex);
+    let held = gateway.provider_state(&provider).await? == ProviderState::Present;
+    forget_login(gateway, account).await?;
+    Ok(held)
+}
+
+async fn sync_login(
+    fs: &dyn FileSystem,
+    gateway: &dyn Gateway,
+    account: &Account,
+) -> Result<AccountSync, AccountError> {
+    if account.provider() != Provider::Codex {
+        return Ok(AccountSync::HostOnly);
+    }
+    let spec = Agent::Codex.spec();
+    let Some(stored) = account.chatgpt_login() else {
+        return Err(AccountError::Unsupported {
+            account: account.name().clone(),
+            mode: CodexAuthMode::ApiKey,
+        });
+    };
+    let login = read_chatgpt_login(fs, stored.home).await?;
+    if login.account_id != *stored.account_id {
+        return Err(AccountError::AccountIdMismatch {
+            account: account.name().clone(),
+        });
+    }
+    let profile = ProviderProfile::parse(&spec.openshell.chatgpt_profile)?;
+    let synced = gateway.ensure_profile(&profile).await?;
+    let name = ProviderName::for_account(account.name(), Agent::Codex);
+    gateway
+        .put_provider(&ProviderSpec {
+            name: name.clone(),
+            profile: profile.id,
+            keys: spec.openshell.keys,
+            material: ProviderMaterial::ChatgptLogin {
+                access_token: login.access_token,
+                refresh_token: login.refresh_token,
+                client_id: login.client_id,
+                chatgpt_account_id: login.account_id,
+            },
+        })
+        .await?;
+    Ok(AccountSync::ProviderReady {
+        provider: name,
+        profile: synced,
+    })
 }

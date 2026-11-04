@@ -322,6 +322,7 @@ async fn a_refusal_on_a_peer_names_that_gateway_and_a_retry_finishes_the_removal
         assert_eq!(gateway.as_str(), "second");
         assert!(matches!(source, GatewayError::FailedPrecondition { .. }));
         assert_eq!(fleet.store.load().await?, before);
+        assert_eq!(fleet.holders()?, [true, true, false]);
 
         fleet
             .apply(
@@ -441,6 +442,148 @@ async fn an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publi
         );
         assert_eq!(fleet.holders()?, [false, false, false]);
         assert!(fleet.store.load().await?.account(&name("work")?).is_none());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_refusal_on_a_later_gateway_restores_the_providers_it_removed_and_adds_none() -> TestResult
+{
+    guard(async {
+        let fleet = fleet([true, false, true]).await?;
+        fleet.third.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: GatewayError::FailedPrecondition {
+                message: "attached to a sandbox".to_owned(),
+            },
+        });
+        let before = fleet.store.load().await?;
+
+        let refused = fleet
+            .apply(
+                &[&fleet.second, &fleet.third],
+                vec![ConfigEdit::RemoveAccountClearingBindings(name("work")?)],
+            )
+            .await;
+
+        assert!(
+            matches!(
+                &refused,
+                Err(AccountEditError::OnGateway { gateway, .. }) if gateway.as_str() == "third"
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(fleet.store.load().await?, before);
+        assert_eq!(fleet.holders()?, [true, false, true]);
+        Ok(())
+    })
+    .await
+}
+
+async fn renewed_credential(
+    fleet: &Fleet,
+) -> Result<(Home, jackin_core::CredentialSource), Box<dyn std::error::Error>> {
+    let mut rotated = login_json();
+    rotated["tokens"]["refresh_token"] = serde_json::json!(ROTATED);
+    let home = Home::new(&rotated).await?;
+    let credential = codex_account(&home.path, ACCOUNT_ID)?.credential().clone();
+    assert_ne!(&credential, fleet.account.credential());
+    Ok((home, credential))
+}
+
+fn refresh_on(gateway: &FakeGateway) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(gateway
+        .provider(&provider()?)
+        .ok_or("the gateway lost the provider")?
+        .refresh_token)
+}
+
+#[tokio::test]
+async fn a_peer_that_fails_a_renewal_leaves_every_gateway_on_the_old_material() -> TestResult {
+    guard(async {
+        let refused = || GatewayError::FailedPrecondition {
+            message: "refused".to_owned(),
+        };
+        let faults = [
+            Fault::FailAfter {
+                op: GatewayOp::Provider,
+                calls: 1,
+                error: refused(),
+            },
+            Fault::PutProviderFailsAfterWrite { error: refused() },
+        ];
+        for fault in faults {
+            let fleet = fleet([true, true, false]).await?;
+            let (_renewed_home, credential) = renewed_credential(&fleet).await?;
+            let before = fleet.store.load().await?;
+            fleet.second.inject(fault);
+
+            let failed = fleet
+                .apply(
+                    &[&fleet.second, &fleet.third],
+                    vec![ConfigEdit::SetAccountCredential {
+                        account: name("work")?,
+                        credential,
+                    }],
+                )
+                .await;
+
+            assert!(
+                matches!(
+                    &failed,
+                    Err(AccountEditError::OnGateway { gateway, .. }) if gateway.as_str() == "second"
+                ),
+                "{failed:?}"
+            );
+            assert_eq!(fleet.store.load().await?, before);
+            assert_eq!(fleet.holders()?, [true, true, false]);
+            assert_eq!(refresh_on(&fleet.world.gateway)?, REFRESH);
+            assert_eq!(refresh_on(&fleet.second)?, REFRESH);
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_restore_that_cannot_read_the_old_login_names_the_account_and_the_gateway() -> TestResult
+{
+    guard(async {
+        let fleet = fleet([true, true, false]).await?;
+        let (_renewed_home, credential) = renewed_credential(&fleet).await?;
+        tokio::fs::remove_file(fleet.home.path.as_path().join("auth.json")).await?;
+        fleet.second.inject(Fault::FailAfter {
+            op: GatewayOp::Provider,
+            calls: 1,
+            error: GatewayError::FailedPrecondition {
+                message: "refused".to_owned(),
+            },
+        });
+
+        let failed = fleet
+            .apply(
+                &[&fleet.second, &fleet.third],
+                vec![ConfigEdit::SetAccountCredential {
+                    account: name("work")?,
+                    credential,
+                }],
+            )
+            .await;
+
+        assert!(
+            matches!(
+                &failed,
+                Err(AccountEditError::RollbackFailed { account, gateway, original, .. })
+                    if account.as_str() == "work"
+                        && gateway.as_str() == "second"
+                        && matches!(
+                            &**original,
+                            AccountEditError::OnGateway { gateway, .. } if gateway.as_str() == "second"
+                        )
+            ),
+            "{failed:?}"
+        );
         Ok(())
     })
     .await
