@@ -263,8 +263,14 @@ async fn a_failed_folder_check_is_worded_by_the_vocabulary_from_the_fault() -> T
                     file: "auth.json".to_owned(),
                 },
             ),
-            (broken, invalid.clone()),
-            (apikey, invalid),
+            (broken, invalid),
+            (
+                apikey,
+                IssueReason::LoginMissing {
+                    path: "apikey".to_owned(),
+                    file: "ChatGPT login in auth.json".to_owned(),
+                },
+            ),
         ];
         for (folder, reason) in cases {
             let shown = material_row(&mut lab, &folder.display().to_string()).await?;

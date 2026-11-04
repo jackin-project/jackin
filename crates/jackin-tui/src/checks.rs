@@ -135,11 +135,14 @@ fn failure_of(source: &CredentialSource, fault: &SourceFault) -> Failure {
             action,
             login_invalid(),
         ),
-        SourceFault::NotChatgpt(_) => failure(
+        SourceFault::NotChatgpt(path) => failure(
             IssueCode::FolderWrongProvider,
             Lifecycle::Error,
             action,
-            login_invalid(),
+            IssueReason::LoginMissing {
+                path: path.to_string(),
+                file: format!("ChatGPT login in {AUTH_FILE}"),
+            },
         ),
         SourceFault::FolderMissing(path) => failure(
             IssueCode::FolderMissing,
