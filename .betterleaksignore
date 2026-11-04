@@ -446,3 +446,10 @@ c8c07a6005841df58db667cda7d8228f1c139715:crates/jackin/tests/cli/role_workspace.
 c8c07a6005841df58db667cda7d8228f1c139715:crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:251
 e33179dba95f4086b3752612f69d360c0d2f8a21:rewrite/reconciliation/P13.3.md:generic-credential-uri:151
 e33179dba95f4086b3752612f69d360c0d2f8a21:rewrite/reconciliation/P13.3.md:generic-credential-uri:162
+
+# Reason: the same fake userinfo URLs of the P13.3 C2 test and its reconciliation record, as directory-scan fingerprints (file:rule:line); not credentials
+# 4 finding(s); rules: generic-credential-uri; files: crates/jackin/tests/cli/role_workspace.rs (2), rewrite/reconciliation/P13.3.md (2)
+crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:293
+crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:295
+rewrite/reconciliation/P13.3.md:generic-credential-uri:151
+rewrite/reconciliation/P13.3.md:generic-credential-uri:162
