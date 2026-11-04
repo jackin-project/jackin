@@ -58,7 +58,8 @@ pub(crate) fn reply(effect: &Effect) -> Msg {
             role: role.clone(),
             result: Err(error),
         },
-        Effect::CheckRole { role, .. } => Msg::RoleChecked {
+        Effect::CheckRole { role, ticket, .. } => Msg::RoleChecked {
+            ticket: *ticket,
             role: role.clone(),
             result: Err(error),
         },

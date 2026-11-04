@@ -99,9 +99,9 @@ impl JackinBackend {
             Effect::LoadRole { role } => self
                 .bridge
                 .spawn(failure, async move { inputs.load_role(&role).await }),
-            Effect::CheckRole { role, doc } => self
-                .bridge
-                .spawn(failure, async move { inputs.check_role(&role, &doc).await }),
+            Effect::CheckRole { role, doc, ticket } => self.bridge.spawn(failure, async move {
+                inputs.check_role(ticket, &role, &doc).await
+            }),
             Effect::SaveRole { role, base, doc } => self.bridge.spawn(failure, async move {
                 inputs.save_role(&role, &base, &doc).await
             }),
