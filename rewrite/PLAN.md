@@ -655,13 +655,13 @@ P11.1 and P11.2 run in parallel.
 - **Owner:** `docs-researcher`. **Depends:** all tasks of P0 to P12.
 - **Steps:** Do the P8.0 steps again.
 - **Proof:** a trail row with the versions found.
-- [ ] P13.0 done
+- [x] P13.0 done. Proof: /private/tmp/claude-501/plans/P13.0-releases.md (checked 2026-11-04) and decisions rows 2026-11-08T23:30 and 2026-11-09T10:30: OpenShell 0.1.7, velnor-actions 0.1.73, Docker CLI 29.9.3, buildx 0.38.2, russh 0.65.1, toml 1.2.0, mr-boxington 1.29.2, uv 0.13.7, prek 0.5.10, mise 2026.11.0, rustup 1.29.3, jactionlint 2.4.0 landed in every repo (jackin ad7d09824, sentinel f8a254d, agent-smith e852386, architect f040d07, baseline 916de2c); reqwest 0.12 and noyalib 0.0.53 held by OpenShell 0.1.7's requirements; termpane held at its git rev until 0.1.1 is published.
 
 ### P13.1 Run the full gate
 
 - **Owner:** `verifier`. **Depends:** P13.0 and the tasks that it added.
-- **Steps:** Run G-FULL. Run `rg -l -i 'bollard|dind|capsule' --glob '!rewrite/**' --glob '!docs/content/**/adr*/**'` and verify that it prints nothing.
-- **Proof:** G-FULL passes on the head of jackin. G-ROLE passes in each role repository. The full baseline suite passes in terminal-components-baseline, and its existing baseline files have no diff against `95bbcbb`.
+- **Steps:** Run G-FULL. Run `rg -l -i 'bollard|dind' --glob '!rewrite/**' --glob '!docs/content/**/adr*/**'` and verify that it prints nothing (`capsule` is no longer forbidden: D28 makes Jackin Capsule the host multiplexer).
+- **Proof:** G-FULL passes on the head of jackin. G-ROLE passes in each role repository. The full baseline suite passes in terminal-components-baseline, and every approved baseline file that differs from `95bbcbb` is a re-take or addition recorded with its UX review in `docs/P9.3-red-green.md`.
 - [ ] P13.1 done
 
 ### P13.2 Repeat the journey from fresh resources
