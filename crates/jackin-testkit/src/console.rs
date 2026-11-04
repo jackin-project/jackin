@@ -17,8 +17,8 @@ use jackin_image::ImageEngine;
 use jackin_openshell::Gateway;
 use jackin_session::{GatewayConnector, HostPorts, Session, SessionDeps};
 use jackin_tui::{
-    Console, ConsoleDeps, ConsoleLimits, GatewaySessions, GatewayState, SessionConnector,
-    SessionSet, build_console,
+    Console, ConsoleDeps, ConsoleLimits, DefaultGateway, GatewaySessions, GatewayState,
+    SessionConnector, SessionSet, build_console,
 };
 use jackin_usage::{HostUsage, UsageDeps};
 use junie_tui::core::event::{Input, Key, Mouse, MouseKind};
@@ -116,6 +116,7 @@ pub struct ConsoleRigBuilder<'a> {
     clipboard: Arc<RecordingClipboard>,
     pane_inbox_bytes: usize,
     unchosen: bool,
+    pinned: Option<GatewayName>,
 }
 
 pub struct ConsoleRig {
@@ -183,6 +184,7 @@ impl ConsoleRig {
             clipboard: RecordingClipboard::new(true),
             pane_inbox_bytes: 1024 * 1024,
             unchosen: false,
+            pinned: None,
         }
     }
 
@@ -419,6 +421,12 @@ impl ConsoleRigBuilder<'_> {
     }
 
     #[must_use]
+    pub fn pinned(mut self, name: GatewayName) -> Self {
+        self.pinned = Some(name);
+        self
+    }
+
+    #[must_use]
     pub fn deadline(mut self, deadline: Duration) -> Self {
         self.deadline = deadline;
         self
@@ -479,10 +487,16 @@ impl ConsoleRigBuilder<'_> {
     async fn prepare(self) -> Result<Prepared, FixtureError> {
         let world = self.world;
         let config = world.config.load().await?;
-        let default = (!self.unchosen).then(|| match config.resolve_gateway(None) {
-            Ok((name, _)) => name.clone(),
-            Err(_) => world.gateway.name().clone(),
-        });
+        let default =
+            match self.pinned {
+                Some(name) => DefaultGateway::Pinned(name),
+                None => DefaultGateway::Followed((!self.unchosen).then(|| {
+                    match config.resolve_gateway(None) {
+                        Ok((name, _)) => name.clone(),
+                        Err(_) => world.gateway.name().clone(),
+                    }
+                })),
+            };
         let mut entries = self.extra;
         if !entries.contains_key(world.gateway.name()) {
             let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);

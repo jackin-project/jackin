@@ -61,6 +61,7 @@ pub(crate) struct Inputs {
     pub(crate) desk: AccountDesk,
     pub(crate) usage: Arc<HostUsage>,
     pub(crate) usage_gate: tokio::sync::Mutex<()>,
+    refresh_gate: tokio::sync::Mutex<()>,
     pub(crate) op: OpSnapshot,
     pub(crate) op_cli: OnePasswordCli,
     pub(crate) sources: SourceDesk,
@@ -145,6 +146,7 @@ impl Inputs {
             desk,
             usage,
             usage_gate: tokio::sync::Mutex::new(()),
+            refresh_gate: tokio::sync::Mutex::new(()),
             op,
             op_cli,
             sources,
@@ -171,8 +173,22 @@ impl Inputs {
         }
     }
 
-    pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
+    async fn refreshed(&self) -> Result<Config, ConfigError> {
+        let _turn = self.refresh_gate.lock().await;
         let config = self.config.load().await?;
+        self.sessions
+            .reconcile(
+                &config,
+                self.connect.as_ref(),
+                self.limits.connect_deadline,
+                &self.cancel,
+            )
+            .await;
+        Ok(config)
+    }
+
+    pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
+        let config = self.refreshed().await?;
         let fleet = read_fleet(&self.sessions, &config, self.limits, &self.work).await;
         Ok(self.observation(&config, fleet).await)
     }
@@ -229,7 +245,7 @@ impl Inputs {
         let session = self
             .sessions
             .default_name()
-            .and_then(|name| self.sessions.get(name))
+            .and_then(|name| self.sessions.get(&name))
             .or_else(|| {
                 self.sessions
                     .reached()
@@ -276,14 +292,21 @@ impl Inputs {
     }
 
     pub(crate) async fn run_doctor(&self, reconnect: bool) -> Result<DoctorReport, DoctorFailure> {
+        let config = if reconnect {
+            self.refreshed().await.ok()
+        } else {
+            None
+        };
         let run = async {
-            if reconnect && let Ok(config) = self.config.load().await {
+            if let Some(config) = &config {
                 self.sessions
-                    .reconnect(self.connect.as_ref(), &config, &self.cancel)
+                    .reconnect(self.connect.as_ref(), config, &self.cancel)
                     .await;
             }
-            let name = self.sessions.default_name();
-            let access = self.sessions.default_access();
+            let (name, access) = match self.sessions.default_target() {
+                Some((name, access)) => (Some(name), access),
+                None => (None, Access::NotChosen),
+            };
             let input = DoctorInput {
                 runner: self.host.runner.as_ref(),
                 fs: self.host.fs.as_ref(),
@@ -294,7 +317,8 @@ impl Inputs {
             let checked = doctor(&input, &self.cancel).await;
             doctor::report(
                 &checked,
-                name.filter(|_| !matches!(access, Access::NotChosen)),
+                name.as_ref()
+                    .filter(|_| !matches!(access, Access::NotChosen)),
                 self.wall.epoch_millis().div_euclid(1000),
             )
         };

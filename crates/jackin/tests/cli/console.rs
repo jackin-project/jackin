@@ -71,7 +71,7 @@ impl ConsoleHost for ScriptedConsole {
             })
             .cloned()
             .collect();
-        let default = deps.sessions.default_name().cloned();
+        let default = deps.sessions.default_name();
         let (cwd, home) = (deps.cwd.clone(), deps.home.clone());
         let (connect_deadline, supervisor_poll) =
             (deps.limits.connect_deadline, deps.limits.supervisor_poll);

@@ -3,7 +3,7 @@
 
 use jackin_console::app::Route;
 use jackin_console::domain::launch::{LaunchContent, NextStep};
-use jackin_core::{HookKind, SupervisorState, sandbox_layout};
+use jackin_core::{ConfigEdit, GatewayName, HookKind, SupervisorState, sandbox_layout};
 use jackin_openshell::GatewayOp;
 use jackin_testkit::{ConsoleRig, Fault, ProgramScript, Rig, TestResult, Trigger, guard};
 
@@ -63,6 +63,22 @@ async fn a_launch_with_no_gateway_selected_fails_before_any_stage_and_says_to_ru
     guard(async {
         let rig = Rig::new().await?;
         rig.world.seed_all(&rig.config).await?;
+        let entry = rig
+            .config
+            .gateways()
+            .next()
+            .map(|(_, entry)| entry.clone())
+            .ok_or("the rig has no gateway")?;
+        rig.world
+            .config
+            .edit(vec![
+                ConfigEdit::AddGateway {
+                    name: GatewayName::parse("second-gateway")?,
+                    entry,
+                },
+                ConfigEdit::SetDefaultGateway(None),
+            ])
+            .await?;
         let mut console = ConsoleRig::builder(&rig.world)
             .size(160, 44)
             .unchosen()
