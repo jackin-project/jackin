@@ -14,7 +14,7 @@ import {
 
 const CORE: CrateReadme = {
   name: 'jackin-core',
-  dir: 'crates/core/jackin-core',
+  dir: 'crates/jackin-core',
   body: '',
 }
 
@@ -27,13 +27,13 @@ describe('stripH1', () => {
 describe('normalizeRepoPath', () => {
   test('src/x.rs under crate', () => {
     expect(normalizeRepoPath(CORE.dir, 'src/lib.rs')).toBe(
-      'crates/core/jackin-core/src/lib.rs',
+      'crates/jackin-core/src/lib.rs',
     )
   })
 
   test('src/dir relative path', () => {
-    expect(normalizeRepoPath(CORE.dir, 'src/agent')).toBe(
-      'crates/core/jackin-core/src/agent',
+    expect(normalizeRepoPath(CORE.dir, 'src/config')).toBe(
+      'crates/jackin-core/src/config',
     )
   })
 
@@ -73,15 +73,15 @@ describe('rewriteLinks', () => {
   test('rewrites three link shapes', () => {
     const input = [
       '[`lib.rs`](src/lib.rs)',
-      '[agent](src/agent)',
+      '[config](src/config)',
       '[protocol](../jackin-protocol/README.md)',
     ].join('\n')
     const out = rewriteLinks(CORE.dir, input)
     expect(out).toContain(
-      '<RepoFile path="crates/core/jackin-core/src/lib.rs">`lib.rs`</RepoFile>',
+      '<RepoFile path="crates/jackin-core/src/lib.rs">`lib.rs`</RepoFile>',
     )
     expect(out).toContain(
-      '<RepoFile path="crates/core/jackin-core/src/agent.rs">agent</RepoFile>',
+      '<RepoFile path="crates/jackin-core/src/config.rs">config</RepoFile>',
     )
     expect(out).toContain('[protocol](/reference/crates/jackin-protocol/)')
   })
@@ -108,7 +108,7 @@ describe('transformReadmeBody', () => {
     const body = '# Title\n\nSee [`lib.rs`](src/lib.rs) and {brace}.\n'
     const out = transformReadmeBody(CORE, body)
     expect(out.startsWith('#')).toBe(false)
-    expect(out).toContain('<RepoFile path="crates/core/jackin-core/src/lib.rs">')
+    expect(out).toContain('<RepoFile path="crates/jackin-core/src/lib.rs">')
     expect(out).toContain('\\{brace}')
   })
 })

@@ -254,7 +254,7 @@ const manifest = {
   name: 'jackin❯',
   short_name: 'j❯',
   description:
-    'Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.',
+    'Run Codex at full speed in NVIDIA OpenShell sandboxes: a copy of your project, credentials that stay on the gateway, native OpenShell policy, and work exported as git branches.',
   start_url: '/',
   display: 'standalone',
   background_color: DARK,
