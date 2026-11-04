@@ -20,6 +20,7 @@ jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
 jsonschema = { version = "0.60.2", default-features = false }
 portable-pty = { workspace = true }
+rustix = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -32,7 +33,6 @@ zeroize = { workspace = true }
 [dev-dependencies]
 jackin-testkit = { workspace = true }
 regex = { workspace = true }
-rustix = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]

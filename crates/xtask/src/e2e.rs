@@ -33,7 +33,9 @@ use jackin_openshell::Gateway;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio_util::sync::CancellationToken;
 
-pub use a1::{A1_LOCK_FILE, A1Error, A1Lock, A1Login, fixture_login, host_login_state};
+pub use a1::{
+    A1_LOCK_DIR, A1_LOCK_FILE, A1Error, A1Lock, A1Login, fixture_login, host_login_state,
+};
 pub use args::E2eArgs;
 pub use clock::{Budgets, Clock, SystemClock};
 pub use engine::{HostEngine, SocketEngine};

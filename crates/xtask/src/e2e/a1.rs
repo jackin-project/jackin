@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use super::redact::hex;
 use thiserror::Error;
 
+pub const A1_LOCK_DIR: &str = "jackin-e2e-a1";
 pub const A1_LOCK_FILE: &str = "jackin-e2e-a1.lock";
 const NO_SOURCE: &str = "A1 has no usable source; write blockers/A1.md";
 
@@ -194,15 +195,50 @@ pub struct A1Lock {
     file: fs::File,
 }
 
+fn open_lock(dir: &Path, path: &Path) -> std::io::Result<fs::File> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+
+    let denied =
+        |what: &str| std::io::Error::new(std::io::ErrorKind::PermissionDenied, what.to_owned());
+    let me = rustix::process::geteuid().as_raw();
+    match fs::DirBuilder::new().mode(0o700).create(dir) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error),
+    }
+    let meta = fs::symlink_metadata(dir)?;
+    if !meta.is_dir() || meta.uid() != me || meta.mode() & 0o077 != 0 {
+        return Err(denied(
+            "the lock directory is not a private directory owned by this user",
+        ));
+    }
+    let file = fs::File::from(rustix::fs::open(
+        path,
+        rustix::fs::OFlags::WRONLY
+            | rustix::fs::OFlags::CREATE
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::from_raw_mode(0o600),
+    )?);
+    let meta = file.metadata()?;
+    if !meta.is_file() || meta.uid() != me {
+        return Err(denied(
+            "the lock file is not a regular file owned by this user",
+        ));
+    }
+    Ok(file)
+}
+
 impl A1Lock {
     pub fn acquire(dir: &Path) -> Result<A1Lock, A1Error> {
-        let path = dir.join(A1_LOCK_FILE);
+        let lock_dir = dir.join(A1_LOCK_DIR);
+        let path = lock_dir.join(A1_LOCK_FILE);
         let io = |error: std::io::Error| A1Error::LockIo {
             path: path.clone(),
             message: error.to_string(),
         };
         fs::create_dir_all(dir).map_err(io)?;
-        let file = fs::File::create(&path).map_err(io)?;
+        let file = open_lock(&lock_dir, &path).map_err(io)?;
         match file.try_lock() {
             Ok(()) => Ok(A1Lock { file }),
             Err(fs::TryLockError::WouldBlock) => Err(A1Error::LockHeld(path)),
