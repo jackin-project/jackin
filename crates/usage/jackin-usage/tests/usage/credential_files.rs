@@ -1,19 +1,20 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fs::File;
 use std::os::unix::fs::symlink;
 use std::path::Path;
+use std::process::Command;
 use std::sync::Arc;
 
 use jackin_core::{CredentialSource, FileSystem, HostPath, Provider, StdFileSystem};
-use jackin_testkit::WorkingFs;
+use jackin_testkit::{Method, WorkingFs};
 use jackin_usage::{AccountUsage, Refresh, UnavailableReason, UsageAccount, UsageRequest};
 use tokio_util::sync::CancellationToken;
 
 use crate::providers::openrouter_serve;
 use crate::support::{
-    TestResult, UsageHarness, account, codex_login, guard, unavailable, windows_of,
+    AUTH_CHATGPT, CODEX_PATH, TestResult, UsageHarness, account, codex_body, codex_login,
+    codex_route, guard, unavailable, windows_of,
 };
 
 const TOKEN: &str = "SECRET_TOKEN_FILE";
@@ -39,6 +40,12 @@ async fn read_through(
 ) -> Result<AccountUsage, Box<dyn std::error::Error>> {
     let harness = UsageHarness::new().await?;
     openrouter_serve(&harness, TOKEN);
+    harness.server.serve(
+        Provider::Codex,
+        Method::Get,
+        CODEX_PATH,
+        codex_route(&codex_body(42)),
+    );
     let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
         Arc::new(StdFileSystem::default()),
         &harness.clock,
@@ -57,12 +64,6 @@ fn refusal(usage: &AccountUsage) -> &str {
         UnavailableReason::Provider(message) => message,
         other => panic!("expected a provider refusal, got {other:?}"),
     }
-}
-
-fn sized(path: &Path, bytes: u64) -> TestResult {
-    let file = File::create(path)?;
-    file.set_len(bytes)?;
-    Ok(())
 }
 
 fn padded(path: &Path, bytes: u64) -> TestResult {
@@ -99,20 +100,7 @@ async fn a_token_file_one_byte_over_the_cap_is_refused_as_too_large() -> TestRes
 }
 
 #[tokio::test]
-async fn a_sparse_two_gibibyte_credential_file_is_refused_as_too_large() -> TestResult {
-    guard(async {
-        let directory = tempfile::tempdir()?;
-        let key = directory.path().join("key");
-        sized(&key, 2 << 30)?;
-        let usage = read_through(&directory, file_account(&key)?).await?;
-        assert_eq!(refusal(&usage), "the credential file is too large");
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_symbolic_link_to_a_good_token_file_is_refused() -> TestResult {
+async fn a_symbolic_link_to_a_good_token_file_is_the_bearer_token() -> TestResult {
     guard(async {
         let directory = tempfile::tempdir()?;
         let real = directory.path().join("real");
@@ -120,7 +108,68 @@ async fn a_symbolic_link_to_a_good_token_file_is_refused() -> TestResult {
         let link = directory.path().join("key");
         symlink(&real, &link)?;
         let usage = read_through(&directory, file_account(&link)?).await?;
-        assert_eq!(refusal(&usage), "the credential file is a symbolic link");
+        assert_eq!(windows_of(&usage.outcome).len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symbolic_link_to_an_oversized_file_is_refused_as_too_large() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let real = directory.path().join("real");
+        padded(&real, CAP + 1)?;
+        let link = directory.path().join("key");
+        symlink(&real, &link)?;
+        let usage = read_through(&directory, file_account(&link)?).await?;
+        assert_eq!(refusal(&usage), "the credential file is too large");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symbolic_link_to_a_directory_is_refused_as_not_a_regular_file() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let real = directory.path().join("real");
+        std::fs::create_dir(&real)?;
+        let link = directory.path().join("key");
+        symlink(&real, &link)?;
+        let usage = read_through(&directory, file_account(&link)?).await?;
+        assert_eq!(refusal(&usage), "the credential file is not a regular file");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symbolic_link_to_a_pipe_is_refused_without_blocking() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let pipe = directory.path().join("pipe");
+        assert!(Command::new("mkfifo").arg(&pipe).status()?.success());
+        let link = directory.path().join("key");
+        symlink(&pipe, &link)?;
+        let usage = read_through(&directory, file_account(&link)?).await?;
+        assert_eq!(refusal(&usage), "the credential file is not a regular file");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_dangling_symbolic_link_is_no_credentials() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let link = directory.path().join("key");
+        symlink(directory.path().join("gone"), &link)?;
+        let usage = read_through(&directory, file_account(&link)?).await?;
+        assert_eq!(
+            unavailable(&usage.outcome),
+            &UnavailableReason::NoCredentials
+        );
         Ok(())
     })
     .await
@@ -155,17 +204,37 @@ async fn a_missing_credential_file_stays_no_credentials() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_symbolic_link_in_place_of_a_codex_auth_json_is_refused() -> TestResult {
+async fn a_symbolic_link_in_place_of_a_codex_auth_json_is_the_login() -> TestResult {
     guard(async {
         let directory = tempfile::tempdir()?;
         let home = directory.path().join("codex");
         std::fs::create_dir(&home)?;
         let real = directory.path().join("real.json");
-        std::fs::write(&real, "{}")?;
+        std::fs::write(&real, AUTH_CHATGPT)?;
         symlink(&real, home.join("auth.json"))?;
         let login = codex_login("work", &home.display().to_string(), "acct-1");
         let usage = read_through(&directory, login).await?;
-        assert_eq!(refusal(&usage), "the credential file is a symbolic link");
+        assert_eq!(windows_of(&usage.outcome).len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_pipe_in_place_of_a_codex_auth_json_is_refused_without_blocking() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let home = directory.path().join("codex");
+        std::fs::create_dir(&home)?;
+        assert!(
+            Command::new("mkfifo")
+                .arg(home.join("auth.json"))
+                .status()?
+                .success()
+        );
+        let login = codex_login("work", &home.display().to_string(), "acct-1");
+        let usage = read_through(&directory, login).await?;
+        assert_eq!(refusal(&usage), "the credential file is not a regular file");
         Ok(())
     })
     .await

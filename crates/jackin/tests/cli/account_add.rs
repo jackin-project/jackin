@@ -291,3 +291,73 @@ async fn a_credential_source_must_exist_where_the_account_is_added_and_a_refusal
     })
     .await
 }
+
+#[tokio::test]
+async fn a_credential_file_link_is_followed_and_an_oversized_file_or_a_link_to_a_pipe_is_refused()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        let home = world.home().as_path();
+        std::fs::write(home.join("real.key"), "fake-key")?;
+        std::os::unix::fs::symlink(home.join("real.key"), home.join("linked.key"))?;
+        std::fs::write(home.join("big.key"), vec![b'k'; (1 << 20) + 1])?;
+        std::os::unix::fs::symlink(home.join("big.key"), home.join("big-linked.key"))?;
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(home.join("pipe.key"))
+                .status()?
+                .success()
+        );
+        std::os::unix::fs::symlink(home.join("pipe.key"), home.join("pipe-linked.key"))?;
+
+        harness
+            .run(&[
+                "account",
+                "add",
+                "codex",
+                "--name",
+                "linked",
+                "--credential",
+                "file:linked.key",
+            ])
+            .await?
+            .ok()?;
+        assert!(
+            harness
+                .stored()
+                .await?
+                .account(&account("linked")?)
+                .is_some()
+        );
+
+        for credential in [
+            "file:big.key",
+            "file:big-linked.key",
+            "file:pipe.key",
+            "file:pipe-linked.key",
+        ] {
+            let before = harness.config_bytes()?;
+            let ran = harness
+                .run(&[
+                    "account",
+                    "add",
+                    "codex",
+                    "--name",
+                    "refused",
+                    "--credential",
+                    credential,
+                ])
+                .await?;
+            assert_eq!(ran.exit, ExitClass::Usage, "{credential}");
+            assert!(
+                ran.stderr.contains("needs an existing regular file"),
+                "{credential}: {}",
+                ran.stderr
+            );
+            assert_eq!(harness.config_bytes()?, before, "{credential}");
+        }
+        Ok(())
+    })
+    .await
+}

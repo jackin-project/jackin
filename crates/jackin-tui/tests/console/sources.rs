@@ -477,7 +477,7 @@ async fn a_cli_file_account_whose_file_is_gone_fails_the_check_and_the_save() ->
             .find(|a| a.id == "filed")
             .ok_or("filed")?;
         filed.source = ConsoleSource::LocalFolder {
-            path: file.display().to_string(),
+            path: file.with_file_name("never-login").display().to_string(),
             detected: DetectedKind::Unknown,
         };
         lab.perform(Effect::SaveAccounts {
@@ -485,6 +485,91 @@ async fn a_cli_file_account_whose_file_is_gone_fails_the_check_and_the_save() ->
             registry: Box::new(registry),
         })
         .await?;
+        assert_eq!(lab.console.config_text().await?, before);
+        Ok(())
+    })
+    .await
+}
+
+async fn save_file_path(lab: &mut Lab, path: &Path) -> TestResult {
+    let base = lab.world().accounts.clone();
+    let mut registry = base.clone();
+    let filed = registry
+        .accounts
+        .iter_mut()
+        .find(|a| a.id == "filed")
+        .ok_or("filed")?;
+    filed.source = ConsoleSource::LocalFolder {
+        path: path.display().to_string(),
+        detected: DetectedKind::Unknown,
+    };
+    lab.perform(Effect::SaveAccounts {
+        base: Box::new(base),
+        registry: Box::new(registry),
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_symbolic_link_to_a_good_file_validates_and_saves_as_the_file_source() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let file = cli_file_account(&lab, "filed").await?;
+        let real = file.with_file_name("real-login");
+        tokio::fs::rename(&file, &real).await?;
+        tokio::fs::symlink(&real, &file).await?;
+        lab.reopen().await?;
+        let validated = validate_edit_form(&mut lab).await?;
+        assert!(
+            validated.contains("✓ material   File found at"),
+            "{validated}"
+        );
+
+        let other = file.with_file_name("other-login");
+        tokio::fs::symlink(&real, &other).await?;
+        save_file_path(&mut lab, &other).await?;
+        let config = lab.config().await?;
+        let saved = config
+            .account(&jackin_core::AccountName::parse("filed")?)
+            .ok_or("filed")?;
+        assert_eq!(
+            *saved.credential(),
+            CredentialSource::File {
+                path: jackin_core::HostPath::parse(&other)?
+            }
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_oversized_file_or_a_link_to_a_pipe_fails_the_check_and_the_save() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let file = cli_file_account(&lab, "filed").await?;
+        lab.reopen().await?;
+        let before = lab.console.config_text().await?;
+        tokio::fs::write(&file, vec![b'x'; (1 << 20) + 1]).await?;
+        let validated = validate_edit_form(&mut lab).await?;
+        assert!(validated.contains("! material"), "{validated}");
+        assert!(!validated.contains("✓ material"), "{validated}");
+
+        let big = file.with_file_name("big-login");
+        tokio::fs::write(&big, vec![b'x'; (1 << 20) + 1]).await?;
+        save_file_path(&mut lab, &big).await?;
+        assert_eq!(lab.console.config_text().await?, before);
+
+        let pipe = file.with_file_name("pipe-login");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&pipe)
+                .status()?
+                .success()
+        );
+        let linked = file.with_file_name("pipe-link");
+        tokio::fs::symlink(&pipe, &linked).await?;
+        save_file_path(&mut lab, &linked).await?;
         assert_eq!(lab.console.config_text().await?, before);
         Ok(())
     })
@@ -524,7 +609,7 @@ async fn two_providers_on_one_folder_save_independently() -> TestResult {
         let stored = |name: &str| -> Result<CredentialSource, Box<dyn std::error::Error>> {
             Ok(config
                 .account(&jackin_core::AccountName::parse(name)?)
-                .ok_or(name.to_owned())?
+                .ok_or(format!("{name} was not saved"))?
                 .credential()
                 .clone())
         };

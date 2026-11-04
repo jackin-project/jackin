@@ -17,13 +17,14 @@ use jackin_core::plain;
 use jackin_core::{
     Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath, ModelName,
     PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
+    read_credential_file,
 };
 use jackin_core::{EnvSpec, ManifestError, Workspace as CoreWorkspace};
 use jackin_image::Rebuild;
 use jackin_openshell::PowerAction;
 use jackin_session::{
-    AccountPlan, BuildRequest, Gateways, MANIFEST_FILE, PurgeMode, RoleError, build_observed,
-    error_chain, plan_account_edits, read_chatgpt_login,
+    AccountPlan, BuildRequest, Gateways, MANIFEST_FILE, PurgeMode, RoleError, Source,
+    build_observed, error_chain, plan_account_edits, read_chatgpt_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -102,6 +103,20 @@ fn finding(error: &RoleError, doc: &RoleManifestDoc) -> RoleFinding {
     }
 }
 
+pub(crate) enum LocalKind {
+    File(HostPath),
+    Folder(HostPath),
+}
+
+impl LocalKind {
+    pub(crate) fn source(&self, login: bool) -> Source<'_> {
+        match self {
+            LocalKind::File(path) => Source::File { path },
+            LocalKind::Folder(path) => Source::Folder { path, login },
+        }
+    }
+}
+
 impl Inputs {
     async fn saved_snapshot(&self) -> Option<Snapshot> {
         let config = self.config.load().await.ok()?;
@@ -134,11 +149,12 @@ impl Inputs {
         HostPath::parse(&expanded)
     }
 
-    pub(crate) async fn is_regular_file(&self, path: &HostPath) -> bool {
-        matches!(
-            self.host.fs.stat_following(path).await,
-            Ok(Some(FileKind::File))
-        )
+    pub(crate) async fn local_kind(&self, text: &str) -> Result<LocalKind, PathError> {
+        let path = self.expanded(text)?;
+        Ok(match self.host.fs.stat_following(&path).await {
+            Ok(Some(FileKind::File)) => LocalKind::File(path),
+            _ => LocalKind::Folder(path),
+        })
     }
 
     async fn folder(&self, text: &str) -> Result<HostPath, PersistError> {
@@ -164,9 +180,9 @@ impl Inputs {
         };
         let name = provider.login_file().ok_or_else(unusable)?;
         let file = HostPath::resolve(Path::new(name), folder)?;
-        match self.host.fs.stat_following(&file).await? {
-            Some(FileKind::File) => Ok(file),
-            _ => Err(unusable()),
+        match read_credential_file(self.host.fs.as_ref(), &file).await? {
+            Ok(_) => Ok(file),
+            Err(_) => Err(unusable()),
         }
     }
 
@@ -303,9 +319,13 @@ impl Inputs {
         console_provider: Provider,
         path: &str,
     ) -> Result<Folder, Refused> {
-        let file = self.expanded(path).map_err(PersistError::from)?;
-        if self.is_regular_file(&file).await {
-            return Ok(Folder::Login { file });
+        let kind = self.local_kind(path).await.map_err(PersistError::from)?;
+        if let LocalKind::File(file) = &kind {
+            self.sources
+                .check(kind.source(false), &self.cancel)
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?;
+            return Ok(Folder::Login { file: file.clone() });
         }
         let folder = self.folder(path).await?;
         let provider = crate::project::core_provider(console_provider);

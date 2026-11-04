@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::backend::Effect;
-
 use jackin_core::{ConfigEdit, RoleManifest, RoleName, RoleSource, WorkspaceName};
 use jackin_testkit::{RoleFixture, TestResult, guard};
 

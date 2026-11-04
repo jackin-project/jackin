@@ -118,6 +118,12 @@ fn failure_of(source: &CredentialSource, fault: &SourceFault) -> Failure {
                 path: path.to_string(),
             },
         ),
+        SourceFault::FileTooLarge(path) => failure(
+            IssueCode::CredentialMalformed,
+            Lifecycle::Error,
+            action,
+            unreadable(path.to_string()),
+        ),
         SourceFault::Unreadable(path) => failure(
             IssueCode::FolderUnreadable,
             Lifecycle::Error,
@@ -275,7 +281,6 @@ impl Inputs {
         source: &CredentialSource,
     ) -> Result<Box<ValidationOutcome>, String> {
         let reference;
-        let folder;
         let checked = match source {
             CredentialSource::PlainApiKey { .. } => {
                 return Err(sentence(&Rejection::CannotSave(SaveField::ApiKey)));
@@ -284,19 +289,12 @@ impl Inputs {
                 self.sources.check(Source::Env { var }, &self.cancel).await
             }
             CredentialSource::LocalFolder { path, .. } => {
-                folder = match self.expanded(path) {
-                    Ok(folder) => folder,
+                let kind = match self.local_kind(path).await {
+                    Ok(kind) => kind,
                     Err(error) => return Err(error_chain(&error)),
                 };
-                let local = if self.is_regular_file(&folder).await {
-                    Source::File { path: &folder }
-                } else {
-                    Source::Folder {
-                        path: &folder,
-                        login: core_provider(provider) == jackin_core::Provider::Codex,
-                    }
-                };
-                self.sources.check(local, &self.cancel).await
+                let login = core_provider(provider) == jackin_core::Provider::Codex;
+                self.sources.check(kind.source(login), &self.cancel).await
             }
             CredentialSource::OnePassword(found) => {
                 reference = found.canonical();

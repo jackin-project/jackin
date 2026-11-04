@@ -379,6 +379,54 @@ impl FileSystem for StdFileSystem {
     }
 }
 
+pub const CREDENTIAL_FILE_MAX_BYTES: usize = 1 << 20;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum CredentialFileProblem {
+    Missing,
+    NotARegularFile,
+    TooLarge,
+}
+
+pub async fn read_credential_file(
+    fs: &dyn FileSystem,
+    path: &HostPath,
+) -> Result<Result<Vec<u8>, CredentialFileProblem>, FsError> {
+    let Some(target) = fs.canonicalize(path).await? else {
+        return Ok(Err(CredentialFileProblem::Missing));
+    };
+    let Some(dir) = target.parent() else {
+        return Ok(Err(CredentialFileProblem::NotARegularFile));
+    };
+    let name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| RepoPath::parse(name).ok())
+        .ok_or_else(|| FsError::Io {
+            path: target.clone(),
+            kind: ErrorKind::InvalidInput,
+            message: "credential file name is not usable".to_owned(),
+        })?;
+    match fs
+        .read_regular(&dir, &name, CREDENTIAL_FILE_MAX_BYTES)
+        .await
+    {
+        Err(FsError::Io {
+            kind: ErrorKind::NotFound,
+            ..
+        })
+        | Ok(Err(RegularFileProblem::Missing)) => Ok(Err(CredentialFileProblem::Missing)),
+        Ok(Err(RegularFileProblem::Symlink | RegularFileProblem::NotARegularFile)) => {
+            Ok(Err(CredentialFileProblem::NotARegularFile))
+        }
+        Ok(Ok(file)) if file.bytes.len() > CREDENTIAL_FILE_MAX_BYTES => {
+            Ok(Err(CredentialFileProblem::TooLarge))
+        }
+        Ok(Ok(file)) => Ok(Ok(file.bytes)),
+        Err(other) => Err(other),
+    }
+}
+
 pub fn lock_path(target: &HostPath) -> Result<HostPath, FsError> {
     let Some(name) = target.file_name() else {
         return Err(FsError::Io {
