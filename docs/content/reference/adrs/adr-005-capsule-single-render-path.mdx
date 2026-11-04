@@ -2,7 +2,7 @@
 title: "ADR-005: Capsule single render path"
 ---
 
-**Status**: Accepted  
+**Status**: Superseded by <RepoFile path="rewrite/DESIGN.md">DESIGN.md</RepoFile> (decision D22). Jackin Capsule now runs on the host in the jackin process, and the console draws it with the `junie-tui` crate (D27, D28).  
 **Current state**: every frame is one `Terminal::draw` of the full widget tree encoded by `SocketBackend` and written by `ClientWriter` inside `?2026` synchronized-output brackets; handlers only mutate state and bump a frame generation; a real screen erase precedes a frame only on first attach and resize.  
 **Date**: 2026-06-10  
 **Deciders**: Operator + agent
@@ -41,5 +41,5 @@ Collapse to one render path, derived rendering, and one writer:
 - **Atomic frames.** Non-empty frames are synchronized-output bracketed. Out-of-band OSC/CSI bytes do not appear in the middle of a composed frame.
 - **No ordinary wipe.** `\x1b[2J` is legal only for first attach and resize; all other redraws repaint in place.
 - **Modes and cursor are frame state.** Cursor visibility/position/shape and focused-pane modes are derived from `DamageGrid` and reconciled by the encoder each frame, not asserted by focus-swap or input-handler side paths.
-- **CSI is default-deny.** Unknown agent CSI cannot repair the outer terminal behind the compositor's back. Additions to the forward allowlist require a documented sequence and reason in [Multiplexer design rules](/reference/capsule/multiplexer-design-rules/).
+- **CSI is default-deny.** Unknown agent CSI cannot repair the outer terminal behind the compositor's back. Additions to the forward allowlist require a documented sequence and reason.
 - **Shared components stay shared.** Pane scrollbars render through the same `scrollable_panel` functions as the host console and dialogs.

@@ -67,13 +67,13 @@ git push
 
 Do not run the full verification suite before every commit by default. Run it when a pull request is ready to merge, or earlier only when the operator explicitly asks.
 
-Use the aggregate local CI gate:
+Use the aggregate local CI gate. It runs every step, including the docs build:
 
 ```sh
 mise exec -- mbx +1.99.1 xtask ci
 ```
 
-To skip the docs build, run `--fast` or `--no-docs` (both skip only that step):
+The `docs` step runs `bun install --frozen-lockfile` and `bun run build` in `docs/`. To skip it, run `--fast` or `--no-docs` (both skip only that step):
 
 ```sh
 mise exec -- mbx +1.99.1 xtask ci --fast
@@ -88,7 +88,5 @@ mise exec -- mbx +1.99.1 xtask ci --only comments,layers,pins,containers
 `xtask e2e` runs the live journey against a gateway. It is not part of `xtask ci`.
 
 `xtask baseline-branch` checks with `gh` that the pinned `terminal-components-baseline` rev is on `feature/openshell-native` (`ahead` or `identical`). It needs the network, so it is not part of `xtask ci`. Run it at every pin bump.
-
-Set `JACKIN_TOOLCHAIN_GUARD` to an absolute executable path when local policy requires a guard for toolchain commands. The shared xtask command launcher prefixes Cargo and mbx commands with that executable and `-- mise exec --`, including commands launched by nested xtasks. The guard must admit the requested commands; workspace doctests use `mbx test --doc --workspace --locked`.
 
 If formatting fails, run `mise exec -- mbx +1.99.1 fmt`, then re-run `mise exec -- mbx +1.99.1 fmt --check`.
