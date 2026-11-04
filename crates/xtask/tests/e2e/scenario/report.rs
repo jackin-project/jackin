@@ -41,7 +41,7 @@ fn exec_ok() -> Value {
 }
 
 fn egress(code: u32, exit: u32) -> Value {
-    json!({"url": "https://example.invalid/", "curl_exit": exit, "http_code": code})
+    json!({"url": "https://example.invalid/", "curl_found": true, "curl_exit": exit, "http_code": code})
 }
 
 fn project_files(dir: &Path) -> Vec<Value> {
@@ -171,7 +171,8 @@ fn facts(
         }),
         "J16" => json!({
             "docker_binary": false, "docker_variables": [], "endpoint": engine,
-            "connection": {"attempted": true, "curl_exit": 7, "http_code": 0},
+            "connection": {"attempted": true, "curl_found": true, "curl_exit": 7, "http_code": 0},
+            "resolver_control": egress(0, 7),
         }),
         other => panic!("no scenario facts for {other}"),
     }

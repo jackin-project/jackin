@@ -4,7 +4,7 @@
 use std::fs;
 
 use crate::e2e::host::HostOutput;
-use crate::e2e::probe::FactsJ09;
+use crate::e2e::probe::{FactsJ09, Outcome};
 use crate::e2e::run::{Fail, Res, Run, fail};
 use crate::e2e::verdict::Verdict;
 
@@ -30,11 +30,12 @@ pub(crate) fn judge_egress(
         ("outside host", &facts.outside_host),
         ("metadata host", &facts.metadata_host),
     ] {
-        if egress.http_code != 0 {
-            problems.push(format!("the {name} answered HTTP {}", egress.http_code));
-        }
+        problems.extend(egress.outcome().fault(name));
     }
     match &facts.provider_host {
+        Some(egress) if egress.outcome() == Outcome::CurlMissing => {
+            problems.extend(egress.outcome().fault("provider host"));
+        }
         Some(egress) if (200..300).contains(&egress.http_code) => problems.push(format!(
             "the provider host answered HTTP {} to a request that carried only a placeholder",
             egress.http_code

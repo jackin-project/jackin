@@ -364,7 +364,56 @@ pub(crate) struct FactsJ08 {
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Egress {
+    pub(crate) curl_found: bool,
+    pub(crate) curl_exit: Option<i64>,
     pub(crate) http_code: u32,
+}
+
+pub(crate) const CURL_COULD_NOT_RESOLVE: i64 = 6;
+const CURL_COULD_NOT_CONNECT: i64 = 7;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Outcome {
+    Refused,
+    Unresolved,
+    CurlMissing,
+    Answered(u32),
+    Failed(Option<i64>),
+}
+
+impl Egress {
+    pub(crate) fn outcome(&self) -> Outcome {
+        if !self.curl_found {
+            return Outcome::CurlMissing;
+        }
+        if self.http_code != 0 {
+            return Outcome::Answered(self.http_code);
+        }
+        match self.curl_exit {
+            Some(CURL_COULD_NOT_CONNECT) => Outcome::Refused,
+            Some(CURL_COULD_NOT_RESOLVE) => Outcome::Unresolved,
+            other => Outcome::Failed(other),
+        }
+    }
+}
+
+impl Outcome {
+    pub(crate) fn fault(self, subject: &str) -> Option<String> {
+        match self {
+            Self::Refused => None,
+            Self::CurlMissing => Some(format!(
+                "curl is missing in the sandbox, so the {subject} was not tested"
+            )),
+            Self::Unresolved => Some(format!(
+                "the {subject} did not resolve (curl exit {CURL_COULD_NOT_RESOLVE}): a resolver fault, not a policy denial"
+            )),
+            Self::Answered(code) => Some(format!("the {subject} answered HTTP {code}")),
+            Self::Failed(exit) => Some(format!(
+                "the {subject} gave curl exit {} and no HTTP response: not a policy denial",
+                exit.map_or_else(|| "none".to_owned(), |code| code.to_string())
+            )),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -452,7 +501,8 @@ pub(crate) struct FactsJ15 {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Connection {
     pub(crate) attempted: bool,
-    pub(crate) curl_exit: Option<i64>,
+    #[serde(flatten)]
+    pub(crate) reply: Egress,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -460,4 +510,5 @@ pub(crate) struct FactsJ16 {
     pub(crate) docker_binary: bool,
     pub(crate) docker_variables: Vec<String>,
     pub(crate) connection: Connection,
+    pub(crate) resolver_control: Option<Egress>,
 }
