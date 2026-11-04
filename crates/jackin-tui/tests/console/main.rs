@@ -6,6 +6,7 @@ mod allowed_roles;
 mod fixed;
 mod github;
 mod lifecycle;
+mod panes;
 mod persisted;
 mod projection;
 mod roles;

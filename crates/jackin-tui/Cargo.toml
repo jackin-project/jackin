@@ -20,7 +20,7 @@ jackin-session = { workspace = true }
 junie-tui = { workspace = true }
 ratatui = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 tokio-util = { workspace = true }
 
 [dev-dependencies]

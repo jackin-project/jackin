@@ -12,6 +12,7 @@ mod fleet;
 mod ids;
 mod observe;
 mod origin;
+mod panes;
 pub mod persist;
 mod project;
 mod sessions;

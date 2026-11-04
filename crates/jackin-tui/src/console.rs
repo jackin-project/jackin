@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use jackin_console::app::{App, AppOptions, ClipboardMode, Entry, EntryPage, assemble};
 use jackin_console::arbiter::Arbiter;
+use jackin_console::panes::PanePolicy;
 use jackin_console::world::{Snapshot, WallSource, World, WorldParts};
 use jackin_core::{
     Compatibility, CompatibilityError, ConfigError, ConfigStore, EnvName, EnvSnapshot, HostPath,
@@ -17,14 +18,15 @@ use junie_tui::clock::SimClock;
 use junie_tui::core::event::Input;
 use junie_tui::motion::Motion;
 use junie_tui::runtime::{Application, ExternalReceiver, external_channel};
+use junie_tui::shell::NativeClipboard;
 use junie_tui::theme::{Theme, Tone};
 use thiserror::Error;
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 use crate::backend::JackinBackend;
 use crate::bridge::{Bridge, InFlight};
-use crate::clipboard::HostClipboard;
 use crate::observe::{Inputs, InputsParts};
+use crate::panes::PaneHub;
 use crate::sessions::{SessionConnector, SessionSet};
 use crate::unbuilt::SignedInOnly;
 
@@ -34,6 +36,8 @@ const NO_MOTION: &str = "JACKIN_NO_MOTION";
 pub struct ConsoleLimits {
     pub connect_deadline: Duration,
     pub work_reads: NonZeroUsize,
+    pub pane_inbox_bytes: NonZeroUsize,
+    pub supervisor_poll: Duration,
 }
 
 #[derive(Debug)]
@@ -53,6 +57,7 @@ pub struct ConsoleDeps {
     pub theme: Theme,
     pub handle: tokio::runtime::Handle,
     pub limits: ConsoleLimits,
+    pub clipboard: Arc<dyn NativeClipboard>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,6 +68,7 @@ pub enum ConsoleExit {
 pub struct Console {
     app: App,
     inflight: InFlight,
+    panes: PaneHub,
     _cancel: DropGuard,
 }
 
@@ -89,6 +95,15 @@ impl Console {
 
     pub fn inflight(&self) -> usize {
         self.inflight.count()
+    }
+
+    pub fn pane_tasks(&self) -> usize {
+        self.panes.live()
+    }
+
+    pub async fn close_panes(&mut self, deadline: Duration) -> bool {
+        self.app.world.daemons.clear();
+        self.panes.finished(deadline).await
     }
 
     pub async fn drain(&mut self) {
@@ -136,6 +151,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         theme,
         handle,
         limits,
+        clipboard,
     } = deps;
     let config_path = config.path().as_path().display().to_string();
     let cancel = CancellationToken::new();
@@ -159,10 +175,17 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     let first = inputs.observe().await?;
     let (sender, receiver) = external_channel();
     let inflight = InFlight::new();
+    let panes = PaneHub::new(
+        Arc::clone(&inputs),
+        handle.clone(),
+        limits.pane_inbox_bytes.get(),
+        limits.supervisor_poll,
+    );
     let backend = Arc::new(JackinBackend::new(
         Arc::clone(&inputs),
         Bridge::new(sender, inflight.clone(), handle),
         first.snapshot.surfaces.vocabulary.clone(),
+        panes.clone(),
     ));
     let status = first.status(&first.snapshot.surfaces.vocabulary);
     let Snapshot {
@@ -207,7 +230,8 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
             motion: Motion::resolve(None, reduced_motion(&env)),
             frame: 0,
             theme,
-            clipboard: ClipboardMode::Host(Arc::new(HostClipboard)),
+            clipboard: ClipboardMode::Host(clipboard),
+            panes: PanePolicy::default(),
         },
     )
     .with_external(receiver);
@@ -219,6 +243,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     Ok(Console {
         app,
         inflight,
+        panes,
         _cancel: cancel.drop_guard(),
     })
 }
