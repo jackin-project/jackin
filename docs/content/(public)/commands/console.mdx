@@ -1,34 +1,68 @@
 ---
 title: Console
-description: What the design fixes about the jackin console and Jackin Capsule.
+description: Use the jackin console to manage workspaces, accounts and bindings, launch Codex, and work in Jackin Capsule.
 ---
 
 <EarlyDevelopmentNotice />
 
-This page is a stub. It lists only what the design fixes. It does not document screens or key bindings.
+The console is the main way to use jackin. It runs on your host and looks and works like the `jackin-preview` demo of the `terminal-components-baseline` repository, with OpenShell content in place of the demo text. Every CLI command stays available, and the console and the CLI change the same configuration.
+
+This page walks through one session: set up, launch, work, detach, and delete.
 
 ## Open the console
 
-Run `jackin` on a terminal. Without a terminal, `jackin` prints help. Every CLI command stays available. The console is the main way to use jackin.
+Run `jackin` with no arguments on a terminal:
 
-## Two surfaces
+```sh
+jackin
+```
 
-The console and Jackin Capsule come from one application. Both look and behave like the `jackin-preview` demo in the `terminal-components-baseline` repository. Jackin has the same screens, flows, key bindings, and navigation as the demo, with OpenShell content in place of the demo text.
+Without a terminal, `jackin` prints help instead.
 
-- **Jackin Console** manages workspaces, roles, accounts, bindings, the Docker setting, and usage. It launches sessions.
-- **Jackin Capsule** is the multiplexer. It has the menu bar, the session tabs, the split panes, the status line, and the hint line. Codex runs in its panes. Capsule runs on your host, in the jackin process.
+The console needs a gateway entry. With none in the configuration, the home screen reports a failing gateway. Add one, then restart the console. A running console does not pick up a gateway that you add later. For the options, see [Run a local OpenShell gateway](/guides/gateway/).
 
-The console and the CLI both create, edit, and delete workspaces, roles, and accounts. They manage the default account, the workspace bindings, and the role bindings.
+```sh
+jackin gateway add jackin-local --default
+```
 
-## Panes
+## Find your way around
 
-Each pane is an OpenShell terminal session. The Codex pane attaches to the main process of the sandbox. A shell pane opens a new shell.
+The home screen is the manager. It has a menu bar (`File`, `Go`, `Help`), a roster on the left, and the details of the selected row on the right.
 
-- A bell or notification from an unfocused Codex pane marks it as needing input. Exit code 0 marks it done.
-- Capsule accepts a clipboard write from the focused Codex pane only. The write must come shortly after your input and hold at most 100,000 bytes. Each write shows a status message. Capsule refuses clipboard reads and every clipboard write from a shell pane.
-- The intro honours `JACKIN_NO_MOTION`.
+- The roster lists your current directory, your saved workspaces, and, under each workspace, its running instances. An instance is a sandbox that jackin launched.
+- The right side shows the selected row and a status block with the gateway health, the refresh interval, and the usage summary.
+- The footer lists the keys of the current screen. `?` opens the help.
 
-## Controls that have one fixed value
+From the manager, these keys open the other views:
+
+| Key | View |
+|---|---|
+| `c` | Accounts |
+| `u` | Usage |
+| `s` | Settings |
+| `R` | Roles |
+| `D` | Doctor |
+| `q` | Quit |
+
+`Esc` goes back one screen.
+
+## Create a workspace
+
+A workspace is a saved project. The console uploads it to `/sandbox/project`. It never mounts your directory.
+
+Your current directory is always on the roster as `Current directory`, marked `not saved`. Press `Enter` on it to launch with defaults. Press `n` to save it as a workspace.
+
+To create a workspace:
+
+1. Select `+ New workspace` and press `Enter`. The wizard has five steps: source, destination, working directory, name, then the editor.
+2. In the working directory step, the only destination is `/sandbox/project`. The console shows it as fixed.
+3. Name the workspace. A save dialog opens with `Cancel` selected. Move to `Save` with the right arrow key, then press `Enter`.
+
+In the folder step, press `Space` on the `Choose` button. In the live run of this release, `Enter` on that button did nothing.
+
+The new workspace appears on the roster as `idle`. Its detail page shows the working directory, the project path, the allowed roles, the environment variables, the bound accounts, and the policies.
+
+### Settings that have one fixed value
 
 Some controls of the demo have one true value in jackin. The console shows the value and the reason.
 
@@ -42,10 +76,265 @@ Some controls of the demo have one true value in jackin. The console shows the v
 | Co-author trailer and DCO sign-off | Off. |
 | Global account enable | Every account is enabled. |
 
-## Environment values and 1Password
+### Environment values
 
 The console edits environment values at the global, workspace, and workspace-and-role scopes. Values are plain text. Jackin refuses a value that starts with `op://` or `openshell:resolve:`, in any letter case and after leading whitespace.
 
-An account can name its credential as an `op://` reference. Jackin resolves it on the host with `op` for usage only. It never sends the reference or the value to a sandbox or an OpenShell provider.
+## Add accounts
 
-The console has a doctor panel. Its health screen shows the health of the OpenShell gateway.
+An account is a named credential for one provider. Press `c` in the manager to open Accounts. The left list groups accounts by provider. Press `a` to add one.
+
+The form asks for these fields:
+
+- `Display name`.
+- `Purpose label`, which is optional.
+- `Provider`.
+- `Credential source`.
+
+Only a Codex account with a ChatGPT login can run in a sandbox. Every other account is for usage only. Jackin keeps it on the host and uses it to read limits. A launch refuses a usage-only account.
+
+### Codex with the ChatGPT login folder
+
+1. Choose the provider `Codex`.
+2. Choose the source `Local agent folder`.
+3. Enter the `CODEX_HOME` folder, or press `Browse…`. The default is `~/.codex`.
+4. Press `Validate`. A good login shows this line:
+
+   ```text
+   ✓ material   ChatGPT login for <uuid>…
+   ```
+
+   The `identity` and `quota` rows read `not attempted` at this point.
+5. Press `Save`.
+
+Jackin puts the login into an OpenShell provider on the gateway. The sandbox gets a placeholder, never the token. See [Accounts](/guides/accounts/) for the details.
+
+### Other providers
+
+Choose one of these sources:
+
+- `Environment variable (usage only)`. Enter the name of the variable, never its value. Jackin saves only the name. The value stays in the environment of the console. The account detail then shows `Host env · $NAME`.
+- `1Password item / field (usage only)`. Jackin saves an `op://` reference. It resolves the reference on the host with `op`, only to read usage. It never sends the reference or the value to a sandbox or an OpenShell provider.
+
+The console accepts no typed keys. The `Plain-text API key` option and the `Enter plain text instead` button are fixed controls with a stated reason. The form shows `jackin stores no typed keys`.
+
+A usage account with a bad credential shows `failed` in the usage panel. A fake key in the live run did exactly that.
+
+### Check an account
+
+Select an account and use these keys:
+
+| Key | Action |
+|---|---|
+| `Enter` | Show the details. |
+| `r` | Refresh the usage of the account. |
+| `v` | Validate the credential. |
+| `e` | Edit the account. |
+| `d` | Remove the account. |
+| `/` | Filter the list. |
+
+## Set defaults and bindings
+
+Each provider has at most one default account. A saved account shows a star when it is the default of its provider. Select an account and press `Space` to make it the default.
+
+Bindings pin an account to a place:
+
+- A workspace binding holds one account for each provider in that workspace. Open the workspace editor, go to the `Accounts` tab, choose the accounts, and press `Ctrl+S`.
+- A role binding holds the default account of a role for the agent. Press `R` to open Roles, select the role, and press `Bind account…`. `Clear binding` removes it.
+
+For each launch, jackin picks the account in this order:
+
+1. The `--account` flag.
+2. The workspace binding for the provider of the agent.
+3. The role binding for the agent.
+4. The default account of the provider.
+5. The only account of the provider, when exactly one exists.
+
+If no rule selects an account, the launch stops with an error that names the missing binding. When two accounts are ready and no rule chooses one, the launch picker asks you.
+
+The console can remove a default account. The CLI cannot: `jackin account rm` refuses while an account is still the default of its provider. In the console, the `Remove…` action clears the default and removes the account.
+
+## Read the usage panel
+
+Press `u` in the manager, or `m` on an account screen, to open Usage. The title says `read-only`. The panel lists your accounts by provider and shows the usage of every one, not only of the accounts that jackin can run.
+
+- `Overview` shows the health, the freshness, the registry, and one row per provider with its worst window and status.
+- An account page shows the provider, the credential, the status, and the limit windows. For example, a Codex account reads `weekly 82%` with a reset time.
+
+Press `r` to refresh. Press `m` to manage the account in Accounts. The first read can show `failed` for a Codex account. One refresh brings the windows in.
+
+## Run the doctor
+
+Press `D` in the manager to open the doctor panel. Press `Enter` or `r` to run the checks. The doctor changes nothing. It checks:
+
+- the `openshell`, `ssh`, and `git` binaries
+- that the gateway is registered, and its health
+- the pinned OpenShell version
+- the engine socket of the gateway
+
+Each `warn` and `fail` row has a `fix` line. Press `y` to copy the report. The status block on the home screen shows the gateway health at all times.
+
+## Launch Codex
+
+1. In the roster, select a workspace, or your current directory, and press `Enter`.
+2. Pick the role if the console asks. The title reads `Launch › <workspace> › <role>`.
+3. The cockpit opens and runs seven stages: `Image build`, `OpenShell provider`, `Sandbox`, `Credentials`, `Upload`, `Hooks`, and `Codex`. The header names the account and where the choice came from, for example `account Codex · p95b-codex (Workspace choice)`.
+4. If the role asks for values, a `Values for this launch` dialog opens on top of the stage list. The launch cannot continue until you answer it. Fill in the fields, move to `Start launch` with `Tab`, and press `Enter`.
+
+The dialog is easy to miss because it opens over the first stage. If a launch looks stuck at stage 1, look for it.
+
+Cockpit keys:
+
+| Key | Action |
+|---|---|
+| `x` | Cancel the launch. A dialog asks you to confirm. |
+| `b` | Open the build log. |
+| `i` | Show the instance info. |
+| `Ctrl+Q` | Quit the console. |
+
+A cancel keeps the sandbox. Jackin reports it as a restore candidate and attaches nothing.
+
+When the stages finish, the console opens Jackin Capsule with the Codex pane attached.
+
+## Work in Jackin Capsule
+
+Jackin Capsule is the multiplexer. It has a menu bar (`File`, `Edit`, `View`, `Session`, `Help`), a tab bar, split panes, a status line, and a hint line. It runs on your host, in the jackin process. Nothing runs in the sandbox for it.
+
+Each pane is an OpenShell terminal session. The Codex pane attaches to the main process of the sandbox. A shell pane opens a new shell in the sandbox. A sandbox has one Codex pane.
+
+### Prefix keys
+
+Press `Ctrl+B`, release it, then press one more key. `Ctrl+B` then `Space` lists the commands.
+
+| Keys | Action |
+|---|---|
+| `Ctrl+B c` | New tab. |
+| `Ctrl+B n`, `Ctrl+B p` | Next and previous tab. |
+| `Ctrl+B 1` to `9`, `0` | Go to a tab. `0` is tab 10. |
+| `Ctrl+B %` | Split right. |
+| `Ctrl+B "` | Split below. |
+| `Ctrl+B h`, `j`, `k`, `l` | Move the focus left, down, up, right. |
+| `Ctrl+B H`, `J`, `K`, `L` | Resize the pane. |
+| `Ctrl+B z` | Zoom or unzoom the pane. |
+| `Ctrl+B x` | Close the pane. |
+| `Ctrl+B &` | Close the tab. |
+| `Ctrl+B ,` | Change the tab title. |
+| `Ctrl+B m` | Open the tab menu. |
+| `Ctrl+B Ctrl+L` | Clear the pane. |
+| `Ctrl+B r` | Redraw the pane. |
+| `Ctrl+B u` | Open the usage panel. |
+| `Ctrl+B i` | Show the container info. |
+| `Ctrl+B d` | Detach. |
+| `Ctrl+B Ctrl+B` | Send a literal `Ctrl+B` to the pane. |
+
+`F10` after the prefix opens the menu bar. `Ctrl+\` opens the command palette.
+
+### Add a shell pane
+
+1. Press `Ctrl+B %`. The `Split → Right` picker opens.
+2. Choose `Shell`.
+3. The shell opens next to Codex in the project directory. The tab is now named `Mix (2)`.
+
+The picker lists the other agents as `usage only · launches Codex only`. Codex is the only agent that launches.
+
+### What Capsule never sends
+
+- `Ctrl-D` never reaches Codex or a shell. Capsule drops it, so you cannot end an agent by accident.
+- `Ctrl+Q` is the console's own key. It never reaches a pane.
+
+### Clipboard
+
+Capsule accepts a clipboard write from the focused Codex pane only. All of these must hold:
+
+- The write comes within 5 seconds of your last key or click in that pane.
+- The write holds at most 100,000 bytes.
+
+Each write shows a status message. Capsule refuses clipboard reads. It refuses every clipboard write from a shell pane. `jackin attach` and `jackin shell` never touch the host clipboard.
+
+Copy joins soft-wrapped lines. The intro honours `JACKIN_NO_MOTION`.
+
+### Pane status
+
+A bell or a notification from an unfocused Codex pane marks it as needing input. Exit code 0 marks it done.
+
+## Detach and reattach
+
+Press `Ctrl+B d`. The console returns to the roster and shows:
+
+```text
+Detached · p95b keeps running · 1 instance on the gateway
+```
+
+The sandbox stays `Ready`. Codex and the shell keep running. The instance row shows `running`, the number of tabs and panes, and the live topology.
+
+To reattach:
+
+1. Select the instance in the roster.
+2. Press `Enter` (`Reconnect`).
+
+Capsule reopens with the same panes. The gateway replays the output, so the shell history is still there.
+
+On the instance, these keys are also available:
+
+| Key | Action |
+|---|---|
+| `Enter` | Reconnect. On a stopped instance, restore. |
+| `a` | Start a new session. |
+| `!` | Open a shell. |
+| `t` | Stop the sandbox. |
+| `i` | Inspect the instance. |
+| `p` | Purge the instance. |
+| `←` | Go back. |
+
+## Stop an instance
+
+Press `t` on the instance. The dialog says: "The sandbox stops and every session in it ends. You can restore it later." Confirm to stop it.
+
+A stopped sandbox refuses commands, so jackin cannot inspect it. It counts the work in it as not exported. Press `Enter` on the stopped instance to restore it. After a restore, the main process waits and Codex does not run until you attach again.
+
+## Purge an instance
+
+Purge deletes the sandbox and its files. You cannot undo it.
+
+1. Select the instance and press `p`.
+2. The dialog lists the action, the target, the scope, and the risk. For a clean instance it reads:
+
+   ```text
+   Purge instance 0xw9?
+
+   Action      delete the sandbox
+   Target      0xw9 · p95b › sentinel · Codex
+   Scope       1 preserved session · clean project copy
+   Risk        the sandbox and its files are deleted
+   Reversible  no
+   ```
+
+3. Type the instance id, here `0xw9`. The dialog starts in this field.
+4. Move to `Purge` with `Tab` and press `Enter`.
+
+The instance leaves the roster and the gateway lists no sandbox.
+
+### Guarded purge
+
+The console purge is guarded. It refuses when work in the sandbox is not exported. Work is not exported when any of these is true:
+
+- A worktree has an uncommitted change.
+- The stash is not empty.
+- A branch tip differs from your branch of the same name and from its ref under `refs/heads/jackin/<sandbox>/`.
+- Jackin cannot inspect the sandbox.
+
+The error names the problem and ends with the next step:
+
+```text
+the work in jackin-work-0001 is not exported: <state> · to delete it anyway, run jackin purge --force
+```
+
+To keep the work, leave the console and run `jackin export <sandbox>`. It writes the branches into your repository as `refs/heads/jackin/<sandbox>/<branch>`. Then purge again.
+
+To delete the sandbox and lose the unexported work, run this on the command line. The console offers no forced purge.
+
+```sh
+jackin purge <sandbox> --force
+```
+
+See [Work with sandboxes](/guides/sandboxes/) for the export and the exit codes.
