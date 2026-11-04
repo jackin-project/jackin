@@ -430,3 +430,7 @@ d84c40a1677e4e190c11f9994492aab893f8ac4b:crates/adapters/jackin-docker/src/shell
 # History fingerprints for betterleaks git: the jackin placeholder ID token at its first path, and prose in a deleted reconciliation note
 ddd296b40920dc19887107cca29f9204b4f8ae5e:crates/jackin-session/src/files.rs:jwt:7
 6e96df7af2d32cf9ad22b7e19227a0d1f603a46d:rewrite/reconciliation/P9.3.md:generic-password:31
+
+# Reason: prose, no credential, reviewed 2026-11-04
+# Working-tree fingerprint for betterleaks dir: the match is the quoted plan title in item 1 of the P9.3 reconciliation note ("login (plan 7.3, ...)"), which only names Session::sync_account; the same line is already listed above for betterleaks git at its first commit
+rewrite/reconciliation/P9.3.md:generic-password:31
