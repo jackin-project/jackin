@@ -21,14 +21,14 @@ export function CompositionMachine() {
   const role = org.roles[activeRole];
   const ws = org.workspaces[activeWs];
   const denied = ws?.allowed && !ws.allowed.includes(activeRole);
-  const shortRole = activeRole.split('/').pop() ?? activeRole;
+  const slug = activeWs.slice(0, 7).replace(/-+$/, '');
 
   return (
     <section id="concepts" className="landing-section">
       <div className="landing-shell">
         <div className="landing-sec-label">06 · Mental Model</div>
         <h2 className="landing-sec-title">Think in <span className="accent">two dimensions</span>.</h2>
-        <p className="landing-sec-intro">Same agent in different workspaces. Same workspace with different agents. Pick both — see what runs.</p>
+        <p className="landing-sec-intro">Same role in different workspaces. Same workspace with different roles. Pick both — see what launches.</p>
 
         <div className="landing-machine-wrapper">
           <div className="landing-org-tabs">
@@ -47,7 +47,7 @@ export function CompositionMachine() {
           <div className="landing-machine">
             <div className="landing-machine-panel">
               <div className="landing-machine-label">Role</div>
-              <div className="landing-machine-sublabel">the tool profile</div>
+              <div className="landing-machine-sublabel">the tool profile and egress rules</div>
               <div className="landing-machine-options">
                 {roleKeys.map(name => (
                   <button
@@ -66,7 +66,7 @@ export function CompositionMachine() {
 
             <div className="landing-machine-panel">
               <div className="landing-machine-label">Workspace</div>
-              <div className="landing-machine-sublabel">workdir + mounts</div>
+              <div className="landing-machine-sublabel">the saved project</div>
               <div className="landing-machine-options">
                 {wsKeys.map(name => (
                   <button
@@ -84,42 +84,34 @@ export function CompositionMachine() {
             <div className="landing-machine-op">=</div>
 
             <div className="landing-machine-panel preview">
-              <div className="landing-machine-label">Running Agent</div>
-              <div className="landing-machine-sublabel">the resulting container</div>
+              <div className="landing-machine-label">Running Sandbox</div>
+              <div className="landing-machine-sublabel">the resulting sandbox</div>
               <div className="landing-preview">
                 {denied ? (
                   <div className="landing-preview-denied">
                     <span className="label">✕ not loaded</span>
-                    Workspace "{activeWs}" declares <code>allowed-roles: [{ws?.allowed?.join(', ')}]</code>.
-                    Rejected before the container starts.
+                    Workspace "{activeWs}" declares <code>allowed roles: [{ws?.allowed?.join(', ')}]</code>.
+                    Rejected before the sandbox is created.
                   </div>
                 ) : role && ws ? (
                   <>
-                    <PreviewRow k="container"><span className="hl">jackin-{shortRole}</span></PreviewRow>
+                    <PreviewRow k="sandbox"><span className="hl">jackin-{slug}-3f9a</span></PreviewRow>
+                    <PreviewRow k="agent">Codex</PreviewRow>
                     <PreviewRow k="role">{activeRole}</PreviewRow>
                     <PreviewRow k="repo">github.com/{role.repo}</PreviewRow>
                     <PreviewRow k="tools">{role.tools}</PreviewRow>
-                    <PreviewRow k="plugins">{role.plugins}</PreviewRow>
-                    <PreviewRow k="workdir">{ws.workdir}</PreviewRow>
-                    <PreviewRow k="mounts">
+                    <PreviewRow k="egress">{role.egress}</PreviewRow>
+                    <PreviewRow k="upload">
                       <div className="landing-mount-list">
-                        {ws.mounts.map((m, i) => (
-                          <div key={i} className="landing-mount-item">
-                            {m.src === m.dst ? (
-                              <span className="src">{m.src}</span>
-                            ) : (
-                              <>
-                                <span className="src">{m.src}</span>
-                                <span className="arrow">→</span>
-                                <span className="dst">{m.dst}</span>
-                              </>
-                            )}
-                            <span className={'perm ' + (m.ro ? 'ro' : 'rw')}>{m.ro ? 'ro' : 'rw'}</span>
-                          </div>
-                        ))}
+                        <div className="landing-mount-item">
+                          <span className="src">{ws.path}</span>
+                          <span className="arrow">→</span>
+                          <span className="dst">/sandbox/project</span>
+                          <span className="perm rw">copy</span>
+                        </div>
                       </div>
                     </PreviewRow>
-                    <PreviewRow k="network">jackin-{shortRole}-net</PreviewRow>
+                    <PreviewRow k="docker">{ws.docker ? 'on · engine you run' : 'off'}</PreviewRow>
                   </>
                 ) : null}
               </div>
