@@ -118,13 +118,17 @@ async fn a_role_policy_that_overlaps_a_codex_host_is_rejected_before_any_plan() 
         let fine = RoleFixture::new("sentinel")?.policy_yaml(&policy("github", "github.com", 443, "/usr/bin/git"));
         load(&fine).await?;
 
-        let reserved = RoleFixture::new("sentinel")?.policy_yaml(&policy("_provider_codex", "github.com", 443, "/usr/bin/git"));
-        let result = load(&reserved).await;
-        assert!(
-            matches!(result.as_ref().err().and_then(|e| e.downcast_ref::<RoleError>()), Some(RoleError::Policy(_))),
-            "{:?}",
-            result.err()
-        );
+        for name in ["_provider_codex", "docker_engine"] {
+            let reserved = RoleFixture::new("sentinel")?.policy_yaml(&policy(name, "github.com", 443, "/usr/bin/git"));
+            let result = load(&reserved).await;
+            assert!(
+                matches!(result.as_ref().err().and_then(|e| e.downcast_ref::<RoleError>()), Some(RoleError::Policy(PolicyError::ReservedRuleName(key))) if key == name),
+                "{name}: {:?}",
+                result.err()
+            );
+        }
+        let near = RoleFixture::new("sentinel")?.policy_yaml(&policy("docker_engine2", "github.com", 443, "/usr/bin/git"));
+        load(&near).await?;
 
         let ubuntu = RoleFixture::new("sentinel")?.dockerfile("FROM ubuntu\n");
         let result = load(&ubuntu).await;

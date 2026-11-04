@@ -341,7 +341,7 @@ fn launch_policy(
         ),
         DockerCapability::Disabled => (role.policy().clone(), Vec::new()),
     };
-    Ok((ClosedPolicy::parse(&document.render()?)?, warnings))
+    Ok((document.close()?, warnings))
 }
 
 pub fn plan_launch(
