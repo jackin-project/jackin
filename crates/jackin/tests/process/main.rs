@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod console;
+
 use std::path::Path;
 use std::process::{Output, Stdio};
 use std::time::Duration;

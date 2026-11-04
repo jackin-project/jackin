@@ -11,6 +11,7 @@ use jackin::{
 use jackin_core::{EnvSnapshot, HostPath, StdFileSystem};
 use jackin_image::BuildxEngine;
 use jackin_session::HostPorts;
+use jackin_tui::TerminalConsole;
 use jackin_usage::ProviderEndpoints;
 use tokio_util::sync::CancellationToken;
 
@@ -80,6 +81,7 @@ async fn start() -> ExitCode {
         host,
         limits: launch_limits(),
         usage_endpoints: ProviderEndpoints::real(),
+        console: Arc::new(TerminalConsole),
     };
     let run = jackin::run(
         AppEnv {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::{self, Read, Write};
-use std::num::{NonZeroU8, NonZeroU16};
+use std::num::{NonZeroU8, NonZeroU16, NonZeroUsize};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,6 +17,7 @@ use jackin_session::{
     ConnectError, DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
     DEFAULT_EXPORT_TOTAL_BYTES, GatewayConnector, LaunchLimits,
 };
+use jackin_tui::ConsoleLimits;
 use rustix::termios::{self, OptionalActions, Termios};
 use tokio::signal::unix::{Signal, SignalKind, signal};
 use tokio::sync::mpsc;
@@ -30,6 +31,7 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 const READ_CHUNK: usize = 4096;
 const FALLBACK_SIZE: (u16, u16) = (80, 24);
 const DOCKER_SOCKET: &str = "/var/run/docker.sock";
+const PANE_INBOX_BYTES: usize = 1024 * 1024;
 const UNIX_SCHEME: &str = "unix://";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,8 +68,7 @@ pub(crate) fn engine_socket(env: &EnvSnapshot) -> Result<HostPath, CommandError>
 }
 
 pub fn locations(env: &EnvSnapshot) -> Result<Locations, CommandError> {
-    let home = absolute(env, "HOME")?
-        .ok_or_else(|| CommandError::Environment("HOME is not set".to_owned()))?;
+    let home = home(env)?;
     let config_path = match absolute(env, "XDG_CONFIG_HOME")? {
         Some(base) => below(&base, "jackin/config.toml")?,
         None => ConfigStore::default_path(&home),
@@ -100,6 +101,19 @@ pub fn launch_limits() -> LaunchLimits {
         export_entry_bytes: DEFAULT_EXPORT_ENTRY_BYTES,
         export_objects: DEFAULT_EXPORT_OBJECTS,
         export_total_bytes: DEFAULT_EXPORT_TOTAL_BYTES,
+    }
+}
+
+pub(crate) fn home(env: &EnvSnapshot) -> Result<HostPath, CommandError> {
+    absolute(env, "HOME")?.ok_or_else(|| CommandError::Environment("HOME is not set".to_owned()))
+}
+
+pub(crate) fn console_limits() -> ConsoleLimits {
+    ConsoleLimits {
+        connect_deadline: Duration::from_secs(5),
+        work_reads: NonZeroUsize::MIN.saturating_add(3),
+        pane_inbox_bytes: NonZeroUsize::new(PANE_INBOX_BYTES).unwrap_or(NonZeroUsize::MIN),
+        supervisor_poll: Duration::from_millis(250),
     }
 }
 
@@ -178,9 +192,19 @@ fn pump_stdin(sender: &mpsc::UnboundedSender<Vec<u8>>) {
     }
 }
 
+type Chunks = mpsc::UnboundedReceiver<Vec<u8>>;
+
+fn reading(slot: &mut Option<Chunks>) -> &mut Chunks {
+    slot.get_or_insert_with(|| {
+        let (sender, chunks) = mpsc::unbounded_channel();
+        std::thread::spawn(move || pump_stdin(&sender));
+        chunks
+    })
+}
+
 #[derive(Debug)]
 pub struct SystemTerminal {
-    chunks: mpsc::UnboundedReceiver<Vec<u8>>,
+    chunks: Option<Chunks>,
     resizes: Signal,
     pending: Vec<u8>,
 }
@@ -191,10 +215,8 @@ impl SystemTerminal {
             return Ok(None);
         }
         let resizes = signal(SignalKind::window_change())?;
-        let (sender, chunks) = mpsc::unbounded_channel();
-        std::thread::spawn(move || pump_stdin(&sender));
         Ok(Some(SystemTerminal {
-            chunks,
+            chunks: None,
             resizes,
             pending: Vec::new(),
         }))
@@ -232,7 +254,7 @@ impl Terminal for SystemTerminal {
                 let text = String::from_utf8_lossy(&line);
                 return Ok(Some(text.trim_end_matches(['\r', '\n']).to_owned()));
             }
-            match self.chunks.recv().await {
+            match reading(&mut self.chunks).recv().await {
                 Some(chunk) => self.pending.extend(chunk),
                 None if self.pending.is_empty() => return Ok(None),
                 None => {
@@ -248,7 +270,7 @@ impl Terminal for SystemTerminal {
             return TerminalInput::Bytes(std::mem::take(&mut self.pending));
         }
         tokio::select! {
-            chunk = self.chunks.recv() => match chunk {
+            chunk = reading(&mut self.chunks).recv() => match chunk {
                 Some(bytes) => TerminalInput::Bytes(bytes),
                 None => TerminalInput::Closed,
             },
