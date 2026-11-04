@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{ConfigEdit, Workspace};
+use jackin_core::{ConfigEdit, Workspace, plain};
 
 use crate::app::App;
 use crate::cli::{JsonArg, WorkspaceAddArgs, WorkspaceArg, WorkspaceCommand};
@@ -37,7 +37,7 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     for row in &view.workspaces {
         let docker = if row.docker { "\tdocker" } else { "" };
         app.io
-            .line(&format!("{}\t{}{docker}", row.name, row.path))?;
+            .line(&format!("{}\t{}{docker}", row.name, plain(&row.path)))?;
     }
     Ok(())
 }
