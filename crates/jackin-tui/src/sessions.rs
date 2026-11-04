@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::join_all;
@@ -13,6 +14,8 @@ use jackin_session::{
     ConnectError, GatewayAccess, GatewayConnector, Gateways, Session, UnreachableGateway,
 };
 use tokio_util::sync::CancellationToken;
+
+use crate::fleet::{TimedOut, Waited, within};
 
 #[derive(Debug)]
 pub enum GatewayState {
@@ -142,6 +145,27 @@ impl SessionSet {
                     .collect(),
             ),
         }
+    }
+
+    pub async fn connect(
+        config: &Config,
+        default: GatewayName,
+        connector: &dyn SessionConnector,
+        deadline: Duration,
+        cancel: &CancellationToken,
+    ) -> SessionSet {
+        let attempts = config.gateways().map(|(name, entry)| async move {
+            let state = match within(deadline, connector.connect(name, entry, cancel)).await {
+                Some(Ok(session)) => GatewayState::Connected(Box::new(session)),
+                Some(Err(error)) => GatewayState::Failed(error),
+                None => GatewayState::Failed(GatewayError::Unreachable {
+                    endpoint: name.to_string(),
+                    message: TimedOut(Waited(deadline)).to_string(),
+                }),
+            };
+            (name.clone(), state)
+        });
+        SessionSet::new(default, join_all(attempts).await.into_iter().collect())
     }
 
     pub fn get(&self, name: &GatewayName) -> Option<Session> {

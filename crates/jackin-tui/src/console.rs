@@ -6,6 +6,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use jackin_console::app::{App, AppOptions, ClipboardMode, Entry, EntryPage, assemble};
 use jackin_console::arbiter::Arbiter;
 use jackin_console::panes::PanePolicy;
@@ -20,7 +21,7 @@ use junie_tui::core::event::Input;
 use junie_tui::motion::Motion;
 use junie_tui::runtime::{Application, ExternalReceiver, external_channel};
 use junie_tui::shell::NativeClipboard;
-use junie_tui::theme::{Theme, Tone};
+use junie_tui::theme::{ColorLevel, Theme, Tone};
 use thiserror::Error;
 use tokio_util::sync::{CancellationToken, DropGuard};
 
@@ -32,6 +33,7 @@ use crate::panes::PaneHub;
 use crate::sessions::{SessionConnector, SessionSet};
 
 const NO_MOTION: &str = "JACKIN_NO_MOTION";
+const CLOSE_DEADLINE: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Copy, Debug)]
 pub struct ConsoleLimits {
@@ -88,6 +90,58 @@ pub enum ConsoleError {
     Config(#[from] ConfigError),
     #[error(transparent)]
     Pinned(#[from] CompatibilityError),
+    #[error("the console stopped before it could quit")]
+    Panicked,
+}
+
+#[async_trait]
+pub trait ConsoleHost: Send + Sync + fmt::Debug {
+    async fn run(&self, deps: ConsoleDeps) -> Result<ConsoleExit, ConsoleError>;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TerminalConsole;
+
+#[async_trait]
+impl ConsoleHost for TerminalConsole {
+    async fn run(&self, deps: ConsoleDeps) -> Result<ConsoleExit, ConsoleError> {
+        run_console(deps).await
+    }
+}
+
+pub async fn run_console(deps: ConsoleDeps) -> Result<ConsoleExit, ConsoleError> {
+    run_console_with(deps, junie_tui::shell::run).await
+}
+
+pub async fn run_console_with<F>(
+    deps: ConsoleDeps,
+    terminal: F,
+) -> Result<ConsoleExit, ConsoleError>
+where
+    F: FnOnce(&mut App) -> std::io::Result<()> + Send + 'static,
+{
+    let handle = deps.handle.clone();
+    let (panes, cancel, outcome) = tokio::task::spawn_blocking(move || {
+        let Console {
+            mut app,
+            panes,
+            _cancel: cancel,
+            ..
+        } = handle.block_on(build_console(deps))?;
+        let outcome = terminal(&mut app);
+        drop(app);
+        Ok::<_, ConsoleError>((panes, cancel, outcome))
+    })
+    .await
+    .map_err(|_| ConsoleError::Panicked)??;
+    panes.finished(CLOSE_DEADLINE).await;
+    drop(cancel);
+    outcome.map_err(ConsoleError::Terminal)?;
+    Ok(ConsoleExit::Quit)
+}
+
+pub fn system_theme() -> Theme {
+    Theme::for_level(ColorLevel::detect())
 }
 
 impl Console {
