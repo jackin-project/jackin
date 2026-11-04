@@ -57,11 +57,7 @@ async fn add_registers_a_path_role_by_its_manifest_name() -> TestResult {
         fresh.commit().await?;
         let bad = lab.code.join("alpha");
         let before = lab.console.config_text().await?;
-        for location in [
-            bad.display().to_string(),
-            "https://example.com/owner/role.git".to_owned(),
-            "/nonexistent/role".to_owned(),
-        ] {
+        for location in [bad.display().to_string(), "/nonexistent/role".to_owned()] {
             lab.perform(Effect::AddRole { location }).await?;
             assert_eq!(lab.console.config_text().await?, before);
         }

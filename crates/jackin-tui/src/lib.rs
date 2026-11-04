@@ -22,7 +22,6 @@ pub mod persist;
 mod project;
 mod readings;
 mod sessions;
-mod unbuilt;
 mod usage;
 mod wall;
 

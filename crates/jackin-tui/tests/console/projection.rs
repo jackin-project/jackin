@@ -1,9 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_console::backend::Effect;
 use jackin_console::domain::instance::{ID_PREFIX, InstanceStatus};
-use jackin_console::domain::vocabulary::{Unbuilt, Vocabulary};
 use jackin_core::{ConfigEdit, Labels, Phase, SandboxName, WorkspaceName};
 use jackin_openshell::{GatewayError, GatewayOp, PowerAction};
 use jackin_testkit::{ConsoleRig, Fault, Rig, TestResult, World, guard, launch_id};
@@ -226,59 +224,6 @@ async fn refresh_brings_in_a_new_sandbox() -> TestResult {
         }
         console.settle().await?;
         assert_eq!(status_of(&mut console, 1), Some(InstanceStatus::Running));
-        Ok(())
-    })
-    .await
-}
-
-fn words(what: Unbuilt) -> String {
-    Vocabulary::openshell().unbuilt(what)
-}
-
-fn failed_text(rig: &mut ConsoleRig, effect: Effect, expected: Unbuilt) {
-    let world = &mut rig.console().app().world;
-    world.perform(effect);
-    let jobs: Vec<String> = world
-        .jobs
-        .iter()
-        .map(|job| format!("{:?}", job.work))
-        .collect();
-    assert_eq!(jobs.len(), 1, "{jobs:?}");
-    assert!(jobs[0].contains(&words(expected)), "{}", jobs[0]);
-}
-
-async fn bare() -> Result<(Rig, ConsoleRig), Box<dyn std::error::Error>> {
-    let rig = Rig::new().await?;
-    let mut console = ConsoleRig::seeded(&rig).await?;
-    console.skip_intro();
-    Ok((rig, console))
-}
-
-#[tokio::test]
-async fn unbuilt_restore_fails_visibly() -> TestResult {
-    guard(async {
-        let (_rig, mut console) = bare().await?;
-        failed_text(
-            &mut console,
-            Effect::Restore {
-                instance: "jk-0000".to_owned(),
-            },
-            Unbuilt::RestoreSandbox,
-        );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn unbuilt_prewarm_fails_visibly() -> TestResult {
-    guard(async {
-        let (_rig, mut console) = bare().await?;
-        failed_text(
-            &mut console,
-            Effect::Prewarm { workspace: 1 },
-            Unbuilt::PrewarmImage,
-        );
         Ok(())
     })
     .await

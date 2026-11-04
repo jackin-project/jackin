@@ -22,7 +22,6 @@ use crate::files::HostFiles;
 use crate::launch;
 use crate::observe::Inputs;
 use crate::panes::PaneHub;
-use crate::unbuilt;
 
 const REFRESH_EVERY_SECS: i64 = 5;
 const NEVER: i64 = i64::MIN;
@@ -68,9 +67,7 @@ impl JackinBackend {
     }
 
     fn settle(&self, effect: Effect) {
-        let Some(failure) = crashed::reply(&effect) else {
-            return;
-        };
+        let failure = crashed::reply(&effect);
         let inputs = Arc::clone(&self.inputs);
         match effect {
             Effect::SaveWorkspace {
@@ -164,10 +161,13 @@ impl JackinBackend {
                     result: inputs.list_op(&scope).await,
                 }
             }),
-            Effect::Refresh
-            | Effect::RunDoctor
-            | Effect::Restore { .. }
-            | Effect::Prewarm { .. } => {}
+            Effect::Restore { instance } => self
+                .bridge
+                .spawn(failure, async move { inputs.restore(&instance).await }),
+            Effect::Prewarm { workspace } => self
+                .bridge
+                .spawn(failure, async move { inputs.prewarm(workspace).await }),
+            Effect::Refresh | Effect::RunDoctor => {}
         }
     }
 
@@ -212,7 +212,6 @@ impl Backend for JackinBackend {
                 self.rerun_doctor();
                 None
             }
-            Effect::Restore { .. } | Effect::Prewarm { .. } => unbuilt::fails(effect, &self.words),
             _ => {
                 self.settle(effect.clone());
                 None

@@ -3,6 +3,7 @@
 
 mod accounts;
 mod allowed_roles;
+mod controls;
 mod env_source;
 mod fixed;
 mod github;

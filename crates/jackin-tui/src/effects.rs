@@ -9,20 +9,21 @@ use jackin_console::domain::account::{AccountId, AccountRegistry};
 use jackin_console::domain::agent::Agent;
 use jackin_console::domain::instance::InstanceId;
 use jackin_console::domain::role::{FindingArea, RoleFinding, RoleManifestDoc};
-use jackin_console::domain::vocabulary::{Rejection, SaveField, Unbuilt, Vocabulary};
+use jackin_console::domain::vocabulary::{Rejection, SaveField};
 use jackin_console::domain::workspace::{MountSource, Workspace, WorkspaceId};
 use jackin_console::panes::{FailNext, LinkFault};
 use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
 use jackin_core::plain;
 use jackin_core::{
     Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath, ModelName,
-    PathError, RepoPath, RoleManifest, RoleName, RoleSource, WorkspaceName,
+    PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
 };
 use jackin_core::{EnvSpec, ManifestError, Workspace as CoreWorkspace};
+use jackin_image::Rebuild;
 use jackin_openshell::PowerAction;
 use jackin_session::{
-    AccountPlan, Gateways, MANIFEST_FILE, PurgeMode, RoleError, error_chain, plan_account_edits,
-    read_chatgpt_login,
+    AccountPlan, BuildRequest, Gateways, MANIFEST_FILE, PurgeMode, RoleError, build_observed,
+    error_chain, plan_account_edits, read_chatgpt_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -437,20 +438,79 @@ impl Inputs {
         Ok(Box::new(observation.snapshot))
     }
 
-    pub(crate) async fn stop(&self, instance: &InstanceId) -> Msg {
+    async fn powered(
+        &self,
+        instance: &InstanceId,
+        action: PowerAction,
+    ) -> Result<Box<Snapshot>, String> {
         let result = async {
             let (gateway, name) = self.sandbox(instance)?;
             self.session(&gateway)?
-                .power(&name, PowerAction::Stop, &self.cancel)
+                .power(&name, action, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             self.after_lifecycle().await
         }
         .await;
+        result.map_err(|error| text(&error))
+    }
+
+    pub(crate) async fn stop(&self, instance: &InstanceId) -> Msg {
         Msg::Stopped {
             instance: instance.clone(),
-            result: result.map_err(|error| text(&error)),
+            result: self.powered(instance, PowerAction::Stop).await,
         }
+    }
+
+    pub(crate) async fn restore(&self, instance: &InstanceId) -> Msg {
+        Msg::Restored {
+            instance: instance.clone(),
+            result: self.powered(instance, PowerAction::Start).await,
+        }
+    }
+
+    pub(crate) async fn prewarm(&self, id: WorkspaceId) -> Msg {
+        let result = self.try_prewarm(id).await.map_err(|error| text(&error));
+        Msg::Prewarmed {
+            workspace: id,
+            result,
+        }
+    }
+
+    async fn try_prewarm(&self, id: WorkspaceId) -> Result<(), Refused> {
+        let name = locked(&self.ids)
+            .name(id)
+            .cloned()
+            .ok_or_else(|| Refused::Text(id.to_string()))?;
+        let config = self.config.load().await?;
+        let workspace = config
+            .workspace(&name)
+            .ok_or_else(|| ConfigError::MissingReference {
+                kind: "workspace",
+                name: name.to_string(),
+            })?;
+        let session = match self.sessions.default_access() {
+            Access::Up(session) => *session,
+            Access::Down { error, .. } => return Err(Refused::Text(text(&*error))),
+            Access::NotChosen => return Err(ConfigError::NoGateway.into()),
+        };
+        let request = BuildRequest {
+            gateway: self.sessions.default_name(),
+            role: None,
+            path: &workspace.path,
+            rebuild: Rebuild::No,
+        };
+        build_observed(
+            session.engine(),
+            &self.roles,
+            &config,
+            &request,
+            &self.cancel,
+            |_| {},
+        )
+        .await
+        .map(drop)
+        .map_err(|error| Refused::Text(text(&error)))
     }
 
     pub(crate) async fn purge(&self, instance: &InstanceId) -> Msg {
@@ -532,23 +592,27 @@ impl Inputs {
     }
 
     async fn try_add_role(&self, location: &str) -> Result<(String, Box<Snapshot>), Refused> {
-        if jackin_core::RoleUrl::parse(location).is_ok() {
-            return Err(Refused::Text(
-                Vocabulary::openshell().unbuilt(Unbuilt::AddGitRole),
-            ));
-        }
-        let root = self.folder(location).await?;
-        let loaded = self
-            .roles
-            .load_path(&root, &CancellationToken::new())
-            .await
-            .map_err(|error| Refused::Text(text(&error)))?;
-        let name = loaded.name().clone();
+        let (name, source) = if let Ok(url) = RoleUrl::parse(location) {
+            let loaded = self
+                .roles
+                .fetch_git(&url, None, &self.cancel)
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?;
+            (loaded.name().clone(), RoleSource::Git { url, rev: None })
+        } else {
+            let root = self.folder(location).await?;
+            let loaded = self
+                .roles
+                .load_path(&root, &CancellationToken::new())
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?;
+            (loaded.name().clone(), RoleSource::Path(root))
+        };
         let saved = self
             .config
             .edit(vec![ConfigEdit::AddRole {
                 name: name.clone(),
-                source: RoleSource::Path(root),
+                source,
             }])
             .await?;
         Ok((name.to_string(), self.snapshot_of(&saved).await))
