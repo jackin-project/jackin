@@ -1,14 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+
 use jackin_console::backend::Effect;
 use jackin_console::domain::account::{Account, CredentialSource, DetectedKind, UNSAVED_ID};
 use jackin_console::domain::agent::Provider;
 use jackin_core::{
     Account as CoreAccount, AccountName, Agent, ConfigEdit, CredentialSource as Credential,
-    Provider as CoreProvider, ProviderName, RoleName, WorkspaceName,
+    GatewayName, OpenShellWorkspace, Provider as CoreProvider, ProviderName, RoleName,
+    WorkspaceName,
 };
-use jackin_testkit::{ACCOUNT_ID, TestResult, guard};
+use jackin_openshell::Gateway;
+use jackin_testkit::{
+    ACCOUNT_ID, ConsoleRig, FakeGateway, ScriptedConnector, TestResult, connector_over, guard,
+    session_over,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::support::Lab;
@@ -333,6 +340,122 @@ async fn the_preselected_account_equals_the_d26_table() -> TestResult {
             }
             assert_eq!(core.as_deref(), expected, "{case}: Config::select_account");
         }
+        Ok(())
+    })
+    .await
+}
+
+async fn dialed(
+    lab: &Lab,
+    peer: &Arc<FakeGateway>,
+) -> Result<ConsoleRig, Box<dyn std::error::Error>> {
+    let home: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&lab.rig.world.gateway);
+    let other: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(peer);
+    let connector = ScriptedConnector::new()
+        .gateway(home, Vec::new())
+        .gateway(other, Vec::new());
+    let mut console = ConsoleRig::builder(&lab.rig.world)
+        .connector(connector_over(&lab.rig.world, Arc::new(connector)))
+        .build()
+        .await?;
+    console.skip_intro();
+    Ok(console)
+}
+
+fn remove_second(registry: &mut jackin_console::domain::account::AccountRegistry) {
+    registry.accounts.retain(|a| a.id != "second");
+}
+
+#[tokio::test]
+async fn a_removal_reaches_a_gateway_that_was_added_after_the_console_opened() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        second_login(&lab).await?;
+        lab.reopen().await?;
+        let name = GatewayName::parse("late")?;
+        let peer = Arc::new(FakeGateway::new(
+            name.clone(),
+            OpenShellWorkspace::parse("default")?,
+        ));
+        let login = lab
+            .config()
+            .await?
+            .account(&account("second")?)
+            .cloned()
+            .ok_or("second")?;
+        let entry = lab
+            .config()
+            .await?
+            .gateways()
+            .next()
+            .map(|(_, entry)| entry.clone())
+            .ok_or("entry")?;
+        lab.console = dialed(&lab, &peer).await?;
+        lab.edit(vec![ConfigEdit::AddGateway { name, entry }])
+            .await?;
+        let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&peer);
+        session_over(&lab.rig.world, port)
+            .sync_account(&login, &CancellationToken::new())
+            .await?;
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        remove_second(&mut registry);
+        lab.perform(Effect::SaveAccounts {
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        assert!(lab.config().await?.account(&account("second")?).is_none());
+        assert!(!peer.providers().contains(&provider_of("second")?));
+        assert!(
+            !lab.rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("second")?)
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_add_publishes_nothing_when_the_home_gateway_left_the_config() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let home = lab
+            .config()
+            .await?
+            .gateways()
+            .next()
+            .map(|(name, _)| name.clone())
+            .ok_or("home gateway")?;
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        registry.accounts.push(Account::registered(
+            UNSAVED_ID,
+            "newlogin",
+            Provider::OpenAi,
+            CredentialSource::LocalFolder {
+                path: lab.rig.home.as_path().display().to_string(),
+                detected: DetectedKind::CodexAuthJson,
+            },
+        ));
+        lab.edit(vec![ConfigEdit::RemoveGateway(home)]).await?;
+        let before = lab.console.config_text().await?;
+        lab.perform(Effect::SaveAccounts {
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        assert_eq!(lab.console.config_text().await?, before);
+        assert!(
+            !lab.rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("newlogin")?)
+        );
         Ok(())
     })
     .await

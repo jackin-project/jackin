@@ -388,6 +388,7 @@ impl ConsoleRigBuilder<'_> {
         let theme = Theme::for_level(ColorLevel::TrueColor);
         let console = build_console(ConsoleDeps {
             config: world.config.clone(),
+            desk: world.desk(),
             sessions: SessionSet::new(default, entries),
             connect,
             roles: Arc::clone(&world.roles),
