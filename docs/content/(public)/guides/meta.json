@@ -1,0 +1,11 @@
+{
+  "title": "Operator guide",
+  "pages": [
+    "gateway",
+    "accounts",
+    "workspaces",
+    "docker-capability",
+    "sandboxes",
+    "security-model"
+  ]
+}

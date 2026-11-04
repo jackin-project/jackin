@@ -1,0 +1,61 @@
+---
+title: Security model
+description: What protects your host and your credentials, who enforces it, and where the limits are.
+---
+
+<EarlyDevelopmentNotice />
+
+## Who enforces what
+
+OpenShell enforces the isolation. It runs each sandbox and applies the network policy and the filesystem policy. Jackin does not run containers and does not enforce isolation.
+
+Jackin controls what goes into the sandbox and what comes out. It builds the image, sends the policy, uploads the project, and imports the work.
+
+Codex starts with `--sandbox danger-full-access`. The Codex sandbox does not work inside an OpenShell sandbox, and OpenShell already isolates Codex.
+
+## Credentials
+
+Your credentials stay on the gateway. Jackin never writes a real token into a sandbox, an image, a log, a label, or its configuration. The one exception is the Docker client key of the [Docker capability](/guides/docker-capability/).
+
+- The sandbox receives a placeholder. The gateway replaces it on the hosts that the policy allows.
+- A command that Codex starts can use the credential on an allowed host, but it cannot read it.
+- Usage checks run on the host. They read the credential of an account on the host and never send it to a sandbox. They never refresh a token.
+- Only the generated OpenShell provider rule may match the hosts of the Codex provider. A role policy that overlaps those hosts is refused.
+
+## The role image
+
+A role is trusted as far as you trust its source. A role `Dockerfile` can pull from a private registry that you can pull from, because `docker buildx` uses your registry login.
+
+Jackin limits what a role can do to the image:
+
+- The final stage must start `FROM construct`.
+- The `syntax` directive may name only the `docker/dockerfile` frontend.
+- The final stage must not set Docker engine client variables.
+- Jackin installs Codex, the supervisor, and the hooks itself, as root, over whatever the role put at those paths.
+- A scan fails the build on a setuid or setgid file, a file capability, a tool such as `sudo` or a firewall or container tool, or a `codex` binary that differs from the trusted copy.
+
+## The policy
+
+Jackin sends the role `policy.yaml` to OpenShell without change. OpenShell adds the rule of the Codex provider, and jackin adds the engine rule when the Docker capability is on. Jackin refuses a policy whose Landlock compatibility is not `hard_requirement`, and a policy with no filesystem paths. After the sandbox exists, only the `network_policies` section can change.
+
+## The project upload
+
+- Your host `.git` directory never reaches the sandbox. Jackin builds a new repository from a bundle.
+- Jackin runs no program that your project repository configures. It runs the programs from your global and system git configuration, as `git` does.
+- A project that needs a repository-defined filter is refused, because the sandbox cannot reproduce the filter.
+- Jackin never writes to your working tree or your index.
+
+## Getting work out
+
+Jackin treats the bundle from the sandbox as untrusted input. It parses the bundle itself and bounds the size of every entry, the object count, and the total size before it hands anything to `git`. Then `git index-pack --strict` checks every object. Jackin writes only refs under `refs/heads/jackin/<sandbox>/`.
+
+## Terminal and clipboard
+
+`jackin attach` and `jackin shell` pass terminal output through a filter. It forwards only titles, hyperlinks, and colour queries and replies. It drops every other escape string, including the clipboard escape OSC 52, so the command line never reads or writes your clipboard.
+
+## Limits
+
+- The agent can rewrite the state files in `/sandbox/.jackin`. Jackin treats them as advisory and never decides on export or purge from them.
+- With the Docker capability on, the agent can read the engine client key, and containers bypass the network policy.
+- A guarded `jackin purge` checks the work and then deletes. Work written between the two steps is lost.
+- A clean filter inside the sandbox, or an `info/exclude` that contains `*`, can hide work from the check for unexported work.

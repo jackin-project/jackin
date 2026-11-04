@@ -1,0 +1,80 @@
+---
+title: Docker capability
+description: Give the agent in a sandbox access to a dedicated Docker engine, and understand the risks.
+---
+
+Some projects need Codex to start containers during development and tests. The Docker capability gives the agent in a sandbox access to an external Docker engine that you run. It is off by default.
+
+Read [the risks](#risks) before you turn it on.
+
+## What the capability does
+
+When the capability is off:
+
+- The image has no Docker client.
+- The policy permits no engine endpoint.
+- The sandbox gets no engine file and no engine variable.
+
+When the capability is on, for a launch:
+
+- The image gets the Docker client at `/usr/local/bin/docker`, with its `buildx` and `compose` plugins. It never gets an engine.
+- The policy gets one rule. It allows the `docker` binary to reach `host.openshell.internal` on the engine port.
+- Jackin writes `ca.pem`, `cert.pem`, and `key.pem` to `/sandbox/.jackin/docker/` in the sandbox. The key has mode 0600.
+- The sandbox environment and each shell have `DOCKER_HOST=tcp://host.openshell.internal:<port>`, `DOCKER_TLS_VERIFY=1`, and `DOCKER_CERT_PATH=/sandbox/.jackin/docker`.
+
+The agent starts its containers through the engine. Jackin does not start containers, and never starts or stops an engine.
+
+## Run a dedicated engine
+
+The engine must hold nothing else. A sandbox that reaches the default engine of your host would have root access to your host, so never use it.
+
+Start an engine on the gateway host with these properties:
+
+- It listens on `127.0.0.1` with TLS and client certificates.
+- Its server certificate names `host.openshell.internal`.
+- Its port is not 2375, the plaintext Docker port.
+- Its client certificate directory holds `ca.pem`, `cert.pem`, and `key.pem`.
+
+Rootless Docker-in-Docker on the gateway host is the recommended form. An engine inside the sandbox does not work with OpenShell 0.1.6, because the sandbox workload has no capabilities and the seccomp filter denies `mount` and user namespaces.
+
+## Register the engine
+
+Name the engine port and the certificate directory when you add the gateway entry:
+
+```sh
+jackin gateway add jackin-local --default --engine-port 2376 --engine-certs ~/engine-certs
+```
+
+The two options go together.
+
+## Turn the capability on
+
+Turn it on for a role in its manifest:
+
+```toml
+[docker]
+enabled = true
+```
+
+Or turn it on for a workspace:
+
+```sh
+jackin workspace add my-app ~/Projects/my-app --docker
+```
+
+A launch enables the capability when the role or the workspace asks for it.
+
+If a role runs `docker build`, its own `policy.yaml` must allow the registry hosts that the `buildx` plugin needs. A role policy must not name `host.openshell.internal`, `host.docker.internal`, or `host.containers.internal`. `jackin role check` refuses a policy that does.
+
+## Risks
+
+`jackin load` and the console show a warning for each launch with the capability. The warning says:
+
+- The agent can read the engine client key.
+- Containers bypass the sandbox network policy.
+- A bind mount names a path on the engine host, not in the sandbox.
+- The engine outlives the sandbox, and sandboxes that use one engine see each other's containers. You remove them.
+
+OpenShell 0.1.6 cannot keep a working engine credential outside the sandbox. That is why the agent can read the key.
+
+A retry of a launch is refused if the capability or the engine differs from the one the sandbox was created with.

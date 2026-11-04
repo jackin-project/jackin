@@ -1,0 +1,51 @@
+---
+title: Console
+description: What the design fixes about the jackin console and Jackin Capsule.
+---
+
+<EarlyDevelopmentNotice />
+
+This page is a stub. It lists only what the design fixes. It does not document screens or key bindings.
+
+## Open the console
+
+Run `jackin` on a terminal. Without a terminal, `jackin` prints help. Every CLI command stays available. The console is the main way to use jackin.
+
+## Two surfaces
+
+The console and Jackin Capsule come from one application. Both look and behave like the `jackin-preview` demo in the `terminal-components-baseline` repository. Jackin has the same screens, flows, key bindings, and navigation as the demo, with OpenShell content in place of the demo text.
+
+- **Jackin Console** manages workspaces, roles, accounts, bindings, the Docker setting, and usage. It launches sessions.
+- **Jackin Capsule** is the multiplexer. It has the menu bar, the session tabs, the split panes, the status line, and the hint line. Codex runs in its panes. Capsule runs on your host, in the jackin process.
+
+The console and the CLI both create, edit, and delete workspaces, roles, and accounts. They manage the default account, the workspace bindings, and the role bindings.
+
+## Panes
+
+Each pane is an OpenShell terminal session. The Codex pane attaches to the main process of the sandbox. A shell pane opens a new shell.
+
+- A bell or notification from an unfocused Codex pane marks it as needing input. Exit code 0 marks it done.
+- Capsule accepts a clipboard write from the focused Codex pane only. The write must come shortly after your input and hold at most 100,000 bytes. Each write shows a status message. Capsule refuses clipboard reads and every clipboard write from a shell pane.
+- The intro honours `JACKIN_NO_MOTION`.
+
+## Controls that have one fixed value
+
+Some controls of the demo have one true value in jackin. The console shows the value and the reason.
+
+| Control | Value |
+|---|---|
+| Global mounts | Empty. |
+| Workspace mounts | One row: your project, uploaded to `/sandbox/project`, read-write. Jackin never uses a bind mount. |
+| `git_pull` | Off. Jackin never writes to your working tree. |
+| `keep_awake` | Off. You own the gateway host. |
+| Dirty-exit policy | `ask`. |
+| Co-author trailer and DCO sign-off | Off. |
+| Global account enable | Every account is enabled. |
+
+## Environment values and 1Password
+
+The console edits environment values at the global, workspace, and workspace-and-role scopes. Values are plain text. Jackin refuses a value that starts with `op://` or `openshell:resolve:`, in any letter case and after leading whitespace.
+
+An account can name its credential as an `op://` reference. Jackin resolves it on the host with `op` for usage only. It never sends the reference or the value to a sandbox or an OpenShell provider.
+
+The console has a doctor panel. Its health screen shows the health of the OpenShell gateway.

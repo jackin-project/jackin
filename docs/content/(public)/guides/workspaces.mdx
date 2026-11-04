@@ -1,0 +1,53 @@
+---
+title: Workspaces
+description: Save a project as a workspace, and learn how jackin uploads it to a sandbox.
+---
+
+A workspace is a saved project. It has a name and an absolute directory. `jackin load` needs a workspace for the directory you launch from.
+
+## Add, list, and remove workspaces
+
+```sh
+jackin workspace add my-app ~/Projects/my-app
+jackin workspace ls
+jackin workspace rm my-app
+```
+
+Launch from the saved directory, or pass it as the `PATH` argument of `jackin load`. The path must equal the saved path.
+
+To turn on the [Docker capability](/guides/docker-capability/) for every launch of a workspace, add `--docker`:
+
+```sh
+jackin workspace add my-app ~/Projects/my-app --docker
+```
+
+The console sets the other workspace options: the default role, the allowed roles, environment values, and account bindings. A workspace that lists allowed roles refuses any other role before jackin checks out the role.
+
+## How the upload works
+
+A sandbox has no bind mounts. Jackin uploads a copy of your project to `/sandbox/project`, and Codex works in that copy. The copy is read-write. Jackin never writes to your working tree or your index.
+
+The host `.git` directory never reaches the sandbox. Jackin uploads the working tree and the history separately and builds a new repository in the sandbox:
+
+1. It uploads the working tree, which respects `.gitignore` and includes untracked files that are not ignored.
+2. It uploads the history as a git bundle.
+3. It runs `git init` in the sandbox, fetches the bundle, points `HEAD` at your branch or commit, and resets the index.
+4. It compares the tree of the uploaded working tree with the tree of your working tree. If they differ, the launch fails.
+
+Staged changes arrive in the sandbox as unstaged changes. Hooks, stashes, and the reflog of your repository do not arrive. The only git configuration that arrives is `user.name` and `user.email`.
+
+## What jackin refuses to upload
+
+Jackin refuses these projects before it uploads anything. Each refusal is a typed error that names the cause.
+
+| Project | What to do |
+|---|---|
+| A sparse checkout, or a checkout with skip-worktree entries | Check out the full tree. |
+| A populated submodule, or a nested repository, in the upload listing | For submodules, run `git submodule deinit --all`. |
+| A path that has a symlink in a leading directory | Remove the symlink or the path. |
+| A path that uses a repository-defined filter with `clean`, `smudge`, or `process`, such as git-crypt or `git lfs install --local` | Define the filter in your global git configuration. |
+| A partial clone | Fetch the missing objects, or clone the full history. |
+| A repository with `objects/info/alternates` | Run `git repack -a -d` and remove the file. |
+| A `.git` that does not belong to the project | Fix the `.git` file or directory. |
+
+A shallow repository uploads as shallow.

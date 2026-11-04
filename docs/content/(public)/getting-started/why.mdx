@@ -1,0 +1,32 @@
+---
+title: Why jackin
+description: What jackin does, what it leaves to OpenShell, and what you need to run it.
+---
+
+<EarlyDevelopmentNotice />
+
+Jackin is a command-line tool and a terminal console. It runs the Codex coding agent in an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox.
+
+Codex works best when it can run commands without asking you first. That is unsafe on your own machine. A sandbox moves the risk away from your files, your credentials, and your network.
+
+## What jackin does
+
+- It builds a container image for each role. A role is a repository that describes the tools and the network rules for one kind of work.
+- It creates one sandbox for each launch and uploads your project into it.
+- It starts Codex in the sandbox and attaches your terminal to it.
+- It fetches the work back into your repository as git branches when you ask for it.
+- It tracks your accounts and shows the usage limits of each one.
+
+## What OpenShell does
+
+OpenShell runs the sandboxes and enforces the isolation. It also holds your credentials on the gateway, so the sandbox receives only a placeholder. Jackin does not run containers and does not enforce isolation.
+
+## What you provide
+
+You run the OpenShell gateway. Jackin does not install, start, or stop it. See [Run a local OpenShell gateway](/guides/gateway/).
+
+## Where to go next
+
+- [Install jackin](/getting-started/installation/)
+- [Quick start](/getting-started/quickstart/)
+- [Core concepts](/getting-started/concepts/)

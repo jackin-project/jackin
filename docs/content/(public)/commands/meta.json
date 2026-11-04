@@ -1,0 +1,5 @@
+{
+  "title": "Commands",
+  "defaultOpen": false,
+  "pages": ["index", "reference", "console"]
+}
