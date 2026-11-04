@@ -8,7 +8,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use jackin_xtask::{
-    CiArgs, CiFailure, E2eArgs, GhCompare, Repo, baseline_branch, e2e_command, production, run_ci,
+    Check, CiArgs, CiFailure, E2eArgs, GhCompare, ProductCheck, Repo, baseline_branch, e2e_command,
+    production, run_ci,
 };
 
 const E2E_HELP: &str = "J15 and J16 need the operator's D24 test engine: a rootless dockerd at \
@@ -35,6 +36,11 @@ enum Command {
     )]
     BaselineBranch,
     #[command(
+        name = "product-check",
+        about = "Build the release binary of jackin and prove that it holds no demo (several minutes)"
+    )]
+    ProductCheck,
+    #[command(
         about = "Run the sentinel journey J00 to J17 against a gateway",
         after_help = E2E_HELP
     )]
@@ -46,6 +52,7 @@ async fn main() -> ExitCode {
     match Cli::parse().command {
         Command::Ci(args) => ci(args),
         Command::BaselineBranch => branch(),
+        Command::ProductCheck => product_check(),
         Command::E2e(args) => e2e(&args).await,
     }
 }
@@ -54,14 +61,15 @@ async fn e2e(args: &E2eArgs) -> ExitCode {
     ExitCode::from(e2e_command(args, production(args)).await)
 }
 
+fn open_repo() -> Result<Repo, ExitCode> {
+    let root = std::env::current_dir().map_err(|error| fail_chain(&error))?;
+    Repo::open(root).map_err(|error| fail_chain(&error))
+}
+
 fn ci(args: CiArgs) -> ExitCode {
-    let root = match std::env::current_dir() {
-        Ok(root) => root,
-        Err(error) => return fail_chain(&error),
-    };
-    let repo = match Repo::open(root) {
+    let repo = match open_repo() {
         Ok(repo) => repo,
-        Err(error) => return fail_chain(&error),
+        Err(code) => return code,
     };
     match run_ci(&args.steps(), &repo) {
         Ok(()) => ExitCode::SUCCESS,
@@ -79,14 +87,37 @@ fn ci(args: CiArgs) -> ExitCode {
     }
 }
 
-fn branch() -> ExitCode {
-    let root = match std::env::current_dir() {
-        Ok(root) => root,
-        Err(error) => return fail_chain(&error),
-    };
-    let repo = match Repo::open(root) {
+fn product_check() -> ExitCode {
+    let repo = match open_repo() {
         Ok(repo) => repo,
-        Err(error) => return fail_chain(&error),
+        Err(code) => return code,
+    };
+    let mut stderr = io::stderr().lock();
+    if writeln!(stderr, "xtask: product-check").is_err() {
+        return ExitCode::FAILURE;
+    }
+    drop(stderr);
+    let violations = ProductCheck::production().run(&repo);
+    if violations.is_empty() {
+        return ExitCode::SUCCESS;
+    }
+    let mut stderr = io::stderr().lock();
+    for violation in &violations {
+        if writeln!(stderr, "{violation}").is_err() {
+            break;
+        }
+    }
+    drop(stderr);
+    fail(format!(
+        "product-check reported {} violations",
+        violations.len()
+    ))
+}
+
+fn branch() -> ExitCode {
+    let repo = match open_repo() {
+        Ok(repo) => repo,
+        Err(code) => return code,
     };
     match baseline_branch(&repo, &GhCompare) {
         Ok(pins) => {
