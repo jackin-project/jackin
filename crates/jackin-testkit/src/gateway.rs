@@ -21,10 +21,10 @@ use jackin_core::{
 };
 use jackin_openshell::{
     ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
-    Missing, NetworkRule, PolicyReport, PowerAction, ProfileSync, ProgramOutcome, ProgramRun,
-    ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint, RuleKey,
-    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalKind,
-    TerminalRequest, TerminalSession, TlsMode, TransferOp,
+    Missing, NetworkRule, PolicyDocument, PolicyReport, PowerAction, ProfileSync, ProgramOutcome,
+    ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint,
+    RuleKey, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TermSize,
+    TerminalKind, TerminalRequest, TerminalSession, TlsMode, TransferOp,
 };
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
@@ -324,6 +324,12 @@ impl FakeGateway {
     pub fn add_live_rule(&self, name: &SandboxName, rule: NetworkRule) {
         if let Some(cell) = self.registry().sandboxes.get(name) {
             cell.state().live_rules.push(rule);
+        }
+    }
+
+    pub fn replace_live_policy(&self, name: &SandboxName, policy: PolicyDocument) {
+        if let Some(cell) = self.registry().sandboxes.get(name) {
+            cell.state().live_policy = Some(policy);
         }
     }
 
@@ -789,7 +795,7 @@ impl Gateway for FakeGateway {
         self.pause(GatewayOp::Detail, None, None).await?;
         let cell = self.cell(GatewayOp::Detail, name)?;
         let view = observed(&cell);
-        let (spec, ready, live) = {
+        let (spec, ready, live, replaced) = {
             let state = cell.state();
             (
                 state.spec.clone(),
@@ -798,6 +804,7 @@ impl Gateway for FakeGateway {
                     jackin_openshell::Provisioning::Failed { .. }
                 ) && state.phase != Phase::Provisioning,
                 state.live_rules.clone(),
+                state.live_policy.clone(),
             )
         };
         let mut rules = self.generated_rules(&spec);
@@ -806,6 +813,9 @@ impl Gateway for FakeGateway {
         let mut document = spec.policy().clone();
         for rule in rules {
             document = document.with_rule(rule).map_err(protocol)?;
+        }
+        if let Some(replaced) = replaced {
+            document = replaced;
         }
         Ok(SandboxDetail {
             view,

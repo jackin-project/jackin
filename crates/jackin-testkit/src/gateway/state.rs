@@ -11,7 +11,8 @@ use jackin_core::{
     TerminalText, Timestamp,
 };
 use jackin_openshell::{
-    GatewayError, GatewayOp, NetworkRule, ProviderProfile, Provisioning, SandboxCreate, SandboxView,
+    GatewayError, GatewayOp, NetworkRule, PolicyDocument, ProviderProfile, Provisioning,
+    SandboxCreate, SandboxView,
 };
 use tempfile::TempDir;
 use tokio::sync::Notify;
@@ -281,6 +282,7 @@ pub(super) struct Sandbox {
     pub(super) runs: Vec<(SandboxPath, RunRecord)>,
     pub(super) shown: Option<Labels>,
     pub(super) live_rules: Vec<NetworkRule>,
+    pub(super) live_policy: Option<PolicyDocument>,
     pub(super) shells: Vec<Arc<Mutex<ShellWitness>>>,
     pub(super) stream_status: Option<i32>,
     pub(super) replay_window: Option<usize>,
@@ -327,6 +329,7 @@ impl Sandbox {
             runs: Vec::new(),
             shown: None,
             live_rules: Vec::new(),
+            live_policy: None,
             shells: Vec::new(),
             stream_status: None,
             replay_window: None,
