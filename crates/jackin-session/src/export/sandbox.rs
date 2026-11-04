@@ -19,6 +19,7 @@ const CLEANUP: Duration = Duration::from_secs(10);
 const UNTRACKED_FILES: usize = 500;
 const UNTRACKED_BYTES: usize = 256 * 1024;
 const NOT_READ: i32 = 66;
+const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; IFS= read -r p < \"$d/gitdir\" || [ -n \"$p\" ]; printf '%s\\0%s\\0' \"${d##*/}\" \"$p\"; done";
 static SH: SandboxPath = SandboxPath::from_static("/bin/sh");
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
@@ -218,6 +219,34 @@ impl Remote<'_> {
         }
     }
 
+    async fn recorded_worktrees(&self) -> Result<BTreeMap<String, String>, RemoteError> {
+        const MALFORMED: RemoteError =
+            RemoteError::Malformed("the worktree metadata listing is unreadable");
+        let outcome = self
+            .exec(
+                &SH,
+                vec![
+                    "-c".to_owned(),
+                    RECORDED_WORKTREES.to_owned(),
+                    "jackin-worktrees".to_owned(),
+                ],
+            )
+            .await?;
+        if outcome.exit_code != 0 {
+            return Err(failure(&outcome));
+        }
+        let fields: Vec<&[u8]> = outcome.stdout.split(|byte| *byte == 0).collect();
+        let mut found = BTreeMap::new();
+        for pair in fields.as_chunks::<2>().0 {
+            let id = std::str::from_utf8(pair[0]).map_err(|_| MALFORMED)?;
+            let gitdir = std::str::from_utf8(pair[1]).map_err(|_| MALFORMED)?;
+            if let Some(path) = gitdir.strip_suffix("/.git") {
+                found.insert(path.to_owned(), id.to_owned());
+            }
+        }
+        Ok(found)
+    }
+
     pub(super) async fn repository(&self) -> Result<Repository, RemoteError> {
         self.require_repository().await?;
         let listed = self
@@ -230,11 +259,11 @@ impl Remote<'_> {
             linked: Vec::new(),
             checkouts: Vec::new(),
         };
+        let mut recorded: Option<BTreeMap<String, String>> = None;
         for (index, checkout) in checkouts(&listed)?.into_iter().enumerate() {
-            if checkout.prunable {
-                continue;
+            if !checkout.prunable {
+                repository.checkouts.push(checkout.path.clone());
             }
-            repository.checkouts.push(checkout.path.clone());
             if !checkout.off_heads {
                 continue;
             }
@@ -245,12 +274,24 @@ impl Remote<'_> {
                 repository.detached = Some(tip);
                 continue;
             }
-            let git_dir = self
-                .require(&["-C", &checkout.path, "rev-parse", "--absolute-git-dir"])
-                .await?;
-            match worktree_id(&git_dir) {
+            let id = if checkout.prunable {
+                if recorded.is_none() {
+                    recorded = Some(self.recorded_worktrees().await?);
+                }
+                recorded
+                    .as_ref()
+                    .and_then(|ids| ids.get(&checkout.path))
+                    .and_then(|id| BranchName::parse(id).ok())
+                    .ok_or(())
+            } else {
+                let git_dir = self
+                    .require(&["-C", &checkout.path, "rev-parse", "--absolute-git-dir"])
+                    .await?;
+                worktree_id(&git_dir).map_err(|_| ())
+            };
+            match id {
                 Ok(name) => repository.linked.push(LinkedHead { name, tip }),
-                Err(_) => repository.unusable.push(TerminalText::sanitize(
+                Err(()) => repository.unusable.push(TerminalText::sanitize(
                     format!("worktree at {}", checkout.path).as_bytes(),
                 )),
             }
