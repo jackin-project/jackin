@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use jackin_core::{
-    CommitId, EnvName, FileMode, ImageId, Labels, Phase, SandboxName, SandboxPath, SupervisorState,
-    Timestamp, sandbox_layout,
+    CommitId, EnvName, FileMode, ImageId, LabelError, Labels, Phase, SandboxName, SandboxPath,
+    SupervisorState, Timestamp, sandbox_layout,
 };
 use jackin_openshell::TermSize;
 
@@ -52,6 +52,19 @@ impl SandboxHandle {
 
     pub fn labels(&self) -> Labels {
         self.cell.state().all_labels()
+    }
+
+    pub fn add_label(&self, key: &str, value: &str) -> Result<(), LabelError> {
+        let mut state = self.cell.state();
+        let extended = Labels::from_pairs(
+            state
+                .all_labels()
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .chain([(key.to_owned(), value.to_owned())]),
+        )?;
+        state.shown = Some(extended);
+        Ok(())
     }
 
     pub fn environment(&self) -> BTreeMap<EnvName, String> {

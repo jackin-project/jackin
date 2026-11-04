@@ -179,16 +179,13 @@ fn stale(
         return None;
     };
     let wanted = plan.draft().labels().clone().complete(&image.id, docker);
-    let found = match SandboxLabels::from_labels(&view.labels) {
-        Ok(found) => found,
-        Err(error) => {
-            return Some(LaunchError::SandboxLabels {
-                sandbox: view.name.clone(),
-                error,
-            });
-        }
-    };
-    let differences = found.differences(&wanted);
+    if let Err(error) = SandboxLabels::from_labels(&view.labels) {
+        return Some(LaunchError::SandboxLabels {
+            sandbox: view.name.clone(),
+            error,
+        });
+    }
+    let differences = view.labels.differences(&wanted);
     (!differences.is_empty()).then(|| LaunchError::StaleSandbox {
         launch: plan.launch_id().clone(),
         sandbox: view.name.clone(),

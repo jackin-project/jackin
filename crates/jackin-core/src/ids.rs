@@ -347,10 +347,10 @@ fn check_role_url(kind: &'static str, text: &str) -> Result<(), IdError> {
     let accepted = plain_text(text)
         && !text.starts_with('-')
         && if let Some(rest) = text.strip_prefix("https://") {
-            let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
-            !authority.contains('@') && url_host(authority)
+            let authority = rest.split('/').next().unwrap_or_default();
+            !rest.contains(['?', '#']) && !authority.contains('@') && url_host(authority)
         } else if let Some(rest) = text.strip_prefix("ssh://") {
-            ssh_authority(rest.split(['/', '?', '#']).next().unwrap_or_default())
+            !rest.contains(['?', '#']) && ssh_authority(rest.split('/').next().unwrap_or_default())
         } else {
             !text.contains("://") && scp_form(text)
         };
@@ -359,7 +359,7 @@ fn check_role_url(kind: &'static str, text: &str) -> Result<(), IdError> {
     } else {
         Err(IdError::BadFormat {
             kind,
-            expected: "an https URL without credentials, an ssh URL, or scp-style text, with a real host and no option, password or control character",
+            expected: "an https URL without credentials, an ssh URL, or scp-style text, with a real host and no option, password, query, fragment or control character",
         })
     }
 }

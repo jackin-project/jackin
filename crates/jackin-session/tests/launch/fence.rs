@@ -215,6 +215,30 @@ async fn a_retry_under_another_policy_is_refused_even_when_the_image_id_is_uncha
     .await
 }
 
+#[tokio::test]
+async fn a_retry_against_a_sandbox_with_a_label_outside_the_jackin_set_is_refused() -> TestResult {
+    guard(async {
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(1).await?)?;
+        rig.handle(1)
+            .await?
+            .add_label("example.com/owner", "someone-else")?;
+        let kept = snapshot(&rig).await?;
+
+        let shown = refused(
+            &rig,
+            retry(&rig, &rig.config, &rig.loaded, rig.request(1)?).await?,
+        )
+        .await?;
+        assert!(shown.contains("example.com/owner"), "{shown}");
+        assert!(shown.contains("someone-else"), "{shown}");
+        assert!(shown.contains("(none)"), "{shown}");
+        assert_eq!(snapshot(&rig).await?, kept);
+        Ok(())
+    })
+    .await
+}
+
 fn extra_rule() -> Result<NetworkRule, Box<dyn Error>> {
     Ok(NetworkRule {
         key: RuleKey::provider_rule(&ProviderName::parse("extra")?),
