@@ -30,6 +30,8 @@ tokio-util = { workspace = true }
 
 [dev-dependencies]
 jackin-openshell = { workspace = true, features = ["contract"] }
+tui-test = { workspace = true }
+tuiscotti = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "test-util"] }
 
 [lints]

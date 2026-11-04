@@ -6,6 +6,10 @@ all-features = true
 
 [advisories]
 yanked = "deny"
+ignore = [
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz comes through tuiscotti-tui-test, a dev dependency of jackin-testkit for the identity gate (P9.4); the pinned tuiscotti has no replacement." },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser comes through tuiscotti-tui-test, a dev dependency of jackin-testkit for the identity gate (P9.4); the pinned tuiscotti has no replacement." },
+]
 
 [licenses]
 allow = [
@@ -88,5 +92,6 @@ allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/NVIDIA/OpenShell",
     "https://github.com/tailrocks/terminal-components-baseline",
+    "https://github.com/tailrocks/tuiscotti",
     "https://github.com/tailrocks/termpane",
 ]

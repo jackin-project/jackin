@@ -18,10 +18,13 @@ pub const BASELINE_BRANCH: &str = "feature/openshell-native";
 
 const TERMPANE_URL: &str = "https://github.com/tailrocks/termpane";
 
-pub const ALLOWED_GIT: [&str; 3] = [
+const TUISCOTTI_URL: &str = "https://github.com/tailrocks/tuiscotti";
+
+pub const ALLOWED_GIT: [&str; 4] = [
     "https://github.com/NVIDIA/OpenShell",
     BASELINE_URL,
     TERMPANE_URL,
+    TUISCOTTI_URL,
 ];
 
 const JUNIE_TUI: &str = "junie-tui";
@@ -237,9 +240,9 @@ fn source_url_problem(entry: &Table) -> Option<&'static str> {
         .filter_map(Value::as_str)
         .any(|value| {
             let value = normalized_url(value);
-            value == BASELINE_URL || value == TERMPANE_URL
+            value == BASELINE_URL || value == TERMPANE_URL || value == TUISCOTTI_URL
         })
-        .then_some("names the baseline or termpane URL")
+        .then_some("names the baseline, termpane or tuiscotti URL")
 }
 
 fn table_pin(entry: &Value) -> Option<&str> {
