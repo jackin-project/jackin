@@ -327,7 +327,9 @@ pub(super) async fn on_two_gateways(rig: &Rig, second_holds_it: bool) -> Result<
         .connector
         .clone()
         .with(Arc::<FakeGateway>::clone(&second));
-    harness.write_config(&format!("{}{SECOND_GATEWAY}", rig.config.render()))?;
+    let text = format!("{}{SECOND_GATEWAY}", rig.config.render());
+    harness.write_config(&text)?;
+    rig.world.seed_all(&Config::parse(&text)?).await?;
     let work = AccountName::parse("work")?;
     let account = rig.config.account(&work).ok_or("no work account")?;
     let cancel = CancellationToken::new();

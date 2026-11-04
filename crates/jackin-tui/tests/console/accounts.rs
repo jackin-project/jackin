@@ -30,13 +30,8 @@ async fn second_login(lab: &Lab) -> Out {
             chatgpt_account_id: jackin_core::ChatgptAccountId::parse(ACCOUNT_ID)?,
         },
     )?;
-    lab.rig
-        .world
-        .session
-        .sync_account(&login, &CancellationToken::new())
-        .await?;
     lab.edit(vec![
-        ConfigEdit::AddAccount(login),
+        ConfigEdit::AddAccount(login.clone()),
         ConfigEdit::BindWorkspaceAccount {
             workspace: WorkspaceName::parse("platform-backend")?,
             account: account("second")?,
@@ -51,6 +46,11 @@ async fn second_login(lab: &Lab) -> Out {
         },
     ])
     .await?;
+    lab.rig
+        .world
+        .session
+        .sync_account(&login, &CancellationToken::new())
+        .await?;
     Ok(())
 }
 

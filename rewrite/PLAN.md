@@ -119,7 +119,7 @@ Run every cargo command from the jackin repository root through mise and mbx.
 | G0 | `mise exec -- mbx +1.99.1 check --workspace --locked` | P2.2 only, before `xtask` exists |
 | G-FAST | `mise exec -- mbx +1.99.1 xtask ci --fast` | After each unit, from P2.3 |
 | G-FULL | `mise exec -- mbx +1.99.1 xtask ci --no-docs` until P12.1, then `mise exec -- mbx +1.99.1 xtask ci` | At the end of each phase |
-| G-E2E | `mise exec -- mbx +1.99.1 xtask e2e --gateway jackin-local --role ../jackin-sentinel` | From P8, at the end of each later phase |
+| G-E2E | `mise exec -- mbx +1.99.1 xtask e2e --gateway jackin-local --role ../jackin-sentinel --builder orbstack --platform linux/arm64 --engine-port 2376 --engine-certs ~/.local/share/jackin-e2e-engine/client` | From P8, at the end of each later phase |
 | G-ROLE | `/Users/donbeave/Projects/jackin-project/jackin/target/debug/jackin role check .` in the role repository, after `mise exec -- mbx +1.99.1 build -p jackin` in jackin | Each role task, from P6.1 |
 
 If D02 changes the Rust version, change `+1.99.1` in this table, in `COMMITS.md`, and in `mise.toml`. Make all three changes in the same commit.
@@ -606,7 +606,7 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 - **Repo:** jackin. **Owner:** `agent-sandbox-engineer`. **Depends:** P8.2.
 - **Steps:** P4.1, P5.1, and P6.1 build mode B, because the journey in P8.2 needs it (D10). This task proves it in isolation and hardens it. Prove D10 mode B. `jackin account add codex --chatgpt-from <codex-home>` imports the login into the OpenShell provider. The sandbox gets a placeholder `auth.json`. Device login is interactive only and is not part of the proof.
 - **Proof:** G-FAST passes. J07 and J08 pass with a mode B account. `evidence/P10.1-chatgpt.md` shows the output.
-- [ ] P10.1 done
+- [x] P10.1 done. Proof: evidence/P10.1-chatgpt.md; G-E2E at bec2f810b with the mode B ChatGPT account: J00-J17 PASS, RESULT PASS=19 FAIL=0 SKIP=0, a1_host_login=unchanged, exit 0; G-FAST 1542 passed at d0219aac4 (pre-push gate).
 
 ### P10.2 Review mode B
 
@@ -646,7 +646,7 @@ P11.1 and P11.2 run in parallel.
 
 - **Owner:** `docs-writer` for the role READMEs. The orchestrator updates `~/.claude/project-notes/jackin.md` and the index row for the three role repositories. **Depends:** P11.1, P11.2.
 - **Proof:** the diffs.
-- [ ] P12.2 done
+- [x] P12.2 done. Proof: role READMEs rewritten and pushed (jackin-sentinel 1e3c5c1, jackin-agent-smith 79f5e13, jackin-the-architect f9ff481; each repo's `mise run test` and `jackin role check .` exit 0); `~/.claude/project-notes/jackin.md` updated (console git dependencies, full G-E2E command, backlog and red/green records, signed merges); the index row in `~/.claude/project-notes/README.md` already covers the three role repositories.
 
 ## Phase P13. Finish and open the pull requests
 

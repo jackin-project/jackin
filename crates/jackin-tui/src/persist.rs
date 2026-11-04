@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 
 use jackin_console::domain::account::{
     Account, AccountRegistry, CredentialSource as ConsoleSource,
@@ -23,61 +22,54 @@ use thiserror::Error;
 
 use crate::project::core_provider;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
 pub enum Field {
+    #[error("workdir")]
     Workdir,
+    #[error("mounts")]
     Mounts,
+    #[error("keep_awake")]
     KeepAwake,
+    #[error("git_pull")]
     GitPull,
+    #[error("dirty_policy")]
     DirtyPolicy,
+    #[error("disabled_defaults")]
     DisabledDefaults,
+    #[error("enabled accounts")]
     EnabledAccounts,
+    #[error("role accounts")]
     RoleAccounts,
+    #[error("coauthor_trailer")]
     CoauthorTrailer,
+    #[error("dco_signoff")]
     DcoSignoff,
+    #[error("global mounts")]
     GlobalMounts,
+    #[error("global role variables")]
     GlobalRoleVariables,
+    #[error("agent modes")]
     AgentModes,
+    #[error("trust")]
     Trust,
+    #[error("account name")]
     AccountName,
+    #[error("account provider")]
     AccountProvider,
+    #[error("purpose")]
     Purpose,
+    #[error("endpoint")]
     Endpoint,
+    #[error("env source")]
     EnvSource,
+    #[error("api key")]
     ApiKey,
+    #[error("agent")]
     Agent,
+    #[error("role source")]
     RoleSource,
+    #[error("role name")]
     RoleName,
-}
-
-impl fmt::Display for Field {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Field::Workdir => "workdir",
-            Field::Mounts => "mounts",
-            Field::KeepAwake => "keep_awake",
-            Field::GitPull => "git_pull",
-            Field::DirtyPolicy => "dirty_policy",
-            Field::DisabledDefaults => "disabled_defaults",
-            Field::EnabledAccounts => "enabled accounts",
-            Field::RoleAccounts => "role accounts",
-            Field::CoauthorTrailer => "coauthor_trailer",
-            Field::DcoSignoff => "dco_signoff",
-            Field::GlobalMounts => "global mounts",
-            Field::GlobalRoleVariables => "global role variables",
-            Field::AgentModes => "agent modes",
-            Field::Trust => "trust",
-            Field::AccountName => "account name",
-            Field::AccountProvider => "account provider",
-            Field::Purpose => "purpose",
-            Field::Endpoint => "endpoint",
-            Field::EnvSource => "env source",
-            Field::ApiKey => "api key",
-            Field::Agent => "agent",
-            Field::RoleSource => "role source",
-            Field::RoleName => "role name",
-        })
-    }
 }
 
 #[derive(Debug, Error)]

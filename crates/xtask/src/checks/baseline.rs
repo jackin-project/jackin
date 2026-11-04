@@ -16,17 +16,18 @@ pub const BASELINE_URL: &str = "https://github.com/tailrocks/terminal-components
 
 pub const BASELINE_BRANCH: &str = "feature/openshell-native";
 
+const TERMPANE_URL: &str = "https://github.com/tailrocks/termpane";
+
 pub const ALLOWED_GIT: [&str; 3] = [
     "https://github.com/NVIDIA/OpenShell",
     BASELINE_URL,
-    "https://github.com/tailrocks/termpane",
+    TERMPANE_URL,
 ];
 
 const JUNIE_TUI: &str = "junie-tui";
 const JACKIN_CONSOLE: &str = "jackin-console";
 const DEMO_EXEMPT_MEMBER: &str = "jackin-testkit";
 const ROOT_MANIFEST: &str = "Cargo.toml";
-const CARGO_CONFIG: &str = ".cargo/config.toml";
 const LOCK: &str = "Cargo.lock";
 const DENY: &str = "deny.toml";
 
@@ -218,6 +219,29 @@ fn parse_table(repo: &Repo, path: &str) -> Option<Table> {
     toml::from_str(file.text()).ok()
 }
 
+fn is_cargo_config(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name == "config.toml" || name == "config")
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|dir| dir == ".cargo")
+}
+
+fn source_url_problem(entry: &Table) -> Option<&'static str> {
+    if entry.contains_key("replace-with") {
+        return Some("replaces the source it names");
+    }
+    entry
+        .values()
+        .filter_map(Value::as_str)
+        .any(|value| {
+            let value = normalized_url(value);
+            value == BASELINE_URL || value == TERMPANE_URL
+        })
+        .then_some("names the baseline or termpane URL")
+}
+
 fn table_pin(entry: &Value) -> Option<&str> {
     entry.as_table()?.get("rev")?.as_str()
 }
@@ -286,11 +310,15 @@ fn replace_names_baseline(key: &str) -> bool {
 
 fn override_violations(repo: &Repo) -> Vec<Violation> {
     let mut violations = Vec::new();
-    for path in [ROOT_MANIFEST, CARGO_CONFIG] {
-        let Some(table) = parse_table(repo, path) else {
+    for file in repo.files() {
+        let at = file.path();
+        if at != Path::new(ROOT_MANIFEST) && !is_cargo_config(at) {
+            continue;
+        }
+        let Ok(table) = toml::from_str::<Table>(file.text()) else {
             continue;
         };
-        let at = Path::new(path);
+        let path = at.display();
         for (registry, patched) in table
             .get("patch")
             .and_then(Value::as_table)
@@ -339,6 +367,21 @@ fn override_violations(repo: &Repo) -> Vec<Violation> {
                 "R4",
                 format!("{path} has a [replace] entry for {key}"),
             ));
+        }
+        for (name, entry) in table
+            .get("source")
+            .and_then(Value::as_table)
+            .into_iter()
+            .flatten()
+        {
+            if let Some(problem) = entry.as_table().and_then(source_url_problem) {
+                violations.push(rule(
+                    CiStep::Baseline,
+                    at,
+                    "R4",
+                    format!("{path} has a [source.{name}] table that {problem}"),
+                ));
+            }
         }
         if table
             .get("paths")

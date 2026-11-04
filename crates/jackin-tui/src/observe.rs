@@ -4,83 +4,39 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
 
 use futures::future::join_all;
-use jackin_console::domain::doctor::{DoctorReport, DoctorSurface};
+use jackin_console::domain::doctor::{
+    DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
+};
+use jackin_console::domain::vocabulary::{Notice, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
-    AccountName, Compatibility, Config, ConfigError, ConfigStore, GatewayName, HostPath,
-    RoleManifest, RoleName, RoleSource as CoreRoleSource,
+    Compatibility, Config, ConfigError, ConfigStore, HostPath, RoleManifest, RoleName,
+    RoleSource as CoreRoleSource,
 };
 use jackin_session::{DoctorInput, HostPorts, MANIFEST_FILE, RoleCatalog, doctor};
 use tokio_util::sync::CancellationToken;
 
+use crate::console::ConsoleLimits;
 use crate::doctor::{self, DoctorCell};
-use crate::fleet::{Fleet, GatewayReading, read_fleet};
+use crate::fleet::{Fleet, WorkCache, read_fleet};
 use crate::ids::IdTable;
 use crate::origin::OriginCache;
 use crate::project::{
     Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, manifest_doc, project,
-    unmapped_accounts,
 };
 use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Note {
-    GatewayUnreachable { gateway: GatewayName, error: String },
-    UnreadableLabels(usize),
-    AccountNotShown(AccountName),
-}
-
-impl fmt::Display for Note {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Note::GatewayUnreachable { gateway, error } => {
-                write!(f, "Could not list sandboxes on {gateway}: {error}")
-            }
-            Note::UnreadableLabels(count) => {
-                write!(f, "{count} sandboxes have labels jackin cannot read")
-            }
-            Note::AccountNotShown(name) => {
-                write!(f, "Account {name} has a provider the console cannot show")
-            }
-        }
-    }
-}
-
-struct Notes<'a>(&'a [Note]);
-
-impl fmt::Display for Notes<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for (index, note) in self.0.iter().enumerate() {
-            if index > 0 {
-                f.write_str(" · ")?;
-            }
-            write!(f, "{note}")?;
-        }
-        Ok(())
-    }
-}
-
-struct TimedOut(Duration);
-
-impl fmt::Display for TimedOut {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "no answer within {} s", self.0.as_secs())
-    }
-}
 
 #[derive(Debug)]
 pub(crate) struct Observation {
     pub(crate) snapshot: Snapshot,
-    pub(crate) notes: Vec<Note>,
-    pub(crate) healthy: bool,
+    pub(crate) notices: Vec<Notice>,
 }
 
 impl Observation {
-    pub(crate) fn status(&self) -> Option<String> {
-        (!self.notes.is_empty()).then(|| Notes(&self.notes).to_string())
+    pub(crate) fn status(&self, words: &Vocabulary) -> Option<String> {
+        (!self.notices.is_empty()).then(|| words.notices(&self.notices))
     }
 }
 
@@ -106,7 +62,8 @@ pub(crate) struct Inputs {
     pub(crate) version: String,
     pub(crate) home: String,
     pub(crate) config_path: String,
-    pub(crate) deadline: Duration,
+    pub(crate) limits: ConsoleLimits,
+    work: WorkCache,
     pub(crate) ids: Mutex<IdTable>,
     pub(crate) docs: Mutex<DocCache>,
     pub(crate) fleet: Mutex<Fleet>,
@@ -138,7 +95,7 @@ pub(crate) struct InputsParts {
     pub version: String,
     pub home: String,
     pub config_path: String,
-    pub deadline: Duration,
+    pub limits: ConsoleLimits,
 }
 
 impl Inputs {
@@ -156,7 +113,7 @@ impl Inputs {
             version,
             home,
             config_path,
-            deadline,
+            limits,
         } = parts;
         Inputs {
             config,
@@ -172,7 +129,8 @@ impl Inputs {
             version,
             home,
             config_path,
-            deadline,
+            limits,
+            work: WorkCache::default(),
             ids: Mutex::new(IdTable::new()),
             docs: Mutex::new(DocCache::new()),
             fleet: Mutex::new(Fleet::default()),
@@ -183,23 +141,7 @@ impl Inputs {
 
     pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
         let config = self.config.load().await?;
-        let fleet =
-            match tokio::time::timeout(self.deadline, read_fleet(&self.sessions, &config)).await {
-                Ok(fleet) => fleet,
-                Err(_) => Fleet {
-                    sandboxes: Vec::new(),
-                    unreadable: 0,
-                    gateways: self
-                        .sessions
-                        .reached()
-                        .into_iter()
-                        .map(|(name, _)| GatewayReading {
-                            name,
-                            failure: Some(TimedOut(self.deadline).to_string()),
-                        })
-                        .collect(),
-                },
-            };
+        let fleet = read_fleet(&self.sessions, &config, self.limits, &self.work).await;
         Ok(self.observation(&config, fleet).await)
     }
 
@@ -233,27 +175,21 @@ impl Inputs {
         snapshot.surfaces.doctor = Some(DoctorSurface {
             noun: snapshot.surfaces.vocabulary.health_noun.clone(),
             state: self.doctor.state(),
+            rerun_secs: Some(STALE_AFTER_SECS),
         });
-        let mut notes: Vec<Note> = fleet
+        let mut notices: Vec<Notice> = fleet
             .failed()
-            .map(|g| Note::GatewayUnreachable {
-                gateway: g.name.clone(),
-                error: g.failure.clone().unwrap_or_default(),
+            .map(|g| Notice::GatewayUnreachable {
+                gateway: g.name.to_string(),
+                reason: g.failure.clone().unwrap_or_default(),
             })
             .collect();
         if fleet.unreadable > 0 {
-            notes.push(Note::UnreadableLabels(fleet.unreadable));
+            notices.push(Notice::UnreadableLabels {
+                count: fleet.unreadable,
+            });
         }
-        notes.extend(
-            unmapped_accounts(config)
-                .into_iter()
-                .map(Note::AccountNotShown),
-        );
-        Observation {
-            snapshot,
-            healthy: fleet.failed().next().is_none(),
-            notes,
-        }
+        Observation { snapshot, notices }
     }
 
     async fn origins(&self, config: &Config) -> Origins {
@@ -276,41 +212,43 @@ impl Inputs {
             self.host.clock.now().0,
             &self.cancel,
         );
-        tokio::time::timeout(self.deadline, read)
+        tokio::time::timeout(self.limits.connect_deadline, read)
             .await
             .unwrap_or_default()
     }
 
-    pub(crate) async fn run_doctor(&self, reconnect: bool) -> DoctorReport {
-        if reconnect && let Ok(config) = self.config.load().await {
-            self.sessions
-                .reconnect(self.connect.as_ref(), &config, &self.cancel)
-                .await;
-        }
-        let name = self.sessions.default_name();
-        let access = self.sessions.access(name);
-        let input = DoctorInput {
-            runner: self.host.runner.as_ref(),
-            fs: self.host.fs.as_ref(),
-            gateway: access.borrowed(),
-            engine_socket: self.engine_socket.clone(),
-            pinned: &self.pinned,
+    pub(crate) async fn run_doctor(&self, reconnect: bool) -> Result<DoctorReport, DoctorFailure> {
+        let run = async {
+            if reconnect && let Ok(config) = self.config.load().await {
+                self.sessions
+                    .reconnect(self.connect.as_ref(), &config, &self.cancel)
+                    .await;
+            }
+            let name = self.sessions.default_name();
+            let access = self.sessions.access(name);
+            let input = DoctorInput {
+                runner: self.host.runner.as_ref(),
+                fs: self.host.fs.as_ref(),
+                gateway: access.borrowed(),
+                engine_socket: self.engine_socket.clone(),
+                pinned: &self.pinned,
+            };
+            let checked = doctor(&input, &self.cancel).await;
+            doctor::report(
+                &checked,
+                (!matches!(access, Access::NotChosen)).then_some(name),
+                self.wall.epoch_millis().div_euclid(1000),
+            )
         };
-        let checked = doctor(&input, &self.cancel).await;
-        doctor::report(
-            &checked,
-            (!matches!(access, Access::NotChosen)).then_some(name),
-            self.wall.epoch_millis().div_euclid(1000),
-        )
+        let report = tokio::time::timeout(self.limits.connect_deadline, run)
+            .await
+            .map_err(|_| DoctorFailure::TimedOut)?;
+        self.doctor.record(report.clone());
+        Ok(report)
     }
 
     pub(crate) async fn doctor_at_start(&self) {
-        let Some(run) = self.doctor.begin() else {
-            return;
-        };
-        if let Ok(report) = tokio::time::timeout(self.deadline, self.run_doctor(false)).await {
-            run.finish(report);
-        }
+        drop(self.run_doctor(false).await);
     }
 
     async fn manifest_only(&self, root: &HostPath) -> Option<RoleManifest> {

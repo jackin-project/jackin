@@ -36,14 +36,15 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             chatgpt_account_id: login.account_id,
         });
     }
-    match &args.credential {
-        Some(CredentialArg::Env(var)) => Ok(CredentialSource::Env { var: var.clone() }),
-        Some(CredentialArg::OnePassword(reference)) => Ok(CredentialSource::OnePassword {
-            reference: reference.clone(),
+    match args.credential.as_deref().map(CredentialArg::parse) {
+        Some(Ok(CredentialArg::Env(var))) => Ok(CredentialSource::Env { var }),
+        Some(Ok(CredentialArg::OnePassword(reference))) => {
+            Ok(CredentialSource::OnePassword { reference })
+        }
+        Some(Ok(CredentialArg::File(path))) => Ok(CredentialSource::File {
+            path: absolutize(&path, &app.cwd)?,
         }),
-        Some(CredentialArg::File(path)) => Ok(CredentialSource::File {
-            path: absolutize(path, &app.cwd)?,
-        }),
+        Some(Err(error)) => Err(error),
         None => Err(CommandError::Argument(
             "pass --chatgpt-from or --credential".to_owned(),
         )),

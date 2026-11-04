@@ -4,7 +4,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_core::Program;
+use jackin_console::domain::doctor::DoctorFailure;
+use jackin_console::domain::vocabulary::Vocabulary;
+use jackin_core::{Config, Program};
 use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::{CheckId, GatewayConnector};
 use jackin_testkit::{
@@ -343,5 +345,51 @@ async fn held_doctor_waits_the_deadline() -> TestResult {
     console.keys("D")?;
     let screen = console.screen();
     assert!(screen.contains("Checks have not run yet"), "{screen}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn no_usable_gateway_is_failing() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        world
+            .seed_all(&Config::parse(
+                "default_gateway = \"unreached\"\n\n[gateways.unreached]\nopenshell_workspace = \"default\"\nbuilder = \"b\"\nplatform = \"linux/arm64\"\n",
+            )?)
+            .await?;
+        let mut console = ConsoleRig::builder(&world).size(200, 40).build().await?;
+        console.skip_intro();
+        let screen = console.screen();
+        assert!(screen.contains(FAILING), "{screen}");
+        console.keys("D")?;
+        let screen = words(&console.screen());
+        assert!(screen.contains("no usable gateway"), "{screen}");
+        assert!(!screen.contains("all checks pass"), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test(start_paused = true)]
+async fn held_rerun_says_it_could_not_run() -> TestResult {
+    let world = World::builder().build()?;
+    let mut console = ConsoleRig::builder(&world)
+        .host(DoctorHost {
+            openshell: ProcessReply::until_cancelled(Vec::new()),
+            ..DoctorHost::healthy()
+        })
+        .deadline(Duration::from_secs(3))
+        .size(200, 40)
+        .build()
+        .await?;
+    console.skip_intro();
+    console.tick(1);
+    console.settle().await?;
+    let screen = console.screen();
+    assert!(screen.contains(FAILING), "{screen}");
+    console.keys("D")?;
+    let screen = words(&console.screen());
+    let reason = Vocabulary::openshell().doctor_failure(&DoctorFailure::TimedOut);
+    assert!(screen.contains(&reason), "{reason}: {screen}");
     Ok(())
 }

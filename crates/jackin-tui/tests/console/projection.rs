@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::backend::Effect;
-use jackin_console::domain::instance::InstanceStatus;
+use jackin_console::domain::instance::{ID_PREFIX, InstanceStatus};
+use jackin_console::domain::vocabulary::{Unbuilt, Vocabulary};
 use jackin_core::{ConfigEdit, Labels, Phase, SandboxName, WorkspaceName};
 use jackin_openshell::{GatewayError, GatewayOp, PowerAction};
 use jackin_testkit::{ConsoleRig, Fault, Rig, TestResult, World, guard, launch_id};
-use jackin_tui::{GatewayState, Unbuilt};
+use jackin_tui::GatewayState;
 use tokio_util::sync::CancellationToken;
 
 fn status_of(console: &mut ConsoleRig, id: u8) -> Option<InstanceStatus> {
@@ -58,6 +59,7 @@ async fn roster_maps_phase_and_exit_code() -> TestResult {
         }
         let first = console.console().app().world.instances[0].clone();
         assert_eq!(first.role, "sentinel");
+        assert!(first.id.starts_with(ID_PREFIX), "{}", first.id);
         assert_eq!(first.account.as_deref(), Some("work"));
         assert_eq!(first.workdir, "/sandbox/project");
         Ok(())
@@ -229,6 +231,10 @@ async fn refresh_brings_in_a_new_sandbox() -> TestResult {
     .await
 }
 
+fn words(what: Unbuilt) -> String {
+    Vocabulary::openshell().unbuilt(what)
+}
+
 fn failed_text(rig: &mut ConsoleRig, effect: Effect, expected: Unbuilt) {
     let world = &mut rig.console().app().world;
     world.perform(effect);
@@ -238,7 +244,7 @@ fn failed_text(rig: &mut ConsoleRig, effect: Effect, expected: Unbuilt) {
         .map(|job| format!("{:?}", job.work))
         .collect();
     assert_eq!(jobs.len(), 1, "{jobs:?}");
-    assert!(jobs[0].contains(&expected.to_string()), "{}", jobs[0]);
+    assert!(jobs[0].contains(&words(expected)), "{}", jobs[0]);
 }
 
 async fn bare() -> Result<(Rig, ConsoleRig), Box<dyn std::error::Error>> {
@@ -256,7 +262,7 @@ async fn unbuilt_launch_fails_visibly() -> TestResult {
         console.tick(3);
         console.settle().await?;
         let screen = console.screen();
-        assert!(screen.contains(&Unbuilt::Launch.to_string()), "{screen}");
+        assert!(screen.contains(&words(Unbuilt::Launch)), "{screen}");
         assert!(rig.world.gateway.sandboxes().is_empty());
         Ok(())
     })

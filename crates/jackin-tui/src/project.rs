@@ -2,17 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 
 use jackin_console::arbiter::DiscoveryError;
 use jackin_console::domain::account::{
     Account, AccountRegistry, CredentialSource, DetectedKind, LaunchBlock,
 };
 use jackin_console::domain::agent::{Agent, AuthMode, Provider};
-use jackin_console::domain::docker::{DockerRiskText, DockerSetting, EngineState};
+use jackin_console::domain::docker::{DockerRiskText, DockerSetting, EngineEndpoint, EngineState};
 use jackin_console::domain::instance::RepoRef;
 use jackin_console::domain::instance::{
-    DaemonSnapshot, Instance, InstanceStatus, SessionRecord, SessionStatus,
+    DaemonSnapshot, Instance, InstanceId, InstanceStatus, SessionRecord, SessionStatus, instance_id,
 };
 use jackin_console::domain::onepassword::OpReference;
 use jackin_console::domain::openshell as normalize;
@@ -24,21 +23,20 @@ use jackin_console::domain::workspace::{
     AllowedRoles as ConsoleAllowedRoles, EnvVar, RoleEntry, RolePolicy, RoleSource,
     Workspace as ConsoleWorkspace,
 };
-use jackin_console::world::{GithubRepo, GlobalConfig, Snapshot, TrustRow};
-use jackin_core::{
-    AccountName, AllowedRoles, Config, CredentialSource as CoreCredential, DockerRisk, EnvTable,
-    GatewayName, Phase, RoleName, RoleSource as CoreRoleSource, SandboxName, SandboxSummary,
-    SupervisorReading, SupervisorState, WorkspaceName,
+use jackin_console::world::{
+    DaemonHealth, GithubRepo, GlobalConfig, Snapshot, TrustKind, TrustRow,
 };
 use jackin_core::{Agent as CoreAgent, NameSuffix, Provider as CoreProvider, plain};
+use jackin_core::{
+    AllowedRoles, Config, CredentialSource as CoreCredential, DockerRisk, EnvTable, GatewayName,
+    Phase, RoleName, RoleSource as CoreRoleSource, SandboxName, SandboxSummary, SupervisorReading,
+    SupervisorState, WorkspaceName,
+};
 use jackin_session::{GithubOrigin, WorkState};
 use thiserror::Error;
 
 use crate::fleet::{Fleet, ObservedSandbox};
 use crate::ids::IdTable;
-
-const KIND_GIT: &str = "git";
-const KIND_PATH: &str = "path";
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum RoleDocError {
@@ -72,66 +70,38 @@ pub struct ProjectInput<'a> {
     pub origins: &'a Origins,
 }
 
-#[derive(Clone, Copy, Debug)]
-enum AboutLabel {
-    Product,
-    Gateway,
-    Config,
-}
-
-impl fmt::Display for AboutLabel {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            AboutLabel::Product => "Product",
-            AboutLabel::Gateway => "Gateway",
-            AboutLabel::Config => "Config",
-        })
-    }
-}
-
-struct InstanceId<'a>(&'a str);
-
-impl fmt::Display for InstanceId<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "jk-{}", self.0)
-    }
-}
-
-struct EnginePort(std::num::NonZeroU16);
-
-impl fmt::Display for EnginePort {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "tls port {}", self.0)
-    }
-}
-
-pub fn provider(provider: CoreProvider) -> Option<Provider> {
+pub fn provider(provider: CoreProvider) -> Provider {
     match provider {
-        CoreProvider::Amp => Some(Provider::Amp),
-        CoreProvider::Claude => Some(Provider::Anthropic),
-        CoreProvider::Codex => Some(Provider::OpenAi),
-        CoreProvider::Cursor => Some(Provider::Cursor),
-        CoreProvider::Gemini => Some(Provider::Gemini),
-        CoreProvider::Grok => Some(Provider::XAi),
-        CoreProvider::Kimi => Some(Provider::Moonshot),
-        CoreProvider::Minimax => Some(Provider::MiniMax),
-        CoreProvider::Opencode => Some(Provider::OpenCode),
-        CoreProvider::Openrouter => Some(Provider::Openrouter),
-        CoreProvider::Zai => Some(Provider::Zai),
-        CoreProvider::Antigravity | CoreProvider::Hermes | CoreProvider::Muse => None,
+        CoreProvider::Amp => Provider::Amp,
+        CoreProvider::Antigravity => Provider::Antigravity,
+        CoreProvider::Claude => Provider::Anthropic,
+        CoreProvider::Codex => Provider::OpenAi,
+        CoreProvider::Cursor => Provider::Cursor,
+        CoreProvider::Gemini => Provider::Gemini,
+        CoreProvider::Grok => Provider::XAi,
+        CoreProvider::Hermes => Provider::Hermes,
+        CoreProvider::Kimi => Provider::Moonshot,
+        CoreProvider::Minimax => Provider::MiniMax,
+        CoreProvider::Muse => Provider::Muse,
+        CoreProvider::Opencode => Provider::OpenCode,
+        CoreProvider::Openrouter => Provider::Openrouter,
+        CoreProvider::Zai => Provider::Zai,
     }
 }
 
 pub fn core_provider(provider: Provider) -> CoreProvider {
     match provider {
         Provider::Amp => CoreProvider::Amp,
+        Provider::Antigravity => CoreProvider::Antigravity,
         Provider::Anthropic => CoreProvider::Claude,
         Provider::OpenAi => CoreProvider::Codex,
         Provider::Cursor => CoreProvider::Cursor,
         Provider::Gemini => CoreProvider::Gemini,
         Provider::XAi => CoreProvider::Grok,
+        Provider::Hermes => CoreProvider::Hermes,
         Provider::Moonshot => CoreProvider::Kimi,
         Provider::MiniMax => CoreProvider::Minimax,
+        Provider::Muse => CoreProvider::Muse,
         Provider::OpenCode => CoreProvider::Opencode,
         Provider::Openrouter => CoreProvider::Openrouter,
         Provider::Zai => CoreProvider::Zai,
@@ -178,7 +148,10 @@ fn env_kind(provider: Provider) -> DetectedKind {
         | Provider::OpenCode
         | Provider::Cursor
         | Provider::Gemini
-        | Provider::Openrouter => DetectedKind::Unknown,
+        | Provider::Openrouter
+        | Provider::Antigravity
+        | Provider::Hermes
+        | Provider::Muse => DetectedKind::Unknown,
     }
 }
 
@@ -194,7 +167,10 @@ fn file_kind(provider: Provider) -> DetectedKind {
         | Provider::MiniMax
         | Provider::Cursor
         | Provider::Gemini
-        | Provider::Openrouter => DetectedKind::Unknown,
+        | Provider::Openrouter
+        | Provider::Antigravity
+        | Provider::Hermes
+        | Provider::Muse => DetectedKind::Unknown,
     }
 }
 
@@ -218,8 +194,8 @@ fn source(credential: &CoreCredential, provider: Provider) -> CredentialSource {
     }
 }
 
-fn account(config: &Config, core: &jackin_core::Account) -> Option<Account> {
-    let provider = provider(core.provider())?;
+fn account(config: &Config, core: &jackin_core::Account) -> Account {
+    let provider = provider(core.provider());
     let credential = source(core.credential(), provider);
     let local_login = core.chatgpt_login().is_some();
     let edit_blocked = match &credential {
@@ -240,14 +216,14 @@ fn account(config: &Config, core: &jackin_core::Account) -> Option<Account> {
     a.launch_blocked = (core.provider() == CoreProvider::Codex && !local_login)
         .then_some(LaunchBlock::UsageOnlySource);
     normalize::account(&mut a);
-    Some(a)
+    a
 }
 
 fn registry(config: &Config) -> AccountRegistry {
     AccountRegistry {
         accounts: config
             .accounts()
-            .filter_map(|core| account(config, core))
+            .map(|core| account(config, core))
             .collect(),
         revision: 0,
     }
@@ -291,7 +267,7 @@ fn workspace(
     ws.accounts.preferred = core
         .bindings
         .iter()
-        .filter_map(|(p, account)| Some((provider(*p)?, account.to_string())))
+        .map(|(p, account)| (provider(*p), account.to_string()))
         .collect();
     normalize::workspace(
         &mut ws,
@@ -308,7 +284,7 @@ fn role_source(source: &CoreRoleSource) -> RoleSource {
         },
         CoreRoleSource::Git { url, rev } => RoleSource::Git {
             url: url.to_string(),
-            branch: rev.as_ref().map(ToString::to_string).unwrap_or_default(),
+            branch: rev.as_ref().map(ToString::to_string),
         },
     }
 }
@@ -352,11 +328,11 @@ fn role_entries(config: &Config) -> Vec<RoleEntry> {
 }
 
 fn trust_rows(config: &Config) -> Vec<TrustRow> {
-    let mut by_source: BTreeMap<String, (&'static str, usize)> = BTreeMap::new();
+    let mut by_source: BTreeMap<String, (TrustKind, usize)> = BTreeMap::new();
     for (_, entry) in config.roles() {
         let (label, kind) = match &entry.source {
-            CoreRoleSource::Path(path) => (path.as_path().display().to_string(), KIND_PATH),
-            CoreRoleSource::Git { url, .. } => (url.to_string(), KIND_GIT),
+            CoreRoleSource::Path(path) => (path.as_path().display().to_string(), TrustKind::Path),
+            CoreRoleSource::Git { url, .. } => (url.to_string(), TrustKind::Git),
         };
         by_source.entry(label).or_insert((kind, 0)).1 += 1;
     }
@@ -471,21 +447,13 @@ fn split_name(name: &str) -> (&str, &str) {
     name.split_at_checked(split).unwrap_or((name, name))
 }
 
-pub fn instance_id(name: &SandboxName) -> String {
-    InstanceId(split_name(name.as_str()).1).to_string()
-}
-
-struct FullName<'a>(&'a GithubOrigin);
-
-impl fmt::Display for FullName<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}/{}", self.0.repo.owner(), self.0.repo.name())
-    }
+pub fn sandbox_id(name: &SandboxName) -> InstanceId {
+    instance_id(split_name(name.as_str()).1)
 }
 
 fn repo_ref(origin: &GithubOrigin) -> RepoRef {
     RepoRef {
-        full_name: FullName(origin).to_string(),
+        full_name: origin.repo.full_name(),
         url: origin.repo.to_string(),
     }
 }
@@ -542,7 +510,7 @@ fn instance(
         Some(WorkState::Exported | WorkState::Unknown(_)) | None => (0, 0, None),
     };
     let mut record = Instance {
-        id: InstanceId(suffix).to_string(),
+        id: instance_id(suffix),
         container: head.trim_end_matches('-').to_owned(),
         workspace: config
             .workspace(&labels.workspace)
@@ -631,7 +599,7 @@ fn docker_setting(
         gateway: gateway.map(ToString::to_string).unwrap_or_default(),
         engine: match entry.and_then(|g| g.docker_engine.as_ref()) {
             Some(engine) => EngineState::Configured {
-                endpoint: EnginePort(engine.port).to_string(),
+                endpoint: EngineEndpoint::TlsPort(engine.port),
             },
             None => EngineState::Missing,
         },
@@ -667,18 +635,13 @@ fn surfaces(input: &ProjectInput<'_>) -> Surfaces {
         origins: _,
     } = input;
     let gateway = gateway_name(config);
-    let mut about = vec![(AboutLabel::Product.to_string(), facts.version.clone())];
-    if let Some(name) = &gateway {
-        about.push((AboutLabel::Gateway.to_string(), name.to_string()));
-    }
-    about.push((AboutLabel::Config.to_string(), facts.config_path.clone()));
     Surfaces::openshell(LiveFacts {
         version: facts.version.clone(),
         config_path: facts.config_path.clone(),
+        gateway: gateway.as_ref().map(ToString::to_string),
     })
     .roles(role_admin(config, roles, checks))
     .docker(docker_setting(config, roles, gateway.as_ref()))
-    .about(about)
 }
 
 pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
@@ -711,13 +674,10 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
         index_error: fleet
             .all_failed()
             .then_some(DiscoveryError::IndexUnreadable),
+        daemon_health: if fleet.failed().next().is_some() {
+            DaemonHealth::Stale
+        } else {
+            DaemonHealth::Healthy
+        },
     }
-}
-
-pub fn unmapped_accounts(config: &Config) -> Vec<AccountName> {
-    config
-        .accounts()
-        .filter(|a| provider(a.provider()).is_none())
-        .map(|a| a.name().clone())
-        .collect()
 }

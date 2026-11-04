@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_console::world::TrustKind;
 use jackin_core::{Config, ConfigEdit, RoleName};
 use jackin_testkit::{ConsoleRig, TestResult, World, guard};
 
@@ -22,12 +23,15 @@ async fn trust_rows_from_sources() -> TestResult {
         let trust = console.console().app().world.global.trust.clone();
         assert_eq!(trust.len(), 2);
         assert!(trust.iter().all(|row| row.trusted));
-        let git = trust.iter().find(|r| r.kind == "git").ok_or("no git row")?;
+        let git = trust
+            .iter()
+            .find(|r| r.kind == TrustKind::Git)
+            .ok_or("no git row")?;
         assert_eq!(git.roles, 2);
         assert!(git.source.contains("acme/roles"));
         let path = trust
             .iter()
-            .find(|r| r.kind == "path")
+            .find(|r| r.kind == TrustKind::Path)
             .ok_or("no path row")?;
         assert_eq!(path.roles, 1);
         Ok(())
@@ -74,7 +78,7 @@ async fn trust_row_updates_after_role_removal() -> TestResult {
         console.settle().await?;
         let trust = &console.console().app().world.global.trust;
         assert_eq!(trust.len(), 1);
-        assert_eq!(trust[0].kind, "path");
+        assert_eq!(trust[0].kind, TrustKind::Path);
         Ok(())
     })
     .await

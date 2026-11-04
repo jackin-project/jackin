@@ -1,0 +1,40 @@
+---
+title: Commands
+description: Every jackin command with a one-line purpose and the guide that explains it.
+---
+
+Run `jackin` on a terminal to open the [console](/commands/console/). Without a terminal, `jackin` prints help. `jackin load` without a terminal does not attach. It prints the sandbox name and the launch ID, separated by a tab.
+
+The option `--gateway <name>` is global. It selects a gateway entry from the jackin configuration. Without it, jackin uses the default gateway.
+
+## Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | The command succeeded. |
+| 1 | The command failed. |
+| 2 | The command line is wrong. |
+| 3 | Jackin refused the action, for example `jackin purge` on unexported work. |
+| 130 | You cancelled the command. |
+
+## Commands
+
+| Command | Purpose | Guide |
+|---|---|---|
+| `jackin gateway add`, `ls`, `rm` | Manage the gateway entries in the jackin configuration. | [Run a local OpenShell gateway](/guides/gateway/) |
+| `jackin doctor` | Check the host tools, the gateway, and the engine socket. | [Install jackin](/getting-started/installation/) |
+| `jackin role add`, `ls`, `rm` | Manage role sources. | [Create a role](/developing/creating-roles/) |
+| `jackin role check` | Validate a role manifest, its `Dockerfile`, and its policy. | [Create a role](/developing/creating-roles/) |
+| `jackin workspace add`, `ls`, `rm` | Manage workspaces. | [Workspaces](/guides/workspaces/) |
+| `jackin account add`, `ls`, `rm`, `default`, `bind` | Manage accounts and their bindings. | [Accounts](/guides/accounts/) |
+| `jackin usage` | Show the limit windows of each account. | [Accounts](/guides/accounts/#check-usage) |
+| `jackin build` | Build the role image and print its image ID. | [Create a role](/developing/creating-roles/#use-the-role) |
+| `jackin load` | Launch a sandbox and attach to Codex. | [Quick start](/getting-started/quickstart/) |
+| `jackin attach` | Reattach to the Codex terminal. | [Work with sandboxes](/guides/sandboxes/) |
+| `jackin shell` | Open a new shell in a sandbox. | [Work with sandboxes](/guides/sandboxes/) |
+| `jackin ls`, `inspect` | List and inspect sandboxes. | [Work with sandboxes](/guides/sandboxes/) |
+| `jackin stop`, `start` | Stop and start a sandbox. | [Work with sandboxes](/guides/sandboxes/) |
+| `jackin export` | Fetch the sandbox branches into your repository. | [Work with sandboxes](/guides/sandboxes/) |
+| `jackin purge` | Delete a sandbox. | [Work with sandboxes](/guides/sandboxes/) |
+
+For the options of each command, see the [command reference](/commands/reference/).

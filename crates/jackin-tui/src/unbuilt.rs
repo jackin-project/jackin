@@ -1,21 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fmt;
-
 use jackin_console::backend::{
-    ChangeSet, CheckRow, Completion, FieldDescriptor, FolderProbe, OnePassword, OpAccount, OpError,
-    OpField, OpItem, OpSession, OpVault, SecretClass, ValidationOutcome,
+    ChangeSet, Completion, Effect, FieldDescriptor, FolderProbe, OnePassword, OpAccount, OpError,
+    OpField, OpItem, OpSession, OpVault, SecretClass,
 };
-use jackin_console::domain::account::{
-    AccountId, AccountIdentity, Confidence, IssueCode, Lifecycle, Recoverability, RecoverableIssue,
-};
-use jackin_console::domain::instance::{AgentState, Instance, InstanceId, InstanceStatus};
+use jackin_console::domain::instance::{AgentState, Instance};
 use jackin_console::domain::launch::LaunchFailure;
 use jackin_console::domain::onepassword::OpReference;
-use jackin_console::domain::openshell as normalize;
-use jackin_console::domain::workspace::WorkspaceId;
-use jackin_console::launch::{FailedLaunch, LaunchEvent, LaunchFeed, LaunchTarget, TypedKey};
+use jackin_console::domain::vocabulary::{Unbuilt, Vocabulary};
+use jackin_console::launch::{EnvAnswer, FailedLaunch, LaunchEvent, LaunchFeed, TypedKey};
 use jackin_console::panes::{PaneBody, PaneKey, PaneKindTag, PaneNote, PaneSpawn, PasteOutcome};
 use jackin_console::world::{Msg, World};
 use jackin_openshell::GatewayError;
@@ -26,112 +20,55 @@ use junie_tui::widgets::viewport::TextViewport;
 use junie_tui::widgets::viewport_ops::ViewportOps;
 use ratatui::layout::Rect;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Unbuilt {
-    RestoreSandbox,
-    PrewarmImage,
-    RefreshUsage,
-    ValidateAccount,
-    AddGitRole,
-    Launch,
-    Pane,
-}
-
-impl fmt::Display for Unbuilt {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let what = match self {
-            Unbuilt::RestoreSandbox => "Restoring a sandbox",
-            Unbuilt::PrewarmImage => "Building an image",
-            Unbuilt::RefreshUsage => "Reading usage",
-            Unbuilt::ValidateAccount => "Validating an account",
-            Unbuilt::AddGitRole => "Adding a role from a Git URL",
-            Unbuilt::Launch => "Launching a sandbox",
-            Unbuilt::Pane => "A terminal pane",
-        };
-        write!(f, "{what} is not available in this build yet")
-    }
-}
-
-impl Unbuilt {
-    fn text(self) -> String {
-        self.to_string()
-    }
-}
-
-pub(crate) fn restore(instance: &InstanceId) -> Option<Completion> {
-    Some(Completion::ready(
-        0,
-        Msg::Restored {
+pub(crate) fn fails(effect: &Effect, words: &Vocabulary) -> Option<Completion> {
+    let no = |what: Unbuilt| words.unbuilt(what);
+    let msg = match effect {
+        Effect::Restore { instance } => Msg::Restored {
             instance: instance.clone(),
-            result: Err(Unbuilt::RestoreSandbox.text()),
+            result: Err(no(Unbuilt::RestoreSandbox)),
         },
-    ))
-}
-
-pub(crate) fn prewarm(workspace: WorkspaceId) -> Option<Completion> {
-    Some(Completion::ready(
-        0,
-        Msg::Prewarmed {
-            workspace,
-            result: Err(Unbuilt::PrewarmImage.text()),
+        Effect::Prewarm { workspace } => Msg::Prewarmed {
+            workspace: *workspace,
+            result: Err(no(Unbuilt::PrewarmImage)),
         },
-    ))
-}
-
-pub(crate) fn refresh_account(account: &AccountId) -> Option<Completion> {
-    Some(Completion::ready(
-        0,
-        Msg::AccountRefreshed {
+        Effect::RefreshAccount { account, .. } => Msg::AccountRefreshed {
             account: account.clone(),
-            result: Err(Unbuilt::RefreshUsage.text()),
+            result: Err(no(Unbuilt::RefreshUsage)),
         },
-    ))
-}
-
-pub(crate) fn validate_account(account: &AccountId) -> Option<Completion> {
-    Some(Completion::ready(
-        0,
-        Msg::AccountValidated {
+        Effect::ValidateAccount { account } => Msg::AccountValidated {
             account: account.clone(),
-            result: Err(Unbuilt::ValidateAccount.text()),
+            result: Err(no(Unbuilt::ValidateAccount)),
         },
-    ))
+        Effect::CheckSource { ticket, .. } => Msg::SourceChecked {
+            ticket: *ticket,
+            result: Err(no(Unbuilt::ValidateAccount)),
+        },
+        Effect::ProbeFolder { ticket, .. } => Msg::FolderProbed {
+            ticket: *ticket,
+            result: Ok(FolderProbe::Unreadable),
+        },
+        Effect::ReadChanges {
+            ticket, unpushed, ..
+        } => Msg::ChangesRead {
+            ticket: *ticket,
+            result: Ok(ChangeSet {
+                files: Vec::new(),
+                unpushed: *unpushed,
+            }),
+        },
+        Effect::LoadOp { ticket, .. } => Msg::OpLoaded {
+            ticket: *ticket,
+            result: Err(OpError::NotAvailable),
+        },
+        _ => return None,
+    };
+    Some(Completion::ready(0, msg))
 }
 
-pub(crate) fn validation() -> ValidationOutcome {
-    let text = Unbuilt::ValidateAccount.text();
-    ValidationOutcome {
-        level: None,
-        identity: AccountIdentity::default(),
-        confidence: Confidence::None,
-        lifecycle: Lifecycle::Unavailable,
-        issue: Some(RecoverableIssue::new(
-            IssueCode::ProviderUnavailable,
-            text.clone(),
-            Recoverability::ActionRequired,
-        )),
-        usage: None,
-        material: CheckRow::Skipped(text.clone()),
-        identity_row: CheckRow::Skipped(text.clone()),
-        quota_row: CheckRow::Failed(text),
-    }
-}
-
-pub(crate) fn folder_probe() -> FolderProbe {
-    FolderProbe::Unreadable
-}
-
-pub(crate) fn changes(unpushed: usize) -> ChangeSet {
-    ChangeSet {
-        files: Vec::new(),
-        unpushed,
-    }
-}
-
-pub(crate) fn launch_failure() -> LaunchFailure {
+pub(crate) fn launch_failure(words: &Vocabulary) -> LaunchFailure {
     LaunchFailure {
         stage: 0,
-        summary: Unbuilt::Launch.text(),
+        summary: words.unbuilt(Unbuilt::Launch),
         next_step: String::new(),
         detail: Vec::new(),
     }
@@ -151,40 +88,13 @@ pub(crate) struct UnbuiltLaunch {
 }
 
 impl UnbuiltLaunch {
-    pub(crate) fn new(
-        world: &World,
-        target: &LaunchTarget,
-        failure: LaunchFailure,
-    ) -> UnbuiltLaunch {
-        let workspace = target.workspace.and_then(|id| world.workspace(id));
-        let run_id = world.now_secs().to_string();
-        let instance = Instance {
-            id: run_id.clone(),
-            container: workspace.map(|w| w.name.clone()).unwrap_or_default(),
-            workspace: target.workspace,
-            workdir: String::new(),
-            role: target.role.clone(),
-            agent: target.agent,
-            status: InstanceStatus::FailedSetup,
-            created_secs: world.now_secs(),
-            last_seen_secs: world.now_secs(),
-            run_id: run_id.clone(),
-            sessions: Ok(Vec::new()),
-            daemon: jackin_console::domain::instance::DaemonSnapshot::NoTabs,
-            branch: None,
-            pr: None,
-            default_branch: String::new(),
-            github: None,
-            uncommitted: 0,
-            unpushed: 0,
-            account: target.account.clone(),
-            accounts: target.account.iter().cloned().collect(),
-        };
-        let mut instance = instance;
-        normalize::instance(&mut instance);
+    pub(crate) fn new(world: &World, failure: LaunchFailure) -> UnbuiltLaunch {
         UnbuiltLaunch {
-            run_id,
-            failed: Some(Box::new(FailedLaunch { failure, instance })),
+            run_id: world.now_secs().to_string(),
+            failed: Some(Box::new(FailedLaunch {
+                failure,
+                instance: None,
+            })),
         }
     }
 }
@@ -208,6 +118,8 @@ impl LaunchFeed for UnbuiltLaunch {
         None
     }
 
+    fn answer_env(&mut self, _answers: Vec<EnvAnswer>) {}
+
     fn cancel(&mut self, _world: &World) -> Option<Instance> {
         None
     }
@@ -216,13 +128,15 @@ impl LaunchFeed for UnbuiltLaunch {
 #[derive(Debug)]
 pub(crate) struct UnbuiltPane {
     viewport: TextViewport,
+    note: String,
 }
 
 impl UnbuiltPane {
-    pub(crate) fn new(spawn: &PaneSpawn) -> UnbuiltPane {
+    pub(crate) fn new(spawn: &PaneSpawn, words: &Vocabulary) -> UnbuiltPane {
         let id = WidgetId::of(&spawn.workspace).child(usize::try_from(spawn.id).unwrap_or(0));
         UnbuiltPane {
             viewport: TextViewport::new(id),
+            note: words.unbuilt(Unbuilt::Pane),
         }
     }
 }
@@ -242,7 +156,7 @@ impl PaneBody for UnbuiltPane {
 
     fn note(&self) -> Option<PaneNote> {
         Some(PaneNote {
-            text: Unbuilt::Pane.text(),
+            text: self.note.clone(),
             tone: Tone::Error,
         })
     }

@@ -12,7 +12,7 @@ use jackin_session::{
 
 use super::progress::launch_event;
 use crate::app::App;
-use crate::cli::LoadArgs;
+use crate::cli::{EnvAssignment, LoadArgs};
 use crate::error::CommandError;
 use crate::paths::absolutize;
 use crate::term;
@@ -91,6 +91,11 @@ fn cancelled(candidate: &RestoreCandidate) -> CommandError {
 }
 
 pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandError> {
+    let mut values = BTreeMap::new();
+    for text in &args.env {
+        let EnvAssignment { name, value } = EnvAssignment::parse(text)?;
+        values.insert(name, value);
+    }
     let config = app.store.load().await?;
     let path = absolutize(&args.path, &app.cwd)?;
     let (_, workspace) = lookup_workspace(&config, &path).require_saved()?;
@@ -108,11 +113,6 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         .account(args.account)
         .rebuild(Rebuild::from(args.rebuild))
         .prompting(Prompting::for_terminal(app.terminal.is_some()));
-    let mut values: BTreeMap<EnvName, String> = args
-        .env
-        .into_iter()
-        .map(|assignment| (assignment.name, assignment.value))
-        .collect();
     let plan = plan(app, &config, &role, &request, &mut values).await?;
     let launch = plan.launch_id().clone();
     let session = app.session(&config).await?;

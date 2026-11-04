@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
@@ -405,6 +406,7 @@ impl ConsoleRigBuilder<'_> {
             handle: tokio::runtime::Handle::current(),
             limits: ConsoleLimits {
                 connect_deadline: self.deadline,
+                work_reads: NonZeroUsize::MIN.saturating_add(3),
             },
         })
         .await?;

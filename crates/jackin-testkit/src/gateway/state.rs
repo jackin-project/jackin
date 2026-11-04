@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -136,6 +136,7 @@ pub(super) struct Registry {
     pub(super) host_home: Option<PathBuf>,
     pub(super) host_edits: Vec<(UploadKind, HostEdit)>,
     pub(super) put_fails_after_write: Option<GatewayError>,
+    pub(super) calls: HashMap<GatewayOp, u32>,
 }
 
 impl Registry {
@@ -166,6 +167,7 @@ impl Registry {
             host_home: None,
             host_edits: Vec::new(),
             put_fails_after_write: None,
+            calls: HashMap::new(),
         }
     }
 
@@ -220,6 +222,7 @@ impl Registry {
         op: GatewayOp,
         special: Option<&Trigger>,
     ) -> Result<(), GatewayError> {
+        *self.calls.entry(op).or_default() += 1;
         self.count_down(op)?;
         let matches = |armed: &ArmedTrigger| {
             armed.trigger == Trigger::Op(op) || special == Some(&armed.trigger)

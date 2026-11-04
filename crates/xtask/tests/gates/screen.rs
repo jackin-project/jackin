@@ -70,6 +70,7 @@ fn literals_in_display_pass() -> TestResult {
     expect(
         "use std::fmt;\n\
          struct Row;\n\
+         impl std::error::Error for Row {}\n\
          impl fmt::Display for Row {\n\
          \x20   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n\
          \x20       fn label() -> &'static str {\n\
@@ -99,6 +100,22 @@ fn literals_in_display_pass() -> TestResult {
          \x20   }\n\
          }\n",
         &[],
+    )
+}
+
+#[test]
+fn display_literal_in_non_error_fails() -> TestResult {
+    expect(
+        "use std::fmt;\n\
+         struct Row;\n\
+         impl fmt::Display for Row {\n\
+         \x20   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {\n\
+         \x20       write!(f, \"Saved\")\n\
+         \x20   }\n\
+         }\n\
+         struct Other;\n\
+         impl std::error::Error for Other {}\n",
+        &[("C2", 5, "Saved")],
     )
 }
 
@@ -137,9 +154,8 @@ fn production_allowed_literals_pass() -> TestResult {
         "fn motion() -> bool {\n\
          \x20   std::env::var_os(\"JACKIN_NO_MOTION\").is_some()\n\
          }\n\
-         const GIT: &str = \"git\";\n\
-         const PATH: &str = \"path\";\n",
-        &[],
+         const GIT: &str = \"git\";\n",
+        &[("C2", 4, "git")],
     )
 }
 

@@ -260,8 +260,8 @@ export function metaCompletenessError(
 async function main(): Promise<void> {
   const crates = await listCrateReadmes()
   if (crates.length === 0) {
-    console.error('gen-crate-pages: no crates/*/*/README.md found')
-    process.exit(1)
+    console.log('gen-crate-pages: no crates/*/*/README.md found; nothing to generate')
+    return
   }
 
   const names = crates.map((c) => c.name)

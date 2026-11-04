@@ -24,5 +24,4 @@ pub use fleet::*;
 pub use ids::IdTable;
 pub use project::*;
 pub use sessions::*;
-pub use unbuilt::Unbuilt;
 pub use wall::SystemWall;

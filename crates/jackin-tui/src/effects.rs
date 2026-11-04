@@ -9,7 +9,7 @@ use jackin_console::domain::agent::Agent;
 use jackin_console::domain::instance::InstanceId;
 use jackin_console::domain::role::{FindingArea, RoleFinding, RoleManifestDoc};
 use jackin_console::domain::workspace::{MountSource, Workspace, WorkspaceId};
-use jackin_console::world::{GlobalConfig, Msg, Snapshot};
+use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
 use jackin_core::plain;
 use jackin_core::{
     Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath, ModelName,
@@ -27,7 +27,7 @@ use tokio_util::sync::CancellationToken;
 use crate::bridge::Settled;
 use crate::observe::{Inputs, Observation, locked};
 use crate::persist::{self, Field, Folder, PersistError, Resolved};
-use crate::project::{instance_id, manifest_doc};
+use crate::project::{manifest_doc, sandbox_id};
 use crate::sessions::{Access, Home};
 
 #[derive(Debug, Error)]
@@ -38,6 +38,8 @@ enum Refused {
     Text(String),
     #[error("unknown role {0}")]
     UnknownRole(RoleName),
+    #[error("Adding a role from a Git URL is not available in this build yet")]
+    GitRole,
     #[error(transparent)]
     Persist(#[from] PersistError),
     #[error(transparent)]
@@ -46,6 +48,13 @@ enum Refused {
 
 fn text(error: &dyn std::error::Error) -> String {
     error_chain(error)
+}
+
+fn save_failure(error: &dyn std::error::Error) -> SaveFailure {
+    SaveFailure {
+        error: text(error),
+        next: None,
+    }
 }
 
 fn core_agent(agent: Agent) -> Result<CoreAgent, PersistError> {
@@ -148,7 +157,7 @@ impl Inputs {
             Err(error) => {
                 let reply = Msg::WorkspaceSaved {
                     id: None,
-                    result: Err(text(&error)),
+                    result: Err(save_failure(&error)),
                 };
                 self.failed(reply).await
             }
@@ -234,7 +243,7 @@ impl Inputs {
             .into(),
             Err(error) => {
                 let reply = Msg::GlobalSaved {
-                    result: Err(text(&error)),
+                    result: Err(save_failure(&error)),
                 };
                 self.failed(reply).await
             }
@@ -323,7 +332,7 @@ impl Inputs {
         locked(&self.fleet)
             .sandboxes
             .iter()
-            .find(|observed| &instance_id(&observed.summary.name) == instance)
+            .find(|observed| &sandbox_id(&observed.summary.name) == instance)
             .map(|observed| (observed.gateway.clone(), observed.summary.name.clone()))
             .ok_or_else(|| Refused::NotInRoster(instance.clone()))
     }
@@ -440,7 +449,7 @@ impl Inputs {
 
     async fn try_add_role(&self, location: &str) -> Result<(String, Box<Snapshot>), Refused> {
         if jackin_core::RoleUrl::parse(location).is_ok() {
-            return Err(Refused::Text(crate::Unbuilt::AddGitRole.to_string()));
+            return Err(Refused::GitRole);
         }
         let root = self.folder(location).await?;
         let loaded = self

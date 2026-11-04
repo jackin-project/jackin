@@ -1,175 +1,34 @@
 ---
-title: The Construct Image
-description: What's inside the shared base image that every agent starts from
+title: The construct image
+description: The base image that every role Dockerfile starts from, and what jackin adds on top of your role.
 ---
 
-<Aside type="note">
-This page has two readers. **Role authors** (user-facing) read the
-top half — *what is in the `construct`*, *what tools come for free*,
-*how to extend it from a role's `Dockerfile`*. **Contributors**
-(internals-facing) read the lower half — *how to build, validate,
-and publish the `construct` image itself* (`mise exec -- mbx +1.99.1 xtask construct build-local`,
-CI workflow, advanced publish rehearsal). Operators using jackin❯
-as a product do not need to read either half; `jackin load` pulls
-and updates the `construct` automatically.
-</Aside>
+The construct image is the base of every role. Jackin builds it from a `Dockerfile` that is part of jackin, and caches it by digest. It needs no registry. Your role `Dockerfile` refers to it as `construct`.
 
-## What is the construct?
+## What the construct image has
 
-`projectjackin/construct:trixie` is the shared base Docker image for every agent — the foundation layer that every role extends. It provides system tools, shell environment, and container infrastructure, kept in one image so every agent inherits the same baseline.
+- It starts from the OpenShell default sandbox image, `nvcr.io/nvidia/base/ubuntu:24.04`, pinned by digest.
+- It has the user `sandbox`, uid and gid 1000, with the home directory `/sandbox`. The `ubuntu` user is removed. The gateway driver takes the runtime user from `/etc/passwd`, not from the image `USER` line.
+- It has `git`, `curl`, `ca-certificates`, `jq`, `bash`, and the other shell tools that roles commonly need. Export needs `git` in the sandbox.
+- It has no setuid or setgid bit. The build fails if `sudo`, a firewall tool, or a container tool is on `PATH`.
 
-Every agent Dockerfile starts from the construct:
+Jackin puts its own files under `/usr/local`, because the default Landlock policy denies `/opt`. Put yours there too.
 
-```dockerfile
-FROM projectjackin/construct:0.4-trixie
-```
+## What jackin adds to your role
 
-## What's inside
+After the role image builds, jackin builds a final image on top of it. As root, the final layer:
 
-The construct is built on **Debian Trixie** and includes:
+- Installs `codex` and `codex-code-mode-host` at the pinned Codex version, over any file your role put at those paths.
+- Writes `/etc/codex/config.toml` with `check_for_update_on_startup = false`.
+- Installs `jackin-start` at `/usr/local/bin/jackin-start`. It is the main process of the sandbox. It starts Codex, and it keeps the sandbox alive when Codex exits so that you can still export your work.
+- Installs the role hooks at `/usr/local/lib/jackin/hooks/setup` and `/usr/local/lib/jackin/hooks/preflight`.
+- Sets the user to `sandbox`.
+- Scans the result. The build fails on a setuid or setgid file, a file capability, a forbidden tool, a changed `codex`, or a jackin path that is not a real root-owned path.
 
-### System tools
+When the Docker capability is on, the final layer also adds the Docker client at `/usr/local/bin/docker` with its `buildx` and `compose` plugins, and the scan allows them. It never adds an engine.
 
-| Package | Purpose |
-|---|---|
-| `bash` | Default shell for scripts |
-| `zsh` + Oh My Zsh | Default interactive shell for the `agent` user. Oh My Zsh runs with `ZSH_THEME=""` so the `git` plugin, autosuggestions plugin, and OSC 0/2 + OSC 7 auto-title hooks are active without overriding the Starship prompt. |
-| `fish` | Opt-in alternative shell. Pre-configured `~/.config/fish/config.fish` initialises Starship and emits the same OSC 0/2 + OSC 7 pane title escapes as zsh, so pane border titles render identically. Enter with `fish` from a default zsh pane. |
-| `git` + Git LFS | Source control with large file support |
-| `curl` | HTTP client |
-| `jq` + `yq` | JSON and YAML processors |
-| `openssh-client` | SSH for git operations |
-| `sudo` | Sudo command-line package. A profile or grant may provision a sudoers file during root container setup; Capsule's wrapped PTY sessions still run nonroot with no-new-privileges and Landlock, so this does not provide interactive privilege escalation. |
-| `tree` | Directory visualization |
+## How images are named and cached
 
-### Search tools
+Every image name starts with `jackin.invalid/`. That host never resolves, so a build that refers to a missing local image fails instead of pulling an image with the same name from a public registry.
 
-| Package | Purpose |
-|---|---|
-| `ripgrep` (`rg`) | Fast regex search |
-| `fd-find` (`fd`) | Fast file finder |
-| `fzf` | Fuzzy finder for interactive selection |
-
-### Development infrastructure
-
-| Package | Purpose |
-|---|---|
-| `mise` | Polyglot language version manager |
-| Docker CLI + Compose | Container operations via DinD |
-| GitHub CLI (`gh`) | Repository, PR, and issue operations |
-| Starship prompt | Informative terminal prompt |
-
-### User environment
-
-The construct creates an `agent` user with:
-- Home directory at `/home/agent`
-- Zsh as the default shell, with fish available as an opt-in alternative (`fish` from zsh)
-- A sudoers entry may be provisioned by the launcher for a profile/grant, but wrapped Capsule sessions cannot use it to elevate; install runtime tools in the image instead
-- Oh My Zsh sourced with `ZSH_THEME=""` so the git plugin, autosuggestions plugin, and OSC 0/2 + OSC 7 title hooks are active without competing with Starship for the prompt
-- Starship prompt configured for both zsh and fish so the prompt surface stays the same when switching shells
-- Pane border title (`user@host:cwd`) emitted via OSC 0/2 on every prompt — the jackin-capsule multiplexer reads it and renders it as the pane title (the same mechanism zellij uses)
-- mise shims in `$PATH` for both shells
-
-## How it's built
-
-The construct source starts at <RepoFile path="docker/construct/Dockerfile">docker/construct/Dockerfile</RepoFile> in the jackin❯ repository. The declarative build definition lives in <RepoFile path="docker-bake.hcl">docker-bake.hcl</RepoFile> at the repo root, and the supported command surface is `mise exec -- mbx +1.99.1 xtask construct ...`, backed by the <RepoFile path="crates/tools/jackin-xtask/src/construct.rs">crates/tools/jackin-xtask/src/construct.rs</RepoFile> Rust task runner.
-
-The root <RepoFile path="mise.toml">mise.toml</RepoFile> `min_version` is the sole Mise version for construct builds and upstream asset checks. The construct xtask passes that exact value as the required `MISE_VERSION` Docker build argument; <RepoFile path="docker/construct/versions.env">versions.env</RepoFile> keeps the independent `tirith`, `shellfirm`, and `starship` pins. The Docker build downloads the architecture-specific Mise release archive and verifies its checksum against that release’s `SHASUMS256.txt` before installing `mise/bin/mise`. Updating the root minimum changes the build argument and invalidates the Mise installation layer’s cache key.
-
-The image build compiles the pinned `shellfirm` version from source in a temporary Rust build stage, then copies only the executable into the final image. The build produces the binary for the requested image architecture; it does not require a host-staged binary.
-
-## Build workflow
-
-Run the `mise exec -- mbx +1.99.1 xtask construct ...` commands from the repository root for construct work. Docker Bake is the underlying build engine.
-
-### Local validation
-
-Before opening a pull request for construct changes, validate the image locally:
-
-```bash
-mise exec -- mbx +1.99.1 xtask construct init-buildx
-mise exec -- mbx +1.99.1 xtask construct build-local
-```
-
-By default, local validation loads the image into your Docker daemon as `jackin-local/construct:trixie`, so it does not silently replace the canonical `projectjackin/construct:trixie` base image that normal `jackin` workflows consume.
-
-To test `jackin load` against your local construct build, set `JACKIN_CONSTRUCT_IMAGE` after building:
-
-```bash
-mise exec -- mbx +1.99.1 xtask construct init-buildx
-mise exec -- mbx +1.99.1 xtask construct build-local
-export JACKIN_CONSTRUCT_IMAGE="jackin-local/construct:trixie"
-```
-
-With `JACKIN_CONSTRUCT_IMAGE` set, jackin❯ validates role Dockerfiles against the canonical image name as usual (role repos reference a versioned construct tag such as `projectjackin/construct:0.4-trixie`), but substitutes your local image at derived-build time so `docker build` uses `jackin-local/construct:trixie` as the actual base.
-
-Use `mise exec -- mbx +1.99.1 xtask construct inspect` to print the fully resolved Bake config without building the image.
-
-If builder state gets stale or confusing, run `mise exec -- mbx +1.99.1 xtask construct doctor-buildx` to inspect it or `mise exec -- mbx +1.99.1 xtask construct reset-buildx` to recreate it. Set `BUILDX_BUILDER` before running the command if you want to isolate this workflow under a different local builder name.
-
-### Platform-specific debugging
-
-To force a specific target architecture during local debugging:
-
-```bash
-mise exec -- mbx +1.99.1 xtask construct build-platform amd64
-mise exec -- mbx +1.99.1 xtask construct build-platform arm64
-```
-
-The selected Buildx builder must support the requested platform. These commands select the target architecture; successful cross-architecture execution depends on the builder configuration.
-
-### Advanced publish rehearsal
-
-If you need to rehearse the release path against a temporary registry, point `REGISTRY_IMAGE` at your own namespace instead of the canonical `projectjackin/construct` repository:
-
-```bash
-REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise exec -- mbx +1.99.1 xtask construct push-platform amd64
-REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise exec -- mbx +1.99.1 xtask construct push-platform arm64
-REGISTRY_IMAGE=ttl.sh/jackin-construct-$USER mise exec -- mbx +1.99.1 xtask construct publish-manifest
-```
-
-<Aside type="caution">
-`mise exec -- mbx +1.99.1 xtask construct push-platform` and `mise exec -- mbx +1.99.1 xtask construct publish-manifest` intentionally refuse to publish to `projectjackin/construct` unless they are running in CI.
-</Aside>
-### CI behavior
-
-Automatic construct-image validation and publication are currently unavailable. Use the local build and inspection commands above to validate an image. [Contributor CI research](/research/engineering/ci/performance/ci-speed-roadmap/#historical-construct-publication-contract) records the workflow history and current integration gaps.
-
-The documented tag convention is:
-
-- `projectjackin/construct:trixie` — the stable tag
-- `projectjackin/construct:trixie-<sha>` — commit-specific tag
-
-## The derived image layer
-
-When you load an agent, jackin❯ doesn't use the construct directly. It generates a **derived Dockerfile** that adds:
-
-1. **Agent installation** — copies jackin❯ cached binaries for every supported runtime into the derived image
-2. **Plugin installation** — any Claude plugins declared in the role manifest
-3. **Default-home snapshot** — captures each baked agent home under `/jackin/default-home` for first-launch seeding
-4. **Volatile runtime payload** — copies jackin❯ owned runtime files, including the entrypoint, hook shims, agent-status helper, and `jackin-capsule`, after the heavier agent and default-home layers
-5. **Runtime finalization** — creates the `/jackin/` runtime/state/run paths and appends shell-title integration after the runtime shims exist
-
-The volatile runtime payload is intentionally late in the Dockerfile. A jackin❯ version bump changes `jackin-capsule`, so placing that COPY block after agent installs, plugin installs, and the default-home snapshot means a jackin❯ upgrade rebuilds only the cheap tail layers instead of invalidating the expensive agent setup layers.
-
-<Aside type="note">
-jackin❯ tags derived images per role commit. Warm launches inspect recipe labels first; if the role source, construct/base image, runtime recipe, supported-agent set, `jackin-capsule`, hooks, Claude plugin recipe, host identity strategy, and host UID still match, launch reuses the local image and skips binary prep, build-context creation, GitHub build-token lookup, `docker build`, and the selected-agent version probe. Published-image lag falls back to a local role-base build while preserving Docker layer cache; passing `--rebuild` is the explicit full-refresh path.
-</Aside>
-## Extending the construct
-
-Role repos add their tools on top of the construct. The construct provides the foundation — agents provide the specialization:
-
-```
-┌─────────────────────────────────┐
-│  Derived Layer (jackin-managed) │  Selected agent CLI, entrypoint, /jackin state
-├─────────────────────────────────┤
-│  Agent Layer (your Dockerfile)  │  Rust, Node, Python, custom tools
-├─────────────────────────────────┤
-│  Construct (shared base)        │  Debian, git, Docker CLI, mise, zsh
-└─────────────────────────────────┘
-```
-
-This layered approach means:
-- Agent authors focus on their tools, not infrastructure
-- The construct can be updated independently (security patches, new tools)
-- Docker layer caching makes builds fast
+The image tag is the cache key. It covers the role revision, the `Dockerfile` digest, the construct image, the Codex version, the platform, the Docker capability, and the digests of the jackin files in the image. When an image with that tag exists, jackin does not build it again. `--rebuild` ignores the cache.
