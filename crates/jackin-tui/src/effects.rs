@@ -684,7 +684,14 @@ impl Inputs {
             let config = self.config.load().await?;
             let name = RoleName::parse(role).map_err(PersistError::from)?;
             let root = self.role_root(&config, &name).await?;
-            let errors = self.roles.findings(&root).await;
+            let errors = match self.roles.read_manifest(&root).await {
+                Err(errors) => errors,
+                Ok(mut manifest) => {
+                    let base = manifest_doc(&manifest);
+                    merge_manifest(&mut manifest, &base, doc)?;
+                    self.roles.findings_of(&root, manifest).await
+                }
+            };
             let found: Vec<RoleFinding> = errors.iter().map(|error| finding(error, doc)).collect();
             locked(&self.checks).insert(name, found);
             Ok::<_, Refused>(self.snapshot_of(&config).await)
