@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -76,6 +76,7 @@ const IMAGE: &str = "jackin.dev/image";
 const LAUNCH: &str = "jackin.dev/launch";
 const DOCKER: &str = "jackin.dev/docker";
 const ENGINE_PREFIX: &str = "engine-";
+const ABSENT: &str = "(none)";
 
 impl fmt::Display for LabelKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -127,22 +128,6 @@ impl SandboxLabels {
             pair(LAUNCH, planned.launch.as_str()),
             pair(DOCKER, &docker_value(self.docker)),
         ]))
-    }
-
-    pub fn differences(&self, wanted: &SandboxLabels) -> Vec<LabelDifference> {
-        let wanted = wanted.to_labels();
-        self.to_labels()
-            .0
-            .into_iter()
-            .filter_map(|(key, found)| {
-                let wanted = wanted.0.get(&key).filter(|value| **value != found)?;
-                Some(LabelDifference {
-                    key,
-                    found,
-                    wanted: wanted.clone(),
-                })
-            })
-            .collect()
     }
 
     pub fn from_labels(labels: &Labels) -> Result<SandboxLabels, LabelError> {
@@ -264,6 +249,23 @@ impl Labels {
             labels.insert(LabelKey(key), LabelValue(value));
         }
         Ok(Labels(labels))
+    }
+
+    pub fn differences(&self, wanted: &SandboxLabels) -> Vec<LabelDifference> {
+        let wanted = wanted.to_labels();
+        let absent = LabelValue(ABSENT.to_owned());
+        let keys: BTreeSet<&LabelKey> = self.0.keys().chain(wanted.0.keys()).collect();
+        keys.into_iter()
+            .filter_map(|key| {
+                let found = self.0.get(key).unwrap_or(&absent);
+                let wanted = wanted.0.get(key).unwrap_or(&absent);
+                (found != wanted).then(|| LabelDifference {
+                    key: key.clone(),
+                    found: found.clone(),
+                    wanted: wanted.clone(),
+                })
+            })
+            .collect()
     }
 
     pub fn is_managed(&self) -> bool {

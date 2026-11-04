@@ -118,7 +118,7 @@ fn a_stale_sandbox_is_never_offered_a_retry_under_the_same_launch() -> Fallible<
         LaunchError::StaleSandbox {
             launch: launch()?,
             sandbox: sandbox()?,
-            differences: found.differences(&wanted),
+            differences: found.to_labels().differences(&wanted),
         },
     )?;
     assert_eq!(stale.next_step(), None);
