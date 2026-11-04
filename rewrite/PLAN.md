@@ -646,7 +646,7 @@ P11.1 and P11.2 run in parallel.
 
 - **Owner:** `docs-writer` for the role READMEs. The orchestrator updates `~/.claude/project-notes/jackin.md` and the index row for the three role repositories. **Depends:** P11.1, P11.2.
 - **Proof:** the diffs.
-- [ ] P12.2 done
+- [x] P12.2 done. Proof: role READMEs rewritten and pushed (jackin-sentinel 1e3c5c1, jackin-agent-smith 79f5e13, jackin-the-architect f9ff481; each repo's `mise run test` and `jackin role check .` exit 0); `~/.claude/project-notes/jackin.md` updated (console git dependencies, full G-E2E command, backlog and red/green records, signed merges); the index row in `~/.claude/project-notes/README.md` already covers the three role repositories.
 
 ## Phase P13. Finish and open the pull requests
 
