@@ -24,7 +24,7 @@ use jackin_testkit::{ProcessReply, ScriptedProgram, World, default_limits};
 use jackin_usage::ProviderEndpoints;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use tokio_util::sync::CancellationToken;
 
 use super::console::ScriptedConsole;
@@ -161,6 +161,7 @@ pub(crate) enum Step {
     Bytes(Vec<u8>),
     Resize(TermSize),
     Close,
+    Gate(Arc<Notify>),
 }
 
 #[derive(Clone, Debug)]
@@ -247,16 +248,24 @@ impl Terminal for ScriptedTerminal {
     }
 
     async fn next_input(&mut self) -> TerminalInput {
-        match self.script.front() {
-            Some(Step::Bytes(_) | Step::Resize(_) | Step::Close) => match self.script.pop_front() {
-                Some(Step::Bytes(bytes)) => TerminalInput::Bytes(bytes),
-                Some(Step::Resize(size)) => {
-                    self.size = size;
-                    TerminalInput::Resized(size)
+        loop {
+            match self.script.front() {
+                Some(Step::Gate(gate)) => {
+                    Arc::clone(gate).notified().await;
+                    self.script.pop_front();
                 }
-                _ => TerminalInput::Closed,
-            },
-            _ => std::future::pending().await,
+                Some(Step::Bytes(_) | Step::Resize(_) | Step::Close) => {
+                    return match self.script.pop_front() {
+                        Some(Step::Bytes(bytes)) => TerminalInput::Bytes(bytes),
+                        Some(Step::Resize(size)) => {
+                            self.size = size;
+                            TerminalInput::Resized(size)
+                        }
+                        _ => TerminalInput::Closed,
+                    };
+                }
+                _ => std::future::pending().await,
+            }
         }
     }
 }
