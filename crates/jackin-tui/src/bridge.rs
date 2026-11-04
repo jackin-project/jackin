@@ -95,6 +95,14 @@ impl Bridge {
         }
     }
 
+    pub(crate) fn detach(&self, work: impl Future<Output = ()> + Send + 'static) {
+        self.handle.spawn(work);
+    }
+
+    pub(crate) fn send(&self, msg: Msg) {
+        self.sender.send(Remote::Msg(msg));
+    }
+
     pub(crate) fn handle(&self) -> &Handle {
         &self.handle
     }

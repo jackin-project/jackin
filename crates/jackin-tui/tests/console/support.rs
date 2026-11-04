@@ -84,3 +84,34 @@ impl Lab {
             .cloned()
     }
 }
+
+pub(crate) const CANARY: &str = "CANARY-op-secret-91c7d2e8";
+
+impl Lab {
+    pub(crate) async fn step(&mut self, keys: &str) -> TestResult {
+        self.console.keys(keys)?;
+        self.console.settle().await
+    }
+
+    pub(crate) async fn open_form(&mut self, name: &str) -> TestResult {
+        self.step("c").await?;
+        self.step("a").await?;
+        self.step("enter").await?;
+        self.console.type_text(name);
+        self.console.settle().await?;
+        self.step("tab").await?;
+        self.step("tab").await
+    }
+
+    pub(crate) async fn choose_codex(&mut self) -> TestResult {
+        self.step("enter").await?;
+        self.step("down").await?;
+        self.step("enter").await
+    }
+
+    pub(crate) async fn choose_one_password(&mut self) -> TestResult {
+        self.step("tab").await?;
+        self.step("up").await?;
+        self.step("space").await
+    }
+}

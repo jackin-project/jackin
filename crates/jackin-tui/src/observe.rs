@@ -9,22 +9,29 @@ use futures::future::join_all;
 use jackin_console::domain::doctor::{
     DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
 };
+use jackin_console::domain::instance::Instance;
 use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
-    Compatibility, Config, ConfigError, ConfigStore, HostPath, RoleManifest, RoleName,
+    Compatibility, Config, ConfigError, ConfigStore, EnvSnapshot, HostPath, RoleManifest, RoleName,
     RoleSource as CoreRoleSource,
 };
-use jackin_session::{AccountDesk, DoctorInput, HostPorts, MANIFEST_FILE, RoleCatalog, doctor};
+use jackin_session::{
+    AccountDesk, DoctorInput, HostPorts, MANIFEST_FILE, OnePasswordCli, RoleCatalog, SourceDesk,
+    doctor,
+};
+use jackin_usage::HostUsage;
 use tokio_util::sync::CancellationToken;
 
 use crate::console::ConsoleLimits;
 use crate::doctor::{self, DoctorCell};
-use crate::fleet::{Fleet, WorkCache, read_fleet};
+use crate::fleet::{Fleet, ObservedSandbox, WorkCache, read_fleet};
 use crate::ids::IdTable;
+use crate::onepassword::OpSnapshot;
 use crate::origin::OriginCache;
 use crate::project::{
-    Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, manifest_doc, project,
+    Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, instance as project_instance,
+    manifest_doc, project,
 };
 use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
 
@@ -51,6 +58,11 @@ pub(crate) type DocCache = BTreeMap<
 pub(crate) struct Inputs {
     pub(crate) config: ConfigStore,
     pub(crate) desk: AccountDesk,
+    pub(crate) usage: Arc<HostUsage>,
+    pub(crate) usage_gate: tokio::sync::Mutex<()>,
+    pub(crate) op: OpSnapshot,
+    pub(crate) op_cli: OnePasswordCli,
+    pub(crate) sources: SourceDesk,
     pub(crate) sessions: SessionSet,
     pub(crate) roles: Arc<RoleCatalog>,
     pub(crate) host: HostPorts,
@@ -86,6 +98,9 @@ pub(crate) fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 pub(crate) struct InputsParts {
     pub config: ConfigStore,
     pub desk: AccountDesk,
+    pub usage: Arc<HostUsage>,
+    pub op: OpSnapshot,
+    pub env: EnvSnapshot,
     pub sessions: SessionSet,
     pub roles: Arc<RoleCatalog>,
     pub host: HostPorts,
@@ -105,6 +120,9 @@ impl Inputs {
         let InputsParts {
             config,
             desk,
+            usage,
+            op,
+            env,
             sessions,
             roles,
             host,
@@ -118,9 +136,16 @@ impl Inputs {
             config_path,
             limits,
         } = parts;
+        let op_cli = OnePasswordCli::new(Arc::clone(&host.runner));
+        let sources = SourceDesk::new(Arc::clone(&host.fs), env, op_cli.clone());
         Inputs {
             config,
             desk,
+            usage,
+            usage_gate: tokio::sync::Mutex::new(()),
+            op,
+            op_cli,
+            sources,
             sessions,
             roles,
             host,
@@ -219,6 +244,21 @@ impl Inputs {
         tokio::time::timeout(self.limits.connect_deadline, read)
             .await
             .unwrap_or_default()
+    }
+
+    pub(crate) fn instance_of(
+        &self,
+        config: &Config,
+        observed: &ObservedSandbox,
+        origins: &Origins,
+    ) -> Instance {
+        project_instance(
+            observed,
+            config,
+            origins,
+            &locked(&self.ids),
+            self.host.clock.now().0,
+        )
     }
 
     pub(crate) async fn run_doctor(&self, reconnect: bool) -> Result<DoctorReport, DoctorFailure> {

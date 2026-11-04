@@ -176,7 +176,7 @@ fn file_kind(provider: Provider) -> DetectedKind {
     }
 }
 
-fn source(credential: &CoreCredential, provider: Provider) -> CredentialSource {
+pub(crate) fn source(credential: &CoreCredential, provider: Provider) -> CredentialSource {
     match credential {
         CoreCredential::Env { var } => CredentialSource::HostEnv {
             var: var.as_str().to_owned(),
@@ -488,7 +488,7 @@ fn github_repos(origins: &Origins) -> Vec<GithubRepo> {
         .collect()
 }
 
-fn instance(
+pub(crate) fn instance(
     observed: &ObservedSandbox,
     config: &Config,
     origins: &Origins,
@@ -593,6 +593,16 @@ fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmi
     }
 }
 
+pub(crate) fn docker_risks() -> Vec<DockerRiskText> {
+    DockerRisk::ALL
+        .into_iter()
+        .map(|risk| DockerRiskText {
+            label: risk.label().to_owned(),
+            text: risk.text().to_owned(),
+        })
+        .collect()
+}
+
 fn docker_setting(
     config: &Config,
     docs: &RoleDocs,
@@ -607,13 +617,7 @@ fn docker_setting(
             },
             None => EngineState::Missing,
         },
-        risks: DockerRisk::ALL
-            .into_iter()
-            .map(|risk| DockerRiskText {
-                label: risk.label().to_owned(),
-                text: risk.text().to_owned(),
-            })
-            .collect(),
+        risks: docker_risks(),
         role_enabled: docs
             .iter()
             .filter(|(_, doc)| doc.as_ref().is_ok_and(|d| d.docker))

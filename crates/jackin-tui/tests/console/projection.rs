@@ -255,21 +255,6 @@ async fn bare() -> Result<(Rig, ConsoleRig), Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-async fn unbuilt_launch_fails_visibly() -> TestResult {
-    guard(async {
-        let (rig, mut console) = bare().await?;
-        console.keys("down enter enter")?;
-        console.tick(3);
-        console.settle().await?;
-        let screen = console.screen();
-        assert!(screen.contains(&words(Unbuilt::Launch)), "{screen}");
-        assert!(rig.world.gateway.sandboxes().is_empty());
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
 async fn unbuilt_restore_fails_visibly() -> TestResult {
     guard(async {
         let (_rig, mut console) = bare().await?;
@@ -279,31 +264,6 @@ async fn unbuilt_restore_fails_visibly() -> TestResult {
                 instance: "jk-0000".to_owned(),
             },
             Unbuilt::RestoreSandbox,
-        );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn unbuilt_usage_and_validation_fail_visibly() -> TestResult {
-    guard(async {
-        let (_rig, mut console) = bare().await?;
-        failed_text(
-            &mut console,
-            Effect::RefreshAccount {
-                account: "work".to_owned(),
-                stagger_ms: 0,
-            },
-            Unbuilt::RefreshUsage,
-        );
-        let (_rig2, mut console2) = bare().await?;
-        failed_text(
-            &mut console2,
-            Effect::ValidateAccount {
-                account: "work".to_owned(),
-            },
-            Unbuilt::ValidateAccount,
         );
         Ok(())
     })

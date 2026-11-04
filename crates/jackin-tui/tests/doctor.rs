@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_console::domain::doctor::DoctorFailure;
+use jackin_console::domain::launch::{LaunchContent, NextStep};
 use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_core::{Config, Program};
 use jackin_openshell::{Gateway, GatewayError};
@@ -314,11 +315,27 @@ async fn launch_on_failed_gateway() -> TestResult {
             .build()
             .await?;
         console.keys("down enter enter")?;
-        console.tick(3);
-        console.settle().await?;
+        for _ in 0..400 {
+            console.tick(1);
+            console.settle().await?;
+            if console.screen().contains("connection refused") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
         let screen = console.screen();
         assert!(screen.contains("connection refused"), "{screen}");
-        assert!(screen.contains("jackin doctor"), "{screen}");
+        let doctor = LaunchContent::openshell()
+            .words
+            .next_step(&NextStep::RunDoctor)
+            .ok_or("the doctor step has no words")?;
+        let shown = screen
+            .lines()
+            .filter_map(|line| line.split('│').nth(1))
+            .flat_map(str::split_whitespace)
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(shown.contains(&doctor), "{doctor}\n{screen}");
         assert!(rig.world.gateway.sandboxes().is_empty());
         Ok(())
     })

@@ -17,15 +17,15 @@ use junie_tui::core::refusal::Reason;
 
 use crate::bridge::Bridge;
 use crate::files::HostFiles;
+use crate::launch;
 use crate::observe::Inputs;
 use crate::panes::PaneHub;
-use crate::sessions::Access;
-use crate::unbuilt::{self, UnbuiltLaunch};
+use crate::unbuilt;
 
 #[derive(Clone)]
 pub(crate) struct JackinBackend {
-    inputs: Arc<Inputs>,
-    bridge: Bridge,
+    pub(crate) inputs: Arc<Inputs>,
+    pub(crate) bridge: Bridge,
     words: Vocabulary,
     panes: PaneHub,
     refreshing: Arc<AtomicBool>,
@@ -108,20 +108,47 @@ impl JackinBackend {
             Effect::RemoveRole { role } => self
                 .bridge
                 .spawn(async move { inputs.remove_role(&role).await }),
+            Effect::RefreshAccount { account, .. } => self
+                .bridge
+                .spawn(async move { inputs.refresh_account(&account).await }),
+            Effect::ValidateAccount { account } => self
+                .bridge
+                .spawn(async move { inputs.validate_account(&account).await }),
+            Effect::CheckSource {
+                ticket,
+                provider,
+                source,
+                key,
+            } => self.bridge.spawn(async move {
+                inputs
+                    .check_source(ticket, provider, &source, key.as_ref())
+                    .await
+            }),
+            Effect::ProbeFolder { ticket, path } => self
+                .bridge
+                .spawn(async move { inputs.probe_folder(ticket, &path).await }),
+            Effect::ReadChanges {
+                ticket,
+                instance,
+                unpushed,
+                ..
+            } => self
+                .bridge
+                .spawn(async move { inputs.read_changes(ticket, &instance, unpushed).await }),
+            Effect::LoadOp { ticket, scope } => self.bridge.spawn(async move {
+                Msg::OpLoaded {
+                    ticket,
+                    result: inputs.list_op(&scope).await,
+                }
+            }),
             Effect::Refresh
             | Effect::RunDoctor
             | Effect::Restore { .. }
-            | Effect::Prewarm { .. }
-            | Effect::RefreshAccount { .. }
-            | Effect::ValidateAccount { .. }
-            | Effect::CheckSource { .. }
-            | Effect::ProbeFolder { .. }
-            | Effect::ReadChanges { .. }
-            | Effect::LoadOp { .. } => {}
+            | Effect::Prewarm { .. } => {}
         }
     }
 
-    fn refresh(&self) {
+    pub(crate) fn refresh(&self) {
         if self.refreshing.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -153,14 +180,7 @@ impl Backend for JackinBackend {
                 self.rerun_doctor();
                 None
             }
-            Effect::Restore { .. }
-            | Effect::Prewarm { .. }
-            | Effect::RefreshAccount { .. }
-            | Effect::ValidateAccount { .. }
-            | Effect::CheckSource { .. }
-            | Effect::ProbeFolder { .. }
-            | Effect::ReadChanges { .. }
-            | Effect::LoadOp { .. } => unbuilt::fails(effect, &self.words),
+            Effect::Restore { .. } | Effect::Prewarm { .. } => unbuilt::fails(effect, &self.words),
             _ => {
                 self.settle(effect.clone());
                 None
@@ -180,15 +200,8 @@ impl Backend for JackinBackend {
         Arc::new(LaunchContent::openshell())
     }
 
-    fn launch(&self, world: &World, _target: &LaunchTarget) -> Box<dyn LaunchFeed> {
-        let sessions = &self.inputs.sessions;
-        let failure = match sessions.access(sessions.default_name()) {
-            Access::Down { error, .. } => {
-                unbuilt::gateway_failure(&LaunchContent::openshell().network_failure, &error)
-            }
-            Access::Up(_) | Access::NotChosen => unbuilt::launch_failure(&self.words),
-        };
-        Box::new(UnbuiltLaunch::new(world, failure))
+    fn launch(&self, world: &World, target: &LaunchTarget) -> Box<dyn LaunchFeed> {
+        launch::start(self, world, target)
     }
 
     fn spawn_pane(&self, request: &PaneRequest, spawn: PaneSpawn) -> Box<dyn PaneBody> {

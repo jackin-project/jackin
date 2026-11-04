@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use jackin_console::backend::Ticket;
 use jackin_console::domain::account::{AccountId, AccountRegistry};
 use jackin_console::domain::agent::Agent;
 use jackin_console::domain::instance::InstanceId;
@@ -26,6 +27,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::bridge::Settled;
+use crate::changes::read_changes;
 use crate::observe::{Inputs, Observation, locked};
 use crate::persist::{self, Folder, PersistError, Resolved, sentence};
 use crate::project::{manifest_doc, sandbox_id};
@@ -120,14 +122,18 @@ impl Inputs {
         Box::new(snapshot)
     }
 
-    async fn folder(&self, text: &str) -> Result<HostPath, PersistError> {
+    pub(crate) fn expanded(&self, text: &str) -> Result<HostPath, jackin_core::PathError> {
         let expanded = match text.strip_prefix('~') {
             Some(rest) if rest.is_empty() || rest.starts_with('/') => {
                 Path::new(&self.home).join(rest.trim_start_matches('/'))
             }
             _ => Path::new(text).to_path_buf(),
         };
-        let path = HostPath::parse(&expanded)?;
+        HostPath::parse(&expanded)
+    }
+
+    async fn folder(&self, text: &str) -> Result<HostPath, PersistError> {
+        let path = self.expanded(text)?;
         let folder = || {
             PersistError::from(Rejection::NotAFolder {
                 folder: text.to_owned(),
@@ -329,6 +335,24 @@ impl Inputs {
                 self.failed(reply).await
             }
         }
+    }
+
+    pub(crate) async fn read_changes(
+        &self,
+        ticket: Ticket,
+        instance: &InstanceId,
+        unpushed: usize,
+    ) -> Settled {
+        let result = async {
+            let (gateway, sandbox) = self.sandbox(instance)?;
+            let session = self.session(&gateway)?;
+            read_changes(&session, &sandbox, unpushed, &self.cancel)
+                .await
+                .map_err(Refused::Text)
+        }
+        .await
+        .map_err(|error| text(&error));
+        Msg::ChangesRead { ticket, result }.into()
     }
 
     fn sandbox(
