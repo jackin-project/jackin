@@ -160,3 +160,113 @@ async fn a_missing_op_binary_and_unreadable_output_are_told_apart() -> TestResul
     })
     .await
 }
+
+#[tokio::test]
+async fn a_concealed_value_of_eight_characters_or_fewer_shows_no_tail() -> TestResult {
+    guard(async {
+        let bench = Bench::new();
+        bench.op(
+            &["item", "get"],
+            exited(&item(&json!([
+                concealed("f1", "three", "abc"),
+                concealed("f2", "eight", "12345678"),
+                concealed("f3", "nine", "123456789"),
+                concealed("f4", "none", ""),
+            ]))),
+        );
+        let detail = bench
+            .cli()
+            .item("acct-1", "vault-1", "item-1", &token())
+            .await?;
+        let tails: Vec<&str> = detail.fields.iter().map(|f| f.tail.as_str()).collect();
+        assert_eq!(tails, ["", "", "6789", ""]);
+        let shown = format!("{detail:?}");
+        assert!(
+            !shown.contains("abc") && !shown.contains("12345678"),
+            "{shown}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_name_that_starts_with_a_dash_never_reaches_op_and_the_item_follows_a_double_dash()
+-> TestResult {
+    guard(async {
+        let bench = Bench::new();
+        bench.op(&["item", "get"], exited(&item(&json!([]))));
+        bench.op(&["item", "list"], exited(&json!([])));
+        bench.op(&["vault", "list"], exited(&json!([])));
+        let cli = bench.cli();
+        for refused in [
+            cli.item("acct-1", "vault-1", "--reveal", &token())
+                .await
+                .err(),
+            cli.item("acct-1", "-vault", "item-1", &token()).await.err(),
+            cli.item("-acct", "vault-1", "item-1", &token()).await.err(),
+            cli.items("acct-1", "--cache", &token()).await.err(),
+            cli.vaults("--session", &token()).await.err(),
+        ] {
+            assert!(
+                matches!(refused, Some(OpFault::FlagLikeName { .. })),
+                "{refused:?}"
+            );
+        }
+        assert!(bench.op_calls().is_empty(), "{:?}", bench.op_calls());
+        cli.item("acct-1", "vault-1", "item-1", &token()).await?;
+        assert_eq!(
+            bench.op_calls()[0].args,
+            [
+                "item",
+                "get",
+                "--vault",
+                "vault-1",
+                "--account",
+                "acct-1",
+                "--format",
+                "json",
+                "--",
+                "item-1"
+            ]
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_name_that_holds_a_marker_word_does_not_change_the_fault() -> TestResult {
+    guard(async {
+        let cases: [(&str, &str, Expect); 3] = [
+            (
+                "approve-keys",
+                "\"approve-keys\" isn't an item in the \"vault-1\" vault",
+                |f| matches!(f, OpFault::MissingItem { item, .. } if item == "approve-keys"),
+            ),
+            (
+                "forbidden",
+                "\"forbidden\" isn't an item in the \"vault-1\" vault",
+                |f| matches!(f, OpFault::MissingItem { item, .. } if item == "forbidden"),
+            ),
+            (
+                "not signed in",
+                "\"not signed in\" isn't an item in the \"vault-1\" vault",
+                |f| matches!(f, OpFault::MissingItem { item, .. } if item == "not signed in"),
+            ),
+        ];
+        for (name, stderr, expected) in cases {
+            let bench = Bench::new();
+            bench.op(&["item", "get"], failed(stderr));
+            let fault = bench
+                .cli()
+                .item("acct-1", "vault-1", name, &token())
+                .await
+                .err()
+                .ok_or("op failed but the call succeeded")?;
+            assert!(expected(&fault), "{name}: {fault:?}");
+        }
+        Ok(())
+    })
+    .await
+}

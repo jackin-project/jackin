@@ -112,6 +112,7 @@ async fn the_picker_walks_to_a_concealed_field_and_the_form_saves_only_its_refer
         }
         let op = format!("{:?}", lab.world().op);
         assert!(!op.contains(CANARY), "{op}");
+        assert!(!op.contains("d2e8"), "{op}");
         let accounts = format!("{:?}", lab.world().accounts);
         assert!(!accounts.contains(CANARY), "{accounts}");
         for call in lab

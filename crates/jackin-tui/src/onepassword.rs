@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use jackin_console::backend::{
@@ -19,12 +20,25 @@ type Account = String;
 type Vault = (Account, String);
 type Item = (Account, String, String);
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct OpSnapshot {
     loaded: Arc<Mutex<Loaded>>,
 }
 
-#[derive(Debug, Default)]
+impl fmt::Debug for OpSnapshot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let loaded = locked(&self.loaded);
+        f.debug_struct("OpSnapshot")
+            .field("session", &loaded.session)
+            .field("accounts", &loaded.accounts.len())
+            .field("vaults", &loaded.vaults.len())
+            .field("items", &loaded.items.len())
+            .field("fields", &loaded.fields.len())
+            .finish()
+    }
+}
+
+#[derive(Default)]
 struct Loaded {
     session: Option<OpSession>,
     accounts: Vec<OpAccount>,
@@ -44,9 +58,11 @@ fn field_kind(kind: OpFieldKind) -> FieldKind {
 pub(crate) fn op_error(fault: &OpFault) -> OpError {
     match fault {
         OpFault::Locked => OpError::Locked,
-        OpFault::NotInstalled(_) | OpFault::Malformed | OpFault::Failed | OpFault::Process(_) => {
-            OpError::NotAvailable
-        }
+        OpFault::NotInstalled(_)
+        | OpFault::FlagLikeName { .. }
+        | OpFault::Malformed
+        | OpFault::Failed
+        | OpFault::Process(_) => OpError::NotAvailable,
         OpFault::AuthorizationRequired { account } => OpError::AuthorizationRequired {
             account: account.clone(),
         },
