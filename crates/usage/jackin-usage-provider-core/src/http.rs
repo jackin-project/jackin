@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::error::ProviderError;
 
+const MAX_BODY_BYTES: u64 = 1 << 20;
 const AGENT: &str = concat!("jackin/", env!("CARGO_PKG_VERSION"));
 
 static SECURE: OnceLock<Option<Client>> = OnceLock::new();
@@ -113,7 +114,23 @@ impl Http {
             other if !other.is_success() => return Err(ProviderError::Status(other.as_u16())),
             _ => {}
         }
-        let bytes = response.bytes().await.map_err(transport)?;
+        let mut response = response;
+        let too_large = ProviderError::Decode("the response is larger than 1 MiB");
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_BODY_BYTES)
+        {
+            return Err(too_large);
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(transport)? {
+            if u64::try_from(bytes.len().saturating_add(chunk.len()))
+                .map_or(true, |total| total > MAX_BODY_BYTES)
+            {
+                return Err(too_large);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
         serde_json::from_slice(&bytes)
             .map_err(|_| ProviderError::Decode("the response is not valid JSON"))
     }

@@ -164,6 +164,30 @@ async fn the_individual_limit_shows_money_left_and_the_percent_used() -> TestRes
 }
 
 #[tokio::test]
+async fn an_overspent_individual_limit_shows_zero_left_from_either_source() -> TestResult {
+    guard(async {
+        for body in [
+            include_str!("fixtures/codex/usage_individual_overspent_remaining.json"),
+            include_str!("fixtures/codex/usage_individual_overspent_used.json"),
+        ] {
+            let usage = usage_for(body).await?;
+            assert_windows(
+                &usage.outcome,
+                &[want(
+                    WindowKind::Spend,
+                    "Individual limit",
+                    Some(100.0),
+                    Left::Amount("0.00", "USD"),
+                    Some(1_767_312_000),
+                )],
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn an_individual_limit_with_only_a_remaining_percent_shows_that_percent() -> TestResult {
     guard(async {
         let usage = usage_for(include_str!(

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::Timestamp;
+use jackin_core::{TerminalText, Timestamp};
 use jackin_usage_provider_core::{Bucket, BucketKind, Remaining as BucketRemaining};
 
 use crate::model::{LimitWindow, Percent, Remaining, UnavailableReason, WindowKind};
@@ -30,7 +30,7 @@ fn window(bucket: Bucket) -> Result<Option<LimitWindow>, UnavailableReason> {
         Some(BucketRemaining::Percent(value)) => Some(Remaining::Percent(percent(value)?)),
         Some(BucketRemaining::Amount(money)) => Some(Remaining::Amount {
             value: money.text(),
-            unit: money.unit().to_owned(),
+            unit: clean(money.unit()),
         }),
         None => match used {
             Some(used) => Some(Remaining::Percent(percent(100.0 - used.get())?)),
@@ -43,11 +43,15 @@ fn window(bucket: Bucket) -> Result<Option<LimitWindow>, UnavailableReason> {
     }
     Ok(Some(LimitWindow {
         kind: kind(bucket.kind),
-        label: bucket.label,
+        label: clean(&bucket.label),
         used,
         remaining,
         resets_at,
     }))
+}
+
+fn clean(text: &str) -> String {
+    TerminalText::sanitize(text.as_bytes()).to_string()
 }
 
 fn instant(epoch: i64) -> Result<Timestamp, UnavailableReason> {

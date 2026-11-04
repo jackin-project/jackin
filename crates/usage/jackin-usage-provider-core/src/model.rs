@@ -70,12 +70,8 @@ impl Money {
         &self.unit
     }
 
-    pub fn magnitude(&self) -> Option<Money> {
-        Money::new(self.minor.checked_abs()?, self.exponent, self.unit.clone())
-    }
-
     pub fn minus(&self, other: &Money) -> Option<Money> {
-        if self.exponent != other.exponent {
+        if self.exponent != other.exponent || self.unit != other.unit {
             return None;
         }
         Money::new(

@@ -390,3 +390,21 @@ async fn a_spend_used_and_limit_in_different_exponents_is_a_provider_error_port_
     })
     .await
 }
+
+#[tokio::test]
+async fn a_spend_used_and_limit_in_different_currencies_is_a_provider_error() -> TestResult {
+    guard(async {
+        let body = "{\"spend\":{\"used\":{\"amount_minor\":2000,\"currency\":\"EUR\",\"exponent\":2},\"limit\":{\"amount_minor\":10000,\"currency\":\"USD\",\"exponent\":2},\"percent\":18,\"enabled\":true}}";
+        assert_provider(&windows_for(body).await?);
+        let same = want(
+            WindowKind::Spend,
+            "Extra usage",
+            Some(18.0),
+            Left::Amount("80.00", "USD"),
+            None,
+        );
+        assert_windows(&windows_for(&body.replace("EUR", "USD")).await?, &[same]);
+        Ok(())
+    })
+    .await
+}

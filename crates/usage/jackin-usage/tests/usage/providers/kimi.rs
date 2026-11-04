@@ -125,6 +125,23 @@ async fn a_limit_without_a_window_is_labelled_by_its_name() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_limit_name_carrying_terminal_controls_is_shown_without_them() -> TestResult {
+    guard(async {
+        let body = NO_WINDOW.replace("Burst", "\\u001b[2JBu\\u202ers\\u0007t");
+        let burst = want(
+            WindowKind::Other,
+            "Burst",
+            Some(10.0),
+            Left::Percent(90.0),
+            Some(1_767_243_600),
+        );
+        assert_windows(&outcome(&body).await?, &[burst]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn usage_above_the_limit_is_clamped_to_a_full_window() -> TestResult {
     guard(async {
         let full = want(

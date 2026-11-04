@@ -171,3 +171,19 @@ async fn an_individual_limit_beyond_the_integers_is_a_provider_error() -> TestRe
     })
     .await
 }
+
+#[tokio::test]
+async fn a_body_over_one_mebibyte_is_a_provider_error_and_one_at_the_limit_decodes() -> TestResult {
+    guard(async {
+        let limit = 1 << 20;
+        let at_limit = format!("{FULL}{}", " ".repeat(limit - FULL.len()));
+        let (harness, account) = UsageHarness::with_codex(&at_limit).await?;
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert!(!windows_of(&usage.outcome).is_empty());
+
+        let over = format!("{at_limit} ");
+        assert_provider_without_the_body(&broken(&over).await?);
+        Ok(())
+    })
+    .await
+}
