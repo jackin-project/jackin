@@ -89,13 +89,12 @@ fn operator_input_loses_every_osc52_reply() {
 
 #[test]
 fn csi_sgr_and_plain_text_pass_unchanged_in_both_directions_at_every_cut() {
-    let samples: [&[u8]; 8] = [
+    let samples: [&[u8]; 7] = [
         SGR,
         CPR,
         b"plain \xe2\x9c\x9d \xe2\xa0\x9c \xc2\xb5 \xf0\x9f\x98\x80 text\r\n",
         b"\x1b[?2004h\x1b[>1u\x1b[<u\x1b[6n",
         b"\x1b(B\x1b=\x1b7\x1b8",
-        b"\x1bP1$r0m\x1b\\",
         b"\x1b[200~pasted \x1b[0m text\x1b[201~",
         b"\x07\x08\t\r\n",
     ];
@@ -223,4 +222,117 @@ fn directions_keep_separate_state() {
     assert_eq!(guard.from_sandbox(b"a\x1b]52;c;"), b"a");
     assert_eq!(guard.from_operator(b"typed"), b"typed");
     assert_eq!(guard.from_sandbox(b"QQ==\x07b"), b"b");
+}
+
+const KITTY_PROBE: &[u8] = b"\x1b_Gi=1,a=q,t=f,f=100;L2V0Yy9wYXNzd2Q=\x1b\\";
+const XTGETTCAP: &[u8] = b"\x1bP+q544e\x1b\\";
+const DECRQSS: &[u8] = b"\x1bP$qm\x1b\\";
+const SIXEL: &[u8] = b"\x1bPq#0;2;0;0;0#0!10~-\x1b\\";
+const SOS: &[u8] = b"\x1bXtext\x1b\\";
+const PM: &[u8] = b"\x1b^note\x1b\\";
+const C1_DCS: &[u8] = b"\x90+q544e\x9c";
+const C1_SOS: &[u8] = b"\x98text\x9c";
+const C1_PM: &[u8] = b"\x9enote\x9c";
+const C1_APC: &[u8] = b"\x9fGi=1,a=q,t=f;L2V0Yy9wYXNzd2Q=\x9c";
+const WIDE_APC: &[u8] = b"\xc2\x9fGi=1,a=q,t=f;L2V0Yy9wYXNzd2Q=\xc2\x9c";
+const WIDE_DCS: &[u8] = b"\xc2\x90$qm\xc2\x9c";
+const STRINGS: [&[u8]; 10] = [
+    KITTY_PROBE,
+    XTGETTCAP,
+    DECRQSS,
+    SIXEL,
+    SOS,
+    PM,
+    C1_DCS,
+    C1_SOS,
+    C1_PM,
+    C1_APC,
+];
+const WINDOW_OPS: [&[u8]; 7] = [
+    b"\x1b[21t",
+    b"\x1b[8;50;200t",
+    b"\x1b[14t",
+    b"\x1b[18t",
+    b"\x1b[>0;1t",
+    b"\x9b18t",
+    b"\xc2\x9b8;50;200t",
+];
+
+#[test]
+fn sandbox_output_loses_dcs_apc_pm_and_sos_strings_at_every_split() {
+    for string in STRINGS.iter().copied().chain([WIDE_APC, WIDE_DCS]) {
+        let stream = framed(string);
+        for at in 0..=stream.len() {
+            let out = chunked(&stream, at, ClipboardGuard::from_sandbox);
+            assert_eq!(out, b"abcd", "split at {at} of {string:?}");
+        }
+    }
+}
+
+#[test]
+fn sandbox_output_loses_csi_window_operations_at_every_split() {
+    for operation in WINDOW_OPS {
+        let stream = framed(operation);
+        for at in 0..=stream.len() {
+            let out = chunked(&stream, at, ClipboardGuard::from_sandbox);
+            assert_eq!(out, b"abcd", "split at {at} of {operation:?}");
+        }
+    }
+}
+
+#[test]
+fn other_csi_sequences_still_reach_the_terminal_from_the_sandbox_at_every_split() {
+    for keep in [
+        SGR,
+        CPR,
+        b"\x1b[2 q".as_slice(),
+        b"\x1b[?25h".as_slice(),
+        b"\x1b[38;2;10;20;30m".as_slice(),
+        b"\x9b31m".as_slice(),
+    ] {
+        let stream = framed(keep);
+        for at in 0..=stream.len() {
+            let out = chunked(&stream, at, ClipboardGuard::from_sandbox);
+            assert_eq!(out, stream, "split at {at} of {keep:?}");
+        }
+    }
+}
+
+#[test]
+fn the_operator_keeps_the_terminal_replies_that_the_sandbox_cannot_provoke() {
+    for reply in [
+        b"\x1b[8;24;80t".as_slice(),
+        b"\x1b_Gi=1;OK\x1b\\".as_slice(),
+        b"\x1bP1+r544e\x1b\\".as_slice(),
+    ] {
+        let stream = framed(reply);
+        for at in 0..=stream.len() {
+            let out = chunked(&stream, at, ClipboardGuard::from_operator);
+            assert_eq!(out, stream, "split at {at} of {reply:?}");
+        }
+    }
+}
+
+#[test]
+fn a_cancelled_or_restarted_string_or_csi_ends_where_a_terminal_ends_it() {
+    let mut guard = ClipboardGuard::default();
+    assert_eq!(guard.from_sandbox(b"ab\x1b_Gi=1\x18cd"), b"abcd");
+    let mut guard = ClipboardGuard::default();
+    assert_eq!(guard.from_sandbox(b"ab\x1bPxx\x1b[31mcd"), b"ab\x1b[31mcd");
+    let mut guard = ClipboardGuard::default();
+    assert_eq!(guard.from_sandbox(b"ab\x1b[1\x1b[31mcd"), b"ab\x1b[31mcd");
+    let mut guard = ClipboardGuard::default();
+    assert_eq!(
+        guard.from_sandbox(b"ab\x1b[1\x1ac\x1b[1;31m"),
+        b"abc\x1b[1;31m"
+    );
+}
+
+#[test]
+fn an_oversized_csi_is_dropped_and_later_output_survives() {
+    let mut guard = ClipboardGuard::default();
+    let mut long = b"ab\x1b[".to_vec();
+    long.extend(std::iter::repeat_n(b'1', 100_000));
+    long.extend_from_slice(b"mcd");
+    assert_eq!(guard.from_sandbox(&long), b"abcd");
 }
