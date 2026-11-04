@@ -4,9 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_console::fixtures::Scenario;
-use tuiscotti::check::{CheckOutcome, FrozenStore};
 
+use crate::app::App;
 use crate::baseline;
+use crate::steps::jackin;
 
 const JOURNEYS: [&str; 3] = [
     include_str!("manager.rs"),
@@ -117,31 +118,50 @@ fn every_scenario_is_driven_or_has_no_approved_file() {
     assert!(problems.is_empty(), "{problems:#?}");
 }
 
-#[test]
-fn a_one_cell_colour_change_fails_the_check() {
-    let path = baseline::root().join("functional/jackin_launch_reconnect.tui.json");
+const COLOUR_ID: &str = "functional/jackin_launch_reconnect";
+
+fn approved_copy(change_one_colour: bool) -> tempfile::TempDir {
+    let path = baseline::root().join(format!("{COLOUR_ID}.tui.json"));
     let approved = std::fs::read_to_string(&path)
         .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    let marker = "\"fg\":\"#";
-    let last = approved.find(marker).expect("a foreground colour") + marker.len() + 5;
-    let flipped = if approved.as_bytes()[last] == b'f' {
-        "e"
+    let copy = if change_one_colour {
+        let marker = "\"fg\":\"#";
+        let last = approved.find(marker).expect("a foreground colour") + marker.len() + 5;
+        let flipped = if approved.as_bytes()[last] == b'f' {
+            "e"
+        } else {
+            "f"
+        };
+        format!("{}{flipped}{}", &approved[..last], &approved[last + 1..])
     } else {
-        "f"
+        approved
     };
-    let changed = format!("{}{flipped}{}", &approved[..last], &approved[last + 1..]);
-    let artifacts = tempfile::tempdir().expect("an artifact directory");
-    let store = FrozenStore::new(baseline::root(), artifacts.path()).expect("a frozen store");
+    let root = tempfile::tempdir().expect("a baseline copy");
+    let target = root.path().join(format!("{COLOUR_ID}.tui.json"));
+    std::fs::create_dir_all(target.parent().expect("a parent directory")).expect("create it");
+    std::fs::write(&target, copy).expect("write the copy");
+    root
+}
 
-    let same = store
-        .check(approved.as_bytes())
-        .expect("check the approved file");
-    assert!(same.is_pass(), "{same:?}");
-    match store
-        .check(changed.as_bytes())
-        .expect("check the changed file")
-    {
-        CheckOutcome::Failure(failure) => assert_eq!(failure.changed_cell_total(), 1),
-        CheckOutcome::Pass(_) => panic!("a one-cell colour change passed"),
-    }
+fn launch_reconnect_app() -> App {
+    let app = jackin("jackin-colour", "paused");
+    app.wait_text("Current directory");
+    app.key("enter");
+    app.wait_text("Launch · choose Agent");
+    app
+}
+
+#[test]
+fn an_unchanged_approved_copy_passes_the_journey_check() {
+    let root = approved_copy(false);
+    launch_reconnect_app().visual_in(root.path(), COLOUR_ID);
+}
+
+#[test]
+#[should_panic(
+    expected = "1 changed cells [ReportedCell { col: 0, row: 0, fields: [\"fg\"], actual_text: \" \", baseline_text: \" \" }]"
+)]
+fn a_one_cell_colour_change_fails_the_journey_check() {
+    let root = approved_copy(true);
+    launch_reconnect_app().visual_in(root.path(), COLOUR_ID);
 }

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::app::App;
+use crate::app::{App, row_text};
 
 fn capsule(name: &str) -> App {
     App::new(
@@ -115,8 +115,10 @@ fn jackin_terminal_detached_exited_and_failed_panes() {
     app.wait_text("Codex exited (code 0) · press Enter to restart · the sandbox keeps running");
     app.visual("functional/jackin_pane_exited");
 
-    chord(&app, "7");
     app.advance_clock(300);
-    app.wait_text("could not attach to Codex");
+    chord(&app, "7");
+    app.wait_screen("the failure is in the status line", |screen| {
+        row_text(screen, screen.rows() - 1).contains("could not attach to Codex")
+    });
     app.visual("functional/jackin_pane_failed");
 }

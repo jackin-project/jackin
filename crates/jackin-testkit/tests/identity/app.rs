@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use junie_tui::clock::TestRequest;
 use tempfile::TempDir;
 use tui_test::{
     CheckedMouseAction, LaunchEnvMode, LaunchOptions, MouseOptions, OpenOptions, Operation,
@@ -106,9 +107,57 @@ impl App {
     }
 
     pub(crate) fn screen(&self) -> TerminalSnapshot {
+        self.fence();
+        self.capture()
+    }
+
+    fn capture(&self) -> TerminalSnapshot {
         self.session
             .capture_snapshot(SnapshotScope::ActiveScreen)
             .expect("capture the live terminal")
+    }
+
+    fn accepts_paste(&self) -> bool {
+        let OperationResult::State(state) = self
+            .session
+            .execute(Operation::State)
+            .expect("process state")
+        else {
+            panic!("missing process state");
+        };
+        state.exited.is_none() && state.modes.get("bracketed_paste") == Some(&true)
+    }
+
+    fn bells(&self) -> u64 {
+        let OperationResult::BellCount(count) = self
+            .session
+            .execute(Operation::GetBellCount)
+            .expect("bell count")
+        else {
+            panic!("missing bell count");
+        };
+        count
+    }
+
+    fn fence(&self) {
+        if !self.accepts_paste() {
+            return;
+        }
+        let before = self.bells();
+        self.session
+            .paste(TestRequest::FENCE)
+            .expect("fence through bracketed paste");
+        let deadline = Instant::now() + TIMEOUT;
+        while self.bells() == before {
+            self.assert_running("waiting for the application to handle the input");
+            assert!(
+                Instant::now() < deadline,
+                "the application did not acknowledge the fence within {TIMEOUT:?} (bells {before} -> {})\n{}",
+                self.bells(),
+                text(&self.capture())
+            );
+            pause(Duration::from_millis(2));
+        }
     }
 
     pub(crate) fn wait_screen(
@@ -171,12 +220,15 @@ impl App {
     }
 
     pub(crate) fn visual(&self, test_id: &str) {
+        self.visual_in(baseline::root(), test_id);
+    }
+
+    pub(crate) fn visual_in(&self, root: &Path, test_id: &str) {
         drop(self.settle());
         let screen = self.stable_screen();
         let sample = Sample::state(test_id, screen, Observation::empty())
             .expect("build the Tuiscotti state sample");
-        let store = FrozenStore::new(baseline::root(), &artifacts())
-            .expect("open the Tuiscotti frozen store");
+        let store = FrozenStore::new(root, &artifacts()).expect("open the Tuiscotti frozen store");
         let outcome = store
             .check(&sample.to_bytes().expect("serialize the Tuiscotti sample"))
             .expect("run the Tuiscotti frozen check");
@@ -216,6 +268,7 @@ impl App {
     }
 
     pub(crate) fn settle(&self) -> TerminalSnapshot {
+        self.fence();
         self.session
             .wait_quiet(&WaitQuietOptions::new(TIMEOUT, QUIET).expect("a valid quiet window"))
             .expect("the terminal settles after the semantic wait");
@@ -248,7 +301,7 @@ impl App {
     }
 
     pub(crate) fn advance_clock(&self, milliseconds: u64) {
-        self.paste(&format!("junie-tui:advance-clock:{milliseconds}"));
+        self.paste(&TestRequest::advance(milliseconds));
     }
 
     pub(crate) fn move_to(&self, point: Point) {
@@ -311,7 +364,7 @@ impl App {
             state.exited.is_none(),
             "console-fixture exited while {reason}: {:?}\n{}",
             state.exited,
-            text(&self.screen())
+            text(&self.capture())
         );
     }
 }
