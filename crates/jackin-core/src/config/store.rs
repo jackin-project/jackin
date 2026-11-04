@@ -26,6 +26,10 @@ impl ConfigStore {
         ConfigStore { fs, clock, path }
     }
 
+    pub fn path(&self) -> &HostPath {
+        &self.path
+    }
+
     pub fn default_path(home: &HostPath) -> HostPath {
         home.join_name(".config")
             .join_name("jackin")

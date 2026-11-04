@@ -741,6 +741,7 @@ impl Gateway for FakeGateway {
 
     async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::Find, None, None).await?;
         let cells: Vec<Arc<Cell>> = {
             let mut registry = self.registry();
             registry.strike(GatewayOp::Find)?;

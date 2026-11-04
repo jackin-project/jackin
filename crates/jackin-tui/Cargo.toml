@@ -11,15 +11,22 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+futures = { workspace = true }
 jackin-console = { workspace = true }
 jackin-core = { workspace = true }
 jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
 junie-tui = { workspace = true }
+ratatui = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio-util = { workspace = true }
 
-[package.metadata.cargo-shear]
-ignored = ["jackin-console", "junie-tui"]
+[dev-dependencies]
+clap = { workspace = true }
+jackin-console = { workspace = true, features = ["demo"] }
+jackin-testkit = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "test-util", "time"] }
 
 [lints]
 workspace = true

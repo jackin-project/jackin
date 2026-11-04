@@ -11,7 +11,7 @@ use crate::lex::{Token, lex_rust};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
-pub const ALLOWED_LITERALS: &[&str] = &[];
+pub const ALLOWED_LITERALS: &[&str] = &["JACKIN_NO_MOTION", "git", "path"];
 
 const SCREEN_SOURCE: &str = "crates/jackin-tui/src";
 
@@ -64,10 +64,12 @@ impl Check for ScreenCheck {
     fn run(&self, repo: &Repo) -> Vec<Violation> {
         let mut violations = Vec::new();
         let mut used: BTreeSet<&str> = BTreeSet::new();
+        let mut scanned = false;
         for file in repo.files() {
             if file.kind() != FileKind::Rust || !file.path().starts_with(SCREEN_SOURCE) {
                 continue;
             }
+            scanned = true;
             let tokens = lex_rust(file.text()).tokens;
             violations.extend(import_violations(file.path(), &tokens));
             violations.extend(literal_violations(
@@ -77,7 +79,11 @@ impl Check for ScreenCheck {
                 &mut used,
             ));
         }
-        for entry in self.allowed.iter().filter(|entry| !used.contains(**entry)) {
+        for entry in self
+            .allowed
+            .iter()
+            .filter(|entry| scanned && !used.contains(**entry))
+        {
             violations.push(Violation::at_file(
                 self.step(),
                 Path::new(SCREEN_CHECK_FILE),

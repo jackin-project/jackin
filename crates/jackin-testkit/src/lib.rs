@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod connector;
+mod console;
+mod console_fixture;
 mod engine;
 mod exec;
 mod fixtures;
@@ -16,6 +18,8 @@ mod usage;
 mod world;
 
 pub use connector::*;
+pub use console::*;
+pub use console_fixture::*;
 pub use engine::*;
 pub use fixtures::*;
 pub use gateway::*;

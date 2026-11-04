@@ -45,7 +45,7 @@ fn found(
 }
 
 fn expect(source: &str, expected: &[(&str, u32, &str)]) -> TestResult {
-    expect_with(ScreenCheck::production(), source, expected)
+    expect_with(ScreenCheck::with_allowed(&[]), source, expected)
 }
 
 fn expect_with(check: ScreenCheck, source: &str, expected: &[(&str, u32, &str)]) -> TestResult {
@@ -127,6 +127,19 @@ fn allowed_literals_pass() -> TestResult {
          \x20   std::process::Command::new(\"codex\")\n\
          }\n",
         &[("C2", 5, "JACKIN_NO_MOTION_X")],
+    )
+}
+
+#[test]
+fn production_allowed_literals_pass() -> TestResult {
+    expect_with(
+        ScreenCheck::production(),
+        "fn motion() -> bool {\n\
+         \x20   std::env::var_os(\"JACKIN_NO_MOTION\").is_some()\n\
+         }\n\
+         const GIT: &str = \"git\";\n\
+         const PATH: &str = \"path\";\n",
+        &[],
     )
 }
 

@@ -69,6 +69,7 @@ openshell-core = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", 
 openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
 openshell-providers = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
 openshell-sdk = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.6", version = "0.0.0" }
+ratatui = { version = "0.30.2", features = ["crossterm_0_29"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
 reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-native-roots-no-provider"] }

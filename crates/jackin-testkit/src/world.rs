@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Clock, Config, ConfigEdit, ConfigError, ConfigStore, FileSystem, GatewayName, HostPath,
-    OpenShellWorkspace, ProcessRunner, StdFileSystem,
+    Clock, Config, ConfigEdit, ConfigError, ConfigStore, EnvScope, FileSystem, GatewayName,
+    HostPath, OpenShellWorkspace, ProcessRunner, Provider, StdFileSystem,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::Gateway;
@@ -83,6 +83,78 @@ impl World {
             })
             .collect();
         edits.extend(config.accounts().cloned().map(ConfigEdit::AddAccount));
+        self.config.edit(edits).await?;
+        Ok(())
+    }
+
+    pub async fn seed_all(&self, config: &Config) -> Result<(), ConfigError> {
+        let stored = self.config.load().await?;
+        let mut edits = Vec::new();
+        for (name, entry) in config.gateways() {
+            if stored.gateway(name).is_none() {
+                edits.push(ConfigEdit::AddGateway {
+                    name: name.clone(),
+                    entry: entry.clone(),
+                });
+            }
+        }
+        if let Some(name) = config
+            .default_gateway()
+            .filter(|_| stored.default_gateway().is_none())
+        {
+            edits.push(ConfigEdit::SetDefaultGateway(Some(name.clone())));
+        }
+        for account in config.accounts() {
+            if stored.account(account.name()).is_none() {
+                edits.push(ConfigEdit::AddAccount(account.clone()));
+            }
+        }
+        for provider in Provider::ALL {
+            if let Some(account) = config
+                .default_account(provider)
+                .filter(|_| stored.default_account(provider).is_none())
+            {
+                edits.push(ConfigEdit::SetDefaultAccount {
+                    account: account.clone(),
+                });
+            }
+        }
+        for (name, role) in config
+            .roles()
+            .filter(|(name, _)| stored.role(name).is_none())
+        {
+            edits.push(ConfigEdit::AddRole {
+                name: name.clone(),
+                source: role.source.clone(),
+            });
+            for (agent, account) in &role.bindings {
+                edits.push(ConfigEdit::BindRoleAccount {
+                    role: name.clone(),
+                    agent: *agent,
+                    account: account.clone(),
+                });
+            }
+        }
+        for (name, workspace) in config
+            .workspaces()
+            .filter(|(name, _)| stored.workspace(name).is_none())
+        {
+            edits.push(ConfigEdit::AddWorkspace {
+                name: name.clone(),
+                workspace: workspace.clone(),
+            });
+        }
+        for (name, value) in config
+            .env()
+            .iter()
+            .filter(|(name, _)| !stored.env().contains_key(*name))
+        {
+            edits.push(ConfigEdit::SetEnv {
+                scope: EnvScope::Global,
+                name: name.name().clone(),
+                value: Some(value.clone()),
+            });
+        }
         self.config.edit(edits).await?;
         Ok(())
     }
