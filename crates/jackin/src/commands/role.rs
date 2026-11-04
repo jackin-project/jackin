@@ -33,10 +33,9 @@ async fn source(app: &App, args: &RoleAddArgs) -> Result<RoleSource, CommandErro
         Err(CommandError::Path(PathError::NotADirectory(_))) => {}
         Err(other) => return Err(other),
     }
-    let url = RoleUrl::parse(&args.source).map_err(|_| {
+    let url = RoleUrl::parse(&args.source).map_err(|error| {
         CommandError::Argument(format!(
-            "{} is neither an existing directory nor a Git URL",
-            args.source
+            "the source must be an existing directory or a Git URL ({error})"
         ))
     })?;
     Ok(RoleSource::Git {
