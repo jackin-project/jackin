@@ -588,9 +588,9 @@ P9.1 and P9.2 change the baseline repository. They can start after P2.1 and run 
 ### P9.4 Prove that the console is identical to the baseline
 
 - **Repo:** jackin. **Owner:** `rust-cli-tui-engineer`, with `test-reviewer` for the red and green record. **Depends:** P9.3.
-- **Steps:** Add the D27 identity gate to the nextest suite. The gate builds the console through build_console, the function the product uses, with the baseline feature demo enabled only in test builds. It runs the jackin console in a PTY on the baseline fixture data. It drives each demo scenario and each key-driven demo state with the demo key sequence (D28). It verifies each result against its `jackin-preview` tuiscotti baseline.
+- **Steps:** Add the D27 identity gate to the nextest suite. The gate runs the `console-fixture` binary of `jackin-testkit`, which builds the pinned `jackin-console` through `assemble`, the same path the product's `build_console` takes (design 4.2, G16), with the baseline feature demo enabled only in that test binary; `build_console` itself projects live jackin data and cannot show the fixture worlds. It runs the jackin console in a PTY on the baseline fixture data. It drives each demo scenario and each key-driven demo state with the demo key sequence (D28). It verifies each result against its `jackin-preview` tuiscotti baseline.
 - **Proof:** G-FAST passes. `test-reviewer` records a red run after a one-cell color change and a green run after the revert. xtask demo-gate passes.
-- [ ] P9.4 done
+- [x] P9.4 done. Proof: identity target in crates/jackin-testkit/tests/identity compares 41 journeys and 54 approved jackin-preview files of the pinned baseline (adbbfe8) through tuiscotti; test-reviewer red after a one-cell colour change (`1 changed cells ... fields ["fg"]`) and green after revert (/private/tmp/claude-501/plans/P9.4-redgreen.md), its FIX (colour test bypassing the visual path) fixed with the weakening break red; load flake fixed (0 of 160 under 24 burners); xtask demo-gate exit 0; G-FAST passes.
 
 ### P9.5 Drive the console live
 
