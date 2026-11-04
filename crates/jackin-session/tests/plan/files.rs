@@ -5,7 +5,7 @@ use jackin_core::{EnvFile, FileMode, SandboxPath};
 use jackin_session::LaunchPlan;
 use jackin_testkit::RoleFixture;
 
-use super::support::{Spec, TestResult, env_values, guard, launch_id};
+use super::support::{Spec, TestResult, env_values, guard, launch_id, plain_values};
 
 const TRUST: &str = "[projects.\"/sandbox/project\"]\ntrust_level = \"trusted\"\n";
 
@@ -64,7 +64,7 @@ async fn planned_files_carry_the_trust_entry_the_model_and_the_env_with_exact_pa
             &env_values(&[("GREETING", "hello")])?
         );
 
-        let flagged = plain.plan(plain.request(1)?.env(env_values(&[("GREETING", "hi")])?))?;
+        let flagged = plain.plan(plain.request(1)?.env(plain_values(&[("GREETING", "hi")])?))?;
         assert_eq!(
             EnvFile::parse(&flagged.files().env.text)?.values(),
             &env_values(&[("GREETING", "hi")])?

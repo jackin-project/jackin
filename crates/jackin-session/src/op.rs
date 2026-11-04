@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -96,14 +97,26 @@ pub enum OpFieldKind {
     Url,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct OpFieldInfo {
     pub id: String,
     pub label: String,
     pub kind: OpFieldKind,
     pub section: Option<String>,
-    pub tail: String,
+    pub tail: Zeroizing<String>,
     pub empty: bool,
+}
+
+impl fmt::Debug for OpFieldInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("OpFieldInfo")
+            .field("id", &self.id)
+            .field("label", &self.label)
+            .field("kind", &self.kind)
+            .field("section", &self.section)
+            .field("empty", &self.empty)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -182,26 +195,28 @@ fn kind_of(kind: &str) -> OpFieldKind {
     }
 }
 
-fn tail_of(value: &str) -> String {
+fn tail_of(value: &str) -> Zeroizing<String> {
     let count = value.chars().count();
     if count <= TAIL_MIN_CHARS {
-        return String::new();
+        return Zeroizing::new(String::new());
     }
-    value
-        .chars()
-        .skip(count.saturating_sub(TAIL_CHARS))
-        .collect()
+    Zeroizing::new(
+        value
+            .chars()
+            .skip(count.saturating_sub(TAIL_CHARS))
+            .collect(),
+    )
 }
 
 fn field(raw: &Value) -> Result<OpFieldInfo, OpFault> {
     let id = text_of(raw, "id")?;
     let kind = kind_of(raw.get("type").and_then(Value::as_str).unwrap_or_default());
     let value = raw.get("value").and_then(Value::as_str).unwrap_or_default();
-    let tail = Zeroizing::new(if kind == OpFieldKind::Concealed {
+    let tail = if kind == OpFieldKind::Concealed {
         tail_of(value)
     } else {
-        String::new()
-    });
+        Zeroizing::new(String::new())
+    };
     Ok(OpFieldInfo {
         id: id.to_owned(),
         label: raw
@@ -216,7 +231,7 @@ fn field(raw: &Value) -> Result<OpFieldInfo, OpFault> {
             .and_then(|section| section.get("id"))
             .and_then(Value::as_str)
             .map(str::to_owned),
-        tail: tail.as_str().to_owned(),
+        tail,
         empty: value.is_empty(),
     })
 }

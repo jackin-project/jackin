@@ -7,7 +7,9 @@ use jackin_core::{
 };
 use jackin_testkit::{Rig, RoleFixture, TestResult, guard};
 
-use super::support::{answer, begin, console, env_file, only, until_route};
+use super::support::{
+    Stage, answer, begin, console, env_file, only, stage, until_route, until_shows,
+};
 
 type Failure = Box<dyn std::error::Error>;
 
@@ -74,6 +76,37 @@ async fn the_env_file_follows_the_scope_order() -> TestResult {
             "export GREETING='typed'",
         ] {
             assert!(file.lines().any(|l| l == line), "{line}\n{file}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_answer_that_is_a_reference_stops_the_launch_without_showing_it() -> TestResult {
+    guard(async {
+        for value in [
+            "op://vault/item/field",
+            "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN",
+        ] {
+            let role = RoleFixture::new("sentinel")?.env("TOKENISH", None, Some("Tokenish"));
+            let rig = Rig::builder().role(role).build().await?;
+            rig.world.seed_all(&rig.config).await?;
+            let mut console = console(&rig).await?;
+            begin(&mut console)?;
+            answer(&mut console, Some(value)).await?;
+            until_shows(&mut console, "Run id").await?;
+            let screen = console.screen();
+            assert_eq!(
+                stage(&screen, "04 Credentials"),
+                Some(Stage::Failed),
+                "{screen}"
+            );
+            for part in ["vault", "CODEX_AUTH", "item/field"] {
+                assert!(!screen.contains(part), "{part}\n{screen}");
+            }
+            assert!(rig.gateway().sandboxes().is_empty());
+            assert!(rig.gateway().providers().is_empty());
         }
         Ok(())
     })

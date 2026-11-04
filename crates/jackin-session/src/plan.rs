@@ -9,9 +9,10 @@ use std::time::Duration;
 use jackin_core::{
     Account, AccountName, AccountQuery, AccountSelection, Agent, ChatgptAccountId, CodexAuthMode,
     Config, ConfigError, DockerCapability, DockerError, DockerLabel, DockerLayer, EnvFile,
-    EnvFileError, EnvName, EnvTable, FileMode, GatewayName, LaunchId, NameSuffix, PathError,
-    PlannedLabels, PolicyLabel, ProjectRoot, Provider, ProviderName, RoleManifest, RoleName,
-    SandboxName, SandboxPath, SelectionError, Workspace, WorkspaceName, plain_list, sandbox_layout,
+    EnvFileError, EnvName, EnvTable, EnvValueError, FileMode, GatewayName, LaunchId, NameSuffix,
+    PathError, PlainEnvValue, PlannedLabels, PolicyLabel, ProjectRoot, Provider, ProviderName,
+    RoleManifest, RoleName, SandboxName, SandboxPath, SelectionError, Workspace, WorkspaceName,
+    plain_list, sandbox_layout,
 };
 use jackin_image::{ImageError, ImageRequest, Rebuild};
 use jackin_openshell::{
@@ -34,7 +35,7 @@ pub struct LaunchRequest {
     launch: LaunchId,
     account: Option<AccountName>,
     rebuild: Rebuild,
-    env: BTreeMap<EnvName, String>,
+    env: BTreeMap<EnvName, PlainEnvValue>,
     prompting: Prompting,
 }
 
@@ -42,7 +43,7 @@ pub struct LaunchRequest {
 pub struct EnvQuestion {
     pub name: EnvName,
     pub prompt: Option<String>,
-    pub default: Option<String>,
+    pub default: Option<PlainEnvValue>,
 }
 
 impl fmt::Display for EnvQuestion {
@@ -135,6 +136,12 @@ pub enum PlanError {
     EnvNeeded(Vec<EnvQuestion>),
     #[error("environment names are not declared by the role: {}", plain_list(.0))]
     EnvUndeclared(Vec<EnvName>),
+    #[error("the default of {name} in the role manifest is refused")]
+    EnvDefault {
+        name: EnvName,
+        #[source]
+        source: EnvValueError,
+    },
     #[error(transparent)]
     EnvFile(#[from] EnvFileError),
     #[error("account {account} uses {mode}, which is not supported yet")]
@@ -198,7 +205,7 @@ impl LaunchRequest {
     }
 
     #[must_use]
-    pub fn env(mut self, values: BTreeMap<EnvName, String>) -> LaunchRequest {
+    pub fn env(mut self, values: BTreeMap<EnvName, PlainEnvValue>) -> LaunchRequest {
         self.env = values;
         self
     }
@@ -230,9 +237,9 @@ impl<'a> EnvLayers<'a> {
 pub fn resolve_env(
     layers: &EnvLayers<'_>,
     manifest: &RoleManifest,
-    answers: &BTreeMap<EnvName, String>,
+    answers: &BTreeMap<EnvName, PlainEnvValue>,
     prompting: Prompting,
-) -> Result<BTreeMap<EnvName, String>, PlanError> {
+) -> Result<BTreeMap<EnvName, PlainEnvValue>, PlanError> {
     let undeclared: Vec<EnvName> = answers
         .keys()
         .filter(|name| !manifest.env.contains_key(*name))
@@ -241,7 +248,7 @@ pub fn resolve_env(
     if !undeclared.is_empty() {
         return Err(PlanError::EnvUndeclared(undeclared));
     }
-    let mut values: BTreeMap<EnvName, String> = BTreeMap::new();
+    let mut values: BTreeMap<EnvName, PlainEnvValue> = BTreeMap::new();
     for table in [
         Some(layers.global),
         Some(layers.workspace),
@@ -253,7 +260,7 @@ pub fn resolve_env(
         values.extend(
             table
                 .iter()
-                .map(|(name, value)| (name.name().clone(), value.as_str().to_owned())),
+                .map(|(name, value)| (name.name().clone(), value.clone())),
         );
     }
     let mut questions = Vec::new();
@@ -265,15 +272,26 @@ pub fn resolve_env(
         if values.contains_key(name) {
             continue;
         }
-        match (prompting, &spec.default) {
-            (Prompting::Never, Some(default)) => {
-                values.insert(name.clone(), default.clone());
-            }
-            (Prompting::Never | Prompting::Interactive, _) => questions.push(EnvQuestion {
+        let default = spec
+            .default
+            .as_deref()
+            .map(PlainEnvValue::parse)
+            .transpose()
+            .map_err(|source| PlanError::EnvDefault {
                 name: name.clone(),
-                prompt: spec.prompt.clone(),
-                default: spec.default.clone(),
-            }),
+                source,
+            })?;
+        match (prompting, default) {
+            (Prompting::Never, Some(default)) => {
+                values.insert(name.clone(), default);
+            }
+            (Prompting::Never | Prompting::Interactive, default) => {
+                questions.push(EnvQuestion {
+                    name: name.clone(),
+                    prompt: spec.prompt.clone(),
+                    default,
+                });
+            }
         }
     }
     if questions.is_empty() {
@@ -381,7 +399,11 @@ pub fn plan_launch(
     let (policy, warnings) = launch_policy(role, &docker)?;
     let policy_label = PolicyLabel::of(&policy.document().render()?);
     let layers = EnvLayers::of(config, workspace, &request.role);
-    let mut values = resolve_env(&layers, role.manifest(), &request.env, request.prompting)?;
+    let mut values: BTreeMap<EnvName, String> =
+        resolve_env(&layers, role.manifest(), &request.env, request.prompting)?
+            .into_iter()
+            .map(|(name, value)| (name, value.as_str().to_owned()))
+            .collect();
     values.extend(docker.environment());
     let files = PlannedFiles {
         codex_config: PlannedFile {

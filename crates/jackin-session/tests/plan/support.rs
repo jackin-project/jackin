@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Config, EnvName, FileSystem, GatewayName, HostPath, ImageId, LaunchId, ProjectRoot, RoleName,
-    Sha256, StdFileSystem,
+    Config, EnvName, FileSystem, GatewayName, HostPath, ImageId, LaunchId, PlainEnvValue,
+    ProjectRoot, RoleName, Sha256, StdFileSystem,
 };
 use jackin_image::{BuiltImage, ImageSource};
 use jackin_session::{LaunchPlan, LaunchRequest, LoadedRole, PlanError, RoleCatalog, plan_launch};
@@ -169,6 +169,15 @@ pub(crate) fn built_image(role: &LoadedRole, fill: char) -> Result<BuiltImage, B
         id: ImageId::parse(&format!("sha256:{}", fill.to_string().repeat(64)))?,
         source: ImageSource::Built,
     })
+}
+
+pub(crate) fn plain_values(
+    pairs: &[(&str, &str)],
+) -> Result<BTreeMap<EnvName, PlainEnvValue>, Box<dyn Error>> {
+    pairs
+        .iter()
+        .map(|(name, value)| Ok((EnvName::parse(name)?, PlainEnvValue::parse(value)?)))
+        .collect()
 }
 
 pub(crate) fn env_values(

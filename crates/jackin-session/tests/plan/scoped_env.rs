@@ -7,7 +7,7 @@ use jackin_core::{EnvFile, EnvName, EnvTable, PlainEnvValue, RoleManifest, Scope
 use jackin_session::{EnvLayers, EnvQuestion, PlanError, Prompting, resolve_env};
 use jackin_testkit::RoleFixture;
 
-use super::support::{Spec, TestResult, env_values, guard};
+use super::support::{Spec, TestResult, env_values, guard, plain_values};
 
 fn table(pairs: &[(&str, &str)]) -> Result<EnvTable, Box<dyn std::error::Error>> {
     pairs
@@ -26,11 +26,11 @@ fn manifest() -> Result<RoleManifest, Box<dyn std::error::Error>> {
     Ok(RoleManifest::parse(text)?)
 }
 
-fn question(name: &str, default: Option<&str>) -> Result<EnvQuestion, jackin_core::IdError> {
+fn question(name: &str, default: Option<&str>) -> Result<EnvQuestion, Box<dyn std::error::Error>> {
     Ok(EnvQuestion {
         name: EnvName::parse(name)?,
         prompt: None,
-        default: default.map(str::to_owned),
+        default: default.map(PlainEnvValue::parse).transpose()?,
     })
 }
 
@@ -58,11 +58,11 @@ fn a_value_comes_from_the_nearest_scope_and_a_scoped_name_needs_no_declaration()
         workspace: &workspace,
         workspace_role: Some(&role),
     };
-    let answers = env_values(&[("ANSWER_WINS", "answer")])?;
+    let answers = plain_values(&[("ANSWER_WINS", "answer")])?;
     let values = resolve_env(&layers, &manifest()?, &answers, Prompting::Never)?;
     assert_eq!(
         values,
-        env_values(&[
+        plain_values(&[
             ("ANSWER_WINS", "answer"),
             ("FROM_MANIFEST", "manifest"),
             ("GLOBAL_ONLY", "global"),
@@ -78,7 +78,7 @@ fn a_value_comes_from_the_nearest_scope_and_a_scoped_name_needs_no_declaration()
         ..layers
     };
     let values = resolve_env(&without_role, &manifest()?, &answers, Prompting::Never)?;
-    assert_eq!(values[&EnvName::parse("ROLE_WINS")?], "workspace");
+    assert_eq!(values[&EnvName::parse("ROLE_WINS")?].as_str(), "workspace");
     assert!(!values.contains_key(&EnvName::parse("ROLE_ONLY")?));
     Ok(())
 }
@@ -127,7 +127,7 @@ fn an_answer_for_an_undeclared_name_is_still_refused_even_when_a_scope_sets_it()
     let refused = resolve_env(
         &layers,
         &manifest()?,
-        &env_values(&[("GLOBAL_ONLY", "answer")])?,
+        &plain_values(&[("GLOBAL_ONLY", "answer")])?,
         Prompting::Never,
     );
     assert!(
@@ -154,7 +154,7 @@ async fn the_launch_plan_reads_the_three_scopes_of_the_config_into_the_env_file(
                 ("REGION", "ap"),
             ])?
         );
-        let answered = setup.plan(setup.request(2)?.env(env_values(&[("GREETING", "typed")])?))?;
+        let answered = setup.plan(setup.request(2)?.env(plain_values(&[("GREETING", "typed")])?))?;
         assert_eq!(
             EnvFile::parse(&answered.files().env.text)?.values()[&EnvName::parse("GREETING")?],
             "typed"
@@ -162,4 +162,38 @@ async fn the_launch_plan_reads_the_three_scopes_of_the_config_into_the_env_file(
         Ok(())
     })
     .await
+}
+
+#[test]
+fn a_manifest_default_that_is_a_reference_or_a_placeholder_is_refused_without_echoing_it()
+-> TestResult {
+    let none = EnvTable::new();
+    let layers = EnvLayers {
+        global: &none,
+        workspace: &none,
+        workspace_role: None,
+    };
+    for default in [
+        "op://vault/item/field",
+        "OP://vault/item/field",
+        "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN",
+    ] {
+        let text = format!(
+            "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[env.TOKENISH]\ndefault = \"{default}\"\n"
+        );
+        let manifest = RoleManifest::parse(&text)?;
+        for prompting in [Prompting::Never, Prompting::Interactive] {
+            let refused = resolve_env(&layers, &manifest, &BTreeMap::new(), prompting);
+            assert!(
+                matches!(&refused, Err(PlanError::EnvDefault { name, .. }) if name.as_str() == "TOKENISH"),
+                "{default}: {refused:?}"
+            );
+            let shown = format!("{}", refused.as_ref().err().ok_or("no error")?);
+            assert!(
+                !shown.contains("vault") && !shown.contains("CODEX_AUTH"),
+                "{shown}"
+            );
+        }
+    }
+    Ok(())
 }

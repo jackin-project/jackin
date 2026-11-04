@@ -189,6 +189,10 @@ pub enum DiscoveryError {
         name: GatewayName,
         scheme: Option<String>,
     },
+    #[error(
+        "gateway {name} has an endpoint with credentials; register it without a user or password"
+    )]
+    EndpointCredentials { name: GatewayName },
     #[error("gateway {name} uses the authentication {}; only mtls is accepted", plain(.auth))]
     UnsupportedAuth { name: GatewayName, auth: String },
     #[error("missing certificate {path}")]

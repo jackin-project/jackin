@@ -177,3 +177,62 @@ async fn a_prompt_and_a_default_from_the_role_reach_the_terminal_as_printable_te
     })
     .await
 }
+
+const REFUSED: [&str; 5] = [
+    "op://vault/item/field",
+    "OP://vault/item/field",
+    "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN",
+    "OpenShell:Resolve:env:CODEX_AUTH_ACCESS_TOKEN",
+    " \t op://vault/item/field",
+];
+
+#[tokio::test]
+async fn a_flag_value_that_is_a_reference_or_a_placeholder_is_refused_without_echoing_it()
+-> TestResult {
+    guard(async {
+        let (rig, harness) = rigged().await?;
+        for value in REFUSED {
+            let arg = format!("TOKENISH={value}");
+            let ran = harness.run(&["load", "--env", &arg]).await?;
+            failed(&ran, ExitClass::Usage, &["TOKENISH", "not allowed"])?;
+            for part in ["vault", "CODEX_AUTH", "item/field"] {
+                assert!(!ran.stderr.contains(part), "{value:?}: {}", ran.stderr);
+            }
+            assert!(nothing_created(&rig), "{value:?}");
+        }
+        let plain = harness
+            .run(&["load", "--env", "TOKENISH=op:/not-a-reference"])
+            .await?;
+        plain.ok()?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_answer_that_is_a_reference_or_a_placeholder_is_refused_and_asked_again() -> TestResult {
+    guard(async {
+        let (rig, harness) = rigged().await?;
+        let id = launch_id(1).to_string();
+        let mut answers = vec![""];
+        answers.extend(REFUSED);
+        answers.push("typed-value");
+        let ran = harness
+            .command(&["load", "--launch-id", &id])
+            .terminal(lines(&answers)?)
+            .run()
+            .await?;
+        ran.ok()?;
+        assert_eq!(ran.stderr.matches("not allowed").count(), REFUSED.len());
+        for part in ["vault", "CODEX_AUTH", "item/field"] {
+            assert!(!ran.stderr.contains(part), "{}", ran.stderr);
+        }
+        let seen = values(&rig, 1).await?;
+        assert_eq!(
+            seen.get("TOKENISH").map(String::as_str),
+            Some("typed-value")
+        );
+        Ok(())
+    })
+    .await
+}

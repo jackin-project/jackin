@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{EnvName, LaunchId, ProjectRoot, TerminalText};
+use jackin_core::{EnvName, LaunchId, PlainEnvValue, ProjectRoot, TerminalText};
 use jackin_image::Rebuild;
 use jackin_session::{
     AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, PlanError,
@@ -17,7 +17,7 @@ use crate::error::CommandError;
 use crate::paths::existing_dir;
 use crate::term;
 
-async fn answer(app: &mut App, question: &EnvQuestion) -> Result<String, CommandError> {
+async fn answer(app: &mut App, question: &EnvQuestion) -> Result<PlainEnvValue, CommandError> {
     let printable = |text: &str| TerminalText::sanitize(text.as_bytes());
     let label = printable(
         question
@@ -27,8 +27,8 @@ async fn answer(app: &mut App, question: &EnvQuestion) -> Result<String, Command
     );
     let shown = question
         .default
-        .as_deref()
-        .map(|default| format!(" [{}]", printable(default).as_str()))
+        .as_ref()
+        .map(|default| format!(" [{}]", printable(default.as_str()).as_str()))
         .unwrap_or_default();
     loop {
         app.io.ask(&format!("{}{shown}: ", label.as_str()));
@@ -48,7 +48,10 @@ async fn answer(app: &mut App, question: &EnvQuestion) -> Result<String, Command
                     question.name
                 )));
             }
-            (Some(text), _) if !text.is_empty() => return Ok(text),
+            (Some(text), _) if !text.is_empty() => match PlainEnvValue::parse(&text) {
+                Ok(value) => return Ok(value),
+                Err(error) => app.io.note(&format!("{}: {error}", question.name)),
+            },
             (Some(_), Some(default)) => return Ok(default.clone()),
             (Some(_), None) => app.io.note(&format!("{} needs a value", question.name)),
         }
@@ -60,7 +63,7 @@ async fn plan(
     config: &jackin_core::Config,
     role: &jackin_session::LoadedRole,
     request: &LaunchRequest,
-    values: &mut BTreeMap<EnvName, String>,
+    values: &mut BTreeMap<EnvName, PlainEnvValue>,
 ) -> Result<LaunchPlan, CommandError> {
     match plan_launch(config, role, request.clone().env(values.clone())) {
         Err(PlanError::EnvNeeded(questions)) if app.terminal.is_some() => {

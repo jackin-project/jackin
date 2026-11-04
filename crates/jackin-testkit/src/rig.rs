@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use jackin_core::{
     Clock, Config, EngineCert, EnvName, FileSystem, HookKind, HostPath, LabelSelector, LaunchId,
-    ProcessRunner, ProjectRoot, RoleName, SandboxName, sandbox_layout,
+    PlainEnvValue, ProcessRunner, ProjectRoot, RoleName, SandboxName, sandbox_layout,
 };
 use jackin_image::{BuildStage, BuiltImage, ImageEngine, ImageSource};
 use jackin_openshell::{Gateway, SandboxQuery};
@@ -193,6 +193,10 @@ impl Rig {
         id: u8,
         env: BTreeMap<EnvName, String>,
     ) -> Result<LaunchOutcome, FixtureError> {
+        let env = env
+            .into_iter()
+            .map(|(name, value)| Ok((name, PlainEnvValue::parse(&value)?)))
+            .collect::<Result<BTreeMap<_, _>, FixtureError>>()?;
         self.run(self.request(id)?.env(env), CancellationToken::new())
             .await?
             .result

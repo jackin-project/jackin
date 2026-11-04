@@ -19,7 +19,8 @@ use jackin_console::launch::{
 use jackin_console::world::{Msg, World};
 use jackin_core::{
     AccountName, Config, ConfigEdit, ConfigError, EntropyError, EnvName, GatewayName, HostPath,
-    IdError, LaunchId, PathError, ProjectRoot, RoleName, SandboxName, Workspace, WorkspaceName,
+    IdError, LaunchId, PathError, PlainEnvValue, ProjectRoot, RoleName, SandboxName, Workspace,
+    WorkspaceName,
 };
 use jackin_image::ImageEvent;
 use jackin_openshell::GatewayError;
@@ -85,9 +86,10 @@ fn stage_of(step: LaunchStep) -> Stage {
 
 fn plan_stage(error: &PlanError) -> Stage {
     match error {
-        PlanError::Selection(_) | PlanError::Unsupported { .. } | PlanError::EnvFile(_) => {
-            Stage::Credentials
-        }
+        PlanError::Selection(_)
+        | PlanError::Unsupported { .. }
+        | PlanError::EnvFile(_)
+        | PlanError::EnvDefault { .. } => Stage::Credentials,
         PlanError::Docker(_) | PlanError::Policy(_) | PlanError::Closure(_) => Stage::Sandbox,
         PlanError::Config(_)
         | PlanError::Project(_)
@@ -310,7 +312,7 @@ fn question(found: &jackin_session::EnvQuestion) -> EnvQuestion {
             .prompt
             .clone()
             .unwrap_or_else(|| found.name.to_string()),
-        default: found.default.clone(),
+        default: found.default.as_ref().map(ToString::to_string),
     }
 }
 
@@ -382,7 +384,7 @@ impl Run {
     async fn ask(
         &mut self,
         found: &[jackin_session::EnvQuestion],
-    ) -> Result<BTreeMap<EnvName, String>, Stop> {
+    ) -> Result<BTreeMap<EnvName, PlainEnvValue>, Stop> {
         self.send(LaunchEvent::NeedsInput(
             found.iter().map(question).collect(),
         ));
@@ -391,10 +393,16 @@ impl Run {
             () = self.cancel.cancelled() => return Err(Stop::Cancelled),
             answers = self.answers.recv() => answers.ok_or(Stop::Cancelled)?,
         };
-        Ok(answers
-            .into_iter()
-            .filter_map(|answer| Some((EnvName::parse(&answer.name).ok()?, answer.value)))
-            .collect())
+        let mut values = BTreeMap::new();
+        for answer in answers {
+            let Ok(name) = EnvName::parse(&answer.name) else {
+                continue;
+            };
+            let value = PlainEnvValue::parse(&answer.value)
+                .map_err(|error| Stop::at(Stage::Credentials, &error))?;
+            values.insert(name, value);
+        }
+        Ok(values)
     }
 
     async fn prepare(&mut self) -> Result<Prepared, Stop> {
