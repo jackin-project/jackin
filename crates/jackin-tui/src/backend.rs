@@ -5,13 +5,10 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use jackin_console::backend::{
-    Backend, ChangeSet, Completion, Effect, FolderProbe, OnePassword, ValidationOutcome,
-};
-use jackin_console::domain::account::CredentialSource as AccountSource;
-use jackin_console::domain::agent::Provider;
+use jackin_console::backend::{Backend, Completion, Effect};
 use jackin_console::domain::instance::Instance;
 use jackin_console::domain::launch::LaunchContent;
+use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_console::launch::{LaunchFeed, LaunchTarget};
 use jackin_console::panes::{PaneBody, PaneRequest, PaneSpawn};
 use jackin_console::world::{Msg, World};
@@ -25,6 +22,7 @@ use crate::unbuilt::{self, UnbuiltLaunch, UnbuiltPane};
 pub(crate) struct JackinBackend {
     inputs: Arc<Inputs>,
     bridge: Bridge,
+    words: Vocabulary,
     refreshing: Arc<AtomicBool>,
 }
 
@@ -35,24 +33,19 @@ impl fmt::Debug for JackinBackend {
 }
 
 impl JackinBackend {
-    pub(crate) fn new(inputs: Arc<Inputs>, bridge: Bridge) -> JackinBackend {
+    pub(crate) fn new(inputs: Arc<Inputs>, bridge: Bridge, words: Vocabulary) -> JackinBackend {
         JackinBackend {
             inputs,
             bridge,
+            words,
             refreshing: Arc::new(AtomicBool::new(false)),
         }
     }
 
     fn rerun_doctor(&self) {
-        let Some(run) = self.inputs.doctor.begin() else {
-            return;
-        };
         let inputs = Arc::clone(&self.inputs);
-        self.bridge.spawn(async move {
-            let report = inputs.run_doctor(true).await;
-            run.finish(report.clone());
-            Msg::DoctorFinished(report)
-        });
+        self.bridge
+            .spawn(async move { Msg::DoctorFinished(inputs.run_doctor(true).await) });
     }
 
     fn refresh(&self) {
@@ -61,10 +54,11 @@ impl JackinBackend {
         }
         let inputs = Arc::clone(&self.inputs);
         let refreshing = Arc::clone(&self.refreshing);
+        let words = self.words.clone();
         self.bridge.spawn(async move {
             let result = match inputs.observe().await {
                 Ok(observation) if observation.snapshot.index_error.is_some() => {
-                    Err(observation.status().unwrap_or_default())
+                    Err(observation.status(&words).unwrap_or_default())
                 }
                 Ok(observation) => Ok(Box::new(observation.snapshot)),
                 Err(error) => Err(error.to_string()),
@@ -76,21 +70,6 @@ impl JackinBackend {
 }
 
 impl Backend for JackinBackend {
-    fn validate(
-        &self,
-        _provider: Provider,
-        _source: &AccountSource,
-        _plain_value: Option<&str>,
-        _op: &dyn OnePassword,
-        _now: i64,
-    ) -> ValidationOutcome {
-        unbuilt::validation()
-    }
-
-    fn probe_folder(&self, _path: &str) -> FolderProbe {
-        unbuilt::folder_probe()
-    }
-
     fn perform(&self, effect: &Effect, _world: &World) -> Option<Completion> {
         match effect {
             Effect::Refresh => {
@@ -101,44 +80,27 @@ impl Backend for JackinBackend {
                 self.rerun_doctor();
                 None
             }
-            _ => unbuilt::fails(effect),
+            _ => unbuilt::fails(effect, &self.words),
         }
-    }
-
-    fn due(&self, world: &World) -> Vec<Msg> {
-        if self.inputs.doctor.due(world.now_secs()) {
-            self.rerun_doctor();
-        }
-        Vec::new()
-    }
-
-    fn changes(
-        &self,
-        _instance_id: &str,
-        _touched: &[String],
-        _uncommitted: usize,
-        unpushed: usize,
-    ) -> ChangeSet {
-        unbuilt::changes(unpushed)
     }
 
     fn launch_content(&self) -> Arc<LaunchContent> {
         Arc::new(LaunchContent::openshell())
     }
 
-    fn launch(&self, world: &World, target: &LaunchTarget) -> Box<dyn LaunchFeed> {
+    fn launch(&self, world: &World, _target: &LaunchTarget) -> Box<dyn LaunchFeed> {
         let sessions = &self.inputs.sessions;
         let failure = match sessions.access(sessions.default_name()) {
             Access::Down { error, .. } => {
                 unbuilt::gateway_failure(&LaunchContent::openshell().network_failure, &error)
             }
-            Access::Up(_) | Access::NotChosen => unbuilt::launch_failure(),
+            Access::Up(_) | Access::NotChosen => unbuilt::launch_failure(&self.words),
         };
-        Box::new(UnbuiltLaunch::new(world, target, failure))
+        Box::new(UnbuiltLaunch::new(world, failure))
     }
 
     fn spawn_pane(&self, _request: &PaneRequest, spawn: PaneSpawn) -> Box<dyn PaneBody> {
-        Box::new(UnbuiltPane::new(&spawn))
+        Box::new(UnbuiltPane::new(&spawn, &self.words))
     }
 
     fn initial_panes(&self, _instance: &Instance) -> Vec<PaneRequest> {

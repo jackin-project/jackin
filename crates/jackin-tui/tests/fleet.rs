@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use jackin_console::domain::instance::InstanceStatus;
 use jackin_core::{GatewayName, OpenShellWorkspace};
-use jackin_openshell::{Gateway, GatewayOp, PowerAction};
+use jackin_openshell::{Gateway, GatewayError, GatewayOp, PowerAction};
 use jackin_testkit::{
     ConsoleRig, FakeGateway, Fault, Rig, TestResult, Trigger, guard, session_over,
 };
@@ -14,6 +14,7 @@ use jackin_tui::GatewayState;
 use tokio_util::sync::CancellationToken;
 
 const DEADLINE: Duration = Duration::from_secs(1);
+const STALE: &str = "▲ gateway stale";
 
 async fn refresh(console: &mut ConsoleRig) -> TestResult {
     console.elapse(5);
@@ -185,6 +186,71 @@ async fn work_state_is_read_once_per_state() -> TestResult {
             3 * one_read,
             "a restarted sandbox is not read"
         );
+        Ok(())
+    })
+    .await
+}
+
+fn refused() -> GatewayError {
+    GatewayError::Unreachable {
+        endpoint: "127.0.0.1:8080".to_owned(),
+        message: "connection refused".to_owned(),
+    }
+}
+
+async fn with_second_gateway(
+    failing_at_start: bool,
+) -> Result<(Rig, Arc<FakeGateway>, ConsoleRig), Box<dyn std::error::Error>> {
+    let rig = Rig::new().await?;
+    rig.launch(1).await?;
+    rig.world.seed_all(&rig.config).await?;
+    let (name, second) = second_gateway("second-gateway")?;
+    if failing_at_start {
+        second.inject(Fault::FailNext {
+            op: GatewayOp::Find,
+            error: refused(),
+        });
+    }
+    let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&second);
+    let session = session_over(&rig.world, port);
+    let mut console = ConsoleRig::builder(&rig.world)
+        .gateway(name, GatewayState::Connected(Box::new(session)))
+        .deadline(DEADLINE)
+        .size(200, 40)
+        .build()
+        .await?;
+    console.skip_intro();
+    Ok((rig, second, console))
+}
+
+#[tokio::test]
+async fn failed_gateway_shows_after_refresh() -> TestResult {
+    guard(async {
+        let (_rig, second, mut console) = with_second_gateway(false).await?;
+        let screen = console.screen();
+        assert!(!screen.contains(STALE), "{screen}");
+        second.inject(Fault::FailNext {
+            op: GatewayOp::Find,
+            error: refused(),
+        });
+        refresh(&mut console).await?;
+        let screen = console.screen();
+        assert!(screen.contains(STALE), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn recovered_gateway_shows_healthy() -> TestResult {
+    guard(async {
+        let (_rig, _second, mut console) = with_second_gateway(true).await?;
+        let screen = console.screen();
+        assert!(screen.contains(STALE), "{screen}");
+        refresh(&mut console).await?;
+        let screen = console.screen();
+        assert!(!screen.contains(STALE), "{screen}");
+        assert_eq!(statuses(&mut console), [InstanceStatus::Running]);
         Ok(())
     })
     .await

@@ -11,7 +11,7 @@ use crate::lex::{Token, lex_rust};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
-pub const ALLOWED_LITERALS: &[&str] = &["JACKIN_NO_MOTION", "git", "path"];
+pub const ALLOWED_LITERALS: &[&str] = &["JACKIN_NO_MOTION"];
 
 const SCREEN_SOURCE: &str = "crates/jackin-tui/src";
 
@@ -30,7 +30,7 @@ const TRACING_MACROS: [&str; 10] = [
     "span",
 ];
 
-const DISPLAY_TRAITS: [&str; 2] = ["Display", "Debug"];
+const ERROR_TRAIT: &str = "Error";
 
 const RATATUI_ALLOWED: [&[&str]; 4] = [
     &["Frame"],
@@ -114,10 +114,18 @@ fn is_path_separator(tokens: &[Token], index: usize) -> bool {
         && tokens.get(index + 1).is_some_and(|t| t.is_punct(':'))
 }
 
-fn display_impl_body(tokens: &[Token], index: usize) -> Option<Range<usize>> {
+struct Impl<'a> {
+    trait_name: &'a str,
+    target: &'a str,
+    body: Range<usize>,
+}
+
+fn impl_of(tokens: &[Token], index: usize) -> Option<Impl<'_>> {
     let mut depth = 0usize;
     let mut last_ident: Option<&str> = None;
-    let mut implements: Option<&str> = None;
+    let mut trait_name: Option<&str> = None;
+    let mut target: Option<&str> = None;
+    let mut in_where = false;
     let mut position = index + 1;
     while let Some(token) = tokens.get(position) {
         if token.is_punct('<') {
@@ -125,22 +133,38 @@ fn display_impl_body(tokens: &[Token], index: usize) -> Option<Range<usize>> {
         } else if token.is_punct('>') && !tokens[position - 1].is_punct('-') {
             depth = depth.saturating_sub(1);
         } else if depth == 0 && token.is_punct('{') {
-            let name = implements?;
-            return DISPLAY_TRAITS
-                .contains(&name)
-                .then(|| position..closing(tokens, position) + 1);
+            return Some(Impl {
+                trait_name: trait_name?,
+                target: target?,
+                body: position..closing(tokens, position) + 1,
+            });
         } else if depth == 0 && token.is_punct(';') {
             return None;
-        } else if depth == 0 && token.is_ident("for") {
-            implements = last_ident;
+        } else if depth == 0 && token.is_ident("where") {
+            in_where = true;
+        } else if depth == 0 && !in_where && token.is_ident("for") {
+            trait_name = last_ident;
         } else if depth == 0
+            && !in_where
             && let Some(ident) = token.ident()
         {
             last_ident = Some(ident);
+            if trait_name.is_some() {
+                target = Some(ident);
+            }
         }
         position += 1;
     }
     None
+}
+
+fn error_types(tokens: &[Token]) -> BTreeSet<&str> {
+    (0..tokens.len())
+        .filter(|index| tokens[*index].is_ident("impl"))
+        .filter_map(|index| impl_of(tokens, index))
+        .filter(|found| found.trait_name == ERROR_TRAIT)
+        .map(|found| found.target)
+        .collect()
 }
 
 fn cfg_test_module(tokens: &[Token], index: usize) -> Option<Range<usize>> {
@@ -191,10 +215,15 @@ fn error_attribute(tokens: &[Token], index: usize) -> Option<Range<usize>> {
 }
 
 fn allowed_ranges(tokens: &[Token]) -> Vec<Range<usize>> {
+    let errors = error_types(tokens);
     let mut ranges = Vec::new();
     for index in 0..tokens.len() {
-        if tokens[index].is_ident("impl") {
-            ranges.extend(display_impl_body(tokens, index));
+        if tokens[index].is_ident("impl")
+            && let Some(found) = impl_of(tokens, index)
+            && (found.trait_name == "Debug"
+                || (found.trait_name == "Display" && errors.contains(found.target)))
+        {
+            ranges.push(found.body);
         }
         ranges.extend(cfg_test_module(tokens, index));
         ranges.extend(macro_arguments(tokens, index));
@@ -229,7 +258,7 @@ fn literal_violations<'a>(
             path,
             token.line,
             format!(
-                "C2: the string literal \"{text}\" is outside a Display impl, a tracing macro, an error attribute, a test module and ALLOWED_LITERALS; screen text comes from the baseline or from a domain crate"
+                "C2: the string literal \"{text}\" is outside a Debug impl, a Display impl of an error type, a tracing macro, an error attribute, a test module and ALLOWED_LITERALS; screen text comes from the baseline or from a domain crate"
             ),
         ));
     }
