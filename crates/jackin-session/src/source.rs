@@ -15,6 +15,7 @@ use crate::credentials::{CredentialError, read_chatgpt_login};
 use crate::op::{OnePasswordCli, OpFault, OpFieldKind};
 
 pub const AUTH_FILE: &str = "auth.json";
+pub const CHATGPT_LOGIN: &str = "ChatGPT login in auth.json";
 const OP_SCHEME: &str = "op://";
 
 #[derive(Clone, Copy, Debug)]

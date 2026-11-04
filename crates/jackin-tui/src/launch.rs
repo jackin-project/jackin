@@ -36,7 +36,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio_util::sync::CancellationToken;
 
 use crate::backend::JackinBackend;
-use crate::crashed::STOPPED;
+use crate::crashed::Stopped;
 use crate::fleet::ObservedSandbox;
 use crate::project::{Origins, docker_risks};
 use crate::sessions::Access;
@@ -698,7 +698,7 @@ pub(crate) fn start(
             &out,
             LaunchFailure {
                 stage: stage.load(Ordering::Relaxed),
-                summary: STOPPED.to_owned(),
+                summary: Stopped.to_string(),
                 next_step: NextStep::None,
                 detail: Vec::new(),
             },

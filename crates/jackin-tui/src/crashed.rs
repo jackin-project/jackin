@@ -4,11 +4,14 @@
 use jackin_console::backend::{Effect, OpError};
 use jackin_console::domain::doctor::DoctorFailure;
 use jackin_console::world::{Msg, SaveFailure};
+use thiserror::Error;
 
-pub(crate) const STOPPED: &str = "the work stopped unexpectedly";
+#[derive(Debug, Error)]
+#[error("the work stopped unexpectedly")]
+pub(crate) struct Stopped;
 
 fn stopped() -> String {
-    STOPPED.to_owned()
+    Stopped.to_string()
 }
 
 pub(crate) fn refresh() -> Msg {
@@ -134,7 +137,7 @@ mod tests {
             reply(&probe),
             Some(Msg::FolderProbed {
                 ticket: 8,
-                result: Err(STOPPED.to_owned()),
+                result: Err(Stopped.to_string()),
             })
         );
         assert_eq!(reply(&Effect::Refresh), Some(refresh()));
