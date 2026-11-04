@@ -40,3 +40,10 @@ Each row is a LOW finding that a review raised and the orchestrator deferred. A 
 | PR 1264 wave 3 F10, LOW-4 | `power` and the `find`/`check_builder` path observe the token only in some calls; `FakeEngine` ignores the token. | Thread the token (cancellation family with N7, N16). |
 | PR 1264 wave 3 LOW-1, LOW-2, LOW-3 | No row pins "staged bytes equal hashed bytes"; the N21 row asserts only the parsed policy; the cache-hit final-tag hold has no row. | Add the rows (patch in the wave 3 red/green report). |
 | PR 1264 wave 3 LOW-8 | The manifest, policy, Dockerfile and hooks are read twice (`inspect`, then `snapshot`); the hashed bytes are the staged bytes, but parsing reads separately. | Parse from the snapshot bytes. |
+| Baseline B6 review | The sim's account-removal scrub of workspace account references has no test. | Add a row in `tests/effects.rs`. |
+| Baseline B6 review | `AccountsScreen.saving` never clears without a reply; a late success closes the top layer. | Clear on a timeout or on any reply; close only its own layer. |
+| Baseline B6 review | `perform` and `settle` are two parallel matches; an effect in one only never replies. | One table, or an exhaustive check that each effect settles. |
+| Baseline B5b review | `World::workspace_repo` needs a launched instance, so a new workspace has no repository link. | Carry the repository on the workspace record (J2 origin). |
+| Baseline B6 red/green LOW-1 | The capsule still writes `last_seen_secs` every tick (`capsule.rs`, `app.rs`); no test pins the sim ownership while attached. | Move it to the backend and add the attached row. |
+| Baseline B6/B8a red/green LOW-2..5 | Usage refresh not driven by a test; `Clear pane` menu item, the shell `pwd` reply and one double-close break are unobserved. | Add the rows. |
+| Baseline B8a review | `ViewportOps` doc names the Capsule; `BackendSource` only passes calls through; the `y` copy key ignores `keyboard_copy()`. | Tidy in B8b. |
