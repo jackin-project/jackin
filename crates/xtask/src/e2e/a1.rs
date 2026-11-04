@@ -12,7 +12,6 @@ use sha2::{Digest, Sha256};
 use super::redact::hex;
 use thiserror::Error;
 
-pub const A1_LOCK_DIR: &str = "jackin-e2e-a1";
 pub const A1_LOCK_FILE: &str = "jackin-e2e-a1.lock";
 const NO_SOURCE: &str = "A1 has no usable source; write blockers/A1.md";
 
@@ -190,6 +189,10 @@ fn set_private(path: &Path) -> std::io::Result<()> {
     fs::set_permissions(path, fs::Permissions::from_mode(0o600))
 }
 
+pub fn a1_lock_dir() -> String {
+    format!("jackin-e2e-a1-{}", rustix::process::geteuid().as_raw())
+}
+
 #[derive(Debug)]
 pub struct A1Lock {
     file: fs::File,
@@ -231,7 +234,7 @@ fn open_lock(dir: &Path, path: &Path) -> std::io::Result<fs::File> {
 
 impl A1Lock {
     pub fn acquire(dir: &Path) -> Result<A1Lock, A1Error> {
-        let lock_dir = dir.join(A1_LOCK_DIR);
+        let lock_dir = dir.join(a1_lock_dir());
         let path = lock_dir.join(A1_LOCK_FILE);
         let io = |error: std::io::Error| A1Error::LockIo {
             path: path.clone(),

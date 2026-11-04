@@ -7,7 +7,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use jackin_xtask::{
-    A1_LOCK_DIR, A1_LOCK_FILE, A1Error, A1Lock, A1Login, Redactor, fixture_login, host_login_state,
+    A1_LOCK_FILE, A1Error, A1Lock, A1Login, Redactor, a1_lock_dir, fixture_login, host_login_state,
 };
 use regex::Regex;
 use serde_json::{Value, json};
@@ -315,7 +315,7 @@ fn a1_lock_never_follows_or_truncates_what_it_finds_at_its_path() {
     let dir = tempfile::tempdir().expect("tempdir");
     let victim = dir.path().join("victim.txt");
     fs::write(&victim, b"keep me").expect("victim");
-    let lock_dir = dir.path().join(A1_LOCK_DIR);
+    let lock_dir = dir.path().join(a1_lock_dir());
     let held = A1Lock::acquire(dir.path()).expect("a fresh directory");
     assert_eq!(
         fs::metadata(&lock_dir).expect("dir").permissions().mode() & 0o777,
@@ -329,7 +329,7 @@ fn a1_lock_never_follows_or_truncates_what_it_finds_at_its_path() {
 
     let elsewhere = tempfile::tempdir().expect("tempdir");
     let other = tempfile::tempdir().expect("tempdir");
-    symlink(elsewhere.path(), other.path().join(A1_LOCK_DIR)).expect("link");
+    symlink(elsewhere.path(), other.path().join(a1_lock_dir())).expect("link");
     denied(A1Lock::acquire(other.path()));
     assert!(
         fs::read_dir(elsewhere.path())
@@ -339,17 +339,17 @@ fn a1_lock_never_follows_or_truncates_what_it_finds_at_its_path() {
     );
 
     let open = tempfile::tempdir().expect("tempdir");
-    fs::create_dir(open.path().join(A1_LOCK_DIR)).expect("dir");
+    fs::create_dir(open.path().join(a1_lock_dir())).expect("dir");
     fs::set_permissions(
-        open.path().join(A1_LOCK_DIR),
+        open.path().join(a1_lock_dir()),
         fs::Permissions::from_mode(0o755),
     )
     .expect("chmod");
     denied(A1Lock::acquire(open.path()));
-    assert!(!open.path().join(A1_LOCK_DIR).join(A1_LOCK_FILE).exists());
+    assert!(!open.path().join(a1_lock_dir()).join(A1_LOCK_FILE).exists());
 
     let kept = tempfile::tempdir().expect("tempdir");
-    let private = kept.path().join(A1_LOCK_DIR);
+    let private = kept.path().join(a1_lock_dir());
     fs::create_dir(&private).expect("dir");
     fs::set_permissions(&private, fs::Permissions::from_mode(0o700)).expect("chmod");
     fs::write(private.join(A1_LOCK_FILE), b"owner note").expect("lock file");
@@ -358,6 +358,20 @@ fn a1_lock_never_follows_or_truncates_what_it_finds_at_its_path() {
         fs::read(private.join(A1_LOCK_FILE)).expect("lock file"),
         b"owner note"
     );
+}
+
+#[test]
+fn a_directory_pre_created_at_a_shared_name_does_not_block_the_lock() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let squat = dir.path().join("jackin-e2e-a1");
+    fs::create_dir(&squat).expect("dir");
+    fs::set_permissions(&squat, fs::Permissions::from_mode(0o777)).expect("chmod");
+    let held = A1Lock::acquire(dir.path()).expect("the per-user directory is free");
+    assert!(dir.path().join(a1_lock_dir()).join(A1_LOCK_FILE).exists());
+    assert!(!squat.join(A1_LOCK_FILE).exists());
+    drop(held);
 }
 
 #[tokio::test]
