@@ -237,6 +237,37 @@ fn jackin_fixed_account_form_refuses_a_typed_key_and_its_button() {
 }
 
 #[test]
+fn jackin_fixed_account_form_offers_an_environment_variable() {
+    let words = Vocabulary::openshell().source;
+    let app = fixed_app("jackin-fixed-account-env");
+    open_fixed_accounts(&app, 0, "Accounts › Overview");
+    app.key("a");
+    app.wait_text("New account");
+    for _ in 0..3 {
+        app.key("tab");
+    }
+    app.wait_screen("focus reaches the source radio", |s| {
+        row_has(s, "Local agent folder", "▎")
+    });
+    for _ in 0..2 {
+        app.key("down");
+    }
+    app.wait_screen("the environment variable is chosen", |s| {
+        text(s).contains(&format!("(●) {}", words.env_label))
+    });
+    app.key("tab");
+    app.key("enter");
+    app.type_text("ANTHROPIC_API_KEY");
+    app.wait_screen("the typed name replaces the placeholder", |s| {
+        let shown = text(s);
+        shown.contains("ANTHROPIC_API_KEY")
+            && shown.contains(&words.env_help)
+            && !shown.contains(&words.env_placeholder)
+    });
+    app.visual("functional/jackin_fixed_account_form_env");
+}
+
+#[test]
 fn jackin_fixed_account_form_says_what_jackin_does_with_a_reference() {
     let app = fixed_app("jackin-fixed-account-pending");
     open_fixed_accounts(&app, 0, "Accounts › Overview");
