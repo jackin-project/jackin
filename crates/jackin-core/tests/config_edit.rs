@@ -412,6 +412,22 @@ fn entry_rows() -> Fallible<Vec<Row>> {
             unset(&[&["workspaces", "other"]]),
         ),
         row(
+            "rename workspace",
+            ConfigEdit::RenameWorkspace {
+                from: ws("proj")?,
+                to: ws("renamed")?,
+            },
+            Box::new(|table| {
+                let workspaces = table
+                    .get_mut("workspaces")
+                    .and_then(toml::Value::as_table_mut)
+                    .ok_or("workspaces")?;
+                let moved = workspaces.remove("proj").ok_or("proj")?;
+                workspaces.insert("renamed".to_owned(), moved);
+                Ok(())
+            }),
+        ),
+        row(
             "set docker",
             ConfigEdit::SetWorkspaceDocker {
                 workspace: ws("other")?,
@@ -592,6 +608,14 @@ fn duplicate_rows() -> Fallible<Vec<RejectedRow>> {
             },
             "duplicate:workspace:proj".to_owned(),
         ),
+        (
+            "rename onto a taken workspace",
+            ConfigEdit::RenameWorkspace {
+                from: ws("proj")?,
+                to: ws("other")?,
+            },
+            "duplicate:workspace:other".to_owned(),
+        ),
     ])
 }
 
@@ -630,6 +654,14 @@ fn missing_rows() -> Fallible<Vec<RejectedRow>> {
         (
             "remove ghost workspace",
             ConfigEdit::RemoveWorkspace(ws("ghost")?),
+            "reference:workspace:ghost".to_owned(),
+        ),
+        (
+            "rename ghost workspace",
+            ConfigEdit::RenameWorkspace {
+                from: ws("ghost")?,
+                to: ws("renamed")?,
+            },
             "reference:workspace:ghost".to_owned(),
         ),
         (
