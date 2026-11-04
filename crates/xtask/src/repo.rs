@@ -221,6 +221,15 @@ pub(crate) fn cargo_program() -> OsString {
     std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into())
 }
 
+pub(crate) fn without_git_env(command: &mut Command) -> &mut Command {
+    for (name, _) in std::env::vars_os() {
+        if name.as_encoded_bytes().starts_with(b"GIT_") {
+            command.env_remove(name);
+        }
+    }
+    command
+}
+
 pub(crate) fn capture(command: &mut Command) -> io::Result<Output> {
     command
         .stdin(Stdio::null())
@@ -381,21 +390,16 @@ fn is_generated(text: &str) -> bool {
 }
 
 fn read_files(root: &Path) -> Result<Vec<RepoFile>, CiError> {
-    let mut git = Command::new("git");
-    for (name, _) in std::env::vars_os() {
-        if name.as_encoded_bytes().starts_with(b"GIT_") {
-            git.env_remove(name);
-        }
-    }
     let output = capture(
-        git.args([
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-        ])
-        .current_dir(root),
+        without_git_env(&mut Command::new("git"))
+            .args([
+                "ls-files",
+                "-z",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+            ])
+            .current_dir(root),
     )?;
     if !output.status.success() {
         return Err(CiError::ListFiles(

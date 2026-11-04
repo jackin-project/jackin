@@ -10,7 +10,7 @@ use serde::Deserialize;
 use super::Check;
 use super::baseline::demo_violations;
 use crate::ci::CiStep;
-use crate::repo::{Repo, capture, cargo_program};
+use crate::repo::{Repo, capture, cargo_program, without_git_env};
 use crate::text::plain;
 use crate::violation::{Violation, sorted};
 
@@ -54,7 +54,11 @@ impl CommandRunner for SystemRunner {
         } else {
             program.into()
         };
-        let output = capture(Command::new(program).args(args).current_dir(dir))?;
+        let output = capture(
+            without_git_env(&mut Command::new(program))
+                .args(args)
+                .current_dir(dir),
+        )?;
         Ok(ToolOutput {
             success: output.status.success(),
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
