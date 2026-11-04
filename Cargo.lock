@@ -2397,7 +2397,7 @@ dependencies = [
 [[package]]
 name = "jackin-console"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=68f441d12554456f5f379f712f6a3b0ca5175d0d#68f441d12554456f5f379f712f6a3b0ca5175d0d"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=93949cf19e81d070582ecaf8895434c3cb5d2c05#93949cf19e81d070582ecaf8895434c3cb5d2c05"
 dependencies = [
  "junie-tui",
  "ratatui",
@@ -2844,7 +2844,7 @@ dependencies = [
 [[package]]
 name = "junie-tui"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=68f441d12554456f5f379f712f6a3b0ca5175d0d#68f441d12554456f5f379f712f6a3b0ca5175d0d"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=93949cf19e81d070582ecaf8895434c3cb5d2c05#93949cf19e81d070582ecaf8895434c3cb5d2c05"
 dependencies = [
  "libc",
  "ratatui",
