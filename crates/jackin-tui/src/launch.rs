@@ -589,7 +589,7 @@ impl Run {
             supervisor: Some(inspected.supervisor),
             work: Some(work),
         };
-        Ok(self.backend.inputs.instance_of(config, &observed, origins))
+        Ok(self.backend.inputs.admit(config, observed, origins))
     }
 
     async fn ready(

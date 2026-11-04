@@ -501,7 +501,7 @@ pub(crate) fn instance(
         supervisor,
         work,
     } = observed;
-    let (head, suffix) = split_name(summary.name.as_str());
+    let (head, _) = split_name(summary.name.as_str());
     let labels = &summary.labels.planned;
     let origin = origins.get(&labels.workspace);
     let status = preserved(status_of(summary.phase, supervisor.as_ref()), work.as_ref());
@@ -514,7 +514,7 @@ pub(crate) fn instance(
         Some(WorkState::Exported | WorkState::Unknown(_)) | None => (0, 0, None),
     };
     let mut record = Instance {
-        id: instance_id(suffix),
+        id: sandbox_id(&summary.name),
         container: head.trim_end_matches('-').to_owned(),
         workspace: config
             .workspace(&labels.workspace)

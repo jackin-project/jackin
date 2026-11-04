@@ -3,12 +3,13 @@
 
 use jackin_console::app::Route;
 use jackin_console::domain::instance::RepoRef;
+use jackin_console::screens::Go;
 use jackin_core::{Agent, SupervisorState, sandbox_layout};
 use jackin_openshell::GatewayOp;
 use jackin_testkit::{Fault, RepoFixture, Rig, TestResult, Trigger, guard};
 
 use super::support::{
-    Stage, begin, console, labels, launch, only, seconds, stage, until_route, until_shows,
+    Stage, begin, console, labels, launch, only, seconds, stage, until, until_route, until_shows,
     until_stage,
 };
 
@@ -238,5 +239,48 @@ async fn ready_instance_carries_the_github_origin() -> TestResult {
         assert_eq!(record.branch, None);
         Ok(())
     })
+    .await
+}
+
+#[tokio::test]
+async fn a_launched_instance_attaches_codex_and_opens_a_shell() -> TestResult {
+    guard(Box::pin(async {
+        let rig = Rig::new().await?;
+        let mut console = console(&rig).await?;
+        launch(&mut console).await?;
+        until_route(&mut console, Route::Capsule).await?;
+        let handle = only(&rig)?;
+        until(&mut console, "Codex attached", |c| {
+            let screen = c.screen();
+            handle.attachments() == 1 || screen.contains("not in the roster")
+        })
+        .await?;
+        let screen = console.screen();
+        assert!(!screen.contains("not in the roster"), "{screen}");
+        assert_eq!(handle.attachments(), 1, "{screen}");
+        let instance = console
+            .console()
+            .app()
+            .world
+            .instances
+            .first()
+            .ok_or("no instance")?
+            .id
+            .clone();
+        console.console().app().go(Go::NewSession {
+            instance,
+            agent: None,
+            account: None,
+        });
+        until(&mut console, "a shell opened", |c| {
+            let screen = c.screen();
+            handle.shells().len() == 1 || screen.contains("not in the roster")
+        })
+        .await?;
+        let screen = console.screen();
+        assert!(!screen.contains("not in the roster"), "{screen}");
+        assert_eq!(handle.shells().len(), 1, "{screen}");
+        Ok(())
+    }))
     .await
 }

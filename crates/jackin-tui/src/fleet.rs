@@ -16,7 +16,10 @@ use jackin_session::{Session, WorkState};
 use thiserror::Error;
 use tokio::sync::Semaphore;
 
+use jackin_console::domain::instance::InstanceId;
+
 use crate::console::ConsoleLimits;
+use crate::project::sandbox_id;
 use crate::sessions::{Reached, SessionSet};
 
 #[derive(Clone, Debug)]
@@ -47,6 +50,19 @@ impl Fleet {
 
     pub fn all_failed(&self) -> bool {
         !self.gateways.is_empty() && self.gateways.iter().all(|g| g.failure.is_some())
+    }
+
+    pub(crate) fn admit(&mut self, observed: ObservedSandbox) {
+        self.sandboxes.retain(|seen| {
+            seen.gateway != observed.gateway || seen.summary.name != observed.summary.name
+        });
+        self.sandboxes.push(observed);
+    }
+
+    pub(crate) fn locate(&self, instance: &InstanceId) -> Option<&ObservedSandbox> {
+        self.sandboxes
+            .iter()
+            .find(|observed| &sandbox_id(&observed.summary.name) == instance)
     }
 }
 

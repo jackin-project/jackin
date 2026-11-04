@@ -9,7 +9,7 @@ use futures::future::join_all;
 use jackin_console::domain::doctor::{
     DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
 };
-use jackin_console::domain::instance::Instance;
+use jackin_console::domain::instance::{Instance, InstanceId};
 use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
@@ -79,7 +79,7 @@ pub(crate) struct Inputs {
     work: WorkCache,
     pub(crate) ids: Mutex<IdTable>,
     pub(crate) docs: Mutex<DocCache>,
-    pub(crate) fleet: Mutex<Fleet>,
+    fleet: Mutex<Fleet>,
     pub(crate) checks: Mutex<RoleChecks>,
     origins: OriginCache,
 }
@@ -250,19 +250,25 @@ impl Inputs {
             .unwrap_or_default()
     }
 
-    pub(crate) fn instance_of(
+    pub(crate) fn admit(
         &self,
         config: &Config,
-        observed: &ObservedSandbox,
+        observed: ObservedSandbox,
         origins: &Origins,
     ) -> Instance {
-        project_instance(
-            observed,
+        let instance = project_instance(
+            &observed,
             config,
             origins,
             &locked(&self.ids),
             self.host.clock.now().0,
-        )
+        );
+        locked(&self.fleet).admit(observed);
+        instance
+    }
+
+    pub(crate) fn locate(&self, instance: &InstanceId) -> Option<ObservedSandbox> {
+        locked(&self.fleet).locate(instance).cloned()
     }
 
     pub(crate) async fn run_doctor(&self, reconnect: bool) -> Result<DoctorReport, DoctorFailure> {
