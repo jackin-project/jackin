@@ -323,7 +323,7 @@
               }
             }
           ],
-          "description": "Docker capability on. SKIP when docker is off. PASS when the Docker variables and certificates exist and docker run --rm hello-world prints the hello text. engine.id lets the host compare the engine with the chosen one."
+          "description": "Docker capability on. SKIP when docker is off. PASS when the Docker variables and certificates exist and docker run --rm of the digest-pinned hello-world image prints the hello text. engine.id lets the host compare the engine with the chosen one."
         },
         "J16": {
           "allOf": [
