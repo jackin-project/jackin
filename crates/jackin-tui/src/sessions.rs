@@ -168,27 +168,51 @@ impl SessionSet {
             .collect()
     }
 
-    pub(crate) fn home(&self) -> Home {
-        let slots = locked(&self.slots);
-        let home = match slots.get(&self.default) {
-            None => return Home::NotChosen,
-            Some(Slot::Down(error)) => return Home::Down(Arc::clone(error)),
-            Some(Slot::Up(session)) => Session::clone(session),
+    pub(crate) async fn home(
+        &self,
+        config: &Config,
+        connector: &dyn SessionConnector,
+        cancel: &CancellationToken,
+    ) -> Home {
+        let (home, known) = {
+            let slots = locked(&self.slots);
+            let home = match slots.get(&self.default) {
+                None => return Home::NotChosen,
+                Some(Slot::Down(error)) => return Home::Down(Arc::clone(error)),
+                Some(Slot::Up(session)) => Session::clone(session),
+            };
+            let known: BTreeMap<GatewayName, Reached> = slots
+                .iter()
+                .map(|(name, slot)| {
+                    let reached = match slot {
+                        Slot::Up(session) => Reached::Up(session.clone()),
+                        Slot::Down(error) => Reached::Down(Arc::clone(error)),
+                    };
+                    (name.clone(), reached)
+                })
+                .collect();
+            (home, known)
         };
-        let peers = slots
-            .iter()
-            .filter(|(name, _)| **name != self.default)
-            .map(|(name, slot)| match slot {
-                Slot::Up(session) => Ok(Session::clone(session)),
-                Slot::Down(error) => Err(UnreachableGateway::new(
-                    name.clone(),
-                    ConnectError::Gateway(GatewayError::Unreachable {
-                        endpoint: name.to_string(),
-                        message: error.to_string(),
-                    }),
-                )),
-            })
-            .collect();
+        let unreachable = |name: &GatewayName, error: &GatewayError| {
+            UnreachableGateway::new(
+                name.clone(),
+                ConnectError::Gateway(GatewayError::Unreachable {
+                    endpoint: name.to_string(),
+                    message: error.to_string(),
+                }),
+            )
+        };
+        let mut peers = Vec::new();
+        for (name, entry) in config.gateways().filter(|(name, _)| **name != self.default) {
+            peers.push(match known.get(name) {
+                Some(Reached::Up(session)) => Ok(Session::clone(session)),
+                Some(Reached::Down(error)) => Err(unreachable(name, error)),
+                None => connector
+                    .connect(name, entry, cancel)
+                    .await
+                    .map_err(|error| unreachable(name, &error)),
+            });
+        }
         Home::Ready(Box::new(Gateways::assemble(home, peers)))
     }
 

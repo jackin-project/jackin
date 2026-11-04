@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+use jackin_console::backend::Ticket;
 use jackin_console::domain::account::{AccountId, AccountRegistry};
 use jackin_console::domain::agent::Agent;
 use jackin_console::domain::instance::InstanceId;
@@ -26,6 +27,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::bridge::Settled;
+use crate::changes::read_changes;
 use crate::observe::{Inputs, Observation, locked};
 use crate::persist::{self, Folder, PersistError, Resolved, sentence};
 use crate::project::{manifest_doc, sandbox_id};
@@ -120,14 +122,18 @@ impl Inputs {
         Box::new(snapshot)
     }
 
-    async fn folder(&self, text: &str) -> Result<HostPath, PersistError> {
+    pub(crate) fn expanded(&self, text: &str) -> Result<HostPath, jackin_core::PathError> {
         let expanded = match text.strip_prefix('~') {
             Some(rest) if rest.is_empty() || rest.starts_with('/') => {
                 Path::new(&self.home).join(rest.trim_start_matches('/'))
             }
             _ => Path::new(text).to_path_buf(),
         };
-        let path = HostPath::parse(&expanded)?;
+        HostPath::parse(&expanded)
+    }
+
+    async fn folder(&self, text: &str) -> Result<HostPath, PersistError> {
+        let path = self.expanded(text)?;
         let folder = || {
             PersistError::from(Rejection::NotAFolder {
                 folder: text.to_owned(),
@@ -276,24 +282,29 @@ impl Inputs {
         Ok(resolved)
     }
 
-    async fn apply_accounts(
-        &self,
-        config: &Config,
-        edits: Vec<ConfigEdit>,
-    ) -> Result<Config, Refused> {
+    async fn apply_accounts(&self, edits: Vec<ConfigEdit>) -> Result<Config, Refused> {
         if edits.is_empty() {
-            return Ok(config.clone());
+            return Ok(self.config.load().await?);
         }
-        match plan_account_edits(config, edits)? {
-            AccountPlan::Offline(plan) => Ok(plan.apply(&self.config).await?),
-            AccountPlan::Gateway(plan) => match self.sessions.home() {
-                Home::Ready(gateways) => plan
-                    .apply(&gateways, &self.config, &self.cancel)
-                    .await
-                    .map_err(|error| Refused::Text(text(&error))),
-                Home::Down(error) => Err(Refused::Text(text(&*error))),
-                Home::NotChosen => Err(ConfigError::NoGateway.into()),
-            },
+        let plan = plan_account_edits(&self.desk, edits, &self.cancel)
+            .await
+            .map_err(|error| Refused::Text(text(&error)))?;
+        match plan {
+            AccountPlan::Offline(plan) => Ok(plan.apply().await?),
+            AccountPlan::Gateway(plan) => {
+                let home = self
+                    .sessions
+                    .home(plan.config(), self.connect.as_ref(), &self.cancel)
+                    .await;
+                match home {
+                    Home::Ready(gateways) => plan
+                        .apply(&gateways)
+                        .await
+                        .map_err(|error| Refused::Text(text(&error))),
+                    Home::Down(error) => Err(Refused::Text(text(&*error))),
+                    Home::NotChosen => Err(ConfigError::NoGateway.into()),
+                }
+            }
         }
     }
 
@@ -303,11 +314,10 @@ impl Inputs {
         registry: &AccountRegistry,
     ) -> Settled {
         let result = async {
-            let config = self.config.load().await?;
             let resolved = self.resolve_accounts(base, registry).await?;
             let edits = persist::accounts(base, registry, &resolved)?;
             let added = persist::added(registry)?;
-            let saved = self.apply_accounts(&config, edits).await?;
+            let saved = self.apply_accounts(edits).await?;
             Ok::<_, Refused>((self.snapshot_of(&saved).await, added))
         }
         .await;
@@ -325,6 +335,24 @@ impl Inputs {
                 self.failed(reply).await
             }
         }
+    }
+
+    pub(crate) async fn read_changes(
+        &self,
+        ticket: Ticket,
+        instance: &InstanceId,
+        unpushed: usize,
+    ) -> Settled {
+        let result = async {
+            let (gateway, sandbox) = self.sandbox(instance)?;
+            let session = self.session(&gateway)?;
+            read_changes(&session, &sandbox, unpushed, &self.cancel)
+                .await
+                .map_err(Refused::Text)
+        }
+        .await
+        .map_err(|error| text(&error));
+        Msg::ChangesRead { ticket, result }.into()
     }
 
     fn sandbox(

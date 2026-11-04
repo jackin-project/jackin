@@ -176,7 +176,7 @@ fn file_kind(provider: Provider) -> DetectedKind {
     }
 }
 
-fn source(credential: &CoreCredential, provider: Provider) -> CredentialSource {
+pub(crate) fn source(credential: &CoreCredential, provider: Provider) -> CredentialSource {
     match credential {
         CoreCredential::Env { var } => CredentialSource::HostEnv {
             var: var.as_str().to_owned(),

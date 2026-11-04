@@ -12,7 +12,8 @@ use jackin_console::world::{Snapshot, WallSource, World, WorldParts};
 use jackin_core::{
     Compatibility, CompatibilityError, ConfigError, ConfigStore, EnvName, EnvSnapshot, HostPath,
 };
-use jackin_session::{HostPorts, RoleCatalog};
+use jackin_session::{AccountDesk, HostPorts, RoleCatalog};
+use jackin_usage::HostUsage;
 use junie_tui::clock::SimClock;
 use junie_tui::core::event::Input;
 use junie_tui::motion::Motion;
@@ -25,8 +26,8 @@ use crate::backend::JackinBackend;
 use crate::bridge::{Bridge, InFlight};
 use crate::clipboard::HostClipboard;
 use crate::observe::{Inputs, InputsParts};
+use crate::onepassword::OpSnapshot;
 use crate::sessions::{SessionConnector, SessionSet};
-use crate::unbuilt::SignedInOnly;
 
 const NO_MOTION: &str = "JACKIN_NO_MOTION";
 
@@ -39,6 +40,8 @@ pub struct ConsoleLimits {
 #[derive(Debug)]
 pub struct ConsoleDeps {
     pub config: ConfigStore,
+    pub desk: AccountDesk,
+    pub usage: Arc<HostUsage>,
     pub sessions: SessionSet,
     pub connect: Arc<dyn SessionConnector>,
     pub roles: Arc<RoleCatalog>,
@@ -95,7 +98,10 @@ impl Console {
         loop {
             let idle = *changes.borrow_and_update() == 0;
             self.deliver();
-            if idle || changes.changed().await.is_err() {
+            if idle && *changes.borrow() == 0 {
+                break;
+            }
+            if !idle && changes.changed().await.is_err() {
                 break;
             }
         }
@@ -121,6 +127,8 @@ fn reduced_motion(env: &EnvSnapshot) -> bool {
 pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     let ConsoleDeps {
         config,
+        desk,
+        usage,
         sessions,
         connect,
         roles,
@@ -137,8 +145,13 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     } = deps;
     let config_path = config.path().as_path().display().to_string();
     let cancel = CancellationToken::new();
+    let op = OpSnapshot::default();
     let inputs = Arc::new(Inputs::new(InputsParts {
         config,
+        desk,
+        usage,
+        op: op.clone(),
+        env: env.clone(),
         sessions,
         roles,
         host,
@@ -177,7 +190,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         SimClock::new(0, 0),
         home.as_path().display().to_string(),
         cwd.as_path().display().to_string(),
-        Box::new(SignedInOnly),
+        Box::new(op),
         backend,
         surfaces,
     )
