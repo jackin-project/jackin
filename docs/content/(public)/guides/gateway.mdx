@@ -5,24 +5,24 @@ description: Start an OpenShell gateway with the vm compute driver on an Apple s
 
 Jackin does not install, start, or stop an OpenShell gateway. You run one. This page starts a local gateway named `jackin-local` with the `vm` compute driver. Each sandbox is a lightweight virtual machine.
 
-The steps were tested on macOS 27.2 on Apple silicon with OpenShell 0.1.6.
+The steps were tested on macOS 27.2 on Apple silicon. They install OpenShell 0.1.7, the release that jackin pins.
 
 ## Before you start
 
 You need:
 
 - An Apple silicon Mac. The `vm` driver uses Hypervisor.framework.
-- Homebrew, with the `openshell` formula at 0.1.6: `brew install openshell`.
+- Homebrew, with the `openshell` formula at 0.1.7: `brew install openshell`.
 - e2fsprogs. The driver builds ext4 disks with `mke2fs`: `brew install e2fsprogs`.
 - The GitHub CLI `gh`, signed in. It downloads the driver.
 - `git` and `ssh` on the host. Jackin uses `git` to filter an upload and `ssh` for file transfers.
 - A Docker engine on the host, with its socket at `/var/run/docker.sock`. Jackin builds role images with it. The `vm` driver also looks for the image there. The engine does not run your sandboxes.
 
-The Homebrew package does not contain `openshell-driver-vm`. The script below downloads it from the `v0.1.6` release, checks its digest, and signs it with the Hypervisor entitlement.
+The Homebrew package does not contain `openshell-driver-vm`. The script below downloads it from the `v0.1.7` release, checks its digest, and signs it with the Hypervisor entitlement.
 
 ## Start the gateway
 
-Save this script as `start-gateway.sh` and run `sh start-gateway.sh`. It is safe to run again. It installs the driver only when the entitlement is missing, keeps existing certificates and configuration, starts the gateway only when none runs, and registers it only when it is not registered.
+Save this script as `start-gateway.sh` and run `sh start-gateway.sh`. It is safe to run again. It installs the driver only when the driver is missing, unsigned, or not version 0.1.7, keeps existing certificates and configuration, starts the gateway only when none runs, and registers it only when it is not registered.
 
 ```sh
 #!/bin/sh
@@ -30,7 +30,8 @@ set -eu
 
 NAME=jackin-local
 PORT=17670
-TAG=v0.1.6
+TAG=v0.1.7
+VERSION=${TAG#v}
 ASSET=openshell-driver-vm-aarch64-apple-darwin.tar.gz
 
 STATE="$HOME/.local/state/openshell/$NAME"
@@ -42,7 +43,8 @@ DRIVER="$STATE/libexec/openshell-driver-vm"
 
 mkdir -p "$STATE/libexec"
 
-if ! codesign -d --entitlements - "$DRIVER" 2>&1 | grep -q com.apple.security.hypervisor; then
+if ! codesign -d --entitlements - "$DRIVER" 2>&1 | grep -q com.apple.security.hypervisor ||
+  [ "$("$DRIVER" --version)" != "openshell-driver-vm $VERSION" ]; then
   work=$(mktemp -d)
   gh release download "$TAG" -R NVIDIA/OpenShell -D "$work" \
     -p "$ASSET" -p openshell-checksums-sha256.txt
@@ -133,7 +135,7 @@ Jackin accepts only a gateway entry with an `https://` endpoint and mutual TLS. 
 openshell -g jackin-local status
 ```
 
-The output ends with `Status: Connected` and `Version: 0.1.6`.
+The output ends with `Status: Connected` and `Version: 0.1.7`.
 
 Create a short sandbox to prove the driver:
 
@@ -168,6 +170,17 @@ Delete or stop your sandboxes first. Then stop the process:
 ```sh
 kill $(pgrep -f 'openshell-gateway --config .*/jackin-local/gateway-vm.toml')
 ```
+
+## Upgrade the gateway
+
+Jackin pins one OpenShell release (`compatibility.lock.toml`), and `jackin doctor` fails when the gateway runs another one. To move the gateway to the pinned release:
+
+1. Export the work of every sandbox, then purge the sandboxes: `jackin export <sandbox>` and `jackin purge <sandbox>`.
+2. Stop the gateway as shown above, and wait until `pgrep -f 'openshell-gateway --config .*/jackin-local/gateway-vm.toml'` prints nothing.
+3. Copy the database, so that you can go back: `cp ~/.local/state/openshell/jackin-local/gateway.db ~/.local/state/openshell/jackin-local/gateway.db.bak`. The new gateway migrates the file when it starts.
+4. Upgrade the `openshell` formula: `brew upgrade openshell`.
+5. Run the script of this page again. Its `TAG` is the pinned release. It replaces the driver, because the installed driver does not report that version. It keeps the certificates and the configuration, and it starts the new gateway.
+6. Run `openshell -g jackin-local status` and `jackin doctor`.
 
 ## Fix common errors
 

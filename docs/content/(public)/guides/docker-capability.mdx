@@ -35,7 +35,7 @@ Start an engine on the gateway host with these properties:
 - Its port is not 2375, the plaintext Docker port.
 - Its client certificate directory holds `ca.pem`, `cert.pem`, and `key.pem`.
 
-Rootless Docker-in-Docker on the gateway host is the recommended form. An engine inside the sandbox does not work with OpenShell 0.1.6, because the sandbox workload has no capabilities and the seccomp filter denies `mount` and user namespaces.
+Rootless Docker-in-Docker on the gateway host is the recommended form. An engine inside the sandbox does not work with OpenShell 0.1.7, because the sandbox workload has no capabilities and the seccomp filter denies `mount` and user namespaces.
 
 ## Register the engine
 
@@ -75,6 +75,6 @@ If a role runs `docker build`, its own `policy.yaml` must allow the registry hos
 - A bind mount names a path on the engine host, not in the sandbox.
 - The engine outlives the sandbox, and sandboxes that use one engine see each other's containers. You remove them.
 
-OpenShell 0.1.6 cannot keep a working engine credential outside the sandbox. That is why the agent can read the key.
+OpenShell 0.1.7 cannot keep a working engine credential outside the sandbox. That is why the agent can read the key.
 
 A retry of a launch is refused if the capability or the engine differs from the one the sandbox was created with.
