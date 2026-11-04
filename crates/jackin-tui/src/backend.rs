@@ -6,24 +6,28 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jackin_console::backend::{Backend, Completion, Effect, FileSource};
-use jackin_console::domain::instance::Instance;
+use jackin_console::domain::instance::{Instance, InstanceStatus};
 use jackin_console::domain::launch::LaunchContent;
 use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_console::launch::{LaunchFeed, LaunchTarget};
-use jackin_console::panes::{PaneBody, PaneRequest, PaneSpawn};
+use jackin_console::panes::{PaneBody, PaneKind, PaneRequest, PaneSpawn, PaneTiming, TerminalPane};
 use jackin_console::world::{Msg, World};
+use jackin_session::REPAINT_NUDGE;
+use junie_tui::core::refusal::Reason;
 
 use crate::bridge::Bridge;
 use crate::files::HostFiles;
 use crate::launch;
 use crate::observe::Inputs;
-use crate::unbuilt::{self, UnbuiltPane};
+use crate::panes::PaneHub;
+use crate::unbuilt;
 
 #[derive(Clone)]
 pub(crate) struct JackinBackend {
     pub(crate) inputs: Arc<Inputs>,
     pub(crate) bridge: Bridge,
     words: Vocabulary,
+    panes: PaneHub,
     refreshing: Arc<AtomicBool>,
 }
 
@@ -34,11 +38,17 @@ impl fmt::Debug for JackinBackend {
 }
 
 impl JackinBackend {
-    pub(crate) fn new(inputs: Arc<Inputs>, bridge: Bridge, words: Vocabulary) -> JackinBackend {
+    pub(crate) fn new(
+        inputs: Arc<Inputs>,
+        bridge: Bridge,
+        words: Vocabulary,
+        panes: PaneHub,
+    ) -> JackinBackend {
         JackinBackend {
             inputs,
             bridge,
             words,
+            panes,
             refreshing: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -194,11 +204,52 @@ impl Backend for JackinBackend {
         launch::start(self, world, target)
     }
 
-    fn spawn_pane(&self, _request: &PaneRequest, spawn: PaneSpawn) -> Box<dyn PaneBody> {
-        Box::new(UnbuiltPane::new(&spawn, &self.words))
+    fn spawn_pane(&self, request: &PaneRequest, spawn: PaneSpawn) -> Box<dyn PaneBody> {
+        Box::new(TerminalPane::new(
+            spawn.id,
+            request.clone(),
+            self.panes.links(),
+            self.pane_timing(),
+            spawn.now_ms,
+        ))
     }
 
-    fn initial_panes(&self, _instance: &Instance) -> Vec<PaneRequest> {
+    fn initial_panes(&self, instance: &Instance) -> Vec<PaneRequest> {
+        if instance.status != InstanceStatus::Running {
+            return Vec::new();
+        }
+        vec![PaneRequest::new(
+            &instance.id,
+            Some(instance.agent),
+            instance.account.clone(),
+        )]
+    }
+
+    fn spawnable(&self, world: &World, instance: &Instance, kind: &PaneKind) -> Result<(), Reason> {
+        let has_agent = world
+            .daemons
+            .get(&instance.id)
+            .is_some_and(|daemon| daemon.panes.iter().any(|pane| pane.agent.is_some()));
+        match kind {
+            PaneKind::Agent { .. } if has_agent => Err(Reason::new(<&str>::default())),
+            PaneKind::Agent { .. } | PaneKind::Shell => Ok(()),
+        }
+    }
+
+    fn pane_timing(&self) -> PaneTiming {
+        let defaults = PaneTiming::default();
+        PaneTiming {
+            nudge_ms: i64::try_from(REPAINT_NUDGE.as_millis()).unwrap_or(defaults.nudge_ms),
+            ..defaults
+        }
+    }
+
+    fn due(&self, world: &World) -> Vec<Msg> {
+        for (instance, daemon) in &world.daemons {
+            if daemon.attached_by.is_none() {
+                self.panes.leave(instance);
+            }
+        }
         Vec::new()
     }
 }

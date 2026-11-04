@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use jackin_openshell::{
     EndReason, GatewayError, InputLease, InputMode, MainProcess, RepaintPolicy, TermSize,
     TerminalCommand, TerminalEvent,
@@ -109,10 +112,14 @@ struct Attachment {
     size: TermSize,
     nudge_pending: bool,
     events: UnboundedSender<TerminalEvent>,
+    pending: Arc<AtomicUsize>,
 }
 
 impl Attachment {
     fn send(&self, event: TerminalEvent) {
+        if let TerminalEvent::Output(bytes) = &event {
+            self.pending.fetch_add(bytes.len(), Ordering::SeqCst);
+        }
         drop(self.events.send(event));
     }
 }
@@ -186,13 +193,20 @@ impl Main {
         self.attachments.len()
     }
 
+    pub(super) fn undelivered(&self) -> usize {
+        self.attachments
+            .iter()
+            .map(|a| a.pending.load(Ordering::SeqCst))
+            .sum()
+    }
+
     pub(super) fn attach(
         &mut self,
         input: InputMode,
         size: TermSize,
         repaint: RepaintPolicy,
         replay_window: Option<usize>,
-    ) -> (Seat, UnboundedReceiver<TerminalEvent>) {
+    ) -> (Seat, UnboundedReceiver<TerminalEvent>, Arc<AtomicUsize>) {
         let (events, queued) = mpsc::unbounded_channel();
         let id = self.next;
         self.next += 1;
@@ -203,6 +217,7 @@ impl Main {
             InputLease::ReadOnly
         };
         self.pty = Some(size);
+        let pending = Arc::new(AtomicUsize::new(0));
         let attachment = Attachment {
             id,
             input,
@@ -211,6 +226,7 @@ impl Main {
             size,
             nudge_pending: matches!(repaint, RepaintPolicy::NudgeAfter(_)),
             events,
+            pending: Arc::clone(&pending),
         };
         attachment.send(TerminalEvent::Attached);
         attachment.send(TerminalEvent::Lease(lease));
@@ -223,7 +239,7 @@ impl Main {
             generation: self.generation,
             id,
         };
-        (seat, queued)
+        (seat, queued, pending)
     }
 
     pub(super) fn command(&mut self, seat: Seat, command: TerminalCommand) {

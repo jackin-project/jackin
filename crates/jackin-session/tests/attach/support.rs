@@ -71,6 +71,20 @@ pub(crate) async fn delivered(
     Ok(got)
 }
 
+pub(crate) async fn replied(
+    handle: &SandboxHandle,
+    terminal: &mut AttachedTerminal,
+    chunk: &[u8],
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let before = handle.main_input().len();
+    terminal.reply(chunk.to_vec()).await?;
+    terminal.input(b"~".to_vec()).await?;
+    until(|| handle.main_input().len() > before && handle.main_input().ends_with(b"~")).await?;
+    let mut got = handle.main_input().split_off(before);
+    got.pop();
+    Ok(got)
+}
+
 pub(crate) async fn set_state(
     rig: &Rig,
     name: &SandboxName,

@@ -339,3 +339,59 @@ async fn a_shell_witness_records_where_it_ran_what_it_was_given_and_when_it_clos
     })
     .await
 }
+
+#[tokio::test]
+async fn undelivered_output_counts_what_the_consumer_has_not_taken() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let handle = banner(&fake).await?;
+        let mut held = attach(&fake, &handle.name(), InputMode::Owner).await?;
+        let chunk = vec![b'x'; 4096];
+        for _ in 0..300 {
+            handle.print_main(&chunk);
+        }
+        eventually(
+            "the transport channel to fill",
+            || handle.undelivered_main_output() < 100 * 4096,
+            true,
+        )
+        .await?;
+        let stuck = handle.undelivered_main_output();
+        assert!(stuck > 0, "{stuck}");
+        collect_until("the last chunk", &mut held, |_| {
+            handle.undelivered_main_output() == 0
+        })
+        .await?;
+        eventually("nothing left", || handle.undelivered_main_output(), 0).await?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn closing_the_main_streams_ends_every_attachment_without_an_exit() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let handle = banner(&fake).await?;
+        let mut session = attach(&fake, &handle.name(), InputMode::Owner).await?;
+        collect_until("the replay", &mut session, is_output).await?;
+        handle.close_main_streams();
+        let events = collect_until("the end", &mut session, |event| {
+            matches!(event, TerminalEvent::Ended(_))
+        })
+        .await?;
+        assert!(
+            events
+                .iter()
+                .all(|event| !matches!(event, TerminalEvent::Exited(_))),
+            "{events:?}"
+        );
+        assert_eq!(
+            events.last(),
+            Some(&TerminalEvent::Ended(EndReason::StreamClosed))
+        );
+        assert_eq!(handle.attachments(), 0);
+        Ok(())
+    })
+    .await
+}

@@ -7,6 +7,7 @@ mod fixed;
 mod github;
 mod lifecycle;
 mod onepassword;
+mod panes;
 mod persisted;
 mod probes;
 mod projection;
