@@ -576,6 +576,133 @@ async fn an_oversized_file_or_a_link_to_a_pipe_fails_the_check_and_the_save() ->
     .await
 }
 
+const CLAUDE_LOGIN: &str = ".credentials.json";
+
+fn make_pipe(path: &Path) -> TestResult {
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(path)
+            .status()?
+            .success()
+    );
+    Ok(())
+}
+
+async fn save_claude_folder(lab: &mut Lab, name: &str) -> TestResult {
+    lab.reopen().await?;
+    lab.folder_form(name, 0, &format!("~/code/{name}")).await?;
+    lab.save_form().await
+}
+
+#[tokio::test]
+async fn a_claude_login_file_that_is_a_link_to_a_good_file_saves_as_the_login_file() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let folder = lab.code.join("linked");
+        tokio::fs::create_dir_all(&folder).await?;
+        let real = lab.code.join("real-login");
+        tokio::fs::write(&real, "login").await?;
+        tokio::fs::symlink(&real, folder.join(CLAUDE_LOGIN)).await?;
+        save_claude_folder(&mut lab, "linked").await?;
+        let config = lab.config().await?;
+        let account = config
+            .account(&jackin_core::AccountName::parse("linked")?)
+            .ok_or("the account was not saved")?;
+        assert_eq!(account.provider(), Provider::Claude);
+        assert!(
+            matches!(account.credential(), CredentialSource::File { path } if path.as_path().ends_with(format!("linked/{CLAUDE_LOGIN}"))),
+            "{:?}",
+            account.credential()
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_oversized_claude_login_file_or_a_link_to_a_pipe_is_refused_and_the_config_stays()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let before = lab.console.config_text().await?;
+        let refused = Vocabulary::openshell().rejection(&Rejection::NotAFolder {
+            folder: "~/code/big".to_owned(),
+        });
+        let big = lab.code.join("big");
+        tokio::fs::create_dir_all(&big).await?;
+        tokio::fs::write(big.join(CLAUDE_LOGIN), vec![b'x'; (1 << 20) + 1]).await?;
+        save_claude_folder(&mut lab, "big").await?;
+        let screen = lab.console.screen();
+        assert!(screen.contains(&refused), "{screen}");
+        assert_eq!(lab.console.config_text().await?, before);
+
+        let piped = lab.code.join("piped");
+        tokio::fs::create_dir_all(&piped).await?;
+        let pipe = lab.code.join("login-pipe");
+        make_pipe(&pipe)?;
+        tokio::fs::symlink(&pipe, piped.join(CLAUDE_LOGIN)).await?;
+        save_claude_folder(&mut lab, "piped").await?;
+        assert_eq!(lab.console.config_text().await?, before);
+        Ok(())
+    })
+    .await
+}
+
+async fn unreadable_codex_folders(
+    lab: &Lab,
+) -> Result<[std::path::PathBuf; 2], Box<dyn std::error::Error>> {
+    let big = lab.code.join("codex-big");
+    tokio::fs::create_dir_all(&big).await?;
+    tokio::fs::write(big.join("auth.json"), vec![b'x'; (1 << 20) + 1]).await?;
+    let piped = lab.code.join("codex-piped");
+    tokio::fs::create_dir_all(&piped).await?;
+    make_pipe(&piped.join("auth.json"))?;
+    Ok([big, piped])
+}
+
+#[tokio::test]
+async fn a_codex_folder_whose_auth_json_is_a_pipe_or_oversized_reads_as_unreadable_not_as_no_login()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let words = Vocabulary::openshell();
+        for folder in unreadable_codex_folders(&lab).await? {
+            let shown = material_row(&mut lab, &folder.display().to_string()).await?;
+            let canonical = tokio::fs::canonicalize(&folder)
+                .await?
+                .display()
+                .to_string();
+            let reason = IssueReason::FolderUnreadable {
+                detail: format!("cannot read {canonical}"),
+                path: canonical,
+            };
+            let expected: String = words.check(&reason).chars().take(40).collect();
+            assert!(
+                shown.contains(&format!("! material   {expected}")),
+                "{shown}"
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_codex_folder_whose_auth_json_is_a_pipe_or_oversized_blocks_the_save() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let before = lab.console.config_text().await?;
+        for folder in unreadable_codex_folders(&lab).await? {
+            lab.reopen().await?;
+            codex_folder_form(&mut lab, &folder.display().to_string()).await?;
+            lab.step("tab tab tab tab enter").await?;
+            assert_eq!(lab.console.config_text().await?, before);
+        }
+        Ok(())
+    })
+    .await
+}
+
 #[tokio::test]
 async fn two_providers_on_one_folder_save_independently() -> TestResult {
     guard(async {

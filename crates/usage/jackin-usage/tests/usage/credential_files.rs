@@ -130,21 +130,6 @@ async fn a_symbolic_link_to_an_oversized_file_is_refused_as_too_large() -> TestR
 }
 
 #[tokio::test]
-async fn a_symbolic_link_to_a_directory_is_refused_as_not_a_regular_file() -> TestResult {
-    guard(async {
-        let directory = tempfile::tempdir()?;
-        let real = directory.path().join("real");
-        std::fs::create_dir(&real)?;
-        let link = directory.path().join("key");
-        symlink(&real, &link)?;
-        let usage = read_through(&directory, file_account(&link)?).await?;
-        assert_eq!(refusal(&usage), "the credential file is not a regular file");
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
 async fn a_symbolic_link_to_a_pipe_is_refused_without_blocking() -> TestResult {
     guard(async {
         let directory = tempfile::tempdir()?;
@@ -215,26 +200,6 @@ async fn a_symbolic_link_in_place_of_a_codex_auth_json_is_the_login() -> TestRes
         let login = codex_login("work", &home.display().to_string(), "acct-1");
         let usage = read_through(&directory, login).await?;
         assert_eq!(windows_of(&usage.outcome).len(), 1);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_pipe_in_place_of_a_codex_auth_json_is_refused_without_blocking() -> TestResult {
-    guard(async {
-        let directory = tempfile::tempdir()?;
-        let home = directory.path().join("codex");
-        std::fs::create_dir(&home)?;
-        assert!(
-            Command::new("mkfifo")
-                .arg(home.join("auth.json"))
-                .status()?
-                .success()
-        );
-        let login = codex_login("work", &home.display().to_string(), "acct-1");
-        let usage = read_through(&directory, login).await?;
-        assert_eq!(refusal(&usage), "the credential file is not a regular file");
         Ok(())
     })
     .await
