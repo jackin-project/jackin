@@ -47,3 +47,11 @@ Each row is a LOW finding that a review raised and the orchestrator deferred. A 
 | Baseline B6 red/green LOW-1 | The capsule still writes `last_seen_secs` every tick (`capsule.rs`, `app.rs`); no test pins the sim ownership while attached. | Move it to the backend and add the attached row. |
 | Baseline B6/B8a red/green LOW-2..5 | Usage refresh not driven by a test; `Clear pane` menu item, the shell `pwd` reply and one double-close break are unobserved. | Add the rows. |
 | Baseline B8a review | `ViewportOps` doc names the Capsule; `BackendSource` only passes calls through; the `y` copy key ignores `keyboard_copy()`. | Tidy in B8b. |
+| Baseline B7a review L3 | A `Ready` for an instance that is not Running strands the cockpit (no Cancel, `x` inert). | Treat it as a failure reply with a visible reason. |
+| Baseline B7a review L4 | A Blocked launch cannot be cancelled with `x`, though the status line promises it. | Route `x` to `LaunchFeed::cancel` while Blocked (J4). |
+| Baseline B7a review L5, L6 | First-session daemon code exists twice (`app.rs`, `manager.rs`); the attach builds a daemon only with a cockpit page in the stack. | One helper; record the limit in J4. |
+| Baseline B4c review L7 | `env_edit_block` is called only by the fixture, so jackin's projection can diverge. | Call it from `openshell::account` (J2). |
+| Baseline B4c review L8, L10 | Fixed gating uses the optional `short` text; the wizard destination radio is disabled with no reason when `fixed` is absent. | Gate on the `Reason`; always carry a reason. |
+| Baseline B4c review L9 | The `ChoiceDialog`, `FormDialog` and `FileBrowser` fixes are not shown in the showcase (AGENTS.md). | Add showcase pages without moving approved baselines. |
+| Baseline B4c UX F3 | With the fixed Read-only box focused, the browser footer still shows `Space Choose`. | Hints follow focus. |
+| Baseline B4c red/green | The B4c PTY tests lack T21 assertions 3, 4, 6 and the unrelated click of 7; one always-true assertion (`jackin.rs` destination test); `ReadyInstance.run_id` unused. | Add the assertions; drop the field or use it. |
