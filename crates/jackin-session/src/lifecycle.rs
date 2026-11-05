@@ -55,6 +55,10 @@ pub enum PurgeError {
         sandbox: SandboxName,
         state: Box<WorkState>,
     },
+    #[error(
+        "{sandbox} was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted"
+    )]
+    Replaced { sandbox: SandboxName },
     #[error(transparent)]
     Gateway(#[from] GatewayError),
 }
@@ -147,6 +151,22 @@ impl Session {
                 sandbox: sandbox.clone(),
                 state: Box::new(was),
             });
+        }
+        if mode == PurgeMode::Guarded {
+            match self.find_managed(sandbox).await? {
+                Some(now) if now.phase != Phase::Deleting => {
+                    if view.created_at.is_none() || now.created_at != view.created_at {
+                        return Err(PurgeError::Replaced {
+                            sandbox: sandbox.clone(),
+                        });
+                    }
+                }
+                Some(_) | None => {
+                    return Ok(PurgeOutcome::AlreadyGone {
+                        sandbox: sandbox.clone(),
+                    });
+                }
+            }
         }
         self.deps.gateway.delete_sandbox(sandbox).await?;
         Ok(PurgeOutcome::Deleted {

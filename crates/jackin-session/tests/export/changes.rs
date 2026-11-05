@@ -8,7 +8,7 @@ use jackin_openshell::PowerAction;
 use jackin_session::{
     ChangeHunk, ChangeLine, ChangeSet, ChangeStatus, ChangedFile, ChangesError, Unread,
 };
-use jackin_testkit::{Rig, SandboxHandle, TestResult, guard};
+use jackin_testkit::{RepoFixture, Rig, SandboxHandle, TestResult, guard};
 use tokio_util::sync::CancellationToken;
 
 use super::support::state;
@@ -177,6 +177,45 @@ async fn changes_refuses_a_stopped_or_absent_sandbox_and_a_project_that_is_not_a
                 ..
             })
         ));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_staged_file_in_a_repository_with_an_unborn_head_is_listed_before_the_untracked_ones()
+-> TestResult {
+    guard(async {
+        let repo = RepoFixture::new().await?;
+        repo.file("staged.txt", b"s\n").await?;
+        repo.file("loose.txt", b"l\n").await?;
+        let rig = Rig::builder().repo(repo).build().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        handle.git(&["add", "staged.txt"]).await?;
+        handle
+            .git(&["rev-parse", "-q", "--verify", "HEAD"])
+            .await
+            .unwrap_err();
+
+        let found = changes(&rig, &handle.name()).await?;
+
+        assert_eq!(
+            found.files,
+            [
+                file(
+                    "staged.txt",
+                    ChangeStatus::Added,
+                    vec![hunk(0, 1, vec![added("s")])]
+                ),
+                file(
+                    "loose.txt",
+                    ChangeStatus::Added,
+                    vec![hunk(0, 1, vec![added("l")])]
+                ),
+            ]
+        );
+        assert_eq!(found.omitted, 0);
         Ok(())
     })
     .await

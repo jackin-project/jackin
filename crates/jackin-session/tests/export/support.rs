@@ -177,3 +177,39 @@ pub(crate) fn digests(
 pub(crate) async fn state(rig: &Rig, name: &SandboxName) -> jackin_session::WorkState {
     rig.world.session.work_state(&rig.config, name).await
 }
+
+pub(crate) fn rewrite_packed(
+    git_dir: &std::path::Path,
+    add: &[(Vec<u8>, &CommitId)],
+    drop: &[Vec<u8>],
+) -> Result<(), Box<dyn Error>> {
+    let file = git_dir.join("packed-refs");
+    let mut entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+    for line in std::fs::read(&file)
+        .unwrap_or_default()
+        .split(|byte| *byte == b'\n')
+    {
+        if line.is_empty() || line.starts_with(b"#") || line.starts_with(b"^") {
+            continue;
+        }
+        let split = line
+            .iter()
+            .position(|byte| *byte == b' ')
+            .ok_or("bad line")?;
+        entries.push((line[split + 1..].to_vec(), line[..split].to_vec()));
+    }
+    entries.retain(|(name, _)| !drop.contains(name));
+    for (name, id) in add {
+        entries.push((name.clone(), id.as_str().as_bytes().to_vec()));
+    }
+    entries.sort();
+    let mut out = b"# pack-refs with: peeled fully-peeled sorted \n".to_vec();
+    for (name, id) in entries {
+        out.extend(id);
+        out.push(b' ');
+        out.extend(name);
+        out.push(b'\n');
+    }
+    std::fs::write(&file, out)?;
+    Ok(())
+}

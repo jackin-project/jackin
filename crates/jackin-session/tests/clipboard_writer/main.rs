@@ -88,6 +88,85 @@ fn a_tool_that_hangs_past_the_deadline_is_not_a_write() -> TestResult {
 }
 
 #[test]
+fn a_large_text_reaches_the_tool_in_full() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    recording(dir.path(), "pbcopy")?;
+    let text = "0123456789abcdef".repeat(65_536);
+    assert!(writer(&dir, vec![ClipboardTool::Pbcopy]).write(&text));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("pbcopy.out"))?.len(),
+        text.len()
+    );
+    Ok(())
+}
+
+#[test]
+fn a_tool_that_exits_while_a_child_still_holds_its_input_does_not_hold_the_write() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    tool(
+        dir.path(),
+        "pbcopy",
+        "exec 3<&0
+/bin/sleep 4 &
+exit 0",
+    )?;
+    let text = "0123456789abcdef".repeat(65_536);
+    let started = std::time::Instant::now();
+    let wrote = writer(&dir, vec![ClipboardTool::Pbcopy])
+        .within(Duration::from_secs(30))
+        .write(&text);
+    assert!(!wrote);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the write waited {:?} for the pipe",
+        started.elapsed()
+    );
+    Ok(())
+}
+
+fn alive(pid: &str) -> Result<bool, Box<dyn Error>> {
+    Ok(std::process::Command::new("/bin/kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()?
+        .success())
+}
+
+#[tokio::test]
+async fn a_tool_that_hangs_past_the_deadline_is_killed() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let pid_file = dir.path().join("pid");
+    tool(
+        dir.path(),
+        "pbcopy",
+        &format!("echo $$ > '{}'\nexec /bin/sleep 30", pid_file.display()),
+    )?;
+    let hung = writer(&dir, vec![ClipboardTool::Pbcopy]).within(Duration::from_secs(2));
+    assert!(!hung.write("Hello"));
+    let give_up = std::time::Instant::now() + Duration::from_secs(5);
+    let pid = loop {
+        if let Ok(text) = std::fs::read_to_string(&pid_file)
+            && !text.trim().is_empty()
+        {
+            break text.trim().to_owned();
+        }
+        assert!(
+            std::time::Instant::now() < give_up,
+            "the tool never started"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    while alive(&pid)? {
+        assert!(
+            std::time::Instant::now() < give_up,
+            "the hung tool {pid} is still running"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Ok(())
+}
+
+#[test]
 fn the_tools_follow_the_host_and_its_display() {
     let none = EnvSnapshot::from_pairs(Vec::<(String, String)>::new());
     let x11 = EnvSnapshot::from_pairs([("DISPLAY".to_owned(), ":0".to_owned())]);

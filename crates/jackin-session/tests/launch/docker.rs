@@ -502,3 +502,70 @@ async fn every_certificate_read_asks_the_filesystem_for_no_more_than_the_size_ca
     })
     .await
 }
+
+const ROTATED_CERT: &str =
+    "-----BEGIN CERTIFICATE-----\nRlJFU0hDRVJURlJFU0hDRVJURlJFU0g=\n-----END CERTIFICATE-----\n";
+const ROTATED_KEY: &str = "-----BEGIN PRIVATE KEY-----\nUk9UQVRFREtFWVJPVEFURURLRVlST1RBVEVES0VZ\n-----END PRIVATE KEY-----\n";
+
+async fn rotated_after(
+    after: &str,
+    skip: usize,
+    rotated: (&str, &'static str),
+) -> Result<(EngineCert, EngineCertProblem), Box<dyn std::error::Error>> {
+    let rig = docker_rig(false, true, Engine::WithCerts).await?;
+    let recorder = Arc::new(RecordsCaps::new(Arc::clone(&rig.world.fs)));
+    let target = rig.engine_certs()?.as_path().join(rotated.0);
+    recorder.after_read(after, skip, move || {
+        drop(std::fs::write(&target, rotated.1));
+    });
+    let fs: Arc<dyn FileSystem> = Arc::<RecordsCaps>::clone(&recorder);
+    let world = &rig.world;
+    let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
+    let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
+    let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
+    let runner: Arc<dyn ProcessRunner> = Arc::<TestRunner>::clone(&world.runner);
+    let session = Session::new(SessionDeps {
+        gateway,
+        engine,
+        host: HostPorts { clock, fs, runner },
+        cache_dir: world.cache_dir().clone(),
+        config: world.config.clone(),
+        limits: default_limits(),
+    });
+
+    let outcome = rig
+        .run_on(&session, rig.request(1)?, CancellationToken::new())
+        .await?;
+
+    let failed = failure(outcome)?;
+    assert_eq!(failed.step, LaunchStep::Credentials);
+    let (file, problem, _) = engine_error(&failed)?;
+    assert!(docker_files(&rig.handle(1).await?).is_empty());
+    Ok((file, problem))
+}
+
+#[tokio::test]
+async fn a_client_certificate_rotated_between_the_reads_never_reaches_the_sandbox_with_the_old_key()
+-> TestResult {
+    guard(async {
+        assert_eq!(
+            rotated_after("key.pem", 1, ("cert.pem", ROTATED_CERT)).await?,
+            (EngineCert::Cert, EngineCertProblem::Changed)
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_client_key_rotated_between_the_reads_never_reaches_the_sandbox_with_the_old_certificate()
+-> TestResult {
+    guard(async {
+        assert_eq!(
+            rotated_after("cert.pem", 2, ("key.pem", ROTATED_KEY)).await?,
+            (EngineCert::Key, EngineCertProblem::Changed)
+        );
+        Ok(())
+    })
+    .await
+}

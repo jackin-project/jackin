@@ -56,6 +56,7 @@ jackin-usage-provider-zai = { path = "crates/usage/jackin-usage-provider-zai", v
 alacritty_terminal = { version = "0.26.0", default-features = false }
 async-trait = "0.1.92"
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+caseless = "0.2.2"
 chrono = { version = "0.4.45", default-features = false, features = ["std"] }
 clap = { version = "4.6.7", features = ["derive"] }
 flate2 = "1.1.10"
@@ -93,6 +94,7 @@ tui-test = { package = "tuiscotti-tui-test", version = "=0.2.1" }
 tuiscotti = { git = "https://github.com/tailrocks/tuiscotti", rev = "d8d54155947f6303a41dfd6079b53c0abc16f29a", version = "0.4.0" }
 tonic = { version = "0.14.9", features = ["tls-aws-lc"] }
 tonic-types = "0.14.9"
+unicode-normalization = { version = "0.1.26", default-features = false, features = ["std"] }
 zeroize = { version = "1.9.1", features = ["derive"] }
 
 [workspace.lints.rust]

@@ -78,6 +78,18 @@ async fn a_linked_worktree_root_arrives_as_a_normal_repository() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_linked_worktree_in_a_directory_whose_name_holds_a_line_feed_arrives() -> TestResult {
+    guard(async {
+        let main = base().await?;
+        let tree = main.linked_worktree_named("topic", "line\nbreak").await?;
+        tree.file("u.txt", b"untracked\n").await?;
+        assert!(tree.root().as_path().join(".git").is_file());
+        arrives(tree, &["?? u.txt"]).await
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_submodule_checkout_root_arrives_with_its_detached_head() -> TestResult {
     guard(async {
         let source = base().await?;
@@ -180,6 +192,18 @@ async fn a_detached_head_arrives_detached_at_the_same_commit_with_the_branches()
         repo.git(&["branch", "feat"]).await?;
         repo.git(&["checkout", "-q", "--detach", "HEAD~1"]).await?;
         arrives(repo, &[]).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_project_in_a_directory_whose_name_holds_a_line_feed_arrives() -> TestResult {
+    guard(async {
+        let repo = RepoFixture::new_named("line\nbreak").await?;
+        repo.file("a.txt", b"alpha\n").await?;
+        repo.commit().await?;
+        repo.file("b.txt", b"beta\n").await?;
+        arrives(repo, &["?? b.txt"]).await
     })
     .await
 }

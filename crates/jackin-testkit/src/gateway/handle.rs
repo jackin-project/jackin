@@ -42,6 +42,10 @@ impl SandboxHandle {
         self.cell.state().created_at
     }
 
+    pub fn forget_created_at(&self) {
+        self.cell.state().created_at = None;
+    }
+
     pub fn image_id(&self) -> Option<ImageId> {
         self.cell.state().image_id.clone()
     }

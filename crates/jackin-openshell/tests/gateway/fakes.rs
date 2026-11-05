@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, EnvValue, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LineSink,
-    LinkProblem, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus,
+    DirEntry, EnvValue, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
+    LineSink, LinkProblem, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus,
     ProcessStdin, Program, RegularFile, RegularFileProblem, RepoPath, SecretOutput,
 };
 use tokio_util::sync::CancellationToken;
@@ -74,6 +74,10 @@ impl FileSystem for RegistryFs {
     }
     async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
         Ok(self.stat_following(path).await?.map(|_| path.clone()))
+    }
+
+    async fn identity(&self, _path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        Ok(None)
     }
 
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {

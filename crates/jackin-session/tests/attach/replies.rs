@@ -3,7 +3,7 @@
 
 use jackin_testkit::{Rig, TestResult, guard};
 
-use super::support::{delivered, events, owner, replied, set_state};
+use super::support::{delivered, delivered_in_two, events, owner, replied, set_state};
 
 const CPR: &[u8] = b"\x1b[12;40R";
 const DA1: &[u8] = b"\x1b[?62;4c";
@@ -128,6 +128,46 @@ async fn reply_drops_in_every_other_state() -> TestResult {
         }
         set_state(&rig, &name, "running 1\n").await?;
         assert_eq!(replied(&handle, &mut terminal, DECRQM).await?, DECRQM);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_reply_split_across_two_reads_is_dropped_whole_unless_the_agent_runs() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let mut terminal = owner(&rig, 1).await?;
+        events(&mut terminal, 2).await?;
+
+        for reply in replies() {
+            for at in 2..reply.len() {
+                let (first, second) = reply.split_at(at);
+                assert_eq!(
+                    delivered_in_two(&handle, &mut terminal, first, second).await?,
+                    reply,
+                    "running, split at {at}"
+                );
+            }
+        }
+
+        handle.exit_codex(3);
+        for reply in replies() {
+            for at in 2..reply.len() {
+                let (first, second) = reply.split_at(at);
+                assert_eq!(
+                    delivered_in_two(&handle, &mut terminal, first, second).await?,
+                    b"",
+                    "exited, {reply:?} split at {at}"
+                );
+            }
+        }
+        assert_eq!(
+            delivered_in_two(&handle, &mut terminal, b"\x1b[1;5", b"C").await?,
+            b"\x1b[1;5C"
+        );
         Ok(())
     })
     .await

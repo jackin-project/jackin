@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,8 +9,9 @@ use std::time::Duration;
 use jackin_core::{
     Agent, Clock, CommitId, Config, FileKind, FileLock, FileSystem, FsError, HookKind, HostPath,
     LinkProblem, ManifestError, PathError, PollError, PollPlan, ProcessError, ProcessOutput,
-    ProcessRunner, ProcessStatus, RegularFileProblem, RepoPath, RoleManifest, RoleName, RoleRev,
-    RoleSource, RoleUrl, Sha256, TerminalText, Workspace, hold_lock, lock_path, plain_list,
+    ProcessRunner, ProcessStatus, RegularFile, RegularFileProblem, RepoPath, RoleManifest,
+    RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace, hold_lock, lock_path,
+    plain_list,
 };
 use jackin_image::{
     ContextEntry, DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile,
@@ -70,6 +72,10 @@ pub enum RoleError {
     RootMissing { path: HostPath },
     #[error("{path} is not a directory")]
     RootNotDirectory { path: HostPath },
+    #[error(
+        "{path} was replaced by another directory while the role was loaded; load it again once it is quiet"
+    )]
+    RootReplaced { path: HostPath },
     #[error("{root} has no {}", MANIFEST_FILE)]
     ManifestMissing { root: HostPath },
     #[error("missing file {path}")]
@@ -113,6 +119,8 @@ pub enum RoleError {
     #[error(transparent)]
     Process(ProcessError),
 }
+
+type Reads = BTreeMap<RepoPath, RegularFile>;
 
 struct Inspected {
     manifest: RoleManifest,
@@ -230,11 +238,20 @@ impl RoleCatalog {
         root: &HostPath,
         cancel: &CancellationToken,
     ) -> Result<LoadedRole, RoleError> {
-        let inspected = match self.inspect(root).await {
+        let pinned = self.fs.identity(root).await?;
+        let mut reads = Reads::new();
+        let manifest = match self.read_manifest_from(root, &mut reads).await {
+            Ok(manifest) => manifest,
+            Err(mut findings) => return Err(findings.remove(0)),
+        };
+        let inspected = match self.inspect_manifest(root, manifest, &mut reads).await {
             Ok(inspected) => inspected,
             Err(mut findings) => return Err(findings.remove(0)),
         };
-        let (revision, files) = self.snapshot(root, cancel).await?;
+        let (revision, files) = self.snapshot(root, &reads, cancel).await?;
+        if self.fs.identity(root).await? != pinned {
+            return Err(RoleError::RootReplaced { path: root.clone() });
+        }
         Ok(LoadedRole {
             name: inspected.manifest.role.name.clone(),
             root: root.clone(),
@@ -315,29 +332,33 @@ impl RoleCatalog {
     }
 
     pub async fn findings(&self, root: &HostPath) -> Vec<RoleError> {
-        self.inspect(root).await.err().unwrap_or_default()
-    }
-
-    pub async fn findings_of(&self, root: &HostPath, manifest: RoleManifest) -> Vec<RoleError> {
-        self.inspect_manifest(root, manifest)
+        let mut reads = Reads::new();
+        let manifest = match self.read_manifest_from(root, &mut reads).await {
+            Ok(manifest) => manifest,
+            Err(findings) => return findings,
+        };
+        self.inspect_manifest(root, manifest, &mut reads)
             .await
             .err()
             .unwrap_or_default()
     }
 
-    async fn inspect(&self, root: &HostPath) -> Result<Inspected, Vec<RoleError>> {
-        let manifest = self.read_manifest(root).await?;
-        self.inspect_manifest(root, manifest).await
+    pub async fn findings_of(&self, root: &HostPath, manifest: RoleManifest) -> Vec<RoleError> {
+        self.inspect_manifest(root, manifest, &mut Reads::new())
+            .await
+            .err()
+            .unwrap_or_default()
     }
 
     async fn inspect_manifest(
         &self,
         root: &HostPath,
         manifest: RoleManifest,
+        reads: &mut Reads,
     ) -> Result<Inspected, Vec<RoleError>> {
         let mut findings = Vec::new();
         let dockerfile = self
-            .read_checked(root, &manifest.role.dockerfile, &mut findings)
+            .read_checked(root, &manifest.role.dockerfile, reads, &mut findings)
             .await;
         if let Some(bytes) = &dockerfile {
             match std::str::from_utf8(bytes) {
@@ -350,7 +371,7 @@ impl RoleCatalog {
             }
         }
         let policy_bytes = self
-            .read_checked(root, &manifest.role.policy, &mut findings)
+            .read_checked(root, &manifest.role.policy, reads, &mut findings)
             .await;
         let policy = policy_bytes.and_then(|bytes| {
             let parsed = std::str::from_utf8(&bytes)
@@ -367,10 +388,10 @@ impl RoleCatalog {
             }
         });
         let setup = self
-            .hook(root, &manifest, HookKind::Setup, &mut findings)
+            .hook(root, &manifest, HookKind::Setup, reads, &mut findings)
             .await;
         let preflight = self
-            .hook(root, &manifest, HookKind::Preflight, &mut findings)
+            .hook(root, &manifest, HookKind::Preflight, reads, &mut findings)
             .await;
         if let Some(policy) = &policy {
             Self::check_closure(policy, &mut findings);
@@ -391,6 +412,14 @@ impl RoleCatalog {
     }
 
     pub async fn read_manifest(&self, root: &HostPath) -> Result<RoleManifest, Vec<RoleError>> {
+        self.read_manifest_from(root, &mut Reads::new()).await
+    }
+
+    async fn read_manifest_from(
+        &self,
+        root: &HostPath,
+        reads: &mut Reads,
+    ) -> Result<RoleManifest, Vec<RoleError>> {
         let name = RepoPath::parse(MANIFEST_FILE).map_err(|error| vec![RoleError::from(error)])?;
         match self
             .fs
@@ -406,7 +435,7 @@ impl RoleCatalog {
         }
         let manifest_missing = || vec![RoleError::ManifestMissing { root: root.clone() }];
         let path = join_repo(root, &name).map_err(|error| vec![RoleError::from(error)])?;
-        let bytes = match self.read_input(root, &name).await {
+        let bytes = match self.read_input(root, &name, reads).await {
             Ok(bytes) => bytes,
             Err(RoleError::FileMissing { .. }) => return Err(manifest_missing()),
             Err(error) => return Err(vec![error]),
@@ -434,13 +463,22 @@ impl RoleCatalog {
         RoleManifest::parse(&text).map_err(|source| vec![RoleError::Manifest { path, source }])
     }
 
-    async fn read_input(&self, root: &HostPath, path: &RepoPath) -> Result<Vec<u8>, RoleError> {
+    async fn read_input(
+        &self,
+        root: &HostPath,
+        path: &RepoPath,
+        reads: &mut Reads,
+    ) -> Result<Vec<u8>, RoleError> {
         match self.fs.read_regular(root, path, MAX_FILE_BYTES).await? {
             Ok(file) if file.bytes.len() > MAX_FILE_BYTES => Err(RoleError::FileTooLarge {
                 path: path.clone(),
                 limit: MAX_FILE_BYTES,
             }),
-            Ok(file) => Ok(file.bytes),
+            Ok(file) => {
+                let bytes = file.bytes.clone();
+                reads.insert(path.clone(), file);
+                Ok(bytes)
+            }
             Err(RegularFileProblem::Missing) => Err(RoleError::FileMissing { path: path.clone() }),
             Err(RegularFileProblem::Symlink) => {
                 Err(RoleError::EscapesRepository { path: path.clone() })
@@ -455,9 +493,10 @@ impl RoleCatalog {
         &self,
         root: &HostPath,
         path: &RepoPath,
+        reads: &mut Reads,
         findings: &mut Vec<RoleError>,
     ) -> Option<Vec<u8>> {
-        match self.read_input(root, path).await {
+        match self.read_input(root, path, reads).await {
             Ok(bytes) => Some(bytes),
             Err(error) => {
                 findings.push(error);
@@ -471,10 +510,11 @@ impl RoleCatalog {
         root: &HostPath,
         manifest: &RoleManifest,
         kind: HookKind,
+        reads: &mut Reads,
         findings: &mut Vec<RoleError>,
     ) -> Option<SourceFile> {
         let path = manifest.hook(kind)?;
-        let bytes = self.read_checked(root, path, findings).await?;
+        let bytes = self.read_checked(root, path, reads, findings).await?;
         Some(SourceFile {
             path: path.clone(),
             bytes,
@@ -554,6 +594,7 @@ impl RoleCatalog {
     async fn snapshot(
         &self,
         root: &HostPath,
+        reads: &Reads,
         cancel: &CancellationToken,
     ) -> Result<(RoleRevision, Vec<ContextEntry>), RoleError> {
         let head = self.git(root, cancel, &["rev-parse", "HEAD"]).await?;
@@ -579,11 +620,11 @@ impl RoleCatalog {
             let text = std::str::from_utf8(name)
                 .map_err(|_| RoleError::NonUtf8Path(TerminalText::sanitize(name)))?;
             let path = RepoPath::parse(text)?;
-            let (kind, exec, content) = match self
-                .fs
-                .read_regular(root, &path, MAX_FILE_BYTES)
-                .await?
-            {
+            let found = match reads.get(&path) {
+                Some(file) => Ok(file.clone()),
+                None => self.fs.read_regular(root, &path, MAX_FILE_BYTES).await?,
+            };
+            let (kind, exec, content) = match found {
                 Ok(file) => {
                     if file.bytes.len() > MAX_FILE_BYTES {
                         return Err(RoleError::FileTooLarge {

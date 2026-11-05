@@ -5,7 +5,9 @@ use std::ffi::OsString;
 use std::fs::{self, DirBuilder, File, OpenOptions, TryLockError};
 use std::io::{self, ErrorKind, Read, Seek, SeekFrom, Write};
 use std::os::fd::OwnedFd;
-use std::os::unix::fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt, PermissionsExt, symlink};
+use std::os::unix::fs::{
+    DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt, symlink,
+};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -14,8 +16,8 @@ use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, readlinkat, stat
 use rustix::io::Errno;
 
 use crate::boundary::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, LinkProblem, RegularFile,
-    RegularFileProblem,
+    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, LinkProblem,
+    RegularFile, RegularFileProblem,
 };
 use crate::paths::{HostPath, RepoPath};
 
@@ -253,6 +255,18 @@ impl FileSystem for StdFileSystem {
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         blocking(path, |p| {
             missing_is_none(fs::metadata(p)).map(|meta| meta.map(|m| m.len()))
+        })
+        .await
+    }
+
+    async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        blocking(path, |p| {
+            missing_is_none(fs::metadata(p)).map(|meta| {
+                meta.map(|m| FileIdentity {
+                    dev: m.dev(),
+                    ino: m.ino(),
+                })
+            })
         })
         .await
     }

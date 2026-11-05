@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, DockerCapability, DockerLabel, FileMode, HookKind, HostPath, LabelSelector,
+    Agent, DockerCapability, DockerLabel, FileLock, FileMode, HookKind, HostPath, LabelSelector,
     PLACEHOLDER_SCHEME, SandboxLabels, SandboxName, SandboxPath, SecretBytes, StartRequest,
     sandbox_layout,
 };
@@ -28,7 +28,7 @@ use crate::launch::{
     LaunchError, LaunchEvent, LaunchEvents, LaunchFailure, LaunchOutcome, LaunchStep,
     RestoreCandidate, SkipReason,
 };
-use crate::lock::LockError;
+use crate::lock::{self, LockError};
 use crate::plan::{LaunchPlan, PlannedFile};
 use crate::project;
 use crate::service::{POLL, Session};
@@ -344,6 +344,10 @@ impl Run<'_> {
     }
 
     async fn create(&mut self, image: &BuiltImage, docker: DockerLabel) -> Result<(), Stop> {
+        if self.image_hold.is_none() {
+            self.done.image = None;
+            return Ok(());
+        }
         self.enter(LaunchStep::Sandbox).await;
         let create = self.plan.draft().complete(image, docker);
         match self.session.deps.gateway.create_sandbox(&create).await {
@@ -622,13 +626,19 @@ impl Run<'_> {
             self.tracker.skip(SkipReason::SetupAlreadyDone);
         }
         if plan.setup || plan.preflight {
+            let _held = self.hold_hooks().await?;
             let gateway = self.session.deps.gateway.as_ref();
+            let mut setup = plan.setup;
+            if setup && self.setup_done(sandbox).await? {
+                self.tracker.skip(SkipReason::SetupAlreadyDone);
+                setup = false;
+            }
             let env = crate::state::env_file(gateway, sandbox, self.plan.launch_id())
                 .await
                 .map_err(|error| failed(STEP, error))?;
             let timeout = self.session.deps.limits.hook;
             for (wanted, kind) in [
-                (plan.setup, HookKind::Setup),
+                (setup, HookKind::Setup),
                 (plan.preflight, HookKind::Preflight),
             ] {
                 if !wanted {
@@ -654,6 +664,34 @@ impl Run<'_> {
         }
         self.done.steps.insert(STEP);
         Ok(())
+    }
+
+    async fn hold_hooks(&self) -> Result<FileLock, Stop> {
+        let deps = &self.session.deps;
+        lock::hold(
+            &deps.host,
+            &deps.cache_dir,
+            &format!("hooks-{}.lock", self.plan.launch_id()),
+            self.cancel,
+        )
+        .await
+        .map_err(|error| match error {
+            LockError::Cancelled => Stop::Cancelled,
+            LockError::Fs(error) => failed(LaunchStep::Hooks, LaunchError::Fs(error)),
+            LockError::Path(error) => failed(LaunchStep::Hooks, LaunchError::Path(error)),
+        })
+    }
+
+    async fn setup_done(&self, sandbox: &SandboxName) -> Result<bool, Stop> {
+        let marker = sandbox_layout::setup_done_marker(self.plan.launch_id());
+        let found = self
+            .session
+            .deps
+            .gateway
+            .read_files(sandbox, std::slice::from_ref(&marker))
+            .await
+            .map_err(|error| failed(LaunchStep::Hooks, error))?;
+        Ok(found.first().is_some_and(Option::is_some))
     }
 
     async fn start(

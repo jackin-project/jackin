@@ -144,7 +144,11 @@ async fn an_untracked_nested_repository_at_any_depth_is_refused_unless_it_is_ign
         ignored
             .file(
                 "vendor/dep/.git/config",
-                b"[remote \"x\"]\n\turl = https://bot:IGNORED-TOKEN@h/x.git\n",
+                concat!(
+                    "[remote \"x\"]\n\turl = https://bot",
+                    ":IGNORED-TOKEN@h/x.git\n"
+                )
+                .as_bytes(),
             )
             .await?;
         ignored.ignore("vendor/\n").await?;

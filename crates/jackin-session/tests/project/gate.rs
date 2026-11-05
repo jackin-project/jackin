@@ -5,10 +5,13 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use jackin_core::{FileMode, RepoPath, sandbox_layout};
+use jackin_session::{LaunchError, UnsupportedProject};
 use jackin_testkit::{Fault, HostEdit, RepoFixture, UploadKind};
 
 use super::oracle::{arrived, git};
-use super::support::{Rig, TestResult, global_config, guard, launch_id, mismatch, ready};
+use super::support::{
+    Rig, TestResult, failure, global_config, guard, launch_id, mismatch, ready, tree_of,
+};
 
 async fn base() -> Result<RepoFixture, Box<dyn std::error::Error>> {
     let repo = RepoFixture::new().await?;
@@ -67,6 +70,11 @@ async fn a_host_edit_after_the_tree_upload_fails_with_a_mismatch_for_content_and
             assert!(found.host_only.is_empty() && found.sandbox_only.is_empty());
             let handle = rig.handle(1).await?;
             assert!(!marker_present(&handle), "{label}");
+            assert_eq!(
+                tree_of(&handle.root().join("project"))?,
+                Vec::<String>::new(),
+                "{label}"
+            );
         }
 
         let repo = base().await?;
@@ -81,6 +89,40 @@ async fn a_host_edit_after_the_tree_upload_fails_with_a_mismatch_for_content_and
             &handle.root(),
             &[" M a.txt", " M tool.sh", "?? u.txt"],
         )
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_change_the_upload_refuses_leaves_no_project_tree_in_the_sandbox() -> TestResult {
+    guard(async {
+        let repo = base().await?;
+        let late = jackin_core::HostPath::parse(&repo.root().as_path().join("late.txt"))?;
+        let rig = Rig::new(repo).await?;
+        rig.world.gateway.inject(Fault::EditHostAfter {
+            upload: UploadKind::Tree,
+            edit: HostEdit::Write {
+                path: late,
+                bytes: b"created during the upload\n".to_vec(),
+            },
+        });
+
+        let failed = failure(rig.launch(1).await?)?;
+
+        assert!(
+            matches!(
+                *failed.error,
+                LaunchError::Unsupported(UnsupportedProject::ChangedDuringUpload { .. })
+            ),
+            "{:?}",
+            failed.error
+        );
+        let handle = rig.handle(1).await?;
+        assert_eq!(
+            tree_of(&handle.root().join("project"))?,
+            Vec::<String>::new()
+        );
+        Ok(())
     })
     .await
 }
@@ -226,7 +268,6 @@ async fn neither_a_success_nor_a_mismatch_changes_a_byte_of_the_host_repository(
         mismatch(rig.launch(1).await?)?;
         assert_unchanged(&snapshot(&roots)?, &before);
         let sandbox = rig.handle(1).await?.root().join("project");
-        git(&sandbox, &["diff", "--cached", "--quiet"])?;
 
         std::fs::remove_file(rig.world.home().as_path().join(".gitconfig"))?;
         ready(rig.launch(1).await?)?;

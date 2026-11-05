@@ -40,6 +40,7 @@ pub struct ChangedFile {
 pub enum Unread {
     TooLarge,
     NotRegular,
+    UndecodableName,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -226,7 +227,7 @@ pub(super) fn parse_patch(output: &[u8]) -> Result<Vec<ChangedFile>, &'static st
         .collect())
 }
 
-pub(super) fn added_file(path: &str, content: Result<&[u8], Unread>) -> ChangedFile {
+pub(super) fn added_file(path: &[u8], content: Result<&[u8], Unread>) -> ChangedFile {
     let (lines, unread) = match content {
         Ok(bytes) => (text_lines(bytes), None),
         Err(unread) => (None, Some(unread)),
@@ -240,7 +241,7 @@ pub(super) fn added_file(path: &str, content: Result<&[u8], Unread>) -> ChangedF
         _ => Vec::new(),
     };
     ChangedFile {
-        path: text(path),
+        path: TerminalText::sanitize(path),
         status: ChangeStatus::Added,
         hunks,
         unread,

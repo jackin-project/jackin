@@ -28,6 +28,8 @@ pub const REPAINT_NUDGE: Duration = Duration::from_millis(600);
 const REQUEST_MODE: jackin_core::FileMode = jackin_core::FileMode(0o600);
 const ESC: u8 = 0x1b;
 const BEL: u8 = 0x07;
+const HELD_MIN: usize = 2;
+const HELD_MAX: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AttachRequest {
@@ -42,6 +44,7 @@ pub struct AttachedTerminal {
     gateway: Arc<dyn Gateway>,
     sandbox: SandboxName,
     supervisor: SupervisorReading,
+    held: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -175,6 +178,54 @@ fn osc_reply(bytes: &[u8]) -> Option<usize> {
     }
 }
 
+fn partial_csi(body: &[u8]) -> bool {
+    if body.is_empty() {
+        return true;
+    }
+    if matches!(body.first(), Some(b'?' | b'>')) {
+        return body[1..]
+            .iter()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b';' | b':'));
+    }
+    let row = digits(body, 0);
+    row > 0
+        && match body.get(row) {
+            None => true,
+            Some(b';') => digits(body, row + 1) == body.len() - row - 1,
+            Some(_) => false,
+        }
+}
+
+fn partial_osc(body: &[u8]) -> bool {
+    if body.len() < 3 {
+        return b"10;".starts_with(body) || b"11;".starts_with(body);
+    }
+    (body.starts_with(b"10;") || body.starts_with(b"11;"))
+        && !body.contains(&BEL)
+        && body
+            .iter()
+            .position(|byte| *byte == ESC)
+            .is_none_or(|at| at + 1 == body.len())
+}
+
+fn partial_reply(bytes: &[u8]) -> bool {
+    if bytes.len() < HELD_MIN || bytes.len() > HELD_MAX {
+        return false;
+    }
+    if let Some(body) = bytes.strip_prefix(&[ESC, b'[']) {
+        partial_csi(body)
+    } else if let Some(body) = bytes.strip_prefix(&[ESC, b']']) {
+        partial_osc(body)
+    } else {
+        false
+    }
+}
+
+fn held_from(bytes: &[u8]) -> Option<usize> {
+    (bytes.len().saturating_sub(HELD_MAX)..bytes.len())
+        .find(|at| bytes[*at] == ESC && partial_reply(&bytes[*at..]))
+}
+
 pub(crate) fn split_replies(chunk: &[u8]) -> (Vec<u8>, bool) {
     let mut plain = Vec::with_capacity(chunk.len());
     let mut replies = false;
@@ -198,7 +249,14 @@ impl AttachedTerminal {
         &self.supervisor
     }
 
-    pub async fn input(&mut self, bytes: Vec<u8>) -> Result<(), SessionClosed> {
+    pub async fn input(&mut self, typed: Vec<u8>) -> Result<(), SessionClosed> {
+        let mut bytes = std::mem::take(&mut self.held);
+        bytes.extend(typed);
+        if let Some(at) = held_from(&bytes)
+            && !self.running().await
+        {
+            self.held = bytes.split_off(at);
+        }
         let (plain, replies) = split_replies(&bytes);
         let send = if !replies || self.running().await {
             bytes
@@ -321,6 +379,7 @@ impl Session {
             gateway: Arc::clone(&self.deps.gateway),
             sandbox: sandbox.clone(),
             supervisor,
+            held: Vec::new(),
         })
     }
 

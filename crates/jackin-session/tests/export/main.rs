@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod abort;
+mod aliases;
 mod bundle_limits;
 mod cancel;
 mod changes;
@@ -16,6 +17,7 @@ mod honest;
 mod host_calls;
 mod lab;
 mod nesting;
+mod non_utf8;
 mod pack;
 mod purge;
 mod redirect;

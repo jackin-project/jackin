@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::time::Duration;
+
 use jackin_core::{Config, Phase, SandboxName, sandbox_layout};
-use jackin_openshell::{GatewayError, GatewayOp};
+use jackin_openshell::{Gateway, GatewayError, GatewayOp};
 use jackin_session::{LaunchStep, PurgeError, PurgeMode, PurgeOutcome, UnknownReason, WorkState};
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
 use tokio_util::sync::CancellationToken;
@@ -233,6 +235,76 @@ async fn a_repeated_purge_is_already_gone_a_failed_delete_keeps_the_sandbox_and_
                 );
             }
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_guarded_purge_never_deletes_a_sandbox_that_replaced_the_one_it_inspected() -> TestResult
+{
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.handle(1).await?.name();
+        let gateway = &rig.world.gateway;
+        let held = Trigger::Op(GatewayOp::Program);
+        gateway.inject(Fault::HoldAt {
+            trigger: held.clone(),
+        });
+
+        let purging = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded);
+        let swapping = async {
+            assert!(gateway.until_held(&held).await);
+            gateway.delete_sandbox(&name).await?;
+            rig.world.clock.advance(Duration::from_secs(60));
+            rig.launch(1).await?;
+            gateway.release(&held);
+            Ok::<_, Box<dyn std::error::Error>>(())
+        };
+        let (purged, swapped) = tokio::join!(purging, swapping);
+
+        swapped?;
+        let Err(PurgeError::Replaced { sandbox }) = purged else {
+            return Err(format!("expected a refusal, saw {purged:?}").into());
+        };
+        assert_eq!(sandbox, name);
+        assert!(gateway.sandbox(&name).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_guarded_purge_refuses_a_sandbox_whose_creation_time_is_unknown() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        export(&rig, &name).await?;
+        handle.forget_created_at();
+
+        let purged = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .await;
+
+        let Err(PurgeError::Replaced { sandbox }) = purged else {
+            return Err(format!("expected a refusal, saw {purged:?}").into());
+        };
+        assert_eq!(sandbox, name);
+        assert!(rig.world.gateway.sandbox(&name).is_some());
+        let forced = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Forced)
+            .await?;
+        assert!(matches!(forced, PurgeOutcome::Deleted { .. }));
         Ok(())
     })
     .await

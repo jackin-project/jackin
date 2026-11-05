@@ -6,10 +6,11 @@ use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use jackin_session::UnsupportedProject;
 use jackin_testkit::RepoFixture;
 
 use super::oracle::{arrived, git, run};
-use super::support::{Rig, TestResult, guard, ready};
+use super::support::{Rig, TestResult, assert_nothing_created, guard, ready, unsupported};
 
 async fn base() -> Result<RepoFixture, Box<dyn std::error::Error>> {
     let repo = RepoFixture::new().await?;
@@ -103,6 +104,63 @@ async fn a_host_head_on_a_jackin_branch_arrives_detached_at_its_commit() -> Test
 }
 
 #[tokio::test]
+async fn a_host_head_on_a_tag_or_a_remote_ref_arrives_detached_at_its_commit() -> TestResult {
+    guard(async {
+        for target in ["refs/tags/v1", "refs/remotes/origin/main"] {
+            let repo = base().await?;
+            repo.git(&["tag", "v1"]).await?;
+            repo.git(&["update-ref", "refs/remotes/origin/main", "HEAD"])
+                .await?;
+            repo.git(&["symbolic-ref", "HEAD", target]).await?;
+            let commit = repo.git(&["rev-parse", "HEAD"]).await?;
+            let rig = Rig::new(repo).await?;
+            ready(rig.launch(1).await?)?;
+            let project = rig.handle(1).await?.root().join("project");
+            assert!(
+                !run(&project, &["symbolic-ref", "-q", "HEAD"])?
+                    .status
+                    .success(),
+                "{target}: the sandbox HEAD is a symbolic ref"
+            );
+            assert_eq!(git(&project, &["rev-parse", "HEAD"])?, commit, "{target}");
+            assert!(
+                branch_refs(&project)?.contains("refs/heads/main"),
+                "{target}"
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_unborn_head_outside_the_plain_branches_is_refused_by_name() -> TestResult {
+    guard(async {
+        for target in [
+            "refs/heads/jackin/old/work",
+            "refs/tags/fresh",
+            "refs/remotes/origin/fresh",
+        ] {
+            let repo = base().await?;
+            repo.git(&["symbolic-ref", "HEAD", target]).await?;
+            repo.git(&["rev-parse", "-q", "--verify", "HEAD"])
+                .await
+                .unwrap_err();
+            let rig = Rig::new(repo).await?;
+            match unsupported(rig.launch(1).await?)? {
+                UnsupportedProject::UnbornHead { reference } => {
+                    assert_eq!(reference.as_str(), target);
+                }
+                other => return Err(format!("{target}: expected UnbornHead, saw {other:?}").into()),
+            }
+            assert_nothing_created(&rig)?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn an_unborn_head_with_only_jackin_branches_launches_unborn_without_a_bundle() -> TestResult {
     guard(async {
         let repo = base().await?;
@@ -159,22 +217,37 @@ async fn no_host_credential_reaches_any_sandbox_file_or_the_sandbox_repository_s
             "remote",
             "add",
             "origin",
-            "https://bot:SECRETTOKEN-remote@example.invalid/x.git",
+            concat!("https://bot", ":SECRETTOKEN-remote@example.invalid/x.git"),
         ])
         .await?;
-        repo.git(&["config", "http.extraheader", "Authorization: SECRETHEADER-http"])
-            .await?;
-        repo.git(&["config", "credential.helper", "store --file=SECRETHELPER-credential"])
-            .await?;
         repo.git(&[
             "config",
-            "url.https://bot:SECRETREWRITE-url@example.invalid/.insteadOf",
+            "http.extraheader",
+            "Authorization: SECRETHEADER-http",
+        ])
+        .await?;
+        repo.git(&[
+            "config",
+            "credential.helper",
+            "store --file=SECRETHELPER-credential",
+        ])
+        .await?;
+        repo.git(&[
+            "config",
+            concat!(
+                "url.https://bot",
+                ":SECRETREWRITE-url@example.invalid/.insteadOf"
+            ),
             "https://example.invalid/",
         ])
         .await?;
         repo.file(
             ".git/modules/lib/config",
-            b"[remote \"origin\"]\n\turl = https://bot:SECRETSUBMODULE-config@example.invalid/lib.git\n",
+            concat!(
+                "[remote \"origin\"]\n\turl = https://bot",
+                ":SECRETSUBMODULE-config@example.invalid/lib.git\n"
+            )
+            .as_bytes(),
         )
         .await?;
         let rig = Rig::new(repo).await?;

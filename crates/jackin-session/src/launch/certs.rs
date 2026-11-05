@@ -92,6 +92,26 @@ pub(super) async fn bind(
     })
 }
 
+async fn unchanged(
+    fs: &dyn FileSystem,
+    access: &EngineAccess,
+    file: EngineCert,
+    first: &[u8],
+) -> Result<(), LaunchError> {
+    let again = read(fs, access, file).await?;
+    let same = again == first;
+    wipe(again);
+    if same {
+        Ok(())
+    } else {
+        Err(LaunchError::EngineCert {
+            file,
+            directory: access.engine.client_certs.clone(),
+            problem: EngineCertProblem::Changed,
+        })
+    }
+}
+
 pub(super) async fn read_set(
     fs: &dyn FileSystem,
     access: &EngineAccess,
@@ -105,7 +125,13 @@ pub(super) async fn read_set(
             return Err(error);
         }
     };
-    let ca = match read(fs, access, EngineCert::Ca).await {
+    let confirmed = async {
+        unchanged(fs, access, EngineCert::Cert, &cert).await?;
+        unchanged(fs, access, EngineCert::Key, &key).await?;
+        read(fs, access, EngineCert::Ca).await
+    }
+    .await;
+    let ca = match confirmed {
         Ok(ca) => ca,
         Err(error) => {
             wipe(cert);

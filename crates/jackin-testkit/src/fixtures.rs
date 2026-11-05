@@ -405,8 +405,16 @@ impl RepoFixture {
     }
 
     pub async fn linked_worktree(&self, branch: &str) -> Result<RepoFixture, FixtureError> {
+        self.linked_worktree_named(branch, "tree").await
+    }
+
+    pub async fn linked_worktree_named(
+        &self,
+        branch: &str,
+        name: &str,
+    ) -> Result<RepoFixture, FixtureError> {
         let (dir, root, _) = temp_root("jackin-worktree-")?;
-        let target = root.as_path().join("tree");
+        let target = root.as_path().join(name);
         let target_text = target.to_string_lossy().into_owned();
         self.git(&["worktree", "add", "-q", "-b", branch, &target_text])
             .await?;

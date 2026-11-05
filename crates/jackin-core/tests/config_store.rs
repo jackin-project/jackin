@@ -10,9 +10,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     Account, AccountName, Clock, Config, ConfigEdit, ConfigError, ConfigStore, CredentialSource,
-    DirEntry, EnvName, FileKind, FileLock, FileMode, FileSystem, FsError, GatewayEntry,
-    GatewayName, HostPath, LinkProblem, Platform, Provider, RegularFile, RegularFileProblem,
-    RepoPath, RoleName, RoleSource, StdFileSystem, Timestamp, Workspace, WorkspaceName,
+    DirEntry, EnvName, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError,
+    GatewayEntry, GatewayName, HostPath, LinkProblem, Platform, Provider, RegularFile,
+    RegularFileProblem, RepoPath, RoleName, RoleSource, StdFileSystem, Timestamp, Workspace,
+    WorkspaceName,
 };
 use tokio::sync::{Semaphore, oneshot};
 
@@ -305,6 +306,9 @@ impl FileSystem for CrashFs {
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
     }
+    async fn identity(&self, p: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(p).await
+    }
     async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.gate(None, d)?;
         self.inner.list(d).await
@@ -454,6 +458,9 @@ impl FileSystem for GateFs {
     }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
+    }
+    async fn identity(&self, p: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(p).await
     }
     async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.inner.list(d).await

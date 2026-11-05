@@ -5,14 +5,30 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
-    RegularFile, RegularFileProblem, RepoPath,
+    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
+    LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
+
+struct Hook {
+    file: String,
+    skip: usize,
+    action: Box<dyn FnOnce() + Send>,
+}
+
+impl std::fmt::Debug for Hook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Hook")
+            .field("file", &self.file)
+            .field("skip", &self.skip)
+            .finish_non_exhaustive()
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct RecordsCaps {
     inner: Arc<dyn FileSystem>,
     seen: Mutex<Vec<(String, usize)>>,
+    after: Mutex<Option<Hook>>,
 }
 
 impl RecordsCaps {
@@ -20,7 +36,21 @@ impl RecordsCaps {
         RecordsCaps {
             inner,
             seen: Mutex::new(Vec::new()),
+            after: Mutex::new(None),
         }
+    }
+
+    pub(crate) fn after_read(
+        &self,
+        file: &str,
+        skip: usize,
+        action: impl FnOnce() + Send + 'static,
+    ) {
+        *self.after.lock().unwrap_or_else(PoisonError::into_inner) = Some(Hook {
+            file: file.to_owned(),
+            skip,
+            action: Box::new(action),
+        });
     }
 
     pub(crate) fn seen(&self) -> Vec<(String, usize)> {
@@ -47,6 +77,9 @@ impl FileSystem for RecordsCaps {
     }
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(path).await
+    }
+    async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(path).await
     }
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.inner.list(dir).await
@@ -93,7 +126,22 @@ impl FileSystem for RecordsCaps {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((file.as_str().to_owned(), max_bytes));
-        self.inner.read_regular(root, file, max_bytes).await
+        let read = self.inner.read_regular(root, file, max_bytes).await;
+        let hook = {
+            let mut after = self.after.lock().unwrap_or_else(PoisonError::into_inner);
+            match after.as_mut() {
+                Some(hook) if hook.file == file.as_str() && hook.skip > 0 => {
+                    hook.skip -= 1;
+                    None
+                }
+                Some(hook) if hook.file == file.as_str() => after.take(),
+                _ => None,
+            }
+        };
+        if let Some(hook) = hook {
+            (hook.action)();
+        }
+        read
     }
     async fn read_link(
         &self,

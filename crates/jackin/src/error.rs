@@ -155,7 +155,9 @@ impl CommandError {
             CommandError::Argument(_) | CommandError::EnvValue { .. } => ExitClass::Usage,
             CommandError::Plan(PlanError::EnvNeeded(_))
             | CommandError::Restart(RestartError::AlreadyRunning { .. })
-            | CommandError::Purge(PurgeError::WorkNotExported { .. }) => ExitClass::Refused,
+            | CommandError::Purge(
+                PurgeError::WorkNotExported { .. } | PurgeError::Replaced { .. },
+            ) => ExitClass::Refused,
             CommandError::Cancelled(_)
             | CommandError::Usage(UsageError::Cancelled)
             | CommandError::Role(RoleError::Cancelled)

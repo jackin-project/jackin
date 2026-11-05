@@ -21,10 +21,11 @@ use jackin_core::{
 use jackin_openshell::GatewayError;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
+use unicode_normalization::UnicodeNormalization;
 
 pub use self::bundle::{BundleRefusal, EntryKind};
 use self::bundle::{Limits, MAX_HEADS};
-use self::host::{HEAD, Host, HostRefs, Update, exported_prefix};
+use self::host::{HEAD, Host, HostRefs, Update, Worktree, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
 use crate::project::{HostProject, HostProjectError, UnsupportedProject};
 use crate::service::Session;
@@ -370,8 +371,27 @@ fn classify(repository: &Repository, uncommitted: usize, refs: &HostRefs) -> Wor
     }
 }
 
-fn nested(target: &str, other: &str) -> bool {
-    target.starts_with(&format!("{other}/")) || other.starts_with(&format!("{target}/"))
+struct Named {
+    exact: String,
+    folded: String,
+}
+
+fn named(exact: String) -> Named {
+    let decomposed: String = exact.nfd().collect();
+    let folded = caseless::default_case_fold_str(&decomposed).nfd().collect();
+    Named { exact, folded }
+}
+
+fn within(parent: &str, child: &str) -> bool {
+    child
+        .strip_prefix(parent)
+        .is_some_and(|rest| rest.starts_with('/'))
+}
+
+fn related(target: &Named, other: &Named) -> bool {
+    target.folded == other.folded
+        || within(&target.folded, &other.folded)
+        || within(&other.folded, &target.folded)
 }
 
 fn clash(target: &str, other: &str) -> ExportError {
@@ -381,11 +401,11 @@ fn clash(target: &str, other: &str) -> ExportError {
     }
 }
 
-fn conflict(target: &str, existing: &[String]) -> Option<ExportError> {
+fn conflict(target: &Named, existing: &[Named]) -> Option<ExportError> {
     existing
         .iter()
-        .find(|other| nested(target, other))
-        .map(|other| clash(target, other))
+        .find(|other| other.exact != target.exact && related(target, other))
+        .map(|other| clash(&target.exact, &other.exact))
 }
 
 fn collision(
@@ -393,15 +413,20 @@ fn collision(
     repository: &Repository,
     wanted: &[(Wanted, CommitId)],
 ) -> Option<ExportError> {
-    let every: Vec<(Wanted, CommitId)> = heads(repository);
+    let every: Vec<(Wanted, Named)> = heads(repository)
+        .into_iter()
+        .map(|(item, _)| {
+            let target = named(item.target(sandbox));
+            (item, target)
+        })
+        .collect();
     wanted.iter().find_map(|(item, _)| {
-        let target = item.target(sandbox);
+        let target = named(item.target(sandbox));
         every
             .iter()
             .filter(|(other, _)| other != item)
-            .map(|(other, _)| other.target(sandbox))
-            .find(|other| *other == target || nested(&target, other))
-            .map(|other| clash(&target, &other))
+            .find(|(_, other)| related(&target, other))
+            .map(|(_, other)| clash(&target.exact, &other.exact))
     })
 }
 
@@ -616,6 +641,7 @@ impl Session {
                 observed: observed.refs.exported.get(&item.name()).cloned(),
             });
         }
+        unoccupied(host, &targets).await?;
         host.publish(self.deps.host.fs.as_ref(), updates).await?;
         let landed = host.refs(sandbox).await?;
         report(sandbox, digest, items, &header.heads, &landed)
@@ -642,17 +668,28 @@ fn require_heads(heads: &BTreeMap<String, CommitId>, items: &[Wanted]) -> Result
 }
 
 async fn guard(host: &Host<'_>, refs: &HostRefs, targets: &[String]) -> Result<(), ExportError> {
+    let existing: Vec<Named> = refs.every.iter().cloned().map(named).collect();
     if let Some(error) = targets
         .iter()
-        .find_map(|target| conflict(target, &refs.every))
+        .find_map(|target| conflict(&named(target.clone()), &existing))
     {
         return Err(error);
     }
-    let worktrees = host.worktrees().await?;
+    unoccupied(host, targets).await
+}
+
+async fn unoccupied(host: &Host<'_>, targets: &[String]) -> Result<(), ExportError> {
+    let occupied: Vec<(Named, Worktree)> = host
+        .worktrees()
+        .await?
+        .into_iter()
+        .filter_map(|tree| Some((named(tree.branch.clone()?), tree)))
+        .collect();
     for target in targets {
-        if let Some(tree) = worktrees
+        let wanted = named(target.clone());
+        if let Some((_, tree)) = occupied
             .iter()
-            .find(|tree| tree.branch.as_deref() == Some(target.as_str()))
+            .find(|(branch, _)| branch.folded == wanted.folded)
         {
             return Err(ExportError::RefCheckedOut {
                 host_ref: target.clone(),

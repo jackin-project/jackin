@@ -113,7 +113,21 @@ async fn fs_boundary_extras(fs: &dyn FileSystem, root: &HostPath) -> TestResult 
     assert_eq!(fs.stat_following(&size).await?, Some(FileKind::File));
     assert_eq!(fs.stat_following(root).await?, Some(FileKind::Dir));
     assert_eq!(fs.stat_following(&child(root, "none")?).await?, None);
-    fs.remove_file(&size).await?;
+    let first = fs.identity(&size).await?;
+    assert!(first.is_some());
+    assert_eq!(fs.identity(&size).await?, first);
+    assert_eq!(fs.identity(&child(root, "none")?).await?, None);
+    let sibling = child(root, "sibling.bin")?;
+    fs.write_new(&sibling, b"1", FileMode(0o600)).await?;
+    assert_ne!(fs.identity(&sibling).await?, first);
+    assert_ne!(fs.identity(root).await?, first);
+    let moved = child(root, "moved.bin")?;
+    fs.rename(&size, &moved).await?;
+    assert_eq!(fs.identity(&size).await?, None);
+    assert_eq!(fs.identity(&moved).await?, first);
+    fs.remove_file(&sibling).await?;
+    assert_eq!(fs.identity(&sibling).await?, None);
+    fs.remove_file(&moved).await?;
     let private = child(root, "priv/inner")?;
     fs.create_private_dir_all(&private).await?;
     assert_eq!(fs.stat(&private).await?, Some(FileKind::Dir));
@@ -222,11 +236,12 @@ async fn memfs_read_regular_returns_bytes_and_mode_and_gives_the_typed_refusal_o
     Ok(())
 }
 
-const OPS: [FsOp; 15] = [
+const OPS: [FsOp; 16] = [
     FsOp::Read,
     FsOp::Stat,
     FsOp::StatFollowing,
     FsOp::FileLen,
+    FsOp::Identity,
     FsOp::List,
     FsOp::CreateDirAll,
     FsOp::CreatePrivateDirAll,
@@ -256,6 +271,7 @@ async fn invoke(fs: &MemFs, op: FsOp, root: &HostPath, round: u32) -> Result<(),
         FsOp::Stat => fs.stat(&file).await.map(drop),
         FsOp::StatFollowing => fs.stat_following(&file).await.map(drop),
         FsOp::FileLen => fs.file_len(&file).await.map(drop),
+        FsOp::Identity => fs.identity(&file).await.map(drop),
         FsOp::List => fs.list(root).await.map(drop),
         FsOp::CreateDirAll => fs.create_dir_all(root).await,
         FsOp::CreatePrivateDirAll => fs.create_private_dir_all(root).await,

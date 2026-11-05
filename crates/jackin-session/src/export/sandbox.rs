@@ -292,23 +292,34 @@ impl Remote<'_> {
                 "refs/heads",
             ])
             .await?;
-        for line in String::from_utf8_lossy(&listed).lines() {
-            let (name, oid) = line.split_once('\0').ok_or(RemoteError::Malformed(
-                "git for-each-ref printed a line without an object name",
-            ))?;
-            let Some(branch) = name.strip_prefix(HEADS) else {
+        for line in listed.split(|byte| *byte == b'\n') {
+            if line.is_empty() {
+                continue;
+            }
+            let (name, oid) = line
+                .iter()
+                .position(|byte| *byte == 0)
+                .map(|at| (&line[..at], &line[at + 1..]))
+                .ok_or(RemoteError::Malformed(
+                    "git for-each-ref printed a line without an object name",
+                ))?;
+            let Some(branch) = name.strip_prefix(HEADS.as_bytes()) else {
                 continue;
             };
-            let tip = CommitId::parse(oid).map_err(|_| {
-                RemoteError::Malformed("git for-each-ref printed an unreadable object name")
-            })?;
-            match BranchName::parse(branch) {
-                Ok(branch) => {
+            let tip = std::str::from_utf8(oid)
+                .ok()
+                .and_then(|oid| CommitId::parse(oid).ok())
+                .ok_or(RemoteError::Malformed(
+                    "git for-each-ref printed an unreadable object name",
+                ))?;
+            match std::str::from_utf8(branch)
+                .ok()
+                .and_then(|branch| BranchName::parse(branch).ok())
+            {
+                Some(branch) => {
                     repository.branches.insert(branch, tip);
                 }
-                Err(_) => repository
-                    .unusable
-                    .push(TerminalText::sanitize(branch.as_bytes())),
+                None => repository.unusable.push(TerminalText::sanitize(branch)),
             }
         }
         Ok(repository)
@@ -357,28 +368,37 @@ impl Remote<'_> {
         let head = self
             .git(&["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"])
             .await?;
-        let mut files = if head.exit_code == 0 {
-            let patch = self
-                .require(&[
-                    "-C",
-                    root,
-                    "-c",
-                    "core.quotepath=false",
-                    "diff-index",
-                    "-p",
-                    "--no-color",
-                    "--no-ext-diff",
-                    "--no-textconv",
-                    "--find-renames",
-                    "-U3",
-                    "HEAD",
-                    "--",
-                ])
-                .await?;
-            parse_patch(&patch).map_err(RemoteError::Malformed)?
-        } else {
-            Vec::new()
+        let base = match head.exit_code {
+            0 => "HEAD".to_owned(),
+            1 => {
+                let printed = self
+                    .require(&["-C", root, "hash-object", "-t", "tree", "/dev/null"])
+                    .await?;
+                std::str::from_utf8(&printed)
+                    .map_err(|_| RemoteError::Malformed("git hash-object printed unusable output"))?
+                    .trim()
+                    .to_owned()
+            }
+            _ => return Err(failure(&head)),
         };
+        let patch = self
+            .require(&[
+                "-C",
+                root,
+                "-c",
+                "core.quotepath=false",
+                "diff-index",
+                "-p",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--find-renames",
+                "-U3",
+                &base,
+                "--",
+            ])
+            .await?;
+        let mut files = parse_patch(&patch).map_err(RemoteError::Malformed)?;
         let listed = self
             .require(&[
                 "-C",
@@ -391,12 +411,14 @@ impl Remote<'_> {
             .await?;
         let mut names = listed
             .split(|byte| *byte == 0)
-            .filter(|name| !name.is_empty())
-            .map(|name| String::from_utf8_lossy(name).into_owned());
+            .filter(|name| !name.is_empty());
         for name in names.by_ref().take(UNTRACKED_FILES) {
-            let content = self.read_untracked(root, &name).await?;
+            let content = match std::str::from_utf8(name) {
+                Ok(name) => self.read_untracked(root, name).await?,
+                Err(_) => Err(Unread::UndecodableName),
+            };
             files.push(added_file(
-                &name,
+                name,
                 content.as_deref().map_err(|unread| *unread),
             ));
         }

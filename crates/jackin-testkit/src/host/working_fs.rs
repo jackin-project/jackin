@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
-    RegularFile, RegularFileProblem, RepoPath,
+    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
+    LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
 
 use super::FakeClock;
@@ -51,6 +51,11 @@ impl FileSystem for WorkingFs {
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         let _working = self.clock.working();
         self.inner.file_len(path).await
+    }
+
+    async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        let _working = self.clock.working();
+        self.inner.identity(path).await
     }
 
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
