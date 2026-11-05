@@ -952,6 +952,7 @@ impl Gateway for FakeGateway {
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
         let _working = self.working();
         tokio::task::yield_now().await;
+        self.pause(GatewayOp::ReadFiles, None, None).await?;
         let cell = self.exec_cell(GatewayOp::ReadFiles, sandbox)?;
         let installed = self.registry().installed.clone();
         files::read_files(&cell.root(), &installed, paths).await

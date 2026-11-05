@@ -3,7 +3,9 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -45,6 +47,59 @@ pub struct AttachedTerminal {
     sandbox: SandboxName,
     supervisor: SupervisorReading,
     held: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+struct SupervisorProbe {
+    gateway: Arc<dyn Gateway>,
+    sandbox: SandboxName,
+}
+
+impl SupervisorProbe {
+    async fn read(&self) -> SupervisorReading {
+        run_state(self.gateway.as_ref(), &self.sandbox)
+            .await
+            .unwrap_or(SupervisorReading::Unreadable)
+    }
+}
+
+pub struct SupervisorReads {
+    probe: Option<SupervisorProbe>,
+    pending: Option<Pin<Box<dyn Future<Output = SupervisorReading> + Send>>>,
+}
+
+impl fmt::Debug for SupervisorReads {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SupervisorReads").finish_non_exhaustive()
+    }
+}
+
+impl SupervisorReads {
+    pub fn idle() -> SupervisorReads {
+        SupervisorReads {
+            probe: None,
+            pending: None,
+        }
+    }
+
+    pub fn begin(&mut self) {
+        if self.pending.is_none()
+            && let Some(probe) = self.probe.clone()
+        {
+            self.pending = Some(Box::pin(async move { probe.read().await }));
+        }
+    }
+
+    pub async fn finished(&mut self) -> SupervisorReading {
+        match self.pending.as_mut() {
+            Some(read) => {
+                let reading = read.await;
+                self.pending = None;
+                reading
+            }
+            None => std::future::pending().await,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -288,10 +343,22 @@ impl AttachedTerminal {
         self.session.next_event().await
     }
 
+    pub fn reads(&self) -> SupervisorReads {
+        SupervisorReads {
+            probe: Some(self.probe()),
+            pending: None,
+        }
+    }
+
+    fn probe(&self) -> SupervisorProbe {
+        SupervisorProbe {
+            gateway: Arc::clone(&self.gateway),
+            sandbox: self.sandbox.clone(),
+        }
+    }
+
     pub async fn supervisor(&self) -> SupervisorReading {
-        run_state(self.gateway.as_ref(), &self.sandbox)
-            .await
-            .unwrap_or(SupervisorReading::Unreadable)
+        self.probe().read().await
     }
 
     async fn running(&self) -> bool {

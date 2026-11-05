@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use jackin_core::{SandboxName, SupervisorReading, SupervisorState};
 use jackin_openshell::{EndReason, SessionClosed, TermSize, TerminalEvent, TerminalSession};
-use jackin_session::{AttachRequest, AttachedTerminal, ClipboardGuard, Session, ShellRequest};
+use jackin_session::{
+    AttachRequest, AttachedTerminal, ClipboardGuard, Session, ShellRequest, SupervisorReads,
+};
 
 use crate::app::App;
 use crate::error::CommandError;
@@ -52,13 +54,10 @@ impl Remote {
         matches!(self, Remote::Main(_))
     }
 
-    async fn codex_state(&self) -> Option<SupervisorState> {
+    fn supervisor_reads(&self) -> SupervisorReads {
         match self {
-            Remote::Main(terminal) => match terminal.supervisor().await {
-                SupervisorReading::Reported(state) => Some(state),
-                SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => None,
-            },
-            Remote::Shell(_) => None,
+            Remote::Main(terminal) => terminal.reads(),
+            Remote::Shell(_) => SupervisorReads::idle(),
         }
     }
 }
@@ -101,6 +100,7 @@ pub(crate) async fn pump(
         },
         Remote::Shell(_) => None,
     };
+    let mut reads = remote.supervisor_reads();
     let mut tick = pin!(clock.sleep(WATCH));
     let (reason, interrupted) = loop {
         tokio::select! {
@@ -136,7 +136,10 @@ pub(crate) async fn pump(
             },
             () = &mut tick, if watching => {
                 tick.set(clock.sleep(WATCH));
-                if let Some(state) = remote.codex_state().await {
+                reads.begin();
+            }
+            reading = reads.finished(), if watching => {
+                if let SupervisorReading::Reported(state) = reading {
                     if let SupervisorState::Exited { code, .. } = state
                         && codex != Some(state)
                     {

@@ -21,7 +21,7 @@ use jackin_openshell::{
 };
 use jackin_session::{
     AttachError, AttachRequest, AttachedTerminal, LineDelivery, RestartError, Session,
-    ShellRequest, error_chain, launch_events,
+    ShellRequest, SupervisorReads, error_chain, launch_events,
 };
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, mpsc, watch};
@@ -515,6 +515,10 @@ impl Run {
             }
         };
         let mut detaching = false;
+        let mut reads = match &terminal {
+            Terminal::Main(main) if self.agent => main.reads(),
+            Terminal::Main(_) | Terminal::Shell(_) => SupervisorReads::idle(),
+        };
         let mut watch =
             tokio::time::interval_at(tokio::time::Instant::now() + self.poll, self.poll);
         watch.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -546,10 +550,10 @@ impl Run {
                         }
                     }
                 }
-                _ = watch.tick(), if self.agent && !detaching => {
-                    if let Terminal::Main(main) = &terminal
-                        && let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
-                            main.supervisor().await
+                _ = watch.tick(), if self.agent && !detaching => reads.begin(),
+                reading = reads.finished(), if self.agent && !detaching => {
+                    if let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
+                        reading
                     {
                         self.inbox.push(LinkEvent::Exited(Some(code)));
                         return;

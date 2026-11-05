@@ -14,7 +14,7 @@ use jackin_core::{AttemptId, SupervisorState};
 use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_openshell::{InputMode, TermSize};
 use jackin_session::AttachRequest;
-use jackin_testkit::{ConsoleRig, Fault, Rig, SandboxHandle, TestResult, guard};
+use jackin_testkit::{ConsoleRig, Fault, Rig, SandboxHandle, TestResult, Trigger, guard};
 
 use super::support::Lab;
 
@@ -400,6 +400,24 @@ async fn leaving_the_capsule_detaches_codex_and_keeps_the_shell() -> TestResult 
         capsule.console().pump(5).await;
         assert!(!capsule.handle.shells()[0].closed);
         Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn a_stalled_supervisor_read_does_not_hold_back_a_detach() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        let gateway = Arc::clone(&capsule.lab.rig.world.gateway);
+        let held = Trigger::Op(GatewayOp::ReadFiles);
+        gateway.inject(Fault::HoldAt {
+            trigger: held.clone(),
+        });
+        assert!(gateway.until_held(&held).await);
+        capsule.console().keys("ctrl+b d")?;
+        let detached = capsule.pump_until(|handle| handle.attachments() == 0).await;
+        gateway.release(&held);
+        detached
     }))
     .await
 }

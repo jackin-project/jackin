@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use jackin::ExitClass;
 use jackin_core::{AttemptId, HookKind, Phase, SupervisorState, sandbox_layout};
-use jackin_testkit::{Rig, SandboxHandle, TestResult, guard};
+use jackin_openshell::GatewayOp;
+use jackin_testkit::{Fault, Rig, SandboxHandle, TestResult, Trigger, guard};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
@@ -382,6 +383,49 @@ async fn a_running_codex_never_shows_the_exit_hint() -> TestResult {
         ran.ok()?;
         assert!(!raw.raw());
         assert_eq!(hints(&ran), 0, "{:?}", ran.stderr);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_stalled_supervisor_read_never_freezes_the_terminal_or_delays_a_detach() -> TestResult {
+    guard(async {
+        let (rig, harness, handle) = running().await?;
+        let gate = Arc::new(Notify::new());
+        let (terminal, probe) = script(vec![
+            Step::Gate(Arc::clone(&gate)),
+            Step::Bytes(DETACH.to_vec()),
+        ])?;
+        let name = handle.name();
+        let cancel = CancellationToken::new();
+        let command = harness
+            .command(&["attach", name.as_str()])
+            .terminal(terminal)
+            .cancel(cancel.clone());
+        let gateway = &rig.world.gateway;
+        let held = Trigger::Op(GatewayOp::ReadFiles);
+        let (ran, driven) = tokio::join!(command.run(), async {
+            let driven = async {
+                until(|| probe.raw()).await?;
+                gateway.inject(Fault::HoldAt {
+                    trigger: held.clone(),
+                });
+                if !gateway.until_held(&held).await {
+                    return Err(Failure::from("the supervisor read was never held"));
+                }
+                gate.notify_one();
+                until(|| handle.attachments() == 0).await
+            }
+            .await;
+            gateway.release(&held);
+            if driven.is_err() {
+                cancel.cancel();
+            }
+            driven
+        });
+        driven?;
+        ran?.ok()?;
         Ok(())
     })
     .await
