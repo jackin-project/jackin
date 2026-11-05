@@ -368,28 +368,37 @@ impl Remote<'_> {
         let head = self
             .git(&["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"])
             .await?;
-        let mut files = if head.exit_code == 0 {
-            let patch = self
-                .require(&[
-                    "-C",
-                    root,
-                    "-c",
-                    "core.quotepath=false",
-                    "diff-index",
-                    "-p",
-                    "--no-color",
-                    "--no-ext-diff",
-                    "--no-textconv",
-                    "--find-renames",
-                    "-U3",
-                    "HEAD",
-                    "--",
-                ])
-                .await?;
-            parse_patch(&patch).map_err(RemoteError::Malformed)?
-        } else {
-            Vec::new()
+        let base = match head.exit_code {
+            0 => "HEAD".to_owned(),
+            1 => {
+                let printed = self
+                    .require(&["-C", root, "hash-object", "-t", "tree", "/dev/null"])
+                    .await?;
+                std::str::from_utf8(&printed)
+                    .map_err(|_| RemoteError::Malformed("git hash-object printed unusable output"))?
+                    .trim()
+                    .to_owned()
+            }
+            _ => return Err(failure(&head)),
         };
+        let patch = self
+            .require(&[
+                "-C",
+                root,
+                "-c",
+                "core.quotepath=false",
+                "diff-index",
+                "-p",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--find-renames",
+                "-U3",
+                &base,
+                "--",
+            ])
+            .await?;
+        let mut files = parse_patch(&patch).map_err(RemoteError::Malformed)?;
         let listed = self
             .require(&[
                 "-C",
