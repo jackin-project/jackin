@@ -15,6 +15,7 @@ const TOKEN: &str = "SECRET_TOKEN_MINIMAX";
 const PATH: &str = "/v1/token_plan/remains";
 const REMAINS: &str = include_str!("../fixtures/minimax/token_plan_remains.json");
 const NO_END: &str = include_str!("../fixtures/minimax/token_plan_no_end.json");
+const NO_END_SECONDS: &str = include_str!("../fixtures/minimax/token_plan_no_end_seconds.json");
 const STATES: &str = include_str!("../fixtures/minimax/token_plan_states.json");
 const ERROR: &str = include_str!("../fixtures/minimax/token_plan_error.json");
 const OVER: &str = include_str!("../fixtures/minimax/token_plan_over.json");
@@ -104,6 +105,24 @@ async fn without_an_end_time_the_remaining_time_gives_the_reset_port_fidelity() 
                 Some(42.0),
                 Left::Percent(58.0),
                 Some(1_767_243_600),
+            )],
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_remaining_time_of_a_day_in_seconds_is_not_read_as_milliseconds() -> TestResult {
+    guard(async {
+        assert_windows(
+            &outcome(NO_END_SECONDS).await?,
+            &[want(
+                WindowKind::FiveHour,
+                "5-hour",
+                Some(42.0),
+                Left::Percent(58.0),
+                Some(1_767_225_600 + 86_400),
             )],
         );
         Ok(())
