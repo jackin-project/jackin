@@ -52,10 +52,10 @@ Start the final stage `FROM construct`. `construct` is the base image that jacki
 ```dockerfile
 FROM construct
 
-USER 0
+USER root
 RUN --mount=type=bind,source=tools,target=/mnt/tools \
     install -D -m 0755 -o root -g root /mnt/tools/my-tool /usr/local/bin/my-tool
-USER 1000
+USER sandbox
 ```
 
 Jackin checks these rules before it builds:
