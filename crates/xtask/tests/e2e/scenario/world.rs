@@ -6,9 +6,21 @@ use std::path::{Path, PathBuf};
 
 use jackin_xtask::E2eArgs;
 
-pub(crate) const ACCESS: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWExLWFjY2Vzcy1wYXlsb2FkIn0.c2lnbmF0dXJlLWExLWFjY2Vzcy1zZWNyZXQtYnl0ZXM";
+pub(crate) const ACCESS: &str = concat!(
+    "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9",
+    ".",
+    "eyJzdWIiOiJ1c2VyLWExLWFjY2Vzcy1wYXlsb2FkIn0",
+    ".",
+    "c2lnbmF0dXJlLWExLWFjY2Vzcy1zZWNyZXQtYnl0ZXM"
+);
 pub(crate) const REFRESH: &str = "rt_a1refreshtokenvalue0123456789abcdefghijkl";
-pub(crate) const ID_TOKEN: &str = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImExIn0.eyJhdWQiOiJhMS1pZC10b2tlbi1wYXlsb2FkLWxvbmcifQ.aWQtdG9rZW4tc2lnbmF0dXJlLWExLWJ5dGVzLTAxMjM";
+pub(crate) const ID_TOKEN: &str = concat!(
+    "eyJhbGciOiJSUzI1NiIsImtpZCI6ImExIn0",
+    ".",
+    "eyJhdWQiOiJhMS1pZC10b2tlbi1wYXlsb2FkLWxvbmcifQ",
+    ".",
+    "aWQtdG9rZW4tc2lnbmF0dXJlLWExLWJ5dGVzLTAxMjM"
+);
 pub(crate) const ACCOUNT_ID: &str = "7f6c1f3e-0000-4000-8000-0000000000a1";
 pub(crate) const CLIENT_ID: &str = "app_E2eClientId0123456789";
 

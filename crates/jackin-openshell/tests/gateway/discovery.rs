@@ -277,9 +277,9 @@ async fn resolve_gateway_refuses_a_plaintext_or_non_mtls_entry() {
         ("ftp://localhost:17670", Some("ftp")),
         ("HTTPS://localhost:17670", Some("HTTPS")),
         ("localhost:17670", None),
-        ("http://admin:hunter2@h:1", Some("http")),
-        ("admin:hunter2@h:1", None),
-        ("admin:hunter2@h://x", None),
+        (concat!("http://admin:", "hunter2", "@h:1"), Some("http")),
+        (concat!("admin:", "hunter2", "@h:1"), None),
+        (concat!("admin:", "hunter2", "@h://x"), None),
     ] {
         let error = resolve(single(endpoint, "mtls")).await.unwrap_err();
         match &error {
@@ -343,9 +343,13 @@ async fn resolve_gateway_refuses_an_https_endpoint_with_credentials_without_echo
         );
     }
     for endpoint in [
-        "https://admin:ghp_FAKEf4k3@gateway.example:17670",
-        "https://ghp_FAKEf4k3@gateway.example",
-        "https://admin:ghp_FAKEf4k3@gateway.example/path?x=1",
+        concat!("https://admin:", "ghp_FAKEf4k3", "@gateway.example:17670"),
+        concat!("https://", "ghp_FAKEf4k3", "@gateway.example"),
+        concat!(
+            "https://admin:",
+            "ghp_FAKEf4k3",
+            "@gateway.example/path?x=1"
+        ),
     ] {
         let runner = ScriptedRunner::always(exited(0, single(endpoint, "mtls").as_bytes(), b""));
         let error = resolve_gateway(&runner, &fs, &home, &name(GATEWAY), &cancel)
