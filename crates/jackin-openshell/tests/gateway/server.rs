@@ -84,6 +84,12 @@ pub(crate) enum Broken {
 
 pub(crate) type ProfileHook = Box<dyn FnMut(&mut State) + Send>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Paging {
+    Finite,
+    Cycling,
+}
+
 pub(crate) struct State {
     pub(crate) sandboxes: BTreeMap<Key, Sandbox>,
     pub(crate) providers: BTreeMap<Key, Provider>,
@@ -93,6 +99,7 @@ pub(crate) struct State {
     pub(crate) faults: HashMap<&'static str, Fault>,
     pub(crate) rpc_count: usize,
     pub(crate) page_cap: usize,
+    pub(crate) paging: Paging,
     pub(crate) store_labels: bool,
     pub(crate) store_environment: bool,
     pub(crate) known_images: Option<HashSet<String>>,
@@ -182,6 +189,7 @@ fn fresh_state() -> State {
         faults: HashMap::new(),
         rpc_count: 0,
         page_cap: 2,
+        paging: Paging::Finite,
         store_labels: true,
         store_environment: true,
         known_images: None,

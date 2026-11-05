@@ -22,9 +22,10 @@ use super::exec_rpc::{
 };
 use super::harness::{Env, WORKSPACE, connect, env, guard, wait_until};
 use super::server::ExecCtx;
-use super::support::{SANDBOX, add_sandbox, sandbox_name};
+use super::support::{SANDBOX, add_sandbox, every_window_has_a_symbol, sandbox_name};
 
-const SENTINEL: &str = "Zq7#Xv9!Lm2@Hk4wP";
+const SENTINEL: &str = "Zq#7X!v9@Lm$2H%k4";
+const _: () = assert!(every_window_has_a_symbol(SENTINEL));
 
 fn path(text: &str) -> SandboxPath {
     SandboxPath::parse(text).unwrap()

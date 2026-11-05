@@ -79,15 +79,30 @@ fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
     Ok(())
 }
 
+fn read_write_argument(paths: &[String]) -> Result<Option<String>, ImageError> {
+    for path in paths {
+        let safe = path.starts_with('/')
+            && path
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'));
+        if !safe {
+            return Err(ImageError::ReadWritePath { path: path.clone() });
+        }
+    }
+    Ok((!paths.is_empty()).then(|| build_arg("READ_WRITE_PATHS", &paths.join(":"))))
+}
+
 pub(crate) fn derived_arguments(
     agent: Agent,
     docker: DockerLayer,
+    read_write: &[String],
 ) -> Result<Vec<String>, ImageError> {
     let spec = agent.spec();
     let mut args = vec![
         build_arg("CODEX_VERSION", spec.install.version),
         build_arg("CODEX_BIN_DIR", parent_directory(&spec.binary)),
     ];
+    args.extend(read_write_argument(read_write)?);
     for platform in PLATFORMS {
         let target = install_target(agent, platform)?;
         let name = format!(
@@ -104,7 +119,7 @@ pub(crate) fn derived_arguments(
 
 impl ImageKey {
     pub fn derive(request: &ImageRequest, construct: &ImageId) -> Result<ImageKey, ImageError> {
-        let derived_args = derived_arguments(request.agent, request.docker)?;
+        let derived_args = derived_arguments(request.agent, request.docker, &request.read_write)?;
         Ok(ImageKey::compute(request, &derived_args, construct))
     }
 
@@ -127,6 +142,7 @@ impl ImageKey {
             platform,
             builder: _,
             docker,
+            read_write: _,
             rebuild: _,
         } = request;
         let SourceFile {

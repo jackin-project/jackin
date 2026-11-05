@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Sha256;
-use jackin_image::ContextEntry;
+use jackin_image::{ContextEntry, ImageError};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs;
@@ -101,6 +101,7 @@ fn base() -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: Vec::new(),
         rebuild: Rebuild::No,
     })
 }
@@ -414,6 +415,56 @@ fn derived_args_with(
 }
 
 #[test]
+fn the_read_write_paths_of_the_policy_reach_the_derived_build_only_when_safe() -> TestResult {
+    let derived =
+        |paths: &[&str]| -> Result<Result<BTreeMap<String, String>, ImageError>, Box<dyn Error>> {
+            let mut request = base()?;
+            request.read_write = paths.iter().map(|path| (*path).to_owned()).collect();
+            Ok(match ImagePlan::new(&request) {
+                Ok(plan) => Ok(build_arg_map(
+                    &plan.final_builds(&construct_id()?).derived.args,
+                )?),
+                Err(error) => Err(error),
+            })
+        };
+    let none = derived(&[])?.map_err(|error| error.to_string())?;
+    assert!(!none.contains_key("READ_WRITE_PATHS"));
+    let some = derived(&["/sandbox", "/tmp"])?.map_err(|error| error.to_string())?;
+    assert_eq!(some["READ_WRITE_PATHS"], "/sandbox:/tmp");
+    for unsafe_path in ["/sand box", "/a:b", "/x\ny", "relative", "/semi;colon"] {
+        assert!(
+            matches!(
+                derived(&[unsafe_path])?,
+                Err(ImageError::ReadWritePath { .. })
+            ),
+            "{unsafe_path:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn derived_scan_stage_hands_the_policy_read_write_paths_to_the_scan() -> TestResult {
+    let all = stages(&instructions(derived_text()?));
+    let scan = stage_named(&all, "scan")?;
+    assert!(
+        scan.lines.iter().any(|line| line == "ARG READ_WRITE_PATHS"),
+        "{:?}",
+        scan.lines
+    );
+    let run = scan
+        .lines
+        .iter()
+        .find(|line| line.starts_with("RUN "))
+        .ok_or("no scan RUN")?;
+    assert!(
+        run.contains(r#"for rw in $READ_WRITE_PATHS; do set -- "$@" --read-write "$rw"; done"#),
+        "{run}"
+    );
+    Ok(())
+}
+
+#[test]
 fn derived_build_args_come_from_the_codex_row() -> TestResult {
     let spec = Agent::Codex.spec();
     let arm = derived_args(Platform::LinuxArm64)?;
@@ -557,7 +608,8 @@ fn derived_dockerfile_installs_what_the_codex_row_describes() -> TestResult {
     let spec = Agent::Codex.spec();
     let text = derived_text()?;
     let lines = instructions(text);
-    let wanted: BTreeSet<String> = ARG_NAMES.iter().map(|name| (*name).to_owned()).collect();
+    let mut wanted: BTreeSet<String> = ARG_NAMES.iter().map(|name| (*name).to_owned()).collect();
+    wanted.insert("READ_WRITE_PATHS".to_owned());
     assert_eq!(declared_args(&lines), wanted, "declared ARG names");
     let adds = archive_stage_adds(&lines);
     for target in spec.install.targets {

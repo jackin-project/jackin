@@ -15,6 +15,7 @@ use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 
 use super::harness::{WORKSPACE, connect, env, guard};
 use super::sandbox_rpc::CREATED_MILLIS;
+use super::server::Paging;
 use super::support::{
     IMAGE_DIGEST, LAUNCH, SANDBOX, add_sandbox, create_spec, planned, policy, policy_text,
     sandbox_name, set_conditions,
@@ -675,4 +676,31 @@ async fn a_managed_sandbox_with_an_invalid_label_is_listed_without_that_label() 
             .is_err(),
         "a single-sandbox lookup still refuses invalid labels"
     );
+}
+
+#[tokio::test]
+async fn a_gateway_that_cycles_its_page_tokens_fails_the_listing_at_the_first_repeat() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    {
+        let mut state = env.server.state();
+        state.paging = Paging::Cycling;
+        add_sandbox(
+            &mut state,
+            WORKSPACE,
+            "jackin-s1",
+            SandboxPhase::Ready,
+            None,
+            &[("jackin.dev/managed", "true")],
+        );
+    }
+    let error = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("repeated a page token"),
+        "{error}"
+    );
+    let asked = env.server.state().rpc_count;
+    assert!(asked < 10, "{asked} requests before the cycle was seen");
 }

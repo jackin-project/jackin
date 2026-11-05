@@ -11,9 +11,11 @@ use tonic::Code;
 
 use super::harness::{WORKSPACE, connect, env, guard};
 use super::server::{Fault, State};
+use super::support::every_window_has_a_symbol;
 
-const ACCESS: &str = "Zq7#Xv9!Lm2@Hk4wP";
-const REFRESH: &str = "Rt5$Bn8%Qw3&Jd6yS";
+const ACCESS: &str = "Zq#7X!v9@Lm$2H%k4";
+const REFRESH: &str = "Rt&5B$n8%Qw#3J!d6";
+const _: () = assert!(every_window_has_a_symbol(ACCESS) && every_window_has_a_symbol(REFRESH));
 const ACCOUNT_ID: &str = "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9";
 const PROVIDER: &str = "jackin-work-codex";
 

@@ -4,9 +4,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use jackin_core::{
-    BranchName, CommitId, EnvName, SandboxName, SandboxPath, TerminalText, sandbox_layout,
-};
+use jackin_core::{BranchName, CommitId, SandboxName, SandboxPath, TerminalText, sandbox_layout};
 
 use super::diff::{ChangedFile, Unread, added_file, parse_patch};
 use jackin_openshell::{Gateway, GatewayError, ProgramOutcome, ProgramRun, ProgramStdin};
@@ -144,9 +142,6 @@ impl Remote<'_> {
         program: &SandboxPath,
         args: Vec<String>,
     ) -> Result<ProgramOutcome, GatewayError> {
-        let env = EnvName::parse("LC_ALL")
-            .map(|name| BTreeMap::from([(name, "C".to_owned())]))
-            .unwrap_or_default();
         self.gateway
             .run_program(
                 &ProgramRun {
@@ -154,7 +149,7 @@ impl Remote<'_> {
                     program: program.clone(),
                     args,
                     workdir: Some(sandbox_layout::PROJECT.clone()),
-                    env,
+                    env: ProgramRun::c_locale(),
                     stdin: ProgramStdin::Closed,
                     touch_on_success: None,
                     timeout,

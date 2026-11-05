@@ -101,6 +101,7 @@ impl Fixture {
             platform: Platform::LinuxArm64,
             builder: BuilderName::parse("orbstack")?,
             docker: DockerLayer::Absent,
+            read_write: Vec::new(),
             rebuild: Rebuild::No,
         })
     }

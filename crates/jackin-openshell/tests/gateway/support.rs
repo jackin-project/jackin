@@ -18,6 +18,21 @@ use openshell_sdk::raw::proto::{ObjectMeta, Sandbox, SandboxPhase, SandboxStatus
 use super::sandbox_rpc::condition;
 use super::server::State;
 
+pub(crate) const fn every_window_has_a_symbol(secret: &str) -> bool {
+    let bytes = secret.as_bytes();
+    let mut start = 0;
+    while start + 3 <= bytes.len() {
+        if bytes[start].is_ascii_alphanumeric()
+            && bytes[start + 1].is_ascii_alphanumeric()
+            && bytes[start + 2].is_ascii_alphanumeric()
+        {
+            return false;
+        }
+        start += 1;
+    }
+    true
+}
+
 pub(crate) const LAUNCH: &str = "01hzy3k5m7p9r2t4v6w8x0abcd";
 pub(crate) const IMAGE_DIGEST: &str =
     "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";

@@ -107,6 +107,7 @@ fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: Vec::new(),
         rebuild: Rebuild::No,
     };
     let id = ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
@@ -328,6 +329,21 @@ impl Fixture {
 
     fn scan(&self) -> Result<Outcome, Box<dyn Error>> {
         self.run(&self.arguments())
+    }
+
+    fn scan_read_write(&self, paths: &[&str]) -> Result<Outcome, Box<dyn Error>> {
+        let mut args = self.arguments();
+        let image = self.top.join("image").display().to_string();
+        let at = args
+            .iter()
+            .position(|arg| *arg == image)
+            .ok_or("the arguments hold no image root")?;
+        let flags: Vec<String> = paths
+            .iter()
+            .flat_map(|path| ["--read-write".to_owned(), (*path).to_owned()])
+            .collect();
+        args.splice(at..at, flags);
+        self.run(&args)
     }
 
     fn move_aside(&self, path: &str) -> Result<PathBuf, Box<dyn Error>> {
@@ -1423,5 +1439,52 @@ fn scan_refuses_every_codex_system_layer_path_the_role_image_holds() -> TestResu
             out.stderr
         );
     }
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_read_write_path_that_is_or_crosses_a_symlink() -> TestResult {
+    let crossing = |path: &str, at: &str| {
+        format!("read_write path of the role policy is or crosses a symlink: {path} (at {at})")
+    };
+    let fx = Fixture::new()?;
+    fx.dir("/sandbox/work", 0o755)?;
+    fx.dir("/tmp", 0o1777)?;
+    let out = fx.scan_read_write(&["/sandbox/work", "/tmp", "/sandbox/not-created-yet"])?;
+    assert!(
+        out.ok,
+        "real directories and a missing path pass: {}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.dir("/usr/local/bin", 0o755)?;
+    fx.dir("/sandbox", 0o755)?;
+    symlink("/usr/local/bin", fx.image("/sandbox/tools"))?;
+    let out = fx.scan_read_write(&["/sandbox/tools"])?;
+    assert!(
+        !out.ok && out.lines() == [crossing("/sandbox/tools", "/sandbox/tools")],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.dir("/usr/share/data", 0o755)?;
+    symlink("/usr/share", fx.image("/srv"))?;
+    let out = fx.scan_read_write(&["/srv/data"])?;
+    assert!(
+        !out.ok && out.lines() == [crossing("/srv/data", "/srv")],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    symlink("/nonexistent", fx.image("/dangling"))?;
+    let out = fx.scan_read_write(&["/dangling"])?;
+    assert!(
+        !out.ok && out.lines() == [crossing("/dangling", "/dangling")],
+        "a dangling link counts: {}",
+        out.stderr
+    );
     Ok(())
 }

@@ -325,6 +325,7 @@ pub fn plan_image(
         platform: entry.platform,
         builder: entry.builder.clone(),
         docker: layer,
+        read_write: role.policy().document().read_write_paths(),
         rebuild,
     })
 }

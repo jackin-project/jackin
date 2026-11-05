@@ -254,6 +254,14 @@ pub struct ProgramRun {
     pub timeout: Duration,
 }
 
+impl ProgramRun {
+    pub fn c_locale() -> BTreeMap<EnvName, String> {
+        EnvName::parse("LC_ALL")
+            .map(|name| BTreeMap::from([(name, "C".to_owned())]))
+            .unwrap_or_default()
+    }
+}
+
 #[derive(Debug)]
 pub enum ProgramStdin {
     Closed,

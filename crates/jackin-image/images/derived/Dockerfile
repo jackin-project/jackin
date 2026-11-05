@@ -4,6 +4,7 @@ ARG CODEX_VERSION
 ARG CODEX_BIN_DIR
 ARG CODEX_SHA256_ARM64
 ARG CODEX_SHA256_AMD64
+ARG READ_WRITE_PATHS=
 ARG DOCKER_LAYER=absent
 ARG DOCKER_CLI_VERSION
 ARG DOCKER_BUILDX_VERSION
@@ -140,6 +141,7 @@ COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/hooks/s
 
 FROM construct AS scan
 ARG CODEX_BIN_DIR
+ARG READ_WRITE_PATHS
 
 USER root
 COPY scan /jackin-scan
@@ -161,6 +163,11 @@ RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
         --absent /etc/codex/rules \
         --absent /etc/codex/agents \
         --absent /etc/codex/skills \
+    ; if [ -n "$READ_WRITE_PATHS" ]; then \
+        old_ifs=$IFS; IFS=:; set -f; \
+        for rw in $READ_WRITE_PATHS; do set -- "$@" --read-write "$rw"; done; \
+        set +f; IFS=$old_ifs; \
+    fi \
     ; extra= \
     ; if [ -e /trusted-docker/usr/local/bin/docker ]; then \
         for path in /usr/local/bin/docker /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-compose; do \
