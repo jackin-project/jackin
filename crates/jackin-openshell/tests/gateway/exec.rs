@@ -9,8 +9,8 @@ use std::time::Duration;
 
 use jackin_core::{EnvName, FileMode, OutputStream, SandboxName, SandboxPath, SecretBytes};
 use jackin_openshell::{
-    EndReason, Gateway, GatewayError, GatewayOp, ProgramRun, ProgramStdin, SandboxFile, TermSize,
-    TerminalEvent, TerminalKind, TerminalRequest,
+    EndReason, Gateway, GatewayError, GatewayOp, InputLease, ProgramRun, ProgramStdin, SandboxFile,
+    TermSize, TerminalEvent, TerminalKind, TerminalRequest,
 };
 use openshell_sdk::raw::proto::{SandboxPhase, exec_sandbox_input};
 use tempfile::TempDir;
@@ -580,6 +580,10 @@ async fn shell_terminal_stream_shape_and_raw_output() {
     assert_eq!(
         guard(session.next_event()).await,
         Some(TerminalEvent::Attached)
+    );
+    assert_eq!(
+        guard(session.next_event()).await,
+        Some(TerminalEvent::Lease(InputLease::Owner))
     );
     guard(session.input(b"echo hi\n".to_vec())).await.unwrap();
     let big: Vec<u8> = (0..10_000_u32)

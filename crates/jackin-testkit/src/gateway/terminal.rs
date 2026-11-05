@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use jackin_core::ProcessStatus;
 use jackin_openshell::{
-    EndReason, GatewayError, TermSize, TerminalCommand, TerminalDriver, TerminalEvent,
+    EndReason, GatewayError, InputLease, TermSize, TerminalCommand, TerminalDriver, TerminalEvent,
     TerminalKind, TerminalSession,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
@@ -169,8 +169,13 @@ async fn pump_shell(
     let mut stdin = child.stdin.take();
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
-    if events.send(TerminalEvent::Attached).await.is_err() {
-        return;
+    for event in [
+        TerminalEvent::Attached,
+        TerminalEvent::Lease(InputLease::Owner),
+    ] {
+        if events.send(event).await.is_err() {
+            return;
+        }
     }
     let mut out = vec![0_u8; CHUNK];
     let mut err = vec![0_u8; CHUNK];

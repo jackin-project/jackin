@@ -16,7 +16,7 @@ use super::Inner;
 use super::program::exec_start;
 use crate::error::{GatewayError, GatewayOp, Missing};
 use crate::terminal::{
-    EndReason, TermSize, TerminalCommand, TerminalDriver, TerminalEvent, TerminalKind,
+    EndReason, InputLease, TermSize, TerminalCommand, TerminalDriver, TerminalEvent, TerminalKind,
     TerminalRequest, TerminalSession,
 };
 
@@ -112,7 +112,10 @@ async fn shell_task(
         mut commands,
         events,
     } = driver;
-    let mut queue: VecDeque<TerminalEvent> = VecDeque::from([TerminalEvent::Attached]);
+    let mut queue: VecDeque<TerminalEvent> = VecDeque::from([
+        TerminalEvent::Attached,
+        TerminalEvent::Lease(InputLease::Owner),
+    ]);
     let mut exited = false;
     let mut ended = false;
     loop {
