@@ -6,6 +6,7 @@ mod contract;
 mod ended;
 mod exec;
 mod faults;
+mod guard;
 mod holds;
 mod lifecycle;
 mod power;

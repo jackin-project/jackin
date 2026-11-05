@@ -42,14 +42,9 @@ process:
   run_as_group: sandbox
 ";
 
-const GUARD: Duration = Duration::from_secs(10);
 const WAIT: Duration = Duration::from_secs(3);
 
-pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
-    tokio::time::timeout(GUARD, work)
-        .await
-        .map_err(|_| "the test hung for 10 s")?
-}
+pub(crate) use jackin_testkit::guard;
 
 pub(crate) fn fake() -> Result<FakeGateway, Box<dyn Error>> {
     let fake = FakeGateway::new(
