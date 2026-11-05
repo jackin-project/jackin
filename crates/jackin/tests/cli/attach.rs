@@ -264,8 +264,14 @@ async fn a_lone_escape_key_reaches_the_sandbox_before_any_later_input() -> TestR
             .cancel(cancel.clone());
         let (ran, driven) = tokio::join!(command.run(), async {
             let seen = async {
-                until(|| probe.raw()).await?;
-                until(|| handle.main_input() == b"\x1b").await?;
+                until(|| probe.raw())
+                    .await
+                    .map_err(|_| Failure::from("the terminal never entered raw mode"))?;
+                until(|| handle.main_input() == b"\x1b")
+                    .await
+                    .map_err(|_| {
+                        Failure::from("the lone ESC byte never reached the sandbox main input")
+                    })?;
                 gate.notify_one();
                 Ok::<_, Failure>(())
             }
