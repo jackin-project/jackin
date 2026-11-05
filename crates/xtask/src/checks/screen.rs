@@ -37,6 +37,13 @@ const KEYWORDS_BEFORE_PATH: [&str; 13] = [
     "const",
 ];
 
+const KEYWORDS_BEFORE_ARRAY: [&str; 13] = [
+    "in", "return", "mut", "else", "break", "let", "const", "ref", "dyn", "impl", "if", "while",
+    "match",
+];
+
+const SILENCING_ATTRIBUTES: [&str; 2] = ["allow", "expect"];
+
 const RATATUI_ALLOWED: [&[&str]; 4] = [
     &["Frame"],
     &["layout", "Rect"],
@@ -77,6 +84,8 @@ impl Check for ScreenCheck {
             scanned = true;
             let tokens = lex_rust(file.text()).tokens;
             violations.extend(import_violations(file.path(), &tokens));
+            violations.extend(index_violations(file.path(), &tokens));
+            violations.extend(silencing_violations(file.path(), &tokens));
             violations.extend(literal_violations(
                 file.path(),
                 &tokens,
@@ -348,6 +357,91 @@ fn import_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
                     ),
                 ));
             }
+        }
+    }
+    violations
+}
+
+fn test_modules(tokens: &[Token]) -> Vec<Range<usize>> {
+    (0..tokens.len())
+        .filter_map(|index| cfg_test_module(tokens, index))
+        .collect()
+}
+
+fn is_index_open(tokens: &[Token], index: usize) -> bool {
+    if !tokens[index].is_punct('[') || index == 0 {
+        return false;
+    }
+    let before = &tokens[index - 1];
+    before.is_punct(')')
+        || before.is_punct(']')
+        || before.is_punct('?')
+        || before
+            .ident()
+            .is_some_and(|ident| !KEYWORDS_BEFORE_ARRAY.contains(&ident))
+}
+
+fn is_range_index(tokens: &[Token], open: usize) -> bool {
+    let close = closing(tokens, open).min(tokens.len());
+    let mut depth = 0usize;
+    for index in open + 1..close {
+        let token = &tokens[index];
+        if ['(', '[', '{'].iter().any(|c| token.is_punct(*c)) {
+            depth += 1;
+        } else if [')', ']', '}'].iter().any(|c| token.is_punct(*c)) {
+            depth = depth.saturating_sub(1);
+        } else if depth == 0
+            && token.is_punct('.')
+            && tokens.get(index + 1).is_some_and(|next| next.is_punct('.'))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
+    let tests = test_modules(tokens);
+    (0..tokens.len())
+        .filter(|index| is_index_open(tokens, *index) && !is_range_index(tokens, *index))
+        .filter(|index| !tests.iter().any(|range| range.contains(index)))
+        .map(|index| {
+            Violation::at_line(
+                CiStep::Screen,
+                path,
+                tokens[index].line,
+                "C1: indexes with [..]; indexing a ratatui Buffer draws a cell, and jackin-tui draws nothing",
+            )
+        })
+        .collect()
+}
+
+fn silencing_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
+    let mut violations = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        if !token.is_punct('#') {
+            continue;
+        }
+        let open = if tokens.get(index + 1).is_some_and(|t| t.is_punct('!')) {
+            index + 2
+        } else {
+            index + 1
+        };
+        if !tokens.get(open).is_some_and(|t| t.is_punct('[')) {
+            continue;
+        }
+        let attribute = &tokens[open..=closing(tokens, open).min(tokens.len() - 1)];
+        let silences = attribute
+            .iter()
+            .any(|t| SILENCING_ATTRIBUTES.iter().any(|name| t.is_ident(name)))
+            && attribute.iter().any(|t| t.is_ident("disallowed_methods"));
+        if silences {
+            violations.push(Violation::at_line(
+                CiStep::Screen,
+                path,
+                token.line,
+                "C1: silences clippy::disallowed_methods; the ban on ratatui drawing methods cannot be allowed or expected in jackin-tui",
+            ));
         }
     }
     violations
