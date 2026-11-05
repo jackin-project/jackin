@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jackin_core::{
-    AccountName, Config, ConfigEdit, CredentialSource, EnvName, GatewayName, ProviderName,
+    AccountName, ChatgptAccountId, Config, ConfigEdit, CredentialSource, EnvName, GatewayName,
+    ProviderName,
 };
 use jackin_openshell::GatewayOp;
 use jackin_session::{
@@ -16,6 +17,8 @@ use jackin_testkit::{
     FakeGateway, Fault, FixtureError, Outcome, Rig, ScriptedConnector, TestResult, Trigger, guard,
 };
 use tokio_util::sync::CancellationToken;
+
+use super::support::{ACCOUNT_ID, Home, login_json};
 
 fn work() -> Result<AccountName, FixtureError> {
     Ok(AccountName::parse("work")?)
@@ -148,6 +151,38 @@ async fn a_launch_planned_before_the_login_became_a_key_fails_and_creates_no_pro
             "{refused:?}"
         );
         assert_nothing_created(&rig);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_launch_planned_before_the_account_changed_fails_even_when_its_provider_is_already_there()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let plan = rig.plan(2)?;
+        let other = Home::new(&login_json()).await?;
+        edit(
+            &rig,
+            ConfigEdit::SetAccountCredential {
+                account: work()?,
+                credential: CredentialSource::CodexLogin {
+                    home: other.path.clone(),
+                    chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+                },
+            },
+        )
+        .await?;
+
+        let refused = refusal(&rig, launch(&rig, plan).await)?;
+
+        assert!(
+            matches!(&refused, AccountError::Changed { account } if account.as_str() == "work"),
+            "{refused:?}"
+        );
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
         Ok(())
     })
     .await

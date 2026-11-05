@@ -602,6 +602,15 @@ impl Session {
         Ok(true)
     }
 
+    pub(crate) async fn confirm_current(
+        &self,
+        account: &Account,
+        cancel: &CancellationToken,
+    ) -> Result<(), AccountError> {
+        drop(self.hold_current(account, cancel).await?);
+        Ok(())
+    }
+
     async fn hold_current(
         &self,
         account: &Account,

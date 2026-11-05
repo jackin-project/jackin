@@ -193,7 +193,14 @@ impl Inputs {
     pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
         let _turn = self.refresh_gate.lock().await;
         let config = self.reloaded().await?;
-        let fleet = read_fleet(&self.sessions, &config, self.limits, &self.work).await;
+        let fleet = read_fleet(
+            &self.sessions,
+            &config,
+            self.limits,
+            &self.work,
+            self.host.clock.now().0,
+        )
+        .await;
         Ok(self.observation(&config, fleet).await)
     }
 
@@ -338,36 +345,42 @@ impl Inputs {
     }
 
     async fn role_docs(&self, config: &Config) -> RoleDocs {
-        let wanted: Vec<(RoleName, CoreRoleSource)> = {
-            let cache = locked(&self.docs);
+        let read = join_all(
             config
                 .roles()
-                .filter(|(name, entry)| cache.get(*name).is_none_or(|(s, _)| *s != entry.source))
-                .map(|(name, entry)| (name.clone(), entry.source.clone()))
-                .collect()
-        };
-        let loaded = join_all(wanted.into_iter().map(|(name, source)| async move {
-            let doc = match &source {
-                CoreRoleSource::Path(path) => {
-                    match self.roles.load_path(path, &CancellationToken::new()).await {
-                        Ok(role) => Ok(manifest_doc(role.manifest())),
-                        Err(error) => match self.roles.read_manifest(path).await {
+                .filter_map(|(name, entry)| match &entry.source {
+                    CoreRoleSource::Path(path) => Some(async move {
+                        let doc = match self.roles.read_manifest(path).await {
                             Ok(manifest) => Ok(manifest_doc(&manifest)),
-                            Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
-                        },
-                    }
-                }
-                CoreRoleSource::Git { .. } => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
-            };
-            (name, (source, doc))
-        }))
+                            Err(findings) => Err(RoleDocError::Unreadable(
+                                findings
+                                    .first()
+                                    .map(ToString::to_string)
+                                    .unwrap_or_default(),
+                            )),
+                        };
+                        (name.clone(), doc)
+                    }),
+                    CoreRoleSource::Git { .. } => None,
+                }),
+        )
         .await;
         let mut cache = locked(&self.docs);
-        cache.extend(loaded);
-        cache.retain(|name, _| config.role(name).is_some());
-        cache
-            .iter()
-            .map(|(name, (_, doc))| (name.clone(), doc.clone()))
-            .collect()
+        cache.retain(|name, (source, _)| {
+            config
+                .role(name)
+                .is_some_and(|entry| entry.source == *source)
+        });
+        let mut docs: RoleDocs = read.into_iter().collect();
+        for (name, entry) in config.roles() {
+            if matches!(entry.source, CoreRoleSource::Git { .. }) {
+                let doc = cache.get(name).map_or(
+                    Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
+                    |(_, doc)| doc.clone(),
+                );
+                docs.insert(name.clone(), doc);
+            }
+        }
+        docs
     }
 }

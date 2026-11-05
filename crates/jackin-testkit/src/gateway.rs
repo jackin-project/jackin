@@ -349,6 +349,10 @@ impl FakeGateway {
         self.registry().installed.insert(path.clone(), bytes);
     }
 
+    pub fn peak_inspections(&self) -> u32 {
+        self.registry().peak_inspecting
+    }
+
     pub fn bake_file(&self, path: &SandboxPath, bytes: Vec<u8>) {
         self.registry().baked.insert(path.clone(), bytes);
     }
@@ -810,6 +814,7 @@ impl Gateway for FakeGateway {
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
+        let _gauge = Inspecting::enter(self);
         tokio::task::yield_now().await;
         self.pause(GatewayOp::Detail, None, None).await?;
         let cell = self.cell(GatewayOp::Detail, name)?;
@@ -1077,5 +1082,23 @@ impl Gateway for FakeGateway {
 fn already_running() -> GatewayError {
     GatewayError::FailedPrecondition {
         message: "start sandbox failed: VM sandbox is already running generation".to_owned(),
+    }
+}
+
+struct Inspecting<'a>(&'a FakeGateway);
+
+impl<'a> Inspecting<'a> {
+    fn enter(gateway: &'a FakeGateway) -> Inspecting<'a> {
+        let mut registry = gateway.registry();
+        registry.inspecting += 1;
+        registry.peak_inspecting = registry.peak_inspecting.max(registry.inspecting);
+        drop(registry);
+        Inspecting(gateway)
+    }
+}
+
+impl Drop for Inspecting<'_> {
+    fn drop(&mut self) {
+        self.0.registry().inspecting -= 1;
     }
 }

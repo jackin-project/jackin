@@ -57,8 +57,7 @@ fn round_trip_emits_no_edit() -> Out {
         let config = Config::parse(&text)?;
         let shown = snapshot(&config);
         for workspace in &shown.workspaces {
-            let edits =
-                persist::workspace(&config, Some(workspace), workspace, &Resolved::default())?;
+            let edits = persist::workspace(Some(workspace), workspace, &Resolved::default())?;
             assert_eq!(edits, Vec::new(), "workspace {}", workspace.name);
         }
         assert_eq!(persist::global(&shown.global, &shown.global)?, Vec::new());
@@ -77,7 +76,7 @@ fn unrepresentable_field_is_named() -> Out {
     let base = shown.workspaces[0].clone();
     let mut payload = base.clone();
     payload.keep_awake = true;
-    let result = persist::workspace(&config, Some(&base), &payload, &Resolved::default());
+    let result = persist::workspace(Some(&base), &payload, &Resolved::default());
     assert!(
         matches!(
             result,
@@ -127,7 +126,7 @@ fn env_goes_to_its_own_scope() -> Out {
         .get_mut("sentinel")
         .ok_or("role env")?
         .push(EnvVar::plain("MODE", "slow"));
-    let edits = persist::workspace(&config, Some(&base), &payload, &Resolved::default())?;
+    let edits = persist::workspace(Some(&base), &payload, &Resolved::default())?;
     let alpha = WorkspaceName::parse("alpha")?;
     let set = |scope: EnvScope,
                name: &str,
@@ -161,7 +160,7 @@ fn env_refuses_a_secret_reference() -> Out {
     payload
         .env
         .push(EnvVar::plain("TOKEN_X", "op://Dev/OpenAI/credential"));
-    let result = persist::workspace(&config, Some(&base), &payload, &Resolved::default());
+    let result = persist::workspace(Some(&base), &payload, &Resolved::default());
     assert!(matches!(result, Err(PersistError::Value(_))), "{result:?}");
     Ok(())
 }
@@ -227,7 +226,7 @@ fn a_rename_with_new_roles_and_a_new_default_applies_cleanly() -> Out {
     payload.roles.allowed =
         jackin_console::domain::workspace::AllowedRoles::Custom(vec!["other".to_owned()]);
     payload.roles.default = Some("other".to_owned());
-    let edits = persist::workspace(&config, Some(&base), &payload, &Resolved::default())?;
+    let edits = persist::workspace(Some(&base), &payload, &Resolved::default())?;
     for edit in edits {
         config.apply(edit)?;
     }
@@ -249,7 +248,7 @@ fn a_rename_keeps_what_another_handle_wrote_after_the_read() -> Out {
     let base = shown.workspaces[0].clone();
     let mut payload = base.clone();
     payload.name = "alpha2".to_owned();
-    let edits = persist::workspace(&stale, Some(&base), &payload, &Resolved::default())?;
+    let edits = persist::workspace(Some(&base), &payload, &Resolved::default())?;
     let alpha = WorkspaceName::parse("alpha")?;
     let mut newer = stale.clone();
     newer.apply(ConfigEdit::SetWorkspaceDocker {
@@ -272,5 +271,31 @@ fn a_rename_keeps_what_another_handle_wrote_after_the_read() -> Out {
         moved.env.keys().any(|key| key.as_str() == "LATE"),
         "the other handle's env was dropped"
     );
+    Ok(())
+}
+
+#[test]
+fn a_default_role_set_by_another_handle_after_the_read_does_not_block_a_role_change() -> Out {
+    let original = Config::parse(&shapes()[1])?;
+    let alpha = WorkspaceName::parse("alpha")?;
+    let mut stale = original.clone();
+    stale.apply(ConfigEdit::SetWorkspaceDefaultRole {
+        workspace: alpha.clone(),
+        role: None,
+    })?;
+    let shown = snapshot(&stale);
+    let base = shown.workspaces[0].clone();
+    assert_eq!(base.roles.default, None);
+    let mut payload = base.clone();
+    payload.roles.allowed =
+        jackin_console::domain::workspace::AllowedRoles::Custom(vec!["other".to_owned()]);
+    payload.roles.default = Some("other".to_owned());
+    let edits = persist::workspace(Some(&base), &payload, &Resolved::default())?;
+    let mut newer = original;
+    for edit in edits {
+        newer.apply(edit)?;
+    }
+    let saved = newer.workspace(&alpha).ok_or("alpha")?;
+    assert_eq!(saved.default_role, Some(RoleName::parse("other")?));
     Ok(())
 }

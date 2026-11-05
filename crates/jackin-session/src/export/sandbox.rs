@@ -362,9 +362,28 @@ impl Remote<'_> {
         &self,
         repository: &Repository,
     ) -> Result<(Vec<ChangedFile>, usize), RemoteError> {
-        let root = repository.checkouts.first().ok_or(RemoteError::Malformed(
-            "git worktree list printed no checkout",
-        ))?;
+        if repository.checkouts.is_empty() {
+            return Err(RemoteError::Malformed(
+                "git worktree list printed no checkout",
+            ));
+        }
+        let mut files = Vec::new();
+        let mut more = 0;
+        for (index, root) in repository.checkouts.iter().enumerate() {
+            let (found, rest) = self.changes_in(root).await?;
+            more += rest;
+            files.extend(found.into_iter().map(|file| {
+                if index == 0 {
+                    file
+                } else {
+                    in_checkout(root, file)
+                }
+            }));
+        }
+        Ok((files, more))
+    }
+
+    async fn changes_in(&self, root: &str) -> Result<(Vec<ChangedFile>, usize), RemoteError> {
         let head = self
             .git(&["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"])
             .await?;
@@ -496,4 +515,10 @@ impl Remote<'_> {
             Err(failure(&outcome))
         }
     }
+}
+
+fn in_checkout(root: &str, mut file: ChangedFile) -> ChangedFile {
+    let name = root.rsplit('/').next().unwrap_or(root);
+    file.path = TerminalText::sanitize(format!("{name}/{}", file.path).as_bytes());
+    file
 }

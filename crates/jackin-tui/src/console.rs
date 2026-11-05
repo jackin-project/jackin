@@ -190,7 +190,7 @@ fn reduced_motion(env: &EnvSnapshot) -> bool {
     EnvName::parse(NO_MOTION)
         .ok()
         .and_then(|name| env.get(&name).map(str::to_owned))
-        .is_some_and(|value| !value.trim_start_matches('0').is_empty())
+        .is_some_and(|value| !value.is_empty() && value != "0")
 }
 
 pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {

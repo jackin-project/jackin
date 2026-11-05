@@ -262,7 +262,7 @@ impl Inputs {
             project,
             folders: BTreeMap::new(),
         };
-        let edits = persist::workspace(&config, base, workspace, &resolved)?;
+        let edits = persist::workspace(base, workspace, &resolved)?;
         let saved = self.applied(&config, edits).await?;
         let name = WorkspaceName::parse(&workspace.name).map_err(PersistError::from)?;
         if let Some(old) = base.filter(|b| b.name != workspace.name) {

@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::boundary::{FileKind, FileSystem, FsError};
+use crate::boundary::{FileIdentity, FileKind, FileSystem, FsError};
 use crate::display::plain;
 pub(crate) const PROJECT_PATH: &str = "/sandbox/project";
 
@@ -23,7 +23,10 @@ pub struct SandboxPath(Cow<'static, str>);
 pub struct RepoPath(String);
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-pub struct ProjectRoot(HostPath);
+pub struct ProjectRoot {
+    path: HostPath,
+    identity: FileIdentity,
+}
 
 #[derive(Debug, Error)]
 pub enum PathError {
@@ -87,7 +90,7 @@ impl fmt::Display for RepoPath {
 
 impl fmt::Display for ProjectRoot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        self.path.fmt(f)
     }
 }
 
@@ -200,16 +203,28 @@ impl ProjectRoot {
             return Err(PathError::NotADirectory(path.clone()));
         }
         let git = path.join_name(".git");
-        match fs.stat(&git).await? {
-            None => Err(PathError::NotAGitWorkTree(path.clone())),
-            Some(FileKind::Dir) => Ok(ProjectRoot(path.clone())),
-            Some(FileKind::File) => Ok(ProjectRoot(path.clone())),
-            Some(_) => Err(PathError::UnsupportedGitEntry(path.clone())),
+        let marker = fs.stat(&git).await?;
+        match marker {
+            None => return Err(PathError::NotAGitWorkTree(path.clone())),
+            Some(FileKind::Dir | FileKind::File) => {}
+            Some(_) => return Err(PathError::UnsupportedGitEntry(path.clone())),
         }
+        let identity = fs
+            .identity(path)
+            .await?
+            .ok_or_else(|| PathError::NotADirectory(path.clone()))?;
+        Ok(ProjectRoot {
+            path: path.clone(),
+            identity,
+        })
     }
 
     pub fn path(&self) -> &HostPath {
-        &self.0
+        &self.path
+    }
+
+    pub fn identity(&self) -> FileIdentity {
+        self.identity
     }
 }
 

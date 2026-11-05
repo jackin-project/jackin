@@ -303,3 +303,51 @@ async fn recovered_gateway_shows_healthy() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn the_sandbox_reads_of_one_gateway_stay_within_the_read_limit() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        for launch in 1..=6 {
+            rig.launch(launch).await?;
+        }
+        rig.world.seed_all(&rig.config).await?;
+        let mut console = ConsoleRig::builder(&rig.world).build().await?;
+        assert_eq!(statuses(&mut console).len(), 6);
+        let peak = rig.gateway().peak_inspections();
+        assert!(peak >= 2, "the reads never overlapped: {peak}");
+        assert!(peak <= 4, "{peak} sandbox reads ran at once");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_work_state_read_long_ago_is_read_again_although_the_sandbox_is_unchanged() -> TestResult
+{
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        rig.handle(1).await?.exit_codex(0);
+        let gateway = Arc::clone(&rig.world.gateway);
+        let program = || gateway.calls(GatewayOp::Program);
+        let before = program();
+        let mut console = ConsoleRig::seeded(&rig).await?;
+        console.skip_intro();
+        let one_read = program() - before;
+        assert!(one_read > 0, "the exited sandbox is read at start");
+
+        refresh(&mut console).await?;
+        assert_eq!(program() - before, one_read, "a fresh read is kept");
+
+        console.elapse(600);
+        refresh(&mut console).await?;
+        assert_eq!(
+            program() - before,
+            2 * one_read,
+            "a stale read is made again"
+        );
+        Ok(())
+    })
+    .await
+}

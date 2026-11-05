@@ -140,6 +140,8 @@ pub(super) struct Registry {
     pub(super) put_fails_after_write: Option<GatewayError>,
     pub(super) delete_fails_after_write: Option<GatewayError>,
     pub(super) calls: HashMap<GatewayOp, u32>,
+    pub(super) inspecting: u32,
+    pub(super) peak_inspecting: u32,
 }
 
 impl Registry {
@@ -173,6 +175,8 @@ impl Registry {
             put_fails_after_write: None,
             delete_fails_after_write: None,
             calls: HashMap::new(),
+            inspecting: 0,
+            peak_inspecting: 0,
         }
     }
 

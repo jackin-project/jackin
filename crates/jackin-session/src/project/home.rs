@@ -222,12 +222,24 @@ impl<'a> HostProject<'a> {
     ) -> Result<HostProject<'a>, HostProjectError> {
         let git = HostGit::unauthenticated(deps.host.runner.as_ref(), project.path(), cancel);
         let fs = deps.host.fs.as_ref();
+        HostProject::refuse_replaced(fs, project).await?;
         let location = locate(&git, fs).await?;
         belongs(&git, fs, project.path(), &location).await?;
         Ok(HostProject {
             discovered: git,
             location,
         })
+    }
+
+    pub(crate) async fn refuse_replaced(
+        fs: &dyn FileSystem,
+        project: &ProjectRoot,
+    ) -> Result<(), HostProjectError> {
+        if fs.identity(project.path()).await? == Some(project.identity()) {
+            Ok(())
+        } else {
+            Err(UnsupportedProject::RootReplaced(project.path().clone()).into())
+        }
     }
 
     pub(crate) fn git(&self) -> HostGit<'_> {

@@ -317,24 +317,29 @@ impl Run<'_> {
             .await
             .map_err(|error| failed(LaunchStep::Provider, error))?;
         self.live()?;
+        let account = self.plan.account_entry();
+        let stale = |source: AccountError| match source {
+            AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
+            other => failed(
+                LaunchStep::Provider,
+                LaunchError::ProviderUnavailable {
+                    account: account.name().clone(),
+                    source: Box::new(other),
+                },
+            ),
+        };
         if state == ProviderState::Present {
+            self.session
+                .confirm_current(account, self.cancel)
+                .await
+                .map_err(stale)?;
             self.tracker.skip(SkipReason::ProviderPresent);
         } else {
-            let account = self.plan.account_entry();
             let synced = self
                 .session
                 .sync_if_absent(account, name, self.cancel)
                 .await
-                .map_err(|source| match source {
-                    AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
-                    other => failed(
-                        LaunchStep::Provider,
-                        LaunchError::ProviderUnavailable {
-                            account: account.name().clone(),
-                            source: Box::new(other),
-                        },
-                    ),
-                })?;
+                .map_err(stale)?;
             if !synced {
                 self.tracker.skip(SkipReason::ProviderPresent);
             }

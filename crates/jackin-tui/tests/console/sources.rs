@@ -12,7 +12,9 @@ use jackin_console::domain::agent::Provider as ConsoleProvider;
 use jackin_console::domain::reason::{Found, IssueReason};
 use jackin_console::domain::vocabulary::{Rejection, Vocabulary};
 use jackin_core::{CredentialSource, Provider};
-use jackin_testkit::{ACCOUNT_ID, ProcessReply, ScriptedProgram, TestResult, guard};
+use jackin_testkit::{
+    ACCESS, ACCOUNT_ID, ProcessReply, REFRESH, ScriptedProgram, TestResult, guard,
+};
 
 use super::support::{CANARY, Lab};
 
@@ -144,6 +146,12 @@ async fn saving_a_codex_folder_through_the_form_checks_it_and_stores_the_login()
             saved.credential(),
             CredentialSource::CodexLogin { chatgpt_account_id, .. } if chatgpt_account_id.as_str() == ACCOUNT_ID
         ));
+        for secret in [ACCESS, REFRESH] {
+            let screen = lab.console.screen();
+            assert!(!screen.contains(secret), "{screen}");
+            let text = lab.console.config_text().await?;
+            assert!(!text.contains(secret), "{text}");
+        }
         Ok(())
     })
     .await

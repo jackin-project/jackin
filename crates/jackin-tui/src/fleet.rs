@@ -68,8 +68,12 @@ impl Fleet {
 
 #[derive(Debug, Default)]
 pub struct WorkCache {
-    entries: Mutex<BTreeMap<(GatewayName, SandboxName), (WorkKey, WorkState)>>,
+    entries: Mutex<BTreeMap<(GatewayName, SandboxName), Cached>>,
 }
+
+type Cached = (WorkKey, i64, WorkState);
+
+const WORK_FRESH_SECS: i64 = 120;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct WorkKey {
@@ -79,17 +83,17 @@ struct WorkKey {
 }
 
 impl WorkCache {
-    fn get(&self, at: &(GatewayName, SandboxName), key: &WorkKey) -> Option<WorkState> {
+    fn get(&self, at: &(GatewayName, SandboxName), key: &WorkKey, now: i64) -> Option<WorkState> {
         let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         entries
             .get(at)
-            .filter(|(cached, _)| cached == key)
-            .map(|(_, state)| state.clone())
+            .filter(|(cached, read_at, _)| cached == key && now - read_at < WORK_FRESH_SECS)
+            .map(|(_, _, state)| state.clone())
     }
 
-    fn put(&self, at: (GatewayName, SandboxName), key: WorkKey, state: WorkState) {
+    fn put(&self, at: (GatewayName, SandboxName), key: WorkKey, now: i64, state: WorkState) {
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.insert(at, (key, state));
+        entries.insert(at, (key, now, state));
     }
 
     fn keep_seen(&self, fleet: &Fleet) {
@@ -149,6 +153,7 @@ pub async fn read_fleet(
     config: &Config,
     limits: ConsoleLimits,
     cache: &WorkCache,
+    now: i64,
 ) -> Fleet {
     let readings = join_all(
         sessions
@@ -158,7 +163,7 @@ pub async fn read_fleet(
                 match reached {
                     Reached::Down(error) => unreadable(&name, error.to_string()),
                     Reached::Up(session) => {
-                        read_gateway(&name, &session, config, limits, cache).await
+                        read_gateway(&name, &session, config, limits, (cache, now)).await
                     }
                 }
             }),
@@ -193,7 +198,7 @@ async fn read_gateway(
     session: &Session,
     config: &Config,
     limits: ConsoleLimits,
-    cache: &WorkCache,
+    (cache, now): (&WorkCache, i64),
 ) -> (GatewayReading, Vec<ObservedSandbox>, usize) {
     let deadline = limits.connect_deadline;
     let listing = match within(deadline, session.list()).await {
@@ -202,19 +207,24 @@ async fn read_gateway(
         None => return unreadable(name, TimedOut(Waited(deadline)).to_string()),
     };
     let unreadable = listing.unreadable.len();
+    let slots = Semaphore::new(limits.work_reads.get());
     let inspected = join_all(
         listing
             .sandboxes
             .into_iter()
-            .map(|summary| inspect(session, summary, deadline)),
+            .map(|summary| inspect(session, summary, deadline, &slots)),
     )
     .await;
-    let slots = Semaphore::new(limits.work_reads.get());
-    let works = join_all(
-        inspected
-            .iter()
-            .map(|sandbox| read_work(name, session, config, sandbox, deadline, (cache, &slots))),
-    )
+    let works = join_all(inspected.iter().map(|sandbox| {
+        read_work(
+            name,
+            session,
+            config,
+            sandbox,
+            deadline,
+            (cache, &slots, now),
+        )
+    }))
     .await;
     let sandboxes = inspected
         .into_iter()
@@ -244,8 +254,18 @@ async fn read_gateway(
     )
 }
 
-async fn inspect(session: &Session, summary: SandboxSummary, deadline: Duration) -> Inspected {
-    let supervisor = if summary.phase == Phase::Ready {
+async fn inspect(
+    session: &Session,
+    summary: SandboxSummary,
+    deadline: Duration,
+    slots: &Semaphore,
+) -> Inspected {
+    let slot = if summary.phase == Phase::Ready {
+        slots.acquire().await.ok()
+    } else {
+        None
+    };
+    let supervisor = if slot.is_some() {
         within(deadline, session.inspect(&summary.name))
             .await
             .and_then(Result::ok)
@@ -265,20 +285,20 @@ async fn read_work(
     config: &Config,
     sandbox: &Inspected,
     deadline: Duration,
-    (cache, slots): (&WorkCache, &Semaphore),
+    (cache, slots, now): (&WorkCache, &Semaphore, i64),
 ) -> Option<WorkState> {
     if !sandbox.needs_work() {
         return None;
     }
     let at = (gateway.clone(), sandbox.summary.name.clone());
     let key = sandbox.work_key();
-    if let Some(state) = cache.get(&at, &key) {
+    if let Some(state) = cache.get(&at, &key, now) {
         return Some(state);
     }
     let _slot = slots.acquire().await.ok()?;
     let state = within(deadline, session.work_state(config, &sandbox.summary.name)).await?;
     if !matches!(state, WorkState::Unknown(_)) {
-        cache.put(at, key, state.clone());
+        cache.put(at, key, now, state.clone());
     }
     Some(state)
 }
