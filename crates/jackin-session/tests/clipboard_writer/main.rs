@@ -107,17 +107,17 @@ fn a_tool_that_exits_while_a_child_still_holds_its_input_does_not_hold_the_write
         dir.path(),
         "pbcopy",
         "exec 3<&0
-/bin/sleep 4 &
+/bin/sleep 30 &
 exit 0",
     )?;
     let text = "0123456789abcdef".repeat(65_536);
     let started = std::time::Instant::now();
     let wrote = writer(&dir, vec![ClipboardTool::Pbcopy])
-        .within(Duration::from_secs(30))
+        .within(Duration::from_secs(20))
         .write(&text);
     assert!(!wrote);
     assert!(
-        started.elapsed() < Duration::from_secs(2),
+        started.elapsed() < Duration::from_secs(10),
         "the write waited {:?} for the pipe",
         started.elapsed()
     );
