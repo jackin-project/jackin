@@ -315,3 +315,19 @@ async fn read_regular_returns_at_most_the_cap_plus_one_byte_and_keeps_every_refu
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn a_lock_file_that_is_a_symlink_is_refused_and_creates_no_target() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let lock = at(&dir, "usage.json.lock")?;
+    let target = dir.path().join("elsewhere");
+    std::os::unix::fs::symlink(&target, lock.as_path())?;
+    let refused = fs.lock(&lock).await;
+    assert!(matches!(refused, Err(FsError::Io { .. })), "{refused:?}");
+    assert!(
+        !target.exists(),
+        "the lock followed the link and created its target"
+    );
+    Ok(())
+}

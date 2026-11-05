@@ -102,7 +102,7 @@ impl Http {
                 .map_err(|_| ProviderError::Decode("the request body could not be encoded"))?;
             request = request.header(CONTENT_TYPE, "application/json").body(bytes);
         }
-        let response = request.send().await.map_err(transport)?;
+        let mut response = request.send().await.map_err(transport)?;
         let status = response.status();
         let retry_after = retry_after_seconds(&response);
         match status {
@@ -116,7 +116,6 @@ impl Http {
             other if !other.is_success() => return Err(ProviderError::Status(other.as_u16())),
             _ => {}
         }
-        let mut response = response;
         let too_large = ProviderError::Decode("the response is larger than 1 MiB");
         if response
             .content_length()

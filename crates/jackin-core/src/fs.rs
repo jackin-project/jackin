@@ -98,6 +98,7 @@ fn lock_file(path: &Path) -> io::Result<Result<File, ()>> {
         .create(true)
         .truncate(false)
         .mode(0o600)
+        .custom_flags(OFlags::NOFOLLOW.bits().cast_signed())
         .open(path)?;
     match file.try_lock() {
         Ok(()) => Ok(Ok(file)),

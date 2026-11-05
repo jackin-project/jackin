@@ -3,6 +3,7 @@
 
 use jackin_testkit::guard;
 use std::io::ErrorKind;
+use std::time::Duration;
 
 use jackin_core::{FileMode, FileSystem, FsError, Provider, Timestamp};
 use jackin_testkit::{FsOp, Held, Method, Route};
@@ -12,8 +13,8 @@ use jackin_usage::{
 };
 
 use crate::support::{
-    CODEX_PATH, T0, TestResult, UsageHarness, codex_body, codex_login, codex_route, host_path,
-    unavailable, windows_of,
+    AUTH_CHATGPT, CODEX_HOME, CODEX_PATH, CODEX_TOKEN, T0, TestResult, UsageHarness, codex_body,
+    codex_login, codex_route, host_path, unavailable, windows_of,
 };
 
 async fn start(used: u32) -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {
@@ -640,6 +641,55 @@ async fn a_stale_save_does_not_bring_back_a_removed_entry() -> TestResult {
         return Err(format!("the removed entry came back: {:?}", usage.outcome).into());
     }
     Ok(())
+}
+
+#[tokio::test]
+async fn a_failed_run_never_replaces_the_newer_report_of_another_run() -> TestResult {
+    guard(async {
+        let (harness, codex) = start(10).await?;
+        harness.one(&codex, Refresh::Cached).await?;
+        let newer_token = format!("{CODEX_TOKEN}_NEWER");
+        harness.server.replace(
+            Provider::Codex,
+            Method::Get,
+            CODEX_PATH,
+            Route::status(500)
+                .requires_header("authorization", &format!("Bearer {CODEX_TOKEN}"))
+                .requires_header("chatgpt-account-id", "acct-1")
+                .delayed(Duration::from_secs(2)),
+        );
+        harness.server.serve(
+            Provider::Codex,
+            Method::Get,
+            CODEX_PATH,
+            Route::json(200, &codex_body(70))
+                .requires_header("authorization", &format!("Bearer {newer_token}"))
+                .requires_header("chatgpt-account-id", "acct-1"),
+        );
+        let (first, second) = (harness.host(), harness.host());
+        let slow = harness.report_on(&first, std::slice::from_ref(&codex), Refresh::Force);
+        let fast = async {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            harness.advance(100);
+            let login = format!("{CODEX_HOME}/auth.json");
+            harness.fs.remove_file(&host_path(&login)).await?;
+            harness
+                .put(&login, &AUTH_CHATGPT.replace(CODEX_TOKEN, &newer_token))
+                .await?;
+            harness
+                .report_on(&second, std::slice::from_ref(&codex), Refresh::Force)
+                .await?;
+            Ok::<(), Box<dyn std::error::Error>>(())
+        };
+        let (slow, fast) = tokio::join!(slow, fast);
+        slow?;
+        fast?;
+        harness.advance(1);
+        let usage = harness.one(&codex, Refresh::Cached).await?;
+        assert!((used_of(&usage) - 70.0).abs() < f64::EPSILON, "{usage:?}");
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]
