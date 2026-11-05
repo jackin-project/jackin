@@ -438,27 +438,25 @@ fn construct_tag_depends_on_the_platform_only() -> TestResult {
 #[test]
 fn construct_dockerfile_pins_its_base_image_by_digest() -> TestResult {
     let text = std::str::from_utf8(CONSTRUCT_DOCKERFILE)?;
-    let registry = "nvcr.io/";
-    let pinned = "nvidia/base/ubuntu:24.04@sha256:";
     let mut count = 0;
-    for (index, _) in text.match_indices(registry) {
+    for line in text.lines().filter(|l| l.starts_with("ARG BASE_IMAGE=")) {
         count += 1;
-        let rest = &text[index + registry.len()..];
-        let digest = rest.strip_prefix(pinned).ok_or_else(|| {
-            format!(
-                "occurrence {count} is not pinned: {}",
-                &rest[..40.min(rest.len())]
-            )
-        })?;
-        let hex: String = digest.chars().take(64).collect();
+        let value = &line["ARG BASE_IMAGE=".len()..];
+        let (name, digest) = value
+            .split_once("@sha256:")
+            .ok_or_else(|| format!("occurrence {count} is not pinned: {value}"))?;
         assert!(
-            hex.len() == 64
-                && hex
+            name.starts_with("debian:") && name.len() > "debian:".len(),
+            "occurrence {count} is not a tagged debian image: {name:?}"
+        );
+        assert!(
+            digest.len() == 64
+                && digest
                     .chars()
                     .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
-            "occurrence {count} has a bad digest {hex:?}"
+            "occurrence {count} has a bad digest {digest:?}"
         );
     }
-    assert!(count >= 1, "no nvcr.io reference");
+    assert!(count >= 1, "no ARG BASE_IMAGE line");
     Ok(())
 }
