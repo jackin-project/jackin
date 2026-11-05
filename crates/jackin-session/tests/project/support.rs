@@ -196,7 +196,12 @@ impl Rig {
             "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n",
             home.as_path().display(),
             role.root().as_path().display(),
-            at.as_path().display(),
+            at.as_path()
+                .display()
+                .to_string()
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('\n', "\\n"),
         ))?;
         world.seed_config(&config).await?;
         let project = ProjectRoot::open(&StdFileSystem::default(), at).await?;

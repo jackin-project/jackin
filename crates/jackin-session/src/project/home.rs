@@ -154,12 +154,7 @@ async fn submodule(
     if top.status != ProcessStatus::Exited(0) {
         return Ok(false);
     }
-    let line = top
-        .stdout
-        .split(|byte| *byte == b'\n')
-        .next()
-        .unwrap_or(&[]);
-    Ok(real(fs, line).await?.as_ref() == Some(root))
+    Ok(real(fs, without_newline(&top.stdout)).await?.as_ref() == Some(root))
 }
 
 async fn belongs(
@@ -195,29 +190,32 @@ async fn directory(fs: &dyn FileSystem, bytes: &[u8]) -> Result<HostPath, HostPr
         .ok_or_else(|| unusable("the git directory does not exist"))
 }
 
-async fn locate(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Location, HostProjectError> {
+fn without_newline(bytes: &[u8]) -> &[u8] {
+    bytes.strip_suffix(b"\n").unwrap_or(bytes)
+}
+
+async fn resolved(
+    git: &HostGit<'_>,
+    fs: &dyn FileSystem,
+    flag: &str,
+) -> Result<HostPath, HostProjectError> {
     let output = git
         .capture(
             Pace::Quick,
-            words(&[
-                "rev-parse",
-                "--path-format=absolute",
-                "--git-common-dir",
-                "--absolute-git-dir",
-            ]),
+            words(&["rev-parse", "--path-format=absolute", flag]),
             Vec::new(),
         )
         .await?;
     if output.status != ProcessStatus::Exited(0) {
         return Err(failure(&output));
     }
-    let mut lines = output.stdout.split(|byte| *byte == b'\n');
-    let (Some(common), Some(own)) = (lines.next(), lines.next()) else {
-        return Err(unusable("rev-parse printed too few lines"));
-    };
+    directory(fs, without_newline(&output.stdout)).await
+}
+
+async fn locate(git: &HostGit<'_>, fs: &dyn FileSystem) -> Result<Location, HostProjectError> {
     Ok(Location {
-        git_dir: directory(fs, common).await?,
-        own_dir: directory(fs, own).await?,
+        git_dir: resolved(git, fs, "--git-common-dir").await?,
+        own_dir: resolved(git, fs, "--absolute-git-dir").await?,
     })
 }
 
