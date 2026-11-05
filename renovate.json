@@ -39,7 +39,7 @@
         "/^hk\\.pkl$/"
       ],
       "matchStrings": [
-        "hk@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+        "download/v(?<currentValue>\\d+\\.\\d+\\.\\d+)/hk@\\d+\\.\\d+\\.\\d+#"
       ],
       "depNameTemplate": "jdx/hk",
       "datasourceTemplate": "github-releases",
