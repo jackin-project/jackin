@@ -12,6 +12,7 @@ publish.workspace = true
 
 [dependencies]
 async-trait = { workspace = true }
+caseless = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 flate2 = { workspace = true }
 jackin-core = { workspace = true }

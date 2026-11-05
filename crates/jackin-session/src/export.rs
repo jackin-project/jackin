@@ -25,7 +25,7 @@ use unicode_normalization::UnicodeNormalization;
 
 pub use self::bundle::{BundleRefusal, EntryKind};
 use self::bundle::{Limits, MAX_HEADS};
-use self::host::{HEAD, Host, HostRefs, Update, exported_prefix};
+use self::host::{HEAD, Host, HostRefs, Update, Worktree, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
 use crate::project::{HostProject, HostProjectError, UnsupportedProject};
 use crate::service::Session;
@@ -377,7 +377,8 @@ struct Named {
 }
 
 fn named(exact: String) -> Named {
-    let folded = exact.chars().flat_map(char::to_lowercase).nfd().collect();
+    let decomposed: String = exact.nfd().collect();
+    let folded = caseless::default_case_fold_str(&decomposed).nfd().collect();
     Named { exact, folded }
 }
 
@@ -678,11 +679,17 @@ async fn guard(host: &Host<'_>, refs: &HostRefs, targets: &[String]) -> Result<(
 }
 
 async fn unoccupied(host: &Host<'_>, targets: &[String]) -> Result<(), ExportError> {
-    let worktrees = host.worktrees().await?;
+    let occupied: Vec<(Named, Worktree)> = host
+        .worktrees()
+        .await?
+        .into_iter()
+        .filter_map(|tree| Some((named(tree.branch.clone()?), tree)))
+        .collect();
     for target in targets {
-        if let Some(tree) = worktrees
+        let wanted = named(target.clone());
+        if let Some((_, tree)) = occupied
             .iter()
-            .find(|tree| tree.branch.as_deref() == Some(target.as_str()))
+            .find(|(branch, _)| branch.folded == wanted.folded)
         {
             return Err(ExportError::RefCheckedOut {
                 host_ref: target.clone(),
