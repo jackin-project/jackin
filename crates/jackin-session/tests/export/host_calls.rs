@@ -80,7 +80,10 @@ async fn every_host_git_call_is_hardened_and_the_import_carries_its_memory_pins(
                 .cloned()
         };
         let named: Vec<Option<String>> = discovery.iter().map(flags).collect();
-        assert!(!named.is_empty() && named.len() % 2 == 0, "{named:?}");
+        assert!(
+            !named.is_empty() && named.len().is_multiple_of(2),
+            "{named:?}"
+        );
         for pair in named.chunks(2) {
             assert_eq!(
                 pair,
