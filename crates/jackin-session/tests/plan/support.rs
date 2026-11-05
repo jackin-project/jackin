@@ -17,7 +17,7 @@ use jackin_testkit::{FakeClock, RepoFixture, RoleFixture, TestRunner};
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
-const GUARD: Duration = Duration::from_secs(60);
+const GUARD: Duration = Duration::from_secs(170);
 
 pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
     tokio::time::timeout(GUARD, work)

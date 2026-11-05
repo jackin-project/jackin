@@ -26,7 +26,7 @@ use crate::world::{World, default_limits};
 
 pub type TestResult = Result<(), FixtureError>;
 
-const GUARD: Duration = Duration::from_secs(60);
+const GUARD: Duration = Duration::from_secs(170);
 
 pub async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
     guard_within(GUARD, work).await

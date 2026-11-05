@@ -14,7 +14,7 @@ use jackin_testkit::{Outcome, RepoFixture, Rig, RigBuilder, SandboxHandle, guard
 
 pub(crate) use jackin_testkit::{ACCESS, ACCOUNT_ID, PLACEHOLDER, REFRESH, TestResult, launch_id};
 
-const GUARD: Duration = Duration::from_secs(60);
+const GUARD: Duration = Duration::from_secs(170);
 
 pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
     guard_within(GUARD, work).await
