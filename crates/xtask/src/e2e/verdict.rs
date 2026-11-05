@@ -59,11 +59,6 @@ impl StepId {
         ];
         LABELS[self as usize]
     }
-
-    #[must_use]
-    pub fn in_sandbox(self) -> bool {
-        !matches!(self, StepId::J01 | StepId::J02 | StepId::J03 | StepId::J17)
-    }
 }
 
 impl fmt::Display for StepId {

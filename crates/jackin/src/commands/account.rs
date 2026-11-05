@@ -8,8 +8,8 @@ use jackin_session::{AccountPlan, Gateways, plan_account_edits, read_chatgpt_log
 
 use crate::app::App;
 use crate::cli::{
-    AccountAddArgs, AccountArg, AccountCommand, BindArgs, BindScope, CredentialArg, JsonArg,
-    parse_provider,
+    AccountAddArgs, AccountArg, AccountCommand, AccountDefaultArgs, BindArgs, BindScope,
+    CredentialArg, JsonArg, parse_provider,
 };
 use crate::error::CommandError;
 use crate::paths::absolutize;
@@ -123,12 +123,27 @@ async fn rm(app: &App, arg: AccountArg) -> Result<(), CommandError> {
     apply(app, vec![ConfigEdit::RemoveAccount(arg.account)]).await
 }
 
-async fn default(app: &App, arg: AccountArg) -> Result<(), CommandError> {
-    app.store
-        .edit(vec![ConfigEdit::SetDefaultAccount {
+async fn default(app: &App, arg: AccountDefaultArgs) -> Result<(), CommandError> {
+    let edit = if arg.clear {
+        let config = app.store.load().await?;
+        let provider = config
+            .account(&arg.account)
+            .ok_or_else(|| unknown_account(&arg.account))?
+            .provider();
+        if config.default_account(provider) != Some(&arg.account) {
+            return Err(CommandError::Argument(format!(
+                "account {} is not the default of {}",
+                arg.account,
+                provider.as_str()
+            )));
+        }
+        ConfigEdit::ClearDefaultAccount { provider }
+    } else {
+        ConfigEdit::SetDefaultAccount {
             account: arg.account,
-        }])
-        .await?;
+        }
+    };
+    app.store.edit(vec![edit]).await?;
     Ok(())
 }
 

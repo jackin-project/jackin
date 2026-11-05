@@ -477,7 +477,14 @@ impl GatewayPlan {
             check_gateways(&locked.config, gateways)?;
             gateways.every().map_err(AccountEditError::Unreachable)?
         } else {
-            vec![gateways.home()]
+            let home = gateways.home();
+            if locked.config.gateway(home.gateway_name()).is_none() {
+                return Err(AccountError::GatewayRemoved {
+                    gateway: home.gateway_name().clone(),
+                }
+                .into());
+            }
+            vec![home]
         };
         let mut journal = Vec::new();
         let written = async {

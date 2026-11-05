@@ -57,6 +57,47 @@ async fn rendered(harness: &Harness) -> Result<String, Failure> {
 }
 
 #[tokio::test]
+async fn default_clear_removes_the_default_of_the_provider_only_for_the_account_that_holds_it()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = seeded(&world)?;
+
+        let refused = harness
+            .run(&["account", "default", "two", "--clear"])
+            .await?;
+        failed(
+            &refused,
+            ExitClass::Usage,
+            &["account two is not the default of codex"],
+        )?;
+        assert_eq!(
+            harness
+                .stored()
+                .await?
+                .default_account(Provider::Codex)
+                .map(AccountName::as_str),
+            Some("one")
+        );
+
+        harness
+            .run(&["account", "default", "one", "--clear"])
+            .await?
+            .ok()?;
+        assert!(
+            harness
+                .stored()
+                .await?
+                .default_account(Provider::Codex)
+                .is_none()
+        );
+        harness.run(&["account", "rm", "one"]).await?.ok()?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn default_and_bind_change_exactly_the_named_entry() -> TestResult {
     guard(async {
         let world = World::builder().build()?;

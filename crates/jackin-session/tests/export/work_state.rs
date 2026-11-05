@@ -69,6 +69,27 @@ async fn a_fresh_launch_is_exported_and_only_real_changes_make_it_unexported() -
 }
 
 #[tokio::test]
+async fn a_ref_in_a_namespace_that_only_starts_like_the_branches_is_not_a_branch() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        handle
+            .git(&["update-ref", "refs/headsx/foo", "HEAD"])
+            .await?;
+        assert_eq!(state(&rig, &name).await, WorkState::Exported);
+
+        handle
+            .git(&["update-ref", "refs/heads/foo", "HEAD"])
+            .await?;
+        assert_eq!(state(&rig, &name).await, unexported(0, &["foo"])?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn an_untracked_file_alone_counts_as_uncommitted() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;

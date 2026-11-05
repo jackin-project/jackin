@@ -10,7 +10,7 @@ use jackin_console::domain::account::{
 };
 use jackin_console::domain::agent::Provider as ConsoleProvider;
 use jackin_console::domain::reason::{Found, IssueReason};
-use jackin_console::domain::vocabulary::{Rejection, Vocabulary};
+use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_core::{CredentialSource, Provider};
 use jackin_testkit::{
     ACCESS, ACCOUNT_ID, ProcessReply, REFRESH, ScriptedProgram, TestResult, guard,
@@ -352,10 +352,8 @@ async fn the_form_lists_every_provider_and_saves_each_one_that_has_a_login_file(
             let saved = config.accounts().find(|a| a.name().as_str() == name);
             let Some(file) = core.login_file() else {
                 assert!(saved.is_none(), "{} has no login file", choice.label);
-                let refused =
-                    Vocabulary::openshell().rejection(&Rejection::NotAFolder { folder: typed });
                 let screen = lab.console.screen();
-                assert!(screen.contains(&refused), "{}: {screen}", choice.label);
+                assert!(screen.contains("! material"), "{}: {screen}", choice.label);
                 continue;
             };
             let account = saved.ok_or_else(|| format!("{} was not saved", choice.label))?;
@@ -368,7 +366,7 @@ async fn the_form_lists_every_provider_and_saves_each_one_that_has_a_login_file(
 }
 
 #[tokio::test]
-async fn a_folder_without_the_providers_login_file_is_refused_on_save() -> TestResult {
+async fn a_folder_without_the_providers_login_file_is_refused_before_the_save() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
         let empty = lab.code.join("claude-empty");
@@ -378,11 +376,36 @@ async fn a_folder_without_the_providers_login_file_is_refused_on_save() -> TestR
             .await?;
         lab.save_form().await?;
         assert_eq!(lab.console.config_text().await?, before);
-        let refused = Vocabulary::openshell().rejection(&Rejection::NotAFolder {
-            folder: "~/code/claude-empty".to_owned(),
-        });
         let screen = lab.console.screen();
-        assert!(screen.contains(&refused), "{screen}");
+        assert!(screen.contains("! material"), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_folder_without_the_providers_login_file_fails_the_check_and_one_with_it_passes()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let empty = lab.code.join("claude-empty");
+        tokio::fs::create_dir_all(&empty).await?;
+        lab.folder_form("claudette", 0, "~/code/claude-empty")
+            .await?;
+        lab.step("tab tab enter").await?;
+        let failed = lab.console.screen();
+        assert!(failed.contains("! material"), "{failed}");
+        assert!(!failed.contains("✓ material"), "{failed}");
+
+        let form = AccountForm::openshell();
+        let core = jackin_tui::core_provider(form.providers[0].provider);
+        plant_login(&lab, &lab.code.join("claude-full"), core).await?;
+        lab.reopen().await?;
+        lab.folder_form("claudette", 0, "~/code/claude-full")
+            .await?;
+        lab.step("tab tab enter").await?;
+        let passed = lab.console.screen();
+        assert!(passed.contains("✓ material"), "{passed}");
         Ok(())
     })
     .await
@@ -633,15 +656,12 @@ async fn an_oversized_claude_login_file_or_a_link_to_a_pipe_is_refused_and_the_c
     guard(async {
         let mut lab = Lab::open().await?;
         let before = lab.console.config_text().await?;
-        let refused = Vocabulary::openshell().rejection(&Rejection::NotAFolder {
-            folder: "~/code/big".to_owned(),
-        });
         let big = lab.code.join("big");
         tokio::fs::create_dir_all(&big).await?;
         tokio::fs::write(big.join(CLAUDE_LOGIN), vec![b'x'; (1 << 20) + 1]).await?;
         save_claude_folder(&mut lab, "big").await?;
         let screen = lab.console.screen();
-        assert!(screen.contains(&refused), "{screen}");
+        assert!(screen.contains("! material"), "{screen}");
         assert_eq!(lab.console.config_text().await?, before);
 
         let piped = lab.code.join("piped");

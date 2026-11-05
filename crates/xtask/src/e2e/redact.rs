@@ -55,11 +55,6 @@ impl Redactor {
     }
 
     #[must_use]
-    pub fn scrub_bytes(&self, bytes: &[u8]) -> String {
-        self.scrub(&String::from_utf8_lossy(bytes))
-    }
-
-    #[must_use]
     pub fn scan(&self, bytes: &[u8]) -> Option<usize> {
         self.inner
             .needles

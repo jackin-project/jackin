@@ -141,11 +141,6 @@ impl Scratch {
         self.root.join("role-copies")
     }
 
-    #[must_use]
-    pub fn config_file(&self) -> PathBuf {
-        self.xdg_config().join("jackin/config.toml")
-    }
-
     pub fn link_registry(&self, target: &Path) -> Result<(), ScratchError> {
         let link = self.xdg_config().join("openshell");
         std::os::unix::fs::symlink(target, &link).map_err(|error| io_error(&link, &error))

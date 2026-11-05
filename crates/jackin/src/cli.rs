@@ -75,8 +75,8 @@ pub enum AccountCommand {
     Ls(JsonArg),
     #[command(about = "Remove an account")]
     Rm(AccountArg),
-    #[command(about = "Make an account the default of its provider")]
-    Default(AccountArg),
+    #[command(about = "Make an account the default of its provider, or clear that default")]
+    Default(AccountDefaultArgs),
     #[command(about = "Bind an account to a role or a workspace")]
     Bind(BindArgs),
 }
@@ -179,6 +179,17 @@ pub struct GatewayAddArgs {
 pub struct AccountArg {
     #[arg(help = "Account name")]
     pub account: AccountName,
+}
+
+#[derive(Debug, Args)]
+pub struct AccountDefaultArgs {
+    #[arg(help = "Account name")]
+    pub account: AccountName,
+    #[arg(
+        long,
+        help = "Clear the default of the provider of the account; the account must be that default"
+    )]
+    pub clear: bool,
 }
 
 #[derive(Debug, Args)]

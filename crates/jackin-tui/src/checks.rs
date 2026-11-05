@@ -19,6 +19,7 @@ use jackin_session::{
 };
 
 use crate::bridge::Settled;
+use crate::effects::LocalKind;
 use crate::observe::Inputs;
 use crate::onepassword::op_error;
 use crate::persist::sentence;
@@ -293,8 +294,17 @@ impl Inputs {
                     Ok(kind) => kind,
                     Err(error) => return Err(error_chain(&error)),
                 };
-                let login = core_provider(provider) == jackin_core::Provider::Codex;
-                self.sources.check(kind.source(login), &self.cancel).await
+                let core = core_provider(provider);
+                let login = core == jackin_core::Provider::Codex;
+                let found = self.sources.check(kind.source(login), &self.cancel).await;
+                match (&kind, found) {
+                    (LocalKind::Folder(folder), Ok(SourceFound::Folder))
+                        if self.login_file(core, folder, path).await.is_err() =>
+                    {
+                        Err(SourceFault::NoLogin(folder.clone()))
+                    }
+                    (_, found) => found,
+                }
             }
             CredentialSource::OnePassword(found) => {
                 reference = found.canonical();

@@ -196,7 +196,7 @@ impl Inputs {
         }
     }
 
-    async fn login_file(
+    pub(crate) async fn login_file(
         &self,
         provider: jackin_core::Provider,
         folder: &HostPath,

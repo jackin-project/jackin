@@ -195,19 +195,20 @@ async fn providers_profiles_and_detail_follow_the_gateway_contract() -> TestResu
         );
         assert_eq!(fake.providers(), vec![provider.clone()]);
         let handle = fake.sandboxes();
-        fake.delete_sandbox(spec.name()).await?;
-        fake.delete_provider(&provider).await?;
-        assert_eq!(fake.provider_state(&provider).await?, ProviderState::Absent);
-        fake.delete_provider(&provider).await?;
         for secret in [ACCESS, REFRESH] {
             for text in [
                 format!("{fake:?}"),
                 format!("{handle:?}"),
+                format!("{:?}", fake.provider(&provider)),
                 early_error.clone(),
             ] {
                 assert!(!leaks(&text, secret), "{secret} leaked into {text}");
             }
         }
+        fake.delete_sandbox(spec.name()).await?;
+        fake.delete_provider(&provider).await?;
+        assert_eq!(fake.provider_state(&provider).await?, ProviderState::Absent);
+        fake.delete_provider(&provider).await?;
         Ok(())
     })
     .await
