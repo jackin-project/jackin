@@ -535,7 +535,7 @@ impl ConsoleRigBuilder<'_> {
             config: world.config.clone(),
             desk: world.desk(),
             usage,
-            sessions: SessionSet::new(default, entries),
+            sessions: SessionSet::new(&config, default, entries),
             connect,
             roles: Arc::clone(&world.roles),
             host: HostPorts {

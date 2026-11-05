@@ -130,7 +130,7 @@ async fn dial(
     connector: &dyn SessionConnector,
     deadline: Duration,
     cancel: &CancellationToken,
-) -> (GatewayName, GatewayState) {
+) -> Dialed {
     let state = match within(deadline, connector.connect(name, entry, cancel)).await {
         Some(Ok(session)) => GatewayState::Connected(Box::new(session)),
         Some(Err(error)) => GatewayState::Failed(error),
@@ -139,8 +139,10 @@ async fn dial(
             message: TimedOut(Waited(deadline)).to_string(),
         }),
     };
-    (name.clone(), state)
+    (name.clone(), entry.clone(), state)
 }
+
+type Dialed = (GatewayName, GatewayEntry, GatewayState);
 
 #[derive(Clone, Debug)]
 pub enum DefaultGateway {
@@ -192,6 +194,7 @@ impl DefaultGateway {
 struct State {
     default: DefaultGateway,
     slots: BTreeMap<GatewayName, Slot>,
+    built: BTreeMap<GatewayName, GatewayEntry>,
 }
 
 impl State {
@@ -218,9 +221,14 @@ fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl SessionSet {
     pub fn new(
+        config: &Config,
         default: DefaultGateway,
         entries: BTreeMap<GatewayName, GatewayState>,
     ) -> SessionSet {
+        let built = entries
+            .keys()
+            .filter_map(|name| Some((name.clone(), config.gateway(name)?.clone())))
+            .collect();
         SessionSet {
             state: Mutex::new(State {
                 default,
@@ -228,6 +236,7 @@ impl SessionSet {
                     .into_iter()
                     .map(|(n, s)| (n, Slot::from(s)))
                     .collect(),
+                built,
             }),
         }
     }
@@ -243,10 +252,22 @@ impl SessionSet {
         let attempts = config
             .gateways()
             .map(|(name, entry)| dial(name, entry, connector, deadline, cancel));
-        Ok(SessionSet::new(
-            default,
-            join_all(attempts).await.into_iter().collect(),
-        ))
+        let dialed = join_all(attempts).await;
+        let built = dialed
+            .iter()
+            .map(|(name, entry, _)| (name.clone(), entry.clone()))
+            .collect();
+        let slots = dialed
+            .into_iter()
+            .map(|(name, _, state)| (name, Slot::from(state)))
+            .collect();
+        Ok(SessionSet {
+            state: Mutex::new(State {
+                default,
+                slots,
+                built,
+            }),
+        })
     }
 
     pub(crate) async fn reconcile(
@@ -257,11 +278,15 @@ impl SessionSet {
         cancel: &CancellationToken,
     ) {
         let missing: Vec<(&GatewayName, &GatewayEntry)> = {
-            let mut state = locked(&self.state);
-            state.slots.retain(|name, _| config.gateway(name).is_some());
+            let mut guard = locked(&self.state);
+            let State { slots, built, .. } = &mut *guard;
+            slots.retain(|name, _| {
+                config.gateway(name).is_some() && built.get(name) == config.gateway(name)
+            });
+            built.retain(|name, _| slots.contains_key(name));
             config
                 .gateways()
-                .filter(|(name, _)| !state.slots.contains_key(*name))
+                .filter(|(name, _)| !slots.contains_key(*name))
                 .collect()
         };
         let dialed = join_all(
@@ -271,11 +296,13 @@ impl SessionSet {
         )
         .await;
         let mut state = locked(&self.state);
-        for (name, gateway) in dialed {
-            state
-                .slots
-                .entry(name)
-                .or_insert_with(|| Slot::from(gateway));
+        for (name, entry, gateway) in dialed {
+            if let std::collections::btree_map::Entry::Vacant(vacant) =
+                state.slots.entry(name.clone())
+            {
+                vacant.insert(Slot::from(gateway));
+                state.built.insert(name, entry);
+            }
         }
         state.default = state.default.settle(config);
     }
@@ -381,16 +408,17 @@ impl SessionSet {
             .collect();
         let attempts = failed.iter().filter_map(|name| {
             let entry = config.gateway(name)?;
-            Some(async move { (name, connector.connect(name, entry, cancel).await) })
+            Some(async move { (name, entry, connector.connect(name, entry, cancel).await) })
         });
         let outcomes = join_all(attempts).await;
         let mut state = locked(&self.state);
-        for (name, outcome) in outcomes {
+        for (name, entry, outcome) in outcomes {
             let slot = match outcome {
                 Ok(session) => Slot::Up(Box::new(session)),
                 Err(error) => Slot::Down(Arc::new(error)),
             };
             state.slots.insert(name.clone(), slot);
+            state.built.insert(name.clone(), entry.clone());
         }
     }
 }

@@ -419,6 +419,39 @@ async fn a_gateway_removed_and_added_again_is_dialed_afresh() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_gateway_whose_entry_changed_under_the_same_name_is_dialed_afresh() -> TestResult {
+    guard(async {
+        let mut pair = pair(Peer::Connected).await?;
+        let name = pair.second.name().clone();
+        let mut entry = pair
+            .lab
+            .config()
+            .await?
+            .gateway(&name)
+            .cloned()
+            .ok_or("the second gateway has no entry")?;
+        refresh(&mut pair.lab).await?;
+        assert_eq!(pair.connector.calls(&name), 0);
+        entry.openshell_workspace = OpenShellWorkspace::parse("moved")?;
+        pair.lab
+            .edit(vec![
+                ConfigEdit::RemoveGateway(name.clone()),
+                ConfigEdit::AddGateway {
+                    name: name.clone(),
+                    entry,
+                },
+            ])
+            .await?;
+        refresh(&mut pair.lab).await?;
+        assert_eq!(pair.connector.calls(&name), 1);
+        refresh(&mut pair.lab).await?;
+        assert_eq!(pair.connector.calls(&name), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_doctor_rerun_checks_the_default_the_config_holds_now() -> TestResult {
     guard(async {
         let mut pair = pair(Peer::Connected).await?;
