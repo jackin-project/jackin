@@ -58,6 +58,18 @@ fn classify(endpoint: &str, error: SdkError) -> GatewayError {
 
 impl GrpcGateway {
     pub async fn connect(config: GrpcGatewayConfig) -> Result<GrpcGateway, GatewayError> {
+        let cancel = config.cancel.clone();
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(GatewayError::Cancelled {
+                op: GatewayOp::Health,
+                group: None,
+            }),
+            connected = Self::establish(config) => connected,
+        }
+    }
+
+    async fn establish(config: GrpcGatewayConfig) -> Result<GrpcGateway, GatewayError> {
         let gateway = &config.gateway;
         let endpoint = gateway.endpoint().to_owned();
         probe(&endpoint).await?;

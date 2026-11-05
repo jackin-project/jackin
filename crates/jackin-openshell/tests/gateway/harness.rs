@@ -101,6 +101,7 @@ pub(crate) fn config(
         runner: Arc::new(runner),
         transfer_timeout: Duration::from_secs(123),
         call_timeout: Duration::from_secs(60),
+        cancel: CancellationToken::new(),
     }
 }
 

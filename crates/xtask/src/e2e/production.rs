@@ -269,6 +269,7 @@ pub async fn production(args: &E2eArgs) -> Result<Boundaries, ProductionError> {
         runner,
         transfer_timeout: TRANSFER_TIMEOUT,
         call_timeout: CALL_TIMEOUT,
+        cancel: cancel.clone(),
     })
     .await
     .map_err(|error| {

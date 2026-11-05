@@ -164,6 +164,7 @@ impl GatewayConnector for GrpcConnector {
             runner: Arc::clone(&self.runner),
             transfer_timeout: TRANSFER_TIMEOUT,
             call_timeout: CALL_TIMEOUT,
+            cancel: cancel.clone(),
         })
         .await?;
         Ok(Arc::new(gateway))
