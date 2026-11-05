@@ -866,8 +866,8 @@ impl Inputs {
                 HostPath::parse(dir).map_err(|error| Refused::from(PersistError::from(error)))
             })?;
         let key = Sha256::of(file.to_string().as_bytes());
-        let name = format!("role-{}", &key.as_str()[..LOCK_KEY_LEN]);
-        let target = HostPath::resolve(Path::new(&name), &dir).map_err(PersistError::from)?;
+        let name = Path::new(MANIFEST_FILE).with_extension(&key.as_str()[..LOCK_KEY_LEN]);
+        let target = HostPath::resolve(&name, &dir).map_err(PersistError::from)?;
         let lock = lock_path(&target).map_err(|error| Refused::Text(text(&error)))?;
         hold_lock(
             self.host.fs.as_ref(),

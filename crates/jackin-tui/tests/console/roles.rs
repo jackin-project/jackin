@@ -162,7 +162,7 @@ async fn two_saves_of_one_manifest_keep_both_edits() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_manifest_save_holds_a_role_named_lock_in_the_config_directory() -> TestResult {
+async fn a_manifest_save_holds_a_manifest_named_lock_in_the_config_directory() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
         let (base, _) = sentinel_docs(&mut lab)?;
@@ -189,7 +189,7 @@ async fn a_manifest_save_holds_a_role_named_lock_in_the_config_directory() -> Te
         let role_locks = locks
             .iter()
             .filter(|name| {
-                name.strip_prefix("role-")
+                name.strip_prefix("jackin.role.")
                     .and_then(|rest| rest.strip_suffix(".lock"))
                     .is_some_and(is_key)
             })
