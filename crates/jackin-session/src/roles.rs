@@ -331,16 +331,21 @@ impl RoleCatalog {
             })
     }
 
-    pub async fn findings(&self, root: &HostPath) -> Vec<RoleError> {
+    pub async fn findings(&self, root: &HostPath, cancel: &CancellationToken) -> Vec<RoleError> {
         let mut reads = Reads::new();
         let manifest = match self.read_manifest_from(root, &mut reads).await {
             Ok(manifest) => manifest,
             Err(findings) => return findings,
         };
-        self.inspect_manifest(root, manifest, &mut reads)
-            .await
-            .err()
-            .unwrap_or_default()
+        match self.inspect_manifest(root, manifest, &mut reads).await {
+            Ok(_) => self
+                .snapshot(root, &reads, cancel)
+                .await
+                .err()
+                .into_iter()
+                .collect(),
+            Err(findings) => findings,
+        }
     }
 
     pub async fn findings_of(&self, root: &HostPath, manifest: RoleManifest) -> Vec<RoleError> {
