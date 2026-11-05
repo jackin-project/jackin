@@ -162,6 +162,49 @@ async fn two_saves_of_one_manifest_keep_both_edits() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_manifest_save_holds_a_role_named_lock_in_the_config_directory() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (base, _) = sentinel_docs(&mut lab)?;
+        let mut doc = base.clone();
+        doc.docker = true;
+        lab.perform(Effect::SaveRole {
+            role: "sentinel".to_owned(),
+            base: Box::new(base),
+            doc: Box::new(doc),
+        })
+        .await?;
+        let dir = lab
+            .console
+            .config()
+            .path()
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .to_owned();
+        let locks: Vec<String> = std::fs::read_dir(dir)?
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .collect();
+        let is_key = |text: &str| text.len() == 32 && text.bytes().all(|b| b.is_ascii_hexdigit());
+        let role_locks = locks
+            .iter()
+            .filter(|name| {
+                name.strip_prefix("role-")
+                    .and_then(|rest| rest.strip_suffix(".lock"))
+                    .is_some_and(is_key)
+            })
+            .count();
+        let bare_locks = locks
+            .iter()
+            .filter(|name| name.strip_suffix(".lock").is_some_and(is_key))
+            .count();
+        assert_eq!((role_locks, bare_locks), (1, 0), "{locks:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_linked_manifest_is_neither_shown_nor_saved_through() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;

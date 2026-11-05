@@ -20,12 +20,12 @@ use jackin_core::{
     read_credential_file,
 };
 use jackin_core::{
-    EnvSpec, FileLock, ManifestError, Poll, PollError, PollPlan, Sha256,
-    Workspace as CoreWorkspace, hold_lock, poll_until,
+    EnvSpec, FileLock, ManifestError, Poll, PollError, PollPlan, Sha256, SupervisorReading,
+    SupervisorState, Workspace as CoreWorkspace, hold_lock, poll_until,
 };
 use jackin_core::{lock_path, plain};
 use jackin_image::Rebuild;
-use jackin_openshell::PowerAction;
+use jackin_openshell::{GatewayError, PowerAction};
 use jackin_session::{
     AccountPlan, BuildRequest, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode, RestartError,
     RoleError, Session, Source, build_observed, error_chain, launch_events, plan_account_edits,
@@ -51,6 +51,8 @@ enum Refused {
     StartCancelled,
     #[error("Codex in {0} did not reach its start state")]
     StartTimedOut(jackin_core::SandboxName),
+    #[error("Codex is already running in {0}")]
+    AgentRunning(jackin_core::SandboxName),
     #[error("the configuration path has no directory")]
     NoConfigDir,
     #[error("cancelled while waiting for the role manifest")]
@@ -65,7 +67,7 @@ enum Refused {
     Config(#[from] ConfigError),
 }
 
-const AGENT_START: PollPlan = PollPlan {
+const SUPERVISOR_WAIT: PollPlan = PollPlan {
     interval: Duration::from_millis(250),
     timeout: Duration::from_secs(30),
 };
@@ -532,6 +534,7 @@ impl Inputs {
                 .power(&name, PowerAction::Start, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
+            self.await_supervisor(&session, &name).await?;
             self.start_agent(&session, &name).await?;
             self.after_lifecycle().await
         }
@@ -542,28 +545,21 @@ impl Inputs {
         }
     }
 
-    async fn start_agent(
+    async fn await_supervisor(
         &self,
         session: &Session,
         name: &jackin_core::SandboxName,
     ) -> Result<(), Refused> {
         poll_until(
             self.host.clock.as_ref(),
-            AGENT_START,
+            SUPERVISOR_WAIT,
             &self.cancel,
             || async {
-                let (events, feed) = launch_events(LineDelivery::BestEffort);
-                drop(feed);
-                match session
-                    .restart_agent(name, events, self.cancel.clone())
-                    .await
-                {
-                    Ok(_) => Ok(Poll::Ready(())),
-                    Err(
-                        RestartError::StateUnreadable { .. } | RestartError::AlreadyRunning { .. },
-                    ) => Ok(Poll::Pending),
-                    Err(error) => Err(error),
-                }
+                let reading = session.supervisor_state(name).await?;
+                Ok::<_, GatewayError>(match reading {
+                    SupervisorReading::Reported(SupervisorState::Waiting) => Poll::Ready(()),
+                    _ => Poll::Pending,
+                })
             },
         )
         .await
@@ -572,6 +568,23 @@ impl Inputs {
             PollError::Timeout { .. } => Refused::StartTimedOut(name.clone()),
             PollError::Probe(error) => Refused::Text(text(&error)),
         })
+    }
+
+    async fn start_agent(
+        &self,
+        session: &Session,
+        name: &jackin_core::SandboxName,
+    ) -> Result<(), Refused> {
+        let (events, feed) = launch_events(LineDelivery::BestEffort);
+        drop(feed);
+        session
+            .restart_agent(name, events, self.cancel.clone())
+            .await
+            .map(drop)
+            .map_err(|error| match error {
+                RestartError::AlreadyRunning { .. } => Refused::AgentRunning(name.clone()),
+                other => Refused::Text(text(&other)),
+            })
     }
 
     pub(crate) async fn prewarm(&self, id: WorkspaceId) -> Msg {
@@ -853,8 +866,8 @@ impl Inputs {
                 HostPath::parse(dir).map_err(|error| Refused::from(PersistError::from(error)))
             })?;
         let key = Sha256::of(file.to_string().as_bytes());
-        let target = HostPath::resolve(Path::new(&key.as_str()[..LOCK_KEY_LEN]), &dir)
-            .map_err(PersistError::from)?;
+        let name = format!("role-{}", &key.as_str()[..LOCK_KEY_LEN]);
+        let target = HostPath::resolve(Path::new(&name), &dir).map_err(PersistError::from)?;
         let lock = lock_path(&target).map_err(|error| Refused::Text(text(&error)))?;
         hold_lock(
             self.host.fs.as_ref(),

@@ -350,6 +350,13 @@ impl Session {
             .await?)
     }
 
+    pub async fn supervisor_state(
+        &self,
+        sandbox: &SandboxName,
+    ) -> Result<SupervisorReading, GatewayError> {
+        run_state(self.deps.gateway.as_ref(), sandbox).await
+    }
+
     pub async fn restart_agent(
         &self,
         sandbox: &SandboxName,
