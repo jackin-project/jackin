@@ -38,58 +38,79 @@ async fn launched(rig: &Rig) -> Result<(AccountName, String), Failure> {
     Ok((labels(&only(rig)?)?.planned.account, picked))
 }
 
+async fn launches(
+    expected: &str,
+    workspace: bool,
+    role: bool,
+    default: bool,
+) -> Result<(), Failure> {
+    let rig = Rig::new().await?;
+    rig.world.seed_all(&rig.config).await?;
+    let mut edits = Vec::new();
+    for account in ["by-workspace", "by-role", "by-default"] {
+        edits.push(login(&rig, account)?);
+    }
+    if workspace {
+        edits.push(ConfigEdit::BindWorkspaceAccount {
+            workspace: WorkspaceName::parse(WORKSPACE)?,
+            account: name("by-workspace")?,
+        });
+    }
+    if role {
+        edits.push(ConfigEdit::BindRoleAccount {
+            role: RoleName::parse("sentinel")?,
+            agent: Agent::Codex,
+            account: name("by-role")?,
+        });
+    }
+    if default {
+        edits.push(ConfigEdit::SetDefaultAccount {
+            account: name("by-default")?,
+        });
+    }
+    rig.world.config.edit(edits).await?;
+    let config = rig.world.config.load().await?;
+    let workspace_name = WorkspaceName::parse(WORKSPACE)?;
+    let role_name = RoleName::parse("sentinel")?;
+    let selected = config.select_account(&AccountQuery {
+        flag: None,
+        workspace: &workspace_name,
+        role: &role_name,
+        agent: Agent::Codex,
+    })?;
+    assert_eq!(selected.account.as_str(), expected);
+    let (account, picked) = launched(&rig).await?;
+    assert_eq!(account.as_str(), expected, "{picked}");
+    let flat = picked.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(&format!("account Codex · {expected}")),
+        "{expected}\n{picked}"
+    );
+    Ok(())
+}
+
 #[tokio::test]
-async fn the_launched_account_follows_the_d26_order() -> TestResult {
+async fn the_workspace_account_is_launched_first() -> TestResult {
     guard(async {
-        let cases: [(&str, bool, bool, bool); 3] = [
-            ("by-workspace", true, true, true),
-            ("by-role", false, true, true),
-            ("by-default", false, false, true),
-        ];
-        for (expected, workspace, role, default) in cases {
-            let rig = Rig::new().await?;
-            rig.world.seed_all(&rig.config).await?;
-            let mut edits = Vec::new();
-            for account in ["by-workspace", "by-role", "by-default"] {
-                edits.push(login(&rig, account)?);
-            }
-            if workspace {
-                edits.push(ConfigEdit::BindWorkspaceAccount {
-                    workspace: WorkspaceName::parse(WORKSPACE)?,
-                    account: name("by-workspace")?,
-                });
-            }
-            if role {
-                edits.push(ConfigEdit::BindRoleAccount {
-                    role: RoleName::parse("sentinel")?,
-                    agent: Agent::Codex,
-                    account: name("by-role")?,
-                });
-            }
-            if default {
-                edits.push(ConfigEdit::SetDefaultAccount {
-                    account: name("by-default")?,
-                });
-            }
-            rig.world.config.edit(edits).await?;
-            let config = rig.world.config.load().await?;
-            let workspace_name = WorkspaceName::parse(WORKSPACE)?;
-            let role_name = RoleName::parse("sentinel")?;
-            let selected = config.select_account(&AccountQuery {
-                flag: None,
-                workspace: &workspace_name,
-                role: &role_name,
-                agent: Agent::Codex,
-            })?;
-            assert_eq!(selected.account.as_str(), expected);
-            let (account, picked) = launched(&rig).await?;
-            assert_eq!(account.as_str(), expected, "{picked}");
-            let flat = picked.split_whitespace().collect::<Vec<_>>().join(" ");
-            assert!(
-                flat.contains(&format!("account Codex · {expected}")),
-                "{expected}\n{picked}"
-            );
-        }
+        launches("by-workspace", true, true, true).await?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_role_account_is_launched_without_a_workspace_account() -> TestResult {
+    guard(async {
+        launches("by-role", false, true, true).await?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_default_account_is_launched_without_a_binding() -> TestResult {
+    guard(async {
+        launches("by-default", false, false, true).await?;
         Ok(())
     })
     .await
