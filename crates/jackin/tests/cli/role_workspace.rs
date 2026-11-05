@@ -185,6 +185,31 @@ async fn ls_escapes_control_characters_in_stored_paths_and_json_stays_the_stored
 }
 
 #[tokio::test]
+async fn ls_escapes_bidi_controls_in_a_git_role_source() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        harness
+            .run(&[
+                "role",
+                "add",
+                "spoof",
+                "https://example.com/\u{202e}gpj.evil/role.git",
+            ])
+            .await?
+            .ok()?;
+        let ran = harness.run(&["role", "ls"]).await?;
+        ran.ok()?;
+        assert_eq!(
+            ran.stdout,
+            "spoof\thttps://example.com/\\u{202e}gpj.evil/role.git\n"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_workspace_or_role_path_is_stored_by_its_real_path_and_must_be_an_existing_directory()
 -> TestResult {
     guard(async {

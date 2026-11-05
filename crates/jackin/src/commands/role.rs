@@ -64,10 +64,10 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     for row in &view.roles {
         let source = match &row.source {
             RoleSourceRow::Path { path } => plain(path),
-            RoleSourceRow::Git { url, rev } => match rev {
+            RoleSourceRow::Git { url, rev } => plain(match rev {
                 Some(rev) => format!("{url}@{rev}"),
                 None => url.to_string(),
-            },
+            }),
         };
         app.io.line(&format!("{}\t{source}", row.name))?;
     }
