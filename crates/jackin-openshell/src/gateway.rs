@@ -103,7 +103,14 @@ pub enum ProfileSync {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ProviderState {
     Absent,
+    Unrefreshed,
     Present,
+}
+
+impl ProviderState {
+    pub fn exists(self) -> bool {
+        self != ProviderState::Absent
+    }
 }
 
 #[derive(Debug)]

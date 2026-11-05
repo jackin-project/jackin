@@ -208,10 +208,19 @@ async fn put_provider_creates_updates_and_configures_refresh() {
         .unwrap_err();
     assert_no_secret(&error.to_string());
     assert_no_secret(&format!("{error:?}"));
+    let name = ProviderName::parse(PROVIDER).unwrap();
+    assert_eq!(
+        guard(gateway.provider_state(&name)).await.unwrap(),
+        ProviderState::Unrefreshed
+    );
     env.server.state().faults.clear();
     guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
         .await
         .unwrap();
+    assert_eq!(
+        guard(gateway.provider_state(&name)).await.unwrap(),
+        ProviderState::Present
+    );
     let state = env.server.state();
     assert_eq!(
         state.providers[&provider_key].credentials[keys.access_token],

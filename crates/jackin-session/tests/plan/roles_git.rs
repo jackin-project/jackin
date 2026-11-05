@@ -163,3 +163,61 @@ async fn a_git_role_whose_tag_was_deleted_at_the_origin_no_longer_loads() -> Tes
     })
     .await
 }
+
+#[tokio::test]
+async fn a_pinned_role_loads_from_its_cache_while_the_origin_head_dangles() -> TestResult {
+    guard(async {
+        let origin = Origin::new().await?;
+        let (cache, _keep) = cache()?;
+        origin
+            .load(&cache, Some("v1"))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        git(
+            origin.role.root().as_path(),
+            &["symbolic-ref", "HEAD", "refs/heads/gone"],
+        )
+        .await?;
+        let (commit, _) = origin
+            .load(&cache, Some("v1"))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(commit, origin.commits[0]);
+        let followed = origin.load(&cache, None).await?;
+        assert!(
+            matches!(followed, Err(RoleError::Git { .. })),
+            "{followed:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn role_locks_live_apart_from_the_role_checkouts_and_the_cache_directory_is_private()
+-> TestResult {
+    guard(async {
+        use std::os::unix::fs::PermissionsExt;
+
+        let origin = Origin::new().await?;
+        let (cache, _keep) = cache()?;
+        let roles = cache.as_path().join("roles");
+        tokio::fs::create_dir_all(&roles).await?;
+        tokio::fs::set_permissions(&roles, std::fs::Permissions::from_mode(0o755)).await?;
+        origin
+            .load(&cache, None)
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        let mut entries = Vec::new();
+        let mut listing = tokio::fs::read_dir(&roles).await?;
+        while let Some(entry) = listing.next_entry().await? {
+            entries.push(entry.file_name().to_string_lossy().into_owned());
+        }
+        entries.sort();
+        assert_eq!(entries, [".locks", "sentinel"]);
+        let mode = tokio::fs::metadata(&roles).await?.permissions().mode();
+        assert_eq!(mode & 0o777, 0o700);
+        Ok(())
+    })
+    .await
+}

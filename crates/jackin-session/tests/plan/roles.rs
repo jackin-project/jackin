@@ -504,6 +504,26 @@ async fn a_path_that_leaves_the_repository_or_is_not_a_regular_file_rejects_the_
 }
 
 #[tokio::test]
+async fn role_check_reports_the_file_limits_that_load_enforces() -> TestResult {
+    guard(async {
+        let scope = scope()?;
+        let role = RoleFixture::new("sentinel")?;
+        role.file("assets/big.bin", &vec![0_u8; 16 * 1024 * 1024 + 1]).await?;
+        role.commit().await?;
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let findings = scope.catalog.findings(role.root(), &cancel).await;
+        assert!(
+            matches!(findings.as_slice(), [RoleError::FileTooLarge { path, .. }] if path.as_str() == "assets/big.bin"),
+            "{findings:?}"
+        );
+        let loaded = scope.catalog.load_path(role.root(), &cancel).await.err();
+        assert!(matches!(loaded, Some(RoleError::FileTooLarge { .. })), "{loaded:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> TestResult {
     guard(async {
         let outside = Outside::new()?;
@@ -511,13 +531,13 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
 
         let valid = RoleFixture::new("sentinel")?;
         valid.commit().await?;
-        assert!(scope.catalog.findings(valid.root()).await.is_empty());
+        assert!(scope.catalog.findings(valid.root(), &tokio_util::sync::CancellationToken::new()).await.is_empty());
         scope.catalog.load_path(valid.root(), &tokio_util::sync::CancellationToken::new()).await?;
 
         let broken = "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[hooks]\nsetpu = \"x\"\n\n[docker]\nenabled = \"yes\"\n\n[env.CODEX_HOME]\n";
         let role = symlinked(broken.to_owned())?.dockerfile("FROM ubuntu\n");
         role.commit().await?;
-        let findings = scope.catalog.findings(role.root()).await;
+        let findings = scope.catalog.findings(role.root(), &tokio_util::sync::CancellationToken::new()).await;
         let expected = RoleManifest::findings(broken);
         assert_eq!(findings.len(), 3);
         for (found, wanted) in findings.iter().zip(&expected) {
@@ -534,7 +554,7 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
         assert_eq!(kinds, ["invalid docker.enabled", "reserved CODEX_HOME", "unknown hooks.setpu"]);
         assert_eq!(format!("{:?}", scope.catalog.load_path(role.root(), &tokio_util::sync::CancellationToken::new()).await.err()), format!("Some({:?})", findings[0]));
         role.file("jackin.role.toml", manifest("Dockerfile", "policy.yaml", &[]).as_bytes()).await?;
-        let findings = scope.catalog.findings(role.root()).await;
+        let findings = scope.catalog.findings(role.root(), &tokio_util::sync::CancellationToken::new()).await;
         assert!(
             matches!(findings.as_slice(), [RoleError::Dockerfile(DockerfileError::FinalStageNotConstruct { found, .. })] if found == "ubuntu"),
             "{findings:?}"
@@ -548,7 +568,7 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
             ]));
         role.symlink("hooks/pre.sh", &outside.file()).await?;
         role.commit().await?;
-        let findings = scope.catalog.findings(role.root()).await;
+        let findings = scope.catalog.findings(role.root(), &tokio_util::sync::CancellationToken::new()).await;
         assert!(
             matches!(
                 findings.as_slice(),
@@ -570,7 +590,7 @@ async fn role_findings_come_in_one_pass_and_load_path_returns_the_first() -> Tes
             .dockerfile("FROM ubuntu\n")
             .policy_yaml(&policy("_provider_codex", "github.com", 443, "/usr/bin/git"));
         role.commit().await?;
-        let findings = scope.catalog.findings(role.root()).await;
+        let findings = scope.catalog.findings(role.root(), &tokio_util::sync::CancellationToken::new()).await;
         assert!(
             matches!(findings.as_slice(), [RoleError::Dockerfile(_), RoleError::Policy(_)]),
             "{findings:?}"

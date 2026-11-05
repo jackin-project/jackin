@@ -295,7 +295,12 @@ impl FileSystem for StdFileSystem {
 
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         blocking(dir, |p| {
-            DirBuilder::new().recursive(true).mode(0o700).create(p)
+            DirBuilder::new().recursive(true).mode(0o700).create(p)?;
+            let meta = fs::symlink_metadata(p)?;
+            if meta.is_dir() && meta.permissions().mode() & 0o777 != 0o700 {
+                fs::set_permissions(p, fs::Permissions::from_mode(0o700))?;
+            }
+            Ok(())
         })
         .await
     }

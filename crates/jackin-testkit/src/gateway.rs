@@ -88,6 +88,7 @@ pub struct ProviderRecord {
     pub refresh_token: String,
     pub client_id: String,
     pub chatgpt_account_id: ChatgptAccountId,
+    pub refreshing: bool,
 }
 
 impl std::fmt::Debug for ProviderRecord {
@@ -646,10 +647,10 @@ impl Gateway for FakeGateway {
         tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
-        Ok(if registry.providers.contains_key(name) {
-            ProviderState::Present
-        } else {
-            ProviderState::Absent
+        Ok(match registry.providers.get(name) {
+            None => ProviderState::Absent,
+            Some(record) if record.refreshing => ProviderState::Present,
+            Some(_) => ProviderState::Unrefreshed,
         })
     }
 
@@ -669,6 +670,7 @@ impl Gateway for FakeGateway {
             client_id,
             chatgpt_account_id,
         } = &spec.material;
+        let refreshing = registry.put_fails_after_write.is_none();
         registry.providers.insert(
             spec.name.clone(),
             ProviderRecord {
@@ -679,6 +681,7 @@ impl Gateway for FakeGateway {
                 refresh_token: refresh_token.expose().to_owned(),
                 client_id: client_id.clone(),
                 chatgpt_account_id: chatgpt_account_id.clone(),
+                refreshing,
             },
         );
         match registry.put_fails_after_write.take() {

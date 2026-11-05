@@ -83,7 +83,7 @@ async fn rm(app: &App, arg: RoleArg) -> Result<(), CommandError> {
 
 async fn check(app: &App, args: &RoleCheckArgs) -> Result<(), CommandError> {
     let root = absolutize(&args.path, &app.cwd)?;
-    let findings = app.catalog().findings(&root).await;
+    let findings = app.catalog().findings(&root, &app.cancel).await;
     if findings.is_empty() {
         Ok(())
     } else {

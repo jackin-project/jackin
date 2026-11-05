@@ -7,8 +7,8 @@ use jackin_core::{ProfileId, ProviderName, Redactor};
 use openshell_sdk::raw::proto::{
     ConfigureProviderRefreshRequest, CreateProviderRequest, DeleteProviderProfileRequest,
     DeleteProviderRefreshRequest, DeleteProviderRequest, GetProviderProfileRequest,
-    GetProviderRequest, ImportProviderProfilesRequest, ObjectMeta, Provider,
-    ProviderCredentialRefreshStrategy, ProviderProfile, ProviderProfileDiagnostic,
+    GetProviderRefreshStatusRequest, GetProviderRequest, ImportProviderProfilesRequest, ObjectMeta,
+    Provider, ProviderCredentialRefreshStrategy, ProviderProfile, ProviderProfileDiagnostic,
     ProviderProfileImportItem, UpdateProviderProfilesRequest, UpdateProviderRequest,
 };
 
@@ -222,10 +222,27 @@ impl Inner {
         name: &ProviderName,
     ) -> Result<ProviderState, GatewayError> {
         match self.get_provider(name).await {
-            Ok(_) => Ok(ProviderState::Present),
-            Err(GatewayError::NotFound { .. }) => Ok(ProviderState::Absent),
-            Err(error) => Err(error),
+            Ok(_) => {}
+            Err(GatewayError::NotFound { .. }) => return Ok(ProviderState::Absent),
+            Err(error) => return Err(error),
         }
+        let status = self
+            .unary(
+                GatewayOp::Provider,
+                Some(Missing::Provider(name.clone())),
+                self.grpc()
+                    .get_provider_refresh_status(GetProviderRefreshStatusRequest {
+                        workspace_scope: Some(self.scope()),
+                        provider: name.to_string(),
+                        credential_key: String::new(),
+                    }),
+            )
+            .await?;
+        Ok(if status.credentials.is_empty() {
+            ProviderState::Unrefreshed
+        } else {
+            ProviderState::Present
+        })
     }
 
     async fn get_provider(&self, name: &ProviderName) -> Result<Provider, GatewayError> {
@@ -295,14 +312,17 @@ impl Inner {
             ProviderState::Absent => match self.create_provider(spec, record.clone()).await {
                 Ok(()) => {}
                 Err(error @ GatewayError::AlreadyExists { .. }) => {
-                    match self.provider_state(&spec.name).await? {
-                        ProviderState::Present => self.update_provider(spec, record).await?,
-                        ProviderState::Absent => return Err(error),
+                    if self.provider_state(&spec.name).await?.exists() {
+                        self.update_provider(spec, record).await?;
+                    } else {
+                        return Err(error);
                     }
                 }
                 Err(error) => return Err(error),
             },
-            ProviderState::Present => self.update_provider(spec, record).await?,
+            ProviderState::Present | ProviderState::Unrefreshed => {
+                self.update_provider(spec, record).await?;
+            }
         }
         self.unary(
             GatewayOp::Provider,

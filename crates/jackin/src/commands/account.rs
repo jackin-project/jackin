@@ -4,7 +4,7 @@
 use jackin_core::{
     Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, read_credential_file,
 };
-use jackin_session::{AccountPlan, plan_account_edits, read_chatgpt_login};
+use jackin_session::{AccountPlan, Gateways, plan_account_edits, read_chatgpt_login};
 
 use crate::app::App;
 use crate::cli::{
@@ -85,7 +85,11 @@ async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
             plan.apply().await?;
         }
         AccountPlan::Gateway(plan) => {
-            let gateways = app.gateways(plan.config()).await?;
+            let gateways = if plan.needs_every_gateway() {
+                app.gateways(plan.config()).await?
+            } else {
+                Gateways::single(app.session(plan.config()).await?)
+            };
             plan.apply(&gateways).await?;
         }
     }

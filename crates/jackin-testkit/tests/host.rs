@@ -134,6 +134,11 @@ async fn fs_boundary_extras(fs: &dyn FileSystem, root: &HostPath) -> TestResult 
     assert_eq!(fs.mode(&private).await?, Some(FileMode(0o700)));
     assert_eq!(fs.mode(&child(root, "priv")?).await?, Some(FileMode(0o700)));
     fs.remove_dir_all(&child(root, "priv")?).await?;
+    let wide = child(root, "wide")?;
+    fs.create_dir_all(&wide).await?;
+    fs.create_private_dir_all(&wide).await?;
+    assert_eq!(fs.mode(&wide).await?, Some(FileMode(0o700)));
+    fs.remove_dir_all(&wide).await?;
     let ranged = child(root, "range.bin")?;
     fs.write_new(&ranged, b"0123456789", FileMode(0o600))
         .await?;

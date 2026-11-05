@@ -317,7 +317,9 @@ impl Run<'_> {
             .await
             .map_err(|error| failed(LaunchStep::Provider, error))?;
         self.live()?;
-        if state == ProviderState::Absent {
+        if state == ProviderState::Present {
+            self.tracker.skip(SkipReason::ProviderPresent);
+        } else {
             let account = self.plan.account_entry();
             let synced = self
                 .session
@@ -336,8 +338,6 @@ impl Run<'_> {
             if !synced {
                 self.tracker.skip(SkipReason::ProviderPresent);
             }
-        } else {
-            self.tracker.skip(SkipReason::ProviderPresent);
         }
         self.done.steps.insert(LaunchStep::Provider);
         Ok(())

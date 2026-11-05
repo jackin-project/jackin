@@ -15,7 +15,10 @@ const ALIASES: [&str; 3] = [OPENSHELL, CONTAINERS, DOCKER];
 async fn findings(policy: &str) -> Result<Vec<RoleError>, Box<dyn std::error::Error>> {
     let role = RoleFixture::new("sentinel")?.policy_yaml(policy);
     role.commit().await?;
-    Ok(scope()?.catalog.findings(role.root()).await)
+    Ok(scope()?
+        .catalog
+        .findings(role.root(), &tokio_util::sync::CancellationToken::new())
+        .await)
 }
 
 fn keys(found: &[RoleError]) -> Option<Vec<String>> {

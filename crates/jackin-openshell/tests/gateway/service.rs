@@ -295,9 +295,9 @@ impl OpenShell for Fake {
 
     async fn get_provider_refresh_status(
         &self,
-        _request: Request<openshell_sdk::raw::proto::GetProviderRefreshStatusRequest>,
+        request: Request<openshell_sdk::raw::proto::GetProviderRefreshStatusRequest>,
     ) -> Result<Response<openshell_sdk::raw::proto::GetProviderRefreshStatusResponse>, Status> {
-        Err(Status::unimplemented("get_provider_refresh_status"))
+        self.get_provider_refresh_status_impl(request).await
     }
 
     async fn configure_provider_refresh(

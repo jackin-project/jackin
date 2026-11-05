@@ -269,7 +269,11 @@ impl FileSystem for MemFs {
 
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         let mut state = self.enter(FsOp::CreatePrivateDirAll)?;
-        make_dirs(&mut state, dir, FileMode(0o700))
+        make_dirs(&mut state, dir, FileMode(0o700))?;
+        if let Some(mode) = state.dirs.get_mut(dir.as_path()) {
+            *mode = FileMode(0o700);
+        }
+        Ok(())
     }
 
     async fn write_new(

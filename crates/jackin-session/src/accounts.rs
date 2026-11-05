@@ -462,19 +462,22 @@ impl GatewayPlan {
         &self.locked.config
     }
 
+    pub fn needs_every_gateway(&self) -> bool {
+        self.effects.needs_every_gateway()
+    }
+
     pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
         let GatewayPlan {
             locked,
             edits,
             effects,
         } = self;
-        check_gateways(&locked.config, gateways)?;
         let store = &locked.desk.store;
-        let home = gateways.home();
         let sessions = if effects.needs_every_gateway() {
+            check_gateways(&locked.config, gateways)?;
             gateways.every().map_err(AccountEditError::Unreachable)?
         } else {
-            vec![home]
+            vec![gateways.home()]
         };
         let mut journal = Vec::new();
         let written = async {
@@ -535,7 +538,7 @@ async fn publish<'a>(
                 .provider_state(&provider)
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
-            let held = state == ProviderState::Present;
+            let held = state.exists();
             if !held && index > 0 {
                 continue;
             }
@@ -657,7 +660,7 @@ async fn forget_login(gateway: &dyn Gateway, account: &Account) -> Result<(), Ac
 
 async fn holds(gateway: &dyn Gateway, account: &Account) -> Result<bool, AccountError> {
     let provider = ProviderName::for_account(account.name(), Agent::Codex);
-    Ok(gateway.provider_state(&provider).await? == ProviderState::Present)
+    Ok(gateway.provider_state(&provider).await?.exists())
 }
 
 async fn sync_login(

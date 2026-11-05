@@ -10,8 +10,7 @@ use jackin_core::{
     Agent, Clock, CommitId, Config, FileKind, FileLock, FileSystem, FsError, HookKind, HostPath,
     LinkProblem, ManifestError, PathError, PollError, PollPlan, ProcessError, ProcessOutput,
     ProcessRunner, ProcessStatus, RegularFile, RegularFileProblem, RepoPath, RoleManifest,
-    RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace, hold_lock, lock_path,
-    plain_list,
+    RoleName, RoleRev, RoleSource, RoleUrl, Sha256, TerminalText, Workspace, hold_lock, plain_list,
 };
 use jackin_image::{
     ContextEntry, DockerfileError, HookFiles, RoleRevision, SourceFile, validate_dockerfile,
@@ -30,6 +29,7 @@ const KIND_LINK: u8 = b'l';
 const KIND_OTHER: u8 = b'o';
 const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
+const LOCK_DIR: &str = ".locks";
 const LOCK_PLAN: PollPlan = PollPlan {
     interval: Duration::from_millis(50),
     timeout: Duration::from_mins(10),
@@ -273,7 +273,7 @@ impl RoleCatalog {
     ) -> Result<LoadedRole, RoleError> {
         let parent = self.cache_parent().await?;
         let dir = join(&parent, name.as_str())?;
-        let _held = self.hold_dir(&dir, cancel).await?;
+        let _held = self.hold_dir(&parent, name.as_str(), cancel).await?;
         self.checkout(&parent, &dir, name.as_str(), url, rev, cancel)
             .await?;
         self.load_path(&dir, cancel).await
@@ -289,7 +289,7 @@ impl RoleCatalog {
         let digest = Sha256::of(url.as_str().as_bytes());
         let staging = format!(".incoming-{}", &digest.as_str()[..16]);
         let incoming = join(&parent, &staging)?;
-        let _staged = self.hold_dir(&incoming, cancel).await?;
+        let _staged = self.hold_dir(&parent, &staging, cancel).await?;
         let found = async {
             self.checkout(&parent, &incoming, &staging, url, rev, cancel)
                 .await?;
@@ -304,7 +304,9 @@ impl RoleCatalog {
             }
         };
         let dir = join(&parent, loaded.name().as_str())?;
-        let _held = self.hold_dir(&dir, cancel).await?;
+        let _held = self
+            .hold_dir(&parent, loaded.name().as_str(), cancel)
+            .await?;
         self.fs.remove_dir_all(&dir).await?;
         self.fs.rename(&incoming, &dir).await?;
         self.load_path(&dir, cancel).await
@@ -318,10 +320,13 @@ impl RoleCatalog {
 
     async fn hold_dir(
         &self,
-        dir: &HostPath,
+        parent: &HostPath,
+        leaf: &str,
         cancel: &CancellationToken,
     ) -> Result<FileLock, RoleError> {
-        let lock = lock_path(dir)?;
+        let locks = join(parent, LOCK_DIR)?;
+        self.fs.create_private_dir_all(&locks).await?;
+        let lock = join(&locks, &format!("{leaf}.lock"))?;
         hold_lock(&*self.fs, &*self.clock, &lock, LOCK_PLAN, cancel)
             .await
             .map_err(|error| match error {
@@ -331,16 +336,20 @@ impl RoleCatalog {
             })
     }
 
-    pub async fn findings(&self, root: &HostPath) -> Vec<RoleError> {
+    pub async fn findings(&self, root: &HostPath, cancel: &CancellationToken) -> Vec<RoleError> {
         let mut reads = Reads::new();
         let manifest = match self.read_manifest_from(root, &mut reads).await {
             Ok(manifest) => manifest,
             Err(findings) => return findings,
         };
-        self.inspect_manifest(root, manifest, &mut reads)
+        if let Err(findings) = self.inspect_manifest(root, manifest, &mut reads).await {
+            return findings;
+        }
+        self.snapshot(root, &reads, cancel)
             .await
             .err()
-            .unwrap_or_default()
+            .into_iter()
+            .collect()
     }
 
     pub async fn findings_of(&self, root: &HostPath, manifest: RoleManifest) -> Vec<RoleError> {
@@ -720,8 +729,10 @@ impl RoleCatalog {
                 ],
             )
             .await?;
-            self.git(dir, cancel, &["remote", "set-head", "origin", "--auto"])
-                .await?;
+            if rev.is_none() {
+                self.git(dir, cancel, &["remote", "set-head", "origin", "--auto"])
+                    .await?;
+            }
         } else {
             self.fs.remove_dir_all(dir).await?;
             self.git(
