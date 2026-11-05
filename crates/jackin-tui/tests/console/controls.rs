@@ -5,7 +5,7 @@ use std::path::Path;
 
 use jackin_console::backend::Effect;
 use jackin_console::domain::instance::InstanceStatus;
-use jackin_core::{Phase, RoleName, RoleSource, RoleUrl};
+use jackin_core::{Phase, RoleName, RoleSource, RoleUrl, SupervisorState};
 use jackin_testkit::{RoleFixture, TestResult, guard};
 
 use super::support::Lab;
@@ -46,6 +46,14 @@ async fn restore_starts_a_stopped_sandbox_as_jackin_start_does() -> TestResult {
         );
         lab.perform(Effect::Restore { instance: id }).await?;
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Ready);
+        assert!(
+            matches!(
+                lab.rig.handle(1).await?.supervisor(),
+                Some(SupervisorState::Running { .. })
+            ),
+            "{:?}",
+            lab.rig.handle(1).await?.supervisor()
+        );
         let screen = lab.console.screen();
         assert!(!flat(&screen).contains(UNBUILT), "{screen}");
         Ok(())

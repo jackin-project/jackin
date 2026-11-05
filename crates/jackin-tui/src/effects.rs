@@ -21,14 +21,15 @@ use jackin_core::{
     read_credential_file,
 };
 use jackin_core::{
-    EnvSpec, FileLock, ManifestError, PollError, PollPlan, Sha256, Workspace as CoreWorkspace,
-    hold_lock,
+    EnvSpec, FileLock, ManifestError, Poll, PollError, PollPlan, Sha256,
+    Workspace as CoreWorkspace, hold_lock, poll_until,
 };
 use jackin_image::Rebuild;
 use jackin_openshell::PowerAction;
 use jackin_session::{
-    AccountPlan, BuildRequest, Gateways, MANIFEST_FILE, PurgeMode, RoleError, Source,
-    build_observed, error_chain, plan_account_edits, read_chatgpt_login,
+    AccountPlan, BuildRequest, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode, RestartError,
+    RoleError, Session, Source, build_observed, error_chain, launch_events, plan_account_edits,
+    read_chatgpt_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -52,6 +53,10 @@ enum Refused {
     Config(#[from] ConfigError),
 }
 
+const AGENT_START: PollPlan = PollPlan {
+    interval: Duration::from_millis(250),
+    timeout: Duration::from_secs(30),
+};
 const LOCK_KEY_LEN: usize = 32;
 const MANIFEST_LOCK: PollPlan = PollPlan {
     interval: Duration::from_millis(50),
@@ -457,7 +462,7 @@ impl Inputs {
     pub(crate) fn pane_target(
         &self,
         instance: &InstanceId,
-    ) -> Result<(jackin_session::Session, jackin_core::SandboxName), LinkFault> {
+    ) -> Result<(Session, jackin_core::SandboxName), LinkFault> {
         let (gateway, name) = self
             .sandbox(instance)
             .map_err(|error| LinkFault::new(plain(&error)))?;
@@ -470,10 +475,7 @@ impl Inputs {
         }
     }
 
-    fn session(
-        &self,
-        gateway: &jackin_core::GatewayName,
-    ) -> Result<jackin_session::Session, Refused> {
+    fn session(&self, gateway: &jackin_core::GatewayName) -> Result<Session, Refused> {
         match self.sessions.access(gateway) {
             Access::Up(session) => Ok(*session),
             Access::Down { error, .. } => Err(Refused::Text(text(&*error))),
@@ -511,10 +513,55 @@ impl Inputs {
     }
 
     pub(crate) async fn restore(&self, instance: &InstanceId) -> Msg {
+        let result = async {
+            let (gateway, name) = self.sandbox(instance)?;
+            let session = self.session(&gateway)?;
+            session
+                .power(&name, PowerAction::Start, &self.cancel)
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?;
+            self.start_agent(&session, &name).await?;
+            self.after_lifecycle().await
+        }
+        .await;
         Msg::Restored {
             instance: instance.clone(),
-            result: self.powered(instance, PowerAction::Start).await,
+            result: result.map_err(|error| text(&error)),
         }
+    }
+
+    async fn start_agent(
+        &self,
+        session: &Session,
+        name: &jackin_core::SandboxName,
+    ) -> Result<(), Refused> {
+        poll_until(
+            self.host.clock.as_ref(),
+            AGENT_START,
+            &self.cancel,
+            || async {
+                let (events, feed) = launch_events(LineDelivery::BestEffort);
+                drop(feed);
+                match session
+                    .restart_agent(name, events, self.cancel.clone())
+                    .await
+                {
+                    Ok(_) => Ok(Poll::Ready(())),
+                    Err(
+                        RestartError::StateUnreadable { .. } | RestartError::AlreadyRunning { .. },
+                    ) => Ok(Poll::Pending),
+                    Err(error) => Err(error),
+                }
+            },
+        )
+        .await
+        .map_err(|error| match error {
+            PollError::Cancelled => Refused::Text("cancelled while starting Codex".to_owned()),
+            PollError::Timeout { .. } => {
+                Refused::Text(format!("Codex in {name} did not reach its start state"))
+            }
+            PollError::Probe(error) => Refused::Text(text(&error)),
+        })
     }
 
     pub(crate) async fn prewarm(&self, id: WorkspaceId) -> Msg {
