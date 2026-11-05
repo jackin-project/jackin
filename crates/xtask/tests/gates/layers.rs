@@ -110,3 +110,13 @@ fn layers_reject_normal_testkit_edge() -> TestResult {
     assert_eq!(messages(&workspace)?, Vec::<String>::new());
     Ok(())
 }
+
+#[test]
+fn a_member_may_dev_depend_on_itself_to_enable_its_own_test_features() -> TestResult {
+    let workspace = layered(&[(
+        "jackin-openshell",
+        "[features]\ncontract = []\n\n[dev-dependencies]\njackin-openshell = { workspace = true, features = [\"contract\"] }\n",
+    )])?;
+    assert_eq!(messages(&workspace)?, Vec::<String>::new());
+    Ok(())
+}

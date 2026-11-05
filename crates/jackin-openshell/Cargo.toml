@@ -13,11 +13,6 @@ publish.workspace = true
 [features]
 contract = []
 
-[[test]]
-name = "gateway"
-path = "tests/gateway/main.rs"
-required-features = ["contract"]
-
 [dependencies]
 async-trait = { workspace = true }
 jackin-core = { workspace = true }
@@ -38,6 +33,7 @@ tonic = { workspace = true }
 [dev-dependencies]
 futures = { workspace = true }
 globset = { workspace = true }
+jackin-openshell = { workspace = true, features = ["contract"] }
 jackin-testkit = { workspace = true }
 rcgen = { workspace = true }
 tempfile = { workspace = true }
