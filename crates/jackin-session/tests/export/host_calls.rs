@@ -67,7 +67,10 @@ async fn every_host_git_call_is_hardened_and_the_import_carries_its_memory_pins(
             .filter(|call| {
                 call.program == Program::Git
                     && call.args != ["--version"]
-                    && !call.args.iter().any(|arg| arg == "--git-common-dir")
+                    && !call
+                        .args
+                        .iter()
+                        .any(|arg| arg == "--git-common-dir" || arg == "--absolute-git-dir")
             })
             .collect();
         assert!(!scoped.is_empty());
