@@ -14,7 +14,6 @@ use jackin_console::domain::vocabulary::{Rejection, SaveField};
 use jackin_console::domain::workspace::{MountSource, Workspace, WorkspaceId};
 use jackin_console::panes::{FailNext, LinkFault};
 use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
-use jackin_core::plain;
 use jackin_core::{
     Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath, ModelName,
     PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
@@ -24,6 +23,7 @@ use jackin_core::{
     EnvSpec, FileLock, ManifestError, Poll, PollError, PollPlan, Sha256,
     Workspace as CoreWorkspace, hold_lock, poll_until,
 };
+use jackin_core::{lock_path, plain};
 use jackin_image::Rebuild;
 use jackin_openshell::PowerAction;
 use jackin_session::{
@@ -47,6 +47,18 @@ enum Refused {
     Rejected(Rejection),
     #[error("{}", plain(.0))]
     Text(String),
+    #[error("cancelled while starting Codex")]
+    StartCancelled,
+    #[error("Codex in {0} did not reach its start state")]
+    StartTimedOut(jackin_core::SandboxName),
+    #[error("the configuration path has no directory")]
+    NoConfigDir,
+    #[error("cancelled while waiting for the role manifest")]
+    ManifestCancelled,
+    #[error("another jackin process is saving this role manifest")]
+    ManifestBusy,
+    #[error("{}", .0.iter().map(|error| text(error)).collect::<Vec<_>>().join("; "))]
+    RoleErrors(Vec<RoleError>),
     #[error(transparent)]
     Persist(#[from] PersistError),
     #[error(transparent)]
@@ -556,10 +568,8 @@ impl Inputs {
         )
         .await
         .map_err(|error| match error {
-            PollError::Cancelled => Refused::Text("cancelled while starting Codex".to_owned()),
-            PollError::Timeout { .. } => {
-                Refused::Text(format!("Codex in {name} did not reach its start state"))
-            }
+            PollError::Cancelled => Refused::StartCancelled,
+            PollError::Timeout { .. } => Refused::StartTimedOut(name.clone()),
             PollError::Probe(error) => Refused::Text(text(&error)),
         })
     }
@@ -815,15 +825,11 @@ impl Inputs {
             let file =
                 HostPath::resolve(Path::new(MANIFEST_FILE), root).map_err(PersistError::from)?;
             let _held = self.hold_manifest(&file).await?;
-            let mut manifest = self.roles.read_manifest(root).await.map_err(|errors| {
-                Refused::Text(
-                    errors
-                        .iter()
-                        .map(|error| text(error))
-                        .collect::<Vec<_>>()
-                        .join("; "),
-                )
-            })?;
+            let mut manifest = self
+                .roles
+                .read_manifest(root)
+                .await
+                .map_err(Refused::RoleErrors)?;
             merge_manifest(&mut manifest, base, doc).map_err(|unmerged| unmerged.refused)?;
             manifest
                 .write(self.host.fs.as_ref(), &file)
@@ -842,13 +848,14 @@ impl Inputs {
     async fn hold_manifest(&self, file: &HostPath) -> Result<FileLock, Refused> {
         let dir = Path::new(&self.config_path)
             .parent()
-            .ok_or_else(|| Refused::Text("the configuration path has no directory".to_owned()))
+            .ok_or(Refused::NoConfigDir)
             .and_then(|dir| {
                 HostPath::parse(dir).map_err(|error| Refused::from(PersistError::from(error)))
             })?;
         let key = Sha256::of(file.to_string().as_bytes());
-        let name = format!("role-{}.lock", &key.as_str()[..LOCK_KEY_LEN]);
-        let lock = HostPath::resolve(Path::new(&name), &dir).map_err(PersistError::from)?;
+        let target = HostPath::resolve(Path::new(&key.as_str()[..LOCK_KEY_LEN]), &dir)
+            .map_err(PersistError::from)?;
+        let lock = lock_path(&target).map_err(|error| Refused::Text(text(&error)))?;
         hold_lock(
             self.host.fs.as_ref(),
             self.host.clock.as_ref(),
@@ -858,12 +865,8 @@ impl Inputs {
         )
         .await
         .map_err(|error| match error {
-            PollError::Cancelled => {
-                Refused::Text("cancelled while waiting for the role manifest".to_owned())
-            }
-            PollError::Timeout { .. } => {
-                Refused::Text("another jackin process is saving this role manifest".to_owned())
-            }
+            PollError::Cancelled => Refused::ManifestCancelled,
+            PollError::Timeout { .. } => Refused::ManifestBusy,
             PollError::Probe(error) => Refused::Text(text(&error)),
         })
     }
