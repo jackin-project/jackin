@@ -12,13 +12,13 @@ use tokio_util::sync::CancellationToken;
 
 use crate::support::{
     GROUP_ID, LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, WAIT_FOR, assert_no_leftover,
-    guarded, next_line, wait_for_beat,
+    guard, next_line, wait_for_beat,
 };
 
 #[tokio::test]
 async fn a_timeout_kills_the_child_and_every_descendant_and_reports_the_configured_limit()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let mut spec = scratch.spec(&format!("{LOOP_DETACHED}echo ready\nwait\n"), &[])?;
         spec.timeout = Duration::from_secs(3);
@@ -79,7 +79,7 @@ async fn a_timeout_kills_the_child_and_every_descendant_and_reports_the_configur
 
 #[tokio::test]
 async fn cancel_kills_the_child_and_every_descendant_and_reports_cancelled() -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let body = format!("{LOOP_HOLDING}echo ready\nwait\n");
         let mut spec = scratch.spec(&body, &[])?;
@@ -145,7 +145,7 @@ async fn cancel_kills_the_child_and_every_descendant_and_reports_cancelled() -> 
 
 #[tokio::test]
 async fn a_clean_exit_kills_a_descendant_that_closed_its_pipes() -> TestResult {
-    guarded(async {
+    guard(async {
         let body = format!("{WAIT_FOR}{LOOP_DETACHED}wait_for \"$d/beat\"\nsleep 0.2\nexit 0\n");
         let plain = Scratch::new()?;
         let output = TokioProcessRunner
@@ -275,7 +275,7 @@ async fn cancel_round(round: usize) -> TestResult {
 
 #[tokio::test]
 async fn a_run_returns_only_after_no_process_of_its_group_is_left() -> TestResult {
-    guarded(async {
+    guard(async {
         for round in 0..40 {
             exit_round(round).await?;
         }

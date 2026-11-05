@@ -18,8 +18,8 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guarded,
-    guarded_heavy, next_line, same_bytes,
+    LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guard,
+    next_line, same_bytes,
 };
 
 const MARK: &str = " [truncated]";
@@ -54,7 +54,7 @@ async fn release_gates(
 
 #[tokio::test]
 async fn lines_reach_the_sink_in_arrival_order_while_the_child_is_still_running() -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let body = format!(
             "{WAIT_FOR}echo out-1\nwait_for \"$1/g1\"\necho err-1 >&2\nwait_for \"$1/g2\"\necho out-2\nprintf tail\n"
@@ -87,7 +87,7 @@ async fn lines_reach_the_sink_in_arrival_order_while_the_child_is_still_running(
 #[tokio::test]
 async fn unstreamed_output_is_returned_whole_from_both_streams_without_a_pipe_deadlock()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let spec = scratch.spec("seq 1 50000 >&2\nseq 1 50000\nprintf last\n", &[])?;
         let output = TokioProcessRunner
@@ -108,7 +108,7 @@ async fn unstreamed_output_is_returned_whole_from_both_streams_without_a_pipe_de
 #[tokio::test]
 async fn streamed_output_is_lossless_ordered_per_stream_lossy_decoded_and_tailed_to_64_kib()
 -> TestResult {
-    guarded_heavy(async {
+    guard(async {
         let scratch = Scratch::heavy()?;
         let body = "seq 1 30000\nprintf '\\377\\376bad\\n'\nseq 1 5 >&2\necho done\n";
         let spec = scratch.spec(body, &[])?;
@@ -161,7 +161,7 @@ async fn streamed_output_is_lossless_ordered_per_stream_lossy_decoded_and_tailed
 
 #[tokio::test]
 async fn a_gone_line_receiver_never_fails_or_stalls_the_run() -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let spec = scratch.spec("seq 1 50000\nseq 1 50000 >&2\nexit 0\n", &[])?;
         let (tx, rx) = mpsc::channel::<OutputLine>(1);
@@ -211,7 +211,7 @@ fn texts(lines: &[OutputLine], stream: OutputStream) -> Vec<&str> {
 #[tokio::test]
 async fn a_single_output_line_is_cut_at_64_kib_with_a_mark_and_the_next_line_arrives_intact()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let body = "for n in 65535 65536; do head -c $n /dev/zero | tr '\\0' a; echo; done\nhead -c 65536 /dev/zero | tr '\\0' a; echo z\necho next\nprintf last\nhead -c 1048576 /dev/zero | tr '\\0' e >&2\necho >&2\necho after-err >&2\n";
         let (output, lines) = streamed(&scratch.spec(body, &[])?).await?;
@@ -273,7 +273,7 @@ async fn resident_kib() -> Result<u64, Box<dyn Error + Send + Sync>> {
 
 #[tokio::test]
 async fn a_128_mib_line_does_not_grow_process_memory() -> TestResult {
-    guarded_heavy(async {
+    guard(async {
         let scratch = Scratch::heavy()?;
         let spec = scratch.spec("head -c 134217728 /dev/zero | tr '\\0' a\n", &[])?;
         let baseline = resident_kib().await.map_err(|error| error.to_string())?;
@@ -348,7 +348,7 @@ fn names(error: &ProcessError, expected: OutputStream) -> TestResult {
 #[tokio::test]
 async fn unstreamed_output_beyond_16_mib_per_stream_fails_with_output_too_large_and_stops_the_child()
 -> TestResult {
-    guarded_heavy(async {
+    guard(async {
         let exact = Scratch::heavy()?;
         let spec = exact.spec(&flood(OutputStream::Stdout, WHOLE_LIMIT, ""), &[])?;
         let output = TokioProcessRunner
@@ -496,7 +496,7 @@ async fn slow_sink_run(holding: bool) -> TestResult {
 #[tokio::test]
 async fn a_slow_sink_after_the_child_exits_loses_no_line_and_the_idle_rule_still_ends_the_run()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let (plain, holding) = tokio::join!(slow_sink_run(false), slow_sink_run(true));
         plain?;
         holding

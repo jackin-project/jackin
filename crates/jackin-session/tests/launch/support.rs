@@ -10,15 +10,11 @@ use jackin_core::{
 use jackin_image::BuildStage;
 use jackin_openshell::{Gateway, SandboxFile};
 use jackin_session::{AttachTarget, LaunchFailure, LaunchLimits, LaunchOutcome};
-use jackin_testkit::{Outcome, RepoFixture, Rig, RigBuilder, SandboxHandle, guard_within};
+use jackin_testkit::{Outcome, RepoFixture, Rig, RigBuilder, SandboxHandle};
 
 pub(crate) use jackin_testkit::{ACCESS, ACCOUNT_ID, PLACEHOLDER, REFRESH, TestResult, launch_id};
 
-const GUARD: Duration = Duration::from_secs(170);
-
-pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
-    guard_within(GUARD, work).await
-}
+pub(crate) use jackin_testkit::guard;
 
 pub(crate) fn path(text: &str) -> Result<SandboxPath, Box<dyn Error>> {
     Ok(SandboxPath::parse(text)?)

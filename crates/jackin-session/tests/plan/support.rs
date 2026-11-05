@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
-use std::time::Duration;
 
 use jackin_core::{
     Config, EnvName, FileSystem, GatewayName, HostPath, ImageId, LaunchId, PlainEnvValue,
@@ -17,13 +16,7 @@ use jackin_testkit::{FakeClock, RepoFixture, RoleFixture, TestRunner};
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
-const GUARD: Duration = Duration::from_secs(170);
-
-pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
-    tokio::time::timeout(GUARD, work)
-        .await
-        .map_err(|_| format!("the test hung for {} s", GUARD.as_secs()))?
-}
+pub(crate) use jackin_testkit::guard;
 
 pub(crate) fn launch_id(byte: u8) -> LaunchId {
     LaunchId::from_entropy(&[byte; 26])
