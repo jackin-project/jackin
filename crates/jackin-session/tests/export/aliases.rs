@@ -5,44 +5,15 @@ use jackin_core::CommitId;
 use jackin_session::ExportError;
 use jackin_testkit::{Rig, SandboxHandle, TestResult, guard};
 
-use super::support::{branch_with_commit, bundles_left, export, exports, ref_of, snapshot, tip};
-
-const HEADER: &[u8] = b"# pack-refs with: peeled fully-peeled sorted \n";
+use super::support::{
+    self, branch_with_commit, bundles_left, export, exports, ref_of, snapshot, tip,
+};
 
 fn rewrite_packed(handle: &SandboxHandle, add: &[(&str, &CommitId)], drop: &[&str]) -> TestResult {
-    let file = handle.root().join("project/.git/packed-refs");
-    let mut entries: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
-    for line in std::fs::read(&file)?.split(|byte| *byte == b'\n') {
-        if line.is_empty() || line.starts_with(b"#") || line.starts_with(b"^") {
-            continue;
-        }
-        let split = line
-            .iter()
-            .position(|byte| *byte == b' ')
-            .ok_or("bad line")?;
-        entries.push((line[split + 1..].to_vec(), line[..split].to_vec()));
-    }
-    entries.retain(|(name, _)| {
-        !drop
-            .iter()
-            .any(|gone| name == format!("refs/heads/{gone}").as_bytes())
-    });
-    for (name, id) in add {
-        entries.push((
-            format!("refs/heads/{name}").into_bytes(),
-            id.as_str().as_bytes().to_vec(),
-        ));
-    }
-    entries.sort();
-    let mut out = HEADER.to_vec();
-    for (name, id) in entries {
-        out.extend(id);
-        out.push(b' ');
-        out.extend(name);
-        out.push(b'\n');
-    }
-    std::fs::write(&file, out)?;
-    Ok(())
+    let named = |name: &str| format!("refs/heads/{name}").into_bytes();
+    let add: Vec<(Vec<u8>, &CommitId)> = add.iter().map(|(name, id)| (named(name), *id)).collect();
+    let drop: Vec<Vec<u8>> = drop.iter().map(|name| named(name)).collect();
+    support::rewrite_packed(&handle.root().join("project/.git"), &add, &drop)
 }
 
 #[tokio::test]

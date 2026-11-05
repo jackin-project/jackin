@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{HostPath, TerminalText};
+use jackin_openshell::GatewayOp;
 use jackin_session::{ExportError, PurgeError, PurgeMode, Unexported, WorkState};
-use jackin_testkit::{Rig, TestResult, guard};
+use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
 
 use super::support::{branch_with_commit, export, exports, ref_of, snapshot, state};
 
@@ -111,6 +112,57 @@ async fn a_target_ref_checked_out_in_any_host_worktree_is_refused_with_no_ref_ch
                 .get(&target)
                 .map(String::as_str),
             Some(second.as_str())
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_worktree_that_takes_a_target_ref_during_the_download_still_blocks_the_update()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let first = handle.commit_in_project("a.txt", b"a", "one").await?;
+        export(&rig, &name).await?;
+        let target = ref_of(&name, "main");
+        let short = target.trim_start_matches("refs/heads/").to_owned();
+        handle.commit_in_project("b.txt", b"b", "two").await?;
+        let gateway = &rig.world.gateway;
+        let held = Trigger::Op(GatewayOp::Download);
+        gateway.inject(Fault::HoldAt {
+            trigger: held.clone(),
+        });
+        let other = tempfile::tempdir()?;
+        let path = other.path().join("late").to_string_lossy().into_owned();
+
+        let exporting = export(&rig, &name);
+        let racing = async {
+            assert!(gateway.until_held(&held).await);
+            let added = rig
+                .repo
+                .git(&["worktree", "add", "-q", &path, &short])
+                .await;
+            gateway.release(&held);
+            added
+        };
+        let (refused, added) = tokio::join!(exporting, racing);
+
+        added?;
+        let Err(ExportError::RefCheckedOut { host_ref, .. }) = refused else {
+            return Err(format!("expected a refusal, saw {refused:?}").into());
+        };
+        assert_eq!(host_ref, target);
+        assert_eq!(
+            snapshot(&rig)
+                .await?
+                .exported
+                .get(&target)
+                .map(String::as_str),
+            Some(first.as_str())
         );
         Ok(())
     })

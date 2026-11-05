@@ -626,6 +626,7 @@ impl Session {
                 observed: observed.refs.exported.get(&item.name()).cloned(),
             });
         }
+        unoccupied(host, &targets).await?;
         host.publish(self.deps.host.fs.as_ref(), updates).await?;
         let landed = host.refs(sandbox).await?;
         report(sandbox, digest, items, &header.heads, &landed)
@@ -658,6 +659,10 @@ async fn guard(host: &Host<'_>, refs: &HostRefs, targets: &[String]) -> Result<(
     {
         return Err(error);
     }
+    unoccupied(host, targets).await
+}
+
+async fn unoccupied(host: &Host<'_>, targets: &[String]) -> Result<(), ExportError> {
     let worktrees = host.worktrees().await?;
     for target in targets {
         if let Some(tree) = worktrees

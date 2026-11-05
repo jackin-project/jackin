@@ -113,9 +113,22 @@ impl<'a> Host<'a> {
             every: Vec::new(),
             head: self.resolve(HEAD).await?,
         };
-        for line in String::from_utf8_lossy(&listed).lines() {
-            let (oid, name) = line.split_once(' ').ok_or(ExportError::HostOutput {
-                message: "for-each-ref printed a line without a name".to_owned(),
+        for line in listed.split(|byte| *byte == b'\n') {
+            if line.is_empty() {
+                continue;
+            }
+            let (oid, name) = line
+                .iter()
+                .position(|byte| *byte == b' ')
+                .map(|at| (&line[..at], &line[at + 1..]))
+                .ok_or(ExportError::HostOutput {
+                    message: "for-each-ref printed a line without a name".to_owned(),
+                })?;
+            let Ok(name) = std::str::from_utf8(name) else {
+                continue;
+            };
+            let oid = std::str::from_utf8(oid).map_err(|_| ExportError::HostOutput {
+                message: "for-each-ref printed a non-UTF-8 object name".to_owned(),
             })?;
             refs.every.push(name.to_owned());
             let tip = commit(oid)?;
@@ -172,7 +185,7 @@ impl<'a> Host<'a> {
             if let Some(rest) = field.strip_prefix(b"worktree ") {
                 path = Some(HostPath::parse(&PathBuf::from(OsStr::from_bytes(rest)))?);
             } else if let Some(rest) = field.strip_prefix(b"branch ") {
-                branch = Some(String::from_utf8_lossy(rest).into_owned());
+                branch = std::str::from_utf8(rest).ok().map(str::to_owned);
             }
         }
         if let Some(path) = path {
