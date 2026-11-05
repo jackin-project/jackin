@@ -36,7 +36,7 @@ export function ImageLayers() {
             <span className="jk-layer-owner">built by jackin❯</span>
           </div>
           <ul className="jk-layer-items">
-            <li>OpenShell default sandbox image, Ubuntu 24.04</li>
+            <li>Debian stable (trixie) base image</li>
             <li>User sandbox, uid 1000</li>
             <li>git, curl, jq, bash</li>
             <li>No setuid bit, no sudo</li>
