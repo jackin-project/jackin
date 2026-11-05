@@ -77,6 +77,27 @@ impl Pipeline<'_> {
             .map_err(from_engine)
     }
 
+    async fn cached(&self, tag: &ImageTag) -> Result<Option<ImageId>, ImageError> {
+        let Some(found) = self.find(tag).await? else {
+            return Ok(None);
+        };
+        self.live()?;
+        let attested = self
+            .engine
+            .attested(tag, self.cancel)
+            .await
+            .map_err(from_engine)?;
+        Ok((attested.as_ref() == Some(&found)).then_some(found))
+    }
+
+    async fn attest(&self, tag: &ImageTag, id: &ImageId) -> Result<(), ImageError> {
+        self.live()?;
+        self.engine
+            .attest(tag, id, self.cancel)
+            .await
+            .map_err(from_engine)
+    }
+
     async fn inspect(&self, id: &ImageId) -> Result<ImageInspect, ImageError> {
         self.live()?;
         self.engine
@@ -188,14 +209,14 @@ pub async fn ensure_held(
     };
     let construct = plan.construct_build();
     let mut cached = match request.rebuild {
-        Rebuild::No => pipeline.find(&construct.tag).await?,
+        Rebuild::No => pipeline.cached(&construct.tag).await?,
         Rebuild::Yes => None,
     };
     let mut construct_lock = None;
     if cached.is_none() {
         construct_lock = pipeline.hold(&construct.tag).await?;
         if request.rebuild == Rebuild::No {
-            cached = pipeline.find(&construct.tag).await?;
+            cached = pipeline.cached(&construct.tag).await?;
         }
     }
     let construct_id = if let Some(id) = cached {
@@ -204,13 +225,15 @@ pub async fn ensure_held(
             .await;
         id
     } else {
-        pipeline.build(construct, &[]).await?
+        let built = pipeline.build(construct, &[]).await?;
+        pipeline.attest(&construct.tag, &built).await?;
+        built
     };
     drop(construct_lock);
     let final_tag = plan.final_tag(&construct_id);
     let hold = pipeline.hold(&final_tag).await?;
     if request.rebuild == Rebuild::No
-        && let Some(id) = pipeline.find(&final_tag).await?
+        && let Some(id) = pipeline.cached(&final_tag).await?
     {
         let construct_image = pipeline.inspect(&construct_id).await?;
         pipeline
@@ -254,6 +277,7 @@ pub async fn ensure_held(
     pipeline
         .verify(BuildStage::Derived, &built, &construct_image)
         .await?;
+    pipeline.attest(&builds.derived.tag, &built).await?;
     Ok(HeldImage {
         image: BuiltImage {
             tag: builds.derived.tag,

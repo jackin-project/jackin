@@ -251,6 +251,18 @@ impl Labels {
         Ok(Labels(labels))
     }
 
+    pub fn from_valid_pairs(pairs: impl IntoIterator<Item = (String, String)>) -> Labels {
+        Labels(
+            pairs
+                .into_iter()
+                .filter(|(key, value)| {
+                    label_key_problem(key).is_none() && label_value_problem(value).is_none()
+                })
+                .map(|(key, value)| (LabelKey(key), LabelValue(value)))
+                .collect(),
+        )
+    }
+
     pub fn differences(&self, wanted: &SandboxLabels) -> Vec<LabelDifference> {
         let wanted = wanted.to_labels();
         let absent = LabelValue(ABSENT.to_owned());
@@ -266,6 +278,10 @@ impl Labels {
                 })
             })
             .collect()
+    }
+
+    pub fn workspace(&self) -> Option<WorkspaceName> {
+        self.parsed(WORKSPACE, WorkspaceName::parse).ok()
     }
 
     pub fn is_managed(&self) -> bool {

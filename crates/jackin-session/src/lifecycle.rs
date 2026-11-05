@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use jackin_core::{
     ClosureViolationView, Config, InspectView, LabelError, LabelSelector, Labels, Phase,
-    PolicyStatus, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading, plain_duration,
+    PolicyStatus, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading, WorkspaceName,
+    plain_duration,
 };
 use jackin_openshell::{
     ClosureViolation, GatewayError, PolicyError, PowerAction, ProviderProfile, RuleKey,
@@ -26,6 +27,7 @@ pub struct SandboxListing {
 #[derive(Debug)]
 pub struct UnreadableSandbox {
     pub name: SandboxName,
+    pub workspace: Option<WorkspaceName>,
     pub error: LabelError,
 }
 
@@ -173,6 +175,7 @@ impl Session {
                 }),
                 Err(error) => listing.unreadable.push(UnreadableSandbox {
                     name: view.name,
+                    workspace: view.labels.workspace(),
                     error,
                 }),
             }

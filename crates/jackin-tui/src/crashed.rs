@@ -80,12 +80,16 @@ pub(crate) fn reply(effect: &Effect) -> Msg {
             role: role.clone(),
             result: Err(error),
         },
-        Effect::RefreshAccount { account, .. } => Msg::AccountRefreshed {
+        Effect::RefreshAccount {
+            account, source, ..
+        } => Msg::AccountRefreshed {
             account: account.clone(),
+            source: Box::new(source.clone()),
             result: Err(error),
         },
-        Effect::ValidateAccount { account } => Msg::AccountValidated {
+        Effect::ValidateAccount { account, source } => Msg::AccountValidated {
             account: account.clone(),
+            source: Box::new(source.clone()),
             result: Err(error),
         },
         Effect::CheckSource { ticket, .. } => Msg::SourceChecked {
@@ -120,6 +124,8 @@ pub(crate) fn reply(effect: &Effect) -> Msg {
 #[cfg(test)]
 mod tests {
     use jackin_console::backend::OpScope;
+    use jackin_console::domain::account::{CredentialSource, DetectedKind};
+    use jackin_console::domain::role::RoleManifestDoc;
 
     use super::*;
 
@@ -148,5 +154,60 @@ mod tests {
             }
         );
         assert_eq!(reply(&Effect::Refresh), refresh());
+    }
+
+    #[test]
+    fn a_crashed_reply_echoes_the_ticket_and_the_request_sources() {
+        let check = Effect::CheckRole {
+            ticket: 11,
+            role: "agent-smith".to_owned(),
+            doc: RoleManifestDoc {
+                name: "agent-smith".to_owned(),
+                dockerfile: String::new(),
+                policy: String::new(),
+                codex_model: None,
+                docker: false,
+                hook_setup: None,
+                hook_preflight: None,
+                env: Vec::new(),
+            },
+        };
+        assert_eq!(
+            reply(&check),
+            Msg::RoleChecked {
+                ticket: 11,
+                role: "agent-smith".to_owned(),
+                result: Err(Stopped.to_string()),
+            }
+        );
+        let source = CredentialSource::HostEnv {
+            var: "OPENAI_API_KEY".to_owned(),
+            detected: DetectedKind::CodexAuthJson,
+        };
+        let validate = Effect::ValidateAccount {
+            account: "personal".to_owned(),
+            source: source.clone(),
+        };
+        assert_eq!(
+            reply(&validate),
+            Msg::AccountValidated {
+                account: "personal".to_owned(),
+                source: Box::new(source.clone()),
+                result: Err(Stopped.to_string()),
+            }
+        );
+        let refresh = Effect::RefreshAccount {
+            account: "personal".to_owned(),
+            source: source.clone(),
+            stagger_ms: 250,
+        };
+        assert_eq!(
+            reply(&refresh),
+            Msg::AccountRefreshed {
+                account: "personal".to_owned(),
+                source: Box::new(source),
+                result: Err(Stopped.to_string()),
+            }
+        );
     }
 }

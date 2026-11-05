@@ -312,8 +312,14 @@ impl Inputs {
             .ok_or_else(|| error_chain(&jackin_usage::UsageError::Cancelled))
     }
 
-    pub(crate) async fn refresh_account(&self, account: &str) -> Settled {
-        let result = self.read_usage(account).await.map(|read| {
+    pub(crate) async fn refresh_account(
+        &self,
+        account: &str,
+        requested: CredentialSource,
+    ) -> Settled {
+        let read = self.read_usage(account).await;
+        let source = read.as_ref().map_or(requested, |read| read.source.clone());
+        let result = read.map(|read| {
             let Mapped {
                 usage,
                 issue,
@@ -330,19 +336,27 @@ impl Inputs {
         });
         Msg::AccountRefreshed {
             account: account.to_owned(),
+            source: Box::new(source),
             result,
         }
         .into()
     }
 
-    pub(crate) async fn validate_account(&self, account: &str) -> Settled {
-        let result = self.read_usage(account).await.map(|read| {
+    pub(crate) async fn validate_account(
+        &self,
+        account: &str,
+        requested: CredentialSource,
+    ) -> Settled {
+        let read = self.read_usage(account).await;
+        let source = read.as_ref().map_or(requested, |read| read.source.clone());
+        let result = read.map(|read| {
             let outcome = validation(&read.found, &read.source, read.now);
             locked(&self.readings).checked(read.account, outcome.clone(), read.now);
             Validation::Checked(Box::new(outcome))
         });
         Msg::AccountValidated {
             account: account.to_owned(),
+            source: Box::new(source),
             result,
         }
         .into()

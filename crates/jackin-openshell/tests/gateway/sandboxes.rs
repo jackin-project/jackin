@@ -615,3 +615,35 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         ProviderState::Absent
     );
 }
+
+#[tokio::test]
+async fn a_managed_sandbox_with_an_invalid_label_is_listed_without_that_label() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    add_sandbox(
+        &mut env.server.state(),
+        WORKSPACE,
+        "jackin-bad-label",
+        SandboxPhase::Ready,
+        None,
+        &[
+            ("jackin.dev/managed", "true"),
+            ("jackin.dev/workspace", "Not A Valid Value!"),
+            ("jackin.dev/role", "backend"),
+        ],
+    );
+    let found = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].name.to_string(), "jackin-bad-label");
+    assert!(found[0].labels.workspace().is_none());
+    assert_eq!(found[0].labels.iter().count(), 2);
+    assert!(found[0].labels.is_managed());
+    assert!(
+        guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-bad-label"))))
+            .await
+            .is_err(),
+        "a single-sandbox lookup still refuses invalid labels"
+    );
+}

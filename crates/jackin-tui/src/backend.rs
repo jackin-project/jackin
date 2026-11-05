@@ -119,17 +119,17 @@ impl JackinBackend {
             Effect::RemoveRole { role } => self
                 .bridge
                 .spawn(failure, async move { inputs.remove_role(&role).await }),
-            Effect::RefreshAccount { account, .. } => {
-                self.bridge.spawn(
-                    failure,
-                    async move { inputs.refresh_account(&account).await },
-                );
+            Effect::RefreshAccount {
+                account, source, ..
+            } => {
+                self.bridge.spawn(failure, async move {
+                    inputs.refresh_account(&account, source).await
+                });
             }
-            Effect::ValidateAccount { account } => {
-                self.bridge.spawn(
-                    failure,
-                    async move { inputs.validate_account(&account).await },
-                );
+            Effect::ValidateAccount { account, source } => {
+                self.bridge.spawn(failure, async move {
+                    inputs.validate_account(&account, source).await
+                });
             }
             Effect::CheckSource {
                 ticket,

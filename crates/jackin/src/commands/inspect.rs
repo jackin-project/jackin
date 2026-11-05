@@ -46,10 +46,7 @@ fn human(app: &mut App, view: &InspectView) -> Result<(), CommandError> {
         app.io.line(&line)?;
     }
     for violation in &view.closure_violations {
-        app.io.line(&format!(
-            "violation\t{} reaches {} (provider host {})",
-            violation.rule, violation.host, violation.provider_host
-        ))?;
+        app.io.line(&format!("violation\t{violation}"))?;
     }
     Ok(())
 }

@@ -22,6 +22,7 @@ use crate::sync::locked;
 struct EngineState {
     images: BTreeMap<ImageTag, ImageId>,
     pinned: BTreeMap<ImageTag, ImageId>,
+    attested: BTreeMap<ImageTag, ImageId>,
     builds: Vec<BuildRecord>,
     failures: Vec<BuildStage>,
     script: Vec<EngineMoment>,
@@ -185,6 +186,10 @@ impl FakeEngine {
         self.exclusion.waiters(key)
     }
 
+    pub fn plant(&self, tag: &ImageTag, id: ImageId) {
+        locked(&self.state).images.insert(tag.clone(), id);
+    }
+
     pub fn pin_id(&self, tag: &ImageTag, id: ImageId) {
         let mut state = locked(&self.state);
         state.pinned.insert(tag.clone(), id.clone());
@@ -330,6 +335,24 @@ impl ImageEngine for FakeEngine {
             state.retag(retag);
         }
         Ok(answer)
+    }
+
+    async fn attested(
+        &self,
+        tag: &ImageTag,
+        _cancel: &CancellationToken,
+    ) -> Result<Option<ImageId>, EngineError> {
+        Ok(locked(&self.state).attested.get(tag).cloned())
+    }
+
+    async fn attest(
+        &self,
+        tag: &ImageTag,
+        id: &ImageId,
+        _cancel: &CancellationToken,
+    ) -> Result<(), EngineError> {
+        locked(&self.state).attested.insert(tag.clone(), id.clone());
+        Ok(())
     }
 
     async fn inspect(

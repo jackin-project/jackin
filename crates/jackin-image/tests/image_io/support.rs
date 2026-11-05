@@ -123,7 +123,7 @@ impl Fixture {
                 entries
                     .filter_map(Result::ok)
                     .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                    .filter(|name| name != "locks")
+                    .filter(|name| !matches!(name.as_str(), "locks" | "attested"))
                     .collect()
             },
         )
@@ -267,6 +267,12 @@ impl DockerModel {
             .images
             .insert(tag.to_owned(), id.clone());
         id
+    }
+
+    pub(crate) fn plant(&self, tag: &str, id: &str) {
+        locked(&self.state)
+            .images
+            .insert(tag.to_owned(), id.to_owned());
     }
 
     pub(crate) fn images(&self) -> BTreeMap<String, String> {

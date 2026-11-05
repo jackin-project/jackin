@@ -4,7 +4,8 @@
 use jackin::ExitClass;
 use jackin_core::{InspectView, Labels, Phase, ProviderName, SandboxName};
 use jackin_openshell::{
-    EndpointProtocol, HostPattern, NetworkRule, PowerAction, RuleEndpoint, RuleKey, TlsMode,
+    EndpointProtocol, HostPattern, NetworkRule, PolicyDocument, PowerAction, RuleEndpoint, RuleKey,
+    TlsMode,
 };
 use jackin_testkit::{Rig, TestResult, guard};
 use serde_json::json;
@@ -120,6 +121,37 @@ async fn inspect_of_a_missing_or_unmanaged_sandbox_fails_with_empty_stdout() -> 
             let ran = harness.run(&["inspect", name, "--json"]).await?;
             failed(&ran, ExitClass::Failure, &[name])?;
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn inspect_escapes_an_unparsable_live_policy_host_in_the_human_output() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.handle(1).await?.name();
+        let harness = Harness::new(&rig.world);
+        harness.write_config(&rig.config.render())?;
+        let hostile = "evil.example\u{1b}[2J\nviolation\t_provider_forged reaches api.openai.com";
+        let policy = PolicyDocument::parse(&format!(
+            "version: 1\nfilesystem_policy:\n  read_only:\n    - /bin\nlandlock:\n  compatibility: hard_requirement\nnetwork_policies:\n  hostile:\n    name: hostile\n    endpoints:\n      - host: \"{}\"\n        port: 443\n    binaries:\n      - path: /usr/bin/curl\n",
+            hostile.replace('\u{1b}', "\\e").replace('\n', "\\n")
+        ))?;
+        rig.world.gateway.replace_live_policy(&name, policy)?;
+
+        let ran = harness.run(&["inspect", name.as_str()]).await?;
+        ran.ok()?;
+        assert!(!ran.stdout.contains('\u{1b}'), "{:?}", ran.stdout);
+        let rows: Vec<&str> = ran
+            .stdout
+            .lines()
+            .filter(|line| line.starts_with("violation\t"))
+            .collect();
+        assert_eq!(rows.len(), 1, "{:?}", ran.stdout);
+        assert!(rows[0].contains("\\u{1b}"), "{:?}", rows[0]);
+        assert!(rows[0].contains("\\n"), "{:?}", rows[0]);
         Ok(())
     })
     .await

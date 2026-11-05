@@ -379,7 +379,7 @@ impl Inputs {
         }
         self.gateways(config)
             .await?
-            .ensure_workspace_unused(name)
+            .ensure_workspace_unused(config, name)
             .await
             .map_err(|error| Refused::Text(text(&error)))
     }

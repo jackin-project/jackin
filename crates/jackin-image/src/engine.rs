@@ -22,6 +22,17 @@ pub trait ImageEngine: Send + Sync + Debug {
         tag: &ImageTag,
         cancel: &CancellationToken,
     ) -> Result<Option<ImageId>, EngineError>;
+    async fn attested(
+        &self,
+        tag: &ImageTag,
+        cancel: &CancellationToken,
+    ) -> Result<Option<ImageId>, EngineError>;
+    async fn attest(
+        &self,
+        tag: &ImageTag,
+        id: &ImageId,
+        cancel: &CancellationToken,
+    ) -> Result<(), EngineError>;
     async fn inspect(
         &self,
         id: &ImageId,
