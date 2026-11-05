@@ -157,7 +157,7 @@ pub(super) async fn borrowed_objects(
             match entry.kind {
                 FileKind::Dir => pending.push(path),
                 FileKind::File => {}
-                FileKind::Symlink | FileKind::Socket => {
+                FileKind::Symlink | FileKind::Socket | FileKind::Other => {
                     return Err(UnsupportedProject::LinkedObjects(path).into());
                 }
             }

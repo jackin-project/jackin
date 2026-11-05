@@ -269,6 +269,7 @@ pub async fn production(args: &E2eArgs) -> Result<Boundaries, ProductionError> {
         runner,
         transfer_timeout: TRANSFER_TIMEOUT,
         call_timeout: CALL_TIMEOUT,
+        cancel: cancel.clone(),
     })
     .await
     .map_err(|error| {
@@ -293,7 +294,7 @@ pub async fn production(args: &E2eArgs) -> Result<Boundaries, ProductionError> {
         jackin,
         repo_root: root,
         codex_home,
-        scratch_root: std::env::temp_dir().join("jackin-e2e"),
+        scratch_root: std::env::temp_dir().join(super::scratch::scratch_dir_name()),
         log_dir,
         lock_dir: std::env::temp_dir(),
         tag,

@@ -381,7 +381,9 @@ impl ImageEngine for BuildxEngine {
         match self.fs.stat(&record).await? {
             None | Some(FileKind::File) => {}
             Some(FileKind::Dir) => self.fs.remove_dir_all(&record).await?,
-            Some(FileKind::Symlink | FileKind::Socket) => self.fs.remove_file(&record).await?,
+            Some(FileKind::Symlink | FileKind::Socket | FileKind::Other) => {
+                self.fs.remove_file(&record).await?;
+            }
         }
         write_atomic(
             self.fs.as_ref(),

@@ -40,6 +40,7 @@ pub struct GrpcGatewayConfig {
     pub runner: Arc<dyn ProcessRunner>,
     pub transfer_timeout: Duration,
     pub call_timeout: Duration,
+    pub cancel: CancellationToken,
 }
 
 #[derive(Clone)]

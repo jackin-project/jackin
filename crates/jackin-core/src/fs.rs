@@ -58,8 +58,10 @@ fn kind_of(file_type: fs::FileType) -> FileKind {
         FileKind::Symlink
     } else if file_type.is_socket() {
         FileKind::Socket
-    } else {
+    } else if file_type.is_file() {
         FileKind::File
+    } else {
+        FileKind::Other
     }
 }
 

@@ -211,6 +211,7 @@ impl AuthoredPolicy {
     }
 
     pub fn with_rule(&self, rule: NetworkRule) -> Result<AuthoredPolicy, PolicyError> {
+        yaml::check_added(&rule)?;
         self.0.with_rule(rule).map(AuthoredPolicy)
     }
 

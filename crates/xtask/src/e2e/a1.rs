@@ -199,22 +199,12 @@ pub struct A1Lock {
 }
 
 fn open_lock(dir: &Path, path: &Path) -> std::io::Result<fs::File> {
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+    use std::os::unix::fs::MetadataExt;
 
     let denied =
         |what: &str| std::io::Error::new(std::io::ErrorKind::PermissionDenied, what.to_owned());
     let me = rustix::process::geteuid().as_raw();
-    match fs::DirBuilder::new().mode(0o700).create(dir) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(error),
-    }
-    let meta = fs::symlink_metadata(dir)?;
-    if !meta.is_dir() || meta.uid() != me || meta.mode() & 0o077 != 0 {
-        return Err(denied(
-            "the lock directory is not a private directory owned by this user",
-        ));
-    }
+    super::private::ensure_private_dir(dir)?;
     let file = fs::File::from(rustix::fs::open(
         path,
         rustix::fs::OFlags::WRONLY

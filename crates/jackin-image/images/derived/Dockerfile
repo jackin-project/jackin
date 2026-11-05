@@ -120,6 +120,7 @@ USER root
 COPY --from=codex --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
 COPY --chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start
 COPY --chown=root:root --chmod=0755 hooks/setup hooks/preflight /usr/local/lib/jackin/hooks/
+COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
 
 FROM construct AS layout
 
@@ -132,7 +133,7 @@ ARG CODEX_BIN_DIR
 USER root
 COPY --from=layout --chown=root:root --chmod=0755 /layout/ /
 COPY --from=trusted --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_BIN_DIR}/codex-code-mode-host ${CODEX_BIN_DIR}/
-COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
+COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
 COPY --from=docker-client --chown=root:root --chmod=u=rwX,go=rX / /
 COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/bin/jackin-start /usr/local/bin/jackin-start
 COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/hooks/setup /usr/local/lib/jackin/hooks/preflight /usr/local/lib/jackin/hooks/
@@ -151,6 +152,15 @@ RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
         --same-as /usr/local/lib/jackin/hooks/preflight=/trusted/usr/local/lib/jackin/hooks/preflight \
         --same-as ${CODEX_BIN_DIR}/codex=/trusted${CODEX_BIN_DIR}/codex \
         --same-as ${CODEX_BIN_DIR}/codex-code-mode-host=/trusted${CODEX_BIN_DIR}/codex-code-mode-host \
+        --same-as /etc/codex/config.toml=/trusted/etc/codex/config.toml \
+        --data /etc/codex/config.toml \
+        --absent /usr/local/lib/jackin/image-scan \
+        --absent /etc/codex/requirements.toml \
+        --absent /etc/codex/managed_config.toml \
+        --absent /etc/codex/hooks.json \
+        --absent /etc/codex/rules \
+        --absent /etc/codex/agents \
+        --absent /etc/codex/skills \
     ; extra= \
     ; if [ -e /trusted-docker/usr/local/bin/docker ]; then \
         for path in /usr/local/bin/docker /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-compose; do \

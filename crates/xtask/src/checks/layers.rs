@@ -261,6 +261,9 @@ fn dependency_problem(
     if !is_internal(name) {
         return None;
     }
+    if dependency.kind() == DependencyKind::Dev && name == member.name() {
+        return None;
+    }
     let listed = |list: &[&str]| list.contains(&name);
     let allowed = match dependency.kind() {
         DependencyKind::Dev => listed(rule.dev_depends) || listed(rule.depends),

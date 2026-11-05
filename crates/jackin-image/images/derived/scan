@@ -9,7 +9,7 @@ newline='
 '
 
 usage() {
-    echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... ROOT PROTECTED..." >&2
+    echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... [--data PATH]... [--absent PATH]... ROOT PROTECTED..." >&2
     exit 64
 }
 
@@ -81,12 +81,18 @@ check_path() {
         *" $1 "*) return 0 ;;
     esac
     checked="$checked $1"
-    if [ "$2" = d ]; then
-        good_dir "$root$1" && return 0
-    else
-        good_file "$root$1" && return 0
-    fi
-    report "protected path is not a real root-owned path: $(show "$1") ($(reason "$root$1" "$2"))"
+    case $2:${3:-} in
+        d:*) good_dir "$root$1" && return 0 ;;
+        f:data) good_data "$root$1" && return 0 ;;
+        *) good_file "$root$1" && return 0 ;;
+    esac
+    report "protected path is not a real root-owned path: $(show "$1") ($(reason "$root$1" "$2" "${3:-}"))"
+}
+
+check_ancestors() {
+    for ancestor in $(ancestors "$1"); do
+        check_path "$ancestor" d
+    done
 }
 
 canonical() {
@@ -201,6 +207,8 @@ exempt() {
 owner=
 pairs=
 allow=
+data=
+absent=
 while [ "$#" -gt 0 ]; do
     case $1 in
         --owner)
@@ -218,6 +226,16 @@ while [ "$#" -gt 0 ]; do
             allow="$allow $2"
             shift 2
             ;;
+        --data)
+            [ "$#" -ge 2 ] || usage
+            data="$data $2"
+            shift 2
+            ;;
+        --absent)
+            [ "$#" -ge 2 ] || usage
+            absent="$absent $2"
+            shift 2
+            ;;
         -*) usage ;;
         *) break ;;
     esac
@@ -229,6 +247,18 @@ for allowed in $allow; do
     esac
     case " $pairs " in
         *" $allowed="*) ;;
+        *) usage ;;
+    esac
+done
+for listed in $data $absent; do
+    case $listed in
+        /*) ;;
+        *) usage ;;
+    esac
+done
+for listed in $data; do
+    case " $pairs " in
+        *" $listed="*) ;;
         *) usage ;;
     esac
 done
@@ -289,10 +319,20 @@ control=${control%"$newline"}
 [ -z "$control" ] || report "path with a control character in role image: $(show "${control#"$root"}")"
 
 for path in $protected; do
-    for ancestor in $(ancestors "$path"); do
-        check_path "$ancestor" d
-    done
+    check_ancestors "$path"
     check_path "$path" f
+done
+
+for path in $data; do
+    check_ancestors "$path"
+    check_path "$path" f data
+done
+
+for path in $absent; do
+    check_ancestors "$path"
+    if [ -e "$root$path" ] || [ -L "$root$path" ]; then
+        report "path must be absent from the role image: $(show "$path")"
+    fi
 done
 
 for pair in $pairs; do

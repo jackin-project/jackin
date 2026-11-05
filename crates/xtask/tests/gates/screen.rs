@@ -276,10 +276,115 @@ fn ratatui_prelude_fails() -> TestResult {
 }
 
 #[test]
-fn buffer_set_fails() -> TestResult {
+fn ratatui_paths_with_a_leading_separator_fail() -> TestResult {
     expect(
-        "fn f(buffer: &mut Buffer) {\n    buffer.set_string(0, 0, 1, 2);\n}\n",
-        &[("C1", 2, "buffer.set_string")],
+        "use ::ratatui::widgets::Paragraph;\npub use ::ratatui::style::Style;\nimpl ::ratatui::widgets::Widget for X {}\nfn f(_: &dyn ::ratatui::text::Span) {}\n",
+        &[
+            ("C1", 1, "ratatui::widgets::Paragraph"),
+            ("C1", 2, "ratatui::style::Style"),
+            ("C1", 3, "ratatui::widgets::Widget"),
+            ("C1", 4, "ratatui::text::Span"),
+        ],
+    )
+}
+
+#[test]
+fn a_module_that_is_merely_named_ratatui_is_not_the_crate() -> TestResult {
+    expect("use crate::support::ratatui::widgets::Paragraph;\n", &[])
+}
+
+#[test]
+fn a_source_cut_off_inside_a_tracing_macro_is_not_a_panic() -> TestResult {
+    for source in [
+        "fn f() {\n    info!",
+        "fn f() {\n    tracing::warn!(",
+        "#[error(",
+    ] {
+        expect(source, &[])?;
+    }
+    Ok(())
+}
+
+#[test]
+fn indexing_a_buffer_fails() -> TestResult {
+    expect(
+        "fn draw(buf: &mut Buffer, pos: Position) {\n\
+         \x20   buf[(0, 0)] = Cell::default();\n\
+         \x20   buf[pos].set_fg(Color::Red);\n\
+         \x20   let seen = &buf[(1, 1)];\n\
+         \x20   self.buf[pos] = Cell::default();\n\
+         \x20   frame.buffer_mut()[pos].reset();\n\
+         \x20   grid[0][1] = 2;\n\
+         }\n",
+        &[
+            ("C1", 2, "indexes"),
+            ("C1", 3, "indexes"),
+            ("C1", 4, "indexes"),
+            ("C1", 5, "indexes"),
+            ("C1", 6, "indexes"),
+            ("C1", 7, "indexes"),
+            ("C1", 7, "indexes"),
+        ],
+    )
+}
+
+#[test]
+fn brackets_that_are_not_an_index_pass() -> TestResult {
+    expect(
+        "#[derive(Debug)]\n\
+         #![deny(unused)]\n\
+         struct Row {\n\
+         \x20   bytes: [u8; 4],\n\
+         \x20   rest: &'static [u8],\n\
+         \x20   nested: Vec<[u8; 2]>,\n\
+         }\n\
+         fn f(x: &mut [u8]) -> [u8; 2] {\n\
+         \x20   let a = [1, 2];\n\
+         \x20   for item in [1, 2] {}\n\
+         \x20   let v = vec![1, 2];\n\
+         \x20   if let [first, ..] = x {}\n\
+         \x20   return [0, 0];\n\
+         \x20   if [1, 2].contains(&3) {}\n\
+         \x20   while [1, 2].is_empty() {}\n\
+         \x20   match [1, 2] { _ => {} }\n\
+         \x20   let tail = &x[1..];\n\
+         \x20   let all = &[][..];\n\
+         \x20   let mid = &x[a..=b];\n\
+         }\n\
+         #[cfg(test)]\n\
+         mod tests {\n\
+         \x20   fn read(buf: &Buffer) {\n\
+         \x20       let cell = &buf[(0, 0)];\n\
+         \x20   }\n\
+         }\n",
+        &[],
+    )
+}
+
+#[test]
+fn silencing_the_drawing_ban_fails() -> TestResult {
+    expect(
+        "#![expect(clippy::disallowed_methods)]\n\
+         #[allow(clippy::disallowed_methods)]\n\
+         fn a() {}\n\
+         #[cfg_attr(test, expect(clippy::too_many_lines, clippy::disallowed_methods))]\n\
+         fn b() {}\n",
+        &[
+            ("C1", 1, "disallowed_methods"),
+            ("C1", 2, "disallowed_methods"),
+            ("C1", 4, "disallowed_methods"),
+        ],
+    )
+}
+
+#[test]
+fn other_attributes_pass() -> TestResult {
+    expect(
+        "#![deny(clippy::disallowed_methods)]\n\
+         #[expect(clippy::too_many_lines)]\n\
+         #[allow(dead_code)]\n\
+         fn a() {}\n",
+        &[],
     )
 }
 

@@ -246,6 +246,49 @@ async fn osc52_is_blocked_in_both_directions_while_other_bytes_pass() -> TestRes
     .await
 }
 
+#[tokio::test]
+async fn a_lone_escape_key_reaches_the_sandbox_before_any_later_input() -> TestResult {
+    guard(async {
+        let (_rig, harness, handle) = running().await?;
+        let name = handle.name();
+        let gate = Arc::new(Notify::new());
+        let (terminal, probe) = script(vec![
+            Step::Bytes(b"\x1b".to_vec()),
+            Step::Gate(Arc::clone(&gate)),
+            Step::Bytes(DETACH.to_vec()),
+        ])?;
+        let cancel = CancellationToken::new();
+        let command = harness
+            .command(&["attach", name.as_str()])
+            .terminal(terminal)
+            .cancel(cancel.clone());
+        let (ran, driven) = tokio::join!(command.run(), async {
+            let seen = async {
+                until(|| probe.raw())
+                    .await
+                    .map_err(|_| Failure::from("the terminal never entered raw mode"))?;
+                until(|| handle.main_input() == b"\x1b")
+                    .await
+                    .map_err(|_| {
+                        Failure::from("the lone ESC byte never reached the sandbox main input")
+                    })?;
+                gate.notify_one();
+                Ok::<_, Failure>(())
+            }
+            .await;
+            if seen.is_err() {
+                cancel.cancel();
+            }
+            seen
+        });
+        driven?;
+        ran?.ok()?;
+        assert_eq!(handle.main_input(), b"\x1b");
+        Ok(())
+    })
+    .await
+}
+
 async fn after_ticks(
     rig: &Rig,
     harness: &Harness,

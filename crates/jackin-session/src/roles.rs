@@ -429,7 +429,7 @@ impl RoleCatalog {
         {
             None => return Err(vec![RoleError::RootMissing { path: root.clone() }]),
             Some(FileKind::Dir) => {}
-            Some(FileKind::File | FileKind::Socket | FileKind::Symlink) => {
+            Some(FileKind::File | FileKind::Socket | FileKind::Symlink | FileKind::Other) => {
                 return Err(vec![RoleError::RootNotDirectory { path: root.clone() }]);
             }
         }
@@ -663,7 +663,7 @@ impl RoleCatalog {
                     match self.fs.stat(&join_repo(root, &path)?).await? {
                         None => continue,
                         Some(FileKind::Dir | FileKind::Socket) => (KIND_OTHER, 0, Sha256::of(b"")),
-                        Some(FileKind::File | FileKind::Symlink) => {
+                        Some(FileKind::File | FileKind::Symlink | FileKind::Other) => {
                             return Err(RoleError::FileNotRegular { path });
                         }
                     }

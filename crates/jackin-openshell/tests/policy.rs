@@ -477,6 +477,31 @@ fn with_rule_adds_exactly_one_docker_rule_and_keeps_every_other_node() {
     );
 }
 
+#[test]
+fn an_authored_policy_refuses_an_added_rule_that_the_authored_checks_would_refuse() {
+    let original = AuthoredPolicy::parse(BASE).unwrap();
+    let engine = NetworkRule::docker_engine(NonZeroU16::new(12376).unwrap());
+
+    let mut zero = engine.clone();
+    zero.endpoints[0].port = 0;
+    assert!(matches!(
+        original.with_rule(zero.clone()),
+        Err(PolicyError::InvalidPort { ref rule, port: 0 }) if rule == "docker_engine"
+    ));
+    assert!(
+        original.document().with_rule(zero).is_ok(),
+        "the live document keeps accepting what the gateway reports"
+    );
+
+    let mut provider = engine;
+    provider.key = RuleKey::provider_rule(&ProviderName::parse("codex").unwrap());
+    let reserved = provider.key.as_str().to_owned();
+    assert!(matches!(
+        original.with_rule(provider),
+        Err(PolicyError::ReservedRuleName(ref key)) if *key == reserved
+    ));
+}
+
 const ACCEPTED_HOSTS: [&str; 12] = [
     "github.com",
     "*.github.com",

@@ -267,6 +267,19 @@ fn rule_node(rule: &NetworkRule) -> Value {
     Value::Mapping(node)
 }
 
+pub(super) fn check_added(rule: &NetworkRule) -> Result<(), PolicyError> {
+    if is_reserved(rule.key.as_str()) && rule.key.as_str() != DOCKER_ENGINE_RULE {
+        return Err(PolicyError::ReservedRuleName(rule.key.as_str().to_owned()));
+    }
+    if rule.endpoints.iter().any(|endpoint| endpoint.port == 0) {
+        return Err(PolicyError::InvalidPort {
+            rule: rule.key.as_str().to_owned(),
+            port: 0,
+        });
+    }
+    Ok(())
+}
+
 pub(super) fn with_rule(value: &Value, rule: &NetworkRule) -> Result<PolicyDocument, PolicyError> {
     let mut root = value.clone();
     let Some(map) = root.as_mapping_mut() else {

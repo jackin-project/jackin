@@ -6,8 +6,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
-    FileSystem, GatewayName, HostPath, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus,
-    ProcessStdin, Program, SecretBytes, TerminalText,
+    CredentialFileProblem, FileSystem, GatewayName, HostPath, ProcessOutput, ProcessRunner,
+    ProcessSpec, ProcessStatus, ProcessStdin, Program, SecretBytes, TerminalText,
+    read_credential_file,
 };
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -171,9 +172,14 @@ async fn read_material(
         .join("mtls")
         .join(file);
     let path = HostPath::resolve(&relative, home).map_err(unparsable)?;
-    fs.read(&path)
-        .await?
-        .ok_or(DiscoveryError::MissingCertificate { path })
+    match read_credential_file(fs, &path).await? {
+        Ok(bytes) => Ok(bytes),
+        Err(CredentialFileProblem::Missing) => Err(DiscoveryError::MissingCertificate { path }),
+        Err(CredentialFileProblem::NotARegularFile) => {
+            Err(DiscoveryError::CertificateNotRegular { path })
+        }
+        Err(CredentialFileProblem::TooLarge) => Err(DiscoveryError::CertificateTooLarge { path }),
+    }
 }
 
 fn scheme_of(endpoint: &str) -> Option<String> {

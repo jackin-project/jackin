@@ -157,7 +157,7 @@ impl UsageHarness {
                         let bytes = self.fs.read(&path).await?.unwrap_or_default();
                         out.push((path.as_path().display().to_string(), bytes));
                     }
-                    FileKind::Symlink | FileKind::Socket => {}
+                    FileKind::Symlink | FileKind::Socket | FileKind::Other => {}
                 }
             }
         }

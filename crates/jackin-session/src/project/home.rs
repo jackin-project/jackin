@@ -168,7 +168,7 @@ async fn belongs(
             submodule(git, fs, &root_real).await?
         }
         Some(FileKind::File) => linked_worktree(fs, &dot_git, location).await?,
-        Some(FileKind::Symlink | FileKind::Socket) | None => false,
+        Some(FileKind::Symlink | FileKind::Socket | FileKind::Other) | None => false,
     };
     if owned {
         Ok(())

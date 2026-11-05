@@ -37,6 +37,17 @@ const DIRECTORIES: [&str; 6] = [
     "usr/local/lib/jackin/hooks",
 ];
 const LEAVES: [&str; 5] = [START, CODEX, CODEX_HOST, SETUP, PREFLIGHT];
+const CONFIG: &str = "/etc/codex/config.toml";
+const CONFIG_BYTES: &[u8] = b"check_for_update_on_startup = false\n";
+const VERDICT: &str = "/usr/local/lib/jackin/image-scan";
+const CODEX_SYSTEM_LAYER: [(&str, bool); 6] = [
+    ("/etc/codex/requirements.toml", false),
+    ("/etc/codex/managed_config.toml", false),
+    ("/etc/codex/hooks.json", false),
+    ("/etc/codex/rules", true),
+    ("/etc/codex/agents", true),
+    ("/etc/codex/skills", true),
+];
 const DOCKER: &str = "/usr/local/bin/docker";
 const BUILDX: &str = "/usr/local/libexec/docker/cli-plugins/docker-buildx";
 const COMPOSE: &str = "/usr/local/libexec/docker/cli-plugins/docker-compose";
@@ -76,7 +87,7 @@ fn trusted_name(leaf: &str) -> &str {
     leaf.rsplit('/').next().unwrap_or(leaf)
 }
 
-fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
+fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let request = ImageRequest {
         role: RoleName::parse("sentinel")?,
         context_files: vec![entry("Dockerfile")?],
@@ -105,9 +116,26 @@ fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
     };
     files
         .into_iter()
-        .find(|file| file.name == "scan")
+        .find(|file| file.name == name)
         .map(|file| file.bytes)
-        .ok_or_else(|| "the derived context holds no scan".into())
+        .ok_or_else(|| format!("the derived context holds no {name}").into())
+}
+
+fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
+    derived_file("scan")
+}
+
+fn scan_absent_paths() -> Result<Vec<String>, Box<dyn Error>> {
+    let dockerfile = String::from_utf8(derived_file("Dockerfile")?)?;
+    let (_, scan_stage) = dockerfile
+        .split_once("AS scan\n")
+        .ok_or("the derived Dockerfile has no scan stage")?;
+    let words: Vec<&str> = scan_stage.split_whitespace().collect();
+    Ok(words
+        .windows(2)
+        .filter(|pair| pair[0] == "--absent")
+        .map(|pair| pair[1].to_owned())
+        .collect())
 }
 
 struct Outcome {
@@ -128,6 +156,7 @@ struct Fixture {
     top: PathBuf,
     uid: u32,
     gid: u32,
+    absent: Vec<String>,
 }
 
 impl Fixture {
@@ -144,6 +173,7 @@ impl Fixture {
             top,
             uid: meta.uid(),
             gid: meta.gid(),
+            absent: scan_absent_paths()?,
         };
         for name in ["find", "tr", "cmp"] {
             fx.tool(name)?;
@@ -157,6 +187,9 @@ impl Fixture {
             fs::write(fx.trusted(leaf), leaf_bytes(leaf))?;
         }
         fx.dir("/etc", 0o755)?;
+        fx.dir("/etc/codex", 0o755)?;
+        fx.file(CONFIG, CONFIG_BYTES, 0o644)?;
+        fs::write(fx.trusted(CONFIG), CONFIG_BYTES)?;
         fx.file("/etc/passwd", PASSWD.as_bytes(), 0o644)?;
         fx.file("/etc/group", GROUP.as_bytes(), 0o644)?;
         Ok(fx)
@@ -220,8 +253,23 @@ impl Fixture {
             args.push("--same-as".to_owned());
             args.push(format!("{leaf}={}", self.trusted(leaf).display()));
         }
+        args.extend(self.data_arguments());
         args.push(self.top.join("image").display().to_string());
         args.extend(LEAVES.iter().map(|leaf| (*leaf).to_owned()));
+        args
+    }
+
+    fn data_arguments(&self) -> Vec<String> {
+        let mut args = vec![
+            "--same-as".to_owned(),
+            format!("{CONFIG}={}", self.trusted(CONFIG).display()),
+            "--data".to_owned(),
+            CONFIG.to_owned(),
+        ];
+        for path in &self.absent {
+            args.push("--absent".to_owned());
+            args.push(path.clone());
+        }
         args
     }
 
@@ -268,6 +316,7 @@ impl Fixture {
             args.push("--allow-tool".to_owned());
             args.push(leaf.to_owned());
         }
+        args.extend(self.data_arguments());
         args.push(self.top.join("image").display().to_string());
         args.extend(LEAVES.iter().chain(&CLIENT).map(|leaf| (*leaf).to_owned()));
         args
@@ -968,17 +1017,35 @@ fn scan_refuses_account_files_that_are_not_real_root_owned_files() -> TestResult
     fs::write(fx.top.join("sandbox/etc/group"), GROUP)?;
     fs::remove_dir_all(fx.image("/etc"))?;
     symlink(fx.top.join("sandbox/etc"), fx.image("/etc"))?;
-    expect_lines(&fx, "/etc absolute symlink", &[&reason_dir("symlink")])?;
+    let protected_etc =
+        |reason: &str| format!("protected path is not a real root-owned path: /etc ({reason})");
+    let below_etc = [
+        "protected path is not a real root-owned path: /etc/codex (missing)",
+        "protected path is not a real root-owned path: /etc/codex/config.toml (missing)",
+        "protected file differs from the trusted copy: /etc/codex/config.toml",
+    ];
+    let mut symlinked = vec![protected_etc("symlink")];
+    symlinked.extend(below_etc.map(str::to_owned));
+    symlinked.push(reason_dir("symlink"));
+    let wanted: Vec<&str> = symlinked.iter().map(String::as_str).collect();
+    expect_lines(&fx, "/etc absolute symlink", &wanted)?;
     let fx = Fixture::new()?;
     fs::set_permissions(fx.image("/etc"), fs::Permissions::from_mode(0o775))?;
     expect_lines(
         &fx,
         "/etc 775",
-        &[&reason_dir("writable by group or others")],
+        &[
+            &protected_etc("writable by group or others"),
+            &reason_dir("writable by group or others"),
+        ],
     )?;
     let fx = Fixture::new()?;
     fs::remove_dir_all(fx.image("/etc"))?;
-    expect_lines(&fx, "/etc missing", &[&reason_dir("missing")])?;
+    let mut missing = vec![protected_etc("missing")];
+    missing.extend(below_etc.map(str::to_owned));
+    missing.push(reason_dir("missing"));
+    let wanted: Vec<&str> = missing.iter().map(String::as_str).collect();
+    expect_lines(&fx, "/etc missing", &wanted)?;
     Ok(())
 }
 
@@ -1222,5 +1289,139 @@ fn scan_leaves_the_client_names_alone_when_the_capability_is_on() -> TestResult 
     }
     let out = fx.scan_client()?;
     assert!(out.ok, "{}", out.stderr);
+    Ok(())
+}
+
+#[test]
+fn scan_checks_the_data_file_like_a_protected_path_without_demanding_the_executable_bit()
+-> TestResult {
+    let fx = Fixture::new()?;
+    assert!(fx.scan()?.ok, "a 0644 root-owned config must pass");
+    let wanted = |path: &str| format!("protected file differs from the trusted copy: {path}");
+    let refused = |path: &str, reason: &str| {
+        format!("protected path is not a real root-owned path: {path} ({reason})")
+    };
+
+    let fx = Fixture::new()?;
+    fx.file(CONFIG, b"check_for_update_on_startup = true\n", 0o644)?;
+    let out = fx.scan()?;
+    assert!(!out.ok && out.lines() == [wanted(CONFIG)], "{}", out.stderr);
+
+    let fx = Fixture::new()?;
+    fs::remove_file(fx.image(CONFIG))?;
+    let out = fx.scan()?;
+    let lines = out.lines();
+    assert!(
+        !out.ok && lines.contains(&refused(CONFIG, "missing").as_str()),
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.relink(CONFIG, false)?;
+    let out = fx.scan()?;
+    let lines = out.lines();
+    assert!(
+        !out.ok && lines.contains(&refused(CONFIG, "symlink").as_str()),
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fs::set_permissions(fx.image(CONFIG), fs::Permissions::from_mode(0o666))?;
+    let out = fx.scan()?;
+    let lines = out.lines();
+    assert!(
+        !out.ok && lines.contains(&refused(CONFIG, "writable by group or others").as_str()),
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.relink("/etc/codex", true)?;
+    let out = fx.scan()?;
+    let lines = out.lines();
+    assert!(
+        !out.ok && lines.contains(&refused("/etc/codex", "symlink").as_str()),
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fs::remove_file(fx.trusted(CONFIG))?;
+    let out = fx.scan()?;
+    assert!(
+        !out.ok && out.stderr.contains(&wanted(CONFIG)),
+        "{}",
+        out.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_role_image_that_already_holds_the_verdict_path() -> TestResult {
+    let present = |path: &str| format!("path must be absent from the role image: {path}");
+    let fx = Fixture::new()?;
+    assert!(fx.scan()?.ok, "an absent verdict path must pass");
+
+    let fx = Fixture::new()?;
+    fx.file(VERDICT, b"forged\n", 0o644)?;
+    let out = fx.scan()?;
+    assert!(
+        !out.ok && out.lines() == [present(VERDICT)],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    symlink("/etc/passwd", fx.image(VERDICT))?;
+    let out = fx.scan()?;
+    assert!(
+        !out.ok && out.lines() == [present(VERDICT)],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    symlink("/nonexistent/target", fx.image(VERDICT))?;
+    let out = fx.scan()?;
+    assert!(
+        !out.ok && out.lines() == [present(VERDICT)],
+        "a dangling link counts: {}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.dir(VERDICT, 0o755)?;
+    let out = fx.scan()?;
+    assert!(
+        !out.ok && out.lines() == [present(VERDICT)],
+        "{}",
+        out.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_every_codex_system_layer_path_the_role_image_holds() -> TestResult {
+    let present = |path: &str| format!("path must be absent from the role image: {path}");
+    assert!(
+        Fixture::new()?.scan()?.ok,
+        "a clean image with only the trusted config must pass"
+    );
+    for (path, directory) in CODEX_SYSTEM_LAYER {
+        let fx = Fixture::new()?;
+        if directory {
+            fx.dir(path, 0o755)?;
+        } else {
+            fx.file(path, b"sandbox = \"danger-full-access\"\n", 0o644)?;
+        }
+        let out = fx.scan()?;
+        assert!(
+            !out.ok && out.lines() == [present(path)],
+            "{path}: {}",
+            out.stderr
+        );
+    }
     Ok(())
 }

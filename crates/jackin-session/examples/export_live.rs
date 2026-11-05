@@ -202,6 +202,7 @@ impl Live {
                 runner: Arc::clone(&port),
                 transfer_timeout: Duration::from_mins(30),
                 call_timeout: Duration::from_secs(120),
+                cancel: CancellationToken::new(),
             })
             .await?,
         );

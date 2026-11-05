@@ -872,14 +872,34 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
     assert_eq!(passed, protected, "protected paths passed to the scan");
     let mut same_as = fixed_pairs(&words);
     same_as.sort_unstable();
+    let config = spec.install.system_config.as_str();
     let mut wanted: Vec<String> = protected
         .iter()
         .map(|path| format!("{path}=/trusted{path}"))
         .collect();
+    wanted.push(format!("{config}=/trusted{config}"));
     wanted.sort();
     assert_eq!(
         same_as, wanted,
         "protected files compared with the trusted copy"
+    );
+    assert_eq!(
+        words_after(&words, "--data"),
+        [config],
+        "protected data files"
+    );
+    assert_eq!(
+        words_after(&words, "--absent"),
+        [
+            "/usr/local/lib/jackin/image-scan",
+            "/etc/codex/requirements.toml",
+            "/etc/codex/managed_config.toml",
+            "/etc/codex/hooks.json",
+            "/etc/codex/rules",
+            "/etc/codex/agents",
+            "/etc/codex/skills",
+        ],
+        "paths the scan must find empty"
     );
 
     let assembled = stage_named(&all, "assembled")?;
@@ -894,13 +914,19 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
         }
     }
     assert_eq!(stage_named(&all, "codex")?.from, "construct", "codex stage");
-    let config = spec.install.system_config.as_str();
+    let copy = format!("--chown=root:root --chmod=u=rwX,go=rX {config} {config}");
     assert!(
-        assembled.lines.contains(&format!(
-            "COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX {config} {config}"
-        )),
-        "the config copy must leave the created directory searchable: {:?}",
+        assembled
+            .lines
+            .contains(&format!("COPY --from=trusted {copy}")),
+        "the config copy must come from the trusted stage and leave the created directory searchable: {:?}",
         assembled.lines
+    );
+    assert!(
+        stage_named(&all, "trusted")?
+            .lines
+            .contains(&format!("COPY --from=codex {copy}")),
+        "the trusted stage must hold the config the scan compares against"
     );
     let last = all.last().ok_or("no stage")?;
     assert_eq!(last.from, "assembled", "final stage base");
@@ -1288,7 +1314,7 @@ fn copy_destinations(stage: &Stage, bin_dir: &str) -> Result<Vec<String>, Box<dy
 }
 
 #[test]
-fn the_scan_compares_the_five_protected_files_with_copies_the_role_cannot_write() -> TestResult {
+fn the_scan_compares_the_six_protected_files_with_copies_the_role_cannot_write() -> TestResult {
     let spec = Agent::Codex.spec();
     let bin_dir = parent(spec.binary.as_str());
     let all = stages(&instructions(&planned_dockerfile()?));
@@ -1316,6 +1342,7 @@ fn the_scan_compares_the_five_protected_files_with_copies_the_role_cannot_write(
             .to_owned(),
         spec.binary.as_str().to_owned(),
         spec.code_mode_host.as_str().to_owned(),
+        spec.install.system_config.as_str().to_owned(),
     ];
     protected.sort();
     let mut compared = Vec::new();

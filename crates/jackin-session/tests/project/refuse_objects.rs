@@ -87,6 +87,21 @@ async fn a_symlinked_loose_object_is_refused() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_fifo_in_place_of_a_loose_object_is_refused() -> TestResult {
+    guard(async {
+        let repo = base().await?;
+        let git_dir = repo.root().as_path().join(".git");
+        let fan = first_entry(&git_dir.join("objects"), true)?;
+        let loose = first_entry(&fan, false)?;
+        std::fs::remove_file(&loose)?;
+        let made = std::process::Command::new("mkfifo").arg(&loose).status()?;
+        assert!(made.success(), "mkfifo failed");
+        linked(repo, &loose).await
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_symlinked_pack_file_is_refused() -> TestResult {
     guard(async {
         let repo = base().await?;

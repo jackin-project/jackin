@@ -2564,6 +2564,7 @@ dependencies = [
  "futures",
  "globset",
  "jackin-core",
+ "jackin-openshell",
  "jackin-testkit",
  "noyalib",
  "openshell-core",
