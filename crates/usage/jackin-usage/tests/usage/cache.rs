@@ -465,6 +465,29 @@ async fn a_corrupt_cache_file_is_rewritten_and_the_report_succeeds() -> TestResu
     .await
 }
 
+#[tokio::test]
+async fn a_cache_larger_than_the_limit_is_ignored_and_replaced() -> TestResult {
+    guard(async {
+        let (harness, account) = start(10).await?;
+        harness.one(&account, Refresh::Cached).await?;
+        let mut cache = harness.cache_text().ok_or("no cache was written")?;
+        cache.push_str(&" ".repeat((1 << 20) + 1));
+        let path = host_path("/state/usage/usage.json");
+        harness.fs.remove_file(&path).await?;
+        harness.put("/state/usage/usage.json", &cache).await?;
+        serve(&harness, codex_route(&codex_body(90)));
+        let again = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!(used_of(&again), 90.0);
+        assert!(
+            harness
+                .cache_text()
+                .is_some_and(|text| text.len() < 1 << 20)
+        );
+        Ok(())
+    })
+    .await
+}
+
 fn denied() -> FsError {
     FsError::Io {
         path: host_path("/state/usage/usage.json"),

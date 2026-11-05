@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::io::ErrorKind;
 use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
-    CredentialSource, FileMode, FsError, HostPath, PollError, PollPlan, hold_lock, lock_path,
-    write_atomic_locked,
+    CredentialSource, FileMode, FsError, HostPath, PollError, PollPlan, RegularFileProblem,
+    RepoPath, hold_lock, lock_path, write_atomic_locked,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -23,6 +24,7 @@ const LOCK_PLAN: PollPlan = PollPlan {
     timeout: Duration::from_secs(10),
 };
 const CACHE_MODE: FileMode = FileMode(0o600);
+const CACHE_MAX_BYTES: usize = 1024 * 1024;
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -112,11 +114,28 @@ impl Cache {
 }
 
 async fn read(deps: &UsageDeps, path: &HostPath) -> Result<CacheFile, UsageError> {
-    let bytes = deps
+    let refuse = |message: &str| UsageError::Store {
+        path: path.clone(),
+        message: message.to_owned(),
+    };
+    let name =
+        RepoPath::parse(CACHE_FILE).map_err(|error| UsageError::Internal(error.to_string()))?;
+    let bytes = match deps
         .fs
-        .read(path)
+        .read_regular(&deps.state_dir, &name, CACHE_MAX_BYTES)
         .await
-        .map_err(|error| store(path, &error))?;
+    {
+        Ok(Ok(file)) if file.bytes.len() <= CACHE_MAX_BYTES => Some(file.bytes),
+        Ok(Ok(_) | Err(RegularFileProblem::Missing)) => None,
+        Ok(Err(RegularFileProblem::Symlink | RegularFileProblem::NotARegularFile)) => {
+            return Err(refuse("the cache is not a regular file"));
+        }
+        Err(FsError::Io {
+            kind: ErrorKind::NotFound,
+            ..
+        }) => None,
+        Err(error) => return Err(store(path, &error)),
+    };
     Ok(bytes
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
         .unwrap_or_default())
