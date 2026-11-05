@@ -33,13 +33,7 @@ fn category(kind: WindowKind) -> WindowCategory {
 }
 
 fn window(found: &LimitWindow) -> QuotaWindow {
-    let used_pct = found
-        .used
-        .map(jackin_usage::Percent::rounded)
-        .or(match found.remaining {
-            Some(Remaining::Percent(left)) => Some(100 - left.rounded()),
-            _ => None,
-        });
+    let used_pct = found.used.map(jackin_usage::Percent::rounded);
     QuotaWindow {
         id: found.kind.id(),
         label: found.label.clone(),

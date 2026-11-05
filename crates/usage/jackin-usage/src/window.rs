@@ -25,7 +25,13 @@ pub(crate) fn windows(buckets: Vec<Bucket>) -> Result<Vec<LimitWindow>, Unavaila
 }
 
 fn window(bucket: Bucket) -> Result<Option<LimitWindow>, UnavailableReason> {
-    let used = bucket.used_percent.map(percent).transpose()?;
+    let used = match (bucket.used_percent, &bucket.remaining) {
+        (Some(used), _) => Some(percent(used)?),
+        (None, Some(BucketRemaining::Percent(left))) => {
+            Some(percent(100.0 - percent(*left)?.get())?)
+        }
+        (None, _) => None,
+    };
     let remaining = match bucket.remaining {
         Some(BucketRemaining::Percent(value)) => Some(Remaining::Percent(percent(value)?)),
         Some(BucketRemaining::Amount(money)) => Some(Remaining::Amount {
