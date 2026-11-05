@@ -143,7 +143,7 @@ async fn a_reply_split_across_two_reads_is_dropped_whole_unless_the_agent_runs()
         events(&mut terminal, 2).await?;
 
         for reply in replies() {
-            for at in 3..reply.len() {
+            for at in 2..reply.len() {
                 let (first, second) = reply.split_at(at);
                 assert_eq!(
                     delivered_in_two(&handle, &mut terminal, first, second).await?,
@@ -155,7 +155,7 @@ async fn a_reply_split_across_two_reads_is_dropped_whole_unless_the_agent_runs()
 
         handle.exit_codex(3);
         for reply in replies() {
-            for at in 3..reply.len() {
+            for at in 2..reply.len() {
                 let (first, second) = reply.split_at(at);
                 assert_eq!(
                     delivered_in_two(&handle, &mut terminal, first, second).await?,

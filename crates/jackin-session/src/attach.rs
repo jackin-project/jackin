@@ -28,7 +28,7 @@ pub const REPAINT_NUDGE: Duration = Duration::from_millis(600);
 const REQUEST_MODE: jackin_core::FileMode = jackin_core::FileMode(0o600);
 const ESC: u8 = 0x1b;
 const BEL: u8 = 0x07;
-const HELD_MIN: usize = 3;
+const HELD_MIN: usize = 2;
 const HELD_MAX: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,6 +179,9 @@ fn osc_reply(bytes: &[u8]) -> Option<usize> {
 }
 
 fn partial_csi(body: &[u8]) -> bool {
+    if body.is_empty() {
+        return true;
+    }
     if matches!(body.first(), Some(b'?' | b'>')) {
         return body[1..]
             .iter()
