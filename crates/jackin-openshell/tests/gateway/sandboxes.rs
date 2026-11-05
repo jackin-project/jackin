@@ -219,7 +219,7 @@ async fn label_selector_text_is_accepted_by_the_gateway_grammar() {
 async fn phase_and_exit_code_map_to_the_documented_jackin_phase() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
-    let cases: [(i32, Option<i32>, Phase); 17] = [
+    let cases: [(i32, Option<i32>, Phase); 16] = [
         (0, None, Phase::Unknown),
         (1, None, Phase::Provisioning),
         (2, None, Phase::Ready),
@@ -232,7 +232,6 @@ async fn phase_and_exit_code_map_to_the_documented_jackin_phase() {
         (8, None, Phase::Starting),
         (9, Some(0), Phase::Completed { exit_code: 0 }),
         (9, Some(4), Phase::Completed { exit_code: 4 }),
-        (9, None, Phase::Unknown),
         (11, None, Phase::Suspending),
         (12, None, Phase::Suspended),
         (10, None, Phase::Unknown),
@@ -257,6 +256,29 @@ async fn phase_and_exit_code_map_to_the_documented_jackin_phase() {
             .unwrap();
         assert_eq!(found[0].phase, expected, "{raw}");
     }
+}
+
+#[tokio::test]
+async fn a_completed_sandbox_without_an_exit_code_is_a_protocol_error() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    {
+        let mut state = env.server.state();
+        add_sandbox(
+            &mut state,
+            WORKSPACE,
+            "jackin-bare",
+            SandboxPhase::Completed,
+            None,
+            &[],
+        );
+    }
+    let found =
+        guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-bare")))).await;
+    assert!(
+        matches!(found, Err(jackin_openshell::GatewayError::Protocol { .. })),
+        "{found:?}"
+    );
 }
 
 #[tokio::test]

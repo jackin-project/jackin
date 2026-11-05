@@ -29,24 +29,27 @@ fn protocol(message: impl ToString) -> GatewayError {
     }
 }
 
-fn phase_of(sandbox: &Sandbox) -> Phase {
+fn phase_of(sandbox: &Sandbox) -> Result<Phase, GatewayError> {
     let status = sandbox.status.as_ref();
     let exit_code = status.and_then(|status| status.exit_code);
-    match SandboxPhase::try_from(status.map_or(0, |status| status.phase)) {
-        Ok(SandboxPhase::Provisioning) => Phase::Provisioning,
-        Ok(SandboxPhase::Ready) => Phase::Ready,
-        Ok(SandboxPhase::Error) => Phase::Error { exit_code },
-        Ok(SandboxPhase::Deleting) => Phase::Deleting,
-        Ok(SandboxPhase::Stopping) => Phase::Stopping,
-        Ok(SandboxPhase::Stopped) => Phase::Stopped,
-        Ok(SandboxPhase::Starting) => Phase::Starting,
-        Ok(SandboxPhase::Completed) => {
-            exit_code.map_or(Phase::Unknown, |exit_code| Phase::Completed { exit_code })
-        }
-        Ok(SandboxPhase::Suspending) => Phase::Suspending,
-        Ok(SandboxPhase::Suspended) => Phase::Suspended,
-        Ok(SandboxPhase::Unspecified | SandboxPhase::Unknown) | Err(_) => Phase::Unknown,
-    }
+    Ok(
+        match SandboxPhase::try_from(status.map_or(0, |status| status.phase)) {
+            Ok(SandboxPhase::Provisioning) => Phase::Provisioning,
+            Ok(SandboxPhase::Ready) => Phase::Ready,
+            Ok(SandboxPhase::Error) => Phase::Error { exit_code },
+            Ok(SandboxPhase::Deleting) => Phase::Deleting,
+            Ok(SandboxPhase::Stopping) => Phase::Stopping,
+            Ok(SandboxPhase::Stopped) => Phase::Stopped,
+            Ok(SandboxPhase::Starting) => Phase::Starting,
+            Ok(SandboxPhase::Completed) => Phase::Completed {
+                exit_code: exit_code
+                    .ok_or_else(|| protocol("a completed sandbox has no exit code"))?,
+            },
+            Ok(SandboxPhase::Suspending) => Phase::Suspending,
+            Ok(SandboxPhase::Suspended) => Phase::Suspended,
+            Ok(SandboxPhase::Unspecified | SandboxPhase::Unknown) | Err(_) => Phase::Unknown,
+        },
+    )
 }
 
 fn provisioning_of(sandbox: &Sandbox) -> Provisioning {
@@ -83,7 +86,7 @@ fn view_with(
     let labels = labels(metadata.labels.clone())?;
     Ok(SandboxView {
         name,
-        phase: phase_of(sandbox),
+        phase: phase_of(sandbox)?,
         labels,
         provisioning: provisioning_of(sandbox),
         created_at: metadata
