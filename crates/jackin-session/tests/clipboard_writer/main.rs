@@ -87,6 +87,48 @@ fn a_tool_that_hangs_past_the_deadline_is_not_a_write() -> TestResult {
     Ok(())
 }
 
+fn alive(pid: &str) -> Result<bool, Box<dyn Error>> {
+    Ok(std::process::Command::new("/bin/kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()?
+        .success())
+}
+
+#[tokio::test]
+async fn a_tool_that_hangs_past_the_deadline_is_killed() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let pid_file = dir.path().join("pid");
+    tool(
+        dir.path(),
+        "pbcopy",
+        &format!("echo $$ > '{}'\nexec /bin/sleep 30", pid_file.display()),
+    )?;
+    let hung = writer(&dir, vec![ClipboardTool::Pbcopy]).within(Duration::from_millis(300));
+    assert!(!hung.write("Hello"));
+    let give_up = std::time::Instant::now() + Duration::from_secs(5);
+    let pid = loop {
+        if let Ok(text) = std::fs::read_to_string(&pid_file)
+            && !text.trim().is_empty()
+        {
+            break text.trim().to_owned();
+        }
+        assert!(
+            std::time::Instant::now() < give_up,
+            "the tool never started"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    };
+    while alive(&pid)? {
+        assert!(
+            std::time::Instant::now() < give_up,
+            "the hung tool {pid} is still running"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Ok(())
+}
+
 #[test]
 fn the_tools_follow_the_host_and_its_display() {
     let none = EnvSnapshot::from_pairs(Vec::<(String, String)>::new());

@@ -5,11 +5,12 @@ use std::ffi::OsString;
 use std::io::Write;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use jackin_core::{EnvName, EnvSnapshot};
 
 const ACCEPT: Duration = Duration::from_secs(2);
+const POLL: Duration = Duration::from_millis(5);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ClipboardTool {
@@ -122,14 +123,24 @@ impl ClipboardWriter {
         let (done, answer) = mpsc::channel();
         let writer = self.clone();
         let text = text.to_owned();
+        let end = Instant::now() + self.deadline;
         let spawned = std::thread::Builder::new().spawn(move || {
-            done.send(writer.tools.iter().any(|tool| writer.run(*tool, &text)))
-                .unwrap_or(());
+            done.send(
+                writer
+                    .tools
+                    .iter()
+                    .any(|tool| writer.run(*tool, &text, end)),
+            )
+            .unwrap_or(());
         });
         spawned.is_ok() && answer.recv_timeout(self.deadline).unwrap_or(false)
     }
 
-    fn run(&self, tool: ClipboardTool, text: &str) -> bool {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "runs on the owned worker thread that write spawns"
+    )]
+    fn run(&self, tool: ClipboardTool, text: &str, end: Instant) -> bool {
         let mut command = tool.command();
         if let Some(path) = &self.search {
             command.env("PATH", path);
@@ -142,11 +153,22 @@ impl ClipboardWriter {
         else {
             return false;
         };
-        let wrote = child
-            .stdin
-            .take()
-            .is_some_and(|mut stdin| stdin.write_all(text.as_bytes()).is_ok());
-        let status = child.wait();
-        wrote && status.is_ok_and(|status| status.success())
+        let feeding = child.stdin.take().map(|mut stdin| {
+            let text = text.to_owned();
+            std::thread::spawn(move || stdin.write_all(text.as_bytes()).is_ok())
+        });
+        let finished = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status.success(),
+                Ok(None) if Instant::now() < end => std::thread::sleep(POLL),
+                Ok(None) | Err(_) => {
+                    drop(child.kill());
+                    drop(child.wait());
+                    break false;
+                }
+            }
+        };
+        let wrote = feeding.is_some_and(|feeding| feeding.join().unwrap_or(false));
+        wrote && finished
     }
 }
