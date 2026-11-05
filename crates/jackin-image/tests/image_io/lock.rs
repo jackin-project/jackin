@@ -391,6 +391,52 @@ async fn a_rebuild_of_the_same_key_waits_until_the_caller_drops_the_returned_hol
 }
 
 #[tokio::test]
+async fn a_cache_hit_keeps_the_final_tag_held_until_the_caller_drops_the_returned_hold()
+-> TestResult {
+    guarded(async {
+        let mut rig = Rig::new()?;
+        rig.model.stable_ids();
+        let request = rig.fixture.request()?;
+        let mut rebuild = request.clone();
+        rebuild.rebuild = Rebuild::Yes;
+        let (first, second) = (rig.engine(), rig.engine());
+        let cancel = CancellationToken::new();
+        let built = call(&first, &request, &cancel).await?;
+        assert_eq!(built.source, ImageSource::Built);
+        assert_eq!(rig.builds_of(ROLE_TAGS), 1);
+
+        let (tx, mut rx) = mpsc::channel::<ImageEvent>(256);
+        let held = ensure_held(&first, &request, &tx, &cancel).await?;
+        rx.close();
+        assert_eq!(held.image.source, ImageSource::Cache);
+        assert_eq!(rig.builds_of(ROLE_TAGS), 1);
+
+        let mut again = Box::pin(call(&second, &rebuild, &cancel));
+        let waited = tokio::select! {
+            result = again.as_mut() => Err(result),
+            contended = rig.contended.recv() => Ok(contended),
+        };
+        let during = rig.builds_of(ROLE_TAGS);
+        drop(held);
+        match waited {
+            Err(result) => {
+                return Err(format!(
+                    "the rebuild did not wait for the cache hit's hold: {:?} after {during} role builds",
+                    result.map(|built| built.source)
+                )
+                .into());
+            }
+            Ok(contended) => contended.ok_or("the signal closed")?,
+        }
+        assert_eq!(during, 1, "role builds while the cache hit was held");
+        assert_eq!(again.await?.source, ImageSource::Built);
+        assert_eq!(rig.builds_of(ROLE_TAGS), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn different_final_keys_share_only_the_construct_lock_and_both_build() -> TestResult {
     guarded(async {
         let mut rig = Rig::new()?;
