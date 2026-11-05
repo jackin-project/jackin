@@ -234,7 +234,7 @@ async fn no_marker_is_written_at_a_corrupt_upload_a_failing_step_or_a_mismatch()
         mismatch(rig.launch(1).await?)?;
         let handle = rig.handle(1).await?;
         assert!(handle.file(&marker()).is_none());
-        assert!(handle.root().join("project/.git").is_dir());
+        assert!(!handle.root().join("project/.git").exists());
         std::fs::remove_file(rig.world.home().as_path().join(".gitconfig"))?;
         ready(rig.launch(1).await?)?;
         assert!(rig.handle(1).await?.file(&marker()).is_some());

@@ -344,6 +344,10 @@ impl Run<'_> {
     }
 
     async fn create(&mut self, image: &BuiltImage, docker: DockerLabel) -> Result<(), Stop> {
+        if self.image_hold.is_none() {
+            self.done.image = None;
+            return Ok(());
+        }
         self.enter(LaunchStep::Sandbox).await;
         let create = self.plan.draft().complete(image, docker);
         match self.session.deps.gateway.create_sandbox(&create).await {

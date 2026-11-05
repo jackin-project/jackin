@@ -387,6 +387,7 @@ impl Staged {
         let sandbox_entries = remote.entries(&gate, &sandbox_tree).await?;
         let autocrlf = host.autocrlf().await?;
         remote.clear(&gate).await?;
+        drop(remote.empty().await);
         Err(LaunchError::ProjectMismatch(Box::new(gate::mismatch(
             (host_tree, &host_entries),
             (sandbox_tree, &sandbox_entries),

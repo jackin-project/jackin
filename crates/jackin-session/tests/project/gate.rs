@@ -8,7 +8,7 @@ use jackin_core::{FileMode, RepoPath, sandbox_layout};
 use jackin_testkit::{Fault, HostEdit, RepoFixture, UploadKind};
 
 use super::oracle::{arrived, git};
-use super::support::{Rig, TestResult, global_config, guard, launch_id, mismatch, ready};
+use super::support::{Rig, TestResult, global_config, guard, launch_id, mismatch, ready, tree_of};
 
 async fn base() -> Result<RepoFixture, Box<dyn std::error::Error>> {
     let repo = RepoFixture::new().await?;
@@ -67,6 +67,11 @@ async fn a_host_edit_after_the_tree_upload_fails_with_a_mismatch_for_content_and
             assert!(found.host_only.is_empty() && found.sandbox_only.is_empty());
             let handle = rig.handle(1).await?;
             assert!(!marker_present(&handle), "{label}");
+            assert_eq!(
+                tree_of(&handle.root().join("project"))?,
+                Vec::<String>::new(),
+                "{label}"
+            );
         }
 
         let repo = base().await?;
@@ -226,7 +231,6 @@ async fn neither_a_success_nor_a_mismatch_changes_a_byte_of_the_host_repository(
         mismatch(rig.launch(1).await?)?;
         assert_unchanged(&snapshot(&roots)?, &before);
         let sandbox = rig.handle(1).await?.root().join("project");
-        git(&sandbox, &["diff", "--cached", "--quiet"])?;
 
         std::fs::remove_file(rig.world.home().as_path().join(".gitconfig"))?;
         ready(rig.launch(1).await?)?;
