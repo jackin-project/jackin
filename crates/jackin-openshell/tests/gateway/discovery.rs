@@ -3,7 +3,10 @@
 
 use std::time::Duration;
 
-use jackin_core::{FsError, ProcessError, ProcessStatus, Program};
+use jackin_core::{
+    CREDENTIAL_FILE_MAX_BYTES, FsError, HostPath, ProcessError, ProcessStatus, Program,
+    StdFileSystem,
+};
 use jackin_openshell::{
     DiscoveryError, GatewayAuth, RegisteredGateway, registered_gateways, resolve_gateway,
 };
@@ -191,6 +194,54 @@ async fn resolve_gateway_selects_by_name_reads_exactly_three_files_and_writes_no
         .await
         .unwrap_err();
     assert!(matches!(error, DiscoveryError::Fs(_)));
+}
+
+#[tokio::test]
+async fn resolve_gateway_refuses_a_fifo_or_an_oversized_certificate_file() {
+    let cancel = CancellationToken::new();
+    let runner = ScriptedRunner::always(exited(0, THREE.as_bytes(), b""));
+    let dir = tempfile::tempdir().unwrap();
+    let home = HostPath::parse(dir.path()).unwrap();
+    let mtls = dir.path().join("gateways").join(GATEWAY).join("mtls");
+    std::fs::create_dir_all(&mtls).unwrap();
+    for file in ["ca.crt", "tls.crt", "tls.key"] {
+        std::fs::write(mtls.join(file), file.as_bytes()).unwrap();
+    }
+    let fs = StdFileSystem::default();
+    resolve_gateway(&runner, &fs, &home, &name(GATEWAY), &cancel)
+        .await
+        .unwrap();
+
+    std::fs::remove_file(mtls.join("tls.key")).unwrap();
+    let made = std::process::Command::new("mkfifo")
+        .arg(mtls.join("tls.key"))
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let error = tokio::time::timeout(
+        Duration::from_secs(10),
+        resolve_gateway(&runner, &fs, &home, &name(GATEWAY), &cancel),
+    )
+    .await
+    .expect("a FIFO blocked the read")
+    .unwrap_err();
+    assert!(
+        matches!(&error, DiscoveryError::CertificateNotRegular { path } if path.as_path().ends_with("tls.key")),
+        "{error:?}"
+    );
+
+    std::fs::remove_file(mtls.join("tls.key")).unwrap();
+    std::fs::write(mtls.join("tls.key"), b"key").unwrap();
+    let huge = std::fs::File::create(mtls.join("ca.crt")).unwrap();
+    huge.set_len(u64::try_from(CREDENTIAL_FILE_MAX_BYTES).unwrap() + 1)
+        .unwrap();
+    let error = resolve_gateway(&runner, &fs, &home, &name(GATEWAY), &cancel)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, DiscoveryError::CertificateTooLarge { path } if path.as_path().ends_with("ca.crt")),
+        "{error:?}"
+    );
 }
 
 fn single(endpoint: &str, auth: &str) -> String {

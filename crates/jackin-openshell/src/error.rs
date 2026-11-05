@@ -5,9 +5,9 @@ use std::fmt;
 use std::time::Duration;
 
 use jackin_core::{
-    FsError, GatewayName, GroupFault, HostPath, OpenShellWorkspace, OutputStream, Phase,
-    ProcessError, ProcessStatus, ProfileId, ProviderName, SandboxName, SandboxPath, TerminalText,
-    plain, plain_duration, plain_list,
+    CREDENTIAL_FILE_MAX_BYTES, FsError, GatewayName, GroupFault, HostPath, OpenShellWorkspace,
+    OutputStream, Phase, ProcessError, ProcessStatus, ProfileId, ProviderName, SandboxName,
+    SandboxPath, TerminalText, plain, plain_duration, plain_list,
 };
 use thiserror::Error;
 
@@ -197,6 +197,13 @@ pub enum DiscoveryError {
     UnsupportedAuth { name: GatewayName, auth: String },
     #[error("missing certificate {path}")]
     MissingCertificate { path: HostPath },
+    #[error("certificate {path} is not a regular file")]
+    CertificateNotRegular { path: HostPath },
+    #[error(
+        "certificate {path} is larger than {} bytes",
+        CREDENTIAL_FILE_MAX_BYTES
+    )]
+    CertificateTooLarge { path: HostPath },
     #[error(transparent)]
     Process(#[from] ProcessError),
     #[error(transparent)]

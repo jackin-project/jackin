@@ -162,6 +162,20 @@ fn registry_and_policy_errors_name_gateways_paths_and_violations_plainly() {
             "missing certificate /home/me/my certs/ca.crt".to_owned(),
         ),
         (
+            DiscoveryError::CertificateNotRegular {
+                path: host("/home/me/ca.crt"),
+            }
+            .to_string(),
+            "certificate /home/me/ca.crt is not a regular file".to_owned(),
+        ),
+        (
+            DiscoveryError::CertificateTooLarge {
+                path: host("/home/me/ca.crt"),
+            }
+            .to_string(),
+            "certificate /home/me/ca.crt is larger than 1048576 bytes".to_owned(),
+        ),
+        (
             DiscoveryError::ListFailed {
                 status: ProcessStatus::Signaled(9),
                 tail: TerminalText::sanitize(b"killed"),
