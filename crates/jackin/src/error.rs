@@ -79,7 +79,7 @@ pub enum CommandError {
     Accounts(AccountEditError),
     #[error(transparent)]
     WorkspaceInUse(#[from] WorkspaceGuardError),
-    #[error("cannot import the ChatGPT login from {}", .home.as_path().display())]
+    #[error("cannot import the ChatGPT login from {}", .home)]
     Login {
         home: HostPath,
         source: CredentialError,

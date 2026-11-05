@@ -30,9 +30,9 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Error)]
 pub enum ScratchError {
-    #[error("scratch i/o at {}: {}", .path.display(), plain(.message))]
+    #[error("scratch i/o at {}: {}", plain(.path.display()), plain(.message))]
     Io { path: PathBuf, message: String },
-    #[error("git {} failed in {}: {}", plain(.command), .dir.display(), plain(.message))]
+    #[error("git {} failed in {}: {}", plain(.command), plain(.dir.display()), plain(.message))]
     Git {
         command: String,
         dir: PathBuf,

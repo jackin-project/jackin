@@ -1924,6 +1924,67 @@ mod error_strings {
     }
 }
 
+mod error_paths {
+    use super::*;
+
+    const LIB: &str = "crates/jackin-core/src/lib.rs";
+
+    fn run(source: &str) -> Result<Vec<Violation>, Box<dyn Error>> {
+        let fixture = Fixture::new(&bare(&["jackin-core"]))?;
+        fixture.write(LIB, source)?;
+        Ok(ErrorsCheck.run(&fixture.repo()?))
+    }
+
+    #[test]
+    fn a_raw_display_call_in_an_error_message_is_reported_at_the_literal_line() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"named p_named {}\", .path.display())]",
+            "    A { path: PathBuf },",
+            "    #[error(\"as_path p_chain {}\", .0.as_path().display())]",
+            "    B(HostPath),",
+            "    #[error(\"second p_second {} {}\", plain(.message), .dir.display())]",
+            "    C { message: String, dir: PathBuf },",
+            "}",
+            "#[error(\"struct p_struct {}\", .path.display())]",
+            "pub struct S { path: PathBuf }",
+        ]);
+        let violations = run(&source)?;
+        assert_eq!(
+            summary(&violations),
+            lines(
+                CiStep::Errors,
+                LIB,
+                &source,
+                &["p_named", "p_chain", "p_second", "p_struct"]
+            )
+        );
+        assert!(
+            violations[0].message.contains("display"),
+            "{}",
+            violations[0].message
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_display_call_wrapped_in_plain_or_outside_an_error_attribute_passes() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"wrapped {}\", plain(.path.display()))]",
+            "    A { path: PathBuf },",
+            "    #[error(\"nested {}\", plain(.0.as_path().display()))]",
+            "    B(HostPath),",
+            "    #[error(\"typed {}\", .0)]",
+            "    C(HostPath),",
+            "}",
+            "fn shown(path: &Path) -> String { path.display().to_string() }",
+        ]);
+        assert_eq!(summary(&run(&source)?), []);
+        Ok(())
+    }
+}
+
 mod repo {
     use super::*;
 

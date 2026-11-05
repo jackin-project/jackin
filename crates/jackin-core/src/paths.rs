@@ -35,6 +35,8 @@ pub enum PathError {
     ParentSegment(String),
     #[error("path contains an empty segment: {}", plain(.0))]
     EmptySegment(String),
+    #[error("path is not valid UTF-8: {}", plain(.0))]
+    NotUtf8(String),
     #[error("not a directory: {0}")]
     NotADirectory(HostPath),
     #[error("not a git work tree: {0}")]
@@ -48,6 +50,9 @@ pub enum PathError {
 }
 
 fn normalize_host(path: &Path) -> Result<PathBuf, PathError> {
+    if path.to_str().is_none() {
+        return Err(PathError::NotUtf8(path.display().to_string()));
+    }
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {

@@ -334,6 +334,7 @@ fn scp_form(text: &str) -> bool {
         return false;
     };
     !path.is_empty()
+        && !path.contains(['?', '#'])
         && !target.contains('/')
         && !user.is_empty()
         && !user.starts_with('-')
