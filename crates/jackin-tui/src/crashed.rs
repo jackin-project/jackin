@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_console::backend::{Effect, OpError};
+use jackin_console::backend::{Effect, OpError, Ticket};
 use jackin_console::domain::doctor::DoctorFailure;
 use jackin_console::world::{Msg, SaveFailure};
 use thiserror::Error;
@@ -14,8 +14,9 @@ fn stopped() -> String {
     Stopped.to_string()
 }
 
-pub(crate) fn refresh() -> Msg {
+pub(crate) fn refresh(ticket: Ticket) -> Msg {
     Msg::Refreshed {
+        ticket,
         result: Err(stopped()),
     }
 }
@@ -108,7 +109,7 @@ pub(crate) fn reply(effect: &Effect) -> Msg {
             ticket: *ticket,
             result: Err(OpError::NotAvailable),
         },
-        Effect::Refresh => refresh(),
+        Effect::Refresh { ticket } => refresh(*ticket),
         Effect::RunDoctor => doctor(),
         Effect::Restore { instance } => Msg::Restored {
             instance: instance.clone(),
@@ -153,7 +154,7 @@ mod tests {
                 result: Err(Stopped.to_string()),
             }
         );
-        assert_eq!(reply(&Effect::Refresh), refresh());
+        assert_eq!(reply(&Effect::Refresh { ticket: 9 }), refresh(9));
     }
 
     #[test]

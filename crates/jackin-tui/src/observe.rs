@@ -174,6 +174,10 @@ impl Inputs {
 
     async fn refreshed(&self) -> Result<Config, ConfigError> {
         let _turn = self.refresh_gate.lock().await;
+        self.reloaded().await
+    }
+
+    async fn reloaded(&self) -> Result<Config, ConfigError> {
         let config = self.config.load().await?;
         self.sessions
             .reconcile(
@@ -187,7 +191,8 @@ impl Inputs {
     }
 
     pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
-        let config = self.refreshed().await?;
+        let _turn = self.refresh_gate.lock().await;
+        let config = self.reloaded().await?;
         let fleet = read_fleet(&self.sessions, &config, self.limits, &self.work).await;
         Ok(self.observation(&config, fleet).await)
     }

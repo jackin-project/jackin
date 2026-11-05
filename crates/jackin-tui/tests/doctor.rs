@@ -361,7 +361,8 @@ async fn held_doctor_waits_the_deadline() -> TestResult {
     console.skip_intro();
     console.keys("D")?;
     let screen = console.screen();
-    assert!(screen.contains("Checks have not run yet"), "{screen}");
+    assert!(screen.contains("Running checks…"), "{screen}");
+    assert!(!screen.contains("Checks have not run yet"), "{screen}");
     Ok(())
 }
 

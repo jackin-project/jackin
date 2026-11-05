@@ -6,7 +6,6 @@ use std::num::NonZeroU16;
 use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_console::backend::Effect;
 use jackin_console::domain::instance::InstanceStatus;
 use jackin_console::domain::vocabulary::{PaneWords, fill_in};
 use jackin_console::panes::{PaneKind, PaneRefusal, PaneRequest};
@@ -636,7 +635,7 @@ async fn a_refresh_keeps_the_open_panes() -> TestResult {
             before.contains("1 Codex") && before.contains("2 Shell"),
             "{before}"
         );
-        capsule.lab.world().perform(Effect::Refresh);
+        capsule.lab.world().refresh_now();
         capsule.console().settle().await?;
         let after = capsule.console().screen();
         assert!(

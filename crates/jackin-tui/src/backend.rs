@@ -3,9 +3,9 @@
 
 use std::fmt;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 
-use jackin_console::backend::{Backend, Completion, Effect, FileSource};
+use jackin_console::backend::{Backend, Completion, Effect, FileSource, Ticket};
 use jackin_console::domain::instance::{Instance, InstanceStatus};
 use jackin_console::domain::launch::LaunchContent;
 use jackin_console::domain::vocabulary::Vocabulary;
@@ -32,8 +32,9 @@ pub(crate) struct JackinBackend {
     pub(crate) bridge: Bridge,
     words: Vocabulary,
     panes: PaneHub,
-    refreshing: Arc<AtomicBool>,
+    refreshing: Arc<AtomicUsize>,
     refreshed_at: Arc<AtomicI64>,
+    refresh_ticket: Arc<AtomicU64>,
 }
 
 impl fmt::Debug for JackinBackend {
@@ -54,8 +55,9 @@ impl JackinBackend {
             bridge,
             words,
             panes,
-            refreshing: Arc::new(AtomicBool::new(false)),
+            refreshing: Arc::new(AtomicUsize::new(0)),
             refreshed_at: Arc::new(AtomicI64::new(NEVER)),
+            refresh_ticket: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -167,19 +169,33 @@ impl JackinBackend {
             Effect::Prewarm { workspace } => self
                 .bridge
                 .spawn(failure, async move { inputs.prewarm(workspace).await }),
-            Effect::Refresh | Effect::RunDoctor => {}
+            Effect::Refresh { .. } | Effect::RunDoctor => {}
         }
     }
 
     pub(crate) fn refresh(&self) {
-        if self.refreshing.swap(true, Ordering::SeqCst) {
+        if self
+            .refreshing
+            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
             return;
         }
+        let held = Refreshing(Arc::clone(&self.refreshing));
+        self.observe(self.refresh_ticket.load(Ordering::SeqCst), held);
+    }
+
+    fn refresh_for(&self, ticket: Ticket) {
+        self.refresh_ticket.store(ticket, Ordering::SeqCst);
+        self.refreshing.fetch_add(1, Ordering::SeqCst);
+        self.observe(ticket, Refreshing(Arc::clone(&self.refreshing)));
+    }
+
+    fn observe(&self, ticket: Ticket, held: Refreshing) {
         let inputs = Arc::clone(&self.inputs);
-        let refreshing = Refreshing(Arc::clone(&self.refreshing));
         let words = self.words.clone();
-        self.bridge.spawn(crashed::refresh(), async move {
-            let _refreshing = refreshing;
+        self.bridge.spawn(crashed::refresh(ticket), async move {
+            let _held = held;
             let result = match inputs.observe().await {
                 Ok(observation) if observation.snapshot.index_error.is_some() => {
                     Err(observation.status(&words).unwrap_or_default())
@@ -187,25 +203,25 @@ impl JackinBackend {
                 Ok(observation) => Ok(Box::new(observation.snapshot)),
                 Err(error) => Err(error.to_string()),
             };
-            Msg::Refreshed { result }
+            Msg::Refreshed { ticket, result }
         });
     }
 }
 
-struct Refreshing(Arc<AtomicBool>);
+struct Refreshing(Arc<AtomicUsize>);
 
 impl Drop for Refreshing {
     fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
 impl Backend for JackinBackend {
     fn perform(&self, effect: &Effect, world: &World) -> Option<Completion> {
         match effect {
-            Effect::Refresh => {
+            Effect::Refresh { ticket } => {
                 self.refreshed_at.store(world.now_secs(), Ordering::SeqCst);
-                self.refresh();
+                self.refresh_for(*ticket);
                 None
             }
             Effect::RunDoctor => {
@@ -306,13 +322,13 @@ mod tests {
 
     #[tokio::test]
     async fn a_panic_while_refreshing_lets_the_next_refresh_start() {
-        let flag = Arc::new(AtomicBool::new(true));
-        let held = Refreshing(Arc::clone(&flag));
+        let count = Arc::new(AtomicUsize::new(1));
+        let held = Refreshing(Arc::clone(&count));
         let task = tokio::spawn(async move {
             let _held = held;
             panic!("observe crashed");
         });
         assert!(task.await.is_err_and(|error| error.is_panic()));
-        assert!(!flag.load(Ordering::SeqCst));
+        assert_eq!(count.load(Ordering::SeqCst), 0);
     }
 }

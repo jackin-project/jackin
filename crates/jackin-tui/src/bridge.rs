@@ -201,10 +201,16 @@ mod tests {
         let (sender, receiver) = external_channel();
         let inflight = InFlight::new();
         let bridge = Bridge::new(sender, inflight.clone(), Handle::current());
-        bridge.spawn(crashed::refresh(), async { crash() });
+        bridge.spawn(crashed::refresh(3), async { crash() });
         let got = reply(&receiver).await;
         assert!(
-            matches!(&got, Some(Remote::Msg(Msg::Refreshed { result: Err(_) }))),
+            matches!(
+                &got,
+                Some(Remote::Msg(Msg::Refreshed {
+                    ticket: 3,
+                    result: Err(_)
+                }))
+            ),
             "{got:?}"
         );
         let mut count = inflight.subscribe();
