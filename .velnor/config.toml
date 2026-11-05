@@ -59,7 +59,7 @@ platform = "linux/amd64"
 [[qualified_tools]]
 depends_on = []
 id = "betterleaks"
-version = "1.9.0"
+version = "1.10.0"
 
 [qualified_tools.backend]
 kind = "aqua"
@@ -71,20 +71,20 @@ kind = "default"
 [[qualified_tools.platforms]]
 platform = "linux_x64"
 dependency_artifacts = []
-install_tree_sha256 = "40899fd0c8b1b63338c41e64971b2529049ce71b2e7eb770ad9e6846f67e455f"
+install_tree_sha256 = "4acf6b64c89b582a38e40df0d1e5b29e54a90f41c1b1e974de2de2e4faa39646"
 
 [[qualified_tools.platforms.artifacts]]
-url = "https://github.com/betterleaks/betterleaks/releases/download/v1.9.0/betterleaks_1.9.0_linux_x64.tar.gz"
-sha256 = "f8b185a39ffcece2a1ca82bf3a4e7435cd81963ffd16b7a9128daf75f35f6de7"
+url = "https://github.com/betterleaks/betterleaks/releases/download/v1.10.0/betterleaks_1.10.0_linux_x64.tar.gz"
+sha256 = "9d9ad503cd5d80d18a939352266c3fcca52f10da9b83cd5cfe646989b13940fe"
 
 [[qualified_tools.platforms.executables]]
 name = "betterleaks"
 path = "betterleaks"
-sha256 = "0ace40b41652344608f89967fe93c6caf4faae9a4df20423632c7efb02a4d4e1"
+sha256 = "d9deb306c80b489512bbca87c39bf4b5f529ce1ab43cd8e0aa444c603085db7e"
 
 [qualified_tools.platforms.executables.probe]
 kind = "version_subcommand"
-expected = "1.9.0"
+expected = "1.10.0"
 
 [[qualified_tools]]
 depends_on = ["rust"]
