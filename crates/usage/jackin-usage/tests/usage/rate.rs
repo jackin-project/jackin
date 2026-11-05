@@ -59,12 +59,39 @@ async fn a_cached_report_after_the_ttl_still_honors_the_retry_time() -> TestResu
 }
 
 #[tokio::test]
-async fn a_forced_report_still_honors_the_retry_time() -> TestResult {
+async fn a_forced_report_asks_the_provider_again_during_the_retry_time() -> TestResult {
     guard(async {
         let (harness, account, _) = limited("600").await?;
         harness.advance(300);
         let again = harness.one(&account, Refresh::Force).await?;
-        assert_eq!(unavailable(&again.outcome), &limited_until(T0 + 600));
+        assert_eq!(windows_of(&again.outcome).len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_forced_report_that_is_limited_again_holds_the_new_retry_time() -> TestResult {
+    guard(async {
+        let (harness, account, _) = limited("600").await?;
+        harness.advance(300);
+        harness.server.replace(
+            Provider::Codex,
+            Method::Get,
+            CODEX_PATH,
+            Route::status(429).reply_header("Retry-After", "900"),
+        );
+        let forced = harness.one(&account, Refresh::Force).await?;
+        assert_eq!(unavailable(&forced.outcome), &limited_until(T0 + 300 + 900));
+        harness.server.replace(
+            Provider::Codex,
+            Method::Get,
+            CODEX_PATH,
+            codex_route(&codex_body(10)),
+        );
+        harness.advance(600);
+        let cached = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!(unavailable(&cached.outcome), &limited_until(T0 + 300 + 900));
         Ok(())
     })
     .await

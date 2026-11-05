@@ -93,7 +93,9 @@ impl HostUsage {
     ) -> Settled {
         let print = fingerprint(account);
         let entry = entry.filter(|entry| entry.fingerprint == print);
-        if let Some(held) = entry.as_ref().and_then(|entry| held(entry, now)) {
+        if refresh == Refresh::Cached
+            && let Some(held) = entry.as_ref().and_then(|entry| held(entry, now))
+        {
             return settled(account, held.0, held.1, Update::Keep);
         }
         if let (Refresh::Cached, Some(good)) =
