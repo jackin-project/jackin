@@ -13,7 +13,7 @@ use jackin_core::{
     Config, FsError, HookKind, HostPath, ImageId, ProcessRunner, RoleName, StdFileSystem,
     WorkspaceName,
 };
-use jackin_image::{BuildxEngine, ImageEngine, ImagePlan, Rebuild};
+use jackin_image::{BuildxEngine, ContextEntry, ImageEngine, ImagePlan, Rebuild};
 use jackin_session::{RoleCatalog, plan_image};
 use jackin_testkit::{
     CapturedFile, FakeClock, ProcessEffect, ProcessReply, RoleFixture, ScriptedProcessRunner,
@@ -152,6 +152,62 @@ async fn a_role_input_swapped_for_a_symlink_after_it_was_checked_never_yields_ou
                 .collect();
             assert!(!keys.iter().any(|key| key == "evil"), "{keys:?}");
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_staged_dockerfile_is_the_validated_dockerfile_even_when_the_file_changes_after_the_check()
+-> TestResult {
+    guard(async {
+        let role = RoleFixture::new("sentinel")?;
+        role.commit().await?;
+        let leaf = HostPath::parse(&role.root().as_path().join("Dockerfile"))?;
+        let swapped = Arc::new(AtomicBool::new(false));
+        let done = Arc::clone(&swapped);
+        let swapping = Arc::new(HookFs::new(
+            Arc::new(StdFileSystem::default()),
+            Box::new(move |path: &HostPath| {
+                if *path == leaf && !done.swap(true, Ordering::SeqCst) {
+                    std::fs::write(leaf.as_path(), b"FROM construct\nRUN echo swapped\n").map_err(
+                        |source| FsError::Io {
+                            path: leaf.clone(),
+                            kind: source.kind(),
+                            message: source.to_string(),
+                        },
+                    )?;
+                }
+                Ok(())
+            }),
+            Box::new(|| {}),
+        ));
+        let (cache, _keep) = cache()?;
+        let catalog = RoleCatalog::new(
+            Arc::<HookFs>::clone(&swapping),
+            Arc::new(TestRunner::new()),
+            Arc::new(FakeClock::new()),
+            cache,
+        );
+
+        let loaded = catalog
+            .load_path(role.root(), &CancellationToken::new())
+            .await?;
+
+        assert!(swapped.load(Ordering::SeqCst), "the swap never ran");
+        let validated = &loaded.dockerfile().bytes;
+        let staged: Vec<&Vec<u8>> = loaded
+            .files()
+            .iter()
+            .filter_map(|entry| match entry {
+                ContextEntry::File { path, bytes, .. } if *path == loaded.dockerfile().path => {
+                    Some(bytes)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(staged, [validated]);
+        assert!(!String::from_utf8_lossy(validated).contains("swapped"));
         Ok(())
     })
     .await
