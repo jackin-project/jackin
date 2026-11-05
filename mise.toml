@@ -65,8 +65,8 @@ trap 'rm -rf "$tree"' EXIT
 git checkout-index --all --prefix="$tree/" || exit 1
 (cd "$tree" && gitleaks dir . --redact --no-banner) || status=1
 gitleaks git . --redact --no-banner --log-opts=HEAD || status=1
-(cd "$tree" && betterleaks dir . --redact --no-banner) || status=1
-betterleaks git . --redact --no-banner --log-opts=HEAD || status=1
+(cd "$tree" && betterleaks dir . --config .gitleaks.toml --redact --no-banner) || status=1
+betterleaks git . --config .gitleaks.toml --redact --no-banner --log-opts=HEAD || status=1
 (cd "$tree" && kingfisher scan . --git-history none --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml) || status=1
 kingfisher scan . --git-history full --branch HEAD --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml || status=1
 exit "$status"

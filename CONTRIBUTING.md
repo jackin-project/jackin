@@ -57,7 +57,7 @@ git add -p && git commit -s
 
 Never write a secret in a file, a log, a label, a commit, or a test. Use `op` for 1Password references.
 
-CI runs gitleaks, betterleaks, and Kingfisher as the `secrets-scan` check. Run the same scan locally with `mise run check:secrets-scan`. For a finding, either remove it from the source or review it and record it in the file of the scanner that reported it. `.gitleaks.toml` holds the path and pattern allowlists that gitleaks and betterleaks both read. `.gitleaksignore` holds fingerprints for gitleaks. `.betterleaksignore` holds fingerprints for betterleaks. `.kingfisher-baseline.yml` holds the Kingfisher baseline. Refresh it with `--manage-baseline` in a clean clone that has no linked worktrees, and review the diff.
+CI runs gitleaks, betterleaks, and Kingfisher as the `secrets-scan` check. Run the same scan locally with `mise run check:secrets-scan`. For a finding, either remove it from the source or review it and record it in the file of the scanner that reported it. `.gitleaks.toml` holds the path and pattern allowlists that gitleaks and betterleaks both read. Betterleaks 1.10.0 no longer loads it by itself, so every betterleaks command passes `--config .gitleaks.toml`. `.gitleaksignore` holds fingerprints for gitleaks. `.betterleaksignore` holds fingerprints for betterleaks. `.kingfisher-baseline.yml` holds the Kingfisher baseline. Refresh it with `--manage-baseline` in a clean clone that has no linked worktrees, and review the diff.
 
 The full-history `security-audit` hook never fires from Git. Run it with `mise exec -- hk run security-audit`.
 

@@ -53,14 +53,14 @@ hooks {
   }
   ["pre-push"] {
     steps {
-      ["betterleaks-history"] { check = "betterleaks git . --redact --log-opts=\"HEAD --not --remotes\"" }
+      ["betterleaks-history"] { check = "betterleaks git . --config .gitleaks.toml --redact --log-opts=\"HEAD --not --remotes\"" }
       ["xtask-ci"] { check = "mise run ci:fast" }
     }
   }
   ["security-audit"] {
     steps {
       ["kingfisher-history"] { check = "mise exec --locked -- kingfisher scan . --git-history full --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml" }
-      ["betterleaks-history"] { check = "mise exec --locked -- betterleaks git . --redact" }
+      ["betterleaks-history"] { check = "mise exec --locked -- betterleaks git . --config .gitleaks.toml --redact" }
       ["gitleaks-history"] { check = "mise exec --locked -- gitleaks git . --redact --no-banner" }
     }
   }
