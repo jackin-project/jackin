@@ -814,7 +814,7 @@ async fn flooded() -> Result<Capsule, Box<dyn Error>> {
 }
 
 #[tokio::test]
-async fn a_flood_arrives_in_order_and_ends_at_the_last_line() -> TestResult {
+async fn a_flood_backs_up_then_drains_and_the_console_stays_live() -> TestResult {
     guard(Box::pin(async {
         let mut capsule = flooded().await?;
         for first in (1..=FLOOD_LINES).step_by(40) {

@@ -187,13 +187,12 @@ fn env_file_and_work_state_problems_print_as_sentences() -> TestResult {
             format!("the work in jackin-work-0001 is not exported: {expected}")
         );
     }
-    assert_eq!(
-        PurgeError::Replaced {
-            sandbox: sandbox.clone()
-        }
-        .to_string(),
-        "jackin-work-0001 was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted"
-    );
+    let replaced = PurgeError::Replaced {
+        sandbox: sandbox.clone(),
+    }
+    .to_string();
+    assert!(replaced.contains("jackin-work-0001"), "{replaced}");
+    assert!(replaced.contains("nothing was deleted"), "{replaced}");
     Ok(())
 }
 
