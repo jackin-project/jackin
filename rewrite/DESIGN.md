@@ -100,8 +100,8 @@ Evidence: `evidence/P0.3-codex.md`, `evidence/P7.1-image.md`.
 
 `jackin-image` embeds `images/construct/Dockerfile`. Jackin builds the construct image locally and caches it by digest. The base image needs no registry. The image has these properties:
 
-- It starts from the OpenShell default sandbox image `nvcr.io/nvidia/base/ubuntu:24.04`, pinned by digest.
-- It removes the user `ubuntu` and creates the user `sandbox` with uid and gid 1000 and home `/sandbox`. The `vm` driver takes the runtime user from `/etc/passwd`, not from the image `USER`.
+- It starts from the official Debian stable image `debian:trixie` (Debian 13), pinned by the multi-arch index digest. OpenShell needs nothing from its default sandbox image: the supervisor is injected, and the `vm` driver takes the runtime user from `/etc/passwd`.
+- It creates the user `sandbox` with uid and gid 1000 and home `/sandbox` at mode 0755. Debian has no user or group at 1000, so a base that holds the id fails the build. The `vm` driver takes the runtime user from `/etc/passwd`, not from the image `USER`.
 - It clears every setuid and setgid bit. The build fails when `sudo`, a firewall tool, or a container tool is on `PATH`. The derived scan (D05) matches the same forbidden names anywhere in the final tree.
 - It contains `git`, `curl`, `ca-certificates`, `jq`, `bash`, and the other shared shell tools that roles need. Export needs `git` (D08).
 - Jackin puts each of its files under `/usr/local`, because the default Landlock policy denies `/opt`.
