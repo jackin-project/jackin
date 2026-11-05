@@ -502,3 +502,46 @@ async fn every_certificate_read_asks_the_filesystem_for_no_more_than_the_size_ca
     })
     .await
 }
+
+#[tokio::test]
+async fn a_client_certificate_rotated_between_the_reads_never_reaches_the_sandbox_with_the_old_key()
+-> TestResult {
+    guard(async {
+        let rig = docker_rig(false, true, Engine::WithCerts).await?;
+        let recorder = Arc::new(RecordsCaps::new(Arc::clone(&rig.world.fs)));
+        let cert = rig.engine_certs()?.as_path().join("cert.pem");
+        let rotated = "-----BEGIN CERTIFICATE-----\nRlJFU0hDRVJURlJFU0hDRVJURlJFU0g=\n-----END CERTIFICATE-----\n";
+        recorder.after_read("key.pem", 1, move || {
+            drop(std::fs::write(&cert, rotated));
+        });
+        let fs: Arc<dyn FileSystem> = Arc::<RecordsCaps>::clone(&recorder);
+        let world = &rig.world;
+        let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
+        let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
+        let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
+        let runner: Arc<dyn ProcessRunner> = Arc::<TestRunner>::clone(&world.runner);
+        let session = Session::new(SessionDeps {
+            gateway,
+            engine,
+            host: HostPorts { clock, fs, runner },
+            cache_dir: world.cache_dir().clone(),
+            config: world.config.clone(),
+            limits: default_limits(),
+        });
+
+        let outcome = rig
+            .run_on(&session, rig.request(1)?, CancellationToken::new())
+            .await?;
+
+        let failed = failure(outcome)?;
+        assert_eq!(failed.step, LaunchStep::Credentials);
+        let (file, problem, _) = engine_error(&failed)?;
+        assert_eq!(
+            (file, problem),
+            (EngineCert::Cert, EngineCertProblem::Changed)
+        );
+        assert!(docker_files(&rig.handle(1).await?).is_empty());
+        Ok(())
+    })
+    .await
+}

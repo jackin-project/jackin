@@ -105,6 +105,24 @@ pub(super) async fn read_set(
             return Err(error);
         }
     };
+    match read(fs, access, EngineCert::Cert).await {
+        Ok(again) if again == cert => wipe(again),
+        Ok(again) => {
+            wipe(again);
+            wipe(cert);
+            wipe(key);
+            return Err(LaunchError::EngineCert {
+                file: EngineCert::Cert,
+                directory: access.engine.client_certs.clone(),
+                problem: EngineCertProblem::Changed,
+            });
+        }
+        Err(error) => {
+            wipe(cert);
+            wipe(key);
+            return Err(error);
+        }
+    }
     let ca = match read(fs, access, EngineCert::Ca).await {
         Ok(ca) => ca,
         Err(error) => {
