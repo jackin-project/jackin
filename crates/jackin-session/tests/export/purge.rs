@@ -268,17 +268,43 @@ async fn a_guarded_purge_never_deletes_a_sandbox_that_replaced_the_one_it_inspec
         let (purged, swapped) = tokio::join!(purging, swapping);
 
         swapped?;
-        let Err(PurgeError::WorkNotExported { sandbox, state }) = purged else {
+        let Err(PurgeError::Replaced { sandbox }) = purged else {
             return Err(format!("expected a refusal, saw {purged:?}").into());
         };
-        assert_eq!(
-            (sandbox, *state),
-            (
-                name.clone(),
-                WorkState::Unknown(UnknownReason::InspectionFailed)
-            )
-        );
+        assert_eq!(sandbox, name);
         assert!(gateway.sandbox(&name).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_guarded_purge_refuses_a_sandbox_whose_creation_time_is_unknown() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        export(&rig, &name).await?;
+        handle.forget_created_at();
+
+        let purged = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .await;
+
+        let Err(PurgeError::Replaced { sandbox }) = purged else {
+            return Err(format!("expected a refusal, saw {purged:?}").into());
+        };
+        assert_eq!(sandbox, name);
+        assert!(rig.world.gateway.sandbox(&name).is_some());
+        let forced = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Forced)
+            .await?;
+        assert!(matches!(forced, PurgeOutcome::Deleted { .. }));
         Ok(())
     })
     .await

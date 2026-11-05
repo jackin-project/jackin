@@ -15,7 +15,7 @@ use jackin_openshell::{
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::export::{UnknownReason, WorkState};
+use crate::export::WorkState;
 use crate::service::{POLL, Session};
 
 #[derive(Debug)]
@@ -55,6 +55,10 @@ pub enum PurgeError {
         sandbox: SandboxName,
         state: Box<WorkState>,
     },
+    #[error(
+        "{sandbox} was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted"
+    )]
+    Replaced { sandbox: SandboxName },
     #[error(transparent)]
     Gateway(#[from] GatewayError),
 }
@@ -150,12 +154,12 @@ impl Session {
         }
         if mode == PurgeMode::Guarded {
             match self.find_managed(sandbox).await? {
-                Some(now) if now.phase != Phase::Deleting && now.created_at == view.created_at => {}
                 Some(now) if now.phase != Phase::Deleting => {
-                    return Err(PurgeError::WorkNotExported {
-                        sandbox: sandbox.clone(),
-                        state: Box::new(WorkState::Unknown(UnknownReason::InspectionFailed)),
-                    });
+                    if view.created_at.is_none() || now.created_at != view.created_at {
+                        return Err(PurgeError::Replaced {
+                            sandbox: sandbox.clone(),
+                        });
+                    }
                 }
                 Some(_) | None => {
                     return Ok(PurgeOutcome::AlreadyGone {

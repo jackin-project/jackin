@@ -81,6 +81,9 @@ fn purge_error(error: &PurgeError) -> String {
         PurgeError::WorkNotExported { sandbox, state } => format!(
             "the work in sandbox {sandbox} is not exported ({state}); run jackin export {sandbox} or pass --force"
         ),
+        PurgeError::Replaced { sandbox } => format!(
+            "sandbox {sandbox} was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted; run jackin purge {sandbox} again"
+        ),
         PurgeError::Gateway(error) => error_chain(error),
     }
 }
