@@ -371,17 +371,26 @@ fn classify(repository: &Repository, uncommitted: usize, refs: &HostRefs) -> Wor
     }
 }
 
-fn folded(name: &str) -> String {
-    name.chars().flat_map(char::to_lowercase).nfd().collect()
+struct Named {
+    exact: String,
+    folded: String,
 }
 
-fn nested(target: &str, other: &str) -> bool {
-    let (target, other) = (folded(target), folded(other));
-    target.starts_with(&format!("{other}/")) || other.starts_with(&format!("{target}/"))
+fn named(exact: String) -> Named {
+    let folded = exact.chars().flat_map(char::to_lowercase).nfd().collect();
+    Named { exact, folded }
 }
 
-fn aliases(target: &str, other: &str) -> bool {
-    folded(target) == folded(other)
+fn within(parent: &str, child: &str) -> bool {
+    child
+        .strip_prefix(parent)
+        .is_some_and(|rest| rest.starts_with('/'))
+}
+
+fn related(target: &Named, other: &Named) -> bool {
+    target.folded == other.folded
+        || within(&target.folded, &other.folded)
+        || within(&other.folded, &target.folded)
 }
 
 fn clash(target: &str, other: &str) -> ExportError {
@@ -391,11 +400,11 @@ fn clash(target: &str, other: &str) -> ExportError {
     }
 }
 
-fn conflict(target: &str, existing: &[String]) -> Option<ExportError> {
+fn conflict(target: &Named, existing: &[Named]) -> Option<ExportError> {
     existing
         .iter()
-        .find(|other| nested(target, other) || (*other != target && aliases(target, other)))
-        .map(|other| clash(target, other))
+        .find(|other| other.exact != target.exact && related(target, other))
+        .map(|other| clash(&target.exact, &other.exact))
 }
 
 fn collision(
@@ -403,15 +412,20 @@ fn collision(
     repository: &Repository,
     wanted: &[(Wanted, CommitId)],
 ) -> Option<ExportError> {
-    let every: Vec<(Wanted, CommitId)> = heads(repository);
+    let every: Vec<(Wanted, Named)> = heads(repository)
+        .into_iter()
+        .map(|(item, _)| {
+            let target = named(item.target(sandbox));
+            (item, target)
+        })
+        .collect();
     wanted.iter().find_map(|(item, _)| {
-        let target = item.target(sandbox);
+        let target = named(item.target(sandbox));
         every
             .iter()
             .filter(|(other, _)| other != item)
-            .map(|(other, _)| other.target(sandbox))
-            .find(|other| aliases(&target, other) || nested(&target, other))
-            .map(|other| clash(&target, &other))
+            .find(|(_, other)| related(&target, other))
+            .map(|(_, other)| clash(&target.exact, &other.exact))
     })
 }
 
@@ -653,9 +667,10 @@ fn require_heads(heads: &BTreeMap<String, CommitId>, items: &[Wanted]) -> Result
 }
 
 async fn guard(host: &Host<'_>, refs: &HostRefs, targets: &[String]) -> Result<(), ExportError> {
+    let existing: Vec<Named> = refs.every.iter().cloned().map(named).collect();
     if let Some(error) = targets
         .iter()
-        .find_map(|target| conflict(target, &refs.every))
+        .find_map(|target| conflict(&named(target.clone()), &existing))
     {
         return Err(error);
     }
