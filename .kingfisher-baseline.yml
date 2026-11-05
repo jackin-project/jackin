@@ -243,6 +243,12 @@ repositories:
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
   - path: crates/jackin-openshell/tests/gateway/discovery.rs
+    fingerprint: '4842053511444827687'
+    rule_id: betterleaks.generic-credential-uri
+    line: 280
+    first_seen_at: 2026-11-05T00:30:00.000000+00:00
+    last_updated_at: 2026-11-05T00:30:00.000000+00:00
+  - path: crates/jackin-openshell/tests/gateway/discovery.rs
     fingerprint: '15695154713795733532'
     rule_id: betterleaks.generic-credential-uri
     line: 228
