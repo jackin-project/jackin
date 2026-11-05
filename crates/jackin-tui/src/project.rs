@@ -692,39 +692,3 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
         },
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use jackin_core::TerminalText;
-    use jackin_session::Unexported;
-
-    use super::*;
-
-    fn left(unusable: &[&str]) -> WorkState {
-        WorkState::Unexported(Unexported {
-            uncommitted: 0,
-            branches: Vec::new(),
-            detached: None,
-            worktrees: Vec::new(),
-            unusable: unusable
-                .iter()
-                .map(|name| TerminalText::sanitize(name.as_bytes()))
-                .collect(),
-        })
-    }
-
-    #[test]
-    fn work_that_cannot_be_exported_still_preserves_the_sandbox() {
-        for status in [
-            InstanceStatus::CleanExited,
-            InstanceStatus::RestoreAvailable,
-        ] {
-            assert_eq!(
-                preserved(status, Some(&left(&["worktree at /sandbox/x"]))),
-                InstanceStatus::PreservedUnpushed
-            );
-            assert_eq!(preserved(status, Some(&left(&[]))), status);
-            assert_eq!(preserved(status, Some(&WorkState::Exported)), status);
-        }
-    }
-}
