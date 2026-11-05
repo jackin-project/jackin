@@ -209,6 +209,32 @@ async fn work_state_is_read_once_per_state() -> TestResult {
     .await
 }
 
+#[tokio::test]
+async fn an_unknown_work_state_is_read_again_and_a_known_one_is_not() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        rig.handle(1).await?.exit_codex(0);
+        let gateway = Arc::clone(&rig.world.gateway);
+        let program = || gateway.calls(GatewayOp::Program);
+        rig.world.gateway.inject(Fault::FailNext {
+            op: GatewayOp::Program,
+            error: refused(),
+        });
+        let mut console = ConsoleRig::seeded(&rig).await?;
+        console.skip_intro();
+        let failed = program();
+        refresh(&mut console).await?;
+        let read = program();
+        assert!(read > failed, "the unknown state is not read again");
+        refresh(&mut console).await?;
+        refresh(&mut console).await?;
+        assert_eq!(program(), read, "the known state is read again");
+        Ok(())
+    })
+    .await
+}
+
 fn refused() -> GatewayError {
     GatewayError::Unreachable {
         endpoint: "127.0.0.1:8080".to_owned(),
