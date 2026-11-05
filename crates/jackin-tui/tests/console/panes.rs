@@ -6,6 +6,7 @@ use std::num::NonZeroU16;
 use std::sync::Arc;
 use std::time::Duration;
 
+use jackin_console::backend::Effect;
 use jackin_console::domain::instance::InstanceStatus;
 use jackin_console::domain::vocabulary::{PaneWords, fill_in};
 use jackin_console::panes::{PaneKind, PaneRefusal, PaneRequest};
@@ -222,6 +223,19 @@ async fn ctrl_d_never_reaches_codex_and_ctrl_b_ctrl_b_sends_the_prefix() -> Test
         assert_eq!(capsule.handle.raw_input(), b"a\x02b");
         let raw = capsule.sync().await?;
         assert_eq!(raw, b"a\x02b");
+        assert_eq!(capsule.handle.attachments(), 1);
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn alt_ctrl_d_never_reaches_codex_either() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        capsule.console().keys("a alt+ctrl+d b")?;
+        let raw = capsule.sync().await?;
+        assert_eq!(raw, b"ab");
         assert_eq!(capsule.handle.attachments(), 1);
         Ok(())
     }))
@@ -598,6 +612,96 @@ async fn a_clipboard_write_is_refused_without_a_gesture_or_after_the_window() ->
 }
 
 #[tokio::test]
+async fn a_refresh_keeps_the_open_panes() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        let instance = capsule.id.clone();
+        capsule.console().console().app().go(Go::NewSession {
+            instance,
+            agent: None,
+            account: None,
+        });
+        capsule
+            .pump_until(|handle| handle.shells().len() == 1)
+            .await?;
+        capsule.console().pump(12).await;
+        let before = capsule.console().screen();
+        assert!(
+            before.contains("1 Codex") && before.contains("2 Shell"),
+            "{before}"
+        );
+        capsule.lab.world().perform(Effect::Refresh);
+        capsule.console().settle().await?;
+        let after = capsule.console().screen();
+        assert!(
+            after.contains("1 Codex") && after.contains("2 Shell"),
+            "{after}"
+        );
+        assert_eq!(capsule.handle.attachments(), 1);
+        assert_eq!(capsule.handle.shells().len(), 1);
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn a_clipboard_write_in_the_replay_is_not_copied_after_a_key() -> TestResult {
+    guard(Box::pin(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        handle.print_main(&osc52(b"Replayed"));
+        let mut lab = Lab::with(rig).await?;
+        let id = lab.world().instances[0].id.clone();
+        let mut capsule = Capsule {
+            lab,
+            id,
+            handle,
+            marks: 0,
+            seen: 0,
+        };
+        capsule.enter();
+        capsule.console().keys("a")?;
+        capsule.attached().await?;
+        capsule.console().pump(20).await;
+        assert_eq!(capsule.console().clipboard().writes(), Vec::<String>::new());
+        capsule.console().keys("a")?;
+        capsule.feed(&osc52(b"Live")).await?;
+        assert_eq!(capsule.console().clipboard().writes(), vec!["Live"]);
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn a_clipboard_write_from_a_pane_that_lost_the_focus_is_refused() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        capsule.console().keys("a")?;
+        let instance = capsule.id.clone();
+        capsule.console().console().app().go(Go::NewSession {
+            instance,
+            agent: None,
+            account: None,
+        });
+        capsule
+            .pump_until(|handle| handle.shells().len() == 1)
+            .await?;
+        capsule.console().pump(12).await;
+        capsule.console().keys("a")?;
+        capsule.handle.print_main(&osc52(b"Hidden"));
+        capsule.console().pump(20).await;
+        assert_eq!(capsule.console().clipboard().writes(), Vec::<String>::new());
+        capsule.console().keys("ctrl+b p")?;
+        capsule.console().keys("a")?;
+        capsule.feed(&osc52(b"Shown")).await?;
+        assert_eq!(capsule.console().clipboard().writes(), vec!["Shown"]);
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
 async fn a_clipboard_read_is_never_answered_and_the_cap_is_on_decoded_bytes() -> TestResult {
     guard(Box::pin(async {
         let mut capsule = Capsule::open().await?;
@@ -653,6 +757,8 @@ async fn a_shell_pane_never_writes_the_clipboard() -> TestResult {
     .await
 }
 
+const FLOOD_LINES: u32 = 22_000;
+
 #[tokio::test]
 async fn a_flood_is_bounded_by_the_inbox_and_loses_nothing() -> TestResult {
     guard(Box::pin(async {
@@ -680,9 +786,13 @@ async fn a_flood_is_bounded_by_the_inbox_and_loses_nothing() -> TestResult {
         };
         capsule.enter();
         capsule.attached().await?;
-        let line = format!("{}\r\n", "x".repeat(4094));
-        for _ in 0..512 {
-            capsule.handle.print_main(line.as_bytes());
+        for first in (1..=FLOOD_LINES).step_by(40) {
+            let mut chunk = String::new();
+            for number in first..(first + 40).min(FLOOD_LINES + 1) {
+                chunk.push_str(&"x".repeat(90));
+                chunk.push_str(&format!("{number:05}\r\n"));
+            }
+            capsule.handle.print_main(chunk.as_bytes());
         }
         let mut last = usize::MAX;
         for _ in 0..100 {
@@ -695,8 +805,23 @@ async fn a_flood_is_bounded_by_the_inbox_and_loses_nothing() -> TestResult {
         }
         assert!(last > 512 * 1024, "{last}");
         capsule.handle.print_main(b"FLOODEND\r\n");
-        capsule.console().wait_for_text("FLOODEND").await?;
+        let screen = capsule.console().wait_for_text("FLOODEND").await?;
         assert_eq!(capsule.handle.undelivered_main_output(), 0);
+        let numbers: Vec<u32> = screen
+            .split_whitespace()
+            .filter_map(|word| {
+                let (rest, digits) = word.split_at_checked(word.len().checked_sub(5)?)?;
+                (rest.ends_with('x') && rest.bytes().all(|b| b == b'x'))
+                    .then(|| digits.parse().ok())
+                    .flatten()
+            })
+            .collect();
+        assert!(numbers.len() >= 2, "{screen}");
+        assert_eq!(numbers.last(), Some(&FLOOD_LINES), "{screen}");
+        assert!(
+            numbers.windows(2).all(|pair| pair[1] == pair[0] + 1),
+            "{numbers:?}"
+        );
         Ok(())
     }))
     .await

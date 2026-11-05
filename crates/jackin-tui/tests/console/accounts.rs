@@ -152,6 +152,53 @@ async fn a_new_codex_account_syncs_its_provider() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_new_account_with_a_typed_purpose_or_endpoint_is_refused_and_writes_nothing() -> TestResult
+{
+    guard(async {
+        for typed in ["purpose", "endpoint", "nothing"] {
+            let mut lab = Lab::open().await?;
+            let before = lab.console.config_text().await?;
+            let base = lab.world().accounts.clone();
+            let mut registry = base.clone();
+            let mut added = Account::registered(
+                UNSAVED_ID,
+                "newlogin",
+                Provider::OpenAi,
+                CredentialSource::LocalFolder {
+                    path: lab.rig.home.as_path().display().to_string(),
+                    detected: DetectedKind::CodexAuthJson,
+                },
+            );
+            match typed {
+                "purpose" => added.purpose = Some("work".to_owned()),
+                "nothing" => {}
+                _ => {
+                    added.endpoint = Some(jackin_console::domain::account::Endpoint {
+                        label: "custom".to_owned(),
+                        host: "example.invalid".to_owned(),
+                    });
+                }
+            }
+            registry.accounts.push(added);
+            lab.perform(Effect::SaveAccounts {
+                base: Box::new(base),
+                registry: Box::new(registry),
+            })
+            .await?;
+            let saved = lab.config().await?.account(&account("newlogin")?).is_some();
+            assert_eq!(saved, typed == "nothing", "{typed}");
+            assert_eq!(
+                lab.console.config_text().await? == before,
+                typed != "nothing",
+                "{typed}"
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_folder_without_a_login_writes_nothing() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;

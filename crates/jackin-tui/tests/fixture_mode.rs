@@ -54,8 +54,7 @@ async fn idle_console_is_quiet() -> TestResult {
         console.settle().await?;
         assert_eq!(console.console().inflight(), 0);
         for _ in 0..61 {
-            console.elapse(1);
-            console.tick(1);
+            console.tick(5);
             console.settle().await?;
             assert_eq!(console.console().inflight(), 0);
             assert!(
