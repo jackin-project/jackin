@@ -12,7 +12,7 @@ use jackin_core::{
     AttemptId, HookKind, Phase, RoleName, RoleSource, RoleUrl, SupervisorState, sandbox_layout,
 };
 use jackin_openshell::{Gateway, SandboxFile};
-use jackin_testkit::{Fault, Rig, RoleFixture, TestResult, Trigger, guard};
+use jackin_testkit::{FakeClock, Fault, Rig, RoleFixture, TestResult, Trigger, guard};
 
 use super::support::Lab;
 
@@ -156,6 +156,71 @@ async fn restore_of_a_supervisor_that_never_starts_times_out_without_a_start_req
         assert_eq!(handle.runs(&preflight).len(), runs);
         let waited: Duration = lab.rig.world.clock.slept().iter().sum();
         assert!(waited >= Duration::from_secs(30), "{waited:?}");
+        Ok(())
+    })
+    .await
+}
+
+async fn slow_host(clock: Arc<FakeClock>) {
+    for _ in 0..10 {
+        let held = clock.working();
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        drop(held);
+        for _ in 0..200 {
+            tokio::task::yield_now().await;
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_restore_that_progresses_slowly_settles_however_long_the_host_takes() -> TestResult {
+    guard(async {
+        let (mut lab, id) = stopped_after(Some(3)).await?;
+        let handle = lab.rig.handle(1).await?;
+        lab.rig.world.gateway.inject(Fault::StaleSupervisor {
+            observations: u32::MAX,
+        });
+        let clock = Arc::clone(&lab.rig.world.clock);
+        tokio::time::pause();
+        let load = tokio::spawn(slow_host(clock));
+        let started = tokio::time::Instant::now();
+        lab.perform(Effect::Restore { instance: id }).await?;
+        load.await?;
+        assert!(
+            started.elapsed() > Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        let screen = lab.console.screen();
+        assert!(
+            flat(&screen).contains("did not reach its start state"),
+            "{screen}"
+        );
+        assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_restore_held_forever_fails_to_settle_for_lack_of_progress_instead_of_hanging()
+-> TestResult {
+    guard(async {
+        let (mut lab, id) = stopped().await?;
+        let gateway = Arc::clone(&lab.rig.world.gateway);
+        let preflight = Trigger::Program(sandbox_layout::hook_path(HookKind::Preflight));
+        gateway.inject(Fault::HoldAt {
+            trigger: preflight.clone(),
+        });
+        lab.world().perform(Effect::Restore { instance: id });
+        assert!(gateway.until_held(&preflight).await);
+        tokio::time::pause();
+        let settled = lab.console.settle().await;
+        gateway.release(&preflight);
+        let message = settled
+            .expect_err("the held restore cannot settle")
+            .to_string();
+        assert!(message.contains("no progress"), "{message}");
         Ok(())
     })
     .await

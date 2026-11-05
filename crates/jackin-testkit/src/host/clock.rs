@@ -98,6 +98,21 @@ impl FakeClock {
     pub fn sleepers(&self) -> usize {
         locked(&self.state).waiting.len()
     }
+
+    fn progress(&self) -> (usize, Duration) {
+        let state = locked(&self.state);
+        (state.slept.len(), state.elapsed)
+    }
+
+    pub async fn until_stalled(&self, window: Duration) {
+        loop {
+            let seen = self.progress();
+            tokio::time::sleep(window).await;
+            if self.progress() == seen {
+                return;
+            }
+        }
+    }
 }
 
 impl Default for FakeClock {

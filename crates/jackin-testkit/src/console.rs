@@ -38,7 +38,7 @@ use crate::host::FakeClock;
 use crate::world::World;
 
 const USAGE_DIR: &str = "usage";
-const SETTLE_CAP: Duration = Duration::from_secs(5);
+const SETTLE_STALL: Duration = Duration::from_secs(5);
 const WAIT_STEPS: usize = 1000;
 const WAIT_STEP: Duration = Duration::from_millis(5);
 const DEFAULT_SIZE: (u16, u16) = (120, 40);
@@ -322,9 +322,13 @@ impl ConsoleRig {
     }
 
     pub async fn settle(&mut self) -> Result<(), FixtureError> {
-        tokio::time::timeout(SETTLE_CAP, self.console.drain())
-            .await
-            .map_err(|_| "the console did not settle within 5 s")?;
+        let clock = Arc::clone(&self.wall.clock);
+        tokio::select! {
+            () = self.console.drain() => {}
+            () = clock.until_stalled(SETTLE_STALL) => {
+                return Err("the console made no progress for 5 s".into());
+            }
+        }
         self.render();
         Ok(())
     }
