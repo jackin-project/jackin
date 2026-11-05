@@ -126,7 +126,7 @@ impl HostUsage {
                     Update::Set(next),
                 )
             }
-            Err(failure) => failed(account, failure, entry, print),
+            Err(failure) => failed(account, failure, entry, print, now),
         }
     }
 
@@ -201,6 +201,7 @@ fn failed(
     failure: Failure,
     entry: Option<Entry>,
     print: String,
+    now: i64,
 ) -> Settled {
     let Failure { reason, transient } = failure;
     if !transient {
@@ -213,7 +214,10 @@ fn failed(
     }
     let retry_at = match &reason {
         UnavailableReason::RateLimited { retry_at } => retry_at.map(|at| at.0),
-        _ => None,
+        _ => entry
+            .as_ref()
+            .and_then(|entry| entry.retry_at)
+            .filter(|at| *at > now),
     };
     let next = Entry {
         retry_at,
