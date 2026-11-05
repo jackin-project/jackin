@@ -141,6 +141,7 @@ pub enum FileKind {
     Dir,
     Symlink,
     Socket,
+    Other,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

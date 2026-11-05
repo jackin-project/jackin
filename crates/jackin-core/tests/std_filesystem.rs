@@ -148,6 +148,43 @@ async fn private_dirs_are_created_with_mode_0700_at_every_new_level() -> TestRes
 }
 
 #[tokio::test]
+async fn a_fifo_is_reported_as_other_and_never_as_a_file() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let pipe = at(&dir, "pipe")?;
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(pipe.as_path())
+            .status()?
+            .success()
+    );
+    let to_pipe = at(&dir, "to-pipe")?;
+    std::os::unix::fs::symlink(pipe.as_path(), to_pipe.as_path())?;
+    let file = at(&dir, "a.txt")?;
+    fs.write_new(&file, b"abc", FileMode(0o600)).await?;
+
+    assert_eq!(fs.stat(&pipe).await?, Some(FileKind::Other));
+    assert_eq!(fs.stat_following(&pipe).await?, Some(FileKind::Other));
+    assert_eq!(fs.stat_following(&to_pipe).await?, Some(FileKind::Other));
+    assert_eq!(fs.stat(&file).await?, Some(FileKind::File));
+    let mut entries = fs.list(&HostPath::parse(dir.path())?).await?;
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    let kinds: Vec<(&str, FileKind)> = entries
+        .iter()
+        .map(|entry| (entry.name.as_str(), entry.kind))
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            ("a.txt", FileKind::File),
+            ("pipe", FileKind::Other),
+            ("to-pipe", FileKind::Symlink),
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn stat_following_resolves_links_and_reports_sockets() -> TestResult {
     use std::os::unix::fs::symlink;
 

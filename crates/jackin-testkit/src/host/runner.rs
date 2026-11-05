@@ -553,7 +553,7 @@ async fn snapshot(
                     let target = read_link(fs, root, &relative).await?;
                     files.insert(relative, CapturedFile::Link { target });
                 }
-                FileKind::Socket => {}
+                FileKind::Socket | FileKind::Other => {}
             }
         }
     }
