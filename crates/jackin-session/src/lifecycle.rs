@@ -15,7 +15,7 @@ use jackin_openshell::{
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::export::WorkState;
+use crate::export::{UnknownReason, WorkState};
 use crate::service::{POLL, Session};
 
 #[derive(Debug)]
@@ -147,6 +147,22 @@ impl Session {
                 sandbox: sandbox.clone(),
                 state: Box::new(was),
             });
+        }
+        if mode == PurgeMode::Guarded {
+            match self.find_managed(sandbox).await? {
+                Some(now) if now.phase != Phase::Deleting && now.created_at == view.created_at => {}
+                Some(now) if now.phase != Phase::Deleting => {
+                    return Err(PurgeError::WorkNotExported {
+                        sandbox: sandbox.clone(),
+                        state: Box::new(WorkState::Unknown(UnknownReason::InspectionFailed)),
+                    });
+                }
+                Some(_) | None => {
+                    return Ok(PurgeOutcome::AlreadyGone {
+                        sandbox: sandbox.clone(),
+                    });
+                }
+            }
         }
         self.deps.gateway.delete_sandbox(sandbox).await?;
         Ok(PurgeOutcome::Deleted {
