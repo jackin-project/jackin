@@ -266,7 +266,7 @@ struct MetaDependency {
 
 fn read_members(path: &Path) -> Result<(PathBuf, Vec<Member>), CiError> {
     let output = capture(
-        Command::new(cargo_program())
+        without_git_env(&mut Command::new(cargo_program()))
             .args([
                 "metadata",
                 "--no-deps",

@@ -2079,7 +2079,7 @@ mod ci_run {
         "bun run build @docs",
     ];
 
-    const CARGO_SCRIPT: &str = "#!/bin/sh\nif [ \"$1\" = metadata ]; then exec \"$REAL_CARGO\" \"$@\"; fi\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nprintf 'cargo %s\\n' \"$*\" >> \"$XTASK_LOG\"\nif [ \"$1\" = \"$FAIL_ON\" ]; then exit 7; fi\nexit 0\n";
+    const CARGO_SCRIPT: &str = "#!/bin/sh\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nif [ \"$1\" = metadata ]; then exec \"$REAL_CARGO\" \"$@\"; fi\nprintf 'cargo %s\\n' \"$*\" >> \"$XTASK_LOG\"\nif [ \"$1\" = \"$FAIL_ON\" ]; then exit 7; fi\nexit 0\n";
 
     const REUSE_SCRIPT: &str = "#!/bin/sh\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nprintf 'reuse %s\\n' \"$*\" >> \"$XTASK_LOG\"\nif [ \"$FAIL_ON\" = reuse ]; then exit 7; fi\nexit 0\n";
 
