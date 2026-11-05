@@ -18,7 +18,7 @@ use jackin_core::{
     SandboxName, SandboxPath, Sha256, TerminalText, WorkspaceName, plain, plain_list,
     sandbox_layout,
 };
-use jackin_openshell::GatewayError;
+use jackin_openshell::{GatewayError, SandboxView};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use unicode_normalization::UnicodeNormalization;
@@ -160,6 +160,10 @@ pub enum ExportError {
     },
     #[error("sandbox {0} was not found")]
     NotFound(SandboxName),
+    #[error(
+        "{sandbox} was replaced, or cannot be told apart from a replacement, while it was exported; nothing was exported"
+    )]
+    Replaced { sandbox: SandboxName },
     #[error("sandbox {sandbox} is not running: {phase}")]
     NotRunning { sandbox: SandboxName, phase: Phase },
     #[error("unknown workspace {0}")]
@@ -534,6 +538,7 @@ impl Session {
             host: &host,
             refs: &refs,
         };
+        self.ensure_same_incarnation(sandbox, &view).await?;
         let result = self
             .ship(&observed, sandbox, &unique, &remote_bundle, &items, &cancel)
             .await;
@@ -544,6 +549,24 @@ impl Session {
             uncommitted,
             ..report
         })
+    }
+
+    async fn ensure_same_incarnation(
+        &self,
+        sandbox: &SandboxName,
+        inspected: &SandboxView,
+    ) -> Result<(), ExportError> {
+        let now = self
+            .find_managed(sandbox)
+            .await?
+            .filter(|now| now.phase != Phase::Deleting)
+            .ok_or_else(|| ExportError::NotFound(sandbox.clone()))?;
+        if inspected.created_at.is_none() || now.created_at != inspected.created_at {
+            return Err(ExportError::Replaced {
+                sandbox: sandbox.clone(),
+            });
+        }
+        Ok(())
     }
 
     async fn ship(

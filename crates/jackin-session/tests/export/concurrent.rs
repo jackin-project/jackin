@@ -1,7 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_openshell::GatewayOp;
+use std::time::Duration;
+
+use jackin_openshell::{Gateway, GatewayOp};
+use jackin_session::ExportError;
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
 use tokio_util::sync::CancellationToken;
 
@@ -160,6 +163,49 @@ async fn an_export_finishes_the_refs_that_another_run_has_not_published_yet() ->
             landed.get(&ref_of(&name, "y")).map(String::as_str),
             Some(y.as_str())
         );
+        assert_eq!(staging_left(&rig)?, Vec::<String>::new());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_export_never_ships_a_replacement_sandbox_into_the_recovery_refs() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.handle(1).await?.name();
+        rig.handle(1)
+            .await?
+            .commit_in_project("a.txt", b"a", "original")
+            .await?;
+        let gateway = &rig.world.gateway;
+        let held = Trigger::Op(GatewayOp::Program);
+        gateway.inject(Fault::HoldAt {
+            trigger: held.clone(),
+        });
+
+        let exporting = export(&rig, &name);
+        let swapping = async {
+            assert!(gateway.until_held(&held).await);
+            gateway.delete_sandbox(&name).await?;
+            rig.world.clock.advance(Duration::from_secs(60));
+            rig.launch(1).await?;
+            rig.handle(1)
+                .await?
+                .commit_in_project("b.txt", b"b", "replacement")
+                .await?;
+            gateway.release(&held);
+            Ok::<_, Box<dyn std::error::Error>>(())
+        };
+        let (exported, swapped) = tokio::join!(exporting, swapping);
+
+        swapped?;
+        let Err(ExportError::Replaced { sandbox }) = exported else {
+            return Err(format!("expected a refusal, saw {exported:?}").into());
+        };
+        assert_eq!(sandbox, name);
+        assert_eq!(exports(&snapshot(&rig).await?).len(), 0);
         assert_eq!(staging_left(&rig)?, Vec::<String>::new());
         Ok(())
     })
