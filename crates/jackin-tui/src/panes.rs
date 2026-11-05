@@ -35,7 +35,15 @@ const COMMANDS: usize = 64;
 #[derive(Debug, Default)]
 struct InboxState {
     events: VecDeque<LinkEvent>,
-    output_bytes: usize,
+    queued: usize,
+}
+
+fn cost(event: &LinkEvent) -> usize {
+    match event {
+        LinkEvent::Output(bytes) => bytes.len(),
+        LinkEvent::Notice(text) => text.len().max(1),
+        _ => 1,
+    }
 }
 
 struct Inbox {
@@ -67,16 +75,14 @@ impl Inbox {
 
     fn push(&self, event: LinkEvent) {
         let mut state = locked(&self.state);
-        if let LinkEvent::Output(bytes) = &event {
-            state.output_bytes += bytes.len();
-        }
+        state.queued += cost(&event);
         state.events.push_back(event);
         drop(state);
         (self.wake)();
     }
 
     fn has_room(&self) -> bool {
-        locked(&self.state).output_bytes < self.cap
+        locked(&self.state).queued < self.cap
     }
 
     fn drain(&self, budget: usize) -> Vec<LinkEvent> {
@@ -95,16 +101,19 @@ impl Inbox {
                         state.events.push_front(LinkEvent::Output(rest));
                     }
                     left -= bytes.len();
-                    state.output_bytes -= bytes.len();
+                    state.queued -= bytes.len();
                     taken.push(LinkEvent::Output(bytes));
                     if left == 0 {
                         break;
                     }
                 }
-                other => taken.push(other),
+                other => {
+                    state.queued -= cost(&other);
+                    taken.push(other);
+                }
             }
         }
-        let freed = state.output_bytes < self.cap;
+        let freed = state.queued < self.cap;
         drop(state);
         if freed {
             self.room.notify_one();
@@ -658,6 +667,23 @@ mod tests {
         inbox.push(LinkEvent::Attached);
         assert!(!inbox.has_room());
         assert_eq!(inbox.drain(4), vec![output(4, 1)]);
+        assert!(inbox.has_room());
+    }
+
+    #[test]
+    fn notices_and_state_events_count_against_the_cap_until_a_drain_takes_them() {
+        let inbox = Inbox::new(10, Box::new(|| {}));
+        inbox.push(LinkEvent::Notice("12345".to_owned()));
+        assert!(inbox.has_room());
+        inbox.push(LinkEvent::Notice("12345".to_owned()));
+        assert!(!inbox.has_room());
+        assert_eq!(inbox.drain(0).len(), 2);
+        assert!(inbox.has_room());
+        for _ in 0..10 {
+            inbox.push(LinkEvent::Lease(Lease::Owner));
+        }
+        assert!(!inbox.has_room());
+        inbox.drain(0);
         assert!(inbox.has_room());
     }
 }
