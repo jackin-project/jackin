@@ -27,7 +27,7 @@
         "/^mise\\.toml$/"
       ],
       "matchStrings": [
-        "min_version = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+        "soft = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ],
       "depNameTemplate": "jdx/mise",
       "datasourceTemplate": "github-releases",
