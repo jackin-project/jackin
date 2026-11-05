@@ -265,6 +265,14 @@ impl<R: CommandRunner + Sync> Check for DemoGateCheck<R> {
         let mut violations = demo_violations(repo, self.step());
         if self.feature_graph(repo, &mut violations) {
             self.symbols(repo, &mut violations);
+        } else {
+            violations.push(Violation::general(
+                CiStep::DemoGate,
+                format!(
+                    "{CONSOLE} is in the dependency tree of none of {}, so the gate measured nothing",
+                    TREE_MEMBERS.join(", ")
+                ),
+            ));
         }
         sorted(violations)
     }

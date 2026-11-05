@@ -2065,7 +2065,7 @@ mod ci_run {
 
     use super::*;
 
-    const FULL: [&str; 11] = [
+    const FULL: [&str; 12] = [
         "cargo fmt --all --check",
         "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings",
         "cargo nextest run --workspace --all-features --locked",
@@ -2074,16 +2074,19 @@ mod ci_run {
         "cargo tree -p jackin -e normal,build -f {p} {f} -i jackin-console",
         "cargo tree -p jackin-tui -e normal,build -f {p} {f} -i jackin-console",
         "cargo tree -p jackin -e normal -i clap",
+        "cargo build -p jackin-tui --message-format=json",
         "reuse lint",
         "bun install --frozen-lockfile @docs",
         "bun run build @docs",
     ];
 
-    const CARGO_SCRIPT: &str = "#!/bin/sh\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nif [ \"$1\" = metadata ]; then exec \"$REAL_CARGO\" \"$@\"; fi\nprintf 'cargo %s\\n' \"$*\" >> \"$XTASK_LOG\"\nif [ \"$1\" = \"$FAIL_ON\" ]; then exit 7; fi\nexit 0\n";
+    const CARGO_SCRIPT: &str = "#!/bin/sh\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nif [ \"$1\" = metadata ]; then exec \"$REAL_CARGO\" \"$@\"; fi\nprintf 'cargo %s\\n' \"$*\" >> \"$XTASK_LOG\"\ncase \"$*\" in \"tree -p jackin-tui \"*) printf 'jackin-console v0.1.0 (/work) \\n' ;; \"build -p jackin-tui \"*) printf '{\"reason\":\"compiler-artifact\",\"target\":{\"name\":\"jackin_console\",\"kind\":[\"lib\"]},\"filenames\":[\"/work/libjackin_console.rlib\"],\"executable\":null}\\n' ;; esac\nif [ \"$1\" = \"$FAIL_ON\" ]; then exit 7; fi\nexit 0\n";
 
     const REUSE_SCRIPT: &str = "#!/bin/sh\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nprintf 'reuse %s\\n' \"$*\" >> \"$XTASK_LOG\"\nif [ \"$FAIL_ON\" = reuse ]; then exit 7; fi\nexit 0\n";
 
     const BUN_SCRIPT: &str = "#!/bin/sh\nenv | grep '^GIT_' >> \"$XTASK_GIT_ENV\" 2>/dev/null\nprintf 'bun %s @%s\\n' \"$*\" \"$(basename \"$(pwd -P)\")\" >> \"$XTASK_LOG\"\nif [ \"$FAIL_ON\" = bun ]; then exit 7; fi\nexit 0\n";
+
+    const INSPECTOR_SCRIPT: &str = "#!/bin/sh\nexit 0\n";
 
     struct Outcome {
         code: Option<i32>,
@@ -2106,6 +2109,8 @@ mod ci_run {
                 ("cargo", CARGO_SCRIPT),
                 ("reuse", REUSE_SCRIPT),
                 ("bun", BUN_SCRIPT),
+                ("nm", INSPECTOR_SCRIPT),
+                ("strings", INSPECTOR_SCRIPT),
             ] {
                 let path = spy.dir.path().join(name);
                 fs::write(&path, script)?;
@@ -2208,7 +2213,7 @@ mod ci_run {
         let fixture = green()?;
         for args in [&["--fast"][..], &["--no-docs"], &["--fast", "--no-docs"]] {
             let outcome = spy.run(&fixture, args, "")?;
-            assert_eq!(outcome.log, FULL[..9], "args {args:?}");
+            assert_eq!(outcome.log, FULL[..10], "args {args:?}");
             assert!(outcome.success, "{}", outcome.stderr);
         }
         Ok(())
@@ -2219,12 +2224,12 @@ mod ci_run {
         let spy = Spy::new()?;
         let fixture = green()?;
         let cases: [(&str, &[&str]); 6] = [
-            ("reuse,fmt", &[FULL[0], FULL[8]]),
-            ("docs", &FULL[9..]),
+            ("reuse,fmt", &[FULL[0], FULL[9]]),
+            ("docs", &FULL[10..]),
             ("deny,deny", &[FULL[3]]),
             ("comments,layers,pins,containers", &[]),
             ("baseline,screen", &[]),
-            ("demo-gate,screen,baseline", &FULL[5..8]),
+            ("demo-gate,screen,baseline", &FULL[5..9]),
         ];
         for (selection, expected) in cases {
             let outcome = spy.run(&fixture, &["--only", selection], "")?;
@@ -2238,7 +2243,7 @@ mod ci_run {
     fn a_failing_tool_stops_the_run_and_fails_the_exit_status() -> TestResult {
         let spy = Spy::new()?;
         let fixture = green()?;
-        for (fail_on, count) in [("clippy", 2), ("deny", 4), ("reuse", 9), ("bun", 10)] {
+        for (fail_on, count) in [("clippy", 2), ("deny", 4), ("reuse", 10), ("bun", 11)] {
             let outcome = spy.run(&fixture, &[], fail_on)?;
             assert_eq!(outcome.log, FULL[..count], "FAIL_ON {fail_on}");
             assert!(!outcome.success, "FAIL_ON {fail_on}");

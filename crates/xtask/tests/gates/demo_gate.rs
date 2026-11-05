@@ -191,7 +191,7 @@ impl Case {
 }
 
 fn expect_one(violations: &[Violation], needle: &str) {
-    assert_eq!(violations.len(), 1, "{violations:#?}");
+    assert_eq!(violations.len(), 1, "{needle:?}: {violations:#?}");
     let message = &violations[0].message;
     assert!(message.contains(needle), "{needle:?} not in {message:?}");
 }
@@ -327,22 +327,42 @@ fn rlib_chosen_from_json_not_glob() -> TestResult {
 }
 
 #[test]
-fn no_match_is_clean() -> TestResult {
-    let mut case = Case::new()?;
-    case.reply(
-        format!("cargo tree {TREE_JACKIN}"),
-        failed(NO_MATCH_CARGO_1_99_1),
-    );
-    case.reply(
-        format!("cargo tree {TREE_TUI}"),
-        failed(NO_MATCH_CARGO_1_99_1),
-    );
-    case.reply(
-        format!("cargo tree {TREE_CLAP}"),
-        failed("error: package ID specification `clap` did not match any packages\n"),
-    );
-    let violations = case.run()?;
-    assert!(violations.is_empty(), "{violations:#?}");
+fn a_console_missing_from_one_measured_tree_is_clean() -> TestResult {
+    for (key, member) in [
+        (format!("cargo tree {TREE_JACKIN}"), "jackin"),
+        (format!("cargo tree {TREE_TUI}"), "jackin-tui"),
+    ] {
+        let mut case = Case::new()?;
+        case.reply(key, failed(NO_MATCH_CARGO_1_99_1));
+        let violations = case.run()?;
+        assert!(violations.is_empty(), "{member}: {violations:#?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn a_console_missing_from_every_measured_tree_is_a_violation_and_not_a_clean_pass() -> TestResult {
+    for (label, reply_jackin, reply_tui) in [
+        (
+            "no match in both",
+            failed(NO_MATCH_CARGO_1_99_1),
+            failed(NO_MATCH_CARGO_1_99_1),
+        ),
+        ("empty trees", ok(""), ok("")),
+    ] {
+        let mut case = Case::new()?;
+        case.reply(format!("cargo tree {TREE_JACKIN}"), reply_jackin);
+        case.reply(format!("cargo tree {TREE_TUI}"), reply_tui);
+        let violations = case.run()?;
+        assert_eq!(violations.len(), 1, "{label}: {violations:#?}");
+        let message = &violations[0].message;
+        assert!(
+            message.contains(
+                "jackin-console is in the dependency tree of none of jackin, jackin-tui, so the gate measured nothing"
+            ),
+            "{label}: {message}"
+        );
+    }
     Ok(())
 }
 
