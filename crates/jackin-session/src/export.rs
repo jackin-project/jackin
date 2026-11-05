@@ -21,6 +21,7 @@ use jackin_core::{
 use jackin_openshell::GatewayError;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
+use unicode_normalization::UnicodeNormalization;
 
 pub use self::bundle::{BundleRefusal, EntryKind};
 use self::bundle::{Limits, MAX_HEADS};
@@ -370,8 +371,17 @@ fn classify(repository: &Repository, uncommitted: usize, refs: &HostRefs) -> Wor
     }
 }
 
+fn folded(name: &str) -> String {
+    name.chars().flat_map(char::to_lowercase).nfd().collect()
+}
+
 fn nested(target: &str, other: &str) -> bool {
+    let (target, other) = (folded(target), folded(other));
     target.starts_with(&format!("{other}/")) || other.starts_with(&format!("{target}/"))
+}
+
+fn aliases(target: &str, other: &str) -> bool {
+    folded(target) == folded(other)
 }
 
 fn clash(target: &str, other: &str) -> ExportError {
@@ -384,7 +394,7 @@ fn clash(target: &str, other: &str) -> ExportError {
 fn conflict(target: &str, existing: &[String]) -> Option<ExportError> {
     existing
         .iter()
-        .find(|other| nested(target, other))
+        .find(|other| nested(target, other) || (*other != target && aliases(target, other)))
         .map(|other| clash(target, other))
 }
 
@@ -400,7 +410,7 @@ fn collision(
             .iter()
             .filter(|(other, _)| other != item)
             .map(|(other, _)| other.target(sandbox))
-            .find(|other| *other == target || nested(&target, other))
+            .find(|other| aliases(&target, other) || nested(&target, other))
             .map(|other| clash(&target, &other))
     })
 }
