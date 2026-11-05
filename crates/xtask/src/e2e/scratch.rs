@@ -13,6 +13,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use super::host::{HostCommand, HostError, HostProcess};
+use super::private::ensure_private_dir;
 
 const KEEP: [&str; 9] = [
     "PATH",
@@ -85,11 +86,19 @@ pub fn child_env(
     env
 }
 
+#[must_use]
+pub fn scratch_dir_name() -> String {
+    format!("jackin-e2e-{}", rustix::process::geteuid().as_raw())
+}
+
 impl Scratch {
     pub fn create(root: &Path) -> Result<Scratch, ScratchError> {
         let scratch = Scratch {
             root: root.to_path_buf(),
         };
+        if let Some(parent) = root.parent() {
+            ensure_private_dir(parent).map_err(|error| io_error(parent, &error))?;
+        }
         for dir in [
             scratch.xdg_config(),
             scratch.xdg_cache(),

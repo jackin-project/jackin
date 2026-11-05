@@ -14,8 +14,8 @@ use async_trait::async_trait;
 use jackin_core::{GroupFault, ProcessError, ProcessRunner, ProcessSpec, ProcessStdin, Program};
 use jackin_testkit::guard_within;
 use jackin_xtask::{
-    Exit, HostCommand, HostError, HostOutput, HostProcess, RealHost, Scratch, ToolRunner,
-    child_env, snapshot_tree,
+    Exit, HostCommand, HostError, HostOutput, HostProcess, RealHost, Scratch, ScratchError,
+    ToolRunner, child_env, scratch_dir_name, snapshot_tree,
 };
 use rustix::process::{
     Pid, Signal, WaitId, WaitIdOptions, kill_process, test_kill_process, waitid,
@@ -48,9 +48,17 @@ fn parent() -> BTreeMap<String, String> {
     .into()
 }
 
+fn private_tempdir() -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).expect("chmod");
+    dir
+}
+
 #[tokio::test]
 async fn child_environment_is_an_allowlist() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = private_tempdir();
     let scratch = Scratch::create(&dir.path().join("scratch")).expect("scratch");
     let env = child_env(&parent(), &scratch, false);
     let command = HostCommand::new("/usr/bin/env", Duration::from_secs(5)).env(env);
@@ -129,7 +137,7 @@ async fn scratch_config_is_isolated_and_the_real_registry_is_not_written() {
 
 #[tokio::test]
 async fn fixture_projects_have_the_shapes_journey_steps_need() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = private_tempdir();
     let scratch = Scratch::create(&dir.path().join("scratch")).expect("scratch");
     let mut env = BTreeMap::new();
     env.insert("PATH".to_owned(), std::env::var("PATH").unwrap_or_default());
@@ -615,4 +623,49 @@ async fn a_tool_run_hands_the_group_fault_of_the_host_to_the_process_error() {
         }
         other => panic!("expected Group, got {other:?}"),
     }
+}
+
+#[test]
+fn the_scratch_parent_is_per_user_private_and_never_a_foreign_or_linked_directory() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    assert_eq!(
+        scratch_dir_name(),
+        format!("jackin-e2e-{}", rustix::process::geteuid().as_raw())
+    );
+
+    let base = private_tempdir();
+    let fresh = base.path().join(scratch_dir_name());
+    Scratch::create(&fresh.join("tag")).expect("a fresh parent");
+    assert_eq!(
+        fs::metadata(&fresh).expect("parent").permissions().mode() & 0o777,
+        0o700
+    );
+    Scratch::create(&fresh.join("again")).expect("an existing private parent");
+
+    let open = base.path().join("open");
+    fs::create_dir(&open).expect("dir");
+    fs::set_permissions(&open, fs::Permissions::from_mode(0o755)).expect("chmod");
+    let refused = Scratch::create(&open.join("tag"));
+    assert!(
+        matches!(refused, Err(ScratchError::Io { .. })),
+        "{refused:?}"
+    );
+    assert!(!open.join("tag").exists());
+
+    let elsewhere = tempfile::tempdir().expect("tempdir");
+    fs::set_permissions(elsewhere.path(), fs::Permissions::from_mode(0o700)).expect("chmod");
+    let linked = base.path().join("linked");
+    symlink(elsewhere.path(), &linked).expect("link");
+    let refused = Scratch::create(&linked.join("tag"));
+    assert!(
+        matches!(refused, Err(ScratchError::Io { .. })),
+        "{refused:?}"
+    );
+    assert!(
+        fs::read_dir(elsewhere.path())
+            .expect("list")
+            .next()
+            .is_none()
+    );
 }

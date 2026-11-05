@@ -7,6 +7,7 @@ mod clock;
 mod engine;
 mod host;
 mod ledger;
+mod private;
 mod probe;
 mod production;
 mod pty;
@@ -48,7 +49,7 @@ pub use production::{ProductionError, ToolRunner, production};
 pub use pty::{PortablePty, PtyError, PtyHost, PtyLink, PtySession, PtySpec};
 pub use redact::Redactor;
 pub use report::{Capture, Sink};
-pub use scratch::{Scratch, ScratchError, base_env, child_env, snapshot_tree};
+pub use scratch::{Scratch, ScratchError, base_env, child_env, scratch_dir_name, snapshot_tree};
 pub use verdict::{ExitStatus, LineId, STEP_IDS, Status, StepId, StepLine, Verdict, render};
 
 use report::{OrderedPrinter, Printer};
