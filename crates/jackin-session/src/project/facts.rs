@@ -4,13 +4,16 @@
 use std::fmt;
 use std::path::Path;
 
-use jackin_core::{CommitId, FileSystem, HostPath, ProcessStatus, RegularFileProblem, RepoPath};
+use jackin_core::{
+    CommitId, FileSystem, HostPath, ProcessStatus, RegularFileProblem, RepoPath, TerminalText,
+};
 
 use crate::launch::LaunchError;
 use crate::project::git::{HostGit, Pace, failure, words};
 use crate::project::home::HostProject;
 use crate::project::{ProjectStep, UnsupportedProject};
 
+const BRANCHES: &str = "refs/heads/";
 const JACKIN_HEADS: &str = "refs/heads/jackin/";
 const SHALLOW_LIMIT: usize = 4 << 20;
 const EXCLUDE_LIMIT: usize = 1 << 20;
@@ -83,6 +86,10 @@ fn malformed(step: ProjectStep, message: &str) -> LaunchError {
     }
 }
 
+fn is_branch(reference: &str) -> bool {
+    reference.starts_with(BRANCHES) && !reference.starts_with(JACKIN_HEADS)
+}
+
 async fn head(git: &HostGit<'_>) -> Result<Head, LaunchError> {
     let symbolic = git
         .capture(
@@ -93,7 +100,8 @@ async fn head(git: &HostGit<'_>) -> Result<Head, LaunchError> {
         .await?;
     let reference = match symbolic.status {
         ProcessStatus::Exited(0) => Some(
-            String::from_utf8_lossy(&symbolic.stdout)
+            std::str::from_utf8(&symbolic.stdout)
+                .map_err(|_| malformed(ProjectStep::Head, "HEAD names a non-UTF-8 reference"))?
                 .trim_end()
                 .to_owned(),
         ),
@@ -116,12 +124,15 @@ async fn head(git: &HostGit<'_>) -> Result<Head, LaunchError> {
         _ => return Err(failure(ProjectStep::Head, &resolved)),
     };
     match (reference, commit) {
-        (Some(reference), Some(commit)) if reference.starts_with(JACKIN_HEADS) => {
-            Ok(Head::Detached { commit })
+        (Some(reference), Some(commit)) if is_branch(&reference) => {
+            Ok(Head::Branch { reference, commit })
         }
-        (Some(reference), Some(commit)) => Ok(Head::Branch { reference, commit }),
-        (Some(reference), None) => Ok(Head::Unborn { reference }),
-        (None, Some(commit)) => Ok(Head::Detached { commit }),
+        (Some(_) | None, Some(commit)) => Ok(Head::Detached { commit }),
+        (Some(reference), None) if is_branch(&reference) => Ok(Head::Unborn { reference }),
+        (Some(reference), None) => Err(UnsupportedProject::UnbornHead {
+            reference: TerminalText::sanitize(reference.as_bytes()),
+        }
+        .into()),
         (None, None) => Err(malformed(
             ProjectStep::Head,
             "HEAD is neither a branch nor a commit",

@@ -91,6 +91,10 @@ pub enum UnsupportedProject {
     PopulatedSubmodules(Vec<RepoPath>),
     #[error("the project has nested git repositories {}; ignore or remove them", plain_list(.0))]
     NestedRepositories(Vec<RepoPath>),
+    #[error(
+        "the project HEAD is unborn and names {reference}, which is not a branch outside refs/heads/jackin/; run `git symbolic-ref HEAD refs/heads/<branch>`"
+    )]
+    UnbornHead { reference: TerminalText },
     #[error("the project is a partial clone: {output}")]
     PartialClone { output: TerminalText },
     #[error(
