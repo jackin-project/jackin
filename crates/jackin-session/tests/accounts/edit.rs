@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::collections::BTreeSet;
 
 use jackin_core::{
@@ -12,7 +13,7 @@ use jackin_session::{AccountEditError, AccountPlan, Gateways, plan_account_edits
 use jackin_testkit::{Fault, World};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Home, TestResult, codex_account, guard, login_json, registered};
+use super::support::{Home, TestResult, codex_account, login_json, registered};
 
 fn name(text: &str) -> Result<AccountName, Box<dyn std::error::Error>> {
     Ok(AccountName::parse(text)?)

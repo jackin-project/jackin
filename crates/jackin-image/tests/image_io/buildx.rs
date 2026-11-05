@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs;
@@ -26,7 +27,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::support::{
     CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, IidFile, JACKIN_START, Outcome, ROLE_DOCKERFILE,
-    SCAN, Script, Stack, TestResult, assert_local_only, guarded, tag_id,
+    SCAN, Script, Stack, TestResult, assert_local_only, tag_id,
 };
 
 fn still_alive() -> GroupFault {
@@ -55,7 +56,7 @@ fn path_arg<'a>(call: &'a SeenCall, prefix: &str) -> Result<&'a str, Box<dyn Err
 #[tokio::test]
 async fn buildx_passes_plan_args_context_and_stdin_to_docker_and_reads_the_image_id() -> TestResult
 {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         for stage in [BuildStage::Construct, BuildStage::Role, BuildStage::Derived] {
             let iid = IidFile::Text(format!("sha256:{}\n", "2".repeat(64)));
@@ -148,7 +149,7 @@ fn write_mode(root: &Path, name: &str, mode: u32) -> TestResult {
 
 #[tokio::test]
 async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let role = stack.fixture.role.as_path();
         let modes = [
@@ -262,7 +263,7 @@ fn materialized(name: &str) -> ContextSource {
 
 #[tokio::test]
 async fn buildx_refuses_unsafe_context_entries_before_docker_runs() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let role = stack.fixture.role.as_path();
         let outside = tempfile::tempdir()?;
@@ -393,7 +394,7 @@ fn check_line_events(events: &[ImageEvent], stage: BuildStage, expected: &[Strin
 
 #[tokio::test]
 async fn buildx_streams_build_output_as_ordered_sanitized_line_events() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let raw = texts();
         let expected: Vec<String> = raw
@@ -460,7 +461,7 @@ fn expected_tail() -> String {
 
 #[tokio::test]
 async fn buildx_build_succeeds_when_the_progress_receiver_is_gone() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let (_, finals) = plan_for(&stack)?;
         let (tx, rx) = mpsc::channel::<ImageEvent>(1);
@@ -528,7 +529,7 @@ fn unreadable(
 
 #[tokio::test]
 async fn buildx_failures_timeouts_and_cancel_are_typed_and_leave_no_directory() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let (_, finals) = plan_for(&stack)?;
         let tag = &finals.role.tag;
@@ -641,7 +642,7 @@ fn only_call(
 
 #[tokio::test]
 async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence() -> TestResult {
-    guarded(async {
+    guard(async {
         let tag = ImageTag::parse("jackin.invalid/sentinel:0123456789abcdef")?;
         let id = format!("sha256:{}", "a".repeat(64));
         let sub = DockerSubcommand::ImageInspect;
@@ -725,7 +726,7 @@ async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence
 
 #[tokio::test]
 async fn buildx_check_builder_reads_the_driver_line_of_the_inspect_output() -> TestResult {
-    guarded(async {
+    guard(async {
         let builder = BuilderName::parse("orbstack")?;
         let sub = DockerSubcommand::BuildxInspect;
         let inspect = |driver: &str| {
@@ -788,7 +789,7 @@ fn cancelling(
 
 #[tokio::test]
 async fn buildx_find_and_check_builder_end_when_the_callers_token_is_cancelled() -> TestResult {
-    guarded(async {
+    guard(async {
         const TAG: &str = "jackin.invalid/sentinel:0123456789abcdef";
         const BUILDER: &str = "orbstack";
         let tag = ImageTag::parse(TAG)?;

@@ -28,11 +28,16 @@ pub type TestResult = Result<(), FixtureError>;
 
 const GUARD: Duration = Duration::from_secs(170);
 
-pub async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
+pub async fn guard<T>(
+    work: impl Future<Output = Result<T, FixtureError>>,
+) -> Result<T, FixtureError> {
     guard_within(GUARD, work).await
 }
 
-pub async fn guard_within(limit: Duration, work: impl Future<Output = TestResult>) -> TestResult {
+pub async fn guard_within<T>(
+    limit: Duration,
+    work: impl Future<Output = Result<T, FixtureError>>,
+) -> Result<T, FixtureError> {
     tokio::time::timeout(limit, work)
         .await
         .map_err(|_| format!("the test hung for {} s", limit.as_secs()))?

@@ -3,12 +3,12 @@
 
 use jackin_core::{FileMode, FileSystem};
 use jackin_session::{FolderFacts, OpFault, Source, SourceFault, SourceFound};
+use jackin_testkit::guard;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCOUNT_ID, Bench, CANARY, TestResult, chatgpt_login, concealed, exited, failed, guard, host,
-    item,
+    ACCOUNT_ID, Bench, CANARY, TestResult, chatgpt_login, concealed, exited, failed, host, item,
 };
 
 fn token() -> CancellationToken {

@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::io::ErrorKind;
 
 use jackin_core::{FileMode, FileSystem, FsError, Provider, Timestamp};
@@ -11,8 +12,8 @@ use jackin_usage::{
 };
 
 use crate::support::{
-    CODEX_PATH, T0, TestResult, UsageHarness, codex_body, codex_login, codex_route, guard,
-    host_path, unavailable, windows_of,
+    CODEX_PATH, T0, TestResult, UsageHarness, codex_body, codex_login, codex_route, host_path,
+    unavailable, windows_of,
 };
 
 async fn start(used: u32) -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {

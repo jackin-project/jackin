@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::cell::Cell;
 use std::sync::Arc;
 
@@ -17,8 +18,8 @@ use jackin_testkit::{FakeGateway, ScriptedConnector, World};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, guard, hold_account, login_json,
-    register, until_polling,
+    ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, hold_account, login_json, register,
+    until_polling,
 };
 
 async fn put_provider(world: &World, account: &str) -> TestResult {

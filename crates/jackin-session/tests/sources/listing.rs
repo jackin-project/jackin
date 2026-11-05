@@ -3,10 +3,11 @@
 
 use jackin_session::{OpFault, OpFieldKind};
 use jackin_testkit::ProcessReply;
+use jackin_testkit::guard;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Bench, CANARY, TestResult, concealed, exited, failed, guard, item};
+use super::support::{Bench, CANARY, TestResult, concealed, exited, failed, item};
 
 fn token() -> CancellationToken {
     CancellationToken::new()

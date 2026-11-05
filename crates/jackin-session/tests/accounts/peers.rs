@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::sync::Arc;
 
 use jackin_core::{
@@ -16,8 +17,7 @@ use jackin_testkit::{FakeGateway, Fault, ScriptedConnector, World, default_limit
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, guard, hold_account, login_json,
-    until_polling,
+    ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, hold_account, login_json, until_polling,
 };
 
 const ROTATED: &str = "REFRESH-ROTATED-2c8f61";

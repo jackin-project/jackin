@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -23,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::support::{
     AfterBuild, Delivery, Fixture, Outcome, Script, Stack, TestResult, assert_local_only, drain,
-    guarded, source, tag_id, until_role_line,
+    source, tag_id, until_role_line,
 };
 
 async fn ensure(
@@ -93,7 +94,7 @@ async fn scenario(
 #[tokio::test]
 async fn ensure_image_builds_in_order_then_serves_the_second_call_from_cache_on_the_fake_engine()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let request = Fixture::new()?.request()?;
         let engine = FakeEngine::new();
         let built = || {
@@ -111,7 +112,7 @@ async fn ensure_image_builds_in_order_then_serves_the_second_call_from_cache_on_
 #[tokio::test]
 async fn ensure_image_builds_in_order_then_serves_the_second_call_from_cache_on_buildx_over_scripted_docker()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let request = stack.fixture.request()?;
         let built = || stack.built_tags();
@@ -131,7 +132,7 @@ fn stages(engine: &FakeEngine, from: usize) -> Vec<BuildStage> {
 #[tokio::test]
 async fn a_changed_construct_id_rebuilds_role_and_derived_only_and_rebuild_forces_all() -> TestResult
 {
-    guarded(async {
+    guard(async {
         let mut request = Fixture::new()?.request()?;
         let engine = FakeEngine::new();
         let plan = ImagePlan::new(&request)?;
@@ -188,7 +189,7 @@ async fn a_changed_construct_id_rebuilds_role_and_derived_only_and_rebuild_force
 #[tokio::test]
 async fn a_failed_role_build_stops_before_derived_and_the_next_call_reuses_the_construct()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let request = Fixture::new()?.request()?;
         let engine = FakeEngine::new();
         engine.fail_next(BuildStage::Role);
@@ -224,7 +225,7 @@ async fn a_failed_role_build_stops_before_derived_and_the_next_call_reuses_the_c
 #[tokio::test]
 async fn ensure_image_rejects_a_role_dockerfile_without_construct_before_any_engine_call()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let mut request = Fixture::new()?.request()?;
         request.dockerfile = source("Dockerfile", b"FROM ubuntu\n")?;
         let engine = FakeEngine::new();
@@ -249,7 +250,7 @@ async fn ensure_image_rejects_a_role_dockerfile_without_construct_before_any_eng
 #[tokio::test]
 async fn the_builder_is_checked_once_before_the_first_build_and_never_on_a_cache_hit() -> TestResult
 {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let request = stack.fixture.request()?;
         stack.model.driver("docker-container");
@@ -334,7 +335,7 @@ fn role_lines(texts: &[(OutputStream, &str)]) -> Script {
 #[tokio::test]
 async fn build_output_reaches_the_sink_between_stage_events_and_a_failure_stops_the_pipeline()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let request = stack.fixture.request()?;
         stack.model.script(
@@ -421,7 +422,7 @@ async fn cancel_at_first_line(
 
 #[tokio::test]
 async fn cancel_during_a_build_returns_cancelled_and_stops_the_pipeline() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let request = stack.fixture.request()?;
         let script = Script {
@@ -461,7 +462,7 @@ async fn cancel_during_a_build_returns_cancelled_and_stops_the_pipeline() -> Tes
 
 #[tokio::test]
 async fn a_built_image_must_be_present_in_the_engine_under_its_final_tag() -> TestResult {
-    guarded(async {
+    guard(async {
         let other = tag_id("someone else");
         let rows = [
             ("present", Delivery::Normal),
@@ -567,7 +568,7 @@ fn built_stages(engine: &FakeEngine) -> Vec<BuildStage> {
 #[tokio::test]
 async fn a_source_tag_that_moved_before_a_dependent_build_stops_the_pipeline_before_that_build_starts()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let other = ImageId::parse(&tag_id("someone else"))?;
 
         let mut request = Fixture::new()?.request()?;
@@ -657,7 +658,7 @@ async fn a_source_tag_that_moved_before_a_dependent_build_stops_the_pipeline_bef
 #[tokio::test]
 async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_starts_nothing_after_it()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let other = ImageId::parse(&tag_id("someone else"))?;
         let request = Fixture::new()?.request()?;
         let tags = Tags::of(&request)?;
@@ -752,7 +753,7 @@ async fn a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_s
 
 #[tokio::test]
 async fn source_checks_read_image_inspect_and_fail_closed() -> TestResult {
-    guarded(async {
+    guard(async {
         let other = tag_id("someone else");
 
         let stack = Stack::new()?;
@@ -817,7 +818,7 @@ async fn source_checks_read_image_inspect_and_fail_closed() -> TestResult {
 #[tokio::test]
 async fn a_cancelled_token_stops_ensure_image_before_any_engine_work_and_between_stages()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let mut request = Fixture::new()?.request()?;
         for rebuild in [Rebuild::No, Rebuild::Yes] {
             request.rebuild = rebuild;
@@ -895,7 +896,7 @@ fn staged_copies(dir: &Path, found: &mut Vec<PathBuf>) -> TestResult {
 
 #[tokio::test]
 async fn dropping_ensure_image_mid_build_leaves_no_copy_of_the_context() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let request = stack.fixture.request()?;
         stack.model.script(
@@ -924,7 +925,7 @@ async fn dropping_ensure_image_mid_build_leaves_no_copy_of_the_context() -> Test
 
 #[tokio::test]
 async fn a_cancel_whose_group_stop_failed_reaches_the_image_error_with_its_fault() -> TestResult {
-    guarded(async {
+    guard(async {
         let alive = GroupFault::Alive {
             after: Duration::from_secs(5),
         };
@@ -981,7 +982,7 @@ async fn a_cancel_whose_group_stop_failed_reaches_the_image_error_with_its_fault
 
 #[tokio::test]
 async fn a_construct_tag_that_jackin_did_not_build_is_rebuilt_not_trusted() -> TestResult {
-    guarded(async {
+    guard(async {
         let request = Fixture::new()?.request()?;
         let engine = FakeEngine::new();
         let plan = ImagePlan::new(&request)?;
@@ -1017,7 +1018,7 @@ async fn a_construct_tag_that_jackin_did_not_build_is_rebuilt_not_trusted() -> T
 
 #[tokio::test]
 async fn buildx_rebuilds_a_construct_whose_image_moved_after_jackin_recorded_it() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let request = stack.fixture.request()?;
         let plan = ImagePlan::new(&request)?;
@@ -1048,7 +1049,7 @@ async fn buildx_rebuilds_a_construct_whose_image_moved_after_jackin_recorded_it(
 
 #[tokio::test]
 async fn a_derived_tag_that_jackin_did_not_build_is_rebuilt_not_trusted() -> TestResult {
-    guarded(async {
+    guard(async {
         let request = Fixture::new()?.request()?;
         let engine = FakeEngine::new();
         let plan = ImagePlan::new(&request)?;
@@ -1106,7 +1107,7 @@ async fn a_derived_tag_that_jackin_did_not_build_is_rebuilt_not_trusted() -> Tes
 
 #[tokio::test]
 async fn buildx_rebuilds_a_derived_image_that_moved_after_jackin_recorded_it() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let request = stack.fixture.request()?;
         let (warm, _) = ensure(&stack.engine, &request).await?;
@@ -1138,7 +1139,7 @@ type Damage = fn(&Path, &Path, &str) -> std::io::Result<()>;
 
 #[tokio::test]
 async fn buildx_does_not_trust_an_attestation_record_that_is_not_a_plain_file() -> TestResult {
-    guarded(async {
+    guard(async {
         let rows: [(&str, Damage); 3] = [
             ("directory", |_, record, _| fs::create_dir(record)),
             ("symlink to a valid record", |valid, record, _| {

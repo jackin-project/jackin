@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Provider;
+use jackin_testkit::guard;
 use jackin_testkit::{Method, Route};
 use jackin_usage::{Refresh, UnavailableReason, UsageAccount, UsageOutcome, WindowKind};
 
 use super::Case;
 use crate::support::{
-    Left, TestResult, UsageHarness, Want, account, assert_windows, env_source, guard, unavailable,
-    want,
+    Left, TestResult, UsageHarness, Want, account, assert_windows, env_source, unavailable, want,
 };
 
 const TOKEN: &str = "SECRET_TOKEN_MINIMAX";

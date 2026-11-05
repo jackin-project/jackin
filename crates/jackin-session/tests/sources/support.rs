@@ -3,7 +3,6 @@
 
 use std::error::Error;
 use std::sync::Arc;
-use std::time::Duration;
 
 use jackin_core::{EnvSnapshot, FileMode, FileSystem, HostPath, ProcessRunner};
 use jackin_session::{OnePasswordCli, SourceDesk};
@@ -14,13 +13,6 @@ pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const CANARY: &str = "CANARY-op-secret-91c7d2e8";
 pub(crate) const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
-const GUARD: Duration = Duration::from_secs(10);
-
-pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
-    tokio::time::timeout(GUARD, work)
-        .await
-        .map_err(|_| "the test hung for 10 s")?
-}
 
 pub(crate) fn host(path: &str) -> Result<HostPath, Box<dyn Error>> {
     Ok(HostPath::parse(std::path::Path::new(path))?)

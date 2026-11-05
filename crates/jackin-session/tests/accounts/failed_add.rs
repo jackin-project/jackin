@@ -6,10 +6,11 @@ use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::{
     AccountEditError, AccountError, Gateways, LaunchError, LaunchStep, plan_account_edits,
 };
+use jackin_testkit::guard;
 use jackin_testkit::{Fault, Rig, World};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{ACCOUNT_ID, Home, TestResult, codex_account, guard, login_json, registered};
+use super::support::{ACCOUNT_ID, Home, TestResult, codex_account, login_json, registered};
 
 fn work() -> Result<AccountName, Box<dyn std::error::Error>> {
     Ok(AccountName::parse("work")?)

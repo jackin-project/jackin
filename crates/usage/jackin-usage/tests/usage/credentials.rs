@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Provider;
+use jackin_testkit::guard;
 use jackin_testkit::{ProcessReply, ScriptedProgram};
 use jackin_usage::{Refresh, UnavailableReason, UsageAccount};
 
 use crate::providers::openrouter_serve;
 use crate::support::{
-    TestResult, UsageHarness, account, env_source, file_source, guard, op_source, op_source_in,
+    TestResult, UsageHarness, account, env_source, file_source, op_source, op_source_in,
     unavailable, windows_of,
 };
 

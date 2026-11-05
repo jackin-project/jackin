@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::io::ErrorKind;
 use std::os::unix::fs::symlink;
 use std::process::Command;
@@ -11,7 +12,7 @@ use jackin_testkit::{FsOp, MemFs};
 use serde_json::{Value, json};
 
 use super::support::{
-    ACCESS, ACCOUNT_ID, CLIENT, REFRESH, SECRETS, TestResult, guard, host, login_json, put,
+    ACCESS, ACCOUNT_ID, CLIENT, REFRESH, SECRETS, TestResult, host, login_json, put,
 };
 
 fn assert_clean(text: &str) {

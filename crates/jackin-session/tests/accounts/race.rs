@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -17,7 +18,7 @@ use jackin_testkit::{FakeGateway, Fault, FsOp, MemFs, ScriptedConnector, Trigger
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Home, TestResult, codex_account, guard, login_json, registered};
+use super::support::{Home, TestResult, codex_account, login_json, registered};
 
 const FIRST_REFRESH: &str = "REFRESH-FIRST-4b1d70";
 const SECOND_REFRESH: &str = "REFRESH-SECOND-9e3a52";
