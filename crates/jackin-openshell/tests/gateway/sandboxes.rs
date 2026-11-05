@@ -617,6 +617,35 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
 }
 
 #[tokio::test]
+async fn a_listed_record_that_cannot_be_read_fails_the_listing_instead_of_vanishing() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    add_sandbox(
+        &mut env.server.state(),
+        WORKSPACE,
+        "Not A Sandbox Name!",
+        SandboxPhase::Ready,
+        None,
+        &managed(),
+    );
+    add_sandbox(
+        &mut env.server.state(),
+        WORKSPACE,
+        "jackin-fine",
+        SandboxPhase::Ready,
+        None,
+        &managed(),
+    );
+    let error = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, jackin_openshell::GatewayError::Protocol { .. }),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
 async fn a_managed_sandbox_with_an_invalid_label_is_listed_without_that_label() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
