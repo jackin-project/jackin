@@ -29,6 +29,7 @@ const CONSOLE_LIB: &str = "jackin_console";
 const SYMBOL_EXCERPT: usize = 160;
 
 const NO_MATCH: &str = "did not match any packages";
+const SPEC_OPEN: &str = "package ID specification `";
 const TREE_MEMBERS: [&str; 2] = ["jackin", "jackin-tui"];
 const BUILD_MEMBER: &str = "jackin-tui";
 const ARTIFACT_MEMBER: &str = "jackin";
@@ -88,7 +89,25 @@ impl<R> DemoGateCheck<R> {
 
 enum Reply {
     Text(String),
-    NoMatch,
+    NoMatch(String),
+}
+
+fn missing_spec(stderr: &str) -> String {
+    stderr
+        .split_once(SPEC_OPEN)
+        .and_then(|(_, rest)| rest.split_once('`'))
+        .map(|(spec, _)| spec.to_owned())
+        .unwrap_or_default()
+}
+
+fn measured_nothing(command: &str, spec: &str) -> Violation {
+    Violation::general(
+        CiStep::DemoGate,
+        format!(
+            "{command}: the package {} is not in the workspace, so the gate measured nothing",
+            plain(spec)
+        ),
+    )
 }
 
 impl<R: CommandRunner> DemoGateCheck<R> {
@@ -107,7 +126,7 @@ impl<R: CommandRunner> DemoGateCheck<R> {
             return Ok(Reply::Text(output.stdout));
         }
         if output.stderr.contains(NO_MATCH) {
-            return Ok(Reply::NoMatch);
+            return Ok(Reply::NoMatch(missing_spec(&output.stderr)));
         }
         Err(Violation::general(
             CiStep::DemoGate,
@@ -142,7 +161,10 @@ impl<R: CommandRunner> DemoGateCheck<R> {
                         ));
                     }
                 }
-                Ok(Reply::NoMatch) => {}
+                Ok(Reply::NoMatch(spec)) if spec == CONSOLE => {}
+                Ok(Reply::NoMatch(spec)) => {
+                    violations.push(measured_nothing(&format!("cargo tree -p {member}"), &spec));
+                }
                 Err(violation) => violations.push(violation),
             }
         }
@@ -158,7 +180,10 @@ impl<R: CommandRunner> DemoGateCheck<R> {
                     ));
                 }
             }
-            Ok(Reply::NoMatch) => {}
+            Ok(Reply::NoMatch(spec)) if spec == "clap" => {}
+            Ok(Reply::NoMatch(spec)) => {
+                violations.push(measured_nothing("cargo tree -p jackin -i clap", &spec));
+            }
             Err(violation) => violations.push(violation),
         }
         console_present
@@ -168,7 +193,13 @@ impl<R: CommandRunner> DemoGateCheck<R> {
         let args = ["build", "-p", BUILD_MEMBER, "--message-format=json"];
         let text = match self.call(repo, "cargo", &args) {
             Ok(Reply::Text(text)) => text,
-            Ok(Reply::NoMatch) => return,
+            Ok(Reply::NoMatch(spec)) => {
+                violations.push(measured_nothing(
+                    &format!("cargo build -p {BUILD_MEMBER}"),
+                    &spec,
+                ));
+                return;
+            }
             Err(violation) => {
                 violations.push(violation);
                 return;
@@ -203,7 +234,7 @@ impl<R: CommandRunner> DemoGateCheck<R> {
                         ));
                     }
                 }
-                Ok(Reply::NoMatch) => {}
+                Ok(Reply::NoMatch(_)) => {}
                 Err(violation) => violations.push(violation),
             }
             match self.call(repo, "strings", &["-a", &rlib]) {
@@ -218,7 +249,7 @@ impl<R: CommandRunner> DemoGateCheck<R> {
                         ));
                     }
                 }
-                Ok(Reply::NoMatch) => {}
+                Ok(Reply::NoMatch(_)) => {}
                 Err(violation) => violations.push(violation),
             }
         }
@@ -271,10 +302,10 @@ impl<R: CommandRunner> ProductCheck<R> {
         ];
         let text = match self.gate.call(repo, "cargo", &args) {
             Ok(Reply::Text(text)) => text,
-            Ok(Reply::NoMatch) => {
-                violations.push(Violation::general(
-                    CiStep::DemoGate,
-                    format!("cargo build --release -p {ARTIFACT_MEMBER} matched no package"),
+            Ok(Reply::NoMatch(spec)) => {
+                violations.push(measured_nothing(
+                    &format!("cargo build --release -p {ARTIFACT_MEMBER}"),
+                    &spec,
                 ));
                 return;
             }

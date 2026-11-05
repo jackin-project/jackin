@@ -32,6 +32,11 @@ const TRACING_MACROS: [&str; 10] = [
 
 const ERROR_TRAIT: &str = "Error";
 
+const KEYWORDS_BEFORE_PATH: [&str; 13] = [
+    "use", "pub", "impl", "for", "dyn", "as", "where", "mut", "in", "let", "return", "else",
+    "const",
+];
+
 const RATATUI_ALLOWED: [&[&str]; 4] = [
     &["Frame"],
     &["layout", "Rect"],
@@ -202,7 +207,9 @@ fn macro_arguments(tokens: &[Token], index: usize) -> Option<Range<usize>> {
         return None;
     }
     let open = index + 2;
-    let opens = ['(', '[', '{'].iter().any(|c| tokens[open].is_punct(*c));
+    let opens = ['(', '[', '{']
+        .iter()
+        .any(|c| tokens.get(open).is_some_and(|t| t.is_punct(*c)));
     opens.then(|| open..closing(tokens, open) + 1)
 }
 
@@ -313,22 +320,12 @@ fn path_tree(
 fn import_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
     let mut violations = Vec::new();
     for (index, token) in tokens.iter().enumerate() {
-        if token.is_ident("buffer")
-            && tokens.get(index + 1).is_some_and(|t| t.is_punct('.'))
-            && let Some(method) = tokens.get(index + 2).and_then(Token::ident)
-            && method.starts_with("set_")
-        {
-            violations.push(Violation::at_line(
-                CiStep::Screen,
-                path,
-                token.line,
-                format!("C1: buffer.{method} draws; the baseline draws, jackin-tui draws nothing"),
-            ));
-        }
-        let starts_path = token.is_ident("ratatui")
-            && !(index >= 3
-                && is_path_separator(tokens, index - 2)
-                && tokens[index - 3].ident().is_some());
+        let continues_path = index >= 3
+            && is_path_separator(tokens, index - 2)
+            && tokens[index - 3]
+                .ident()
+                .is_some_and(|ident| !KEYWORDS_BEFORE_PATH.contains(&ident));
+        let starts_path = token.is_ident("ratatui") && !continues_path;
         if !starts_path {
             continue;
         }

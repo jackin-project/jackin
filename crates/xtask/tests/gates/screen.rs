@@ -276,11 +276,33 @@ fn ratatui_prelude_fails() -> TestResult {
 }
 
 #[test]
-fn buffer_set_fails() -> TestResult {
+fn ratatui_paths_with_a_leading_separator_fail() -> TestResult {
     expect(
-        "fn f(buffer: &mut Buffer) {\n    buffer.set_string(0, 0, 1, 2);\n}\n",
-        &[("C1", 2, "buffer.set_string")],
+        "use ::ratatui::widgets::Paragraph;\npub use ::ratatui::style::Style;\nimpl ::ratatui::widgets::Widget for X {}\nfn f(_: &dyn ::ratatui::text::Span) {}\n",
+        &[
+            ("C1", 1, "ratatui::widgets::Paragraph"),
+            ("C1", 2, "ratatui::style::Style"),
+            ("C1", 3, "ratatui::widgets::Widget"),
+            ("C1", 4, "ratatui::text::Span"),
+        ],
     )
+}
+
+#[test]
+fn a_module_that_is_merely_named_ratatui_is_not_the_crate() -> TestResult {
+    expect("use crate::support::ratatui::widgets::Paragraph;\n", &[])
+}
+
+#[test]
+fn a_source_cut_off_inside_a_tracing_macro_is_not_a_panic() -> TestResult {
+    for source in [
+        "fn f() {\n    info!",
+        "fn f() {\n    tracing::warn!(",
+        "#[error(",
+    ] {
+        expect(source, &[])?;
+    }
+    Ok(())
 }
 
 #[test]

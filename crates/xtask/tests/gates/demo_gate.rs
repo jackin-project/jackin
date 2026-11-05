@@ -347,6 +347,48 @@ fn no_match_is_clean() -> TestResult {
 }
 
 #[test]
+fn a_missing_measured_package_is_a_violation_and_not_a_clean_pass() -> TestResult {
+    for (key, member, program) in [
+        (
+            format!("cargo tree {TREE_JACKIN}"),
+            "jackin",
+            "cargo tree -p jackin",
+        ),
+        (
+            format!("cargo tree {TREE_TUI}"),
+            "jackin-tui",
+            "cargo tree -p jackin-tui",
+        ),
+        (
+            format!("cargo build {BUILD}"),
+            "jackin-tui",
+            "cargo build -p jackin-tui",
+        ),
+        (
+            format!("cargo tree {TREE_CLAP}"),
+            "jackin",
+            "cargo tree -p jackin -i clap",
+        ),
+    ] {
+        let mut case = Case::new()?;
+        case.reply(
+            key,
+            failed(&format!(
+                "error: package ID specification `{member}` did not match any packages\n"
+            )),
+        );
+        let violations = case.run()?;
+        expect_one(
+            &violations,
+            &format!(
+                "{program}: the package {member} is not in the workspace, so the gate measured nothing"
+            ),
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn other_cargo_failure_is_an_error() -> TestResult {
     let mut case = Case::new()?;
     case.reply(
