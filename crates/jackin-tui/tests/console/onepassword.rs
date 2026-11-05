@@ -187,6 +187,7 @@ async fn resave_with_another_field(
     let shown = reference.clone();
     reference.field_id = "other".to_owned();
     lab.perform(Effect::SaveAccounts {
+        ticket: 1,
         base: Box::new(base),
         registry: Box::new(registry),
     })
@@ -319,7 +320,7 @@ async fn a_field_that_is_not_concealed_is_refused_with_the_baseline_wording() ->
         }
         let op = lab.world().op.box_clone();
         let kept = op
-            .reference("acct-1", "vault-1", "item-1", "api key")
+            .reference("acct-1", "vault-1", "item-1", "key", None)
             .map_err(|e| e.message())?;
         assert_eq!(kept.canonical(), "op://vault-1/item-1/key");
         assert_eq!(kept.vault_name, "Private");
@@ -328,7 +329,7 @@ async fn a_field_that_is_not_concealed_is_refused_with_the_baseline_wording() ->
             op.describe(&kept).map_err(|e| e.message())?.masked,
             "••••••••…d2e8"
         );
-        let refused = op.reference("acct-1", "vault-1", "item-1", "endpoint");
+        let refused = op.reference("acct-1", "vault-1", "item-1", "url", None);
         assert_eq!(
             refused,
             Err(OpError::WrongFieldShape {

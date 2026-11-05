@@ -438,6 +438,7 @@ async fn a_cli_file_account_validates_as_a_file_and_a_file_path_saves_as_a_file(
             detected: DetectedKind::Unknown,
         };
         lab.perform(Effect::SaveAccounts {
+            ticket: 1,
             base: Box::new(base),
             registry: Box::new(registry),
         })
@@ -481,6 +482,7 @@ async fn a_cli_file_account_whose_file_is_gone_fails_the_check_and_the_save() ->
             detected: DetectedKind::Unknown,
         };
         lab.perform(Effect::SaveAccounts {
+            ticket: 1,
             base: Box::new(base),
             registry: Box::new(registry),
         })
@@ -504,6 +506,7 @@ async fn save_file_path(lab: &mut Lab, path: &Path) -> TestResult {
         detected: DetectedKind::Unknown,
     };
     lab.perform(Effect::SaveAccounts {
+        ticket: 1,
         base: Box::new(base),
         registry: Box::new(registry),
     })
@@ -730,6 +733,7 @@ async fn two_providers_on_one_folder_save_independently() -> TestResult {
             ));
         }
         lab.perform(Effect::SaveAccounts {
+            ticket: 1,
             base: Box::new(base),
             registry: Box::new(registry),
         })

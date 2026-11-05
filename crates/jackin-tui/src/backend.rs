@@ -81,8 +81,12 @@ impl JackinBackend {
                     async move { inputs.save_global(&base, &global).await },
                 );
             }
-            Effect::SaveAccounts { base, registry } => self.bridge.spawn(failure, async move {
-                inputs.save_accounts(&base, &registry).await
+            Effect::SaveAccounts {
+                ticket,
+                base,
+                registry,
+            } => self.bridge.spawn(failure, async move {
+                inputs.save_accounts(ticket, &base, &registry).await
             }),
             Effect::DeleteWorkspace { id } => self
                 .bridge

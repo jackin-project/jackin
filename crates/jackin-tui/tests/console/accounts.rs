@@ -82,6 +82,7 @@ async fn remove_clears_the_bindings_in_one_write() -> TestResult {
         let mut registry = base.clone();
         registry.accounts.retain(|a| a.id != "second");
         lab.perform(Effect::SaveAccounts {
+            ticket: 1,
             base: Box::new(base),
             registry: Box::new(registry),
         })
@@ -125,6 +126,7 @@ async fn a_new_codex_account_syncs_its_provider() -> TestResult {
         added.default_for_provider = true;
         registry.accounts.push(added);
         lab.perform(Effect::SaveAccounts {
+            ticket: 1,
             base: Box::new(base),
             registry: Box::new(registry),
         })
@@ -181,6 +183,7 @@ async fn a_new_account_with_a_typed_purpose_or_endpoint_is_refused_and_writes_no
             }
             registry.accounts.push(added);
             lab.perform(Effect::SaveAccounts {
+                ticket: 1,
                 base: Box::new(base),
                 registry: Box::new(registry),
             })
@@ -216,6 +219,7 @@ async fn a_folder_without_a_login_writes_nothing() -> TestResult {
             },
         ));
         lab.perform(Effect::SaveAccounts {
+            ticket: 1,
             base: Box::new(base),
             registry: Box::new(registry),
         })
@@ -245,6 +249,7 @@ async fn a_stale_registry_keeps_the_other_handles_account() -> TestResult {
             .iter_mut()
             .for_each(|a| a.default_for_provider = a.id == "work");
         lab.perform(Effect::SaveAccounts {
+            ticket: 1,
             base: Box::new(base),
             registry: Box::new(registry),
         })
@@ -448,6 +453,7 @@ async fn a_removal_reaches_a_gateway_that_was_added_after_the_console_opened() -
         let mut registry = base.clone();
         remove_second(&mut registry);
         lab.perform(Effect::SaveAccounts {
+            ticket: 1,
             base: Box::new(base),
             registry: Box::new(registry),
         })
@@ -491,6 +497,7 @@ async fn an_add_publishes_nothing_when_the_home_gateway_left_the_config() -> Tes
         lab.edit(vec![ConfigEdit::RemoveGateway(home)]).await?;
         let before = lab.console.config_text().await?;
         lab.perform(Effect::SaveAccounts {
+            ticket: 1,
             base: Box::new(base),
             registry: Box::new(registry),
         })

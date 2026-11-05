@@ -35,7 +35,8 @@ pub(crate) fn reply(effect: &Effect) -> Msg {
         Effect::SaveGlobal { .. } => Msg::GlobalSaved {
             result: Err(SaveFailure { error, next: None }),
         },
-        Effect::SaveAccounts { .. } => Msg::AccountsSaved {
+        Effect::SaveAccounts { ticket, .. } => Msg::AccountsSaved {
+            ticket: *ticket,
             added: None,
             result: Err(error),
         },

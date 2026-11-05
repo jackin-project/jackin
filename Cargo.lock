@@ -2519,7 +2519,7 @@ dependencies = [
 [[package]]
 name = "jackin-console"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=8b777d06b6ddf491c83d4704351329e250531163#8b777d06b6ddf491c83d4704351329e250531163"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=a901c275055091810ae0d0ac30ec5fc09ce595d9#a901c275055091810ae0d0ac30ec5fc09ce595d9"
 dependencies = [
  "clap",
  "junie-tui",
@@ -2991,7 +2991,7 @@ dependencies = [
 [[package]]
 name = "junie-tui"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=8b777d06b6ddf491c83d4704351329e250531163#8b777d06b6ddf491c83d4704351329e250531163"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=a901c275055091810ae0d0ac30ec5fc09ce595d9#a901c275055091810ae0d0ac30ec5fc09ce595d9"
 dependencies = [
  "clap",
  "libc",
@@ -6153,7 +6153,7 @@ dependencies = [
 [[package]]
 name = "termpane"
 version = "0.1.1"
-source = "git+https://github.com/tailrocks/termpane?rev=0337acc11a2321f99985e1fae9b670229198d124#0337acc11a2321f99985e1fae9b670229198d124"
+source = "git+https://github.com/tailrocks/termpane?rev=46cc0977d8ee95d5284f75080d507ca2d116c007#46cc0977d8ee95d5284f75080d507ca2d116c007"
 dependencies = [
  "compact_str 0.10.0",
  "smallvec",

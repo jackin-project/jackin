@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_console::domain::account::AccountForm;
+use jackin_console::domain::account::{Account, AccountForm, AccountOrigin, CredentialSource};
 use jackin_console::domain::agent::{AgentBlocked, AuthMode};
 use jackin_console::domain::fixed::Fixed;
 use jackin_console::domain::fixed_fields::{
     AccountFixed, FixedFields, SurfaceFixed, WorkspaceFixed, snapshot_fixed, world_fixed,
 };
-use jackin_console::domain::openshell::PROJECT_DIR;
+use jackin_console::domain::openshell::{PROJECT_DIR, env_edit_block};
 use jackin_console::domain::role::LaunchRoleRule;
 use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_console::domain::workspace::{DirtyExitPolicy, Isolation, WizardDefaults};
@@ -100,26 +100,29 @@ fn projected(text: &str) -> Result<(Config, Snapshot), Box<dyn std::error::Error
 
 struct Fixture {
     workspace: WorkspaceFixed,
-    account: AccountFixed,
     fixed: FixedFields,
 }
 
 fn fixture() -> Fixture {
     let fixed = world_fixed(&world_for(Scenario::OpenshellFixed));
-    let first = |fields: &FixedFields| (fields.workspaces[0].clone(), fields.accounts[0].clone());
-    let (workspace, account) = first(&fixed);
+    let workspace = fixed.workspaces[0].clone();
     assert!(
         fixed.workspaces.iter().all(|w| *w == workspace),
         "the fixture holds one workspace value"
     );
-    assert!(
-        fixed.accounts.iter().all(|a| *a == account),
-        "the fixture holds one account value"
-    );
-    Fixture {
-        workspace,
-        account,
-        fixed,
+    Fixture { workspace, fixed }
+}
+
+fn expected_account(account: &Account) -> AccountFixed {
+    AccountFixed {
+        enabled: true,
+        origin: AccountOrigin::Registered,
+        edit_blocked: match &account.source {
+            CredentialSource::HostEnv { var, .. } => Some(env_edit_block(var)),
+            CredentialSource::OnePassword(_)
+            | CredentialSource::LocalFolder { .. }
+            | CredentialSource::PlainApiKey { .. } => None,
+        },
     }
 }
 
@@ -166,9 +169,18 @@ fn global_fixed_values_match() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn account_fixed_values_match() -> Result<(), Box<dyn std::error::Error>> {
     let fixture = fixture();
-    for (name, _, fields, _) in every_shape()? {
-        for account in &fields.accounts {
-            assert_eq!(account, &fixture.account, "{name}");
+    for account in &fixture.fixed.accounts {
+        assert!(account.enabled, "fixture");
+        assert_eq!(account.origin, AccountOrigin::Registered, "fixture");
+    }
+    for (name, _, fields, snapshot) in every_shape()? {
+        assert_eq!(
+            fields.accounts.len(),
+            snapshot.accounts.accounts.len(),
+            "{name}"
+        );
+        for (fixed, account) in fields.accounts.iter().zip(&snapshot.accounts.accounts) {
+            assert_eq!(fixed, &expected_account(account), "{name}");
         }
         for role in &fields.roles {
             assert!(role.trusted, "{name}");
@@ -363,8 +375,7 @@ fn mutations() -> Vec<Mutation> {
         (
             "origin",
             |s| {
-                s.accounts.accounts[0].origin =
-                    jackin_console::domain::account::AccountOrigin::Discovered;
+                s.accounts.accounts[0].origin = AccountOrigin::Discovered;
             },
             |f| format!("{:?}", f.accounts[0].origin),
         ),

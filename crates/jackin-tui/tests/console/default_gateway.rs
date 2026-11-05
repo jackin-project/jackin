@@ -234,6 +234,7 @@ async fn an_account_add_publishes_to_the_new_default_after_the_default_left_the_
         ));
         pair.lab
             .perform(Effect::SaveAccounts {
+                ticket: 1,
                 base: Box::new(base),
                 registry: Box::new(registry),
             })

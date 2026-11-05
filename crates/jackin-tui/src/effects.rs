@@ -415,6 +415,7 @@ impl Inputs {
 
     pub(crate) async fn save_accounts(
         &self,
+        ticket: Ticket,
         base: &AccountRegistry,
         registry: &AccountRegistry,
     ) -> Settled {
@@ -428,12 +429,14 @@ impl Inputs {
         .await;
         match result {
             Ok((snapshot, added)) => Msg::AccountsSaved {
+                ticket,
                 added,
                 result: Ok(snapshot),
             }
             .into(),
             Err(error) => {
                 let reply = Msg::AccountsSaved {
+                    ticket,
                     added: None,
                     result: Err(text(&error)),
                 };

@@ -164,12 +164,15 @@ impl OnePassword for OpSnapshot {
         account: &str,
         vault: &str,
         item: &str,
-        field: &str,
+        field_id: &str,
+        section: Option<&str>,
     ) -> Result<OpReference, OpError> {
         let found = self
-            .field(account, vault, item, |info| info.label == field)
+            .field(account, vault, item, |info| {
+                info.id == field_id && info.section.as_deref() == section
+            })
             .ok_or_else(|| OpError::MissingField {
-                field: field.to_owned(),
+                field: field_id.to_owned(),
                 item: item.to_owned(),
             })?;
         if found.kind != OpFieldKind::Concealed {
@@ -318,6 +321,7 @@ impl Inputs {
                     .map(|field| OpFieldRow {
                         id: field.id.clone(),
                         label: field.label.clone(),
+                        section: field.section.clone(),
                         kind: field_kind(field.kind),
                     })
                     .collect();

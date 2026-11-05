@@ -203,12 +203,6 @@ fn account(config: &Config, core: &jackin_core::Account) -> Account {
     let provider = provider(core.provider());
     let credential = source(core.credential(), provider);
     let local_login = core.chatgpt_login().is_some();
-    let edit_blocked = match &credential {
-        CredentialSource::HostEnv { var, .. } => Some(normalize::env_edit_block(var)),
-        CredentialSource::OnePassword(_)
-        | CredentialSource::LocalFolder { .. }
-        | CredentialSource::PlainApiKey { .. } => None,
-    };
     let mut a = Account::registered(
         core.name().as_str(),
         core.name().as_str(),
@@ -217,7 +211,6 @@ fn account(config: &Config, core: &jackin_core::Account) -> Account {
     );
     a.lifecycle = jackin_console::domain::account::Lifecycle::Available;
     a.default_for_provider = config.default_account(core.provider()) == Some(core.name());
-    a.edit_blocked = edit_blocked;
     a.launch_blocked = (core.provider() == CoreProvider::Codex && !local_login)
         .then_some(LaunchBlock::UsageOnlySource);
     normalize::account(&mut a);

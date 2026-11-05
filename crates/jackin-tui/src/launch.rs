@@ -7,7 +7,7 @@ use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
-use jackin_console::backend::{Backend, OnePassword};
+use jackin_console::backend::{Backend, OnePassword, PlainKey};
 use jackin_console::domain::agent::Agent;
 use jackin_console::domain::docker::DockerCapability;
 use jackin_console::domain::instance::Instance;
@@ -654,7 +654,7 @@ impl LaunchFeed for SessionLaunch {
 
     fn retry_credentials(&mut self, _op: &mut dyn OnePassword) {}
 
-    fn use_plain_text(&mut self) -> Option<TypedKey> {
+    fn use_plain_text(&mut self, _key: PlainKey) -> Option<TypedKey> {
         None
     }
 

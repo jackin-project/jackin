@@ -15,9 +15,10 @@ const JOURNEYS: [&str; 3] = [
     include_str!("capsule.rs"),
 ];
 
-const WITHOUT_CAPTURE: [&str; 9] = [
+const WITHOUT_CAPTURE: [&str; 10] = [
     "jackin_cockpit_docker_names_key_and_egress_bypass",
     "jackin_roles_add_role",
+    "jackin_fixed_editor_refusals_carry_the_full_reason_at_80_by_24",
     "jackin_fixed_dirty_exit_refuses_the_list_by_key_and_click",
     "jackin_fixed_working_directory_refuses_the_picker_by_key_and_click",
     "jackin_fixed_last_allowed_role_cannot_be_unchecked",
