@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.28.0@sha256:bb22d9815c728170f72750f4e5b0d672e06176142e1d602c7e66c050100b7e5b
 
-ARG BASE_IMAGE=nvcr.io/nvidia/base/ubuntu:24.04@sha256:d9461f428eea54e553add3a5158a0f245c6e1ea73efc59fff8e98e3d4a38e378
+ARG BASE_IMAGE=debian:trixie@sha256:2dc419c6d7fe3dad0a2f9fd469c34cc90b0f9ba642d8fde837fe3d7d34a0e7f1
 
 FROM ${BASE_IMAGE}
 
@@ -28,11 +28,10 @@ RUN apt-get update \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN if getent passwd ubuntu >/dev/null; then userdel --remove ubuntu; fi \
-    && if getent group ubuntu >/dev/null; then groupdel ubuntu; fi \
-    && groupadd --gid "${SANDBOX_GID}" sandbox \
+RUN groupadd --gid "${SANDBOX_GID}" sandbox \
     && useradd --uid "${SANDBOX_UID}" --gid "${SANDBOX_GID}" --home-dir /sandbox --create-home --shell /bin/bash sandbox \
-    && chown "${SANDBOX_UID}:${SANDBOX_GID}" /sandbox
+    && chown "${SANDBOX_UID}:${SANDBOX_GID}" /sandbox \
+    && chmod 0755 /sandbox
 
 RUN for tool in sudo su-exec gosu doas iptables ip6tables nft ufw docker podman nerdctl dockerd containerd containerd-shim containerd-shim-runc-v2 runc crun buildkitd rootlesskit docker-proxy dockerd-rootless.sh docker-compose docker-buildx buildctl ctr; do \
         if command -v "$tool" >/dev/null; then echo "forbidden tool in construct: $tool" >&2; exit 1; fi; \

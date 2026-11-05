@@ -7,8 +7,8 @@ The construct image is the base of every role. Jackin builds it from a `Dockerfi
 
 ## What the construct image has
 
-- It starts from the OpenShell default sandbox image, `nvcr.io/nvidia/base/ubuntu:24.04`, pinned by digest.
-- It has the user `sandbox`, uid and gid 1000, with the home directory `/sandbox`. The `ubuntu` user is removed. The gateway driver takes the runtime user from `/etc/passwd`, not from the image `USER` line.
+- It starts from the official Debian stable image, `debian:trixie`, pinned by digest.
+- It has the user `sandbox`, uid and gid 1000, with the home directory `/sandbox`. The gateway driver takes the runtime user from `/etc/passwd`, not from the image `USER` line.
 - It has `git`, `curl`, `ca-certificates`, `jq`, `bash`, and the other shell tools that roles commonly need. Export needs `git` in the sandbox.
 - It has no setuid or setgid bit. The build fails if `sudo`, a firewall tool, or a container tool is on `PATH`.
 
