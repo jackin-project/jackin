@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::time::Duration;
 
 use jackin_console::backend::Ticket;
 use jackin_console::domain::account::{AccountId, AccountRegistry};
@@ -19,7 +20,10 @@ use jackin_core::{
     PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
     read_credential_file,
 };
-use jackin_core::{EnvSpec, ManifestError, Workspace as CoreWorkspace};
+use jackin_core::{
+    EnvSpec, FileLock, ManifestError, PollError, PollPlan, Sha256, Workspace as CoreWorkspace,
+    hold_lock,
+};
 use jackin_image::Rebuild;
 use jackin_openshell::PowerAction;
 use jackin_session::{
@@ -47,6 +51,12 @@ enum Refused {
     #[error(transparent)]
     Config(#[from] ConfigError),
 }
+
+const LOCK_KEY_LEN: usize = 32;
+const MANIFEST_LOCK: PollPlan = PollPlan {
+    interval: Duration::from_millis(50),
+    timeout: Duration::from_secs(30),
+};
 
 fn text(error: &dyn std::error::Error) -> String {
     error_chain(error)
@@ -709,15 +719,22 @@ impl Inputs {
             let config = self.config.load().await?;
             let name = RoleName::parse(role).map_err(PersistError::from)?;
             let root = self.role_root(&config, &name).await?;
-            let errors = match self.roles.read_manifest(&root).await {
-                Err(errors) => errors,
+            let found: Vec<RoleFinding> = match self.roles.read_manifest(&root).await {
+                Err(errors) => errors.iter().map(|error| finding(error, doc)).collect(),
                 Ok(mut manifest) => {
                     let base = manifest_doc(&manifest);
-                    merge_manifest(&mut manifest, &base, doc)?;
-                    self.roles.findings_of(&root, manifest).await
+                    match merge_manifest(&mut manifest, &base, doc) {
+                        Ok(()) => self
+                            .roles
+                            .findings_of(&root, manifest)
+                            .await
+                            .iter()
+                            .map(|error| finding(error, doc))
+                            .collect(),
+                        Err(unmerged) => vec![unmerged.finding()],
+                    }
                 }
             };
-            let found: Vec<RoleFinding> = errors.iter().map(|error| finding(error, doc)).collect();
             locked(&self.checks).insert(name, found);
             Ok::<_, Refused>(self.snapshot_of(&config).await)
         }
@@ -750,16 +767,17 @@ impl Inputs {
             };
             let file =
                 HostPath::resolve(Path::new(MANIFEST_FILE), root).map_err(PersistError::from)?;
-            let bytes = self
-                .host
-                .fs
-                .read(&file)
-                .await
-                .map_err(PersistError::from)?
-                .unwrap_or_default();
-            let mut manifest = RoleManifest::parse(&String::from_utf8_lossy(&bytes))
-                .map_err(|error| Refused::Text(text(&error)))?;
-            merge_manifest(&mut manifest, base, doc)?;
+            let _held = self.hold_manifest(&file).await?;
+            let mut manifest = self.roles.read_manifest(root).await.map_err(|errors| {
+                Refused::Text(
+                    errors
+                        .iter()
+                        .map(|error| text(error))
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                )
+            })?;
+            merge_manifest(&mut manifest, base, doc).map_err(|unmerged| unmerged.refused)?;
             manifest
                 .write(self.host.fs.as_ref(), &file)
                 .await
@@ -772,6 +790,35 @@ impl Inputs {
             role: role.to_owned(),
             result: result.map_err(|error| text(&error)),
         }
+    }
+
+    async fn hold_manifest(&self, file: &HostPath) -> Result<FileLock, Refused> {
+        let dir = Path::new(&self.config_path)
+            .parent()
+            .ok_or_else(|| Refused::Text("the configuration path has no directory".to_owned()))
+            .and_then(|dir| {
+                HostPath::parse(dir).map_err(|error| Refused::from(PersistError::from(error)))
+            })?;
+        let key = Sha256::of(file.to_string().as_bytes());
+        let name = format!("role-{}.lock", &key.as_str()[..LOCK_KEY_LEN]);
+        let lock = HostPath::resolve(Path::new(&name), &dir).map_err(PersistError::from)?;
+        hold_lock(
+            self.host.fs.as_ref(),
+            self.host.clock.as_ref(),
+            &lock,
+            MANIFEST_LOCK,
+            &self.cancel,
+        )
+        .await
+        .map_err(|error| match error {
+            PollError::Cancelled => {
+                Refused::Text("cancelled while waiting for the role manifest".to_owned())
+            }
+            PollError::Timeout { .. } => {
+                Refused::Text("another jackin process is saving this role manifest".to_owned())
+            }
+            PollError::Probe(error) => Refused::Text(text(&error)),
+        })
     }
 
     pub(crate) async fn trust_role(&self, role: &str) -> Msg {
@@ -793,20 +840,49 @@ impl Inputs {
     }
 }
 
+struct Unmerged {
+    area: FindingArea,
+    refused: Refused,
+}
+
+impl Unmerged {
+    fn on(area: FindingArea) -> impl Fn(PersistError) -> Unmerged {
+        move |error| Unmerged {
+            area,
+            refused: error.into(),
+        }
+    }
+
+    fn finding(&self) -> RoleFinding {
+        RoleFinding {
+            area: self.area,
+            key: None,
+            message: text(&self.refused),
+            fix: None,
+        }
+    }
+}
+
 fn merge_manifest(
     manifest: &mut RoleManifest,
     base: &RoleManifestDoc,
     doc: &RoleManifestDoc,
-) -> Result<(), Refused> {
-    let repo = |value: &str| RepoPath::parse(value).map_err(PersistError::from);
+) -> Result<(), Unmerged> {
+    let repo = |value: &str, area| {
+        RepoPath::parse(value)
+            .map_err(PersistError::from)
+            .map_err(Unmerged::on(area))
+    };
     if doc.name != base.name {
-        return Err(PersistError::from(Rejection::CannotSave(SaveField::RoleName)).into());
+        return Err(Unmerged::on(FindingArea::Manifest)(PersistError::from(
+            Rejection::CannotSave(SaveField::RoleName),
+        )));
     }
     if doc.dockerfile != base.dockerfile {
-        manifest.role.dockerfile = repo(&doc.dockerfile)?;
+        manifest.role.dockerfile = repo(&doc.dockerfile, FindingArea::Dockerfile)?;
     }
     if doc.policy != base.policy {
-        manifest.role.policy = repo(&doc.policy)?;
+        manifest.role.policy = repo(&doc.policy, FindingArea::Policy)?;
     }
     if doc.codex_model != base.codex_model {
         manifest.codex.model = doc
@@ -814,16 +890,25 @@ fn merge_manifest(
             .as_deref()
             .map(ModelName::parse)
             .transpose()
-            .map_err(PersistError::from)?;
+            .map_err(PersistError::from)
+            .map_err(Unmerged::on(FindingArea::Manifest))?;
     }
     if doc.docker != base.docker {
         manifest.docker.enabled = doc.docker;
     }
     if doc.hook_setup != base.hook_setup {
-        manifest.hooks.setup = doc.hook_setup.as_deref().map(repo).transpose()?;
+        manifest.hooks.setup = doc
+            .hook_setup
+            .as_deref()
+            .map(|value| repo(value, FindingArea::Hook))
+            .transpose()?;
     }
     if doc.hook_preflight != base.hook_preflight {
-        manifest.hooks.preflight = doc.hook_preflight.as_deref().map(repo).transpose()?;
+        manifest.hooks.preflight = doc
+            .hook_preflight
+            .as_deref()
+            .map(|value| repo(value, FindingArea::Hook))
+            .transpose()?;
     }
     let names: BTreeSet<&str> = base
         .env
@@ -837,7 +922,9 @@ fn merge_manifest(
         if before == after {
             continue;
         }
-        let key = EnvName::parse(name).map_err(PersistError::from)?;
+        let key = EnvName::parse(name)
+            .map_err(PersistError::from)
+            .map_err(Unmerged::on(FindingArea::Manifest))?;
         match after {
             Some(entry) => {
                 manifest.env.insert(
