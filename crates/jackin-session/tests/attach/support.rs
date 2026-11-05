@@ -114,3 +114,19 @@ pub(crate) async fn dropped(
     tokio::time::sleep(Duration::from_millis(40)).await;
     Ok(handle.main_input() == before)
 }
+
+pub(crate) async fn delivered_in_two(
+    handle: &SandboxHandle,
+    terminal: &mut AttachedTerminal,
+    first: &[u8],
+    second: &[u8],
+) -> Result<Vec<u8>, Box<dyn Error>> {
+    let before = handle.main_input().len();
+    terminal.input(first.to_vec()).await?;
+    terminal.input(second.to_vec()).await?;
+    terminal.input(b"~".to_vec()).await?;
+    until(|| handle.main_input().len() > before && handle.main_input().ends_with(b"~")).await?;
+    let mut got = handle.main_input().split_off(before);
+    got.pop();
+    Ok(got)
+}
