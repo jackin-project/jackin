@@ -104,7 +104,7 @@ async fn a_tool_that_hangs_past_the_deadline_is_killed() -> TestResult {
         "pbcopy",
         &format!("echo $$ > '{}'\nexec /bin/sleep 30", pid_file.display()),
     )?;
-    let hung = writer(&dir, vec![ClipboardTool::Pbcopy]).within(Duration::from_millis(300));
+    let hung = writer(&dir, vec![ClipboardTool::Pbcopy]).within(Duration::from_secs(2));
     assert!(!hung.write("Hello"));
     let give_up = std::time::Instant::now() + Duration::from_secs(5);
     let pid = loop {

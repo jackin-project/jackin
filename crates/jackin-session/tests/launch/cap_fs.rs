@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
-    RegularFile, RegularFileProblem, RepoPath,
+    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
+    LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
 
 struct Hook {
@@ -77,6 +77,9 @@ impl FileSystem for RecordsCaps {
     }
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(path).await
+    }
+    async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(path).await
     }
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.inner.list(dir).await

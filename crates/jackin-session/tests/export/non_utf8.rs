@@ -1,12 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::os::unix::ffi::OsStrExt;
-
 use jackin_core::{BranchName, TerminalText};
-use jackin_session::{ExportError, ExportedBranch, Unexported, Unread, WorkState};
+use jackin_session::{ExportError, ExportedBranch, Unexported, WorkState};
 use jackin_testkit::{Rig, TestResult, guard};
-use tokio_util::sync::CancellationToken;
 
 use super::support::{export, exports, ref_of, rewrite_packed, snapshot, state, tip};
 
@@ -105,39 +102,47 @@ async fn a_host_branch_with_a_non_utf8_name_is_not_taken_for_a_sandbox_branch_wi
     .await
 }
 
-#[tokio::test]
-async fn an_untracked_file_with_a_non_utf8_name_is_listed_unread() -> TestResult {
-    guard(async {
-        let rig = Rig::new().await?;
-        rig.launch(1).await?;
-        let handle = rig.handle(1).await?;
-        let file = handle
-            .root()
-            .join("project")
-            .join(std::ffi::OsStr::from_bytes(b"caf\xe9.txt"));
-        if std::fs::write(&file, b"x\n").is_err() {
-            return Ok(());
-        }
+#[cfg(target_os = "linux")]
+mod linux_only {
+    use std::os::unix::ffi::OsStrExt;
 
-        let found = rig
-            .world
-            .session
-            .changes(&handle.name(), &CancellationToken::new())
-            .await?;
+    use jackin_core::TerminalText;
+    use jackin_session::Unread;
+    use jackin_testkit::{Rig, TestResult, guard};
+    use tokio_util::sync::CancellationToken;
 
-        let listed: Vec<(&str, Option<Unread>)> = found
-            .files
-            .iter()
-            .map(|changed| (changed.path.as_str(), changed.unread))
-            .collect();
-        assert_eq!(
-            listed,
-            [(
-                TerminalText::sanitize(b"caf\xe9.txt").as_str(),
-                Some(Unread::UndecodableName)
-            )]
-        );
-        Ok(())
-    })
-    .await
+    #[tokio::test]
+    async fn an_untracked_file_with_a_non_utf8_name_is_listed_unread() -> TestResult {
+        guard(async {
+            let rig = Rig::new().await?;
+            rig.launch(1).await?;
+            let handle = rig.handle(1).await?;
+            let file = handle
+                .root()
+                .join("project")
+                .join(std::ffi::OsStr::from_bytes(b"caf\xe9.txt"));
+            std::fs::write(&file, b"x\n")?;
+
+            let found = rig
+                .world
+                .session
+                .changes(&handle.name(), &CancellationToken::new())
+                .await?;
+
+            let listed: Vec<(&str, Option<Unread>)> = found
+                .files
+                .iter()
+                .map(|changed| (changed.path.as_str(), changed.unread))
+                .collect();
+            assert_eq!(
+                listed,
+                [(
+                    TerminalText::sanitize(b"caf\xe9.txt").as_str(),
+                    Some(Unread::UndecodableName)
+                )]
+            );
+            Ok(())
+        })
+        .await
+    }
 }

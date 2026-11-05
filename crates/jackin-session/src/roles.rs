@@ -72,8 +72,10 @@ pub enum RoleError {
     RootMissing { path: HostPath },
     #[error("{path} is not a directory")]
     RootNotDirectory { path: HostPath },
-    #[error("{path} changed while the role was loaded; load it again once it is quiet")]
-    RootChanged { path: HostPath },
+    #[error(
+        "{path} was replaced by another directory while the role was loaded; load it again once it is quiet"
+    )]
+    RootReplaced { path: HostPath },
     #[error("{root} has no {}", MANIFEST_FILE)]
     ManifestMissing { root: HostPath },
     #[error("missing file {path}")]
@@ -236,7 +238,7 @@ impl RoleCatalog {
         root: &HostPath,
         cancel: &CancellationToken,
     ) -> Result<LoadedRole, RoleError> {
-        let canonical = self.fs.canonicalize(root).await?;
+        let pinned = self.fs.identity(root).await?;
         let mut reads = Reads::new();
         let manifest = match self.read_manifest_from(root, &mut reads).await {
             Ok(manifest) => manifest,
@@ -247,8 +249,8 @@ impl RoleCatalog {
             Err(mut findings) => return Err(findings.remove(0)),
         };
         let (revision, files) = self.snapshot(root, &reads, cancel).await?;
-        if self.fs.canonicalize(root).await? != canonical {
-            return Err(RoleError::RootChanged { path: root.clone() });
+        if self.fs.identity(root).await? != pinned {
+            return Err(RoleError::RootReplaced { path: root.clone() });
         }
         Ok(LoadedRole {
             name: inspected.manifest.role.name.clone(),

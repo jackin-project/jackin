@@ -4,7 +4,7 @@
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -14,7 +14,7 @@ use jackin_core::{
     WorkspaceName,
 };
 use jackin_image::{BuildxEngine, ContextEntry, ImageEngine, ImagePlan, Rebuild};
-use jackin_session::{RoleCatalog, plan_image};
+use jackin_session::{RoleCatalog, RoleError, plan_image};
 use jackin_testkit::{
     CapturedFile, FakeClock, ProcessEffect, ProcessReply, RoleFixture, ScriptedProcessRunner,
     ScriptedProgram, TestRunner,
@@ -22,7 +22,7 @@ use jackin_testkit::{
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use super::hook_fs::HookFs;
+use super::hook_fs::{HookFs, Touch};
 use super::roles_origin::{Origin, cache, git};
 use super::support::{Spec, TestResult, catalog, guard};
 
@@ -424,11 +424,70 @@ async fn a_tracked_path_below_a_directory_swapped_for_a_link_is_refused() -> Tes
             .load_path(role.root(), &CancellationToken::new())
             .await;
         assert!(
-            matches!(
-                found,
-                Err(jackin_session::RoleError::EscapesRepository { .. })
-            ),
+            matches!(found, Err(RoleError::EscapesRepository { .. })),
             "{found:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+fn replace_on_first_touch(
+    leaf: HostPath,
+    root: PathBuf,
+    parked: PathBuf,
+    incoming: PathBuf,
+    done: Arc<AtomicBool>,
+) -> Touch {
+    Box::new(move |path: &HostPath| {
+        if *path != leaf || done.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        std::fs::rename(&root, &parked)
+            .and_then(|()| std::fs::rename(&incoming, &root))
+            .map_err(|source| FsError::Io {
+                path: leaf.clone(),
+                kind: source.kind(),
+                message: source.to_string(),
+            })
+    })
+}
+
+#[tokio::test]
+async fn a_role_directory_replaced_by_another_during_the_load_is_refused() -> TestResult {
+    guard(async {
+        let role = RoleFixture::new("sentinel")?;
+        role.commit().await?;
+        let other = RoleFixture::new("sentinel")?;
+        other.commit().await?;
+        let root = role.root().as_path().to_path_buf();
+        let parked = root.with_extension("parked");
+        let incoming = other.root().as_path().to_path_buf();
+        let leaf = HostPath::parse(&root.join("Dockerfile"))?;
+        let swapped = Arc::new(AtomicBool::new(false));
+        let swapping = Arc::new(HookFs::new(
+            Arc::new(StdFileSystem::default()),
+            replace_on_first_touch(leaf, root, parked.clone(), incoming, Arc::clone(&swapped)),
+            Box::new(|| {}),
+        ));
+        let (cache, _keep) = cache()?;
+        let catalog = RoleCatalog::new(
+            Arc::<HookFs>::clone(&swapping),
+            Arc::new(TestRunner::new()),
+            Arc::new(FakeClock::new()),
+            cache,
+        );
+
+        let found = catalog
+            .load_path(role.root(), &CancellationToken::new())
+            .await;
+
+        assert!(swapped.load(Ordering::SeqCst), "the swap never ran");
+        let outcome = found.map(|_| ());
+        let _cleanup = std::fs::remove_dir_all(&parked);
+        assert!(
+            matches!(outcome, Err(RoleError::RootReplaced { .. })),
+            "{outcome:?}"
         );
         Ok(())
     })

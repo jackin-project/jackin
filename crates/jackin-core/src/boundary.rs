@@ -76,6 +76,7 @@ pub trait FileSystem: Send + Sync + Debug {
     async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError>;
     async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError>;
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError>;
+    async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError>;
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError>;
     async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError>;
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError>;
@@ -134,6 +135,12 @@ pub enum LinkProblem {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FileMode(pub u32);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct FileIdentity {
+    pub dev: u64,
+    pub ino: u64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FileKind {

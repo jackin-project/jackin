@@ -8,10 +8,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    CommitId, DirEntry, DockerSubcommand, FileKind, FileLock, FileMode, FileSystem, FsError,
-    HostPath, LineSink, LinkProblem, OutputStream, ProcessError, ProcessOutput, ProcessRunner,
-    ProcessSpec, ProcessStatus, Program, RegularFile, RegularFileProblem, RepoPath, RoleName,
-    SecretOutput, StdFileSystem,
+    CommitId, DirEntry, DockerSubcommand, FileIdentity, FileKind, FileLock, FileMode, FileSystem,
+    FsError, HostPath, LineSink, LinkProblem, OutputStream, ProcessError, ProcessOutput,
+    ProcessRunner, ProcessSpec, ProcessStatus, Program, RegularFile, RegularFileProblem, RepoPath,
+    RoleName, SecretOutput, StdFileSystem,
 };
 use jackin_image::{
     BuildStage, BuildxEngine, BuiltImage, ImageEngine, ImageError, ImageEvent, ImagePlan,
@@ -105,6 +105,9 @@ impl FileSystem for SignalFs {
     }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
+    }
+    async fn identity(&self, p: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(p).await
     }
     async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.inner.list(d).await

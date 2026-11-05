@@ -3,8 +3,8 @@
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
-    RegularFile, RegularFileProblem, RepoPath,
+    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
+    LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
 use std::sync::Arc;
 
@@ -49,6 +49,9 @@ impl FileSystem for HookFs {
     }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
+    }
+    async fn identity(&self, p: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(p).await
     }
     async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.inner.list(d).await

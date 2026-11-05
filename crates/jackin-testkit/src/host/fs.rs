@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, LinkProblem,
-    RegularFile, RegularFileProblem, RepoPath,
+    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
+    LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
 
 use crate::sync::locked;
@@ -20,6 +20,7 @@ pub enum FsOp {
     Stat,
     StatFollowing,
     FileLen,
+    Identity,
     List,
     CreateDirAll,
     CreatePrivateDirAll,
@@ -43,6 +44,8 @@ struct FsState {
     files: BTreeMap<PathBuf, MemFile>,
     dirs: BTreeMap<PathBuf, FileMode>,
     locked: BTreeSet<PathBuf>,
+    inodes: BTreeMap<PathBuf, u64>,
+    next_inode: u64,
     calls: HashMap<FsOp, u32>,
     faults: Vec<FsFault>,
 }
@@ -210,6 +213,23 @@ impl FileSystem for MemFs {
             .map(|file| file.bytes.len() as u64))
     }
 
+    async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        let mut state = self.enter(FsOp::Identity)?;
+        if !state.occupied(path.as_path()) {
+            return Ok(None);
+        }
+        let key = path.as_path().to_path_buf();
+        let ino = if let Some(known) = state.inodes.get(&key) {
+            *known
+        } else {
+            state.next_inode += 1;
+            let fresh = state.next_inode;
+            state.inodes.insert(key, fresh);
+            fresh
+        };
+        Ok(Some(FileIdentity { dev: 1, ino }))
+    }
+
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         let state = self.enter(FsOp::List)?;
         if state.files.contains_key(dir.as_path()) {
@@ -292,6 +312,10 @@ impl FileSystem for MemFs {
         if let Some(file) = state.files.remove(from.as_path()) {
             state.files.insert(to.as_path().to_path_buf(), file);
         }
+        state.inodes.remove(to.as_path());
+        if let Some(ino) = state.inodes.remove(from.as_path()) {
+            state.inodes.insert(to.as_path().to_path_buf(), ino);
+        }
         Ok(())
     }
 
@@ -301,6 +325,7 @@ impl FileSystem for MemFs {
             return Err(io_error(path, ErrorKind::IsADirectory, "is a directory"));
         }
         state.files.remove(path.as_path());
+        state.inodes.remove(path.as_path());
         Ok(())
     }
 
@@ -312,6 +337,7 @@ impl FileSystem for MemFs {
         let root = path.as_path();
         state.files.retain(|file, _| !file.starts_with(root));
         state.dirs.retain(|dir, _| !dir.starts_with(root));
+        state.inodes.retain(|node, _| !node.starts_with(root));
         Ok(())
     }
 

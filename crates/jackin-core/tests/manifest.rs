@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, EnvFile, EnvName, EnvSpec, FileKind, FileLock, FileMode, FileSystem, FsError,
-    HookKind, HostPath, LinkProblem, ManifestError, RegularFile, RegularFileProblem, RepoPath,
-    RoleManifest, StdFileSystem,
+    DirEntry, EnvFile, EnvName, EnvSpec, FileIdentity, FileKind, FileLock, FileMode, FileSystem,
+    FsError, HookKind, HostPath, LinkProblem, ManifestError, RegularFile, RegularFileProblem,
+    RepoPath, RoleManifest, StdFileSystem,
 };
 
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
@@ -469,6 +469,9 @@ impl FileSystem for CrashFs {
     }
     async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
         self.inner.file_len(p).await
+    }
+    async fn identity(&self, p: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(p).await
     }
     async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
         self.inner.list(d).await
