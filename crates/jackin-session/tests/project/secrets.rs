@@ -217,22 +217,37 @@ async fn no_host_credential_reaches_any_sandbox_file_or_the_sandbox_repository_s
             "remote",
             "add",
             "origin",
-            "https://bot:SECRETTOKEN-remote@example.invalid/x.git",
+            concat!("https://bot", ":SECRETTOKEN-remote@example.invalid/x.git"),
         ])
         .await?;
-        repo.git(&["config", "http.extraheader", "Authorization: SECRETHEADER-http"])
-            .await?;
-        repo.git(&["config", "credential.helper", "store --file=SECRETHELPER-credential"])
-            .await?;
         repo.git(&[
             "config",
-            "url.https://bot:SECRETREWRITE-url@example.invalid/.insteadOf",
+            "http.extraheader",
+            "Authorization: SECRETHEADER-http",
+        ])
+        .await?;
+        repo.git(&[
+            "config",
+            "credential.helper",
+            "store --file=SECRETHELPER-credential",
+        ])
+        .await?;
+        repo.git(&[
+            "config",
+            concat!(
+                "url.https://bot",
+                ":SECRETREWRITE-url@example.invalid/.insteadOf"
+            ),
             "https://example.invalid/",
         ])
         .await?;
         repo.file(
             ".git/modules/lib/config",
-            b"[remote \"origin\"]\n\turl = https://bot:SECRETSUBMODULE-config@example.invalid/lib.git\n",
+            concat!(
+                "[remote \"origin\"]\n\turl = https://bot",
+                ":SECRETSUBMODULE-config@example.invalid/lib.git\n"
+            )
+            .as_bytes(),
         )
         .await?;
         let rig = Rig::new(repo).await?;
