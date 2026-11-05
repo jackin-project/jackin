@@ -3,10 +3,16 @@
 
 use std::path::Path;
 
+use std::sync::Arc;
+use std::time::Duration;
+
 use jackin_console::backend::Effect;
 use jackin_console::domain::instance::InstanceStatus;
-use jackin_core::{Phase, RoleName, RoleSource, RoleUrl};
-use jackin_testkit::{RoleFixture, TestResult, guard};
+use jackin_core::{
+    AttemptId, HookKind, Phase, RoleName, RoleSource, RoleUrl, SupervisorState, sandbox_layout,
+};
+use jackin_openshell::{Gateway, SandboxFile};
+use jackin_testkit::{Fault, Rig, RoleFixture, TestResult, Trigger, guard};
 
 use super::support::Lab;
 
@@ -18,8 +24,15 @@ fn flat(screen: &str) -> String {
 }
 
 async fn stopped() -> Result<(Lab, String), Box<dyn std::error::Error>> {
-    let rig = jackin_testkit::Rig::new().await?;
+    stopped_after(None).await
+}
+
+async fn stopped_after(exit: Option<i32>) -> Result<(Lab, String), Box<dyn std::error::Error>> {
+    let rig = Rig::new().await?;
     rig.launch(1).await?;
+    if let Some(code) = exit {
+        rig.handle(1).await?.exit_codex(code);
+    }
     let mut lab = Lab::with(rig).await?;
     let id = lab
         .world()
@@ -46,8 +59,162 @@ async fn restore_starts_a_stopped_sandbox_as_jackin_start_does() -> TestResult {
         );
         lab.perform(Effect::Restore { instance: id }).await?;
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Ready);
+        assert!(
+            matches!(
+                lab.rig.handle(1).await?.supervisor(),
+                Some(SupervisorState::Running { .. })
+            ),
+            "{:?}",
+            lab.rig.handle(1).await?.supervisor()
+        );
         let screen = lab.console.screen();
         assert!(!flat(&screen).contains(UNBUILT), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn restore_waits_for_a_stale_exited_state_to_give_way_to_the_new_supervisor() -> TestResult {
+    guard(async {
+        let (mut lab, id) = stopped_after(Some(3)).await?;
+        let handle = lab.rig.handle(1).await?;
+        assert_eq!(
+            handle.supervisor(),
+            Some(SupervisorState::Exited {
+                attempt: AttemptId::FIRST,
+                code: 3
+            })
+        );
+        lab.rig
+            .world
+            .gateway
+            .inject(Fault::StaleSupervisor { observations: 8 });
+        lab.perform(Effect::Restore { instance: id }).await?;
+        assert_eq!(
+            handle.supervisor(),
+            Some(SupervisorState::Running {
+                attempt: AttemptId::FIRST
+            })
+        );
+        assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));
+        let screen = lab.console.screen();
+        assert!(!flat(&screen).contains("did not reach"), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn restore_waits_for_a_stale_running_state_to_give_way_to_the_new_supervisor() -> TestResult {
+    guard(async {
+        let (mut lab, id) = stopped().await?;
+        let handle = lab.rig.handle(1).await?;
+        assert_eq!(
+            handle.supervisor(),
+            Some(SupervisorState::Running {
+                attempt: AttemptId::FIRST
+            })
+        );
+        lab.rig
+            .world
+            .gateway
+            .inject(Fault::StaleSupervisor { observations: 8 });
+        lab.perform(Effect::Restore { instance: id }).await?;
+        assert_eq!(
+            handle.supervisor(),
+            Some(SupervisorState::Running {
+                attempt: AttemptId::FIRST
+            })
+        );
+        assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));
+        let screen = lab.console.screen();
+        assert!(!flat(&screen).contains("already running"), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn restore_of_a_supervisor_that_never_starts_times_out_without_a_start_request() -> TestResult
+{
+    guard(async {
+        let (mut lab, id) = stopped_after(Some(3)).await?;
+        let handle = lab.rig.handle(1).await?;
+        let preflight = sandbox_layout::hook_path(HookKind::Preflight);
+        let runs = handle.runs(&preflight).len();
+        lab.rig.world.gateway.inject(Fault::StaleSupervisor {
+            observations: u32::MAX,
+        });
+        lab.perform(Effect::Restore { instance: id }).await?;
+        let screen = lab.console.screen();
+        assert!(
+            flat(&screen).contains("did not reach its start state"),
+            "{screen}"
+        );
+        assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));
+        assert_eq!(handle.runs(&preflight).len(), runs);
+        let waited: Duration = lab.rig.world.clock.slept().iter().sum();
+        assert!(waited >= Duration::from_secs(30), "{waited:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn closing_the_console_during_the_preflight_hook_cancels_the_restore() -> TestResult {
+    guard(async {
+        let (mut lab, id) = stopped().await?;
+        let handle = lab.rig.handle(1).await?;
+        let preflight = Trigger::Program(sandbox_layout::hook_path(HookKind::Preflight));
+        lab.rig.world.gateway.inject(Fault::HoldAt {
+            trigger: preflight.clone(),
+        });
+        lab.world().perform(Effect::Restore { instance: id });
+        assert!(lab.rig.world.gateway.until_held(&preflight).await);
+        lab.reopen().await?;
+        lab.rig.world.gateway.release(&preflight);
+        for _ in 0..200 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(handle.file(&sandbox_layout::RUN_START), None);
+        assert_eq!(handle.supervisor(), Some(SupervisorState::Waiting));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn restore_of_a_sandbox_whose_codex_started_meanwhile_says_it_is_already_running()
+-> TestResult {
+    guard(async {
+        let (mut lab, id) = stopped().await?;
+        let handle = lab.rig.handle(1).await?;
+        let preflight = Trigger::Program(sandbox_layout::hook_path(HookKind::Preflight));
+        let gateway = Arc::clone(&lab.rig.world.gateway);
+        gateway.inject(Fault::HoldAt {
+            trigger: preflight.clone(),
+        });
+        lab.world().perform(Effect::Restore { instance: id });
+        assert!(gateway.until_held(&preflight).await);
+        gateway
+            .write_file(
+                &handle.name(),
+                &SandboxFile {
+                    path: sandbox_layout::RUN_START.clone(),
+                    mode: jackin_core::FileMode(0o600),
+                    content: jackin_core::SecretBytes::new(b"1".to_vec()),
+                },
+            )
+            .await?;
+        gateway.release(&preflight);
+        lab.console.settle().await?;
+        let screen = lab.console.screen();
+        assert!(
+            flat(&screen).contains("Codex is already running in"),
+            "{screen}"
+        );
+        assert!(!flat(&screen).contains("did not reach"), "{screen}");
         Ok(())
     })
     .await

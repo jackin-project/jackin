@@ -424,7 +424,7 @@ fn preserved(status: InstanceStatus, work: Option<&WorkState>) -> InstanceStatus
         (
             InstanceStatus::CleanExited | InstanceStatus::RestoreAvailable,
             Some(WorkState::Unexported(left)),
-        ) if left.unpushed() > 0 => InstanceStatus::PreservedUnpushed,
+        ) if left.unpushed() > 0 || !left.unusable.is_empty() => InstanceStatus::PreservedUnpushed,
         _ => status,
     }
 }

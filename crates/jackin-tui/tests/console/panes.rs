@@ -6,6 +6,7 @@ use std::num::NonZeroU16;
 use std::sync::Arc;
 use std::time::Duration;
 
+use jackin_console::backend::Effect;
 use jackin_console::domain::instance::InstanceStatus;
 use jackin_console::domain::vocabulary::{PaneWords, fill_in};
 use jackin_console::panes::{PaneKind, PaneRefusal, PaneRequest};
@@ -42,14 +43,14 @@ struct Capsule {
     seen: usize,
 }
 
-async fn until(mut done: impl FnMut() -> bool) -> TestResult {
+async fn until(what: &str, mut done: impl FnMut() -> bool) -> TestResult {
     for _ in 0..1000 {
         if done() {
             return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
-    Err("the condition never held".into())
+    Err(format!("never held: {what}").into())
 }
 
 impl Capsule {
@@ -113,7 +114,10 @@ impl Capsule {
         let before = self.handle.raw_input().len();
         self.lab.console.type_text("~");
         let handle = self.handle.clone();
-        until(|| handle.raw_input().len() > before && handle.raw_input().ends_with(b"~")).await?;
+        until("the sync marker reached the sandbox input", || {
+            handle.raw_input().len() > before && handle.raw_input().ends_with(b"~")
+        })
+        .await?;
         let mut raw = self.handle.raw_input().split_off(self.seen);
         raw.pop();
         self.seen = self.handle.raw_input().len();
@@ -222,6 +226,19 @@ async fn ctrl_d_never_reaches_codex_and_ctrl_b_ctrl_b_sends_the_prefix() -> Test
         assert_eq!(capsule.handle.raw_input(), b"a\x02b");
         let raw = capsule.sync().await?;
         assert_eq!(raw, b"a\x02b");
+        assert_eq!(capsule.handle.attachments(), 1);
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn alt_ctrl_d_never_reaches_codex_either() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        capsule.console().keys("a alt+ctrl+d b")?;
+        let raw = capsule.sync().await?;
+        assert_eq!(raw, b"ab");
         assert_eq!(capsule.handle.attachments(), 1);
         Ok(())
     }))
@@ -459,7 +476,10 @@ async fn a_refused_attach_is_failed_with_its_reason_and_enter_retries() -> TestR
         lab.rig.world.gateway.set_attachment_cap(20);
         lab.console.keys("enter")?;
         let handle = lab.rig.handle(1).await?;
-        until(|| handle.attachments() == 1).await?;
+        until("the main process has one attachment", || {
+            handle.attachments() == 1
+        })
+        .await?;
         Ok(())
     }))
     .await
@@ -598,6 +618,96 @@ async fn a_clipboard_write_is_refused_without_a_gesture_or_after_the_window() ->
 }
 
 #[tokio::test]
+async fn a_refresh_keeps_the_open_panes() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        let instance = capsule.id.clone();
+        capsule.console().console().app().go(Go::NewSession {
+            instance,
+            agent: None,
+            account: None,
+        });
+        capsule
+            .pump_until(|handle| handle.shells().len() == 1)
+            .await?;
+        capsule.console().pump(12).await;
+        let before = capsule.console().screen();
+        assert!(
+            before.contains("1 Codex") && before.contains("2 Shell"),
+            "{before}"
+        );
+        capsule.lab.world().perform(Effect::Refresh);
+        capsule.console().settle().await?;
+        let after = capsule.console().screen();
+        assert!(
+            after.contains("1 Codex") && after.contains("2 Shell"),
+            "{after}"
+        );
+        assert_eq!(capsule.handle.attachments(), 1);
+        assert_eq!(capsule.handle.shells().len(), 1);
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn a_clipboard_write_in_the_replay_is_not_copied_after_a_key() -> TestResult {
+    guard(Box::pin(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        handle.print_main(&osc52(b"Replayed"));
+        let mut lab = Lab::with(rig).await?;
+        let id = lab.world().instances[0].id.clone();
+        let mut capsule = Capsule {
+            lab,
+            id,
+            handle,
+            marks: 0,
+            seen: 0,
+        };
+        capsule.enter();
+        capsule.console().keys("a")?;
+        capsule.attached().await?;
+        capsule.console().pump(20).await;
+        assert_eq!(capsule.console().clipboard().writes(), Vec::<String>::new());
+        capsule.console().keys("a")?;
+        capsule.feed(&osc52(b"Live")).await?;
+        assert_eq!(capsule.console().clipboard().writes(), vec!["Live"]);
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn a_clipboard_write_from_a_pane_that_lost_the_focus_is_refused() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        capsule.console().keys("a")?;
+        let instance = capsule.id.clone();
+        capsule.console().console().app().go(Go::NewSession {
+            instance,
+            agent: None,
+            account: None,
+        });
+        capsule
+            .pump_until(|handle| handle.shells().len() == 1)
+            .await?;
+        capsule.console().pump(12).await;
+        capsule.console().keys("a")?;
+        capsule.handle.print_main(&osc52(b"Hidden"));
+        capsule.console().pump(20).await;
+        assert_eq!(capsule.console().clipboard().writes(), Vec::<String>::new());
+        capsule.console().keys("ctrl+b p")?;
+        capsule.console().keys("a")?;
+        capsule.feed(&osc52(b"Shown")).await?;
+        assert_eq!(capsule.console().clipboard().writes(), vec!["Shown"]);
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
 async fn a_clipboard_read_is_never_answered_and_the_cap_is_on_decoded_bytes() -> TestResult {
     guard(Box::pin(async {
         let mut capsule = Capsule::open().await?;
@@ -653,36 +763,64 @@ async fn a_shell_pane_never_writes_the_clipboard() -> TestResult {
     .await
 }
 
+const FLOOD_LINES: u32 = 22_000;
+
+fn numbered(first: u32, last: u32) -> Vec<u8> {
+    let mut chunk = String::new();
+    for number in first..=last {
+        chunk.push_str(&"x".repeat(90));
+        chunk.push_str(&format!("{number:05}\r\n"));
+    }
+    chunk.into_bytes()
+}
+
+fn visible_numbers(screen: &str) -> Vec<u32> {
+    screen
+        .split_whitespace()
+        .filter_map(|word| {
+            let (rest, digits) = word.split_at_checked(word.len().checked_sub(5)?)?;
+            (rest.ends_with('x') && rest.bytes().all(|b| b == b'x'))
+                .then(|| digits.parse().ok())
+                .flatten()
+        })
+        .collect()
+}
+
+async fn flooded() -> Result<Capsule, Box<dyn Error>> {
+    let rig = Rig::new().await?;
+    rig.launch(1).await?;
+    let handle = rig.handle(1).await?;
+    rig.world.seed_all(&rig.config).await?;
+    let console = ConsoleRig::builder(&rig.world)
+        .pane_inbox_bytes(128 * 1024)
+        .build()
+        .await?;
+    let mut lab = Lab {
+        rig,
+        console,
+        code: std::path::PathBuf::new(),
+    };
+    lab.console.skip_intro();
+    let id = lab.world().instances[0].id.clone();
+    let mut capsule = Capsule {
+        lab,
+        id,
+        handle,
+        marks: 0,
+        seen: 0,
+    };
+    capsule.enter();
+    capsule.attached().await?;
+    Ok(capsule)
+}
+
 #[tokio::test]
-async fn a_flood_is_bounded_by_the_inbox_and_loses_nothing() -> TestResult {
+async fn a_flood_arrives_in_order_and_ends_at_the_last_line() -> TestResult {
     guard(Box::pin(async {
-        let rig = Rig::new().await?;
-        rig.launch(1).await?;
-        let handle = rig.handle(1).await?;
-        rig.world.seed_all(&rig.config).await?;
-        let console = ConsoleRig::builder(&rig.world)
-            .pane_inbox_bytes(128 * 1024)
-            .build()
-            .await?;
-        let mut lab = Lab {
-            rig,
-            console,
-            code: std::path::PathBuf::new(),
-        };
-        lab.console.skip_intro();
-        let id = lab.world().instances[0].id.clone();
-        let mut capsule = Capsule {
-            lab,
-            id,
-            handle,
-            marks: 0,
-            seen: 0,
-        };
-        capsule.enter();
-        capsule.attached().await?;
-        let line = format!("{}\r\n", "x".repeat(4094));
-        for _ in 0..512 {
-            capsule.handle.print_main(line.as_bytes());
+        let mut capsule = flooded().await?;
+        for first in (1..=FLOOD_LINES).step_by(40) {
+            let last = (first + 39).min(FLOOD_LINES);
+            capsule.handle.print_main(&numbered(first, last));
         }
         let mut last = usize::MAX;
         for _ in 0..100 {
@@ -695,8 +833,41 @@ async fn a_flood_is_bounded_by_the_inbox_and_loses_nothing() -> TestResult {
         }
         assert!(last > 512 * 1024, "{last}");
         capsule.handle.print_main(b"FLOODEND\r\n");
-        capsule.console().wait_for_text("FLOODEND").await?;
+        let screen = capsule.console().wait_for_text("FLOODEND").await?;
         assert_eq!(capsule.handle.undelivered_main_output(), 0);
+        let numbers = visible_numbers(&screen);
+        assert!(numbers.len() >= 2, "{screen}");
+        assert_eq!(numbers.last(), Some(&FLOOD_LINES), "{screen}");
+        assert!(
+            numbers.windows(2).all(|pair| pair[1] == pair[0] + 1),
+            "{numbers:?}"
+        );
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn each_burst_of_a_flood_is_complete_when_it_has_arrived() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = flooded().await?;
+        let mut next = 1_u32;
+        for size in [700_u32, 1_500, 2_300, 900, 1_900, 1_100, 2_700, 500] {
+            let last = next + size - 1;
+            capsule.handle.print_main(&numbered(next, last));
+            let screen = capsule
+                .console()
+                .wait_for_text(&format!("{last:05}"))
+                .await?;
+            let numbers = visible_numbers(&screen);
+            assert!(numbers.len() >= 2, "{screen}");
+            assert_eq!(numbers.last(), Some(&last), "{screen}");
+            assert!(
+                numbers.windows(2).all(|pair| pair[1] == pair[0] + 1),
+                "{numbers:?}"
+            );
+            next = last + 1;
+        }
         Ok(())
     }))
     .await

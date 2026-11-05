@@ -2,10 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::domain::instance::{ID_PREFIX, InstanceStatus};
-use jackin_core::{ConfigEdit, Labels, Phase, SandboxName, WorkspaceName};
-use jackin_openshell::{GatewayError, GatewayOp, PowerAction};
+use std::collections::BTreeMap;
+
+use jackin_core::{
+    AttemptId, ConfigEdit, Labels, Phase, SandboxName, SupervisorReading, SupervisorState,
+    TerminalText, WorkspaceName,
+};
+use jackin_openshell::{Gateway, GatewayError, GatewayOp, PowerAction};
+use jackin_session::{Unexported, WorkState};
 use jackin_testkit::{ConsoleRig, Fault, Rig, TestResult, World, guard, launch_id};
-use jackin_tui::GatewayState;
+use jackin_tui::{Facts, Fleet, GatewayState, IdTable, ObservedSandbox, ProjectInput, project};
 use tokio_util::sync::CancellationToken;
 
 fn status_of(console: &mut ConsoleRig, id: u8) -> Option<InstanceStatus> {
@@ -238,6 +244,83 @@ async fn refresh_brings_in_a_new_sandbox() -> TestResult {
         }
         console.settle().await?;
         assert_eq!(status_of(&mut console, 1), Some(InstanceStatus::Running));
+        Ok(())
+    })
+    .await
+}
+
+fn left(unusable: &[&str]) -> WorkState {
+    WorkState::Unexported(Unexported {
+        uncommitted: 0,
+        branches: Vec::new(),
+        detached: None,
+        worktrees: Vec::new(),
+        unusable: unusable
+            .iter()
+            .map(|name| TerminalText::sanitize(name.as_bytes()))
+            .collect(),
+    })
+}
+
+#[tokio::test]
+async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let summary = rig
+            .world
+            .session
+            .list()
+            .await?
+            .sandboxes
+            .into_iter()
+            .next()
+            .ok_or("no sandbox")?;
+        let config = rig.world.config.load().await?;
+        let facts = Facts {
+            version: "test".to_owned(),
+            config_path: "config.toml".to_owned(),
+            home: "/home/test".to_owned(),
+            now_secs: 0,
+        };
+        let exited = SupervisorReading::Reported(SupervisorState::Exited {
+            attempt: AttemptId::FIRST,
+            code: 0,
+        });
+        let cases = [
+            (
+                Some(left(&["worktree at /sandbox/x"])),
+                InstanceStatus::PreservedUnpushed,
+            ),
+            (Some(left(&[])), InstanceStatus::CleanExited),
+            (Some(WorkState::Exported), InstanceStatus::CleanExited),
+            (None, InstanceStatus::CleanExited),
+        ];
+        for (work, expected) in cases {
+            let fleet = Fleet {
+                sandboxes: vec![ObservedSandbox {
+                    gateway: rig.world.gateway.name().clone(),
+                    summary: summary.clone(),
+                    supervisor: Some(exited.clone()),
+                    work: work.clone(),
+                }],
+                unreadable: 0,
+                gateways: Vec::new(),
+            };
+            let snapshot = project(
+                &ProjectInput {
+                    config: &config,
+                    fleet: &fleet,
+                    facts: &facts,
+                    roles: &BTreeMap::new(),
+                    checks: &BTreeMap::new(),
+                    origins: &BTreeMap::new(),
+                },
+                &mut IdTable::new(),
+            );
+            let statuses: Vec<_> = snapshot.instances.iter().map(|i| i.status).collect();
+            assert_eq!(statuses, vec![expected], "{work:?}");
+        }
         Ok(())
     })
     .await

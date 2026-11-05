@@ -12,7 +12,8 @@ const REMAINS_URL: &str = "https://api.minimax.io/v1/token_plan/remains";
 const PAY_AS_YOU_GO_PREFIX: &str = "sk-api-";
 const GENERAL: &str = "general";
 const EXHAUSTED: i64 = 2;
-const MILLISECONDS: i64 = 1_000_000;
+const FIVE_HOURS: i64 = 18_000;
+const DAY: i64 = 86_400;
 
 pub async fn fetch(http: &Http, token: &str, now: i64) -> Result<Vec<Bucket>, ProviderError> {
     if token.starts_with(PAY_AS_YOU_GO_PREFIX) {
@@ -49,10 +50,11 @@ fn model_windows(model: &Value, now: i64) -> Result<Vec<Bucket>, ProviderError> 
     } else {
         (BucketKind::Other, name)
     };
+    let window = if general { FIVE_HOURS } else { DAY };
     let mut out = vec![
         Bucket::named(kind, label)
             .used(used(model, "interval"))
-            .resets(interval_reset(model, now)?),
+            .resets(interval_reset(model, now, window)?),
     ];
     if general {
         out.push(
@@ -82,7 +84,7 @@ fn used(model: &Value, period: &str) -> Option<f64> {
     (status == Some(EXHAUSTED)).then_some(100.0)
 }
 
-fn interval_reset(model: &Value, now: i64) -> Result<Option<i64>, ProviderError> {
+fn interval_reset(model: &Value, now: i64, window: i64) -> Result<Option<i64>, ProviderError> {
     if let Some(end) = model
         .get("end_time")
         .and_then(json_number)
@@ -93,7 +95,7 @@ fn interval_reset(model: &Value, now: i64) -> Result<Option<i64>, ProviderError>
     let Some(remains) = model.get("remains_time").and_then(json_integer) else {
         return Ok(None);
     };
-    let seconds = if remains > MILLISECONDS {
+    let seconds = if remains > window {
         remains / 1000
     } else {
         remains

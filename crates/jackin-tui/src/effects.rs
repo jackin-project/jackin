@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::time::Duration;
 
 use jackin_console::backend::Ticket;
 use jackin_console::domain::account::{AccountId, AccountRegistry};
@@ -13,18 +14,22 @@ use jackin_console::domain::vocabulary::{Rejection, SaveField};
 use jackin_console::domain::workspace::{MountSource, Workspace, WorkspaceId};
 use jackin_console::panes::{FailNext, LinkFault};
 use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
-use jackin_core::plain;
 use jackin_core::{
     Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath, ModelName,
     PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
     read_credential_file,
 };
-use jackin_core::{EnvSpec, ManifestError, Workspace as CoreWorkspace};
+use jackin_core::{
+    EnvSpec, FileLock, ManifestError, Poll, PollError, PollPlan, Sha256, SupervisorReading,
+    SupervisorState, Workspace as CoreWorkspace, hold_lock, poll_until,
+};
+use jackin_core::{lock_path, plain};
 use jackin_image::Rebuild;
-use jackin_openshell::PowerAction;
+use jackin_openshell::{GatewayError, PowerAction};
 use jackin_session::{
-    AccountPlan, BuildRequest, Gateways, MANIFEST_FILE, PurgeMode, RoleError, Source,
-    build_observed, error_chain, plan_account_edits, read_chatgpt_login,
+    AccountPlan, BuildRequest, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode, RestartError,
+    RoleError, Session, Source, build_observed, error_chain, launch_events, plan_account_edits,
+    read_chatgpt_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -42,11 +47,35 @@ enum Refused {
     Rejected(Rejection),
     #[error("{}", plain(.0))]
     Text(String),
+    #[error("cancelled while starting Codex")]
+    StartCancelled,
+    #[error("Codex in {0} did not reach its start state")]
+    StartTimedOut(jackin_core::SandboxName),
+    #[error("Codex is already running in {0}")]
+    AgentRunning(jackin_core::SandboxName),
+    #[error("the configuration path has no directory")]
+    NoConfigDir,
+    #[error("cancelled while waiting for the role manifest")]
+    ManifestCancelled,
+    #[error("another jackin process is saving this role manifest")]
+    ManifestBusy,
+    #[error("{}", .0.iter().map(|error| text(error)).collect::<Vec<_>>().join("; "))]
+    RoleErrors(Vec<RoleError>),
     #[error(transparent)]
     Persist(#[from] PersistError),
     #[error(transparent)]
     Config(#[from] ConfigError),
 }
+
+const SUPERVISOR_WAIT: PollPlan = PollPlan {
+    interval: Duration::from_millis(250),
+    timeout: Duration::from_secs(30),
+};
+const LOCK_KEY_LEN: usize = 32;
+const MANIFEST_LOCK: PollPlan = PollPlan {
+    interval: Duration::from_millis(50),
+    timeout: Duration::from_secs(30),
+};
 
 fn text(error: &dyn std::error::Error) -> String {
     error_chain(error)
@@ -447,7 +476,7 @@ impl Inputs {
     pub(crate) fn pane_target(
         &self,
         instance: &InstanceId,
-    ) -> Result<(jackin_session::Session, jackin_core::SandboxName), LinkFault> {
+    ) -> Result<(Session, jackin_core::SandboxName), LinkFault> {
         let (gateway, name) = self
             .sandbox(instance)
             .map_err(|error| LinkFault::new(plain(&error)))?;
@@ -460,10 +489,7 @@ impl Inputs {
         }
     }
 
-    fn session(
-        &self,
-        gateway: &jackin_core::GatewayName,
-    ) -> Result<jackin_session::Session, Refused> {
+    fn session(&self, gateway: &jackin_core::GatewayName) -> Result<Session, Refused> {
         match self.sessions.access(gateway) {
             Access::Up(session) => Ok(*session),
             Access::Down { error, .. } => Err(Refused::Text(text(&*error))),
@@ -501,10 +527,64 @@ impl Inputs {
     }
 
     pub(crate) async fn restore(&self, instance: &InstanceId) -> Msg {
+        let result = async {
+            let (gateway, name) = self.sandbox(instance)?;
+            let session = self.session(&gateway)?;
+            session
+                .power(&name, PowerAction::Start, &self.cancel)
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?;
+            self.await_supervisor(&session, &name).await?;
+            self.start_agent(&session, &name).await?;
+            self.after_lifecycle().await
+        }
+        .await;
         Msg::Restored {
             instance: instance.clone(),
-            result: self.powered(instance, PowerAction::Start).await,
+            result: result.map_err(|error| text(&error)),
         }
+    }
+
+    async fn await_supervisor(
+        &self,
+        session: &Session,
+        name: &jackin_core::SandboxName,
+    ) -> Result<(), Refused> {
+        poll_until(
+            self.host.clock.as_ref(),
+            SUPERVISOR_WAIT,
+            &self.cancel,
+            || async {
+                let reading = session.supervisor_state(name).await?;
+                Ok::<_, GatewayError>(match reading {
+                    SupervisorReading::Reported(SupervisorState::Waiting) => Poll::Ready(()),
+                    _ => Poll::Pending,
+                })
+            },
+        )
+        .await
+        .map_err(|error| match error {
+            PollError::Cancelled => Refused::StartCancelled,
+            PollError::Timeout { .. } => Refused::StartTimedOut(name.clone()),
+            PollError::Probe(error) => Refused::Text(text(&error)),
+        })
+    }
+
+    async fn start_agent(
+        &self,
+        session: &Session,
+        name: &jackin_core::SandboxName,
+    ) -> Result<(), Refused> {
+        let (events, feed) = launch_events(LineDelivery::BestEffort);
+        drop(feed);
+        session
+            .restart_agent(name, events, self.cancel.clone())
+            .await
+            .map(drop)
+            .map_err(|error| match error {
+                RestartError::AlreadyRunning { .. } => Refused::AgentRunning(name.clone()),
+                other => Refused::Text(text(&other)),
+            })
     }
 
     pub(crate) async fn prewarm(&self, id: WorkspaceId) -> Msg {
@@ -709,15 +789,22 @@ impl Inputs {
             let config = self.config.load().await?;
             let name = RoleName::parse(role).map_err(PersistError::from)?;
             let root = self.role_root(&config, &name).await?;
-            let errors = match self.roles.read_manifest(&root).await {
-                Err(errors) => errors,
+            let found: Vec<RoleFinding> = match self.roles.read_manifest(&root).await {
+                Err(errors) => errors.iter().map(|error| finding(error, doc)).collect(),
                 Ok(mut manifest) => {
                     let base = manifest_doc(&manifest);
-                    merge_manifest(&mut manifest, &base, doc)?;
-                    self.roles.findings_of(&root, manifest).await
+                    match merge_manifest(&mut manifest, &base, doc) {
+                        Ok(()) => self
+                            .roles
+                            .findings_of(&root, manifest)
+                            .await
+                            .iter()
+                            .map(|error| finding(error, doc))
+                            .collect(),
+                        Err(unmerged) => vec![unmerged.finding()],
+                    }
                 }
             };
-            let found: Vec<RoleFinding> = errors.iter().map(|error| finding(error, doc)).collect();
             locked(&self.checks).insert(name, found);
             Ok::<_, Refused>(self.snapshot_of(&config).await)
         }
@@ -750,16 +837,13 @@ impl Inputs {
             };
             let file =
                 HostPath::resolve(Path::new(MANIFEST_FILE), root).map_err(PersistError::from)?;
-            let bytes = self
-                .host
-                .fs
-                .read(&file)
+            let _held = self.hold_manifest(&file).await?;
+            let mut manifest = self
+                .roles
+                .read_manifest(root)
                 .await
-                .map_err(PersistError::from)?
-                .unwrap_or_default();
-            let mut manifest = RoleManifest::parse(&String::from_utf8_lossy(&bytes))
-                .map_err(|error| Refused::Text(text(&error)))?;
-            merge_manifest(&mut manifest, base, doc)?;
+                .map_err(Refused::RoleErrors)?;
+            merge_manifest(&mut manifest, base, doc).map_err(|unmerged| unmerged.refused)?;
             manifest
                 .write(self.host.fs.as_ref(), &file)
                 .await
@@ -772,6 +856,32 @@ impl Inputs {
             role: role.to_owned(),
             result: result.map_err(|error| text(&error)),
         }
+    }
+
+    async fn hold_manifest(&self, file: &HostPath) -> Result<FileLock, Refused> {
+        let dir = Path::new(&self.config_path)
+            .parent()
+            .ok_or(Refused::NoConfigDir)
+            .and_then(|dir| {
+                HostPath::parse(dir).map_err(|error| Refused::from(PersistError::from(error)))
+            })?;
+        let key = Sha256::of(file.to_string().as_bytes());
+        let name = Path::new(MANIFEST_FILE).with_extension(&key.as_str()[..LOCK_KEY_LEN]);
+        let target = HostPath::resolve(&name, &dir).map_err(PersistError::from)?;
+        let lock = lock_path(&target).map_err(|error| Refused::Text(text(&error)))?;
+        hold_lock(
+            self.host.fs.as_ref(),
+            self.host.clock.as_ref(),
+            &lock,
+            MANIFEST_LOCK,
+            &self.cancel,
+        )
+        .await
+        .map_err(|error| match error {
+            PollError::Cancelled => Refused::ManifestCancelled,
+            PollError::Timeout { .. } => Refused::ManifestBusy,
+            PollError::Probe(error) => Refused::Text(text(&error)),
+        })
     }
 
     pub(crate) async fn trust_role(&self, role: &str) -> Msg {
@@ -793,20 +903,49 @@ impl Inputs {
     }
 }
 
+struct Unmerged {
+    area: FindingArea,
+    refused: Refused,
+}
+
+impl Unmerged {
+    fn on(area: FindingArea) -> impl Fn(PersistError) -> Unmerged {
+        move |error| Unmerged {
+            area,
+            refused: error.into(),
+        }
+    }
+
+    fn finding(&self) -> RoleFinding {
+        RoleFinding {
+            area: self.area,
+            key: None,
+            message: text(&self.refused),
+            fix: None,
+        }
+    }
+}
+
 fn merge_manifest(
     manifest: &mut RoleManifest,
     base: &RoleManifestDoc,
     doc: &RoleManifestDoc,
-) -> Result<(), Refused> {
-    let repo = |value: &str| RepoPath::parse(value).map_err(PersistError::from);
+) -> Result<(), Unmerged> {
+    let repo = |value: &str, area| {
+        RepoPath::parse(value)
+            .map_err(PersistError::from)
+            .map_err(Unmerged::on(area))
+    };
     if doc.name != base.name {
-        return Err(PersistError::from(Rejection::CannotSave(SaveField::RoleName)).into());
+        return Err(Unmerged::on(FindingArea::Manifest)(PersistError::from(
+            Rejection::CannotSave(SaveField::RoleName),
+        )));
     }
     if doc.dockerfile != base.dockerfile {
-        manifest.role.dockerfile = repo(&doc.dockerfile)?;
+        manifest.role.dockerfile = repo(&doc.dockerfile, FindingArea::Dockerfile)?;
     }
     if doc.policy != base.policy {
-        manifest.role.policy = repo(&doc.policy)?;
+        manifest.role.policy = repo(&doc.policy, FindingArea::Policy)?;
     }
     if doc.codex_model != base.codex_model {
         manifest.codex.model = doc
@@ -814,16 +953,25 @@ fn merge_manifest(
             .as_deref()
             .map(ModelName::parse)
             .transpose()
-            .map_err(PersistError::from)?;
+            .map_err(PersistError::from)
+            .map_err(Unmerged::on(FindingArea::Manifest))?;
     }
     if doc.docker != base.docker {
         manifest.docker.enabled = doc.docker;
     }
     if doc.hook_setup != base.hook_setup {
-        manifest.hooks.setup = doc.hook_setup.as_deref().map(repo).transpose()?;
+        manifest.hooks.setup = doc
+            .hook_setup
+            .as_deref()
+            .map(|value| repo(value, FindingArea::Hook))
+            .transpose()?;
     }
     if doc.hook_preflight != base.hook_preflight {
-        manifest.hooks.preflight = doc.hook_preflight.as_deref().map(repo).transpose()?;
+        manifest.hooks.preflight = doc
+            .hook_preflight
+            .as_deref()
+            .map(|value| repo(value, FindingArea::Hook))
+            .transpose()?;
     }
     let names: BTreeSet<&str> = base
         .env
@@ -837,7 +985,9 @@ fn merge_manifest(
         if before == after {
             continue;
         }
-        let key = EnvName::parse(name).map_err(PersistError::from)?;
+        let key = EnvName::parse(name)
+            .map_err(PersistError::from)
+            .map_err(Unmerged::on(FindingArea::Manifest))?;
         match after {
             Some(entry) => {
                 manifest.env.insert(

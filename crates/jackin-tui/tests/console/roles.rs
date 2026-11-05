@@ -109,6 +109,135 @@ async fn saving_the_manifest_rewrites_only_the_edited_fields() -> TestResult {
     .await
 }
 
+fn sentinel_docs(
+    lab: &mut Lab,
+) -> Result<
+    (
+        jackin_console::domain::role::RoleManifestDoc,
+        std::path::PathBuf,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let record = lab
+        .world()
+        .surfaces
+        .roles
+        .as_ref()
+        .and_then(|admin| admin.role("sentinel"))
+        .cloned()
+        .ok_or("role")?;
+    let base = record.manifest.clone()?;
+    Ok((
+        base,
+        lab.rig.loaded.root().as_path().join("jackin.role.toml"),
+    ))
+}
+
+#[tokio::test]
+async fn two_saves_of_one_manifest_keep_both_edits() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (base, file) = sentinel_docs(&mut lab)?;
+        let mut docker = base.clone();
+        docker.docker = true;
+        let mut model = base.clone();
+        model.codex_model = Some("gpt-5".to_owned());
+        for edited in [&docker, &model] {
+            lab.world().perform(Effect::SaveRole {
+                role: "sentinel".to_owned(),
+                base: Box::new(base.clone()),
+                doc: Box::new(edited.clone()),
+            });
+        }
+        lab.console.settle().await?;
+        let manifest = RoleManifest::parse(&std::fs::read_to_string(file)?)?;
+        assert!(manifest.docker.enabled);
+        assert_eq!(
+            manifest.codex.model.map(|m| m.to_string()),
+            Some("gpt-5".to_owned())
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_manifest_save_holds_a_manifest_named_lock_in_the_config_directory() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (base, _) = sentinel_docs(&mut lab)?;
+        let mut doc = base.clone();
+        doc.docker = true;
+        lab.perform(Effect::SaveRole {
+            role: "sentinel".to_owned(),
+            base: Box::new(base),
+            doc: Box::new(doc),
+        })
+        .await?;
+        let dir = lab
+            .console
+            .config()
+            .path()
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .to_owned();
+        let locks: Vec<String> = std::fs::read_dir(dir)?
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .collect();
+        let is_key = |text: &str| text.len() == 32 && text.bytes().all(|b| b.is_ascii_hexdigit());
+        let role_locks = locks
+            .iter()
+            .filter(|name| {
+                name.strip_prefix("jackin.role.")
+                    .and_then(|rest| rest.strip_suffix(".lock"))
+                    .is_some_and(is_key)
+            })
+            .count();
+        let bare_locks = locks
+            .iter()
+            .filter(|name| name.strip_suffix(".lock").is_some_and(is_key))
+            .count();
+        assert_eq!((role_locks, bare_locks), (1, 0), "{locks:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_linked_manifest_is_neither_shown_nor_saved_through() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (base, file) = sentinel_docs(&mut lab)?;
+        let elsewhere = lab.code.join("elsewhere.toml");
+        let text = std::fs::read_to_string(&file)?;
+        std::fs::write(&elsewhere, &text)?;
+        std::fs::remove_file(&file)?;
+        std::os::unix::fs::symlink(&elsewhere, &file)?;
+        lab.reopen().await?;
+        let record = lab
+            .world()
+            .surfaces
+            .roles
+            .as_ref()
+            .and_then(|admin| admin.role("sentinel"))
+            .cloned()
+            .ok_or("role")?;
+        assert!(record.manifest.is_err(), "{:?}", record.manifest);
+        let mut doc = base.clone();
+        doc.docker = !base.docker;
+        lab.perform(Effect::SaveRole {
+            role: "sentinel".to_owned(),
+            base: Box::new(base),
+            doc: Box::new(doc),
+        })
+        .await?;
+        assert_eq!(std::fs::read_to_string(&elsewhere)?, text);
+        Ok(())
+    })
+    .await
+}
+
 async fn edited_check(
     lab: &mut Lab,
     to_field: &str,
@@ -151,6 +280,10 @@ async fn check_reports_what_is_wrong_with_the_edited_manifest_not_the_saved_one(
                 "hooks/missing.sh",
                 "missing file hooks/missing.sh",
             ),
+            (DOCKERFILE, "dir//Dockerfile", "empty segment"),
+            (POLICY, "dir//policy.yaml", "empty segment"),
+            (SETUP, "hooks//setup.sh", "empty segment"),
+            (PREFLIGHT, "hooks//setup.sh", "empty segment"),
         ];
         for (field, text, finding) in rows {
             let mut lab = Lab::open().await?;
@@ -158,7 +291,7 @@ async fn check_reports_what_is_wrong_with_the_edited_manifest_not_the_saved_one(
             tokio::fs::write(root.join("Bad.Dockerfile"), "RUN true\n").await?;
             let manifest = tokio::fs::read(root.join("jackin.role.toml")).await?;
             let (status, screen) = edited_check(&mut lab, field, text).await?;
-            assert_eq!(status, "1 error", "{text}: {screen}");
+            assert_eq!(status, "1 error", "{field}: {text}: {screen}");
             assert!(screen.contains(finding), "{text}: {screen}");
             assert!(!screen.contains("Check passed"), "{text}: {screen}");
             assert_eq!(

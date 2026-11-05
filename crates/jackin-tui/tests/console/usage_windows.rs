@@ -126,8 +126,9 @@ async fn a_window_with_only_a_remaining_percent_takes_its_used_percent_from_it()
     guard(async {
         let mut lab = Lab::open().await?;
         for (left, used, status) in [
-            (70, 30, QuotaStatus::Available),
-            (0, 100, QuotaStatus::Exhausted),
+            (70.0, 30, QuotaStatus::Available),
+            (0.5, 100, QuotaStatus::Exhausted),
+            (0.0, 100, QuotaStatus::Exhausted),
         ] {
             serve(
                 &lab,

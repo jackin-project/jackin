@@ -199,8 +199,30 @@ async fn an_individual_limit_with_only_a_remaining_percent_shows_that_percent() 
             &[want(
                 WindowKind::Spend,
                 "Individual limit",
-                None,
+                Some(30.0),
                 Left::Percent(70.0),
+                Some(1_767_312_000),
+            )],
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_remaining_percent_gives_the_exact_complement_as_used() -> TestResult {
+    guard(async {
+        let usage = usage_for(include_str!(
+            "fixtures/codex/usage_individual_percent_half.json"
+        ))
+        .await?;
+        assert_windows(
+            &usage.outcome,
+            &[want(
+                WindowKind::Spend,
+                "Individual limit",
+                Some(99.5),
+                Left::Percent(0.5),
                 Some(1_767_312_000),
             )],
         );

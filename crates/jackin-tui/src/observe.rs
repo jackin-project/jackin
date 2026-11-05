@@ -13,12 +13,11 @@ use jackin_console::domain::instance::{Instance, InstanceId};
 use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
-    Compatibility, Config, ConfigError, ConfigStore, EnvSnapshot, HostPath, RoleManifest, RoleName,
+    Compatibility, Config, ConfigError, ConfigStore, EnvSnapshot, HostPath, RoleName,
     RoleSource as CoreRoleSource,
 };
 use jackin_session::{
-    AccountDesk, DoctorInput, HostPorts, MANIFEST_FILE, OnePasswordCli, RoleCatalog, SourceDesk,
-    doctor,
+    AccountDesk, DoctorInput, HostPorts, OnePasswordCli, RoleCatalog, SourceDesk, doctor,
 };
 use jackin_usage::HostUsage;
 use tokio_util::sync::CancellationToken;
@@ -333,12 +332,6 @@ impl Inputs {
         drop(self.run_doctor(false).await);
     }
 
-    async fn manifest_only(&self, root: &HostPath) -> Option<RoleManifest> {
-        let file = HostPath::resolve(std::path::Path::new(MANIFEST_FILE), root).ok()?;
-        let bytes = self.host.fs.read(&file).await.ok().flatten()?;
-        RoleManifest::parse(&String::from_utf8_lossy(&bytes)).ok()
-    }
-
     async fn role_docs(&self, config: &Config) -> RoleDocs {
         let wanted: Vec<(RoleName, CoreRoleSource)> = {
             let cache = locked(&self.docs);
@@ -353,9 +346,9 @@ impl Inputs {
                 CoreRoleSource::Path(path) => {
                     match self.roles.load_path(path, &CancellationToken::new()).await {
                         Ok(role) => Ok(manifest_doc(role.manifest())),
-                        Err(error) => match self.manifest_only(path).await {
-                            Some(manifest) => Ok(manifest_doc(&manifest)),
-                            None => Err(RoleDocError::Unreadable(error.to_string())),
+                        Err(error) => match self.roles.read_manifest(path).await {
+                            Ok(manifest) => Ok(manifest_doc(&manifest)),
+                            Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
                         },
                     }
                 }
