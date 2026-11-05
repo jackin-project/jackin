@@ -41,10 +41,27 @@ pub struct AttachRequest {
 #[derive(Debug)]
 pub struct AttachedTerminal {
     session: TerminalSession,
-    gateway: Arc<dyn Gateway>,
-    sandbox: SandboxName,
+    watch: SupervisorWatch,
     supervisor: SupervisorReading,
     held: Vec<u8>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SupervisorWatch {
+    gateway: Arc<dyn Gateway>,
+    sandbox: SandboxName,
+}
+
+impl SupervisorWatch {
+    pub fn sandbox(&self) -> &SandboxName {
+        &self.sandbox
+    }
+
+    pub async fn read(&self) -> SupervisorReading {
+        run_state(self.gateway.as_ref(), &self.sandbox)
+            .await
+            .unwrap_or(SupervisorReading::Unreadable)
+    }
 }
 
 #[derive(Debug)]
@@ -288,15 +305,13 @@ impl AttachedTerminal {
         self.session.next_event().await
     }
 
-    pub async fn supervisor(&self) -> SupervisorReading {
-        run_state(self.gateway.as_ref(), &self.sandbox)
-            .await
-            .unwrap_or(SupervisorReading::Unreadable)
+    pub fn watch(&self) -> SupervisorWatch {
+        self.watch.clone()
     }
 
     async fn running(&self) -> bool {
         matches!(
-            self.supervisor().await,
+            self.watch.read().await,
             SupervisorReading::Reported(SupervisorState::Running { .. })
         )
     }
@@ -376,8 +391,10 @@ impl Session {
         let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
         Ok(AttachedTerminal {
             session,
-            gateway: Arc::clone(&self.deps.gateway),
-            sandbox: sandbox.clone(),
+            watch: SupervisorWatch {
+                gateway: Arc::clone(&self.deps.gateway),
+                sandbox: sandbox.clone(),
+            },
             supervisor,
             held: Vec::new(),
         })

@@ -540,7 +540,7 @@ impl Run {
                 _ = watch.tick(), if self.agent && !detaching => {
                     if let Terminal::Main(main) = &terminal
                         && let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
-                            main.supervisor().await
+                            main.watch().read().await
                     {
                         self.inbox.push(LinkEvent::Exited(Some(code)));
                         return;

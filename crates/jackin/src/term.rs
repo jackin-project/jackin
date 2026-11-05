@@ -1,12 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::pin::pin;
+use std::future::{Future, pending};
+use std::pin::{Pin, pin};
 use std::time::Duration;
 
 use jackin_core::{SandboxName, SupervisorReading, SupervisorState};
 use jackin_openshell::{EndReason, SessionClosed, TermSize, TerminalEvent, TerminalSession};
-use jackin_session::{AttachRequest, AttachedTerminal, ClipboardGuard, Session, ShellRequest};
+use jackin_session::{
+    AttachRequest, AttachedTerminal, ClipboardGuard, Session, ShellRequest, SupervisorWatch,
+};
 
 use crate::app::App;
 use crate::error::CommandError;
@@ -48,18 +51,32 @@ impl Remote {
         }
     }
 
-    fn watches_codex(&self) -> bool {
-        matches!(self, Remote::Main(_))
-    }
-
-    async fn codex_state(&self) -> Option<SupervisorState> {
+    fn watcher(&self) -> Option<Watcher> {
         match self {
-            Remote::Main(terminal) => match terminal.supervisor().await {
-                SupervisorReading::Reported(state) => Some(state),
-                SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => None,
-            },
+            Remote::Main(terminal) => Some(Watcher {
+                watch: terminal.watch(),
+                seen: reported(terminal.supervisor_at_attach().clone()),
+            }),
             Remote::Shell(_) => None,
         }
+    }
+}
+
+struct Watcher {
+    watch: SupervisorWatch,
+    seen: Option<SupervisorState>,
+}
+
+type Reading = Pin<Box<dyn Future<Output = SupervisorReading> + Send>>;
+
+fn read_once(watch: SupervisorWatch) -> Reading {
+    Box::pin(async move { watch.read().await })
+}
+
+fn reported(reading: SupervisorReading) -> Option<SupervisorState> {
+    match reading {
+        SupervisorReading::Reported(state) => Some(state),
+        SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => None,
     }
 }
 
@@ -76,11 +93,7 @@ pub(crate) struct Ended {
     pub(crate) interrupted: bool,
 }
 
-pub(crate) async fn pump(
-    app: &mut App,
-    remote: &mut Remote,
-    sandbox: &SandboxName,
-) -> Result<Ended, CommandError> {
+pub(crate) async fn pump(app: &mut App, remote: &mut Remote) -> Result<Ended, CommandError> {
     let App {
         io,
         terminal,
@@ -93,14 +106,8 @@ pub(crate) async fn pump(
     let raw = terminal.enter_raw().map_err(CommandError::Terminal)?;
     let mut exit = None;
     let mut clipboard = ClipboardGuard::default();
-    let watching = remote.watches_codex();
-    let mut codex = match remote {
-        Remote::Main(attached) => match attached.supervisor_at_attach() {
-            SupervisorReading::Reported(state) => Some(*state),
-            SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => None,
-        },
-        Remote::Shell(_) => None,
-    };
+    let mut watcher = remote.watcher();
+    let mut reading: Option<Reading> = None;
     let mut tick = pin!(clock.sleep(WATCH));
     let (reason, interrupted) = loop {
         tokio::select! {
@@ -134,15 +141,24 @@ pub(crate) async fn pump(
                 Some(TerminalEvent::Exited(code)) => exit = code,
                 Some(TerminalEvent::Attached | TerminalEvent::Lease(_)) => {}
             },
-            () = &mut tick, if watching => {
+            () = &mut tick, if watcher.is_some() && reading.is_none() => {
+                reading = watcher.as_ref().map(|watcher| read_once(watcher.watch.clone()));
+            }
+            seen = async {
+                match reading.as_mut() {
+                    Some(read) => read.await,
+                    None => pending().await,
+                }
+            }, if reading.is_some() => {
+                reading = None;
                 tick.set(clock.sleep(WATCH));
-                if let Some(state) = remote.codex_state().await {
+                if let (Some(state), Some(watcher)) = (reported(seen), watcher.as_mut()) {
                     if let SupervisorState::Exited { code, .. } = state
-                        && codex != Some(state)
+                        && watcher.seen != Some(state)
                     {
-                        io.raw_note(&exited_note(sandbox, code));
+                        io.raw_note(&exited_note(watcher.watch.sandbox(), code));
                     }
-                    codex = Some(state);
+                    watcher.seen = Some(state);
                 }
             }
             () = cancel.cancelled() => {
@@ -172,7 +188,7 @@ pub(crate) async fn attach(
         app.io.note(&exited_note(&sandbox, *code));
     }
     let mut remote = Remote::Main(attached);
-    let ended = pump(app, &mut remote, &sandbox).await?;
+    let ended = pump(app, &mut remote).await?;
     finish(app, &sandbox, ended)
 }
 
@@ -216,7 +232,7 @@ pub(crate) async fn shell(
 ) -> Result<(), CommandError> {
     let sandbox = request.sandbox.clone();
     let mut remote = Remote::Shell(session.open_shell(request).await?);
-    let ended = pump(app, &mut remote, &sandbox).await?;
+    let ended = pump(app, &mut remote).await?;
     if ended.interrupted {
         return Err(CommandError::Cancelled(format!(
             "cancelled; closed the shell in sandbox {sandbox}"
