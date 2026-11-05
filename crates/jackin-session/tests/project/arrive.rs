@@ -78,6 +78,18 @@ async fn a_linked_worktree_root_arrives_as_a_normal_repository() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_linked_worktree_in_a_directory_whose_name_holds_a_line_feed_arrives() -> TestResult {
+    guard(async {
+        let main = base().await?;
+        let tree = main.linked_worktree_named("topic", "line\nbreak").await?;
+        tree.file("u.txt", b"untracked\n").await?;
+        assert!(tree.root().as_path().join(".git").is_file());
+        arrives(tree, &["?? u.txt"]).await
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_submodule_checkout_root_arrives_with_its_detached_head() -> TestResult {
     guard(async {
         let source = base().await?;

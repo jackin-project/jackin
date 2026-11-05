@@ -119,12 +119,7 @@ async fn linked_worktree(
     if file.bytes.len() > BACK_REFERENCE_LIMIT {
         return Ok(false);
     }
-    let line = file
-        .bytes
-        .split(|byte| *byte == b'\n')
-        .next()
-        .unwrap_or(&[]);
-    Ok(real(fs, line.trim_ascii()).await?.as_ref() == Some(dot_git))
+    Ok(real(fs, without_newline(&file.bytes)).await?.as_ref() == Some(dot_git))
 }
 
 async fn submodule(

@@ -322,6 +322,29 @@ impl Staged {
             cancel,
         };
         remote.empty().await?;
+        let arrived = self
+            .arrive(deps, project, sandbox, launch, &remote, cancel)
+            .await;
+        if arrived.is_err() {
+            let uncancelled = CancellationToken::new();
+            let cleanup = Sandbox {
+                cancel: &uncancelled,
+                ..remote
+            };
+            drop(cleanup.empty().await);
+        }
+        arrived
+    }
+
+    async fn arrive(
+        &self,
+        deps: &SessionDeps,
+        project: &ProjectRoot,
+        sandbox: &SandboxName,
+        launch: &LaunchId,
+        remote: &Sandbox<'_>,
+        cancel: &CancellationToken,
+    ) -> Result<(), LaunchError> {
         deps.gateway
             .upload_tree(sandbox, project, &sandbox_layout::PROJECT, cancel)
             .await?;
@@ -331,7 +354,7 @@ impl Staged {
         refuse::unmoved(&self.facts, &now)?;
         let landed = self.send_bundle(deps, sandbox, launch, cancel).await?;
         remote.repository(&self.facts, landed.as_ref()).await?;
-        self.verify(deps, project, &remote, launch, cancel).await
+        self.verify(deps, project, remote, launch, cancel).await
     }
 
     async fn send_bundle(
@@ -387,7 +410,6 @@ impl Staged {
         let sandbox_entries = remote.entries(&gate, &sandbox_tree).await?;
         let autocrlf = host.autocrlf().await?;
         remote.clear(&gate).await?;
-        drop(remote.empty().await);
         Err(LaunchError::ProjectMismatch(Box::new(gate::mismatch(
             (host_tree, &host_entries),
             (sandbox_tree, &sandbox_entries),
