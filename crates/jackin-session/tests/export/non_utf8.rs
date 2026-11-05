@@ -102,6 +102,50 @@ async fn a_host_branch_with_a_non_utf8_name_is_not_taken_for_a_sandbox_branch_wi
     .await
 }
 
+#[tokio::test]
+async fn a_host_worktree_on_a_non_utf8_branch_is_not_taken_for_one_that_holds_the_target_ref()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let lossy = "caf\u{fffd}";
+        handle.git(&["branch", lossy]).await?;
+        let other = tempfile::tempdir()?;
+        let path = other.path().join("tree").to_string_lossy().into_owned();
+        rig.repo
+            .git(&["worktree", "add", "-q", "--detach", &path])
+            .await?;
+        let registered = rig.repo.root().as_path().join(".git/worktrees");
+        let entry = std::fs::read_dir(&registered)?
+            .next()
+            .ok_or("no registered worktree")??;
+        let mut head = b"ref: refs/heads/".to_vec();
+        head.extend(
+            ref_of(&name, "caf")
+                .trim_start_matches("refs/heads/")
+                .as_bytes(),
+        );
+        head.extend(b"\xe9\n");
+        std::fs::write(entry.path().join("HEAD"), head)?;
+
+        let report = export(&rig, &name).await?;
+
+        let exported: Vec<&str> = report
+            .branches
+            .iter()
+            .map(|branch| branch.host_ref.as_str())
+            .collect();
+        assert!(
+            exported.contains(&ref_of(&name, lossy).as_str()),
+            "{exported:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
 #[cfg(target_os = "linux")]
 mod linux_only {
     use std::os::unix::ffi::OsStrExt;
