@@ -40,6 +40,14 @@ const LEAVES: [&str; 5] = [START, CODEX, CODEX_HOST, SETUP, PREFLIGHT];
 const CONFIG: &str = "/etc/codex/config.toml";
 const CONFIG_BYTES: &[u8] = b"check_for_update_on_startup = false\n";
 const VERDICT: &str = "/usr/local/lib/jackin/image-scan";
+const CODEX_SYSTEM_LAYER: [(&str, bool); 6] = [
+    ("/etc/codex/requirements.toml", false),
+    ("/etc/codex/managed_config.toml", false),
+    ("/etc/codex/hooks.json", false),
+    ("/etc/codex/rules", true),
+    ("/etc/codex/agents", true),
+    ("/etc/codex/skills", true),
+];
 const DOCKER: &str = "/usr/local/bin/docker";
 const BUILDX: &str = "/usr/local/libexec/docker/cli-plugins/docker-buildx";
 const COMPOSE: &str = "/usr/local/libexec/docker/cli-plugins/docker-compose";
@@ -79,7 +87,7 @@ fn trusted_name(leaf: &str) -> &str {
     leaf.rsplit('/').next().unwrap_or(leaf)
 }
 
-fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
+fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let request = ImageRequest {
         role: RoleName::parse("sentinel")?,
         context_files: vec![entry("Dockerfile")?],
@@ -108,9 +116,26 @@ fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
     };
     files
         .into_iter()
-        .find(|file| file.name == "scan")
+        .find(|file| file.name == name)
         .map(|file| file.bytes)
-        .ok_or_else(|| "the derived context holds no scan".into())
+        .ok_or_else(|| format!("the derived context holds no {name}").into())
+}
+
+fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
+    derived_file("scan")
+}
+
+fn scan_absent_paths() -> Result<Vec<String>, Box<dyn Error>> {
+    let dockerfile = String::from_utf8(derived_file("Dockerfile")?)?;
+    let (_, scan_stage) = dockerfile
+        .split_once("AS scan\n")
+        .ok_or("the derived Dockerfile has no scan stage")?;
+    let words: Vec<&str> = scan_stage.split_whitespace().collect();
+    Ok(words
+        .windows(2)
+        .filter(|pair| pair[0] == "--absent")
+        .map(|pair| pair[1].to_owned())
+        .collect())
 }
 
 struct Outcome {
@@ -131,6 +156,7 @@ struct Fixture {
     top: PathBuf,
     uid: u32,
     gid: u32,
+    absent: Vec<String>,
 }
 
 impl Fixture {
@@ -147,6 +173,7 @@ impl Fixture {
             top,
             uid: meta.uid(),
             gid: meta.gid(),
+            absent: scan_absent_paths()?,
         };
         for name in ["find", "tr", "cmp"] {
             fx.tool(name)?;
@@ -233,14 +260,17 @@ impl Fixture {
     }
 
     fn data_arguments(&self) -> Vec<String> {
-        vec![
+        let mut args = vec![
             "--same-as".to_owned(),
             format!("{CONFIG}={}", self.trusted(CONFIG).display()),
             "--data".to_owned(),
             CONFIG.to_owned(),
-            "--absent".to_owned(),
-            VERDICT.to_owned(),
-        ]
+        ];
+        for path in &self.absent {
+            args.push("--absent".to_owned());
+            args.push(path.clone());
+        }
+        args
     }
 
     fn run(&self, args: &[String]) -> Result<Outcome, Box<dyn Error>> {
@@ -1330,7 +1360,7 @@ fn scan_checks_the_data_file_like_a_protected_path_without_demanding_the_executa
 
 #[test]
 fn scan_refuses_a_role_image_that_already_holds_the_verdict_path() -> TestResult {
-    let present = |path: &str| format!("path exists before the scan verdict is written: {path}");
+    let present = |path: &str| format!("path must be absent from the role image: {path}");
     let fx = Fixture::new()?;
     assert!(fx.scan()?.ok, "an absent verdict path must pass");
 
@@ -1369,5 +1399,29 @@ fn scan_refuses_a_role_image_that_already_holds_the_verdict_path() -> TestResult
         "{}",
         out.stderr
     );
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_every_codex_system_layer_path_the_role_image_holds() -> TestResult {
+    let present = |path: &str| format!("path must be absent from the role image: {path}");
+    assert!(
+        Fixture::new()?.scan()?.ok,
+        "a clean image with only the trusted config must pass"
+    );
+    for (path, directory) in CODEX_SYSTEM_LAYER {
+        let fx = Fixture::new()?;
+        if directory {
+            fx.dir(path, 0o755)?;
+        } else {
+            fx.file(path, b"sandbox = \"danger-full-access\"\n", 0o644)?;
+        }
+        let out = fx.scan()?;
+        assert!(
+            !out.ok && out.lines() == [present(path)],
+            "{path}: {}",
+            out.stderr
+        );
+    }
     Ok(())
 }

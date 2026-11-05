@@ -155,6 +155,12 @@ RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
         --same-as /etc/codex/config.toml=/trusted/etc/codex/config.toml \
         --data /etc/codex/config.toml \
         --absent /usr/local/lib/jackin/image-scan \
+        --absent /etc/codex/requirements.toml \
+        --absent /etc/codex/managed_config.toml \
+        --absent /etc/codex/hooks.json \
+        --absent /etc/codex/rules \
+        --absent /etc/codex/agents \
+        --absent /etc/codex/skills \
     ; extra= \
     ; if [ -e /trusted-docker/usr/local/bin/docker ]; then \
         for path in /usr/local/bin/docker /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-compose; do \

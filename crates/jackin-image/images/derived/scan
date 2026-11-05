@@ -331,7 +331,7 @@ done
 for path in $absent; do
     check_ancestors "$path"
     if [ -e "$root$path" ] || [ -L "$root$path" ]; then
-        report "path exists before the scan verdict is written: $(show "$path")"
+        report "path must be absent from the role image: $(show "$path")"
     fi
 done
 

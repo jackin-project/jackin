@@ -890,7 +890,15 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
     );
     assert_eq!(
         words_after(&words, "--absent"),
-        ["/usr/local/lib/jackin/image-scan"],
+        [
+            "/usr/local/lib/jackin/image-scan",
+            "/etc/codex/requirements.toml",
+            "/etc/codex/managed_config.toml",
+            "/etc/codex/hooks.json",
+            "/etc/codex/rules",
+            "/etc/codex/agents",
+            "/etc/codex/skills",
+        ],
         "paths the scan must find empty"
     );
 
@@ -1306,7 +1314,7 @@ fn copy_destinations(stage: &Stage, bin_dir: &str) -> Result<Vec<String>, Box<dy
 }
 
 #[test]
-fn the_scan_compares_the_five_protected_files_with_copies_the_role_cannot_write() -> TestResult {
+fn the_scan_compares_the_six_protected_files_with_copies_the_role_cannot_write() -> TestResult {
     let spec = Agent::Codex.spec();
     let bin_dir = parent(spec.binary.as_str());
     let all = stages(&instructions(&planned_dockerfile()?));
