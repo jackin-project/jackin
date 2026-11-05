@@ -47,7 +47,7 @@ async fn a_retry_after_a_host_deletion_ends_ready_without_the_deleted_file() -> 
         });
         failure(rig.launch(1).await?)?;
         let handle = rig.handle(1).await?;
-        assert!(handle.file(&path("/sandbox/project/u.txt")?).is_some());
+        assert!(handle.file(&path("/sandbox/project/u.txt")?).is_none());
         assert!(handle.file(&marker()).is_none());
 
         rig.repo.remove("u.txt").await?;
