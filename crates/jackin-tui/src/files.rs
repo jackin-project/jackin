@@ -45,7 +45,7 @@ impl FileSource for HostFiles {
         let listed = block_on(self.fs.list(&root)).map_err(|error| error_chain(&error))?;
         Ok(listed
             .into_iter()
-            .map(|entry| {
+            .filter_map(|entry| {
                 let path = Path::new(dir)
                     .join(&entry.name)
                     .to_string_lossy()
@@ -53,8 +53,9 @@ impl FileSource for HostFiles {
                 let kind = HostPath::parse(Path::new(&path))
                     .map_or(entry.kind, |full| self.kind(&full, entry.kind));
                 match kind {
-                    FileKind::Dir => FileEntry::dir(&path),
-                    _ => FileEntry::file(&path),
+                    FileKind::Dir => Some(FileEntry::dir(&path)),
+                    FileKind::File | FileKind::Symlink => Some(FileEntry::file(&path)),
+                    FileKind::Socket | FileKind::Other => None,
                 }
             })
             .collect())
@@ -72,5 +73,58 @@ impl FileSource for HostFiles {
 
     fn home(&self) -> Option<String> {
         Some(self.home.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+
+    use jackin_core::StdFileSystem;
+
+    use super::*;
+
+    fn names(source: &HostFiles, dir: &Path) -> Vec<(String, bool)> {
+        let mut listed: Vec<(String, bool)> = source
+            .list(&dir.to_string_lossy())
+            .unwrap_or_default()
+            .iter()
+            .map(|entry| (entry.name().to_owned(), entry.dir))
+            .collect();
+        listed.sort();
+        listed
+    }
+
+    #[test]
+    fn a_pipe_or_a_link_to_one_is_not_offered_as_a_file() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime");
+        let source = HostFiles::new(
+            Arc::new(StdFileSystem::default()),
+            runtime.handle().clone(),
+            String::new(),
+        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        std::fs::write(root.join("login.json"), b"{}").expect("file");
+        std::fs::create_dir(root.join("folder")).expect("dir");
+        std::os::unix::fs::symlink(root.join("login.json"), root.join("link")).expect("link");
+        assert!(
+            Command::new("mkfifo")
+                .arg(root.join("pipe"))
+                .status()
+                .expect("mkfifo")
+                .success()
+        );
+        std::os::unix::fs::symlink(root.join("pipe"), root.join("to-pipe")).expect("link");
+        assert_eq!(
+            names(&source, root),
+            [
+                ("folder".to_owned(), true),
+                ("link".to_owned(), false),
+                ("login.json".to_owned(), false),
+            ]
+        );
     }
 }
