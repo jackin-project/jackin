@@ -348,6 +348,10 @@ impl FakeGateway {
         self.registry().installed.insert(path.clone(), bytes);
     }
 
+    pub fn bake_file(&self, path: &SandboxPath, bytes: Vec<u8>) {
+        self.registry().baked.insert(path.clone(), bytes);
+    }
+
     pub fn provider(&self, name: &ProviderName) -> Option<ProviderRecord> {
         self.registry().providers.get(name).cloned()
     }
@@ -747,6 +751,7 @@ impl Gateway for FakeGateway {
             .tempdir()
             .map_err(protocol)?;
         std::fs::create_dir(dir.path().join("sandbox")).map_err(protocol)?;
+        files::bake(&dir.path().join("sandbox"), &registry.baked)?;
         let mut sandbox = Sandbox::new(
             spec.clone(),
             plan,
