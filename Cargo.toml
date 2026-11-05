@@ -65,7 +65,7 @@ getrandom = "0.4.3"
 globset = { version = "0.4.21", default-features = false }
 jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "8b777d06b6ddf491c83d4704351329e250531163", default-features = false }
 junie-tui = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "8b777d06b6ddf491c83d4704351329e250531163", default-features = false, features = ["terminal"] }
-noyalib = { version = "0.0.53", default-features = false, features = ["std", "lossless-u64"] }
+noyalib = { version = "0.0.58", default-features = false, features = ["std", "lossless-u64"] }
 openshell-core = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
 openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
 openshell-providers = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
@@ -74,7 +74,7 @@ portable-pty = "0.9.0"
 ratatui = { version = "0.30.2", features = ["crossterm_0_29"] }
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 regex = { version = "1.13.1", default-features = false, features = ["std", "unicode-perl"] }
-reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls-native-roots-no-provider"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
 russh = { version = "0.65.1", default-features = false, features = ["aws-lc-rs", "flate2"] }
 rustix = { version = "1.1.6", features = ["fs", "process"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }

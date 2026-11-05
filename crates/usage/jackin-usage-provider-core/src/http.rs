@@ -25,11 +25,13 @@ pub struct Http {
 
 fn build(roots: bool) -> Option<Client> {
     install_crypto_provider();
-    Client::builder()
-        .redirect(Policy::none())
-        .tls_built_in_root_certs(roots)
-        .build()
-        .ok()
+    let builder = Client::builder().redirect(Policy::none());
+    let builder = if roots {
+        builder
+    } else {
+        builder.tls_certs_only([])
+    };
+    builder.build().ok()
 }
 
 fn client_for(url: &Url) -> Result<&'static Client, ProviderError> {

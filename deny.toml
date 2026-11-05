@@ -22,6 +22,9 @@ allow = [
     "Zlib",
 ]
 confidence-threshold = 0.8
+exceptions = [
+    { crate = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
+]
 
 [licenses.private]
 ignore = true
@@ -47,9 +50,9 @@ deny = [
 ]
 skip = [
     { crate = "block-buffer@0.10.4", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
-    { crate = "crypto-common@0.1.6", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
+    { crate = "crypto-common@0.1.7", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
     { crate = "digest@0.10.7", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
-    { crate = "generic-array@0.14.9", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
+    { crate = "generic-array@0.14.7", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
     { crate = "hashbrown@0.15.5", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
     { crate = "nix@0.29.0", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
     { crate = "num-bigint@0.4.8", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
@@ -76,6 +79,8 @@ skip = [
     { crate = "cfg_aliases@0.1.1", reason = "nix 0.28.0 under portable-pty 0.9.0 (xtask e2e) builds with cfg_aliases 0.1; keep the older survivor visible for future drift." },
     { crate = "foldhash@0.1.5", reason = "jsonschema 0.60.2 (xtask e2e) pulls hashbrown 0.17.1 on foldhash 0.2.0 while the OpenShell build tree keeps hashbrown 0.15.5 on foldhash 0.1.5; keep the older survivor visible for future drift." },
     { crate = "compact_str@0.9.1", reason = "ratatui-core and termpane pin different compact_str generations; keep the older survivor visible for future drift." },
+    { crate = "reqwest@0.12.28", reason = "openshell-sdk at the pinned OpenShell tag reaches reqwest 0.12 through oauth2 5.0.0, while jackin-usage-provider-core uses the latest reqwest; keep the older survivor visible for future drift." },
+    { crate = "noyalib@0.0.53", reason = "openshell-policy-schema at the pinned OpenShell tag pins noyalib 0.0.53, while jackin-openshell uses the latest noyalib; keep the older survivor visible for future drift." },
     { crate = "unicode-width@0.1.14", reason = "Transitive duplicate from the OpenShell SDK and russh dependency trees; keep the older survivor visible for future drift." },
     { crate = "untrusted@0.7.1", reason = "Transitive duplicate from the OpenShell SDK and russh dependency trees; keep the older survivor visible for future drift." },
 ]
