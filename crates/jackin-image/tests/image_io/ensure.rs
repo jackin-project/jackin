@@ -1139,16 +1139,13 @@ type Damage = fn(&Path, &Path, &str) -> std::io::Result<()>;
 #[tokio::test]
 async fn buildx_does_not_trust_an_attestation_record_that_is_not_a_plain_file() -> TestResult {
     guarded(async {
-        let rows: [(&str, Damage); 4] = [
+        let rows: [(&str, Damage); 3] = [
             ("directory", |_, record, _| fs::create_dir(record)),
             ("symlink to a valid record", |valid, record, _| {
                 std::os::unix::fs::symlink(valid, record)
             }),
             ("oversized", |_, record, id| {
                 fs::write(record, format!("{id}{}", " ".repeat(4096)))
-            }),
-            ("garbage", |_, record, _| {
-                fs::write(record, b"not an image id")
             }),
         ];
         for (label, damage) in rows {

@@ -638,6 +638,7 @@ async fn a_managed_sandbox_with_an_invalid_label_is_listed_without_that_label() 
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].name.to_string(), "jackin-bad-label");
     assert!(found[0].labels.workspace().is_none());
+    assert_eq!(found[0].labels.iter().count(), 2);
     assert!(found[0].labels.is_managed());
     assert!(
         guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-bad-label"))))
