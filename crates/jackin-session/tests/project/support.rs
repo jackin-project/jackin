@@ -204,6 +204,7 @@ impl Rig {
                 .replace('\n', "\\n"),
         ))?;
         world.seed_config(&config).await?;
+        world.seed_workspaces(&config).await?;
         let project = ProjectRoot::open(&StdFileSystem::default(), at).await?;
         world.gateway.script_program(
             &sandbox_layout::PRINTENV,

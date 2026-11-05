@@ -32,6 +32,7 @@ use crate::lock::{self, LockError};
 use crate::plan::{LaunchPlan, PlannedFile};
 use crate::project;
 use crate::service::{POLL, Session};
+use crate::workspace::workspace_lock;
 
 const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
 const IMAGE_PROGRESS: usize = 64;
@@ -350,6 +351,7 @@ impl Run<'_> {
         }
         self.enter(LaunchStep::Sandbox).await;
         let create = self.plan.draft().complete(image, docker);
+        let _held = self.hold_workspace().await?;
         match self.session.deps.gateway.create_sandbox(&create).await {
             Ok(view) => {
                 self.done.created = self.done.created.saturating_add(1);
@@ -359,6 +361,35 @@ impl Run<'_> {
             Err(GatewayError::AlreadyExists { .. }) => self.join(create.name()).await,
             Err(error) => Err(failed(LaunchStep::Sandbox, error)),
         }
+    }
+
+    async fn hold_workspace(&self) -> Result<FileLock, Stop> {
+        let deps = &self.session.deps;
+        let workspace = self.plan.workspace();
+        let held = lock::hold(
+            &deps.host,
+            &deps.cache_dir,
+            &workspace_lock(workspace),
+            self.cancel,
+        )
+        .await
+        .map_err(|error| match error {
+            LockError::Cancelled => Stop::Cancelled,
+            LockError::Fs(error) => failed(LaunchStep::Sandbox, LaunchError::Fs(error)),
+            LockError::Path(error) => failed(LaunchStep::Sandbox, LaunchError::Path(error)),
+        })?;
+        let config = deps
+            .config
+            .load()
+            .await
+            .map_err(|error| failed(LaunchStep::Sandbox, error))?;
+        if config.workspace(workspace).is_none() {
+            return Err(failed(
+                LaunchStep::Sandbox,
+                LaunchError::WorkspaceRemoved(workspace.clone()),
+            ));
+        }
+        Ok(held)
     }
 
     async fn join(&mut self, name: &SandboxName) -> Result<(), Stop> {

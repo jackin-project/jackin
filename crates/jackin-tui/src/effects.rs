@@ -28,8 +28,8 @@ use jackin_image::Rebuild;
 use jackin_openshell::{GatewayError, PowerAction};
 use jackin_session::{
     AccountPlan, BuildRequest, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode, RestartError,
-    RoleError, Session, Source, build_observed, error_chain, launch_events, plan_account_edits,
-    read_chatgpt_login,
+    RoleError, Session, Source, WorkspaceHold, build_observed, error_chain, launch_events,
+    plan_account_edits, read_chatgpt_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -242,10 +242,13 @@ impl Inputs {
         workspace: &Workspace,
     ) -> Result<(WorkspaceId, Box<Snapshot>), Refused> {
         let config = self.config.load().await?;
-        if let Some(old) = base.filter(|b| b.name != workspace.name) {
-            let old = WorkspaceName::parse(&old.name).map_err(PersistError::from)?;
-            self.ensure_unused(&config, &old).await?;
-        }
+        let _hold = match base.filter(|b| b.name != workspace.name) {
+            Some(old) => {
+                let old = WorkspaceName::parse(&old.name).map_err(PersistError::from)?;
+                self.ensure_unused(&config, &old).await?
+            }
+            None => None,
+        };
         let project = match base {
             None => {
                 let source = workspace.mounts.first().map(|mount| &mount.source);
@@ -300,7 +303,7 @@ impl Inputs {
             .cloned()
             .ok_or_else(|| Refused::Text(id.to_string()))?;
         let config = self.config.load().await?;
-        self.ensure_unused(&config, &name).await?;
+        let _hold = self.ensure_unused(&config, &name).await?;
         let saved = self
             .config
             .edit(vec![ConfigEdit::RemoveWorkspace(name)])
@@ -402,14 +405,19 @@ impl Inputs {
         }
     }
 
-    async fn ensure_unused(&self, config: &Config, name: &WorkspaceName) -> Result<(), Refused> {
+    async fn ensure_unused(
+        &self,
+        config: &Config,
+        name: &WorkspaceName,
+    ) -> Result<Option<WorkspaceHold>, Refused> {
         if config.gateways().next().is_none() {
-            return Ok(());
+            return Ok(None);
         }
         self.gateways(config)
             .await?
-            .ensure_workspace_unused(config, name)
+            .ensure_workspace_unused(config, name, &self.cancel)
             .await
+            .map(Some)
             .map_err(|error| Refused::Text(text(&error)))
     }
 

@@ -103,6 +103,18 @@ impl World {
         Ok(())
     }
 
+    pub async fn seed_workspaces(&self, config: &Config) -> Result<(), ConfigError> {
+        let edits: Vec<ConfigEdit> = config
+            .workspaces()
+            .map(|(name, workspace)| ConfigEdit::AddWorkspace {
+                name: name.clone(),
+                workspace: workspace.clone(),
+            })
+            .collect();
+        self.config.edit(edits).await?;
+        Ok(())
+    }
+
     pub async fn seed_all(&self, config: &Config) -> Result<(), ConfigError> {
         let stored = self.config.load().await?;
         let mut edits = Vec::new();

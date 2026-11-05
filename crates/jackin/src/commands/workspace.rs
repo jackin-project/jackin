@@ -44,12 +44,16 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
 
 async fn rm(app: &App, arg: WorkspaceArg) -> Result<(), CommandError> {
     let config = app.store.load().await?;
-    if config.workspace(&arg.name).is_some() && config.gateways().next().is_some() {
-        app.gateways(&config)
-            .await?
-            .ensure_workspace_unused(&config, &arg.name)
-            .await?;
-    }
+    let _hold = if config.workspace(&arg.name).is_some() && config.gateways().next().is_some() {
+        Some(
+            app.gateways(&config)
+                .await?
+                .ensure_workspace_unused(&config, &arg.name, &app.cancel)
+                .await?,
+        )
+    } else {
+        None
+    };
     app.store
         .edit(vec![ConfigEdit::RemoveWorkspace(arg.name)])
         .await?;

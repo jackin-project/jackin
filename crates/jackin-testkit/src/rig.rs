@@ -412,6 +412,7 @@ impl RigBuilder {
             repo.root().as_path().display(),
         ))?;
         world.seed_config(&config).await?;
+        world.seed_workspaces(&config).await?;
         let project = repo.project().await?;
         let gateway = &world.gateway;
         gateway.script_program(

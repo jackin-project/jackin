@@ -12,9 +12,10 @@ use std::fmt;
 use std::time::Duration;
 
 use jackin_core::{
-    AccountName, AttemptId, EngineCert, EngineCertProblem, FsError, HookKind, HostPath,
-    LabelDifference, LabelError, LaunchId, PathError, Phase, ProcessError, SandboxName,
-    SupervisorReading, SupervisorState, TerminalText, plain, plain_duration, plain_list,
+    AccountName, AttemptId, ConfigError, EngineCert, EngineCertProblem, FsError, HookKind,
+    HostPath, LabelDifference, LabelError, LaunchId, PathError, Phase, ProcessError, SandboxName,
+    SupervisorReading, SupervisorState, TerminalText, WorkspaceName, plain, plain_duration,
+    plain_list,
 };
 use jackin_image::{ImageError, ImageEvent};
 use jackin_openshell::GatewayError;
@@ -184,6 +185,10 @@ pub enum LaunchError {
     Image(#[from] ImageError),
     #[error(transparent)]
     Gateway(#[from] GatewayError),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error("workspace {0} was removed while this launch was planned")]
+    WorkspaceRemoved(WorkspaceName),
     #[error(transparent)]
     Credential(#[from] CredentialError),
     #[error(transparent)]

@@ -2,14 +2,26 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Config, ConfigError, GatewayName, HostPath, IdError, SandboxName, Workspace, WorkspaceName,
+    Config, ConfigError, FileLock, GatewayName, HostPath, IdError, SandboxName, Workspace,
+    WorkspaceName,
 };
 use sha2::{Digest, Sha256};
 use thiserror::Error;
+use tokio_util::sync::CancellationToken;
 
 use crate::accounts::unreachable_text;
 use crate::gateways::{Gateways, UnreachableGateway};
 use crate::lifecycle::LifecycleError;
+use crate::lock::{self, LockError};
+
+pub(crate) fn workspace_lock(name: &WorkspaceName) -> String {
+    format!("workspace-{name}.lock")
+}
+
+#[derive(Debug)]
+pub struct WorkspaceHold {
+    _lock: FileLock,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorkspaceLookup {
@@ -158,6 +170,8 @@ pub enum WorkspaceGuardError {
         gateway: GatewayName,
         source: LifecycleError,
     },
+    #[error(transparent)]
+    Lock(#[from] LockError),
 }
 
 impl Gateways {
@@ -165,8 +179,17 @@ impl Gateways {
         &self,
         config: &Config,
         workspace: &WorkspaceName,
-    ) -> Result<(), WorkspaceGuardError> {
+        cancel: &CancellationToken,
+    ) -> Result<WorkspaceHold, WorkspaceGuardError> {
         let sessions = self.every().map_err(WorkspaceGuardError::Unreachable)?;
+        let home = &self.home().deps;
+        let lock = lock::hold(
+            &home.host,
+            &home.cache_dir,
+            &workspace_lock(workspace),
+            cancel,
+        )
+        .await?;
         let mut holders = WorkspaceHolders {
             readable: Vec::new(),
             unreadable: Vec::new(),
@@ -204,7 +227,7 @@ impl Gateways {
             }
         }
         if holders.is_empty() {
-            return Ok(());
+            return Ok(WorkspaceHold { _lock: lock });
         }
         for group in [
             &mut holders.readable,
