@@ -162,14 +162,14 @@ async fn work_state_is_read_once_per_state() -> TestResult {
         let mut console = ConsoleRig::seeded(&rig).await?;
         console.skip_intro();
         let one_read = program() - before;
-        assert!(one_read > 0, "the exited sandbox is not read at start");
+        assert!(one_read > 0, "the exited sandbox is read at start");
 
         refresh(&mut console).await?;
         refresh(&mut console).await?;
         assert_eq!(
             program() - before,
             one_read,
-            "an unchanged sandbox is read again"
+            "an unchanged sandbox is not read again"
         );
 
         rig.handle(2).await?.exit_codex(0);
@@ -177,14 +177,14 @@ async fn work_state_is_read_once_per_state() -> TestResult {
         assert_eq!(
             program() - before,
             2 * one_read,
-            "a changed sandbox is not read"
+            "a changed sandbox is read once more"
         );
 
         refresh(&mut console).await?;
         assert_eq!(
             program() - before,
             2 * one_read,
-            "an unchanged sandbox is read again"
+            "an unchanged sandbox is not read again"
         );
         assert_eq!(
             statuses(&mut console),
@@ -202,7 +202,7 @@ async fn work_state_is_read_once_per_state() -> TestResult {
         assert_eq!(
             program() - before,
             3 * one_read,
-            "a restarted sandbox is not read"
+            "a restarted sandbox is read once more"
         );
         Ok(())
     })
@@ -226,10 +226,13 @@ async fn an_unknown_work_state_is_read_again_and_a_known_one_is_not() -> TestRes
         let failed = program();
         refresh(&mut console).await?;
         let read = program();
-        assert!(read > failed, "the unknown state is not read again");
+        assert!(
+            read > failed,
+            "an unknown state is read again on the next refresh"
+        );
         refresh(&mut console).await?;
         refresh(&mut console).await?;
-        assert_eq!(program(), read, "the known state is read again");
+        assert_eq!(program(), read, "a known state is not read again");
         Ok(())
     })
     .await
