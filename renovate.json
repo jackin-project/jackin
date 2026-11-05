@@ -7,14 +7,151 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/^rust-toolchain\\.toml$/"
+        "/^rust-toolchain\\.toml$/",
+        "/^Cargo\\.toml$/",
+        "/^mise\\.toml$/",
+        "/^hk\\.pkl$/"
       ],
       "matchStrings": [
-        "channel = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+        "channel = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\"",
+        "rust-version = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\"",
+        "mbx \\+(?<currentValue>\\d+\\.\\d+\\.\\d+)"
       ],
       "depNameTemplate": "rust-lang/rust",
       "datasourceTemplate": "github-tags",
       "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^mise\\.toml$/"
+      ],
+      "matchStrings": [
+        "min_version = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "jdx/mise",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^hk\\.pkl$/"
+      ],
+      "matchStrings": [
+        "hk@(?<currentValue>\\d+\\.\\d+\\.\\d+)"
+      ],
+      "depNameTemplate": "jdx/hk",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^compatibility\\.lock\\.toml$/"
+      ],
+      "matchStrings": [
+        "\\[openshell\\]\\nversion = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "NVIDIA/OpenShell",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^compatibility\\.lock\\.toml$/"
+      ],
+      "matchStrings": [
+        "\\[codex\\]\\nversion = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "openai/codex",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^rust-v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^compatibility\\.lock\\.toml$/"
+      ],
+      "matchStrings": [
+        "cli_version = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "docker/cli",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^compatibility\\.lock\\.toml$/"
+      ],
+      "matchStrings": [
+        "buildx_version = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "docker/buildx",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^compatibility\\.lock\\.toml$/"
+      ],
+      "matchStrings": [
+        "compose_version = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "docker/compose",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchDepNames": [
+        "rust",
+        "rust-lang/rust"
+      ],
+      "groupName": "rust toolchain"
+    },
+    {
+      "matchDepNames": [
+        "hk",
+        "jdx/hk"
+      ],
+      "groupName": "hk"
+    },
+    {
+      "matchDepNames": [
+        "jdx/mise"
+      ],
+      "groupName": "mise"
+    },
+    {
+      "matchDepNames": [
+        "NVIDIA/OpenShell",
+        "openshell-core",
+        "openshell-policy",
+        "openshell-providers",
+        "openshell-sdk"
+      ],
+      "groupName": "openshell",
+      "dependencyDashboardApproval": true,
+      "addLabels": [
+        "needs-live-contract"
+      ]
+    },
+    {
+      "matchDepNames": [
+        "openai/codex",
+        "docker/cli",
+        "docker/buildx",
+        "docker/compose"
+      ],
+      "dependencyDashboardApproval": true,
+      "addLabels": [
+        "needs-image-rebuild"
+      ]
     }
   ],
   "prHourlyLimit": 4,
