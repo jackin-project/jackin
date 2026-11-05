@@ -1,13 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{EnvName, HookKind, Phase, PlainEnvValue, SupervisorState, sandbox_layout};
+use std::path::Path;
+
+use jackin_core::{
+    EnvName, FileLock, HookKind, HostPath, Phase, PlainEnvValue, SupervisorState, sandbox_layout,
+};
 use jackin_openshell::{Gateway, ProgramRun, ProgramStdin};
-use jackin_session::{LaunchError, LaunchStep};
+use jackin_session::{
+    LaunchError, LaunchEvent, LaunchFeed, LaunchOutcome, LaunchStep, LineDelivery, SkipReason,
+    StepResult, launch_events,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
     TestResult, builder, converged, failure, guard, has_file, launch_id, launch_rig, path, ready,
+    write,
 };
 use jackin_testkit::{ProgramScript, Rig, RoleFixture};
 
@@ -234,6 +242,74 @@ async fn a_role_with_only_a_preflight_hook_never_writes_the_setup_marker() -> Te
             &handle,
             &sandbox_layout::setup_done_marker(&launch_id(1))
         ));
+        Ok(())
+    })
+    .await
+}
+
+async fn as_a_peer(
+    rig: &Rig,
+    feed: &mut LaunchFeed,
+    held: &mut Option<FileLock>,
+) -> Result<Option<StepResult>, Box<dyn std::error::Error>> {
+    let mut hooks = None;
+    while let Some(event) = feed.recv().await {
+        match event {
+            LaunchEvent::StepStarted(LaunchStep::Hooks) => {
+                let name = rig.handle(1).await?.name();
+                let marker = sandbox_layout::setup_done_marker(&launch_id(1));
+                write(rig, &name, &marker, "").await?;
+                *held = None;
+            }
+            LaunchEvent::StepFinished {
+                step: LaunchStep::Hooks,
+                result,
+            } => hooks = Some(result),
+            _ => {}
+        }
+    }
+    Ok(hooks)
+}
+
+#[tokio::test]
+async fn a_launch_that_waits_for_the_hook_lock_skips_a_setup_a_peer_finished_meanwhile()
+-> TestResult {
+    guard(async {
+        let rig = launch_rig().await?;
+        rig.world.fs.create_dir_all(rig.world.cache_dir()).await?;
+        let lock = HostPath::resolve(
+            Path::new(&format!("hooks-{}.lock", launch_id(1))),
+            rig.world.cache_dir(),
+        )?;
+        let mut held = Some(rig.world.fs.lock(&lock).await?);
+        let (events, mut feed) = launch_events(LineDelivery::Reliable);
+        let launched = rig
+            .world
+            .session
+            .launch(rig.plan(1)?, events, CancellationToken::new());
+        let peer = as_a_peer(&rig, &mut feed, &mut held);
+        let (outcome, hooks) = tokio::join!(launched, peer);
+        assert!(
+            matches!(outcome, Ok(LaunchOutcome::Ready(_))),
+            "{outcome:?}"
+        );
+        assert_eq!(
+            hooks?,
+            Some(StepResult::Skipped(SkipReason::SetupAlreadyDone))
+        );
+        assert!(held.is_none());
+        let handle = rig.handle(1).await?;
+        assert!(
+            handle
+                .runs(&sandbox_layout::hook_path(HookKind::Setup))
+                .is_empty()
+        );
+        assert_eq!(
+            handle
+                .runs(&sandbox_layout::hook_path(HookKind::Preflight))
+                .len(),
+            1
+        );
         Ok(())
     })
     .await
