@@ -229,8 +229,8 @@ async fn j03_one_sandbox_per_launch_faults() {
         ),
         (
             "a label is missing",
-            "label jackin.dev/account is missing",
-            Box::new(|s| s.knobs().drop_labels.push("jackin.dev/account".to_owned())),
+            "label jackin.dev/agents is missing",
+            Box::new(|s| s.knobs().drop_labels.push("jackin.dev/agents".to_owned())),
         ),
         (
             "image label of 31 characters",

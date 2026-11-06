@@ -31,7 +31,7 @@ async fn j17_selection_faults() {
     fault(
         "the provider default gives fxr",
         "J17",
-        "J17 provider default: the account label",
+        "J17 provider default: the agents label",
         |scenario| {
             scenario.knobs().account_override =
                 Some(("e2e-abcd-a1".to_owned(), "e2e-abcd-fxr".to_owned()));
@@ -51,7 +51,7 @@ async fn j17_selection_faults() {
     fault(
         "precedence is broken",
         "J17",
-        "J17 workspace binding: the account label",
+        "J17 workspace binding: the agents label",
         |scenario| {
             scenario.knobs().bound_ignored = true;
         },

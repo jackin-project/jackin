@@ -187,9 +187,90 @@ fn hook_file(kind: HookKind, source: Option<&SourceFile>) -> MaterializedFile {
     )
 }
 
+fn multi_dockerfile(agents: &[jackin_core::Agent]) -> Vec<u8> {
+    let text = String::from_utf8_lossy(DERIVED_DOCKERFILE).into_owned();
+    let mut out = text;
+    for index in 1..agents.len() {
+        let n = index + 1;
+        let prefix = format!("AGENT{n}");
+        let archive = format!(
+            "FROM scratch AS agent{n}-archive-arm64\nARG {prefix}_SHA256_ARM64\nARG {prefix}_URL_ARM64\nADD --checksum=sha256:${{{prefix}_SHA256_ARM64}} ${{{prefix}_URL_ARM64}} /agent-artifact\n\nFROM scratch AS agent{n}-archive-amd64\nARG {prefix}_SHA256_AMD64\nARG {prefix}_URL_AMD64\nADD --checksum=sha256:${{{prefix}_SHA256_AMD64}} ${{{prefix}_URL_AMD64}} /agent-artifact\n\nFROM agent{n}-archive-${{TARGETARCH}} AS agent{n}-archive\n\n"
+        );
+        out = out.replacen(
+            "FROM construct AS agent\n",
+            &format!("{archive}FROM construct AS agent\n"),
+            1,
+        );
+        let start = out
+            .find("RUN --mount=type=bind,from=agent-archive")
+            .unwrap_or(0);
+        let end = out[start..]
+            .find("\n\nFROM scratch AS docker-cli-archive-arm64")
+            .map_or(out.len(), |at| start + at);
+        let run = out[start..end]
+            .replace("AGENT_", &format!("{prefix}_"))
+            .replace("agent-archive", &format!("agent{n}-archive"));
+        let stage = format!(
+            "FROM construct AS agent{n}\nARG {prefix}_VERSION\nARG {prefix}_BIN_DIR\nARG {prefix}_BINARY\nARG {prefix}_ARCHIVE_MEMBERS\nARG {prefix}_VERSION_OUTPUT\nARG {prefix}_SYSTEM_CONFIG\nARG {prefix}_SYSTEM_CONFIG_CONTENT\nARG {prefix}_EXTRA_BINARY\n\nUSER root\n{run}\n\n"
+        );
+        out = out.replacen(
+            "FROM scratch AS docker-cli-archive-arm64",
+            &format!("{stage}FROM scratch AS docker-cli-archive-arm64"),
+            1,
+        );
+        out = out.replacen(
+            "COPY --from=agent --chown=root:root /out/ /\n",
+            &format!(
+                "COPY --from=agent --chown=root:root /out/ /\nCOPY --from=agent{n} --chown=root:root /out/ /\n"
+            ),
+            1,
+        );
+        out = out.replacen(
+            "ARG AGENT_EXTRA_BINARY\n\nUSER root\nCOPY --from=layout",
+            &format!(
+                "ARG AGENT_EXTRA_BINARY\nARG {prefix}_SYSTEM_CONFIG\n\nUSER root\nCOPY --from=layout"
+            ),
+            1,
+        );
+        out = out.replacen(
+            "COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX ${AGENT_SYSTEM_CONFIG} ${AGENT_SYSTEM_CONFIG}\n",
+            &format!(
+                "COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX ${{AGENT_SYSTEM_CONFIG}} ${{AGENT_SYSTEM_CONFIG}}\nCOPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX ${{{prefix}_SYSTEM_CONFIG}} ${{{prefix}_SYSTEM_CONFIG}}\n"
+            ),
+            1,
+        );
+        out = out.replacen(
+            "ARG AGENT_EXTRA_BINARY\n\nUSER root\nCOPY scan /jackin-scan",
+            &format!(
+                "ARG AGENT_EXTRA_BINARY\nARG {prefix}_BINARY\nARG {prefix}_SYSTEM_CONFIG\n\nUSER root\nCOPY scan /jackin-scan"
+            ),
+            1,
+        );
+        out = out.replacen(
+            "--same-as ${AGENT_BINARY}=/trusted${AGENT_BINARY}",
+            &format!(
+                "--same-as ${{AGENT_BINARY}}=/trusted${{AGENT_BINARY}} \\\n        --same-as ${{{prefix}_BINARY}}=/trusted${{{prefix}_BINARY}} \\\n        --same-as ${{{prefix}_SYSTEM_CONFIG}}=/trusted${{{prefix}_SYSTEM_CONFIG}} \\\n        --data ${{{prefix}_SYSTEM_CONFIG}}"
+            ),
+            1,
+        );
+        out = out.replacen(
+            "        ${AGENT_BINARY} \\",
+            &format!("        ${{AGENT_BINARY}} \\\n        ${{{prefix}_BINARY}} \\"),
+            1,
+        );
+    }
+    out.into_bytes()
+}
+
 fn derived_context(request: &ImageRequest) -> Vec<MaterializedFile> {
+    let agents = request.sorted_agents();
+    let dockerfile = if agents.len() > 1 {
+        multi_dockerfile(&agents)
+    } else {
+        DERIVED_DOCKERFILE.to_vec()
+    };
     vec![
-        file("Dockerfile", DERIVED_DOCKERFILE),
+        file("Dockerfile", &dockerfile),
         file("jackin-start", JACKIN_START),
         file("scan", SCAN),
         hook_file(HookKind::Setup, request.hooks.setup.as_ref()),

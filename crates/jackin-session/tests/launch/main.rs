@@ -27,6 +27,7 @@ mod supervisor;
 mod support;
 mod upload_timeout;
 mod workspace_fence;
+mod worktree;
 
 #[path = "../support/trap.rs"]
 mod trap;

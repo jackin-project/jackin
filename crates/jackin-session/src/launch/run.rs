@@ -650,6 +650,10 @@ impl Run<'_> {
             .map_err(|error| failed(STEP, error))?;
         self.write(STEP, sandbox, &marker, MARKER_MODE, Vec::new())
             .await?;
+        self.session
+            .setup_worktrees(sandbox, self.plan.instances(), self.cancel)
+            .await
+            .map_err(|error| failed(STEP, error))?;
         Ok(Uploaded::Done)
     }
 

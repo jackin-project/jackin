@@ -9,12 +9,11 @@ use crate::e2e::run::{Fail, Res, Run, fail, labels_of, text_of};
 use crate::e2e::verdict::Verdict;
 use crate::e2e::world::LoadObs;
 
-const KEYS: [&str; 9] = [
+const KEYS: [&str; 8] = [
     "jackin.dev/managed",
     "jackin.dev/workspace",
     "jackin.dev/role",
-    "jackin.dev/agent",
-    "jackin.dev/account",
+    "jackin.dev/agents",
     "jackin.dev/policy",
     "jackin.dev/image",
     "jackin.dev/launch",
@@ -27,6 +26,12 @@ pub(crate) struct Expect<'a> {
     pub image_id: &'a str,
     pub launch: &'a str,
     pub docker: &'a str,
+}
+
+pub(crate) fn agents_label(account: &str) -> String {
+    jackin_core::Sha256::of(format!("codex:codex:{account}:gpt-5.1-codex").as_bytes()).as_str()
+        [..32]
+        .to_owned()
 }
 
 pub(crate) fn image_label(image_id: &str) -> String {
@@ -80,8 +85,7 @@ pub(crate) fn judge_launch(
         ("jackin.dev/managed", "true"),
         ("jackin.dev/workspace", expect.workspace),
         ("jackin.dev/role", "sentinel"),
-        ("jackin.dev/agent", "codex"),
-        ("jackin.dev/account", expect.account),
+        ("jackin.dev/agents", &agents_label(expect.account)),
         ("jackin.dev/launch", expect.launch),
         ("jackin.dev/docker", expect.docker),
     ];

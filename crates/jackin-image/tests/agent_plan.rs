@@ -95,3 +95,87 @@ fn codex_plan_unchanged() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn two_agent_plan_installs_and_scans_both_binaries() -> TestResult {
+    let mut req = request(Agent::Codex)?;
+    req.agents = vec![Agent::Codex, Agent::Omp];
+    let plan = ImagePlan::new(&req)?;
+    let id = jackin_core::ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
+    let built = plan.final_builds(&id);
+    let args = built
+        .derived
+        .args
+        .iter()
+        .filter_map(|arg| {
+            arg.strip_prefix("--build-arg=")?
+                .split_once('=')
+                .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (prefix, agent) in [("AGENT", Agent::Codex), ("AGENT2", Agent::Omp)] {
+        let spec = agent.spec();
+        assert_eq!(
+            args.get(&format!("{prefix}_BINARY")).map(String::as_str),
+            Some(spec.binary.as_str())
+        );
+        assert_eq!(
+            args.get(&format!("{prefix}_VERSION")).map(String::as_str),
+            Some(spec.install.version)
+        );
+        for target in spec.install.targets {
+            let name = format!(
+                "{prefix}_SHA256_{}",
+                target.platform.target_arch().to_ascii_uppercase()
+            );
+            assert_eq!(
+                args.get(&name).map(String::as_str),
+                Some(target.sha256),
+                "{name}"
+            );
+            let url = format!(
+                "{prefix}_URL_{}",
+                target.platform.target_arch().to_ascii_uppercase()
+            );
+            assert!(
+                args.get(&url).is_some_and(|value| !value.is_empty()),
+                "{url}"
+            );
+        }
+    }
+    let jackin_image::ContextSource::Materialized(files) = built.derived.context else {
+        return Err("derived context is not materialized".into());
+    };
+    let dockerfile = files
+        .iter()
+        .find(|file| file.name == "Dockerfile")
+        .ok_or("derived Dockerfile")?;
+    let text = String::from_utf8(dockerfile.bytes.clone())?;
+    assert!(text.contains("AGENT2_BINARY"), "{text}");
+    assert!(
+        text.contains("--same-as ${AGENT2_BINARY}=/trusted${AGENT2_BINARY}"),
+        "{text}"
+    );
+    assert!(text.contains("agent2-archive"), "{text}");
+    let mut changed = request(Agent::Codex)?;
+    changed.agents = vec![Agent::Codex, Agent::MimoCode];
+    let other = ImagePlan::new(&changed)?.final_builds(&id);
+    assert_ne!(built.key.sha256(), other.key.sha256());
+    let single = ImagePlan::new(&request(Agent::Codex)?)?.final_builds(&id);
+    let jackin_image::ContextSource::Materialized(single_files) = single.derived.context else {
+        return Err("single derived context is not materialized".into());
+    };
+    let single_dockerfile = single_files
+        .iter()
+        .find(|file| file.name == "Dockerfile")
+        .ok_or("single Dockerfile")?;
+    assert_eq!(
+        single_dockerfile.bytes,
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/images/derived/Dockerfile"
+        ))
+        .to_vec()
+    );
+    Ok(())
+}

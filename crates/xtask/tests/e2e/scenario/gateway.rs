@@ -57,8 +57,10 @@ impl ScenarioGateway {
             ("jackin.dev/managed".to_owned(), "true".to_owned()),
             ("jackin.dev/workspace".to_owned(), "mine".to_owned()),
             ("jackin.dev/role".to_owned(), "other".to_owned()),
-            ("jackin.dev/agent".to_owned(), "codex".to_owned()),
-            ("jackin.dev/account".to_owned(), "mine".to_owned()),
+            (
+                "jackin.dev/agents".to_owned(),
+                Sha256::of(b"codex:codex:mine:gpt-5.1-codex").as_str()[..32].to_owned(),
+            ),
             ("jackin.dev/image".to_owned(), "0".repeat(32)),
             ("jackin.dev/launch".to_owned(), "foreignlaunch".to_owned()),
         ])

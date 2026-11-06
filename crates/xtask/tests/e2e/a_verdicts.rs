@@ -268,7 +268,7 @@ async fn a_failed_prerequisite_blocks_dependents_with_skip_and_exit_one() {
         scenario
             .knobs()
             .drop_labels
-            .push("jackin.dev/account".to_owned());
+            .push("jackin.dev/agents".to_owned());
     })
     .await;
 

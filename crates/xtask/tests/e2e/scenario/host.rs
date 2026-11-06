@@ -114,8 +114,12 @@ impl ScenarioHost {
             ("jackin.dev/managed".to_owned(), "true".to_owned()),
             ("jackin.dev/workspace".to_owned(), workspace.to_owned()),
             ("jackin.dev/role".to_owned(), "sentinel".to_owned()),
-            ("jackin.dev/agent".to_owned(), "codex".to_owned()),
-            ("jackin.dev/account".to_owned(), account.to_owned()),
+            (
+                "jackin.dev/agents".to_owned(),
+                jackin_core::Sha256::of(format!("codex:codex:{account}:gpt-5.1-codex").as_bytes())
+                    .as_str()[..32]
+                    .to_owned(),
+            ),
             (
                 "jackin.dev/policy".to_owned(),
                 PolicyLabel::of(POLICY).to_string(),
