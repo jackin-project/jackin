@@ -89,6 +89,7 @@ pub(crate) fn credential_kind(account: &Account) -> &'static str {
         CredentialSource::OmpHost => "omp-host",
         CredentialSource::File { .. } => "file",
         CredentialSource::CodexLogin { .. } => "codex-login",
+        CredentialSource::HostLogin { .. } => "host-login",
     }
 }
 

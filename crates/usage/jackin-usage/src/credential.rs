@@ -97,7 +97,7 @@ pub(crate) async fn resolve(
                 .map(Material::token)
                 .ok_or(Unresolved::Missing)
         }
-        CredentialSource::OmpHost => Err(Unresolved::Missing),
+        CredentialSource::OmpHost | CredentialSource::HostLogin { .. } => Err(Unresolved::Missing),
         CredentialSource::File { path } => {
             let text = read_text(deps, path).await?;
             Ok(if text.starts_with('{') {

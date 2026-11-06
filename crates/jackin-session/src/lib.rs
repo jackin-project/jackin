@@ -30,7 +30,9 @@ mod source;
 mod state;
 mod workspace;
 
-pub use crate::files::{omp_auth_file, render_kimi_config, render_mimo_config, render_omp_config};
+pub use crate::files::{
+    grok_auth_file, omp_auth_file, render_kimi_config, render_mimo_config, render_omp_config,
+};
 pub use accounts::*;
 pub use attach::*;
 pub use build::*;

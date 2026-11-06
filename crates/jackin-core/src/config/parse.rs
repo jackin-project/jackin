@@ -239,6 +239,9 @@ fn read_credential(account: &mut Reader<'_, '_>) -> Option<CredentialSource> {
         "file" => credential
             .required_parsed("path", host_path, static_message)
             .map(|path| CredentialSource::File { path }),
+        "host-login" => credential
+            .required_parsed("path", host_path, static_message)
+            .map(|path| CredentialSource::HostLogin { path }),
         "codex-login" => {
             let home = credential.required_parsed("home", host_path, static_message);
             let id = credential.required_parsed(
@@ -252,7 +255,10 @@ fn read_credential(account: &mut Reader<'_, '_>) -> Option<CredentialSource> {
             })
         }
         _ => {
-            credential.report_invalid("source", "expected env, op, file, omp-host, or codex-login");
+            credential.report_invalid(
+                "source",
+                "expected env, op, file, omp-host, codex-login, or host-login",
+            );
             None
         }
     };

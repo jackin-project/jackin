@@ -362,7 +362,7 @@ pub fn parse_provider(text: &str) -> Result<Provider, CommandError> {
     ArgGroup::new("source")
         .required(true)
         .multiple(false)
-        .args(["chatgpt_from", "credential"])
+        .args(["chatgpt_from", "credential", "from_host_login"])
 ))]
 pub struct AccountAddArgs {
     #[arg(help = "Provider of the account")]
@@ -380,6 +380,11 @@ pub struct AccountAddArgs {
         help = "Import a Codex ChatGPT login"
     )]
     pub chatgpt_from: Option<PathBuf>,
+    #[arg(
+        long = "from-host-login",
+        help = "Import the host login for the provider"
+    )]
+    pub from_host_login: bool,
     #[arg(
         long,
         value_name = "SOURCE",

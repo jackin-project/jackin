@@ -157,6 +157,7 @@ pub(crate) fn fingerprint(account: &UsageAccount) -> String {
             reference.as_str()
         ),
         CredentialSource::OmpHost => "omp-host".to_owned(),
+        CredentialSource::HostLogin { path } => format!("host-login:{}", path.as_path().display()),
         CredentialSource::File { path } => format!("file:{}", path.as_path().display()),
         CredentialSource::CodexLogin {
             home,
