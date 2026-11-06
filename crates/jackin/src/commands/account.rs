@@ -37,8 +37,7 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
                 &jackin_core::EnvName::parse("HOME")
                     .map_err(|_| CommandError::Argument("HOME is not set".to_owned()))?,
             )
-            .ok_or_else(|| CommandError::Argument("HOME is not set".to_owned()))?
-            .clone();
+            .ok_or_else(|| CommandError::Argument("HOME is not set".to_owned()))?;
         let relative = match provider {
             jackin_core::Provider::Grok => ".grok/auth.json",
             jackin_core::Provider::Muse => ".config/muse/auth.json",
@@ -147,6 +146,17 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
     }
 }
 
+fn default_agent(provider: jackin_core::Provider) -> Agent {
+    match provider {
+        jackin_core::Provider::Grok => Agent::GrokBuild,
+        jackin_core::Provider::Muse => Agent::MuseCode,
+        jackin_core::Provider::Kimi => Agent::KimiCode,
+        jackin_core::Provider::Mimo => Agent::MimoCode,
+        jackin_core::Provider::Codex => Agent::Codex,
+        _ => Agent::Omp,
+    }
+}
+
 async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
     let provider = parse_provider(&args.provider)?;
     let agent = match &args.agent {
@@ -154,14 +164,7 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
         None => None,
     };
     let account = Account::new(args.name.clone(), provider, source(app, &args).await?)?;
-    let agent = agent.unwrap_or_else(|| match provider {
-        jackin_core::Provider::Grok => Agent::GrokBuild,
-        jackin_core::Provider::Muse => Agent::MuseCode,
-        jackin_core::Provider::Kimi => Agent::KimiCode,
-        jackin_core::Provider::Mimo => Agent::MimoCode,
-        jackin_core::Provider::Codex => Agent::Codex,
-        _ => Agent::Omp,
-    });
+    let agent = agent.unwrap_or(default_agent(provider));
     match plan_account_edits_for_agent(
         &app.desk(),
         vec![ConfigEdit::AddAccount(account)],

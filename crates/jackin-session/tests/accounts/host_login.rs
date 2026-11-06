@@ -71,7 +71,7 @@ async fn grok_reader_taxonomy_is_typed_and_secret_free() -> TestResult {
         let base = dir.path().join("auth.json");
         let hp = HostPath::parse(&base)?;
         let missing = read_grok_login(world.fs.as_ref(), &hp).await;
-        assert!(missing.is_err());
+        missing.unwrap_err();
         write_file(&base, "{not json").await?;
         let malformed = read_grok_login(world.fs.as_ref(), &hp).await.unwrap_err();
         write_file(
@@ -152,7 +152,7 @@ async fn muse_metadata_reader() -> TestResult {
         let dir = tempfile::tempdir()?;
         let file = dir.path().join("auth.json");
         let hp = HostPath::parse(&file)?;
-        assert!(read_muse_host_metadata(world.fs.as_ref(), &hp).await.is_err());
+        read_muse_host_metadata(world.fs.as_ref(), &hp).await.unwrap_err();
         write_file(
             &file,
             &serde_json::json!({"providers": {"meta": {"mechanism": "oauth", "storage": "os-store", "subs_active": true}}})
@@ -426,7 +426,7 @@ async fn grok_accounts_are_isolated_in_providers_and_launch_plan_names() -> Test
             &AccountName::parse("beta")?,
             Agent::GrokBuild,
         )];
-        assert_eq!(launch_providers, [b.clone()]);
+        assert_eq!(launch_providers, [b]);
         assert!(!format!("{launch_providers:?}").contains(GROK_A));
         assert!(!format!("{launch_providers:?}").contains("alpha"));
         Ok(())

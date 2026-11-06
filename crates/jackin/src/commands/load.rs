@@ -204,21 +204,13 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
     }
     let instances = jackin_core::AgentInstances::new(instances)
         .map_err(|error| CommandError::Argument(error.to_string()))?;
-    let task = match (&args.task, &args.task_file, &args.issue) {
-        (Some(text), None, None) => Some(text.clone()),
-        (None, Some(path), None) => {
-            Some(tokio::fs::read_to_string(path).await.map_err(|error| {
-                CommandError::Argument(format!("cannot read task file: {error}"))
-            })?)
-        }
-        (None, None, Some(url)) => Some(issue_task(app, url).await?),
-        (None, None, None) => None,
-        _ => {
-            return Err(CommandError::Argument(
-                "pass only one of --task, --task-file, and --issue".to_owned(),
-            ));
-        }
-    };
+    let task = resolve_task(
+        app,
+        args.task.as_ref(),
+        args.task_file.as_ref(),
+        args.issue.as_ref(),
+    )
+    .await?;
     let request = LaunchRequest::new(gateway.clone(), project, role.name().clone(), launch)
         .tuple(agent, provider)
         .instances(instances)
@@ -248,6 +240,27 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
             }
             None => app.io.line(&format!("{}\t{launch}", target.sandbox)),
         },
+    }
+}
+
+async fn resolve_task(
+    app: &mut App,
+    task: Option<&String>,
+    task_file: Option<&std::path::PathBuf>,
+    issue: Option<&String>,
+) -> Result<Option<String>, CommandError> {
+    match (task, task_file, issue) {
+        (Some(text), None, None) => Ok(Some(text.clone())),
+        (None, Some(path), None) => {
+            Ok(Some(tokio::fs::read_to_string(path).await.map_err(
+                |error| CommandError::Argument(format!("cannot read task file: {error}")),
+            )?))
+        }
+        (None, None, Some(url)) => Ok(Some(issue_task(app, url).await?)),
+        (None, None, None) => Ok(None),
+        _ => Err(CommandError::Argument(
+            "pass only one of --task, --task-file, and --issue".to_owned(),
+        )),
     }
 }
 

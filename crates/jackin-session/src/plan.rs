@@ -843,6 +843,39 @@ impl LaunchPlan {
     }
 }
 
+impl SandboxDraft {
+    pub fn name(&self) -> &SandboxName {
+        &self.name
+    }
+
+    pub fn labels(&self) -> &PlannedLabels {
+        &self.labels
+    }
+
+    pub fn provider(&self) -> &ProviderName {
+        &self.provider
+    }
+
+    pub fn providers(&self) -> &[ProviderName] {
+        &self.providers
+    }
+
+    pub fn complete(&self, image: &jackin_image::BuiltImage, docker: DockerLabel) -> SandboxCreate {
+        SandboxCreate::new(
+            self.name.clone(),
+            image.tag.clone(),
+            self.labels.clone().complete(&image.id, docker),
+            if self.providers.is_empty() {
+                vec![self.provider.clone()]
+            } else {
+                self.providers.clone()
+            },
+            self.policy.clone(),
+            self.main.clone(),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -945,38 +978,5 @@ mod tests {
                 .values()
                 .any(|entry| entry["trust_level"] == toml::Value::String("trusted".to_owned()))
         );
-    }
-}
-
-impl SandboxDraft {
-    pub fn name(&self) -> &SandboxName {
-        &self.name
-    }
-
-    pub fn labels(&self) -> &PlannedLabels {
-        &self.labels
-    }
-
-    pub fn provider(&self) -> &ProviderName {
-        &self.provider
-    }
-
-    pub fn providers(&self) -> &[ProviderName] {
-        &self.providers
-    }
-
-    pub fn complete(&self, image: &jackin_image::BuiltImage, docker: DockerLabel) -> SandboxCreate {
-        SandboxCreate::new(
-            self.name.clone(),
-            image.tag.clone(),
-            self.labels.clone().complete(&image.id, docker),
-            if self.providers.is_empty() {
-                vec![self.provider.clone()]
-            } else {
-                self.providers.clone()
-            },
-            self.policy.clone(),
-            self.main.clone(),
-        )
     }
 }
