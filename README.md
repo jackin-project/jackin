@@ -3,105 +3,76 @@
 ![jackin❯ by tailrocks](docs/public/readme-hero.svg)
 
 > [!WARNING]
-> 🚧 jackin❯ is in active early development.
->
-> jackin❯ is not production-ready. We are actively refining the core concept, runtime integrations, CLI/TUI workflows, schemas, and documentation, and that will introduce major breaking changes before a stable release. Features may be redesigned, replaced, or removed while we find the shape that makes sense. Early adopters are welcome, but the priority right now is concept quality and fast iteration rather than freezing today's behavior. The docs track the preview channel; open issues and roadmap feedback are welcome, but do not treat the current feature set as a compatibility promise.
+> jackin❯ is in active early development and is not production-ready. Expect breaking changes. Do not treat the current feature set as a compatibility promise.
 
-Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.
+Jackin is a command-line tool and a terminal console. It runs the Codex coding agent in [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandboxes.
 
-jackin❯ is the **ecosystem layer around** AI coding agents — not another agent itself. It runs many agents in parallel, each in its own container, with its own file access, tool profile, and credentials. Every agent runtime ([Claude Code](https://claude.com/product/claude-code) `--dangerously-skip-permissions`, [Codex](https://github.com/openai/codex) YOLO, [Amp](https://ampcode.com), Kimi, OpenCode, Grok, and the next ones to come) is most productive at full speed — and full speed against your host machine is risky. jackin❯ moves the boundary off the host, so the runtime can stay fast.
+Jackin builds a container image for each role. It creates one sandbox for each launch, uploads your project into it, starts Codex, and attaches your terminal. OpenShell runs the sandbox and enforces the isolation. Your credentials stay on the OpenShell gateway.
 
 Documentation: <https://jackin.tailrocks.com/>
 
+## What it does
+
+- Builds a role image with Docker BuildKit from a role repository: a `Dockerfile`, a `jackin.role.toml` manifest, and an OpenShell `policy.yaml`.
+- Uploads your project as a working tree and a git bundle. Your host `.git` directory and your working tree stay untouched.
+- Gives each sandbox a placeholder instead of your Codex login. The gateway holds the real token.
+- Fetches the work of a sandbox back into your repository as git branches with `jackin export`.
+- Tracks your accounts and shows the usage limits of each one with `jackin usage`.
+- Gives a sandbox access to a Docker engine only when a role or a workspace turns on the Docker capability.
+
 ## Install
 
-```sh
-brew tap jackin-project/tap
-brew install jackin-preview
-```
-
-Or [build from source](https://jackin.tailrocks.com/getting-started/installation/) if you prefer. For source
-checkouts, run `mise install` first to install the pinned toolchain and dev tools.
-
-## Quick Start
-
-The simplest way to use jackin❯ is the **operator console** — an interactive TUI that picks workspaces, roles, and agents for you:
+Jackin has no packaged release yet. Build it from source:
 
 ```sh
-jackin
+mise install
+mise exec -- mbx +1.99.1 build -p jackin --release
 ```
 
-(Or `jackin console` to be explicit.) The console is the daily driver and covers the common cases of every other command.
+The binary is `target/release/jackin`. You also need the `openshell` CLI, `ssh`, `git`, and `docker` with `buildx` on your host, and an OpenShell gateway that you run. See [Install jackin](https://jackin.tailrocks.com/getting-started/installation/) and [Run a local OpenShell gateway](https://jackin.tailrocks.com/guides/gateway/).
 
-If you'd rather see the isolation model in action with a single one-shot command, `jackin load` is the **scriptable CLI** equivalent:
+## Quick start
 
 ```sh
-jackin load agent-smith
+jackin gateway add jackin-local --default
+jackin doctor
+jackin role add my-role ~/roles/my-role
+jackin account add codex --name work --chatgpt-from ~/.codex
+jackin workspace add my-app ~/Projects/my-app
+cd ~/Projects/my-app
+jackin load my-role
 ```
 
-That pulls the base image, builds the agent container, mounts your project, and drops you into the agent runtime — fully autonomous inside an isolated environment.
+Run `jackin` on a terminal to open the console. See the [Quick start](https://jackin.tailrocks.com/getting-started/quickstart/) for the full walkthrough and the [command reference](https://jackin.tailrocks.com/commands/reference/) for every option.
 
-See the [Quick Start guide](https://jackin.tailrocks.com/getting-started/quickstart/) for the full walkthrough, and [`jackin console`](https://jackin.tailrocks.com/commands/console/) for the TUI reference.
+## Documentation
 
-Register an additional login and grant it to a saved workspace:
-
-```sh
-jackin account add claude-work --agent claude --directory ~/.claude-work
-jackin workspace account assign my-app claude-work
-jackin workspace account select my-app claude-work --agent claude
-```
-
-First start discovers default host logins and provider API-key references. Workspaces explicitly choose which accounts they may use. See [Account commands](https://jackin.tailrocks.com/commands/account/).
-
-## What It Does
-
-- **Isolates each agent** in its own Docker container with Docker-in-Docker enabled
-- **Gives agents full autonomy** inside the container boundary (whatever full-speed mode the runtime ships — Claude's `--dangerously-skip-permissions`, Codex's YOLO, etc.)
-- **Separates tooling from file access** — roles define the environment, workspaces define which files are visible
-- **Supports multiple agents simultaneously** — different tool profiles against the same or different projects
-- **Manages named accounts** — discover host logins, add profile folders or API keys, and authorize accounts per workspace
-- **Persists agent state** between sessions (conversation history, GitHub CLI auth, plugins)
-
-Learn more: [Why jackin❯?](https://jackin.tailrocks.com/getting-started/why/) · [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) · [Security Model](https://jackin.tailrocks.com/guides/security-model/) · [Comparison with Alternatives](https://jackin.tailrocks.com/guides/comparison/)
+- [Why jackin](https://jackin.tailrocks.com/getting-started/why/)
+- [Install jackin](https://jackin.tailrocks.com/getting-started/installation/)
+- [Quick start](https://jackin.tailrocks.com/getting-started/quickstart/)
+- [Core concepts](https://jackin.tailrocks.com/getting-started/concepts/)
+- [Run a local OpenShell gateway](https://jackin.tailrocks.com/guides/gateway/)
+- [Accounts](https://jackin.tailrocks.com/guides/accounts/)
+- [Docker capability](https://jackin.tailrocks.com/guides/docker-capability/)
+- [Security model](https://jackin.tailrocks.com/guides/security-model/)
+- [Create a role](https://jackin.tailrocks.com/developing/creating-roles/)
 
 ## Ecosystem
 
 | Repository | Description |
 |---|---|
-| [jackin❯](https://github.com/jackin-project/jackin) | CLI source code (this repo) |
-| [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) | Default general-purpose role |
-| [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) | Rust development role (used for jackin❯ development) |
-| [construct image source](docker/construct/README.md) | Shared base Docker image for all roles |
-
-## Documentation
-
-This README is a first impression. The full documentation at **<https://jackin.tailrocks.com/>** is where every detail lives:
-
-- [Why jackin❯?](https://jackin.tailrocks.com/getting-started/why/) — the problem and the ecosystem framing
-- [Installation](https://jackin.tailrocks.com/getting-started/installation/) — install methods and prerequisites
-- [Quick Start](https://jackin.tailrocks.com/getting-started/quickstart/) — first-run walkthrough, console + CLI side by side
-- [Core Concepts](https://jackin.tailrocks.com/getting-started/concepts/) — operators, agents, roles, constructs, workspaces
-- [`jackin console`](https://jackin.tailrocks.com/commands/console/) — the daily-driver TUI
-- [Commands](https://jackin.tailrocks.com/commands/console/) — full reference (TUI first, then CLI)
-- [Security Model](https://jackin.tailrocks.com/guides/security-model/) — what the boundary protects and what it doesn't
-- [Comparison with Alternatives](https://jackin.tailrocks.com/guides/comparison/) — honest snapshot vs. Docker Sandboxes and others
-- Behind jackin❯ — [Architecture](https://jackin.tailrocks.com/reference/getting-oriented/architecture/) and [Codebase Map](https://jackin.tailrocks.com/reference/getting-oriented/codebase-map/)
-- [Roadmap](https://jackin.tailrocks.com/roadmap/) — in-progress, planned, and brainstormed implementation work
-- [Research](https://jackin.tailrocks.com/research/) — evidence, comparisons, experiments, and design rationale
+| [jackin](https://github.com/jackin-project/jackin) | The CLI and the console (this repository) |
+| [jackin-agent-smith](https://github.com/jackin-project/jackin-agent-smith) | A code review role |
+| [jackin-the-architect](https://github.com/jackin-project/jackin-the-architect) | A role with the Rust toolchain, for developing jackin |
+| [jackin-sentinel](https://github.com/jackin-project/jackin-sentinel) | A role that proves jackin works end to end |
 
 ## Development
 
-To develop jackin❯ itself, use [The Architect](https://github.com/jackin-project/jackin-the-architect) — a dedicated role with the full Rust toolchain:
-
-```sh
-jackin load the-architect
-```
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [COMMITS.md](COMMITS.md), and [AGENTS.md](AGENTS.md). The target design is in [rewrite/DESIGN.md](rewrite/DESIGN.md).
 
 ## About this project
 
-jackin❯ is an independent personal project by Alexey Zhokhov. It is
-not affiliated with or endorsed by any employer or client of the
-author.
+jackin❯ is an independent personal project by Alexey Zhokhov. It is not affiliated with or endorsed by any employer or client of the author.
 
 ## License
 

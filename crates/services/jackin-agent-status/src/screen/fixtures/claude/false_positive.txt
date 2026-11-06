@@ -1,6 +1,0 @@
-
-  showing detailed transcript
-  ctrl+o to toggle
-  ctrl+e to show all/collapse
-
-✻ Simplifying…

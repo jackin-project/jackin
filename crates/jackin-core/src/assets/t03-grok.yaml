@@ -1,0 +1,35 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+id: grok
+display_name: Grok Build
+description: Grok Build with gateway-managed credential
+category: agent
+inference_capable: true
+credentials:
+  - name: access_token
+    description: Gateway-held credential for Grok Build
+    env_vars: [XAI_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [access_token]
+endpoints:
+  - host: x.ai
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: cli-chat-proxy.grok.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: auth.x.ai
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/grok

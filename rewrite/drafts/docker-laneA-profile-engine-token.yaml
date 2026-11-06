@@ -1,0 +1,13 @@
+id: p05a-docker-engine
+display_name: P0.5 lane A dedicated Docker engine
+description: Bearer token for the operator dedicated Docker engine front end
+category: other
+credentials:
+  - name: engine_token
+    description: Bearer token that the engine front end requires
+    env_vars: [DOCKER_ENGINE_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+binaries:
+  - /usr/local/bin/docker

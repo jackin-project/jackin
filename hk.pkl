@@ -1,69 +1,44 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-amends "package://github.com/jdx/hk/releases/download/v2.8.0/hk@2.8.0#/Config.pkl"
-import "package://github.com/jdx/hk/releases/download/v2.8.0/hk@2.8.0#/Builtins.pkl"
+amends "package://github.com/jdx/hk/releases/download/v2.11.1/hk@2.11.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v2.11.1/hk@2.11.1#/Builtins.pkl"
 
 jobs = 2
 fail_fast = false
 
 steps {
   ["mise"] = Builtins.mise
-  ["gitleaks"] = Builtins.gitleaks
-  ["cargo_fmt"] = (Builtins.cargo_fmt) {
-    workspace_indicator = "Cargo.toml"
-    dir = "{{workspace}}"
-    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
-    exclude = List("vendor/branches-0.4.6/**")
-    check { command = "cargo fmt --all --check" }
-    check_list_files { command = "cargo fmt --all --check -- --files-with-diff" }
-    fix { command = "cargo fmt --all" }
+  ["gitleaks"] = (Builtins.gitleaks) {
+    check = "tree=$(mktemp -d) && trap 'rm -rf \"$tree\"' EXIT && git checkout-index --all --prefix=\"$tree/\" && cd \"$tree\" && gitleaks dir --redact --verbose --no-banner ."
   }
-  ["cargo_check"] = (Builtins.cargo_check) {
-    workspace_indicator = "Cargo.toml"
-    dir = "{{workspace}}"
-    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
-    exclude = List("crates/tools/jackin-lints/**")
-    check { command = "cargo check --locked --quiet" }
-    fix { command = "cargo fix --locked --allow-dirty --allow-staged --quiet" }
+  ["cargo_fmt"] {
+    glob = List("**/*.rs", "rustfmt.toml")
+    check = "cargo fmt --all --check"
+    fix = "cargo fmt --all"
   }
-  ["cargo_clippy"] = (Builtins.cargo_clippy) {
-    workspace_indicator = "Cargo.toml"
-    dir = "{{workspace}}"
-    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
-    exclude = List("crates/tools/jackin-lints/**")
-    check { command = "cargo clippy --locked --quiet" }
-    fix { command = "cargo clippy --locked --fix --allow-dirty --allow-staged --quiet" }
+  ["cargo_clippy"] {
+    glob = List("**/*.rs", "**/Cargo.toml", "Cargo.lock", "clippy.toml")
+    check = "cargo clippy --workspace --all-targets --all-features --locked -- -D warnings"
+    fix = "cargo clippy --workspace --all-targets --all-features --locked --fix --allow-dirty --allow-staged -- -D warnings"
+    check_first = false
   }
-  ["cargo_deny"] = (Builtins.cargo_deny) {
-    workspace_indicator = "Cargo.lock"
-    prefix = "bash \"$(git rev-parse --show-toplevel)/scripts/hk-workspace-admission\" \"$(pwd -P)/Cargo.toml\" -- mise exec --"
-    exclude = List("fuzz/**", "crates/tools/jackin-lints/**", "vendor/branches-0.4.6/**")
-    check { command = "cargo deny --locked --workspace check" }
-  }
-  ["rust-toolchain-mirror"] {
-    glob = List("mise.toml", "rust-toolchain.toml")
-    check = "sh scripts/check-rust-toolchain-mirror.sh"
+  ["xtask_repo_gates"] {
+    check = "mise exec -- mbx +1.99.1 xtask ci --only comments,layers,pins,containers,errors"
   }
   ["rumdl"] = (Builtins.rumdl) {
+    exclude = List("rewrite/**", "README.md")
     check { command = "rumdl check --no-cache {{files}}" }
     check_diff { command = "rumdl check --no-cache --diff {{files}}" }
   }
   ["jactionlint"] = (Builtins.jactionlint) {
     fix = null
     check_diff = null
-    check = "jactionlint --format gcc --strict-exit --no-online --shellcheck=shellcheck --pyflakes= {{files}}"
+    check = "jactionlint --config-file .github/jactionlint.yaml --format gcc --strict-exit --no-online --shellcheck=shellcheck --pyflakes= {{files}}"
   }
-  ["swiftlint"] {
-    glob = "native/**/*.swift"
-    condition = "exec('command -v swiftlint || true') != ''"
-    check = "cd native && swiftlint lint --strict"
-  }
-  ["swift-format"] {
-    glob = "native/**/*.swift"
-    condition = "exec('command -v xcrun || true') != ''"
-    check = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format lint --configuration .swift-format --strict --parallel"
-    fix = "cd native && find Sources Tests UITests Tools Scripts -name '*.swift' ! -path '*/JackinUsageBindings/*' -print0 | xargs -0 xcrun swift-format format --configuration .swift-format --in-place --parallel"
+  ["zizmor"] {
+    glob = ".github/workflows/*.yml"
+    check = "zizmor --offline --no-progress --min-severity low {{files}}"
   }
 }
 
@@ -78,13 +53,14 @@ hooks {
   }
   ["pre-push"] {
     steps {
-      ["betterleaks-history"] { check = "betterleaks git . --redact" }
+      ["betterleaks-history"] { check = "betterleaks git . --config .gitleaks.toml --redact --log-opts=\"HEAD --not --remotes\"" }
+      ["xtask-ci"] { check = "mise run ci:fast" }
     }
   }
   ["security-audit"] {
     steps {
       ["kingfisher-history"] { check = "mise exec --locked -- kingfisher scan . --git-history full --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml" }
-      ["betterleaks-history"] { check = "mise exec --locked -- betterleaks git . --redact" }
+      ["betterleaks-history"] { check = "mise exec --locked -- betterleaks git . --config .gitleaks.toml --redact" }
       ["gitleaks-history"] { check = "mise exec --locked -- gitleaks git . --redact --no-banner" }
     }
   }

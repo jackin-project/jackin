@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Account usage on the host: credential resolution, provider dispatch, the cache, and the report types."
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+futures = { workspace = true }
+jackin-core = { workspace = true }
+jackin-usage-provider-claude = { workspace = true }
+jackin-usage-provider-codex = { workspace = true }
+jackin-usage-provider-core = { workspace = true }
+jackin-usage-provider-cursor = { workspace = true }
+jackin-usage-provider-gemini = { workspace = true }
+jackin-usage-provider-grok = { workspace = true }
+jackin-usage-provider-kimi = { workspace = true }
+jackin-usage-provider-minimax = { workspace = true }
+jackin-usage-provider-opencode = { workspace = true }
+jackin-usage-provider-openrouter = { workspace = true }
+jackin-usage-provider-zai = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt"] }
+tokio-util = { workspace = true }
+
+[dev-dependencies]
+jackin-testkit = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[lints]
+workspace = true

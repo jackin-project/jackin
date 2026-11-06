@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[openshell]
+version = "0.1.7"
+tag = "v0.1.7"
+commit = "5d25211b25a8fc887e8d5c606d57d6ab22f1d76c"
+date = "2026-11-03"
+sdk_crate = "openshell-sdk"
+sdk_path = "crates/openshell-sdk"
+repository = "https://github.com/NVIDIA/OpenShell"
+
+[codex]
+version = "0.166.0"
+package = "@openai/codex"
+date = "2026-10-29"
+
+[docker]
+cli_version = "29.9.3"
+cli_date = "2026-11-04"
+buildx_version = "0.38.2"
+buildx_date = "2026-11-03"
+compose_version = "5.7.0"
+compose_date = "2026-11-02"

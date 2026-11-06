@@ -1,0 +1,105 @@
+---
+title: Work with sandboxes
+description: List, attach to, stop, export from, and delete the sandboxes that jackin created.
+---
+
+Jackin creates one sandbox for each launch. It keeps no local index. It finds your sandboxes by the labels it put on them in the gateway.
+
+## List and inspect
+
+```sh
+jackin ls
+```
+
+Each line shows the sandbox name, the workspace, the role, the account, and the phase, separated by tabs. When there are no sandboxes, jackin prints `no sandboxes` on stderr and nothing on stdout. `jackin ls --json` adds `created_at`.
+
+```sh
+jackin inspect <sandbox>
+```
+
+It shows the phase, the labels, the OpenShell providers, and whether the policy is loaded. Add `--json` for the full data.
+
+## Attach and detach
+
+```sh
+jackin attach <sandbox>
+```
+
+This opens the Codex terminal. Detach with `Ctrl-D`, or press `Ctrl-P` and then `Ctrl-Q`. Codex never receives `Ctrl-D`, and it keeps running after you detach. The gateway keeps the terminal and replays the last 1 MiB of output when you attach again.
+
+A second attachment is a read-only viewer. It still resizes the shared terminal.
+
+If Codex exited, `jackin attach` shows the exit code. The sandbox stays alive so that you can export your work. To start Codex again, run the role `preflight` hook and then Codex:
+
+```sh
+jackin attach <sandbox> --restart
+```
+
+## Open a shell
+
+```sh
+jackin shell <sandbox>
+```
+
+This starts a new interactive process in the sandbox. It has no detach and no replay. The process ends when the stream closes.
+
+## Stop and start
+
+```sh
+jackin stop <sandbox>
+jackin start <sandbox>
+```
+
+A stopped sandbox refuses commands. Jackin cannot inspect it, so it counts its work as not exported. After `jackin start`, the main process begins again and waits. Run `jackin attach <sandbox> --restart` to start Codex.
+
+## Continue a launch
+
+If you cancel a launch, or a hook stops it, jackin keeps the sandbox. A cancel prints the launch ID. Continue it with the same ID:
+
+```sh
+jackin load my-role --launch-id <id>
+```
+
+A retry continues at the observed state. It does not create a second sandbox. If the role, the image, the policy, the account, or the Docker capability changed since the first try, jackin refuses the retry and names each label that differs.
+
+A hook that fails stops the launch. The sandbox stays and the output of the hook is printed with terminal control sequences removed.
+
+## Export your work
+
+```sh
+jackin export <sandbox>
+```
+
+Jackin creates a git bundle for each sandbox branch whose tip differs from your branch of the same name. It downloads the bundle, checks it, and writes the branches into your repository as `refs/heads/jackin/<sandbox>/<branch>`. A detached `HEAD` is written as `refs/heads/jackin/<sandbox>/HEAD`.
+
+For each ref it published, jackin prints the ref and the commit, separated by a tab. If there is nothing to export, it prints a note on stderr and nothing on stdout. Export never ships uncommitted work. When the sandbox has uncommitted changes, the note on stderr says so and tells you to commit them in the sandbox first.
+
+Merge or cherry-pick from those branches as you would from any other:
+
+```sh
+git log jackin/<sandbox>/main
+git merge jackin/<sandbox>/main
+```
+
+Jackin never writes to your working tree or your index. It refuses to export a branch name it cannot use, such as one under `jackin/`. It also refuses a target ref that one of your worktrees has checked out.
+
+## Delete a sandbox
+
+```sh
+jackin purge <sandbox>
+```
+
+Jackin refuses to delete a sandbox whose work you have not exported. Work counts as unexported when any of these is true:
+
+- A worktree has an uncommitted change.
+- The stash is not empty.
+- A branch tip differs from your branch of the same name and from its ref under `refs/heads/jackin/<sandbox>/`.
+- Jackin cannot inspect the sandbox.
+
+The refusal exits with status 3. To delete the sandbox anyway, pass `--force`:
+
+```sh
+jackin purge <sandbox> --force
+```
+
+The check and the deletion are two separate steps. Work that Codex writes between them is lost. Stop the agent first when you need certainty.

@@ -1,31 +1,20 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-min_version = "2026.10.18"
+min_version = { hard = "2026.11.1", soft = "2026.11.1" }
 
 [tools]
-"github:open-telemetry/weaver" = "0.28.0"
-"aqua:betterleaks/betterleaks" = "1.9.0"
+"aqua:betterleaks/betterleaks" = "1.10.0"
 bun = "1.4.4"
-cargo-binstall = "1.26.0"
-"cargo:cargo-audit" = "0.22.2"
+cargo-binstall = "1.26.2"
 cargo-deny = "0.20.2"
-"cargo:cargo-dylint" = "6.2.0"
-"cargo:cargo-fuzz" = "0.13.2"
-"cargo:cargo-hack" = "0.6.45"
-"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.150"
-"cargo:cargo-shear" = "1.14.0"
-"github:boltffi/boltffi" = { version = "0.31.1", os = [
-  "macos",
-], matching_regex = "^boltffi-(darwin-aarch64|darwin-x86_64|linux-aarch64(-musl)?|linux-x86_64(-musl)?|windows-arm64|windows-x86_64)\\.(tar\\.gz|zip)$" }
-"aqua:rust-cross/cargo-zigbuild" = "0.24.0"
-"cargo:dylint-link" = "6.2.0"
-cosign = "3.1.4"
+"aqua:nextest-rs/nextest/cargo-nextest" = "0.9.151"
+"github:Boshen/cargo-shear" = "1.14.0"
 gh = "2.103.3"
 "aqua:gitleaks/gitleaks" = "8.30.1"
-hk = "2.8.0"
-"github:mongodb/kingfisher" = { version = "2.14.0", matching_regex = "^kingfisher-(darwin|linux)-(arm64|x64)\\.tgz$|^kingfisher-windows-x64\\.zip$" }
-mr-boxington = { version = "1.28.0", workflow = "release.yml@refs/heads/main" }
+hk = { version = "2.11.1", workflow = "release.yml" }
+"github:mongodb/kingfisher" = { version = "2.16.0", matching_regex = "^kingfisher-(darwin|linux)-(arm64|x64)\\.tgz$|^kingfisher-windows-x64\\.zip$" }
+mr-boxington = { version = "1.29.2", workflow = "release.yml@refs/heads/main" }
 rust = { version = "1.99.1", profile = "minimal", components = [
   "clippy",
   "rustfmt",
@@ -34,15 +23,13 @@ rust = { version = "1.99.1", profile = "minimal", components = [
   "x86_64-unknown-linux-gnu",
 ], mr_boxington = true }
 shellcheck = "0.11.0"
-jactionlint = "2.3.0"
-rumdl = "0.3.0"
-node = "26.12.1"
-periphery = { version = "3.8.0", os = ["macos"] }
-swiftlint = { version = "0.65.1", os = ["macos"] }
-xcodegen = { version = "2.46.0", os = ["macos"] }
-xcbeautify = { version = "3.2.1", os = ["macos"] }
-zig = "0.17.0"
-zizmor = "1.31.1"
+jactionlint = { version = "2.4.0", workflow = "release.yaml" }
+rumdl = "0.3.2"
+uv = "0.13.7"
+node = "26.13.0"
+python = "3.15.2"
+"pipx:reuse" = { version = "6.3.0", extras = "charset-normalizer" }
+zizmor = "1.32.0"
 
 [settings]
 cargo.binstall = true
@@ -53,27 +40,34 @@ lockfile = true
 command = "mbx"
 env = { MBX_CARGO_SHIM_MODE = "1" }
 
-[tasks.renovate-upstream-sources]
-description = "Verify the pinned mise release publishes both construct installer architectures"
-run = "bash docker/construct/check-upstream-assets.sh"
-
-[tasks."release:package"]
-description = "Build unsigned release payloads and the native Velnor handoff"
-run = "cargo run --locked -p jackin-xtask -- release-package"
-
-
-[tasks."check:repository-policy"]
-description = "Enforce repository-wide architecture, telemetry, and ratchet policy"
-run = "cargo run --locked -p jackin-xtask -- lint --strict"
-
-[tasks."check:repository-links"]
-description = "Validate links across tracked repository documentation"
-run = "cargo run --locked -p jackin-xtask -- docs repo-links"
-
 [tasks."check:dependency-usage"]
 description = "Reject unused workspace dependencies"
 run = "cargo shear --deny-warnings"
 
-[tasks."check:custom-lints"]
-description = "Build pinned nightly custom lints, then check the workspace"
-run = "cargo run --locked -p jackin-xtask -- custom-lints"
+[tasks."check:repository-steps"]
+description = "Run the repository steps that start no external tool: comments, layers, pins, containers, errors"
+run = "cargo xtask ci --only comments,layers,pins,containers,errors"
+
+[tasks."ci:fast"]
+description = "Run the repository gates without the docs build"
+run = "mbx +1.99.1 xtask ci --fast"
+
+[tasks."ci:full"]
+description = "Run the repository gates; the docs build joins at P12.1"
+run = "mbx +1.99.1 xtask ci --no-docs"
+
+[tasks."check:secrets-scan"]
+description = "Scan the indexed tree and the history reachable from HEAD with gitleaks, betterleaks and Kingfisher"
+run = """
+status=0
+tree=$(mktemp -d)
+trap 'rm -rf "$tree"' EXIT
+git checkout-index --all --prefix="$tree/" || exit 1
+(cd "$tree" && gitleaks dir . --redact --no-banner) || status=1
+gitleaks git . --redact --no-banner --log-opts=HEAD || status=1
+(cd "$tree" && betterleaks dir . --config .gitleaks.toml --redact --no-banner) || status=1
+betterleaks git . --config .gitleaks.toml --redact --no-banner --log-opts=HEAD || status=1
+(cd "$tree" && kingfisher scan . --git-history none --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml) || status=1
+kingfisher scan . --git-history full --branch HEAD --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml || status=1
+exit "$status"
+"""

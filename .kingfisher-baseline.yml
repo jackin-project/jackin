@@ -14,19 +14,26 @@
 #   - local-development default / placeholder value
 #   - prose in Markdown documentation mentioning password, no literal value
 #   - test fixture: placeholder token/URI (ghp_xxx) in unit tests
+# Refreshed 2026-11-03 with --manage-baseline in a clean clone. Each finding has two entries: the working-tree path (./crates/...) and the git and staged path (crates/...).
 version: 2
 fingerprint_algorithm: kingfisher-v1
 repositories:
 - id: git://github.com/jackin-project/jackin
   findings:
+  - path: .kingfisher-baseline.yml
+    fingerprint: '1265784279435296958'
+    rule_id: betterleaks.azure-storage-account-name
+    line: 524
+    first_seen_at: 2026-11-03T11:07:30.629497+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
+  - path: .kingfisher-baseline.yml
+    fingerprint: '12899230867388031377'
+    rule_id: betterleaks.azure-storage-account-name
+    line: 524
+    first_seen_at: 2026-11-03T11:07:30.629497+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
   - path: crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs
     fingerprint: '18085921644036203508'
-    rule_id: betterleaks.generic-credential-uri
-    line: 245
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
-  - path: crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs
-    fingerprint: '6513720359978289459'
     rule_id: betterleaks.generic-credential-uri
     line: 245
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
@@ -37,6 +44,66 @@ repositories:
     line: 248
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
+  - path: crates/apps/jackin-capsule/src/exec/tests/case_01.rs
+    fingerprint: '6109986465419107661'
+    rule_id: betterleaks.private-key
+    line: 24
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/apps/jackin-capsule/src/exec/tests/case_01.rs
+    fingerprint: '13383720952452488733'
+    rule_id: betterleaks.private-key
+    line: 26
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-capsule/src/exec/tests.rs
+    fingerprint: '3927696326968071745'
+    rule_id: betterleaks.private-key
+    line: 24
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-capsule/src/exec/tests.rs
+    fingerprint: '2062894378261848786'
+    rule_id: betterleaks.private-key
+    line: 27
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-core/src/agent.rs
+    fingerprint: '14654735214883087869'
+    rule_id: betterleaks.jwt
+    line: 165
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
+  - path: crates/jackin-core/src/agent.rs
+    fingerprint: '2001662616931921538'
+    rule_id: betterleaks.jwt
+    line: 165
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-core/tests/secrets.rs
+    fingerprint: '7986522159873920938'
+    rule_id: betterleaks.private-key
+    line: 83
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-core/tests/secrets.rs
+    fingerprint: '1055216483623026778'
+    rule_id: betterleaks.private-key
+    line: 98
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-core/tests/secrets.rs
+    fingerprint: '11463744340601405726'
+    rule_id: betterleaks.private-key
+    line: 103
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-diagnostics/src/build_log/tests.rs
+    fingerprint: '6212251552392568713'
+    rule_id: betterleaks.private-key
+    line: 134
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: crates/jackin-diagnostics/src/observability/config/tests.rs
     fingerprint: '16352112363799869626'
     rule_id: betterleaks.generic-credential-uri
@@ -44,17 +111,41 @@ repositories:
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
   - path: crates/jackin-diagnostics/src/redact/tests.rs
+    fingerprint: '11291047193723220796'
+    rule_id: betterleaks.private-key
+    line: 21
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-diagnostics/src/redact/tests.rs
+    fingerprint: '5621249883206577759'
+    rule_id: betterleaks.private-key
+    line: 69
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-diagnostics/src/redact/tests.rs
+    fingerprint: '4439983984360149563'
+    rule_id: betterleaks.private-key
+    line: 78
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-diagnostics/src/redact/tests.rs
+    fingerprint: '10975275419143731735'
+    rule_id: betterleaks.private-key
+    line: 96
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-diagnostics/src/redact/tests.rs
     fingerprint: '6894767704145806207'
     rule_id: betterleaks.private-key
     line: 244
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
-  - path: crates/jackin-diagnostics/src/redact/tests.rs
-    fingerprint: '3627121026186917716'
+  - path: crates/jackin-diagnostics/src/secret_scrub/tests.rs
+    fingerprint: '11439518880377045581'
     rule_id: betterleaks.private-key
-    line: 500
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
+    line: 30
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: crates/jackin-docker/src/shell_runner/tests.rs
     fingerprint: '13673702141347034448'
     rule_id: betterleaks.generic-credential-uri
@@ -151,6 +242,66 @@ repositories:
     line: 829
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
+  - path: crates/jackin-openshell/tests/gateway/discovery.rs
+    fingerprint: '4842053511444827687'
+    rule_id: betterleaks.generic-credential-uri
+    line: 280
+    first_seen_at: 2026-11-05T01:43:45.465825+00:00
+    last_updated_at: 2026-11-05T01:43:45.465825+00:00
+  - path: crates/jackin-core/tests/engine_cert.rs
+    fingerprint: '1644127716964583751'
+    rule_id: betterleaks.private-key
+    line: 66
+    first_seen_at: 2026-11-05T01:42:35.233310+00:00
+    last_updated_at: 2026-11-05T01:42:35.233310+00:00
+  - path: crates/jackin-core/tests/engine_cert.rs
+    fingerprint: '17256990541361803925'
+    rule_id: betterleaks.private-key
+    line: 66
+    first_seen_at: 2026-11-05T01:42:35.233310+00:00
+    last_updated_at: 2026-11-05T01:42:35.233310+00:00
+  - path: crates/services/jackin-diagnostics/src/redact/tests/case_02.rs
+    fingerprint: '17578323562781365490'
+    rule_id: betterleaks.private-key
+    line: 114
+    first_seen_at: 2026-11-05T01:42:35.233310+00:00
+    last_updated_at: 2026-11-05T01:42:35.233310+00:00
+  - path: crates/jackin-diagnostics/src/redact/tests.rs
+    fingerprint: '3627121026186917716'
+    rule_id: betterleaks.private-key
+    line: 500
+    first_seen_at: 2026-11-05T01:42:35.233310+00:00
+    last_updated_at: 2026-11-05T01:42:35.233310+00:00
+  - path: preserved/historical-layout/crates/jackin-diagnostics/src/redact/tests.rs
+    fingerprint: '3627121026186917716'
+    rule_id: betterleaks.private-key
+    line: 500
+    first_seen_at: 2026-11-05T01:42:35.233310+00:00
+    last_updated_at: 2026-11-05T01:42:35.233310+00:00
+  - path: crates/jackin-openshell/tests/gateway/discovery.rs
+    fingerprint: '15695154713795733532'
+    rule_id: betterleaks.generic-credential-uri
+    line: 228
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-openshell/tests/gateway/discovery.rs
+    fingerprint: '3407169798526525991'
+    rule_id: betterleaks.generic-credential-uri
+    line: 229
+    first_seen_at: 2026-11-03T11:07:30.629497+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
+  - path: crates/jackin-openshell/tests/gateway/discovery.rs
+    fingerprint: '9524989594829128001'
+    rule_id: betterleaks.generic-credential-uri
+    line: 229
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-openshell/tests/gateway/git_config.rs
+    fingerprint: '17592061197741452805'
+    rule_id: betterleaks.generic-credential-uri
+    line: 101
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: crates/jackin-runtime/src/isolation/materialize/tests.rs
     fingerprint: '349777679358941043'
     rule_id: betterleaks.generic-credential-uri
@@ -163,54 +314,174 @@ repositories:
     line: 806
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
+  - path: crates/jackin-session/src/files.rs
+    fingerprint: '7341315995936153994'
+    rule_id: betterleaks.jwt
+    line: 7
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/src/files.rs
+    fingerprint: '16505328089748758664'
+    rule_id: betterleaks.jwt
+    line: 8
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/refuse.rs
+    fingerprint: '11086008894298380327'
+    rule_id: betterleaks.generic-credential-uri
+    line: 147
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/refuse.rs
+    fingerprint: '5641864439370502602'
+    rule_id: betterleaks.generic-credential-uri
+    line: 147
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '7652777610793474294'
+    rule_id: betterleaks.generic-credential-uri
+    line: 131
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '16900927284507076171'
+    rule_id: betterleaks.generic-credential-uri
+    line: 132
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '14777421867442525014'
+    rule_id: betterleaks.generic-credential-uri
+    line: 140
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '16165581178275746922'
+    rule_id: betterleaks.generic-credential-uri
+    line: 141
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '12415391757625331188'
+    rule_id: betterleaks.generic-credential-uri
+    line: 146
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '1104445977021180208'
+    rule_id: betterleaks.generic-credential-uri
+    line: 147
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '453638631738168739'
+    rule_id: betterleaks.generic-credential-uri
+    line: 159
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '17945903320757591660'
+    rule_id: betterleaks.generic-credential-uri
+    line: 162
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '89884830540951438'
+    rule_id: betterleaks.generic-credential-uri
+    line: 162
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '561279475952007857'
+    rule_id: betterleaks.generic-credential-uri
+    line: 168
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '3930548132925679269'
+    rule_id: betterleaks.generic-credential-uri
+    line: 171
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '8524185829530938861'
+    rule_id: betterleaks.generic-credential-uri
+    line: 171
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '2593105193132428974'
+    rule_id: betterleaks.generic-credential-uri
+    line: 174
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '17370117188782159873'
+    rule_id: betterleaks.generic-credential-uri
+    line: 177
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '553062047359132682'
+    rule_id: betterleaks.generic-credential-uri
+    line: 177
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: crates/jackin-usage/src/usage/cursor/tests.rs
     fingerprint: '3835586919848998453'
     rule_id: betterleaks.jwt
     line: 29
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
+  - path: crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs
+    fingerprint: '17954156367739567015'
+    rule_id: betterleaks.private-key
+    line: 130
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/services/jackin-diagnostics/src/build_log/tests/case_01.rs
+    fingerprint: '4047312987665011685'
+    rule_id: betterleaks.private-key
+    line: 131
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: crates/services/jackin-diagnostics/src/observability/config/tests/case_01.rs
     fingerprint: '12952437371115577811'
     rule_id: betterleaks.generic-credential-uri
     line: 184
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
-  - path: crates/services/jackin-diagnostics/src/observability/config/tests/case_01.rs
-    fingerprint: '8269196955293221951'
-    rule_id: betterleaks.generic-credential-uri
-    line: 184
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
   - path: crates/services/jackin-diagnostics/src/redact/tests/case_01.rs
-    fingerprint: '13907180474180145697'
+    fingerprint: '16863836698451098532'
     rule_id: betterleaks.private-key
-    line: 244
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
+    line: 69
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/services/jackin-diagnostics/src/redact/tests/case_01.rs
+    fingerprint: '5721944278884671996'
+    rule_id: betterleaks.private-key
+    line: 78
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/services/jackin-diagnostics/src/redact/tests/case_01.rs
+    fingerprint: '11978473061136423534'
+    rule_id: betterleaks.private-key
+    line: 96
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: crates/services/jackin-diagnostics/src/redact/tests/case_01.rs
     fingerprint: '6429737295095907378'
     rule_id: betterleaks.private-key
     line: 244
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
-  - path: crates/services/jackin-diagnostics/src/redact/tests/case_02.rs
-    fingerprint: '17578323562781365490'
+  - path: crates/services/jackin-diagnostics/src/secret_scrub/tests.rs
+    fingerprint: '185899769543754589'
     rule_id: betterleaks.private-key
-    line: 114
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
-  - path: crates/services/jackin-diagnostics/src/redact/tests/case_02.rs
-    fingerprint: '5037854082951015674'
-    rule_id: betterleaks.private-key
-    line: 114
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
-  - path: crates/services/jackin-isolation/src/materialize/tests/case_01.rs
-    fingerprint: '1128500944465004036'
-    rule_id: betterleaks.generic-credential-uri
-    line: 75
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
+    line: 28
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: crates/services/jackin-isolation/src/materialize/tests/case_01.rs
     fingerprint: '11375255418900771404'
     rule_id: betterleaks.generic-credential-uri
@@ -230,21 +501,9 @@ repositories:
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
   - path: crates/services/jackin-isolation/src/materialize/tests/case_01.rs
-    fingerprint: '18420292797828406231'
-    rule_id: betterleaks.generic-credential-uri
-    line: 104
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
-  - path: crates/services/jackin-isolation/src/materialize/tests/case_01.rs
     fingerprint: '12262414174184669973'
     rule_id: betterleaks.generic-credential-uri
     line: 112
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
-  - path: crates/services/jackin-isolation/src/materialize/tests/case_03.rs
-    fingerprint: '1973376600511223562'
-    rule_id: betterleaks.generic-credential-uri
-    line: 18
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
   - path: crates/services/jackin-isolation/src/materialize/tests/case_03.rs
@@ -266,23 +525,53 @@ repositories:
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
   - path: crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs
-    fingerprint: '396379388140288622'
-    rule_id: betterleaks.jwt
-    line: 8
-    first_seen_at: 2026-10-22T11:05:19.257717+00:00
-    last_updated_at: 2026-10-22T11:05:19.257717+00:00
-  - path: crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs
     fingerprint: '5712441508378942259'
     rule_id: betterleaks.jwt
     line: 9
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
+  - path: crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs
+    fingerprint: '9513070904791017781'
+    rule_id: betterleaks.jwt
+    line: 14
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/xtask/tests/e2e/scenario/world.rs
+    fingerprint: '12638979745217639803'
+    rule_id: betterleaks.jwt
+    line: 9
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
+  - path: crates/xtask/tests/e2e/scenario/world.rs
+    fingerprint: '13837221004436367791'
+    rule_id: betterleaks.jwt
+    line: 9
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
+  - path: crates/xtask/tests/e2e/scenario/world.rs
+    fingerprint: '11953210001442509036'
+    rule_id: betterleaks.jwt
+    line: 11
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T11:07:30.629497+00:00
+  - path: crates/xtask/tests/e2e/scenario/world.rs
+    fingerprint: '6047543060910122716'
+    rule_id: betterleaks.jwt
+    line: 11
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: docs/consolidation-20261013/plan/goal-references/tools/test_collector.py
     fingerprint: '10295677005589416588'
     rule_id: betterleaks.generic-credential-uri
     line: 43
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
+  - path: docs/content/research/context/techniques/tools/refresh-2026-10-24/integration/logs/ci-f820-repository-links.log
+    fingerprint: '9503224675790723857'
+    rule_id: betterleaks.azure-storage-account-name
+    line: 370
+    first_seen_at: 2026-11-03T10:42:09.428389+00:00
+    last_updated_at: 2026-11-03T10:42:09.428389+00:00
   - path: plans/jackin-build-split/stop-preservation/mbx-24b8-code.tar!mbx-24b8-code/cargo-seed-verify-fixture-24b8-v1.py
     fingerprint: '8388772762832838637'
     rule_id: betterleaks.generic-credential-uri
@@ -439,3 +728,27 @@ repositories:
     line: 1922
     first_seen_at: 2026-10-22T11:05:19.257717+00:00
     last_updated_at: 2026-10-22T11:05:19.257717+00:00
+  - path: rewrite/reconciliation/P13.3.md
+    fingerprint: '8965963314725187051'
+    rule_id: betterleaks.generic-credential-uri
+    line: 151
+    first_seen_at: 2026-11-04T18:55:00+00:00
+    last_updated_at: 2026-11-04T18:55:00+00:00
+  - path: rewrite/reconciliation/P13.3.md
+    fingerprint: '12182408407750016531'
+    rule_id: betterleaks.generic-credential-uri
+    line: 151
+    first_seen_at: 2026-11-04T18:55:00+00:00
+    last_updated_at: 2026-11-04T18:55:00+00:00
+  - path: ./rewrite/reconciliation/P13.3.md
+    fingerprint: '15293903854739224969'
+    rule_id: betterleaks.generic-credential-uri
+    line: 151
+    first_seen_at: 2026-11-04T18:55:00+00:00
+    last_updated_at: 2026-11-04T18:55:00+00:00
+  - path: ./rewrite/reconciliation/P13.3.md
+    fingerprint: '14703636204504340946'
+    rule_id: betterleaks.generic-credential-uri
+    line: 151
+    first_seen_at: 2026-11-04T18:55:00+00:00
+    last_updated_at: 2026-11-04T18:55:00+00:00

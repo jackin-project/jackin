@@ -1,31 +1,52 @@
 # Rules
 
-Shared working agreement: keep this section byte-identical across projects. Project-specific rules live under `## This project` below.
+Keep this section identical in all four repositories. Write the rules for one repository under `## This project`.
 
-- No legacy code. Finish every migration: remove old paths completely — no compatibility shims, aliases, or deprecation periods. Breaking changes are preferred.
-- Research project: unsafe, breaking changes expected, never production-ready. Break things when needed; deliver fast.
-- Verification gates: verify from the repo root before committing or merging. Run tests with cargo nextest, never cargo test.
-- Write a test for every added or changed required behavior, to prove it works and keeps working; never write a test for coverage numbers or KPIs.
-- Never write a test without a reviewed plan first: the plan must state which required behavior it proves, which real positive and negative scenarios it covers, and why existing tests cannot cover them, confirmed by an independent subagent.
-- Prefer fewer high-signal tests over many low-signal tests; never judge a suite by count, coverage %, or speed.
-- Test functional/integration-first through public APIs, asserting resulting state not interaction sequences; test internals only for pure logic unreachable observably; forbid mirror-logic assertions and unreviewed snapshots.
-- Never mock owned code; mocks and fakes are permitted only at unowned external I/O (network, clock, filesystem, OS) behind interfaces you own; if a small change breaks many doubles, consolidate toward real coverage.
-- A red test must name broken user-observable behavior, never a reshaped abstraction or a bad double; fix the test when reshaping or a bad double causes the red, and analyze an expected behavior change before updating its tests; an expected change under analysis may stay red only within its plan, beyond that quarantine it.
-- When an issue escapes, do not just append a test; analyze why current tests missed it and rethink coverage conceptually, with independent review for significant escapes, before writing or refactoring the test.
-- Keep a test only if observed red on broken code and green on fixed code, with the break recorded and verified by an independent subagent; reject tests never seen red.
-- Keep every test hermetic and deterministic — no live network, seeded randomness, fake clocks — and quarantine flakes at once via `#[ignore]` with a tracking reference, never tolerate them; never skip, weaken, edit, or delete a test to hide broken required behavior.
-- Run narrow tests per change and the full relevant suite before done, per the project's verification doc; keep the loop fast enough to run every time.
-- No comments in code. Code is the source of truth; a comment creates ambiguity about what is right, code or comment. Keep a comment only when functionality requires it: SPDX license headers for REUSE compliance, clap `#[command]`/`#[arg]` help text and similar string literals consumed by tools, parser directives such as Dockerfile `# syntax=`, and machine-generated files that the repo's own generators verify byte-identical. Never keep explanatory, TODO, or SAFETY comments; when code seems to need explanation, rewrite the code instead.
-- Judge correctness, consistency, and project fit. Never defer a known-wrong state for ROI, cost, effort, or edge cases.
-- Stop only when the required change is proven impossible with the available tools or model. When uncertain, inspect, test, and measure first.
-- Before fixing a bug, identify why the architecture permitted it and whether the same structure permits related bugs. Prefer fixes that remove the enabling condition; use a symptom-layer patch only when the root fix is proven infeasible or belongs in a separate change, and name the deferred root cause.
-- Delegate first: use subagents for parallel research, implementation, review, and independent verification. Resolve ambiguity autonomously from evidence and project docs.
-- Commit verified changes frequently; push regularly. Prefer one branch; add another only for safe isolation.
-- Before every PR merge, read all reviews, comments, replies, and unresolved or outdated threads. Use independent subagents to verify findings against code, tests, docs, and recorded decisions.
-- For accepted feedback: fix, verify, commit, push, and reply with the fixing commit URL before resolving. For rejected feedback: reply with evidence and rationale before resolving. Re-fetch feedback at the final head SHA. Merge only with zero unaddressed feedback and all required checks and approvals satisfied. Only explicit, PR-specific human authorization permits ignoring identified feedback.
-- Keep instructions lean; explanations, plans, and progress belong in documentation, not here.
+## Program
+
+- This program rebuilds jackin on NVIDIA OpenShell. The program files are in `jackin/rewrite/` on the branch `feature/openshell-native`. `rewrite/DESIGN.md` is the authority. `rewrite/PLAN.md` lists the tasks and the gates.
+- OpenShell is the only execution engine. Do not run an agent, a sandbox, or a container with Docker, Podman, or Apple `container`.
+- Jackin builds the role images with Docker BuildKit through `docker buildx`. Only the `jackin-image` crate starts `docker`.
+- An agent can run Docker containers in its sandbox only when its role or workspace enables the Docker capability (decision D24). The capability is disabled by default.
+- The agents are the twelve tuples of decision D29 in `rewrite/DESIGN.md`. Do not add code, files, or configuration for an agent outside that catalog.
+- Use the old code only as a reference. To read an old jackin file, run `git show 470fc5d6:<path>` in jackin. Copy old code only when the task states a reason.
+- Do not keep compatibility. Do not write a migration, an importer, a shim, an alias, or a fallback. Make breaking changes.
+- Use the latest stable version of every tool and every dependency. Do not use a prerelease.
+- Run silently. Do not ask a human. If you are not sure, find the facts. Decide. Record the decision in `jackin/rewrite/decisions.tsv`.
+
+## Code
+
+- Do not write comments in code. The only exceptions are SPDX license headers, shebang lines, parser directives such as the Dockerfile `# syntax=` line, and files that a repository generator writes and verifies.
+- Write clap help text with `#[command(about = "...")]` and `#[arg(help = "...")]`. Do not use doc comments for help text.
+- Before you fix a bug, find why the design permitted it. Find whether the same design permits related bugs. Fix the cause. Do not fix only the symptom.
+- Judge work by correctness, consistency, and fit. Do not keep a known-wrong state because of cost or effort.
+
+## Tests
+
+- Delete all old tests. Write new tests only for the behavior that the program builds.
+- Before you write a test, get approval of its plan from an independent reviewer subagent. In the plan, name the behavior, the positive and negative cases, and the reason that no other test covers them.
+- Keep a test only after an independent reviewer subagent sees it fail on broken code and pass on fixed code.
+- Test through public interfaces. Assert the resulting state. Do not assert the sequence of calls.
+- Do not use a fake for code that you own. Use a fake only at an external boundary, behind an interface that you own. The boundaries are the OpenShell gateway, the network, the clock, and the filesystem.
+- Keep tests hermetic and deterministic. Do not use a live network in nextest. Run live tests against a real gateway in `xtask e2e`.
+- Run tests with `cargo nextest` through `mise exec -- mbx`. Never use `cargo test`.
+- If a test is flaky, quarantine it at once. Mark it `#[ignore]` with a tracking reference. Do not weaken, skip, or delete a test to hide broken behavior.
+
+## Work
+
+- Use subagents for research, implementation, review, and verification. Use a different subagent to review the work of each implementer.
+- Verify from the repository root before each commit.
+- Use Conventional Commits. Commit with `git commit -s`. Push after each commit.
+- Work on `feature/openshell-native`, or on a local worktree branch that you merge into it. Do not force-push. Do not merge to `main`. The operator merges the pull requests.
+- Before the operator merges a pull request, read every review, comment, and thread. Fix accepted feedback and reply with the URL of the fix commit. Reply to rejected feedback with the evidence.
+- Keep this file short. Put plans, explanations, and progress in documentation.
 
 ## This project (jackin)
 
-- Secrets: use the CLI whenever sufficient. Use only `op` for 1Password. Before installing GitHub secrets, back up and verify exact values in 1Password; report vault and item.
-- Verification gates: exact commands, purposes, and usage: [COMMITS.md](./COMMITS.md).
+- Jackin is developer experience. It is a CLI and a terminal console that build role images and run Codex in OpenShell sandboxes.
+- Only the orchestrator edits `rewrite/DESIGN.md`, `rewrite/PLAN.md`, and `rewrite/decisions.tsv`.
+- Use the gate commands in the Gates table of `rewrite/PLAN.md`. `COMMITS.md` gives the commit format.
+- Only `jackin-openshell` imports `openshell-sdk`. Only `jackin-image` starts `docker`. `compatibility.lock.toml` holds the OpenShell pin.
+- Velnor generates `.github/workflows/` from `.velnor/config.toml`. Do not edit the generated files. Run `velnor-actions generate`.
+- The console uses the `junie-tui` crate from `terminal-components-baseline` (decision D27). Do not use `termrock`. If the console needs more, extend the baseline. Never change an approved baseline visual.
+- Use only `op` for 1Password. Never write a secret in a file, a log, a label, a commit, or the trail.

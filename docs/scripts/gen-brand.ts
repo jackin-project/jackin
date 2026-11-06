@@ -2,7 +2,7 @@
 import { Resvg } from '@resvg/resvg-js'
 import ImageResponse from '@takumi-rs/image-response'
 import React from 'react'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { chevron, chevronHeight, chevronSvg, wordChevronGap } from './brand-geometry'
 import { font, interData, interFont, jbBoldData, outlineWord, placeWord } from './brand-outline'
@@ -69,11 +69,17 @@ function faviconSvg(size: number): string {
 `
 }
 
+const rewriteRaster = process.argv.includes('--raster')
+
+function writeRaster(path: string, data: Buffer): boolean {
+  if (existsSync(path) && !rewriteRaster) return false
+  writeFileSync(path, data)
+  return true
+}
+
 const brandDir = join(root, 'public', 'brand')
-const nativeBrandDir = join(root, '..', 'native', 'Sources', 'JackinDesktop', 'Resources', 'Brand')
 const pub = join(root, 'public')
 mkdirSync(brandDir, { recursive: true })
-mkdirSync(nativeBrandDir, { recursive: true })
 
 function assertBylineAligned(svg: string, tolUnits = 3) {
   const vbW = Number(svg.match(/viewBox="0 0 ([0-9.]+)/)?.[1])
@@ -119,18 +125,6 @@ writeFileSync(join(brandDir, 'jackin-wordmark-onlight.svg'), wordmarkOnlight)
 console.log('wrote public/brand/jackin-wordmark-onlight.svg')
 writeFileSync(join(brandDir, 'jackin-lockup-onlight.svg'), wordmarkOnlight)
 console.log('wrote public/brand/jackin-lockup-onlight.svg')
-const monogramOnlight = wordmarkSvg('j', 200, DARK_WORD, GREEN, false)
-
-for (const [name, svg] of [
-  ['JackinWordmarkDark.svg', wordmark],
-  ['JackinWordmarkLight.svg', wordmarkOnlight],
-  ['JackinMonogramDark.svg', monogram],
-  ['JackinMonogramLight.svg', monogramOnlight],
-] as const) {
-  writeFileSync(join(nativeBrandDir, name), svg)
-  console.log(`wrote native/Sources/JackinDesktop/Resources/Brand/${name}`)
-}
-
 writeFileSync(join(pub, 'favicon.svg'), faviconSvg(512))
 console.log('wrote public/favicon.svg')
 
@@ -212,8 +206,8 @@ for (const [name, word] of [['jackin-wordmark', 'jackin'], ['jackin-monogram', '
   const width = Math.ceil(fontSize * 0.6 * word.length + wordChevronGap(fontSize) + chev.width)
   const height = Math.ceil(chev.height * 1.4 + (byline ? fontSize * 0.45 : 0))
   const png = await renderPng(wordmarkElement(word, fontSize, false, byline), width, height)
-  writeFileSync(join(brandDir, `${name}.png`), png)
-  console.log(`wrote public/brand/${name}.png (${png.byteLength.toLocaleString()} bytes)`)
+  const wrote = writeRaster(join(brandDir, `${name}.png`), png)
+  console.log(`${wrote ? 'wrote' : 'kept'} public/brand/${name}.png`)
 }
 
 async function iconPng(size: number): Promise<Buffer> {
@@ -241,20 +235,20 @@ function faviconIco(images: Buffer[]): Buffer {
 }
 
 const ico = await Promise.all([16, 32, 48].map((s) => iconPng(s)))
-writeFileSync(join(pub, 'favicon.ico'), faviconIco(ico))
-console.log('wrote public/favicon.ico')
+const wroteIco = writeRaster(join(pub, 'favicon.ico'), faviconIco(ico))
+console.log(`${wroteIco ? 'wrote' : 'kept'} public/favicon.ico`)
 
 for (const [name, size] of [['apple-touch-icon.png', 180], ['icon-192.png', 192], ['icon-512.png', 512]] as const) {
   const png = await iconPng(size)
-  writeFileSync(join(pub, name), png)
-  console.log(`wrote public/${name} (${size}x${size}, ${png.byteLength.toLocaleString()} bytes)`)
+  const wrote = writeRaster(join(pub, name), png)
+  console.log(`${wrote ? 'wrote' : 'kept'} public/${name}`)
 }
 
 const manifest = {
   name: 'jackin❯',
   short_name: 'j❯',
   description:
-    'Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.',
+    'Run Codex at full speed in NVIDIA OpenShell sandboxes: a copy of your project, credentials that stay on the gateway, native OpenShell policy, and work exported as git branches.',
   start_url: '/',
   display: 'standalone',
   background_color: DARK,

@@ -1,0 +1,61 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::fmt::Debug;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use jackin_core::{GatewayEntry, GatewayName, GroupFault, ProcessError};
+use jackin_openshell::{DiscoveryError, Gateway, GatewayError};
+
+use crate::report::error_chain;
+use thiserror::Error;
+use tokio_util::sync::CancellationToken;
+
+#[derive(Debug, Error)]
+pub enum ConnectError {
+    #[error("cannot discover gateway {gateway}")]
+    Discovery {
+        gateway: GatewayName,
+        source: DiscoveryError,
+    },
+    #[error(transparent)]
+    Gateway(#[from] GatewayError),
+}
+
+impl ConnectError {
+    pub fn into_failure(self, name: &GatewayName) -> GatewayError {
+        match self {
+            ConnectError::Gateway(error) => error,
+            discovery @ ConnectError::Discovery { .. } => GatewayError::Unreachable {
+                endpoint: name.to_string(),
+                message: error_chain(&discovery),
+            },
+        }
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel().is_some()
+    }
+
+    pub fn cancel(&self) -> Option<Option<&GroupFault>> {
+        match self {
+            ConnectError::Discovery {
+                source: DiscoveryError::Process(ProcessError::Cancelled { group, .. }),
+                ..
+            }
+            | ConnectError::Gateway(GatewayError::Cancelled { group, .. }) => Some(group.as_ref()),
+            ConnectError::Discovery { .. } | ConnectError::Gateway(_) => None,
+        }
+    }
+}
+
+#[async_trait]
+pub trait GatewayConnector: Send + Sync + Debug {
+    async fn connect(
+        &self,
+        name: &GatewayName,
+        entry: &GatewayEntry,
+        cancel: &CancellationToken,
+    ) -> Result<Arc<dyn Gateway>, ConnectError>;
+}
