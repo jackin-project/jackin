@@ -30,6 +30,7 @@ mod source;
 mod state;
 mod workspace;
 
+pub use crate::files::{omp_auth_file, render_omp_config};
 pub use accounts::*;
 pub use attach::*;
 pub use build::*;

@@ -72,6 +72,40 @@ fn text<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a str, Credent
         .ok_or_else(|| invalid(key))
 }
 
+pub fn extract_omp_api_key(bytes: &[u8], provider_id: &str) -> Option<Secret> {
+    let text = String::from_utf8_lossy(bytes);
+    let start = text.find(provider_id)?;
+    let window = &text[start..text.len().min(start + 8192)];
+    let key_at = window.find("\"key\"")?;
+    let rest = &window[key_at + 5..];
+    let colon = rest.find(':')?;
+    let rest = rest[colon + 1..].trim_start();
+    let rest = rest.strip_prefix('"')?;
+    let end = rest.find('"')?;
+    let value = &rest[..end];
+    if value.is_empty() {
+        None
+    } else {
+        Some(Secret::new(value.to_owned()))
+    }
+}
+
+pub async fn read_omp_host_key(
+    fs: &dyn FileSystem,
+    db_path: &HostPath,
+    provider_id: &str,
+) -> Result<Secret, CredentialError> {
+    let bytes = fs
+        .read(db_path)
+        .await?
+        .ok_or_else(|| CredentialError::LoginUnreadable {
+            path: db_path.clone(),
+        })?;
+    extract_omp_api_key(&bytes, provider_id).ok_or_else(|| CredentialError::LoginUnreadable {
+        path: db_path.clone(),
+    })
+}
+
 pub async fn read_chatgpt_login(
     fs: &dyn FileSystem,
     home: &HostPath,

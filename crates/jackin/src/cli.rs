@@ -295,13 +295,14 @@ pub enum CredentialArg {
     Env(EnvName),
     OnePassword(OpReference),
     File(PathBuf),
+    OmpHost,
 }
 
 const MAX_ENV_NAME: usize = 128;
 
 impl CredentialArg {
     pub fn parse(text: &str) -> Result<CredentialArg, CommandError> {
-        const FORMS: &str = "--credential expects env:NAME, an op:// reference, or file:PATH";
+        const FORMS: &str = "--credential expects env:NAME, an op:// reference, file:PATH, or omp-host";
         let bad = || CommandError::Argument(FORMS.to_owned());
         if let Some(name) = text.strip_prefix("env:") {
             if name.len() > MAX_ENV_NAME {
@@ -310,6 +311,9 @@ impl CredentialArg {
             return EnvName::parse(name)
                 .map(CredentialArg::Env)
                 .map_err(|_| bad());
+        }
+        if text == "omp-host" {
+            return Ok(CredentialArg::OmpHost);
         }
         if text.starts_with("op://") {
             return OpReference::parse(text)
@@ -373,7 +377,7 @@ pub struct AccountAddArgs {
     #[arg(
         long,
         value_name = "SOURCE",
-        help = "Credential as env:NAME, an op:// reference, or file:PATH"
+        help = "Credential as env:NAME, an op:// reference, file:PATH, or omp-host"
     )]
     pub credential: Option<String>,
 }

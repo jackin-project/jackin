@@ -130,6 +130,36 @@ pub struct AgentTuple {
 }
 
 impl AgentTuple {
+    pub fn omp_provider_id(&self) -> Option<&'static str> {
+        match self.id {
+            "T09" => Some("zai"),
+            "T10" => Some("moonshot"),
+            "T11" => Some("minimax-code"),
+            "T12" => Some("xiaomi-token-plan-sgp"),
+            _ => None,
+        }
+    }
+
+    pub fn omp_credential_env(&self) -> Option<&'static str> {
+        match self.id {
+            "T09" => Some("ZAI_API_KEY"),
+            "T10" => Some("KIMI_API_KEY"),
+            "T11" => Some("MINIMAX_CODE_API_KEY"),
+            "T12" => Some("XIAOMI_TOKEN_PLAN_SGP_API_KEY"),
+            _ => None,
+        }
+    }
+
+    pub fn omp_provider_hosts(&self) -> &'static [&'static str] {
+        match self.id {
+            "T09" => &["api.z.ai"],
+            "T10" => &["api.kimi.com"],
+            "T11" => &["api.minimax.io"],
+            "T12" => &["token-plan-sgp.xiaomimimo.com"],
+            _ => &[],
+        }
+    }
+
     pub fn check_model(&'static self, model: &str) -> Result<&'static AgentTuple, CatalogError> {
         if self.allowed_models.contains(&model) {
             Ok(self)
