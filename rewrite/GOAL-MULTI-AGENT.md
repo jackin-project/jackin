@@ -328,7 +328,7 @@ Unit 2, image and policy (`jackin-image`, then `jackin-openshell`):
 
 Unit 3, supervisor and work (`jackin-image`, then `jackin-session`):
 
-1. Implement the route that Unit 0 selected. Keep the main process alive at all times.
+1. Implement the route that Unit 0 selected. Keep the main process alive at all times. A non-lead instance has no always-on interactive process: the sandbox forbids PTY allocation. Its process runs while a jackin host process holds its PTY (attach or console), or while it is driven through exec. `jackin agent restart` stops only that instance process and returns the instance to ready.
 2. Write `/sandbox/.jackin/task/task.md`, `/sandbox/.jackin/agents.json`, and one status directory, as that section states.
 3. Create one worktree and one branch for each non-lead instance, and one home directory for each instance.
 4. Add `jackin agent restart <sandbox> <agent>`, `jackin attach --agent`, and `jackin integrate <sandbox>`.
@@ -338,7 +338,7 @@ Unit 4, live proof:
 
 1. Run one sandbox with Codex and one `supported` omp tuple at the same time, on one task file with two named parts.
 2. Each agent must write its status file and commit on its own branch.
-3. Restart the omp instance during the run. Codex must not stop.
+3. Restart the omp instance during the run with `jackin agent restart`. Only the omp process stops. Codex must not stop. Then drive omp again and finish its part.
 4. Run `jackin export`. Both branches must arrive on the host.
 5. Run `jackin integrate`. It must merge both branches or stop on a named conflict.
 6. Record each step in `rewrite/evidence/A3M-live.md`.
