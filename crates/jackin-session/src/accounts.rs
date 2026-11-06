@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
-    FileLock, FileSystem, GatewayEntry, GatewayName, HostPath, Provider, ProviderName,
+    FileLock, GatewayEntry, GatewayName, HostPath, Provider, ProviderName,
 };
 use jackin_openshell::{
     Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile,
@@ -15,7 +15,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::connect::{ConnectError, GatewayConnector};
-use crate::credentials::{CredentialError, read_chatgpt_login};
+use crate::credentials::{CredentialError, read_chatgpt_login, resolve_static_key};
 use crate::gateways::{Gateways, UnreachableGateway};
 use crate::lock::{self, LockError};
 use crate::report::error_chain;
@@ -66,6 +66,8 @@ pub enum AccountError {
     },
     #[error("the login of account {account} belongs to another ChatGPT account")]
     AccountIdMismatch { account: AccountName },
+    #[error("no credential is available for account {account}")]
+    MissingCredential { account: AccountName },
 }
 
 #[derive(Debug, Error)]
@@ -91,6 +93,16 @@ pub enum AccountEditError {
         #[source]
         rollback: AccountError,
     },
+}
+
+pub(crate) fn account_agent(account: &Account) -> Agent {
+    if account.provider() == Provider::Codex {
+        Agent::Codex
+    } else if jackin_core::lookup_tuple(Agent::Omp, account.provider()).is_ok() {
+        Agent::Omp
+    } else {
+        Agent::Codex
+    }
 }
 
 fn login_accounts(config: &Config) -> BTreeSet<AccountName> {
@@ -357,7 +369,7 @@ impl RemovalPlan {
                     .map_err(|error| on_gateway(&self.name, error))?;
                 if held {
                     journal.push(Undo {
-                        fs: host.fs.as_ref(),
+                        host,
                         gateway: gateway.as_ref(),
                         account,
                         action: Action::Restore,
@@ -385,7 +397,7 @@ enum Action {
 
 #[derive(Debug)]
 struct Undo<'a> {
-    fs: &'a dyn FileSystem,
+    host: &'a HostPorts,
     gateway: &'a dyn Gateway,
     account: &'a Account,
     action: Action,
@@ -395,9 +407,14 @@ impl Undo<'_> {
     async fn run(&self) -> Result<(), AccountError> {
         match self.action {
             Action::Remove => forget_login(self.gateway, self.account).await,
-            Action::Restore => sync_login(self.fs, self.gateway, self.account)
-                .await
-                .map(drop),
+            Action::Restore => sync_login(
+                self.host,
+                self.gateway,
+                self.account,
+                &CancellationToken::new(),
+            )
+            .await
+            .map(drop),
         }
     }
 }
@@ -527,7 +544,8 @@ async fn publish<'a>(
                 .map_err(|error| on_gateway(home.gateway_name(), error))?;
             continue;
         };
-        let provider = ProviderName::for_account(entry.account.name(), Agent::Codex);
+        let provider =
+            ProviderName::for_account(entry.account.name(), account_agent(&entry.account));
         for (index, &session) in sessions.iter().enumerate() {
             let state = session
                 .deps
@@ -556,7 +574,7 @@ async fn publish<'a>(
 impl Session {
     fn undo<'a>(&'a self, action: Action, account: &'a Account) -> Undo<'a> {
         Undo {
-            fs: self.deps.host.fs.as_ref(),
+            host: &self.deps.host,
             gateway: self.deps.gateway.as_ref(),
             account,
             action,
@@ -569,7 +587,7 @@ impl Session {
         cancel: &CancellationToken,
     ) -> Result<AccountSync, AccountError> {
         let _held = self.hold_current(account, cancel).await?;
-        self.sync_locked(account).await
+        self.sync_locked_c(account, cancel).await
     }
 
     async fn forget_locked(&self, account: &Account) -> Result<(), AccountError> {
@@ -586,7 +604,7 @@ impl Session {
         if self.deps.gateway.provider_state(provider).await? == ProviderState::Present {
             return Ok(false);
         }
-        if let Err(original) = self.sync_locked(account).await {
+        if let Err(original) = self.sync_locked_c(account, cancel).await {
             return Err(match self.forget_locked(account).await {
                 Ok(()) => original,
                 Err(rollback) => AccountError::RollbackFailed {
@@ -637,12 +655,15 @@ impl Session {
     }
 
     async fn sync_locked(&self, account: &Account) -> Result<AccountSync, AccountError> {
-        sync_login(
-            self.deps.host.fs.as_ref(),
-            self.deps.gateway.as_ref(),
-            account,
-        )
-        .await
+        self.sync_locked_c(account, &CancellationToken::new()).await
+    }
+
+    async fn sync_locked_c(
+        &self,
+        account: &Account,
+        cancel: &CancellationToken,
+    ) -> Result<AccountSync, AccountError> {
+        sync_login(&self.deps.host, self.deps.gateway.as_ref(), account, cancel).await
     }
 }
 
@@ -650,23 +671,51 @@ async fn forget_login(gateway: &dyn Gateway, account: &Account) -> Result<(), Ac
     if !account.has_provider() {
         return Ok(());
     }
-    let provider = ProviderName::for_account(account.name(), Agent::Codex);
+    let provider = ProviderName::for_account(account.name(), account_agent(account));
     gateway.delete_provider(&provider).await?;
     Ok(())
 }
 
 async fn holds(gateway: &dyn Gateway, account: &Account) -> Result<bool, AccountError> {
-    let provider = ProviderName::for_account(account.name(), Agent::Codex);
+    let provider = ProviderName::for_account(account.name(), account_agent(account));
     Ok(gateway.provider_state(&provider).await? == ProviderState::Present)
 }
 
 async fn sync_login(
-    fs: &dyn FileSystem,
+    host: &HostPorts,
     gateway: &dyn Gateway,
     account: &Account,
+    cancel: &CancellationToken,
 ) -> Result<AccountSync, AccountError> {
     if account.provider() != Provider::Codex {
-        return Ok(AccountSync::HostOnly);
+        let Ok(tuple) = jackin_core::lookup_tuple(Agent::Omp, account.provider()) else {
+            return Ok(AccountSync::HostOnly);
+        };
+        if tuple.auth_class != jackin_core::AuthClass::StaticKey {
+            return Ok(AccountSync::HostOnly);
+        }
+        let provider_id = tuple.omp_provider_id().unwrap_or_default();
+        let key = resolve_static_key(host, account, provider_id, cancel)
+            .await
+            .map_err(|_| AccountError::MissingCredential {
+                account: account.name().clone(),
+            })?;
+        let asset = jackin_core::tuple_profile_asset(tuple);
+        let profile = ProviderProfile::parse(asset)?;
+        let synced = gateway.ensure_profile(&profile).await?;
+        let name = ProviderName::for_account(account.name(), Agent::Omp);
+        gateway
+            .put_provider(&ProviderSpec {
+                name: name.clone(),
+                profile: profile.id,
+                keys: Agent::Codex.spec().codex.openshell.keys,
+                material: ProviderMaterial::StaticKey { key },
+            })
+            .await?;
+        return Ok(AccountSync::ProviderReady {
+            provider: name,
+            profile: synced,
+        });
     }
     let spec = Agent::Codex.spec();
     let Some(stored) = account.chatgpt_login() else {
@@ -675,7 +724,7 @@ async fn sync_login(
             mode: CodexAuthMode::ApiKey,
         });
     };
-    let login = read_chatgpt_login(fs, stored.home).await?;
+    let login = read_chatgpt_login(host.fs.as_ref(), stored.home).await?;
     if login.account_id != *stored.account_id {
         return Err(AccountError::AccountIdMismatch {
             account: account.name().clone(),

@@ -286,3 +286,51 @@ async fn sync_account_refuses_an_account_the_config_no_longer_holds_as_given_and
     })
     .await
 }
+
+#[tokio::test]
+async fn an_omp_static_key_account_creates_the_tuple_provider_with_only_the_key() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let path = HostPath::parse(&world.home().as_path().join("zai.txt"))?;
+        world
+            .fs
+            .write_new(&path, b"OMP-KEY-SECRET-1", jackin_core::FileMode(0o600))
+            .await?;
+        let account = Account::new(
+            AccountName::parse("work")?,
+            Provider::Zai,
+            CredentialSource::File { path },
+        )?;
+        register(&world, &account).await?;
+        let result = world
+            .session
+            .sync_account(&account, &CancellationToken::new())
+            .await?;
+        let name = ProviderName::parse("jackin-work-omp")?;
+        assert!(
+            matches!(result, AccountSync::ProviderReady { ref provider, .. } if *provider == name),
+            "{result:?}"
+        );
+        assert_eq!(world.gateway.providers(), std::slice::from_ref(&name));
+        let record = world.gateway.provider(&name).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "omp-zai");
+        assert_eq!(record.access_token, "OMP-KEY-SECRET-1");
+        assert!(!format!("{result:?}").contains("OMP-KEY-SECRET-1"));
+        assert!(!format!("{:?}", world.config).contains("OMP-KEY-SECRET-1"));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_omp_account_with_a_missing_key_fails_without_a_secret() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let account = Account::new(AccountName::parse("work")?, Provider::Zai, CredentialSource::Env { var: EnvName::parse("JACKIN_TEST_MISSING_OMP_KEY")? })?;
+        register(&world, &account).await?;
+        let result = world.session.sync_account(&account, &CancellationToken::new()).await;
+        assert!(matches!(&result, Err(AccountError::MissingCredential { account }) if account.as_str() == "work"), "{result:?}");
+        assert!(world.gateway.providers().is_empty());
+        Ok(())
+    }).await
+}
