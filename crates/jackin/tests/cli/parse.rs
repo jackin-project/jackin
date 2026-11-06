@@ -255,7 +255,10 @@ async fn a_rejected_credential_is_never_echoed_and_the_error_names_the_expected_
                 form,
             ];
             never_echoed(
-                &[(&args, "env:NAME, an op:// reference, file:PATH, or omp-host")],
+                &[(
+                    &args,
+                    "env:NAME, an op:// reference, file:PATH, or omp-host",
+                )],
                 "sk-",
             )
             .await?;

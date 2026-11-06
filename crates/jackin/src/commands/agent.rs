@@ -42,7 +42,10 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
         let request = AttachRequest::owner(restarted?, size);
         return term::attach(app, &session, request).await;
     }
-    session.restart_instance(&args.sandbox, agent, &app.cancel.clone()).await.map_err(|error| CommandError::Argument(error.to_string()))?;
+    session
+        .restart_instance(&args.sandbox, agent, &app.cancel.clone())
+        .await
+        .map_err(|error| CommandError::Argument(error.to_string()))?;
     app.io.line(&format!("{} ready", agent.as_str()))?;
     Ok(())
 }

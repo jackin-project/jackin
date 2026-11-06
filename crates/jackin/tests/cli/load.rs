@@ -145,27 +145,67 @@ async fn account_for_and_provider_scoped_global_account_resolve_per_instance() -
         harness.cwd = rig.repo.root().clone();
         std::fs::write(rig.home.as_path().join("zai.txt"), "test-key")?;
         harness.write_config(&multi_account_config(&rig))?;
-        let base = ["load", "--agent", "codex", "--agent", "omp", "--provider-for", "omp=zai"];
+        let base = [
+            "load",
+            "--agent",
+            "codex",
+            "--agent",
+            "omp",
+            "--provider-for",
+            "omp=zai",
+        ];
         let mut args: Vec<String> = base.iter().map(|s| (*s).to_owned()).collect();
-        args.extend(["--account-for", "codex=second", "--account-for", "omp=zaiacct", "--launch-id"].iter().map(|s| (*s).to_owned()));
+        args.extend(
+            [
+                "--account-for",
+                "codex=second",
+                "--account-for",
+                "omp=zaiacct",
+                "--launch-id",
+            ]
+            .iter()
+            .map(|s| (*s).to_owned()),
+        );
         args.push(launch_id(3).to_string());
-        harness.run(&args.iter().map(String::as_str).collect::<Vec<_>>()).await?.ok()?;
+        harness
+            .run(&args.iter().map(String::as_str).collect::<Vec<_>>())
+            .await?
+            .ok()?;
         let boxes = rig.world.gateway.sandboxes();
         assert_eq!(boxes.len(), 1);
-        let text = String::from_utf8(boxes[0].file(&jackin_core::SandboxPath::from_static("/sandbox/.jackin/agents.json")).ok_or("agents.json")?)?;
+        let text = String::from_utf8(
+            boxes[0]
+                .file(&jackin_core::SandboxPath::from_static(
+                    "/sandbox/.jackin/agents.json",
+                ))
+                .ok_or("agents.json")?,
+        )?;
         assert!(text.contains("\"account\":\"second\""), "{text}");
         assert!(text.contains("\"account\":\"zaiacct\""), "{text}");
 
         let mut args2: Vec<String> = base.iter().map(|s| (*s).to_owned()).collect();
-        args2.extend(["--account", "second", "--launch-id"].iter().map(|s| (*s).to_owned()));
+        args2.extend(
+            ["--account", "second", "--launch-id"]
+                .iter()
+                .map(|s| (*s).to_owned()),
+        );
         args2.push(launch_id(4).to_string());
-        harness.run(&args2.iter().map(String::as_str).collect::<Vec<_>>()).await?.ok()?;
+        harness
+            .run(&args2.iter().map(String::as_str).collect::<Vec<_>>())
+            .await?
+            .ok()?;
         assert_eq!(rig.world.gateway.sandboxes().len(), 2);
 
         let mut args3: Vec<String> = base.iter().map(|s| (*s).to_owned()).collect();
-        args3.extend(["--account-for", "codex=zaiacct", "--launch-id"].iter().map(|s| (*s).to_owned()));
+        args3.extend(
+            ["--account-for", "codex=zaiacct", "--launch-id"]
+                .iter()
+                .map(|s| (*s).to_owned()),
+        );
         args3.push(launch_id(5).to_string());
-        let ran = harness.run(&args3.iter().map(String::as_str).collect::<Vec<_>>()).await?;
+        let ran = harness
+            .run(&args3.iter().map(String::as_str).collect::<Vec<_>>())
+            .await?;
         failed(&ran, ExitClass::Usage, &["does not belong"])?;
         assert_eq!(rig.world.gateway.sandboxes().len(), 2);
         Ok(())

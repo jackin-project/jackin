@@ -156,7 +156,10 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
             )));
         }
         let explicit = match accounts_for.get(instance_agent.as_str()) {
-            Some(text) => Some(jackin_core::AccountName::parse(text).map_err(|error| CommandError::Argument(error.to_string()))?),
+            Some(text) => Some(
+                jackin_core::AccountName::parse(text)
+                    .map_err(|error| CommandError::Argument(error.to_string()))?,
+            ),
             None => None,
         };
         let global = match (&explicit, &args.account) {
@@ -168,7 +171,16 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
             (None, None) => None,
         };
         let flag = explicit.as_ref().or(global.as_ref());
-        let instance_account = config.select_account(&jackin_core::AccountQuery { flag, workspace: &workspace_name, role: role.name(), agent: *instance_agent, provider: instance_provider }).map_err(|error| CommandError::Argument(error.to_string()))?.account;
+        let instance_account = config
+            .select_account(&jackin_core::AccountQuery {
+                flag,
+                workspace: &workspace_name,
+                role: role.name(),
+                agent: *instance_agent,
+                provider: instance_provider,
+            })
+            .map_err(|error| CommandError::Argument(error.to_string()))?
+            .account;
         let instance_model = models_for
             .get(instance_agent.as_str())
             .cloned()
