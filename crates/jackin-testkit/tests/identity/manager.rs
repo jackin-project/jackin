@@ -481,3 +481,21 @@ fn jackin_launch_asks_for_the_values_a_role_needs() {
     app.settle();
     app.visual("functional/jackin_launch_env_prompt");
 }
+
+#[test]
+fn jackin_manager_multi_launch_codex_and_omp_in_check_order() {
+    let app = jackin("jackin-multi-launch", "paused");
+    app.wait_text("Current directory");
+    app.key("enter");
+    let picker = app.wait_text("Launch · choose Agent");
+    assert!(text(&picker).contains("Space Toggle"));
+    assert!(text(&picker).contains("Enter Confirm"));
+    app.click_text("▪ Codex");
+    app.key("end");
+    app.key("space");
+    app.key("enter");
+    app.wait_text("Cancel launch…");
+    app.visual("functional/jackin_manager_multi_launch");
+    app.key("ctrl+c");
+    app.wait_text("Current directory");
+}

@@ -117,7 +117,7 @@ async fn the_refusal_view_has_no_demo_words() -> TestResult {
                 },
             ])
             .await?;
-        view.keys("enter")?;
+        view.keys("space enter")?;
         until_shows(&mut view, "does not allow role").await?;
         clean(&view.screen(), &live(), "refusal view");
         Ok(())

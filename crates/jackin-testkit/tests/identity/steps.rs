@@ -194,6 +194,7 @@ pub(crate) fn launch_first_agent(app: &App, downs: usize, scope: &str) {
     }
     app.key("enter");
     app.wait_text(scope);
+    app.key("space");
     app.key("enter");
     app.wait_text("Cancel launch…");
 }

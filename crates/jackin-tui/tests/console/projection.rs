@@ -303,6 +303,7 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
                     summary: summary.clone(),
                     supervisor: Some(exited.clone()),
                     work: work.clone(),
+                    task: None,
                 }],
                 unreadable: 0,
                 gateways: Vec::new(),

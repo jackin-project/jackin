@@ -48,7 +48,7 @@ pub enum RoleDocError {
     Unreadable(String),
 }
 
-pub type RoleDocs = BTreeMap<RoleName, Result<RoleManifestDoc, RoleDocError>>;
+pub type RoleDocs = BTreeMap<RoleName, Result<jackin_core::RoleManifest, RoleDocError>>;
 
 pub type RoleChecks = BTreeMap<RoleName, Vec<RoleFinding>>;
 
@@ -84,7 +84,7 @@ pub fn provider(provider: CoreProvider) -> Option<Provider> {
         CoreProvider::Hermes => Provider::Hermes,
         CoreProvider::Kimi => Provider::Moonshot,
         CoreProvider::Minimax => Provider::MiniMax,
-        CoreProvider::Mimo => return None,
+        CoreProvider::Mimo => Provider::Mimo,
         CoreProvider::Muse => Provider::Muse,
         CoreProvider::Opencode => Provider::OpenCode,
         CoreProvider::Openrouter => Provider::Openrouter,
@@ -112,18 +112,33 @@ pub fn core_provider(provider: Provider) -> CoreProvider {
     }
 }
 
-fn agent(agent: CoreAgent) -> Option<Agent> {
+pub(crate) fn agent(agent: CoreAgent) -> Agent {
     match agent {
-        CoreAgent::Codex => Some(Agent::Codex),
-        CoreAgent::ClaudeCode => Some(Agent::ClaudeCode),
-        CoreAgent::GrokBuild => Some(Agent::GrokBuild),
-        CoreAgent::KimiCode => Some(Agent::KimiCode),
-        CoreAgent::MuseCode
-        | CoreAgent::Antigravity
-        | CoreAgent::MinimaxCode
-        | CoreAgent::MimoCode
-        | CoreAgent::Omp => None,
+        CoreAgent::Codex => Agent::Codex,
+        CoreAgent::ClaudeCode => Agent::ClaudeCode,
+        CoreAgent::GrokBuild => Agent::GrokBuild,
+        CoreAgent::MuseCode => Agent::MuseCode,
+        CoreAgent::Antigravity => Agent::Antigravity,
+        CoreAgent::MinimaxCode => Agent::MinimaxCode,
+        CoreAgent::MimoCode => Agent::MimoCode,
+        CoreAgent::KimiCode => Agent::KimiCode,
+        CoreAgent::Omp => Agent::Omp,
     }
+}
+
+pub(crate) fn core_agent(agent: Agent) -> Option<CoreAgent> {
+    Some(match agent {
+        Agent::Codex => CoreAgent::Codex,
+        Agent::ClaudeCode => CoreAgent::ClaudeCode,
+        Agent::GrokBuild => CoreAgent::GrokBuild,
+        Agent::MuseCode => CoreAgent::MuseCode,
+        Agent::Antigravity => CoreAgent::Antigravity,
+        Agent::MinimaxCode => CoreAgent::MinimaxCode,
+        Agent::MimoCode => CoreAgent::MimoCode,
+        Agent::KimiCode => CoreAgent::KimiCode,
+        Agent::Omp => CoreAgent::Omp,
+        Agent::Amp | Agent::OpenCode => return None,
+    })
 }
 
 fn op_reference(
@@ -455,14 +470,14 @@ fn session_record(
     };
     vec![SessionRecord {
         id: summary.labels.planned.launch.to_string(),
-        agent: agent(
+        agent: Some(agent(
             summary
                 .labels
                 .planned
                 .agents
                 .lead_opt()
                 .map_or(jackin_core::Agent::Codex, |i| i.agent),
-        ),
+        )),
         label: Agent::Codex.label().to_owned(),
         status,
         started_secs: summary.created_at.map_or(0, |t| t.0),
@@ -523,6 +538,7 @@ pub(crate) fn instance(
         summary,
         supervisor,
         work,
+        task,
     } = observed;
     let (head, _) = split_name(summary.name.as_str());
     let labels = &summary.labels.planned;
@@ -549,7 +565,7 @@ pub(crate) fn instance(
                 .agents
                 .lead_opt()
                 .map_or(jackin_core::Agent::Codex, |i| i.agent),
-        )?,
+        ),
         status,
         created_secs: summary.created_at.map_or(0, |t| t.0),
         last_seen_secs: now_secs,
@@ -571,8 +587,48 @@ pub(crate) fn instance(
             .iter()
             .map(|i| i.account.to_string())
             .collect(),
-        agents: Vec::new(),
-        task: None,
+        agents: labels
+            .agents
+            .iter()
+            .filter_map(|item| {
+                provider(item.provider).map(|found| {
+                    jackin_console::domain::instance::AgentInstanceView {
+                        agent: agent(item.agent),
+                        provider: found,
+                        account: Some(item.account.to_string()),
+                        model: item.model.clone(),
+                        branch: Some(item.branch.clone()),
+                        state: match status {
+                            InstanceStatus::Running => {
+                                jackin_console::domain::instance::AgentState::Working
+                            }
+                            InstanceStatus::CleanExited => {
+                                jackin_console::domain::instance::AgentState::Done
+                            }
+                            InstanceStatus::Crashed => {
+                                jackin_console::domain::instance::AgentState::Blocked
+                            }
+                            _ => jackin_console::domain::instance::AgentState::Unknown,
+                        },
+                    }
+                })
+            })
+            .collect(),
+        task: task
+            .as_ref()
+            .map(|found| jackin_console::domain::instance::TaskView {
+                text: found.text.clone(),
+                statuses: found
+                    .statuses
+                    .iter()
+                    .map(
+                        |(core, text)| jackin_console::domain::instance::InstanceStatusView {
+                            agent: agent(*core),
+                            text: text.clone(),
+                        },
+                    )
+                    .collect(),
+            }),
     };
     normalize::instance(&mut record);
     Some(record)
@@ -613,7 +669,7 @@ fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmi
                 name: name.to_string(),
                 source: role_source(&entry.source),
                 manifest: match docs.get(name) {
-                    Some(Ok(doc)) => Ok(doc.clone()),
+                    Some(Ok(doc)) => Ok(manifest_doc(doc)),
                     Some(Err(error)) => Err(error.to_string()),
                     None => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded).to_string()),
                 },
@@ -627,8 +683,7 @@ fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmi
                         jackin_core::TUPLES
                             .iter()
                             .find(|tuple| tuple.provider == *provider)
-                            .and_then(|tuple| agent(tuple.agent))
-                            .map(|a| (a, account.to_string()))
+                            .map(|tuple| (agent(tuple.agent), account.to_string()))
                     })
                     .collect(),
                 files: Vec::new(),
@@ -664,7 +719,7 @@ fn docker_setting(
         risks: docker_risks(),
         role_enabled: docs
             .iter()
-            .filter(|(_, doc)| doc.as_ref().is_ok_and(|d| d.docker))
+            .filter(|(_, doc)| doc.as_ref().is_ok_and(|d| d.docker.enabled))
             .map(|(name, _)| name.to_string())
             .collect::<BTreeSet<_>>(),
     }
@@ -687,13 +742,59 @@ fn surfaces(input: &ProjectInput<'_>) -> Surfaces {
         origins: _,
     } = input;
     let gateway = gateway_name(config);
-    Surfaces::openshell(LiveFacts {
+    let mut built = Surfaces::openshell(LiveFacts {
         version: facts.version.clone(),
         config_path: facts.config_path.clone(),
         gateway: gateway.as_ref().map(ToString::to_string),
     })
     .roles(role_admin(config, roles, checks))
-    .docker(docker_setting(config, roles, gateway.as_ref()))
+    .docker(docker_setting(config, roles, gateway.as_ref()));
+    built.tuples = tuple_offers(roles);
+    built
+}
+
+fn tuple_offers(roles: &RoleDocs) -> Vec<jackin_console::domain::tuple::TupleOffer> {
+    let mut offers: Vec<jackin_console::domain::tuple::TupleOffer> = Vec::new();
+    for doc in roles.values() {
+        let Ok(manifest) = doc else { continue };
+        for tuple in &jackin_core::TUPLES {
+            if !manifest.agents.contains_key(&tuple.agent) {
+                continue;
+            }
+            let Some(found_provider) = provider(tuple.provider) else {
+                continue;
+            };
+            let offer = jackin_console::domain::tuple::TupleOffer {
+                agent: agent(tuple.agent),
+                provider: found_provider,
+                state: match tuple.state {
+                    jackin_core::TupleState::Supported => {
+                        jackin_console::domain::tuple::TupleState::Supported
+                    }
+                    jackin_core::TupleState::Unavailable => {
+                        jackin_console::domain::tuple::TupleState::Unavailable
+                    }
+                    jackin_core::TupleState::BlockedVendor => {
+                        jackin_console::domain::tuple::TupleState::BlockedVendor
+                    }
+                },
+                reason: match tuple.state {
+                    jackin_core::TupleState::Supported => None,
+                    _ => tuple.reason.map(str::to_owned),
+                },
+                allowed_models: tuple
+                    .allowed_models
+                    .iter()
+                    .map(|model| (*model).to_owned())
+                    .collect(),
+                default_model: tuple.default_model.to_owned(),
+            };
+            if !offers.contains(&offer) {
+                offers.push(offer);
+            }
+        }
+    }
+    offers
 }
 
 pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
@@ -731,5 +832,39 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
         } else {
             DaemonHealth::Healthy
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn agent_maps_all_core_agents() {
+        let expected = [
+            (CoreAgent::Codex, Agent::Codex),
+            (CoreAgent::ClaudeCode, Agent::ClaudeCode),
+            (CoreAgent::GrokBuild, Agent::GrokBuild),
+            (CoreAgent::MuseCode, Agent::MuseCode),
+            (CoreAgent::Antigravity, Agent::Antigravity),
+            (CoreAgent::MinimaxCode, Agent::MinimaxCode),
+            (CoreAgent::MimoCode, Agent::MimoCode),
+            (CoreAgent::KimiCode, Agent::KimiCode),
+            (CoreAgent::Omp, Agent::Omp),
+        ];
+        assert_eq!(CoreAgent::ALL.len(), expected.len());
+        for (core, console) in expected {
+            assert_eq!(agent(core), console);
+            assert_eq!(core_agent(console), Some(core));
+        }
+    }
+
+    #[test]
+    fn provider_maps_all_core_providers() {
+        assert_eq!(CoreProvider::ALL.len(), 15);
+        for core in CoreProvider::ALL {
+            let console = provider(core).expect("provider");
+            assert_eq!(core_provider(console), core);
+        }
     }
 }

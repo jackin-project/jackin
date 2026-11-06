@@ -15,7 +15,7 @@ const JOURNEYS: [&str; 3] = [
     include_str!("capsule.rs"),
 ];
 
-const WITHOUT_CAPTURE: [&str; 10] = [
+const WITHOUT_CAPTURE: [&str; 11] = [
     "jackin_cockpit_docker_names_key_and_egress_bypass",
     "jackin_roles_add_role",
     "jackin_fixed_editor_refusals_carry_the_full_reason_at_80_by_24",
@@ -26,6 +26,7 @@ const WITHOUT_CAPTURE: [&str; 10] = [
     "jackin_fixed_env_form_refuses_a_credential_reference_and_notes_a_secret_name",
     "jackin_fixed_workspace_env_keeps_the_role_scope_live_and_refuses_the_sources",
     "jackin_launch_questions_end_the_launch_on_escape",
+    "jackin_manager_multi_launch_reverse_order_and_cancel_second_picker",
 ];
 
 const WITHOUT_APPROVED_FILE: [&str; 4] = [

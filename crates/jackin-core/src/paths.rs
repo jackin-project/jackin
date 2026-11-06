@@ -220,6 +220,10 @@ pub mod sandbox_layout {
     pub static RUN_STATE: SandboxPath = SandboxPath::from_static("/sandbox/.jackin/run/state");
     pub static RUN_START: SandboxPath = SandboxPath::from_static("/sandbox/.jackin/run/start");
     pub static DOCKER_DIR: SandboxPath = SandboxPath::from_static("/sandbox/.jackin/docker");
+    pub static TASK_DIR: SandboxPath = SandboxPath::from_static("/sandbox/.jackin/task");
+    pub static TASK_FILE: SandboxPath = SandboxPath::from_static("/sandbox/.jackin/task/task.md");
+    pub static TASK_STATUS_DIR: SandboxPath =
+        SandboxPath::from_static("/sandbox/.jackin/task/status");
     pub static HOOKS_DIR: SandboxPath = SandboxPath::from_static("/usr/local/lib/jackin/hooks");
     pub static BUNDLE_DIR: SandboxPath = SandboxPath::from_static("/sandbox/.jackin/bundle");
     pub static GIT: SandboxPath = SandboxPath::from_static("/usr/bin/git");
@@ -261,6 +265,10 @@ pub mod sandbox_layout {
 
     pub fn docker_file(name: &str) -> SandboxPath {
         under(&DOCKER_DIR, name.to_owned())
+    }
+
+    pub fn task_status(agent: crate::agent::Agent) -> SandboxPath {
+        under(&TASK_STATUS_DIR, format!("{}.md", agent.as_str()))
     }
 
     pub fn hook_path(kind: HookKind) -> SandboxPath {

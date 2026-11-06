@@ -197,7 +197,8 @@ enum Place {
 struct Wanted {
     place: Place,
     role: String,
-    account: Option<String>,
+    instances: Vec<jackin_console::domain::tuple::InstanceChoice>,
+    task: Option<String>,
     agent: Agent,
 }
 
@@ -355,6 +356,82 @@ async fn resolve(
     }
 }
 
+type Choice = (
+    jackin_core::Agent,
+    jackin_core::Provider,
+    Option<AccountName>,
+    String,
+);
+
+fn resolve_choices(
+    wanted: &Wanted,
+    config: &Config,
+    name: &WorkspaceName,
+    role_name: &RoleName,
+) -> Result<Vec<Choice>, Stop> {
+    let mut choices = Vec::new();
+    for choice in &wanted.instances {
+        if choice.agent != Agent::Codex {
+            return Err(Stop::Refused(RefusalReason::AgentNotLaunchable {
+                agent: choice.agent,
+                launchable: Agent::Codex,
+            }));
+        }
+        let Some(core) = crate::project::core_agent(choice.agent) else {
+            return Err(Stop::Refused(RefusalReason::AgentNotLaunchable {
+                agent: choice.agent,
+                launchable: Agent::Codex,
+            }));
+        };
+        let core_provider = crate::project::core_provider(choice.provider);
+        let account = match &choice.account {
+            Some(id) => {
+                Some(AccountName::parse(id).map_err(|error| Stop::at(Stage::Credentials, &error))?)
+            }
+            None => config
+                .select_account(&jackin_core::AccountQuery {
+                    flag: None,
+                    workspace: name,
+                    role: role_name,
+                    agent: core,
+                    provider: core_provider,
+                })
+                .map(|selection| selection.account)
+                .ok()
+                .or_else(|| config.default_account(core_provider).cloned()),
+        };
+        choices.push((core, core_provider, account, choice.model.clone()));
+    }
+    if choices.is_empty() {
+        choices.push((
+            jackin_core::Agent::Codex,
+            jackin_core::Provider::Codex,
+            None,
+            String::new(),
+        ));
+    }
+    Ok(choices)
+}
+
+fn instances_of(choices: &[Choice]) -> Option<jackin_core::AgentInstances> {
+    let mut items = Vec::new();
+    for (core, core_provider, account, model) in choices {
+        let account = account.clone()?;
+        let model = if model.is_empty() {
+            core.spec().default_model.to_owned()
+        } else {
+            model.clone()
+        };
+        items.push(jackin_core::AgentInstance::new(
+            *core,
+            *core_provider,
+            account,
+            model,
+        ));
+    }
+    jackin_core::AgentInstances::new(items).ok()
+}
+
 impl Run {
     fn send(&self, event: LaunchEvent) {
         if let LaunchEvent::StageChanged(stage, StepState::Running) = &event {
@@ -368,13 +445,6 @@ impl Run {
     }
 
     async fn run(mut self) {
-        if self.wanted.agent != Agent::Codex {
-            self.send(LaunchEvent::Refused(RefusalReason::AgentNotLaunchable {
-                agent: self.wanted.agent,
-                launchable: Agent::Codex,
-            }));
-            return;
-        }
         match self.prepare().await {
             Ok(prepared) => self.launch(prepared).await,
             Err(Stop::Refused(reason)) => self.send(LaunchEvent::Refused(reason)),
@@ -462,16 +532,13 @@ impl Run {
             Err(RoleError::Cancelled) => return Err(Stop::Cancelled),
             Err(error) => return Err(Stop::at(Stage::Image, &error)),
         };
-        let account = self
-            .wanted
-            .account
-            .as_deref()
-            .map(AccountName::parse)
-            .transpose()
-            .map_err(|error| Stop::at(Stage::Credentials, &error))?;
+        let choices = resolve_choices(&self.wanted, &config, &name, &role_name)?;
+        let account = choices
+            .first()
+            .and_then(|(_, _, account, _)| account.clone());
         let mut values = BTreeMap::new();
         loop {
-            let request = LaunchRequest::new(
+            let mut request = LaunchRequest::new(
                 gateway.clone(),
                 project.clone(),
                 role.name().clone(),
@@ -479,7 +546,16 @@ impl Run {
             )
             .account(account.clone())
             .prompting(Prompting::Interactive)
-            .env(values.clone());
+            .env(values.clone())
+            .task(self.wanted.task.clone());
+            let first_has_account = choices
+                .first()
+                .is_some_and(|(_, _, account, _)| account.is_some());
+            if (self.wanted.instances.len() > 1 || choices.len() != 1 || first_has_account)
+                && let Some(instances) = instances_of(&choices)
+            {
+                request = request.instances(instances);
+            }
             match plan_launch(&config, &role, request) {
                 Ok(plan) => {
                     return Ok(Prepared {
@@ -604,6 +680,7 @@ impl Run {
             summary: inspected.summary,
             supervisor: Some(inspected.supervisor),
             work: Some(work),
+            task: None,
         };
         self.backend
             .inputs
@@ -702,7 +779,8 @@ pub(crate) fn start(
         wanted: Wanted {
             place: place(world, target),
             role: target.role.clone(),
-            account: target.account(),
+            instances: target.instances.clone(),
+            task: target.task.clone(),
             agent: target.agent(),
         },
         launch: launch.clone(),

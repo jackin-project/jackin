@@ -67,7 +67,7 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
             "{screen}"
         );
         assert!(!screen.contains("set in Settings"), "{screen}");
-        console.keys("enter")?;
+        console.keys("space enter")?;
         answer(&mut console, None).await?;
         until_route(&mut console, Route::Capsule).await?;
         assert_eq!(
@@ -107,7 +107,7 @@ async fn a_credential_changed_under_the_picker_is_refused_typed() -> TestResult 
                 },
             }])
             .await?;
-        console.keys("enter")?;
+        console.keys("space enter")?;
         until_shows(&mut console, "Run id").await?;
         let screen = console.screen();
         let shown = dialog(&screen);
@@ -195,7 +195,7 @@ async fn a_role_removed_under_the_picker_is_refused() -> TestResult {
                 },
             ])
             .await?;
-        console.keys("enter")?;
+        console.keys("space enter")?;
         until_shows(&mut console, "does not allow role sentinel").await?;
         let screen = console.screen();
         let text = LaunchContent::openshell()
@@ -305,7 +305,7 @@ async fn the_current_directory_launches_with_the_only_role() -> TestResult {
         let rig = Rig::new().await?;
         let (mut console, base, _repo) = elsewhere(&rig).await?;
         console.skip_intro();
-        console.keys("enter enter")?;
+        console.keys("enter space enter")?;
         answer(&mut console, None).await?;
         until_route(&mut console, Route::Capsule).await?;
         let found = labels(&only(&rig)?)?.planned;
@@ -332,7 +332,7 @@ async fn launching_an_unsaved_directory_saves_its_workspace_first() -> TestResul
         console.skip_intro();
         let name = WorkspaceName::parse(&base)?;
         assert!(rig.world.config.load().await?.workspace(&name).is_none());
-        console.keys("enter enter")?;
+        console.keys("enter space enter")?;
         answer(&mut console, None).await?;
         until_route(&mut console, Route::Capsule).await?;
         let saved = rig.world.config.load().await?;
@@ -373,7 +373,7 @@ async fn a_current_directory_reached_through_a_symlink_finds_the_saved_workspace
             .build()
             .await?;
         console.skip_intro();
-        console.keys("enter enter")?;
+        console.keys("enter space enter")?;
         until(
             &mut console,
             "the values form or a failed image stage",
@@ -404,7 +404,7 @@ async fn a_directory_whose_name_is_not_a_workspace_name_launches_under_a_derived
         let (mut console, _, _repo) =
             elsewhere_in(&rig, RepoFixture::new_named("My App").await?).await?;
         console.skip_intro();
-        console.keys("enter enter")?;
+        console.keys("enter space enter")?;
         answer(&mut console, None).await?;
         until_route(&mut console, Route::Capsule).await?;
         let found = labels(&only(&rig)?)?.planned;

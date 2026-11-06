@@ -264,6 +264,7 @@ async fn a_launch_runs_on_the_new_default_after_the_default_left_the_config() ->
         refresh(&mut pair.lab).await?;
         pair.lab.step("down enter enter").await?;
         let mut asked = false;
+        let mut agents_confirmed = 0;
         for _ in 0..4000 {
             pair.lab.console.tick(1);
             pair.lab.console.settle().await?;
@@ -271,6 +272,11 @@ async fn a_launch_runs_on_the_new_default_after_the_default_left_the_config() ->
                 || pair.lab.console.screen().contains("Launch failed")
             {
                 break;
+            }
+            if agents_confirmed < 1 && pair.lab.console.screen().contains("choose Agent") {
+                pair.lab.console.keys("space enter")?;
+                agents_confirmed += 1;
+                continue;
             }
             if !asked && pair.lab.console.screen().contains("Values for this launch") {
                 pair.lab.console.keys("tab tab enter")?;

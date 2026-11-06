@@ -107,7 +107,7 @@ pub(crate) fn dialog(screen: &str) -> String {
 }
 
 pub(crate) fn begin(console: &mut ConsoleRig) -> Result<(), Failure> {
-    console.keys("down enter enter")
+    console.keys("down enter enter space enter")
 }
 
 pub(crate) async fn answer(console: &mut ConsoleRig, value: Option<&str>) -> Result<(), Failure> {

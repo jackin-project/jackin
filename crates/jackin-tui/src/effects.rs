@@ -89,21 +89,7 @@ fn save_failure(error: &dyn std::error::Error) -> SaveFailure {
 }
 
 fn core_agent(agent: Agent) -> Result<CoreAgent, PersistError> {
-    match agent {
-        Agent::Codex => Ok(CoreAgent::Codex),
-        Agent::ClaudeCode
-        | Agent::Amp
-        | Agent::KimiCode
-        | Agent::OpenCode
-        | Agent::GrokBuild
-        | Agent::MuseCode
-        | Agent::Antigravity
-        | Agent::MinimaxCode
-        | Agent::MimoCode
-        | Agent::Omp => {
-            Err(Rejection::CannotSave(SaveField::Agent).into())
-        }
-    }
+    crate::project::core_agent(agent).ok_or_else(|| Rejection::CannotSave(SaveField::Agent).into())
 }
 
 fn finding(error: &RoleError, doc: &RoleManifestDoc) -> RoleFinding {
@@ -785,10 +771,8 @@ impl Inputs {
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             if let Some(entry) = config.role(&name) {
-                locked(&self.docs).insert(
-                    name,
-                    (entry.source.clone(), Ok(manifest_doc(loaded.manifest()))),
-                );
+                locked(&self.docs)
+                    .insert(name, (entry.source.clone(), Ok(loaded.manifest().clone())));
             }
             Ok::<_, Refused>(self.snapshot_of(&config).await)
         }

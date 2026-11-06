@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::app::{App, row_text};
+use crate::app::{App, row_text, text};
 
 fn capsule(name: &str) -> App {
     App::new(
@@ -121,4 +121,20 @@ fn jackin_terminal_detached_exited_and_failed_panes() {
         row_text(screen, screen.rows() - 1).contains("could not attach to Codex")
     });
     app.visual("functional/jackin_pane_failed");
+}
+
+#[test]
+fn jackin_terminal_task_panel_shows_task_and_statuses() {
+    let app = capsule("jackin-terminal-task");
+    drawn(&app);
+    app.advance_clock(1_000);
+    app.wait_text("gpt-5-codex");
+    chord(&app, "i");
+    let info = app.wait_text("Ship the multi-agent launch");
+    assert!(text(&info).contains("working"), "{}", text(&info));
+    assert!(text(&info).contains("OMP"), "{}", text(&info));
+    app.visual("functional/jackin_terminal_task_panel");
+    app.key("esc");
+    chord(&app, "d");
+    app.wait_text("Detached · payments-platform keeps running");
 }

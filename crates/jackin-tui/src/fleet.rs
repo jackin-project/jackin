@@ -23,11 +23,18 @@ use crate::project::sandbox_id;
 use crate::sessions::{Reached, SessionSet};
 
 #[derive(Clone, Debug)]
+pub struct ObservedTask {
+    pub text: String,
+    pub statuses: Vec<(jackin_core::Agent, String)>,
+}
+
+#[derive(Clone, Debug)]
 pub struct ObservedSandbox {
     pub gateway: GatewayName,
     pub summary: SandboxSummary,
     pub supervisor: Option<SupervisorReading>,
     pub work: Option<WorkState>,
+    pub task: Option<ObservedTask>,
 }
 
 #[derive(Clone, Debug)]
@@ -216,21 +223,32 @@ async fn read_gateway(
             .map(|sandbox| read_work(name, session, config, sandbox, deadline, (cache, &slots))),
     )
     .await;
+    let tasks = join_all(
+        inspected
+            .iter()
+            .map(|sandbox| read_task(session, &sandbox.summary, deadline)),
+    )
+    .await;
     let sandboxes = inspected
         .into_iter()
         .zip(works)
+        .zip(tasks)
         .map(
             |(
-                Inspected {
-                    summary,
-                    supervisor,
-                },
-                work,
+                (
+                    Inspected {
+                        summary,
+                        supervisor,
+                    },
+                    work,
+                ),
+                task,
             )| ObservedSandbox {
                 gateway: name.clone(),
                 summary,
                 supervisor,
                 work,
+                task,
             },
         )
         .collect();
@@ -281,4 +299,39 @@ async fn read_work(
         cache.put(at, key, state.clone());
     }
     Some(state)
+}
+
+async fn read_task(
+    session: &Session,
+    summary: &SandboxSummary,
+    deadline: Duration,
+) -> Option<ObservedTask> {
+    let agents: Vec<jackin_core::Agent> = summary
+        .labels
+        .planned
+        .agents
+        .iter()
+        .map(|item| item.agent)
+        .collect();
+    let mut paths = vec![jackin_core::sandbox_layout::TASK_FILE.clone()];
+    for core_agent in &agents {
+        paths.push(jackin_core::sandbox_layout::task_status(*core_agent));
+    }
+    let found = within(
+        deadline,
+        session.gateway().read_files(&summary.name, &paths),
+    )
+    .await
+    .and_then(Result::ok)?;
+    let mut found = found.into_iter();
+    let text = String::from_utf8(found.next().flatten()?).ok()?;
+    let mut statuses = Vec::new();
+    for (core_agent, bytes) in agents.into_iter().zip(found) {
+        if let Some(bytes) = bytes
+            && let Ok(text) = String::from_utf8(bytes)
+        {
+            statuses.push((core_agent, text));
+        }
+    }
+    Some(ObservedTask { text, statuses })
 }

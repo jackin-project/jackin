@@ -315,9 +315,15 @@ async fn launch_on_failed_gateway() -> TestResult {
             .build()
             .await?;
         console.keys("down enter enter")?;
+        let mut agents_confirmed = 0;
         for _ in 0..400 {
             console.tick(1);
             console.settle().await?;
+            if agents_confirmed < 1 && console.screen().contains("choose Agent") {
+                console.keys("space enter")?;
+                agents_confirmed += 1;
+                continue;
+            }
             if console.screen().contains("connection refused") {
                 break;
             }

@@ -30,7 +30,7 @@ use crate::onepassword::OpSnapshot;
 use crate::origin::OriginCache;
 use crate::project::{
     Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, instance as project_instance,
-    manifest_doc, project,
+    project,
 };
 use crate::readings::Readings;
 use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
@@ -51,7 +51,7 @@ pub(crate) type DocCache = BTreeMap<
     RoleName,
     (
         CoreRoleSource,
-        Result<jackin_console::domain::role::RoleManifestDoc, RoleDocError>,
+        Result<jackin_core::RoleManifest, RoleDocError>,
     ),
 >;
 
@@ -350,9 +350,9 @@ impl Inputs {
             let doc = match &source {
                 CoreRoleSource::Path(path) => {
                     match self.roles.load_path(path, &CancellationToken::new()).await {
-                        Ok(role) => Ok(manifest_doc(role.manifest())),
+                        Ok(role) => Ok(role.manifest().clone()),
                         Err(error) => match self.roles.read_manifest(path).await {
-                            Ok(manifest) => Ok(manifest_doc(&manifest)),
+                            Ok(manifest) => Ok(manifest),
                             Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
                         },
                     }

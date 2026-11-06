@@ -306,6 +306,29 @@ impl Backend for JackinBackend {
         launch::start(self, world, target)
     }
 
+    fn initial_panes(&self, instance: &Instance) -> Vec<PaneRequest> {
+        if instance.status != InstanceStatus::Running {
+            return Vec::new();
+        }
+        if instance.agents.is_empty() {
+            return vec![PaneRequest::new(
+                &instance.id,
+                Some(instance.agent),
+                instance.account.clone(),
+            )];
+        }
+        instance
+            .agents
+            .iter()
+            .map(|entry| {
+                let account = entry.account.clone().or_else(|| {
+                    (entry.agent == instance.agent).then(|| instance.account.clone())?
+                });
+                PaneRequest::new(&instance.id, Some(entry.agent), account)
+            })
+            .collect()
+    }
+
     fn spawn_pane(&self, request: &PaneRequest, spawn: PaneSpawn) -> Box<dyn PaneBody> {
         Box::new(TerminalPane::new(
             spawn.id,
@@ -314,17 +337,6 @@ impl Backend for JackinBackend {
             self.pane_timing(),
             spawn.now_ms,
         ))
-    }
-
-    fn initial_panes(&self, instance: &Instance) -> Vec<PaneRequest> {
-        if instance.status != InstanceStatus::Running {
-            return Vec::new();
-        }
-        vec![PaneRequest::new(
-            &instance.id,
-            Some(instance.agent),
-            instance.account.clone(),
-        )]
     }
 
     fn spawnable(
