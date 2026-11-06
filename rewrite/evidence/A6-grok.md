@@ -31,3 +31,10 @@ Sandbox launch, sandbox prompt+tool, post-run host concurrency, subscription bil
 
 ## Cleanup
 Temp worktree removed after writing this file. No secret in any file.
+
+## Update 2026-11-06: stored-key defect fixed
+
+- `jackin account add --gateway jackin-local grok --name grok-live --from-host-login` now exits 0.
+- Provider `jackin-grok-live-grok` (type grok, 1 credential key) exists on gateway jackin-local.
+- The earlier "provider credentials are not declared by profile 'grok': access_token" error was a jackin bug: OpenShell v0.1.7 accepts only profile env var names as stored keys. Fix commit 7c30d78c4 stores the Grok key under XAI_API_KEY.
+- T03 stays unavailable for one reason only: host Grok subscription usage balance exhausted (HTTP 402). See rewrite/blockers/T03-grok.md.
