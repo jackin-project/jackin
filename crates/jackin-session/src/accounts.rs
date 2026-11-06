@@ -8,7 +8,7 @@ use std::time::Duration;
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
     FileLock, GatewayEntry, GatewayName, HostPath, ProcessError, ProcessSpec, ProcessStatus,
-    ProcessStdin, Program, Provider, ProviderName, Secret,
+    ProcessStdin, Program, Provider, ProviderName,
 };
 use jackin_openshell::{
     Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile,
@@ -19,8 +19,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::connect::{ConnectError, GatewayConnector};
 use crate::credentials::{
-    CredentialError, read_chatgpt_login, read_grok_login, read_muse_host_metadata,
-    resolve_static_key,
+    CredentialError, parse_muse_keychain_secret, read_chatgpt_login, read_grok_login,
+    read_muse_host_metadata, resolve_static_key,
 };
 use crate::gateways::{Gateways, UnreachableGateway};
 use crate::lock::{self, LockError};
@@ -837,19 +837,11 @@ async fn sync_muse_login(
             account: account.name().clone(),
         });
     }
-    let document: serde_json::Value =
-        serde_json::from_slice(output.stdout.expose()).map_err(|_| {
-            AccountError::MissingCredential {
-                account: account.name().clone(),
-            }
-        })?;
-    let access_token = document
-        .get("access_token")
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| AccountError::MissingCredential {
+    let access_token = parse_muse_keychain_secret(&output.stdout).ok_or_else(|| {
+        AccountError::MissingCredential {
             account: account.name().clone(),
-        })?;
+        }
+    })?;
     let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
         AccountError::MissingCredential {
             account: account.name().clone(),
@@ -878,9 +870,7 @@ async fn sync_muse_login(
                 id_token: "",
                 token_url: "",
             },
-            material: ProviderMaterial::StaticKey {
-                key: Secret::new(access_token.to_owned()),
-            },
+            material: ProviderMaterial::StaticKey { key: access_token },
         })
         .await?;
     Ok(AccountSync::ProviderReady {

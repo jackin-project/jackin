@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use jackin_core::{
     Account, ChatgptAccountId, CredentialFileProblem, CredentialSource, FileSystem, FsError,
-    HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret, plain,
+    HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret, SecretBytes, plain,
     read_credential_file,
 };
 use tokio_util::sync::CancellationToken;
@@ -179,6 +179,16 @@ pub async fn read_muse_host_metadata(
         subs_active,
         storage: storage.to_owned(),
     })
+}
+
+pub fn parse_muse_keychain_secret(stdout: &SecretBytes) -> Option<Secret> {
+    let document = Document(serde_json::from_slice(stdout.expose()).ok()?);
+    let access_token = document
+        .0
+        .get("access_token")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())?;
+    Some(Secret::new(access_token.to_owned()))
 }
 
 pub async fn read_chatgpt_login(
