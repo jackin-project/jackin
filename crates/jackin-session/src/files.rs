@@ -134,3 +134,30 @@ pub fn render_kimi_config(provider: &ProviderName) -> crate::plan::PlannedFile {
 pub fn render_mimo_config(provider: &ProviderName) -> crate::plan::PlannedFile {
     render_native_config(jackin_core::Agent::MimoCode, provider)
 }
+
+pub fn render_muse_config(model: Option<&str>) -> crate::plan::PlannedFile {
+    let spec = jackin_core::Agent::MuseCode.spec();
+    crate::plan::PlannedFile {
+        path: spec.user_config.path.clone(),
+        mode: spec.user_config.mode,
+        text: json!({
+            "schema_version": 1,
+            "provider": "meta",
+            "model": model.unwrap_or(spec.default_model),
+        })
+        .to_string(),
+    }
+}
+
+pub fn render_grok_config(model: Option<&str>) -> crate::plan::PlannedFile {
+    let spec = jackin_core::Agent::GrokBuild.spec();
+    let text = match model {
+        Some(model) => format!("[cli]\nauto_update = false\n[models]\ndefault = \"{model}\"\n"),
+        None => "[cli]\nauto_update = false\n".to_owned(),
+    };
+    crate::plan::PlannedFile {
+        path: spec.user_config.path.clone(),
+        mode: spec.user_config.mode,
+        text,
+    }
+}

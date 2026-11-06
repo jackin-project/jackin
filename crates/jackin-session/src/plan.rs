@@ -9,7 +9,8 @@ use std::time::Duration;
 use jackin_core::{
     Account, AccountName, AccountQuery, AccountSelection, Agent, ChatgptAccountId, CodexAuthMode,
     Config, ConfigError, DockerCapability, DockerError, DockerLabel, DockerLayer, EnvFile,
-    EnvFileError, EnvName, EnvTable, EnvValueError, FileMode, GatewayName, LaunchId, NameSuffix,
+    EnvFileError, EnvName, EnvTable, EnvValueError, FileMode, GatewayName, LaunchId, ModelName,
+    NameSuffix,
     PathError, PlainEnvValue, PlannedLabels, PolicyLabel, ProjectRoot, Provider, ProviderName,
     RoleManifest, RoleName, SandboxName, SandboxPath, SelectionError, Workspace, WorkspaceName,
     plain_list, sandbox_layout,
@@ -493,7 +494,7 @@ fn agent_config_file(
     is_omp: bool,
     tuple: &'static jackin_core::AgentTuple,
     spec: &jackin_core::AgentSpec,
-    role: &LoadedRole,
+    codex_model: Option<&ModelName>,
     model: Option<&str>,
     agent: Agent,
     provider: Provider,
@@ -508,6 +509,12 @@ fn agent_config_file(
         return Ok(crate::files::render_mimo_config(
             &ProviderName::for_account(account, agent),
         ));
+    }
+    if agent == Agent::MuseCode {
+        return Ok(crate::files::render_muse_config(model));
+    }
+    if agent == Agent::GrokBuild {
+        return Ok(crate::files::render_grok_config(model));
     }
     if is_omp {
         return Ok(PlannedFile {
@@ -525,7 +532,7 @@ fn agent_config_file(
     Ok(PlannedFile {
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
-        text: render_codex_config(role.manifest().codex.model.as_ref(), &spec.workdir)?,
+        text: render_codex_config(codex_model, &spec.workdir)?,
     })
 }
 
@@ -651,8 +658,8 @@ pub fn plan_launch(
             is_omp,
             tuple,
             spec,
-            role,
-            request.model.as_deref(),
+            role.manifest().codex.model.as_ref(),
+            Some(instances.lead().model.as_str()),
             agent,
             provider,
             &selection.account,
@@ -798,6 +805,91 @@ impl LaunchPlan {
 
     pub fn instances(&self) -> &jackin_core::AgentInstances {
         &self.instances
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(
+        agent: Agent,
+        provider: Provider,
+        codex_model: Option<&ModelName>,
+        model: Option<&str>,
+    ) -> PlannedFile {
+        let tuple = jackin_core::lookup_tuple(agent, provider).expect("tuple");
+        let account = AccountName::parse("cfgtest").expect("account");
+        agent_config_file(
+            false,
+            tuple,
+            agent.spec(),
+            codex_model,
+            model,
+            agent,
+            provider,
+            &account,
+        )
+        .expect("config")
+    }
+
+    #[test]
+    fn agent_config_muse_json() {
+        let file = fixture(
+            Agent::MuseCode,
+            Provider::Muse,
+            None,
+            Some("muse-spark-1.2"),
+        );
+        assert!(file.path.as_str().ends_with("settings.json"));
+        let value: serde_json::Value = serde_json::from_str(&file.text).expect("json");
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(value["provider"], "meta");
+        assert_eq!(value["model"], "muse-spark-1.2");
+    }
+
+    #[test]
+    fn agent_config_muse_default_model() {
+        let file = fixture(Agent::MuseCode, Provider::Muse, None, None);
+        let value: serde_json::Value = serde_json::from_str(&file.text).expect("json");
+        assert_eq!(value["model"], Agent::MuseCode.spec().default_model);
+    }
+
+    #[test]
+    fn agent_config_grok_toml() {
+        let file = fixture(Agent::GrokBuild, Provider::Grok, None, Some("grok-4.7"));
+        assert!(file.path.as_str().ends_with("config.toml"));
+        let value: toml::Table = toml::from_str(&file.text).expect("toml");
+        assert_eq!(
+            value["cli"]["auto_update"],
+            toml::Value::Boolean(false)
+        );
+        assert_eq!(value["models"]["default"], toml::Value::String("grok-4.7".to_owned()));
+    }
+
+    #[test]
+    fn agent_config_grok_no_model() {
+        let file = fixture(Agent::GrokBuild, Provider::Grok, None, None);
+        let value: toml::Table = toml::from_str(&file.text).expect("toml");
+        assert_eq!(value["cli"]["auto_update"], toml::Value::Boolean(false));
+        assert!(!value.contains_key("models"));
+    }
+
+    #[test]
+    fn agent_config_codex_stays_toml() {
+        let codex_model = ModelName::parse("gpt-5.1-codex").expect("model");
+        let file = fixture(
+            Agent::Codex,
+            Provider::Codex,
+            Some(&codex_model),
+            Some("gpt-5.1-codex"),
+        );
+        let value: toml::Table = toml::from_str(&file.text).expect("toml");
+        assert!(value.contains_key("model"));
+        let projects = value["projects"].as_table().expect("projects");
+        assert!(projects
+            .values()
+            .any(|entry| entry["trust_level"] == toml::Value::String("trusted".to_owned())));
     }
 }
 
