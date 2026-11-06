@@ -4,10 +4,13 @@
 use std::pin::pin;
 use std::time::Duration;
 
-use jackin_core::{SandboxName, SupervisorReading, SupervisorState};
-use jackin_openshell::{EndReason, SessionClosed, TermSize, TerminalEvent, TerminalSession};
+use jackin_core::{GroupFault, SandboxName, SupervisorReading, SupervisorState};
+use jackin_openshell::{
+    EndReason, GatewayError, SessionClosed, TermSize, TerminalEvent, TerminalSession,
+};
 use jackin_session::{
-    AttachRequest, AttachedTerminal, ClipboardGuard, Session, ShellRequest, SupervisorReads,
+    AttachError, AttachRequest, AttachedTerminal, ClipboardGuard, Session, ShellRequest,
+    SupervisorReads,
 };
 
 use crate::app::App;
@@ -168,7 +171,12 @@ pub(crate) async fn attach(
     request: AttachRequest,
 ) -> Result<(), CommandError> {
     let sandbox = request.sandbox.clone();
-    let attached = session.attach(request).await?;
+    let attached = session
+        .attach(request, &app.cancel)
+        .await
+        .map_err(|error| {
+            opening_error(error, format!("cancelled; detached from sandbox {sandbox}"))
+        })?;
     if let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
         attached.supervisor_at_attach()
     {
@@ -212,13 +220,29 @@ fn finish(app: &mut App, sandbox: &SandboxName, ended: Ended) -> Result<(), Comm
     }
 }
 
+fn opening_error(error: AttachError, context: String) -> CommandError {
+    match error {
+        AttachError::Gateway(GatewayError::Cancelled { group, .. }) => {
+            CommandError::Cancelled(format!("{context}{}", GroupFault::note(group.as_ref())))
+        }
+        error => CommandError::Attach(error),
+    }
+}
+
 pub(crate) async fn shell(
     app: &mut App,
     session: &Session,
     request: ShellRequest,
 ) -> Result<(), CommandError> {
     let sandbox = request.sandbox.clone();
-    let mut remote = Remote::Shell(session.open_shell(request).await?);
+    let mut remote = Remote::Shell(session.open_shell(request, &app.cancel).await.map_err(
+        |error| {
+            opening_error(
+                error,
+                format!("cancelled; closed the shell in sandbox {sandbox}"),
+            )
+        },
+    )?);
     let ended = pump(app, &mut remote, &sandbox).await?;
     if ended.interrupted {
         return Err(CommandError::Cancelled(format!(

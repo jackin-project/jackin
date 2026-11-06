@@ -10,6 +10,7 @@
 mod attach;
 mod attach_rpc;
 mod attach_ssh;
+mod cancellation;
 mod connect;
 mod contract;
 mod discovery;
@@ -31,3 +32,4 @@ mod ssh_server;
 mod status;
 mod support;
 mod transfer;
+mod writer_bootstrap;

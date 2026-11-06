@@ -158,9 +158,15 @@ pub struct AttachTarget {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RestoreFinding {
+    Observed(SandboxName),
+    Unconfirmed { last_observed: Option<SandboxName> },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RestoreCandidate {
     pub launch_id: LaunchId,
-    pub sandbox: Option<SandboxName>,
+    pub finding: RestoreFinding,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

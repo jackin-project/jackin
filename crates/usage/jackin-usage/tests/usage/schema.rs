@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{AccountName, Provider, Timestamp};
+use jackin_testkit::guard;
 use jackin_usage::{
     AccountUsage, Freshness, LimitWindow, Percent, Remaining, UnavailableReason, UsageError,
     UsageOutcome, UsageReport, WindowKind,
 };
 use serde_json::{Value, json};
 
-use crate::support::{TestResult, guard};
+use crate::support::TestResult;
 
 const GOLDEN: &str = include_str!("golden/report.json");
 

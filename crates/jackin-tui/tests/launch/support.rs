@@ -195,10 +195,13 @@ pub(crate) async fn two_roles() -> Result<(Rig, RoleFixture), Failure> {
     other.commit().await?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddRole {
-            name: RoleName::parse("other")?,
-            source: RoleSource::Path(other.root().clone()),
-        }])
+        .edit(
+            vec![ConfigEdit::AddRole {
+                name: RoleName::parse("other")?,
+                source: RoleSource::Path(other.root().clone()),
+            }],
+            &rig.world.cancel,
+        )
         .await?;
     Ok((rig, other))
 }

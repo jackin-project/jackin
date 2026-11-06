@@ -3,6 +3,7 @@
 
 use jackin_core::{HookKind, LaunchId, SandboxName, SupervisorReading, sandbox_layout};
 use jackin_openshell::Gateway;
+use tokio_util::sync::CancellationToken;
 
 use crate::launch::LaunchError;
 use crate::state::reading;
@@ -25,6 +26,7 @@ pub(super) async fn read(
     gateway: &dyn Gateway,
     sandbox: &SandboxName,
     launch: &LaunchId,
+    cancel: &CancellationToken,
 ) -> Result<SandboxProbe, LaunchError> {
     let paths = [
         sandbox_layout::uploaded_marker(launch),
@@ -33,7 +35,7 @@ pub(super) async fn read(
         sandbox_layout::hook_path(HookKind::Preflight),
         sandbox_layout::RUN_STATE.clone(),
     ];
-    let found = gateway.read_files(sandbox, &paths).await?;
+    let found = gateway.read_files(sandbox, &paths, cancel).await?;
     let [uploaded, setup_done, setup, preflight, state] = found.as_slice() else {
         return Err(LaunchError::ProbeInvalid {
             message: format!("expected {} files, read {}", paths.len(), found.len()),

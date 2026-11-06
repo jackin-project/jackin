@@ -1,20 +1,16 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
-use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use futures::future::join_all;
-use jackin_core::{
-    Config, GatewayName, Phase, SandboxName, SandboxSummary, SupervisorReading, SupervisorState,
-    Timestamp,
-};
+use jackin_core::{Config, GatewayName, Phase, SandboxSummary, SupervisorReading, SupervisorState};
 use jackin_session::{Session, WorkState};
 use thiserror::Error;
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 
 use jackin_console::domain::instance::InstanceId;
 
@@ -66,44 +62,6 @@ impl Fleet {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct WorkCache {
-    entries: Mutex<BTreeMap<(GatewayName, SandboxName), (WorkKey, WorkState)>>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct WorkKey {
-    phase: Phase,
-    created_at: Option<Timestamp>,
-    supervisor: Option<SupervisorReading>,
-}
-
-impl WorkCache {
-    fn get(&self, at: &(GatewayName, SandboxName), key: &WorkKey) -> Option<WorkState> {
-        let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries
-            .get(at)
-            .filter(|(cached, _)| cached == key)
-            .map(|(_, state)| state.clone())
-    }
-
-    fn put(&self, at: (GatewayName, SandboxName), key: WorkKey, state: WorkState) {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.insert(at, (key, state));
-    }
-
-    fn keep_seen(&self, fleet: &Fleet) {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.retain(|(gateway, sandbox), _| {
-            fleet.failed().any(|g| g.name == *gateway)
-                || fleet
-                    .sandboxes
-                    .iter()
-                    .any(|seen| seen.gateway == *gateway && seen.summary.name == *sandbox)
-        });
-    }
-}
-
 #[derive(Debug)]
 pub(crate) struct Waited(pub(crate) Duration);
 
@@ -134,21 +92,13 @@ impl Inspected {
                 Some(SupervisorReading::Reported(SupervisorState::Running { .. }))
             )
     }
-
-    fn work_key(&self) -> WorkKey {
-        WorkKey {
-            phase: self.summary.phase,
-            created_at: self.summary.created_at,
-            supervisor: self.supervisor.clone(),
-        }
-    }
 }
 
 pub async fn read_fleet(
     sessions: &SessionSet,
     config: &Config,
     limits: ConsoleLimits,
-    cache: &WorkCache,
+    cancel: &CancellationToken,
 ) -> Fleet {
     let readings = join_all(
         sessions
@@ -158,7 +108,7 @@ pub async fn read_fleet(
                 match reached {
                     Reached::Down(error) => unreadable(&name, error.to_string()),
                     Reached::Up(session) => {
-                        read_gateway(&name, &session, config, limits, cache).await
+                        read_gateway(&name, &session, config, limits, cancel).await
                     }
                 }
             }),
@@ -170,7 +120,6 @@ pub async fn read_fleet(
         fleet.sandboxes.extend(sandboxes);
         fleet.unreadable += unreadable;
     }
-    cache.keep_seen(&fleet);
     fleet
 }
 
@@ -193,27 +142,27 @@ async fn read_gateway(
     session: &Session,
     config: &Config,
     limits: ConsoleLimits,
-    cache: &WorkCache,
+    cancel: &CancellationToken,
 ) -> (GatewayReading, Vec<ObservedSandbox>, usize) {
     let deadline = limits.connect_deadline;
-    let listing = match within(deadline, session.list()).await {
+    let listing = match within(deadline, session.list(cancel)).await {
         Some(Ok(listing)) => listing,
         Some(Err(error)) => return unreadable(name, error.to_string()),
         None => return unreadable(name, TimedOut(Waited(deadline)).to_string()),
     };
     let unreadable = listing.unreadable.len();
+    let slots = Semaphore::new(limits.work_reads.get());
     let inspected = join_all(
         listing
             .sandboxes
             .into_iter()
-            .map(|summary| inspect(session, summary, deadline)),
+            .map(|summary| inspect(session, summary, deadline, &slots, cancel)),
     )
     .await;
-    let slots = Semaphore::new(limits.work_reads.get());
     let works = join_all(
         inspected
             .iter()
-            .map(|sandbox| read_work(name, session, config, sandbox, deadline, (cache, &slots))),
+            .map(|sandbox| read_work(session, config, sandbox, deadline, &slots, cancel)),
     )
     .await;
     let sandboxes = inspected
@@ -244,9 +193,20 @@ async fn read_gateway(
     )
 }
 
-async fn inspect(session: &Session, summary: SandboxSummary, deadline: Duration) -> Inspected {
-    let supervisor = if summary.phase == Phase::Ready {
-        within(deadline, session.inspect(&summary.name))
+async fn inspect(
+    session: &Session,
+    summary: SandboxSummary,
+    deadline: Duration,
+    slots: &Semaphore,
+    cancel: &CancellationToken,
+) -> Inspected {
+    let slot = if summary.phase == Phase::Ready {
+        slots.acquire().await.ok()
+    } else {
+        None
+    };
+    let supervisor = if slot.is_some() {
+        within(deadline, session.inspect(&summary.name, cancel))
             .await
             .and_then(Result::ok)
             .map(|view| view.supervisor)
@@ -260,25 +220,20 @@ async fn inspect(session: &Session, summary: SandboxSummary, deadline: Duration)
 }
 
 async fn read_work(
-    gateway: &GatewayName,
     session: &Session,
     config: &Config,
     sandbox: &Inspected,
     deadline: Duration,
-    (cache, slots): (&WorkCache, &Semaphore),
+    slots: &Semaphore,
+    cancel: &CancellationToken,
 ) -> Option<WorkState> {
     if !sandbox.needs_work() {
         return None;
     }
-    let at = (gateway.clone(), sandbox.summary.name.clone());
-    let key = sandbox.work_key();
-    if let Some(state) = cache.get(&at, &key) {
-        return Some(state);
-    }
     let _slot = slots.acquire().await.ok()?;
-    let state = within(deadline, session.work_state(config, &sandbox.summary.name)).await?;
-    if !matches!(state, WorkState::Unknown(_)) {
-        cache.put(at, key, state.clone());
-    }
-    Some(state)
+    within(
+        deadline,
+        session.work_state(config, &sandbox.summary.name, cancel),
+    )
+    .await
 }

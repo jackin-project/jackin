@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::collections::BTreeSet;
 
 use jackin_core::{
@@ -12,7 +13,7 @@ use jackin_session::{AccountEditError, AccountPlan, Gateways, plan_account_edits
 use jackin_testkit::{Fault, World};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Home, TestResult, codex_account, guard, login_json, registered};
+use super::support::{Home, TestResult, codex_account, login_json, registered};
 
 fn name(text: &str) -> Result<AccountName, Box<dyn std::error::Error>> {
     Ok(AccountName::parse(text)?)
@@ -45,7 +46,8 @@ fn file(path: &str) -> Result<CredentialSource, Box<dyn std::error::Error>> {
 async fn run(world: &World, edits: Vec<ConfigEdit>) -> Result<Config, AccountEditError> {
     let cancel = CancellationToken::new();
     let plan = plan_account_edits(&world.desk(), edits, &cancel).await?;
-    plan.apply(&Gateways::single(world.session.clone())).await
+    plan.apply(&Gateways::single(world.session.clone()), &cancel)
+        .await
 }
 
 #[tokio::test]
@@ -110,12 +112,13 @@ async fn accounts_without_a_chatgpt_login_never_need_the_gateway() -> TestResult
                 },
             )?),
         ];
-        let plan = plan_account_edits(&world.desk(), edits, &CancellationToken::new()).await?;
+        let cancel = CancellationToken::new();
+        let plan = plan_account_edits(&world.desk(), edits, &cancel).await?;
         assert!(!plan.needs_gateway());
         let AccountPlan::Offline(offline) = plan else {
             return Err("a plan without providers needs the gateway".into());
         };
-        let config = offline.apply().await?;
+        let config = offline.apply(&cancel).await?;
         assert_eq!(config.accounts().count(), 3);
         assert!(world.gateway.providers().is_empty());
         assert!(world.gateway.profiles().is_empty());
@@ -352,12 +355,14 @@ async fn after_two_edits(
     let case = format!("{target}: {first:?} then {second:?}");
 
     let edits = vec![edit(first, target, home)?, edit(second, target, home)?];
-    let Ok(plan) = plan_account_edits(&world.desk(), edits, &CancellationToken::new()).await else {
+    let cancel = CancellationToken::new();
+    let Ok(plan) = plan_account_edits(&world.desk(), edits, &cancel).await else {
         assert_eq!(world.config.load().await?, start, "{case}");
         assert_eq!(providers_of(&world), start_providers, "{case}");
         return Ok(false);
     };
-    plan.apply(&Gateways::single(world.session.clone())).await?;
+    plan.apply(&Gateways::single(world.session.clone()), &cancel)
+        .await?;
     let finished = world.config.load().await?;
     assert_eq!(providers_of(&world), logins_of(&finished), "{case}");
     Ok(true)
@@ -393,19 +398,26 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_or_loses_a_cha
         let world = registered().await?;
         world
             .config
-            .edit(vec![
-                edit(Kind::AddLogin, "chat", &home)?,
-                edit(Kind::AddEnv, "keyed", &home)?,
-                ConfigEdit::AddAccount(account(
-                    "vault",
-                    Provider::Codex,
-                    CredentialSource::OnePassword {
-                        reference: OpReference::parse("op://Dev/OpenAI/key")?,
-                        account: None,
-                    },
-                )?),
-                ConfigEdit::AddAccount(account("claude", Provider::Claude, env("CLAUDE_KEY")?)?),
-            ])
+            .edit(
+                vec![
+                    edit(Kind::AddLogin, "chat", &home)?,
+                    edit(Kind::AddEnv, "keyed", &home)?,
+                    ConfigEdit::AddAccount(account(
+                        "vault",
+                        Provider::Codex,
+                        CredentialSource::OnePassword {
+                            reference: OpReference::parse("op://Dev/OpenAI/key")?,
+                            account: None,
+                        },
+                    )?),
+                    ConfigEdit::AddAccount(account(
+                        "claude",
+                        Provider::Claude,
+                        env("CLAUDE_KEY")?,
+                    )?),
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let table = [
             ("add a login", true, edit(Kind::AddLogin, "second", &home)?),

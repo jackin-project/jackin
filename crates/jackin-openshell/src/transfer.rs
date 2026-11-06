@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use jackin_core::{
-    EnvName, EnvValue, HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    EnvValue, HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program,
     ProjectRoot, SandboxName, SandboxPath, Sha256, TerminalText, sandbox_layout,
 };
 use sha2::{Digest, Sha256 as Hasher};
@@ -275,15 +275,7 @@ async fn remote_size(
             .map(str::to_owned)
             .to_vec(),
         workdir: None,
-        env: EnvName::parse("LC_ALL")
-            .map(|name| std::collections::BTreeMap::from([(name, "C".to_owned())]))
-            .map_err(|_| {
-                transfer_failure(
-                    TransferOp::Size,
-                    ProcessStatus::Exited(0),
-                    "the locale variable name is invalid",
-                )
-            })?,
+        env: ProgramRun::c_locale(),
         stdin: ProgramStdin::Closed,
         touch_on_success: None,
         timeout: inner.transfer_timeout,

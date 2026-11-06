@@ -98,7 +98,10 @@ async fn the_lock_is_per_account_and_a_cancelled_wait_ends_the_launch() -> TestR
         )?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddAccount(personal.clone())])
+            .edit(
+                vec![ConfigEdit::AddAccount(personal.clone())],
+                &CancellationToken::new(),
+            )
             .await?;
         rig.world
             .session

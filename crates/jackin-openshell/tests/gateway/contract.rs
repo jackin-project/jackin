@@ -15,7 +15,9 @@ use openshell_sdk::raw::proto::{ObjectMeta, Provider, ProviderProfile, exec_sand
 use tempfile::TempDir;
 use tonic::Code;
 
-use super::exec_rpc::{Step, exit_event, host_shell, host_tools, scripted};
+use super::exec_rpc::{
+    Step, WriterMutation, exit_event, host_shell, host_shell_writer_mutating, host_tools, scripted,
+};
 use super::fakes::{Recorded, ScriptedRunner, exited};
 use super::harness::{Env, WORKSPACE, config, connect, env, guard, resolved};
 use super::server::{Broken, ExecBackend, ExecCtx, Fault};
@@ -52,18 +54,40 @@ async fn fixture() -> (TempDir, ContractFixture) {
     )
 }
 
-fn prepare(env: &Env, root: &TempDir) {
+async fn prepare(env: &Env, root: &TempDir) {
+    let exec = host_shell(root.path().to_path_buf()).await;
     let mut state = env.server.state();
     state.auto_advance = true;
     state.known_images = Some(HashSet::from([IMAGE.to_owned()]));
-    state.exec = Some(host_shell(root.path().to_path_buf()));
+    state.exec = Some(exec);
+}
+
+async fn writer_mutation_report(mutation: WriterMutation) -> (Env, ContractReport) {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    prepare(&env, &root).await;
+    env.server.state().exec =
+        Some(host_shell_writer_mutating(root.path().to_path_buf(), mutation).await);
+    let (_project, fixture) = fixture().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let report = run(&gateway, &fixture, ContractGroup::Core).await;
+    (env, report)
+}
+
+fn assert_writer_mutation_fails(report: &ContractReport, message: &str) {
+    let failed = outcome(report, "write_file_mode_and_atomicity");
+    assert!(
+        failed.as_ref().is_err_and(|found| found.contains(message)),
+        "{failed:?}"
+    );
+    assert_others_pass(report, "write_file_mode_and_atomicity");
 }
 
 #[tokio::test]
 async fn core_group_passes_against_grpc_gateway_on_the_in_process_server() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     let (_project, fixture) = fixture().await;
     let gateway = connect(&env, WORKSPACE).await;
     let report = run(&gateway, &fixture, ContractGroup::Core).await;
@@ -76,10 +100,106 @@ async fn core_group_passes_against_grpc_gateway_on_the_in_process_server() {
 }
 
 #[tokio::test]
+async fn the_public_core_contract_rejects_a_target_with_the_wrong_mode() {
+    let (env, report) = writer_mutation_report(WriterMutation::TargetMode).await;
+    assert_writer_mutation_fails(&report, "target is not a regular 0600 file");
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_a_parent_with_the_wrong_mode() {
+    let (env, report) = writer_mutation_report(WriterMutation::ParentMode).await;
+    assert_writer_mutation_fails(&report, "target parent is not an owned 0700 directory");
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_an_orphan_data_stage() {
+    let (env, report) = writer_mutation_report(WriterMutation::OrphanDataStage).await;
+    assert_writer_mutation_fails(&report, "temporary metadata or unexpected entries");
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_an_orphan_identity_stage() {
+    let (env, report) = writer_mutation_report(WriterMutation::OrphanIdentityStage).await;
+    assert_writer_mutation_fails(&report, "temporary metadata or unexpected entries");
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_an_unrelated_hidden_entry() {
+    let (env, report) = writer_mutation_report(WriterMutation::UnrelatedHiddenEntry).await;
+    assert_writer_mutation_fails(&report, "temporary metadata or unexpected entries");
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_an_identity_bound_to_another_target() {
+    let (env, report) = writer_mutation_report(WriterMutation::ForeignIdentity).await;
+    assert_writer_mutation_fails(&report, "identity is not bound to the target path");
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_a_lock_with_the_wrong_mode() {
+    let (env, report) = writer_mutation_report(WriterMutation::LockMode).await;
+    assert_writer_mutation_fails(&report, "writer lock is not a regular 0600 file");
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_an_extra_writer_namespace() {
+    let (env, report) = writer_mutation_report(WriterMutation::ExtraNamespace).await;
+    assert_writer_mutation_fails(&report, "temporary metadata or unexpected entries");
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_a_symlinked_writer_namespace() {
+    let (env, report) = writer_mutation_report(WriterMutation::NamespaceSymlink).await;
+    assert_writer_mutation_fails(
+        &report,
+        "writer namespace is neither absent nor an owned 0700 directory",
+    );
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_a_dangling_writer_namespace_symlink() {
+    let (env, report) = writer_mutation_report(WriterMutation::DanglingNamespaceSymlink).await;
+    assert_writer_mutation_fails(
+        &report,
+        "writer namespace is neither absent nor an owned 0700 directory",
+    );
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_a_writer_namespace_without_identity() {
+    let (env, report) = writer_mutation_report(WriterMutation::MissingIdentity).await;
+    assert_writer_mutation_fails(
+        &report,
+        "writer identity is not a regular 0600 file owned by the sandbox user with one link",
+    );
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
+async fn the_public_core_contract_rejects_a_writer_namespace_without_lock() {
+    let (env, report) = writer_mutation_report(WriterMutation::MissingLock).await;
+    assert_writer_mutation_fails(
+        &report,
+        "writer lock is not a regular 0600 file owned by the sandbox user with one link",
+    );
+    assert_nothing_left(&env);
+}
+
+#[tokio::test]
 async fn a_leftover_profile_and_provider_from_an_aborted_run_do_not_fail_the_core_group() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     {
         let mut state = env.server.state();
         state.profiles.insert(
@@ -149,7 +269,7 @@ async fn terminal_group_reports_exactly_the_published_checks_and_a_refused_attac
  {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     {
         let mut state = env.server.state();
         state.exec = Some(exit_when_told());
@@ -188,7 +308,7 @@ async fn terminal_group_reports_exactly_the_published_checks_and_a_refused_attac
 async fn a_server_that_drops_labels_fails_the_labels_check_and_runs_the_rest() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     env.server.state().store_labels = false;
     let (_project, fixture) = fixture().await;
     let gateway = connect(&env, WORKSPACE).await;
@@ -214,7 +334,7 @@ async fn a_server_that_drops_labels_fails_the_labels_check_and_runs_the_rest() {
 async fn a_server_that_drops_the_environment_fails_only_the_environment_check() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     env.server.state().store_environment = false;
     let (_project, fixture) = fixture().await;
     let gateway = connect(&env, WORKSPACE).await;
@@ -232,7 +352,7 @@ async fn a_server_that_drops_the_environment_fails_only_the_environment_check() 
 async fn a_sandbox_that_never_reaches_ready_is_deleted_by_the_check() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     env.server.state().faults.insert(
         "get_sandbox",
         Fault::Status(Code::Unavailable, "gateway lost".to_owned()),
@@ -282,7 +402,7 @@ fn hang_after_exit() -> ExecBackend {
 async fn shell_exit_code_cannot_hang_the_run() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     env.server.state().exec = Some(hang_after_exit());
     let (_project, mut fixture) = fixture().await;
     fixture.shell_end_timeout = Duration::from_secs(1);
@@ -330,7 +450,7 @@ fn assert_nothing_left(env: &Env) {
 async fn a_server_that_refuses_stop_on_a_stopped_sandbox_fails_only_that_check() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     env.server.state().broken = Some(Broken::StopOnStopped);
     let (_project, fixture) = fixture().await;
     let gateway = connect(&env, WORKSPACE).await;
@@ -351,7 +471,7 @@ async fn a_server_that_refuses_stop_on_a_stopped_sandbox_fails_only_that_check()
 async fn a_server_that_deletes_an_attached_provider_fails_only_that_check_and_leaves_nothing() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     env.server.state().broken = Some(Broken::DeleteAttachedProviders);
     let (_project, fixture) = fixture().await;
     let gateway = connect(&env, WORKSPACE).await;
@@ -372,7 +492,7 @@ async fn a_server_that_deletes_a_provider_while_refusing_the_delete_fails_only_t
  {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     env.server.state().broken = Some(Broken::DeleteAfterRefusal);
     let (_project, fixture) = fixture().await;
     let gateway = connect(&env, WORKSPACE).await;
@@ -392,7 +512,7 @@ async fn a_server_that_deletes_a_provider_while_refusing_the_delete_fails_only_t
 async fn a_server_that_refuses_the_second_delete_of_a_provider_fails_the_put_and_delete_check() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     env.server.state().broken = Some(Broken::DeleteAbsentRefused);
     let (_project, fixture) = fixture().await;
     let gateway = connect(&env, WORKSPACE).await;
@@ -420,7 +540,7 @@ fn end_with(status: u32) -> Vec<Action> {
 async fn terminal_report(after_subsystem: Vec<Action>) -> (Env, ContractReport) {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     let model = SshModel::new(
         &host_key(&RIGHT_SEED),
         RIGHT_FINGERPRINT,
@@ -464,7 +584,7 @@ async fn an_ended_main_process_attach_that_is_refused_passes_the_check_and_one_t
 async fn transfer_report(runner: ScriptedRunner) -> (Env, ContractReport) {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     let (_project, fixture) = fixture().await;
     let settings = config(&env, resolved(&env).await, WORKSPACE, runner);
     let gateway = guard(GrpcGateway::connect(settings)).await.unwrap();
@@ -618,8 +738,9 @@ fn sandbox_download(root: std::path::PathBuf) -> ScriptedRunner {
 async fn the_download_checks_pass_on_the_adapter_when_the_sandbox_answers_like_the_real_tools() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
-    env.server.state().exec = Some(host_tools(root.path().to_path_buf()));
+    prepare(&env, &root).await;
+    let exec = host_tools(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     let (_project, fixture) = fixture().await;
     let settings = config(
         &env,
@@ -645,7 +766,7 @@ async fn the_download_checks_pass_on_the_adapter_when_the_sandbox_answers_like_t
 async fn a_gateway_that_finds_a_missing_file_and_fails_later_fails_the_size_check() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    prepare(&env, &root);
+    prepare(&env, &root).await;
     env.server.state().exec = Some(scripted(|start, _| {
         if start.command[0] == "/usr/bin/stat" {
             vec![Step::Out(b"regular file 1\n".to_vec()), Step::Exit(0)]

@@ -133,7 +133,7 @@ async fn a_stopped_sandbox_is_started_and_restarts_at_attempt_one() -> TestResul
         ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         rig.gateway()
-            .set_power(&handle.name(), PowerAction::Stop)
+            .set_power(&handle.name(), PowerAction::Stop, &CancellationToken::new())
             .await?;
         rig.repo.file("late.txt", b"late\n").await?;
         let target = ready(rig.launch_observed(1).await?)?;
@@ -160,7 +160,7 @@ async fn a_stale_running_state_after_power_start_is_not_accepted() -> TestResult
         ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         rig.gateway()
-            .set_power(&handle.name(), PowerAction::Stop)
+            .set_power(&handle.name(), PowerAction::Stop, &CancellationToken::new())
             .await?;
         rig.gateway()
             .inject(Fault::StaleSupervisor { observations: 3 });
@@ -207,7 +207,7 @@ async fn a_transient_provisioning_failure_is_deleted_and_recreated_up_to_create_
         assert_eq!(handle.phase(), Phase::Error { exit_code: None });
         let view = rig
             .gateway()
-            .find_sandboxes(&jackin_openshell::SandboxQuery::Name(name))
+            .find_sandboxes(&jackin_openshell::SandboxQuery::Name(name), &CancellationToken::new())
             .await?;
         assert!(matches!(view[0].provisioning, Provisioning::Failed { .. }));
         Ok(())
@@ -222,7 +222,7 @@ async fn a_start_the_gateway_ignores_is_waited_out_on_the_clock_to_a_ready_timeo
         ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         rig.gateway()
-            .set_power(&handle.name(), PowerAction::Stop)
+            .set_power(&handle.name(), PowerAction::Stop, &CancellationToken::new())
             .await?;
         rig.gateway().inject(Fault::StartIgnored);
         let failed = failure(rig.launch_observed(1).await?)?;
@@ -256,7 +256,7 @@ async fn a_stale_exited_state_after_power_start_is_waited_out_and_attempt_one_st
             })
         );
         rig.gateway()
-            .set_power(&handle.name(), PowerAction::Stop)
+            .set_power(&handle.name(), PowerAction::Stop, &CancellationToken::new())
             .await?;
         rig.gateway()
             .inject(Fault::StaleSupervisor { observations: 3 });

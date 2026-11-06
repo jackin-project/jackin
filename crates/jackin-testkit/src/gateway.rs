@@ -33,7 +33,8 @@ pub use handle::SandboxHandle;
 
 use self::main_process::MainPlan;
 use self::state::{
-    Action, Armed, ArmedTrigger, Cell, Direction, Hold, HoldStatus, Registry, Sandbox, Settling,
+    Action, Armed, ArmedTrigger, Cell, Direction, FindMutation, FindVisibility, Hold, HoldStatus,
+    Registry, Sandbox, Settling,
 };
 use crate::engine::FakeEngine;
 use crate::host::{FakeClock, Working};
@@ -46,6 +47,7 @@ pub struct FakeGateway {
     workspace: OpenShellWorkspace,
     registry: Mutex<Registry>,
     holds_changed: Notify,
+    programs_changed: Notify,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -88,6 +90,7 @@ pub struct ProviderRecord {
     pub refresh_token: String,
     pub client_id: String,
     pub chatgpt_account_id: ChatgptAccountId,
+    pub refreshing: bool,
 }
 
 impl std::fmt::Debug for ProviderRecord {
@@ -147,11 +150,19 @@ pub enum Fault {
         trigger: Trigger,
         error: GatewayError,
     },
+    PanicAt {
+        trigger: Trigger,
+    },
     CancelAt {
         trigger: Trigger,
         token: CancellationToken,
     },
+    CancelAfterCreate {
+        token: CancellationToken,
+    },
+    DuplicateNextFind,
     HideUntilCreateConflict,
+    HideNextLaunchLookup,
     StartIgnored,
     HoldAt {
         trigger: Trigger,
@@ -170,6 +181,10 @@ fn protocol(message: impl ToString) -> GatewayError {
     }
 }
 
+fn cancelled(op: GatewayOp) -> GatewayError {
+    GatewayError::Cancelled { op, group: None }
+}
+
 impl FakeGateway {
     pub fn new(name: GatewayName, workspace: OpenShellWorkspace) -> FakeGateway {
         FakeGateway {
@@ -177,6 +192,7 @@ impl FakeGateway {
             workspace,
             registry: Mutex::new(Registry::new()),
             holds_changed: Notify::new(),
+            programs_changed: Notify::new(),
         }
     }
 
@@ -205,10 +221,26 @@ impl FakeGateway {
             Fault::FailAt { trigger, error } => registry
                 .triggers
                 .push(ArmedTrigger::new(trigger, Action::Fail(error))),
+            Fault::PanicAt { trigger } => registry
+                .triggers
+                .push(ArmedTrigger::new(trigger, Action::Panic)),
             Fault::CancelAt { trigger, token } => registry
                 .triggers
                 .push(ArmedTrigger::new(trigger, Action::Cancel(token))),
-            Fault::HideUntilCreateConflict => registry.hidden_until_conflict = true,
+            Fault::CancelAfterCreate { token } => registry.cancel_after_create = Some(token),
+            Fault::DuplicateNextFind => {
+                registry
+                    .find_mutations
+                    .insert(FindMutation::DuplicateNextResult);
+            }
+            Fault::HideUntilCreateConflict => {
+                registry.find_visibility = FindVisibility::HiddenUntilCreateConflict;
+            }
+            Fault::HideNextLaunchLookup => {
+                registry
+                    .find_mutations
+                    .insert(FindMutation::HideNextLaunchLookup);
+            }
             Fault::StartIgnored => registry.start_ignored = true,
             Fault::HoldAt { trigger } => registry.holds.push(Hold::new(trigger)),
             Fault::PutProviderFailsAfterWrite { error } => {
@@ -258,14 +290,29 @@ impl FakeGateway {
         special: Option<&Trigger>,
         cancel: Option<&CancellationToken>,
     ) -> Result<(), GatewayError> {
+        if let Some(token) = cancel
+            && token.is_cancelled()
+        {
+            return Err(cancelled(op));
+        }
         let Some(gate) = self.registry().arrive(op, special) else {
+            if cancel.is_some_and(CancellationToken::is_cancelled) {
+                return Err(cancelled(op));
+            }
             return Ok(());
         };
         self.holds_changed.notify_waiters();
         if let Some(token) = cancel {
             tokio::select! {
-                () = gate.wait() => Ok(()),
-                () = token.cancelled() => Err(GatewayError::Cancelled { op, group: None }),
+                biased;
+                () = token.cancelled() => Err(cancelled(op)),
+                () = gate.wait() => {
+                    if token.is_cancelled() {
+                        Err(cancelled(op))
+                    } else {
+                        Ok(())
+                    }
+                },
             }
         } else {
             gate.wait().await;
@@ -346,6 +393,35 @@ impl FakeGateway {
 
     pub fn install_file(&self, path: &SandboxPath, bytes: Vec<u8>) {
         self.registry().installed.insert(path.clone(), bytes);
+    }
+
+    pub fn peak_inspections(&self) -> u32 {
+        self.registry().peak_inspecting
+    }
+
+    pub fn peak_programs(&self) -> u32 {
+        self.registry().peak_programs
+    }
+
+    pub fn reset_program_peak(&self) {
+        let mut registry = self.registry();
+        registry.peak_programs = registry.running_programs;
+    }
+
+    pub async fn until_peak_programs(&self, count: u32) {
+        loop {
+            let changed = self.programs_changed.notified();
+            let mut changed = std::pin::pin!(changed);
+            changed.as_mut().enable();
+            if self.registry().peak_programs >= count {
+                return;
+            }
+            changed.await;
+        }
+    }
+
+    pub fn bake_file(&self, path: &SandboxPath, bytes: Vec<u8>) {
+        self.registry().baked.insert(path.clone(), bytes);
     }
 
     pub fn provider(&self, name: &ProviderName) -> Option<ProviderRecord> {
@@ -642,10 +718,10 @@ impl Gateway for FakeGateway {
         tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
-        Ok(if registry.providers.contains_key(name) {
-            ProviderState::Present
-        } else {
-            ProviderState::Absent
+        Ok(match registry.providers.get(name) {
+            None => ProviderState::Absent,
+            Some(record) if record.refreshing => ProviderState::Present,
+            Some(_) => ProviderState::Unrefreshed,
         })
     }
 
@@ -665,6 +741,7 @@ impl Gateway for FakeGateway {
             client_id,
             chatgpt_account_id,
         } = &spec.material;
+        let refreshing = registry.put_fails_after_write.is_none();
         registry.providers.insert(
             spec.name.clone(),
             ProviderRecord {
@@ -675,6 +752,7 @@ impl Gateway for FakeGateway {
                 refresh_token: refresh_token.expose().to_owned(),
                 client_id: client_id.clone(),
                 chatgpt_account_id: chatgpt_account_id.clone(),
+                refreshing,
             },
         );
         match registry.put_fails_after_write.take() {
@@ -715,7 +793,7 @@ impl Gateway for FakeGateway {
         let mut registry = self.registry();
         registry.strike(GatewayOp::Create)?;
         if registry.sandboxes.contains_key(spec.name()) {
-            registry.hidden_until_conflict = false;
+            registry.find_visibility = FindVisibility::Visible;
             return Err(GatewayError::AlreadyExists {
                 what: Missing::Sandbox(spec.name().clone()),
             });
@@ -747,6 +825,7 @@ impl Gateway for FakeGateway {
             .tempdir()
             .map_err(protocol)?;
         std::fs::create_dir(dir.path().join("sandbox")).map_err(protocol)?;
+        files::bake(&dir.path().join("sandbox"), &registry.baked)?;
         let mut sandbox = Sandbox::new(
             spec.clone(),
             plan,
@@ -766,20 +845,46 @@ impl Gateway for FakeGateway {
                 inner: Mutex::new(sandbox),
             }),
         );
+        if let Some(cancel) = registry.cancel_after_create.take() {
+            cancel.cancel();
+        }
         Ok(view)
     }
 
-    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
+    async fn find_sandboxes(
+        &self,
+        query: &SandboxQuery,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<SandboxView>, GatewayError> {
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::Find, None, None).await?;
-        let cells: Vec<Arc<Cell>> = {
+        self.pause(GatewayOp::Find, None, Some(cancel)).await?;
+        if cancel.is_cancelled() {
+            return Err(cancelled(GatewayOp::Find));
+        }
+        let (cells, duplicate): (Vec<Arc<Cell>>, bool) = {
             let mut registry = self.registry();
             registry.strike(GatewayOp::Find)?;
-            match query {
+            let duplicate = registry
+                .find_mutations
+                .remove(&FindMutation::DuplicateNextResult);
+            let hide_launch = matches!(
+                query,
+                SandboxQuery::Labels(selector)
+                    if selector.render().split(',').count() > 1
+                        && registry
+                            .find_mutations
+                            .remove(&FindMutation::HideNextLaunchLookup)
+            );
+            let cells = match query {
                 SandboxQuery::Name(name) => {
                     registry.sandboxes.get(name).cloned().into_iter().collect()
                 }
-                SandboxQuery::Labels(_) if registry.hidden_until_conflict => Vec::new(),
+                SandboxQuery::Labels(_)
+                    if registry.find_visibility == FindVisibility::HiddenUntilCreateConflict
+                        || hide_launch =>
+                {
+                    Vec::new()
+                }
                 SandboxQuery::Labels(selector) => {
                     let wanted = selector_pairs(&selector.render());
                     registry
@@ -796,12 +901,18 @@ impl Gateway for FakeGateway {
                         .cloned()
                         .collect()
                 }
-            }
+            };
+            (cells, duplicate)
         };
-        Ok(cells.iter().map(|cell| observed(cell)).collect())
+        let mut views: Vec<_> = cells.iter().map(|cell| observed(cell)).collect();
+        if duplicate && let Some(first) = views.first().cloned() {
+            views.push(first);
+        }
+        Ok(views)
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
+        let _gauge = Inspecting::enter(self);
         tokio::task::yield_now().await;
         self.pause(GatewayOp::Detail, None, None).await?;
         let cell = self.cell(GatewayOp::Detail, name)?;
@@ -854,9 +965,13 @@ impl Gateway for FakeGateway {
         &self,
         name: &SandboxName,
         action: PowerAction,
+        cancel: &CancellationToken,
     ) -> Result<SandboxView, GatewayError> {
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::Power, None, None).await?;
+        self.pause(GatewayOp::Power, None, Some(cancel)).await?;
+        if cancel.is_cancelled() {
+            return Err(cancelled(GatewayOp::Power));
+        }
         let cell = self.cell(GatewayOp::Power, name)?;
         let (stale, start_ignored) = {
             let registry = self.registry();
@@ -930,6 +1045,7 @@ impl Gateway for FakeGateway {
         cancel: &CancellationToken,
     ) -> Result<ProgramOutcome, GatewayError> {
         let _working = self.working();
+        let _gauge = RunningProgram::enter(self);
         tokio::task::yield_now().await;
         let trigger = Trigger::Program(run.program.clone());
         self.pause(GatewayOp::Program, Some(&trigger), Some(cancel))
@@ -949,25 +1065,35 @@ impl Gateway for FakeGateway {
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
+        cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
         let _working = self.working();
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::ReadFiles, None, None).await?;
+        self.pause(GatewayOp::ReadFiles, None, Some(cancel)).await?;
         let cell = self.exec_cell(GatewayOp::ReadFiles, sandbox)?;
         let installed = self.registry().installed.clone();
-        files::read_files(&cell.root(), &installed, paths).await
+        let root = cell.root();
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(cancelled(GatewayOp::ReadFiles)),
+            result = files::read_files(&root, &installed, paths) => result,
+        }
     }
 
     async fn write_file(
         &self,
         sandbox: &SandboxName,
         file: &SandboxFile,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
         let _working = self.working();
         tokio::task::yield_now().await;
         let trigger = Trigger::Write(file.path.clone());
-        self.pause(GatewayOp::WriteFile, Some(&trigger), None)
+        self.pause(GatewayOp::WriteFile, Some(&trigger), Some(cancel))
             .await?;
+        if cancel.is_cancelled() {
+            return Err(cancelled(GatewayOp::WriteFile));
+        }
         let cell = self.exec_cell_at(GatewayOp::WriteFile, Some(&trigger), sandbox)?;
         files::write_file(&cell, file).await
     }
@@ -1069,5 +1195,43 @@ impl Gateway for FakeGateway {
 fn already_running() -> GatewayError {
     GatewayError::FailedPrecondition {
         message: "start sandbox failed: VM sandbox is already running generation".to_owned(),
+    }
+}
+
+struct RunningProgram<'a>(&'a FakeGateway);
+
+impl<'a> RunningProgram<'a> {
+    fn enter(gateway: &'a FakeGateway) -> RunningProgram<'a> {
+        let mut registry = gateway.registry();
+        registry.running_programs += 1;
+        registry.peak_programs = registry.peak_programs.max(registry.running_programs);
+        drop(registry);
+        gateway.programs_changed.notify_waiters();
+        RunningProgram(gateway)
+    }
+}
+
+impl Drop for RunningProgram<'_> {
+    fn drop(&mut self) {
+        self.0.registry().running_programs -= 1;
+        self.0.programs_changed.notify_waiters();
+    }
+}
+
+struct Inspecting<'a>(&'a FakeGateway);
+
+impl<'a> Inspecting<'a> {
+    fn enter(gateway: &'a FakeGateway) -> Inspecting<'a> {
+        let mut registry = gateway.registry();
+        registry.inspecting += 1;
+        registry.peak_inspecting = registry.peak_inspecting.max(registry.inspecting);
+        drop(registry);
+        Inspecting(gateway)
+    }
+}
+
+impl Drop for Inspecting<'_> {
+    fn drop(&mut self) {
+        self.0.registry().inspecting -= 1;
     }
 }

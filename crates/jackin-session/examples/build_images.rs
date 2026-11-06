@@ -210,6 +210,7 @@ async fn request(
         platform: Platform::host_default(),
         builder: BuilderName::parse(&options.builder)?,
         docker: DockerLayer::Absent,
+        read_write: Vec::new(),
         rebuild: options.rebuild,
     })
 }

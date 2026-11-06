@@ -109,6 +109,7 @@ impl Sandbox<'_> {
                     mode: FILE_MODE,
                     content: SecretBytes::new(content.to_vec()),
                 },
+                self.cancel,
             )
             .await?;
         Ok(())

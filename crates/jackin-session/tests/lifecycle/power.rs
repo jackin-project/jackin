@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::task::Poll;
 use std::time::Duration;
 
 use jackin_core::{Labels, Phase, SandboxName, SupervisorState, sandbox_layout};
@@ -237,6 +238,118 @@ async fn cancelling_the_token_ends_the_wait_for_the_sandbox_to_become_ready() ->
         );
         let slept: Duration = rig.world.clock.slept().iter().skip(before).sum();
         assert!(slept < READY_LIMIT, "{slept:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancellation_during_power_lookup_leaves_the_sandbox_ready() -> TestResult {
+    guard(async {
+        let rig = rig().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let session = &rig.world.session;
+        let token = CancellationToken::new();
+        let lookup = jackin_testkit::Trigger::Op(jackin_openshell::GatewayOp::Find);
+        rig.world.gateway.inject(Fault::HoldAt {
+            trigger: lookup.clone(),
+        });
+        let power = session.power(&name, PowerAction::Stop, &token);
+        tokio::pin!(power);
+        tokio::select! {
+            held = rig.world.gateway.until_held(&lookup) => assert!(held),
+            result = &mut power => return Err(format!("power lookup completed before its hold: {result:?}").into()),
+        }
+        token.cancel();
+        let polled = std::future::poll_fn(|cx| Poll::Ready(power.as_mut().poll(cx))).await;
+        assert!(rig.world.gateway.release(&lookup));
+        assert!(
+            matches!(polled, Poll::Ready(Err(LifecycleError::Cancelled))),
+            "{polled:?}"
+        );
+        assert_eq!(handle.phase(), Phase::Ready);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancellation_during_power_transition_leaves_the_sandbox_ready() -> TestResult {
+    guard(async {
+        let rig = rig().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let session = &rig.world.session;
+        let token = CancellationToken::new();
+        let transition = jackin_testkit::Trigger::Op(jackin_openshell::GatewayOp::Power);
+        rig.world.gateway.inject(Fault::HoldAt {
+            trigger: transition.clone(),
+        });
+        let power = session.power(&name, PowerAction::Stop, &token);
+        tokio::pin!(power);
+        tokio::select! {
+            held = rig.world.gateway.until_held(&transition) => assert!(held),
+            result = &mut power => return Err(format!("power transition completed before its hold: {result:?}").into()),
+        }
+        token.cancel();
+        let polled = std::future::poll_fn(|cx| Poll::Ready(power.as_mut().poll(cx))).await;
+        assert!(rig.world.gateway.release(&transition));
+        assert!(
+            matches!(polled, Poll::Ready(Err(LifecycleError::Cancelled))),
+            "{polled:?}"
+        );
+        assert_eq!(handle.phase(), Phase::Ready);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancellation_during_power_observation_returns_cancelled_after_the_transition() -> TestResult
+{
+    guard(async {
+        let rig = rig().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let session = &rig.world.session;
+        session
+            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
+        rig.world.gateway.inject(Fault::StartIgnored);
+        let clock_guard = rig.world.clock.working();
+        let token = CancellationToken::new();
+        let power = session.power(&name, PowerAction::Start, &token);
+        tokio::pin!(power);
+        let wait_for_sleep = async {
+            while rig.world.clock.sleepers() == 0 {
+                tokio::task::yield_now().await;
+            }
+        };
+        tokio::select! {
+            () = wait_for_sleep => {},
+            result = &mut power => return Err(format!("power completed before observation retry: {result:?}").into()),
+        }
+        let trigger = jackin_testkit::Trigger::Op(jackin_openshell::GatewayOp::Find);
+        rig.world.gateway.inject(Fault::HoldAt {
+            trigger: trigger.clone(),
+        });
+        drop(clock_guard);
+        tokio::select! {
+            held = rig.world.gateway.until_held(&trigger) => assert!(held),
+            result = &mut power => return Err(format!("power observation completed before its hold: {result:?}").into()),
+        }
+        token.cancel();
+        let polled = std::future::poll_fn(|cx| Poll::Ready(power.as_mut().poll(cx))).await;
+        assert!(rig.world.gateway.release(&trigger));
+        assert!(
+            matches!(polled, Poll::Ready(Err(LifecycleError::Cancelled))),
+            "{polled:?}"
+        );
+        assert_eq!(handle.phase(), Phase::Stopped);
         Ok(())
     })
     .await

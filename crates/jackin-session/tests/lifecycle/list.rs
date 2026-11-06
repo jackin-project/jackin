@@ -59,7 +59,7 @@ async fn list_returns_exactly_the_managed_sandboxes_with_their_labels_and_phases
             })
             .collect();
 
-        let listing = rig.world.session.list().await?;
+        let listing = rig.world.session.list(&rig.world.cancel).await?;
 
         let listed: BTreeSet<SandboxName> = listing
             .sandboxes
@@ -126,7 +126,7 @@ async fn a_managed_sandbox_with_unreadable_labels_is_reported_apart_and_the_rest
             .gateway
             .insert_unmanaged(&broken, managed_only, Phase::Ready)?;
 
-        let listing = rig.world.session.list().await?;
+        let listing = rig.world.session.list(&rig.world.cancel).await?;
 
         let listed: Vec<_> = listing.sandboxes.iter().map(|s| s.name.clone()).collect();
         assert_eq!(listed, vec![rig.sandbox_name(1)?]);
@@ -152,7 +152,7 @@ async fn list_and_inspect_carry_the_creation_time_the_gateway_recorded() -> Test
         );
         assert!(late.0 - early.0 >= 3_600, "{early:?} {late:?}");
 
-        let listing = rig.world.session.list().await?;
+        let listing = rig.world.session.list(&rig.world.cancel).await?;
         let listed: BTreeMap<SandboxName, Option<jackin_core::Timestamp>> = listing
             .sandboxes
             .iter()
@@ -162,7 +162,11 @@ async fn list_and_inspect_carry_the_creation_time_the_gateway_recorded() -> Test
             listed,
             BTreeMap::from([(first.name(), Some(early)), (second.name(), Some(late)),])
         );
-        let inspected = rig.world.session.inspect(&second.name()).await?;
+        let inspected = rig
+            .world
+            .session
+            .inspect(&second.name(), &CancellationToken::new())
+            .await?;
         assert_eq!(inspected.summary.created_at, Some(late));
         Ok(())
     })

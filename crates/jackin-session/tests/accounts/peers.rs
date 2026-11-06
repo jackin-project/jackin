@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::sync::Arc;
 
 use jackin_core::{
-    Account, AccountName, Config, ConfigEdit, ConfigStore, GatewayName, OpenShellWorkspace,
-    ProviderName,
+    Account, AccountName, Agent, ChatgptAccountId, Config, ConfigEdit, ConfigStore,
+    CredentialSource, GatewayName, OpenShellWorkspace, Provider, ProviderName,
 };
 use jackin_openshell::{Gateway, GatewayError, GatewayOp};
 use jackin_session::{
@@ -16,8 +17,7 @@ use jackin_testkit::{FakeGateway, Fault, ScriptedConnector, World, default_limit
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, guard, hold_account, login_json,
-    until_polling,
+    ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, hold_account, login_json, until_polling,
 };
 
 const ROTATED: &str = "REFRESH-ROTATED-2c8f61";
@@ -134,15 +134,18 @@ impl Fleet {
         reachable: &[&Arc<FakeGateway>],
         edits: Vec<ConfigEdit>,
     ) -> Result<Config, AccountEditError> {
-        let plan = plan_account_edits(&self.world.desk(), edits, &CancellationToken::new()).await?;
+        let cancel = CancellationToken::new();
+        let plan = plan_account_edits(&self.world.desk(), edits, &cancel).await?;
         let gateways = match &plan {
-            AccountPlan::Gateway(gateway) => self
+            AccountPlan::Gateway(gateway) if gateway.needs_every_gateway() => self
                 .dial(gateway.config(), reachable)
                 .await
                 .map_err(AccountEditError::Connect)?,
-            AccountPlan::Offline(_) => Gateways::single(self.world.session.clone()),
+            AccountPlan::Gateway(_) | AccountPlan::Offline(_) => {
+                Gateways::single(self.world.session.clone())
+            }
         };
-        plan.apply(&gateways).await
+        plan.apply(&gateways, &cancel).await
     }
 
     fn holders(&self) -> Result<[bool; 3], Box<dyn std::error::Error>> {
@@ -153,6 +156,31 @@ impl Fleet {
             self.third.provider(&name).is_some(),
         ])
     }
+}
+
+#[tokio::test]
+async fn adding_a_login_account_publishes_it_on_the_home_gateway_alone() -> TestResult {
+    guard(async {
+        let fleet = fleet([false, false, false]).await?;
+        let other = Account::new(
+            name("other")?,
+            Provider::Codex,
+            CredentialSource::CodexLogin {
+                home: fleet.home.path.clone(),
+                chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+            },
+        )?;
+        let after = fleet
+            .apply(&[], vec![ConfigEdit::AddAccount(other)])
+            .await?;
+        assert!(after.account(&name("other")?).is_some());
+        let published = ProviderName::for_account(&name("other")?, Agent::Codex);
+        assert!(fleet.world.gateway.provider(&published).is_some());
+        assert!(fleet.second.provider(&published).is_none());
+        assert!(fleet.third.provider(&published).is_none());
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]
@@ -176,7 +204,7 @@ async fn removing_a_login_account_forgets_its_provider_on_every_gateway() -> Tes
 async fn taking_the_login_off_an_account_forgets_its_provider_on_every_gateway() -> TestResult {
     guard(async {
         let fleet = fleet([true, true, true]).await?;
-        let key = jackin_core::CredentialSource::Env {
+        let key = CredentialSource::Env {
             var: jackin_core::EnvName::parse("OPENAI_KEY")?,
         };
         fleet
@@ -281,7 +309,7 @@ async fn a_new_login_account_needs_only_the_home_gateway() -> TestResult {
         let other = Home::new(&login_json()).await?;
         let added = Account::new(
             name("other")?,
-            jackin_core::Provider::Codex,
+            Provider::Codex,
             codex_account(&other.path, ACCOUNT_ID)?.credential().clone(),
         )?;
 
@@ -351,7 +379,10 @@ async fn a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached(
             .clone();
         fleet
             .store
-            .edit(vec![ConfigEdit::RemoveGateway(third.clone())])
+            .edit(
+                vec![ConfigEdit::RemoveGateway(third.clone())],
+                &CancellationToken::new(),
+            )
             .await?;
         let held = hold_account(&fleet.world, "work").await?;
 
@@ -364,7 +395,10 @@ async fn a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached(
             until_polling(&fleet.world, 1).await;
             fleet
                 .store
-                .edit(vec![ConfigEdit::AddGateway { name: third, entry }])
+                .edit(
+                    vec![ConfigEdit::AddGateway { name: third, entry }],
+                    &CancellationToken::new(),
+                )
                 .await?;
             drop(held);
             Ok::<(), Box<dyn std::error::Error>>(())
@@ -386,14 +420,15 @@ async fn gateways_connected_before_a_gateway_was_added_are_refused_and_nothing_c
         let fleet = fleet([true, true, true]).await?;
         let stale = Config::parse(&config_text(&fleet.home, &["fake-gateway", "second"]))?;
         let gateways = fleet.dial(&stale, &[&fleet.second]).await?;
+        let cancel = CancellationToken::new();
         let plan = plan_account_edits(
             &fleet.world.desk(),
             vec![ConfigEdit::RemoveAccountClearingBindings(name("work")?)],
-            &CancellationToken::new(),
+            &cancel,
         )
         .await?;
 
-        let refused = plan.apply(&gateways).await;
+        let refused = plan.apply(&gateways, &cancel).await;
 
         assert!(
             matches!(
@@ -417,20 +452,24 @@ async fn an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publi
         let fleet = fleet([false, false, false]).await?;
         fleet
             .store
-            .edit(vec![
-                ConfigEdit::RemoveGateway(GatewayName::parse("second")?),
-                ConfigEdit::RemoveAccountClearingBindings(name("work")?),
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::RemoveGateway(GatewayName::parse("second")?),
+                    ConfigEdit::RemoveAccountClearingBindings(name("work")?),
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let gateways = Gateways::single(session_on(&fleet.world, &fleet.second));
+        let cancel = CancellationToken::new();
         let plan = plan_account_edits(
             &fleet.world.desk(),
             vec![ConfigEdit::AddAccount(fleet.account.clone())],
-            &CancellationToken::new(),
+            &cancel,
         )
         .await?;
 
-        let refused = plan.apply(&gateways).await;
+        let refused = plan.apply(&gateways, &cancel).await;
 
         assert!(
             matches!(
@@ -483,7 +522,7 @@ async fn a_refusal_on_a_later_gateway_restores_the_providers_it_removed_and_adds
 
 async fn renewed_credential(
     fleet: &Fleet,
-) -> Result<(Home, jackin_core::CredentialSource), Box<dyn std::error::Error>> {
+) -> Result<(Home, CredentialSource), Box<dyn std::error::Error>> {
     let mut rotated = login_json();
     rotated["tokens"]["refresh_token"] = serde_json::json!(ROTATED);
     let home = Home::new(&rotated).await?;

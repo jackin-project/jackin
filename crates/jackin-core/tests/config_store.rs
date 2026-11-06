@@ -1,10 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::future::Future;
 use std::io::ErrorKind;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::task::Poll;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -15,7 +17,7 @@ use jackin_core::{
     RegularFileProblem, RepoPath, RoleName, RoleSource, StdFileSystem, Timestamp, Workspace,
     WorkspaceName,
 };
-use tokio::sync::{Semaphore, oneshot};
+use tokio::sync::{Notify, Semaphore, oneshot};
 
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
 type TestResult = Fallible<()>;
@@ -109,6 +111,7 @@ fn plain(path: &HostPath) -> ConfigStore {
 
 fn label(error: &ConfigError) -> String {
     match error {
+        ConfigError::Cancelled => "cancelled".to_owned(),
         ConfigError::Syntax { line, .. } => format!("syntax@{line}"),
         ConfigError::UnknownField { key } => format!("unknown:{key}"),
         ConfigError::MissingField { key } => format!("missing:{key}"),
@@ -153,7 +156,12 @@ async fn edit_settled(
     edits: Vec<ConfigEdit>,
 ) -> Fallible<Result<Config, ConfigError>> {
     let store = store.clone();
-    settle(tokio::spawn(async move { store.edit(edits).await })).await
+    settle(tokio::spawn(async move {
+        store
+            .edit(edits, &tokio_util::sync::CancellationToken::new())
+            .await
+    }))
+    .await
 }
 
 #[tokio::test]
@@ -164,20 +172,29 @@ async fn store_creates_the_file_applies_edits_in_order_and_reads_them_back() -> 
     let store = plain_with(&path, &clock);
     assert_eq!(store.load().await?, Config::empty());
     let saved = store
-        .edit(vec![gateway("g1")?, default_gateway("g1")?, account("a")?])
+        .edit(
+            vec![gateway("g1")?, default_gateway("g1")?, account("a")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await?;
     assert_eq!(std::fs::read(path.as_path())?, saved.render().as_bytes());
     assert_eq!(store.load().await?, saved);
     let before = std::fs::read(path.as_path())?;
     let error = store
-        .edit(vec![default_gateway("g2")?, gateway("g2")?])
+        .edit(
+            vec![default_gateway("g2")?, gateway("g2")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await
         .err()
         .ok_or("reverse order")?;
     assert_eq!(label(&error), "reference:gateway:g2");
     assert_eq!(std::fs::read(path.as_path())?, before);
     let config = store
-        .edit(vec![gateway("g2")?, default_gateway("g2")?])
+        .edit(
+            vec![gateway("g2")?, default_gateway("g2")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await?;
     assert_eq!(
         config.default_gateway().map(ToString::to_string),
@@ -197,7 +214,12 @@ async fn a_failing_edit_or_a_corrupt_file_leaves_the_file_untouched_and_the_lock
     let dir = tempfile::tempdir()?;
     let path = hp(&dir.path().join("config.toml"))?;
     let store = plain(&path);
-    store.edit(vec![gateway("g1")?]).await?;
+    store
+        .edit(
+            vec![gateway("g1")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
     let before = std::fs::read(path.as_path())?;
     let error = edit_settled(&store, vec![role("ok")?, default_gateway("ghost")?])
         .await?
@@ -210,7 +232,10 @@ async fn a_failing_edit_or_a_corrupt_file_leaves_the_file_untouched_and_the_lock
 
     let fresh = hp(&dir.path().join("fresh").join("config.toml"))?;
     let error = plain(&fresh)
-        .edit(vec![default_gateway("ghost")?])
+        .edit(
+            vec![default_gateway("ghost")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await
         .err()
         .ok_or("fresh")?;
@@ -381,7 +406,12 @@ async fn crash_case(fault: Fault, existing: bool) -> TestResult {
     let fresh = plain(&path);
     let mut old = Config::empty();
     if existing {
-        old = fresh.edit(vec![gateway("g1")?]).await?;
+        old = fresh
+            .edit(
+                vec![gateway("g1")?],
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await?;
     }
     let before = std::fs::read(path.as_path()).ok();
     let mut with_new = old.clone();
@@ -392,7 +422,10 @@ async fn crash_case(fault: Fault, existing: bool) -> TestResult {
         fired: AtomicBool::new(false),
     });
     let error = ConfigStore::new(crashing, Arc::new(StepClock::default()), path.clone())
-        .edit(vec![account("new")?])
+        .edit(
+            vec![account("new")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await
         .err()
         .ok_or("crash")?;
@@ -543,6 +576,7 @@ fn gate_error(path: &HostPath) -> FsError {
 struct TickClock {
     slept: Mutex<Vec<Duration>>,
     permits: Semaphore,
+    sleep_started: Notify,
 }
 
 impl TickClock {
@@ -550,6 +584,7 @@ impl TickClock {
         TickClock {
             slept: Mutex::new(Vec::new()),
             permits: Semaphore::new(0),
+            sleep_started: Notify::new(),
         }
     }
 
@@ -576,6 +611,7 @@ impl Clock for TickClock {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(duration);
+        self.sleep_started.notify_one();
         if let Ok(permit) = self.permits.acquire().await {
             permit.forget();
         }
@@ -597,7 +633,12 @@ async fn until(what: &str, mut ready: impl FnMut() -> bool) -> TestResult {
 async fn concurrent_edits_serialise_on_the_lock_and_lose_no_update() -> TestResult {
     let dir = tempfile::tempdir()?;
     let path = hp(&dir.path().join("config.toml"))?;
-    plain(&path).edit(vec![gateway("g1")?]).await?;
+    plain(&path)
+        .edit(
+            vec![gateway("g1")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
     let old_bytes = std::fs::read(path.as_path())?;
     let (entered_tx, entered_rx) = oneshot::channel();
     let (release_tx, release_rx) = oneshot::channel();
@@ -615,10 +656,18 @@ async fn concurrent_edits_serialise_on_the_lock_and_lose_no_update() -> TestResu
     let first = ConfigStore::new(Arc::clone(&fs), Arc::clone(&tick), path.clone());
     let second = ConfigStore::new(fs, tick, path.clone());
     let edit_a = vec![role("a")?];
-    let task_a = tokio::spawn(async move { first.edit(edit_a).await });
+    let task_a = tokio::spawn(async move {
+        first
+            .edit(edit_a, &tokio_util::sync::CancellationToken::new())
+            .await
+    });
     entered_rx.await?;
     let edit_b = vec![role("b")?];
-    let task_b = tokio::spawn(async move { second.edit(edit_b).await });
+    let task_b = tokio::spawn(async move {
+        second
+            .edit(edit_b, &tokio_util::sync::CancellationToken::new())
+            .await
+    });
     until("the first failed lock attempt of B", || {
         clock.sleep_count() >= 1 || gate.reads.load(Ordering::SeqCst) >= 2
     })
@@ -653,7 +702,10 @@ async fn a_held_lock_is_retried_on_a_fixed_interval_then_edit_gives_up_with_lock
     let held = StdFileSystem::default().lock(&lock_path).await?;
     let clock = Arc::new(StepClock::default());
     let error = plain_with(&path, &clock)
-        .edit(vec![role("a")?])
+        .edit(
+            vec![role("a")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await
         .err()
         .ok_or("edit under a held lock")?;
@@ -677,7 +729,12 @@ async fn a_held_lock_is_retried_on_a_fixed_interval_then_edit_gives_up_with_lock
     );
     drop(held);
     let fresh = Arc::new(StepClock::default());
-    let config = plain_with(&path, &fresh).edit(vec![role("a")?]).await?;
+    let config = plain_with(&path, &fresh)
+        .edit(
+            vec![role("a")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
     assert!(has_role(&config, "a")?);
     assert!(fresh.sleeps().is_empty());
     Ok(())
@@ -735,7 +792,12 @@ async fn a_lock_released_during_the_wait_lets_the_edit_succeed() -> TestResult {
     let fs: Arc<dyn FileSystem> = fs_copy;
     let ticking: Arc<dyn Clock> = clock_copy;
     let store = ConfigStore::new(fs, ticking, path.clone());
-    let config = store.edit(vec![role("a")?]).await?;
+    let config = store
+        .edit(
+            vec![role("a")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
     assert!(has_role(&config, "a")?);
     assert_eq!(
         *clock.slept.lock().unwrap_or_else(PoisonError::into_inner),
@@ -748,18 +810,139 @@ async fn a_lock_released_during_the_wait_lets_the_edit_succeed() -> TestResult {
 }
 
 #[tokio::test]
+async fn cancelling_while_waiting_for_the_lock_leaves_the_config_untouched() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let lock_path = hp(&dir.path().join("config.toml.lock"))?;
+    let held = StdFileSystem::default().lock(&lock_path).await?;
+    let clock = Arc::new(TickClock::new());
+    let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
+    let clock_port: Arc<dyn Clock> = Arc::<TickClock>::clone(&clock);
+    let store = ConfigStore::new(fs, clock_port, path.clone());
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let edits = vec![role("new")?];
+    let edit = store.edit(edits, &cancel);
+    tokio::pin!(edit);
+    tokio::select! {
+        () = clock.sleep_started.notified() => {},
+        result = &mut edit => return Err(format!("edit completed before the retry wait: {result:?}").into()),
+    }
+    cancel.cancel();
+    let polled = std::future::poll_fn(|cx| Poll::Ready(edit.as_mut().poll(cx))).await;
+    let error = match polled {
+        Poll::Ready(Err(error)) => error,
+        Poll::Ready(Ok(_)) => {
+            return Err("cancelled edit succeeded while lock remained held".into());
+        }
+        Poll::Pending => {
+            return Err("cancelled edit remained pending while lock remained held".into());
+        }
+    };
+    assert!(matches!(error, ConfigError::Cancelled), "{error:?}");
+    assert_eq!(plain(&path).load().await?, Config::empty());
+    assert!(!path.as_path().exists());
+    drop(held);
+    Ok(())
+}
+
+#[tokio::test]
+async fn releasing_a_held_lock_after_the_retry_wait_lets_the_edit_succeed() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let lock_path = hp(&dir.path().join("config.toml.lock"))?;
+    let held = StdFileSystem::default().lock(&lock_path).await?;
+    let clock = Arc::new(TickClock::new());
+    let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
+    let clock_port: Arc<dyn Clock> = Arc::<TickClock>::clone(&clock);
+    let store = ConfigStore::new(fs, clock_port, path.clone());
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let edit = store.edit(vec![role("new")?], &cancel);
+    tokio::pin!(edit);
+    tokio::select! {
+        () = clock.sleep_started.notified() => {},
+        result = &mut edit => return Err(format!("edit completed before the retry wait: {result:?}").into()),
+    }
+    drop(held);
+    clock.permits.add_permits(1);
+    let config = edit.await?;
+    assert!(has_role(&config, "new")?);
+    assert_eq!(plain(&path).load().await?, config);
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelling_after_lock_acquisition_and_before_atomic_write_leaves_old_bytes() -> TestResult
+{
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let plain = plain(&path);
+    let old = plain
+        .edit(
+            vec![gateway("g1")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
+    let before = std::fs::read(path.as_path())?;
+    let (entered_tx, entered_rx) = oneshot::channel();
+    let (release_tx, release_rx) = oneshot::channel();
+    let fs = Arc::new(GateFs {
+        inner: StdFileSystem::default(),
+        target: path.clone(),
+        reads: AtomicUsize::new(0),
+        locks: AtomicUsize::new(0),
+        gate: Mutex::new(Some((entered_tx, release_rx))),
+    });
+    let port: Arc<dyn FileSystem> = fs;
+    let clock: Arc<dyn Clock> = Arc::new(StepClock::default());
+    let store = ConfigStore::new(port, clock, path.clone());
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let edits = vec![role("new")?];
+    let task = {
+        let store = store.clone();
+        let cancel = cancel.clone();
+        tokio::spawn(async move { store.edit(edits, &cancel).await })
+    };
+    entered_rx.await?;
+    cancel.cancel();
+    release_tx.send(()).map_err(|()| "release config read")?;
+    let error = settle(task)
+        .await?
+        .err()
+        .ok_or("cancelled pre-write edit")?;
+    assert!(matches!(error, ConfigError::Cancelled), "{error:?}");
+    assert_eq!(std::fs::read(path.as_path())?, before);
+    assert_eq!(plain.load().await?, old);
+    let recovered = plain
+        .edit(
+            vec![role("new")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
+    assert!(has_role(&recovered, "new")?);
+    Ok(())
+}
+
+#[tokio::test]
 async fn edit_through_a_symlinked_config_is_refused_and_leaves_the_target_untouched() -> TestResult
 {
     let dir = tempfile::tempdir()?;
     let real_dir = dir.path().join("real");
     std::fs::create_dir(&real_dir)?;
     let real = hp(&real_dir.join("config.toml"))?;
-    plain(&real).edit(vec![gateway("g1")?]).await?;
+    plain(&real)
+        .edit(
+            vec![gateway("g1")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
     let before = std::fs::read(real.as_path())?;
     let link = dir.path().join("config.toml");
     std::os::unix::fs::symlink(real.as_path(), &link)?;
     let error = plain(&hp(&link)?)
-        .edit(vec![role("a")?])
+        .edit(
+            vec![role("a")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await
         .err()
         .ok_or("edit through a link")?;
@@ -771,14 +954,22 @@ async fn edit_through_a_symlinked_config_is_refused_and_leaves_the_target_untouc
     assert_eq!(std::fs::read_link(&link)?, real.as_path());
     assert!(!dir.path().join(".config.toml.tmp").exists());
     assert!(!real_dir.join(".config.toml.tmp").exists());
-    let config = plain(&real).edit(vec![role("a")?]).await?;
+    let config = plain(&real)
+        .edit(
+            vec![role("a")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
     assert!(has_role(&config, "a")?);
 
     let dangling = dir.path().join("dangling.toml");
     let missing = dir.path().join("missing.toml");
     std::os::unix::fs::symlink(&missing, &dangling)?;
     let error = plain(&hp(&dangling)?)
-        .edit(vec![role("a")?])
+        .edit(
+            vec![role("a")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await
         .err()
         .ok_or("edit through a dangling link")?;
@@ -811,7 +1002,12 @@ async fn an_edit_sweeps_the_crash_leftovers_of_its_file_and_keeps_every_other_fi
         std::fs::write(dir.path().join(name), b"leftover")?;
     }
     std::fs::create_dir(dir.path().join(".config.toml.9-9.tmp"))?;
-    plain(&path).edit(vec![role("a")?]).await?;
+    plain(&path)
+        .edit(
+            vec![role("a")?],
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
     let mut expected: Vec<String> = others.iter().map(ToString::to_string).collect();
     expected.extend([".config.toml.9-9.tmp", "config.toml", "config.toml.lock"].map(str::to_owned));
     expected.sort();
@@ -832,24 +1028,33 @@ async fn a_rename_keeps_what_another_handle_wrote_after_the_caller_read() -> Tes
     let from = WorkspaceName::parse("proj")?;
     let to = WorkspaceName::parse("app")?;
     store
-        .edit(vec![ConfigEdit::AddWorkspace {
-            name: from.clone(),
-            workspace: Workspace::new(hp(Path::new("/p/proj"))?, false),
-        }])
+        .edit(
+            vec![ConfigEdit::AddWorkspace {
+                name: from.clone(),
+                workspace: Workspace::new(hp(Path::new("/p/proj"))?, false),
+            }],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await?;
     let stale = store.load().await?;
     other
-        .edit(vec![ConfigEdit::SetWorkspaceDocker {
-            workspace: from.clone(),
-            docker: true,
-        }])
+        .edit(
+            vec![ConfigEdit::SetWorkspaceDocker {
+                workspace: from.clone(),
+                docker: true,
+            }],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await?;
     assert!(stale.workspace(&from).is_some_and(|saved| !saved.docker));
     let saved = store
-        .edit(vec![ConfigEdit::RenameWorkspace {
-            from: from.clone(),
-            to: to.clone(),
-        }])
+        .edit(
+            vec![ConfigEdit::RenameWorkspace {
+                from: from.clone(),
+                to: to.clone(),
+            }],
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await?;
     assert!(saved.workspace(&from).is_none());
     assert!(saved.workspace(&to).is_some_and(|moved| moved.docker));

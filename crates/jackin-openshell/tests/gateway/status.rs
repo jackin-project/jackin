@@ -101,7 +101,8 @@ fn file(path: &str) -> SandboxFile {
 async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     add_sandbox(
         &mut env.server.state(),
         WORKSPACE,
@@ -120,13 +121,18 @@ async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
         .await
         .unwrap_err();
     assert!(not_found_named(&error, GONE), "run_program {error:?}");
-    let error = guard(gateway.read_files(&gone, std::slice::from_ref(&probe)))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.read_files(
+        &gone,
+        std::slice::from_ref(&probe),
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(not_found_named(&error, GONE), "read_files {error:?}");
-    let error = guard(gateway.write_file(&gone, &file("/sandbox/probe")))
-        .await
-        .unwrap_err();
+    let error =
+        guard(gateway.write_file(&gone, &file("/sandbox/probe"), &CancellationToken::new()))
+            .await
+            .unwrap_err();
     assert!(not_found_named(&error, GONE), "write_file {error:?}");
     let error = guard(gateway.open_terminal(&shell_terminal(GONE)))
         .await
@@ -146,12 +152,16 @@ async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
         0
     );
     assert_eq!(
-        guard(gateway.read_files(&control, std::slice::from_ref(&probe)))
-            .await
-            .unwrap(),
+        guard(gateway.read_files(
+            &control,
+            std::slice::from_ref(&probe),
+            &CancellationToken::new()
+        ))
+        .await
+        .unwrap(),
         vec![None]
     );
-    guard(gateway.write_file(&control, &file("/sandbox/probe")))
+    guard(gateway.write_file(&control, &file("/sandbox/probe"), &CancellationToken::new()))
         .await
         .unwrap();
 
@@ -166,13 +176,18 @@ async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
     }));
     let error = guard(gateway.run_program(&ok, &cancel)).await.unwrap_err();
     assert!(not_found_named(&error, SANDBOX), "run_program {error:?}");
-    let error = guard(gateway.read_files(&control, std::slice::from_ref(&probe)))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.read_files(
+        &control,
+        std::slice::from_ref(&probe),
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(not_found_named(&error, SANDBOX), "read_files {error:?}");
-    let error = guard(gateway.write_file(&control, &file("/sandbox/probe")))
-        .await
-        .unwrap_err();
+    let error =
+        guard(gateway.write_file(&control, &file("/sandbox/probe"), &CancellationToken::new()))
+            .await
+            .unwrap_err();
     assert!(not_found_named(&error, SANDBOX), "write_file {error:?}");
 }
 

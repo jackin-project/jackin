@@ -143,10 +143,18 @@ async fn fail_next_and_fail_after_hit_one_call_of_one_op_and_change_no_state() -
         });
         let query = SandboxQuery::Name(spec.name().clone());
         let outcomes = [
-            fake.find_sandboxes(&query).await.is_ok(),
-            fake.find_sandboxes(&query).await.is_ok(),
-            fake.find_sandboxes(&query).await.is_ok(),
-            fake.find_sandboxes(&query).await.is_ok(),
+            fake.find_sandboxes(&query, &CancellationToken::new())
+                .await
+                .is_ok(),
+            fake.find_sandboxes(&query, &CancellationToken::new())
+                .await
+                .is_ok(),
+            fake.find_sandboxes(&query, &CancellationToken::new())
+                .await
+                .is_ok(),
+            fake.find_sandboxes(&query, &CancellationToken::new())
+                .await
+                .is_ok(),
         ];
         assert_eq!(outcomes, [true, true, false, true]);
 
@@ -157,7 +165,9 @@ async fn fail_next_and_fail_after_hit_one_call_of_one_op_and_change_no_state() -
                 what: Missing::Sandbox(handle.name()),
             },
         });
-        let denied = fake.set_power(&handle.name(), PowerAction::Stop).await;
+        let denied = fake
+            .set_power(&handle.name(), PowerAction::Stop, &CancellationToken::new())
+            .await;
         assert!(denied.as_ref().is_err_and(|e| !e.is_retryable()));
         assert!(matches!(denied, Err(GatewayError::NotFound { .. })));
         assert_eq!(handle.phase(), Phase::Ready);
@@ -278,10 +288,10 @@ async fn hide_until_create_conflict_hides_label_finds_until_a_create_meets_the_e
         let sandbox = spec_with(&launch, IMAGE, Vec::new(), sh("sleep 3600")?)?;
         fake.create_sandbox(&sandbox).await?;
         let selector = SandboxQuery::Labels(LabelSelector::launch(&launch));
-        assert_eq!(fake.find_sandboxes(&selector).await?.len(), 1);
+        assert_eq!(fake.find_sandboxes(&selector, &CancellationToken::new()).await?.len(), 1);
         fake.inject(Fault::HideUntilCreateConflict);
         for _ in 0..3 {
-            assert!(fake.find_sandboxes(&selector).await?.is_empty());
+            assert!(fake.find_sandboxes(&selector, &CancellationToken::new()).await?.is_empty());
         }
         assert_eq!(observe(&fake, sandbox.name()).await?.name, *sandbox.name());
         let conflict = fake.create_sandbox(&sandbox).await;
@@ -289,7 +299,7 @@ async fn hide_until_create_conflict_hides_label_finds_until_a_create_meets_the_e
             matches!(conflict, Err(GatewayError::AlreadyExists { what: Missing::Sandbox(ref found) }) if found == sandbox.name()),
             "{conflict:?}"
         );
-        assert_eq!(fake.find_sandboxes(&selector).await?.len(), 1);
+        assert_eq!(fake.find_sandboxes(&selector, &CancellationToken::new()).await?.len(), 1);
         assert_eq!(fake.sandboxes().len(), 1);
         Ok(())
     })
@@ -302,10 +312,12 @@ async fn start_ignored_accepts_the_start_and_leaves_the_sandbox_stopped() -> Tes
         let fake = fake()?;
         let handle = ready(&fake, supervised()?).await?;
         let name = handle.name();
-        fake.set_power(&name, PowerAction::Stop).await?;
+        fake.set_power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
         fake.inject(Fault::StartIgnored);
         for _ in 0..3 {
-            fake.set_power(&name, PowerAction::Start).await?;
+            fake.set_power(&name, PowerAction::Start, &CancellationToken::new())
+                .await?;
             assert_eq!(observe(&fake, &name).await?.phase, Phase::Stopped);
         }
         assert_eq!(handle.phase(), Phase::Stopped);

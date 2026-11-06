@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::error::Error;
 
 use jackin_image::{
@@ -11,7 +12,7 @@ use jackin_testkit::{FakeEngine, construct_layer};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{Fixture, Reply, Stack, TestResult, guarded, model_construct_layer};
+use crate::support::{Fixture, Reply, Stack, TestResult, model_construct_layer};
 
 fn inspect(layers: &[&str], env: &[&str], on_build: &[&str]) -> ImageInspect {
     let text = |items: &[&str]| items.iter().map(|item| (*item).to_owned()).collect();
@@ -66,7 +67,7 @@ fn client_trigger(trigger: &str) -> ImageRule {
 #[tokio::test]
 async fn a_role_image_that_does_not_start_with_the_construct_layers_is_refused_before_the_derived_build()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let base = construct_layer();
         let ubuntu = format!("sha256:{}", "b".repeat(64));
         let rows = [
@@ -100,7 +101,7 @@ async fn a_role_image_that_does_not_start_with_the_construct_layers_is_refused_b
 
 #[tokio::test]
 async fn a_role_image_whose_env_names_the_docker_engine_client_is_refused() -> TestResult {
-    guarded(async {
+    guard(async {
         let rows = [
             (
                 "docker host",
@@ -133,7 +134,7 @@ async fn a_role_image_whose_env_names_the_docker_engine_client_is_refused() -> T
 
 #[tokio::test]
 async fn a_role_image_whose_onbuild_could_set_the_docker_engine_client_is_refused() -> TestResult {
-    guarded(async {
+    guard(async {
         let rows = [
             "ENV DOCKER_CONFIG=/sandbox/c",
             "ENV D\\=X DOCKER_HOST=tcp://evil.example:2375",
@@ -162,7 +163,7 @@ async fn a_role_image_whose_onbuild_could_set_the_docker_engine_client_is_refuse
 
 #[tokio::test]
 async fn a_role_image_built_on_construct_with_an_ordinary_config_is_delivered() -> TestResult {
-    guarded(async {
+    guard(async {
         let request = Fixture::new()?.request()?;
         let engine = FakeEngine::new();
         engine.craft_inspect(
@@ -191,7 +192,7 @@ async fn a_role_image_built_on_construct_with_an_ordinary_config_is_delivered() 
 #[tokio::test]
 async fn a_final_image_that_breaks_a_rule_is_never_delivered_and_is_not_served_from_cache()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let base = construct_layer();
         let ubuntu = format!("sha256:{}", "b".repeat(64));
         let rows = [
@@ -251,7 +252,7 @@ fn docker_json(layers: &[&str], env: &str, on_build: &str) -> String {
 
 #[tokio::test]
 async fn the_buildx_engine_reads_the_config_and_layers_that_docker_prints() -> TestResult {
-    guarded(async {
+    guard(async {
         let layers = [
             model_construct_layer(),
             format!("sha256:{}", "c".repeat(64)),
@@ -296,7 +297,7 @@ async fn the_buildx_engine_reads_the_config_and_layers_that_docker_prints() -> T
 
 #[tokio::test]
 async fn an_inspect_the_engine_cannot_read_stops_the_build_without_a_rule_verdict() -> TestResult {
-    guarded(async {
+    guard(async {
         let rows = [
             (
                 "exit status",

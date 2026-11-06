@@ -23,6 +23,7 @@ jackin-usage = { workspace = true }
 junie-tui = { workspace = true }
 portable-pty = { workspace = true }
 ratatui = { workspace = true }
+rcgen = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }

@@ -121,7 +121,7 @@ pub(crate) async fn observe(
     fake: &FakeGateway,
     name: &SandboxName,
 ) -> Result<SandboxView, Box<dyn Error>> {
-    fake.find_sandboxes(&SandboxQuery::Name(name.clone()))
+    fake.find_sandboxes(&SandboxQuery::Name(name.clone()), &CancellationToken::new())
         .await?
         .into_iter()
         .next()
@@ -177,7 +177,9 @@ pub(crate) async fn write(
         mode: FileMode(0o600),
         content: SecretBytes::new(content.as_bytes().to_vec()),
     };
-    Ok(fake.write_file(sandbox, &file).await?)
+    Ok(fake
+        .write_file(sandbox, &file, &CancellationToken::new())
+        .await?)
 }
 
 pub(crate) async fn read(
@@ -185,7 +187,9 @@ pub(crate) async fn read(
     sandbox: &SandboxName,
     target: &str,
 ) -> Result<Option<Vec<u8>>, Box<dyn Error>> {
-    let mut files = fake.read_files(sandbox, &[path(target)?]).await?;
+    let mut files = fake
+        .read_files(sandbox, &[path(target)?], &CancellationToken::new())
+        .await?;
     Ok(files.pop().flatten())
 }
 

@@ -15,7 +15,13 @@ async fn a_detached_head_commit_is_unexported_until_it_is_exported_as_the_head_r
         let name = handle.name();
         let session = &rig.world.session;
         assert_eq!(
-            session.work_state(&rig.config, &name).await,
+            session
+                .work_state(
+                    &rig.config,
+                    &name,
+                    &tokio_util::sync::CancellationToken::new()
+                )
+                .await,
             WorkState::Exported
         );
 
@@ -24,7 +30,13 @@ async fn a_detached_head_commit_is_unexported_until_it_is_exported_as_the_head_r
             .commit_in_project("d.txt", b"d", "detached work")
             .await?;
         assert_eq!(
-            session.work_state(&rig.config, &name).await,
+            session
+                .work_state(
+                    &rig.config,
+                    &name,
+                    &tokio_util::sync::CancellationToken::new()
+                )
+                .await,
             WorkState::Unexported(Unexported {
                 uncommitted: 0,
                 branches: Vec::new(),
@@ -49,7 +61,13 @@ async fn a_detached_head_commit_is_unexported_until_it_is_exported_as_the_head_r
             Some(commit.as_str())
         );
         assert_eq!(
-            session.work_state(&rig.config, &name).await,
+            session
+                .work_state(
+                    &rig.config,
+                    &name,
+                    &tokio_util::sync::CancellationToken::new()
+                )
+                .await,
             WorkState::Exported
         );
         Ok(())
@@ -66,7 +84,14 @@ async fn a_sandbox_launched_from_a_detached_host_head_is_exported_and_exports_no
         rig.launch(1).await?;
         let name = rig.sandbox_name(1)?;
         assert_eq!(
-            rig.world.session.work_state(&rig.config, &name).await,
+            rig.world
+                .session
+                .work_state(
+                    &rig.config,
+                    &name,
+                    &tokio_util::sync::CancellationToken::new()
+                )
+                .await,
             WorkState::Exported
         );
 
@@ -96,7 +121,13 @@ async fn a_head_symbolic_to_a_ref_outside_heads_is_unexported_work_until_it_is_e
             handle.git(&["update-ref", target, "HEAD"]).await?;
             handle.git(&["symbolic-ref", "HEAD", target]).await?;
             assert_eq!(
-                session.work_state(&rig.config, &name).await,
+                session
+                    .work_state(
+                        &rig.config,
+                        &name,
+                        &tokio_util::sync::CancellationToken::new()
+                    )
+                    .await,
                 WorkState::Exported,
                 "{target}"
             );
@@ -110,7 +141,13 @@ async fn a_head_symbolic_to_a_ref_outside_heads_is_unexported_work_until_it_is_e
                 "{target}"
             );
             assert_eq!(
-                session.work_state(&rig.config, &name).await,
+                session
+                    .work_state(
+                        &rig.config,
+                        &name,
+                        &tokio_util::sync::CancellationToken::new()
+                    )
+                    .await,
                 WorkState::Unexported(Unexported {
                     uncommitted: 0,
                     branches: Vec::new(),
@@ -120,7 +157,14 @@ async fn a_head_symbolic_to_a_ref_outside_heads_is_unexported_work_until_it_is_e
                 }),
                 "{target}"
             );
-            let purge = session.purge(&rig.config, &name, PurgeMode::Guarded).await;
+            let purge = session
+                .purge(
+                    &rig.config,
+                    &name,
+                    PurgeMode::Guarded,
+                    &tokio_util::sync::CancellationToken::new(),
+                )
+                .await;
             assert!(
                 matches!(purge, Err(PurgeError::WorkNotExported { .. })),
                 "{target}: {purge:?}"
@@ -136,7 +180,13 @@ async fn a_head_symbolic_to_a_ref_outside_heads_is_unexported_work_until_it_is_e
                 "{target}"
             );
             assert_eq!(
-                session.work_state(&rig.config, &name).await,
+                session
+                    .work_state(
+                        &rig.config,
+                        &name,
+                        &tokio_util::sync::CancellationToken::new()
+                    )
+                    .await,
                 WorkState::Exported,
                 "{target}"
             );

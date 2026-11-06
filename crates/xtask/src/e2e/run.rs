@@ -333,12 +333,12 @@ impl Run<'_> {
         launch: &jackin_core::LaunchId,
     ) -> Res<Vec<SandboxView>> {
         let query = SandboxQuery::Labels(LabelSelector::launch(launch));
-        Ok(self.b.gateway.find_sandboxes(&query).await?)
+        Ok(self.b.gateway.find_sandboxes(&query, &self.token()).await?)
     }
 
     pub(crate) async fn managed(&self) -> Res<Vec<SandboxView>> {
         let query = SandboxQuery::Labels(LabelSelector::managed());
-        Ok(self.b.gateway.find_sandboxes(&query).await?)
+        Ok(self.b.gateway.find_sandboxes(&query, &self.token()).await?)
     }
 
     pub(crate) fn open_pty(&self, args: &[&str], cwd: &Path) -> Res<PtySession> {

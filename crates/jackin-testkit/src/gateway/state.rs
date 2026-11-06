@@ -47,6 +47,20 @@ impl Armed {
 pub(super) enum Action {
     Fail(GatewayError),
     Cancel(CancellationToken),
+    Panic,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum FindVisibility {
+    #[default]
+    Visible,
+    HiddenUntilCreateConflict,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum FindMutation {
+    DuplicateNextResult,
+    HideNextLaunchLookup,
 }
 
 #[derive(Debug)]
@@ -117,6 +131,7 @@ pub(super) struct Registry {
     pub(super) profiles: BTreeMap<ProfileId, ProviderProfile>,
     pub(super) images: BTreeSet<ImageTag>,
     pub(super) installed: BTreeMap<SandboxPath, Vec<u8>>,
+    pub(super) baked: BTreeMap<SandboxPath, Vec<u8>>,
     pub(super) engine: Option<Arc<FakeEngine>>,
     pub(super) clock: Arc<FakeClock>,
     pub(super) faults: Vec<Armed>,
@@ -129,9 +144,11 @@ pub(super) struct Registry {
     pub(super) corrupt: BTreeSet<Direction>,
     pub(super) provision_polls: u32,
     pub(super) failing_creates: u32,
+    pub(super) cancel_after_create: Option<CancellationToken>,
     pub(super) supervisor: SupervisorModel,
-    pub(super) hidden_until_conflict: bool,
     pub(super) start_ignored: bool,
+    pub(super) find_visibility: FindVisibility,
+    pub(super) find_mutations: BTreeSet<FindMutation>,
     pub(super) serving: bool,
     pub(super) version: String,
     pub(super) host_home: Option<PathBuf>,
@@ -139,6 +156,10 @@ pub(super) struct Registry {
     pub(super) put_fails_after_write: Option<GatewayError>,
     pub(super) delete_fails_after_write: Option<GatewayError>,
     pub(super) calls: HashMap<GatewayOp, u32>,
+    pub(super) inspecting: u32,
+    pub(super) peak_inspecting: u32,
+    pub(super) running_programs: u32,
+    pub(super) peak_programs: u32,
 }
 
 impl Registry {
@@ -149,6 +170,7 @@ impl Registry {
             profiles: BTreeMap::new(),
             images: BTreeSet::new(),
             installed: BTreeMap::new(),
+            baked: BTreeMap::new(),
             engine: None,
             clock: Arc::new(FakeClock::new()),
             faults: Vec::new(),
@@ -161,9 +183,11 @@ impl Registry {
             corrupt: BTreeSet::new(),
             provision_polls: 0,
             failing_creates: 0,
+            cancel_after_create: None,
             supervisor: SupervisorModel::Cooperative,
-            hidden_until_conflict: false,
             start_ignored: false,
+            find_visibility: FindVisibility::Visible,
+            find_mutations: BTreeSet::new(),
             serving: true,
             version: "0.1.7".to_owned(),
             host_home: None,
@@ -171,6 +195,10 @@ impl Registry {
             put_fails_after_write: None,
             delete_fails_after_write: None,
             calls: HashMap::new(),
+            inspecting: 0,
+            peak_inspecting: 0,
+            running_programs: 0,
+            peak_programs: 0,
         }
     }
 
@@ -234,6 +262,7 @@ impl Registry {
             match self.triggers.remove(index).action {
                 Action::Fail(error) => return Err(error),
                 Action::Cancel(token) => token.cancel(),
+                Action::Panic => std::panic::resume_unwind(Box::new(())),
             }
         }
         Ok(())

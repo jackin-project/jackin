@@ -3,10 +3,11 @@
 
 use jackin_session::{OpFault, OpFieldKind};
 use jackin_testkit::ProcessReply;
+use jackin_testkit::guard;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Bench, CANARY, TestResult, concealed, exited, failed, guard, item};
+use super::support::{Bench, CANARY, TestResult, concealed, exited, failed, item};
 
 fn token() -> CancellationToken {
     CancellationToken::new()
@@ -65,6 +66,28 @@ async fn the_four_listings_parse_and_the_value_never_survives_the_item_read() ->
         let shown = format!("{accounts:?}{vaults:?}{items:?}{detail:?}");
         assert!(!shown.contains(CANARY), "{shown}");
         assert!(!shown.contains("d2e8"), "{shown}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_concealed_value_shorter_than_sixteen_characters_shows_no_tail() -> TestResult {
+    guard(async {
+        let bench = Bench::new();
+        bench.op(
+            &["item", "get"],
+            exited(&item(&json!([
+                concealed("short", "fifteen", "0123456789abcde"),
+                concealed("long", "sixteen", "0123456789abcdef"),
+            ]))),
+        );
+        let detail = bench
+            .cli()
+            .item("acct-1", "vault-1", "item-1", &token())
+            .await?;
+        assert_eq!(detail.fields[0].tail.as_str(), "");
+        assert_eq!(detail.fields[1].tail.as_str(), "cdef");
         Ok(())
     })
     .await
@@ -163,7 +186,7 @@ async fn a_missing_op_binary_and_unreadable_output_are_told_apart() -> TestResul
 }
 
 #[tokio::test]
-async fn a_concealed_value_of_eight_characters_or_fewer_shows_no_tail() -> TestResult {
+async fn concealed_values_shorter_than_sixteen_show_no_tail_and_debug_omits_values() -> TestResult {
     guard(async {
         let bench = Bench::new();
         bench.op(
@@ -173,6 +196,8 @@ async fn a_concealed_value_of_eight_characters_or_fewer_shows_no_tail() -> TestR
                 concealed("f2", "eight", "12345678"),
                 concealed("f3", "nine", "123456789"),
                 concealed("f4", "none", ""),
+                concealed("f5", "fifteen", "0123456789abcde"),
+                concealed("f6", "sixteen", "synthetic-secret"),
             ]))),
         );
         let detail = bench
@@ -180,10 +205,15 @@ async fn a_concealed_value_of_eight_characters_or_fewer_shows_no_tail() -> TestR
             .item("acct-1", "vault-1", "item-1", &token())
             .await?;
         let tails: Vec<&str> = detail.fields.iter().map(|f| f.tail.as_str()).collect();
-        assert_eq!(tails, ["", "", "6789", ""]);
+        assert_eq!(tails, ["", "", "", "", "", "cret"]);
         let shown = format!("{detail:?}");
         assert!(
-            !shown.contains("abc") && !shown.contains("12345678") && !shown.contains("6789"),
+            !shown.contains("abc")
+                && !shown.contains("12345678")
+                && !shown.contains("123456789")
+                && !shown.contains("0123456789abcde")
+                && !shown.contains("synthetic-secret")
+                && !shown.contains("cret"),
             "{shown}"
         );
         Ok(())

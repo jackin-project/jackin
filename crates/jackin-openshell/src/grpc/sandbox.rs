@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use jackin_core::{EnvName, Labels, Phase, ProviderName, SandboxName, TerminalText, Timestamp};
 use openshell_sdk::raw::proto::GetSandboxConfigRequest;
@@ -222,6 +222,7 @@ impl Inner {
     async fn list_by_selector(&self, selector: &str) -> Result<Vec<SandboxView>, GatewayError> {
         let mut views = Vec::new();
         let mut token = String::new();
+        let mut seen = HashSet::new();
         for _ in 0..MAX_PAGES {
             let page = self
                 .unary(
@@ -241,7 +242,7 @@ impl Inner {
             if page.next_page_token.is_empty() {
                 return Ok(views);
             }
-            if page.next_page_token == token {
+            if !seen.insert(page.next_page_token.clone()) {
                 return Err(protocol("the gateway repeated a page token"));
             }
             token = page.next_page_token;
@@ -326,6 +327,7 @@ impl Inner {
     ) -> Result<Vec<ProviderName>, GatewayError> {
         let mut providers = Vec::new();
         let mut token = String::new();
+        let mut seen = HashSet::new();
         for _ in 0..MAX_PAGES {
             let page = self
                 .unary(
@@ -350,7 +352,7 @@ impl Inner {
             if page.next_page_token.is_empty() {
                 return Ok(providers);
             }
-            if page.next_page_token == token {
+            if !seen.insert(page.next_page_token.clone()) {
                 return Err(protocol("the gateway repeated a page token"));
             }
             token = page.next_page_token;

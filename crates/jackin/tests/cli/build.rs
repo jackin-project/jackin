@@ -47,6 +47,33 @@ async fn build_prints_the_final_image_id_caches_it_and_needs_no_gateway() -> Tes
 }
 
 #[tokio::test]
+async fn a_build_outside_a_saved_workspace_says_it_uses_the_defaults() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = built(&rig)?;
+        let saved = harness.run(&["build"]).await?;
+        saved.ok()?;
+        assert!(
+            !saved.stderr.contains("not a saved workspace"),
+            "{}",
+            saved.stderr
+        );
+
+        harness.cwd = rig.home.clone();
+        let unsaved = harness.run(&["build"]).await?;
+        unsaved.ok()?;
+        assert!(
+            unsaved.stderr.contains("not a saved workspace"),
+            "{}",
+            unsaved.stderr
+        );
+        assert_eq!(unsaved.stdout, saved.stdout);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_long_build_log_goes_to_stderr_and_stdout_stays_one_clean_line() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;

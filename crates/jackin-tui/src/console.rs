@@ -72,6 +72,7 @@ pub enum ConsoleExit {
 pub struct Console {
     app: App,
     inflight: InFlight,
+    detached: InFlight,
     panes: PaneHub,
     _cancel: DropGuard,
 }
@@ -163,15 +164,51 @@ impl Console {
     }
 
     pub async fn drain(&mut self) {
-        let mut changes = self.inflight.subscribe();
+        self.drain_work(false).await;
+    }
+
+    pub async fn drain_all(&mut self) {
+        self.drain_work(true).await;
+    }
+
+    async fn drain_work(&mut self, include_detached: bool) {
+        let mut query_changes = self.inflight.subscribe();
+        let mut detached_changes = self.detached.subscribe();
         loop {
-            let idle = *changes.borrow_and_update() == 0;
+            let _ = *query_changes.borrow_and_update();
+            let _ = *detached_changes.borrow_and_update();
             self.deliver();
-            if idle && *changes.borrow() == 0 {
-                break;
+            let query_idle = *query_changes.borrow() == 0;
+            let detached_idle = !include_detached || *detached_changes.borrow() == 0;
+            if query_idle && detached_idle {
+                if query_changes.has_changed().is_ok_and(|changed| changed)
+                    || (include_detached
+                        && detached_changes.has_changed().is_ok_and(|changed| changed))
+                {
+                    continue;
+                }
+                self.deliver();
+                if *query_changes.borrow() == 0
+                    && (!include_detached || *detached_changes.borrow() == 0)
+                    && !query_changes.has_changed().is_ok_and(|changed| changed)
+                    && (!include_detached
+                        || !detached_changes.has_changed().is_ok_and(|changed| changed))
+                {
+                    break;
+                }
+                continue;
             }
-            if !idle && changes.changed().await.is_err() {
-                break;
+            tokio::select! {
+                result = query_changes.changed(), if !query_idle => {
+                    if result.is_err() {
+                        break;
+                    }
+                }
+                result = detached_changes.changed(), if include_detached && !detached_idle => {
+                    if result.is_err() {
+                        break;
+                    }
+                }
             }
         }
     }
@@ -190,7 +227,7 @@ fn reduced_motion(env: &EnvSnapshot) -> bool {
     EnvName::parse(NO_MOTION)
         .ok()
         .and_then(|name| env.get(&name).map(str::to_owned))
-        .is_some_and(|value| !value.trim_start_matches('0').is_empty())
+        .is_some_and(|value| !value.is_empty() && value.chars().ne(['0']))
 }
 
 pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
@@ -239,7 +276,8 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     let first = inputs.observe().await?;
     let (sender, receiver) = external_channel();
     let inflight = InFlight::new();
-    let bridge = Bridge::new(sender, inflight.clone(), handle.clone());
+    let detached = InFlight::new();
+    let bridge = Bridge::new(sender, inflight.clone(), detached.clone(), handle.clone());
     let panes = PaneHub::new(
         Arc::clone(&inputs),
         handle,
@@ -309,6 +347,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     Ok(Console {
         app,
         inflight,
+        detached,
         panes,
         _cancel: cancel.drop_guard(),
     })

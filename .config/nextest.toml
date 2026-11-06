@@ -7,6 +7,9 @@ max-threads = 1
 [profile.default]
 slow-timeout = { period = "60s", terminate-after = 3, grace-period = "5s" }
 
+[profile.diagnostic]
+fail-fast = false
+
 [[profile.default.overrides]]
 filter = "binary(process_runner) & (test(a_128_mib) | test(streamed_output_is_lossless) | test(unstreamed_output_beyond))"
 test-group = "heavy-output"

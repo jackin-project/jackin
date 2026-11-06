@@ -5,6 +5,7 @@ use jackin_core::{
     DirEntry, FileKind, FileMode, FileSystem, FsError, HostPath, PathError, RegularFileProblem,
     RepoPath, StdFileSystem,
 };
+use std::io::ErrorKind;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -64,6 +65,37 @@ async fn std_filesystem_reads_writes_lists_and_stats() -> TestResult {
     fs.rename(&other, &file).await?;
     assert_eq!(fs.read(&file).await?, Some(b"new".to_vec()));
     assert_eq!(fs.read(&other).await?, None);
+    let replacement = at(&dir, "\u{fffd}")?;
+    std::fs::write(replacement.as_path(), b"valid replacement character")?;
+    assert!(
+        fs.list(&root)
+            .await?
+            .iter()
+            .any(|entry| entry.name == "\u{fffd}")
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn directory_listing_refuses_a_non_utf8_child_name() -> TestResult {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let dir = tempfile::tempdir()?;
+    let root = HostPath::parse(dir.path())?;
+    let invalid = dir.path().join(OsString::from_vec(vec![
+        b'n', b'o', b'n', b'u', b't', b'f', b'8', 0xff,
+    ]));
+    std::fs::write(invalid, b"data")?;
+    let fs = StdFileSystem::default();
+    match fs.list(&root).await {
+        Err(FsError::Io { kind, message, .. }) => {
+            assert_eq!(kind, ErrorKind::InvalidData);
+            assert_eq!(message, "directory entry name is not valid UTF-8");
+        }
+        result => panic!("expected an invalid-data listing error, got {result:?}"),
+    }
     Ok(())
 }
 
@@ -250,7 +282,7 @@ async fn read_at_returns_the_requested_slice_never_pads_and_refuses_a_missing_fi
     assert!(matches!(
         fs.read_at(&at(&dir, "none.bin")?, 0, 1).await,
         Err(FsError::Io {
-            kind: std::io::ErrorKind::NotFound,
+            kind: ErrorKind::NotFound,
             ..
         })
     ));
@@ -313,5 +345,21 @@ async fn read_regular_returns_at_most_the_cap_plus_one_byte_and_keeps_every_refu
         let read = fs.read_regular(&base, &RepoPath::parse(name)?, CAP).await?;
         assert_eq!(read.err(), Some(problem), "{name}");
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_lock_file_that_is_a_symlink_is_refused_and_creates_no_target() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let lock = at(&dir, "usage.json.lock")?;
+    let target = dir.path().join("elsewhere");
+    std::os::unix::fs::symlink(&target, lock.as_path())?;
+    let refused = fs.lock(&lock).await;
+    assert!(matches!(refused, Err(FsError::Io { .. })), "{refused:?}");
+    assert!(
+        !target.exists(),
+        "the lock followed the link and created its target"
+    );
     Ok(())
 }

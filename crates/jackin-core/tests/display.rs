@@ -271,6 +271,18 @@ fn string_fields_of_core_errors_are_shown_without_control_characters() -> TestRe
             format!("unknown field {shown}"),
         ),
         (
+            ConfigError::NoWorkspaceForPath(host(&format!("/w/{}", hostile()))?).to_string(),
+            format!("no workspace for /w/{shown}; run jackin workspace add"),
+        ),
+        (
+            ConfigError::DuplicatePath {
+                path: host(&format!("/w/{}", hostile()))?,
+                workspaces: Vec::new(),
+            }
+            .to_string(),
+            format!("workspaces  share the path /w/{shown}"),
+        ),
+        (
             ConfigError::MissingField { key: hostile() }.to_string(),
             format!("missing field {shown}"),
         ),

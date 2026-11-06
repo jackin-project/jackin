@@ -106,7 +106,10 @@ async fn foreign(
         ))
         .await?;
     rig.gateway()
-        .find_sandboxes(&SandboxQuery::Name(name.clone()))
+        .find_sandboxes(
+            &SandboxQuery::Name(name.clone()),
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await?;
     rig.gateway()
         .sandbox(&name)

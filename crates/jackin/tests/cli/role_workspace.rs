@@ -315,9 +315,17 @@ async fn a_role_source_that_is_not_a_directory_or_a_url_is_refused_without_echoi
         let world = World::builder().build()?;
         let harness = Harness::new(&world);
         let sources = [
-            "https://x-access-token:ghp_FAKEf4k3T0k3nValue0123456789abcdef@github.com/org/repo.git",
+            concat!(
+                "https://x-access-token",
+                ":ghp_FAKEf4k3T0k3nValue0123456789abcdef",
+                "@github.com/org/repo.git"
+            ),
             "https://ghp_FAKEf4k3T0k3nValue0123456789abcdef@github.com/org/repo.git",
-            "ssh://user:ghp_FAKEf4k3T0k3nValue0123456789abcdef@host/org/repo.git",
+            concat!(
+                "ssh://user",
+                ":ghp_FAKEf4k3T0k3nValue0123456789abcdef",
+                "@host/org/repo.git"
+            ),
             "no\u{1b}[2J\nghp_FAKEf4k3T0k3nValue0123456789abcdef",
             "/ghp_FAKEf4k3T0k3nValue0123456789abcdef/missing",
         ];

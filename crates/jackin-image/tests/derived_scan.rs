@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::Sha256;
+use jackin_core::{ImageTag, Sha256};
 use jackin_image::ContextEntry;
 use std::error::Error;
 use std::fs;
@@ -28,7 +28,9 @@ const CODEX: &str = "/usr/local/bin/codex";
 const CODEX_HOST: &str = "/usr/local/bin/codex-code-mode-host";
 const SETUP: &str = "/usr/local/lib/jackin/hooks/setup";
 const PREFLIGHT: &str = "/usr/local/lib/jackin/hooks/preflight";
-const DIRECTORIES: [&str; 6] = [
+const WRITE_FILE: &str = "/usr/local/lib/jackin/write-file";
+const DIRECTORIES: [&str; 7] = [
+    "sandbox",
     "usr",
     "usr/local",
     "usr/local/bin",
@@ -36,7 +38,7 @@ const DIRECTORIES: [&str; 6] = [
     "usr/local/lib/jackin",
     "usr/local/lib/jackin/hooks",
 ];
-const LEAVES: [&str; 5] = [START, CODEX, CODEX_HOST, SETUP, PREFLIGHT];
+const LEAVES: [&str; 6] = [START, CODEX, CODEX_HOST, SETUP, PREFLIGHT, WRITE_FILE];
 const CONFIG: &str = "/etc/codex/config.toml";
 const CONFIG_BYTES: &[u8] = b"check_for_update_on_startup = false\n";
 const VERDICT: &str = "/usr/local/lib/jackin/image-scan";
@@ -64,6 +66,7 @@ const SANDBOX_PASSWD: &str = "sandbox:x:1000:1000::/sandbox:/bin/bash\n";
 const SANDBOX_GROUP: &str = "sandbox:x:1000:\n";
 const MISSING_PASSWD: &str = "sandbox account is missing or duplicated in /etc/passwd";
 const WRONG_PASSWD: &str = "sandbox account is not 1000:1000 in /etc/passwd";
+const WRONG_HOME: &str = "sandbox account home is not /sandbox in /etc/passwd";
 const MISSING_GROUP: &str = "sandbox group is missing or duplicated in /etc/group";
 const WRONG_GROUP: &str = "sandbox group is not gid 1000 in /etc/group";
 
@@ -87,7 +90,7 @@ fn trusted_name(leaf: &str) -> &str {
     leaf.rsplit('/').next().unwrap_or(leaf)
 }
 
-fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+fn image_plan() -> Result<ImagePlan, Box<dyn Error>> {
     let request = ImageRequest {
         role: RoleName::parse("sentinel")?,
         context_files: vec![entry("Dockerfile")?],
@@ -107,10 +110,15 @@ fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: Vec::new(),
         rebuild: Rebuild::No,
     };
+    Ok(ImagePlan::new(&request)?)
+}
+
+fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
     let id = ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
-    let built = ImagePlan::new(&request)?.final_builds(&id);
+    let built = image_plan()?.final_builds(&id);
     let ContextSource::Materialized(files) = built.derived.context else {
         return Err("derived context is not materialized".into());
     };
@@ -119,6 +127,18 @@ fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         .find(|file| file.name == name)
         .map(|file| file.bytes)
         .ok_or_else(|| format!("the derived context holds no {name}").into())
+}
+
+fn construct_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    let plan = image_plan()?;
+    let ContextSource::Materialized(files) = &plan.construct_build().context else {
+        return Err("construct context is not materialized".into());
+    };
+    files
+        .iter()
+        .find(|file| file.name == name)
+        .map(|file| file.bytes.clone())
+        .ok_or_else(|| format!("the construct context holds no {name}").into())
 }
 
 fn scan_script() -> Result<Vec<u8>, Box<dyn Error>> {
@@ -136,6 +156,19 @@ fn scan_absent_paths() -> Result<Vec<String>, Box<dyn Error>> {
         .filter(|pair| pair[0] == "--absent")
         .map(|pair| pair[1].to_owned())
         .collect())
+}
+
+fn scan_sandbox_owner() -> Result<String, Box<dyn Error>> {
+    let dockerfile = String::from_utf8(derived_file("Dockerfile")?)?;
+    let (_, scan_stage) = dockerfile
+        .split_once("AS scan\n")
+        .ok_or("the derived Dockerfile has no scan stage")?;
+    let words: Vec<&str> = scan_stage.split_whitespace().collect();
+    words
+        .windows(2)
+        .find(|pair| pair[0] == "--sandbox-owner")
+        .map(|pair| pair[1].to_owned())
+        .ok_or_else(|| "the derived scanner has no sandbox-owner argument".into())
 }
 
 struct Outcome {
@@ -156,7 +189,10 @@ struct Fixture {
     top: PathBuf,
     uid: u32,
     gid: u32,
+    sandbox_owner: String,
     absent: Vec<String>,
+    sandbox_state: String,
+    write_file_state: String,
 }
 
 impl Fixture {
@@ -164,6 +200,7 @@ impl Fixture {
         let dir = TempDir::new()?;
         let top = dir.path().canonicalize()?;
         fs::write(top.join("scan"), scan_script()?)?;
+        let sandbox_owner = scan_sandbox_owner()?;
         for sub in ["image", "tools", "trusted", "sandbox"] {
             fs::create_dir(top.join(sub))?;
         }
@@ -173,11 +210,16 @@ impl Fixture {
             top,
             uid: meta.uid(),
             gid: meta.gid(),
+            sandbox_owner,
             absent: scan_absent_paths()?,
+            sandbox_state: "canonical".to_owned(),
+            write_file_state: "canonical".to_owned(),
         };
         for name in ["find", "tr", "cmp"] {
             fx.tool(name)?;
         }
+        let find_real = fs::canonicalize(fx.top.join("tools/find"))?;
+        fx.sandbox_find_wrapper(&find_real)?;
         fx.stub("getcap", NO_GETCAP)?;
         for directory in DIRECTORIES {
             fx.dir(directory, 0o755)?;
@@ -232,6 +274,22 @@ impl Fixture {
         Ok(())
     }
 
+    fn sandbox_find_wrapper(&self, real_find: &Path) -> TestResult {
+        let body = format!(
+            "real_find='{}'\nif [ \"${{1:-}}\" = \"${{W1_SANDBOX_PATH:-}}\" ]; then\n  case \" $* \" in\n    *\" -uid \"*) [ \"${{W1_SANDBOX_STATE:-}}\" = wrong-uid ] && exit 0; exec \"$real_find\" \"$1\" -maxdepth 0 -uid \"$W1_FIX_UID\" -print ;;\n    *\" -gid \"*) [ \"${{W1_SANDBOX_STATE:-}}\" = wrong-gid ] && exit 0; exec \"$real_find\" \"$1\" -maxdepth 0 -gid \"$W1_FIX_GID\" -print ;;\n    *\" -perm \"*) exec \"$real_find\" \"$@\" ;;\n  esac\nfi\nif [ \"${{1:-}}\" = \"${{W1_WRITE_FILE_PATH:-}}\" ] && [ \"${{W1_WRITE_FILE_STATE:-}}\" = wrong-owner ]; then\n  case \" $* \" in\n    *\" -uid \"* | *\" -gid \"*) exit 0 ;;\n  esac\nfi\nexec \"$real_find\" \"$@\"\n",
+            real_find.display()
+        );
+        self.stub("find", &body)
+    }
+
+    fn sandbox_state(&mut self, state: &str) {
+        self.sandbox_state = state.to_owned();
+    }
+
+    fn write_file_state(&mut self, state: &str) {
+        self.write_file_state = state.to_owned();
+    }
+
     fn tool(&self, name: &str) -> TestResult {
         let real = ["/usr/bin", "/bin"]
             .iter()
@@ -248,7 +306,12 @@ impl Fixture {
     }
 
     fn arguments(&self) -> Vec<String> {
-        let mut args = vec!["--owner".to_owned(), format!("{}:{}", self.uid, self.gid)];
+        let mut args = vec![
+            "--owner".to_owned(),
+            format!("{}:{}", self.uid, self.gid),
+            "--sandbox-owner".to_owned(),
+            self.sandbox_owner.clone(),
+        ];
         for leaf in LEAVES {
             args.push("--same-as".to_owned());
             args.push(format!("{leaf}={}", self.trusted(leaf).display()));
@@ -281,6 +344,12 @@ impl Fixture {
             .env_clear()
             .env("PATH", self.top.join("tools"))
             .env("LC_ALL", "C")
+            .env("W1_SANDBOX_PATH", self.image("sandbox"))
+            .env("W1_SANDBOX_STATE", &self.sandbox_state)
+            .env("W1_FIX_UID", self.uid.to_string())
+            .env("W1_FIX_GID", self.gid.to_string())
+            .env("W1_WRITE_FILE_PATH", self.image(WRITE_FILE))
+            .env("W1_WRITE_FILE_STATE", &self.write_file_state)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -307,7 +376,12 @@ impl Fixture {
     }
 
     fn client_arguments(&self) -> Vec<String> {
-        let mut args = vec!["--owner".to_owned(), format!("{}:{}", self.uid, self.gid)];
+        let mut args = vec![
+            "--owner".to_owned(),
+            format!("{}:{}", self.uid, self.gid),
+            "--sandbox-owner".to_owned(),
+            self.sandbox_owner.clone(),
+        ];
         for leaf in LEAVES.iter().chain(&CLIENT) {
             args.push("--same-as".to_owned());
             args.push(format!("{leaf}={}", self.trusted(leaf).display()));
@@ -328,6 +402,21 @@ impl Fixture {
 
     fn scan(&self) -> Result<Outcome, Box<dyn Error>> {
         self.run(&self.arguments())
+    }
+
+    fn scan_read_write(&self, paths: &[&str]) -> Result<Outcome, Box<dyn Error>> {
+        let mut args = self.arguments();
+        let image = self.top.join("image").display().to_string();
+        let at = args
+            .iter()
+            .position(|arg| *arg == image)
+            .ok_or("the arguments hold no image root")?;
+        let flags: Vec<String> = paths
+            .iter()
+            .flat_map(|path| ["--read-write".to_owned(), (*path).to_owned()])
+            .collect();
+        args.splice(at..at, flags);
+        self.run(&args)
     }
 
     fn move_aside(&self, path: &str) -> Result<PathBuf, Box<dyn Error>> {
@@ -354,6 +443,130 @@ impl Fixture {
         symlink(target, self.image(path))?;
         Ok(())
     }
+}
+
+#[test]
+fn the_public_image_plan_builds_and_protects_the_static_remote_writer() -> TestResult {
+    let construct = String::from_utf8(construct_file("Dockerfile")?)?;
+    assert!(construct.contains("FROM ${BASE_IMAGE} AS write-file-build"));
+    assert!(construct.contains("cc -std=c11 -O2 -Wall -Wextra -Werror -static"));
+    assert!(construct.contains("readelf -l /out/write-file"));
+    assert!(construct.contains("COPY --from=write-file-build --chown=root:root --chmod=0755 /out/write-file /usr/local/lib/jackin/write-file"));
+    assert!(construct.contains("apt-get install --yes --no-install-recommends build-essential"));
+    let runtime_stage = construct
+        .split("FROM ${BASE_IMAGE}\n\nARG SANDBOX_UID")
+        .nth(1)
+        .ok_or("construct runtime stage is missing")?;
+    assert!(!runtime_stage.contains("build-essential"));
+    assert!(!runtime_stage.contains("gcc"));
+
+    let plan = image_plan()?;
+    let ContextSource::Materialized(construct_context) = &plan.construct_build().context else {
+        return Err("construct context is not materialized".into());
+    };
+    assert_eq!(construct_context.len(), 2);
+    assert!(construct_context.iter().any(|file| {
+        file.name == "write-file.c"
+            && file.bytes
+                == include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/images/construct/write-file.c"
+                ))
+    }));
+    let mut key_fields = Vec::new();
+    let dockerfile_digest = Sha256::of(CONSTRUCT_DOCKERFILE.as_bytes());
+    let helper_digest = Sha256::of(include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/images/construct/write-file.c"
+    )));
+    for field in [
+        dockerfile_digest.as_str().as_bytes(),
+        helper_digest.as_str().as_bytes(),
+        b"linux/arm64".as_slice(),
+    ] {
+        key_fields.extend((field.len() as u64).to_be_bytes());
+        key_fields.extend(field);
+    }
+    assert_eq!(
+        plan.construct_build().tag,
+        ImageTag::for_construct(&Sha256::of(&key_fields))
+    );
+
+    let derived = String::from_utf8(derived_file("Dockerfile")?)?;
+    assert!(derived.contains("COPY --from=construct --chown=root:root --chmod=0755 /usr/local/lib/jackin/write-file /usr/local/lib/jackin/write-file"));
+    assert!(derived.contains("COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/write-file /usr/local/lib/jackin/write-file"));
+    assert!(derived.contains(
+        "--same-as /usr/local/lib/jackin/write-file=/trusted/usr/local/lib/jackin/write-file"
+    ));
+    assert!(
+        derived.contains("/usr/local/lib/jackin/write-file \\\n        ${CODEX_BIN_DIR}/codex")
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_protects_the_construct_write_helper_executable_and_its_ancestors() -> TestResult {
+    let clean = Fixture::new()?;
+    assert!(clean.scan()?.ok);
+
+    let changed = Fixture::new()?;
+    changed.file(WRITE_FILE, b"different executable", 0o755)?;
+    let out = changed.scan()?;
+    assert!(!out.ok);
+    assert!(
+        out.lines()
+            .iter()
+            .any(|line| line
+                == &format!("protected file differs from the trusted copy: {WRITE_FILE}"))
+    );
+
+    let missing = Fixture::new()?;
+    missing.move_aside(WRITE_FILE)?;
+    let out = missing.scan()?;
+    assert!(!out.ok);
+    assert!(out.stderr.contains(WRITE_FILE));
+
+    let linked = Fixture::new()?;
+    linked.relink(WRITE_FILE, true)?;
+    let out = linked.scan()?;
+    assert!(!out.ok);
+    assert!(out.stderr.contains(WRITE_FILE));
+
+    let linked_parent = Fixture::new()?;
+    linked_parent.relink("/usr/local/lib/jackin", true)?;
+    let out = linked_parent.scan()?;
+    assert!(!out.ok);
+    assert!(out.stderr.contains("/usr/local/lib/jackin"));
+
+    let mut wrong_owner = Fixture::new()?;
+    wrong_owner.write_file_state("wrong-owner");
+    let out = wrong_owner.scan()?;
+    assert!(!out.ok);
+    assert!(out.stderr.contains(&format!(
+        "protected path is not a real root-owned path: {WRITE_FILE}"
+    )));
+
+    let writable_parent = Fixture::new()?;
+    fs::set_permissions(
+        writable_parent.image("/usr/local/lib/jackin"),
+        fs::Permissions::from_mode(0o777),
+    )?;
+    let out = writable_parent.scan()?;
+    assert!(!out.ok);
+    assert!(out.stderr.contains("writable by group or others"));
+
+    let non_executable = Fixture::new()?;
+    non_executable.file(WRITE_FILE, b"matching trusted bytes", 0o644)?;
+    fs::write(
+        non_executable.trusted(WRITE_FILE),
+        b"matching trusted bytes",
+    )?;
+    let out = non_executable.scan()?;
+    assert!(!out.ok);
+    assert!(out.stderr.contains(&format!(
+        "protected path is not a real root-owned path: {WRITE_FILE}"
+    )));
+    Ok(())
 }
 
 #[test]
@@ -387,6 +600,7 @@ fn scan_never_executes_a_file_under_its_root_argument() -> TestResult {
         "bin/sh",
         "usr/bin/cmp",
         "usr/bin/tr",
+        "usr/local/lib/jackin/write-file",
     ] {
         let mark = fx.top.join(format!("ran-{}", shadow.replace('/', "_")));
         fx.file(
@@ -1071,7 +1285,7 @@ fn scan_never_passes_when_one_of_its_tools_is_missing() -> TestResult {
     Ok(())
 }
 
-const DEVICE_FIND: &str = "n=$#\nwhile [ \"$n\" -gt 0 ]; do\n  a=$1; shift; n=$((n - 1))\n  if [ \"$a\" = -type ] && [ \"$n\" -gt 0 ]; then\n    t=$1; shift; n=$((n - 1))\n    case $t in\n      b) set -- \"$@\" -name '*.blk' ;;\n      c) set -- \"$@\" -name '*.chr' ;;\n      *) set -- \"$@\" -type \"$t\" ;;\n    esac\n  else\n    set -- \"$@\" \"$a\"\n  fi\ndone\nexec /usr/bin/find \"$@\"\n";
+const DEVICE_FIND: &str = "if [ \"${1:-}\" = \"${W1_SANDBOX_PATH:-}\" ]; then\n  case \" $* \" in\n    *\" -uid \"*) [ \"${W1_SANDBOX_STATE:-}\" = wrong-uid ] && exit 0; exec /usr/bin/find \"$1\" -maxdepth 0 -uid \"$W1_FIX_UID\" -print ;;\n    *\" -gid \"*) [ \"${W1_SANDBOX_STATE:-}\" = wrong-gid ] && exit 0; exec /usr/bin/find \"$1\" -maxdepth 0 -gid \"$W1_FIX_GID\" -print ;;\n    *\" -perm \"*) exec /usr/bin/find \"$@\" ;;\n  esac\nfi\nn=$#\nwhile [ \"$n\" -gt 0 ]; do\n  a=$1; shift; n=$((n - 1))\n  if [ \"$a\" = -type ] && [ \"$n\" -gt 0 ]; then\n    t=$1; shift; n=$((n - 1))\n    case $t in\n      b) set -- \"$@\" -name '*.blk' ;;\n      c) set -- \"$@\" -name '*.chr' ;;\n      *) set -- \"$@\" -type \"$t\" ;;\n    esac\n  else\n    set -- \"$@\" \"$a\"\n  fi\ndone\nexec /usr/bin/find \"$@\"\n";
 
 #[test]
 fn scan_refuses_block_and_character_device_nodes_anywhere_in_the_tree() -> TestResult {
@@ -1183,7 +1397,7 @@ fn scan_exempts_only_the_exact_client_paths_that_hold_the_trusted_bytes() -> Tes
 }
 
 #[test]
-fn scan_refuses_every_other_tool_and_a_missing_pair_in_the_client_form() -> TestResult {
+fn scan_refuses_an_unpaired_client_tool_allow_argument() -> TestResult {
     let fx = Fixture::new()?;
     fx.client()?;
     let mut args = fx.client_arguments();
@@ -1191,7 +1405,11 @@ fn scan_refuses_every_other_tool_and_a_missing_pair_in_the_client_form() -> Test
     args.insert(3, "/usr/local/bin/other".to_owned());
     let out = fx.run(&args)?;
     assert_eq!(out.code, Some(64), "{}", out.stderr);
+    Ok(())
+}
 
+#[test]
+fn scan_requires_the_trusted_bytes_for_every_client_tool() -> TestResult {
     let fx = Fixture::new()?;
     fx.client()?;
     fx.file(DOCKER, b"x", 0o755)?;
@@ -1200,30 +1418,78 @@ fn scan_refuses_every_other_tool_and_a_missing_pair_in_the_client_form() -> Test
     let mut wanted: Vec<String> = CLIENT.iter().map(|leaf| forbidden(leaf)).collect();
     wanted.sort();
     assert_eq!(sorted_lines(&absent), wanted);
-
-    for tool in [
-        "dockerd",
-        "containerd",
-        "containerd-shim",
-        "containerd-shim-runc-v2",
-        "runc",
-        "crun",
-        "buildkitd",
-        "rootlesskit",
-        "podman",
-        "nerdctl",
-        "docker-proxy",
-        "dockerd-rootless.sh",
-    ] {
-        let fx = Fixture::new()?;
-        fx.client()?;
-        let path = format!("/usr/local/bin/{tool}");
-        fx.file(&path, &fs::read(fx.trusted(DOCKER))?, 0o755)?;
-        let out = fx.scan_client()?;
-        assert!(!out.ok, "{tool}");
-        assert_eq!(out.lines(), [forbidden(&path)], "{tool}");
-    }
     Ok(())
+}
+
+fn scan_refuses_runtime_tool(tool: &str) -> TestResult {
+    let fx = Fixture::new()?;
+    fx.client()?;
+    let path = format!("/usr/local/bin/{tool}");
+    fx.file(&path, &fs::read(fx.trusted(DOCKER))?, 0o755)?;
+    let out = fx.scan_client()?;
+    assert!(!out.ok, "{tool}");
+    assert_eq!(out.lines(), [forbidden(&path)], "{tool}");
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_dockerd_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("dockerd")
+}
+
+#[test]
+fn scan_refuses_containerd_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("containerd")
+}
+
+#[test]
+fn scan_refuses_containerd_shim_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("containerd-shim")
+}
+
+#[test]
+fn scan_refuses_containerd_shim_runc_v2_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("containerd-shim-runc-v2")
+}
+
+#[test]
+fn scan_refuses_runc_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("runc")
+}
+
+#[test]
+fn scan_refuses_crun_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("crun")
+}
+
+#[test]
+fn scan_refuses_buildkitd_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("buildkitd")
+}
+
+#[test]
+fn scan_refuses_rootlesskit_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("rootlesskit")
+}
+
+#[test]
+fn scan_refuses_podman_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("podman")
+}
+
+#[test]
+fn scan_refuses_nerdctl_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("nerdctl")
+}
+
+#[test]
+fn scan_refuses_docker_proxy_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("docker-proxy")
+}
+
+#[test]
+fn scan_refuses_dockerd_rootless_script_with_client_allow_list() -> TestResult {
+    scan_refuses_runtime_tool("dockerd-rootless.sh")
 }
 
 const CONTROL: &str = "path with a control character in role image: ";
@@ -1423,5 +1689,218 @@ fn scan_refuses_every_codex_system_layer_path_the_role_image_holds() -> TestResu
             out.stderr
         );
     }
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_sandbox_home_other_than_the_construct_home() -> TestResult {
+    let clean = Fixture::new()?.scan()?;
+    assert!(clean.ok, "the canonical home must pass: {}", clean.stderr);
+    let fx = Fixture::new()?;
+    fx.file(
+        "/etc/passwd",
+        PASSWD
+            .replace(
+                "sandbox:x:1000:1000::/sandbox:",
+                "sandbox:x:1000:1000::/role:",
+            )
+            .as_bytes(),
+        0o644,
+    )?;
+    let out = fx.scan()?;
+    assert!(!out.ok, "an alternate sandbox home passed");
+    assert!(out.lines().contains(&WRONG_HOME), "{}", out.stderr);
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_sandbox_home_that_differs_from_the_construct_directory() -> TestResult {
+    assert_eq!(scan_sandbox_owner()?, "1000:1000");
+    let clean = Fixture::new()?.scan()?;
+    assert!(
+        clean.ok,
+        "the canonical sandbox directory must pass: {}",
+        clean.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fs::remove_dir(fx.image("/sandbox"))?;
+    let missing = fx.scan()?;
+    assert!(
+        missing
+            .lines()
+            .contains(&"sandbox home is missing: /sandbox"),
+        "{}",
+        missing.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fs::remove_dir(fx.image("/sandbox"))?;
+    fs::write(fx.image("/sandbox"), b"not a directory")?;
+    let file = fx.scan()?;
+    assert!(
+        file.lines()
+            .contains(&"sandbox home is not a directory: /sandbox"),
+        "{}",
+        file.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fs::remove_dir(fx.image("/sandbox"))?;
+    fx.dir("/sandbox-target", 0o755)?;
+    symlink(fx.image("/sandbox-target"), fx.image("/sandbox"))?;
+    let linked = fx.scan()?;
+    assert!(
+        linked
+            .lines()
+            .contains(&"sandbox home is a symlink: /sandbox"),
+        "{}",
+        linked.stderr
+    );
+
+    let mut fx = Fixture::new()?;
+    fx.sandbox_state("wrong-uid");
+    let wrong_uid = fx.scan()?;
+    assert!(
+        wrong_uid
+            .lines()
+            .contains(&"sandbox home has the wrong owner uid: /sandbox"),
+        "{}",
+        wrong_uid.stderr
+    );
+
+    let mut fx = Fixture::new()?;
+    fx.sandbox_state("wrong-gid");
+    let wrong_gid = fx.scan()?;
+    assert!(
+        wrong_gid
+            .lines()
+            .contains(&"sandbox home has the wrong group gid: /sandbox"),
+        "{}",
+        wrong_gid.stderr
+    );
+
+    for mode in [0o700, 0o750] {
+        let fx = Fixture::new()?;
+        fs::set_permissions(fx.image("/sandbox"), fs::Permissions::from_mode(mode))?;
+        let wrong_mode = fx.scan()?;
+        assert!(
+            wrong_mode
+                .lines()
+                .contains(&"sandbox home mode is not 0755: /sandbox"),
+            "{}",
+            wrong_mode.stderr
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_any_role_provided_codex_user_layer_path() -> TestResult {
+    let path = "/sandbox/.codex";
+    let present = format!("path must be absent from the role image: {path}");
+    let fx = Fixture::new()?;
+    assert!(fx.scan()?.ok, "an absent user layer must pass");
+
+    let fx = Fixture::new()?;
+    fx.file("/sandbox/project", b"project data", 0o644)?;
+    assert!(fx.scan()?.ok, "an unrelated sandbox file must pass");
+
+    let fx = Fixture::new()?;
+    fx.file(path, b"hooks", 0o644)?;
+    assert!(
+        fx.scan()?.lines().contains(&present.as_str()),
+        "a user-layer file passed"
+    );
+
+    let fx = Fixture::new()?;
+    fx.dir(path, 0o755)?;
+    let empty = fx.scan()?;
+    assert!(
+        !empty.ok && empty.lines() == [present.as_str()],
+        "{}",
+        empty.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.file("/sandbox/.codex/hooks.json", b"{}", 0o644)?;
+    fx.file("/sandbox/.codex/rules/review.md", b"review", 0o644)?;
+    let populated = fx.scan()?;
+    assert!(
+        !populated.ok && populated.lines() == [present.as_str()],
+        "{}",
+        populated.stderr
+    );
+
+    let fx = Fixture::new()?;
+    let target = fx.image("/sandbox/project");
+    fx.file("/sandbox/project", b"project data", 0o644)?;
+    symlink(&target, fx.image(path))?;
+    let linked = fx.scan()?;
+    assert!(
+        !linked.ok && linked.lines() == [present.as_str()],
+        "{}",
+        linked.stderr
+    );
+
+    let fx = Fixture::new()?;
+    symlink("/missing/codex", fx.image(path))?;
+    let dangling = fx.scan()?;
+    assert!(
+        !dangling.ok && dangling.lines() == [present.as_str()],
+        "{}",
+        dangling.stderr
+    );
+    assert!(
+        fx.absent.iter().any(|absent| absent == path),
+        "the generated scan context does not enforce the user-layer absence"
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_read_write_path_that_is_or_crosses_a_symlink() -> TestResult {
+    let crossing = |path: &str, at: &str| {
+        format!("read_write path of the role policy is or crosses a symlink: {path} (at {at})")
+    };
+    let fx = Fixture::new()?;
+    fx.dir("/sandbox/work", 0o755)?;
+    fx.dir("/tmp", 0o1777)?;
+    let out = fx.scan_read_write(&["/sandbox/work", "/tmp", "/sandbox/not-created-yet"])?;
+    assert!(
+        out.ok,
+        "real directories and a missing path pass: {}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.dir("/usr/local/bin", 0o755)?;
+    fx.dir("/sandbox", 0o755)?;
+    symlink("/usr/local/bin", fx.image("/sandbox/tools"))?;
+    let out = fx.scan_read_write(&["/sandbox/tools"])?;
+    assert!(
+        !out.ok && out.lines() == [crossing("/sandbox/tools", "/sandbox/tools")],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.dir("/usr/share/data", 0o755)?;
+    symlink("/usr/share", fx.image("/srv"))?;
+    let out = fx.scan_read_write(&["/srv/data"])?;
+    assert!(
+        !out.ok && out.lines() == [crossing("/srv/data", "/srv")],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    symlink("/nonexistent", fx.image("/dangling"))?;
+    let out = fx.scan_read_write(&["/dangling"])?;
+    assert!(
+        !out.ok && out.lines() == [crossing("/dangling", "/dangling")],
+        "a dangling link counts: {}",
+        out.stderr
+    );
     Ok(())
 }

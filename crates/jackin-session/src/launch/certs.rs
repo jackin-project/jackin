@@ -83,9 +83,25 @@ pub(super) async fn bind(
         directory: access.engine.client_certs.clone(),
         problem,
     })?;
-    for cert in [EngineCert::Cert, EngineCert::Key] {
-        wipe(read(fs, access, cert).await?);
+    let cert = read(fs, access, EngineCert::Cert).await?;
+    let key = match read(fs, access, EngineCert::Key).await {
+        Ok(key) => key,
+        Err(error) => {
+            wipe(cert);
+            return Err(error);
+        }
+    };
+    if let Err(problem) = EngineCert::check_pair(&cert, &key) {
+        wipe(cert);
+        wipe(key);
+        return Err(LaunchError::EngineCert {
+            file: EngineCert::Key,
+            directory: access.engine.client_certs.clone(),
+            problem,
+        });
     }
+    wipe(cert);
+    wipe(key);
     Ok(Bound::Engine {
         port: access.engine.port,
         ca: fingerprint,
@@ -128,6 +144,11 @@ pub(super) async fn read_set(
     let confirmed = async {
         unchanged(fs, access, EngineCert::Cert, &cert).await?;
         unchanged(fs, access, EngineCert::Key, &key).await?;
+        EngineCert::check_pair(&cert, &key).map_err(|problem| LaunchError::EngineCert {
+            file: EngineCert::Key,
+            directory: access.engine.client_certs.clone(),
+            problem,
+        })?;
         read(fs, access, EngineCert::Ca).await
     }
     .await;

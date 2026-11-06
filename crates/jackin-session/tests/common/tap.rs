@@ -171,8 +171,12 @@ impl Gateway for Tap {
         self.inner.create_sandbox(spec).await
     }
 
-    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
-        self.inner.find_sandboxes(query).await
+    async fn find_sandboxes(
+        &self,
+        query: &SandboxQuery,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<SandboxView>, GatewayError> {
+        self.inner.find_sandboxes(query, cancel).await
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
@@ -190,8 +194,9 @@ impl Gateway for Tap {
         &self,
         name: &SandboxName,
         action: PowerAction,
+        cancel: &CancellationToken,
     ) -> Result<SandboxView, GatewayError> {
-        self.inner.set_power(name, action).await
+        self.inner.set_power(name, action, cancel).await
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
@@ -240,7 +245,7 @@ impl Gateway for Tap {
                 .map(|at| hooks.after.remove(at).1)
         };
         if let Some(file) = follow {
-            self.inner.write_file(&run.sandbox, &file).await?;
+            self.inner.write_file(&run.sandbox, &file, cancel).await?;
         }
         outcome
     }
@@ -249,16 +254,18 @@ impl Gateway for Tap {
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
+        cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
-        self.inner.read_files(sandbox, paths).await
+        self.inner.read_files(sandbox, paths, cancel).await
     }
 
     async fn write_file(
         &self,
         sandbox: &SandboxName,
         file: &SandboxFile,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
-        self.inner.write_file(sandbox, file).await
+        self.inner.write_file(sandbox, file, cancel).await
     }
 
     async fn upload_tree(
@@ -306,7 +313,7 @@ impl Gateway for Tap {
         };
         if let Some(bytes) = replacement {
             self.inner
-                .write_file(sandbox, &file(remote, &bytes))
+                .write_file(sandbox, &file(remote, &bytes), cancel)
                 .await?;
         }
         self.inner

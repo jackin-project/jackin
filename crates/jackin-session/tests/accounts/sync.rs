@@ -7,13 +7,14 @@ use jackin_core::{
 };
 use jackin_openshell::{GatewayError, GatewayOp, Missing, ProfileSync};
 use jackin_session::{AccountError, AccountSync};
+use jackin_testkit::guard;
 use jackin_testkit::{Fault, World};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCESS, ACCOUNT_ID, CLIENT, Home, REFRESH, SECRETS, TestResult, codex_account, guard,
-    login_json, register,
+    ACCESS, ACCOUNT_ID, CLIENT, Home, REFRESH, SECRETS, TestResult, codex_account, login_json,
+    register,
 };
 
 fn assert_clean(text: &str) {

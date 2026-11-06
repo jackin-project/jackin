@@ -27,9 +27,9 @@ use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountError, LaunchError, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
     LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LaunchWarning,
-    LineDelivery, PlanError, Prompting, RestoreCandidate, RoleError, Session, StepResult,
-    WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events, lookup_workspace,
-    plan_launch,
+    LineDelivery, PlanError, Prompting, RestoreCandidate, RestoreFinding, RoleError, Session,
+    StepResult, WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events,
+    lookup_workspace, plan_launch,
 };
 use junie_tui::widgets::steps::StepState;
 use thiserror::Error;
@@ -341,10 +341,13 @@ async fn resolve(
                     let workspace = Workspace::new(path, false);
                     let saved = inputs
                         .config
-                        .edit(vec![ConfigEdit::AddWorkspace {
-                            name: name.clone(),
-                            workspace: workspace.clone(),
-                        }])
+                        .edit(
+                            vec![ConfigEdit::AddWorkspace {
+                                name: name.clone(),
+                                workspace: workspace.clone(),
+                            }],
+                            &inputs.cancel,
+                        )
                         .await?;
                     Ok((saved, name, workspace))
                 }
@@ -573,7 +576,8 @@ impl Run {
         gateway: &GatewayName,
         left: RestoreCandidate,
     ) {
-        let Some(sandbox) = left.sandbox else {
+        let RestoreFinding::Observed(sandbox) = left.finding else {
+            self.backend.refresh();
             return;
         };
         match self
@@ -595,8 +599,12 @@ impl Run {
         sandbox: &SandboxName,
         origins: &Origins,
     ) -> Result<Instance, jackin_session::LifecycleError> {
-        let inspected = session.inspect(sandbox).await?;
-        let work = session.work_state(config, sandbox).await;
+        let inspected = session
+            .inspect(sandbox, &self.backend.inputs.cancel)
+            .await?;
+        let work = session
+            .work_state(config, sandbox, &self.backend.inputs.cancel)
+            .await;
         let observed = ObservedSandbox {
             gateway: gateway.clone(),
             summary: inspected.summary,

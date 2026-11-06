@@ -78,7 +78,7 @@ pub(crate) async fn find_stale(
     let query = jackin_openshell::SandboxQuery::Labels(jackin_core::LabelSelector::managed());
     let views = b
         .gateway
-        .find_sandboxes(&query)
+        .find_sandboxes(&query, &b.cancel)
         .await
         .map_err(|error| error.to_string())?;
     let sandboxes = views

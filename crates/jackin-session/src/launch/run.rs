@@ -26,7 +26,7 @@ use crate::launch::probe;
 use crate::launch::tracker::Tracker;
 use crate::launch::{
     LaunchError, LaunchEvent, LaunchEvents, LaunchFailure, LaunchOutcome, LaunchStep,
-    RestoreCandidate, SkipReason,
+    RestoreCandidate, RestoreFinding, SkipReason,
 };
 use crate::lock::{self, LockError};
 use crate::plan::{LaunchPlan, PlannedFile};
@@ -35,6 +35,7 @@ use crate::service::{POLL, Session};
 use crate::workspace::workspace_lock;
 
 const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
+const RECOVERY_LOOKUP_TIMEOUT: Duration = Duration::from_secs(3);
 const IMAGE_PROGRESS: usize = 64;
 const MARKER_MODE: FileMode = FileMode(0o600);
 
@@ -173,23 +174,33 @@ impl Run<'_> {
     }
 
     async fn cancelled(&self) -> LaunchOutcome {
-        let found = self
-            .session
-            .deps
-            .gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(
-                self.plan.launch_id(),
-            )))
-            .await;
-        let sandbox = match found {
-            Ok(views) if views.len() == 1 => views.first().map(|view| view.name.clone()),
-            Ok(_) => None,
-            Err(_) => self.known.clone(),
+        let finding = match self.recovery_lookup().await {
+            Ok(mut views) if views.len() == 1 => RestoreFinding::Observed(views.remove(0).name),
+            Ok(_) | Err(_) => RestoreFinding::Unconfirmed {
+                last_observed: self.known.clone(),
+            },
         };
         LaunchOutcome::Cancelled(RestoreCandidate {
             launch_id: self.plan.launch_id().clone(),
-            sandbox,
+            finding,
         })
+    }
+
+    async fn recovery_lookup(&self) -> Result<Vec<SandboxView>, GatewayError> {
+        let query = SandboxQuery::Labels(LabelSelector::launch(self.plan.launch_id()));
+        let cancel = CancellationToken::new();
+        tokio::select! {
+            biased;
+            result = self.session.deps.gateway.find_sandboxes(&query, &cancel) => result,
+            () = self.session.deps.host.clock.sleep(RECOVERY_LOOKUP_TIMEOUT) => {
+                cancel.cancel();
+                Err(GatewayError::Timeout {
+                    op: GatewayOp::Find,
+                    after: RECOVERY_LOOKUP_TIMEOUT,
+                    group: None,
+                })
+            }
+        }
     }
 
     async fn finished(&mut self, finish: Finish) -> LaunchOutcome {
@@ -217,9 +228,10 @@ impl Run<'_> {
         let hint = self.tracker.current().unwrap_or(LaunchStep::Sandbox);
         let gateway = self.session.deps.gateway.as_ref();
         let mut views = gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(
-                self.plan.launch_id(),
-            )))
+            .find_sandboxes(
+                &SandboxQuery::Labels(LabelSelector::launch(self.plan.launch_id())),
+                self.cancel,
+            )
             .await
             .map_err(|error| failed(hint, error))?;
         match views.len() {
@@ -256,6 +268,7 @@ impl Run<'_> {
             self.session.deps.gateway.as_ref(),
             &view.name,
             self.plan.launch_id(),
+            self.cancel,
         )
         .await;
         match probe {
@@ -318,27 +331,32 @@ impl Run<'_> {
             .await
             .map_err(|error| failed(LaunchStep::Provider, error))?;
         self.live()?;
-        if state == ProviderState::Absent {
-            let account = self.plan.account_entry();
+        let account = self.plan.account_entry();
+        let stale = |source: AccountError| match source {
+            AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
+            other => failed(
+                LaunchStep::Provider,
+                LaunchError::ProviderUnavailable {
+                    account: account.name().clone(),
+                    source: Box::new(other),
+                },
+            ),
+        };
+        if state == ProviderState::Present {
+            self.session
+                .confirm_current(account, self.cancel)
+                .await
+                .map_err(stale)?;
+            self.tracker.skip(SkipReason::ProviderPresent);
+        } else {
             let synced = self
                 .session
                 .sync_if_absent(account, name, self.cancel)
                 .await
-                .map_err(|source| match source {
-                    AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
-                    other => failed(
-                        LaunchStep::Provider,
-                        LaunchError::ProviderUnavailable {
-                            account: account.name().clone(),
-                            source: Box::new(other),
-                        },
-                    ),
-                })?;
+                .map_err(stale)?;
             if !synced {
                 self.tracker.skip(SkipReason::ProviderPresent);
             }
-        } else {
-            self.tracker.skip(SkipReason::ProviderPresent);
         }
         self.done.steps.insert(LaunchStep::Provider);
         Ok(())
@@ -397,7 +415,7 @@ impl Run<'_> {
             .session
             .deps
             .gateway
-            .find_sandboxes(&SandboxQuery::Name(name.clone()))
+            .find_sandboxes(&SandboxQuery::Name(name.clone()), self.cancel)
             .await
             .map_err(|error| failed(LaunchStep::Sandbox, error))?;
         let Some(view) = found.first() else {
@@ -453,7 +471,7 @@ impl Run<'_> {
         self.session
             .deps
             .gateway
-            .set_power(sandbox, PowerAction::Start)
+            .set_power(sandbox, PowerAction::Start, self.cancel)
             .await
             .map_err(|error| failed(LaunchStep::Ready, error))?;
         self.done.boot = Boot::Powered;
@@ -496,6 +514,7 @@ impl Run<'_> {
                     mode,
                     content: SecretBytes::new(content),
                 },
+                self.cancel,
             )
             .await
             .map_err(|error| failed(step, error))
@@ -632,7 +651,7 @@ impl Run<'_> {
         let marker = sandbox_layout::uploaded_marker(launch);
         let found = deps
             .gateway
-            .read_files(sandbox, std::slice::from_ref(&marker))
+            .read_files(sandbox, std::slice::from_ref(&marker), self.cancel)
             .await
             .map_err(|error| failed(STEP, error))?;
         if found.first().is_some_and(Option::is_some) {
@@ -664,7 +683,7 @@ impl Run<'_> {
                 self.tracker.skip(SkipReason::SetupAlreadyDone);
                 setup = false;
             }
-            let env = crate::state::env_file(gateway, sandbox, self.plan.launch_id())
+            let env = crate::state::env_file(gateway, sandbox, self.plan.launch_id(), self.cancel)
                 .await
                 .map_err(|error| failed(STEP, error))?;
             let timeout = self.session.deps.limits.hook;
@@ -719,7 +738,7 @@ impl Run<'_> {
             .session
             .deps
             .gateway
-            .read_files(sandbox, std::slice::from_ref(&marker))
+            .read_files(sandbox, std::slice::from_ref(&marker), self.cancel)
             .await
             .map_err(|error| failed(LaunchStep::Hooks, error))?;
         Ok(found.first().is_some_and(Option::is_some))

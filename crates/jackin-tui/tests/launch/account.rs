@@ -68,7 +68,7 @@ async fn launches(
             account: name("by-default")?,
         });
     }
-    rig.world.config.edit(edits).await?;
+    rig.world.config.edit(edits, &rig.world.cancel).await?;
     let config = rig.world.config.load().await?;
     let workspace_name = WorkspaceName::parse(WORKSPACE)?;
     let role_name = RoleName::parse("sentinel")?;

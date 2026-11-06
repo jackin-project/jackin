@@ -46,6 +46,7 @@ pub struct AttachedTerminal {
     gateway: Arc<dyn Gateway>,
     sandbox: SandboxName,
     supervisor: SupervisorReading,
+    cancel: CancellationToken,
     held: Vec<u8>,
 }
 
@@ -53,11 +54,12 @@ pub struct AttachedTerminal {
 struct SupervisorProbe {
     gateway: Arc<dyn Gateway>,
     sandbox: SandboxName,
+    cancel: CancellationToken,
 }
 
 impl SupervisorProbe {
     async fn read(&self) -> SupervisorReading {
-        run_state(self.gateway.as_ref(), &self.sandbox)
+        run_state(self.gateway.as_ref(), &self.sandbox, &self.cancel)
             .await
             .unwrap_or(SupervisorReading::Unreadable)
     }
@@ -354,6 +356,7 @@ impl AttachedTerminal {
         SupervisorProbe {
             gateway: Arc::clone(&self.gateway),
             sandbox: self.sandbox.clone(),
+            cancel: self.cancel.clone(),
         }
     }
 
@@ -421,10 +424,14 @@ fn not_found(sandbox: &SandboxName) -> GatewayError {
 }
 
 impl Session {
-    pub async fn attach(&self, request: AttachRequest) -> Result<AttachedTerminal, AttachError> {
+    pub async fn attach(
+        &self,
+        request: AttachRequest,
+        cancel: &CancellationToken,
+    ) -> Result<AttachedTerminal, AttachError> {
         let sandbox = &request.sandbox;
         let view = self
-            .find_managed(sandbox)
+            .find_managed(sandbox, cancel)
             .await?
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;
@@ -440,27 +447,32 @@ impl Session {
                 size: request.size,
             })
             .await?;
-        let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
+        let supervisor = run_state(self.deps.gateway.as_ref(), sandbox, cancel).await?;
         Ok(AttachedTerminal {
             session,
             gateway: Arc::clone(&self.deps.gateway),
             sandbox: sandbox.clone(),
             supervisor,
+            cancel: cancel.clone(),
             held: Vec::new(),
         })
     }
 
-    pub async fn open_shell(&self, request: ShellRequest) -> Result<TerminalSession, AttachError> {
+    pub async fn open_shell(
+        &self,
+        request: ShellRequest,
+        cancel: &CancellationToken,
+    ) -> Result<TerminalSession, AttachError> {
         let sandbox = &request.sandbox;
         let view = self
-            .find_managed(sandbox)
+            .find_managed(sandbox, cancel)
             .await?
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;
         let gateway = self.deps.gateway.as_ref();
         let values = async {
             let launch = launch_of(&view.labels)?;
-            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch).await?)
+            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch, cancel).await?)
         }
         .await
         .map_err(|failure| AttachError::env(sandbox, failure))?;
@@ -479,8 +491,9 @@ impl Session {
     pub async fn supervisor_state(
         &self,
         sandbox: &SandboxName,
+        cancel: &CancellationToken,
     ) -> Result<SupervisorReading, GatewayError> {
-        run_state(self.deps.gateway.as_ref(), sandbox).await
+        run_state(self.deps.gateway.as_ref(), sandbox, cancel).await
     }
 
     pub async fn restart_agent(
@@ -491,21 +504,21 @@ impl Session {
     ) -> Result<AttachTarget, RestartError> {
         let gateway = self.deps.gateway.as_ref();
         let view = self
-            .find_managed(sandbox)
+            .find_managed(sandbox, &cancel)
             .await?
             .ok_or_else(|| not_found(sandbox))?;
         require_ready::<RestartError>(view.phase, sandbox)?;
         let values = async {
             let launch = launch_of(&view.labels)?;
-            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch).await?)
+            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch, &cancel).await?)
         }
         .await
         .map_err(|failure| RestartError::env(sandbox, failure))?;
         let _held = self.restart_lock(sandbox).await?;
-        self.restartable(sandbox).await?;
+        self.restartable(sandbox, &cancel).await?;
         self.restart_preflight(sandbox, &values, &events, &cancel)
             .await?;
-        let attempt = self.restartable(sandbox).await?;
+        let attempt = self.restartable(sandbox, &cancel).await?;
         self.request_attempt(sandbox, attempt, &events, &cancel)
             .await
     }
@@ -525,8 +538,12 @@ impl Session {
         }
     }
 
-    async fn restartable(&self, sandbox: &SandboxName) -> Result<AttemptId, RestartError> {
-        let state = match run_state(self.deps.gateway.as_ref(), sandbox).await? {
+    async fn restartable(
+        &self,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<AttemptId, RestartError> {
+        let state = match run_state(self.deps.gateway.as_ref(), sandbox, cancel).await? {
             SupervisorReading::Reported(state) => state,
             SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => {
                 return Err(RestartError::StateUnreadable {
@@ -560,7 +577,7 @@ impl Session {
             .await;
         let hook = sandbox_layout::hook_path(HookKind::Preflight);
         let mut found = gateway
-            .read_files(sandbox, std::slice::from_ref(&hook))
+            .read_files(sandbox, std::slice::from_ref(&hook), cancel)
             .await?;
         let present = found.pop().flatten().is_some_and(|bytes| !bytes.is_empty());
         if present {
@@ -614,12 +631,13 @@ impl Session {
                         StartRequest(attempt).render().into_bytes(),
                     ),
                 },
+                cancel,
             )
             .await?;
         let limit = self.deps.limits.attempt;
         let mut waited = Duration::ZERO;
         loop {
-            let seen_state = run_state(gateway, sandbox).await?;
+            let seen_state = run_state(gateway, sandbox, cancel).await?;
             if let SupervisorReading::Reported(
                 state @ (SupervisorState::Running { attempt: seen }
                 | SupervisorState::Exited { attempt: seen, .. }),

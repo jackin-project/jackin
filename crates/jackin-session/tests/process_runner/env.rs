@@ -8,7 +8,7 @@ use jackin_core::{EnvValue, ProcessRunner, ProcessSpec, ProcessStatus, Secret};
 use jackin_session::TokioProcessRunner;
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{Scratch, TestResult, guarded, text};
+use crate::support::{Scratch, TestResult, guard, text};
 
 const REPORT: &str = "echo \"CARGO_PKG_NAME=${CARGO_PKG_NAME-<unset>}\"\necho \"CARGO_PKG_VERSION=${CARGO_PKG_VERSION-<unset>}\"\necho \"CARGO_MANIFEST_DIR=${CARGO_MANIFEST_DIR-<unset>}\"\necho \"JK_PLAIN=${JK_PLAIN-<unset>}\"\necho \"JK_SECRET=${JK_SECRET-<unset>}\"\npwd -P\n";
 const PLAIN: &str = "a b=c $HOME 'q' \u{e9}";
@@ -56,7 +56,7 @@ fn plain(name: &str, value: &str) -> (String, EnvValue) {
 
 #[tokio::test]
 async fn the_child_gets_the_spec_environment_after_prefix_removal_and_the_spec_cwd() -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let control = report(&scratch, |_| {}).await?;
         assert_eq!(

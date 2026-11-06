@@ -60,6 +60,7 @@ pub(crate) fn op_error(fault: &OpFault) -> OpError {
         OpFault::Locked => OpError::Locked,
         OpFault::NotInstalled(_)
         | OpFault::FlagLikeName { .. }
+        | OpFault::AmbiguousField { .. }
         | OpFault::Malformed
         | OpFault::Failed
         | OpFault::Process(_) => OpError::NotAvailable,

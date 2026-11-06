@@ -19,7 +19,8 @@ async fn run_program_maps_sandbox_paths_records_env_and_returns_127_for_unknown_
             mode: FileMode(0o600),
             content: SecretBytes::new(b"hi".to_vec()),
         };
-        fake.write_file(&name, &input).await?;
+        fake.write_file(&name, &input, &tokio_util::sync::CancellationToken::new())
+            .await?;
         assert_eq!(
             handle.file_mode(&path("/sandbox/in.txt")?),
             Some(FileMode(0o600))

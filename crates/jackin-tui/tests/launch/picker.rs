@@ -42,19 +42,22 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![
-                env_account("codex-env", Provider::Codex, "OPENAI_KEY")?,
-                ConfigEdit::AddAccount(Account::new(
-                    AccountName::parse("codex-op")?,
-                    Provider::Codex,
-                    CredentialSource::OnePassword {
-                        reference: OpReference::parse("op://vault/item/field")?,
-                        account: None,
-                    },
-                )?),
-                env_account("claude-env", Provider::Claude, "ANTHROPIC_KEY")?,
-                env_account("grok-env", Provider::Grok, "XAI_KEY")?,
-            ])
+            .edit(
+                vec![
+                    env_account("codex-env", Provider::Codex, "OPENAI_KEY")?,
+                    ConfigEdit::AddAccount(Account::new(
+                        AccountName::parse("codex-op")?,
+                        Provider::Codex,
+                        CredentialSource::OnePassword {
+                            reference: OpReference::parse("op://vault/item/field")?,
+                            account: None,
+                        },
+                    )?),
+                    env_account("claude-env", Provider::Claude, "ANTHROPIC_KEY")?,
+                    env_account("grok-env", Provider::Grok, "XAI_KEY")?,
+                ],
+                &rig.world.cancel,
+            )
             .await?;
         let mut console = console(&rig).await?;
         console.keys("down enter")?;
@@ -92,12 +95,15 @@ async fn a_credential_changed_under_the_picker_is_refused_typed() -> TestResult 
         until_shows(&mut console, "Launch · choose Agent").await?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetAccountCredential {
-                account: AccountName::parse("work")?,
-                credential: CredentialSource::Env {
-                    var: EnvName::parse("OPENAI_KEY")?,
-                },
-            }])
+            .edit(
+                vec![ConfigEdit::SetAccountCredential {
+                    account: AccountName::parse("work")?,
+                    credential: CredentialSource::Env {
+                        var: EnvName::parse("OPENAI_KEY")?,
+                    },
+                }],
+                &rig.world.cancel,
+            )
             .await?;
         console.keys("enter")?;
         until_shows(&mut console, "Run id").await?;
@@ -139,13 +145,16 @@ async fn the_only_allowed_role_is_launched() -> TestResult {
         let workspace = WorkspaceName::parse("platform-backend")?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetWorkspaceRoles {
-                workspace,
-                roles: AllowedRoles::Only(
-                    jackin_core::RoleSet::new([RoleName::parse("other")?])
-                        .ok_or("an empty role set")?,
-                ),
-            }])
+            .edit(
+                vec![ConfigEdit::SetWorkspaceRoles {
+                    workspace,
+                    roles: AllowedRoles::Only(
+                        jackin_core::RoleSet::new([RoleName::parse("other")?])
+                            .ok_or("an empty role set")?,
+                    ),
+                }],
+                &rig.world.cancel,
+            )
             .await?;
         let mut console = console(&rig).await?;
         begin(&mut console)?;
@@ -163,29 +172,35 @@ async fn a_role_removed_under_the_picker_is_refused() -> TestResult {
         let workspace = WorkspaceName::parse("platform-backend")?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetWorkspaceDefaultRole {
-                workspace: workspace.clone(),
-                role: Some(RoleName::parse("sentinel")?),
-            }])
+            .edit(
+                vec![ConfigEdit::SetWorkspaceDefaultRole {
+                    workspace: workspace.clone(),
+                    role: Some(RoleName::parse("sentinel")?),
+                }],
+                &rig.world.cancel,
+            )
             .await?;
         let mut console = console(&rig).await?;
         console.keys("down enter")?;
         until_shows(&mut console, "Launch · choose Agent").await?;
         rig.world
             .config
-            .edit(vec![
-                ConfigEdit::SetWorkspaceDefaultRole {
-                    workspace: workspace.clone(),
-                    role: None,
-                },
-                ConfigEdit::SetWorkspaceRoles {
-                    workspace,
-                    roles: AllowedRoles::Only(
-                        jackin_core::RoleSet::new([RoleName::parse("other")?])
-                            .ok_or("an empty role set")?,
-                    ),
-                },
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::SetWorkspaceDefaultRole {
+                        workspace: workspace.clone(),
+                        role: None,
+                    },
+                    ConfigEdit::SetWorkspaceRoles {
+                        workspace,
+                        roles: AllowedRoles::Only(
+                            jackin_core::RoleSet::new([RoleName::parse("other")?])
+                                .ok_or("an empty role set")?,
+                        ),
+                    },
+                ],
+                &rig.world.cancel,
+            )
             .await?;
         console.keys("enter")?;
         until_shows(&mut console, "does not allow role sentinel").await?;
@@ -274,9 +289,12 @@ async fn elsewhere_in(
     rig.world.seed_all(&rig.config).await?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::SetDefaultAccount {
-            account: AccountName::parse("work")?,
-        }])
+        .edit(
+            vec![ConfigEdit::SetDefaultAccount {
+                account: AccountName::parse("work")?,
+            }],
+            &rig.world.cancel,
+        )
         .await?;
     let console = ConsoleRig::builder(&rig.world)
         .size(160, 44)
@@ -337,15 +355,18 @@ async fn a_current_directory_reached_through_a_symlink_finds_the_saved_workspace
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![
-                ConfigEdit::SetDefaultAccount {
-                    account: AccountName::parse("work")?,
-                },
-                ConfigEdit::AddWorkspace {
-                    name: WorkspaceName::parse("saved")?,
-                    workspace: jackin_core::Workspace::new(repo.root().clone(), false),
-                },
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::SetDefaultAccount {
+                        account: AccountName::parse("work")?,
+                    },
+                    ConfigEdit::AddWorkspace {
+                        name: WorkspaceName::parse("saved")?,
+                        workspace: jackin_core::Workspace::new(repo.root().clone(), false),
+                    },
+                ],
+                &rig.world.cancel,
+            )
             .await?;
         let mut console = ConsoleRig::builder(&rig.world)
             .size(160, 44)

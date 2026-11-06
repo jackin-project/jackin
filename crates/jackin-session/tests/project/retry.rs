@@ -106,7 +106,7 @@ async fn the_project_directory_is_emptied_but_nothing_outside_it() -> TestResult
                 mode: FileMode(0o600),
                 content: SecretBytes::new(content.as_bytes().to_vec()),
             };
-            Gateway::write_file(gateway.as_ref(), &handle.name(), &file).await?;
+            Gateway::write_file(gateway.as_ref(), &handle.name(), &file, &rig.world.cancel).await?;
         }
         let before = outside(&handle.files());
         assert!(before.len() >= 5, "{:?}", before.keys());
@@ -254,7 +254,10 @@ async fn mark_as_a_peer(rig: &Rig) -> TestResult {
             mode: FileMode(0o600),
             content: SecretBytes::new(content.as_bytes().to_vec()),
         };
-        rig.world.gateway.write_file(&name, &file).await?;
+        rig.world
+            .gateway
+            .write_file(&name, &file, &CancellationToken::new())
+            .await?;
     }
     Ok(())
 }

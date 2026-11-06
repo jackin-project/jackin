@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs;
@@ -18,7 +19,7 @@ use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{IidFile, Script, Stack, TestResult, guarded, tag_id};
+use crate::support::{IidFile, Script, Stack, TestResult, tag_id};
 
 type Tree = BTreeMap<String, String>;
 
@@ -149,7 +150,7 @@ fn std_lab() -> Result<Lab, Box<dyn Error>> {
 
 #[tokio::test]
 async fn buildx_stages_listed_links_as_links_with_their_own_target_text() -> TestResult {
-    guarded(async {
+    guard(async {
         let lab = std_lab()?;
         lab.stack.model.script(
             BuildStage::Role,
@@ -210,7 +211,7 @@ async fn buildx_stages_listed_links_as_links_with_their_own_target_text() -> Tes
 
 #[tokio::test]
 async fn buildx_refuses_a_link_whose_text_can_leave_the_role_root() -> TestResult {
-    guarded(async {
+    guard(async {
         let lab = std_lab()?;
         let inside = format!("{}/real.txt", lab.root().display());
         fs::create_dir_all(lab.root().join("r/s"))?;
@@ -242,7 +243,7 @@ async fn buildx_refuses_a_link_whose_text_can_leave_the_role_root() -> TestResul
 
 #[tokio::test]
 async fn buildx_checks_each_listed_link_on_its_own_text_and_never_resolves_chains() -> TestResult {
-    guarded(async {
+    guard(async {
         let chain = std_lab()?;
         chain.link("chain_ok", "ch_up")?;
         chain.link("ch_up", "../x")?;

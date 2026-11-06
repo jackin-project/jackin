@@ -9,6 +9,7 @@ use jackin_core::{
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, GatewayError, SandboxQuery, SandboxView};
+use tokio_util::sync::CancellationToken;
 
 use crate::plan::LaunchLimits;
 
@@ -58,11 +59,12 @@ impl Session {
     pub(crate) async fn find_managed(
         &self,
         name: &SandboxName,
+        cancel: &CancellationToken,
     ) -> Result<Option<SandboxView>, GatewayError> {
         let found = self
             .deps
             .gateway
-            .find_sandboxes(&SandboxQuery::Name(name.clone()))
+            .find_sandboxes(&SandboxQuery::Name(name.clone()), cancel)
             .await?;
         Ok(found
             .into_iter()

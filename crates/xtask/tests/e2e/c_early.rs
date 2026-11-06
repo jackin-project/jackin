@@ -25,9 +25,10 @@ async fn a_consistent_scripted_journey_prints_all_pass_and_exits_zero() {
         ran.expect(&format!("round {round}"), &[]);
         let sandboxes = scenario
             .gateway
-            .find_sandboxes(&jackin_openshell::SandboxQuery::Labels(
-                jackin_core::LabelSelector::managed(),
-            ))
+            .find_sandboxes(
+                &jackin_openshell::SandboxQuery::Labels(jackin_core::LabelSelector::managed()),
+                &scenario.cancel,
+            )
             .await
             .expect("find");
         let names: Vec<String> = sandboxes.iter().map(|view| view.name.to_string()).collect();

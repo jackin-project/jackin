@@ -15,6 +15,7 @@ use jackin_session::{
     HostPorts, LaunchEvent, LaunchFailure, LaunchLimits, LaunchOutcome, LaunchPlan, LaunchRequest,
     LineDelivery, LoadedRole, Session, SessionDeps, launch_events, plan_launch,
 };
+use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
@@ -28,11 +29,16 @@ pub type TestResult = Result<(), FixtureError>;
 
 const GUARD: Duration = Duration::from_secs(170);
 
-pub async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
+pub async fn guard<T>(
+    work: impl Future<Output = Result<T, FixtureError>>,
+) -> Result<T, FixtureError> {
     guard_within(GUARD, work).await
 }
 
-pub async fn guard_within(limit: Duration, work: impl Future<Output = TestResult>) -> TestResult {
+pub async fn guard_within<T>(
+    limit: Duration,
+    work: impl Future<Output = Result<T, FixtureError>>,
+) -> Result<T, FixtureError> {
     tokio::time::timeout(limit, work)
         .await
         .map_err(|_| format!("the test hung for {} s", limit.as_secs()))?
@@ -72,6 +78,47 @@ pub fn engine_pem(cert: EngineCert) -> String {
         EngineCert::Key => ("PRIVATE KEY", KEY_MARKER),
     };
     format!("-----BEGIN {label}-----\n{body}\n-----END {label}-----\n")
+}
+
+pub struct EngineCertificateSet {
+    pub ca: String,
+    pub cert: String,
+    pub key: String,
+}
+
+impl std::fmt::Debug for EngineCertificateSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("EngineCertificateSet(<redacted>)")
+    }
+}
+
+impl EngineCertificateSet {
+    pub fn generate() -> Result<EngineCertificateSet, FixtureError> {
+        let key = KeyPair::generate()?;
+        let mut params = CertificateParams::new(vec!["localhost".to_owned()])?;
+        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let certificate = params.self_signed(&key)?;
+        let pem = certificate.pem();
+        Ok(EngineCertificateSet {
+            ca: pem.clone(),
+            cert: pem,
+            key: key.serialize_pem(),
+        })
+    }
+
+    pub fn certificate_for_key(key_pem: &str) -> Result<String, FixtureError> {
+        let key = KeyPair::from_pem(key_pem)?;
+        let params = CertificateParams::new(vec!["rotated.local".to_owned()])?;
+        Ok(params.self_signed(&key)?.pem())
+    }
+
+    pub fn pem(&self, cert: EngineCert) -> &str {
+        match cert {
+            EngineCert::Ca => &self.ca,
+            EngineCert::Cert => &self.cert,
+            EngineCert::Key => &self.key,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -164,8 +211,13 @@ impl Rig {
     pub async fn write_engine_certs(&self) -> Result<(), FixtureError> {
         let directory = self.engine_certs()?;
         tokio::fs::create_dir_all(directory.as_path()).await?;
+        let certificates = EngineCertificateSet::generate()?;
         for cert in EngineCert::ALL {
-            tokio::fs::write(directory.as_path().join(cert.file_name()), engine_pem(cert)).await?;
+            tokio::fs::write(
+                directory.as_path().join(cert.file_name()),
+                certificates.pem(cert),
+            )
+            .await?;
         }
         Ok(())
     }
@@ -271,7 +323,10 @@ impl Rig {
         let found = self
             .world
             .gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))))
+            .find_sandboxes(
+                &SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))),
+                &self.world.cancel,
+            )
             .await?;
         Ok(found
             .first()

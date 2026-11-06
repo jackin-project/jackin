@@ -470,10 +470,13 @@ impl Run {
         if !self.agent {
             return self
                 .session
-                .open_shell(ShellRequest {
-                    sandbox: self.sandbox.clone(),
-                    size,
-                })
+                .open_shell(
+                    ShellRequest {
+                        sandbox: self.sandbox.clone(),
+                        size,
+                    },
+                    &self.gone,
+                )
                 .await
                 .map(Terminal::Shell)
                 .map_err(|error| attach_fault(&error));
@@ -487,11 +490,14 @@ impl Run {
                 .map_err(|error| restart_fault(&error))?;
         }
         self.session
-            .attach(AttachRequest {
-                sandbox: self.sandbox.clone(),
-                size,
-                input: InputMode::Owner,
-            })
+            .attach(
+                AttachRequest {
+                    sandbox: self.sandbox.clone(),
+                    size,
+                    input: InputMode::Owner,
+                },
+                &self.gone,
+            )
             .await
             .map(Terminal::Main)
             .map_err(|error| attach_fault(&error))

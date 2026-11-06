@@ -655,6 +655,11 @@ async fn j15_docker_capability_faults() {
                 Box::new(|s| s.knobs().container_in_default_engine = true),
             ),
             (
+                "the host engine cannot list its containers",
+                "cannot list the containers of the host engine",
+                Box::new(|s| s.knobs().host_engine_unlistable = true),
+            ),
+            (
                 "the docker label is not the engine label",
                 "expected engine-2376-<16 hex digits of the engine CA>",
                 Box::new(|s| s.knobs().docker_label_off = true),

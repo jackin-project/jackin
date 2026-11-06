@@ -6,10 +6,11 @@ use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::{
     AccountEditError, AccountError, Gateways, LaunchError, LaunchStep, plan_account_edits,
 };
+use jackin_testkit::guard;
 use jackin_testkit::{Fault, Rig, World};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{ACCOUNT_ID, Home, TestResult, codex_account, guard, login_json, registered};
+use super::support::{ACCOUNT_ID, Home, TestResult, codex_account, login_json, registered};
 
 fn work() -> Result<AccountName, Box<dyn std::error::Error>> {
     Ok(AccountName::parse("work")?)
@@ -31,7 +32,8 @@ fn reset() -> GatewayError {
 async fn apply(world: &World, edit: ConfigEdit) -> Result<jackin_core::Config, AccountEditError> {
     let cancel = CancellationToken::new();
     let plan = plan_account_edits(&world.desk(), vec![edit], &cancel).await?;
-    plan.apply(&Gateways::single(world.session.clone())).await
+    plan.apply(&Gateways::single(world.session.clone()), &cancel)
+        .await
 }
 
 async fn login_account() -> Result<(Home, Account), Box<dyn std::error::Error>> {

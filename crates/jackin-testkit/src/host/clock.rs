@@ -20,6 +20,7 @@ pub struct FakeClock {
     state: Mutex<ClockState>,
     working: AtomicUsize,
     quiet: Notify,
+    advanced: Notify,
 }
 
 #[derive(Debug)]
@@ -37,7 +38,6 @@ impl Drop for Working {
 
 #[derive(Debug, Default)]
 struct ClockState {
-    offset: i32,
     elapsed: Duration,
     slept: Vec<Duration>,
     waiting: BTreeMap<u64, Duration>,
@@ -61,6 +61,7 @@ impl FakeClock {
             state: Mutex::new(ClockState::default()),
             working: AtomicUsize::new(0),
             quiet: Notify::new(),
+            advanced: Notify::new(),
         }
     }
 
@@ -71,24 +72,30 @@ impl FakeClock {
         }
     }
 
-    async fn until_quiet(&self) {
+    async fn until_quiet_or_elapsed(&self, deadline: Duration) -> bool {
         loop {
             let quiet = self.quiet.notified();
             let mut quiet = std::pin::pin!(quiet);
             quiet.as_mut().enable();
-            if self.working.load(Ordering::SeqCst) == 0 {
-                return;
+            let advanced = self.advanced.notified();
+            let mut advanced = std::pin::pin!(advanced);
+            advanced.as_mut().enable();
+            if locked(&self.state).elapsed >= deadline {
+                return true;
             }
-            quiet.await;
+            if self.working.load(Ordering::SeqCst) == 0 {
+                return false;
+            }
+            tokio::select! {
+                () = quiet.as_mut() => {}
+                () = advanced.as_mut() => {}
+            }
         }
     }
 
     pub fn advance(&self, by: Duration) {
         locked(&self.state).elapsed += by;
-    }
-
-    pub fn set_utc_offset(&self, seconds: i32) {
-        locked(&self.state).offset = seconds;
+        self.advanced.notify_waiters();
     }
 
     pub fn slept(&self) -> Vec<Duration> {
@@ -129,7 +136,7 @@ impl Clock for FakeClock {
     }
 
     fn utc_offset_secs(&self) -> i32 {
-        locked(&self.state).offset
+        0
     }
 
     async fn sleep(&self, duration: Duration) {
@@ -147,7 +154,12 @@ impl Clock for FakeClock {
         };
         let mut yields = 0_u32;
         loop {
-            self.until_quiet().await;
+            if self.until_quiet_or_elapsed(deadline).await {
+                let mut state = locked(&self.state);
+                state.elapsed = state.elapsed.max(deadline);
+                state.slept.push(duration);
+                return;
+            }
             tokio::task::yield_now().await;
             yields += 1;
             let mut state = locked(&self.state);

@@ -264,3 +264,18 @@ fn path_errors_show_the_rejected_text_as_plain_text() {
         assert_eq!(message.as_deref(), Some(expected));
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn host_path_refuses_a_path_that_is_not_utf8() {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let bytes = Path::new(OsStr::from_bytes(b"/home/caf\xe9/code"));
+    assert!(matches!(HostPath::parse(bytes), Err(PathError::NotUtf8(_))));
+    let cwd = HostPath::parse(Path::new("/w")).expect("absolute");
+    assert!(matches!(
+        HostPath::resolve(Path::new(OsStr::from_bytes(b"caf\xe9")), &cwd),
+        Err(PathError::NotUtf8(_))
+    ));
+}

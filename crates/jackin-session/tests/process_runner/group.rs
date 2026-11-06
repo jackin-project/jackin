@@ -13,7 +13,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    GROUP_ID, LOOP_DETACHED, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guarded,
+    GROUP_ID, LOOP_DETACHED, Scratch, TestResult, WAIT_FOR, assert_no_leftover, guard,
     wait_for_beat,
 };
 
@@ -112,7 +112,7 @@ async fn run_with_a_zombie(
 #[tokio::test]
 async fn a_clean_exit_that_leaves_only_a_zombie_in_the_group_is_ok_where_a_zombie_is_gone()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let (result, _scratch) = run_with_a_zombie(Ending::Release).await?;
         match (result, zombie_left()) {
             (Ok(output), None) => assert_eq!(output.status, ProcessStatus::Exited(0)),
@@ -131,7 +131,7 @@ async fn a_clean_exit_that_leaves_only_a_zombie_in_the_group_is_ok_where_a_zombi
 
 #[tokio::test]
 async fn a_timeout_that_leaves_only_a_zombie_in_the_group_keeps_the_timeout() -> TestResult {
-    guarded(async {
+    guard(async {
         let (result, _scratch) = run_with_a_zombie(Ending::TimeOut).await?;
         match result {
             Err(ProcessError::Timeout {
@@ -152,7 +152,7 @@ async fn a_timeout_that_leaves_only_a_zombie_in_the_group_keeps_the_timeout() ->
 
 #[tokio::test]
 async fn a_cancel_that_leaves_only_a_zombie_in_the_group_keeps_the_cancel() -> TestResult {
-    guarded(async {
+    guard(async {
         let (result, _scratch) = run_with_a_zombie(Ending::Cancel).await?;
         match result {
             Err(ProcessError::Cancelled { program, group }) => {
@@ -200,7 +200,7 @@ mod hostile_neighbours {
     #[tokio::test]
     async fn a_run_ends_ok_and_spares_neighbours_whose_names_try_to_confuse_the_scan() -> TestResult
     {
-        guarded(async {
+        guard(async {
             let scratch = Scratch::new()?;
             let body = format!("{WAIT_FOR}{LOOP_DETACHED}{GROUP_ID}wait_for \"$d/go\"\nexit 0\n");
             let spec = scratch.spec(&body, &[])?;

@@ -18,13 +18,15 @@ use tokio::sync::Barrier;
 use tokio_util::sync::CancellationToken;
 
 use super::exec_rpc::{
-    Step, exit_event, host_shell, host_shell_aborting, host_shell_gated, out_event, scripted,
+    Step, exit_event, host_shell, host_shell_extra_input, host_shell_gated_aborting,
+    host_shell_gated_first_after, host_shell_short_input_after, out_event, scripted,
 };
 use super::harness::{Env, WORKSPACE, connect, env, guard, wait_until};
 use super::server::ExecCtx;
-use super::support::{SANDBOX, add_sandbox, sandbox_name};
+use super::support::{SANDBOX, add_sandbox, every_window_has_a_symbol, sandbox_name};
 
-const SENTINEL: &str = "Zq7#Xv9!Lm2@Hk4wP";
+const SENTINEL: &str = "Zq#7X!v9@Lm$2H%k4";
+const _: () = assert!(every_window_has_a_symbol(SENTINEL));
 
 fn path(text: &str) -> SandboxPath {
     SandboxPath::parse(text).unwrap()
@@ -65,7 +67,8 @@ fn assert_no_sentinel(text: &str) {
 async fn run_program_returns_exit_code_stdout_stderr_and_forwards_stdin() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     let cancel = CancellationToken::new();
@@ -108,7 +111,8 @@ async fn touch_on_success_creates_the_marker_only_after_exit_zero_in_one_exec() 
     tokio::fs::create_dir_all(root.path().join("sandbox/.jackin"))
         .await
         .unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     let cancel = CancellationToken::new();
@@ -132,7 +136,8 @@ async fn touch_on_success_creates_the_marker_only_after_exit_zero_in_one_exec() 
 async fn program_timeout_and_cancel_stop_the_remote_process() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = Arc::new(connect(&env, WORKSPACE).await);
     let mut sleeper = run("/bin/sh", &["-c", "exec sleep 300"]);
@@ -179,7 +184,8 @@ async fn program_timeout_and_cancel_stop_the_remote_process() {
 async fn write_file_applies_mode_and_exact_bytes_and_keeps_content_off_argv() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     let mut content: Vec<u8> = (0..65_536_u32)
@@ -202,10 +208,10 @@ async fn write_file_applies_mode_and_exact_bytes_and_keeps_content_off_argv() {
             .await
             .unwrap();
     }
-    guard(gateway.write_file(&sandbox_name(SANDBOX), &file()))
+    guard(gateway.write_file(&sandbox_name(SANDBOX), &file(), &CancellationToken::new()))
         .await
         .unwrap();
-    guard(gateway.write_file(&sandbox_name(SANDBOX), &file()))
+    guard(gateway.write_file(&sandbox_name(SANDBOX), &file(), &CancellationToken::new()))
         .await
         .unwrap();
     assert_eq!(tokio::fs::read(&target).await.unwrap(), content);
@@ -218,18 +224,18 @@ async fn write_file_applies_mode_and_exact_bytes_and_keeps_content_off_argv() {
             .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
-    let mut entries = tokio::fs::read_dir(target.parent().unwrap()).await.unwrap();
-    let mut names = Vec::new();
-    while let Some(entry) = entries.next_entry().await.unwrap() {
-        names.push(entry.file_name().to_string_lossy().into_owned());
-    }
-    assert_eq!(names, vec!["auth.json".to_owned()]);
+    let directory = target.parent().unwrap();
+    let names = names_in(directory).await;
+    assert!(names.contains(&"auth.json".to_owned()), "{names:?}");
+    let namespace = writer_namespace(directory).await;
+    assert_eq!(names_in(&namespace).await.len(), 2);
+    assert_no_staging(&namespace).await;
     let fresh = SandboxFile {
         path: path("/sandbox/.fresh/nested/auth.json"),
         mode: FileMode(0o600),
         content: SecretBytes::new(b"fresh".to_vec()),
     };
-    guard(gateway.write_file(&sandbox_name(SANDBOX), &fresh))
+    guard(gateway.write_file(&sandbox_name(SANDBOX), &fresh, &CancellationToken::new()))
         .await
         .unwrap();
     assert_eq!(
@@ -237,6 +243,22 @@ async fn write_file_applies_mode_and_exact_bytes_and_keeps_content_off_argv() {
             .await
             .unwrap(),
         b"fresh"
+    );
+    let fresh_namespace = writer_namespace(&root.path().join("sandbox/.fresh/nested")).await;
+    assert_no_staging(&fresh_namespace).await;
+    let empty = SandboxFile {
+        path: path("/sandbox/.fresh/empty"),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(Vec::new()),
+    };
+    guard(gateway.write_file(&sandbox_name(SANDBOX), &empty, &CancellationToken::new()))
+        .await
+        .unwrap();
+    assert!(
+        tokio::fs::read(root.path().join("sandbox/.fresh/empty"))
+            .await
+            .unwrap()
+            .is_empty()
     );
     for start in &env.server.state().exec_starts {
         assert_no_sentinel(&format!("{start:?}"));
@@ -252,16 +274,40 @@ async fn names_in(directory: &std::path::Path) -> Vec<String> {
     names
 }
 
+async fn writer_namespace(directory: &std::path::Path) -> PathBuf {
+    let names = names_in(directory).await;
+    let namespaces: Vec<_> = names
+        .iter()
+        .filter(|name| name.starts_with(".jackin-write-"))
+        .collect();
+    assert_eq!(namespaces.len(), 1, "{names:?}");
+    directory.join(namespaces[0])
+}
+
+async fn maybe_writer_namespace(directory: &std::path::Path) -> Option<PathBuf> {
+    let names = names_in(directory).await;
+    let namespaces: Vec<_> = names
+        .iter()
+        .filter(|name| name.starts_with(".jackin-write-"))
+        .collect();
+    (namespaces.len() == 1).then(|| directory.join(namespaces[0]))
+}
+
+async fn assert_no_staging(directory: &std::path::Path) {
+    let names = names_in(directory).await;
+    assert!(
+        !names.iter().any(|name| name.starts_with("data.")),
+        "{names:?}"
+    );
+}
+
 #[tokio::test]
 async fn concurrent_writes_to_one_target_each_succeed_and_the_last_rename_wins() {
     const LEN: usize = 512 * 1024;
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell_gated(
-        root.path().to_path_buf(),
-        8,
-        Arc::new(Barrier::new(2)),
-    ));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     let file = |byte: u8| SandboxFile {
@@ -271,9 +317,14 @@ async fn concurrent_writes_to_one_target_each_succeed_and_the_last_rename_wins()
     };
     let name = sandbox_name(SANDBOX);
     let (a, b) = (file(0xAA), file(0xBB));
-    let (first, second) =
-        guard(async { tokio::join!(gateway.write_file(&name, &a), gateway.write_file(&name, &b)) })
-            .await;
+    let (cancel_a, cancel_b) = (CancellationToken::new(), CancellationToken::new());
+    let (first, second) = guard(async {
+        tokio::join!(
+            gateway.write_file(&name, &a, &cancel_a),
+            gateway.write_file(&name, &b, &cancel_b)
+        )
+    })
+    .await;
     first.unwrap();
     second.unwrap();
     let target = root.path().join("sandbox/.codex/auth.json");
@@ -291,17 +342,117 @@ async fn concurrent_writes_to_one_target_each_succeed_and_the_last_rename_wins()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
+    let names = names_in(target.parent().unwrap()).await;
+    assert!(names.contains(&"auth.json".to_owned()), "{names:?}");
+    let namespace = writer_namespace(target.parent().unwrap()).await;
+    assert_no_staging(&namespace).await;
+}
+
+#[tokio::test]
+async fn a_competing_write_preserves_active_staging_until_the_first_write_finishes() {
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    let reached = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(Barrier::new(2));
+    let second_started = Arc::new(tokio::sync::Notify::new());
+    let exec = host_shell_gated_first_after(
+        root.path().to_path_buf(),
+        2,
+        Arc::clone(&reached),
+        Arc::clone(&release),
+        Arc::clone(&second_started),
+    )
+    .await;
+    env.server.state().exec = Some(exec);
+    ready(&env);
+    let gateway = connect(&env, WORKSPACE).await;
+    let target = root.path().join("sandbox/.codex/auth.json");
+    tokio::fs::create_dir_all(target.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&target, b"old bytes").await.unwrap();
+    let sandbox = sandbox_name(SANDBOX);
+    let first = SandboxFile {
+        path: path("/sandbox/.codex/auth.json"),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(vec![0xaa; 192 * 1024]),
+    };
+    let second = SandboxFile {
+        path: path("/sandbox/.codex/auth.json"),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(vec![0xbb; 16 * 1024]),
+    };
+    let first_task = {
+        let gateway = gateway.clone();
+        let sandbox = sandbox.clone();
+        tokio::spawn(async move {
+            gateway
+                .write_file(&sandbox, &first, &CancellationToken::new())
+                .await
+        })
+    };
+    guard(reached.notified()).await;
+    let directory = target.parent().unwrap();
+    let namespace = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let Some(namespace) = maybe_writer_namespace(directory).await else {
+                tokio::task::yield_now().await;
+                continue;
+            };
+            let names = names_in(&namespace).await;
+            let Some(stage) = names.iter().find(|name| name.starts_with("data.")) else {
+                tokio::task::yield_now().await;
+                continue;
+            };
+            let bytes = tokio::fs::read(namespace.join(stage)).await.unwrap();
+            if !bytes.is_empty() {
+                break namespace;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the first write exposes its staging bytes");
+    let stage_name = names_in(&namespace)
+        .await
+        .into_iter()
+        .find(|name| name.starts_with("data."))
+        .expect("active staging exists");
+    let stage = namespace.join(&stage_name);
+    let partial = tokio::fs::read(&stage).await.unwrap();
+    assert!(!partial.is_empty());
+    assert!(partial.iter().all(|byte| *byte == 0xaa));
+
+    let second_task = {
+        let gateway = gateway.clone();
+        let sandbox = sandbox.clone();
+        tokio::spawn(async move {
+            gateway
+                .write_file(&sandbox, &second, &CancellationToken::new())
+                .await
+        })
+    };
+    guard(second_started.notified()).await;
+    assert!(!second_task.is_finished());
+    assert_eq!(tokio::fs::read(&stage).await.unwrap(), partial);
+    assert_eq!(tokio::fs::read(&target).await.unwrap(), b"old bytes");
+
+    release.wait().await;
+    guard(first_task).await.unwrap().unwrap();
+    guard(second_task).await.unwrap().unwrap();
     assert_eq!(
-        names_in(target.parent().unwrap()).await,
-        vec!["auth.json".to_owned()]
+        tokio::fs::read(&target).await.unwrap(),
+        vec![0xbb; 16 * 1024]
     );
+    assert_no_staging(&namespace).await;
 }
 
 #[tokio::test]
 async fn write_file_to_a_name_near_the_filesystem_limit_succeeds() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     let base = "a".repeat(240);
@@ -310,7 +461,7 @@ async fn write_file_to_a_name_near_the_filesystem_limit_succeeds() {
         mode: FileMode(0o600),
         content: SecretBytes::new(b"near the limit".to_vec()),
     };
-    guard(gateway.write_file(&sandbox_name(SANDBOX), &file))
+    guard(gateway.write_file(&sandbox_name(SANDBOX), &file, &CancellationToken::new()))
         .await
         .unwrap();
     let directory = root.path().join("sandbox");
@@ -318,14 +469,133 @@ async fn write_file_to_a_name_near_the_filesystem_limit_succeeds() {
         tokio::fs::read(directory.join(&base)).await.unwrap(),
         b"near the limit"
     );
-    assert_eq!(names_in(&directory).await, vec![base]);
+    assert!(names_in(&directory).await.contains(&base));
+    let namespace = writer_namespace(&directory).await;
+    assert_no_staging(&namespace).await;
+}
+
+#[tokio::test]
+async fn write_file_refuses_unsafe_namespace_entries_and_preserves_unknown_files() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+
+    let env = env().await;
+    let root = TempDir::new().unwrap();
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
+    ready(&env);
+    let gateway = connect(&env, WORKSPACE).await;
+    let sandbox = sandbox_name(SANDBOX);
+    let target = "/sandbox/.codex/auth.json";
+    guard(gateway.write_file(&sandbox, &secret_file(target), &CancellationToken::new()))
+        .await
+        .unwrap();
+    let target_directory = root.path().join("sandbox/.codex");
+    let namespace = writer_namespace(&target_directory).await;
+    let victim = root.path().join("external-victim");
+    tokio::fs::write(&victim, b"untouched").await.unwrap();
+    tokio::fs::set_permissions(&victim, std::fs::Permissions::from_mode(0o600))
+        .await
+        .unwrap();
+
+    tokio::fs::remove_file(namespace.join("lock"))
+        .await
+        .unwrap();
+    symlink(&victim, namespace.join("lock")).unwrap();
+    let error =
+        guard(gateway.write_file(&sandbox, &secret_file(target), &CancellationToken::new()))
+            .await
+            .unwrap_err();
+    assert!(matches!(error, GatewayError::Protocol { .. }), "{error:?}");
+    assert_eq!(tokio::fs::read(&victim).await.unwrap(), b"untouched");
+    tokio::fs::remove_file(namespace.join("lock"))
+        .await
+        .unwrap();
+
+    std::fs::hard_link(&victim, namespace.join("lock")).unwrap();
+    let error =
+        guard(gateway.write_file(&sandbox, &secret_file(target), &CancellationToken::new()))
+            .await
+            .unwrap_err();
+    assert!(matches!(error, GatewayError::Protocol { .. }), "{error:?}");
+    assert_eq!(tokio::fs::read(&victim).await.unwrap(), b"untouched");
+    tokio::fs::remove_file(namespace.join("lock"))
+        .await
+        .unwrap();
+
+    let staged = namespace.join("data.0000000000000000");
+    symlink(&victim, &staged).unwrap();
+    let error =
+        guard(gateway.write_file(&sandbox, &secret_file(target), &CancellationToken::new()))
+            .await
+            .unwrap_err();
+    assert!(matches!(error, GatewayError::Protocol { .. }), "{error:?}");
+    assert_eq!(tokio::fs::read(&victim).await.unwrap(), b"untouched");
+    tokio::fs::remove_file(&staged).await.unwrap();
+
+    std::fs::hard_link(&victim, &staged).unwrap();
+    let error =
+        guard(gateway.write_file(&sandbox, &secret_file(target), &CancellationToken::new()))
+            .await
+            .unwrap_err();
+    assert!(matches!(error, GatewayError::Protocol { .. }), "{error:?}");
+    assert_eq!(tokio::fs::read(&victim).await.unwrap(), b"untouched");
+    tokio::fs::remove_file(&staged).await.unwrap();
+
+    let identity = namespace.join("identity");
+    let identity_bytes = tokio::fs::read(&identity).await.unwrap();
+    tokio::fs::write(&identity, b"a different target identity")
+        .await
+        .unwrap();
+    let mismatched_identity = tokio::fs::read(&identity).await.unwrap();
+    let error =
+        guard(gateway.write_file(&sandbox, &secret_file(target), &CancellationToken::new()))
+            .await
+            .unwrap_err();
+    assert!(matches!(error, GatewayError::Protocol { .. }), "{error:?}");
+    assert_eq!(tokio::fs::read(&victim).await.unwrap(), b"untouched");
+    assert_eq!(
+        tokio::fs::read(&identity).await.unwrap(),
+        mismatched_identity
+    );
+    tokio::fs::write(&identity, identity_bytes).await.unwrap();
+
+    let unknown = namespace.join("operator-note");
+    let unrecognized_stage = namespace.join("data.not-a-stage-id");
+    tokio::fs::write(&unknown, b"preserve").await.unwrap();
+    tokio::fs::write(&unrecognized_stage, b"preserve too")
+        .await
+        .unwrap();
+    guard(gateway.write_file(&sandbox, &secret_file(target), &CancellationToken::new()))
+        .await
+        .unwrap();
+    assert_eq!(tokio::fs::read(&victim).await.unwrap(), b"untouched");
+    assert_eq!(tokio::fs::read(&unknown).await.unwrap(), b"preserve");
+    assert_eq!(
+        tokio::fs::read(&unrecognized_stage).await.unwrap(),
+        b"preserve too"
+    );
+    assert_eq!(
+        tokio::fs::read(root.path().join("sandbox/.codex/auth.json"))
+            .await
+            .unwrap(),
+        SENTINEL.as_bytes()
+    );
 }
 
 #[tokio::test]
 async fn interrupted_write_leaves_the_old_file_intact() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell_aborting(root.path().to_path_buf(), Some(2)));
+    let reached = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(Barrier::new(2));
+    let exec = host_shell_gated_aborting(
+        root.path().to_path_buf(),
+        2,
+        Arc::clone(&reached),
+        Arc::clone(&release),
+    )
+    .await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     let target = root.path().join("sandbox/.codex/auth.json");
@@ -338,15 +608,91 @@ async fn interrupted_write_leaves_the_old_file_intact() {
         mode: FileMode(0o600),
         content: SecretBytes::new(vec![7_u8; 200 * 1024]),
     };
-    let error = guard(gateway.write_file(&sandbox_name(SANDBOX), &file))
-        .await
-        .unwrap_err();
+    let sandbox = sandbox_name(SANDBOX);
+    let cancel = CancellationToken::new();
+    let write = gateway.write_file(&sandbox, &file, &cancel);
+    tokio::pin!(write);
+    tokio::select! {
+        biased;
+        () = reached.notified() => {}
+        result = &mut write => panic!("write ended before the abort gate: {result:?}"),
+    }
+    let directory = target.parent().unwrap();
+    let (namespace, stage_name, partial) = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let Some(namespace) = maybe_writer_namespace(directory).await else {
+                tokio::task::yield_now().await;
+                continue;
+            };
+            let names = names_in(&namespace).await;
+            let Some(stage_name) = names.iter().find(|name| name.starts_with("data.")) else {
+                tokio::task::yield_now().await;
+                continue;
+            };
+            let partial = tokio::fs::read(namespace.join(stage_name)).await.unwrap();
+            if !partial.is_empty() {
+                break (namespace, stage_name.clone(), partial);
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("partial temp file becomes observable");
+    assert!(partial.len() < 200 * 1024);
+    release.wait().await;
+    let error = guard(write).await.unwrap_err();
     assert!(
         matches!(error, GatewayError::Unreachable { .. }),
         "{error:?}"
     );
     guard(env.server.shared.child_killed.notified()).await;
     assert_eq!(tokio::fs::read(&target).await.unwrap(), b"old bytes");
+    assert!(names_in(&namespace).await.contains(&stage_name));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
+    let retry = secret_file("/sandbox/.codex/auth.json");
+    guard(gateway.write_file(&sandbox_name(SANDBOX), &retry, &CancellationToken::new()))
+        .await
+        .unwrap();
+    assert_eq!(tokio::fs::read(&target).await.unwrap(), SENTINEL.as_bytes());
+    assert_no_staging(&namespace).await;
+}
+
+#[tokio::test]
+async fn short_and_oversized_input_streams_leave_the_old_target_unchanged() {
+    for oversized in [false, true] {
+        let env = env().await;
+        let root = TempDir::new().unwrap();
+        let exec = if oversized {
+            host_shell_extra_input(root.path().to_path_buf()).await
+        } else {
+            host_shell_short_input_after(root.path().to_path_buf(), 1).await
+        };
+        env.server.state().exec = Some(exec);
+        ready(&env);
+        let gateway = connect(&env, WORKSPACE).await;
+        let target = root.path().join("sandbox/.codex/auth.json");
+        tokio::fs::create_dir_all(target.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&target, b"old target").await.unwrap();
+        let file = SandboxFile {
+            path: path("/sandbox/.codex/auth.json"),
+            mode: FileMode(0o600),
+            content: SecretBytes::new(vec![0x45; 128 * 1024]),
+        };
+        let error =
+            guard(gateway.write_file(&sandbox_name(SANDBOX), &file, &CancellationToken::new()))
+                .await
+                .unwrap_err();
+        assert!(
+            matches!(&error, GatewayError::Protocol { message } if message.contains("exit code 1")),
+            "{error:?}"
+        );
+        assert_eq!(tokio::fs::read(&target).await.unwrap(), b"old target");
+        let namespace = writer_namespace(target.parent().unwrap()).await;
+        assert_no_staging(&namespace).await;
+    }
 }
 
 fn secret_file(target: &str) -> SandboxFile {
@@ -371,9 +717,13 @@ async fn a_failed_write_names_the_path_and_the_exit_code_and_carries_no_sandbox_
         ready(&env);
         let gateway = connect(&env, WORKSPACE).await;
         let target = "/sandbox/.jackin/docker/key.pem";
-        let error = guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file(target)))
-            .await
-            .unwrap_err();
+        let error = guard(gateway.write_file(
+            &sandbox_name(SANDBOX),
+            &secret_file(target),
+            &CancellationToken::new(),
+        ))
+        .await
+        .unwrap_err();
         match (code, &error) {
             (73, GatewayError::UnsafePath { path }) => assert_eq!(path.as_str(), target),
             (1, GatewayError::Protocol { message }) => {
@@ -394,7 +744,8 @@ async fn a_failed_write_names_the_path_and_the_exit_code_and_carries_no_sandbox_
 async fn write_file_refuses_a_symlinked_directory_or_a_directory_target_and_replaces_a_link_leaf() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     let sandbox = root.path().join("sandbox");
@@ -403,8 +754,12 @@ async fn write_file_refuses_a_symlinked_directory_or_a_directory_target_and_repl
     let refused = |target: &'static str, watched: PathBuf| {
         let gateway = &gateway;
         async move {
-            let result =
-                guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file(target))).await;
+            let result = guard(gateway.write_file(
+                &sandbox_name(SANDBOX),
+                &secret_file(target),
+                &CancellationToken::new(),
+            ))
+            .await;
             assert_eq!(
                 names_in(&watched).await,
                 Vec::<String>::new(),
@@ -454,9 +809,13 @@ async fn write_file_refuses_a_symlinked_directory_or_a_directory_target_and_repl
     let victim = project.join("victim");
     tokio::fs::write(&victim, b"untouched").await.unwrap();
     link("../../project/victim", leaf.clone());
-    guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file(key)))
-        .await
-        .unwrap();
+    guard(gateway.write_file(
+        &sandbox_name(SANDBOX),
+        &secret_file(key),
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     let text = |bytes: Vec<u8>| String::from_utf8(bytes).unwrap();
     assert_eq!(text(tokio::fs::read(&victim).await.unwrap()), "untouched");
     assert_eq!(text(tokio::fs::read(&leaf).await.unwrap()), SENTINEL);
@@ -467,23 +826,28 @@ async fn write_file_refuses_a_symlinked_directory_or_a_directory_target_and_repl
             .is_symlink()
     );
     assert_eq!(names_in(&project).await, vec!["victim".to_owned()]);
-    assert_eq!(
-        names_in(leaf.parent().unwrap()).await,
-        vec!["key.pem".to_owned()]
-    );
+    let names = names_in(leaf.parent().unwrap()).await;
+    assert!(names.contains(&"key.pem".to_owned()), "{names:?}");
+    let namespace = writer_namespace(leaf.parent().unwrap()).await;
+    assert_no_staging(&namespace).await;
 }
 
 #[tokio::test]
 async fn write_file_refuses_a_target_outside_the_sandbox_home_without_running_anything() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     for target in ["/tmp/key.pem", "/sandbox", "/sandboxes/key.pem", "/"] {
-        let error = guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file(target)))
-            .await
-            .unwrap_err();
+        let error = guard(gateway.write_file(
+            &sandbox_name(SANDBOX),
+            &secret_file(target),
+            &CancellationToken::new(),
+        ))
+        .await
+        .unwrap_err();
         assert!(
             matches!(error, GatewayError::InvalidArgument { ref field, .. } if field == "path"),
             "{target}: {error:?}"
@@ -496,7 +860,8 @@ async fn write_file_refuses_a_target_outside_the_sandbox_home_without_running_an
 async fn read_files_returns_one_entry_per_path_and_none_for_missing() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     let base = root.path().join("sandbox");
@@ -516,9 +881,10 @@ async fn read_files_returns_one_entry_per_path_and_none_for_missing() {
         "/sandbox/a",
     ]
     .map(path);
-    let files = guard(gateway.read_files(&sandbox_name(SANDBOX), &paths))
-        .await
-        .unwrap();
+    let files =
+        guard(gateway.read_files(&sandbox_name(SANDBOX), &paths, &CancellationToken::new()))
+            .await
+            .unwrap();
     assert_eq!(
         files,
         vec![
@@ -711,7 +1077,8 @@ fn emit(stdout: usize, stderr: usize, then: &str) -> ProgramRun {
 async fn collected_output_is_capped_per_stream() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     ready(&env);
     let gateway = connect(&env, WORKSPACE).await;
     let cancel = CancellationToken::new();
@@ -751,9 +1118,13 @@ async fn collected_output_is_capped_per_stream() {
     tokio::fs::write(&big, vec![0_u8; 17 * 1024 * 1024])
         .await
         .unwrap();
-    let error = guard(gateway.read_files(&sandbox_name(SANDBOX), &[path("/sandbox/big.bin")]))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.read_files(
+        &sandbox_name(SANDBOX),
+        &[path("/sandbox/big.bin")],
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(
         matches!(
             error,

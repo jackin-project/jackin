@@ -28,12 +28,20 @@ pub(crate) async fn target(rig: &Rig, id: u8) -> Result<AttachTarget, Box<dyn Er
 
 pub(crate) async fn owner(rig: &Rig, id: u8) -> Result<AttachedTerminal, Box<dyn Error>> {
     let request = AttachRequest::owner(target(rig, id).await?, size()?);
-    Ok(rig.world.session.attach(request).await?)
+    Ok(rig
+        .world
+        .session
+        .attach(request, &tokio_util::sync::CancellationToken::new())
+        .await?)
 }
 
 pub(crate) async fn viewer(rig: &Rig, id: u8) -> Result<AttachedTerminal, Box<dyn Error>> {
     let request = AttachRequest::viewer(rig.sandbox_name(id)?, size()?);
-    Ok(rig.world.session.attach(request).await?)
+    Ok(rig
+        .world
+        .session
+        .attach(request, &tokio_util::sync::CancellationToken::new())
+        .await?)
 }
 
 pub(crate) async fn events(
@@ -99,6 +107,7 @@ pub(crate) async fn set_state(
                 mode: FileMode(0o600),
                 content: SecretBytes::new(text.as_bytes().to_vec()),
             },
+            &rig.world.cancel,
         )
         .await?;
     Ok(())

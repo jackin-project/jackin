@@ -63,7 +63,7 @@ async fn create_find_and_delete_round_trip_the_sandbox_state() -> TestResult {
         );
 
         let by_launch = fake
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch)))
+            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch)), &tokio_util::sync::CancellationToken::new())
             .await?;
         assert_eq!(by_launch.len(), 1);
         assert_eq!(by_launch[0].name, name);
@@ -72,17 +72,17 @@ async fn create_find_and_delete_round_trip_the_sandbox_state() -> TestResult {
             *spec.labels()
         );
         let managed = fake
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed()))
+            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed()), &tokio_util::sync::CancellationToken::new())
             .await?;
         assert_eq!(managed.len(), 1);
         let other = LaunchId::generate()?;
         let none = fake
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&other)))
+            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&other)), &tokio_util::sync::CancellationToken::new())
             .await?;
         assert!(none.is_empty());
         let missing = spec_with(&other, IMAGE, Vec::new(), sh("sleep 3600")?)?;
         let none = fake
-            .find_sandboxes(&SandboxQuery::Name(missing.name().clone()))
+            .find_sandboxes(&SandboxQuery::Name(missing.name().clone()), &tokio_util::sync::CancellationToken::new())
             .await?;
         assert!(none.is_empty());
 
@@ -195,19 +195,20 @@ async fn providers_profiles_and_detail_follow_the_gateway_contract() -> TestResu
         );
         assert_eq!(fake.providers(), vec![provider.clone()]);
         let handle = fake.sandboxes();
-        fake.delete_sandbox(spec.name()).await?;
-        fake.delete_provider(&provider).await?;
-        assert_eq!(fake.provider_state(&provider).await?, ProviderState::Absent);
-        fake.delete_provider(&provider).await?;
         for secret in [ACCESS, REFRESH] {
             for text in [
                 format!("{fake:?}"),
                 format!("{handle:?}"),
+                format!("{:?}", fake.provider(&provider)),
                 early_error.clone(),
             ] {
                 assert!(!leaks(&text, secret), "{secret} leaked into {text}");
             }
         }
+        fake.delete_sandbox(spec.name()).await?;
+        fake.delete_provider(&provider).await?;
+        assert_eq!(fake.provider_state(&provider).await?, ProviderState::Absent);
+        fake.delete_provider(&provider).await?;
         Ok(())
     })
     .await
@@ -226,12 +227,19 @@ async fn every_gateway_call_yields_to_the_scheduler_before_it_acts() -> TestResu
         let sandbox = spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), sh("sleep 3600")?)?;
         let selector =
             SandboxQuery::Labels(LabelSelector::launch(&sandbox.labels().planned.launch));
-        assert!(pending_once(fake.find_sandboxes(&selector)));
+        assert!(pending_once(fake.find_sandboxes(
+            &selector,
+            &tokio_util::sync::CancellationToken::new()
+        )));
         assert!(pending_once(fake.create_sandbox(&sandbox)));
         assert!(fake.sandboxes().is_empty());
         fake.create_sandbox(&sandbox).await?;
         let name = observe(&fake, sandbox.name()).await?.name;
-        assert!(pending_once(fake.read_files(&name, &[])));
+        assert!(pending_once(fake.read_files(
+            &name,
+            &[],
+            &tokio_util::sync::CancellationToken::new()
+        )));
         assert!(pending_once(
             fake.provider_state(&ProviderName::parse("p")?)
         ));

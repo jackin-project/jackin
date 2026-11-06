@@ -4,7 +4,6 @@
 use std::cell::Cell;
 use std::error::Error;
 use std::fs;
-use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -24,33 +23,10 @@ pub(crate) const LOOP_DETACHED: &str = "d=$1\n( i=0; while [ \"$i\" -lt 600 ]; d
 
 pub(crate) const LOOP_HOLDING: &str = "d=$1\n( i=0; while [ \"$i\" -lt 600 ]; do echo x >> \"$d/beat\"; i=$((i+1)); sleep 0.05; done ) &\n";
 
-const GUARD: Duration = Duration::from_secs(30);
 const RUN_LIMIT: Duration = Duration::from_secs(10);
-const HEAVY_GUARD: Duration = Duration::from_secs(120);
-const HEAVY_RUN_LIMIT: Duration = Duration::from_secs(60);
+const HEAVY_RUN_LIMIT: Duration = Duration::from_secs(160);
 
-pub(crate) async fn guarded<F>(future: F) -> TestResult
-where
-    F: Future<Output = TestResult>,
-{
-    bounded(GUARD, future).await
-}
-
-pub(crate) async fn guarded_heavy<F>(future: F) -> TestResult
-where
-    F: Future<Output = TestResult>,
-{
-    bounded(HEAVY_GUARD, future).await
-}
-
-async fn bounded<F>(limit: Duration, future: F) -> TestResult
-where
-    F: Future<Output = TestResult>,
-{
-    timeout(limit, future)
-        .await
-        .map_err(|_| format!("the test exceeded its {} s guard", limit.as_secs()))?
-}
+pub(crate) use jackin_testkit::guard;
 
 pub(crate) async fn next_line(
     rx: &mut Receiver<OutputLine>,

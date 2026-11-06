@@ -4,6 +4,7 @@
 use std::num::NonZeroU8;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 use jackin_core::{
     Clock, Config, ConfigEdit, ConfigError, ConfigStore, EnvScope, FileSystem, GatewayName,
@@ -30,6 +31,7 @@ pub struct World {
     pub clock: Arc<FakeClock>,
     pub fs: Arc<dyn FileSystem>,
     pub runner: Arc<TestRunner>,
+    pub cancel: CancellationToken,
     pub session: Session,
     pub roles: Arc<RoleCatalog>,
     pub config: ConfigStore,
@@ -99,7 +101,7 @@ impl World {
             })
             .collect();
         edits.extend(config.accounts().cloned().map(ConfigEdit::AddAccount));
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &self.cancel).await?;
         Ok(())
     }
 
@@ -111,7 +113,7 @@ impl World {
                 workspace: workspace.clone(),
             })
             .collect();
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &self.cancel).await?;
         Ok(())
     }
 
@@ -183,7 +185,7 @@ impl World {
                 value: Some(value.clone()),
             });
         }
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &self.cancel).await?;
         Ok(())
     }
 }
@@ -213,6 +215,7 @@ impl WorldBuilder {
         let clock = Arc::new(FakeClock::new());
         gateway.link_clock(Arc::clone(&clock));
         let runner = Arc::new(TestRunner::with_home(&home));
+        let cancel = CancellationToken::new();
         let fs: Arc<dyn FileSystem> =
             Arc::new(WorkingFs::new(Arc::new(StdFileSystem::default()), &clock));
         let gateway_port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&gateway);
@@ -246,6 +249,7 @@ impl WorldBuilder {
             clock,
             fs,
             runner,
+            cancel,
             session,
             cache_dir,
             home,

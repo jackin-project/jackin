@@ -5,7 +5,6 @@ use std::error::Error;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
@@ -29,14 +28,8 @@ use tokio_util::sync::CancellationToken;
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const PLACEHOLDER: &str = "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN";
-const GUARD: Duration = Duration::from_secs(170);
+pub(crate) use jackin_testkit::guard;
 const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
-
-pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
-    tokio::time::timeout(GUARD, work)
-        .await
-        .map_err(|_| format!("the test hung for {} s", GUARD.as_secs()))?
-}
 
 #[derive(Clone, Copy)]
 pub(crate) enum Point {
@@ -291,7 +284,10 @@ impl Rig {
         let found = self
             .world
             .gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))))
+            .find_sandboxes(
+                &SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))),
+                &CancellationToken::new(),
+            )
             .await?;
         found
             .first()

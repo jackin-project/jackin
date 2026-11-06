@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::Command;
@@ -14,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use crate::providers::openrouter_serve;
 use crate::support::{
     AUTH_CHATGPT, CODEX_PATH, TestResult, UsageHarness, account, codex_body, codex_login,
-    codex_route, guard, unavailable, windows_of,
+    codex_route, unavailable, windows_of,
 };
 
 const TOKEN: &str = "SECRET_TOKEN_FILE";

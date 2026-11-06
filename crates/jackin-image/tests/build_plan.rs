@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Sha256;
-use jackin_image::ContextEntry;
+use jackin_image::{ContextEntry, ImageError};
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs;
@@ -23,6 +23,10 @@ type TestResult = Result<(), Box<dyn Error>>;
 const CONSTRUCT_DOCKERFILE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/images/construct/Dockerfile"
+));
+const WRITE_FILE_C: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/images/construct/write-file.c"
 ));
 const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -101,6 +105,7 @@ fn base() -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: Vec::new(),
         rebuild: Rebuild::No,
     })
 }
@@ -321,9 +326,24 @@ fn build_contexts_hold_exactly_the_documented_files() -> TestResult {
         let label = format!("{declared_setup:?} {declared_preflight:?}");
 
         let construct = materialized(plan.construct_build())?;
-        assert_eq!(construct.len(), 1, "{label}");
-        assert_eq!(construct[0].name, "Dockerfile", "{label}");
-        assert_eq!(construct[0].bytes, CONSTRUCT_DOCKERFILE, "{label}");
+        assert_eq!(construct.len(), 2, "{label}");
+        assert_eq!(
+            construct
+                .iter()
+                .map(|file| file.name.as_str())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["Dockerfile", "write-file.c"]),
+            "{label}"
+        );
+        let construct_files: BTreeMap<&str, &[u8]> = construct
+            .iter()
+            .map(|file| (file.name.as_str(), file.bytes.as_slice()))
+            .collect();
+        assert_eq!(
+            construct_files["Dockerfile"], CONSTRUCT_DOCKERFILE,
+            "{label}"
+        );
+        assert_eq!(construct_files["write-file.c"], WRITE_FILE_C, "{label}");
 
         let built = plan.final_builds(&construct_id()?);
         let ContextSource::Entries(listed) = &built.role.context else {
@@ -411,6 +431,56 @@ fn derived_args_with(
     assert!(build_arg_map(&plan.construct_build().args)?.is_empty());
     assert!(build_arg_map(&built.role.args)?.is_empty());
     build_arg_map(&built.derived.args)
+}
+
+#[test]
+fn the_read_write_paths_of_the_policy_reach_the_derived_build_only_when_safe() -> TestResult {
+    let derived =
+        |paths: &[&str]| -> Result<Result<BTreeMap<String, String>, ImageError>, Box<dyn Error>> {
+            let mut request = base()?;
+            request.read_write = paths.iter().map(|path| (*path).to_owned()).collect();
+            Ok(match ImagePlan::new(&request) {
+                Ok(plan) => Ok(build_arg_map(
+                    &plan.final_builds(&construct_id()?).derived.args,
+                )?),
+                Err(error) => Err(error),
+            })
+        };
+    let none = derived(&[])?.map_err(|error| error.to_string())?;
+    assert!(!none.contains_key("READ_WRITE_PATHS"));
+    let some = derived(&["/sandbox", "/tmp"])?.map_err(|error| error.to_string())?;
+    assert_eq!(some["READ_WRITE_PATHS"], "/sandbox:/tmp");
+    for unsafe_path in ["/sand box", "/a:b", "/x\ny", "relative", "/semi;colon"] {
+        assert!(
+            matches!(
+                derived(&[unsafe_path])?,
+                Err(ImageError::ReadWritePath { .. })
+            ),
+            "{unsafe_path:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn derived_scan_stage_hands_the_policy_read_write_paths_to_the_scan() -> TestResult {
+    let all = stages(&instructions(derived_text()?));
+    let scan = stage_named(&all, "scan")?;
+    assert!(
+        scan.lines.iter().any(|line| line == "ARG READ_WRITE_PATHS"),
+        "{:?}",
+        scan.lines
+    );
+    let run = scan
+        .lines
+        .iter()
+        .find(|line| line.starts_with("RUN "))
+        .ok_or("no scan RUN")?;
+    assert!(
+        run.contains(r#"for rw in $READ_WRITE_PATHS; do set -- "$@" --read-write "$rw"; done"#),
+        "{run}"
+    );
+    Ok(())
 }
 
 #[test]
@@ -557,7 +627,8 @@ fn derived_dockerfile_installs_what_the_codex_row_describes() -> TestResult {
     let spec = Agent::Codex.spec();
     let text = derived_text()?;
     let lines = instructions(text);
-    let wanted: BTreeSet<String> = ARG_NAMES.iter().map(|name| (*name).to_owned()).collect();
+    let mut wanted: BTreeSet<String> = ARG_NAMES.iter().map(|name| (*name).to_owned()).collect();
+    wanted.insert("READ_WRITE_PATHS".to_owned());
     assert_eq!(declared_args(&lines), wanted, "declared ARG names");
     let adds = archive_stage_adds(&lines);
     for target in spec.install.targets {
@@ -853,6 +924,7 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
         .collect();
     let mut protected = vec![
         "/usr/local/bin/jackin-start".to_owned(),
+        "/usr/local/lib/jackin/write-file".to_owned(),
         sandbox_layout::hook_path(HookKind::Setup)
             .as_str()
             .to_owned(),
@@ -898,6 +970,7 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
             "/etc/codex/rules",
             "/etc/codex/agents",
             "/etc/codex/skills",
+            "/sandbox/.codex",
         ],
         "paths the scan must find empty"
     );
@@ -958,7 +1031,7 @@ fn construct_dockerfile_removes_setuid_and_rejects_file_capabilities() -> TestRe
             .position(|line| line.contains(needle))
             .ok_or_else(|| format!("no instruction contains {needle:?}"))
     };
-    let install = &lines[position("apt-get install")?];
+    let install = &lines[position("libcap2-bin")?];
     let packages: BTreeSet<&str> = install.split_whitespace().collect();
     assert!(packages.contains("libcap2-bin"), "libcap2-bin in {install}");
     let users = position("useradd")?;
@@ -1296,9 +1369,11 @@ fn copy_destinations(stage: &Stage, bin_dir: &str) -> Result<Vec<String>, Box<dy
             .copied()
             .partition(|word| word.starts_with("--"));
         assert!(
-            flags
-                .iter()
-                .all(|flag| !flag.starts_with("--from=") || *flag == "--from=codex"),
+            flags.iter().all(|flag| {
+                !flag.starts_with("--from=")
+                    || *flag == "--from=codex"
+                    || *flag == "--from=construct"
+            }),
             "the trusted stage copies from a stage other than codex: {line}"
         );
         let (dest, sources) = paths.split_last().ok_or("a COPY without paths")?;
@@ -1314,7 +1389,7 @@ fn copy_destinations(stage: &Stage, bin_dir: &str) -> Result<Vec<String>, Box<dy
 }
 
 #[test]
-fn the_scan_compares_the_six_protected_files_with_copies_the_role_cannot_write() -> TestResult {
+fn the_scan_compares_protected_files_with_copies_the_role_cannot_write() -> TestResult {
     let spec = Agent::Codex.spec();
     let bin_dir = parent(spec.binary.as_str());
     let all = stages(&instructions(&planned_dockerfile()?));
@@ -1334,6 +1409,7 @@ fn the_scan_compares_the_six_protected_files_with_copies_the_role_cannot_write()
     let destinations = copy_destinations(trusted, bin_dir)?;
     let mut protected = vec![
         "/usr/local/bin/jackin-start".to_owned(),
+        "/usr/local/lib/jackin/write-file".to_owned(),
         sandbox_layout::hook_path(HookKind::Setup)
             .as_str()
             .to_owned(),

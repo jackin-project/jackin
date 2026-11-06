@@ -67,5 +67,6 @@ pub struct ImageRequest {
     pub platform: Platform,
     pub builder: BuilderName,
     pub docker: DockerLayer,
+    pub read_write: Vec<String>,
     pub rebuild: Rebuild,
 }

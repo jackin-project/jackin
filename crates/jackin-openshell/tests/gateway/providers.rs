@@ -11,9 +11,11 @@ use tonic::Code;
 
 use super::harness::{WORKSPACE, connect, env, guard};
 use super::server::{Fault, State};
+use super::support::every_window_has_a_symbol;
 
-const ACCESS: &str = "Zq7#Xv9!Lm2@Hk4wP";
-const REFRESH: &str = "Rt5$Bn8%Qw3&Jd6yS";
+const ACCESS: &str = "Zq#7X!v9@Lm$2H%k4";
+const REFRESH: &str = "Rt&5B$n8%Qw#3J!d6";
+const _: () = assert!(every_window_has_a_symbol(ACCESS) && every_window_has_a_symbol(REFRESH));
 const ACCOUNT_ID: &str = "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9";
 const PROVIDER: &str = "jackin-work-codex";
 
@@ -208,10 +210,19 @@ async fn put_provider_creates_updates_and_configures_refresh() {
         .unwrap_err();
     assert_no_secret(&error.to_string());
     assert_no_secret(&format!("{error:?}"));
+    let name = ProviderName::parse(PROVIDER).unwrap();
+    assert_eq!(
+        guard(gateway.provider_state(&name)).await.unwrap(),
+        ProviderState::Unrefreshed
+    );
     env.server.state().faults.clear();
     guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
         .await
         .unwrap();
+    assert_eq!(
+        guard(gateway.provider_state(&name)).await.unwrap(),
+        ProviderState::Present
+    );
     let state = env.server.state();
     assert_eq!(
         state.providers[&provider_key].credentials[keys.access_token],

@@ -13,8 +13,8 @@ use openshell_sdk::raw::proto::{
 use tonic::{Request, Response, Status};
 
 use super::server::{
-    Broken, Fake, Key, State, parse_selector, scope_name, validate_label_key, validate_label_value,
-    validate_sandbox_name,
+    Broken, Fake, Key, Paging, State, parse_selector, scope_name, validate_label_key,
+    validate_label_value, validate_sandbox_name,
 };
 
 pub(crate) const CREATED_MILLIS: i64 = 1_700_000_000_000;
@@ -226,7 +226,9 @@ impl Fake {
             .collect();
         let start = page_of(&request.page_token);
         let end = (start + state.page_cap).min(matching.len());
-        let next = if end < matching.len() {
+        let next = if state.paging == Paging::Cycling {
+            cycled(&request.page_token)
+        } else if end < matching.len() {
             end.to_string()
         } else {
             String::new()
@@ -254,7 +256,9 @@ impl Fake {
             .collect();
         let start = page_of(&request.page_token);
         let end = (start + state.page_cap).min(providers.len());
-        let next = if end < providers.len() {
+        let next = if state.paging == Paging::Cycling {
+            cycled(&request.page_token)
+        } else if end < providers.len() {
             end.to_string()
         } else {
             String::new()
@@ -404,4 +408,8 @@ impl Fake {
             active_version: if info.loaded { info.version } else { 0 },
         }))
     }
+}
+
+fn cycled(token: &str) -> String {
+    if token == "a" { "b" } else { "a" }.to_owned()
 }

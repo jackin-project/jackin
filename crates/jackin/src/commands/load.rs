@@ -7,7 +7,7 @@ use jackin_core::{EnvName, LaunchId, PlainEnvValue, ProjectRoot, TerminalText};
 use jackin_image::Rebuild;
 use jackin_session::{
     AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, PlanError,
-    Prompting, RestoreCandidate, launch_events, lookup_workspace, plan_launch,
+    Prompting, RestoreCandidate, RestoreFinding, launch_events, lookup_workspace, plan_launch,
 };
 
 use super::progress::launch_event;
@@ -83,12 +83,19 @@ async fn plan(
 
 fn cancelled(candidate: &RestoreCandidate) -> CommandError {
     let launch = &candidate.launch_id;
-    CommandError::Cancelled(match &candidate.sandbox {
-        Some(sandbox) => format!(
+    CommandError::Cancelled(match &candidate.finding {
+        RestoreFinding::Observed(sandbox) => format!(
             "cancelled; sandbox {sandbox} remains as a restore candidate (launch {launch}); rerun with: jackin load --launch-id {launch}"
         ),
-        None => format!(
-            "cancelled before a sandbox existed (launch {launch}); rerun with: jackin load --launch-id {launch}"
+        RestoreFinding::Unconfirmed {
+            last_observed: Some(sandbox),
+        } => format!(
+            "cancelled; sandbox {sandbox} was last observed, but its current state is unconfirmed (launch {launch}); rerun with: jackin load --launch-id {launch}"
+        ),
+        RestoreFinding::Unconfirmed {
+            last_observed: None,
+        } => format!(
+            "cancelled; the gateway could not confirm whether a sandbox exists (launch {launch}); rerun with: jackin load --launch-id {launch}"
         ),
     })
 }

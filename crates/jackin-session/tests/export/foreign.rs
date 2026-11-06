@@ -20,7 +20,12 @@ async fn a_sandbox_without_jackin_labels_is_never_purged_stopped_started_or_expo
         let session = &rig.world.session;
 
         let purged = session
-            .purge(&rig.config, &foreign, PurgeMode::Forced)
+            .purge(
+                &rig.config,
+                &foreign,
+                PurgeMode::Forced,
+                &CancellationToken::new(),
+            )
             .await?;
         assert_eq!(
             purged,

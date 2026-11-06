@@ -35,7 +35,7 @@ async fn a_workspace_removal_waits_for_a_launch_that_is_creating_its_sandbox() -
                 .map_err(|error| error.to_string())?;
             rig.world
                 .config
-                .edit(remove(&workspace))
+                .edit(remove(&workspace), &CancellationToken::new())
                 .await
                 .map_err(|error| error.to_string())?;
             drop(hold);
@@ -72,7 +72,10 @@ async fn a_launch_whose_workspace_was_removed_creates_no_sandbox() -> TestResult
         let rig = launch_rig().await?;
         let plan = rig.plan(1)?;
         let workspace = plan.workspace().clone();
-        rig.world.config.edit(remove(&workspace)).await?;
+        rig.world
+            .config
+            .edit(remove(&workspace), &CancellationToken::new())
+            .await?;
 
         let outcome = rig
             .run_planned(&rig.world.session, plan, CancellationToken::new())

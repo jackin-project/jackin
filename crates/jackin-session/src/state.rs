@@ -8,6 +8,7 @@ use jackin_core::{
     sandbox_layout,
 };
 use jackin_openshell::{Gateway, GatewayError};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug)]
 pub(crate) enum EnvReadError {
@@ -38,9 +39,14 @@ pub(crate) fn reading(bytes: Option<&[u8]>) -> SupervisorReading {
 pub(crate) async fn run_state(
     gateway: &dyn Gateway,
     sandbox: &SandboxName,
+    cancel: &CancellationToken,
 ) -> Result<SupervisorReading, GatewayError> {
     let mut found = gateway
-        .read_files(sandbox, std::slice::from_ref(&sandbox_layout::RUN_STATE))
+        .read_files(
+            sandbox,
+            std::slice::from_ref(&sandbox_layout::RUN_STATE),
+            cancel,
+        )
         .await?;
     Ok(reading(found.pop().flatten().as_deref()))
 }
@@ -49,10 +55,11 @@ pub(crate) async fn env_file(
     gateway: &dyn Gateway,
     sandbox: &SandboxName,
     launch: &LaunchId,
+    cancel: &CancellationToken,
 ) -> Result<BTreeMap<EnvName, String>, EnvReadError> {
     let path = sandbox_layout::env_file(launch);
     let mut found = gateway
-        .read_files(sandbox, std::slice::from_ref(&path))
+        .read_files(sandbox, std::slice::from_ref(&path), cancel)
         .await?;
     let bytes = found.pop().flatten().ok_or(EnvReadError::Missing)?;
     let invalid = EnvReadError::Invalid;

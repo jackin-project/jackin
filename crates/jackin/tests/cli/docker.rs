@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{DockerRisk, EngineCert, EnvFile, sandbox_layout};
-use jackin_testkit::{KEY_MARKER, Rig, TestResult, engine_pem, guard, launch_id};
+use jackin_testkit::{
+    EngineCertificateSet, KEY_MARKER, Rig, TestResult, engine_pem, guard, launch_id,
+};
 
 use jackin::ExitClass;
 
@@ -20,8 +22,9 @@ const RISKS: [&str; DockerRisk::ALL.len()] = [
 fn certs(rig: &Rig) -> Result<String, Failure> {
     let dir = rig.home.as_path().join("engine-certs");
     std::fs::create_dir(&dir)?;
+    let certificates = EngineCertificateSet::generate()?;
     for cert in EngineCert::ALL {
-        std::fs::write(dir.join(cert.file_name()), engine_pem(cert))?;
+        std::fs::write(dir.join(cert.file_name()), certificates.pem(cert))?;
     }
     Ok(dir.display().to_string())
 }

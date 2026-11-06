@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Provider;
+use jackin_testkit::guard;
 use jackin_testkit::{Method, Route};
 use jackin_usage::{Refresh, UnavailableReason};
 
 use crate::support::{
     CODEX_PATH, TestResult, UsageHarness, assert_only_state_written, codex_body, codex_login,
-    guard, unavailable, windows_of,
+    unavailable, windows_of,
 };
 
 const AUTH_PATH: &str = "/home/work/.codex/auth.json";

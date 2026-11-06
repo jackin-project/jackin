@@ -3,7 +3,7 @@
 
 use jackin_core::BuildOutput;
 use jackin_image::{BuiltImage, Rebuild};
-use jackin_session::{BuildRequest, build_observed};
+use jackin_session::{BuildRequest, WorkspaceLookup, build_observed, lookup_workspace};
 
 use super::progress::image_event;
 use crate::app::App;
@@ -15,6 +15,14 @@ pub(crate) async fn run(app: &mut App, args: BuildArgs) -> Result<(), CommandErr
     let config = app.store.load().await?;
     let catalog = app.catalog();
     let (gateway, path) = (app.gateway.clone(), app.cwd.clone());
+    if matches!(
+        lookup_workspace(&config, &path),
+        WorkspaceLookup::Unsaved { .. }
+    ) {
+        app.io.note(&format!(
+            "{path} is not a saved workspace; building with the default settings (jackin workspace add saves it)"
+        ));
+    }
     let request = BuildRequest {
         gateway: gateway.as_ref(),
         role: args.role.as_ref(),

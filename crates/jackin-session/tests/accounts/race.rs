@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -15,9 +16,10 @@ use jackin_session::{
 };
 use jackin_testkit::{FakeGateway, Fault, FsOp, MemFs, ScriptedConnector, Trigger, World};
 use serde_json::json;
+use tokio::sync::{Notify, oneshot};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{Home, TestResult, codex_account, guard, login_json, registered};
+use super::support::{Home, TestResult, codex_account, login_json, registered};
 
 const FIRST_REFRESH: &str = "REFRESH-FIRST-4b1d70";
 const SECOND_REFRESH: &str = "REFRESH-SECOND-9e3a52";
@@ -49,13 +51,9 @@ async fn add(
     desk: AccountDesk,
     account: Account,
 ) -> Result<Config, AccountEditError> {
-    let plan = plan_account_edits(
-        &desk,
-        vec![ConfigEdit::AddAccount(account)],
-        &CancellationToken::new(),
-    )
-    .await?;
-    plan.apply(&Gateways::single(session)).await
+    let cancel = CancellationToken::new();
+    let plan = plan_account_edits(&desk, vec![ConfigEdit::AddAccount(account)], &cancel).await?;
+    plan.apply(&Gateways::single(session), &cancel).await
 }
 
 #[tokio::test]
@@ -137,7 +135,7 @@ async fn failing_store(
             entry: entry.clone(),
         })
         .collect();
-    store.edit(edits).await?;
+    store.edit(edits, &CancellationToken::new()).await?;
     Ok((fs, store))
 }
 
@@ -189,16 +187,17 @@ async fn a_failed_config_write_keeps_a_provider_that_existed_before_the_edit() -
         assert_eq!(world.gateway.providers(), [provider()?]);
 
         fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
+        let cancel = CancellationToken::new();
         let failed = plan_account_edits(
             &desk,
             vec![ConfigEdit::SetAccountCredential {
                 account: work()?,
                 credential: account.credential().clone(),
             }],
-            &CancellationToken::new(),
+            &cancel,
         )
         .await?
-        .apply(&Gateways::single(world.session.clone()))
+        .apply(&Gateways::single(world.session.clone()), &cancel)
         .await;
 
         assert!(
@@ -224,16 +223,17 @@ async fn a_failed_config_write_after_a_changed_credential_restores_the_old_mater
         add(world.session.clone(), desk.clone(), account.clone()).await?;
 
         fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
+        let cancel = CancellationToken::new();
         let failed = plan_account_edits(
             &desk,
             vec![ConfigEdit::SetAccountCredential {
                 account: work()?,
                 credential: renewed.credential().clone(),
             }],
-            &CancellationToken::new(),
+            &cancel,
         )
         .await?
-        .apply(&Gateways::single(world.session.clone()))
+        .apply(&Gateways::single(world.session.clone()), &cancel)
         .await;
 
         assert!(
@@ -318,14 +318,11 @@ async fn a_config_write_that_committed_before_its_directory_sync_failed_is_not_u
         add(world.session.clone(), desk.clone(), account.clone()).await?;
 
         fs.fail_at(FsOp::SyncDir, 1, sync_failure()?);
-        let removed = plan_account_edits(
-            &desk,
-            vec![ConfigEdit::RemoveAccount(work()?)],
-            &CancellationToken::new(),
-        )
-        .await?
-        .apply(&sessions)
-        .await;
+        let cancel = CancellationToken::new();
+        let removed = plan_account_edits(&desk, vec![ConfigEdit::RemoveAccount(work()?)], &cancel)
+            .await?
+            .apply(&sessions, &cancel)
+            .await;
         assert!(unsynced(&removed), "{removed:?}");
         assert!(store.load().await?.account(&work()?).is_none());
         assert!(
@@ -335,16 +332,17 @@ async fn a_config_write_that_committed_before_its_directory_sync_failed_is_not_u
 
         add(world.session.clone(), desk.clone(), account.clone()).await?;
         fs.fail_at(FsOp::SyncDir, 1, sync_failure()?);
+        let cancel = CancellationToken::new();
         let renewal = plan_account_edits(
             &desk,
             vec![ConfigEdit::SetAccountCredential {
                 account: work()?,
                 credential: renewed.credential().clone(),
             }],
-            &CancellationToken::new(),
+            &cancel,
         )
         .await?
-        .apply(&sessions)
+        .apply(&sessions, &cancel)
         .await;
         assert!(unsynced(&renewal), "{renewal:?}");
         assert_eq!(store.load().await?.account(&work()?), Some(&renewed));
@@ -373,6 +371,112 @@ async fn a_config_write_that_committed_before_its_directory_sync_failed_is_not_u
 }
 
 #[tokio::test]
+async fn cancellation_after_config_rename_reports_the_committed_account_and_keeps_its_provider()
+-> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let (_home, account) = candidate(FIRST_REFRESH, FIRST_ID).await?;
+        let (fs, store) = failing_store(&world).await?;
+        let desk = world.desk_over(store.clone());
+        let gateways = Gateways::single(world.session.clone());
+        let cancel = CancellationToken::new();
+        let plan = plan_account_edits(
+            &desk,
+            vec![ConfigEdit::AddAccount(account.clone())],
+            &cancel,
+        )
+        .await?;
+        let reached = Arc::new(Notify::new());
+        let (release, release_rx) = oneshot::channel();
+        fs.hold_next_sync_dir(Some(cancel.clone()), Arc::clone(&reached), release_rx);
+        let task_cancel = cancel.clone();
+        let task = tokio::spawn(async move { plan.apply(&gateways, &task_cancel).await });
+        reached.notified().await;
+        let _released = release.send(());
+        let saved = task.await??;
+
+        assert!(cancel.is_cancelled());
+        assert_eq!(store.load().await?.account(&work()?), Some(&account));
+        assert_eq!(saved.account(&work()?), Some(&account));
+        let record = world.gateway.provider(&provider()?).ok_or("no provider")?;
+        assert_eq!(record.chatgpt_account_id.as_str(), FIRST_ID);
+        assert_eq!(record.refresh_token, FIRST_REFRESH);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancellation_after_config_rename_with_sync_failure_reports_committed_state() -> TestResult
+{
+    guard(async {
+        let world = registered().await?;
+        let (_home, account) = candidate(FIRST_REFRESH, FIRST_ID).await?;
+        let (fs, store) = failing_store(&world).await?;
+        let desk = world.desk_over(store.clone());
+        let gateways = Gateways::single(world.session.clone());
+        let cancel = CancellationToken::new();
+        let plan = plan_account_edits(
+            &desk,
+            vec![ConfigEdit::AddAccount(account.clone())],
+            &cancel,
+        )
+        .await?;
+        fs.fail_at(FsOp::SyncDir, 1, sync_failure()?);
+        let reached = Arc::new(Notify::new());
+        let (release, release_rx) = oneshot::channel();
+        fs.hold_next_sync_dir(Some(cancel.clone()), Arc::clone(&reached), release_rx);
+        let task_cancel = cancel.clone();
+        let task = tokio::spawn(async move { plan.apply(&gateways, &task_cancel).await });
+        reached.notified().await;
+        let _released = release.send(());
+        let result = task.await?;
+
+        assert!(cancel.is_cancelled());
+        assert!(unsynced(&result), "{result:?}");
+        assert_eq!(store.load().await?.account(&work()?), Some(&account));
+        let record = world.gateway.provider(&provider()?).ok_or("no provider")?;
+        assert_eq!(record.chatgpt_account_id.as_str(), FIRST_ID);
+        assert_eq!(record.refresh_token, FIRST_REFRESH);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_uncancelled_account_edit_completes_after_config_rename_and_sync() -> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let (_home, account) = candidate(FIRST_REFRESH, FIRST_ID).await?;
+        let (fs, store) = failing_store(&world).await?;
+        let desk = world.desk_over(store.clone());
+        let gateways = Gateways::single(world.session.clone());
+        let cancel = CancellationToken::new();
+        let plan = plan_account_edits(
+            &desk,
+            vec![ConfigEdit::AddAccount(account.clone())],
+            &cancel,
+        )
+        .await?;
+        let reached = Arc::new(Notify::new());
+        let (release, release_rx) = oneshot::channel();
+        fs.hold_next_sync_dir(None, Arc::clone(&reached), release_rx);
+        let task = tokio::spawn(async move { plan.apply(&gateways, &cancel).await });
+        reached.notified().await;
+        let _released = release.send(());
+        let saved = task.await??;
+
+        assert_eq!(store.load().await?.account(&work()?), Some(&account));
+        assert_eq!(saved.account(&work()?), Some(&account));
+        let record = world.gateway.provider(&provider()?).ok_or("no provider")?;
+        assert_eq!(record.chatgpt_account_id.as_str(), FIRST_ID);
+        assert_eq!(record.refresh_token, FIRST_REFRESH);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_provider_delete_that_landed_and_then_failed_is_restored() -> TestResult {
     guard(async {
         let world = registered().await?;
@@ -387,14 +491,11 @@ async fn a_provider_delete_that_landed_and_then_failed_is_restored() -> TestResu
         };
 
         world.gateway.inject(late());
-        let failed = plan_account_edits(
-            &desk,
-            vec![ConfigEdit::RemoveAccount(work()?)],
-            &CancellationToken::new(),
-        )
-        .await?
-        .apply(&Gateways::single(world.session.clone()))
-        .await;
+        let cancel = CancellationToken::new();
+        let failed = plan_account_edits(&desk, vec![ConfigEdit::RemoveAccount(work()?)], &cancel)
+            .await?
+            .apply(&Gateways::single(world.session.clone()), &cancel)
+            .await;
         assert!(failed.is_err(), "{failed:?}");
         assert_eq!(store.load().await?.account(&work()?), Some(&account));
         let record = world.gateway.provider(&provider()?).ok_or("no provider")?;

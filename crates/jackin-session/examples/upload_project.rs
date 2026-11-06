@@ -150,6 +150,7 @@ fn say(text: &str) -> Result<(), Box<dyn Error>> {
 struct Live {
     gateway: Arc<GrpcGateway>,
     session: Session,
+    cancel: CancellationToken,
     runner: Arc<TokioProcessRunner>,
     project: ProjectRoot,
     options: Options,
@@ -202,7 +203,7 @@ impl Live {
                 runner: Arc::clone(&port),
                 transfer_timeout: Duration::from_mins(30),
                 call_timeout: Duration::from_secs(120),
-                cancel: CancellationToken::new(),
+                cancel: cancel.clone(),
             })
             .await?,
         );
@@ -243,6 +244,7 @@ impl Live {
         Ok(Live {
             gateway,
             session,
+            cancel,
             runner,
             project,
             options,
@@ -275,7 +277,7 @@ impl Live {
         for _ in 0..READY_ATTEMPTS {
             let found = self
                 .gateway
-                .find_sandboxes(&SandboxQuery::Name(name.clone()))
+                .find_sandboxes(&SandboxQuery::Name(name.clone()), &self.cancel)
                 .await?;
             if found.first().is_some_and(|view| view.phase == Phase::Ready) {
                 return Ok(name);
@@ -310,7 +312,7 @@ impl Live {
                     touch_on_success: None,
                     timeout: EXEC_TIMEOUT,
                 },
-                &CancellationToken::new(),
+                &self.cancel,
             )
             .await?;
         let mut text = String::from_utf8_lossy(&outcome.stdout).into_owned();
@@ -344,6 +346,7 @@ impl Live {
                         mode: FileMode(0o644),
                         content: SecretBytes::new(content.as_bytes().to_vec()),
                     },
+                    &self.cancel,
                 )
                 .await?;
         }
@@ -412,7 +415,7 @@ impl Live {
         let started = Instant::now();
         let result = self
             .session
-            .upload_project(&self.project, &sandbox, launch, &CancellationToken::new())
+            .upload_project(&self.project, &sandbox, launch, &self.cancel)
             .await;
         say(&format!(
             "upload_project took {:.1} s",
@@ -503,12 +506,7 @@ impl Live {
                 .join(format!("export-{round}.bundle")),
         )?;
         self.gateway
-            .download_file(
-                sandbox,
-                &SandboxPath::parse(remote)?,
-                &local,
-                &CancellationToken::new(),
-            )
+            .download_file(sandbox, &SandboxPath::parse(remote)?, &local, &self.cancel)
             .await?;
         say(&format!(
             "download_file: Ok, digests equal, {}",

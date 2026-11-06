@@ -12,8 +12,8 @@ use jackin_image::{BuildStage, ImageEngine};
 use jackin_openshell::Gateway;
 use jackin_session::{HostPorts, LaunchEvent, LaunchStep, LaunchWarning, Session, SessionDeps};
 use jackin_testkit::{
-    BuildEffect, ENGINE_PORT, EngineMoment, FakeClock, FakeEngine, FakeGateway, Fault, HostEdit,
-    KEY_MARKER, TestRunner, Trigger, default_limits, engine_pem,
+    BuildEffect, ENGINE_PORT, EngineCertificateSet, EngineMoment, FakeClock, FakeEngine,
+    FakeGateway, Fault, HostEdit, KEY_MARKER, TestRunner, Trigger, default_limits, engine_pem,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -82,7 +82,8 @@ async fn each_source_writes_the_certificates_modes_variables_and_rule_and_a_reru
             let handle = rig.handle(1).await?;
             for cert in EngineCert::ALL {
                 let path = cert.sandbox_path();
-                assert_eq!(handle.file(&path), Some(engine_pem(cert).into_bytes()));
+                let expected = std::fs::read(rig.engine_certs()?.as_path().join(cert.file_name()))?;
+                assert_eq!(handle.file(&path), Some(expected));
                 assert_eq!(handle.file_mode(&path), Some(cert.mode()));
             }
             assert_eq!(
@@ -116,6 +117,48 @@ async fn each_source_writes_the_certificates_modes_variables_and_rule_and_a_reru
             assert_eq!((again.files(), modes(&again)), (files, before));
             assert_eq!(rig.gateway().sandboxes().len(), 1);
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_matching_engine_certificate_pair_launches_and_a_mismatch_is_refused_before_creation()
+-> TestResult {
+    guard(async {
+        let matching = docker_rig(true, false, Engine::WithCerts).await?;
+        let cert_directory = matching.engine_certs()?;
+        let mut expected = Vec::new();
+        for cert in EngineCert::ALL {
+            expected.push((
+                cert,
+                std::fs::read(cert_directory.as_path().join(cert.file_name()))?,
+            ));
+        }
+        ready(matching.launch_observed(1).await?)?;
+        let handle = matching.handle(1).await?;
+        for (cert, bytes) in expected {
+            assert_eq!(handle.file(&cert.sandbox_path()), Some(bytes));
+            assert_eq!(handle.file_mode(&cert.sandbox_path()), Some(cert.mode()));
+        }
+
+        let mismatch = docker_rig(true, false, Engine::WithCerts).await?;
+        let other = EngineCertificateSet::generate()?;
+        let other_key = mismatch
+            .engine_certs()?
+            .as_path()
+            .join(EngineCert::Key.file_name());
+        std::fs::write(&other_key, &other.key)?;
+        let outcome = mismatch.launch_observed(2).await?;
+        assert!(outcome.events.is_empty());
+        let failed = failure(outcome)?;
+        assert_eq!(failed.step, LaunchStep::Credentials);
+        assert!(failed.sandbox.is_none());
+        let (_, problem, _) = engine_error(&failed)?;
+        assert_eq!(problem, EngineCertProblem::PairMismatch);
+        let shown = format!("{:?} {}", failed.error, failed.error);
+        assert!(!shown.contains(&other.key), "private key material leaked");
+        nothing_was_created(&mismatch).await?;
         Ok(())
     })
     .await
@@ -177,7 +220,12 @@ async fn unusable_certificate_content_is_refused_before_anything_is_created() ->
         let rig = docker_rig(true, false, Engine::WithCerts).await?;
         let path = rig.engine_certs()?.as_path().join("cert.pem");
         std::fs::write(&path, padded("CERTIFICATE", 65536))?;
-        ready(rig.launch_observed(1).await?)?;
+        let outcome = rig.launch_observed(1).await?;
+        assert!(outcome.events.is_empty());
+        let failed = failure(outcome)?;
+        assert_eq!(failed.step, LaunchStep::Credentials);
+        assert_eq!(engine_error(&failed)?.1, EngineCertProblem::NotPem);
+        nothing_was_created(&rig).await?;
         Ok(())
     })
     .await
@@ -230,10 +278,6 @@ async fn directory_symlink_and_symlinked_parent_shapes_are_refused_or_accepted_a
     .await
 }
 
-fn certificate(body: &str) -> String {
-    format!("-----BEGIN CERTIFICATE-----\n{body}\n-----END CERTIFICATE-----\n")
-}
-
 #[derive(Clone, Copy)]
 enum Swap {
     KeyLink,
@@ -245,7 +289,6 @@ enum Swap {
 async fn a_certificate_changed_during_the_build_is_refused_at_the_write_and_the_retry_continues()
 -> TestResult {
     guard(async {
-        let rotated_cert = certificate("TkVXQ0VSVE5FV0NFUlRORVdDRVJU");
         let rows = [
             (
                 Swap::KeyLink,
@@ -260,6 +303,9 @@ async fn a_certificate_changed_during_the_build_is_refused_at_the_write_and_the_
         for (swap, expected) in rows {
             let rig = docker_rig(true, false, Engine::WithCerts).await?;
             let directory = rig.engine_certs()?;
+            let original_key = std::fs::read(directory.as_path().join("key.pem"))?;
+            let original_key_pem = std::str::from_utf8(&original_key)?;
+            let rotated_cert = EngineCertificateSet::certificate_for_key(original_key_pem)?;
             let other = rig.home.as_path().join("other-key.pem");
             std::fs::write(&other, engine_pem(EngineCert::Key))?;
             let (edited, edit) = match swap {
@@ -308,7 +354,7 @@ async fn a_certificate_changed_during_the_build_is_refused_at_the_write_and_the_
             assert!(docker_files(&rig.handle(1).await?).is_empty());
             let path = directory.as_path().join(edited.file_name());
             std::fs::remove_file(&path)?;
-            std::fs::write(&path, engine_pem(edited))?;
+            std::fs::write(&path, original_key.clone())?;
             ready(rig.launch_observed(1).await?)?;
             assert_eq!(rig.gateway().sandboxes().len(), 1);
             assert_eq!(docker_files(&rig.handle(1).await?).len(), 3);
@@ -360,10 +406,15 @@ async fn the_key_content_reaches_only_the_key_file() -> TestResult {
         let events = format!("{:?}", outcome.events);
         ready(outcome)?;
         let handle = rig.handle(1).await?;
+        let key_path = rig
+            .engine_certs()?
+            .as_path()
+            .join(EngineCert::Key.file_name());
+        let key_material = std::fs::read(key_path)?;
         let holders: Vec<SandboxPath> = handle
             .files()
             .into_iter()
-            .filter(|(_, bytes)| String::from_utf8_lossy(bytes).contains(KEY_MARKER))
+            .filter(|(_, bytes)| bytes == &key_material)
             .map(|(path, _)| path)
             .collect();
         assert_eq!(holders, [EngineCert::Key.sandbox_path()]);
@@ -382,7 +433,7 @@ async fn the_key_content_reaches_only_the_key_file() -> TestResult {
             surfaces.push(format!("{:?}", handle.runs(program)));
         }
         for surface in surfaces {
-            assert!(!surface.contains(KEY_MARKER), "{surface}");
+            assert!(!surface.contains(std::str::from_utf8(&key_material)?));
         }
         let swapped = docker_rig(true, false, Engine::WithCerts).await?;
         let cert = swapped.engine_certs()?.as_path().join("cert.pem");

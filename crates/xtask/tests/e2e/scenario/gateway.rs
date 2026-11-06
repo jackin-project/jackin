@@ -258,8 +258,12 @@ impl Gateway for ScenarioGateway {
         self.fake.create_sandbox(spec).await
     }
 
-    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
-        self.fake.find_sandboxes(query).await
+    async fn find_sandboxes(
+        &self,
+        query: &SandboxQuery,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<SandboxView>, GatewayError> {
+        self.fake.find_sandboxes(query, cancel).await
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
@@ -309,8 +313,9 @@ impl Gateway for ScenarioGateway {
         &self,
         name: &SandboxName,
         action: PowerAction,
+        cancel: &CancellationToken,
     ) -> Result<SandboxView, GatewayError> {
-        self.fake.set_power(name, action).await
+        self.fake.set_power(name, action, cancel).await
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
@@ -370,7 +375,14 @@ impl Gateway for ScenarioGateway {
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
+        cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
+        if cancel.is_cancelled() {
+            return Err(GatewayError::Cancelled {
+                op: GatewayOp::ReadFiles,
+                group: None,
+            });
+        }
         let knobs = self.shared.knobs().clone();
         let _ = sandbox;
         Ok(paths
@@ -416,8 +428,9 @@ impl Gateway for ScenarioGateway {
         &self,
         sandbox: &SandboxName,
         file: &SandboxFile,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
-        self.fake.write_file(sandbox, file).await
+        self.fake.write_file(sandbox, file, cancel).await
     }
 
     async fn upload_tree(

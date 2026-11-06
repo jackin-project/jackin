@@ -361,6 +361,53 @@ async fn a_codex_exit_while_attached_prints_one_hint_and_the_pump_keeps_running(
 }
 
 #[tokio::test]
+async fn a_state_read_that_never_answers_does_not_hold_back_the_detach_keys() -> TestResult {
+    guard(async {
+        let (rig, harness, handle) = running().await?;
+        let gate = Arc::new(Notify::new());
+        let (terminal, probe) = script(vec![
+            Step::Gate(Arc::clone(&gate)),
+            Step::Bytes(DETACH.to_vec()),
+        ])?;
+        let name = handle.name();
+        let cancel = CancellationToken::new();
+        let command = harness
+            .command(&["attach", name.as_str()])
+            .terminal(terminal)
+            .cancel(cancel.clone());
+        let trigger = Trigger::Op(GatewayOp::ReadFiles);
+        let (ran, driven) = tokio::join!(command.run(), async {
+            let driven = async {
+                until(|| probe.raw()).await?;
+                rig.gateway().inject(Fault::HoldAt {
+                    trigger: trigger.clone(),
+                });
+                if !rig.gateway().until_held(&trigger).await {
+                    return Err(Failure::from("the state read never started"));
+                }
+                gate.notify_one();
+                until(|| handle.attachments() == 0).await?;
+                Ok(())
+            }
+            .await;
+            cancel.cancel();
+            rig.gateway().release(&trigger);
+            driven
+        });
+        driven?;
+        assert!(!probe.raw());
+        let ran = ran?;
+        assert!(
+            ran.stderr.contains("detached from sandbox"),
+            "{:?}",
+            ran.stderr
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn an_exit_before_the_attach_is_hinted_once_even_after_polls() -> TestResult {
     guard(async {
         let (rig, harness, handle) = running().await?;

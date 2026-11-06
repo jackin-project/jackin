@@ -125,6 +125,10 @@ pub enum UnsupportedProject {
     )]
     ForeignGit(HostPath),
     #[error(
+        "the project directory {0} was replaced by another directory after it was chosen; launch again"
+    )]
+    RootReplaced(HostPath),
+    #[error(
         "the object store borrows objects from other repositories through {0}; run `git repack -a -d`, then remove the file"
     )]
     Alternates(HostPath),
@@ -345,6 +349,7 @@ impl Staged {
         remote: &Sandbox<'_>,
         cancel: &CancellationToken,
     ) -> Result<(), LaunchError> {
+        HostProject::refuse_replaced(deps.host.fs.as_ref(), project).await?;
         deps.gateway
             .upload_tree(sandbox, project, &sandbox_layout::PROJECT, cancel)
             .await?;

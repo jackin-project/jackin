@@ -134,6 +134,11 @@ async fn fs_boundary_extras(fs: &dyn FileSystem, root: &HostPath) -> TestResult 
     assert_eq!(fs.mode(&private).await?, Some(FileMode(0o700)));
     assert_eq!(fs.mode(&child(root, "priv")?).await?, Some(FileMode(0o700)));
     fs.remove_dir_all(&child(root, "priv")?).await?;
+    let wide = child(root, "wide")?;
+    fs.create_dir_all(&wide).await?;
+    fs.create_private_dir_all(&wide).await?;
+    assert_eq!(fs.mode(&wide).await?, Some(FileMode(0o700)));
+    fs.remove_dir_all(&wide).await?;
     let ranged = child(root, "range.bin")?;
     fs.write_new(&ranged, b"0123456789", FileMode(0o600))
         .await?;
@@ -1080,6 +1085,78 @@ async fn a_dropped_sleeper_leaves_no_trace_and_a_lone_race_still_moves_time() ->
     }
     assert_eq!(clock.now(), Timestamp(start.0 + 30));
     assert_eq!(clock.slept(), [thirty]);
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_advancement_wakes_an_elapsed_sleep_while_work_remains_held() -> TestResult {
+    let clock = Arc::new(FakeClock::new());
+    let start = clock.now();
+    let working = clock.working();
+    let sleeper_clock = Arc::clone(&clock);
+    let mut sleeper = tokio::spawn(async move {
+        sleeper_clock.sleep(Duration::from_secs(10)).await;
+    });
+    while clock.sleepers() == 0 {
+        tokio::task::yield_now().await;
+    }
+    assert!(
+        !sleeper.is_finished(),
+        "the deadline passed before advancement"
+    );
+
+    clock.advance(Duration::from_secs(5));
+    tokio::task::yield_now().await;
+    assert!(
+        !sleeper.is_finished(),
+        "a partial advancement completed the sleep"
+    );
+    assert_eq!(clock.now(), Timestamp(start.0 + 5));
+
+    clock.advance(Duration::from_secs(5));
+    tokio::time::timeout(Duration::from_secs(2), &mut sleeper).await??;
+    assert_eq!(clock.sleepers(), 0, "a completed sleep remains registered");
+    assert_eq!(clock.now(), Timestamp(start.0 + 10));
+    assert_eq!(clock.slept(), [Duration::from_secs(10)]);
+    drop(working);
+    Ok(())
+}
+
+#[tokio::test]
+async fn explicit_advancement_wakes_each_deadline_without_completing_later_sleepers() -> TestResult
+{
+    let clock = Arc::new(FakeClock::new());
+    let start = clock.now();
+    let working = clock.working();
+    let short_clock = Arc::clone(&clock);
+    let mut short = tokio::spawn(async move {
+        short_clock.sleep(Duration::from_secs(3)).await;
+    });
+    let long_clock = Arc::clone(&clock);
+    let mut long = tokio::spawn(async move {
+        long_clock.sleep(Duration::from_secs(7)).await;
+    });
+    while clock.sleepers() != 2 {
+        tokio::task::yield_now().await;
+    }
+
+    clock.advance(Duration::from_secs(3));
+    tokio::time::timeout(Duration::from_secs(2), &mut short).await??;
+    assert!(
+        !long.is_finished(),
+        "the later deadline completed too early"
+    );
+    assert_eq!(clock.sleepers(), 1, "the later sleep was removed early");
+    assert_eq!(clock.now(), Timestamp(start.0 + 3));
+
+    clock.advance(Duration::from_secs(4));
+    tokio::time::timeout(Duration::from_secs(2), &mut long).await??;
+    assert_eq!(clock.sleepers(), 0, "completed sleeps remain registered");
+    assert_eq!(clock.now(), Timestamp(start.0 + 7));
+    let mut slept = clock.slept();
+    slept.sort();
+    assert_eq!(slept, [Duration::from_secs(3), Duration::from_secs(7)]);
+    drop(working);
     Ok(())
 }
 

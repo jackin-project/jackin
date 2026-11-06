@@ -19,6 +19,8 @@ pub const COMPUTED_COMMAND_DIRS: &[&str] = &[
     "crates/xtask",
     "crates/jackin-session/src/host.rs",
     "crates/jackin/tests/process/main.rs",
+    "crates/jackin-openshell/tests/gateway/exec_rpc.rs",
+    "crates/jackin-openshell/tests/gateway/writer_bootstrap.rs",
 ];
 
 #[derive(Clone, Copy, Debug, Default)]

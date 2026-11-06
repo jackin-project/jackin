@@ -10,7 +10,7 @@ use jackin_session::{LaunchError, LaunchLimits, LaunchStep};
 use jackin_testkit::{Fault, Rig};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{TestResult, builder, launch_id, limits, ready};
+use super::support::{TestResult, builder, launch_id, limits, ready, write};
 
 fn upload_limit(seconds: u64) -> LaunchLimits {
     LaunchLimits {
@@ -21,6 +21,26 @@ fn upload_limit(seconds: u64) -> LaunchLimits {
 
 async fn with_limit(seconds: u64) -> Result<Rig, Box<dyn std::error::Error>> {
     builder().await?.limits(upload_limit(seconds)).build().await
+}
+
+async fn wait_for_upload_lock_wait(rig: &Rig, baseline: usize) -> TestResult {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(4);
+    loop {
+        let sleeps = rig
+            .world
+            .clock
+            .slept()
+            .iter()
+            .filter(|duration| **duration == Duration::from_millis(100))
+            .count();
+        if sleeps > baseline {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err("the launch never waited on the held upload lock".into());
+        }
+        tokio::task::yield_now().await;
+    }
 }
 
 fn ready_outcome(
@@ -82,27 +102,47 @@ async fn an_upload_that_exceeds_its_limit_fails_with_a_typed_timeout_and_a_retry
 #[tokio::test]
 async fn time_spent_waiting_for_the_upload_lock_is_not_charged_to_the_upload_limit() -> TestResult {
     jackin_testkit::guard_within(Duration::from_secs(30), async {
-        let rig = with_limit(3).await?;
+        let rig = builder().await?.build().await?;
+        ready(rig.launch_observed(1).await?)?;
+        let handle = rig.handle(1).await?;
+        let marker = sandbox_layout::uploaded_marker(&launch_id(1));
+        let relative = marker
+            .as_str()
+            .strip_prefix("/sandbox/")
+            .ok_or("the upload marker is outside the sandbox root")?;
+        let marker_host = handle.root().join(relative);
+        let snapshot = handle.files();
+        std::fs::remove_file(marker_host)?;
         rig.world.fs.create_dir_all(rig.world.cache_dir()).await?;
         let lock = HostPath::resolve(
             Path::new(&format!("upload-{}.lock", launch_id(1))),
             rig.world.cache_dir(),
         )?;
         let held = rig.world.fs.lock(&lock).await?;
+        let baseline = rig
+            .world
+            .clock
+            .slept()
+            .iter()
+            .filter(|duration| **duration == Duration::from_millis(100))
+            .count();
+        let session = rig.session_with(upload_limit(3));
+        let request = rig.request(1)?;
         let peer = async {
-            while !rig
-                .world
-                .clock
-                .slept()
-                .contains(&Duration::from_millis(100))
-            {
-                tokio::task::yield_now().await;
-            }
+            wait_for_upload_lock_wait(&rig, baseline).await?;
             tokio::time::sleep(Duration::from_secs(4)).await;
+            let sandbox = handle.name();
+            write(&rig, &sandbox, &marker, "").await?;
             drop(held);
+            Ok::<(), Box<dyn std::error::Error>>(())
         };
-        let (outcome, ()) = tokio::join!(rig.launch_observed(1), peer);
+        let (outcome, restored) = tokio::join!(
+            rig.run_on(&session, request, CancellationToken::new()),
+            peer
+        );
+        restored?;
         ready(outcome?)?;
+        assert_eq!(handle.files(), snapshot, "the project state changed");
         Ok(())
     })
     .await

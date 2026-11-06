@@ -4,6 +4,7 @@ ARG CODEX_VERSION
 ARG CODEX_BIN_DIR
 ARG CODEX_SHA256_ARM64
 ARG CODEX_SHA256_AMD64
+ARG READ_WRITE_PATHS=
 ARG DOCKER_LAYER=absent
 ARG DOCKER_CLI_VERSION
 ARG DOCKER_BUILDX_VERSION
@@ -121,6 +122,7 @@ COPY --from=codex --chown=root:root --chmod=0755 ${CODEX_BIN_DIR}/codex ${CODEX_
 COPY --chown=root:root --chmod=0755 jackin-start /usr/local/bin/jackin-start
 COPY --chown=root:root --chmod=0755 hooks/setup hooks/preflight /usr/local/lib/jackin/hooks/
 COPY --from=codex --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml /etc/codex/config.toml
+COPY --from=construct --chown=root:root --chmod=0755 /usr/local/lib/jackin/write-file /usr/local/lib/jackin/write-file
 
 FROM construct AS layout
 
@@ -137,16 +139,19 @@ COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX /etc/codex/config.toml
 COPY --from=docker-client --chown=root:root --chmod=u=rwX,go=rX / /
 COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/bin/jackin-start /usr/local/bin/jackin-start
 COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/hooks/setup /usr/local/lib/jackin/hooks/preflight /usr/local/lib/jackin/hooks/
+COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/write-file /usr/local/lib/jackin/write-file
 
 FROM construct AS scan
 ARG CODEX_BIN_DIR
+ARG READ_WRITE_PATHS
 
 USER root
 COPY scan /jackin-scan
 RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
     --mount=type=bind,from=trusted,source=/,target=/trusted,ro \
     --mount=type=bind,from=docker-client,source=/,target=/trusted-docker,ro \
-    set -- --owner 0:0 \
+    set -- --owner 0:0 --sandbox-owner 1000:1000 \
+        --same-as /usr/local/lib/jackin/write-file=/trusted/usr/local/lib/jackin/write-file \
         --same-as /usr/local/bin/jackin-start=/trusted/usr/local/bin/jackin-start \
         --same-as /usr/local/lib/jackin/hooks/setup=/trusted/usr/local/lib/jackin/hooks/setup \
         --same-as /usr/local/lib/jackin/hooks/preflight=/trusted/usr/local/lib/jackin/hooks/preflight \
@@ -161,6 +166,12 @@ RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
         --absent /etc/codex/rules \
         --absent /etc/codex/agents \
         --absent /etc/codex/skills \
+        --absent /sandbox/.codex \
+    ; if [ -n "$READ_WRITE_PATHS" ]; then \
+        old_ifs=$IFS; IFS=:; set -f; \
+        for rw in $READ_WRITE_PATHS; do set -- "$@" --read-write "$rw"; done; \
+        set +f; IFS=$old_ifs; \
+    fi \
     ; extra= \
     ; if [ -e /trusted-docker/usr/local/bin/docker ]; then \
         for path in /usr/local/bin/docker /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-compose; do \
@@ -173,6 +184,7 @@ RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
         /usr/local/bin/jackin-start \
         /usr/local/lib/jackin/hooks/setup \
         /usr/local/lib/jackin/hooks/preflight \
+        /usr/local/lib/jackin/write-file \
         ${CODEX_BIN_DIR}/codex \
         ${CODEX_BIN_DIR}/codex-code-mode-host \
         $extra \

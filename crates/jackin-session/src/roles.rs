@@ -273,7 +273,7 @@ impl RoleCatalog {
     ) -> Result<LoadedRole, RoleError> {
         let parent = self.cache_parent().await?;
         let dir = join(&parent, name.as_str())?;
-        let _held = self.hold_dir(&dir, cancel).await?;
+        let _held = self.hold_dir(&parent, name.as_str(), cancel).await?;
         self.checkout(&parent, &dir, name.as_str(), url, rev, cancel)
             .await?;
         self.load_path(&dir, cancel).await
@@ -289,7 +289,7 @@ impl RoleCatalog {
         let digest = Sha256::of(url.as_str().as_bytes());
         let staging = format!(".incoming-{}", &digest.as_str()[..16]);
         let incoming = join(&parent, &staging)?;
-        let _staged = self.hold_dir(&incoming, cancel).await?;
+        let _staged = self.hold_dir(&parent, &staging, cancel).await?;
         let found = async {
             self.checkout(&parent, &incoming, &staging, url, rev, cancel)
                 .await?;
@@ -304,7 +304,9 @@ impl RoleCatalog {
             }
         };
         let dir = join(&parent, loaded.name().as_str())?;
-        let _held = self.hold_dir(&dir, cancel).await?;
+        let _held = self
+            .hold_dir(&parent, loaded.name().as_str(), cancel)
+            .await?;
         self.fs.remove_dir_all(&dir).await?;
         self.fs.rename(&incoming, &dir).await?;
         self.load_path(&dir, cancel).await
@@ -318,10 +320,13 @@ impl RoleCatalog {
 
     async fn hold_dir(
         &self,
-        dir: &HostPath,
+        parent: &HostPath,
+        leaf: &str,
         cancel: &CancellationToken,
     ) -> Result<FileLock, RoleError> {
-        let lock = lock_path(dir)?;
+        let locks = join(parent, ".locks")?;
+        self.fs.create_private_dir_all(&locks).await?;
+        let lock = lock_path(&join(&locks, leaf)?)?;
         hold_lock(&*self.fs, &*self.clock, &lock, LOCK_PLAN, cancel)
             .await
             .map_err(|error| match error {
@@ -725,8 +730,10 @@ impl RoleCatalog {
                 ],
             )
             .await?;
-            self.git(dir, cancel, &["remote", "set-head", "origin", "--auto"])
-                .await?;
+            if rev.is_none() {
+                self.git(dir, cancel, &["remote", "set-head", "origin", "--auto"])
+                    .await?;
+            }
         } else {
             self.fs.remove_dir_all(dir).await?;
             self.git(
@@ -739,11 +746,15 @@ impl RoleCatalog {
         let target = match rev {
             None => "origin/HEAD".to_owned(),
             Some(rev) => {
-                let branch = format!("origin/{}^{{commit}}", rev.as_str());
-                if self.resolves(dir, cancel, &branch).await? {
-                    format!("origin/{}", rev.as_str())
+                if let Some(branch) = rev.as_str().strip_prefix("refs/heads/") {
+                    format!("origin/{branch}^{{commit}}")
                 } else {
-                    format!("{}^{{commit}}", rev.as_str())
+                    let branch = format!("origin/{}^{{commit}}", rev.as_str());
+                    if self.resolves(dir, cancel, &branch).await? {
+                        format!("origin/{}", rev.as_str())
+                    } else {
+                        format!("{}^{{commit}}", rev.as_str())
+                    }
                 }
             }
         };

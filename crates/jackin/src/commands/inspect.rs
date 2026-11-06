@@ -11,7 +11,7 @@ pub(crate) async fn run(app: &mut App, args: InspectArgs) -> Result<(), CommandE
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
     let view = session
-        .inspect(&args.sandbox)
+        .inspect(&args.sandbox, &app.cancel)
         .await
         .map_err(CommandError::Lifecycle)?;
     if args.json {

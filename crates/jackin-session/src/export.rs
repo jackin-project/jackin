@@ -72,6 +72,7 @@ pub enum UnknownReason {
     NotRunning(Phase),
     WorkspaceUnknown(WorkspaceName),
     NoRepository,
+    Cancelled,
     InspectionFailed,
 }
 
@@ -86,6 +87,7 @@ impl fmt::Display for UnknownReason {
                 )
             }
             UnknownReason::NoRepository => f.write_str("cannot be inspected (no repository)"),
+            UnknownReason::Cancelled => f.write_str("cannot be inspected (cancelled)"),
             UnknownReason::InspectionFailed => f.write_str("cannot be inspected"),
         }
     }
@@ -476,7 +478,7 @@ impl Session {
             return Err(ExportError::Cancelled { group: None });
         }
         let view = self
-            .find_managed(sandbox)
+            .find_managed(sandbox, &cancel)
             .await?
             .ok_or_else(|| ExportError::NotFound(sandbox.clone()))?;
         if view.phase != Phase::Ready {
@@ -538,7 +540,8 @@ impl Session {
             host: &host,
             refs: &refs,
         };
-        self.ensure_same_incarnation(sandbox, &view).await?;
+        self.ensure_same_incarnation(sandbox, &view, &cancel)
+            .await?;
         let result = self
             .ship(&observed, sandbox, &unique, &remote_bundle, &items, &cancel)
             .await;
@@ -555,9 +558,10 @@ impl Session {
         &self,
         sandbox: &SandboxName,
         inspected: &SandboxView,
+        cancel: &CancellationToken,
     ) -> Result<(), ExportError> {
         let now = self
-            .find_managed(sandbox)
+            .find_managed(sandbox, cancel)
             .await?
             .filter(|now| now.phase != Phase::Deleting)
             .ok_or_else(|| ExportError::NotFound(sandbox.clone()))?;
@@ -801,7 +805,7 @@ impl Session {
         cancel: &CancellationToken,
     ) -> Result<ChangeSet, ChangesError> {
         let view = self
-            .find_managed(sandbox)
+            .find_managed(sandbox, cancel)
             .await?
             .ok_or_else(|| ChangesError::NotFound(sandbox.clone()))?;
         if view.phase != Phase::Ready {
@@ -838,12 +842,21 @@ fn changes_error(sandbox: &SandboxName, error: RemoteError) -> ChangesError {
 }
 
 impl Session {
-    pub async fn work_state(&self, config: &Config, sandbox: &SandboxName) -> WorkState {
-        match self.find_managed(sandbox).await {
+    pub async fn work_state(
+        &self,
+        config: &Config,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> WorkState {
+        if cancel.is_cancelled() {
+            return WorkState::Unknown(UnknownReason::Cancelled);
+        }
+        match self.find_managed(sandbox, cancel).await {
             Ok(Some(view)) => {
-                self.work_state_of(config, sandbox, view.phase, &view.labels)
+                self.work_state_of(config, sandbox, view.phase, &view.labels, cancel)
                     .await
             }
+            Err(GatewayError::Cancelled { .. }) => WorkState::Unknown(UnknownReason::Cancelled),
             Ok(None) | Err(_) => WorkState::Unknown(UnknownReason::InspectionFailed),
         }
     }
@@ -854,9 +867,11 @@ impl Session {
         sandbox: &SandboxName,
         phase: Phase,
         labels: &jackin_core::Labels,
+        cancel: &CancellationToken,
     ) -> WorkState {
-        match self.inspected(config, sandbox, phase, labels).await {
+        match self.inspected(config, sandbox, phase, labels, cancel).await {
             Ok(state) => state,
+            Err(_) if cancel.is_cancelled() => WorkState::Unknown(UnknownReason::Cancelled),
             Err(reason) => WorkState::Unknown(reason),
         }
     }
@@ -867,7 +882,11 @@ impl Session {
         sandbox: &SandboxName,
         phase: Phase,
         labels: &jackin_core::Labels,
+        cancel: &CancellationToken,
     ) -> Result<WorkState, UnknownReason> {
+        if cancel.is_cancelled() {
+            return Err(UnknownReason::Cancelled);
+        }
         if phase != Phase::Ready {
             return Err(UnknownReason::NotRunning(phase));
         }
@@ -877,8 +896,7 @@ impl Session {
         let entry = config
             .workspace(workspace)
             .ok_or_else(|| UnknownReason::WorkspaceUnknown(workspace.clone()))?;
-        let cancel = CancellationToken::new();
-        let remote = self.remote(sandbox, &cancel);
+        let remote = self.remote(sandbox, cancel);
         let repository = match remote.repository().await {
             Ok(repository) => repository,
             Err(RemoteError::NoRepository) => return Err(UnknownReason::NoRepository),
@@ -891,7 +909,7 @@ impl Session {
         let project = ProjectRoot::open(self.deps.host.fs.as_ref(), &entry.path)
             .await
             .map_err(|_| UnknownReason::InspectionFailed)?;
-        let authenticated = HostProject::open(&self.deps, &project, &cancel)
+        let authenticated = HostProject::open(&self.deps, &project, cancel)
             .await
             .map_err(|_| UnknownReason::InspectionFailed)?;
         let host = Host::new(&authenticated);

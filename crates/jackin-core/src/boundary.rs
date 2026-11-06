@@ -136,7 +136,7 @@ pub enum LinkProblem {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FileMode(pub u32);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 pub struct FileIdentity {
     pub dev: u64,
     pub ino: u64,

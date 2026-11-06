@@ -66,10 +66,13 @@ async fn trust_row_updates_after_role_removal() -> TestResult {
         console.skip_intro();
         world
             .config
-            .edit(vec![
-                ConfigEdit::RemoveRole(RoleName::parse("one")?),
-                ConfigEdit::RemoveRole(RoleName::parse("two")?),
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::RemoveRole(RoleName::parse("one")?),
+                    ConfigEdit::RemoveRole(RoleName::parse("two")?),
+                ],
+                &tokio_util::sync::CancellationToken::new(),
+            )
             .await?;
         for _ in 0..8 {
             console.elapse(1);

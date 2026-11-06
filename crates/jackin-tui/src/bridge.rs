@@ -3,7 +3,6 @@
 
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use jackin_console::app::Remote;
 use jackin_console::world::{Msg, Snapshot};
@@ -84,37 +83,27 @@ impl From<Msg> for Settled {
 pub(crate) struct Bridge {
     sender: ExternalSender,
     inflight: InFlight,
-    detached: Arc<AtomicUsize>,
+    detached: InFlight,
     handle: Handle,
 }
 
-struct Detached(Arc<AtomicUsize>);
-
-impl Detached {
-    fn start(count: &Arc<AtomicUsize>) -> Detached {
-        count.fetch_add(1, Ordering::SeqCst);
-        Detached(Arc::clone(count))
-    }
-}
-
-impl Drop for Detached {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
-    }
-}
-
 impl Bridge {
-    pub(crate) fn new(sender: ExternalSender, inflight: InFlight, handle: Handle) -> Bridge {
+    pub(crate) fn new(
+        sender: ExternalSender,
+        inflight: InFlight,
+        detached: InFlight,
+        handle: Handle,
+    ) -> Bridge {
         Bridge {
             sender,
             inflight,
-            detached: Arc::new(AtomicUsize::new(0)),
+            detached,
             handle,
         }
     }
 
     pub(crate) fn has_detached_work(&self) -> bool {
-        self.detached.load(Ordering::SeqCst) > 0
+        self.detached.count() > 0
     }
 
     pub(crate) fn detach(
@@ -122,15 +111,13 @@ impl Bridge {
         work: impl Future<Output = ()> + Send + 'static,
         failed: impl FnOnce() + Send + 'static,
     ) {
-        let held = Detached::start(&self.detached);
-        let task = self.handle.spawn(async move {
-            let _held = held;
-            work.await;
-        });
+        let held = self.detached.start();
+        let task = self.handle.spawn(work);
         self.handle.spawn(async move {
             if task.await.is_err() {
                 failed();
             }
+            drop(held);
         });
     }
 
@@ -200,7 +187,7 @@ mod tests {
     async fn a_panic_in_spawned_work_sends_a_reply_and_frees_the_count() {
         let (sender, receiver) = external_channel();
         let inflight = InFlight::new();
-        let bridge = Bridge::new(sender, inflight.clone(), Handle::current());
+        let bridge = Bridge::new(sender, inflight.clone(), InFlight::new(), Handle::current());
         bridge.spawn(crashed::refresh(3), async { crash() });
         let got = reply(&receiver).await;
         assert!(
@@ -221,7 +208,7 @@ mod tests {
     #[tokio::test]
     async fn a_panic_in_detached_work_runs_the_failure_and_a_clean_finish_does_not() {
         let (sender, _receiver) = external_channel();
-        let bridge = Bridge::new(sender, InFlight::new(), Handle::current());
+        let bridge = Bridge::new(sender, InFlight::new(), InFlight::new(), Handle::current());
         let (told, heard) = tokio::sync::oneshot::channel();
         bridge.detach(
             async {

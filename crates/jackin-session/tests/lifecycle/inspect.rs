@@ -33,7 +33,7 @@ async fn inspect_reports_the_sandbox_and_flags_only_a_foreign_rule_on_a_codex_ho
         let name = handle.name();
         let session = &rig.world.session;
 
-        let clean = session.inspect(&name).await?;
+        let clean = session.inspect(&name, &CancellationToken::new()).await?;
 
         assert_eq!(clean.summary.name, name);
         assert_eq!(clean.summary.phase, Phase::Ready);
@@ -55,7 +55,7 @@ async fn inspect_reports_the_sandbox_and_flags_only_a_foreign_rule_on_a_codex_ho
         rig.world
             .gateway
             .add_live_rule(&name, codex_host_rule("other")?);
-        let flagged = session.inspect(&name).await?;
+        let flagged = session.inspect(&name, &CancellationToken::new()).await?;
         let rules: Vec<(&str, &str)> = flagged
             .closure_violations
             .iter()
@@ -67,7 +67,10 @@ async fn inspect_reports_the_sandbox_and_flags_only_a_foreign_rule_on_a_codex_ho
             .power(&name, PowerAction::Stop, &CancellationToken::new())
             .await?;
         assert_eq!(
-            session.inspect(&name).await?.supervisor,
+            session
+                .inspect(&name, &CancellationToken::new())
+                .await?
+                .supervisor,
             SupervisorReading::Unreadable
         );
         Ok(())
@@ -81,13 +84,13 @@ async fn inspect_of_an_absent_or_foreign_sandbox_is_not_found() -> TestResult {
         let rig = Rig::new().await?;
         let session = &rig.world.session;
         let absent = rig.sandbox_name(9)?;
-        let missing = session.inspect(&absent).await;
+        let missing = session.inspect(&absent, &CancellationToken::new()).await;
         assert!(matches!(missing, Err(LifecycleError::NotFound(found)) if found == absent));
         let foreign = SandboxName::parse("jackin-ghost-0000")?;
         rig.world
             .gateway
             .insert_unmanaged(&foreign, Labels::from_pairs([])?, Phase::Ready)?;
-        let ghost = session.inspect(&foreign).await;
+        let ghost = session.inspect(&foreign, &CancellationToken::new()).await;
         assert!(matches!(ghost, Err(LifecycleError::NotFound(found)) if found == foreign));
         Ok(())
     })

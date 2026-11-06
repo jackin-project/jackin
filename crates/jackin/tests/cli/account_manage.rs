@@ -57,6 +57,47 @@ async fn rendered(harness: &Harness) -> Result<String, Failure> {
 }
 
 #[tokio::test]
+async fn default_clear_removes_the_default_of_the_provider_only_for_the_account_that_holds_it()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = seeded(&world)?;
+
+        let refused = harness
+            .run(&["account", "default", "two", "--clear"])
+            .await?;
+        failed(
+            &refused,
+            ExitClass::Usage,
+            &["account two is not the default of codex"],
+        )?;
+        assert_eq!(
+            harness
+                .stored()
+                .await?
+                .default_account(Provider::Codex)
+                .map(AccountName::as_str),
+            Some("one")
+        );
+
+        harness
+            .run(&["account", "default", "one", "--clear"])
+            .await?
+            .ok()?;
+        assert!(
+            harness
+                .stored()
+                .await?
+                .default_account(Provider::Codex)
+                .is_none()
+        );
+        harness.run(&["account", "rm", "one"]).await?.ok()?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn default_and_bind_change_exactly_the_named_entry() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
@@ -468,13 +509,19 @@ async fn rm_reaches_a_gateway_that_was_added_while_it_waited_for_the_account_loc
             name: third_name.clone(),
             entry,
         };
-        rig.world.config.edit(vec![add.clone()]).await?;
+        rig.world
+            .config
+            .edit(vec![add.clone()], &CancellationToken::new())
+            .await?;
         session_on(&rig, &third)
             .sync_account(work, &CancellationToken::new())
             .await?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::RemoveGateway(third_name.clone())])
+            .edit(
+                vec![ConfigEdit::RemoveGateway(third_name.clone())],
+                &CancellationToken::new(),
+            )
             .await?;
         fleet.harness.connector = fleet
             .harness
@@ -487,7 +534,11 @@ async fn rm_reaches_a_gateway_that_was_added_while_it_waited_for_the_account_loc
         let removal = fleet.harness.run(&["account", "rm", "work"]);
         let meanwhile = async {
             until_polling(&rig, already).await;
-            fleet.harness.store().edit(vec![add]).await?;
+            fleet
+                .harness
+                .store()
+                .edit(vec![add], &CancellationToken::new())
+                .await?;
             drop(held);
             Ok::<(), Failure>(())
         };
@@ -534,9 +585,10 @@ async fn add_publishes_nothing_to_a_gateway_that_was_removed_while_it_waited_for
             fleet
                 .harness
                 .store()
-                .edit(vec![ConfigEdit::RemoveGateway(GatewayName::parse(
-                    "second",
-                )?)])
+                .edit(
+                    vec![ConfigEdit::RemoveGateway(GatewayName::parse("second")?)],
+                    &CancellationToken::new(),
+                )
                 .await?;
             drop(held);
             Ok::<(), Failure>(())

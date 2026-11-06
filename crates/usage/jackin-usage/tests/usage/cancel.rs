@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::time::Duration;
 
 use jackin_core::Provider;
@@ -9,7 +10,7 @@ use jackin_usage::{Refresh, UnavailableReason, UsageError, UsageRequest};
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    CODEX_PATH, TestResult, UsageHarness, codex_body, codex_login, codex_route, guard, unavailable,
+    CODEX_PATH, TestResult, UsageHarness, codex_body, codex_login, codex_route, unavailable,
     windows_of,
 };
 

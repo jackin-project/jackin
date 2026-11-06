@@ -314,17 +314,21 @@ impl AccountPlan {
         matches!(self, AccountPlan::Gateway(_))
     }
 
-    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
+    pub async fn apply(
+        self,
+        gateways: &Gateways,
+        cancel: &CancellationToken,
+    ) -> Result<Config, AccountEditError> {
         match self {
-            AccountPlan::Offline(plan) => Ok(plan.apply().await?),
-            AccountPlan::Gateway(plan) => plan.apply(gateways).await,
+            AccountPlan::Offline(plan) => Ok(plan.apply(cancel).await?),
+            AccountPlan::Gateway(plan) => plan.apply(gateways, cancel).await,
         }
     }
 }
 
 impl OfflinePlan {
-    pub async fn apply(self) -> Result<Config, ConfigError> {
-        self.locked.desk.store.edit(self.edits).await
+    pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, ConfigError> {
+        self.locked.desk.store.edit(self.edits, cancel).await
     }
 }
 
@@ -338,6 +342,9 @@ impl RemovalPlan {
         connector: &dyn GatewayConnector,
         cancel: &CancellationToken,
     ) -> Result<Config, AccountEditError> {
+        if cancel.is_cancelled() {
+            return Err(ConfigError::Cancelled.into());
+        }
         let gateway = match connector.connect(&self.name, &self.entry, cancel).await {
             Ok(gateway) => gateway,
             Err(error) if error.is_cancelled() => return Err(AccountEditError::Connect(error)),
@@ -367,7 +374,7 @@ impl RemovalPlan {
                     .await
                     .map_err(|error| on_gateway(&self.name, error))?;
             }
-            Ok(self.locked.desk.store.edit(vec![edit]).await?)
+            Ok(self.locked.desk.store.edit(vec![edit], cancel).await?)
         }
         .await;
         match written {
@@ -462,25 +469,45 @@ impl GatewayPlan {
         &self.locked.config
     }
 
-    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
+    pub fn needs_every_gateway(&self) -> bool {
+        self.effects.needs_every_gateway()
+    }
+
+    pub async fn apply(
+        self,
+        gateways: &Gateways,
+        cancel: &CancellationToken,
+    ) -> Result<Config, AccountEditError> {
+        if cancel.is_cancelled() {
+            return Err(ConfigError::Cancelled.into());
+        }
         let GatewayPlan {
             locked,
             edits,
             effects,
         } = self;
-        check_gateways(&locked.config, gateways)?;
         let store = &locked.desk.store;
-        let home = gateways.home();
         let sessions = if effects.needs_every_gateway() {
+            check_gateways(&locked.config, gateways)?;
             gateways.every().map_err(AccountEditError::Unreachable)?
         } else {
+            let home = gateways.home();
+            if locked.config.gateway(home.gateway_name()).is_none() {
+                return Err(AccountError::GatewayRemoved {
+                    gateway: home.gateway_name().clone(),
+                }
+                .into());
+            }
             vec![home]
         };
         let mut journal = Vec::new();
         let written = async {
             forget(&sessions, &effects.forget, &mut journal).await?;
             publish(&sessions, &effects.publish, &mut journal).await?;
-            store.edit(edits).await.map_err(AccountEditError::from)
+            store
+                .edit(edits, cancel)
+                .await
+                .map_err(AccountEditError::from)
         }
         .await;
         match written {
@@ -535,7 +562,7 @@ async fn publish<'a>(
                 .provider_state(&provider)
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
-            let held = state == ProviderState::Present;
+            let held = state.exists();
             if !held && index > 0 {
                 continue;
             }
@@ -599,6 +626,15 @@ impl Session {
         Ok(true)
     }
 
+    pub(crate) async fn confirm_current(
+        &self,
+        account: &Account,
+        cancel: &CancellationToken,
+    ) -> Result<(), AccountError> {
+        drop(self.hold_current(account, cancel).await?);
+        Ok(())
+    }
+
     async fn hold_current(
         &self,
         account: &Account,
@@ -657,7 +693,7 @@ async fn forget_login(gateway: &dyn Gateway, account: &Account) -> Result<(), Ac
 
 async fn holds(gateway: &dyn Gateway, account: &Account) -> Result<bool, AccountError> {
     let provider = ProviderName::for_account(account.name(), Agent::Codex);
-    Ok(gateway.provider_state(&provider).await? == ProviderState::Present)
+    Ok(gateway.provider_state(&provider).await?.exists())
 }
 
 async fn sync_login(

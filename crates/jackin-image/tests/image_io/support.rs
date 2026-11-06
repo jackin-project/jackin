@@ -8,7 +8,6 @@ use std::fs;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::time::Duration;
 
 use jackin_core::{
     Agent, BuilderName, CommitId, DockerLayer, DockerSubcommand, FileSystem, HostPath,
@@ -24,13 +23,16 @@ use jackin_testkit::{
 };
 use tempfile::TempDir;
 use tokio::sync::mpsc::Receiver;
-use tokio::time::timeout;
 
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const CONSTRUCT_DOCKERFILE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/images/construct/Dockerfile"
+));
+pub(crate) const WRITE_FILE_C: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/images/construct/write-file.c"
 ));
 pub(crate) const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -41,15 +43,6 @@ pub(crate) const JACKIN_START: &[u8] =
 pub(crate) const SCAN: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
 pub(crate) const ROLE_DOCKERFILE: &[u8] = b"FROM construct AS role\n";
-
-pub(crate) async fn guarded<F>(future: F) -> TestResult
-where
-    F: Future<Output = TestResult>,
-{
-    timeout(Duration::from_secs(10), future)
-        .await
-        .map_err(|_| "the test exceeded its 10 s guard")?
-}
 
 pub(crate) fn tag_id(tag: &str) -> String {
     format!("sha256:{}", Sha256::of(tag.as_bytes()).as_str())
@@ -112,6 +105,7 @@ impl Fixture {
             platform: Platform::LinuxArm64,
             builder: BuilderName::parse("orbstack")?,
             docker: DockerLayer::Absent,
+            read_write: Vec::new(),
             rebuild: Rebuild::No,
         })
     }

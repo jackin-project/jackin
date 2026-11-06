@@ -979,11 +979,14 @@ async fn a_second_client_leaves_the_pane_read_only_until_the_owner_goes() -> Tes
         let held = rig
             .world
             .session
-            .attach(AttachRequest {
-                sandbox: name,
-                size: size(100, 30)?,
-                input: InputMode::Owner,
-            })
+            .attach(
+                AttachRequest {
+                    sandbox: name,
+                    size: size(100, 30)?,
+                    input: InputMode::Owner,
+                },
+                &tokio_util::sync::CancellationToken::new(),
+            )
             .await?;
         let mut capsule = Capsule::attach(rig, |_| {}).await?;
         let words = PaneWords::openshell();

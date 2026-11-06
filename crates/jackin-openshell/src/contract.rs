@@ -242,6 +242,7 @@ fn path(value: &str) -> Outcome<SandboxPath> {
 struct Ctx<'a> {
     gateway: &'a dyn Gateway,
     fixture: &'a ContractFixture,
+    cancel: CancellationToken,
 }
 
 impl Ctx<'_> {
@@ -306,7 +307,7 @@ impl Ctx<'_> {
     async fn view(&self, name: &SandboxName) -> Outcome<SandboxView> {
         let found = self
             .gateway
-            .find_sandboxes(&SandboxQuery::Name(name.clone()))
+            .find_sandboxes(&SandboxQuery::Name(name.clone()), &self.cancel)
             .await
             .map_err(text)?;
         found
@@ -361,7 +362,7 @@ impl Ctx<'_> {
         for _ in 0..POLL_ATTEMPTS {
             if self
                 .gateway
-                .find_sandboxes(&SandboxQuery::Name(name.clone()))
+                .find_sandboxes(&SandboxQuery::Name(name.clone()), &self.cancel)
                 .await
                 .map_err(text)?
                 .is_empty()
@@ -423,7 +424,10 @@ async fn create_find_by_label(ctx: &Ctx<'_>) -> Outcome<()> {
     ctx.gateway.create_sandbox(&spec).await.map_err(text)?;
     let found = ctx
         .gateway
-        .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch)))
+        .find_sandboxes(
+            &SandboxQuery::Labels(LabelSelector::launch(&launch)),
+            &ctx.cancel,
+        )
         .await
         .map_err(text);
     ctx.cleanup(spec.name()).await;
@@ -537,11 +541,20 @@ async fn absent_sandbox_is_not_found(ctx: &Ctx<'_>) -> Outcome<()> {
         (
             "read_files",
             gateway
-                .read_files(&name, std::slice::from_ref(&target))
+                .read_files(
+                    &name,
+                    std::slice::from_ref(&target),
+                    &CancellationToken::new(),
+                )
                 .await
                 .map(drop),
         ),
-        ("write_file", gateway.write_file(&name, &file).await),
+        (
+            "write_file",
+            gateway
+                .write_file(&name, &file, &CancellationToken::new())
+                .await,
+        ),
         (
             "sandbox_environment",
             gateway.sandbox_environment(&name).await.map(drop),
@@ -624,7 +637,7 @@ async fn marker_exists(
 ) -> Outcome<bool> {
     let files = ctx
         .gateway
-        .read_files(sandbox, std::slice::from_ref(marker))
+        .read_files(sandbox, std::slice::from_ref(marker), &ctx.cancel)
         .await
         .map_err(text)?;
     Ok(files.first().is_some_and(Option::is_some))
@@ -673,10 +686,20 @@ async fn touch_on_success(ctx: &Ctx<'_>) -> Outcome<()> {
     result
 }
 
+fn writer_namespace(relative: &str) -> String {
+    let hash = relative
+        .bytes()
+        .fold(14_695_981_039_346_656_037_u64, |hash, byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(1_099_511_628_211)
+        });
+    format!(".jackin-write-{hash:016x}")
+}
+
 async fn write_file_mode_and_atomicity(ctx: &Ctx<'_>) -> Outcome<()> {
     let sandbox = ctx.sleeper().await?;
     let result = async {
-        let target = path("/sandbox/.contract/secret.json")?;
+        const TARGET: &str = "/sandbox/.contract/secret.json";
+        let target = path(TARGET)?;
         for content in [&b"first"[..], &b"second"[..]] {
             let file = SandboxFile {
                 path: target.clone(),
@@ -684,42 +707,93 @@ async fn write_file_mode_and_atomicity(ctx: &Ctx<'_>) -> Outcome<()> {
                 content: SecretBytes::new(content.to_vec()),
             };
             ctx.gateway
-                .write_file(&sandbox, &file)
+                .write_file(&sandbox, &file, &ctx.cancel)
                 .await
                 .map_err(text)?;
         }
         let read = ctx
             .gateway
-            .read_files(&sandbox, std::slice::from_ref(&target))
+            .read_files(&sandbox, std::slice::from_ref(&target), &ctx.cancel)
             .await
             .map_err(text)?;
         expect(
             read == vec![Some(b"second".to_vec())],
             "the file content is not the last write",
         )?;
-        let listing = ctx
+        let namespace = format!("/sandbox/.contract/{}", writer_namespace(".contract/secret.json"));
+        let inspection = ctx
             .exec(
                 &sandbox,
-                "find \"$1\" -perm 600 -type f; find \"$1\" -maxdepth 0 -perm 700 -type d; ls -A \"$1\"",
-                &["/sandbox/.contract"],
+                r#"set -eu
+uid=$(id -u)
+if [ -n "$(find "$2" -prune -type f -perm 600 -uid "$uid" -links 1 -print 2>/dev/null)" ]; then printf 'target=ok\n'; else printf 'target=bad\n'; fi
+if [ -n "$(find "$1" -prune -type d -perm 700 -uid "$uid" -print 2>/dev/null)" ]; then printf 'parent=ok\n'; else printf 'parent=bad\n'; fi
+parent_entries=$(ls -A "$1")
+parent_entries=$(printf '%s\n' "$parent_entries" | sort)
+namespace_name=${3##*/}
+expected_parent=$(printf '%s\n%s\n' "$namespace_name" secret.json | sort)
+if [ "$parent_entries" = secret.json ]; then
+    printf 'namespace=absent\nparent_entries\n%s\nnamespace_entries\n' "$parent_entries"
+elif [ "$parent_entries" = "$expected_parent" ]; then
+    namespace_dir=$(find "$3" -prune -type d -perm 700 -uid "$uid" -print)
+    identity_file=$(find "$3/identity" -prune -type f -perm 600 -uid "$uid" -links 1 -print 2>/dev/null || true)
+    lock_file=$(find "$3/lock" -prune -type f -perm 600 -uid "$uid" -links 1 -print 2>/dev/null || true)
+    namespace_entries=$(ls -A "$3")
+    namespace_entries=$(printf '%s\n' "$namespace_entries" | sort)
+    if [ "$namespace_dir" = "$3" ]; then printf 'namespace=ok\n'; else printf 'namespace=bad\n'; fi
+    if [ "$identity_file" = "$3/identity" ]; then printf 'identity-file=ok\n'; else printf 'identity-file=bad\n'; fi
+    if [ "$lock_file" = "$3/lock" ]; then printf 'lock=ok\n'; else printf 'lock=bad\n'; fi
+    if [ "$identity_file" = "$3/identity" ] && printf '%s' "$4" | cmp -s - "$3/identity"; then printf 'identity=match\n'; else printf 'identity=mismatch\n'; fi
+    printf 'parent_entries\n%s\nnamespace_entries\n%s\n' "$parent_entries" "$namespace_entries"
+else
+    printf 'inventory=unexpected\nparent_entries\n%s\n' "$parent_entries"
+fi"#,
+                &["/sandbox/.contract", TARGET, &namespace, TARGET],
                 ProgramStdin::Closed,
                 None,
             )
             .await?;
-        let listing = String::from_utf8_lossy(&listing.stdout).into_owned();
-        expect(listing.contains("secret.json"), "the mode is not 0600")?;
+        let inspection = String::from_utf8_lossy(&inspection.stdout).into_owned();
         expect(
-            listing.lines().any(|line| line.ends_with("/.contract")),
-            "the new parent directory is not 0700",
+            inspection.lines().any(|line| line == "target=ok"),
+            "the target is not a regular 0600 file owned by the sandbox user with one link",
         )?;
         expect(
-            listing
-                .lines()
-                .filter(|line| line.contains("secret.json"))
-                .count()
-                == 2
-                && listing.lines().count() == 3,
-            "a temporary file is left behind",
+            inspection.lines().any(|line| line == "parent=ok"),
+            "the target parent is not an owned 0700 directory",
+        )?;
+        expect(
+            inspection.lines().any(|line| line == "namespace=absent")
+                || inspection.lines().any(|line| line == "namespace=ok")
+                || inspection.lines().any(|line| line == "inventory=unexpected"),
+            "the writer namespace is neither absent nor an owned 0700 directory",
+        )?;
+        let expected = if inspection.lines().any(|line| line == "namespace=absent") {
+            "target=ok\nparent=ok\nnamespace=absent\nparent_entries\nsecret.json\nnamespace_entries"
+                .to_owned()
+        } else if inspection.lines().any(|line| line == "namespace=ok") {
+            expect(
+                inspection.lines().any(|line| line == "identity-file=ok"),
+                "the writer identity is not a regular 0600 file owned by the sandbox user with one link",
+            )?;
+            expect(
+                inspection.lines().any(|line| line == "lock=ok"),
+                "the writer lock is not a regular 0600 file owned by the sandbox user with one link",
+            )?;
+            expect(
+                inspection.lines().any(|line| line == "identity=match"),
+                "the writer identity is not bound to the target path",
+            )?;
+            format!(
+                "target=ok\nparent=ok\nnamespace=ok\nidentity-file=ok\nlock=ok\nidentity=match\nparent_entries\n{}\nsecret.json\nnamespace_entries\nidentity\nlock",
+                writer_namespace(".contract/secret.json"),
+            )
+        } else {
+            String::new()
+        };
+        expect(
+            inspection.trim_end() == expected,
+            "the writer left temporary metadata or unexpected entries",
         )
     }
     .await;
@@ -732,7 +806,7 @@ async fn read_missing_file(ctx: &Ctx<'_>) -> Outcome<()> {
     let missing = path("/sandbox/.contract/absent")?;
     let read = ctx
         .gateway
-        .read_files(&sandbox, std::slice::from_ref(&missing))
+        .read_files(&sandbox, std::slice::from_ref(&missing), &ctx.cancel)
         .await
         .map_err(text);
     ctx.cleanup(&sandbox).await;
@@ -823,7 +897,7 @@ async fn output_over_the_limit_is_an_error(ctx: &Ctx<'_>) -> Outcome<()> {
         .await?;
         let whole = ctx
             .gateway
-            .read_files(&sandbox, std::slice::from_ref(&big))
+            .read_files(&sandbox, std::slice::from_ref(&big), &ctx.cancel)
             .await
             .map_err(text)?;
         expect(
@@ -840,7 +914,7 @@ async fn output_over_the_limit_is_an_error(ctx: &Ctx<'_>) -> Outcome<()> {
         .await?;
         let over = ctx
             .gateway
-            .read_files(&sandbox, std::slice::from_ref(&big))
+            .read_files(&sandbox, std::slice::from_ref(&big), &ctx.cancel)
             .await;
         output_too_large(&over, GatewayOp::ReadFiles, OutputStream::Stdout)
     }
@@ -1008,7 +1082,7 @@ async fn power_transitions(ctx: &Ctx<'_>) -> Outcome<()> {
     let result = async {
         let stopped = ctx
             .gateway
-            .set_power(&sandbox, PowerAction::Stop)
+            .set_power(&sandbox, PowerAction::Stop, &ctx.cancel)
             .await
             .map_err(text)?;
         expect(
@@ -1018,7 +1092,7 @@ async fn power_transitions(ctx: &Ctx<'_>) -> Outcome<()> {
         ctx.wait_for(&sandbox, "Stopped", |view| view.phase == Phase::Stopped)
             .await?;
         ctx.gateway
-            .set_power(&sandbox, PowerAction::Start)
+            .set_power(&sandbox, PowerAction::Start, &ctx.cancel)
             .await
             .map_err(text)?;
         ctx.wait_for(&sandbox, "Ready", |view| view.phase == Phase::Ready)
@@ -1034,14 +1108,14 @@ async fn stop_on_stopped_is_ok(ctx: &Ctx<'_>) -> Outcome<()> {
     let sandbox = ctx.sleeper().await?;
     let result = async {
         ctx.gateway
-            .set_power(&sandbox, PowerAction::Stop)
+            .set_power(&sandbox, PowerAction::Stop, &ctx.cancel)
             .await
             .map_err(text)?;
         ctx.wait_for(&sandbox, "Stopped", |view| view.phase == Phase::Stopped)
             .await?;
         let again = ctx
             .gateway
-            .set_power(&sandbox, PowerAction::Stop)
+            .set_power(&sandbox, PowerAction::Stop, &ctx.cancel)
             .await
             .map_err(text)?;
         expect(
@@ -1067,12 +1141,18 @@ async fn ended_main_process_stop_start(ctx: &Ctx<'_>) -> Outcome<()> {
             view.phase.main_process_ended()
         })
         .await?;
-        let stop = ctx.gateway.set_power(spec.name(), PowerAction::Stop).await;
+        let stop = ctx
+            .gateway
+            .set_power(spec.name(), PowerAction::Stop, &ctx.cancel)
+            .await;
         expect(
             matches!(stop, Err(GatewayError::MainProcessFailed { .. })),
             "Stop on an ended main process is not MainProcessFailed",
         )?;
-        let start = ctx.gateway.set_power(spec.name(), PowerAction::Start).await;
+        let start = ctx
+            .gateway
+            .set_power(spec.name(), PowerAction::Start, &ctx.cancel)
+            .await;
         expect(
             matches!(start, Err(GatewayError::FailedPrecondition { .. })),
             "Start on an ended main process is not FailedPrecondition",
@@ -1207,7 +1287,7 @@ async fn upload_tree_checks(
         content: SecretBytes::new(b"stale".to_vec()),
     };
     ctx.gateway
-        .write_file(sandbox, &stale)
+        .write_file(sandbox, &stale, &ctx.cancel)
         .await
         .map_err(text)?;
     ctx.gateway
@@ -1274,7 +1354,7 @@ async fn upload_file_checks(ctx: &Ctx<'_>, sandbox: &SandboxName, dir: &Path) ->
     let replaced = path("/sandbox/.contract-new/small.bin")?;
     let read = ctx
         .gateway
-        .read_files(sandbox, std::slice::from_ref(&replaced))
+        .read_files(sandbox, std::slice::from_ref(&replaced), &ctx.cancel)
         .await
         .map_err(text)?;
     expect(
@@ -1380,7 +1460,7 @@ async fn upload_stopped_sandbox_is_a_transfer_error(ctx: &Ctx<'_>) -> Outcome<()
     let dir = scratch_dir("stopped")?;
     let result = async {
         ctx.gateway
-            .set_power(&sandbox, PowerAction::Stop)
+            .set_power(&sandbox, PowerAction::Stop, &ctx.cancel)
             .await
             .map_err(text)?;
         ctx.wait_for(&sandbox, "Stopped", |view| view.phase == Phase::Stopped)
@@ -1478,7 +1558,10 @@ async fn put_remote(
         mode: FileMode(0o600),
         content: SecretBytes::new(bytes.to_vec()),
     };
-    ctx.gateway.write_file(sandbox, &file).await.map_err(text)
+    ctx.gateway
+        .write_file(sandbox, &file, &ctx.cancel)
+        .await
+        .map_err(text)
 }
 
 async fn download_with_digest(ctx: &Ctx<'_>) -> Outcome<()> {
@@ -1927,7 +2010,11 @@ pub async fn run(
     fixture: &ContractFixture,
     group: ContractGroup,
 ) -> ContractReport {
-    let ctx = Ctx { gateway, fixture };
+    let ctx = Ctx {
+        gateway,
+        fixture,
+        cancel: CancellationToken::new(),
+    };
     let mut checks = Vec::new();
     match group {
         ContractGroup::Core => {

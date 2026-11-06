@@ -270,6 +270,7 @@ async fn restore_of_a_sandbox_whose_codex_started_meanwhile_says_it_is_already_r
                     mode: jackin_core::FileMode(0o600),
                     content: jackin_core::SecretBytes::new(b"1".to_vec()),
                 },
+                &lab.rig.world.cancel,
             )
             .await?;
         gateway.release(&preflight);

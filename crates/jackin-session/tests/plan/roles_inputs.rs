@@ -143,6 +143,20 @@ async fn a_role_input_swapped_for_a_symlink_after_it_was_checked_never_yields_ou
             .await;
         assert!(swapped.load(Ordering::SeqCst), "the swap never ran");
         if let Ok(loaded) = found {
+            let staged: Vec<String> = loaded
+                .files()
+                .iter()
+                .filter_map(|entry| match entry {
+                    ContextEntry::File { path, bytes, .. } if path.as_str() == "policy.yaml" => {
+                        Some(String::from_utf8_lossy(bytes).into_owned())
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                !staged.iter().any(|text| text.contains("evil.example")),
+                "the staged policy.yaml holds the outside bytes"
+            );
             let keys: Vec<String> = loaded
                 .policy()
                 .document()
@@ -218,6 +232,61 @@ const FILE_LIMIT: u64 = 16 * 1024 * 1024;
 fn sparse(path: &Path, len: u64) -> TestResult {
     std::fs::File::create(path)?.set_len(len)?;
     Ok(())
+}
+
+#[tokio::test]
+async fn a_file_that_changes_after_it_was_read_is_staged_and_hashed_as_it_was_read() -> TestResult {
+    guard(async {
+        let role = RoleFixture::new("sentinel")?;
+        role.file("README.md", b"one\n").await?;
+        role.commit().await?;
+        let (cache, _keep) = cache()?;
+        let (plain, _runner) = catalog(&cache);
+        let clean = plain
+            .load_path(role.root(), &CancellationToken::new())
+            .await?;
+
+        let leaf = HostPath::parse(&role.root().as_path().join("README.md"))?;
+        let touches = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = Arc::clone(&touches);
+        let changing = Arc::new(HookFs::new(
+            Arc::new(StdFileSystem::default()),
+            Box::new(move |path: &HostPath| {
+                if *path == leaf && counted.fetch_add(1, Ordering::SeqCst) == 0 {
+                    std::fs::write(leaf.as_path(), b"two\n").map_err(|source| FsError::Io {
+                        path: leaf.clone(),
+                        kind: source.kind(),
+                        message: source.to_string(),
+                    })?;
+                }
+                Ok(())
+            }),
+            Box::new(|| {}),
+        ));
+        let reading = RoleCatalog::new(
+            changing,
+            Arc::new(TestRunner::new()),
+            Arc::new(FakeClock::new()),
+            cache.clone(),
+        );
+        let loaded = reading
+            .load_path(role.root(), &CancellationToken::new())
+            .await?;
+        assert_eq!(loaded.revision().digest, clean.revision().digest);
+        let staged: Vec<&[u8]> = loaded
+            .files()
+            .iter()
+            .filter_map(|entry| match entry {
+                ContextEntry::File { path, bytes, .. } if path.as_str() == "README.md" => {
+                    Some(bytes.as_slice())
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(staged, [b"one\n".as_slice()]);
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]

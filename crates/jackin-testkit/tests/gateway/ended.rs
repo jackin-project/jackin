@@ -41,8 +41,12 @@ async fn assert_exec_not_ready(
         )
         .await
         .err(),
-        fake.read_files(name, &[path("/sandbox/kept")?]).await.err(),
-        fake.write_file(name, &file).await.err(),
+        fake.read_files(name, &[path("/sandbox/kept")?], &CancellationToken::new())
+            .await
+            .err(),
+        fake.write_file(name, &file, &CancellationToken::new())
+            .await
+            .err(),
         fake.open_terminal(&shell).await.err(),
     ];
     for error in errors {
@@ -108,13 +112,17 @@ async fn ended_row(code: i32, ended: Phase) -> TestResult {
     assert_eq!(observe(&fake, &name).await?.phase, ended);
     assert_exec_not_ready(&fake, &name, ended).await?;
     assert_main_refused(&fake, &handle).await?;
-    let stop = fake.set_power(&name, PowerAction::Stop).await;
+    let stop = fake
+        .set_power(&name, PowerAction::Stop, &CancellationToken::new())
+        .await;
     assert!(
         matches!(stop, Err(GatewayError::MainProcessFailed { ref sandbox }) if *sandbox == name)
     );
     assert_eq!(handle.phase(), ended);
     assert_eq!(handle.file(&path("/sandbox/kept")?), Some(b"data".to_vec()));
-    let start = fake.set_power(&name, PowerAction::Start).await;
+    let start = fake
+        .set_power(&name, PowerAction::Start, &CancellationToken::new())
+        .await;
     assert!(matches!(
         start,
         Err(GatewayError::FailedPrecondition { .. })
@@ -125,7 +133,9 @@ async fn ended_row(code: i32, ended: Phase) -> TestResult {
         assert_eq!(view.phase.exit_code(), None);
     }
     for action in [PowerAction::Stop, PowerAction::Start] {
-        let again = fake.set_power(&name, action).await;
+        let again = fake
+            .set_power(&name, action, &CancellationToken::new())
+            .await;
         assert!(matches!(
             again,
             Err(GatewayError::FailedPrecondition { .. })
@@ -154,7 +164,8 @@ async fn a_main_attach_is_not_ready_on_a_stopped_sandbox() -> TestResult {
         let fake = fake()?;
         let handle = ready(&fake, sh("sleep 3600")?).await?;
         let name = handle.name();
-        fake.set_power(&name, PowerAction::Stop).await?;
+        fake.set_power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
         assert_main_not_ready(&fake, &name, Phase::Stopped).await?;
         assert_exec_not_ready(&fake, &name, Phase::Stopped).await?;
         assert_eq!(handle.attachments(), 0);

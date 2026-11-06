@@ -1354,6 +1354,60 @@ mod containers {
     }
 
     #[test]
+    fn computed_commands_are_allowed_only_in_native_gateway_proof_files() -> TestResult {
+        let exec_rpc = text(&[
+            "fn f(program: &str) {",
+            "    let computed = Command::new(program);",
+            "    let docker = Command::new(\"docker\");",
+            "    let podman = Command::new(\"podman\");",
+            "    let container = Command::new(\"container\");",
+            "}",
+        ]);
+        let writer_bootstrap = text(&[
+            "fn f(program: &str) {",
+            "    let computed = Command::new(program);",
+            "    let docker = Command::new(\"docker\");",
+            "    let podman = Command::new(\"podman\");",
+            "    let container = Command::new(\"container\");",
+            "}",
+        ]);
+        let neighboring = "fn f(program: &str) {\n    let computed = Command::new(program);\n}\n";
+        let violations = run(&[
+            (
+                "crates/jackin-openshell/tests/gateway/exec_rpc.rs",
+                &exec_rpc,
+            ),
+            (
+                "crates/jackin-openshell/tests/gateway/writer_bootstrap.rs",
+                &writer_bootstrap,
+            ),
+            (
+                "crates/jackin-openshell/tests/gateway/exec_rpc_neighbor.rs",
+                neighboring,
+            ),
+        ])?;
+        let mut expected = lines(
+            CiStep::Containers,
+            "crates/jackin-openshell/tests/gateway/exec_rpc.rs",
+            &exec_rpc,
+            &["let docker", "let podman", "let container"],
+        );
+        expected.push(at(
+            CiStep::Containers,
+            "crates/jackin-openshell/tests/gateway/exec_rpc_neighbor.rs",
+            2,
+        ));
+        expected.extend(lines(
+            CiStep::Containers,
+            "crates/jackin-openshell/tests/gateway/writer_bootstrap.rs",
+            &writer_bootstrap,
+            &["let docker", "let podman", "let container"],
+        ));
+        assert_eq!(summary(&violations), expected);
+        Ok(())
+    }
+
+    #[test]
     fn command_aliases_are_checked_like_command_new() -> TestResult {
         let session = text(&[
             "use std::process::Command as Cmd;",
@@ -1918,6 +1972,67 @@ mod error_strings {
             "}",
             "#[error(\"struct {}\", plain(.text))]",
             "pub struct S { text: String }",
+        ]);
+        assert_eq!(summary(&run(&source)?), []);
+        Ok(())
+    }
+}
+
+mod error_paths {
+    use super::*;
+
+    const LIB: &str = "crates/jackin-core/src/lib.rs";
+
+    fn run(source: &str) -> Result<Vec<Violation>, Box<dyn Error>> {
+        let fixture = Fixture::new(&bare(&["jackin-core"]))?;
+        fixture.write(LIB, source)?;
+        Ok(ErrorsCheck.run(&fixture.repo()?))
+    }
+
+    #[test]
+    fn a_raw_display_call_in_an_error_message_is_reported_at_the_literal_line() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"named p_named {}\", .path.display())]",
+            "    A { path: PathBuf },",
+            "    #[error(\"as_path p_chain {}\", .0.as_path().display())]",
+            "    B(HostPath),",
+            "    #[error(\"second p_second {} {}\", plain(.message), .dir.display())]",
+            "    C { message: String, dir: PathBuf },",
+            "}",
+            "#[error(\"struct p_struct {}\", .path.display())]",
+            "pub struct S { path: PathBuf }",
+        ]);
+        let violations = run(&source)?;
+        assert_eq!(
+            summary(&violations),
+            lines(
+                CiStep::Errors,
+                LIB,
+                &source,
+                &["p_named", "p_chain", "p_second", "p_struct"]
+            )
+        );
+        assert!(
+            violations[0].message.contains("display"),
+            "{}",
+            violations[0].message
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_display_call_wrapped_in_plain_or_outside_an_error_attribute_passes() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"wrapped {}\", plain(.path.display()))]",
+            "    A { path: PathBuf },",
+            "    #[error(\"nested {}\", plain(.0.as_path().display()))]",
+            "    B(HostPath),",
+            "    #[error(\"typed {}\", .0)]",
+            "    C(HostPath),",
+            "}",
+            "fn shown(path: &Path) -> String { path.display().to_string() }",
         ]);
         assert_eq!(summary(&run(&source)?), []);
         Ok(())

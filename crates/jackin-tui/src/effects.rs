@@ -32,7 +32,6 @@ use jackin_session::{
     plan_account_edits, read_chatgpt_login,
 };
 use thiserror::Error;
-use tokio_util::sync::CancellationToken;
 
 use crate::bridge::Settled;
 use crate::changes::read_changes;
@@ -160,7 +159,7 @@ impl Inputs {
         if edits.is_empty() {
             return Ok(config.clone());
         }
-        Ok(self.config.edit(edits).await?)
+        Ok(self.config.edit(edits, &self.cancel).await?)
     }
 
     async fn snapshot_of(&self, config: &Config) -> Box<Snapshot> {
@@ -196,7 +195,7 @@ impl Inputs {
         }
     }
 
-    async fn login_file(
+    pub(crate) async fn login_file(
         &self,
         provider: jackin_core::Provider,
         folder: &HostPath,
@@ -265,7 +264,7 @@ impl Inputs {
             project,
             folders: BTreeMap::new(),
         };
-        let edits = persist::workspace(&config, base, workspace, &resolved)?;
+        let edits = persist::workspace(base, workspace, &resolved)?;
         let saved = self.applied(&config, edits).await?;
         let name = WorkspaceName::parse(&workspace.name).map_err(PersistError::from)?;
         if let Some(old) = base.filter(|b| b.name != workspace.name) {
@@ -306,7 +305,7 @@ impl Inputs {
         let _hold = self.ensure_unused(&config, &name).await?;
         let saved = self
             .config
-            .edit(vec![ConfigEdit::RemoveWorkspace(name)])
+            .edit(vec![ConfigEdit::RemoveWorkspace(name)], &self.cancel)
             .await?;
         Ok(self.snapshot_of(&saved).await)
     }
@@ -383,10 +382,10 @@ impl Inputs {
             .await
             .map_err(|error| Refused::Text(text(&error)))?;
         match plan {
-            AccountPlan::Offline(plan) => Ok(plan.apply().await?),
+            AccountPlan::Offline(plan) => Ok(plan.apply(&self.cancel).await?),
             AccountPlan::Gateway(plan) => {
                 let gateways = self.gateways(plan.config()).await?;
-                plan.apply(&gateways)
+                plan.apply(&gateways, &self.cancel)
                     .await
                     .map_err(|error| Refused::Text(text(&error)))
             }
@@ -566,7 +565,7 @@ impl Inputs {
             SUPERVISOR_WAIT,
             &self.cancel,
             || async {
-                let reading = session.supervisor_state(name).await?;
+                let reading = session.supervisor_state(name, &self.cancel).await?;
                 Ok::<_, GatewayError>(match reading {
                     SupervisorReading::Reported(SupervisorState::Waiting) => Poll::Ready(()),
                     _ => Poll::Pending,
@@ -642,7 +641,7 @@ impl Inputs {
             let (gateway, name) = self.sandbox(instance)?;
             let config = self.config.load().await?;
             self.session(&gateway)?
-                .purge(&config, &name, PurgeMode::Guarded)
+                .purge(&config, &name, PurgeMode::Guarded, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             self.after_lifecycle().await
@@ -671,7 +670,7 @@ impl Inputs {
                 },
                 None => ConfigEdit::UnbindRoleAccount { role: name, agent },
             };
-            let saved = self.config.edit(vec![edit]).await?;
+            let saved = self.config.edit(vec![edit], &self.cancel).await?;
             Ok::<_, Refused>(self.snapshot_of(&saved).await)
         }
         .await;
@@ -689,7 +688,10 @@ impl Inputs {
     pub(crate) async fn remove_role(&self, role: &str) -> Settled {
         let result = async {
             let name = RoleName::parse(role).map_err(PersistError::from)?;
-            let saved = self.config.edit(vec![ConfigEdit::RemoveRole(name)]).await?;
+            let saved = self
+                .config
+                .edit(vec![ConfigEdit::RemoveRole(name)], &self.cancel)
+                .await?;
             Ok::<_, Refused>(self.snapshot_of(&saved).await)
         }
         .await;
@@ -727,17 +729,20 @@ impl Inputs {
             let root = self.folder(location).await?;
             let loaded = self
                 .roles
-                .load_path(&root, &CancellationToken::new())
+                .load_path(&root, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             (loaded.name().clone(), RoleSource::Path(root))
         };
         let saved = self
             .config
-            .edit(vec![ConfigEdit::AddRole {
-                name: name.clone(),
-                source,
-            }])
+            .edit(
+                vec![ConfigEdit::AddRole {
+                    name: name.clone(),
+                    source,
+                }],
+                &self.cancel,
+            )
             .await?;
         Ok((name.to_string(), self.snapshot_of(&saved).await))
     }
@@ -757,7 +762,7 @@ impl Inputs {
                 );
                 let loaded = self
                     .roles
-                    .load(config, Some(name), &anywhere, &CancellationToken::new())
+                    .load(config, Some(name), &anywhere, &self.cancel)
                     .await
                     .map_err(|error| Refused::Text(text(&error)))?;
                 Ok(loaded.root().clone())
@@ -772,7 +777,7 @@ impl Inputs {
             let root = self.role_root(&config, &name).await?;
             let loaded = self
                 .roles
-                .load_path(&root, &CancellationToken::new())
+                .load_path(&root, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             if let Some(entry) = config.role(&name) {

@@ -27,9 +27,9 @@ async fn stop_on_a_stopped_sandbox_is_ok_keeps_the_files_and_ended_sandboxes_sti
         let name = handle.name();
         write(&fake, &name, "/sandbox/kept", "data").await?;
 
-        let stopped = fake.set_power(&name, PowerAction::Stop).await?;
+        let stopped = fake.set_power(&name, PowerAction::Stop, &CancellationToken::new()).await?;
         assert_eq!(stopped.phase, Phase::Stopped);
-        let again = fake.set_power(&name, PowerAction::Stop).await?;
+        let again = fake.set_power(&name, PowerAction::Stop, &CancellationToken::new()).await?;
         assert_eq!(again.phase, Phase::Stopped);
         for _ in 0..5 {
             assert_eq!(observe(&fake, &name).await?.phase, Phase::Stopped);
@@ -44,7 +44,7 @@ async fn stop_on_a_stopped_sandbox_is_ok_keeps_the_files_and_ended_sandboxes_sti
         ] {
             let handle = ready(&fake, sh("sleep 3600")?).await?;
             handle.exit_main(code);
-            let stop = fake.set_power(&handle.name(), PowerAction::Stop).await;
+            let stop = fake.set_power(&handle.name(), PowerAction::Stop, &CancellationToken::new()).await;
             assert!(
                 matches!(&stop, Err(GatewayError::MainProcessFailed { sandbox }) if *sandbox == handle.name()),
                 "{stop:?}"
@@ -54,13 +54,13 @@ async fn stop_on_a_stopped_sandbox_is_ok_keeps_the_files_and_ended_sandboxes_sti
 
         let handle = ready(&fake, sh("sleep 3600")?).await?;
         handle.exit_main(7);
-        let start = fake.set_power(&handle.name(), PowerAction::Start).await;
+        let start = fake.set_power(&handle.name(), PowerAction::Start, &CancellationToken::new()).await;
         assert!(matches!(
             start,
             Err(GatewayError::FailedPrecondition { .. })
         ));
         assert_eq!(handle.phase(), Phase::Starting);
-        let stop = fake.set_power(&handle.name(), PowerAction::Stop).await;
+        let stop = fake.set_power(&handle.name(), PowerAction::Stop, &CancellationToken::new()).await;
         assert!(
             matches!(stop, Err(GatewayError::FailedPrecondition { .. })),
             "{stop:?}"
@@ -107,7 +107,7 @@ async fn stop_and_start_on_a_provisioning_failed_sandbox_follow_the_p4_4_capture
             let handle = fake.sandbox(&name).ok_or("not listed")?;
 
             for _ in 0..2 {
-                let stop = fake.set_power(&name, PowerAction::Stop).await;
+                let stop = fake.set_power(&name, PowerAction::Stop, &CancellationToken::new()).await;
                 assert!(
                     matches!(&stop, Err(GatewayError::Protocol { message }) if message.contains("stop sandbox failed")),
                     "{stop:?}"
@@ -118,7 +118,7 @@ async fn stop_and_start_on_a_provisioning_failed_sandbox_follow_the_p4_4_capture
                 assert_unchanged_failure(&fake, &name).await?;
             }
             for _ in 0..2 {
-                let start = fake.set_power(&name, PowerAction::Start).await;
+                let start = fake.set_power(&name, PowerAction::Start, &CancellationToken::new()).await;
                 assert!(
                     matches!(start, Err(GatewayError::FailedPrecondition { .. })),
                     "{start:?}"
@@ -182,7 +182,7 @@ async fn call(
             .await
             .map(drop),
         Op::Read => fake
-            .read_files(name, &[path("/sandbox/kept")?])
+            .read_files(name, &[path("/sandbox/kept")?], &CancellationToken::new())
             .await
             .map(drop),
         Op::Write => {
@@ -191,7 +191,8 @@ async fn call(
                 mode: jackin_core::FileMode(0o600),
                 content: jackin_core::SecretBytes::new(b"x".to_vec()),
             };
-            fake.write_file(name, &file).await
+            fake.write_file(name, &file, &CancellationToken::new())
+                .await
         }
         Op::Upload => {
             fake.upload_tree(
@@ -217,7 +218,10 @@ async fn call(
             .open_terminal(&main_request(name, InputMode::Owner)?)
             .await
             .map(drop),
-        Op::Stop => fake.set_power(name, PowerAction::Stop).await.map(drop),
+        Op::Stop => fake
+            .set_power(name, PowerAction::Stop, &CancellationToken::new())
+            .await
+            .map(drop),
     };
     Ok(outcome)
 }
@@ -277,8 +281,10 @@ async fn a_start_settles_on_the_first_call_that_reads_the_phase_and_the_files_ar
         let handle = ready(&fake, sh("sleep 3600")?).await?;
         let name = handle.name();
         write(&fake, &name, "/sandbox/kept", "data").await?;
-        fake.set_power(&name, PowerAction::Stop).await?;
-        fake.set_power(&name, PowerAction::Start).await?;
+        fake.set_power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
+        fake.set_power(&name, PowerAction::Start, &CancellationToken::new())
+            .await?;
         assert_eq!(handle.phase(), Phase::Starting);
         assert_eq!(
             read(&fake, &name, "/sandbox/kept").await?,

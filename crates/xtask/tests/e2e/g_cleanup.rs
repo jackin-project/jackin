@@ -6,12 +6,20 @@ use std::time::Duration;
 use jackin_core::LabelSelector;
 use jackin_openshell::{Gateway as _, SandboxQuery};
 use jackin_xtask::StepId;
+use tokio_util::sync::CancellationToken;
 
 use super::scenario::{ExportMode, J05Fault, Ran, Scenario};
 
 async fn survivors(scenario: &Scenario) -> (Vec<String>, Vec<String>) {
     let query = SandboxQuery::Labels(LabelSelector::managed());
-    let views = scenario.gateway.find_sandboxes(&query).await.expect("find");
+    let verification = CancellationToken::new();
+    let views = tokio::time::timeout(
+        Duration::from_secs(5),
+        scenario.gateway.find_sandboxes(&query, &verification),
+    )
+    .await
+    .expect("verification find timed out")
+    .expect("find");
     let mut sandboxes: Vec<String> = views.iter().map(|view| view.name.to_string()).collect();
     sandboxes.sort();
     let mut providers: Vec<String> = scenario

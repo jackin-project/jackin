@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Sha256;
+use jackin_testkit::guard;
 use std::error::Error;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -22,9 +23,7 @@ use tokio::sync::{mpsc, oneshot, watch};
 use tokio::time::{Instant, timeout};
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{
-    DockerModel, Fixture, Outcome, Script, TestResult, guarded, tag_of, until_role_line,
-};
+use crate::support::{DockerModel, Fixture, Outcome, Script, TestResult, tag_of, until_role_line};
 
 #[derive(Debug)]
 struct Gate {
@@ -260,7 +259,7 @@ async fn call(
 #[tokio::test]
 async fn two_calls_for_one_final_key_build_once_and_the_second_is_served_from_cache() -> TestResult
 {
-    guarded(async {
+    guard(async {
         let mut rig = Rig::new()?;
         rig.close();
         let request = rig.fixture.request()?;
@@ -308,7 +307,7 @@ async fn two_calls_for_one_final_key_build_once_and_the_second_is_served_from_ca
 
 #[tokio::test]
 async fn a_peer_rebuild_waits_while_the_role_and_derived_builds_read_the_construct() -> TestResult {
-    guarded(async {
+    guard(async {
         let mut rig = Rig::new()?;
         rig.close();
         let request = rig.fixture.request()?;
@@ -353,7 +352,7 @@ async fn a_peer_rebuild_waits_while_the_role_and_derived_builds_read_the_constru
 
 #[tokio::test]
 async fn a_rebuild_of_the_same_key_waits_until_the_caller_drops_the_returned_hold() -> TestResult {
-    guarded(async {
+    guard(async {
         let mut rig = Rig::new()?;
         rig.model.stable_ids();
         let request = rig.fixture.request()?;
@@ -396,7 +395,7 @@ async fn a_rebuild_of_the_same_key_waits_until_the_caller_drops_the_returned_hol
 #[tokio::test]
 async fn a_cache_hit_keeps_the_final_tag_held_until_the_caller_drops_the_returned_hold()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let mut rig = Rig::new()?;
         rig.model.stable_ids();
         let request = rig.fixture.request()?;
@@ -441,7 +440,7 @@ async fn a_cache_hit_keeps_the_final_tag_held_until_the_caller_drops_the_returne
 
 #[tokio::test]
 async fn different_final_keys_share_only_the_construct_lock_and_both_build() -> TestResult {
-    guarded(async {
+    guard(async {
         let mut rig = Rig::new()?;
         rig.close();
         let first_request = rig.fixture.request()?;
@@ -488,7 +487,7 @@ async fn different_final_keys_share_only_the_construct_lock_and_both_build() -> 
 
 #[tokio::test]
 async fn a_cached_role_is_served_without_waiting_for_a_peers_role_build() -> TestResult {
-    guarded(async {
+    guard(async {
         let mut rig = Rig::new()?;
         let cached_request = rig.fixture.request()?;
         let mut building_request = cached_request.clone();
@@ -643,7 +642,7 @@ async fn waiting_case(request: &ImageRequest) -> TestResult {
 #[tokio::test]
 async fn the_key_lock_is_released_on_failure_cancel_and_drop_and_waiting_honors_cancel()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let fixture = Fixture::new()?;
         let request = fixture.request()?;
         failed_case(&request).await?;
@@ -657,7 +656,7 @@ async fn the_key_lock_is_released_on_failure_cancel_and_drop_and_waiting_honors_
 #[tokio::test]
 async fn two_roles_that_both_miss_the_construct_build_it_once_and_neither_sees_a_moved_source()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let mut rig = Rig::holding(CONSTRUCT_TAGS)?;
         rig.close();
         let first_request = rig.fixture.request()?;

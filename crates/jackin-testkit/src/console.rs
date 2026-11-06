@@ -333,6 +333,18 @@ impl ConsoleRig {
         Ok(())
     }
 
+    pub async fn settle_all(&mut self) -> Result<(), FixtureError> {
+        let clock = Arc::clone(&self.wall.clock);
+        tokio::select! {
+            () = self.console.drain_all() => {}
+            () = clock.until_stalled(SETTLE_STALL) => {
+                return Err("the console made no progress for 5 s".into());
+            }
+        }
+        self.render();
+        Ok(())
+    }
+
     pub fn screen(&mut self) -> String {
         self.screen_at(self.size.0, self.size.1)
     }

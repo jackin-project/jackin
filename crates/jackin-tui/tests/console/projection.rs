@@ -111,9 +111,12 @@ async fn removed_workspace_label_lists_without_workspace() -> TestResult {
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::RemoveWorkspace(WorkspaceName::parse(
-                "platform-backend",
-            )?)])
+            .edit(
+                vec![ConfigEdit::RemoveWorkspace(WorkspaceName::parse(
+                    "platform-backend",
+                )?)],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::new(&rig.world).await?;
         let world = &console.console().app().world;
@@ -140,10 +143,13 @@ async fn list_failure_on_one_gateway() -> TestResult {
             .ok_or("the rig has no gateway")?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddGateway {
-                name: lost.clone(),
-                entry,
-            }])
+            .edit(
+                vec![ConfigEdit::AddGateway {
+                    name: lost.clone(),
+                    entry,
+                }],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::builder(&rig.world)
             .gateway(
@@ -270,7 +276,7 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
         let summary = rig
             .world
             .session
-            .list()
+            .list(&rig.world.cancel)
             .await?
             .sandboxes
             .into_iter()

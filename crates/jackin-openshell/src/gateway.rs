@@ -30,7 +30,11 @@ pub trait Gateway: Send + Sync + Debug {
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError>;
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
-    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError>;
+    async fn find_sandboxes(
+        &self,
+        query: &SandboxQuery,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<SandboxView>, GatewayError>;
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError>;
     async fn sandbox_environment(
         &self,
@@ -40,6 +44,7 @@ pub trait Gateway: Send + Sync + Debug {
         &self,
         name: &SandboxName,
         action: PowerAction,
+        cancel: &CancellationToken,
     ) -> Result<SandboxView, GatewayError>;
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError>;
 
@@ -52,11 +57,13 @@ pub trait Gateway: Send + Sync + Debug {
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
+        cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError>;
     async fn write_file(
         &self,
         sandbox: &SandboxName,
         file: &SandboxFile,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError>;
 
     async fn upload_tree(
@@ -103,7 +110,14 @@ pub enum ProfileSync {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ProviderState {
     Absent,
+    Unrefreshed,
     Present,
+}
+
+impl ProviderState {
+    pub fn exists(self) -> bool {
+        self != ProviderState::Absent
+    }
 }
 
 #[derive(Debug)]
@@ -245,6 +259,14 @@ pub struct ProgramRun {
     pub stdin: ProgramStdin,
     pub touch_on_success: Option<SandboxPath>,
     pub timeout: Duration,
+}
+
+impl ProgramRun {
+    pub fn c_locale() -> BTreeMap<EnvName, String> {
+        EnvName::parse("LC_ALL")
+            .map(|name| BTreeMap::from([(name, "C".to_owned())]))
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug)]

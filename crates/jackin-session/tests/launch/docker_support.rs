@@ -89,9 +89,10 @@ pub(crate) async fn nothing_was_created(rig: &Rig) -> Result<(), Box<dyn Error>>
     let found = rig
         .world
         .gateway
-        .find_sandboxes(&jackin_openshell::SandboxQuery::Labels(
-            LabelSelector::managed(),
-        ))
+        .find_sandboxes(
+            &jackin_openshell::SandboxQuery::Labels(LabelSelector::managed()),
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await?;
     assert!(found.is_empty());
     Ok(())
