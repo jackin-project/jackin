@@ -8,7 +8,7 @@ Keep this section identical in all four repositories. Write the rules for one re
 - OpenShell is the only execution engine. Do not run an agent, a sandbox, or a container with Docker, Podman, or Apple `container`.
 - Jackin builds the role images with Docker BuildKit through `docker buildx`. Only the `jackin-image` crate starts `docker`.
 - An agent can run Docker containers in its sandbox only when its role or workspace enables the Docker capability (decision D24). The capability is disabled by default.
-- Codex is the only agent. Do not add code, files, or configuration for another agent.
+- The agents are the twelve tuples of decision D29 in `rewrite/DESIGN.md`. Do not add code, files, or configuration for an agent outside that catalog.
 - Use the old code only as a reference. To read an old jackin file, run `git show 470fc5d6:<path>` in jackin. Copy old code only when the task states a reason.
 - Do not keep compatibility. Do not write a migration, an importer, a shim, an alias, or a fallback. Make breaking changes.
 - Use the latest stable version of every tool and every dependency. Do not use a prerelease.

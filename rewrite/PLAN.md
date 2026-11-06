@@ -689,3 +689,19 @@ P11.1 and P11.2 run in parallel.
   - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/jackin-project/jackin-the-architect/pull/481"}`
   - `{"baseRefName":"main","headRefName":"feature/openshell-native","isDraft":false,"state":"OPEN","url":"https://github.com/tailrocks/terminal-components-baseline/pull/1"}`
   - The operator then asked to merge the baseline pull request once it was ready. After its 121 review threads and a second review round were closed, it was merged on 2026-11-04 with a merge commit (`2e9e60f`), so the baseline commit jackin pins (`6eb201c`) is reachable from baseline `main`.
+
+## Phase A. Add all agents (D29)
+
+The task texts are in `rewrite/GOAL-MULTI-AGENT.md`. Do the tasks in order A0, A1, A2, A3, A3M, A4, A5, A6, A7, A8, A9. Mark each box with its commit, gate output, and evidence file.
+
+- [x] A0 Amend the design (D29 in DESIGN.md and decisions.tsv). Gate: reviewer finds no conflict with D01, D03, D05, D10, D27. Proof: two reviewer rounds; round 1 CHANGES (6 findings), round 2 CHANGES (1 finding), each finding fixed and re-checked in the diff; core rules of D01, D03, D10, D27 unchanged.
+- [ ] A1 Prove each agent artifact. Output: `rewrite/research/agent-artifacts.md`, one section per agent.
+- [ ] A2 Generalize the catalog in jackin-core. Gate: G-FAST.
+- [ ] A3 Generalize image, policy, and launch. Gate: G-FAST.
+- [ ] A3M Many agents in one sandbox. Gate: G-FULL and `rewrite/evidence/A3M-live.md`.
+- [ ] A4 omp with Z.AI, Kimi, MiniMax, MiMo. Gate: G-E2E per supported tuple and G-FULL.
+- [ ] A5 Native key agents: Kimi Code, MiMo Code, MiniMax Code. Gate: G-E2E per supported tuple.
+- [ ] A6 Native OAuth agents: Grok Build, Muse Code, MiniMax Code. Gate: G-E2E per supported tuple with refresh proof.
+- [ ] A7 Claude Code and Antigravity. Gate: vendor reply in evidence, then G-E2E. Blocked until then.
+- [ ] A8 Console and roles. Gate: G-FULL in jackin and in the baseline.
+- [ ] A9 Final proof and close. Gate: G-FULL, both reviewer verdicts, no open pull request of this program except PR 1264.
