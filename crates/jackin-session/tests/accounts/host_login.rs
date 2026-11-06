@@ -2,9 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Account, AccountName, Agent, CredentialSource, HostPath, Program, Provider, ProviderName,
+    Account, AccountName, Agent, ConfigEdit, CredentialSource, HostPath, Program, Provider,
+    ProviderName,
 };
-use jackin_session::{AccountError, grok_auth_file, read_grok_login, read_muse_host_metadata};
+use jackin_session::{
+    AccountError, grok_auth_file, plan_account_edits_for_agent, read_grok_login,
+    read_muse_host_metadata,
+};
 use jackin_testkit::{ProcessReply, ScriptedProgram, World};
 use tokio_util::sync::CancellationToken;
 
@@ -336,6 +340,26 @@ async fn muse_metadata_preconditions_never_run_keychain() -> TestResult {
             assert!(world.gateway.providers().is_empty());
             assert!(security_seen(&world).is_empty(), "{error:?}");
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn muse_host_login_account_plans_gateway_sync() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("auth.json");
+        let account = host_login_account("museone", Provider::Muse, &HostPath::parse(&file)?)?;
+        let plan = plan_account_edits_for_agent(
+            &world.desk(),
+            vec![ConfigEdit::AddAccount(account)],
+            Agent::MuseCode,
+            &CancellationToken::new(),
+        )
+        .await?;
+        assert!(plan.needs_gateway());
         Ok(())
     })
     .await

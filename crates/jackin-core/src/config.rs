@@ -527,7 +527,7 @@ impl Account {
 
     pub fn has_provider(&self) -> bool {
         matches!(self.credential, CredentialSource::HostLogin { .. })
-            && matches!(self.provider, Provider::Grok)
+            && matches!(self.provider, Provider::Grok | Provider::Muse)
             || self.chatgpt_login().is_some()
             || (matches!(
                 self.provider,
