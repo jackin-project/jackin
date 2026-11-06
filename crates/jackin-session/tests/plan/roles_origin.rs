@@ -48,13 +48,13 @@ impl Origin {
     }
 
     pub(crate) async fn at(url: &str) -> Result<Origin, Box<dyn Error>> {
-        let role = RoleFixture::new("sentinel")?.model("model-1");
+        let role = RoleFixture::new("sentinel")?.model("gpt-5.1-codex");
         role.commit().await?;
         let root = role.root().as_path();
         git(root, &["tag", "v1"]).await?;
         let first = git(root, &["rev-parse", "HEAD"]).await?;
         git(root, &["checkout", "-q", "-b", "dev"]).await?;
-        role.clone().model("model-dev").commit().await?;
+        role.clone().model("gpt-5.1-codex").commit().await?;
         let dev = git(root, &["rev-parse", "HEAD"]).await?;
         git(root, &["checkout", "-q", "main"]).await?;
         let home_dir = tempfile::tempdir()?;
@@ -117,8 +117,9 @@ impl Origin {
                     commit,
                     loaded
                         .manifest()
-                        .codex
-                        .model
+                        .agents
+                        .get(&jackin_core::Agent::Codex)
+                        .and_then(|s| s.model.as_ref())
                         .as_ref()
                         .map(|m| m.as_str().to_owned()),
                 )

@@ -107,6 +107,7 @@ fn login_text() -> String {
 
 fn default_role() -> Result<RoleFixture, FixtureError> {
     Ok(RoleFixture::new("sentinel")?
+        .omp()
         .env("GREETING", Some("hello"), Some("Greeting"))
         .hook(HookKind::Setup, b"#!/bin/sh\n")
         .hook(HookKind::Preflight, b"#!/bin/sh\n"))

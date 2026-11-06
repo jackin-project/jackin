@@ -22,31 +22,31 @@ async fn two_origins() -> Result<(Origin, Origin), Box<dyn std::error::Error>> {
 async fn a_changed_role_url_never_reuses_the_old_origins_checkout() -> TestResult {
     guard(async {
         let (a, b) = two_origins().await?;
-        let a_head = a.advance("model-FROM-A").await?;
-        let b_head = b.advance("model-FROM-B").await?;
+        let a_head = a.advance("gpt-5.1-codex").await?;
+        let b_head = b.advance("gpt-5.1-codex").await?;
         let (cache, _keep) = cache()?;
 
         let loaded = a.load(&cache, None).await?.map_err(|e| format!("{e:?}"))?;
         assert_eq!(
             (loaded.0, loaded.1.as_deref()),
-            (a_head, Some("model-FROM-A"))
+            (a_head, Some("gpt-5.1-codex"))
         );
 
         let loaded = b.load(&cache, None).await?.map_err(|e| format!("{e:?}"))?;
         assert_eq!(
             (loaded.0, loaded.1.as_deref()),
-            (b_head.clone(), Some("model-FROM-B"))
+            (b_head.clone(), Some("gpt-5.1-codex"))
         );
 
-        a.advance("model-EVIL").await?;
+        a.advance("gpt-5.1-codex").await?;
         let loaded = b.load(&cache, None).await?.map_err(|e| format!("{e:?}"))?;
         assert_eq!(
             (loaded.0, loaded.1.as_deref()),
-            (b_head, Some("model-FROM-B"))
+            (b_head, Some("gpt-5.1-codex"))
         );
 
         let loaded = a.load(&cache, None).await?.map_err(|e| format!("{e:?}"))?;
-        assert_eq!(loaded.1.as_deref(), Some("model-EVIL"));
+        assert_eq!(loaded.1.as_deref(), Some("gpt-5.1-codex"));
         Ok(())
     })
     .await
@@ -56,14 +56,14 @@ async fn a_changed_role_url_never_reuses_the_old_origins_checkout() -> TestResul
 async fn a_changed_role_url_drops_the_tags_and_branches_of_the_old_origin() -> TestResult {
     guard(async {
         let (a, b) = two_origins().await?;
-        a.advance("model-FROM-A").await?;
+        a.advance("gpt-5.1-codex").await?;
         super::roles_origin::git(a.role.root().as_path(), &["tag", "only-in-a"]).await?;
         let (cache, _keep) = cache()?;
         let loaded = a
             .load(&cache, Some("only-in-a"))
             .await?
             .map_err(|e| format!("{e:?}"))?;
-        assert_eq!(loaded.1.as_deref(), Some("model-FROM-A"));
+        assert_eq!(loaded.1.as_deref(), Some("gpt-5.1-codex"));
         let missing = b.load(&cache, Some("only-in-a")).await?;
         assert!(missing.is_err(), "{missing:?}");
         Ok(())

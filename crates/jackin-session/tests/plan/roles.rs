@@ -6,7 +6,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 
-use jackin_core::{HookKind, HostPath, ManifestError, ModelName, RoleManifest, Sha256};
+use jackin_core::{HookKind, HostPath, ManifestError, RoleManifest, Sha256};
 use jackin_image::DockerfileError;
 use jackin_openshell::{ClosureViolation, PolicyError};
 use jackin_session::{LoadedRole, RoleCatalog, RoleError};
@@ -149,7 +149,7 @@ async fn a_role_policy_that_overlaps_a_codex_host_is_rejected_before_any_plan() 
 async fn a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway() -> TestResult {
     guard(async {
         let role = RoleFixture::new("sentinel")?
-            .model("gpt-5.2")
+            .model("gpt-5.1-codex")
             .dockerfile_path("build/role.Dockerfile")
             .dockerfile("FROM construct\nRUN echo role\n")
             .policy_path("net/egress.yaml")
@@ -175,11 +175,11 @@ async fn a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway() 
         assert_eq!(
             loaded
                 .manifest()
-                .codex
-                .model
-                .as_ref()
-                .map(ModelName::as_str),
-            Some("gpt-5.2")
+                .agents
+                .get(&jackin_core::Agent::Codex)
+                .and_then(|s| s.model.as_ref())
+                .map(jackin_core::ModelName::as_str),
+            Some("gpt-5.1-codex")
         );
         assert_eq!(loaded.dockerfile().path.as_str(), "build/role.Dockerfile");
         assert_eq!(

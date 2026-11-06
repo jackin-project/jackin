@@ -64,6 +64,7 @@ pub struct RoleFixture {
     setup: Option<HookSpec>,
     preflight: Option<HookSpec>,
     manifest: Option<String>,
+    omp: bool,
     gitignore: Option<String>,
 }
 
@@ -148,12 +149,19 @@ impl RoleFixture {
             setup: None,
             preflight: None,
             manifest: None,
+            omp: false,
             gitignore: None,
         })
     }
 
     pub fn root(&self) -> &HostPath {
         &self.root
+    }
+
+    #[must_use]
+    pub fn omp(mut self) -> RoleFixture {
+        self.omp = true;
+        self
     }
 
     #[must_use]
@@ -280,8 +288,13 @@ impl RoleFixture {
             quote(&self.dockerfile.0),
             quote(&self.policy.0)
         );
+        text.push_str("\n[agents.codex]\n");
         if let Some(model) = &self.model {
-            text.push_str(&format!("\n[codex]\nmodel = {}\n", quote(model)));
+            text.push_str(&format!("model = {}\n", quote(model)));
+        }
+        text.push_str("instructions = \"instructions/codex.md\"\n");
+        if self.omp {
+            text.push_str("\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n");
         }
         text.push_str(&format!("\n[docker]\nenabled = {}\n", self.docker));
         if self.setup.is_some() || self.preflight.is_some() {

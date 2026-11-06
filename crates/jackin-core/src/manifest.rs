@@ -6,6 +6,7 @@ use std::fmt;
 
 use thiserror::Error;
 
+use crate::agent::{Agent, TUPLES, TupleState};
 use crate::boundary::{FileMode, FileSystem, FsError};
 use crate::display::plain;
 use crate::fs::write_atomic;
@@ -14,6 +15,7 @@ use crate::paths::{HostPath, RepoPath};
 use crate::tomlkit::{Finding, Reader, parse_table, quote};
 
 const MANIFEST_MODE: FileMode = FileMode(0o644);
+pub const CODEX_INSTRUCTIONS: &str = "instructions/codex.md";
 const ENV_TEXT: &str = "expected text without a newline or NUL";
 const REPO_PATH: &str = "expected a relative path without empty, . or .. segments";
 
@@ -21,7 +23,7 @@ const REPO_PATH: &str = "expected a relative path without empty, . or .. segment
 pub struct RoleManifest {
     pub schema: SchemaVersion,
     pub role: RoleSection,
-    pub codex: CodexSection,
+    pub agents: BTreeMap<Agent, AgentSection>,
     pub docker: DockerSection,
     pub hooks: HooksSection,
     pub env: BTreeMap<EnvName, EnvSpec>,
@@ -38,8 +40,9 @@ pub struct RoleSection {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CodexSection {
+pub struct AgentSection {
     pub model: Option<ModelName>,
+    pub instructions: RepoPath,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +95,10 @@ pub enum ManifestError {
     UnsupportedSchema { found: i64 },
     #[error("reserved environment name {0}")]
     ReservedEnvName(EnvName),
+    #[error("role {role} has no instructions for agent {}", .agent.as_str())]
+    NoInstructionMapping { role: RoleName, agent: Agent },
+    #[error("agent {} is not supported in a role manifest", .agent.as_str())]
+    UnsupportedAgentSection { agent: Agent },
     #[error(transparent)]
     Fs(#[from] FsError),
 }
@@ -150,13 +157,54 @@ fn read_role(root: &mut Reader<'_, '_>) -> Option<RoleSection> {
     })
 }
 
-fn read_codex(root: &mut Reader<'_, '_>) -> CodexSection {
-    let mut model = None;
-    if let Some(mut codex) = root.table("codex") {
-        model = codex.parsed("model", ModelName::parse, id_message);
-        codex.finish();
+fn read_agents(root: &mut Reader<'_, '_>) -> BTreeMap<Agent, AgentSection> {
+    let mut out = BTreeMap::new();
+    let Some(mut agents) = root.table("agents") else {
+        return out;
+    };
+    for (key, value) in agents.entries() {
+        let Some(agent) = Agent::ALL.into_iter().find(|agent| agent.as_str() == key) else {
+            agents.report_invalid(key, "unknown agent");
+            continue;
+        };
+        let Some(mut entry) = agents.entry_table(key, value) else {
+            continue;
+        };
+        let model = entry.parsed("model", ModelName::parse, id_message);
+        let instructions = entry.required_parsed("instructions", repo_path, static_message);
+        entry.finish();
+        if let Some(instructions) = instructions {
+            out.insert(
+                agent,
+                AgentSection {
+                    model,
+                    instructions,
+                },
+            );
+        }
     }
-    CodexSection { model }
+    out
+}
+
+fn validate_agents(agents: &BTreeMap<Agent, AgentSection>, errors: &mut Vec<ManifestError>) {
+    for (agent, section) in agents {
+        let supported: Vec<_> = TUPLES
+            .iter()
+            .filter(|tuple| tuple.agent == *agent && tuple.state == TupleState::Supported)
+            .collect();
+        if supported.is_empty() {
+            errors.push(ManifestError::UnsupportedAgentSection { agent: *agent });
+        } else if let Some(model) = &section.model
+            && !supported
+                .iter()
+                .any(|tuple| tuple.allowed_models.contains(&model.as_str()))
+        {
+            errors.push(ManifestError::InvalidValue {
+                key: format!("agents.{}.model", agent.as_str()),
+                message: format!("model {model} is not allowed for this agent"),
+            });
+        }
+    }
 }
 
 fn read_docker(root: &mut Reader<'_, '_>) -> DockerSection {
@@ -237,7 +285,8 @@ fn analyze(text: &str) -> Result<RoleManifest, Findings> {
     let mut root = Reader::new(String::new(), &table, &mut sink);
     read_schema(&mut root, &mut errors);
     let role = read_role(&mut root);
-    let codex = read_codex(&mut root);
+    let agents = read_agents(&mut root);
+    validate_agents(&agents, &mut errors);
     let docker = read_docker(&mut root);
     let hooks = read_hooks(&mut root);
     let env = read_env(&mut root, &mut reserved);
@@ -249,7 +298,7 @@ fn analyze(text: &str) -> Result<RoleManifest, Findings> {
         (None, Some(role)) => Ok(RoleManifest {
             schema: SchemaVersion,
             role,
-            codex,
+            agents,
             docker,
             hooks,
             env,
@@ -298,8 +347,16 @@ impl RoleManifest {
                 quote(self.role.policy.as_str()),
             ),
         ];
-        if let Some(model) = &self.codex.model {
-            blocks.push(format!("[codex]\nmodel = {}\n", quote(model.as_str())));
+        for (agent, section) in &self.agents {
+            let mut block = format!("[agents.{}]\n", agent.as_str());
+            if let Some(model) = &section.model {
+                block.push_str(&format!("model = {}\n", quote(model.as_str())));
+            }
+            block.push_str(&format!(
+                "instructions = {}\n",
+                quote(section.instructions.as_str())
+            ));
+            blocks.push(block);
         }
         blocks.push(format!("[docker]\nenabled = {}\n", self.docker.enabled));
         let hooks: Vec<String> = [

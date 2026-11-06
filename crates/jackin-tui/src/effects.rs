@@ -959,13 +959,26 @@ fn merge_manifest(
         manifest.role.policy = repo(&doc.policy, FindingArea::Policy)?;
     }
     if doc.codex_model != base.codex_model {
-        manifest.codex.model = doc
+        let model = doc
             .codex_model
             .as_deref()
             .map(ModelName::parse)
             .transpose()
             .map_err(PersistError::from)
             .map_err(Unmerged::on(FindingArea::Manifest))?;
+        match manifest.agents.entry(jackin_core::Agent::Codex) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.get_mut().model = model;
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(jackin_core::AgentSection {
+                    model,
+                    instructions: RepoPath::parse(jackin_core::CODEX_INSTRUCTIONS)
+                        .map_err(PersistError::from)
+                        .map_err(Unmerged::on(FindingArea::Manifest))?,
+                });
+            }
+        }
     }
     if doc.docker != base.docker {
         manifest.docker.enabled = doc.docker;

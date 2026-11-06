@@ -578,7 +578,11 @@ pub fn manifest_doc(doc: &jackin_core::RoleManifest) -> RoleManifestDoc {
         name: doc.role.name.to_string(),
         dockerfile: doc.role.dockerfile.to_string(),
         policy: doc.role.policy.to_string(),
-        codex_model: doc.codex.model.as_ref().map(ToString::to_string),
+        codex_model: doc
+            .agents
+            .get(&jackin_core::Agent::Codex)
+            .and_then(|s| s.model.as_ref())
+            .map(ToString::to_string),
         docker: doc.docker.enabled,
         hook_setup: doc.hooks.setup.as_ref().map(ToString::to_string),
         hook_preflight: doc.hooks.preflight.as_ref().map(ToString::to_string),

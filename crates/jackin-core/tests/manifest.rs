@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, EnvFile, EnvName, EnvSpec, FileIdentity, FileKind, FileLock, FileMode, FileSystem,
-    FsError, HookKind, HostPath, LinkProblem, ManifestError, RegularFile, RegularFileProblem,
-    RepoPath, RoleManifest, StdFileSystem,
+    Agent, DirEntry, EnvFile, EnvName, EnvSpec, FileIdentity, FileKind, FileLock, FileMode,
+    FileSystem, FsError, HookKind, HostPath, LinkProblem, ManifestError, RegularFile,
+    RegularFileProblem, RepoPath, RoleManifest, StdFileSystem,
 };
 
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
@@ -23,8 +23,9 @@ name = "sentinel"
 dockerfile = "Dockerfile"
 policy = "policy.yaml"
 
-[codex]
+[agents.codex]
 model = "gpt-5.1-codex"
+instructions = "instructions/codex.md"
 
 [docker]
 enabled = false
@@ -48,6 +49,12 @@ fn label(error: &ManifestError) -> String {
         ManifestError::InvalidValue { key, .. } => format!("invalid:{key}"),
         ManifestError::UnsupportedSchema { found } => format!("schema:{found}"),
         ManifestError::ReservedEnvName(name) => format!("reserved:{name}"),
+        ManifestError::NoInstructionMapping { role, agent } => {
+            format!("no-instructions:{role}:{}", agent.as_str())
+        }
+        ManifestError::UnsupportedAgentSection { agent } => {
+            format!("unsupported-agent:{}", agent.as_str())
+        }
         ManifestError::Fs(_) => "fs".to_owned(),
     }
 }
@@ -74,8 +81,19 @@ fn manifest_parses_the_d11_example() -> TestResult {
     assert_eq!(manifest.role.dockerfile.as_str(), "Dockerfile");
     assert_eq!(manifest.role.policy.as_str(), "policy.yaml");
     assert_eq!(
-        manifest.codex.model.as_ref().map(ToString::to_string),
+        manifest
+            .agents
+            .get(&Agent::Codex)
+            .and_then(|s| s.model.as_ref())
+            .map(ToString::to_string),
         Some("gpt-5.1-codex".to_owned())
+    );
+    assert_eq!(
+        manifest
+            .agents
+            .get(&Agent::Codex)
+            .map(|s| s.instructions.as_str()),
+        Some("instructions/codex.md")
     );
     assert!(!manifest.docker.enabled);
     assert_eq!(
@@ -211,7 +229,14 @@ fn manifest_rejects_an_unknown_field_at_every_level_naming_its_path() -> TestRes
     let cases = [
         ("root", "", "extra = 1", "extra", true),
         ("role", "", "nmae = \"x\"", "role.nmae", false),
-        ("codex", "[codex]\n", "modle = \"x\"", "codex.modle", false),
+        (
+            "agents.codex",
+            "[agents.codex]\ninstructions = \"i.md\"\n",
+            "modle = \"x\"",
+            "agents.codex.modle",
+            false,
+        ),
+        ("legacy codex", "", "[codex]\nmodel = \"x\"", "codex", false),
         (
             "docker",
             "[docker]\n",
@@ -316,12 +341,16 @@ fn manifest_rejects_invalid_values_naming_the_key() -> TestResult {
             "invalid:role.policy".to_owned(),
         ),
         (
-            format!("{MIN}[codex]\nmodel = \"<optional model name>\"\n"),
-            "invalid:codex.model".to_owned(),
+            format!(
+                "{MIN}[agents.codex]\nmodel = \"<optional model name>\"\ninstructions = \"i.md\"\n"
+            ),
+            "invalid:agents.codex.model".to_owned(),
         ),
         (
-            format!("{MIN}[codex]\nmodel = \"gpt\\\"\\nmodel_provider=\\\"x\"\n"),
-            "invalid:codex.model".to_owned(),
+            format!(
+                "{MIN}[agents.codex]\nmodel = \"gpt\\\"\\nmodel_provider=\\\"x\"\ninstructions = \"i.md\"\n"
+            ),
+            "invalid:agents.codex.model".to_owned(),
         ),
         (
             format!("{MIN}[docker]\nenabled = \"yes\"\n"),
@@ -361,6 +390,66 @@ fn manifest_rejects_invalid_values_naming_the_key() -> TestResult {
 }
 
 #[test]
+fn manifest_agents_sections_validate_and_render() -> TestResult {
+    let text = format!(
+        "{MIN}[agents.omp]\ninstructions = \"instructions/omp.md\"\n[agents.codex]\nmodel = \"gpt-5.1-codex\"\ninstructions = \"instructions/codex.md\"\n"
+    );
+    let manifest = RoleManifest::parse(&text)?;
+    let rendered = manifest.render();
+    let expected_agents = "[agents.codex]\nmodel = \"gpt-5.1-codex\"\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n";
+    assert!(rendered.contains(expected_agents), "{rendered}");
+    assert_eq!(RoleManifest::parse(&rendered)?, manifest);
+    assert_eq!(
+        outcome(&format!("{MIN}[agents.nope]\ninstructions = \"i.md\"\n")),
+        "invalid:agents.nope"
+    );
+    assert_eq!(
+        outcome(&format!("{MIN}[agents.grok]\ninstructions = \"i.md\"\n")),
+        "unsupported-agent:grok"
+    );
+    let grok = RoleManifest::parse(&format!("{MIN}[agents.grok]\ninstructions = \"i.md\"\n"))
+        .err()
+        .ok_or("grok")?;
+    assert!(matches!(
+        grok,
+        ManifestError::UnsupportedAgentSection {
+            agent: Agent::GrokBuild
+        }
+    ));
+    RoleManifest::parse(&format!(
+        "{MIN}[agents.omp]\nmodel = \"glm-5.3\"\ninstructions = \"i.md\"\n"
+    ))?;
+    assert_eq!(
+        outcome(&format!(
+            "{MIN}[agents.codex]\nmodel = \"glm-5.3\"\ninstructions = \"i.md\"\n"
+        )),
+        "invalid:agents.codex.model"
+    );
+    assert_eq!(
+        outcome(&format!("{MIN}[codex]\nmodel = \"gpt-5.1-codex\"\n")),
+        "unknown:codex"
+    );
+    assert_eq!(outcome(MIN), "ok");
+    assert_eq!(
+        outcome(&format!("{MIN}[agents.codex]\nmodel = \"gpt-5.1-codex\"\n")),
+        "missing:agents.codex.instructions"
+    );
+    assert_eq!(
+        outcome(&format!(
+            "{MIN}[agents.codex]\ninstructions = \"../x.md\"\n"
+        )),
+        "invalid:agents.codex.instructions"
+    );
+    assert_eq!(
+        outcome(&format!(
+            "{MIN}[agents.codex]\ninstructions = \"i.md\"\nextra = 1\n"
+        )),
+        "unknown:agents.codex.extra"
+    );
+    Ok(())
+}
+
+#[test]
 fn manifest_syntax_errors_never_echo_a_pasted_secret() -> TestResult {
     let sentinel = "Zq7#Xv9!Lm2@Hk4wP";
     let chars: Vec<char> = sentinel.chars().collect();
@@ -381,7 +470,7 @@ fn manifest_syntax_errors_never_echo_a_pasted_secret() -> TestResult {
 fn manifest_optional_sections_default_and_env_entries_keep_default_and_prompt_distinct()
 -> TestResult {
     let min = RoleManifest::parse(MIN)?;
-    assert!(min.codex.model.is_none());
+    assert!(min.agents.is_empty());
     assert!(!min.docker.enabled);
     assert!(min.hook(HookKind::Setup).is_none() && min.hook(HookKind::Preflight).is_none());
     assert!(min.env.is_empty());
@@ -409,13 +498,13 @@ fn manifest_optional_sections_default_and_env_entries_keep_default_and_prompt_di
 
 #[test]
 fn manifest_findings_report_every_problem_in_one_pass() -> TestResult {
-    let text = "schema = 1\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"/abs/policy.yaml\"\n[codex]\nmodel = \"bad model\"\n[docker]\nenabled = \"yes\"\n[hooks]\nsetpu = \"a.sh\"\nprefight = \"b.sh\"\n[env.JACKIN_X]\n";
+    let text = "schema = 1\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"/abs/policy.yaml\"\n[agents.codex]\nmodel = \"bad model\"\ninstructions = \"i.md\"\n[docker]\nenabled = \"yes\"\n[hooks]\nsetpu = \"a.sh\"\nprefight = \"b.sh\"\n[env.JACKIN_X]\n";
     let mut found: Vec<String> = RoleManifest::findings(text).iter().map(label).collect();
     found.sort();
     assert_eq!(
         found,
         [
-            "invalid:codex.model",
+            "invalid:agents.codex.model",
             "invalid:docker.enabled",
             "invalid:role.policy",
             "reserved:JACKIN_X",

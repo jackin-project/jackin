@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod accounts;
+mod agents_manifest;
 mod allowed_roles;
 mod docker;
 mod env;

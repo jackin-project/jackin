@@ -55,7 +55,7 @@ async fn a_cancel_at_clone_fetch_or_checkout_ends_the_load_and_moves_nothing() -
             .map_err(|e| format!("{e:?}"))?;
         let tree = cached.as_path().join("roles/sentinel");
         let before = git(&tree, &["rev-parse", "HEAD"]).await?;
-        origin.advance("model-2").await?;
+        origin.advance("gpt-5.1-codex").await?;
         for word in ["fetch", "checkout"] {
             let found = load_cancelled_at(&origin, &cached, word).await?;
             assert!(

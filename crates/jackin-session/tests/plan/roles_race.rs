@@ -23,8 +23,9 @@ fn summary(loaded: &LoadedRole) -> (String, Option<String>) {
         commit.as_str().to_owned(),
         loaded
             .manifest()
-            .codex
-            .model
+            .agents
+            .get(&jackin_core::Agent::Codex)
+            .and_then(|s| s.model.as_ref())
             .as_ref()
             .map(|model| model.as_str().to_owned()),
     )
@@ -142,11 +143,11 @@ async fn concurrent_loads_of_one_role_each_read_the_revision_they_asked_for() ->
         let (first, second) = race(&origin, "HEAD", Some("v1"), Some("dev")).await?;
         assert_eq!(
             first.map_err(|e| format!("{e:?}"))?,
-            (origin.commits[0].clone(), Some("model-1".to_owned()))
+            (origin.commits[0].clone(), Some("gpt-5.1-codex".to_owned()))
         );
         assert_eq!(
             second.map_err(|e| format!("{e:?}"))?,
-            (origin.commits[1].clone(), Some("model-dev".to_owned()))
+            (origin.commits[1].clone(), Some("gpt-5.1-codex".to_owned()))
         );
         Ok(())
     })
@@ -201,7 +202,7 @@ async fn a_load_cancelled_while_it_waits_for_the_cache_lock_changes_nothing() ->
         assert_eq!(head?, origin.commits[0]);
         assert_eq!(
             first?.map_err(|e| format!("{e:?}"))?,
-            (origin.commits[0].clone(), Some("model-1".to_owned()))
+            (origin.commits[0].clone(), Some("gpt-5.1-codex".to_owned()))
         );
         Ok(())
     })

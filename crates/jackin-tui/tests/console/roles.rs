@@ -88,7 +88,7 @@ async fn saving_the_manifest_rewrites_only_the_edited_fields() -> TestResult {
         let base = record.manifest.clone()?;
         let mut doc = base.clone();
         doc.docker = true;
-        doc.codex_model = Some("gpt-5".to_owned());
+        doc.codex_model = Some("gpt-5.1-codex".to_owned());
         lab.perform(Effect::SaveRole {
             role: "sentinel".to_owned(),
             base: Box::new(base.clone()),
@@ -99,8 +99,12 @@ async fn saving_the_manifest_rewrites_only_the_edited_fields() -> TestResult {
         let manifest = RoleManifest::parse(&std::fs::read_to_string(root)?)?;
         assert!(manifest.docker.enabled);
         assert_eq!(
-            manifest.codex.model.map(|m| m.to_string()),
-            Some("gpt-5".to_owned())
+            manifest
+                .agents
+                .get(&jackin_core::Agent::Codex)
+                .and_then(|s| s.model.as_ref())
+                .map(|m| m.as_str().to_owned()),
+            Some("gpt-5.1-codex".to_owned())
         );
         assert_eq!(manifest.hooks.setup.map(|p| p.to_string()), base.hook_setup);
         assert_eq!(manifest.env.len(), base.env.len());
@@ -141,7 +145,7 @@ async fn two_saves_of_one_manifest_keep_both_edits() -> TestResult {
         let mut docker = base.clone();
         docker.docker = true;
         let mut model = base.clone();
-        model.codex_model = Some("gpt-5".to_owned());
+        model.codex_model = Some("gpt-5.1-codex".to_owned());
         for edited in [&docker, &model] {
             lab.world().perform(Effect::SaveRole {
                 role: "sentinel".to_owned(),
@@ -153,8 +157,12 @@ async fn two_saves_of_one_manifest_keep_both_edits() -> TestResult {
         let manifest = RoleManifest::parse(&std::fs::read_to_string(file)?)?;
         assert!(manifest.docker.enabled);
         assert_eq!(
-            manifest.codex.model.map(|m| m.to_string()),
-            Some("gpt-5".to_owned())
+            manifest
+                .agents
+                .get(&jackin_core::Agent::Codex)
+                .and_then(|s| s.model.as_ref())
+                .map(|m| m.as_str().to_owned()),
+            Some("gpt-5.1-codex".to_owned())
         );
         Ok(())
     })

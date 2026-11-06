@@ -99,6 +99,7 @@ fn plan_stage(error: &PlanError) -> Stage {
         | PlanError::CodexConfig(_)
         | PlanError::RoleMismatch { .. }
         | PlanError::TupleNotSupported { .. }
+        | PlanError::Manifest(_)
         | PlanError::RoleNotAllowed { .. } => Stage::Image,
     }
 }

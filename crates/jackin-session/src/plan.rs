@@ -164,6 +164,8 @@ pub enum PlanError {
     },
     #[error(transparent)]
     CodexConfig(#[from] toml::ser::Error),
+    #[error(transparent)]
+    Manifest(#[from] jackin_core::ManifestError),
     #[error("the request names role {requested} but the loaded role is {loaded}")]
     RoleMismatch {
         requested: RoleName,
@@ -490,6 +492,22 @@ fn validate_instances(instances: &jackin_core::AgentInstances) -> Result<(), Pla
     Ok(())
 }
 
+fn validate_instruction_mappings(
+    role: &LoadedRole,
+    instances: &jackin_core::AgentInstances,
+) -> Result<(), PlanError> {
+    for instance in instances.iter() {
+        if !role.manifest().agents.contains_key(&instance.agent) {
+            return Err(jackin_core::ManifestError::NoInstructionMapping {
+                role: role.name().clone(),
+                agent: instance.agent,
+            }
+            .into());
+        }
+    }
+    Ok(())
+}
+
 fn agent_config_file(
     is_omp: bool,
     tuple: &'static jackin_core::AgentTuple,
@@ -657,6 +675,7 @@ pub fn plan_launch(
     })?;
     let instances = resolve_instances(&request, agent, provider, &selection);
     validate_instances(&instances)?;
+    validate_instruction_mappings(role, &instances)?;
     let account =
         config
             .account(&selection.account)
@@ -692,7 +711,10 @@ pub fn plan_launch(
         codex_config: agent_config_file(
             is_omp,
             tuple,
-            role.manifest().codex.model.as_ref(),
+            role.manifest()
+                .agents
+                .get(&Agent::Codex)
+                .and_then(|section| section.model.as_ref()),
             Some(instances.lead().model.as_str()),
             agent,
             provider,
