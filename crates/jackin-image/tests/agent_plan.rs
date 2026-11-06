@@ -115,7 +115,9 @@ fn codex_scan_absent_paths_unchanged() -> TestResult {
     let map = args(Agent::Codex)?;
     assert_eq!(
         map.get("AGENT_SCAN_ABSENT").map(String::as_str),
-        Some("/etc/codex/requirements.toml /etc/codex/managed_config.toml /etc/codex/hooks.json /etc/codex/rules /etc/codex/agents /etc/codex/skills")
+        Some(
+            "/etc/codex/requirements.toml /etc/codex/managed_config.toml /etc/codex/hooks.json /etc/codex/rules /etc/codex/agents /etc/codex/skills"
+        )
     );
     assert_eq!(
         derived_dockerfile(Agent::Codex)?,
@@ -141,7 +143,42 @@ fn omp_scan_absent_paths_have_no_codex_paths() -> TestResult {
         .filter(|line| line.contains("--absent"))
         .collect();
     assert_eq!(absent.len(), 1, "{absent:?}");
-    assert!(absent[0].contains("/usr/local/lib/jackin/image-scan"), "{absent:?}");
+    assert!(
+        absent[0].contains("/usr/local/lib/jackin/image-scan"),
+        "{absent:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn omp_plan_has_no_system_config_entries() -> TestResult {
+    let map = args(Agent::Omp)?;
+    assert_eq!(map.get("AGENT_SYSTEM_CONFIG"), None);
+    assert_eq!(map.get("AGENT_SYSTEM_CONFIG_CONTENT"), None);
+    assert_eq!(Agent::Omp.spec().install.system_config.as_str(), "");
+    assert_eq!(
+        Agent::Omp.spec().user_config.path.as_str(),
+        "/sandbox/.omp/config.toml"
+    );
+    let text = derived_dockerfile(Agent::Omp)?;
+    assert!(!text.contains("/etc/codex"), "{text}");
+    assert!(
+        !text.contains("COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX ${AGENT_SYSTEM_CONFIG} ${AGENT_SYSTEM_CONFIG}"),
+        "{text}"
+    );
+    assert!(
+        !text.contains("--same-as ${AGENT_SYSTEM_CONFIG}=/trusted${AGENT_SYSTEM_CONFIG}"),
+        "{text}"
+    );
+    assert!(!text.contains("--data ${AGENT_SYSTEM_CONFIG}"), "{text}");
+    assert!(!text.contains("\"/out${AGENT_SYSTEM_CONFIG}\""), "{text}");
+    assert!(
+        !text.contains(&format!(
+            "--data {}",
+            Agent::Omp.spec().user_config.path.as_str()
+        )),
+        "{text}"
+    );
     Ok(())
 }
 
@@ -206,6 +243,17 @@ fn two_agent_plan_installs_and_scans_both_binaries() -> TestResult {
         "{text}"
     );
     assert!(text.contains("agent2-archive"), "{text}");
+    assert_eq!(
+        args.get("AGENT_SYSTEM_CONFIG").map(String::as_str),
+        Some("/etc/codex/config.toml")
+    );
+    assert_eq!(args.get("AGENT2_SYSTEM_CONFIG"), None);
+    assert!(text.contains("--data ${AGENT_SYSTEM_CONFIG}"), "{text}");
+    assert!(!text.contains("--data ${AGENT2_SYSTEM_CONFIG}"), "{text}");
+    assert!(
+        !text.contains("--same-as ${AGENT2_SYSTEM_CONFIG}=/trusted${AGENT2_SYSTEM_CONFIG}"),
+        "{text}"
+    );
     let mut changed = request(Agent::Codex)?;
     changed.agents = vec![Agent::Codex, Agent::MimoCode];
     let other = ImagePlan::new(&changed)?.final_builds(&id);
