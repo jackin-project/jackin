@@ -10,10 +10,9 @@ use jackin_core::{
     Account, AccountName, AccountQuery, AccountSelection, Agent, ChatgptAccountId, CodexAuthMode,
     Config, ConfigError, DockerCapability, DockerError, DockerLabel, DockerLayer, EnvFile,
     EnvFileError, EnvName, EnvTable, EnvValueError, FileMode, GatewayName, LaunchId, ModelName,
-    NameSuffix,
-    PathError, PlainEnvValue, PlannedLabels, PolicyLabel, ProjectRoot, Provider, ProviderName,
-    RoleManifest, RoleName, SandboxName, SandboxPath, SelectionError, Workspace, WorkspaceName,
-    plain_list, sandbox_layout,
+    NameSuffix, PathError, PlainEnvValue, PlannedLabels, PolicyLabel, ProjectRoot, Provider,
+    ProviderName, RoleManifest, RoleName, SandboxName, SandboxPath, SelectionError, Workspace,
+    WorkspaceName, plain_list, sandbox_layout,
 };
 use jackin_image::{ImageError, ImageRequest, Rebuild};
 use jackin_openshell::{
@@ -896,11 +895,11 @@ mod tests {
         let file = fixture(Agent::GrokBuild, Provider::Grok, None, Some("grok-4.7"));
         assert!(file.path.as_str().ends_with("config.toml"));
         let value: toml::Table = toml::from_str(&file.text).expect("toml");
+        assert_eq!(value["cli"]["auto_update"], toml::Value::Boolean(false));
         assert_eq!(
-            value["cli"]["auto_update"],
-            toml::Value::Boolean(false)
+            value["models"]["default"],
+            toml::Value::String("grok-4.7".to_owned())
         );
-        assert_eq!(value["models"]["default"], toml::Value::String("grok-4.7".to_owned()));
     }
 
     #[test]
@@ -923,9 +922,11 @@ mod tests {
         let value: toml::Table = toml::from_str(&file.text).expect("toml");
         assert!(value.contains_key("model"));
         let projects = value["projects"].as_table().expect("projects");
-        assert!(projects
-            .values()
-            .any(|entry| entry["trust_level"] == toml::Value::String("trusted".to_owned())));
+        assert!(
+            projects
+                .values()
+                .any(|entry| entry["trust_level"] == toml::Value::String("trusted".to_owned()))
+        );
     }
 }
 

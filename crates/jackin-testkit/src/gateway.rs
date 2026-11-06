@@ -690,7 +690,7 @@ impl Gateway for FakeGateway {
                     Err(_) => {
                         return Err(GatewayError::Protocol {
                             message: "static id".to_owned(),
-                        })
+                        });
                     }
                 },
             },
