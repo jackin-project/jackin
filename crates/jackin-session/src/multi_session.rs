@@ -4,11 +4,12 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use jackin_core::{Agent, AgentInstances, SandboxName, SandboxPath};
+use jackin_core::{Agent, AgentInstances, EnvName, SandboxName, SandboxPath};
 use jackin_openshell::{GatewayError, ProgramRun, ProgramStdin};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+use crate::multi::ExecLaunch;
 use crate::service::Session;
 
 #[derive(Debug, Error)]
@@ -248,5 +249,37 @@ impl Session {
             merged.push(branch);
         }
         Ok(merged)
+    }
+}
+
+fn shell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
+impl Session {
+    pub async fn start_instance_exec(&self, sandbox: &SandboxName, launch: &ExecLaunch, cancel: &CancellationToken) -> Result<(), GatewayError> {
+        let agent = launch.agent.as_str();
+        let run_dir = format!("/sandbox/.jackin/run/{agent}");
+        let output = format!("{run_dir}/output");
+        let command = launch.argv.iter().map(|part| shell_quote(part)).collect::<Vec<_>>().join(" ");
+        let script = format!("mkdir -p {} && setsid nohup {command} </dev/null >{} 2>&1 &", shell_quote(&run_dir), shell_quote(&output));
+        let mut env = BTreeMap::new();
+        env.insert(EnvName::parse("HOME").map_err(|_| GatewayError::Protocol { message: "invalid HOME".to_owned() })?, launch.home.as_str().to_owned());
+        if launch.agent == Agent::Codex {
+            env.insert(EnvName::parse("CODEX_HOME").map_err(|_| GatewayError::Protocol { message: "invalid CODEX_HOME".to_owned() })?, format!("{}/.codex", launch.home.as_str()));
+        }
+        let outcome = self.deps.gateway.run_program(&ProgramRun { sandbox: sandbox.clone(), program: SandboxPath::from_static("/bin/sh"), args: vec!["-c".to_owned(), script], workdir: Some(launch.workdir.clone()), env, stdin: ProgramStdin::Closed, touch_on_success: None, timeout: Duration::from_secs(30) }, cancel).await?;
+        if outcome.exit_code != 0 {
+            return Err(GatewayError::Protocol { message: format!("starting instance {agent} exited {}", outcome.exit_code) });
+        }
+        Ok(())
+    }
+
+    pub async fn restart_instance(&self, sandbox: &SandboxName, agent: Agent, cancel: &CancellationToken) -> Result<(), IntegrateError> {
+        self.stop_instance(sandbox, agent, cancel).await?;
+        let spec = agent.spec();
+        let launch = ExecLaunch { agent, home: SandboxPath::parse(&format!("/sandbox/.jackin/homes/{}", agent.as_str())).map_err(|error| GatewayError::Protocol { message: error.to_string() })?, workdir: SandboxPath::parse(&format!("/sandbox/work/{}/project", agent.as_str())).map_err(|error| GatewayError::Protocol { message: error.to_string() })?, argv: spec.launch_argv(), provider: spec.provider.as_str().to_owned(), account: String::new(), model: spec.default_model.to_owned() };
+        self.start_instance_exec(sandbox, &launch, cancel).await?;
+        Ok(())
     }
 }
