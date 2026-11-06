@@ -273,10 +273,12 @@ fn scan_absent_dockerfile(dockerfile: Vec<u8>, agents: &[jackin_core::Agent]) ->
             }
         }
     }
-    let replacement = paths
-        .iter()
-        .map(|path| format!("        --absent {path} \\\n"))
-        .collect::<String>();
+    let mut replacement = String::new();
+    for path in &paths {
+        replacement.push_str("        --absent ");
+        replacement.push_str(path);
+        replacement.push_str(" \\\n");
+    }
     String::from_utf8_lossy(&dockerfile)
         .replace(CODEX_SCAN_ABSENT, &replacement)
         .into_bytes()
