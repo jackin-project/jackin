@@ -831,8 +831,8 @@ pub static TUPLES: [AgentTuple; 12] = [
         Agent::Omp,
         Provider::Zai,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        TupleState::Supported,
+        None,
         &["glm-5.3"],
         "glm-5.3"
     ),
