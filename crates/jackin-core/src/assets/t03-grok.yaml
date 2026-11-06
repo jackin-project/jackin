@@ -21,5 +21,15 @@ endpoints:
     protocol: rest
     access: read-write
     enforcement: enforce
+  - host: cli-chat-proxy.grok.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: auth.x.ai
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
 binaries:
   - /usr/local/bin/grok

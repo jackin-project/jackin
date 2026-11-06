@@ -569,9 +569,20 @@ static GROK_BUILD_SPEC: AgentSpec = agent_spec!(
     &["grok"],
     "1.0.77",
     "https://x.ai/cli/grok-{version}-linux-{target}",
-    &[],
+    &[
+        InstallTarget {
+            platform: Platform::LinuxArm64,
+            triple: "aarch64",
+            sha256: "b30eee14a656124ef3c9da8577b5e783ef2cffabeb2b679c5c49633e77eed574"
+        },
+        InstallTarget {
+            platform: Platform::LinuxAmd64,
+            triple: "x86_64",
+            sha256: "b702950aa5827d855e493278ab6215a4e0f5bceb5bba6c6243a9f55cdd143b0a"
+        }
+    ],
     AuthClass::OAuth,
-    &["x.ai"],
+    &["x.ai", "cli-chat-proxy.grok.com", "auth.x.ai"],
     &[],
     &["grok-4.7"],
     "grok-4.7",
