@@ -150,6 +150,15 @@ impl AgentTuple {
         }
     }
 
+    pub fn omp_base_url(&self) -> Option<&'static str> {
+        match self.id {
+            "T09" => Some("https://api.z.ai/api/coding/paas/v4"),
+            "T10" => Some("https://api.kimi.com/coding/v1"),
+            "T12" => Some("https://token-plan-sgp.xiaomimimo.com/v1"),
+            _ => None,
+        }
+    }
+
     pub fn omp_provider_hosts(&self) -> &'static [&'static str] {
         match self.id {
             "T09" => &["api.z.ai"],

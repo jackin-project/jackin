@@ -25,6 +25,34 @@ fn cases() -> Vec<(Provider, &'static str, &'static str, &'static str)> {
     ]
 }
 
+fn base_urls() -> Vec<(Provider, Option<&'static str>)> {
+    vec![
+        (
+            Provider::Zai,
+            Some("https://api.z.ai/api/coding/paas/v4"),
+        ),
+        (Provider::Kimi, Some("https://api.kimi.com/coding/v1")),
+        (Provider::Minimax, None),
+        (
+            Provider::Mimo,
+            Some("https://token-plan-sgp.xiaomimimo.com/v1"),
+        ),
+    ]
+}
+
+#[test]
+fn omp_config_sets_the_exact_plan_base_url_per_tuple() -> TestResult {
+    for (provider, url) in base_urls() {
+        let tuple = lookup_tuple(Agent::Omp, provider)?;
+        let text = render_omp_config(tuple, None)?;
+        match url {
+            Some(url) => assert!(text.contains(&format!("    baseUrl: {url}\n")), "{text}"),
+            None => assert!(!text.contains("baseUrl"), "{text}"),
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn omp_config_names_each_tuples_provider_env_model_and_one_placeholder() -> TestResult {
     for (provider, id, env, model) in cases() {
