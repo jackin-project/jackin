@@ -124,7 +124,7 @@ If neither route keeps one instance alive while another instance restarts, stop.
 ### Labels and retry
 
 1. The current labels `jackin.dev/agent` and `jackin.dev/account` hold one value. Replace them.
-2. Write one label `jackin.dev/agents`: the first 32 hex characters of the SHA-256 of the sorted instance list. One list item is `<agent>:<provider>:<account>:<model>`.
+2. Write one label `jackin.dev/agents`: the first 32 hex characters of the SHA-256 of the sorted instance list. One list item is `<agent>:<provider>:<account>:<model>`. Sort the items as text. Join them with one comma and no spaces. Hash the joined text as UTF-8 with no final newline. The lead is the first instance of the launch list as the operator gave it. Sorting changes only the hash and `agents.json`, never the lead.
 3. Write the full sorted instance list, with no secret, to `/sandbox/.jackin/agents.json` at launch.
 4. On retry, compare the label and `agents.json` with the planned list. If one item differs, stop with `StaleSandbox`. Change nothing.
 5. Keep the other D07 labels. Keep the sandbox name rule. The name does not hold an agent name.
