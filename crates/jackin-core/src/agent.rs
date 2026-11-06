@@ -6,6 +6,7 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 use crate::boundary::FileMode;
+use crate::display::plain;
 use crate::paths::{PROJECT_PATH, SandboxPath};
 use crate::platform::Platform;
 use crate::provider::Provider;
@@ -186,7 +187,7 @@ impl AgentTuple {
 pub enum CatalogError {
     #[error("no catalog tuple for agent {} with provider {}", .agent.as_str(), .provider.as_str())]
     UnknownTuple { agent: Agent, provider: Provider },
-    #[error("model {model} is not allowed for agent {} with provider {}", .agent.as_str(), .provider.as_str())]
+    #[error("model {} is not allowed for agent {} with provider {}", plain(.model), .agent.as_str(), .provider.as_str())]
     UnknownModel {
         agent: Agent,
         provider: Provider,

@@ -12,7 +12,7 @@ use jackin_core::{
     EnvFileError, EnvName, EnvTable, EnvValueError, FileMode, GatewayName, LaunchId, ModelName,
     NameSuffix, PathError, PlainEnvValue, PlannedLabels, PolicyLabel, ProjectRoot, Provider,
     ProviderName, RoleManifest, RoleName, SandboxName, SandboxPath, SelectionError, Workspace,
-    WorkspaceName, plain_list, sandbox_layout,
+    WorkspaceName, plain, plain_list, sandbox_layout,
 };
 use jackin_image::{ImageError, ImageRequest, Rebuild};
 use jackin_openshell::{
@@ -169,7 +169,7 @@ pub enum PlanError {
         requested: RoleName,
         loaded: RoleName,
     },
-    #[error("tuple {} with provider {} is not supported: {reason}", .agent.as_str(), .provider.as_str())]
+    #[error("tuple {} with provider {} is not supported: {}", .agent.as_str(), .provider.as_str(), plain(.reason))]
     TupleNotSupported {
         agent: Agent,
         provider: Provider,

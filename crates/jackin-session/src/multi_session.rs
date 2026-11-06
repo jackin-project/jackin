@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use jackin_core::{Agent, AgentInstances, SandboxName, SandboxPath};
+use jackin_core::{Agent, AgentInstances, SandboxName, SandboxPath, plain};
 use jackin_openshell::{GatewayError, ProgramRun, ProgramStdin};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -15,9 +15,9 @@ use crate::service::Session;
 pub enum IntegrateError {
     #[error(transparent)]
     Gateway(#[from] GatewayError),
-    #[error("merge of branch {branch} stopped with a conflict")]
+    #[error("merge of branch {} stopped with a conflict", plain(.branch))]
     Conflict { branch: String },
-    #[error("agent {agent} is not in this sandbox")]
+    #[error("agent {} is not in this sandbox", plain(.agent))]
     UnknownAgent { agent: String },
 }
 
