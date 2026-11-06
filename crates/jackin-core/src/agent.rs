@@ -842,7 +842,7 @@ pub static TUPLES: [AgentTuple; 12] = [
         Provider::Kimi,
         AuthClass::StaticKey,
         TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        Some("no plan key on this host"),
         &["kimi-for-coding"],
         "kimi-for-coding"
     ),
@@ -852,7 +852,7 @@ pub static TUPLES: [AgentTuple; 12] = [
         Provider::Minimax,
         AuthClass::StaticKey,
         TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        Some("no plan key on this host"),
         &["minimax-m3"],
         "minimax-m3"
     ),
@@ -862,7 +862,7 @@ pub static TUPLES: [AgentTuple; 12] = [
         Provider::Mimo,
         AuthClass::StaticKey,
         TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        Some("no plan key on this host"),
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
