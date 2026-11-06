@@ -87,7 +87,7 @@ pub enum CredentialSource {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleEntry {
     pub source: RoleSource,
-    pub bindings: BTreeMap<Agent, AccountName>,
+    pub bindings: BTreeMap<Provider, AccountName>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -687,8 +687,8 @@ impl Config {
             self.check_workspace(name, workspace)?;
         }
         for role in self.roles.values() {
-            for (agent, account) in &role.bindings {
-                self.check_binding(agent.provider(), account)?;
+            for (provider, account) in &role.bindings {
+                self.check_binding(*provider, account)?;
             }
         }
         self.check_paths_unique()

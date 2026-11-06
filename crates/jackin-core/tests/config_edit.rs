@@ -964,6 +964,7 @@ fn selected(config: &Config) -> Fallible<(String, SelectionRule)> {
         workspace: &workspace,
         role: &role,
         agent: Agent::Codex,
+        provider: Provider::Codex,
     };
     let chosen = config.select_account(&query)?;
     Ok((chosen.account.to_string(), chosen.via))

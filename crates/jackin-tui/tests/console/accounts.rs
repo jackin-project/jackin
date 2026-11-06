@@ -296,7 +296,7 @@ async fn role_binding_from_the_roles_page() -> TestResult {
         let bound = |config: &jackin_core::Config| -> Result<Option<AccountName>, Box<dyn std::error::Error>> {
             Ok(config
                 .role(&RoleName::parse("sentinel")?)
-                .and_then(|role| role.bindings.get(&Agent::Codex).cloned()))
+                .and_then(|role| role.bindings.get(&CoreProvider::Codex).cloned()))
         };
         assert_eq!(bound(&lab.config().await?)?, Some(account("work")?));
         lab.console.keys("d")?;
@@ -341,6 +341,7 @@ async fn preselected(
             workspace: &name,
             role: &role,
             agent: Agent::Codex,
+            provider: CoreProvider::Codex,
         })
         .ok()
         .map(|selected| selected.account.to_string());

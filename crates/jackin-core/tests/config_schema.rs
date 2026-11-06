@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use jackin_core::{
-    Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, CredentialSource,
+    Account, AccountName, CodexAuthMode, Config, ConfigEdit, ConfigError, CredentialSource,
     EnvName, GatewayEntry, GatewayName, HostPath, Platform, Provider, RoleName, RoleRev,
     RoleSource, RoleUrl, WorkspaceName,
 };
@@ -290,7 +290,7 @@ fn config_roles_and_workspaces_keep_their_sources_and_bindings() -> TestResult {
     assert_eq!(
         sentinel
             .bindings
-            .get(&Agent::Codex)
+            .get(&Provider::Codex)
             .map(ToString::to_string),
         Some("work".to_owned())
     );
@@ -464,8 +464,8 @@ fn unknown_cases() -> Vec<(&'static str, String, &'static str, &'static str)> {
         (
             "role binding with a provider key",
             format!("{CL}{ROLE}"),
-            "bindings.cursor = \"cl\"",
-            "roles.r.bindings.cursor",
+            "bindings.cursorx = \"cl\"",
+            "roles.r.bindings.cursorx",
         ),
         (
             "role binding with an unknown key",

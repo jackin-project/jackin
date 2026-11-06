@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+id: mimo
+display_name: MiMo Code
+description: MiMo Code with gateway-managed credential
+category: agent
+inference_capable: true
+credentials:
+  - name: access_token
+    description: Gateway-held credential for MiMo Code
+    env_vars: [MIMO_API_KEY]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [access_token]
+endpoints:
+  - host: mimo.mi.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/mimo

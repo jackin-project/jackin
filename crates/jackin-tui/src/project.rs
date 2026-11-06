@@ -590,7 +590,13 @@ fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmi
                 bindings: entry
                     .bindings
                     .iter()
-                    .filter_map(|(a, account)| agent(*a).map(|a| (a, account.to_string())))
+                    .filter_map(|(provider, account)| {
+                        jackin_core::TUPLES
+                            .iter()
+                            .find(|tuple| tuple.provider == *provider)
+                            .and_then(|tuple| agent(tuple.agent))
+                            .map(|a| (a, account.to_string()))
+                    })
                     .collect(),
                 files: Vec::new(),
             })

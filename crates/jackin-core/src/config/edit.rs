@@ -220,12 +220,13 @@ impl Config {
     ) -> Result<(), ConfigError> {
         self.require_role(role)?;
         self.check_binding(agent.provider(), &account)?;
-        self.role_mut(role)?.bindings.insert(agent, account);
+        let provider = self.require_account(&account)?.provider;
+        self.role_mut(role)?.bindings.insert(provider, account);
         Ok(())
     }
 
     fn unbind_role_account(&mut self, role: &RoleName, agent: Agent) -> Result<(), ConfigError> {
-        self.role_mut(role)?.bindings.remove(&agent);
+        self.role_mut(role)?.bindings.remove(&agent.provider());
         Ok(())
     }
 

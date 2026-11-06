@@ -80,7 +80,10 @@ async fn default_and_bind_change_exactly_the_named_entry() -> TestResult {
             .role(&RoleName::parse("sentinel")?)
             .ok_or("no role")?;
         assert_eq!(
-            bound.bindings.get(&Agent::Codex).map(AccountName::as_str),
+            bound
+                .bindings
+                .get(&Provider::Codex)
+                .map(AccountName::as_str),
             Some("two")
         );
         let alpha = WorkspaceName::parse("alpha")?;

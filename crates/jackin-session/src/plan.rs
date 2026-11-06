@@ -20,7 +20,7 @@ use jackin_openshell::{
 };
 use thiserror::Error;
 
-use crate::files::render_codex_config;
+use crate::files::{placeholder_file, render_codex_config};
 use crate::launch::LaunchWarning;
 use crate::roles::LoadedRole;
 
@@ -34,6 +34,9 @@ pub struct LaunchRequest {
     role: RoleName,
     launch: LaunchId,
     account: Option<AccountName>,
+    agent: Agent,
+    provider: Provider,
+    model: Option<String>,
     rebuild: Rebuild,
     env: BTreeMap<EnvName, PlainEnvValue>,
     prompting: Prompting,
@@ -88,6 +91,7 @@ pub struct PlannedFile {
 pub struct PlannedFiles {
     pub codex_config: PlannedFile,
     pub env: PlannedFile,
+    pub auth: PlannedFile,
 }
 
 #[derive(Clone, Debug)]
@@ -156,6 +160,12 @@ pub enum PlanError {
         requested: RoleName,
         loaded: RoleName,
     },
+    #[error("tuple {} with provider {} is not supported: {reason}", .agent.as_str(), .provider.as_str())]
+    TupleNotSupported {
+        agent: Agent,
+        provider: Provider,
+        reason: String,
+    },
     #[error("workspace {workspace} does not allow role {role}")]
     RoleNotAllowed {
         workspace: WorkspaceName,
@@ -186,6 +196,9 @@ impl LaunchRequest {
             role,
             launch,
             account: None,
+            agent: Agent::Codex,
+            provider: Provider::Codex,
+            model: None,
             rebuild: Rebuild::No,
             env: BTreeMap::new(),
             prompting: Prompting::Never,
@@ -196,6 +209,27 @@ impl LaunchRequest {
     pub fn account(mut self, account: Option<AccountName>) -> LaunchRequest {
         self.account = account;
         self
+    }
+
+    #[must_use]
+    pub fn tuple(mut self, agent: Agent, provider: Provider) -> LaunchRequest {
+        self.agent = agent;
+        self.provider = provider;
+        self
+    }
+
+    #[must_use]
+    pub fn model(mut self, model: Option<String>) -> LaunchRequest {
+        self.model = model;
+        self
+    }
+
+    pub fn agent(&self) -> Agent {
+        self.agent
+    }
+
+    pub fn provider(&self) -> Provider {
+        self.provider
     }
 
     #[must_use]
@@ -308,6 +342,17 @@ pub fn plan_image(
     workspace: Option<&Workspace>,
     rebuild: Rebuild,
 ) -> Result<ImageRequest, PlanError> {
+    plan_image_for(config, role, gateway, workspace, rebuild, Agent::Codex)
+}
+
+pub fn plan_image_for(
+    config: &Config,
+    role: &LoadedRole,
+    gateway: &GatewayName,
+    workspace: Option<&Workspace>,
+    rebuild: Rebuild,
+    agent: Agent,
+) -> Result<ImageRequest, PlanError> {
     let entry = config
         .gateway(gateway)
         .ok_or_else(|| ConfigError::UnknownGateway(gateway.clone()))?;
@@ -321,7 +366,7 @@ pub fn plan_image(
         dockerfile: role.dockerfile().clone(),
         hooks: role.hooks().clone(),
         revision: role.revision().clone(),
-        agent: Agent::Codex,
+        agent,
         platform: entry.platform,
         builder: entry.builder.clone(),
         docker: layer,
@@ -332,6 +377,7 @@ pub fn plan_image(
 fn launch_policy(
     role: &LoadedRole,
     docker: &DockerCapability,
+    tuple: &jackin_core::AgentTuple,
 ) -> Result<(ClosedPolicy, Vec<LaunchWarning>), PlanError> {
     let (document, warnings) = match docker {
         DockerCapability::Enabled(access) => (
@@ -341,7 +387,7 @@ fn launch_policy(
         ),
         DockerCapability::Disabled => (role.policy().clone(), Vec::new()),
     };
-    Ok((document.close()?, warnings))
+    Ok((document.close_for_tuple(tuple)?, warnings))
 }
 
 pub fn plan_launch(
@@ -363,13 +409,37 @@ pub fn plan_launch(
             role: request.role.clone(),
         });
     }
-    let agent = Agent::Codex;
+    let agent = request.agent;
+    let provider = request.provider;
+    let tuple =
+        jackin_core::lookup_tuple(agent, provider).map_err(|_| PlanError::TupleNotSupported {
+            agent,
+            provider,
+            reason: "unknown tuple".to_owned(),
+        })?;
+    if tuple.state != jackin_core::TupleState::Supported {
+        return Err(PlanError::TupleNotSupported {
+            agent,
+            provider,
+            reason: tuple.reason.unwrap_or("not supported").to_owned(),
+        });
+    }
+    if let Some(model) = &request.model {
+        tuple
+            .check_model(model)
+            .map_err(|_| PlanError::TupleNotSupported {
+                agent,
+                provider,
+                reason: format!("unknown model {model}"),
+            })?;
+    }
     let spec = agent.spec();
     let selection = config.select_account(&AccountQuery {
         flag: request.account.as_ref(),
         workspace: workspace_name,
         role: &request.role,
         agent,
+        provider,
     })?;
     let account =
         config
@@ -396,7 +466,7 @@ pub fn plan_launch(
         workspace.docker,
         entry.docker_engine.as_ref(),
     )?;
-    let (policy, warnings) = launch_policy(role, &docker)?;
+    let (policy, warnings) = launch_policy(role, &docker, tuple)?;
     let policy_label = PolicyLabel::of(&policy.document().render()?);
     let layers = EnvLayers::of(config, workspace, &request.role);
     let mut values: BTreeMap<EnvName, String> =
@@ -416,8 +486,16 @@ pub fn plan_launch(
             mode: ENV_FILE_MODE,
             text: EnvFile::new(values)?.render(),
         },
+        auth: placeholder_file(spec),
     };
-    let image_request = plan_image(config, role, gateway, Some(workspace), request.rebuild)?;
+    let image_request = plan_image_for(
+        config,
+        role,
+        gateway,
+        Some(workspace),
+        request.rebuild,
+        agent,
+    )?;
     let name = SandboxName::new(
         &workspace_name.slug(),
         &NameSuffix::for_launch(&request.launch),

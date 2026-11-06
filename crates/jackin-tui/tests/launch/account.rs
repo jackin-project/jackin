@@ -77,6 +77,7 @@ async fn launches(
         workspace: &workspace_name,
         role: &role_name,
         agent: Agent::Codex,
+        provider: Provider::Codex,
     })?;
     assert_eq!(selected.account.as_str(), expected);
     let (account, picked) = launched(&rig).await?;

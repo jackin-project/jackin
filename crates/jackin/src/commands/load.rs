@@ -12,7 +12,7 @@ use jackin_session::{
 
 use super::progress::launch_event;
 use crate::app::App;
-use crate::cli::{EnvAssignment, LoadArgs};
+use crate::cli::{EnvAssignment, LoadArgs, parse_agent, parse_provider};
 use crate::error::CommandError;
 use crate::paths::existing_dir;
 use crate::term;
@@ -112,7 +112,17 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         Some(launch) => launch,
         None => LaunchId::generate()?,
     };
+    let agent = match &args.agent {
+        Some(text) => parse_agent(text)?,
+        None => jackin_core::Agent::Codex,
+    };
+    let provider = match &args.provider {
+        Some(text) => parse_provider(text)?,
+        None => agent.provider(),
+    };
     let request = LaunchRequest::new(gateway.clone(), project, role.name().clone(), launch)
+        .tuple(agent, provider)
+        .model(args.model)
         .account(args.account)
         .rebuild(Rebuild::from(args.rebuild))
         .prompting(Prompting::for_terminal(app.terminal.is_some()));

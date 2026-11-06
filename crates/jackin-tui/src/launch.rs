@@ -98,6 +98,7 @@ fn plan_stage(error: &PlanError) -> Stage {
         | PlanError::EnvUndeclared(_)
         | PlanError::CodexConfig(_)
         | PlanError::RoleMismatch { .. }
+        | PlanError::TupleNotSupported { .. }
         | PlanError::RoleNotAllowed { .. } => Stage::Image,
     }
 }
@@ -603,7 +604,10 @@ impl Run {
             supervisor: Some(inspected.supervisor),
             work: Some(work),
         };
-        self.backend.inputs.admit(config, observed, origins).ok_or(jackin_session::LifecycleError::NotFound(sandbox.clone()))
+        self.backend
+            .inputs
+            .admit(config, observed, origins)
+            .ok_or(jackin_session::LifecycleError::NotFound(sandbox.clone()))
     }
 
     async fn ready(
