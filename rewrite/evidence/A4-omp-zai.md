@@ -31,3 +31,15 @@ Plan usage moved (5h 0% -> 1%); no pay-as-you-go/credits surface.
 
 ## Defects
 - None blocking T09. Prior round-4 scan defect is fixed at HEAD.
+
+## A9 re-proof (2026-11-06)
+
+Verdict: PASS
+
+- Binary: jackin 0.1.0 built from HEAD of feature/openshell-native (`mise exec -- mbx +1.99.1 build -p jackin`). Role: /Users/donbeave/Projects/jackin-project/jackin-sentinel (feature/openshell-native, declares [agents.omp] model glm-5.3). Workspace add a9-sentinel was rejected because a9-codex already shares that path; the launch used the path directly. Provider jackin-omp-zai-omp pre-existing ("provider: skipped, the provider exists"); account omp-zai.
+- Launch: `DOCKER_CONTEXT=default ./target/debug/jackin load sentinel /Users/donbeave/Projects/jackin-project/jackin-sentinel --agent omp --provider zai --account omp-zai --gateway jackin-local --task "In the working directory, create a file named a9-proof.txt containing exactly the line: a9-omp-ok. Then stop."` Image built; sandbox jackin-a9-code-jctg created and ready.
+- Vehicle note: as in A4, the non-TTY launch returned the sandbox id without driving the interactive omp (pid 674 running, no file after 4 min of polling). The task was then driven via `openshell sandbox exec -g jackin-local jackin-a9-code-jctg -- sh -c 'cd /sandbox/project && omp -p --no-session "<same task>"'`, which reported creating the file.
+- File proof: `cat /sandbox/project/a9-proof.txt` -> `a9-omp-ok`; `od -c` shows exactly `a 9 - o m p - o k \n` (10 bytes).
+- Usage before (host `~/.omp/agent/agent.db` usage_history, provider zai, latest poll recorded_at 1793659502044): 5h TOKENS_LIMIT 1.0%, weekly 37.0%. Usage after (fresh host `omp usage` poll, recorded_at 1793973118322, plan max): 5h 1.0%, weekly 37.0% — the 5h percent did not move at percent granularity. Tokens recorded instead: the sandbox omp log for the print-mode run (pid 893, session 01a1b11e-bab9-77fb-8993-46a1f6b1885f) records assistantUsageContextTokens 9056 / storedContextTokens 8136 at agent end, and a post-run usage fetch for provider zai resolved 3 limits (13:49:37Z). Sandbox usage_history held only the startup poll (5h 0.0% in its own fresh window).
+- Hygiene (no key read or grepped): sandbox `/sandbox/.omp/config.toml` (153 bytes) and `/sandbox/.omp/auth.json` (50 bytes) each contain the word `placeholder` for the zai credential and no other key material was inspected; config names provider zai, model glm-5.3, api.z.ai. Processes: `jackin-start omp` and `/usr/local/bin/omp` running as user sandbox with HOME=/sandbox (workspace-local `/sandbox/.omp` config).
+- Cleanup: `jackin purge jackin-a9-code-jctg --force` -> deleted; `openshell sandbox list -g jackin-local` -> no sandboxes. No a9-sentinel workspace entry was created (add rejected). Host `~/.config/jackin/config.toml` was rewritten by jackin during launch (section reordering only, jackin-docker entries preserved); restored byte-identical from the pre-launch backup. No commit or push made.
