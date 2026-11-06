@@ -91,7 +91,16 @@ fn save_failure(error: &dyn std::error::Error) -> SaveFailure {
 fn core_agent(agent: Agent) -> Result<CoreAgent, PersistError> {
     match agent {
         Agent::Codex => Ok(CoreAgent::Codex),
-        Agent::ClaudeCode | Agent::Amp | Agent::KimiCode | Agent::OpenCode | Agent::GrokBuild => {
+        Agent::ClaudeCode
+        | Agent::Amp
+        | Agent::KimiCode
+        | Agent::OpenCode
+        | Agent::GrokBuild
+        | Agent::MuseCode
+        | Agent::Antigravity
+        | Agent::MinimaxCode
+        | Agent::MimoCode
+        | Agent::Omp => {
             Err(Rejection::CannotSave(SaveField::Agent).into())
         }
     }

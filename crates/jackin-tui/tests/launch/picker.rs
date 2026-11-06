@@ -7,6 +7,7 @@ use jackin_console::app::Route;
 use jackin_console::domain::agent::Agent as ConsoleAgent;
 use jackin_console::domain::launch::{LaunchContent, RefusalReason};
 use jackin_console::domain::role::{NO_DEFAULT_ROLE, NO_SAVED_WORKSPACE};
+use jackin_console::domain::tuple::InstanceChoice;
 use jackin_console::launch::{LaunchEvent, LaunchTarget};
 use jackin_core::{
     Account, AccountName, AllowedRoles, ConfigEdit, CredentialSource, EnvName, OpReference,
@@ -235,8 +236,13 @@ async fn another_agent_is_refused_before_any_stage() -> TestResult {
             &LaunchTarget {
                 workspace: Some(workspace),
                 role: "sentinel".to_owned(),
-                agent: ConsoleAgent::ClaudeCode,
-                account: None,
+                instances: vec![InstanceChoice {
+                    agent: ConsoleAgent::ClaudeCode,
+                    provider: ConsoleAgent::ClaudeCode.provider(),
+                    account: None,
+                    model: String::new(),
+                }],
+                task: None,
             },
         );
         let mut events = Vec::new();

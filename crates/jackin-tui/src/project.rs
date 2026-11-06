@@ -105,6 +105,7 @@ pub fn core_provider(provider: Provider) -> CoreProvider {
         Provider::Moonshot => CoreProvider::Kimi,
         Provider::MiniMax => CoreProvider::Minimax,
         Provider::Muse => CoreProvider::Muse,
+        Provider::Mimo => CoreProvider::Mimo,
         Provider::OpenCode => CoreProvider::Opencode,
         Provider::Openrouter => CoreProvider::Openrouter,
         Provider::Zai => CoreProvider::Zai,
@@ -165,6 +166,7 @@ fn env_kind(provider: Provider) -> DetectedKind {
         | Provider::Openrouter
         | Provider::Antigravity
         | Provider::Hermes
+        | Provider::Mimo
         | Provider::Muse => DetectedKind::Unknown,
     }
 }
@@ -184,6 +186,7 @@ fn file_kind(provider: Provider) -> DetectedKind {
         | Provider::Openrouter
         | Provider::Antigravity
         | Provider::Hermes
+        | Provider::Mimo
         | Provider::Muse => DetectedKind::Unknown,
     }
 }
@@ -568,6 +571,8 @@ pub(crate) fn instance(
             .iter()
             .map(|i| i.account.to_string())
             .collect(),
+        agents: Vec::new(),
+        task: None,
     };
     normalize::instance(&mut record);
     Some(record)

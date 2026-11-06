@@ -702,8 +702,8 @@ pub(crate) fn start(
         wanted: Wanted {
             place: place(world, target),
             role: target.role.clone(),
-            account: target.account.clone(),
-            agent: target.agent,
+            account: target.account(),
+            agent: target.agent(),
         },
         launch: launch.clone(),
         out,
