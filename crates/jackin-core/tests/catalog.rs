@@ -25,7 +25,7 @@ fn blocked_and_unavailable_tuples_carry_reasons() -> TestResult {
     let blocked = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
     assert_eq!(blocked.state, TupleState::BlockedVendor);
     assert!(!blocked.reason.unwrap_or_default().is_empty());
-    let unavailable = lookup_tuple(Agent::Omp, Provider::Zai)?;
+    let unavailable = lookup_tuple(Agent::Omp, Provider::Kimi)?;
     assert_eq!(unavailable.state, TupleState::Unavailable);
     assert!(!unavailable.reason.unwrap_or_default().is_empty());
     Ok(())
