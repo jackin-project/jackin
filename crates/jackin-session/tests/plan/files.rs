@@ -96,6 +96,7 @@ async fn planned_files_carry_the_trust_entry_the_model_and_the_env_with_exact_pa
         );
         let bare = Spec::new(RoleFixture::new("sentinel")?).build().await?;
         let plan = bare.plan(bare.request(1)?)?;
+        assert!(plan.files().muse_trust.is_none());
         assert_eq!(EnvFile::parse(&plan.files().env.text)?.values().len(), 0);
         assert_eq!(plan.files().env.text, "");
         Ok(())

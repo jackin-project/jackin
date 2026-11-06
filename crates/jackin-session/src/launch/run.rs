@@ -564,6 +564,22 @@ impl Run<'_> {
             self.write_planned(sandbox, file).await?;
         }
         self.write_planned(sandbox, &files.codex_config).await?;
+        if let Some(trust) = &files.muse_trust {
+            self.write_planned(sandbox, trust).await?;
+        }
+        for instance in self
+            .plan
+            .instances()
+            .iter()
+            .filter(|instance| instance.agent == Agent::MuseCode)
+        {
+            if self.plan.instances().len() > 1 {
+                if let Some(trust) = &files.muse_trust {
+                    self.write_home_auth(sandbox, instance.agent, trust)
+                        .await?;
+                }
+            }
+        }
         self.engine_certs(sandbox, bound).await?;
         self.write_planned(sandbox, &files.env).await?;
         self.done.steps.insert(STEP);

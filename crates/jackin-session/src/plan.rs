@@ -21,7 +21,7 @@ use jackin_openshell::{
 };
 use thiserror::Error;
 
-use crate::files::{placeholder_file, render_codex_config};
+use crate::files::{placeholder_file, render_codex_config, render_muse_trust};
 use crate::launch::LaunchWarning;
 use crate::roles::LoadedRole;
 
@@ -95,6 +95,7 @@ pub struct PlannedFiles {
     pub codex_config: PlannedFile,
     pub env: PlannedFile,
     pub auth: PlannedFile,
+    pub muse_trust: Option<PlannedFile>,
     pub multi: Vec<PlannedFile>,
     pub layout: crate::multi::MultiLayout,
 }
@@ -536,6 +537,13 @@ fn agent_config_file(
     })
 }
 
+fn muse_trust_file(agent: Agent, spec: &jackin_core::AgentSpec) -> Option<PlannedFile> {
+    match agent {
+        Agent::MuseCode => Some(render_muse_trust(&spec.workdir)),
+        _ => None,
+    }
+}
+
 pub fn plan_launch(
     config: &Config,
     role: &LoadedRole,
@@ -674,6 +682,7 @@ pub fn plan_launch(
         } else {
             placeholder_file(spec)
         },
+        muse_trust: muse_trust_file(agent, spec),
     };
     let image_request = plan_image_for(
         config,
@@ -853,6 +862,33 @@ mod tests {
         let file = fixture(Agent::MuseCode, Provider::Muse, None, None);
         let value: serde_json::Value = serde_json::from_str(&file.text).expect("json");
         assert_eq!(value["model"], Agent::MuseCode.spec().default_model);
+    }
+
+    #[test]
+    fn muse_trust_file_only_for_muse() {
+        let spec = Agent::MuseCode.spec();
+        let file = muse_trust_file(Agent::MuseCode, spec).expect("muse trust");
+        assert_eq!(
+            file.path,
+            SandboxPath::parse("/sandbox/.config/muse/trust.json").expect("path")
+        );
+        assert_eq!(file.mode, FileMode(0o600));
+        let value: serde_json::Value = serde_json::from_str(&file.text).expect("json");
+        assert_eq!(value["schema_version"], 1);
+        assert_eq!(
+            value["projects"][spec.workdir.as_str()]["decision"],
+            "trusted"
+        );
+        assert!(muse_trust_file(Agent::Codex, Agent::Codex.spec()).is_none());
+    }
+
+    #[test]
+    fn muse_trust_renderer_uses_given_workdir() {
+        let workdir = SandboxPath::parse("/sandbox/custom").expect("workdir");
+        let file = render_muse_trust(&workdir);
+        let value: serde_json::Value = serde_json::from_str(&file.text).expect("json");
+        assert_eq!(value["projects"]["/sandbox/custom"]["decision"], "trusted");
+        assert_eq!(value["projects"].as_object().expect("projects").len(), 1);
     }
 
     #[test]

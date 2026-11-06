@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    CODEX_PLACEHOLDER_ID_TOKEN, ChatgptAccountId, ModelName, ProviderName, SandboxPath, Timestamp,
+    CODEX_PLACEHOLDER_ID_TOKEN, ChatgptAccountId, FileMode, ModelName, ProviderName, SandboxPath,
+    Timestamp,
 };
 use serde_json::json;
 use toml::{Table, Value};
@@ -144,6 +145,29 @@ pub fn render_muse_config(model: Option<&str>) -> crate::plan::PlannedFile {
             "schema_version": 1,
             "provider": "meta",
             "model": model.unwrap_or(spec.default_model),
+        })
+        .to_string(),
+    }
+}
+
+pub fn render_muse_trust(workdir: &SandboxPath) -> crate::plan::PlannedFile {
+    let config = &jackin_core::Agent::MuseCode.spec().user_config.path;
+    let parent = config
+        .as_str()
+        .rsplit_once('/')
+        .map(|(dir, _)| dir)
+        .unwrap_or_default();
+    let path = SandboxPath::parse(parent)
+        .and_then(|dir| dir.join("trust.json"))
+        .unwrap_or_else(|_| config.clone());
+    crate::plan::PlannedFile {
+        path,
+        mode: FileMode(0o600),
+        text: json!({
+            "schema_version": 1,
+            "projects": {
+                workdir.as_str(): { "decision": "trusted" }
+            }
         })
         .to_string(),
     }

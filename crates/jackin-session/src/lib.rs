@@ -32,7 +32,7 @@ mod workspace;
 
 pub use crate::files::{
     grok_auth_file, omp_auth_file, render_grok_config, render_kimi_config, render_mimo_config,
-    render_muse_config, render_omp_config,
+    render_muse_config, render_muse_trust, render_omp_config,
 };
 pub use accounts::*;
 pub use attach::*;
