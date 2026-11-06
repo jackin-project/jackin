@@ -603,7 +603,7 @@ impl Run {
             supervisor: Some(inspected.supervisor),
             work: Some(work),
         };
-        Ok(self.backend.inputs.admit(config, observed, origins))
+        self.backend.inputs.admit(config, observed, origins).ok_or(jackin_session::LifecycleError::NotFound(sandbox.clone()))
     }
 
     async fn ready(

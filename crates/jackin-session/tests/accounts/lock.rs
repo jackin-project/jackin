@@ -35,13 +35,13 @@ async fn hold(rig: &Rig, account: &str) -> Result<FileLock, Box<dyn Error>> {
 
 async fn peer_put(rig: &Rig, refresh: &str) -> TestResult {
     let spec = Agent::Codex.spec();
-    let profile = ProviderProfile::parse(&spec.openshell.chatgpt_profile)?;
+    let profile = ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile)?;
     rig.gateway().ensure_profile(&profile).await?;
     rig.gateway()
         .put_provider(&ProviderSpec {
             name: ProviderName::parse("jackin-work-codex")?,
             profile: profile.id,
-            keys: spec.openshell.keys,
+            keys: spec.codex.openshell.keys,
             material: ProviderMaterial::ChatgptLogin {
                 access_token: Secret::new("ACCESS-PEER".to_owned()),
                 refresh_token: Secret::new(refresh.to_owned()),

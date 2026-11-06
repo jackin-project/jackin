@@ -220,7 +220,7 @@ impl AuthoredPolicy {
     }
 
     pub fn close(self) -> Result<ClosedPolicy, ClosedPolicyError> {
-        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().codex.openshell.chatgpt_profile)?;
         let violations = self.0.closure_violations(&profile, &[]);
         if violations.is_empty() {
             Ok(ClosedPolicy(self.0))

@@ -56,9 +56,11 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         Provider::Opencode => opencode_usage(call).await,
         Provider::Openrouter => openrouter_usage(call).await,
         Provider::Zai => zai_usage(call).await,
-        Provider::Amp | Provider::Antigravity | Provider::Hermes | Provider::Muse => {
-            Err(unsupported(None).into())
-        }
+        Provider::Amp
+        | Provider::Antigravity
+        | Provider::Hermes
+        | Provider::Mimo
+        | Provider::Muse => Err(unsupported(None).into()),
     }
 }
 

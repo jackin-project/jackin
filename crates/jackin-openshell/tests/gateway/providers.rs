@@ -18,14 +18,14 @@ const ACCOUNT_ID: &str = "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9";
 const PROVIDER: &str = "jackin-work-codex";
 
 fn profile() -> ProviderProfile {
-    ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile).unwrap()
+    ProviderProfile::parse(&Agent::Codex.spec().codex.openshell.chatgpt_profile).unwrap()
 }
 
 fn spec(access: &str, refresh: &str) -> ProviderSpec {
     ProviderSpec {
         name: ProviderName::parse(PROVIDER).unwrap(),
         profile: ProfileId::parse("codex").unwrap(),
-        keys: Agent::Codex.spec().openshell.keys,
+        keys: Agent::Codex.spec().codex.openshell.keys,
         material: ProviderMaterial::ChatgptLogin {
             access_token: Secret::new(access.to_owned()),
             refresh_token: Secret::new(refresh.to_owned()),
@@ -143,7 +143,7 @@ async fn put_provider_creates_updates_and_configures_refresh() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
     guard(gateway.ensure_profile(&profile())).await.unwrap();
-    let keys = Agent::Codex.spec().openshell.keys;
+    let keys = Agent::Codex.spec().codex.openshell.keys;
     let provider_key = (WORKSPACE.to_owned(), PROVIDER.to_owned());
     let refresh_key = (
         WORKSPACE.to_owned(),
@@ -381,7 +381,7 @@ async fn put_provider_converges_when_a_concurrent_writer_creates_first() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
     guard(gateway.ensure_profile(&profile())).await.unwrap();
-    let keys = Agent::Codex.spec().openshell.keys;
+    let keys = Agent::Codex.spec().codex.openshell.keys;
     let provider_key = (WORKSPACE.to_owned(), PROVIDER.to_owned());
     let refresh_key = (
         WORKSPACE.to_owned(),

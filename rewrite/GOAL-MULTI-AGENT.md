@@ -260,7 +260,7 @@ Gate: the file holds one complete section for each of the 8 agents. A reviewer c
 2. Add the new variants to `enum Agent` in `crates/jackin-core/src/agent.rs`: `ClaudeCode`, `GrokBuild`, `MuseCode`, `Antigravity`, `MinimaxCode`, `MimoCode`, `KimiCode`, `Omp`.
 3. Keep `Agent::ALL` complete. Keep each `match` on `Agent` exhaustive. The compiler must find each missing arm.
 4. Change `AgentSpec`. Remove the Codex-only fields `code_mode_host` and `CodexAuthMode` from the common row. Put agent-only fields in a per-agent sub-struct.
-5. Add these fields to each row: binary path, state directory, launch command, install data (version, URL template, checksums), provider, auth class (S, O, or B), placeholder file path and mode, list of provider hosts, and credential environment names.
+5. Add these fields to each row: binary path, state directory, launch command, install data (version, URL template, checksums), provider, auth class (S, O, or B), placeholder file path and mode, list of provider hosts, credential environment names, and the allowed model names with one default model. A model that is not in the list of its tuple is a typed error. This rule defines the unknown-model test of step 9.
 6. Add one tuple table. One row holds one tuple from the target table, its auth class, and its state: `supported`, `unavailable`, or `blocked-vendor`.
 7. At this step, mark only T01 as `supported`. Mark T09 to T12 as `unavailable`. Mark T02 and T05 as `blocked-vendor`. Mark the rest as `unavailable`.
 8. Change `Provider::agent()` so it does not claim one agent for one provider. Add a function that returns all tuples for one provider.

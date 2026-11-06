@@ -23,14 +23,14 @@ use super::support::{
 
 async fn put_provider(world: &World, account: &str) -> TestResult {
     let spec = Agent::Codex.spec();
-    let profile = ProviderProfile::parse(&spec.openshell.chatgpt_profile)?;
+    let profile = ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile)?;
     world.gateway.ensure_profile(&profile).await?;
     world
         .gateway
         .put_provider(&ProviderSpec {
             name: ProviderName::for_account(&AccountName::parse(account)?, Agent::Codex),
             profile: profile.id,
-            keys: spec.openshell.keys,
+            keys: spec.codex.openshell.keys,
             material: ProviderMaterial::ChatgptLogin {
                 access_token: Secret::new("ACCESS-PEER".to_owned()),
                 refresh_token: Secret::new(REFRESH.to_owned()),

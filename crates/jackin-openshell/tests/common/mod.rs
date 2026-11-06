@@ -32,5 +32,5 @@ pub(crate) fn rule_doc(rules: &[(&str, &str, u16)]) -> String {
 }
 
 pub(crate) fn profile() -> ProviderProfile {
-    ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile).unwrap()
+    ProviderProfile::parse(&Agent::Codex.spec().codex.openshell.chatgpt_profile).unwrap()
 }

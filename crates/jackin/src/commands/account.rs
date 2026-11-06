@@ -139,13 +139,19 @@ async fn bind(app: &App, args: &BindArgs) -> Result<(), CommandError> {
             let account = config
                 .account(&args.account)
                 .ok_or_else(|| unknown_account(&args.account))?;
-            let agent = account.provider().agent().ok_or_else(|| {
-                CommandError::Config(ConfigError::ProviderMismatch {
-                    account: args.account.clone(),
-                    expected: Agent::Codex.provider(),
-                    found: account.provider(),
-                })
-            })?;
+            let agent = account
+                .provider()
+                .tuples()
+                .first()
+                .map(|tuple| tuple.agent)
+                .filter(|agent| *agent == Agent::Codex)
+                .ok_or_else(|| {
+                    CommandError::Config(ConfigError::ProviderMismatch {
+                        account: args.account.clone(),
+                        expected: Agent::Codex.provider(),
+                        found: account.provider(),
+                    })
+                })?;
             ConfigEdit::BindRoleAccount {
                 role,
                 agent,

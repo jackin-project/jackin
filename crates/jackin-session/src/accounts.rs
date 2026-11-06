@@ -681,14 +681,14 @@ async fn sync_login(
             account: account.name().clone(),
         });
     }
-    let profile = ProviderProfile::parse(&spec.openshell.chatgpt_profile)?;
+    let profile = ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile)?;
     let synced = gateway.ensure_profile(&profile).await?;
     let name = ProviderName::for_account(account.name(), Agent::Codex);
     gateway
         .put_provider(&ProviderSpec {
             name: name.clone(),
             profile: profile.id,
-            keys: spec.openshell.keys,
+            keys: spec.codex.openshell.keys,
             material: ProviderMaterial::ChatgptLogin {
                 access_token: login.access_token,
                 refresh_token: login.refresh_token,
