@@ -780,6 +780,7 @@ async fn scripted_runner_rejects_git_and_unscripted_programs_naming_them() -> Te
         ScriptedProgram::Openshell => 1,
         ScriptedProgram::Ssh => 2,
         ScriptedProgram::Op => 3,
+        ScriptedProgram::Security => 4,
     };
     assert_eq!(variants(ScriptedProgram::Op), 3);
     Ok(())

@@ -3,9 +3,12 @@
 
 use std::collections::BTreeSet;
 
+use std::time::Duration;
+
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
-    FileLock, GatewayEntry, GatewayName, HostPath, Provider, ProviderName,
+    FileLock, GatewayEntry, GatewayName, HostPath, ProcessError, ProcessSpec, ProcessStatus,
+    ProcessStdin, Program, Provider, ProviderName, Secret,
 };
 use jackin_openshell::{
     Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile,
@@ -16,7 +19,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::connect::{ConnectError, GatewayConnector};
 use crate::credentials::{
-    CredentialError, read_chatgpt_login, read_grok_login, resolve_static_key,
+    CredentialError, read_chatgpt_login, read_grok_login, read_muse_host_metadata,
+    resolve_static_key,
 };
 use crate::gateways::{Gateways, UnreachableGateway};
 use crate::lock::{self, LockError};
@@ -775,8 +779,89 @@ async fn sync_login(
             });
         }
         if agent == Agent::MuseCode && account.provider() == Provider::Muse {
-            return Err(AccountError::HostLoginStoreUnsupported {
-                account: account.name().clone(),
+            let metadata = read_muse_host_metadata(host.fs.as_ref(), path).await?;
+            if !metadata.subs_active {
+                return Err(AccountError::MissingCredential {
+                    account: account.name().clone(),
+                });
+            }
+            if metadata.storage != "keychain" {
+                return Err(AccountError::HostLoginStoreUnsupported {
+                    account: account.name().clone(),
+                });
+            }
+            let spec = ProcessSpec {
+                program: Program::Security,
+                args: vec![
+                    "find-generic-password".to_owned(),
+                    "-s".to_owned(),
+                    "ai.meta.dev.credentials".to_owned(),
+                    "-a".to_owned(),
+                    "meta".to_owned(),
+                    "-w".to_owned(),
+                ],
+                cwd: None,
+                env: Vec::new(),
+                env_remove_prefixes: Vec::new(),
+                stdin: ProcessStdin::Null,
+                timeout: Duration::from_secs(30),
+            };
+            let output =
+                host.runner
+                    .run_secret(&spec, cancel)
+                    .await
+                    .map_err(|error| match error {
+                        ProcessError::Spawn { .. } => AccountError::HostLoginStoreUnsupported {
+                            account: account.name().clone(),
+                        },
+                        _ => AccountError::MissingCredential {
+                            account: account.name().clone(),
+                        },
+                    })?;
+            if output.status != ProcessStatus::Exited(0) {
+                return Err(AccountError::MissingCredential {
+                    account: account.name().clone(),
+                });
+            }
+            let document: serde_json::Value = serde_json::from_slice(output.stdout.expose())
+                .map_err(|_| AccountError::MissingCredential {
+                    account: account.name().clone(),
+                })?;
+            let access_token = document
+                .get("access_token")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.trim().is_empty())
+                .ok_or_else(|| AccountError::MissingCredential {
+                    account: account.name().clone(),
+                })?;
+            let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
+                AccountError::MissingCredential {
+                    account: account.name().clone(),
+                }
+            })?;
+            let asset = jackin_core::tuple_profile_asset(tuple);
+            let profile = ProviderProfile::parse(asset)?;
+            let synced = gateway.ensure_profile(&profile).await?;
+            let name = ProviderName::for_account(account.name(), agent);
+            gateway
+                .put_provider(&ProviderSpec {
+                    name: name.clone(),
+                    profile: profile.id,
+                    keys: jackin_core::CredentialKeys {
+                        access_token: "access_token",
+                        refresh_token: "",
+                        account_id: "",
+                        id_token: "",
+                        token_url: "",
+                    },
+                    material: ProviderMaterial::StaticKey {
+                        key: Secret::new(access_token.to_owned()),
+                    },
+                })
+                .await?;
+            return Ok(AccountSync::ProviderReady {
+                provider: name,
+                profile: synced,
             });
         }
         return Err(AccountError::MissingCredential {

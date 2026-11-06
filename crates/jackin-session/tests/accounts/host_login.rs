@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Account, AccountName, Agent, CredentialSource, HostPath, Provider, ProviderName,
+    Account, AccountName, Agent, CredentialSource, HostPath, Program, Provider, ProviderName,
 };
 use jackin_session::{AccountError, grok_auth_file, read_grok_login, read_muse_host_metadata};
-use jackin_testkit::World;
+use jackin_testkit::{ProcessReply, ScriptedProgram, World};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{TestResult, guard, register};
@@ -13,6 +13,16 @@ use super::support::{TestResult, guard, register};
 const GROK_A: &str = "FAKE-GROK-A-111";
 const GROK_B: &str = "FAKE-GROK-B-222";
 const ISSUER: &str = "https://auth.x.ai";
+const MUSE_API: &str = "FAKE-MUSE-API-333";
+const MUSE_ACCESS: &str = "FAKE-MUSE-ACCESS-444";
+const SECURITY_ARGS: [&str; 6] = [
+    "find-generic-password",
+    "-s",
+    "ai.meta.dev.credentials",
+    "-a",
+    "meta",
+    "-w",
+];
 
 fn host_login_account(
     name: &str,
@@ -112,7 +122,7 @@ async fn grok_sync_creates_t03_provider_with_key_only_in_record() -> TestResult 
 }
 
 #[tokio::test]
-async fn muse_metadata_reader_and_metadata_only_sync() -> TestResult {
+async fn muse_metadata_reader() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         let dir = tempfile::tempdir()?;
@@ -135,16 +145,197 @@ async fn muse_metadata_reader_and_metadata_only_sync() -> TestResult {
         )
         .await?;
         assert!(!read_muse_host_metadata(world.fs.as_ref(), &hp).await?.subs_active);
-        let account = host_login_account("museone", Provider::Muse, &hp)?;
+        Ok(())
+    })
+    .await
+}
+
+async fn muse_world(
+    storage: &str,
+    subs_active: bool,
+) -> Result<(World, Account, tempfile::TempDir), Box<dyn std::error::Error>> {
+    let world = World::builder().build()?;
+    let dir = tempfile::tempdir()?;
+    let file = dir.path().join("auth.json");
+    write_file(
+        &file,
+        &serde_json::json!({"providers": {"meta": {"mechanism": "oauth", "storage": storage, "subs_active": subs_active}}})
+            .to_string(),
+    )
+    .await?;
+    let account = host_login_account("museone", Provider::Muse, &HostPath::parse(&file)?)?;
+    register(&world, &account).await?;
+    Ok((world, account, dir))
+}
+
+fn security_seen(world: &World) -> Vec<jackin_testkit::SeenCall> {
+    world
+        .runner
+        .scripted()
+        .seen()
+        .into_iter()
+        .filter(|call| call.program == Program::Security)
+        .collect()
+}
+
+#[tokio::test]
+async fn muse_keychain_sync_creates_provider_with_access_token_only() -> TestResult {
+    guard(async {
+        let (world, account, _dir) = muse_world("keychain", true).await?;
+        world.runner.scripted().expect(
+            ScriptedProgram::Security,
+            &SECURITY_ARGS,
+            ProcessReply::exited(
+                0,
+                serde_json::json!({"api_key": MUSE_API, "access_token": MUSE_ACCESS})
+                    .to_string()
+                    .as_bytes(),
+                b"",
+            ),
+        );
+        let synced = world
+            .session
+            .sync_account(&account, Agent::MuseCode, &CancellationToken::new())
+            .await?;
+        let name = ProviderName::for_account(&AccountName::parse("museone")?, Agent::MuseCode);
+        assert_eq!(name.as_str(), "jackin-museone-muse");
+        assert!(matches!(synced, jackin_session::AccountSync::ProviderReady { ref provider, .. } if *provider == name));
+        let record = world.gateway.provider(&name).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "muse");
+        assert_eq!(record.access_key, "access_token");
+        assert_eq!(record.access_token, MUSE_ACCESS);
+        assert_ne!(record.access_token, MUSE_API);
+        let debug = format!("{synced:?}");
+        assert!(!debug.contains(MUSE_ACCESS), "{debug}");
+        assert!(!debug.contains(MUSE_API), "{debug}");
+        let seen = security_seen(&world);
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].args, SECURITY_ARGS);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn muse_keychain_error_taxonomy_is_typed_and_secret_free() -> TestResult {
+    guard(async {
+        let cases: Vec<(&str, ProcessReply, bool)> = vec![
+            (
+                "malformed",
+                ProcessReply::exited(0, b"{not json FAKE-MUSE-ACCESS-444", b""),
+                false,
+            ),
+            (
+                "missing",
+                ProcessReply::exited(
+                    0,
+                    serde_json::json!({"api_key": MUSE_API})
+                        .to_string()
+                        .as_bytes(),
+                    b"",
+                ),
+                false,
+            ),
+            (
+                "empty",
+                ProcessReply::exited(
+                    0,
+                    serde_json::json!({"access_token": "  "})
+                        .to_string()
+                        .as_bytes(),
+                    b"",
+                ),
+                false,
+            ),
+            (
+                "nonzero",
+                ProcessReply::exited(44, b"", b"not found"),
+                false,
+            ),
+            ("spawn", ProcessReply::spawn("no binary"), true),
+        ];
+        for (_name, reply, spawn) in cases {
+            let (world, account, _dir) = muse_world("keychain", true).await?;
+            world
+                .runner
+                .scripted()
+                .expect(ScriptedProgram::Security, &SECURITY_ARGS, reply);
+            let result = world
+                .session
+                .sync_account(&account, Agent::MuseCode, &CancellationToken::new())
+                .await;
+            let error = result.err().ok_or("expected error")?;
+            if spawn {
+                assert!(
+                    matches!(error, AccountError::HostLoginStoreUnsupported { .. }),
+                    "{error:?}"
+                );
+            } else {
+                assert!(
+                    matches!(error, AccountError::MissingCredential { .. }),
+                    "{error:?}"
+                );
+            }
+            let text = format!("{error} {error:?}");
+            assert!(!text.contains(MUSE_ACCESS), "{text}");
+            assert!(!text.contains(MUSE_API), "{text}");
+            assert!(world.gateway.providers().is_empty());
+            assert_eq!(security_seen(&world).len(), 1);
+        }
+        let (world, account, _dir) = muse_world("keychain", true).await?;
+        let result = world
+            .session
+            .sync_account(&account, Agent::MuseCode, &CancellationToken::new())
+            .await;
+        let error = result.err().ok_or("expected error")?;
+        assert!(
+            matches!(error, AccountError::HostLoginStoreUnsupported { .. }),
+            "{error:?}"
+        );
+        assert!(world.gateway.providers().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn muse_metadata_preconditions_never_run_keychain() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("missing.json");
+        let account = host_login_account("museone", Provider::Muse, &HostPath::parse(&file)?)?;
         register(&world, &account).await?;
         let result = world
             .session
             .sync_account(&account, Agent::MuseCode, &CancellationToken::new())
             .await;
-        let text = result.as_ref().err().map(ToString::to_string).unwrap_or_default();
-        assert!(matches!(result, Err(AccountError::HostLoginStoreUnsupported { .. })), "{text}");
-        assert!(text.contains("not yet supported"), "{text}");
+        assert!(result.is_err(), "{result:?}");
         assert!(world.gateway.providers().is_empty());
+        assert!(security_seen(&world).is_empty());
+        for (storage, subs_active, unsupported) in
+            [("keychain", false, false), ("os-store", true, true)]
+        {
+            let (world, account, _dir) = muse_world(storage, subs_active).await?;
+            let result = world
+                .session
+                .sync_account(&account, Agent::MuseCode, &CancellationToken::new())
+                .await;
+            let error = result.err().ok_or("expected error")?;
+            if unsupported {
+                assert!(
+                    matches!(error, AccountError::HostLoginStoreUnsupported { .. }),
+                    "{error:?}"
+                );
+            } else {
+                assert!(
+                    matches!(error, AccountError::MissingCredential { .. }),
+                    "{error:?}"
+                );
+            }
+            assert!(world.gateway.providers().is_empty());
+            assert!(security_seen(&world).is_empty(), "{error:?}");
+        }
         Ok(())
     })
     .await
