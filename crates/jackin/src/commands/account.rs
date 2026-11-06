@@ -91,9 +91,8 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             "{home}/.omp/agent/agent.db"
         )))
         .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
-        let _key = read_omp_host_key(app.deps.host.fs.as_ref(), &db, provider_id)
-            .await
-            .map_err(|_| {
+        let _key =
+            read_omp_host_key(app.deps.host.fs.as_ref(), &db, provider_id).map_err(|_| {
                 CommandError::Argument(
                     "no omp host credential for the selected provider".to_owned(),
                 )

@@ -573,10 +573,10 @@ impl Run<'_> {
             .iter()
             .filter(|instance| instance.agent == Agent::MuseCode)
         {
-            if self.plan.instances().len() > 1 {
-                if let Some(trust) = &files.muse_trust {
-                    self.write_home_auth(sandbox, instance.agent, trust).await?;
-                }
+            if self.plan.instances().len() > 1
+                && let Some(trust) = &files.muse_trust
+            {
+                self.write_home_auth(sandbox, instance.agent, trust).await?;
             }
         }
         self.engine_certs(sandbox, bound).await?;

@@ -100,7 +100,7 @@ pub fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Option<Secret> 
     }
 }
 
-pub async fn read_omp_host_key(
+pub fn read_omp_host_key(
     _fs: &dyn FileSystem,
     db_path: &HostPath,
     provider_id: &str,
@@ -256,9 +256,7 @@ pub async fn resolve_static_key(
             let home = std::env::var("HOME").map_err(|_| missing())?;
             let db = HostPath::parse(Path::new(&format!("{home}/.omp/agent/agent.db")))
                 .map_err(|_| missing())?;
-            read_omp_host_key(host.fs.as_ref(), &db, provider_id)
-                .await
-                .map_err(|_| missing())
+            read_omp_host_key(host.fs.as_ref(), &db, provider_id).map_err(|_| missing())
         }
         CredentialSource::OnePassword {
             reference,

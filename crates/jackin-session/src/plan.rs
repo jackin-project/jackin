@@ -493,7 +493,6 @@ fn validate_instances(instances: &jackin_core::AgentInstances) -> Result<(), Pla
 fn agent_config_file(
     is_omp: bool,
     tuple: &'static jackin_core::AgentTuple,
-    spec: &jackin_core::AgentSpec,
     codex_model: Option<&ModelName>,
     model: Option<&str>,
     agent: Agent,
@@ -517,6 +516,7 @@ fn agent_config_file(
         return Ok(crate::files::render_grok_config(model));
     }
     if is_omp {
+        let spec = agent.spec();
         return Ok(PlannedFile {
             path: spec.user_config.path.clone(),
             mode: spec.user_config.mode,
@@ -529,6 +529,7 @@ fn agent_config_file(
             })?,
         });
     }
+    let spec = agent.spec();
     Ok(PlannedFile {
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
@@ -540,6 +541,80 @@ fn muse_trust_file(agent: Agent, spec: &jackin_core::AgentSpec) -> Option<Planne
     match agent {
         Agent::MuseCode => Some(render_muse_trust(&spec.workdir)),
         _ => None,
+    }
+}
+
+type InstanceAccounts = (Vec<Account>, Vec<(Agent, ChatgptAccountId)>);
+
+fn collect_instance_accounts(
+    config: &Config,
+    instances: &jackin_core::AgentInstances,
+) -> Result<InstanceAccounts, PlanError> {
+    let mut instance_accounts = Vec::new();
+    let mut chatgpt_accounts = Vec::new();
+    for instance in instances.iter() {
+        let entry =
+            config
+                .account(&instance.account)
+                .ok_or_else(|| ConfigError::MissingReference {
+                    kind: "account",
+                    name: instance.account.to_string(),
+                })?;
+        instance_accounts.push(entry.clone());
+        if instance.agent == Agent::Codex
+            && let Some(login) = entry.chatgpt_login()
+        {
+            chatgpt_accounts.push((instance.agent, login.account_id.clone()));
+        }
+    }
+    Ok((instance_accounts, chatgpt_accounts))
+}
+
+fn lead_chatgpt_account(
+    agent: Agent,
+    account: &Account,
+    selection: &AccountSelection,
+) -> Result<Option<ChatgptAccountId>, PlanError> {
+    Ok(if agent == Agent::Codex {
+        let mode =
+            account
+                .codex_auth_mode()
+                .ok_or_else(|| SelectionError::FlagProviderMismatch {
+                    account: selection.account.clone(),
+                    expected: Provider::Codex,
+                })?;
+        Some(
+            account
+                .chatgpt_login()
+                .map(|login| login.account_id.clone())
+                .ok_or_else(|| PlanError::Unsupported {
+                    account: selection.account.clone(),
+                    mode,
+                })?,
+        )
+    } else {
+        None
+    })
+}
+
+fn resolve_instances(
+    request: &LaunchRequest,
+    agent: Agent,
+    provider: Provider,
+    selection: &AccountSelection,
+) -> jackin_core::AgentInstances {
+    match request.instances.clone() {
+        Some(instances) => instances,
+        None => jackin_core::AgentInstances::single(jackin_core::AgentInstance {
+            agent,
+            provider,
+            account: selection.account.clone(),
+            model: request
+                .model
+                .clone()
+                .unwrap_or_else(|| agent.spec().default_model.to_owned()),
+            branch: format!("agent/{}", agent.as_str()),
+        }),
     }
 }
 
@@ -580,19 +655,7 @@ pub fn plan_launch(
         agent,
         provider,
     })?;
-    let instances = match request.instances.clone() {
-        Some(instances) => instances,
-        None => jackin_core::AgentInstances::single(jackin_core::AgentInstance {
-            agent,
-            provider,
-            account: selection.account.clone(),
-            model: request
-                .model
-                .clone()
-                .unwrap_or_else(|| agent.spec().default_model.to_owned()),
-            branch: format!("agent/{}", agent.as_str()),
-        }),
-    };
+    let instances = resolve_instances(&request, agent, provider, &selection);
     validate_instances(&instances)?;
     let account =
         config
@@ -601,44 +664,9 @@ pub fn plan_launch(
                 kind: "account",
                 name: selection.account.to_string(),
             })?;
-    let mut instance_accounts = Vec::new();
-    let mut chatgpt_accounts = Vec::new();
-    for instance in instances.iter() {
-        let entry =
-            config
-                .account(&instance.account)
-                .ok_or_else(|| ConfigError::MissingReference {
-                    kind: "account",
-                    name: instance.account.to_string(),
-                })?;
-        instance_accounts.push(entry.clone());
-        if instance.agent == Agent::Codex {
-            if let Some(login) = entry.chatgpt_login() {
-                chatgpt_accounts.push((instance.agent, login.account_id.clone()));
-            }
-        }
-    }
+    let (instance_accounts, chatgpt_accounts) = collect_instance_accounts(config, &instances)?;
     let is_omp = agent == Agent::Omp;
-    let chatgpt_account = if agent != Agent::Codex {
-        None
-    } else {
-        let mode =
-            account
-                .codex_auth_mode()
-                .ok_or_else(|| SelectionError::FlagProviderMismatch {
-                    account: selection.account.clone(),
-                    expected: Provider::Codex,
-                })?;
-        Some(
-            account
-                .chatgpt_login()
-                .map(|login| login.account_id.clone())
-                .ok_or_else(|| PlanError::Unsupported {
-                    account: selection.account.clone(),
-                    mode,
-                })?,
-        )
-    };
+    let chatgpt_account = lead_chatgpt_account(agent, account, &selection)?;
     let docker = DockerCapability::resolve(
         role.manifest().docker.enabled,
         workspace.docker,
@@ -664,7 +692,6 @@ pub fn plan_launch(
         codex_config: agent_config_file(
             is_omp,
             tuple,
-            spec,
             role.manifest().codex.model.as_ref(),
             Some(instances.lead().model.as_str()),
             agent,
@@ -828,17 +855,8 @@ mod tests {
     ) -> PlannedFile {
         let tuple = jackin_core::lookup_tuple(agent, provider).expect("tuple");
         let account = AccountName::parse("cfgtest").expect("account");
-        agent_config_file(
-            false,
-            tuple,
-            agent.spec(),
-            codex_model,
-            model,
-            agent,
-            provider,
-            &account,
-        )
-        .expect("config")
+        agent_config_file(false, tuple, codex_model, model, agent, provider, &account)
+            .expect("config")
     }
 
     #[test]
