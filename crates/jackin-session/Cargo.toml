@@ -40,5 +40,8 @@ tempfile = { workspace = true }
 termwiz = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
 
+[package.metadata.cargo-shear]
+ignored-paths = ["tests/common/tap.rs", "tests/support/trap.rs"]
+
 [lints]
 workspace = true
