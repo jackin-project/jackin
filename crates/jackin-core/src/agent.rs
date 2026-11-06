@@ -303,6 +303,7 @@ pub struct InstallSpec {
     pub version_output: &'static str,
     pub system_config: SandboxPath,
     pub system_config_content: &'static str,
+    pub scan_absent_paths: &'static [&'static str],
     pub targets: &'static [InstallTarget],
 }
 
@@ -446,6 +447,14 @@ static CODEX_SPEC: AgentSpec = AgentSpec {
         version_output: "codex-cli {version}",
         system_config: SandboxPath::from_static("/etc/codex/config.toml"),
         system_config_content: "check_for_update_on_startup = false\n",
+        scan_absent_paths: &[
+            "/etc/codex/requirements.toml",
+            "/etc/codex/managed_config.toml",
+            "/etc/codex/hooks.json",
+            "/etc/codex/rules",
+            "/etc/codex/agents",
+            "/etc/codex/skills",
+        ],
         targets: &[
             InstallTarget {
                 platform: Platform::LinuxArm64,
@@ -497,6 +506,7 @@ macro_rules! agent_spec {
                 version_output: "",
                 system_config: SandboxPath::from_static($config),
                 system_config_content: "",
+                scan_absent_paths: &[],
                 targets: $targets,
             },
             auth_class: $class,
