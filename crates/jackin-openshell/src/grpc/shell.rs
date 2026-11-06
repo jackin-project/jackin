@@ -42,16 +42,22 @@ impl Inner {
         request: &TerminalRequest,
     ) -> Result<TerminalSession, GatewayError> {
         match &request.kind {
-            TerminalKind::Shell { .. } => self.open_shell(request).await,
+            TerminalKind::Shell { .. } | TerminalKind::Exec { .. } => {
+                self.open_shell(request).await
+            }
             TerminalKind::MainProcess { .. } => self.open_main(request).await,
         }
     }
 
     async fn open_shell(&self, request: &TerminalRequest) -> Result<TerminalSession, GatewayError> {
-        let TerminalKind::Shell { workdir, env } = &request.kind else {
-            return Err(GatewayError::Protocol {
-                message: "not a shell terminal".to_owned(),
-            });
+        let (argv, workdir, env) = match &request.kind {
+            TerminalKind::Shell { workdir, env } => (vec![SHELL_PROGRAM.to_owned()], workdir, env),
+            TerminalKind::Exec { argv, workdir, env } => (argv.clone(), workdir, env),
+            TerminalKind::MainProcess { .. } => {
+                return Err(GatewayError::Protocol {
+                    message: "not a shell terminal".to_owned(),
+                });
+            }
         };
         let environment = env
             .iter()
@@ -60,7 +66,7 @@ impl Inner {
         let mut start = exec_start(
             self.scope(),
             &request.sandbox,
-            vec![SHELL_PROGRAM.to_owned()],
+            argv,
             Some(workdir),
             environment,
         );

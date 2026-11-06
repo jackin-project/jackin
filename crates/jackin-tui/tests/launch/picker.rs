@@ -69,7 +69,14 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
         console.keys("enter")?;
         answer(&mut console, None).await?;
         until_route(&mut console, Route::Capsule).await?;
-        assert_eq!(labels(&only(&rig)?)?.planned.account.as_str(), "work");
+        assert_eq!(
+            labels(&only(&rig)?)?.planned.agents.agents_label(),
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+                jackin_core::Agent::Codex,
+                AccountName::parse("work")?
+            ))
+            .agents_label()
+        );
         assert!(
             rig.world
                 .runner
@@ -298,7 +305,14 @@ async fn the_current_directory_launches_with_the_only_role() -> TestResult {
         let found = labels(&only(&rig)?)?.planned;
         assert_eq!(found.workspace.as_str(), base);
         assert_eq!(found.role.as_str(), "sentinel");
-        assert_eq!(found.account.as_str(), "work");
+        assert_eq!(
+            found.agents.agents_label(),
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+                jackin_core::Agent::Codex,
+                AccountName::parse("work")?
+            ))
+            .agents_label()
+        );
         Ok(())
     })
     .await

@@ -259,8 +259,10 @@ impl ScenarioHost {
         let planned = PlannedLabels {
             workspace: WorkspaceName::parse(&model.workspace).expect("workspace"),
             role: RoleName::parse("sentinel").expect("role"),
-            agent: Agent::Codex,
-            account: AccountName::parse(&model.account).expect("account"),
+            agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+                Agent::Codex,
+                AccountName::parse(&model.account).expect("account"),
+            )),
             policy: PolicyLabel::of(POLICY),
             launch: LaunchId::parse(&model.launch).expect("launch"),
         };

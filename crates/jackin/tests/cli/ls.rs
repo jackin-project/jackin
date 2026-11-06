@@ -134,7 +134,7 @@ async fn an_empty_gateway_prints_no_sandboxes_in_human_output_only() -> TestResu
         assert!(ran.stdout.is_empty(), "{}", ran.stdout);
         assert_eq!(
             ran.stderr,
-            "warning: sandbox jackin-broken-0002 has unreadable labels and is not listed: missing label jackin.dev/agent\nno sandboxes\n"
+            "warning: sandbox jackin-broken-0002 has unreadable labels and is not listed: missing label jackin.dev/agents\nno sandboxes\n"
         );
         Ok(())
     })

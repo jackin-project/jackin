@@ -185,7 +185,16 @@ fn stale(
             error,
         });
     }
-    let differences = view.labels.differences(&wanted);
+    let mut differences = view.labels.differences(&wanted);
+    if let Observed::Ready(_, probe) = observed
+        && crate::multi::agents_json_mismatch(plan.instances(), probe.agents_json.as_deref())
+    {
+        differences.push(jackin_core::LabelDifference {
+            key: jackin_core::LabelKey::from_static(jackin_core::AGENTS_LABEL),
+            found: jackin_core::LabelValue::from_static("agents.json mismatch"),
+            wanted: jackin_core::LabelValue::from_static("agents.json match"),
+        });
+    }
     (!differences.is_empty()).then(|| LaunchError::StaleSandbox {
         launch: plan.launch_id().clone(),
         sandbox: view.name.clone(),

@@ -29,6 +29,7 @@ fn request(agent: Agent) -> Result<ImageRequest, Box<dyn Error>> {
             digest: Sha256::of(b"clean"),
         },
         agent,
+        agents: vec![agent],
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,

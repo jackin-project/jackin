@@ -491,6 +491,7 @@ impl Run {
                 sandbox: self.sandbox.clone(),
                 size,
                 input: InputMode::Owner,
+                agent: None,
             })
             .await
             .map(Terminal::Main)

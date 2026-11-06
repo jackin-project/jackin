@@ -37,6 +37,8 @@ pub struct LaunchRequest {
     agent: Agent,
     provider: Provider,
     model: Option<String>,
+    instances: Option<jackin_core::AgentInstances>,
+    task: Option<String>,
     rebuild: Rebuild,
     env: BTreeMap<EnvName, PlainEnvValue>,
     prompting: Prompting,
@@ -92,6 +94,8 @@ pub struct PlannedFiles {
     pub codex_config: PlannedFile,
     pub env: PlannedFile,
     pub auth: PlannedFile,
+    pub multi: Vec<PlannedFile>,
+    pub layout: crate::multi::MultiLayout,
 }
 
 #[derive(Clone, Debug)]
@@ -109,6 +113,7 @@ pub struct LaunchPlan {
     image_request: ImageRequest,
     draft: SandboxDraft,
     files: PlannedFiles,
+    instances: jackin_core::AgentInstances,
 }
 
 #[derive(Clone, Debug)]
@@ -116,6 +121,7 @@ pub struct SandboxDraft {
     name: SandboxName,
     labels: PlannedLabels,
     provider: ProviderName,
+    providers: Vec<ProviderName>,
     policy: ClosedPolicy,
     main: MainProcess,
 }
@@ -199,6 +205,8 @@ impl LaunchRequest {
             agent: Agent::Codex,
             provider: Provider::Codex,
             model: None,
+            instances: None,
+            task: None,
             rebuild: Rebuild::No,
             env: BTreeMap::new(),
             prompting: Prompting::Never,
@@ -216,6 +224,26 @@ impl LaunchRequest {
         self.agent = agent;
         self.provider = provider;
         self
+    }
+
+    #[must_use]
+    pub fn instances(mut self, instances: jackin_core::AgentInstances) -> LaunchRequest {
+        if let Some(lead) = instances.lead_opt() {
+            self.agent = lead.agent;
+            self.provider = lead.provider;
+        }
+        self.instances = Some(instances);
+        self
+    }
+
+    #[must_use]
+    pub fn task(mut self, task: Option<String>) -> LaunchRequest {
+        self.task = task;
+        self
+    }
+
+    pub fn task_text(&self) -> Option<&str> {
+        self.task.as_deref()
     }
 
     #[must_use]
@@ -367,6 +395,7 @@ pub fn plan_image_for(
         hooks: role.hooks().clone(),
         revision: role.revision().clone(),
         agent,
+        agents: vec![agent],
         platform: entry.platform,
         builder: entry.builder.clone(),
         docker: layer,
@@ -390,6 +419,74 @@ fn launch_policy(
     Ok((document.close_for_tuple(tuple)?, warnings))
 }
 
+fn lead_tuple(
+    agent: Agent,
+    provider: Provider,
+    model: Option<&str>,
+) -> Result<&'static jackin_core::AgentTuple, PlanError> {
+    let tuple =
+        jackin_core::lookup_tuple(agent, provider).map_err(|_| PlanError::TupleNotSupported {
+            agent,
+            provider,
+            reason: "unknown tuple".to_owned(),
+        })?;
+    if tuple.state != jackin_core::TupleState::Supported {
+        return Err(PlanError::TupleNotSupported {
+            agent,
+            provider,
+            reason: tuple.reason.unwrap_or("not supported").to_owned(),
+        });
+    }
+    if let Some(model) = model {
+        tuple
+            .check_model(model)
+            .map_err(|_| PlanError::TupleNotSupported {
+                agent,
+                provider,
+                reason: format!("unknown model {model}"),
+            })?;
+    }
+    Ok(tuple)
+}
+
+fn lead_agent_provider(request: &LaunchRequest) -> (Agent, Provider) {
+    match request
+        .instances
+        .as_ref()
+        .and_then(|instances| instances.lead_opt())
+    {
+        Some(lead) => (lead.agent, lead.provider),
+        None => (request.agent, request.provider),
+    }
+}
+
+fn validate_instances(instances: &jackin_core::AgentInstances) -> Result<(), PlanError> {
+    for instance in instances.iter() {
+        let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(|_| {
+            PlanError::TupleNotSupported {
+                agent: instance.agent,
+                provider: instance.provider,
+                reason: "unknown tuple".to_owned(),
+            }
+        })?;
+        if tuple.state != jackin_core::TupleState::Supported {
+            return Err(PlanError::TupleNotSupported {
+                agent: instance.agent,
+                provider: instance.provider,
+                reason: tuple.reason.unwrap_or("not supported").to_owned(),
+            });
+        }
+        tuple
+            .check_model(&instance.model)
+            .map_err(|_| PlanError::TupleNotSupported {
+                agent: instance.agent,
+                provider: instance.provider,
+                reason: format!("unknown model {}", instance.model),
+            })?;
+    }
+    Ok(())
+}
+
 pub fn plan_launch(
     config: &Config,
     role: &LoadedRole,
@@ -409,30 +506,8 @@ pub fn plan_launch(
             role: request.role.clone(),
         });
     }
-    let agent = request.agent;
-    let provider = request.provider;
-    let tuple =
-        jackin_core::lookup_tuple(agent, provider).map_err(|_| PlanError::TupleNotSupported {
-            agent,
-            provider,
-            reason: "unknown tuple".to_owned(),
-        })?;
-    if tuple.state != jackin_core::TupleState::Supported {
-        return Err(PlanError::TupleNotSupported {
-            agent,
-            provider,
-            reason: tuple.reason.unwrap_or("not supported").to_owned(),
-        });
-    }
-    if let Some(model) = &request.model {
-        tuple
-            .check_model(model)
-            .map_err(|_| PlanError::TupleNotSupported {
-                agent,
-                provider,
-                reason: format!("unknown model {model}"),
-            })?;
-    }
+    let (agent, provider) = lead_agent_provider(&request);
+    let tuple = lead_tuple(agent, provider, request.model.as_deref())?;
     let spec = agent.spec();
     let selection = config.select_account(&AccountQuery {
         flag: request.account.as_ref(),
@@ -441,6 +516,20 @@ pub fn plan_launch(
         agent,
         provider,
     })?;
+    let instances = match request.instances.clone() {
+        Some(instances) => instances,
+        None => jackin_core::AgentInstances::single(jackin_core::AgentInstance {
+            agent,
+            provider,
+            account: selection.account.clone(),
+            model: request
+                .model
+                .clone()
+                .unwrap_or_else(|| agent.spec().default_model.to_owned()),
+            branch: format!("agent/{}", agent.as_str()),
+        }),
+    };
+    validate_instances(&instances)?;
     let account =
         config
             .account(&selection.account)
@@ -475,7 +564,14 @@ pub fn plan_launch(
             .map(|(name, value)| (name, value.as_str().to_owned()))
             .collect();
     values.extend(docker.environment());
+    let layout = crate::multi::plan_multi(
+        &instances,
+        request.task.as_deref(),
+        crate::multi::HeadState::Born,
+    );
     let files = PlannedFiles {
+        multi: layout.files.clone(),
+        layout: layout.clone(),
         codex_config: PlannedFile {
             path: spec.user_config.path.clone(),
             mode: spec.user_config.mode,
@@ -496,6 +592,8 @@ pub fn plan_launch(
         request.rebuild,
         agent,
     )?;
+    let mut image_request = image_request;
+    image_request.agents = instances.iter().map(|i| i.agent).collect();
     let name = SandboxName::new(
         &workspace_name.slug(),
         &NameSuffix::for_launch(&request.launch),
@@ -505,12 +603,15 @@ pub fn plan_launch(
         labels: PlannedLabels {
             workspace: workspace_name.clone(),
             role: request.role.clone(),
-            agent,
-            account: selection.account.clone(),
+            agents: instances.clone(),
             policy: policy_label,
             launch: request.launch.clone(),
         },
         provider: ProviderName::for_account(&selection.account, agent),
+        providers: instances
+            .iter()
+            .map(|i| ProviderName::for_account(&i.account, i.agent))
+            .collect(),
         policy,
         main: MainProcess {
             program: JACKIN_START,
@@ -531,6 +632,7 @@ pub fn plan_launch(
         image_request,
         draft,
         files,
+        instances,
     })
 }
 
@@ -590,6 +692,10 @@ impl LaunchPlan {
     pub fn files(&self) -> &PlannedFiles {
         &self.files
     }
+
+    pub fn instances(&self) -> &jackin_core::AgentInstances {
+        &self.instances
+    }
 }
 
 impl SandboxDraft {
@@ -605,12 +711,20 @@ impl SandboxDraft {
         &self.provider
     }
 
+    pub fn providers(&self) -> &[ProviderName] {
+        &self.providers
+    }
+
     pub fn complete(&self, image: &jackin_image::BuiltImage, docker: DockerLabel) -> SandboxCreate {
         SandboxCreate::new(
             self.name.clone(),
             image.tag.clone(),
             self.labels.clone().complete(&image.id, docker),
-            vec![self.provider.clone()],
+            if self.providers.is_empty() {
+                vec![self.provider.clone()]
+            } else {
+                self.providers.clone()
+            },
             self.policy.clone(),
             self.main.clone(),
         )

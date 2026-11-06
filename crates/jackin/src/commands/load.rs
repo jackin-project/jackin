@@ -101,7 +101,7 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
     }
     let config = app.store.load().await?;
     let path = existing_dir(app, &args.path).await?;
-    let (_, workspace) = lookup_workspace(&config, &path).require_saved()?;
+    let (workspace_name, workspace) = lookup_workspace(&config, &path).require_saved()?;
     let project = ProjectRoot::open(app.deps.host.fs.as_ref(), &path).await?;
     let (gateway, _) = config.resolve_gateway(app.gateway.as_ref())?;
     let role = app
@@ -112,16 +112,107 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         Some(launch) => launch,
         None => LaunchId::generate()?,
     };
-    let agent = match &args.agent {
-        Some(text) => parse_agent(text)?,
-        None => jackin_core::Agent::Codex,
+    let agent_texts: Vec<String> = if args.agent.is_empty() {
+        vec!["codex".to_owned()]
+    } else {
+        args.agent.clone()
     };
+    let mut agents = Vec::new();
+    for text in &agent_texts {
+        agents.push(parse_agent(text)?);
+    }
+    let agent = agents[0];
     let provider = match &args.provider {
         Some(text) => parse_provider(text)?,
         None => agent.provider(),
     };
+    let parse_for = |entries: &[String]| -> Result<BTreeMap<String, String>, CommandError> {
+        let mut map = BTreeMap::new();
+        for entry in entries {
+            let (name, value) = entry.split_once('=').ok_or_else(|| {
+                CommandError::Argument(format!("expected <agent>=<value>, got {entry}"))
+            })?;
+            map.insert(name.to_owned(), value.to_owned());
+        }
+        Ok(map)
+    };
+    let providers_for = parse_for(&args.provider_for)?;
+    let accounts_for = parse_for(&args.account_for)?;
+    let models_for = parse_for(&args.model_for)?;
+    let mut instances = Vec::new();
+    for instance_agent in &agents {
+        let instance_provider = match providers_for.get(instance_agent.as_str()) {
+            Some(text) => parse_provider(text)?,
+            None if agents.len() == 1 => provider,
+            None => instance_agent.provider(),
+        };
+        let tuple = jackin_core::lookup_tuple(*instance_agent, instance_provider)
+            .map_err(|error| CommandError::Argument(error.to_string()))?;
+        if tuple.state != jackin_core::TupleState::Supported {
+            return Err(CommandError::Argument(format!(
+                "tuple {} with provider {} is not supported",
+                instance_agent.as_str(),
+                instance_provider.as_str()
+            )));
+        }
+        let instance_account = match accounts_for.get(instance_agent.as_str()) {
+            Some(text) => jackin_core::AccountName::parse(text)
+                .map_err(|error| CommandError::Argument(error.to_string()))?,
+            None => {
+                config
+                    .select_account(&jackin_core::AccountQuery {
+                        flag: args.account.as_ref(),
+                        workspace: &workspace_name,
+                        role: role.name(),
+                        agent: *instance_agent,
+                        provider: instance_provider,
+                    })
+                    .map_err(|error| CommandError::Argument(error.to_string()))?
+                    .account
+            }
+        };
+        let instance_model = models_for
+            .get(instance_agent.as_str())
+            .cloned()
+            .or_else(|| {
+                if agents.len() == 1 {
+                    args.model.clone()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| tuple.default_model.to_owned());
+        tuple
+            .check_model(&instance_model)
+            .map_err(|error| CommandError::Argument(error.to_string()))?;
+        instances.push(jackin_core::AgentInstance::new(
+            *instance_agent,
+            instance_provider,
+            instance_account,
+            instance_model,
+        ));
+    }
+    let instances = jackin_core::AgentInstances::new(instances)
+        .map_err(|error| CommandError::Argument(error.to_string()))?;
+    let task = match (&args.task, &args.task_file, &args.issue) {
+        (Some(text), None, None) => Some(text.clone()),
+        (None, Some(path), None) => {
+            Some(tokio::fs::read_to_string(path).await.map_err(|error| {
+                CommandError::Argument(format!("cannot read task file: {error}"))
+            })?)
+        }
+        (None, None, Some(url)) => Some(issue_task(app, url).await?),
+        (None, None, None) => None,
+        _ => {
+            return Err(CommandError::Argument(
+                "pass only one of --task, --task-file, and --issue".to_owned(),
+            ));
+        }
+    };
     let request = LaunchRequest::new(gateway.clone(), project, role.name().clone(), launch)
         .tuple(agent, provider)
+        .instances(instances)
+        .task(task)
         .model(args.model)
         .account(args.account)
         .rebuild(Rebuild::from(args.rebuild))
@@ -148,4 +239,40 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
             None => app.io.line(&format!("{}\t{launch}", target.sandbox)),
         },
     }
+}
+
+async fn issue_task(app: &mut App, url: &str) -> Result<String, CommandError> {
+    let output = tokio::process::Command::new("gh")
+        .args(["issue", "view", url, "--json", "title,body"])
+        .output()
+        .await
+        .map_err(|error| CommandError::Argument(format!("cannot run gh: {error}")))?;
+    if !output.status.success() {
+        return Err(CommandError::Argument("gh issue view failed".to_owned()));
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let title = json_string(&text, "title").unwrap_or_default();
+    let body = json_string(&text, "body").unwrap_or_default();
+    let _ = app;
+    Ok(format!("{title}\n\n{body}"))
+}
+
+fn json_string(text: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\":\"");
+    let start = text.find(&needle)? + needle.len();
+    let mut out = String::new();
+    let mut chars = text[start..].chars();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '"' => return Some(out),
+            '\\' => match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some(other) => out.push(other),
+                None => {}
+            },
+            other => out.push(other),
+        }
+    }
+    Some(out)
 }

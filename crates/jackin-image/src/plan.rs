@@ -8,7 +8,7 @@ use jackin_core::{FileMode, HookKind, ImageId, ImageTag, SandboxPath, Sha256, sa
 use crate::assets::{CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, JACKIN_START, SCAN};
 use crate::dockerfile::{DockerfileError, validate_dockerfile};
 use crate::error::ImageError;
-use crate::key::{Fields, ImageKey, derived_arguments};
+use crate::key::{Fields, ImageKey, derived_arguments_multi};
 use crate::request::{ContextEntry, ImageRequest, Rebuild, SourceFile};
 
 const CONTEXT_MODE: FileMode = FileMode(0o644);
@@ -74,7 +74,7 @@ impl ImagePlan {
         Ok(ImagePlan {
             request: request.clone(),
             construct: construct_build(request),
-            derived_args: derived_arguments(request.agent, request.docker)?,
+            derived_args: derived_arguments_multi(&request.sorted_agents(), request.docker)?,
         })
     }
 

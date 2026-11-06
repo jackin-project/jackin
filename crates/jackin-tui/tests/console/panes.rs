@@ -983,6 +983,7 @@ async fn a_second_client_leaves_the_pane_read_only_until_the_owner_goes() -> Tes
                 sandbox: name,
                 size: size(100, 30)?,
                 input: InputMode::Owner,
+                agent: None,
             })
             .await?;
         let mut capsule = Capsule::attach(rig, |_| {}).await?;

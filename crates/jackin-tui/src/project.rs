@@ -444,7 +444,14 @@ fn session_record(
     };
     vec![SessionRecord {
         id: summary.labels.planned.launch.to_string(),
-        agent: agent(summary.labels.planned.agent),
+        agent: agent(
+            summary
+                .labels
+                .planned
+                .agents
+                .lead_opt()
+                .map_or(jackin_core::Agent::Codex, |i| i.agent),
+        ),
         label: Agent::Codex.label().to_owned(),
         status,
         started_secs: summary.created_at.map_or(0, |t| t.0),
@@ -526,7 +533,12 @@ pub(crate) fn instance(
             .and_then(|_| ids.lookup(&labels.workspace)),
         workdir: String::new(),
         role: labels.role.to_string(),
-        agent: agent(labels.agent)?,
+        agent: agent(
+            labels
+                .agents
+                .lead_opt()
+                .map_or(jackin_core::Agent::Codex, |i| i.agent),
+        )?,
         status,
         created_secs: summary.created_at.map_or(0, |t| t.0),
         last_seen_secs: now_secs,
@@ -542,8 +554,12 @@ pub(crate) fn instance(
         github: origin.map(repo_ref),
         uncommitted,
         unpushed,
-        account: Some(labels.account.to_string()),
-        accounts: vec![labels.account.to_string()],
+        account: labels.agents.lead_opt().map(|i| i.account.to_string()),
+        accounts: labels
+            .agents
+            .iter()
+            .map(|i| i.account.to_string())
+            .collect(),
     };
     normalize::instance(&mut record);
     Some(record)

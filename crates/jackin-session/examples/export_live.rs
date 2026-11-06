@@ -256,8 +256,10 @@ impl Live {
         let planned = PlannedLabels {
             workspace: WorkspaceName::parse(WORKSPACE_LABEL)?,
             role: RoleName::parse("p52")?,
-            agent: Agent::Codex,
-            account: AccountName::parse("p52")?,
+            agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+                Agent::Codex,
+                AccountName::parse("p52")?,
+            )),
             policy: PolicyLabel::of("policy"),
             launch: launch.clone(),
         };

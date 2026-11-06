@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{HookKind, LaunchId, SandboxName, SupervisorReading, sandbox_layout};
+use jackin_core::{
+    HookKind, LaunchId, SandboxName, SandboxPath, SupervisorReading, sandbox_layout,
+};
 use jackin_openshell::Gateway;
 
 use crate::launch::LaunchError;
@@ -13,6 +15,7 @@ pub(super) struct SandboxProbe {
     pub(super) setup_done: bool,
     pub(super) hooks: HookPresence,
     pub(super) supervisor: SupervisorReading,
+    pub(super) agents_json: Option<Vec<u8>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -32,9 +35,10 @@ pub(super) async fn read(
         sandbox_layout::hook_path(HookKind::Setup),
         sandbox_layout::hook_path(HookKind::Preflight),
         sandbox_layout::RUN_STATE.clone(),
+        SandboxPath::from_static("/sandbox/.jackin/agents.json"),
     ];
     let found = gateway.read_files(sandbox, &paths).await?;
-    let [uploaded, setup_done, setup, preflight, state] = found.as_slice() else {
+    let [uploaded, setup_done, setup, preflight, state, agents_json] = found.as_slice() else {
         return Err(LaunchError::ProbeInvalid {
             message: format!("expected {} files, read {}", paths.len(), found.len()),
         });
@@ -48,5 +52,6 @@ pub(super) async fn read(
             preflight: present(preflight),
         },
         supervisor: reading(state.as_deref()),
+        agents_json: agents_json.clone(),
     })
 }

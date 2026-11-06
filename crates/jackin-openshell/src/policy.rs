@@ -247,6 +247,37 @@ impl AuthoredPolicy {
             .map_err(|_| PolicyError::InvalidHost("unknown tuple".to_owned()))?;
         self.close_for_tuple(tuple)
     }
+
+    pub fn close_for_tuples(
+        self,
+        tuples: &[&jackin_core::AgentTuple],
+    ) -> Result<ClosedPolicy, ClosedPolicyError> {
+        let mut violations = Vec::new();
+        for tuple in tuples {
+            let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?;
+            violations.extend(self.0.closure_violations(&profile, &[]));
+        }
+        violations.sort();
+        violations.dedup();
+        if violations.is_empty() {
+            Ok(ClosedPolicy(self.0))
+        } else {
+            Err(ClosedPolicyError::Violations(violations))
+        }
+    }
+
+    pub fn close_for_instances(
+        self,
+        instances: &jackin_core::AgentInstances,
+    ) -> Result<ClosedPolicy, ClosedPolicyError> {
+        let mut tuples = Vec::new();
+        for instance in instances.iter() {
+            let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider)
+                .map_err(|_| PolicyError::InvalidHost("unknown tuple".to_owned()))?;
+            tuples.push(tuple);
+        }
+        self.close_for_tuples(&tuples)
+    }
 }
 
 impl ClosedPolicy {

@@ -79,6 +79,59 @@ fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
     Ok(())
 }
 
+pub(crate) fn derived_arguments_multi(
+    agents: &[Agent],
+    docker: DockerLayer,
+) -> Result<Vec<String>, ImageError> {
+    let mut sorted = agents.to_vec();
+    sorted.sort_by_key(|agent| agent.as_str());
+    sorted.dedup();
+    if sorted.is_empty() {
+        sorted.push(Agent::Codex);
+    }
+    let mut args = derived_arguments(sorted[0], docker)?;
+    if sorted.len() == 1 {
+        return Ok(args);
+    }
+    args.push(build_arg(
+        "AGENTS",
+        &sorted
+            .iter()
+            .map(|a| a.as_str())
+            .collect::<Vec<_>>()
+            .join(","),
+    ));
+    for agent in &sorted {
+        let spec = agent.spec();
+        args.push(build_arg(
+            &format!(
+                "AGENT_{}_VERSION",
+                agent.as_str().replace('-', "_").to_ascii_uppercase()
+            ),
+            spec.install.version,
+        ));
+        args.push(build_arg(
+            &format!(
+                "AGENT_{}_BINARY",
+                agent.as_str().replace('-', "_").to_ascii_uppercase()
+            ),
+            spec.binary.as_str(),
+        ));
+        for platform in PLATFORMS {
+            let target = install_target(*agent, platform)?;
+            args.push(build_arg(
+                &format!(
+                    "AGENT_{}_SHA256_{}",
+                    agent.as_str().replace('-', "_").to_ascii_uppercase(),
+                    platform.target_arch().to_ascii_uppercase()
+                ),
+                target.sha256,
+            ));
+        }
+    }
+    Ok(args)
+}
+
 pub(crate) fn derived_arguments(
     agent: Agent,
     docker: DockerLayer,
@@ -137,7 +190,7 @@ pub(crate) fn derived_arguments(
 
 impl ImageKey {
     pub fn derive(request: &ImageRequest, construct: &ImageId) -> Result<ImageKey, ImageError> {
-        let derived_args = derived_arguments(request.agent, request.docker)?;
+        let derived_args = derived_arguments_multi(&request.sorted_agents(), request.docker)?;
         Ok(ImageKey::compute(request, &derived_args, construct))
     }
 
@@ -157,6 +210,7 @@ impl ImageKey {
             hooks,
             revision,
             agent,
+            agents,
             platform,
             builder: _,
             docker,
@@ -170,6 +224,23 @@ impl ImageKey {
         let mut fields = Fields::default();
         fields.push(role.as_str());
         fields.push(agent.as_str());
+        for sorted_agent in {
+            let mut v = agents.clone();
+            v.sort_by_key(|a| a.as_str());
+            v.dedup();
+            if v.len() <= 1 {
+                v.clear();
+            }
+            v
+        } {
+            fields.push(sorted_agent.as_str());
+            fields.push(sorted_agent.spec().install.version);
+            for platform_item in PLATFORMS {
+                if let Some(target) = sorted_agent.spec().install_target(platform_item) {
+                    fields.push(target.sha256);
+                }
+            }
+        }
         let RoleRevision { commit, digest } = revision;
         fields.push(commit.as_str());
         fields.push(digest.as_str());

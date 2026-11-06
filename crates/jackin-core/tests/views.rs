@@ -20,8 +20,10 @@ fn summary(phase: Phase) -> Fallible<SandboxSummary> {
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("proj")?,
         role: RoleName::parse("sentinel")?,
-        agent: Agent::Codex,
-        account: AccountName::parse("work")?,
+        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("work")?,
+        )),
         policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
     };

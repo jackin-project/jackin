@@ -560,6 +560,9 @@ impl Run<'_> {
         )
         .await?;
         let files = self.plan.files();
+        for file in &files.multi {
+            self.write_planned(sandbox, file).await?;
+        }
         self.write_planned(sandbox, &files.codex_config).await?;
         self.engine_certs(sandbox, bound).await?;
         self.write_planned(sandbox, &files.env).await?;

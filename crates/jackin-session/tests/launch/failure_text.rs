@@ -100,8 +100,10 @@ fn a_stale_sandbox_is_never_offered_a_retry_under_the_same_launch() -> Fallible<
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("proj")?,
         role: RoleName::parse("backend")?,
-        agent: Agent::Codex,
-        account: AccountName::parse("work")?,
+        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("work")?,
+        )),
         policy: PolicyLabel::of("found"),
         launch: launch()?,
     };

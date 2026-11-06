@@ -104,6 +104,7 @@ fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
             digest: Sha256::of(b"clean"),
         },
         agent: Agent::Codex,
+        agents: vec![Agent::Codex],
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,

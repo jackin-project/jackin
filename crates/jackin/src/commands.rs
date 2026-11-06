@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod account;
+mod agent;
 mod attach;
 mod build;
 pub(crate) mod console;
@@ -31,8 +32,10 @@ pub(crate) async fn dispatch(app: &mut App, command: Command) -> Result<(), Comm
         Command::Account(command) => account::run(app, command).await,
         Command::Doctor => doctor::run(app).await,
         Command::Build(args) => build::run(app, args).await,
-        Command::Load(args) => load::run(app, args).await,
+        Command::Load(args) => load::run(app, *args).await,
         Command::Attach(args) => attach::run(app, args).await,
+        Command::Agent(command) => agent::run(app, command).await,
+        Command::Integrate(arg) => agent::integrate(app, arg).await,
         Command::Shell(arg) => shell::run(app, arg).await,
         Command::Export(arg) => export::run(app, arg).await,
         Command::Stop(arg) => power::run(app, arg, PowerAction::Stop).await,

@@ -107,14 +107,14 @@ pub(super) fn spawn_shell(
     workdir: PathBuf,
     size: TermSize,
 ) -> Result<TerminalSession, GatewayError> {
-    let TerminalKind::Shell {
-        workdir: sandbox_workdir,
-        env,
-    } = kind.clone()
-    else {
-        return Err(GatewayError::Protocol {
-            message: "the fake attached the main process as a shell".to_owned(),
-        });
+    let (sandbox_workdir, env) = match kind.clone() {
+        TerminalKind::Shell { workdir, env } => (workdir, env),
+        TerminalKind::Exec { workdir, env, .. } => (workdir, env),
+        TerminalKind::MainProcess { .. } => {
+            return Err(GatewayError::Protocol {
+                message: "the fake attached the main process as a shell".to_owned(),
+            });
+        }
     };
     let mut command = HostProgram::Shell.command();
     command
