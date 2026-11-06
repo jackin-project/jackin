@@ -694,8 +694,8 @@ P11.1 and P11.2 run in parallel.
 
 The task texts are in `rewrite/GOAL-MULTI-AGENT.md`. Do the tasks in order A0, A1, A2, A3, A3M, A4, A5, A6, A7, A8, A9. Mark each box with its commit, gate output, and evidence file.
 
-- [x] A0 Amend the design (D29 in DESIGN.md and decisions.tsv). Gate: reviewer finds no conflict with D01, D03, D05, D10, D27. Proof: two reviewer rounds; round 1 CHANGES (6 findings), round 2 CHANGES (1 finding), each finding fixed and re-checked in the diff; core rules of D01, D03, D10, D27 unchanged.
-- [ ] A1 Prove each agent artifact. Output: `rewrite/research/agent-artifacts.md`, one section per agent.
+- [x] A0 Amend the design (D29 in DESIGN.md and decisions.tsv). Gate: reviewer finds no conflict with D01, D03, D05, D10, D27. Proof: commit 43967b5d5; two reviewer rounds; round 1 CHANGES (6 findings), round 2 CHANGES (1 finding), each finding fixed and re-checked in the diff; core rules of D01, D03, D10, D27 unchanged.
+- [x] A1 Prove each agent artifact. Output: `rewrite/research/agent-artifacts.md`, one section per agent. Proof: 9 sections; verifier checked the agy manifest and the Codex 0.167.0 SHA256SUMS at random, both PASS. MiniMax Code: unavailable, no stable Linux artifact. Grok Build: no vendor checksum file, first-fetch hash rule.
 - [ ] A2 Generalize the catalog in jackin-core. Gate: G-FAST.
 - [ ] A3 Generalize image, policy, and launch. Gate: G-FAST.
 - [ ] A3M Many agents in one sandbox. Gate: G-FULL and `rewrite/evidence/A3M-live.md`.
