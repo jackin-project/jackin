@@ -4,7 +4,10 @@
 use jackin_core::{
     Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, read_credential_file,
 };
-use jackin_session::{AccountPlan, plan_account_edits, read_chatgpt_login, read_omp_host_key};
+use jackin_session::{
+    AccountPlan, plan_account_edits, plan_account_edits_for_agent, read_chatgpt_login,
+    read_omp_host_key,
+};
 
 use crate::app::App;
 use crate::cli::{
@@ -39,12 +42,15 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
         })?;
         let home = app
             .env
-            .get(&jackin_core::EnvName::parse("HOME").map_err(|_| {
-                CommandError::Argument("HOME is not set".to_owned())
-            })?)
+            .get(
+                &jackin_core::EnvName::parse("HOME")
+                    .map_err(|_| CommandError::Argument("HOME is not set".to_owned()))?,
+            )
             .ok_or_else(|| CommandError::Argument("HOME is not set".to_owned()))?;
-        let db = jackin_core::HostPath::parse(std::path::Path::new(&format!("{home}/.omp/agent/agent.db")))
-            .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
+        let db = jackin_core::HostPath::parse(std::path::Path::new(&format!(
+            "{home}/.omp/agent/agent.db"
+        )))
+        .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
         let _key = read_omp_host_key(app.deps.host.fs.as_ref(), &db, provider_id)
             .await
             .map_err(|_| {
@@ -104,8 +110,34 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
 
 async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
     let provider = parse_provider(&args.provider)?;
+    let agent = match &args.agent {
+        Some(text) => Some(crate::cli::parse_agent(text)?),
+        None => None,
+    };
     let account = Account::new(args.name.clone(), provider, source(app, &args).await?)?;
-    apply(app, vec![ConfigEdit::AddAccount(account)]).await
+    let agent = agent.unwrap_or_else(|| match provider {
+        jackin_core::Provider::Kimi => Agent::KimiCode,
+        jackin_core::Provider::Mimo => Agent::MimoCode,
+        jackin_core::Provider::Codex => Agent::Codex,
+        _ => Agent::Omp,
+    });
+    match plan_account_edits_for_agent(
+        &app.desk(),
+        vec![ConfigEdit::AddAccount(account)],
+        agent,
+        &app.cancel,
+    )
+    .await?
+    {
+        AccountPlan::Offline(plan) => {
+            plan.apply().await?;
+        }
+        AccountPlan::Gateway(plan) => {
+            let gateways = app.gateways(plan.config()).await?;
+            plan.apply(&gateways).await?;
+        }
+    }
+    Ok(())
 }
 
 async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {

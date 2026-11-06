@@ -311,19 +311,50 @@ impl Run<'_> {
         self.enter(LaunchStep::Provider).await;
         let providers: Vec<_> = self.plan.draft().providers().to_vec();
         let accounts: Vec<_> = self.plan.instance_accounts().to_vec();
+        let agents: Vec<_> = self
+            .plan
+            .instances()
+            .iter()
+            .map(|instance| instance.agent)
+            .collect();
         let names: Vec<_> = if providers.is_empty() {
-            vec![(self.plan.draft().provider().clone(), self.plan.account_entry().clone())]
+            vec![(
+                self.plan.draft().provider().clone(),
+                self.plan.account_entry().clone(),
+                agents.first().copied().unwrap_or(Agent::Codex),
+            )]
         } else {
-            providers.into_iter().zip(accounts).collect()
+            providers
+                .into_iter()
+                .zip(accounts)
+                .zip(agents.iter().chain(std::iter::repeat(&Agent::Codex)))
+                .map(|((name, account), agent)| (name, account, *agent))
+                .collect()
         };
-        for (name, account) in &names {
-            let state = self.session.deps.gateway.provider_state(name).await.map_err(|error| failed(LaunchStep::Provider, error))?;
+        for (name, account, agent) in &names {
+            let state = self
+                .session
+                .deps
+                .gateway
+                .provider_state(name)
+                .await
+                .map_err(|error| failed(LaunchStep::Provider, error))?;
             self.live()?;
             if state == ProviderState::Absent {
-                let synced = self.session.sync_if_absent(account, name, self.cancel).await.map_err(|source| match source {
-                    AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
-                    other => failed(LaunchStep::Provider, LaunchError::ProviderUnavailable { account: account.name().clone(), source: Box::new(other) }),
-                })?;
+                let synced = self
+                    .session
+                    .sync_if_absent(account, name, *agent, self.cancel)
+                    .await
+                    .map_err(|source| match source {
+                        AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
+                        other => failed(
+                            LaunchStep::Provider,
+                            LaunchError::ProviderUnavailable {
+                                account: account.name().clone(),
+                                source: Box::new(other),
+                            },
+                        ),
+                    })?;
                 if !synced {
                     self.tracker.skip(SkipReason::ProviderPresent);
                 }
@@ -496,16 +527,34 @@ impl Run<'_> {
         const STEP: LaunchStep = LaunchStep::Credentials;
         self.enter(STEP).await;
         let files = self.plan.files();
-        let has_codex = self.plan.instances().iter().any(|instance| instance.agent == Agent::Codex);
+        let has_codex = self
+            .plan
+            .instances()
+            .iter()
+            .any(|instance| instance.agent == Agent::Codex);
         if has_codex {
             self.write_codex_auth(sandbox).await?;
         }
         if !files.auth.text.is_empty() {
             self.write_planned(sandbox, &files.auth).await?;
         }
-        for instance in self.plan.instances().iter().filter(|instance| instance.agent == Agent::Omp) {
+        for instance in self
+            .plan
+            .instances()
+            .iter()
+            .filter(|instance| instance.agent == Agent::Omp)
+        {
             if self.plan.instances().len() > 1 {
-                let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(|error| failed(STEP, GatewayError::Protocol { message: error.to_string() }))?;
+                let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(
+                    |error| {
+                        failed(
+                            STEP,
+                            GatewayError::Protocol {
+                                message: error.to_string(),
+                            },
+                        )
+                    },
+                )?;
                 let file = crate::files::omp_auth_file(tuple);
                 self.write_planned(sandbox, &file).await?;
                 self.write_home_auth(sandbox, instance.agent, &file).await?;
@@ -521,33 +570,119 @@ impl Run<'_> {
         Ok(())
     }
 
-    async fn write_home_auth(&self, sandbox: &SandboxName, agent: Agent, file: &PlannedFile) -> Result<(), Stop> {
-        let relative = file.path.as_str().strip_prefix("/sandbox").unwrap_or(file.path.as_str());
-        let path = SandboxPath::parse(&format!("/sandbox/.jackin/homes/{}{relative}", agent.as_str())).map_err(|error| failed(LaunchStep::Credentials, LaunchError::Path(error)))?;
-        self.write(LaunchStep::Credentials, sandbox, &path, file.mode, file.text.clone().into_bytes()).await
+    async fn write_home_auth(
+        &self,
+        sandbox: &SandboxName,
+        agent: Agent,
+        file: &PlannedFile,
+    ) -> Result<(), Stop> {
+        let relative = file
+            .path
+            .as_str()
+            .strip_prefix("/sandbox")
+            .unwrap_or(file.path.as_str());
+        let path = SandboxPath::parse(&format!(
+            "/sandbox/.jackin/homes/{}{relative}",
+            agent.as_str()
+        ))
+        .map_err(|error| failed(LaunchStep::Credentials, LaunchError::Path(error)))?;
+        self.write(
+            LaunchStep::Credentials,
+            sandbox,
+            &path,
+            file.mode,
+            file.text.clone().into_bytes(),
+        )
+        .await
     }
 
     async fn write_codex_auth(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
         const STEP: LaunchStep = LaunchStep::Credentials;
         let spec = Agent::Codex.spec();
         let key = spec.codex.openshell.keys.access_token;
-        let outcome = self.session.deps.gateway.run_program(&ProgramRun { sandbox: sandbox.clone(), program: sandbox_layout::PRINTENV.clone(), args: vec![key.to_owned()], workdir: None, env: BTreeMap::new(), stdin: ProgramStdin::Closed, touch_on_success: None, timeout: EXEC_TIMEOUT }, self.cancel).await.map_err(|error| failed(STEP, error))?;
-        let placeholder = String::from_utf8_lossy(&outcome.stdout).trim_end_matches(['\n', '\r']).to_owned();
+        let outcome = self
+            .session
+            .deps
+            .gateway
+            .run_program(
+                &ProgramRun {
+                    sandbox: sandbox.clone(),
+                    program: sandbox_layout::PRINTENV.clone(),
+                    args: vec![key.to_owned()],
+                    workdir: None,
+                    env: BTreeMap::new(),
+                    stdin: ProgramStdin::Closed,
+                    touch_on_success: None,
+                    timeout: EXEC_TIMEOUT,
+                },
+                self.cancel,
+            )
+            .await
+            .map_err(|error| failed(STEP, error))?;
+        let placeholder = String::from_utf8_lossy(&outcome.stdout)
+            .trim_end_matches(['\n', '\r'])
+            .to_owned();
         if outcome.exit_code != 0 || placeholder.is_empty() {
-            return Err(failed(STEP, LaunchError::PlaceholderMissing { sandbox: sandbox.clone(), key: key.to_owned() }));
+            return Err(failed(
+                STEP,
+                LaunchError::PlaceholderMissing {
+                    sandbox: sandbox.clone(),
+                    key: key.to_owned(),
+                },
+            ));
         }
         if !placeholder.starts_with(PLACEHOLDER_SCHEME) || placeholder.contains(['\n', '\r']) {
-            return Err(failed(STEP, LaunchError::PlaceholderInvalid { sandbox: sandbox.clone(), key: key.to_owned() }));
+            return Err(failed(
+                STEP,
+                LaunchError::PlaceholderInvalid {
+                    sandbox: sandbox.clone(),
+                    key: key.to_owned(),
+                },
+            ));
         }
-        let codex_instance = self.plan.instances().iter().find(|instance| instance.agent == Agent::Codex);
-        let chatgpt_account = codex_instance.and_then(|instance| self.plan.chatgpt_account_for(instance.agent)).or_else(|| self.plan.chatgpt_account());
+        let codex_instance = self
+            .plan
+            .instances()
+            .iter()
+            .find(|instance| instance.agent == Agent::Codex);
+        let chatgpt_account = codex_instance
+            .and_then(|instance| self.plan.chatgpt_account_for(instance.agent))
+            .or_else(|| self.plan.chatgpt_account());
         let Some(chatgpt_account) = chatgpt_account else {
-            return Err(failed(STEP, LaunchError::ProviderUnavailable { account: self.plan.account_entry().name().clone(), source: Box::new(AccountError::MissingCredential { account: self.plan.account_entry().name().clone() }) }));
+            return Err(failed(
+                STEP,
+                LaunchError::ProviderUnavailable {
+                    account: self.plan.account_entry().name().clone(),
+                    source: Box::new(AccountError::MissingCredential {
+                        account: self.plan.account_entry().name().clone(),
+                    }),
+                },
+            ));
         };
-        let auth = render_auth_json(&placeholder, chatgpt_account, self.session.deps.host.clock.now());
-        self.write(STEP, sandbox, &spec.auth_file.path, spec.auth_file.mode, auth.clone().into_bytes()).await?;
-        for instance in self.plan.instances().iter().filter(|instance| instance.agent == Agent::Codex) {
-            let file = PlannedFile { path: spec.auth_file.path.clone(), mode: spec.auth_file.mode, text: auth.clone() };
+        let auth = render_auth_json(
+            &placeholder,
+            chatgpt_account,
+            self.session.deps.host.clock.now(),
+        );
+        self.write(
+            STEP,
+            sandbox,
+            &spec.auth_file.path,
+            spec.auth_file.mode,
+            auth.clone().into_bytes(),
+        )
+        .await?;
+        for instance in self
+            .plan
+            .instances()
+            .iter()
+            .filter(|instance| instance.agent == Agent::Codex)
+        {
+            let file = PlannedFile {
+                path: spec.auth_file.path.clone(),
+                mode: spec.auth_file.mode,
+                text: auth.clone(),
+            };
             self.write_home_auth(sandbox, instance.agent, &file).await?;
         }
         Ok(())

@@ -302,7 +302,8 @@ const MAX_ENV_NAME: usize = 128;
 
 impl CredentialArg {
     pub fn parse(text: &str) -> Result<CredentialArg, CommandError> {
-        const FORMS: &str = "--credential expects env:NAME, an op:// reference, file:PATH, or omp-host";
+        const FORMS: &str =
+            "--credential expects env:NAME, an op:// reference, file:PATH, or omp-host";
         let bad = || CommandError::Argument(FORMS.to_owned());
         if let Some(name) = text.strip_prefix("env:") {
             if name.len() > MAX_ENV_NAME {
@@ -368,6 +369,11 @@ pub struct AccountAddArgs {
     pub provider: String,
     #[arg(long, help = "Account name")]
     pub name: AccountName,
+    #[arg(
+        long,
+        help = "Agent to sync this account for; defaults to the provider native agent, or omp for omp-only providers"
+    )]
+    pub agent: Option<String>,
     #[arg(
         long = "chatgpt-from",
         value_name = "CODEX_HOME",

@@ -56,7 +56,7 @@ async fn second_login(lab: &Lab) -> Out {
     lab.rig
         .world
         .session
-        .sync_account(&login, &CancellationToken::new())
+        .sync_account(&login, Agent::Codex, &CancellationToken::new())
         .await?;
     Ok(())
 }
@@ -448,7 +448,7 @@ async fn a_removal_reaches_a_gateway_that_was_added_after_the_console_opened() -
             .await?;
         let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&peer);
         session_over(&lab.rig.world, port)
-            .sync_account(&login, &CancellationToken::new())
+            .sync_account(&login, Agent::Codex, &CancellationToken::new())
             .await?;
         let base = lab.world().accounts.clone();
         let mut registry = base.clone();

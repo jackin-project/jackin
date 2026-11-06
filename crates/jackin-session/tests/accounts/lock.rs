@@ -102,7 +102,7 @@ async fn the_lock_is_per_account_and_a_cancelled_wait_ends_the_launch() -> TestR
             .await?;
         rig.world
             .session
-            .sync_account(&personal, &CancellationToken::new())
+            .sync_account(&personal, Agent::Codex, &CancellationToken::new())
             .await?;
 
         let token = CancellationToken::new();

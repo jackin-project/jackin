@@ -81,11 +81,9 @@ fn text<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a str, Credent
 }
 
 pub fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Option<Secret> {
-    let connection = rusqlite::Connection::open_with_flags(
-        db_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .ok()?;
+    let connection =
+        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .ok()?;
     let data: String = connection
         .query_row(
             "SELECT data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",

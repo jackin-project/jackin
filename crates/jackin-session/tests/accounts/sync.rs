@@ -38,7 +38,11 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
 
         let first = world
             .session
-            .sync_account(&account, &CancellationToken::new())
+            .sync_account(
+                &account,
+                jackin_core::Agent::Codex,
+                &CancellationToken::new(),
+            )
             .await?;
         assert_eq!(
             first,
@@ -60,7 +64,11 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
 
         let second = world
             .session
-            .sync_account(&account, &CancellationToken::new())
+            .sync_account(
+                &account,
+                jackin_core::Agent::Codex,
+                &CancellationToken::new(),
+            )
             .await?;
         assert_eq!(
             second,
@@ -79,7 +87,11 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
         home.write(&changed).await?;
         world
             .session
-            .sync_account(&account, &CancellationToken::new())
+            .sync_account(
+                &account,
+                jackin_core::Agent::Codex,
+                &CancellationToken::new(),
+            )
             .await?;
         let replaced = world.gateway.provider(&name).ok_or("no provider record")?;
         assert_eq!(replaced.access_token, "ACCESS-SECRET-2");
@@ -107,7 +119,7 @@ async fn a_login_of_another_chatgpt_account_is_refused_and_writes_nothing() -> T
         let home = Home::new(&login_json()).await?;
         let account = codex_account(&home.path, "00000000-0000-4000-8000-000000000000")?;
         register(&world, &account).await?;
-        let result = world.session.sync_account(&account, &CancellationToken::new()).await;
+        let result = world.session.sync_account(&account, jackin_core::Agent::Codex, &CancellationToken::new()).await;
         assert!(
             matches!(&result, Err(AccountError::AccountIdMismatch { account }) if account.as_str() == "work"),
             "{result:?}"
@@ -147,7 +159,11 @@ async fn a_failed_sync_stops_at_the_failing_call_and_a_retry_converges() -> Test
             world.gateway.inject(Fault::FailNext { op, error });
             let result = world
                 .session
-                .sync_account(&account, &CancellationToken::new())
+                .sync_account(
+                    &account,
+                    jackin_core::Agent::Codex,
+                    &CancellationToken::new(),
+                )
                 .await;
             assert!(
                 matches!(&result, Err(AccountError::Gateway(_))),
@@ -170,7 +186,11 @@ async fn a_failed_sync_stops_at_the_failing_call_and_a_retry_converges() -> Test
 
             world
                 .session
-                .sync_account(&account, &CancellationToken::new())
+                .sync_account(
+                    &account,
+                    jackin_core::Agent::Codex,
+                    &CancellationToken::new(),
+                )
                 .await?;
             assert_eq!(world.gateway.providers(), [provider()?]);
             let record = world.gateway.provider(&provider()?).ok_or("no record")?;
@@ -221,7 +241,7 @@ async fn mode_a_is_unsupported_and_other_providers_are_host_only_and_neither_tou
                 });
             }
             register(&world, &account).await?;
-            let result = world.session.sync_account(&account, &CancellationToken::new()).await;
+            let result = world.session.sync_account(&account, jackin_core::Agent::Codex, &CancellationToken::new()).await;
             if account.provider() == Provider::Claude {
                 assert_eq!(result?, AccountSync::HostOnly);
             } else {
@@ -247,7 +267,10 @@ async fn sync_account_refuses_an_account_the_config_no_longer_holds_as_given_and
         let cancel = CancellationToken::new();
 
         let bare = World::builder().build()?;
-        let result = bare.session.sync_account(&account, &cancel).await;
+        let result = bare
+            .session
+            .sync_account(&account, jackin_core::Agent::Codex, &cancel)
+            .await;
         assert!(
             matches!(&result, Err(AccountError::GatewayRemoved { .. })),
             "{result:?}"
@@ -257,7 +280,10 @@ async fn sync_account_refuses_an_account_the_config_no_longer_holds_as_given_and
         unregistered
             .seed_all(&Config::parse(super::support::GATEWAY)?)
             .await?;
-        let result = unregistered.session.sync_account(&account, &cancel).await;
+        let result = unregistered
+            .session
+            .sync_account(&account, jackin_core::Agent::Codex, &cancel)
+            .await;
         assert!(
             matches!(&result, Err(AccountError::Removed { account }) if account.as_str() == "work"),
             "{result:?}"
@@ -272,7 +298,10 @@ async fn sync_account_refuses_an_account_the_config_no_longer_holds_as_given_and
             },
         )?;
         register(&renewed, &stored).await?;
-        let result = renewed.session.sync_account(&account, &cancel).await;
+        let result = renewed
+            .session
+            .sync_account(&account, jackin_core::Agent::Codex, &cancel)
+            .await;
         assert!(
             matches!(&result, Err(AccountError::Changed { account }) if account.as_str() == "work"),
             "{result:?}"
@@ -304,7 +333,7 @@ async fn an_omp_static_key_account_creates_the_tuple_provider_with_only_the_key(
         register(&world, &account).await?;
         let result = world
             .session
-            .sync_account(&account, &CancellationToken::new())
+            .sync_account(&account, jackin_core::Agent::Omp, &CancellationToken::new())
             .await?;
         let name = ProviderName::parse("jackin-work-omp")?;
         assert!(
@@ -328,9 +357,122 @@ async fn an_omp_account_with_a_missing_key_fails_without_a_secret() -> TestResul
         let world = World::builder().build()?;
         let account = Account::new(AccountName::parse("work")?, Provider::Zai, CredentialSource::Env { var: EnvName::parse("JACKIN_TEST_MISSING_OMP_KEY")? })?;
         register(&world, &account).await?;
-        let result = world.session.sync_account(&account, &CancellationToken::new()).await;
+        let result = world.session.sync_account(&account, jackin_core::Agent::Omp, &CancellationToken::new()).await;
         assert!(matches!(&result, Err(AccountError::MissingCredential { account }) if account.as_str() == "work"), "{result:?}");
         assert!(world.gateway.providers().is_empty());
         Ok(())
     }).await
+}
+
+#[tokio::test]
+async fn a_kimi_file_key_sync_for_kimi_code_creates_the_t08_provider() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let path = HostPath::parse(&world.home().as_path().join("kimi.txt"))?;
+        world
+            .fs
+            .write_new(&path, b"KIMI-KEY-SECRET-1", jackin_core::FileMode(0o600))
+            .await?;
+        let account = Account::new(
+            AccountName::parse("work")?,
+            Provider::Kimi,
+            CredentialSource::File { path },
+        )?;
+        register(&world, &account).await?;
+        let result = world
+            .session
+            .sync_account(
+                &account,
+                jackin_core::Agent::KimiCode,
+                &CancellationToken::new(),
+            )
+            .await?;
+        let name = ProviderName::parse("jackin-work-kimi")?;
+        assert!(
+            matches!(result, AccountSync::ProviderReady { ref provider, .. } if *provider == name),
+            "{result:?}"
+        );
+        let record = world.gateway.provider(&name).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "kimi");
+        assert_eq!(record.access_key, "KIMI_API_KEY");
+        assert_eq!(record.access_token, "KIMI-KEY-SECRET-1");
+        assert!(!format!("{result:?}").contains("KIMI-KEY-SECRET-1"));
+        assert!(
+            !jackin_session::render_kimi_config(&name)
+                .text
+                .contains("KIMI-KEY-SECRET-1")
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_same_kimi_account_synced_for_omp_creates_the_omp_provider() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let path = HostPath::parse(&world.home().as_path().join("kimi.txt"))?;
+        world
+            .fs
+            .write_new(&path, b"KIMI-KEY-SECRET-1", jackin_core::FileMode(0o600))
+            .await?;
+        let account = Account::new(
+            AccountName::parse("work")?,
+            Provider::Kimi,
+            CredentialSource::File { path },
+        )?;
+        register(&world, &account).await?;
+        let result = world
+            .session
+            .sync_account(&account, jackin_core::Agent::Omp, &CancellationToken::new())
+            .await?;
+        let name = ProviderName::parse("jackin-work-omp")?;
+        assert!(
+            matches!(result, AccountSync::ProviderReady { ref provider, .. } if *provider == name),
+            "{result:?}"
+        );
+        let record = world.gateway.provider(&name).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "omp-kimi");
+        assert_eq!(record.access_token, "KIMI-KEY-SECRET-1");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_mimo_file_key_sync_for_mimo_code_creates_the_t07_provider() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let path = HostPath::parse(&world.home().as_path().join("mimo.txt"))?;
+        world
+            .fs
+            .write_new(&path, b"MIMO-KEY-SECRET-1", jackin_core::FileMode(0o600))
+            .await?;
+        let account = Account::new(
+            AccountName::parse("work")?,
+            Provider::Mimo,
+            CredentialSource::File { path },
+        )?;
+        register(&world, &account).await?;
+        let result = world
+            .session
+            .sync_account(
+                &account,
+                jackin_core::Agent::MimoCode,
+                &CancellationToken::new(),
+            )
+            .await?;
+        let name = ProviderName::parse("jackin-work-mimo")?;
+        assert!(
+            matches!(result, AccountSync::ProviderReady { ref provider, .. } if *provider == name),
+            "{result:?}"
+        );
+        let record = world.gateway.provider(&name).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "mimo");
+        assert_eq!(record.access_key, "MIMO_API_KEY");
+        assert_eq!(record.access_token, "MIMO-KEY-SECRET-1");
+        assert!(!format!("{result:?}").contains("MIMO-KEY-SECRET-1"));
+        Ok(())
+    })
+    .await
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    CODEX_PLACEHOLDER_ID_TOKEN, ChatgptAccountId, ModelName, SandboxPath, Timestamp,
+    CODEX_PLACEHOLDER_ID_TOKEN, ChatgptAccountId, ModelName, ProviderName, SandboxPath, Timestamp,
 };
 use serde_json::json;
 use toml::{Table, Value};
@@ -97,4 +97,31 @@ pub(crate) fn placeholder_file(spec: &jackin_core::AgentSpec) -> crate::plan::Pl
         mode: spec.auth_file.mode,
         text: render_placeholder_auth(spec),
     }
+}
+
+fn render_native_config(
+    agent: jackin_core::Agent,
+    provider: &ProviderName,
+) -> crate::plan::PlannedFile {
+    let spec = agent.spec();
+    let env = spec
+        .credential_env_names
+        .first()
+        .copied()
+        .unwrap_or_default();
+    crate::plan::PlannedFile {
+        path: spec.user_config.path.clone(),
+        mode: spec.user_config.mode,
+        text: format!(
+            "[providers.{provider}]\napi_key_env = \"{env}\"\napi_key = \"placeholder\"\n"
+        ),
+    }
+}
+
+pub fn render_kimi_config(provider: &ProviderName) -> crate::plan::PlannedFile {
+    render_native_config(jackin_core::Agent::KimiCode, provider)
+}
+
+pub fn render_mimo_config(provider: &ProviderName) -> crate::plan::PlannedFile {
+    render_native_config(jackin_core::Agent::MimoCode, provider)
 }

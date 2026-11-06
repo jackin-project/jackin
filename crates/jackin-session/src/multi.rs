@@ -92,7 +92,10 @@ pub fn plan_multi(instances: &AgentInstances, task: Option<&str>, head: HeadStat
         };
         directories.push(workdir.clone());
         if !is_lead {
-            directories.push(path(format!("/sandbox/.jackin/run/{}", instance.agent.as_str())));
+            directories.push(path(format!(
+                "/sandbox/.jackin/run/{}",
+                instance.agent.as_str()
+            )));
         }
         worktrees.push(WorktreePlan {
             agent: instance.agent,
