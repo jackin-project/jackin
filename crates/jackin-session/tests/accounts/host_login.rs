@@ -40,6 +40,21 @@ fn host_login_account(
     )?)
 }
 
+fn profile_env_vars(
+    agent: Agent,
+    provider: Provider,
+) -> Result<std::collections::BTreeSet<String>, Box<dyn std::error::Error>> {
+    let tuple = jackin_core::lookup_tuple(agent, provider)?;
+    let asset = jackin_core::tuple_profile_asset(tuple);
+    Ok(asset
+        .yaml
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("env_vars: ["))
+        .filter_map(|rest| rest.strip_suffix(']'))
+        .flat_map(|list| list.split(',').map(|name| name.trim().to_owned()))
+        .collect())
+}
+
 async fn write_file(path: &std::path::Path, text: &str) -> TestResult {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -113,7 +128,12 @@ async fn grok_sync_creates_t03_provider_with_key_only_in_record() -> TestResult 
         let record = world.gateway.provider(&name).ok_or("no provider")?;
         assert_eq!(record.profile.as_str(), "grok");
         assert_eq!(record.access_token, GROK_A);
-        assert_eq!(record.access_key, "access_token");
+        assert_eq!(record.access_key, "XAI_API_KEY");
+        assert!(
+            profile_env_vars(Agent::GrokBuild, Provider::Grok)?.contains(&record.access_key),
+            "{}",
+            record.access_key
+        );
         assert!(!format!("{synced:?}").contains(GROK_A));
         let planned = grok_auth_file(ISSUER);
         assert_eq!(planned.mode.0, 0o600);
@@ -206,7 +226,12 @@ async fn muse_keychain_sync_creates_provider_with_access_token_only() -> TestRes
         assert!(matches!(synced, jackin_session::AccountSync::ProviderReady { ref provider, .. } if *provider == name));
         let record = world.gateway.provider(&name).ok_or("no provider")?;
         assert_eq!(record.profile.as_str(), "muse");
-        assert_eq!(record.access_key, "access_token");
+        assert_eq!(record.access_key, "META_API_KEY");
+        assert!(
+            profile_env_vars(Agent::MuseCode, Provider::Muse)?.contains(&record.access_key),
+            "{}",
+            record.access_key
+        );
         assert_eq!(record.access_token, MUSE_ACCESS);
         assert_ne!(record.access_token, MUSE_API);
         let debug = format!("{synced:?}");

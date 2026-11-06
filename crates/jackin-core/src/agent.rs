@@ -583,7 +583,7 @@ static GROK_BUILD_SPEC: AgentSpec = agent_spec!(
     ],
     AuthClass::OAuth,
     &["x.ai", "cli-chat-proxy.grok.com", "auth.x.ai"],
-    &[],
+    &["XAI_API_KEY"],
     &["grok-4.7"],
     "grok-4.7",
     &["GROK_HOME"]
@@ -612,7 +612,7 @@ static MUSE_CODE_SPEC: AgentSpec = agent_spec!(
     ],
     AuthClass::OAuth,
     &["api.meta.ai"],
-    &[],
+    &["META_API_KEY"],
     &["muse-spark-1.2"],
     "muse-spark-1.2",
     &["MUSE_AUTH_PATH"]

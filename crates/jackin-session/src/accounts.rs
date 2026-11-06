@@ -755,6 +755,14 @@ async fn sync_login(
             })?;
             let asset = jackin_core::tuple_profile_asset(tuple);
             let profile = ProviderProfile::parse(asset)?;
+            let access_key = agent
+                .spec()
+                .credential_env_names
+                .first()
+                .copied()
+                .ok_or_else(|| AccountError::MissingCredential {
+                    account: account.name().clone(),
+                })?;
             let synced = gateway.ensure_profile(&profile).await?;
             let name = ProviderName::for_account(account.name(), agent);
             gateway
@@ -762,7 +770,7 @@ async fn sync_login(
                     name: name.clone(),
                     profile: profile.id,
                     keys: jackin_core::CredentialKeys {
-                        access_token: "access_token",
+                        access_token: access_key,
                         refresh_token: "",
                         account_id: "",
                         id_token: "",
@@ -841,6 +849,14 @@ async fn sync_login(
             })?;
             let asset = jackin_core::tuple_profile_asset(tuple);
             let profile = ProviderProfile::parse(asset)?;
+            let env_key = agent
+                .spec()
+                .credential_env_names
+                .first()
+                .copied()
+                .ok_or_else(|| AccountError::MissingCredential {
+                    account: account.name().clone(),
+                })?;
             let synced = gateway.ensure_profile(&profile).await?;
             let name = ProviderName::for_account(account.name(), agent);
             gateway
@@ -848,7 +864,7 @@ async fn sync_login(
                     name: name.clone(),
                     profile: profile.id,
                     keys: jackin_core::CredentialKeys {
-                        access_token: "access_token",
+                        access_token: env_key,
                         refresh_token: "",
                         account_id: "",
                         id_token: "",
