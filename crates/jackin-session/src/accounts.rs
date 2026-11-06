@@ -708,7 +708,17 @@ async fn sync_login(
             .put_provider(&ProviderSpec {
                 name: name.clone(),
                 profile: profile.id,
-                keys: Agent::Codex.spec().codex.openshell.keys,
+                keys: jackin_core::CredentialKeys {
+                    access_token: tuple.omp_credential_env().ok_or(
+                        AccountError::MissingCredential {
+                            account: account.name().clone(),
+                        },
+                    )?,
+                    refresh_token: "",
+                    account_id: "",
+                    id_token: "",
+                    token_url: "",
+                },
                 material: ProviderMaterial::StaticKey { key },
             })
             .await?;
