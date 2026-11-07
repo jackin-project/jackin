@@ -2540,7 +2540,7 @@ dependencies = [
 [[package]]
 name = "jackin-console"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=f539d9a61b1fe1e9fab13f4e976c872b09b8fb9a#f539d9a61b1fe1e9fab13f4e976c872b09b8fb9a"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1"
 dependencies = [
  "clap",
  "junie-tui",
@@ -3013,7 +3013,7 @@ dependencies = [
 [[package]]
 name = "junie-tui"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=f539d9a61b1fe1e9fab13f4e976c872b09b8fb9a#f539d9a61b1fe1e9fab13f4e976c872b09b8fb9a"
+source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1"
 dependencies = [
  "clap",
  "libc",
@@ -6689,7 +6689,7 @@ dependencies = [
 [[package]]
 name = "tuiscotti"
 version = "0.4.0"
-source = "git+https://github.com/tailrocks/tuiscotti?rev=fec38841b10a593f64498f1e6daf2f4246a4d70f#fec38841b10a593f64498f1e6daf2f4246a4d70f"
+source = "git+https://github.com/tailrocks/tuiscotti?rev=92ef2d9ee082b35f68e066c5129fedbf07675a80#92ef2d9ee082b35f68e066c5129fedbf07675a80"
 dependencies = [
  "base64 0.23.1",
  "bitflags 2.13.2",
