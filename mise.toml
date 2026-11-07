@@ -57,12 +57,27 @@ description = "Run the repository gates; the docs build joins at P12.1"
 run = "mbx +1.99.1 xtask ci --no-docs"
 
 [tasks."check:secrets-scan"]
-description = "Scan the indexed tree and the history reachable from HEAD with gitleaks, betterleaks and Kingfisher"
+description = "Scan the indexed tree in a temporary linked worktree and the history reachable from HEAD with gitleaks, betterleaks and Kingfisher"
 run = """
 status=0
-tree=$(mktemp -d)
-trap 'rm -rf "$tree"' EXIT
-git checkout-index --all --prefix="$tree/" || exit 1
+index_tree=$(git write-tree) || exit 1
+parent=$(mktemp -d) || exit 1
+tree="$parent/worktree"
+cleanup() {
+  result=$?
+  trap - 0 HUP INT TERM
+  git -c core.hooksPath=/dev/null worktree remove --force "$tree" >/dev/null 2>&1 || result=1
+  rmdir "$parent" 2>/dev/null || result=1
+  exit "$result"
+}
+trap cleanup 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+git -c core.hooksPath=/dev/null worktree add --detach --no-checkout "$tree" HEAD || exit 1
+git_dir=$(git -C "$tree" rev-parse --absolute-git-dir) || exit 1
+GIT_INDEX_FILE="$git_dir/index" git -C "$tree" -c core.hooksPath=/dev/null read-tree "$index_tree" || exit 1
+GIT_INDEX_FILE="$git_dir/index" git -C "$tree" -c core.hooksPath=/dev/null checkout-index --all || exit 1
 (cd "$tree" && gitleaks dir . --redact --no-banner) || status=1
 gitleaks git . --redact --no-banner --log-opts=HEAD || status=1
 (cd "$tree" && betterleaks dir . --config .gitleaks.toml --redact --no-banner) || status=1
