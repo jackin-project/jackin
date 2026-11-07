@@ -92,7 +92,7 @@ toml = { version = "1.2.0", default-features = false, features = ["display", "pa
 tokio-stream = "0.1.19"
 tokio-util = "0.7.20"
 tui-test = { package = "tuiscotti-tui-test", version = "=0.2.1" }
-tuiscotti = { git = "https://github.com/tailrocks/tuiscotti", rev = "d8d54155947f6303a41dfd6079b53c0abc16f29a", version = "0.4.0" }
+tuiscotti = { git = "https://github.com/tailrocks/tuiscotti", rev = "fec38841b10a593f64498f1e6daf2f4246a4d70f", version = "0.4.0" }
 tonic = { version = "0.14.9", features = ["tls-aws-lc"] }
 tonic-types = "0.14.9"
 unicode-normalization = { version = "0.1.26", default-features = false, features = ["std"] }

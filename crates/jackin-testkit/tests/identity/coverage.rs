@@ -98,7 +98,7 @@ fn every_approved_file_is_compared_by_one_journey() {
         .map(|entry| entry.expect("a directory entry").file_name())
         .filter_map(|name| {
             let name = name.to_string_lossy().into_owned();
-            name.strip_suffix(".tui.json")
+            name.strip_suffix(".tui.pb")
                 .map(|stem| format!("functional/{stem}"))
         })
         .collect();
@@ -123,23 +123,79 @@ fn every_scenario_is_driven_or_has_no_approved_file() {
 const COLOUR_ID: &str = "functional/jackin_launch_reconnect";
 
 fn approved_copy(change_one_colour: bool) -> tempfile::TempDir {
-    let path = baseline::root().join(format!("{COLOUR_ID}.tui.json"));
-    let approved = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    use tui_test::terminal::cell::Attrs;
+    use tui_test::{SnapshotCell, SnapshotColor, SnapshotParts, TerminalSnapshot};
+    use tuiscotti::Sample;
+
+    let path = baseline::root().join(format!("{COLOUR_ID}.tui.pb"));
+    let approved =
+        std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
     let copy = if change_one_colour {
-        let marker = "\"fg\":\"#";
-        let last = approved.find(marker).expect("a foreground colour") + marker.len() + 5;
-        let flipped = if approved.as_bytes()[last] == b'f' {
-            "e"
-        } else {
-            "f"
+        let sample = Sample::from_bytes(&approved).expect("decode binary sample");
+        let snapshot = sample.snapshot();
+        let mut cells = snapshot.cells().to_vec();
+        let first = cells
+            .first_mut()
+            .expect("the captured grid has a first cell");
+        let foreground = match first.fg() {
+            SnapshotColor::Rgb(red, green, blue) => {
+                SnapshotColor::Rgb(red.wrapping_add(1), green, blue)
+            }
+            SnapshotColor::Default | SnapshotColor::Indexed(_) => SnapshotColor::Rgb(1, 2, 3),
         };
-        format!("{}{flipped}{}", &approved[..last], &approved[last + 1..])
+        let changed = SnapshotCell::new(
+            first.text().to_owned(),
+            first.width(),
+            foreground,
+            first.bg(),
+            {
+                let mut attrs = Attrs::empty();
+                for flag in [
+                    Attrs::BOLD,
+                    Attrs::DIM,
+                    Attrs::ITALIC,
+                    Attrs::INVERSE,
+                    Attrs::INVISIBLE,
+                    Attrs::STRIKE,
+                    Attrs::BLINK,
+                ] {
+                    if first.has(flag) {
+                        attrs |= flag;
+                    }
+                }
+                attrs
+            },
+            first.underline(),
+            first.underline_color(),
+            first.link_uri().map(str::to_owned),
+            first.link_id().map(str::to_owned),
+        )
+        .expect("rebuild changed sample cell");
+        cells[0] = changed;
+        let changed_snapshot = TerminalSnapshot::try_new(SnapshotParts {
+            cols: snapshot.cols(),
+            rows: snapshot.rows(),
+            scope: snapshot.scope(),
+            viewport_origin: snapshot.viewport_origin(),
+            cells,
+            palette: *snapshot.palette(),
+            default_foreground: snapshot.default_foreground(),
+            default_background: snapshot.default_background(),
+            default_cursor: snapshot.default_cursor(),
+            cursor: snapshot.cursor().clone(),
+            title: snapshot.title().map(str::to_owned),
+            metadata: snapshot.metadata().clone(),
+        })
+        .expect("rebuild changed sample snapshot");
+        Sample::state(COLOUR_ID, changed_snapshot, sample.observation().clone())
+            .expect("build changed binary sample")
+            .to_bytes()
+            .expect("encode changed binary sample")
     } else {
         approved
     };
     let root = tempfile::tempdir().expect("a baseline copy");
-    let target = root.path().join(format!("{COLOUR_ID}.tui.json"));
+    let target = root.path().join(format!("{COLOUR_ID}.tui.pb"));
     std::fs::create_dir_all(target.parent().expect("a parent directory")).expect("create it");
     std::fs::write(&target, copy).expect("write the copy");
     root
