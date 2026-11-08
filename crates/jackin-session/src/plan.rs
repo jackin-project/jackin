@@ -1008,4 +1008,253 @@ mod tests {
                 .any(|entry| entry["trust_level"] == toml::Value::String("trusted".to_owned()))
         );
     }
+
+    #[test]
+    fn agent_config_claude_refuses_tuples_without_an_anthropic_base_url() {
+        let account = AccountName::parse("cfgtest").expect("account");
+        for (tuple_agent, tuple_provider, model) in [
+            (Agent::ClaudeCode, Provider::Claude, "haiku"),
+            (Agent::Omp, Provider::Zai, "glm-5.3"),
+        ] {
+            let tuple = jackin_core::lookup_tuple(tuple_agent, tuple_provider).expect("tuple");
+            let error = agent_config_file(
+                false,
+                tuple,
+                None,
+                Some(model),
+                Agent::ClaudeCode,
+                tuple_provider,
+                &account,
+            )
+            .expect_err("refused config");
+            assert!(
+                matches!(
+                    &error,
+                    PlanError::TupleNotSupported { agent, provider, .. }
+                        if *agent == Agent::ClaudeCode && *provider == tuple_provider
+                ),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_config_claude_lead_slot_pins_the_settings_file() {
+        for (provider, model) in [
+            (Provider::Kimi, "kimi-for-coding"),
+            (Provider::Zai, "glm-5.3"),
+            (Provider::Minimax, "minimax-m3"),
+            (Provider::Mimo, "mimo-v2.6-pro"),
+        ] {
+            let tuple = jackin_core::lookup_tuple(Agent::ClaudeCode, provider).expect("tuple");
+            let file = fixture(Agent::ClaudeCode, provider, None, Some(model));
+            assert_eq!(
+                file.path,
+                SandboxPath::parse("/sandbox/.claude/settings.json").expect("path"),
+                "{}",
+                tuple.id
+            );
+            assert_eq!(file.mode, FileMode(0o600), "{}", tuple.id);
+            assert_eq!(
+                file.text,
+                crate::files::render_claude_config(tuple).expect("text")
+            );
+        }
+    }
+
+    mod wiring {
+        use super::*;
+        use crate::launch::{LaunchOutcome, LineDelivery, launch_events};
+        use crate::roles::RoleCatalog;
+        use crate::service::{HostPorts, Session, SessionDeps};
+        use jackin_core::{
+            AgentInstance, AgentInstances, Secret, lookup_tuple, tuple_profile_asset,
+        };
+        use jackin_image::ImageEngine;
+        use jackin_openshell::{Gateway, ProviderMaterial, ProviderProfile, ProviderSpec};
+        use jackin_testkit::{FakeEngine, FakeGateway, Rig, launch_id};
+        use tokio_util::sync::CancellationToken;
+
+        type TestResult = Result<(), Box<dyn std::error::Error>>;
+
+        fn claude_instance() -> Result<AgentInstance, Box<dyn std::error::Error>> {
+            Ok(AgentInstance::new(
+                Agent::ClaudeCode,
+                Provider::Kimi,
+                AccountName::parse("work")?,
+                "kimi-for-coding".to_owned(),
+            ))
+        }
+
+        fn claude_file() -> Result<PlannedFile, Box<dyn std::error::Error>> {
+            Ok(crate::files::claude_config_file(lookup_tuple(
+                Agent::ClaudeCode,
+                Provider::Kimi,
+            )?)?)
+        }
+        async fn role(rig: &Rig) -> Result<LoadedRole, Box<dyn std::error::Error>> {
+            let catalog = RoleCatalog::new(
+                std::sync::Arc::clone(&rig.world.fs),
+                std::sync::Arc::<jackin_testkit::TestRunner>::clone(&rig.world.runner),
+                std::sync::Arc::<jackin_testkit::FakeClock>::clone(&rig.world.clock),
+                rig.world.cache_dir().clone(),
+            );
+            let (_, entry) = rig.config.roles().next().ok_or("no role")?;
+            let jackin_core::RoleSource::Path(path) = &entry.source else {
+                return Err("role source is not a path".into());
+            };
+            Ok(catalog.load_path(path, &CancellationToken::new()).await?)
+        }
+
+        fn session(rig: &Rig) -> Session {
+            let gateway: std::sync::Arc<dyn Gateway> =
+                std::sync::Arc::<FakeGateway>::clone(&rig.world.gateway);
+            let engine: std::sync::Arc<dyn ImageEngine> =
+                std::sync::Arc::<FakeEngine>::clone(&rig.world.engine);
+            Session::new(SessionDeps {
+                gateway,
+                engine,
+                host: HostPorts {
+                    clock: std::sync::Arc::<jackin_testkit::FakeClock>::clone(&rig.world.clock),
+                    fs: std::sync::Arc::clone(&rig.world.fs),
+                    runner: std::sync::Arc::<jackin_testkit::TestRunner>::clone(&rig.world.runner),
+                },
+                cache_dir: rig.world.cache_dir().clone(),
+                config: rig.world.config.clone(),
+                limits: LaunchLimits {
+                    ready: Duration::from_secs(30),
+                    supervisor: Duration::from_secs(20),
+                    attempt: Duration::from_secs(20),
+                    hook: Duration::from_secs(600),
+                    upload: Duration::from_secs(600),
+                    create_attempts: NonZeroU8::MIN.saturating_add(2),
+                    bundle_bytes: DEFAULT_BUNDLE_BYTES,
+                    export_entry_bytes: DEFAULT_EXPORT_ENTRY_BYTES,
+                    export_objects: DEFAULT_EXPORT_OBJECTS,
+                    export_total_bytes: DEFAULT_EXPORT_TOTAL_BYTES,
+                },
+            })
+        }
+
+        async fn launch(
+            rig: &Rig,
+            mut plan: LaunchPlan,
+        ) -> Result<SandboxName, Box<dyn std::error::Error>> {
+            plan.draft.labels.agents = plan.instances.clone();
+            let layout =
+                crate::multi::plan_multi(&plan.instances, None, crate::multi::HeadState::Born);
+            plan.files.layout = layout.clone();
+            plan.files.multi = layout.files;
+            let (events, mut feed) = launch_events(LineDelivery::Reliable);
+            let collect = async { while feed.recv().await.is_some() {} };
+            let session = session(rig);
+            let (result, ()) = tokio::join!(
+                session.launch(plan, events, CancellationToken::new()),
+                collect
+            );
+            match result {
+                Ok(LaunchOutcome::Ready(target)) => Ok(target.sandbox),
+                other => Err(format!("expected a ready launch, saw {other:?}").into()),
+            }
+        }
+
+        async fn seed_codex_provider(rig: &Rig) -> TestResult {
+            let tuple = lookup_tuple(Agent::Codex, Provider::Codex)?;
+            let profile = ProviderProfile::parse(tuple_profile_asset(tuple))?;
+            rig.gateway().ensure_profile(&profile).await?;
+            rig.gateway()
+                .put_provider(&ProviderSpec {
+                    name: ProviderName::for_account(&AccountName::parse("work")?, Agent::Codex),
+                    profile: profile.id,
+                    keys: jackin_core::CredentialKeys {
+                        access_token: "CODEX_AUTH_ACCESS_TOKEN",
+                        refresh_token: "",
+                        account_id: "",
+                        id_token: "",
+                        token_url: "",
+                    },
+                    material: ProviderMaterial::StaticKey {
+                        key: Secret::new("test-key".to_owned()),
+                    },
+                })
+                .await?;
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn single_claude_launch_writes_the_lead_slot_settings_json() -> TestResult {
+            let rig = Rig::builder().build().await?;
+            seed_codex_provider(&rig).await?;
+            let loaded = role(&rig).await?;
+            let file = claude_file()?;
+            let mut plan = plan_launch(
+                &rig.config,
+                &loaded,
+                LaunchRequest::new(
+                    rig.world.gateway.name().clone(),
+                    rig.project.clone(),
+                    RoleName::parse("sentinel")?,
+                    launch_id(3),
+                ),
+            )?;
+            plan.instances = AgentInstances::single(claude_instance()?);
+            plan.files.codex_config = file.clone();
+            let sandbox = launch(&rig, plan).await?;
+            let handle = rig.gateway().sandbox(&sandbox).ok_or("sandbox handle")?;
+            let settings = SandboxPath::parse("/sandbox/.claude/settings.json")?;
+            assert_eq!(handle.file(&settings), Some(file.text.clone().into_bytes()));
+            assert_eq!(handle.file_mode(&settings), Some(FileMode(0o600)));
+            assert!(
+                handle
+                    .file(&SandboxPath::parse(
+                        "/sandbox/.jackin/homes/claude/.claude/settings.json"
+                    )?)
+                    .is_none()
+            );
+            Ok(())
+        }
+
+        #[tokio::test]
+        async fn multi_instance_claude_non_lead_gets_a_home_copy_and_the_lead_config_stays()
+        -> TestResult {
+            let rig = Rig::builder().build().await?;
+            let loaded = role(&rig).await?;
+            let claude = claude_file()?;
+            let mut plan = plan_launch(
+                &rig.config,
+                &loaded,
+                LaunchRequest::new(
+                    rig.world.gateway.name().clone(),
+                    rig.project.clone(),
+                    RoleName::parse("sentinel")?,
+                    launch_id(4),
+                ),
+            )?;
+            let lead = plan.files.codex_config.clone();
+            plan.instances = AgentInstances::new(vec![
+                AgentInstance::new(
+                    Agent::Codex,
+                    Provider::Codex,
+                    AccountName::parse("work")?,
+                    "gpt-5.1-codex".to_owned(),
+                ),
+                claude_instance()?,
+            ])?;
+            let sandbox = launch(&rig, plan).await?;
+            let handle = rig.gateway().sandbox(&sandbox).ok_or("sandbox handle")?;
+            let home = SandboxPath::parse("/sandbox/.jackin/homes/claude/.claude/settings.json")?;
+            assert_eq!(handle.file(&home), Some(claude.text.clone().into_bytes()));
+            assert_eq!(handle.file_mode(&home), Some(FileMode(0o600)));
+            assert_eq!(
+                handle.file(&lead.path),
+                Some(lead.text.clone().into_bytes())
+            );
+            assert!(
+                handle
+                    .file(&SandboxPath::parse("/sandbox/.claude/settings.json")?)
+                    .is_none()
+            );
+            Ok(())
+        }
+    }
 }
