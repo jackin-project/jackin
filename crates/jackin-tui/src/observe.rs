@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::future::join_all;
@@ -14,7 +15,7 @@ use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
     Compatibility, Config, ConfigError, ConfigStore, EnvSnapshot, HostPath, RoleName,
-    RoleSource as CoreRoleSource,
+    RoleSource as CoreRoleSource, Workspace as CoreWorkspace,
 };
 use jackin_session::{
     AccountDesk, DoctorInput, HostPorts, OnePasswordCli, RoleCatalog, SourceDesk, doctor,
@@ -346,20 +347,36 @@ impl Inputs {
                 .map(|(name, entry)| (name.clone(), entry.source.clone()))
                 .collect()
         };
-        let loaded = join_all(wanted.into_iter().map(|(name, source)| async move {
-            let doc = match &source {
-                CoreRoleSource::Path(path) => {
-                    match self.roles.load_path(path, &CancellationToken::new()).await {
-                        Ok(role) => Ok(role.manifest().clone()),
-                        Err(error) => match self.roles.read_manifest(path).await {
-                            Ok(manifest) => Ok(manifest),
-                            Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
-                        },
+        let anywhere = HostPath::parse(Path::new(&self.home))
+            .ok()
+            .map(|home| CoreWorkspace::new(home, false));
+        let loaded = join_all(wanted.into_iter().map(|(name, source)| {
+            let anywhere = anywhere.clone();
+            async move {
+                let doc = match &source {
+                    CoreRoleSource::Path(path) => {
+                        match self.roles.load_path(path, &CancellationToken::new()).await {
+                            Ok(role) => Ok(role.manifest().clone()),
+                            Err(error) => match self.roles.read_manifest(path).await {
+                                Ok(manifest) => Ok(manifest),
+                                Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
+                            },
+                        }
                     }
-                }
-                CoreRoleSource::Git { .. } => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
-            };
-            (name, (source, doc))
+                    CoreRoleSource::Git { .. } => match &anywhere {
+                        Some(anywhere) => match self
+                            .roles
+                            .load(config, Some(&name), anywhere, &CancellationToken::new())
+                            .await
+                        {
+                            Ok(role) => Ok(role.manifest().clone()),
+                            Err(error) => Err(RoleDocError::Unreadable(error.to_string())),
+                        },
+                        None => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
+                    },
+                };
+                (name, (source, doc))
+            }
         }))
         .await;
         let mut cache = locked(&self.docs);
