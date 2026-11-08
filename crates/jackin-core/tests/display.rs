@@ -349,3 +349,47 @@ fn string_fields_of_core_errors_are_shown_without_control_characters() -> TestRe
     }
     Ok(())
 }
+
+#[test]
+fn config_path_errors_escape_hostile_paths_and_preserve_plain_paths() -> TestResult {
+    use jackin_core::{ConfigError, WorkspaceName};
+
+    let path = host("/workspace/a\u{1b}[2J\nnext")?;
+    let rows = [
+        (
+            ConfigError::NoWorkspaceForPath(path.clone()).to_string(),
+            "no workspace for /workspace/a\\u{1b}[2J\\nnext; run jackin workspace add",
+        ),
+        (
+            ConfigError::DuplicatePath {
+                path: path.clone(),
+                workspaces: vec![
+                    WorkspaceName::parse("first")?,
+                    WorkspaceName::parse("second")?,
+                ],
+            }
+            .to_string(),
+            "workspaces first, second share the path /workspace/a\\u{1b}[2J\\nnext",
+        ),
+        (
+            ConfigError::DuplicatePath {
+                path: host("/workspace/plain path")?,
+                workspaces: vec![
+                    WorkspaceName::parse("first")?,
+                    WorkspaceName::parse("second")?,
+                ],
+            }
+            .to_string(),
+            "workspaces first, second share the path /workspace/plain path",
+        ),
+        (
+            ConfigError::NoWorkspaceForPath(host("/workspace/plain path")?).to_string(),
+            "no workspace for /workspace/plain path; run jackin workspace add",
+        ),
+    ];
+    for (shown, expected) in rows {
+        assert_eq!(shown, expected);
+        assert!(!shown.contains(['\u{1b}', '\n', '\r']));
+    }
+    Ok(())
+}
