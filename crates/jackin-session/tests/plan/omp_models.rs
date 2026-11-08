@@ -68,7 +68,7 @@ fn cases() -> Vec<Case> {
             base_url: None,
             api: None,
             auth_header: false,
-            model: "haiku",
+            model: "claude-haiku-4-5",
             custom_model: false,
         },
         Case {
@@ -181,7 +181,7 @@ fn omp_config_and_auth_goldens_stay_unchanged_for_every_omp_tuple() -> TestResul
         ),
         (
             Provider::Claude,
-            "providers:\n  anthropic:\n    apiKey: placeholder\ncredentialEnv: ANTHROPIC_API_KEY\nmodelRoles:\n  default: anthropic/haiku\n",
+            "providers:\n  anthropic:\n    apiKey: placeholder\ncredentialEnv: ANTHROPIC_API_KEY\nmodelRoles:\n  default: anthropic/claude-haiku-4-5\n",
         ),
         (
             Provider::Codex,

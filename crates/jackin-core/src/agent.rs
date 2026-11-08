@@ -1097,8 +1097,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         AuthClass::ApiKey,
         TupleState::Unavailable,
         Some("no API key on this host"),
-        &["haiku"],
-        "haiku"
+        &["claude-haiku-4-5"],
+        "claude-haiku-4-5"
     ),
     tuple!(
         "T22",

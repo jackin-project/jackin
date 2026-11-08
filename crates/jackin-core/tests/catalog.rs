@@ -114,7 +114,7 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Agent::Omp,
             Provider::Claude,
             AuthClass::ApiKey,
-            "haiku",
+            "claude-haiku-4-5",
             TupleState::Unavailable,
             Some(no_key),
         ),
