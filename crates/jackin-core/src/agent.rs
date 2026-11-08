@@ -170,6 +170,26 @@ impl AgentTuple {
         }
     }
 
+    pub fn claude_base_url(&self) -> Option<&'static str> {
+        match self.id {
+            "T13" => Some("https://api.kimi.ai/coding/"),
+            "T14" => Some("https://api.z.ai/api/anthropic"),
+            "T15" => Some("https://api.minimax.io/anthropic"),
+            "T16" => Some("https://token-plan-sgp.xiaomimimo.com/anthropic"),
+            _ => None,
+        }
+    }
+
+    pub fn claude_auth_env(&self) -> Option<&'static str> {
+        match self.id {
+            "T13" => Some("ANTHROPIC_API_KEY"),
+            "T14" => Some("ANTHROPIC_AUTH_TOKEN"),
+            "T15" => Some("ANTHROPIC_AUTH_TOKEN"),
+            "T16" => Some("ANTHROPIC_AUTH_TOKEN"),
+            _ => None,
+        }
+    }
+
     pub fn check_model(&'static self, model: &str) -> Result<&'static AgentTuple, CatalogError> {
         if self.allowed_models.contains(&model) {
             Ok(self)

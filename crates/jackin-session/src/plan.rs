@@ -533,6 +533,13 @@ fn agent_config_file(
     if agent == Agent::GrokBuild {
         return Ok(crate::files::render_grok_config(model));
     }
+    if agent == Agent::ClaudeCode {
+        return crate::files::claude_config_file(tuple).map_err(|_| PlanError::TupleNotSupported {
+            agent,
+            provider,
+            reason: "no anthropic-compatible base url".to_owned(),
+        });
+    }
     if is_omp {
         let spec = agent.spec();
         return Ok(PlannedFile {
