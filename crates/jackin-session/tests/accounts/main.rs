@@ -10,5 +10,6 @@ mod login;
 mod peers;
 mod race;
 mod renewal;
+mod stale_launch;
 mod support;
 mod sync;

@@ -21,6 +21,7 @@ mod image_handoff;
 mod modes;
 mod multi_instance;
 mod omp_models;
+mod phases;
 mod proofs;
 mod provider;
 mod recreate;
