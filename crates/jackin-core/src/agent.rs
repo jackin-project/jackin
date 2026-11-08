@@ -177,6 +177,21 @@ impl AgentTuple {
         }
     }
 
+    pub fn omp_custom_model(&self) -> bool {
+        matches!(self.id, "T10")
+    }
+
+    pub fn omp_model_api(&self) -> Option<&'static str> {
+        match self.id {
+            "T10" => Some("openai-completions"),
+            _ => None,
+        }
+    }
+
+    pub fn omp_auth_header(&self) -> bool {
+        matches!(self.id, "T10")
+    }
+
     pub fn claude_base_url(&self) -> Option<&'static str> {
         match self.id {
             "T13" => Some("https://api.kimi.ai/coding/"),

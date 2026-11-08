@@ -9,6 +9,6 @@ mod locked_view;
 mod login;
 mod peers;
 mod race;
-mod stale_launch;
+mod renewal;
 mod support;
 mod sync;
