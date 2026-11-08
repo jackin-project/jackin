@@ -58,8 +58,14 @@ fn provider_all_lists_each_provider_once_with_one_spelling() -> TestResult {
             format!("\"{}\"", provider.as_str())
         );
         if provider == Provider::Codex {
-            assert_eq!(provider.tuples().len(), 1);
-            assert_eq!(provider.tuples()[0].agent, Agent::Codex);
+            assert_eq!(
+                provider
+                    .tuples()
+                    .iter()
+                    .map(|tuple| tuple.agent)
+                    .collect::<Vec<_>>(),
+                [Agent::Codex, Agent::Omp]
+            );
         }
     }
     Ok(())

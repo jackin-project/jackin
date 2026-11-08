@@ -48,7 +48,7 @@ pub fn plan_multi(
     lead: Agent,
     task: Option<&str>,
     head: HeadState,
-) -> Result<MultiLayout, serde_json::Error> {
+) -> Result<MultiLayout, crate::plan::PlanError> {
     let mut files = Vec::new();
     let mut directories = vec![
         path("/sandbox/.jackin/task".to_owned()),
@@ -95,6 +95,23 @@ pub fn plan_multi(
             }
         };
         directories.push(workdir.clone());
+        if !is_lead && instance.agent == Agent::Codex {
+            let tuple =
+                jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(|_| {
+                    crate::plan::PlanError::TupleNotSupported {
+                        agent: instance.agent,
+                        provider: instance.provider,
+                        reason: "unknown tuple".to_owned(),
+                    }
+                })?;
+            if tuple.codex_provider_id().is_some() {
+                files.push(crate::files::codex_home_config_file(
+                    tuple,
+                    Some(instance.model.as_str()),
+                    &workdir,
+                )?);
+            }
+        }
         if !is_lead {
             directories.push(path(format!(
                 "/sandbox/.jackin/run/{}",

@@ -193,11 +193,12 @@ async fn the_terminal_is_restored_after_a_session_error_and_a_cancel_detaches_wi
         let command = harness
             .command(&["attach", name.as_str()])
             .terminal(terminal);
-        let (ran, ()) = tokio::join!(command.run(), async {
-            drop(until(|| handle.attachments() == 1).await);
+        let (ran, ()) = tokio::try_join!(command.run(), async {
+            until(|| raw.raw()).await?;
             handle.exit_main(1);
-        });
-        assert_eq!(ran?.exit, ExitClass::Failure);
+            Ok::<_, Failure>(())
+        })?;
+        assert_eq!(ran.exit, ExitClass::Failure);
         assert!(!raw.raw());
 
         let (_rig, harness, handle) = running().await?;
@@ -208,11 +209,11 @@ async fn the_terminal_is_restored_after_a_session_error_and_a_cancel_detaches_wi
             .command(&["attach", name.as_str()])
             .terminal(terminal)
             .cancel(cancel.clone());
-        let (ran, ()) = tokio::join!(command.run(), async {
-            drop(until(|| handle.attachments() == 1).await);
+        let (ran, ()) = tokio::try_join!(command.run(), async {
+            until(|| raw.raw()).await?;
             cancel.cancel();
-        });
-        let ran = ran?;
+            Ok::<_, Failure>(())
+        })?;
         assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
         assert!(!raw.raw());
         assert!(ran.stderr.contains(name.as_str()));
@@ -488,11 +489,11 @@ async fn a_main_stream_that_ends_shows_its_exit_code_and_only_zero_is_a_success(
             let command = harness
                 .command(&["attach", name.as_str()])
                 .terminal(terminal);
-            let (ran, ()) = tokio::join!(command.run(), async {
-                drop(until(|| handle.attachments() == 1).await);
+            let (ran, ()) = tokio::try_join!(command.run(), async {
+                until(|| raw.raw()).await?;
                 handle.exit_main(code);
-            });
-            let ran = ran?;
+                Ok::<_, Failure>(())
+            })?;
             assert_eq!(ran.exit, class, "{}", ran.stderr);
             assert!(
                 ran.stderr.contains(&format!("exited with code {code}")),

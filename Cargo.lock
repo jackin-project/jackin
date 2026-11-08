@@ -2629,6 +2629,7 @@ dependencies = [
  "jackin-image",
  "jackin-openshell",
  "jackin-testkit",
+ "noyalib 0.0.58",
  "rusqlite",
  "rustix",
  "serde",

@@ -417,7 +417,7 @@ pub fn plan_image_for(
 fn launch_policy(
     role: &LoadedRole,
     docker: &DockerCapability,
-    tuple: &jackin_core::AgentTuple,
+    instances: &AgentInstances,
 ) -> Result<(ClosedPolicy, Vec<LaunchWarning>), PlanError> {
     let (document, warnings) = match docker {
         DockerCapability::Enabled(access) => (
@@ -427,7 +427,16 @@ fn launch_policy(
         ),
         DockerCapability::Disabled => (role.policy().clone(), Vec::new()),
     };
-    Ok((document.close_for_tuple(tuple)?, warnings))
+    let document = if matches!(docker, DockerCapability::Disabled)
+        && instances
+            .iter()
+            .any(|instance| instance.agent == Agent::MuseCode)
+    {
+        document.with_read_only("/")?
+    } else {
+        document
+    };
+    Ok((document.close_for_instances(instances)?, warnings))
 }
 
 pub fn catalog_tuple_for_launch(
@@ -525,6 +534,15 @@ fn agent_config_file(context: AgentConfigContext<'_>) -> Result<PlannedFile, Pla
     if context.agent == Agent::GrokBuild {
         return Ok(crate::files::render_grok_config(context.model));
     }
+    if context.agent == Agent::ClaudeCode {
+        return crate::files::claude_config_file(context.tuple).map_err(|_| {
+            PlanError::TupleNotSupported {
+                agent: context.agent,
+                provider: context.provider,
+                reason: "no anthropic-compatible base url".to_owned(),
+            }
+        });
+    }
     if context.agent == Agent::Omp {
         return Ok(PlannedFile {
             path: context.spec.user_config.path.clone(),
@@ -541,7 +559,12 @@ fn agent_config_file(context: AgentConfigContext<'_>) -> Result<PlannedFile, Pla
     Ok(PlannedFile {
         path: context.spec.user_config.path.clone(),
         mode: context.spec.user_config.mode,
-        text: render_codex_config(context.codex_model, &context.spec.workdir)?,
+        text: render_codex_config(
+            context.tuple,
+            context.codex_model,
+            context.model,
+            &context.spec.workdir,
+        )?,
     })
 }
 
@@ -630,7 +653,7 @@ fn launch_accounts(
             chatgpt_accounts.push((instance.agent, login.account_id.clone()));
         }
     }
-    let chatgpt_account = if agent == Agent::Codex {
+    let chatgpt_account = if agent == Agent::Codex && provider == Provider::Codex {
         let mode =
             account
                 .codex_auth_mode()
@@ -696,7 +719,7 @@ pub fn plan_launch(
         workspace.docker,
         entry.docker_engine.as_ref(),
     )?;
-    let (policy, warnings) = launch_policy(role, &docker, tuple)?;
+    let (policy, warnings) = launch_policy(role, &docker, &instances)?;
     let policy_label = PolicyLabel::of(&policy.document().render()?);
     let layers = EnvLayers::of(config, workspace, &request.role);
     let mut values: BTreeMap<EnvName, String> =
@@ -913,6 +936,14 @@ impl SandboxDraft {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::num::NonZeroU16;
+    use std::sync::Arc;
+
+    use jackin_core::{
+        AgentInstance, AgentInstances, DockerSource, EngineAccess, EngineConfig, HostPath,
+        StdFileSystem,
+    };
+    use jackin_testkit::{FakeClock, RoleFixture, TestRunner};
 
     fn fixture(
         agent: Agent,
@@ -1020,5 +1051,213 @@ mod tests {
                 .values()
                 .any(|entry| entry["trust_level"] == toml::Value::String("trusted".to_owned()))
         );
+    }
+
+    #[test]
+    fn agent_config_claude_refuses_tuples_without_an_anthropic_base_url() {
+        let account = AccountName::parse("cfgtest").expect("account");
+        for (tuple_agent, tuple_provider, model) in [
+            (Agent::ClaudeCode, Provider::Claude, "haiku"),
+            (Agent::Omp, Provider::Zai, "glm-5.3"),
+        ] {
+            let tuple = jackin_core::lookup_tuple(tuple_agent, tuple_provider).expect("tuple");
+            let error = agent_config_file(AgentConfigContext {
+                tuple,
+                spec: Agent::ClaudeCode.spec(),
+                codex_model: None,
+                model: Some(model),
+                agent: Agent::ClaudeCode,
+                provider: tuple_provider,
+                account: &account,
+            })
+            .expect_err("refused config");
+            assert!(
+                matches!(
+                    &error,
+                    PlanError::TupleNotSupported { agent, provider, .. }
+                        if *agent == Agent::ClaudeCode && *provider == tuple_provider
+                ),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_config_claude_lead_slot_pins_the_settings_file() {
+        for (provider, model) in [
+            (Provider::Kimi, "kimi-for-coding"),
+            (Provider::Zai, "glm-5.3"),
+            (Provider::Minimax, "minimax-m3"),
+            (Provider::Mimo, "mimo-v2.6-pro"),
+        ] {
+            let tuple = jackin_core::lookup_tuple(Agent::ClaudeCode, provider).expect("tuple");
+            let file = fixture(Agent::ClaudeCode, provider, None, Some(model));
+            assert_eq!(
+                file.path,
+                SandboxPath::parse("/sandbox/.claude/settings.json").expect("path"),
+                "{}",
+                tuple.id
+            );
+            assert_eq!(file.mode, FileMode(0o600), "{}", tuple.id);
+            assert_eq!(
+                file.text,
+                crate::files::render_claude_config(tuple).expect("text")
+            );
+        }
+    }
+
+    fn role_policy(read_only: &[&str]) -> String {
+        let entries = read_only.iter().fold(String::new(), |mut entries, path| {
+            entries.push_str("    - ");
+            entries.push_str(path);
+            entries.push('\n');
+            entries
+        });
+        format!(
+            "version: 1\nfilesystem_policy:\n  include_workdir: true\n  read_only:\n{entries}  read_write:\n    - /tmp\n    - /sandbox\nlandlock:\n  compatibility: hard_requirement\nprocess:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  github:\n    name: github\n    endpoints:\n      - host: github.com\n        port: 443\n    binaries:\n      - path: /usr/bin/git\n"
+        )
+    }
+
+    async fn loaded_role(policy: &str) -> LoadedRole {
+        let fixture = RoleFixture::new("sentinel").expect("role fixture");
+        let fixture = fixture.policy_yaml(policy);
+        fixture.commit().await.expect("role commit");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let cache = HostPath::parse(&std::fs::canonicalize(cache.path()).expect("cache path"))
+            .expect("cache");
+        let catalog = crate::roles::RoleCatalog::new(
+            Arc::new(StdFileSystem::default()),
+            Arc::new(TestRunner::new()),
+            Arc::new(FakeClock::new()),
+            cache,
+        );
+        catalog
+            .load_path(fixture.root(), &tokio_util::sync::CancellationToken::new())
+            .await
+            .expect("role load")
+    }
+
+    fn read_only_entries(policy: &ClosedPolicy) -> Vec<String> {
+        let rendered = policy.document().render().expect("render");
+        let value: noyalib::Value = noyalib::from_str(&rendered).expect("yaml");
+        value
+            .get("filesystem_policy")
+            .and_then(|filesystem| filesystem.get("read_only"))
+            .and_then(noyalib::Value::as_sequence)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(noyalib::Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn account() -> AccountName {
+        AccountName::parse("work").expect("account")
+    }
+
+    fn muse_instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
+        Ok(AgentInstances::single(AgentInstance::lead(
+            Agent::MuseCode,
+            account(),
+        )?)?)
+    }
+
+    #[tokio::test]
+    async fn muse_lead_instance_gains_root_read_only_at_launch()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let role = loaded_role(&role_policy(&["/bin", "/usr"])).await;
+        let (policy, warnings) =
+            launch_policy(&role, &DockerCapability::Disabled, &muse_instances()?).expect("policy");
+        assert_eq!(warnings, Vec::new());
+        assert_eq!(read_only_entries(&policy), ["/bin", "/usr", "/"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn muse_non_lead_instance_gains_root_read_only_at_launch()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let role = loaded_role(&role_policy(&["/bin", "/usr"])).await;
+        let instances = AgentInstances::new(vec![
+            AgentInstance::lead(Agent::Codex, account())?,
+            AgentInstance::lead(Agent::MuseCode, account())?,
+        ])
+        .expect("instances");
+        let (policy, warnings) =
+            launch_policy(&role, &DockerCapability::Disabled, &instances).expect("policy");
+        assert_eq!(warnings, Vec::new());
+        assert_eq!(read_only_entries(&policy), ["/bin", "/usr", "/"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn docker_enabled_muse_launch_keeps_read_only_without_root()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let role = loaded_role(&role_policy(&["/bin", "/usr"])).await;
+        let engine = EngineAccess {
+            engine: EngineConfig {
+                port: NonZeroU16::new(12376).expect("port"),
+                client_certs: HostPath::parse(std::path::Path::new("/tmp/engine-certs"))
+                    .expect("certs"),
+            },
+            enabled_by: DockerSource::Role,
+        };
+        let (policy, warnings) = launch_policy(
+            &role,
+            &DockerCapability::Enabled(engine),
+            &muse_instances()?,
+        )
+        .expect("policy");
+        assert_eq!(warnings, [LaunchWarning::DockerCapability]);
+        assert_eq!(read_only_entries(&policy), ["/bin", "/usr"]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn role_granted_root_forms_gain_no_duplicate_for_muse()
+    -> Result<(), Box<dyn std::error::Error>> {
+        for form in ["/", "//", "/."] {
+            let role = loaded_role(&role_policy(&["/bin", "/usr", form])).await;
+            let (policy, warnings) =
+                launch_policy(&role, &DockerCapability::Disabled, &muse_instances()?)
+                    .expect("policy");
+            assert_eq!(warnings, Vec::new());
+            assert_eq!(read_only_entries(&policy), ["/bin", "/usr", form], "{form}");
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn every_non_muse_tuple_keeps_read_only_unchanged()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let plain = loaded_role(&role_policy(&["/bin", "/usr"])).await;
+        let granting = loaded_role(&role_policy(&["/bin", "/usr", "/"])).await;
+        for tuple in jackin_core::TUPLES {
+            if tuple.agent == Agent::MuseCode {
+                continue;
+            }
+            let instances = AgentInstances::single(AgentInstance::new(
+                tuple.agent,
+                tuple.provider,
+                account(),
+                ModelName::parse(tuple.default_model)?,
+            ))?;
+            let (policy, warnings) =
+                launch_policy(&plain, &DockerCapability::Disabled, &instances).expect("policy");
+            assert_eq!(warnings, Vec::new());
+            assert_eq!(read_only_entries(&policy), ["/bin", "/usr"], "{}", tuple.id);
+            let (granted, warnings) =
+                launch_policy(&granting, &DockerCapability::Disabled, &instances).expect("policy");
+            assert_eq!(warnings, Vec::new());
+            assert_eq!(
+                read_only_entries(&granted),
+                ["/bin", "/usr", "/"],
+                "{}",
+                tuple.id
+            );
+        }
+        Ok(())
     }
 }

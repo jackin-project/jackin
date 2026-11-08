@@ -4,6 +4,8 @@
 mod accounts;
 mod agents_manifest;
 mod allowed_roles;
+mod claude;
+mod codex;
 mod docker;
 mod env;
 mod error_text;
@@ -15,6 +17,7 @@ mod image_request;
 mod native;
 mod omp;
 mod omp_credentials;
+mod policy_root;
 mod role_engine;
 mod roles;
 mod roles_cancel;

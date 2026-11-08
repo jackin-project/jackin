@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, DockerCapability, DockerLabel, FileLock, FileMode, HookKind, HostPath, LabelSelector,
-    PLACEHOLDER_SCHEME, ProviderName, SandboxLabels, SandboxName, SandboxPath, SecretBytes,
-    StartRequest, sandbox_layout,
+    PLACEHOLDER_SCHEME, Provider, ProviderName, SandboxLabels, SandboxName, SandboxPath,
+    SecretBytes, StartRequest, sandbox_layout,
 };
 use jackin_image::{BuiltImage, ImageHold, ImageSource, ensure_held};
 use jackin_openshell::{
@@ -532,12 +532,11 @@ impl Run<'_> {
         const STEP: LaunchStep = LaunchStep::Credentials;
         self.enter(STEP).await;
         let files = self.plan.files();
-        let has_codex = self
-            .plan
-            .instances()
-            .iter()
-            .any(|instance| instance.agent == Agent::Codex);
-        if has_codex {
+        let chatgpt_codex =
+            self.plan.instances().iter().any(|instance| {
+                instance.agent == Agent::Codex && instance.provider == Provider::Codex
+            });
+        if chatgpt_codex {
             self.write_codex_auth(sandbox).await?;
         }
         if !files.auth.text.is_empty() {
@@ -569,6 +568,34 @@ impl Run<'_> {
             self.write_planned(sandbox, file).await?;
         }
         self.write_planned(sandbox, &files.codex_config).await?;
+        for instance in self
+            .plan
+            .instances()
+            .iter()
+            .filter(|instance| instance.agent == Agent::ClaudeCode)
+        {
+            if self.plan.instances().len() > 1 {
+                let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(
+                    |error| {
+                        failed(
+                            STEP,
+                            GatewayError::Protocol {
+                                message: error.to_string(),
+                            },
+                        )
+                    },
+                )?;
+                let file = crate::files::claude_config_file(tuple).map_err(|error| {
+                    failed(
+                        STEP,
+                        GatewayError::Protocol {
+                            message: error.to_string(),
+                        },
+                    )
+                })?;
+                self.write_home_auth(sandbox, instance.agent, &file).await?;
+            }
+        }
         if let Some(trust) = &files.muse_trust {
             self.write_planned(sandbox, trust).await?;
         }

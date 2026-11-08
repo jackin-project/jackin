@@ -14,6 +14,8 @@ use super::{
 use crate::error::PolicyError;
 
 const NETWORK_POLICIES: &str = "network_policies";
+const FILESYSTEM_POLICY: &str = "filesystem_policy";
+const READ_ONLY: &str = "read_only";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Source {
@@ -103,12 +105,15 @@ fn check_shape(root: &Value, source: Source) -> Result<(), PolicyError> {
     Ok(())
 }
 
+fn normalized(path: &str) -> Vec<&str> {
+    path.split('/')
+        .filter(|piece| !piece.is_empty() && *piece != ".")
+        .collect()
+}
+
 fn check_read_write(paths: &[String]) -> Result<(), PolicyError> {
     for path in paths.iter().filter(|path| path.starts_with('/')) {
-        let mut pieces = path
-            .split('/')
-            .filter(|piece| !piece.is_empty() && *piece != ".");
-        match pieces.next() {
+        match normalized(path).first().copied() {
             None => return Err(PolicyError::ReadWriteRoot { path: path.clone() }),
             Some("proc" | "sys") => {
                 return Err(PolicyError::ReadWriteAlias { path: path.clone() });
@@ -300,6 +305,44 @@ pub(super) fn with_rule(value: &Value, rule: &NetworkRule) -> Result<PolicyDocum
         return Err(PolicyError::DuplicateRule(rule.key.clone()));
     }
     rules.insert(rule.key.as_str(), rule_node(rule));
+    build(&render(&root)?, Source::Live)
+}
+
+pub(super) fn with_read_only(value: &Value, path: &str) -> Result<PolicyDocument, PolicyError> {
+    let mut root = value.clone();
+    let Some(map) = root.as_mapping_mut() else {
+        return Err(syntax("the policy document is not a mapping"));
+    };
+    let section = map
+        .entry(FILESYSTEM_POLICY)
+        .or_insert_with(|| Value::Mapping(Mapping::new()));
+    if section.is_null() {
+        *section = Value::Mapping(Mapping::new());
+    }
+    let Some(fields) = section.as_mapping_mut() else {
+        return Err(PolicyError::NotAMapping {
+            key: FILESYSTEM_POLICY.to_owned(),
+        });
+    };
+    let mut paths = match fields.get(READ_ONLY) {
+        None => Vec::new(),
+        Some(value) if value.is_null() => Vec::new(),
+        Some(Value::Sequence(items)) => items.clone(),
+        Some(_) => {
+            return Err(PolicyError::NotAMapping {
+                key: format!("{FILESYSTEM_POLICY}.{READ_ONLY}"),
+            });
+        }
+    };
+    let wanted = normalized(path);
+    if !paths
+        .iter()
+        .filter_map(Value::as_str)
+        .any(|found| normalized(found) == wanted)
+    {
+        paths.push(text(path));
+    }
+    fields.insert(READ_ONLY, Value::Sequence(paths));
     build(&render(&root)?, Source::Live)
 }
 

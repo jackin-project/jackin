@@ -35,6 +35,7 @@ zeroize = { workspace = true }
 alacritty_terminal = { workspace = true }
 jackin-openshell = { workspace = true, features = ["contract"] }
 jackin-testkit = { workspace = true }
+noyalib = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
