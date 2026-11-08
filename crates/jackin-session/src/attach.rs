@@ -582,7 +582,7 @@ impl Session {
         let _held = self.restart_lock(sandbox).await?;
         self.restartable(sandbox, &cancel).await?;
         self.revalidate_agent_identity(expected, &cancel).await?;
-        self.restart_preflight(sandbox, &values, &events, &cancel)
+        self.restart_preflight(expected, &values, &events, &cancel)
             .await?;
         self.revalidate_agent_identity(expected, &cancel).await?;
         let attempt = self.restartable(sandbox, &cancel).await?;
@@ -634,11 +634,12 @@ impl Session {
 
     async fn restart_preflight(
         &self,
-        sandbox: &SandboxName,
+        expected: &crate::AgentMetadataIdentity,
         values: &BTreeMap<EnvName, String>,
         events: &LaunchEvents,
         cancel: &CancellationToken,
     ) -> Result<(), RestartError> {
+        let sandbox = &expected.sandbox;
         let gateway = self.deps.gateway.as_ref();
         events
             .emit(LaunchEvent::StepStarted(LaunchStep::Hooks))
@@ -649,6 +650,7 @@ impl Session {
             .await?;
         let present = found.pop().flatten().is_some_and(|bytes| !bytes.is_empty());
         if present {
+            self.revalidate_agent_identity(expected, cancel).await?;
             hooks::run(
                 HookRun {
                     gateway,
@@ -690,6 +692,7 @@ impl Session {
             }
             .into());
         }
+        self.revalidate_agent_identity(expected, cancel).await?;
         gateway
             .write_file(
                 sandbox,

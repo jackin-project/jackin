@@ -394,3 +394,107 @@ async fn a_replacement_during_preflight_never_receives_an_agent_attempt() -> Tes
     })
     .await
 }
+
+#[tokio::test]
+async fn replacement_during_preflight_read_never_runs_the_replacement_hook() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let old = rig.handle(1).await?;
+        old.exit_codex(3);
+        let expected = identity(&rig, &old.name()).await?;
+        let preflight = sandbox_layout::hook_path(HookKind::Preflight);
+        let tap = Tap::new(&rig);
+        let gate = tap.gate_read(&preflight);
+        let session = tap.session(&rig, default_limits());
+        let (events, _feed) = launch_events(LineDelivery::Reliable);
+        let restart = session.restart_agent(&expected, events, CancellationToken::new());
+        let replace = async {
+            tokio::time::timeout(std::time::Duration::from_secs(10), gate.entered.notified())
+                .await?;
+            rig.world.gateway.delete_sandbox(&old.name()).await?;
+            rig.world.clock.advance(std::time::Duration::from_secs(60));
+            rig.launch(1).await?;
+            let replacement = rig.handle(1).await?;
+            super::support::set_state(&rig, &replacement.name(), "waiting\n").await?;
+            std::fs::remove_file(replacement.root().join(".jackin/run/start"))?;
+            let before = replacement.runs(&preflight).len();
+            gate.release.notify_one();
+            Ok::<_, Box<dyn std::error::Error>>((replacement, before))
+        };
+        let (result, replacement) = tokio::join!(restart, replace);
+        let (replacement, before) = replacement?;
+        assert_eq!(replacement.runs(&preflight).len(), before);
+        assert_eq!(replacement.file(&sandbox_layout::RUN_START), None);
+        assert!(
+            matches!(
+                result,
+                Err(RestartError::AgentMetadata(
+                    jackin_session::AgentMetadataError::Replaced
+                ))
+            ),
+            "{result:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn replacement_while_start_event_is_backpressured_never_receives_start() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let old = rig.handle(1).await?;
+        old.exit_codex(3);
+        let expected = identity(&rig, &old.name()).await?;
+        let tap = Tap::new(&rig);
+        let hook = tap.gate_program(&sandbox_layout::hook_path(HookKind::Preflight));
+        let session = tap.session(&rig, default_limits());
+        let (events, mut feed) = launch_events(LineDelivery::Reliable);
+        for _ in 0..(jackin_session::LAUNCH_EVENT_CAPACITY - 2) {
+            events
+                .emit(LaunchEvent::StepStarted(LaunchStep::Image))
+                .await;
+        }
+        let restart = session.restart_agent(&expected, events, CancellationToken::new());
+        let replace = async {
+            tokio::time::timeout(std::time::Duration::from_secs(10), hook.entered.notified())
+                .await?;
+            let final_lookup = tap.gate_find_after(1);
+            hook.release.notify_one();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                final_lookup.entered.notified(),
+            )
+            .await?;
+            rig.world.gateway.delete_sandbox(&old.name()).await?;
+            rig.world.clock.advance(std::time::Duration::from_secs(60));
+            rig.launch(1).await?;
+            let replacement = rig.handle(1).await?;
+            super::support::set_state(&rig, &replacement.name(), "waiting\n").await?;
+            std::fs::remove_file(replacement.root().join(".jackin/run/start"))?;
+            final_lookup.release.notify_one();
+            drop(feed.recv().await);
+            Ok::<_, Box<dyn std::error::Error>>(replacement)
+        };
+        let (result, replacement) =
+            tokio::time::timeout(std::time::Duration::from_secs(20), async {
+                tokio::join!(restart, replace)
+            })
+            .await?;
+        let replacement = replacement?;
+        assert_eq!(replacement.file(&sandbox_layout::RUN_START), None);
+        assert!(
+            matches!(
+                result,
+                Err(RestartError::AgentMetadata(
+                    jackin_session::AgentMetadataError::Replaced
+                ))
+            ),
+            "{result:?}"
+        );
+        Ok(())
+    })
+    .await
+}

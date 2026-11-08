@@ -163,15 +163,13 @@ async fn removed_workspace_label_lists_without_workspace() -> TestResult {
         let world = &console.console().app().world;
         assert!(world.workspaces.is_empty());
         assert_eq!(world.instances.len(), 1);
-        let InstanceEntry::Unavailable(unavailable) = &world.instances[0] else {
-            return Err("missing workspace label was projected as available".into());
+        let InstanceEntry::Available(instance) = &world.instances[0] else {
+            return Err("valid sandbox metadata was unavailable".into());
         };
-        assert_eq!(unavailable.workspace, None);
-        assert_eq!(unavailable.workspace_name, None);
-        assert_eq!(
-            unavailable.id.sandbox_name,
-            rig.sandbox_name(1)?.to_string()
-        );
+        assert_eq!(instance.workspace, None);
+        assert_eq!(instance.id.sandbox_name, rig.sandbox_name(1)?.to_string());
+        assert_eq!(instance.role.as_deref(), Some("sentinel"));
+        assert_eq!(instance.account.as_deref(), Some("work"));
         Ok(())
     })
     .await

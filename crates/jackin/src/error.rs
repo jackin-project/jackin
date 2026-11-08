@@ -65,6 +65,11 @@ pub enum CommandError {
     Launch(LaunchFailure),
     #[error(transparent)]
     Attach(#[from] AttachError),
+    #[error("cannot read agent metadata for sandbox {sandbox}")]
+    AgentMetadata {
+        sandbox: jackin_core::SandboxName,
+        source: jackin_session::AgentMetadataError,
+    },
     #[error(transparent)]
     Restart(#[from] RestartError),
     #[error(transparent)]
@@ -198,6 +203,10 @@ impl CommandError {
                 AttachError::Gateway(GatewayError::Cancelled { .. })
                 | AttachError::Identity(ManagedIdentityError::Cancelled),
             )
+            | CommandError::AgentMetadata {
+                source: jackin_session::AgentMetadataError::Cancelled,
+                ..
+            }
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. }))
             | CommandError::Export(
                 ExportError::Cancelled { .. }
@@ -244,6 +253,7 @@ impl CommandError {
             | CommandError::Plan(_)
             | CommandError::Role(_)
             | CommandError::Attach(_)
+            | CommandError::AgentMetadata { .. }
             | CommandError::Restart(_)
             | CommandError::Export(_)
             | CommandError::Purge(_)

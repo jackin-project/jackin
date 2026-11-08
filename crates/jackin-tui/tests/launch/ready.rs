@@ -133,7 +133,7 @@ async fn ready_hands_over_the_backends_instance() -> TestResult {
         assert_eq!(record.workdir.as_deref(), Some("/sandbox/project"));
         assert_eq!(record.run_id, found.planned.launch.to_string());
         assert_eq!(record.role.as_deref(), Some("sentinel"));
-        assert_eq!(record.account.as_deref(), None);
+        assert_eq!(record.account.as_deref(), Some("work"));
         assert!(record.workspace.is_some());
         assert_eq!(record.github, None);
         assert_eq!(world.daemons.keys().collect::<Vec<_>>(), [&record.id]);

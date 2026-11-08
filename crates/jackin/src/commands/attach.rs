@@ -45,7 +45,10 @@ pub(crate) async fn run(app: &mut App, args: AttachArgs) -> Result<(), CommandEr
         let metadata = session
             .agent_metadata(summary, &app.cancel)
             .await
-            .map_err(|error| CommandError::Argument(error.to_string()))?;
+            .map_err(|source| CommandError::AgentMetadata {
+                sandbox: args.sandbox.clone(),
+                source,
+            })?;
         let agent = requested_agent.unwrap_or_else(|| metadata.lead_agent());
         if !metadata
             .instances
@@ -85,7 +88,10 @@ pub(crate) async fn run(app: &mut App, args: AttachArgs) -> Result<(), CommandEr
         let identity = session
             .agent_metadata_for_sandbox(&args.sandbox, &app.cancel)
             .await
-            .map_err(|error| CommandError::Argument(error.to_string()))?
+            .map_err(|source| CommandError::AgentMetadata {
+                sandbox: args.sandbox.clone(),
+                source,
+            })?
             .identity;
         AttachRequest {
             identity,

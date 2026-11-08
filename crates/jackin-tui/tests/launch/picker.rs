@@ -64,11 +64,25 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
         console.keys("down enter")?;
         until_shows(&mut console, "Launch · choose Agent").await?;
         let screen = words(&console.screen());
-        assert_eq!(
-            screen.matches("usage only · launches Codex only").count(),
-            2,
-            "{screen}"
-        );
+        let accounts = &console.console().app().world.accounts;
+        for name in ["codex-env", "codex-op"] {
+            let account = accounts
+                .accounts
+                .iter()
+                .find(|account| account.display_name == name)
+                .ok_or("missing account")?;
+            assert_eq!(
+                account.launch_blocked,
+                Some(jackin_console::domain::account::LaunchBlock::UsageOnlySource)
+            );
+        }
+        let work = accounts
+            .accounts
+            .iter()
+            .find(|account| account.display_name == "work")
+            .ok_or("missing work account")?;
+        assert_eq!(work.launch_blocked, None);
+        assert!(screen.contains("Codex · work"), "{screen}");
         assert!(!screen.contains("set in Settings"), "{screen}");
         console.keys("space enter")?;
         answer(&mut console, None).await?;
@@ -190,7 +204,15 @@ async fn without_a_default_role_every_row_is_disabled() -> TestResult {
         let mut console = console(&rig).await?;
         console.keys("down enter")?;
         let screen = words(&console.screen());
-        assert!(screen.contains(NO_DEFAULT_ROLE), "{screen}");
+        assert!(
+            screen.contains(
+                NO_DEFAULT_ROLE
+                    .split(" ·")
+                    .next()
+                    .ok_or("empty role hint")?
+            ),
+            "{screen}"
+        );
         assert!(screen.contains("unavailable"), "{screen}");
         console.keys("enter")?;
         console.settle().await?;
@@ -503,8 +525,11 @@ async fn the_current_directory_with_several_roles_asks_for_a_workspace() -> Test
         console.skip_intro();
         console.keys("enter")?;
         let screen = words(&console.screen());
-        let shown: String = NO_SAVED_WORKSPACE.chars().take(40).collect();
-        assert!(screen.contains(&shown), "{screen}");
+        let shown = NO_SAVED_WORKSPACE
+            .split(" ·")
+            .next()
+            .ok_or("empty workspace hint")?;
+        assert!(screen.contains(shown), "{screen}");
         assert!(screen.contains("unavailable"), "{screen}");
         console.keys("enter")?;
         console.settle().await?;

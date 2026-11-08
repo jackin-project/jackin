@@ -41,6 +41,8 @@ struct Hooks {
     downloads: Vec<Vec<u8>>,
     after: Vec<(SandboxPath, SandboxFile)>,
     gates: Vec<(SandboxPath, Gate)>,
+    read_gates: Vec<(SandboxPath, Gate)>,
+    find_gate: Option<(usize, Gate)>,
     rm_clock: Option<Arc<dyn Clock>>,
     rm_runs: Vec<RmRun>,
     download_dir_modes: Vec<u32>,
@@ -117,6 +119,24 @@ impl Tap {
         gate
     }
 
+    pub(crate) fn gate_read(&self, path: &SandboxPath) -> Gate {
+        let gate = Gate {
+            entered: Arc::new(Notify::new()),
+            release: Arc::new(Notify::new()),
+        };
+        self.hooks().read_gates.push((path.clone(), gate.clone()));
+        gate
+    }
+
+    pub(crate) fn gate_find_after(&self, skip: usize) -> Gate {
+        let gate = Gate {
+            entered: Arc::new(Notify::new()),
+            release: Arc::new(Notify::new()),
+        };
+        self.hooks().find_gate = Some((skip, gate.clone()));
+        gate
+    }
+
     pub(crate) fn stall_rm(&self, clock: Arc<dyn Clock>) {
         self.hooks().rm_clock = Some(clock);
     }
@@ -187,7 +207,23 @@ impl Gateway for Tap {
         query: &SandboxQuery,
         cancel: &CancellationToken,
     ) -> Result<Vec<SandboxView>, GatewayError> {
-        self.inner.find_sandboxes(query, cancel).await
+        let result = self.inner.find_sandboxes(query, cancel).await?;
+        let gate = {
+            let mut hooks = self.hooks();
+            match &mut hooks.find_gate {
+                Some((remaining, _)) if *remaining > 0 => {
+                    *remaining -= 1;
+                    None
+                }
+                Some(_) => hooks.find_gate.take().map(|(_, gate)| gate),
+                None => None,
+            }
+        };
+        if let Some(gate) = gate {
+            gate.entered.notify_one();
+            gate.release.notified().await;
+        }
+        Ok(result)
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
@@ -267,7 +303,23 @@ impl Gateway for Tap {
         paths: &[SandboxPath],
         cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
-        self.inner.read_files(sandbox, paths, cancel).await
+        let result = self.inner.read_files(sandbox, paths, cancel).await?;
+        let gate = {
+            let mut hooks = self.hooks();
+            hooks
+                .read_gates
+                .iter()
+                .position(|(path, _)| paths.contains(path))
+                .map(|at| hooks.read_gates.remove(at).1)
+        };
+        if let Some(gate) = gate {
+            gate.entered.notify_one();
+            tokio::select! {
+                () = cancel.cancelled() => return Err(GatewayError::Cancelled { op: GatewayOp::ReadFiles, group: None }),
+                () = gate.release.notified() => {},
+            }
+        }
+        Ok(result)
     }
 
     async fn write_file(
