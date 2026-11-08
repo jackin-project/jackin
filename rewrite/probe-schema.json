@@ -13,7 +13,7 @@
   ],
   "properties": {
     "schema": {
-      "const": 1,
+      "const": 2,
       "description": "The version of this contract. A breaking change raises it."
     },
     "probe": {
@@ -455,7 +455,6 @@
         "ppid",
         "sid",
         "comm",
-        "args",
         "start_ticks",
         "tty"
       ],
@@ -474,10 +473,7 @@
         },
         "comm": {
           "type": "string",
-          "description": "The executable name from /proc/PID/stat. /proc/PID/exe is not readable for a process outside the caller's own tree, so the probe reads only stat and cmdline."
-        },
-        "args": {
-          "type": "string"
+          "description": "The executable name from /proc/PID/stat. /proc/PID/exe is not readable for a process outside the caller's own tree, so the probe reads only stat. The command line is used for process selection only and never appears in the report."
         },
         "start_ticks": {
           "type": "integer",

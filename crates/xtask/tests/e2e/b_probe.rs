@@ -84,7 +84,7 @@ async fn each_schema_violation_is_rejected_with_its_json_pointer() {
     parse(&base, &steps).expect("the unmutated report is the control");
     type Mutate = fn(&mut Value);
     let table: Vec<(&str, Mutate, &str)> = vec![
-        ("schema 2", |v| v["schema"] = json!(2), "/schema"),
+        ("schema 1", |v| v["schema"] = json!(1), "/schema"),
         (
             "extra property",
             |v| v["steps"]["J04"]["extra"] = json!(1),
@@ -156,7 +156,7 @@ async fn each_schema_violation_is_rejected_with_its_json_pointer() {
     }
 
     let mut two = base.clone();
-    two["schema"] = json!(2);
+    two["schema"] = json!(1);
     two["steps"]["J05"]["facts"]["files"][0]["sha256"] = json!("abc");
     let message = schema_error(parse(&two, &steps));
     assert!(message.contains("/schema"), "{message}");

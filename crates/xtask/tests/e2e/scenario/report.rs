@@ -21,7 +21,7 @@ pub(crate) fn head_of(dir: &Path) -> String {
 }
 
 fn proc(pid: u32, ppid: u32, comm: &str, ticks: u64, tty: Option<&str>) -> Value {
-    json!({"pid": pid, "ppid": ppid, "sid": pid, "comm": comm, "args": comm, "start_ticks": ticks, "tty": tty})
+    json!({"pid": pid, "ppid": ppid, "sid": pid, "comm": comm, "start_ticks": ticks, "tty": tty})
 }
 
 fn processes(model: &SandboxModel, own_tty: &str, descends: bool) -> Value {
@@ -228,7 +228,7 @@ pub(crate) fn build_report(
         );
     }
     let mut report = json!({
-        "schema": 1, "probe": "jackin-sentinel-probe", "mode": "sandbox",
+        "schema": 2, "probe": "jackin-sentinel-probe", "mode": "sandbox",
         "docker": if docker { "on" } else { "off" }, "steps": Value::Object(steps),
     });
     let knobs = gateway.shared.knobs().clone();
