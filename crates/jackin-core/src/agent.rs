@@ -252,6 +252,15 @@ impl AgentTuple {
         }
     }
 
+    pub fn credential_env(&self) -> Option<&'static str> {
+        match self.agent {
+            Agent::Omp => self.omp_credential_env(),
+            Agent::ClaudeCode => self.claude_auth_env(),
+            Agent::Codex => self.codex_credential_env(),
+            _ => None,
+        }
+    }
+
     pub fn check_model(&'static self, model: &str) -> Result<&'static AgentTuple, CatalogError> {
         if self.allowed_models.contains(&model) {
             Ok(self)
@@ -667,12 +676,12 @@ static CLAUDE_CODE_SPEC: AgentSpec = agent_spec!(
     &[
         InstallTarget {
             platform: Platform::LinuxArm64,
-            triple: "linux-arm64",
+            triple: "arm64",
             sha256: "2e2496c9a8065df93acb0fca2d341f59a6b8777649b2e025ab8c9bcd5eef61f3"
         },
         InstallTarget {
             platform: Platform::LinuxAmd64,
-            triple: "linux-x64",
+            triple: "x64",
             sha256: "86dc1fcc69498159eaf15f446613e847010f9036bfbbdffd4c49350be8489ada"
         }
     ],

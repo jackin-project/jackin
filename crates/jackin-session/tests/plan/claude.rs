@@ -34,23 +34,23 @@ fn cases() -> Vec<(Provider, &'static str, &'static str)> {
 }
 
 #[test]
-fn claude_config_pins_the_tuple_base_url_and_auth_env_with_one_placeholder() -> TestResult {
+fn claude_config_pins_only_the_base_url_and_no_auth_env() -> TestResult {
     for (provider, base_url, auth_env) in cases() {
         let tuple = lookup_tuple(Agent::ClaudeCode, provider)?;
         let rendered = render_claude_config(tuple)?;
         let value: Value = serde_json::from_str(&rendered)?;
         assert_eq!(
             value,
-            json!({"env": {"ANTHROPIC_BASE_URL": base_url, auth_env: "placeholder"}}),
+            json!({"env": {"ANTHROPIC_BASE_URL": base_url}}),
             "{}",
             tuple.id
         );
         let root = value.as_object().ok_or("root is not an object")?;
         assert_eq!(root.len(), 1, "{}", tuple.id);
         let env = value["env"].as_object().ok_or("env is not an object")?;
-        assert_eq!(env.len(), 2, "{}", tuple.id);
+        assert_eq!(env.len(), 1, "{}", tuple.id);
         assert_eq!(value["env"]["ANTHROPIC_BASE_URL"], base_url, "{}", tuple.id);
-        assert_eq!(value["env"][auth_env], "placeholder", "{}", tuple.id);
+        assert!(env.get(auth_env).is_none(), "{}", tuple.id);
     }
     Ok(())
 }

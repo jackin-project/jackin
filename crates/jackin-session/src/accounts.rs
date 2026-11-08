@@ -958,16 +958,15 @@ async fn sync_login(
             account: account.name().clone(),
         });
     }
-    if agent != Agent::Codex {
-        let Ok(tuple) = jackin_core::lookup_tuple(agent, account.provider()) else {
-            return Ok(AccountSync::HostOnly);
-        };
-        if !matches!(
-            tuple.auth_class,
-            jackin_core::AuthClass::StaticKey | jackin_core::AuthClass::ApiKey
-        ) {
-            return Ok(AccountSync::HostOnly);
-        }
+    let static_tuple = jackin_core::lookup_tuple(agent, account.provider())
+        .ok()
+        .filter(|tuple| {
+            matches!(
+                tuple.auth_class,
+                jackin_core::AuthClass::StaticKey | jackin_core::AuthClass::ApiKey
+            )
+        });
+    if let Some(tuple) = static_tuple {
         let missing = || AccountError::MissingCredential {
             account: account.name().clone(),
         };
@@ -986,11 +985,9 @@ async fn sync_login(
         let profile = ProviderProfile::parse(asset)?;
         let synced = gateway.ensure_profile(&profile).await?;
         let name = ProviderName::for_account(account.name(), agent);
-        let env = if agent == Agent::Omp {
-            tuple.omp_credential_env()
-        } else {
-            agent.spec().credential_env_names.first().copied()
-        };
+        let env = tuple
+            .credential_env()
+            .or_else(|| agent.spec().credential_env_names.first().copied());
         gateway
             .put_provider(&ProviderSpec {
                 name: name.clone(),
@@ -1009,6 +1006,9 @@ async fn sync_login(
             provider: name,
             profile: synced,
         });
+    }
+    if agent != Agent::Codex {
+        return Ok(AccountSync::HostOnly);
     }
     if account.provider() != Provider::Codex {
         return Ok(AccountSync::HostOnly);

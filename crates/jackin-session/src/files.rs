@@ -152,16 +152,9 @@ pub fn render_claude_config(
             agent: tuple.agent,
             provider: tuple.provider,
         })?;
-    let auth_env = tuple
-        .claude_auth_env()
-        .ok_or(jackin_core::CatalogError::UnknownTuple {
-            agent: tuple.agent,
-            provider: tuple.provider,
-        })?;
     Ok(json!({
         "env": {
             "ANTHROPIC_BASE_URL": base_url,
-            auth_env: "placeholder",
         }
     })
     .to_string())
