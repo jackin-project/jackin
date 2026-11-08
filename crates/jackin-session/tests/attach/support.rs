@@ -20,6 +20,12 @@ pub(crate) fn size() -> Result<TermSize, Box<dyn Error>> {
 pub(crate) async fn target(rig: &Rig, id: u8) -> Result<AttachTarget, Box<dyn Error>> {
     Ok(AttachTarget {
         sandbox: rig.handle(id).await?.name(),
+        identity: rig
+            .world
+            .session
+            .agent_metadata_for_sandbox(&rig.sandbox_name(id)?, &rig.world.cancel)
+            .await?
+            .identity,
         state: SupervisorState::Running {
             attempt: AttemptId::FIRST,
         },
@@ -36,7 +42,14 @@ pub(crate) async fn owner(rig: &Rig, id: u8) -> Result<AttachedTerminal, Box<dyn
 }
 
 pub(crate) async fn viewer(rig: &Rig, id: u8) -> Result<AttachedTerminal, Box<dyn Error>> {
-    let request = AttachRequest::viewer(rig.sandbox_name(id)?, size()?);
+    let request = AttachRequest::viewer(
+        rig.world
+            .session
+            .agent_metadata_for_sandbox(&rig.sandbox_name(id)?, &rig.world.cancel)
+            .await?
+            .identity,
+        size()?,
+    );
     Ok(rig
         .world
         .session

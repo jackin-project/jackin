@@ -14,8 +14,12 @@ pub(crate) async fn run(
 ) -> Result<(), CommandError> {
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
+    let identity = session
+        .managed_identity(&arg.sandbox, &app.cancel)
+        .await
+        .map_err(CommandError::Lifecycle)?;
     let summary = session
-        .power(&arg.sandbox, action, &app.cancel)
+        .power(&identity, action, &app.cancel)
         .await
         .map_err(CommandError::Lifecycle)?;
     let word = match action {

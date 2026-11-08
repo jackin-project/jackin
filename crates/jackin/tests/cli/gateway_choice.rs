@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use jackin::ExitClass;
-use jackin_core::{GatewayName, LsOutput, OpenShellWorkspace, Phase, SandboxName};
+use jackin_core::{GatewayName, OpenShellWorkspace, Phase, SandboxName};
 use jackin_openshell::Gateway;
 use jackin_testkit::{FakeGateway, Rig, TestResult, guard};
 
@@ -46,8 +46,26 @@ async fn two() -> Result<(Rig, Harness, SandboxName, SandboxName), Failure> {
 async fn listed(harness: &Harness, args: &[&str]) -> Result<Vec<SandboxName>, Failure> {
     let ran = harness.run(args).await?;
     ran.ok()?;
-    let output: LsOutput = ran.json()?;
-    Ok(output.sandboxes.into_iter().map(|s| s.name).collect())
+    let output = ran.value()?;
+    if output["schema"].as_u64() != Some(2) {
+        return Err("unexpected listing schema".into());
+    }
+    let entries = output["sandboxes"]
+        .as_array()
+        .ok_or("missing sandboxes array")?;
+    entries
+        .iter()
+        .map(|entry| {
+            let name = match entry["status"].as_str() {
+                Some("readable") => &entry["sandbox"]["name"],
+                Some("unreadable") => &entry["name"],
+                _ => return Err("missing or unknown sandbox status".into()),
+            };
+            Ok(SandboxName::parse(
+                name.as_str().ok_or("missing sandbox name")?,
+            )?)
+        })
+        .collect()
 }
 
 #[tokio::test]

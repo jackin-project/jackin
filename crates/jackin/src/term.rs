@@ -170,7 +170,7 @@ pub(crate) async fn attach(
     session: &Session,
     request: AttachRequest,
 ) -> Result<(), CommandError> {
-    let sandbox = request.sandbox.clone();
+    let sandbox = request.identity.sandbox.clone();
     let attached = session
         .attach(request, &app.cancel)
         .await
@@ -234,7 +234,7 @@ pub(crate) async fn shell(
     session: &Session,
     request: ShellRequest,
 ) -> Result<(), CommandError> {
-    let sandbox = request.sandbox.clone();
+    let sandbox = request.identity.name().clone();
     let mut remote = Remote::Shell(session.open_shell(request, &app.cancel).await.map_err(
         |error| {
             opening_error(

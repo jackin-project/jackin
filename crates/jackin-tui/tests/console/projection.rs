@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_console::domain::instance::{ID_PREFIX, InstanceEntry, InstanceStatus};
+use jackin_console::domain::instance::{ID_PREFIX, InstanceEntry, InstanceStatus, SandboxPhase};
 use std::collections::BTreeMap;
 
 use jackin_core::{
@@ -39,7 +39,10 @@ async fn roster_maps_phase_and_exit_code() -> TestResult {
         rig.world
             .session
             .power(
-                &rig.sandbox_name(4)?,
+                &rig.world
+                    .session
+                    .managed_identity(&rig.sandbox_name(4)?, &CancellationToken::new())
+                    .await?,
                 PowerAction::Stop,
                 &CancellationToken::new(),
             )
@@ -51,15 +54,24 @@ async fn roster_maps_phase_and_exit_code() -> TestResult {
             status_of(&mut console, 3),
             Some(InstanceStatus::CleanExited)
         );
-        assert_eq!(
-            status_of(&mut console, 4),
-            Some(InstanceStatus::RestoreAvailable)
-        );
+        let stopped_name = rig.sandbox_name(4)?.to_string();
+        let stopped = console
+            .console()
+            .app()
+            .world
+            .instances
+            .iter()
+            .find(|entry| entry.id().sandbox_name == stopped_name)
+            .ok_or("stopped sandbox missing")?;
+        let InstanceEntry::Unavailable(stopped) = stopped else {
+            return Err("stopped instance has available metadata".into());
+        };
+        assert_eq!(stopped.phase, SandboxPhase::Stopped);
         let screen = console.screen();
         assert!(screen.contains("1 running"), "{screen}");
         console.keys("down")?;
         let screen = console.screen();
-        for word in ["running", "crashed", "exited", "restore available"] {
+        for word in ["running", "crashed", "exited"] {
             assert!(screen.contains(word), "{word} is not on:\n{screen}");
         }
         let first = console.console().app().world.instances[0]
@@ -72,7 +84,7 @@ async fn roster_maps_phase_and_exit_code() -> TestResult {
             "{}",
             first.id
         );
-        assert_eq!(first.account.as_deref(), None);
+        assert_eq!(first.account.as_deref(), Some("work"));
         assert_eq!(first.workdir.as_deref(), Some("/sandbox/project"));
         Ok(())
     })
@@ -114,10 +126,7 @@ async fn roster_hides_unmanaged_and_notes_unreadable() -> TestResult {
             return Err("expected a degraded sandbox row".into());
         };
         assert_eq!(unavailable.id.sandbox_name, "jackin-broken-0002");
-        assert_eq!(
-            unavailable.phase,
-            jackin_console::domain::instance::SandboxPhase::Ready
-        );
+        assert_eq!(unavailable.phase, SandboxPhase::Ready);
         assert_eq!(unavailable.workspace_name, None);
         assert_eq!(unavailable.role, None);
         assert!(!unavailable.reason.is_empty());
@@ -327,6 +336,11 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
             .session
             .agent_metadata(&summary, &rig.world.cancel)
             .await?;
+        let lifecycle_identity = rig
+            .world
+            .session
+            .managed_identity(&summary.name, &rig.world.cancel)
+            .await?;
         let config = rig.world.config.load().await?;
         let facts = Facts {
             version: "test".to_owned(),
@@ -351,6 +365,7 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
             let fleet = Fleet {
                 sandboxes: vec![ObservedSandbox {
                     gateway: rig.world.gateway.name().clone(),
+                    lifecycle_identity: Ok(lifecycle_identity.clone()),
                     summary: summary.clone(),
                     agent_metadata: Ok(agent_metadata.clone()),
                     supervisor: Some(exited.clone()),

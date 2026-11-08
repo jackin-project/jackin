@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jackin_core::{
@@ -22,6 +23,7 @@ use crate::service::{POLL, Session};
 pub struct SandboxListing {
     pub sandboxes: Vec<SandboxSummary>,
     pub unreadable: Vec<UnreadableSandbox>,
+    pub identities: BTreeMap<SandboxName, Result<ManagedIdentity, ManagedIdentityError>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,6 +35,7 @@ pub struct UnreadableSandbox {
     pub role: Option<RoleName>,
     pub launch: Option<LaunchId>,
     pub error: LabelError,
+    pub lifecycle_identity: Result<ManagedIdentity, ManagedIdentityError>,
 }
 
 impl UnreadableSandbox {
@@ -61,7 +64,7 @@ impl UnreadableSandbox {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct ManagedIdentity {
+pub struct ManagedIdentity {
     name: SandboxName,
     workspace: WorkspaceName,
     launch: LaunchId,
@@ -81,7 +84,7 @@ pub enum ManagedIdentityError {
 }
 
 impl ManagedIdentity {
-    fn read(view: &SandboxView) -> Result<ManagedIdentity, ManagedIdentityError> {
+    pub fn read(view: &SandboxView) -> Result<ManagedIdentity, ManagedIdentityError> {
         if !view.labels.is_managed() {
             return Err(ManagedIdentityError::Unmanaged {
                 sandbox: view.name.clone(),
@@ -106,6 +109,23 @@ impl ManagedIdentity {
                     sandbox: view.name.clone(),
                 })?,
         })
+    }
+
+    pub fn name(&self) -> &SandboxName {
+        &self.name
+    }
+
+    pub fn verify_summary(&self, summary: &SandboxSummary) -> Result<(), ManagedIdentityError> {
+        if self.name != summary.name
+            || self.workspace != summary.labels.planned.workspace
+            || self.launch != summary.labels.planned.launch
+            || Some(self.created_at) != summary.created_at
+        {
+            return Err(ManagedIdentityError::Replaced {
+                sandbox: self.name.clone(),
+            });
+        }
+        Ok(())
     }
 
     fn verify(&self, view: &SandboxView) -> Result<(), ManagedIdentityError> {
@@ -237,6 +257,7 @@ fn unreadable(view: &SandboxView, error: LabelError) -> UnreadableSandbox {
         role: view.labels.role(),
         launch: view.labels.launch(),
         error,
+        lifecycle_identity: ManagedIdentity::read(view),
     }
 }
 
@@ -305,7 +326,7 @@ async fn sandbox_detail(
     }
 }
 
-async fn verify_managed_identity(
+pub(crate) async fn verify_managed_identity(
     session: &Session,
     expected: &ManagedIdentity,
     cancel: &CancellationToken,
@@ -387,8 +408,19 @@ impl Session {
         let mut listing = SandboxListing {
             sandboxes: Vec::new(),
             unreadable: Vec::new(),
+            identities: BTreeMap::new(),
         };
         for view in views {
+            let identity = ManagedIdentity::read(&view);
+            listing
+                .identities
+                .entry(view.name.clone())
+                .and_modify(|entry| {
+                    *entry = Err(ManagedIdentityError::Replaced {
+                        sandbox: view.name.clone(),
+                    });
+                })
+                .or_insert(identity);
             match SandboxLabels::from_labels(&view.labels) {
                 Ok(labels) => listing.sandboxes.push(SandboxSummary {
                     name: view.name.clone(),
@@ -464,24 +496,33 @@ impl Session {
         }))
     }
 
-    pub async fn power(
+    pub async fn managed_identity(
         &self,
         sandbox: &SandboxName,
-        action: PowerAction,
         cancel: &CancellationToken,
-    ) -> Result<SandboxObservation, LifecycleError> {
+    ) -> Result<ManagedIdentity, LifecycleError> {
         let detail = sandbox_detail(self, sandbox, cancel)
             .await
             .map_err(lifecycle_gateway)?
             .ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
-        let view = detail.view;
-        let identity = ManagedIdentity::read(&view)?;
-        if view.phase == Phase::Deleting {
-            return Err(ManagedIdentityError::Replaced {
+        ManagedIdentity::read(&detail.view).map_err(LifecycleError::Identity)
+    }
+
+    pub async fn power(
+        &self,
+        identity: &ManagedIdentity,
+        action: PowerAction,
+        cancel: &CancellationToken,
+    ) -> Result<SandboxObservation, LifecycleError> {
+        let sandbox = identity.name();
+        let view = sandbox_detail(self, sandbox, cancel)
+            .await
+            .map_err(lifecycle_gateway)?
+            .ok_or_else(|| ManagedIdentityError::Replaced {
                 sandbox: sandbox.clone(),
-            }
-            .into());
-        }
+            })?
+            .view;
+        identity.verify(&view)?;
         if view.phase.main_process_ended() {
             return Err(LifecycleError::MainProcessEnded {
                 sandbox: sandbox.clone(),
@@ -492,7 +533,7 @@ impl Session {
             PowerAction::Start => Phase::Ready,
             PowerAction::Stop => Phase::Stopped,
         };
-        verify_managed_identity(self, &identity, cancel).await?;
+        verify_managed_identity(self, identity, cancel).await?;
         let mut view = self
             .deps
             .gateway

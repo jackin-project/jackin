@@ -192,9 +192,11 @@ async fn changes_refuses_a_stopped_or_absent_sandbox_and_a_project_that_is_not_a
             Err(ChangesError::NoRepository { .. })
         ));
 
+        let cancel = CancellationToken::new();
+        let identity = rig.world.session.managed_identity(&name, &cancel).await?;
         rig.world
             .session
-            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .power(&identity, PowerAction::Stop, &cancel)
             .await?;
         assert!(matches!(
             changes(&rig, &name).await,

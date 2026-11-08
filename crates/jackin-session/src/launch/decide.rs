@@ -308,11 +308,17 @@ fn ready(view: &SandboxView, probe: &SandboxProbe, done: &Done, limits: &LaunchL
     if stale {
         return silent();
     }
-    supervised(sandbox, probe, *state, done, limits)
+    let identity = match crate::agent_metadata::identity(&view.name, view.created_at, &view.labels)
+    {
+        Ok(identity) => identity,
+        Err(error) => return Decision::Fail(LaunchStep::Ready, LaunchError::AgentMetadata(error)),
+    };
+    supervised(sandbox, identity, probe, *state, done, limits)
 }
 
 fn supervised(
     sandbox: &SandboxName,
+    identity: crate::AgentMetadataIdentity,
     probe: &SandboxProbe,
     state: SupervisorState,
     done: &Done,
@@ -322,6 +328,7 @@ fn supervised(
         Decision::Finish(Finish {
             target: AttachTarget {
                 sandbox: sandbox.clone(),
+                identity: identity.clone(),
                 state,
             },
             running,

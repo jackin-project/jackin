@@ -41,6 +41,13 @@ regexes = ['''://[A-Za-z0-9]+:(?:SECRET[A-Za-z0-9-]*|IGNORED-[A-Z]+|hunt[a-z0-9]
 paths = ['''^crates/jackin-(session|openshell)/tests/''']
 
 [[allowlists]]
+description = "role workspace URL rejection test: synthetic credentials on the reserved invalid host"
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^https://x-access-token:SECRET-TEST-HTTPS@example\.invalid/org/repo\.git"?$''', '''^ssh://user:SECRET-TEST-SSH@example\.invalid/org/repo\.git"?$''']
+paths = ['''^crates/jackin/tests/cli/role_workspace\.rs$''']
+
+[[allowlists]]
 description = "evidence docs: sandbox gateway-token-id annotation (a record id) and the x password field of an /etc/passwd listing"
 condition = "AND"
 regexTarget = "line"

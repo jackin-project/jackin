@@ -315,17 +315,9 @@ async fn a_role_source_that_is_not_a_directory_or_a_url_is_refused_without_echoi
         let world = World::builder().build()?;
         let harness = Harness::new(&world);
         let sources = [
-            concat!(
-                "https://x-access-token",
-                ":ghp_FAKEf4k3T0k3nValue0123456789abcdef",
-                "@github.com/org/repo.git"
-            ),
-            "https://ghp_FAKEf4k3T0k3nValue0123456789abcdef@github.com/org/repo.git",
-            concat!(
-                "ssh://user",
-                ":ghp_FAKEf4k3T0k3nValue0123456789abcdef",
-                "@host/org/repo.git"
-            ),
+            "https://x-access-token:SECRET-TEST-HTTPS@example.invalid/org/repo.git",
+            "https://ghp_FAKEf4k3T0k3nValue0123456789abcdef@example.invalid/org/repo.git",
+            "ssh://user:SECRET-TEST-SSH@example.invalid/org/repo.git",
             "no\u{1b}[2J\nghp_FAKEf4k3T0k3nValue0123456789abcdef",
             "/ghp_FAKEf4k3T0k3nValue0123456789abcdef/missing",
         ];
@@ -333,7 +325,10 @@ async fn a_role_source_that_is_not_a_directory_or_a_url_is_refused_without_echoi
             let ran = harness.run(&["role", "add", "local", source]).await?;
             failed(&ran, ExitClass::Usage, &[])?;
             assert!(
-                !ran.stderr.contains("ghp_FAKE") && !ran.stderr.contains("x-access-token"),
+                !ran.stderr.contains("ghp_FAKE")
+                    && !ran.stderr.contains("x-access-token")
+                    && !ran.stderr.contains("SECRET-TEST-HTTPS")
+                    && !ran.stderr.contains("SECRET-TEST-SSH"),
                 "{}",
                 ran.stderr
             );

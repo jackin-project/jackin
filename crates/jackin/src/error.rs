@@ -194,7 +194,10 @@ impl CommandError {
             | CommandError::Console(ConsoleError::Config(ConfigError::Cancelled))
             | CommandError::Plan(PlanError::Config(ConfigError::Cancelled))
             | CommandError::Role(RoleError::Cancelled)
-            | CommandError::Attach(AttachError::Gateway(GatewayError::Cancelled { .. }))
+            | CommandError::Attach(
+                AttachError::Gateway(GatewayError::Cancelled { .. })
+                | AttachError::Identity(ManagedIdentityError::Cancelled),
+            )
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. }))
             | CommandError::Export(
                 ExportError::Cancelled { .. }

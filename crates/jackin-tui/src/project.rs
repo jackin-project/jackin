@@ -41,6 +41,14 @@ use crate::fleet::{Fleet, ObservedSandbox, ObservedUnreadableSandbox};
 use crate::ids::IdTable;
 use crate::persist::sentence;
 
+#[derive(Debug, Error)]
+pub(crate) enum AgentMappingError {
+    #[error("the agent and provider are not in the Jackin catalog")]
+    UnknownTuple,
+    #[error("the selected pane agent is not supported by this session")]
+    UnsupportedPane,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum RoleDocError {
     #[error("{}", sentence(.0))]
@@ -668,7 +676,7 @@ pub(crate) fn instance(
         workspace: config
             .workspace(&labels.workspace)
             .and_then(|_| ids.lookup(&labels.workspace)),
-        workdir: Some("/sandbox/project".to_owned()),
+        workdir: Some(jackin_core::sandbox_layout::PROJECT.to_string()),
         role: Some(labels.role.to_string()),
         agent: agent(lead),
         status,

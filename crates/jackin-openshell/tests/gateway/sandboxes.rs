@@ -55,6 +55,7 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
             ("jackin.dev/workspace", "My.Project"),
             ("jackin.dev/role", "backend"),
             ("jackin.dev/agents", "235f80276e0174fa411c641b8bc2f777"),
+            ("jackin.dev/lead-agent", "codex"),
             ("jackin.dev/policy", "823412d1eacb67956220e532959f0104"),
             ("jackin.dev/image", &IMAGE_DIGEST[..32]),
             ("jackin.dev/launch", LAUNCH),

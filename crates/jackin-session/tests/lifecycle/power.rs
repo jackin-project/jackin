@@ -5,7 +5,7 @@ use std::task::Poll;
 use std::time::Duration;
 
 use jackin_core::{Labels, Phase, SandboxName, SandboxSummary, SupervisorState, sandbox_layout};
-use jackin_openshell::PowerAction;
+use jackin_openshell::{Gateway, GatewayOp, PowerAction};
 use jackin_session::{LifecycleError, ManagedIdentityError, SandboxObservation};
 use jackin_testkit::{Fault, Rig, TestResult, default_limits, guard, launch_id};
 use tokio_util::sync::CancellationToken;
@@ -52,6 +52,9 @@ async fn stop_and_start_keep_the_files_and_reset_the_supervisor_and_a_stuck_star
         let handle = rig.handle(1).await?;
         let name = handle.name();
         let session = &rig.world.session;
+        let identity = session
+            .managed_identity(&name, &CancellationToken::new())
+            .await?;
         let env_file = sandbox_layout::env_file(&launch_id(1));
         let project_file = jackin_core::SandboxPath::parse("/sandbox/project/README.md")?;
         let files = handle.files();
@@ -59,7 +62,7 @@ async fn stop_and_start_keep_the_files_and_reset_the_supervisor_and_a_stuck_star
 
         let stopped = readable(
             session
-                .power(&name, PowerAction::Stop, &CancellationToken::new())
+                .power(&identity, PowerAction::Stop, &CancellationToken::new())
                 .await?,
         )?;
         assert_eq!(stopped.phase, Phase::Stopped);
@@ -72,14 +75,14 @@ async fn stop_and_start_keep_the_files_and_reset_the_supervisor_and_a_stuck_star
 
         let again = readable(
             session
-                .power(&name, PowerAction::Stop, &CancellationToken::new())
+                .power(&identity, PowerAction::Stop, &CancellationToken::new())
                 .await?,
         )?;
         assert_eq!(again.phase, Phase::Stopped);
 
         let started = readable(
             session
-                .power(&name, PowerAction::Start, &CancellationToken::new())
+                .power(&identity, PowerAction::Start, &CancellationToken::new())
                 .await?,
         )?;
         assert_eq!(started.phase, Phase::Ready);
@@ -90,12 +93,12 @@ async fn stop_and_start_keep_the_files_and_reset_the_supervisor_and_a_stuck_star
         );
 
         session
-            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .power(&identity, PowerAction::Stop, &CancellationToken::new())
             .await?;
         rig.world.gateway.inject(Fault::StartIgnored);
         let slept_before: Duration = rig.world.clock.slept().iter().sum();
         let stuck = session
-            .power(&name, PowerAction::Start, &CancellationToken::new())
+            .power(&identity, PowerAction::Start, &CancellationToken::new())
             .await;
         let Err(LifecycleError::PowerTimeout {
             sandbox,
@@ -122,7 +125,7 @@ async fn stop_and_start_keep_the_files_and_reset_the_supervisor_and_a_stuck_star
 
         let absent = rig.sandbox_name(9)?;
         let missing = session
-            .power(&absent, PowerAction::Stop, &CancellationToken::new())
+            .managed_identity(&absent, &CancellationToken::new())
             .await;
         assert!(matches!(missing, Err(LifecycleError::NotFound(found)) if found == absent));
         Ok(())
@@ -139,6 +142,9 @@ async fn a_sandbox_whose_main_process_ended_refuses_stop_and_start_and_stays_as_
         let handle = rig.handle(1).await?;
         let name = handle.name();
         let session = &rig.world.session;
+        let identity = session
+            .managed_identity(&name, &CancellationToken::new())
+            .await?;
         for ended in [
             Phase::Completed { exit_code: 0 },
             Phase::Error { exit_code: Some(3) },
@@ -147,7 +153,7 @@ async fn a_sandbox_whose_main_process_ended_refuses_stop_and_start_and_stays_as_
             for action in [PowerAction::Stop, PowerAction::Start] {
                 rig.world.gateway.force_phase(&name, ended);
                 let refused = session
-                    .power(&name, action, &CancellationToken::new())
+                    .power(&identity, action, &CancellationToken::new())
                     .await;
                 assert_ended(refused, &name, ended)?;
                 assert_eq!(handle.phase(), ended);
@@ -157,7 +163,7 @@ async fn a_sandbox_whose_main_process_ended_refuses_stop_and_start_and_stays_as_
         assert_eq!(
             readable(
                 session
-                    .power(&name, PowerAction::Stop, &CancellationToken::new())
+                    .power(&identity, PowerAction::Stop, &CancellationToken::new())
                     .await?,
             )?
             .phase,
@@ -166,7 +172,7 @@ async fn a_sandbox_whose_main_process_ended_refuses_stop_and_start_and_stays_as_
         assert_eq!(
             readable(
                 session
-                    .power(&name, PowerAction::Start, &CancellationToken::new())
+                    .power(&identity, PowerAction::Start, &CancellationToken::new())
                     .await?,
             )?
             .phase,
@@ -188,7 +194,7 @@ async fn a_sandbox_with_unreadable_labels_is_refused_before_any_power_change() -
             Labels::from_pairs([("jackin.dev/managed".to_owned(), "true".to_owned())])?;
         gateway.insert_unmanaged(&broken, managed_only.clone(), Phase::Ready)?;
         let stop = session
-            .power(&broken, PowerAction::Stop, &CancellationToken::new())
+            .managed_identity(&broken, &CancellationToken::new())
             .await;
         assert!(
             matches!(
@@ -204,7 +210,7 @@ async fn a_sandbox_with_unreadable_labels_is_refused_before_any_power_change() -
         let sleeper = SandboxName::parse("jackin-broken-0002")?;
         gateway.insert_unmanaged(&sleeper, managed_only, Phase::Stopped)?;
         let start = session
-            .power(&sleeper, PowerAction::Start, &CancellationToken::new())
+            .managed_identity(&sleeper, &CancellationToken::new())
             .await;
         assert!(
             matches!(
@@ -219,10 +225,13 @@ async fn a_sandbox_with_unreadable_labels_is_refused_before_any_power_change() -
 
         rig.launch(1).await?;
         let name = rig.handle(1).await?.name();
+        let identity = session
+            .managed_identity(&name, &CancellationToken::new())
+            .await?;
         assert_eq!(
             readable(
                 session
-                    .power(&name, PowerAction::Stop, &CancellationToken::new())
+                    .power(&identity, PowerAction::Stop, &CancellationToken::new())
                     .await?,
             )?
             .phase,
@@ -231,7 +240,7 @@ async fn a_sandbox_with_unreadable_labels_is_refused_before_any_power_change() -
         assert_eq!(
             readable(
                 session
-                    .power(&name, PowerAction::Start, &CancellationToken::new())
+                    .power(&identity, PowerAction::Start, &CancellationToken::new())
                     .await?,
             )?
             .phase,
@@ -249,13 +258,16 @@ async fn cancelling_the_token_ends_the_wait_for_the_sandbox_to_become_ready() ->
         rig.launch(1).await?;
         let name = rig.handle(1).await?.name();
         let session = &rig.world.session;
+        let identity = session
+            .managed_identity(&name, &CancellationToken::new())
+            .await?;
         session
-            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .power(&identity, PowerAction::Stop, &CancellationToken::new())
             .await?;
         rig.world.gateway.inject(Fault::StartIgnored);
         let before = rig.world.clock.slept().len();
         let token = CancellationToken::new();
-        let waiting = session.power(&name, PowerAction::Start, &token);
+        let waiting = session.power(&identity, PowerAction::Start, &token);
         let driver = async {
             while rig.world.clock.slept().len() == before {
                 tokio::task::yield_now().await;
@@ -282,12 +294,13 @@ async fn cancellation_during_power_lookup_leaves_the_sandbox_ready() -> TestResu
         let handle = rig.handle(1).await?;
         let name = handle.name();
         let session = &rig.world.session;
+        let identity = session.managed_identity(&name, &CancellationToken::new()).await?;
         let token = CancellationToken::new();
-        let lookup = jackin_testkit::Trigger::Op(jackin_openshell::GatewayOp::Find);
+        let lookup = jackin_testkit::Trigger::Op(GatewayOp::Detail);
         rig.world.gateway.inject(Fault::HoldAt {
             trigger: lookup.clone(),
         });
-        let power = session.power(&name, PowerAction::Stop, &token);
+        let power = session.power(&identity, PowerAction::Stop, &token);
         tokio::pin!(power);
         tokio::select! {
             held = rig.world.gateway.until_held(&lookup) => assert!(held),
@@ -314,12 +327,13 @@ async fn cancellation_during_power_transition_leaves_the_sandbox_ready() -> Test
         let handle = rig.handle(1).await?;
         let name = handle.name();
         let session = &rig.world.session;
+        let identity = session.managed_identity(&name, &CancellationToken::new()).await?;
         let token = CancellationToken::new();
-        let transition = jackin_testkit::Trigger::Op(jackin_openshell::GatewayOp::Power);
+        let transition = jackin_testkit::Trigger::Op(GatewayOp::Power);
         rig.world.gateway.inject(Fault::HoldAt {
             trigger: transition.clone(),
         });
-        let power = session.power(&name, PowerAction::Stop, &token);
+        let power = session.power(&identity, PowerAction::Stop, &token);
         tokio::pin!(power);
         tokio::select! {
             held = rig.world.gateway.until_held(&transition) => assert!(held),
@@ -347,13 +361,14 @@ async fn cancellation_during_power_observation_returns_cancelled_after_the_trans
         let handle = rig.handle(1).await?;
         let name = handle.name();
         let session = &rig.world.session;
+        let identity = session.managed_identity(&name, &CancellationToken::new()).await?;
         session
-            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .power(&identity, PowerAction::Stop, &CancellationToken::new())
             .await?;
         rig.world.gateway.inject(Fault::StartIgnored);
         let clock_guard = rig.world.clock.working();
         let token = CancellationToken::new();
-        let power = session.power(&name, PowerAction::Start, &token);
+        let power = session.power(&identity, PowerAction::Start, &token);
         tokio::pin!(power);
         let wait_for_sleep = async {
             while rig.world.clock.sleepers() == 0 {
@@ -364,7 +379,7 @@ async fn cancellation_during_power_observation_returns_cancelled_after_the_trans
             () = wait_for_sleep => {},
             result = &mut power => return Err(format!("power completed before observation retry: {result:?}").into()),
         }
-        let trigger = jackin_testkit::Trigger::Op(jackin_openshell::GatewayOp::Find);
+        let trigger = jackin_testkit::Trigger::Op(GatewayOp::Detail);
         rig.world.gateway.inject(Fault::HoldAt {
             trigger: trigger.clone(),
         });
@@ -384,4 +399,63 @@ async fn cancellation_during_power_observation_returns_cancelled_after_the_trans
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn power_rejects_a_replacement_captured_before_the_action() -> TestResult {
+    guard(async {
+        for action in [PowerAction::Start, PowerAction::Stop] {
+            let rig = rig().await?;
+            rig.launch(1).await?;
+            let name = rig.handle(1).await?.name();
+            let cancel = CancellationToken::new();
+            let identity = rig.world.session.managed_identity(&name, &cancel).await?;
+            rig.world.gateway.delete_sandbox(&name).await?;
+            rig.world.clock.advance(Duration::from_secs(60));
+            rig.launch(1).await?;
+            let replacement = rig.handle(1).await?;
+            let phase = replacement.phase();
+            let result = rig.world.session.power(&identity, action, &cancel).await;
+            assert!(matches!(result, Err(LifecycleError::Identity(ManagedIdentityError::Replaced { sandbox })) if sandbox == name));
+            assert_eq!(replacement.phase(), phase);
+        }
+        Ok(())
+    }).await
+}
+
+#[tokio::test]
+async fn power_rejects_a_replacement_during_observation() -> TestResult {
+    guard(async {
+        let rig = rig().await?;
+        rig.launch(1).await?;
+        let original = rig.handle(1).await?;
+        let name = original.name();
+        let labels = original.labels();
+        let cancel = CancellationToken::new();
+        let session = &rig.world.session;
+        let identity = session.managed_identity(&name, &cancel).await?;
+        session.power(&identity, PowerAction::Stop, &cancel).await?;
+        rig.world.gateway.inject(Fault::StartIgnored);
+        let held = jackin_testkit::Trigger::Op(GatewayOp::Detail);
+        let clock = rig.world.clock.working();
+        let power = session.power(&identity, PowerAction::Start, &cancel);
+        let swap = async {
+            while rig.world.clock.sleepers() == 0 {
+                tokio::task::yield_now().await;
+            }
+            rig.world.gateway.inject(Fault::HoldAt { trigger: held.clone() });
+            drop(clock);
+            assert!(rig.world.gateway.until_held(&held).await);
+            rig.world.gateway.delete_sandbox(&name).await?;
+            rig.world.clock.advance(Duration::from_secs(60));
+            rig.world.gateway.insert_unmanaged(&name, labels, Phase::Ready)?;
+            rig.world.gateway.release(&held);
+            Ok::<_, Box<dyn std::error::Error>>(())
+        };
+        let (result, swapped) = tokio::join!(power, swap);
+        swapped?;
+        assert!(matches!(result, Err(LifecycleError::Identity(ManagedIdentityError::Replaced { sandbox })) if sandbox == name));
+        assert_eq!(rig.world.gateway.sandbox(&name).ok_or("missing replacement")?.phase(), Phase::Ready);
+        Ok(())
+    }).await
 }

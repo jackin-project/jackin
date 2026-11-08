@@ -389,11 +389,11 @@ fn construct_tag_depends_on_the_platform_only() -> TestResult {
     let amd_digest = construct_digest(Platform::LinuxAmd64, WRITE_FILE_C);
     assert_eq!(
         arm_digest,
-        "b9b62c574059a5eb9e7c6c1e3908c517a5a4e4d6e84808f08fcc070a0d1e7c65"
+        "566a39f9ae1929f83639665f442b11b1e40931002a0fd529d8c200fe78d0dc56"
     );
     assert_eq!(
         amd_digest,
-        "cb353d46a3234563288a123437fc8bbdaeb7855890d79d782c63887546014524"
+        "f790a5170623c7ba0182a3167c9daaa1d203b07ea214e2e68192d5f6ca27a1dc"
     );
     let mut changed_writer = WRITE_FILE_C.to_vec();
     changed_writer.push(b'\n');

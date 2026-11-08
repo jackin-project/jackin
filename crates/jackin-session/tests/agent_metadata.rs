@@ -122,7 +122,7 @@ async fn metadata_read_accepts_the_launch_document_and_refuses_untrusted_variant
             .session
             .attach(
                 AttachRequest {
-                    sandbox: handle.name(),
+                    identity: verified.identity.clone(),
                     size,
                     input: InputMode::Owner,
                     agent: None,
@@ -135,7 +135,7 @@ async fn metadata_read_accepts_the_launch_document_and_refuses_untrusted_variant
     assert!(matches!(
         rig.world
             .session
-            .stop_instance(&handle.name(), Agent::Codex, &rig.world.cancel)
+            .stop_instance(&verified.identity, Agent::Codex, &rig.world.cancel)
             .await,
         Err(IntegrateError::AgentMetadata(AgentMetadataError::Malformed))
     ));
@@ -151,7 +151,7 @@ async fn metadata_read_accepts_the_launch_document_and_refuses_untrusted_variant
     assert!(matches!(
         rig.world
             .session
-            .restart_agent(&handle.name(), events, rig.world.cancel.clone())
+            .restart_agent(&verified.identity, events, rig.world.cancel.clone())
             .await,
         Err(RestartError::AgentMetadata(AgentMetadataError::Malformed))
     ));
@@ -235,6 +235,17 @@ async fn missing_lead_keeps_power_safe_and_refuses_agent_actions_without_side_ef
     let rig = Rig::new().await?;
     rig.launch(1).await?;
     let handle = rig.handle(1).await?;
+    let expected = rig
+        .world
+        .session
+        .agent_metadata_for_sandbox(&handle.name(), &rig.world.cancel)
+        .await?
+        .identity;
+    let lifecycle_identity = rig
+        .world
+        .session
+        .managed_identity(&handle.name(), &rig.world.cancel)
+        .await?;
     let labels = Labels::from_pairs(
         handle
             .labels()
@@ -258,7 +269,7 @@ async fn missing_lead_keeps_power_safe_and_refuses_agent_actions_without_side_ef
             .session
             .attach(
                 AttachRequest {
-                    sandbox: sandbox.clone(),
+                    identity: expected.clone(),
                     size,
                     input: InputMode::Owner,
                     agent: None,
@@ -271,7 +282,7 @@ async fn missing_lead_keeps_power_safe_and_refuses_agent_actions_without_side_ef
     assert!(matches!(
         rig.world
             .session
-            .stop_instance(&sandbox, Agent::Codex, &rig.world.cancel)
+            .stop_instance(&expected, Agent::Codex, &rig.world.cancel)
             .await,
         Err(IntegrateError::AgentMetadata(
             AgentMetadataError::MissingLead
@@ -291,7 +302,7 @@ async fn missing_lead_keeps_power_safe_and_refuses_agent_actions_without_side_ef
     assert!(matches!(
         rig.world
             .session
-            .restart_agent(&sandbox, events, rig.world.cancel.clone())
+            .restart_agent(&expected, events, rig.world.cancel.clone())
             .await,
         Err(RestartError::AgentMetadata(AgentMetadataError::MissingLead))
     ));
@@ -302,7 +313,7 @@ async fn missing_lead_keeps_power_safe_and_refuses_agent_actions_without_side_ef
     let stopped = rig
         .world
         .session
-        .power(&sandbox, PowerAction::Stop, &rig.world.cancel)
+        .power(&lifecycle_identity, PowerAction::Stop, &rig.world.cancel)
         .await?;
     let SandboxObservation::Unreadable(stopped) = stopped else {
         return Err("power fabricated readable agent labels".into());
@@ -312,7 +323,7 @@ async fn missing_lead_keeps_power_safe_and_refuses_agent_actions_without_side_ef
     let started = rig
         .world
         .session
-        .power(&sandbox, PowerAction::Start, &rig.world.cancel)
+        .power(&lifecycle_identity, PowerAction::Start, &rig.world.cancel)
         .await?;
     let SandboxObservation::Unreadable(started) = started else {
         return Err("power fabricated readable agent labels".into());

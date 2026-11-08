@@ -16,13 +16,6 @@ pub(crate) async fn run(app: &mut App, arg: SandboxArg) -> Result<(), CommandErr
         .size();
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
-    term::shell(
-        app,
-        &session,
-        ShellRequest {
-            sandbox: arg.sandbox,
-            size,
-        },
-    )
-    .await
+    let identity = session.managed_identity(&arg.sandbox, &app.cancel).await?;
+    term::shell(app, &session, ShellRequest { identity, size }).await
 }

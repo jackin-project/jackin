@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{EnvName, Labels, Phase, SandboxName, SandboxPath, sandbox_layout};
-use jackin_openshell::{GatewayError, PowerAction, TerminalEvent};
+use jackin_openshell::{Gateway, GatewayError, PowerAction, TerminalEvent};
 use jackin_session::{AttachError, EnvFileProblem, LaunchStep, ShellRequest};
 use jackin_testkit::{Rig, TestResult, guard, launch_id};
 use tokio_util::sync::CancellationToken;
@@ -13,9 +13,11 @@ use super::support::size;
 
 const HOSTILE: &str = "a'b \"c\" $x";
 
-fn request(name: &SandboxName) -> Result<ShellRequest, Box<dyn std::error::Error>> {
+fn request(
+    identity: &jackin_session::ManagedIdentity,
+) -> Result<ShellRequest, Box<dyn std::error::Error>> {
     Ok(ShellRequest {
-        sandbox: name.clone(),
+        identity: identity.clone(),
         size: size()?,
     })
 }
@@ -29,11 +31,16 @@ async fn a_shell_sees_the_role_env_untouched_and_starts_in_the_project_without_t
         rig.launch_with_env(1, env).await?;
         let handle = rig.handle(1).await?;
         let before = handle.supervisor();
+        let identity = rig
+            .world
+            .session
+            .managed_identity(&handle.name(), &CancellationToken::new())
+            .await?;
 
         let mut shell = rig
             .world
             .session
-            .open_shell(request(&handle.name())?, &CancellationToken::new())
+            .open_shell(request(&identity)?, &CancellationToken::new())
             .await?;
         shell
             .input(b"printf '%s' \"$GREETING\" > greeting.txt; touch marker; exit\n".to_vec())
@@ -63,8 +70,11 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
         assert!(matches!(failed, Err(failure) if failure.step == LaunchStep::Credentials));
         let name = rig.sandbox_name(1)?;
         let session = &rig.world.session;
+        let identity = session
+            .managed_identity(&name, &CancellationToken::new())
+            .await?;
         let missing = session
-            .open_shell(request(&name)?, &CancellationToken::new())
+            .open_shell(request(&identity)?, &CancellationToken::new())
             .await;
         assert!(
             matches!(
@@ -82,7 +92,7 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
             .gateway
             .install_file(&env_path, b"not an env file\n".to_vec());
         let invalid = session
-            .open_shell(request(&name)?, &CancellationToken::new())
+            .open_shell(request(&identity)?, &CancellationToken::new())
             .await;
         assert!(
             matches!(
@@ -101,25 +111,30 @@ async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_
             .gateway
             .insert_unmanaged(&unlabelled, managed, Phase::Ready)?;
         let bare = session
-            .open_shell(request(&unlabelled)?, &CancellationToken::new())
+            .managed_identity(&unlabelled, &CancellationToken::new())
             .await;
         assert!(
             matches!(
                 bare,
-                Err(AttachError::EnvFile {
-                    problem: EnvFileProblem::NoLaunchLabel,
-                    ..
-                })
+                Err(jackin_session::LifecycleError::Identity(
+                    jackin_session::ManagedIdentityError::Unavailable { .. }
+                ))
             ),
             "{bare:?}"
         );
 
         rig.world.gateway.force_phase(&name, Phase::Ready);
         session
-            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .power(
+                &session
+                    .managed_identity(&name, &CancellationToken::new())
+                    .await?,
+                PowerAction::Stop,
+                &CancellationToken::new(),
+            )
             .await?;
         let stopped = session
-            .open_shell(request(&name)?, &CancellationToken::new())
+            .open_shell(request(&identity)?, &CancellationToken::new())
             .await;
         assert!(
             matches!(
@@ -142,6 +157,11 @@ async fn a_shell_on_a_sandbox_whose_main_process_ended_is_main_process_ended() -
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
         let name = handle.name();
+        let identity = rig
+            .world
+            .session
+            .managed_identity(&name, &CancellationToken::new())
+            .await?;
         for ended in [
             Phase::Completed { exit_code: 0 },
             Phase::Error { exit_code: Some(7) },
@@ -151,7 +171,7 @@ async fn a_shell_on_a_sandbox_whose_main_process_ended_is_main_process_ended() -
             let refused = rig
                 .world
                 .session
-                .open_shell(request(&name)?, &CancellationToken::new())
+                .open_shell(request(&identity)?, &CancellationToken::new())
                 .await;
             match refused {
                 Err(AttachError::MainProcessEnded { sandbox, phase }) => {
@@ -160,6 +180,70 @@ async fn a_shell_on_a_sandbox_whose_main_process_ended_is_main_process_ended() -
                 other => return Err(format!("{ended:?}: saw {other:?}").into()),
             }
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn stale_shell_identity_refuses_replacement_without_opening_a_terminal() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let old = rig.handle(1).await?;
+        let expected = rig
+            .world
+            .session
+            .managed_identity(&old.name(), &rig.world.cancel)
+            .await?;
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let result = rig
+            .world
+            .session
+            .open_shell(request(&expected)?, &cancelled)
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(AttachError::Identity(
+                    jackin_session::ManagedIdentityError::Cancelled
+                ))
+            ),
+            "{result:?}"
+        );
+        assert!(old.shells().is_empty());
+        rig.world.gateway.delete_sandbox(&old.name()).await?;
+        rig.world.clock.advance(std::time::Duration::from_secs(60));
+        rig.launch(1).await?;
+        let replacement = rig.handle(1).await?;
+        let result = rig
+            .world
+            .session
+            .open_shell(request(&expected)?, &rig.world.cancel)
+            .await;
+        assert!(
+            matches!(
+                result,
+                Err(AttachError::Identity(
+                    jackin_session::ManagedIdentityError::Replaced { .. }
+                ))
+            ),
+            "{result:?}"
+        );
+        assert!(replacement.shells().is_empty());
+        let fresh = rig
+            .world
+            .session
+            .managed_identity(&replacement.name(), &rig.world.cancel)
+            .await?;
+        let shell = rig
+            .world
+            .session
+            .open_shell(request(&fresh)?, &rig.world.cancel)
+            .await?;
+        assert_eq!(replacement.shells().len(), 1);
+        drop(shell);
         Ok(())
     })
     .await

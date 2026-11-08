@@ -47,6 +47,10 @@ enum Refused {
     Rejected(Rejection),
     #[error("{}", plain(.0))]
     Text(String),
+    #[error("agent metadata is unavailable: {}", plain(.0))]
+    MetadataUnavailable(String),
+    #[error("the explicit power action is only available for metadata-unavailable sandboxes")]
+    PowerRequiresUnavailable,
     #[error("cancelled while starting Codex")]
     StartCancelled,
     #[error("Codex in {0} did not reach its start state")]
@@ -474,9 +478,9 @@ impl Inputs {
             Some(ObservedInstance::Available(observed)) => {
                 Ok((observed.gateway, observed.summary.name))
             }
-            Some(ObservedInstance::Unavailable { reason, .. }) => Err(Refused::Text(format!(
-                "agent metadata is unavailable: {reason}"
-            ))),
+            Some(ObservedInstance::Unavailable { reason, .. }) => {
+                Err(Refused::MetadataUnavailable(reason))
+            }
             None => Err(Refused::Rejected(Rejection::NotInRoster {
                 instance: instance.to_string(),
             })),
@@ -500,37 +504,39 @@ impl Inputs {
         }
     }
 
-    fn unavailable_sandbox(
-        &self,
-        instance: &InstanceId,
-    ) -> Result<(jackin_core::GatewayName, jackin_core::SandboxName), Refused> {
-        match self.locate(instance) {
-            Some(ObservedInstance::Unavailable {
-                gateway, sandbox, ..
-            }) => Ok((gateway, sandbox)),
-            Some(ObservedInstance::Available(_)) => Err(Refused::Text(
-                "the explicit power action is only available for metadata-unavailable sandboxes"
-                    .to_owned(),
-            )),
-            None => Err(Refused::Rejected(Rejection::NotInRoster {
-                instance: instance.to_string(),
-            })),
-        }
-    }
-
     pub(crate) fn pane_target(
         &self,
         instance: &InstanceId,
-    ) -> Result<(Session, jackin_core::SandboxName), LinkFault> {
-        let (gateway, name) = self
-            .sandbox(instance)
-            .map_err(|error| LinkFault::new(plain(&error)))?;
-        match self.sessions.access(&gateway) {
-            Access::Up(session) => Ok((*session, name)),
+    ) -> Result<
+        (
+            Session,
+            jackin_session::AgentMetadataIdentity,
+            jackin_session::ManagedIdentity,
+        ),
+        LinkFault,
+    > {
+        let Some(ObservedInstance::Available(observed)) = self.locate(instance) else {
+            return Err(LinkFault::new(text(&Refused::Rejected(
+                Rejection::NotInRoster {
+                    instance: instance.to_string(),
+                },
+            ))));
+        };
+        let lifecycle = observed
+            .lifecycle_identity
+            .map_err(|error| LinkFault::new(text(&error)))?;
+        let identity = observed
+            .agent_metadata
+            .map_err(|error| LinkFault::new(text(&error)))?
+            .identity;
+        match self.sessions.access(&observed.gateway) {
+            Access::Up(session) => Ok((*session, identity, lifecycle)),
             Access::Down { error, .. } => {
                 Err(LinkFault::new(text(&*error)).then(FailNext::RunDoctor))
             }
-            Access::NotChosen => Err(LinkFault::new(text(&ConfigError::UnknownGateway(gateway)))),
+            Access::NotChosen => Err(LinkFault::new(text(&ConfigError::UnknownGateway(
+                observed.gateway,
+            )))),
         }
     }
 
@@ -553,9 +559,22 @@ impl Inputs {
         action: PowerAction,
     ) -> Result<Box<Snapshot>, String> {
         let result = async {
-            let (gateway, name) = self.sandbox(instance)?;
-            self.session(&gateway)?
-                .power(&name, action, &self.cancel)
+            let observed = match self.locate(instance) {
+                Some(ObservedInstance::Available(observed)) => observed,
+                Some(ObservedInstance::Unavailable { reason, .. }) => {
+                    return Err(Refused::MetadataUnavailable(reason));
+                }
+                None => {
+                    return Err(Refused::Rejected(Rejection::NotInRoster {
+                        instance: instance.to_string(),
+                    }));
+                }
+            };
+            let identity = observed
+                .lifecycle_identity
+                .map_err(|error| Refused::Text(text(&error)))?;
+            self.session(&observed.gateway)?
+                .power(&identity, action, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             self.after_lifecycle().await
@@ -577,12 +596,24 @@ impl Inputs {
         action: PowerAction,
     ) -> Result<Box<Snapshot>, String> {
         async {
-            let (gateway, name) = self
-                .unavailable_sandbox(instance)
-                .map_err(|error| text(&error))?;
+            let (gateway, identity) = match self.locate(instance) {
+                Some(ObservedInstance::Unavailable {
+                    gateway,
+                    lifecycle_identity,
+                    ..
+                }) => (gateway, lifecycle_identity.map_err(|error| text(&error))?),
+                Some(ObservedInstance::Available(_)) => {
+                    return Err(text(&Refused::PowerRequiresUnavailable));
+                }
+                None => {
+                    return Err(text(&Refused::Rejected(Rejection::NotInRoster {
+                        instance: instance.to_string(),
+                    })));
+                }
+            };
             self.session(&gateway)
                 .map_err(|error| text(&error))?
-                .power(&name, action, &self.cancel)
+                .power(&identity, action, &self.cancel)
                 .await
                 .map_err(|error| text(&error))?;
             self.after_lifecycle().await.map_err(|error| text(&error))
@@ -606,32 +637,39 @@ impl Inputs {
 
     pub(crate) async fn restore(&self, instance: &InstanceId) -> Msg {
         let result = async {
-            let (gateway, name) = self.sandbox(instance)?;
-            let session = self.session(&gateway)?;
+            let Some(ObservedInstance::Available(observed)) = self.locate(instance) else {
+                return Err(Refused::Rejected(Rejection::NotInRoster {
+                    instance: instance.to_string(),
+                }));
+            };
+            let expected = observed
+                .agent_metadata
+                .map_err(|error| Refused::Text(text(&error)))?
+                .identity;
+            let name = &expected.sandbox;
+            let session = self.session(&observed.gateway)?;
             match session
-                .inspect(&name, &self.cancel)
+                .inspect(name, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?
             {
                 jackin_session::SandboxInspection::Readable(view) => {
-                    session
+                    let metadata = session
                         .agent_metadata(&view.summary, &self.cancel)
                         .await
                         .map_err(|error| Refused::Text(text(&error)))?;
+                    if metadata.identity != expected {
+                        return Err(Refused::Text(text(
+                            &jackin_session::AgentMetadataError::Replaced,
+                        )));
+                    }
                 }
                 jackin_session::SandboxInspection::Unreadable(sandbox) => {
-                    return Err(Refused::Text(format!(
-                        "agent metadata is unavailable: {}",
-                        sandbox.reason()
-                    )));
+                    return Err(Refused::MetadataUnavailable(sandbox.reason()));
                 }
             }
-            session
-                .power(&name, PowerAction::Start, &self.cancel)
-                .await
-                .map_err(|error| Refused::Text(text(&error)))?;
-            self.await_supervisor(&session, &name).await?;
-            self.start_agent(&session, &name).await?;
+            self.await_supervisor(&session, name).await?;
+            self.start_agent(&session, &expected).await?;
             self.after_lifecycle().await
         }
         .await;
@@ -669,12 +707,13 @@ impl Inputs {
     async fn start_agent(
         &self,
         session: &Session,
-        name: &jackin_core::SandboxName,
+        identity: &jackin_session::AgentMetadataIdentity,
     ) -> Result<(), Refused> {
+        let name = &identity.sandbox;
         let (events, feed) = launch_events(LineDelivery::BestEffort);
         drop(feed);
         session
-            .restart_agent(name, events, self.cancel.clone())
+            .restart_agent(identity, events, self.cancel.clone())
             .await
             .map(drop)
             .map_err(|error| match error {

@@ -422,7 +422,7 @@ fn resolve_choices(
                 agent: choice.agent,
                 provider: choice.provider,
                 state: jackin_console::domain::tuple::TupleState::Unavailable,
-                reason: Some("the agent and provider are not in the Jackin catalog".to_owned()),
+                reason: Some(crate::project::AgentMappingError::UnknownTuple.to_string()),
             }));
         };
         let core_provider = crate::project::core_provider(choice.provider);
@@ -739,8 +739,13 @@ impl Run {
         } else {
             None
         };
+        let lifecycle_identity = session
+            .managed_identity(sandbox, &self.backend.inputs.cancel)
+            .await?;
+        lifecycle_identity.verify_summary(&inspected.summary)?;
         let observed = ObservedSandbox {
             gateway: gateway.clone(),
+            lifecycle_identity: Ok(lifecycle_identity),
             summary: inspected.summary,
             agent_metadata,
             supervisor: Some(inspected.supervisor),

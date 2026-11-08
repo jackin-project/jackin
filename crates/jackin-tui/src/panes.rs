@@ -20,8 +20,9 @@ use jackin_openshell::{
     TerminalSession,
 };
 use jackin_session::{
-    AgentMetadataError, AttachError, AttachRequest, AttachedTerminal, IntegrateError, LineDelivery,
-    RestartError, Session, ShellRequest, SupervisorReads, error_chain, launch_events,
+    AgentMetadataError, AgentMetadataIdentity, AttachError, AttachRequest, AttachedTerminal,
+    IntegrateError, LineDelivery, RestartError, Session, ShellRequest, SupervisorReads,
+    error_chain, launch_events,
 };
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, mpsc, watch};
@@ -217,11 +218,11 @@ impl PaneHub {
     ) -> Result<Box<dyn PaneLink>, LinkFault> {
         let agent = match request.agent() {
             Some(agent) => Some(crate::project::core_agent(agent).ok_or_else(|| {
-                LinkFault::new("the selected pane agent is not supported by this session")
+                LinkFault::new(crate::project::AgentMappingError::UnsupportedPane.to_string())
             })?),
             None => None,
         };
-        let (session, sandbox) = self.shared.inputs.pane_target(&request.instance)?;
+        let (session, identity, lifecycle) = self.shared.inputs.pane_target(&request.instance)?;
         let id = self.shared.next.fetch_add(1, Ordering::SeqCst);
         let bridge = self.shared.bridge.clone();
         let instance = request.instance.clone();
@@ -255,7 +256,9 @@ impl PaneHub {
             detach: detach.clone(),
             gone: gone.clone(),
             session,
-            sandbox,
+            sandbox: identity.sandbox.clone(),
+            identity,
+            lifecycle,
             agent,
             attempt,
             initial: size,
@@ -419,7 +422,8 @@ fn attach_fault(error: &AttachError) -> LinkFault {
         AttachError::NotFound(_)
         | AttachError::MainProcessEnded { .. }
         | AttachError::EnvFile { .. }
-        | AttachError::AgentMetadata(_) => fault(error, None),
+        | AttachError::AgentMetadata(_)
+        | AttachError::Identity(_) => fault(error, None),
     }
 }
 
@@ -465,6 +469,8 @@ struct Run {
     gone: CancellationToken,
     session: Session,
     sandbox: SandboxName,
+    identity: AgentMetadataIdentity,
+    lifecycle: jackin_session::ManagedIdentity,
     agent: Option<CoreAgent>,
     attempt: Attempt,
     initial: PaneSize,
@@ -486,7 +492,7 @@ impl Run {
                 .session
                 .open_shell(
                     ShellRequest {
-                        sandbox: self.sandbox.clone(),
+                        identity: self.lifecycle.clone(),
                         size,
                     },
                     &self.gone,
@@ -501,16 +507,19 @@ impl Run {
                 .agent_metadata_for_sandbox(&self.sandbox, &self.gone)
                 .await
                 .map_err(|error| agent_metadata_fault(&error))?;
+            if metadata.identity != self.identity {
+                return Err(agent_metadata_fault(&AgentMetadataError::Replaced));
+            }
             if metadata.lead_agent() == agent {
                 let (events, feed) = launch_events(LineDelivery::BestEffort);
                 drop(feed);
                 self.session
-                    .restart_agent(&self.sandbox, events, self.gone.clone())
+                    .restart_agent(&self.identity, events, self.gone.clone())
                     .await
                     .map_err(|error| restart_fault(&error))?;
             } else {
                 self.session
-                    .restart_instance(&self.sandbox, agent, &self.gone)
+                    .restart_instance(&self.identity, agent, &self.gone)
                     .await
                     .map_err(|error| integrate_fault(&error))?;
             }
@@ -518,7 +527,7 @@ impl Run {
         self.session
             .attach(
                 AttachRequest {
-                    sandbox: self.sandbox.clone(),
+                    identity: self.identity.clone(),
                     size,
                     input: InputMode::Owner,
                     agent: Some(agent),

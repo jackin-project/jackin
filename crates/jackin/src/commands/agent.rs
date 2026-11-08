@@ -59,13 +59,15 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
                 crate::commands::progress::launch_event(&mut app.io, &event);
             }
         };
-        let (restarted, ()) =
-            tokio::join!(session.restart_agent(&args.sandbox, events, cancel), show);
+        let (restarted, ()) = tokio::join!(
+            session.restart_agent(&metadata.identity, events, cancel),
+            show
+        );
         let request = AttachRequest::owner(restarted?, size);
         return term::attach(app, &session, request).await;
     }
     session
-        .restart_instance(&args.sandbox, agent, &app.cancel.clone())
+        .restart_instance(&metadata.identity, agent, &app.cancel.clone())
         .await
         .map_err(|error| CommandError::Argument(error.to_string()))?;
     let size = app
@@ -74,7 +76,7 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
         .ok_or(CommandError::NoTerminal)?
         .size();
     let request = AttachRequest {
-        sandbox: args.sandbox,
+        identity: metadata.identity,
         size,
         input: jackin_openshell::InputMode::Owner,
         agent: Some(agent),

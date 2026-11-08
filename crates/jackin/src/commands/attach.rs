@@ -64,24 +64,31 @@ pub(crate) async fn run(app: &mut App, args: AttachArgs) -> Result<(), CommandEr
                     launch_event(&mut app.io, &event);
                 }
             };
-            let (restarted, ()) =
-                tokio::join!(session.restart_agent(&args.sandbox, events, cancel), show);
+            let (restarted, ()) = tokio::join!(
+                session.restart_agent(&metadata.identity, events, cancel),
+                show
+            );
             AttachRequest::owner(restarted?, size)
         } else {
             session
-                .restart_instance(&args.sandbox, agent, &app.cancel)
+                .restart_instance(&metadata.identity, agent, &app.cancel)
                 .await
                 .map_err(|error| CommandError::Argument(error.to_string()))?;
             AttachRequest {
-                sandbox: args.sandbox,
+                identity: metadata.identity,
                 size,
                 input: InputMode::Owner,
                 agent: Some(agent),
             }
         }
     } else {
+        let identity = session
+            .agent_metadata_for_sandbox(&args.sandbox, &app.cancel)
+            .await
+            .map_err(|error| CommandError::Argument(error.to_string()))?
+            .identity;
         AttachRequest {
-            sandbox: args.sandbox,
+            identity,
             size,
             input: InputMode::Owner,
             agent: requested_agent,

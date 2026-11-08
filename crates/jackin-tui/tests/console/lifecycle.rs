@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::backend::Effect;
-use jackin_console::domain::instance::{InstanceId, InstanceStatus};
-use jackin_core::{Phase, WorkspaceName};
+use jackin_console::domain::instance::{InstanceEntry, InstanceId, SandboxPhase};
+use std::time::Duration;
+
+use jackin_core::{Labels, Phase, WorkspaceName};
+use jackin_openshell::Gateway;
 use jackin_testkit::{TestResult, guard};
 
 use super::support::Lab;
@@ -27,13 +30,10 @@ async fn stop_moves_a_ready_sandbox_to_stopped() -> TestResult {
     guard(async {
         let (mut lab, id) = launched().await?;
         lab.perform(Effect::Stop { instance: id }).await?;
-        assert_eq!(
-            lab.world().instances[0]
-                .as_available()
-                .ok_or("instance metadata unavailable")?
-                .status,
-            InstanceStatus::RestoreAvailable
-        );
+        let InstanceEntry::Unavailable(instance) = &lab.world().instances[0] else {
+            return Err("stopped instance has available metadata".into());
+        };
+        assert_eq!(instance.phase, SandboxPhase::Stopped);
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Stopped);
         Ok(())
     })
@@ -134,6 +134,98 @@ async fn renaming_a_workspace_with_a_sandbox_is_refused_and_names_the_sandbox() 
         lab.console.keys("enter")?;
         lab.save().await?;
         refused_with(&mut lab, name.as_str()).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn stale_roster_power_refuses_same_name_replacement() -> TestResult {
+    guard(async {
+        let (mut lab, id) = launched().await?;
+        let original = lab.rig.handle(1).await?;
+        let name = original.name();
+        let labels = original.labels();
+        lab.rig.world.gateway.delete_sandbox(&name).await?;
+        lab.rig.world.clock.advance(Duration::from_secs(60));
+        lab.rig
+            .world
+            .gateway
+            .insert_unmanaged(&name, labels, Phase::Ready)?;
+        lab.perform(Effect::Stop { instance: id }).await?;
+        let replacement = lab
+            .rig
+            .world
+            .gateway
+            .sandbox(&name)
+            .ok_or("missing replacement")?;
+        assert_eq!(replacement.phase(), Phase::Ready);
+        let screen = lab.console.screen();
+        assert!(
+            screen.contains("replaced") || screen.contains("identity"),
+            "{screen}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn stale_unavailable_roster_power_refuses_same_name_replacement() -> TestResult {
+    guard(async {
+        let (mut lab, id) = launched().await?;
+        lab.perform(Effect::Stop {
+            instance: id.clone(),
+        })
+        .await?;
+        let original = lab.rig.handle(1).await?;
+        let name = original.name();
+        let labels = original.labels();
+        lab.rig.world.gateway.delete_sandbox(&name).await?;
+        lab.rig.world.clock.advance(Duration::from_secs(60));
+        lab.rig
+            .world
+            .gateway
+            .insert_unmanaged(&name, labels, Phase::Stopped)?;
+        lab.perform(Effect::PowerStart { instance: id }).await?;
+        let replacement = lab
+            .rig
+            .world
+            .gateway
+            .sandbox(&name)
+            .ok_or("missing replacement")?;
+        assert_eq!(replacement.phase(), Phase::Stopped);
+        let screen = lab.console.screen();
+        assert!(
+            screen.contains("replaced") || screen.contains("identity"),
+            "{screen}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn power_stops_metadata_unavailable_row_with_complete_lifecycle_identity() -> TestResult {
+    guard(async {
+        let rig = jackin_testkit::Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let labels = Labels::from_pairs(
+            handle
+                .labels()
+                .iter()
+                .filter(|(key, _)| key.to_string() != "jackin.dev/agents")
+                .map(|(key, value)| (key.to_string(), value.to_string())),
+        )?;
+        handle.set_labels(labels);
+        let mut lab = Lab::with(rig).await?;
+        let InstanceEntry::Unavailable(entry) = &lab.world().instances[0] else {
+            return Err("expected unavailable agent metadata".into());
+        };
+        let id = entry.id.clone();
+        lab.perform(Effect::PowerStop { instance: id }).await?;
+        assert_eq!(handle.phase(), Phase::Stopped);
+        Ok(())
     })
     .await
 }

@@ -318,8 +318,12 @@ async fn restart_omp_stops_omp_only_and_starts_no_process() -> Result<(), Box<dy
         let pkill = SandboxPath::from_static("/usr/bin/pkill");
         let stops_before = handle.runs(&pkill).len();
         let session = rig.session_with(crate::support::limits(30, 20));
+        let expected = session
+            .agent_metadata_for_sandbox(&target.sandbox, &CancellationToken::new())
+            .await?
+            .identity;
         session
-            .restart_instance(&target.sandbox, Agent::Omp, &CancellationToken::new())
+            .restart_instance(&expected, Agent::Omp, &CancellationToken::new())
             .await?;
         assert_eq!(count(&handle, "omp"), 0);
         assert_eq!(count(&handle, "codex"), 0);
@@ -336,6 +340,20 @@ async fn restart_omp_stops_omp_only_and_starts_no_process() -> Result<(), Box<dy
                 .iter()
                 .any(|arg| arg.contains("setsid") || arg.contains("script"))
         }));
+        handle.add_label("jackin.dev/agents", "00000000000000000000000000000000")?;
+        let refused = session
+            .restart_instance(&expected, Agent::Omp, &CancellationToken::new())
+            .await;
+        assert!(
+            matches!(
+                refused,
+                Err(jackin_session::IntegrateError::AgentMetadata(
+                    jackin_session::AgentMetadataError::Replaced
+                ))
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(handle.runs(&pkill).len(), stops_before + 1);
         Ok(())
     })
     .await

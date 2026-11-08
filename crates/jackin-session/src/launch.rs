@@ -154,6 +154,7 @@ impl LaunchFeed {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AttachTarget {
     pub sandbox: SandboxName,
+    pub identity: crate::AgentMetadataIdentity,
     pub state: SupervisorState,
 }
 
@@ -187,6 +188,8 @@ pub struct LaunchFailure {
 
 #[derive(Debug, Error)]
 pub enum LaunchError {
+    #[error(transparent)]
+    AgentMetadata(#[from] crate::AgentMetadataError),
     #[error(transparent)]
     AgentJson(#[from] serde_json::Error),
     #[error(transparent)]

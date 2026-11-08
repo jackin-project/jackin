@@ -3,7 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{AttemptId, EnvName, HookKind, Phase, SupervisorState, sandbox_layout};
+use jackin_core::{
+    AttemptId, EnvName, HookKind, Phase, SandboxName, SupervisorState, sandbox_layout,
+};
+use jackin_openshell::Gateway;
 use jackin_session::{
     LaunchEvent, LaunchStep, LineDelivery, RestartError, StepResult, launch_events,
 };
@@ -11,6 +14,18 @@ use jackin_testkit::{ProgramScript, Rig, TestResult, default_limits, guard};
 use tokio_util::sync::CancellationToken;
 
 use super::tap::{Tap, file};
+
+async fn identity(
+    rig: &Rig,
+    sandbox: &SandboxName,
+) -> Result<jackin_session::AgentMetadataIdentity, Box<dyn std::error::Error>> {
+    Ok(rig
+        .world
+        .session
+        .agent_metadata_for_sandbox(sandbox, &rig.world.cancel)
+        .await?
+        .identity)
+}
 
 fn attempt(number: u64) -> Result<AttemptId, Box<dyn std::error::Error>> {
     Ok(AttemptId::try_from(number)?)
@@ -31,7 +46,11 @@ async fn restart_refuses_a_running_agent_and_otherwise_runs_preflight_and_reques
 
         let (events, _feed) = launch_events(LineDelivery::Reliable);
         let busy = session
-            .restart_agent(&name, events, CancellationToken::new())
+            .restart_agent(
+                &identity(&rig, &name).await?,
+                events,
+                CancellationToken::new(),
+            )
             .await;
         assert!(
             matches!(
@@ -46,7 +65,11 @@ async fn restart_refuses_a_running_agent_and_otherwise_runs_preflight_and_reques
         handle.exit_codex(3);
         let (events, mut feed) = launch_events(LineDelivery::Reliable);
         let target = session
-            .restart_agent(&name, events, CancellationToken::new())
+            .restart_agent(
+                &identity(&rig, &name).await?,
+                events,
+                CancellationToken::new(),
+            )
             .await?;
         assert_eq!(
             target.state,
@@ -102,7 +125,11 @@ async fn a_failing_preflight_stops_the_restart_before_any_request_is_written() -
         let failed = rig
             .world
             .session
-            .restart_agent(&handle.name(), events, CancellationToken::new())
+            .restart_agent(
+                &identity(&rig, &handle.name()).await?,
+                events,
+                CancellationToken::new(),
+            )
             .await;
         assert!(
             matches!(
@@ -136,6 +163,7 @@ async fn a_restart_on_a_sandbox_whose_main_process_ended_is_main_process_ended_a
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
         let name = handle.name();
+        let expected = identity(&rig, &name).await?;
         handle.exit_codex(3);
         let preflight = sandbox_layout::hook_path(HookKind::Preflight);
         let runs = handle.runs(&preflight).len();
@@ -149,7 +177,7 @@ async fn a_restart_on_a_sandbox_whose_main_process_ended_is_main_process_ended_a
             let refused = rig
                 .world
                 .session
-                .restart_agent(&name, events, CancellationToken::new())
+                .restart_agent(&expected, events, CancellationToken::new())
                 .await;
             match refused {
                 Err(RestartError::MainProcessEnded { sandbox, phase }) => {
@@ -186,7 +214,11 @@ async fn restart_with_state_written_after_preflight(
     let session = tap.session(&rig, default_limits());
     let (events, _feed) = launch_events(LineDelivery::Reliable);
     let result = session
-        .restart_agent(&handle.name(), events, CancellationToken::new())
+        .restart_agent(
+            &identity(&rig, &handle.name()).await?,
+            events,
+            CancellationToken::new(),
+        )
         .await;
     Ok((result, handle.file(&sandbox_layout::RUN_START)))
 }
@@ -241,17 +273,21 @@ async fn concurrent_restarts_of_one_sandbox_are_serialized_by_a_per_sandbox_lock
 
         let (events, _feed_a) = launch_events(LineDelivery::Reliable);
         let a_session = session.clone();
-        let a_name = first.name();
+        let a_identity = identity(&rig, &first.name()).await?;
         let holder = tokio::spawn(async move {
             a_session
-                .restart_agent(&a_name, events, CancellationToken::new())
+                .restart_agent(&a_identity, events, CancellationToken::new())
                 .await
         });
         gate.entered.notified().await;
 
         let (events, _feed_b) = launch_events(LineDelivery::Reliable);
         let busy = session
-            .restart_agent(&first.name(), events, CancellationToken::new())
+            .restart_agent(
+                &identity(&rig, &first.name()).await?,
+                events,
+                CancellationToken::new(),
+            )
             .await;
         assert!(
             matches!(&busy, Err(RestartError::Busy { sandbox }) if *sandbox == first.name()),
@@ -260,7 +296,11 @@ async fn concurrent_restarts_of_one_sandbox_are_serialized_by_a_per_sandbox_lock
 
         let (events, _feed_c) = launch_events(LineDelivery::Reliable);
         let other = session
-            .restart_agent(&second.name(), events, CancellationToken::new())
+            .restart_agent(
+                &identity(&rig, &second.name()).await?,
+                events,
+                CancellationToken::new(),
+            )
             .await?;
         assert_eq!(
             other.state,
@@ -292,13 +332,64 @@ async fn concurrent_restarts_of_one_sandbox_are_serialized_by_a_per_sandbox_lock
         for _ in 0..2 {
             let (events, _feed) = launch_events(LineDelivery::Reliable);
             let failed = session
-                .restart_agent(&first.name(), events, CancellationToken::new())
+                .restart_agent(
+                    &identity(&rig, &first.name()).await?,
+                    events,
+                    CancellationToken::new(),
+                )
                 .await;
             assert!(
                 matches!(failed, Err(RestartError::HookFailed { exit_code: 4, .. })),
                 "{failed:?}"
             );
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_replacement_during_preflight_never_receives_an_agent_attempt() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let old = rig.handle(1).await?;
+        old.exit_codex(3);
+        let expected = identity(&rig, &old.name()).await?;
+        let held = jackin_testkit::Trigger::Program(sandbox_layout::hook_path(HookKind::Preflight));
+        rig.world.gateway.inject(jackin_testkit::Fault::HoldAt {
+            trigger: held.clone(),
+        });
+        let (events, _feed) = launch_events(LineDelivery::Reliable);
+        let restart = rig
+            .world
+            .session
+            .restart_agent(&expected, events, CancellationToken::new());
+        let replacement = async {
+            if !rig.world.gateway.until_held(&held).await {
+                return Err("preflight was not held".into());
+            }
+            rig.world.gateway.delete_sandbox(&old.name()).await?;
+            rig.world.clock.advance(std::time::Duration::from_secs(60));
+            rig.launch(1).await?;
+            let new = rig.handle(1).await?;
+            super::support::set_state(&rig, &new.name(), "waiting\n").await?;
+            std::fs::remove_file(new.root().join(".jackin/run/start"))?;
+            rig.world.gateway.release(&held);
+            Ok::<_, Box<dyn std::error::Error>>(new)
+        };
+        let (result, replacement) = tokio::join!(restart, replacement);
+        let replacement = replacement?;
+        assert_eq!(replacement.file(&sandbox_layout::RUN_START), None);
+        assert!(
+            matches!(
+                result,
+                Err(RestartError::AgentMetadata(
+                    jackin_session::AgentMetadataError::Replaced
+                ))
+            ),
+            "{result:?}"
+        );
         Ok(())
     })
     .await

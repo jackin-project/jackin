@@ -309,8 +309,7 @@ async fn a_guarded_purge_never_deletes_a_sandbox_that_replaced_the_one_it_inspec
         let (purged, swapped) = tokio::join!(purging, swapping);
 
         swapped?;
-        let Err(PurgeError::Identity(ManagedIdentityError::Unavailable { sandbox })) = purged
-        else {
+        let Err(PurgeError::Replaced { sandbox }) = purged else {
             return Err(format!("expected a refusal, saw {purged:?}").into());
         };
         assert_eq!(sandbox, name);
@@ -402,11 +401,7 @@ async fn power_and_forced_purge_refuse_incomplete_managed_identity() -> TestResu
             let powered = rig
                 .world
                 .session
-                .power(
-                    &name,
-                    jackin_openshell::PowerAction::Stop,
-                    &CancellationToken::new(),
-                )
+                .managed_identity(&name, &CancellationToken::new())
                 .await;
             assert!(matches!(
                 powered,

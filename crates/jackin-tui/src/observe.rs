@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use futures::future::join_all;
@@ -14,7 +15,7 @@ use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
     Compatibility, Config, ConfigError, ConfigStore, EnvSnapshot, HostPath, RoleName,
-    RoleSource as CoreRoleSource,
+    RoleSource as CoreRoleSource, Workspace as CoreWorkspace,
 };
 use jackin_session::{
     AccountDesk, DoctorInput, HostPorts, OnePasswordCli, RoleCatalog, SourceDesk, doctor,
@@ -349,43 +350,52 @@ impl Inputs {
     }
 
     async fn role_docs(&self, config: &Config) -> RoleDocs {
-        let read = join_all(
+        let wanted: Vec<(RoleName, CoreRoleSource)> = {
+            let cache = locked(&self.docs);
             config
                 .roles()
-                .filter_map(|(name, entry)| match &entry.source {
-                    CoreRoleSource::Path(path) => Some(async move {
-                        let doc = match self.roles.read_manifest(path).await {
-                            Ok(manifest) => Ok(manifest),
-                            Err(findings) => Err(RoleDocError::Unreadable(
-                                findings
-                                    .first()
-                                    .map(ToString::to_string)
-                                    .unwrap_or_default(),
-                            )),
-                        };
-                        (name.clone(), entry.source.clone(), doc)
-                    }),
-                    CoreRoleSource::Git { .. } => None,
-                }),
-        )
+                .filter(|(name, entry)| cache.get(*name).is_none_or(|(s, _)| *s != entry.source))
+                .map(|(name, entry)| (name.clone(), entry.source.clone()))
+                .collect()
+        };
+        let anywhere = HostPath::parse(Path::new(&self.home))
+            .ok()
+            .map(|home| CoreWorkspace::new(home, false));
+        let loaded = join_all(wanted.into_iter().map(|(name, source)| {
+            let anywhere = anywhere.clone();
+            Box::pin(async move {
+                let doc = match &source {
+                    CoreRoleSource::Path(path) => {
+                        match self.roles.load_path(path, &CancellationToken::new()).await {
+                            Ok(role) => Ok(role.manifest().clone()),
+                            Err(error) => match self.roles.read_manifest(path).await {
+                                Ok(manifest) => Ok(manifest),
+                                Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
+                            },
+                        }
+                    }
+                    CoreRoleSource::Git { .. } => match &anywhere {
+                        Some(anywhere) => match Box::pin(self.roles.load(
+                            config,
+                            Some(&name),
+                            anywhere,
+                            &self.cancel,
+                        ))
+                        .await
+                        {
+                            Ok(role) => Ok(role.manifest().clone()),
+                            Err(error) => Err(RoleDocError::Unreadable(error.to_string())),
+                        },
+                        None => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
+                    },
+                };
+                (name, (source, doc))
+            })
+        }))
         .await;
         let mut cache = locked(&self.docs);
-        cache.retain(|name, (source, _)| {
-            config
-                .role(name)
-                .is_some_and(|entry| entry.source == *source)
-        });
-        for (name, source, doc) in read {
-            cache.insert(name, (source, doc));
-        }
-        for (name, entry) in config.roles() {
-            cache.entry(name.clone()).or_insert_with(|| {
-                (
-                    entry.source.clone(),
-                    Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
-                )
-            });
-        }
+        cache.extend(loaded);
+        cache.retain(|name, _| config.role(name).is_some());
         cache
             .iter()
             .map(|(name, (_, doc))| (name.clone(), doc.clone()))

@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_console::backend::Effect;
-use jackin_console::domain::instance::{InstanceId, InstanceStatus};
+use jackin_console::domain::instance::{InstanceEntry, InstanceId, SandboxPhase};
 use jackin_core::{
     AttemptId, HookKind, Phase, RoleName, RoleSource, RoleUrl, SupervisorState, sandbox_layout,
 };
@@ -48,18 +48,35 @@ async fn stopped_after(exit: Option<i32>) -> Result<(Lab, InstanceId), Box<dyn s
     Ok((lab, id))
 }
 
+async fn power_started(lab: &mut Lab, id: &InstanceId) -> TestResult {
+    let handle = lab.rig.handle(1).await?;
+    let preflight = sandbox_layout::hook_path(HookKind::Preflight);
+    let runs = handle.runs(&preflight).len();
+    let old_start = handle.file(&sandbox_layout::RUN_START);
+    let InstanceEntry::Unavailable(entry) = &lab.world().instances[0] else {
+        return Err("stopped instance has available metadata".into());
+    };
+    assert_eq!(entry.phase, SandboxPhase::Stopped);
+    lab.perform(Effect::PowerStart {
+        instance: id.clone(),
+    })
+    .await?;
+    assert_eq!(handle.phase(), Phase::Ready);
+    assert_eq!(handle.runs(&preflight).len(), runs);
+    let start = handle.file(&sandbox_layout::RUN_START);
+    assert!(start.is_none() || start == old_start);
+    if lab.world().instances[0].as_available().is_none() {
+        return Err("started instance metadata was not verified".into());
+    }
+    Ok(())
+}
+
 #[tokio::test]
 async fn restore_starts_a_stopped_sandbox_as_jackin_start_does() -> TestResult {
     guard(async {
         let (mut lab, id) = stopped().await?;
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Stopped);
-        assert_eq!(
-            lab.world().instances[0]
-                .as_available()
-                .ok_or("instance metadata unavailable")?
-                .status,
-            InstanceStatus::RestoreAvailable
-        );
+        power_started(&mut lab, &id).await?;
         lab.perform(Effect::Restore { instance: id }).await?;
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Ready);
         assert!(
@@ -67,8 +84,9 @@ async fn restore_starts_a_stopped_sandbox_as_jackin_start_does() -> TestResult {
                 lab.rig.handle(1).await?.supervisor(),
                 Some(SupervisorState::Running { .. })
             ),
-            "{:?}",
-            lab.rig.handle(1).await?.supervisor()
+            "{:?} {}",
+            lab.rig.handle(1).await?.supervisor(),
+            lab.console.screen()
         );
         let screen = lab.console.screen();
         assert!(!flat(&screen).contains(UNBUILT), "{screen}");
@@ -93,6 +111,7 @@ async fn restore_waits_for_a_stale_exited_state_to_give_way_to_the_new_superviso
             .world
             .gateway
             .inject(Fault::StaleSupervisor { observations: 8 });
+        power_started(&mut lab, &id).await?;
         lab.perform(Effect::Restore { instance: id }).await?;
         assert_eq!(
             handle.supervisor(),
@@ -123,6 +142,7 @@ async fn restore_waits_for_a_stale_running_state_to_give_way_to_the_new_supervis
             .world
             .gateway
             .inject(Fault::StaleSupervisor { observations: 8 });
+        power_started(&mut lab, &id).await?;
         lab.perform(Effect::Restore { instance: id }).await?;
         assert_eq!(
             handle.supervisor(),
@@ -149,6 +169,7 @@ async fn restore_of_a_supervisor_that_never_starts_times_out_without_a_start_req
         lab.rig.world.gateway.inject(Fault::StaleSupervisor {
             observations: u32::MAX,
         });
+        power_started(&mut lab, &id).await?;
         lab.perform(Effect::Restore { instance: id }).await?;
         let screen = lab.console.screen();
         assert!(
@@ -183,6 +204,7 @@ async fn a_restore_that_progresses_slowly_settles_however_long_the_host_takes() 
         lab.rig.world.gateway.inject(Fault::StaleSupervisor {
             observations: u32::MAX,
         });
+        power_started(&mut lab, &id).await?;
         let clock = Arc::clone(&lab.rig.world.clock);
         tokio::time::pause();
         let load = tokio::spawn(slow_host(clock));
@@ -210,13 +232,16 @@ async fn a_restore_held_forever_fails_to_settle_for_lack_of_progress_instead_of_
 -> TestResult {
     guard(async {
         let (mut lab, id) = stopped().await?;
+        power_started(&mut lab, &id).await?;
         let gateway = Arc::clone(&lab.rig.world.gateway);
         let preflight = Trigger::Program(sandbox_layout::hook_path(HookKind::Preflight));
         gateway.inject(Fault::HoldAt {
             trigger: preflight.clone(),
         });
         lab.world().perform(Effect::Restore { instance: id });
-        assert!(gateway.until_held(&preflight).await);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(10), gateway.until_held(&preflight)).await?
+        );
         tokio::time::pause();
         let settled = lab.console.settle().await;
         gateway.release(&preflight);
@@ -233,14 +258,21 @@ async fn a_restore_held_forever_fails_to_settle_for_lack_of_progress_instead_of_
 async fn closing_the_console_during_the_preflight_hook_cancels_the_restore() -> TestResult {
     guard(async {
         let (mut lab, id) = stopped().await?;
+        power_started(&mut lab, &id).await?;
         let handle = lab.rig.handle(1).await?;
         let preflight = Trigger::Program(sandbox_layout::hook_path(HookKind::Preflight));
         lab.rig.world.gateway.inject(Fault::HoldAt {
             trigger: preflight.clone(),
         });
         lab.world().perform(Effect::Restore { instance: id });
-        assert!(lab.rig.world.gateway.until_held(&preflight).await);
-        lab.reopen().await?;
+        assert!(
+            tokio::time::timeout(
+                Duration::from_secs(10),
+                lab.rig.world.gateway.until_held(&preflight)
+            )
+            .await?
+        );
+        Box::pin(lab.reopen()).await?;
         lab.rig.world.gateway.release(&preflight);
         for _ in 0..200 {
             tokio::task::yield_now().await;
@@ -257,6 +289,7 @@ async fn restore_of_a_sandbox_whose_codex_started_meanwhile_says_it_is_already_r
 -> TestResult {
     guard(async {
         let (mut lab, id) = stopped().await?;
+        power_started(&mut lab, &id).await?;
         let handle = lab.rig.handle(1).await?;
         let preflight = Trigger::Program(sandbox_layout::hook_path(HookKind::Preflight));
         let gateway = Arc::clone(&lab.rig.world.gateway);
@@ -264,7 +297,9 @@ async fn restore_of_a_sandbox_whose_codex_started_meanwhile_says_it_is_already_r
             trigger: preflight.clone(),
         });
         lab.world().perform(Effect::Restore { instance: id });
-        assert!(gateway.until_held(&preflight).await);
+        assert!(
+            tokio::time::timeout(Duration::from_secs(10), gateway.until_held(&preflight)).await?
+        );
         gateway
             .write_file(
                 &handle.name(),
@@ -293,6 +328,7 @@ async fn restore_of_a_sandbox_whose_codex_started_meanwhile_says_it_is_already_r
 async fn restore_of_a_sandbox_whose_main_process_ended_says_so() -> TestResult {
     guard(async {
         let (mut lab, id) = stopped().await?;
+        power_started(&mut lab, &id).await?;
         let name = lab.rig.handle(1).await?.name();
         lab.rig
             .world
@@ -301,7 +337,8 @@ async fn restore_of_a_sandbox_whose_main_process_ended_says_so() -> TestResult {
         lab.perform(Effect::Restore { instance: id }).await?;
         let screen = lab.console.screen();
         assert!(
-            flat(&screen).contains("main process of") && flat(&screen).contains("has ended"),
+            flat(&screen).contains("agent metadata is unavailable")
+                && flat(&screen).contains("completed with exit code 0"),
             "{screen}"
         );
         assert_eq!(
@@ -313,10 +350,65 @@ async fn restore_of_a_sandbox_whose_main_process_ended_says_so() -> TestResult {
     .await
 }
 
+async fn refuse_untrusted_restore(case: &str) -> TestResult {
+    let (mut lab, id) = Box::pin(stopped()).await?;
+    Box::pin(power_started(&mut lab, &id)).await?;
+    let mut handle = lab.rig.handle(1).await?;
+    let path = handle.root().join(".jackin/agents.json");
+    match case {
+        "malformed" => std::fs::write(&path, b"[")?,
+        "hash" => {
+            let mut document: serde_json::Value = serde_json::from_slice(&std::fs::read(&path)?)?;
+            document[0]["account"] = serde_json::Value::String("other".to_owned());
+            std::fs::write(&path, serde_json::to_vec(&document)?)?;
+        }
+        "replaced" => {
+            lab.rig.world.gateway.delete_sandbox(&handle.name()).await?;
+            lab.rig.world.clock.advance(Duration::from_secs(60));
+            Box::pin(lab.rig.launch(1)).await?;
+            handle = lab.rig.handle(1).await?;
+            let lifecycle = lab
+                .rig
+                .world
+                .session
+                .managed_identity(&handle.name(), &lab.rig.world.cancel)
+                .await?;
+            lab.rig
+                .world
+                .session
+                .power(
+                    &lifecycle,
+                    jackin_openshell::PowerAction::Stop,
+                    &lab.rig.world.cancel,
+                )
+                .await?;
+            lab.rig
+                .world
+                .session
+                .power(
+                    &lifecycle,
+                    jackin_openshell::PowerAction::Start,
+                    &lab.rig.world.cancel,
+                )
+                .await?;
+        }
+        _ => return Err("unknown metadata case".into()),
+    }
+    let hook = sandbox_layout::hook_path(HookKind::Preflight);
+    let runs = handle.runs(&hook).len();
+    let start = handle.file(&sandbox_layout::RUN_START);
+    lab.perform(Effect::Restore { instance: id }).await?;
+    assert_eq!(handle.runs(&hook).len(), runs, "{case}");
+    assert_eq!(handle.file(&sandbox_layout::RUN_START), start, "{case}");
+    let screen = lab.console.screen();
+    assert!(flat(&screen).contains('!'), "{case}: {screen}");
+    Ok(())
+}
+
 #[tokio::test]
 async fn restore_of_an_unknown_instance_fails_with_a_typed_reply() -> TestResult {
     guard(async {
-        let (mut lab, _) = stopped().await?;
+        let (mut lab, _) = Box::pin(stopped()).await?;
         let unknown = InstanceId::new(
             lab.rig.world.gateway.name().to_string(),
             "jackin-ghost-0000",
@@ -325,6 +417,10 @@ async fn restore_of_an_unknown_instance_fails_with_a_typed_reply() -> TestResult
         let screen = lab.console.screen();
         assert!(flat(&screen).contains("jk-0000"), "{screen}");
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Stopped);
+        drop(lab);
+        for case in ["malformed", "hash", "replaced"] {
+            Box::pin(refuse_untrusted_restore(case)).await?;
+        }
         Ok(())
     })
     .await

@@ -86,7 +86,7 @@ fn labels_error(error: LabelError) -> AgentMetadataError {
     }
 }
 
-fn identity(
+pub(crate) fn identity(
     name: &SandboxName,
     created_at: Option<Timestamp>,
     labels: &jackin_core::Labels,

@@ -380,20 +380,24 @@ impl Session {
 
     pub async fn stop_instance(
         &self,
-        sandbox: &SandboxName,
+        expected: &crate::AgentMetadataIdentity,
         agent: Agent,
         cancel: &CancellationToken,
     ) -> Result<(), IntegrateError> {
+        let sandbox = &expected.sandbox;
         let view = self
             .find_managed(sandbox, cancel)
             .await?
             .ok_or(AgentMetadataError::Replaced)?;
+        self.revalidate_agent_identity(expected, cancel).await?;
         let metadata = self.agent_metadata_for_view(&view, cancel).await?;
+        if metadata.identity != *expected {
+            return Err(AgentMetadataError::Replaced.into());
+        }
         if !metadata.instances.iter().any(|item| item.agent == agent) {
             return Err(AgentMetadataError::UnknownAgent { agent }.into());
         }
-        self.revalidate_agent_identity(&metadata.identity, cancel)
-            .await?;
+        self.revalidate_agent_identity(expected, cancel).await?;
         let program = SandboxPath::from_static("/usr/bin/pkill");
         let _outcome = self
             .deps
@@ -479,10 +483,10 @@ impl Session {
 impl Session {
     pub async fn restart_instance(
         &self,
-        sandbox: &SandboxName,
+        expected: &crate::AgentMetadataIdentity,
         agent: Agent,
         cancel: &CancellationToken,
     ) -> Result<(), IntegrateError> {
-        self.stop_instance(sandbox, agent, cancel).await
+        self.stop_instance(expected, agent, cancel).await
     }
 }

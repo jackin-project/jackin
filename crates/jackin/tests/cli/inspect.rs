@@ -82,13 +82,18 @@ async fn inspect_json_pins_every_key_set_and_reports_the_live_closure_violation(
         assert_eq!(violations[0]["rule"], "_provider_other");
         assert_eq!(violations[0]["host"], "api.openai.com");
 
-        rig.world
+        let lifecycle = rig
+            .world
             .session
-            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .managed_identity(&name, &CancellationToken::new())
             .await?;
         rig.world
             .session
-            .power(&name, PowerAction::Start, &CancellationToken::new())
+            .power(&lifecycle, PowerAction::Stop, &CancellationToken::new())
+            .await?;
+        rig.world
+            .session
+            .power(&lifecycle, PowerAction::Start, &CancellationToken::new())
             .await?;
         let waiting = harness.run(&["inspect", name.as_str(), "--json"]).await?;
         assert_eq!(

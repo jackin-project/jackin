@@ -11,9 +11,9 @@ use jackin_console::domain::tuple::InstanceChoice;
 use jackin_console::launch::{LaunchEvent, LaunchTarget};
 use jackin_core::{
     Account, AccountName, AllowedRoles, ConfigEdit, CredentialSource, EnvName, OpReference,
-    Program, Provider, RoleName, WorkspaceName,
+    Program, Provider, RoleName, RoleSource, RoleUrl, WorkspaceName,
 };
-use jackin_testkit::{ConsoleRig, RepoFixture, Rig, TestResult, guard};
+use jackin_testkit::{ConsoleRig, RepoFixture, Rig, RoleFixture, TestResult, guard};
 
 use super::support::{
     Stage, answer, begin, console, dialog, labels, only, stage, two_roles, until, until_route,
@@ -88,6 +88,62 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
                 .seen()
                 .iter()
                 .all(|call| call.program != Program::Op)
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_git_sourced_role_launches_from_the_picker() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.world.seed_all(&rig.config).await?;
+        let fixture = RoleFixture::new("sentinel")?;
+        fixture.commit().await?;
+        let url = "https://example.invalid/role.git";
+        tokio::fs::write(
+            rig.world.home().as_path().join(".gitconfig"),
+            format!(
+                "[url \"file://{}\"]\n\tinsteadOf = {url}\n",
+                fixture.root().as_path().display()
+            ),
+        )
+        .await?;
+        rig.world
+            .config
+            .edit(
+                vec![
+                    ConfigEdit::RemoveRole(RoleName::parse("sentinel")?),
+                    ConfigEdit::AddRole {
+                        name: RoleName::parse("sentinel")?,
+                        source: RoleSource::Git {
+                            url: RoleUrl::parse(url)?,
+                            rev: None,
+                        },
+                    },
+                    ConfigEdit::SetWorkspaceDefaultRole {
+                        workspace: WorkspaceName::parse("platform-backend")?,
+                        role: Some(RoleName::parse("sentinel")?),
+                    },
+                ],
+                &rig.world.cancel,
+            )
+            .await?;
+        let mut console = console(&rig).await?;
+        console.keys("down enter")?;
+        until_shows(&mut console, "Launch · choose Agent").await?;
+        console.keys("space enter")?;
+        until_route(&mut console, Route::Capsule).await?;
+        let found = labels(&only(&rig)?)?.planned;
+        assert_eq!(found.role.as_str(), "sentinel");
+        assert_eq!(
+            found.agents_hash,
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+                jackin_core::Agent::Codex,
+                AccountName::parse("work")?
+            )?)?
+            .hash()
         );
         Ok(())
     })

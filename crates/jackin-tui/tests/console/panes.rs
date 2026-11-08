@@ -11,7 +11,7 @@ use jackin_console::domain::vocabulary::{PaneWords, fill_in};
 use jackin_console::panes::{PaneKind, PaneRefusal, PaneRequest};
 use jackin_console::screens::Go;
 use jackin_core::{AttemptId, SupervisorState};
-use jackin_openshell::{GatewayError, GatewayOp};
+use jackin_openshell::{Gateway, GatewayError, GatewayOp};
 use jackin_openshell::{InputMode, TermSize};
 use jackin_session::AttachRequest;
 use jackin_testkit::{ConsoleRig, Fault, Rig, SandboxHandle, TestResult, Trigger, guard};
@@ -987,7 +987,12 @@ async fn a_second_client_leaves_the_pane_read_only_until_the_owner_goes() -> Tes
             .session
             .attach(
                 AttachRequest {
-                    sandbox: name,
+                    identity: rig
+                        .world
+                        .session
+                        .agent_metadata_for_sandbox(&name, &rig.world.cancel)
+                        .await?
+                        .identity,
                     size: size(100, 30)?,
                     input: InputMode::Owner,
                     agent: None,
@@ -1083,6 +1088,69 @@ async fn an_unreachable_gateway_fails_the_pane_with_the_doctor_step() -> TestRes
         lab.console.wait_for_text(&format!("· {step}")).await?;
         let screen = lab.console.screen();
         assert!(screen.contains("connection refused"), "{screen}");
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn stale_roster_pane_refuses_a_replaced_sandbox_without_attaching() -> TestResult {
+    guard(Box::pin(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let old = rig.handle(1).await?;
+        let mut lab = Lab::with(rig).await?;
+        let instance = lab
+            .world()
+            .instances
+            .first()
+            .ok_or("no instance")?
+            .id()
+            .clone();
+        lab.rig.world.gateway.delete_sandbox(&old.name()).await?;
+        lab.rig.world.clock.advance(Duration::from_secs(60));
+        lab.rig.launch(1).await?;
+        let replacement = lab.rig.handle(1).await?;
+        lab.console.console().app().go(Go::Attach {
+            instance,
+            pane: None,
+        });
+        lab.console.tick(1);
+        lab.console.pump(20).await;
+        lab.console.settle().await?;
+        let screen = lab.console.screen();
+        assert!(screen.contains("changed identity"), "{screen}");
+        assert_eq!(replacement.attachments(), 0);
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
+async fn stale_pane_restart_refuses_a_replaced_sandbox() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        capsule.handle.exit_codex(3);
+        let words = PaneWords::openshell();
+        let note = fill_in(&words.exited, &[("agent", "Codex"), ("code", "3")]);
+        capsule.console().wait_for_text(&note).await?;
+        let name = capsule.handle.name();
+        capsule.lab.rig.world.gateway.delete_sandbox(&name).await?;
+        capsule.lab.rig.world.clock.advance(Duration::from_secs(60));
+        capsule.lab.rig.launch(1).await?;
+        let replacement = capsule.lab.rig.handle(1).await?;
+        std::fs::write(replacement.root().join(".jackin/run/state"), b"waiting\n")?;
+        std::fs::remove_file(replacement.root().join(".jackin/run/start"))?;
+        let preflight = jackin_core::sandbox_layout::hook_path(jackin_core::HookKind::Preflight);
+        let runs = replacement.runs(&preflight).len();
+        capsule.console().keys("enter")?;
+        capsule.console().wait_for_text("changed identity").await?;
+        assert_eq!(replacement.runs(&preflight).len(), runs);
+        assert_eq!(replacement.attachments(), 0);
+        assert_eq!(
+            replacement.file(&jackin_core::sandbox_layout::RUN_START),
+            None
+        );
         Ok(())
     }))
     .await

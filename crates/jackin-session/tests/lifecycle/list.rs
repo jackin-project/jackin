@@ -41,9 +41,15 @@ async fn list_returns_exactly_the_managed_sandboxes_with_their_labels_and_phases
         let gateway = &rig.world.gateway;
         let stopped = rig.sandbox_name(2)?;
         let errored = rig.sandbox_name(3)?;
+        let cancel = CancellationToken::new();
+        let identity = rig
+            .world
+            .session
+            .managed_identity(&stopped, &cancel)
+            .await?;
         rig.world
             .session
-            .power(&stopped, PowerAction::Stop, &CancellationToken::new())
+            .power(&identity, PowerAction::Stop, &cancel)
             .await?;
         gateway.force_phase(&errored, Phase::Error { exit_code: Some(7) });
         let renamed = name("jackin-custom-9999")?;

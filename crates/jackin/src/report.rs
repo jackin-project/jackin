@@ -50,6 +50,7 @@ fn attach_error(error: &AttachError) -> String {
         AttachError::EnvFile { sandbox, problem } => env_file_problem(sandbox, problem),
         AttachError::Gateway(error) => error_chain(error),
         AttachError::AgentMetadata(error) => error_chain(error),
+        AttachError::Identity(error) => error_chain(error),
     }
 }
 

@@ -74,9 +74,9 @@ async fn inspect_reports_the_sandbox_and_flags_only_a_foreign_rule_on_a_codex_ho
             .collect();
         assert_eq!(rules, vec![("_provider_other", "api.openai.com")]);
 
-        session
-            .power(&name, PowerAction::Stop, &CancellationToken::new())
-            .await?;
+        let cancel = CancellationToken::new();
+        let identity = session.managed_identity(&name, &cancel).await?;
+        session.power(&identity, PowerAction::Stop, &cancel).await?;
         let SandboxInspection::Readable(stopped) =
             session.inspect(&name, &CancellationToken::new()).await?
         else {
@@ -115,8 +115,10 @@ async fn inspect_cancellation_covers_stopped_sandboxes_and_pending_detail_querie
         let handle = rig.handle(1).await?;
         let name = handle.name();
         let session = &rig.world.session;
+        let cancel = CancellationToken::new();
+        let identity = session.managed_identity(&name, &cancel).await?;
         session
-            .power(&name, PowerAction::Stop, &CancellationToken::new())
+            .power(&identity, PowerAction::Stop, &cancel)
             .await?;
 
         let cancelled = CancellationToken::new();

@@ -36,7 +36,7 @@ const HELD_MAX: usize = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AttachRequest {
-    pub sandbox: SandboxName,
+    pub identity: crate::AgentMetadataIdentity,
     pub size: TermSize,
     pub input: InputMode,
     pub agent: Option<jackin_core::Agent>,
@@ -125,12 +125,14 @@ impl fmt::Display for EnvFileProblem {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShellRequest {
-    pub sandbox: SandboxName,
+    pub identity: crate::ManagedIdentity,
     pub size: TermSize,
 }
 
 #[derive(Debug, Error)]
 pub enum AttachError {
+    #[error(transparent)]
+    Identity(#[from] crate::ManagedIdentityError),
     #[error(transparent)]
     Gateway(#[from] GatewayError),
     #[error(transparent)]
@@ -190,16 +192,16 @@ pub enum RestartError {
 impl AttachRequest {
     pub fn owner(target: AttachTarget, size: TermSize) -> AttachRequest {
         AttachRequest {
-            sandbox: target.sandbox,
+            identity: target.identity,
             size,
             input: InputMode::Owner,
             agent: None,
         }
     }
 
-    pub fn viewer(sandbox: SandboxName, size: TermSize) -> AttachRequest {
+    pub fn viewer(identity: crate::AgentMetadataIdentity, size: TermSize) -> AttachRequest {
         AttachRequest {
-            sandbox,
+            identity,
             size,
             input: InputMode::Viewer,
             agent: None,
@@ -437,13 +439,18 @@ impl Session {
         request: AttachRequest,
         cancel: &CancellationToken,
     ) -> Result<AttachedTerminal, AttachError> {
-        let sandbox = &request.sandbox;
+        let sandbox = &request.identity.sandbox;
         let view = self
             .find_managed(sandbox, cancel)
             .await?
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;
+        self.revalidate_agent_identity(&request.identity, cancel)
+            .await?;
         let metadata = self.agent_metadata_for_view(&view, cancel).await?;
+        if metadata.identity != request.identity {
+            return Err(AgentMetadataError::Replaced.into());
+        }
         let agent = request.agent.unwrap_or_else(|| metadata.lead_agent());
         if !metadata
             .instances
@@ -516,11 +523,9 @@ impl Session {
         request: ShellRequest,
         cancel: &CancellationToken,
     ) -> Result<TerminalSession, AttachError> {
-        let sandbox = &request.sandbox;
-        let view = self
-            .find_managed(sandbox, cancel)
-            .await?
-            .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
+        let sandbox = request.identity.name();
+        let view =
+            crate::lifecycle::verify_managed_identity(self, &request.identity, cancel).await?;
         require_ready::<AttachError>(view.phase, sandbox)?;
         let gateway = self.deps.gateway.as_ref();
         let values = async {
@@ -529,6 +534,7 @@ impl Session {
         }
         .await
         .map_err(|failure| AttachError::env(sandbox, failure))?;
+        crate::lifecycle::verify_managed_identity(self, &request.identity, cancel).await?;
         Ok(gateway
             .open_terminal(&TerminalRequest {
                 sandbox: sandbox.clone(),
@@ -551,17 +557,22 @@ impl Session {
 
     pub async fn restart_agent(
         &self,
-        sandbox: &SandboxName,
+        expected: &crate::AgentMetadataIdentity,
         events: LaunchEvents,
         cancel: CancellationToken,
     ) -> Result<AttachTarget, RestartError> {
+        let sandbox = &expected.sandbox;
         let gateway = self.deps.gateway.as_ref();
         let view = self
             .find_managed(sandbox, &cancel)
             .await?
             .ok_or_else(|| not_found(sandbox))?;
         require_ready::<RestartError>(view.phase, sandbox)?;
+        self.revalidate_agent_identity(expected, &cancel).await?;
         let metadata = self.agent_metadata_for_view(&view, &cancel).await?;
+        if metadata.identity != *expected {
+            return Err(AgentMetadataError::Replaced.into());
+        }
         let values = async {
             let launch = launch_of(&view.labels)?;
             Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch, &cancel).await?)
@@ -570,12 +581,13 @@ impl Session {
         .map_err(|failure| RestartError::env(sandbox, failure))?;
         let _held = self.restart_lock(sandbox).await?;
         self.restartable(sandbox, &cancel).await?;
+        self.revalidate_agent_identity(expected, &cancel).await?;
         self.restart_preflight(sandbox, &values, &events, &cancel)
             .await?;
+        self.revalidate_agent_identity(expected, &cancel).await?;
         let attempt = self.restartable(sandbox, &cancel).await?;
-        self.revalidate_agent_identity(&metadata.identity, &cancel)
-            .await?;
-        self.request_attempt(sandbox, attempt, &events, &cancel)
+        self.revalidate_agent_identity(expected, &cancel).await?;
+        self.request_attempt(expected, attempt, &events, &cancel)
             .await
     }
 
@@ -661,11 +673,12 @@ impl Session {
 
     async fn request_attempt(
         &self,
-        sandbox: &SandboxName,
+        expected: &crate::AgentMetadataIdentity,
         attempt: AttemptId,
         events: &LaunchEvents,
         cancel: &CancellationToken,
     ) -> Result<AttachTarget, RestartError> {
+        let sandbox = &expected.sandbox;
         let gateway = self.deps.gateway.as_ref();
         events
             .emit(LaunchEvent::StepStarted(LaunchStep::Start))
@@ -708,6 +721,7 @@ impl Session {
                     .await;
                 return Ok(AttachTarget {
                     sandbox: sandbox.clone(),
+                    identity: expected.clone(),
                     state,
                 });
             }

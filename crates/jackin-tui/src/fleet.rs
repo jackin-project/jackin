@@ -10,8 +10,8 @@ use jackin_core::{
     Config, GatewayName, Phase, SandboxName, SandboxSummary, SupervisorReading, SupervisorState,
 };
 use jackin_session::{
-    AgentMetadataError, SandboxInspection, Session, UnreadableSandbox, VerifiedAgentMetadata,
-    WorkState,
+    AgentMetadataError, ManagedIdentity, ManagedIdentityError, SandboxInspection, Session,
+    UnreadableSandbox, VerifiedAgentMetadata, WorkState,
 };
 use thiserror::Error;
 use tokio::sync::Semaphore;
@@ -37,6 +37,7 @@ pub struct ObservedSandbox {
     pub work: Option<WorkState>,
     pub task: Option<ObservedTask>,
     pub agent_metadata: Result<VerifiedAgentMetadata, AgentMetadataError>,
+    pub lifecycle_identity: Result<ManagedIdentity, ManagedIdentityError>,
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +53,7 @@ pub enum ObservedInstance {
         gateway: GatewayName,
         sandbox: SandboxName,
         reason: String,
+        lifecycle_identity: Result<ManagedIdentity, ManagedIdentityError>,
     },
 }
 
@@ -111,6 +113,7 @@ impl Fleet {
                     gateway: observed.gateway.clone(),
                     sandbox: observed.summary.name.clone(),
                     reason: error.to_string(),
+                    lifecycle_identity: observed.lifecycle_identity.clone(),
                 },
             });
         }
@@ -121,6 +124,7 @@ impl Fleet {
                 gateway: observed.gateway.clone(),
                 sandbox: observed.sandbox.name.clone(),
                 reason: observed.sandbox.reason(),
+                lifecycle_identity: observed.sandbox.lifecycle_identity.clone(),
             })
     }
 }
@@ -146,6 +150,7 @@ struct Inspected {
     summary: SandboxSummary,
     supervisor: Option<SupervisorReading>,
     agent_metadata: Result<VerifiedAgentMetadata, AgentMetadataError>,
+    lifecycle_identity: Result<ManagedIdentity, ManagedIdentityError>,
 }
 
 enum InspectionOutcome {
@@ -238,12 +243,15 @@ async fn read_gateway(
         })
         .collect();
     let slots = Semaphore::new(limits.work_reads.get());
-    let inspected = join_all(
-        listing
-            .sandboxes
-            .into_iter()
-            .map(|summary| inspect(session, summary, deadline, &slots, cancel)),
-    )
+    let identities = listing.identities;
+    let inspected = join_all(listing.sandboxes.into_iter().map(|summary| {
+        let identity = identities.get(&summary.name).cloned().unwrap_or_else(|| {
+            Err(ManagedIdentityError::Unavailable {
+                sandbox: summary.name.clone(),
+            })
+        });
+        inspect(session, summary, identity, deadline, &slots, cancel)
+    }))
     .await;
     let inspected: Vec<Inspected> = inspected
         .into_iter()
@@ -285,6 +293,7 @@ async fn read_gateway(
                         summary,
                         supervisor,
                         agent_metadata,
+                        lifecycle_identity,
                     },
                     work,
                 ),
@@ -296,6 +305,7 @@ async fn read_gateway(
                 work,
                 task,
                 agent_metadata,
+                lifecycle_identity,
             },
         )
         .collect();
@@ -312,6 +322,7 @@ async fn read_gateway(
 async fn inspect(
     session: &Session,
     summary: SandboxSummary,
+    lifecycle_identity: Result<ManagedIdentity, ManagedIdentityError>,
     deadline: Duration,
     slots: &Semaphore,
     cancel: &CancellationToken,
@@ -329,7 +340,8 @@ async fn inspect(
         let inspection = within(deadline, session.inspect(&summary.name, cancel)).await;
         let supervisor = match inspection {
             Some(Ok(SandboxInspection::Readable(view))) => Some(view.supervisor),
-            Some(Ok(SandboxInspection::Unreadable(sandbox))) => {
+            Some(Ok(SandboxInspection::Unreadable(mut sandbox))) => {
+                sandbox.lifecycle_identity = lifecycle_identity;
                 return InspectionOutcome::Unreadable(sandbox);
             }
             Some(Err(_)) | None => None,
@@ -349,6 +361,7 @@ async fn inspect(
         summary,
         supervisor,
         agent_metadata,
+        lifecycle_identity,
     })
 }
 

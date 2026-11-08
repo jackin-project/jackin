@@ -55,10 +55,8 @@ async fn purging_an_absent_sandbox_is_ok_and_an_unmanaged_one_is_never_deleted()
         rig.world
             .gateway
             .insert_unmanaged(&ghost, Labels::from_pairs([])?, Phase::Ready)?;
-        harness
-            .run(&["purge", ghost.as_str(), "--force"])
-            .await?
-            .ok()?;
+        let result = harness.run(&["purge", ghost.as_str(), "--force"]).await?;
+        failed(&result, ExitClass::Refused, &["not managed"])?;
         assert!(rig.world.gateway.sandbox(&ghost).is_some());
         assert!(rig.world.gateway.sandbox(&clean).is_some());
         Ok(())
