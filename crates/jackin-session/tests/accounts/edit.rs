@@ -42,6 +42,28 @@ fn file(path: &str) -> Result<CredentialSource, Box<dyn std::error::Error>> {
     })
 }
 
+fn key(world: &World, target: &str) -> Result<CredentialSource, Box<dyn std::error::Error>> {
+    file(
+        &world
+            .home()
+            .as_path()
+            .join(format!("{target}.key"))
+            .display()
+            .to_string(),
+    )
+}
+
+async fn put_key(world: &World, target: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let CredentialSource::File { path } = key(world, target)? else {
+        return Err("not a file key".into());
+    };
+    world
+        .fs
+        .write_new(&path, b"KEY-SECRET-1", jackin_core::FileMode(0o600))
+        .await?;
+    Ok(())
+}
+
 async fn run(world: &World, edits: Vec<ConfigEdit>) -> Result<Config, AccountEditError> {
     let cancel = CancellationToken::new();
     let plan = plan_account_edits(&world.desk(), edits, &cancel).await?;
@@ -95,20 +117,20 @@ async fn a_chatgpt_login_account_gets_its_provider_before_it_reaches_the_config(
 }
 
 #[tokio::test]
-async fn accounts_without_a_chatgpt_login_never_need_the_gateway() -> TestResult {
+async fn accounts_without_a_provider_credential_never_need_the_gateway() -> TestResult {
     guard(async {
         let world = registered().await?;
         let edits = vec![
-            ConfigEdit::AddAccount(account("claude", Provider::Claude, env("CLAUDE_KEY")?)?),
-            ConfigEdit::AddAccount(account("api", Provider::Codex, env("OPENAI_KEY")?)?),
+            ConfigEdit::AddAccount(account("grok", Provider::Grok, env("GROK_KEY")?)?),
             ConfigEdit::AddAccount(account(
-                "vault",
-                Provider::Codex,
+                "muse",
+                Provider::Muse,
                 CredentialSource::OnePassword {
-                    reference: OpReference::parse("op://Dev/OpenAI/key")?,
+                    reference: OpReference::parse("op://Dev/Muse/credential")?,
                     account: None,
                 },
             )?),
+            ConfigEdit::AddAccount(account("host", Provider::Grok, file("/keys/host")?)?),
         ];
         let plan = plan_account_edits(&world.desk(), edits, &CancellationToken::new()).await?;
         assert!(!plan.needs_gateway());
@@ -247,18 +269,24 @@ async fn a_new_credential_re_syncs_forgets_or_creates_the_provider_as_its_kind_c
             .access_token;
         assert_ne!(first, second);
 
+        put_key(&world, "work").await?;
+        let omp = ProviderName::parse("jackin-work-omp")?;
         let config = run(
             &world,
             vec![ConfigEdit::SetAccountCredential {
                 account: name("work")?,
-                credential: file("/keys/work")?,
+                credential: key(&world, "work")?,
             }],
         )
         .await?;
-        assert!(world.gateway.providers().is_empty());
+        assert_eq!(world.gateway.providers(), [omp.clone()]);
+        let record = world.gateway.provider(&omp).ok_or("no omp provider")?;
+        assert_eq!(record.profile.as_str(), "t22-omp-openai");
+        assert_eq!(record.access_key, "OPENAI_API_KEY");
+        assert_eq!(record.access_token, "KEY-SECRET-1");
         assert_eq!(
             config.account(&name("work")?).map(Account::credential),
-            Some(&file("/keys/work")?)
+            Some(&key(&world, "work")?)
         );
 
         run(
@@ -278,18 +306,18 @@ async fn a_new_credential_re_syncs_forgets_or_creates_the_provider_as_its_kind_c
 #[derive(Clone, Copy, Debug)]
 enum Kind {
     AddLogin,
-    AddEnv,
+    AddKey,
     Remove,
     ToLogin,
-    ToFile,
+    ToKey,
 }
 
 const KINDS: [Kind; 5] = [
     Kind::AddLogin,
-    Kind::AddEnv,
+    Kind::AddKey,
     Kind::Remove,
     Kind::ToLogin,
-    Kind::ToFile,
+    Kind::ToKey,
 ];
 
 fn login(home: &Home) -> Result<CredentialSource, Box<dyn std::error::Error>> {
@@ -298,29 +326,40 @@ fn login(home: &Home) -> Result<CredentialSource, Box<dyn std::error::Error>> {
         .clone())
 }
 
-fn edit(kind: Kind, target: &str, home: &Home) -> Result<ConfigEdit, Box<dyn std::error::Error>> {
+fn edit(
+    kind: Kind,
+    target: &str,
+    home: &Home,
+    world: &World,
+) -> Result<ConfigEdit, Box<dyn std::error::Error>> {
     Ok(match kind {
         Kind::AddLogin => ConfigEdit::AddAccount(account(target, Provider::Codex, login(home)?)?),
-        Kind::AddEnv => {
-            ConfigEdit::AddAccount(account(target, Provider::Codex, env("OPENAI_KEY")?)?)
+        Kind::AddKey => {
+            ConfigEdit::AddAccount(account(target, Provider::Codex, key(world, target)?)?)
         }
         Kind::Remove => ConfigEdit::RemoveAccount(name(target)?),
         Kind::ToLogin => ConfigEdit::SetAccountCredential {
             account: name(target)?,
             credential: login(home)?,
         },
-        Kind::ToFile => ConfigEdit::SetAccountCredential {
+        Kind::ToKey => ConfigEdit::SetAccountCredential {
             account: name(target)?,
-            credential: file("/keys/target")?,
+            credential: key(world, target)?,
         },
     })
 }
 
-fn logins_of(config: &Config) -> BTreeSet<ProviderName> {
+fn expected_providers(config: &Config) -> BTreeSet<ProviderName> {
     config
         .accounts()
-        .filter(|account| matches!(account.credential(), CredentialSource::CodexLogin { .. }))
-        .map(|account| ProviderName::for_account(account.name(), Agent::Codex))
+        .filter(|account| account.has_provider())
+        .map(|account| {
+            let agent = match account.credential() {
+                CredentialSource::CodexLogin { .. } => Agent::Codex,
+                _ => Agent::Omp,
+            };
+            ProviderName::for_account(account.name(), agent)
+        })
         .collect()
 }
 
@@ -335,14 +374,17 @@ async fn after_two_edits(
     second: Kind,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let world = registered().await?;
+    for seeded in ["existing-login", "existing-file", "fresh"] {
+        put_key(&world, seeded).await?;
+    }
     run(
         &world,
         vec![
-            edit(Kind::AddLogin, "existing-login", home)?,
+            edit(Kind::AddLogin, "existing-login", home, &world)?,
             ConfigEdit::AddAccount(account(
                 "existing-file",
                 Provider::Codex,
-                file("/keys/start")?,
+                key(&world, "existing-file")?,
             )?),
         ],
     )
@@ -351,7 +393,10 @@ async fn after_two_edits(
     let start_providers = providers_of(&world);
     let case = format!("{target}: {first:?} then {second:?}");
 
-    let edits = vec![edit(first, target, home)?, edit(second, target, home)?];
+    let edits = vec![
+        edit(first, target, home, &world)?,
+        edit(second, target, home, &world)?,
+    ];
     let Ok(plan) = plan_account_edits(&world.desk(), edits, &CancellationToken::new()).await else {
         assert_eq!(world.config.load().await?, start, "{case}");
         assert_eq!(providers_of(&world), start_providers, "{case}");
@@ -359,12 +404,12 @@ async fn after_two_edits(
     };
     plan.apply(&Gateways::single(world.session.clone())).await?;
     let finished = world.config.load().await?;
-    assert_eq!(providers_of(&world), logins_of(&finished), "{case}");
+    assert_eq!(providers_of(&world), expected_providers(&finished), "{case}");
     Ok(true)
 }
 
 #[tokio::test]
-async fn after_any_two_account_edits_the_gateway_holds_a_provider_for_exactly_the_login_accounts()
+async fn after_any_two_account_edits_the_gateway_holds_a_provider_for_exactly_the_provider_accounts()
 -> TestResult {
     let home = guard(Home::new(&login_json())).await?;
     let pairs: Vec<(&str, Kind, Kind)> = ["existing-login", "existing-file", "fresh"]
@@ -386,16 +431,17 @@ async fn after_any_two_account_edits_the_gateway_holds_a_provider_for_exactly_th
 }
 
 #[tokio::test]
-async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_or_loses_a_chatgpt_login()
+async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_changes_or_loses_a_provider()
 -> TestResult {
     guard(async {
         let home = Home::new(&login_json()).await?;
         let world = registered().await?;
+        put_key(&world, "keyed").await?;
         world
             .config
             .edit(vec![
-                edit(Kind::AddLogin, "chat", &home)?,
-                edit(Kind::AddEnv, "keyed", &home)?,
+                edit(Kind::AddLogin, "chat", &home, &world)?,
+                edit(Kind::AddKey, "keyed", &home, &world)?,
                 ConfigEdit::AddAccount(account(
                     "vault",
                     Provider::Codex,
@@ -405,35 +451,70 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_or_loses_a_cha
                     },
                 )?),
                 ConfigEdit::AddAccount(account("claude", Provider::Claude, env("CLAUDE_KEY")?)?),
+                ConfigEdit::AddAccount(account("plain", Provider::Grok, env("GROK_KEY")?)?),
             ])
             .await?;
         let table = [
-            ("add a login", true, edit(Kind::AddLogin, "second", &home)?),
-            ("remove a login", true, edit(Kind::Remove, "chat", &home)?),
+            (
+                "add a login",
+                true,
+                edit(Kind::AddLogin, "second", &home, &world)?,
+            ),
+            (
+                "remove a login",
+                true,
+                edit(Kind::Remove, "chat", &home, &world)?,
+            ),
             (
                 "give a key a login",
                 true,
-                edit(Kind::ToLogin, "keyed", &home)?,
+                edit(Kind::ToLogin, "keyed", &home, &world)?,
             ),
             (
                 "take the login off",
                 true,
-                edit(Kind::ToFile, "chat", &home)?,
+                edit(Kind::ToKey, "chat", &home, &world)?,
             ),
-            ("renew a login", true, edit(Kind::ToLogin, "chat", &home)?),
-            ("add a key", false, edit(Kind::AddEnv, "third", &home)?),
-            ("remove a key", false, edit(Kind::Remove, "keyed", &home)?),
+            (
+                "renew a login",
+                true,
+                edit(Kind::ToLogin, "chat", &home, &world)?,
+            ),
+            (
+                "add a key",
+                true,
+                edit(Kind::AddKey, "third", &home, &world)?,
+            ),
+            (
+                "remove a key",
+                true,
+                edit(Kind::Remove, "keyed", &home, &world)?,
+            ),
             (
                 "remove a vault key",
-                false,
-                edit(Kind::Remove, "vault", &home)?,
+                true,
+                edit(Kind::Remove, "vault", &home, &world)?,
             ),
             (
                 "remove a claude account",
-                false,
-                edit(Kind::Remove, "claude", &home)?,
+                true,
+                edit(Kind::Remove, "claude", &home, &world)?,
             ),
-            ("change a key", false, edit(Kind::ToFile, "keyed", &home)?),
+            (
+                "change a key",
+                true,
+                edit(Kind::ToKey, "keyed", &home, &world)?,
+            ),
+            (
+                "add a plain key",
+                false,
+                ConfigEdit::AddAccount(account("spare", Provider::Grok, env("GROK_KEY")?)?),
+            ),
+            (
+                "remove a plain key",
+                false,
+                ConfigEdit::RemoveAccount(name("plain")?),
+            ),
             (
                 "choose a default",
                 false,

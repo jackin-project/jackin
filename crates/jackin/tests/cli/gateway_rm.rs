@@ -154,7 +154,7 @@ builder = \"b\"
 platform = \"linux/arm64\"
 
 [accounts.one]
-provider = \"codex\"
+provider = \"grok\"
 credential = {{ source = \"env\", var = \"HOST_SECRET_VAR\" }}
 "
         ))?;

@@ -45,6 +45,9 @@ async fn no_secret_reaches_any_output_json_config_or_debug_text() -> TestResult 
             &["read", "op://v/i/f"],
             ProcessReply::exited(1, b"", format!("[ERROR] {OP_STDERR}").as_bytes()),
         );
+        let claude_key = rig.home.as_path().join("claude.key");
+        std::fs::write(&claude_key, KEY)?;
+        let claude_key = claude_key.display().to_string();
         let home = rig.home.as_path().display().to_string();
         let id = launch_id(1).to_string();
         let sandbox = rig.sandbox_name(1)?;
@@ -68,8 +71,10 @@ async fn no_secret_reaches_any_output_json_config_or_debug_text() -> TestResult 
                     "claude",
                     "--name",
                     "c",
+                    "--agent",
+                    "omp",
                     "--credential",
-                    "env:CLAUDE_KEY",
+                    &format!("file:{claude_key}"),
                 ],
                 true,
             ),

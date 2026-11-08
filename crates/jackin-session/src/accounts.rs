@@ -105,6 +105,7 @@ pub enum AccountEditError {
 
 pub(crate) fn account_agent(account: &Account) -> Agent {
     match account.provider() {
+        Provider::Codex if account.chatgpt_login().is_none() => Agent::Omp,
         Provider::Codex => Agent::Codex,
         Provider::Grok => Agent::GrokBuild,
         Provider::Muse => Agent::MuseCode,
@@ -587,7 +588,30 @@ async fn publish<'a>(
             continue;
         };
         let provider = ProviderName::for_account(entry.account.name(), agent);
+        let previous_agent = agents
+            .get(entry.account.name())
+            .copied()
+            .unwrap_or_else(|| account_agent(previous));
+        let previous_provider = ProviderName::for_account(entry.account.name(), previous_agent);
         for (index, &session) in sessions.iter().enumerate() {
+            if previous_provider != provider {
+                let held_previous = session
+                    .deps
+                    .gateway
+                    .provider_state(&previous_provider)
+                    .await
+                    .map_err(|error| on_gateway(session.gateway_name(), error.into()))?
+                    == ProviderState::Present;
+                if held_previous {
+                    journal.push(session.undo(Action::Restore, previous, previous_agent));
+                    session
+                        .deps
+                        .gateway
+                        .delete_provider(&previous_provider)
+                        .await
+                        .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
+                }
+            }
             let state = session
                 .deps
                 .gateway
@@ -599,7 +623,7 @@ async fn publish<'a>(
                 continue;
             }
             journal.push(if held {
-                session.undo(Action::Restore, previous, agent)
+                session.undo(Action::Restore, previous, previous_agent)
             } else {
                 session.undo(Action::Remove, &entry.account, agent)
             });
@@ -901,7 +925,10 @@ async fn sync_login(
         let Ok(tuple) = jackin_core::lookup_tuple(agent, account.provider()) else {
             return Ok(AccountSync::HostOnly);
         };
-        if tuple.auth_class != jackin_core::AuthClass::StaticKey {
+        if !matches!(
+            tuple.auth_class,
+            jackin_core::AuthClass::StaticKey | jackin_core::AuthClass::ApiKey
+        ) {
             return Ok(AccountSync::HostOnly);
         }
         let missing = || AccountError::MissingCredential {

@@ -262,21 +262,23 @@ async fn rm_checks_the_gateway_before_the_config_and_removes_both_when_nothing_u
 }
 
 #[tokio::test]
-async fn rm_of_an_account_that_is_not_a_codex_login_never_connects_and_succeeds_with_the_gateway_down()
+async fn rm_of_an_account_without_a_provider_credential_never_connects_and_succeeds_with_the_gateway_down()
 -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         let mut harness = Harness::new(&world);
         harness.connector = FixedConnector::empty();
-        let text = format!("{GATEWAY_CONFIG}\n{CONFIG}");
+        let text = format!(
+            "{GATEWAY_CONFIG}{CONFIG}\n[accounts.plain]\nprovider = \"grok\"\ncredential = {{ source = \"env\", var = \"PLAIN_KEY\" }}\n"
+        );
         harness.write_config(&text)?;
         harness.run(&["account", "default", "two"]).await?.ok()?;
         let mut expected = Config::parse(&text)?;
         expected.apply(ConfigEdit::SetDefaultAccount {
             account: AccountName::parse("two")?,
         })?;
-        expected.apply(ConfigEdit::RemoveAccount(AccountName::parse("one")?))?;
-        harness.run(&["account", "rm", "one"]).await?.ok()?;
+        expected.apply(ConfigEdit::RemoveAccount(AccountName::parse("plain")?))?;
+        harness.run(&["account", "rm", "plain"]).await?.ok()?;
         assert_eq!(rendered(&harness).await?, expected.render());
 
         let before = harness.config_bytes()?;

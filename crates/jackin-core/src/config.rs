@@ -533,13 +533,23 @@ impl Account {
                 self.provider,
                 Provider::Zai | Provider::Kimi | Provider::Minimax | Provider::Mimo
             ) && !matches!(self.credential, CredentialSource::CodexLogin { .. }))
+            || (matches!(
+                self.provider,
+                Provider::Claude | Provider::Codex
+            ) && matches!(
+                self.credential,
+                CredentialSource::Env { .. }
+                    | CredentialSource::OnePassword { .. }
+                    | CredentialSource::File { .. }
+                    | CredentialSource::OmpHost
+            ))
     }
 
     pub fn codex_auth_mode(&self) -> Option<CodexAuthMode> {
         if self.provider != Provider::Codex {
             return None;
         }
-        Some(if self.has_provider() {
+        Some(if self.chatgpt_login().is_some() {
             CodexAuthMode::ChatgptLogin
         } else {
             CodexAuthMode::ApiKey

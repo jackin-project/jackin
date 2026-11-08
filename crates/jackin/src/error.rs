@@ -41,6 +41,10 @@ impl ExitClass {
 pub enum CommandError {
     #[error("{}", plain(.0))]
     Argument(String),
+    #[error("provider {} with an API key needs --agent omp", .provider.as_str())]
+    ApiKeyNeedsAgent {
+        provider: jackin_core::Provider,
+    },
     #[error("--env {name} is refused")]
     EnvValue {
         name: EnvName,
@@ -152,7 +156,9 @@ impl From<ConnectError> for CommandError {
 impl CommandError {
     pub fn class(&self) -> ExitClass {
         match self {
-            CommandError::Argument(_) | CommandError::EnvValue { .. } => ExitClass::Usage,
+            CommandError::Argument(_)
+            | CommandError::ApiKeyNeedsAgent { .. }
+            | CommandError::EnvValue { .. } => ExitClass::Usage,
             CommandError::Plan(PlanError::EnvNeeded(_))
             | CommandError::Restart(RestartError::AlreadyRunning { .. })
             | CommandError::Purge(
