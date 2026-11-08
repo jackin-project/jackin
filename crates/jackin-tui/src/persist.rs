@@ -13,10 +13,10 @@ use jackin_console::domain::workspace::{
 };
 use jackin_console::world::GlobalConfig;
 use jackin_core::{
-    Account as CoreAccount, AccountName, AllowedRoles, ChatgptAccountId, Config, ConfigEdit,
-    ConfigError, CredentialSource, EnvName, EnvScope, EnvValueError, FsError, HostPath, IdError,
-    OpAccountId, OpReference, PathError, PlainEnvValue, ReservedEnvName, RoleName, RoleSet,
-    Workspace as CoreWorkspace, WorkspaceName,
+    Account as CoreAccount, AccountName, Agent as CoreAgent, AllowedRoles, ChatgptAccountId,
+    Config, ConfigEdit, ConfigError, CredentialSource, EnvName, EnvScope, EnvValueError, FsError,
+    HostPath, IdError, OpAccountId, OpReference, PathError, PlainEnvValue, ReservedEnvName,
+    RoleName, RoleSet, Workspace as CoreWorkspace, WorkspaceName,
 };
 use thiserror::Error;
 
@@ -430,6 +430,30 @@ pub fn folders(registry: &AccountRegistry, base: &AccountRegistry) -> Vec<(Provi
             _ => None,
         })
         .collect()
+}
+
+pub fn agents(
+    base: &AccountRegistry,
+    payload: &AccountRegistry,
+) -> BTreeMap<AccountName, CoreAgent> {
+    let chosen = |account: &Account| account.agent.and_then(crate::project::core_agent);
+    let mut agents = BTreeMap::new();
+    for account in &base.accounts {
+        if let Some(agent) = chosen(account)
+            && let Ok(name) = account_name(&account.id)
+        {
+            agents.insert(name, agent);
+        }
+    }
+    for account in &payload.accounts {
+        if base.get(&account.id).is_none()
+            && let Some(agent) = chosen(account)
+            && let Ok(name) = account_name(&account.display_name)
+        {
+            agents.insert(name, agent);
+        }
+    }
+    agents
 }
 
 pub fn accounts(

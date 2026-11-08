@@ -15,8 +15,8 @@ use jackin_console::domain::workspace::{MountSource, Workspace, WorkspaceId};
 use jackin_console::panes::{FailNext, LinkFault};
 use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
 use jackin_core::{
-    Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath, ModelName,
-    PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
+    AccountName, Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath,
+    ModelName, PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
     read_credential_file,
 };
 use jackin_core::{
@@ -29,7 +29,7 @@ use jackin_openshell::{GatewayError, PowerAction};
 use jackin_session::{
     AccountPlan, BuildRequest, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode, RestartError,
     RoleError, Session, Source, WorkspaceHold, build_observed, error_chain, launch_events,
-    plan_account_edits, read_chatgpt_login,
+    plan_account_edits_for_agents, read_chatgpt_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -370,11 +370,15 @@ impl Inputs {
         })
     }
 
-    async fn apply_accounts(&self, edits: Vec<ConfigEdit>) -> Result<Config, Refused> {
+    async fn apply_accounts(
+        &self,
+        edits: Vec<ConfigEdit>,
+        agents: BTreeMap<AccountName, CoreAgent>,
+    ) -> Result<Config, Refused> {
         if edits.is_empty() {
             return Ok(self.config.load().await?);
         }
-        let plan = plan_account_edits(&self.desk, edits, &self.cancel)
+        let plan = plan_account_edits_for_agents(&self.desk, edits, agents, &self.cancel)
             .await
             .map_err(|error| Refused::Text(text(&error)))?;
         match plan {
@@ -426,7 +430,9 @@ impl Inputs {
             let resolved = self.resolve_accounts(base, registry).await?;
             let edits = persist::accounts(base, registry, &resolved)?;
             let added = persist::added(registry)?;
-            let saved = self.apply_accounts(edits).await?;
+            let saved = self
+                .apply_accounts(edits, persist::agents(base, registry))
+                .await?;
             Ok::<_, Refused>((self.snapshot_of(&saved).await, added))
         }
         .await;
@@ -662,7 +668,7 @@ impl Inputs {
                 Some(id) => ConfigEdit::BindRoleAccount {
                     role: name,
                     agent,
-                    account: jackin_core::AccountName::parse(id).map_err(PersistError::from)?,
+                    account: AccountName::parse(id).map_err(PersistError::from)?,
                 },
                 None => ConfigEdit::UnbindRoleAccount { role: name, agent },
             };

@@ -42,9 +42,7 @@ pub enum CommandError {
     #[error("{}", plain(.0))]
     Argument(String),
     #[error("provider {} with an API key needs --agent omp", .provider.as_str())]
-    ApiKeyNeedsAgent {
-        provider: jackin_core::Provider,
-    },
+    ApiKeyNeedsAgent { provider: jackin_core::Provider },
     #[error("--env {name} is refused")]
     EnvValue {
         name: EnvName,

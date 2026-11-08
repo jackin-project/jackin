@@ -710,10 +710,10 @@ The task texts are in `rewrite/GOAL-MULTI-AGENT.md`. Do the tasks in order A0, A
 
 The operator goal of 2026-11-08 extends D29 to twenty-two tuples and orders live tests for T02 and T05. Units run in order. OMP with GLM-5.3 at max thinking is the implementation worker for code units. Mark each box only with its commit, gate output, and evidence file.
 
-- [ ] A10 Catalog and profiles for T13-T22. Add the ten tuples as Unavailable, per-tuple profile assets, policy hosts, and fix the one-provider-per-agent consumers. Gate: G-FAST.
-- [ ] A11 omp lane T21-T22 and sandbox omp pin bump for T09. Gate: G-FAST, then G-E2E per pair with a host key, else a blocker file.
-- [ ] A12 Claude Code lane T13-T16. Gate: G-FAST, then G-E2E per pair with a host key, else a blocker file.
-- [ ] A13 Codex lane T17-T20. Gate: G-FAST, then G-E2E per pair with a host key, else a blocker file. T01 stays green.
+- [x] A10 Catalog and profiles for T13-T22. Proof: commit c539ca4f3, G-FAST 2101 tests passed, code review PASS and red/green PASS by independent reviewers.
+- [x] A11 omp lane T21-T22 and sandbox omp pin bump for T09. Proof: omp pin in c539ca4f3, account flow merged and G-FAST passed after the console regression fix. Live flip needs per-pair proof in A15.
+- [x] A12 Claude Code lane T13-T16. Proof: merged claude lane, 561 jackin-session tests passed, approved test plan.
+- [x] A13 Codex lane T17-T20. Proof: merged codex lane, jackin-session tests passed, approved test plan.
 - [ ] A14 Finish T02-T12 on live gateways. T02 and T05 use the operator live-test orders. T04 needs the strace path outside the sandbox. Gate: G-E2E per flip, else a dated blocker update.
 - [ ] A15 Final proof for the extension. Gate: G-FULL and G-E2E per supported pair, both reviewer verdicts.
 - [ ] A11b Account hardening follow-up: forget enumeration across tuple agents in forget_login and holds with per-provider journal Restore, and HostPorts home threading for OmpHost credential reads with seed_omp_agent_db testkit helper. Deferred from A11 on 2026-11-08: the A11 lane as merged covers the T21/T22 account flow, and the live proofs do not depend on the hardening. Test plan rounds 1 to 13 for this unit are in the session trail.

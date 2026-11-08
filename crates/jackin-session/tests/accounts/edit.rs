@@ -279,7 +279,7 @@ async fn a_new_credential_re_syncs_forgets_or_creates_the_provider_as_its_kind_c
             }],
         )
         .await?;
-        assert_eq!(world.gateway.providers(), [omp.clone()]);
+        assert_eq!(world.gateway.providers(), std::slice::from_ref(&omp));
         let record = world.gateway.provider(&omp).ok_or("no omp provider")?;
         assert_eq!(record.profile.as_str(), "t22-omp-openai");
         assert_eq!(record.access_key, "OPENAI_API_KEY");
@@ -404,7 +404,11 @@ async fn after_two_edits(
     };
     plan.apply(&Gateways::single(world.session.clone())).await?;
     let finished = world.config.load().await?;
-    assert_eq!(providers_of(&world), expected_providers(&finished), "{case}");
+    assert_eq!(
+        providers_of(&world),
+        expected_providers(&finished),
+        "{case}"
+    );
     Ok(true)
 }
 

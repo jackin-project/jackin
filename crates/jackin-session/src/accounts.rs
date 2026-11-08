@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use std::time::Duration;
 
@@ -207,7 +207,7 @@ pub struct GatewayPlan {
     locked: Locked,
     edits: Vec<ConfigEdit>,
     effects: Effects,
-    agents: std::collections::BTreeMap<AccountName, Agent>,
+    agents: BTreeMap<AccountName, Agent>,
 }
 
 #[derive(Debug)]
@@ -260,19 +260,31 @@ fn touched(edit: &ConfigEdit) -> Option<&AccountName> {
     }
 }
 
-fn effects(config: &Config, edits: &[ConfigEdit]) -> Result<Effects, ConfigError> {
+fn effects(
+    config: &Config,
+    edits: &[ConfigEdit],
+    agents: &BTreeMap<AccountName, Agent>,
+) -> Result<Effects, ConfigError> {
     let mut after = config.clone();
     for edit in edits {
         after.apply(edit.clone())?;
     }
     let names: BTreeSet<&AccountName> = edits.iter().filter_map(touched).collect();
+    let acting = |name: &AccountName, account: &Account| {
+        agents
+            .get(name)
+            .copied()
+            .unwrap_or_else(|| account_agent(account))
+    };
     let mut forget = Vec::new();
     let mut publish = Vec::new();
     for name in names {
         let before = config
             .account(name)
-            .filter(|account| account.has_provider());
-        let now = after.account(name).filter(|account| account.has_provider());
+            .filter(|account| account.has_provider_for(acting(name, account)));
+        let now = after
+            .account(name)
+            .filter(|account| account.has_provider_for(acting(name, account)));
         match (before, now) {
             (before, Some(account)) => publish.push(Publish {
                 account: account.clone(),
@@ -290,7 +302,7 @@ pub async fn plan_account_edits(
     edits: Vec<ConfigEdit>,
     cancel: &CancellationToken,
 ) -> Result<AccountPlan, AccountEditError> {
-    plan_account_edits_inner(desk, edits, None, cancel).await
+    plan_account_edits_inner(desk, edits, BTreeMap::new(), cancel).await
 }
 
 pub async fn plan_account_edits_for_agent(
@@ -299,21 +311,29 @@ pub async fn plan_account_edits_for_agent(
     agent: Agent,
     cancel: &CancellationToken,
 ) -> Result<AccountPlan, AccountEditError> {
-    plan_account_edits_inner(desk, edits, Some(agent), cancel).await
+    let names: BTreeSet<AccountName> = edits.iter().filter_map(touched).cloned().collect();
+    let agents = names.into_iter().map(|name| (name, agent)).collect();
+    plan_account_edits_inner(desk, edits, agents, cancel).await
+}
+
+pub async fn plan_account_edits_for_agents(
+    desk: &AccountDesk,
+    edits: Vec<ConfigEdit>,
+    agents: BTreeMap<AccountName, Agent>,
+    cancel: &CancellationToken,
+) -> Result<AccountPlan, AccountEditError> {
+    plan_account_edits_inner(desk, edits, agents, cancel).await
 }
 
 async fn plan_account_edits_inner(
     desk: &AccountDesk,
     edits: Vec<ConfigEdit>,
-    agent: Option<Agent>,
+    agents: BTreeMap<AccountName, Agent>,
     cancel: &CancellationToken,
 ) -> Result<AccountPlan, AccountEditError> {
     let names: BTreeSet<AccountName> = edits.iter().filter_map(touched).cloned().collect();
-    let agents = agent
-        .map(|agent| names.iter().cloned().map(|name| (name, agent)).collect())
-        .unwrap_or_default();
     let locked = desk.lock(|_| names.clone(), cancel).await?;
-    let effects = effects(&locked.config, &edits)?;
+    let effects = effects(&locked.config, &edits, &agents)?;
     Ok(if effects.is_empty() {
         AccountPlan::Offline(OfflinePlan { locked, edits })
     } else {
@@ -569,7 +589,7 @@ async fn forget<'a>(
 async fn publish<'a>(
     sessions: &[&'a Session],
     publish: &'a [Publish],
-    agents: &std::collections::BTreeMap<AccountName, Agent>,
+    agents: &BTreeMap<AccountName, Agent>,
     journal: &mut Vec<Undo<'a>>,
 ) -> Result<(), AccountEditError> {
     let Some((home, _)) = sessions.split_first() else {

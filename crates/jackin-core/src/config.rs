@@ -533,16 +533,25 @@ impl Account {
                 self.provider,
                 Provider::Zai | Provider::Kimi | Provider::Minimax | Provider::Mimo
             ) && !matches!(self.credential, CredentialSource::CodexLogin { .. }))
-            || (matches!(
-                self.provider,
-                Provider::Claude | Provider::Codex
-            ) && matches!(
+            || self.omp_api_key()
+    }
+
+    pub fn has_provider_for(&self, agent: Agent) -> bool {
+        if self.omp_api_key() {
+            return agent == Agent::Omp;
+        }
+        self.has_provider()
+    }
+
+    fn omp_api_key(&self) -> bool {
+        matches!(self.provider, Provider::Claude | Provider::Codex)
+            && matches!(
                 self.credential,
                 CredentialSource::Env { .. }
                     | CredentialSource::OnePassword { .. }
                     | CredentialSource::File { .. }
                     | CredentialSource::OmpHost
-            ))
+            )
     }
 
     pub fn codex_auth_mode(&self) -> Option<CodexAuthMode> {
