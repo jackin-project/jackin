@@ -4,7 +4,7 @@
 mod accounts;
 mod agents_manifest;
 mod allowed_roles;
-mod docker;
+mod codex;
 mod env;
 mod error_text;
 mod errors;

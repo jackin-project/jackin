@@ -590,10 +590,11 @@ fn collect_instance_accounts(
 
 fn lead_chatgpt_account(
     agent: Agent,
+    provider: Provider,
     account: &Account,
     selection: &AccountSelection,
 ) -> Result<Option<ChatgptAccountId>, PlanError> {
-    Ok(if agent == Agent::Codex {
+    Ok(if agent == Agent::Codex && provider == Provider::Codex {
         let mode =
             account
                 .codex_auth_mode()
@@ -685,7 +686,7 @@ pub fn plan_launch(
             })?;
     let (instance_accounts, chatgpt_accounts) = collect_instance_accounts(config, &instances)?;
     let is_omp = agent == Agent::Omp;
-    let chatgpt_account = lead_chatgpt_account(agent, account, &selection)?;
+    let chatgpt_account = lead_chatgpt_account(agent, provider, account, &selection)?;
     let docker = DockerCapability::resolve(
         role.manifest().docker.enabled,
         workspace.docker,
@@ -704,7 +705,7 @@ pub fn plan_launch(
         &instances,
         request.task.as_deref(),
         crate::multi::HeadState::Born,
-    );
+    )?;
     let files = PlannedFiles {
         multi: layout.files.clone(),
         layout: layout.clone(),

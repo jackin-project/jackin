@@ -24,7 +24,7 @@ fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
 #[test]
 fn layout_born_and_unborn() -> Result<(), Box<dyn std::error::Error>> {
     let instances = instances()?;
-    let layout = plan_multi(&instances, Some("do it"), HeadState::Born);
+    let layout = plan_multi(&instances, Some("do it"), HeadState::Born)?;
     let task = layout
         .files
         .iter()
@@ -44,7 +44,7 @@ fn layout_born_and_unborn() -> Result<(), Box<dyn std::error::Error>> {
     let other = &layout.worktrees[1];
     assert!(other.worktree);
     assert_eq!(other.branch.as_deref(), Some("agent/omp"));
-    let unborn = plan_multi(&instances, Some("do it"), HeadState::Unborn);
+    let unborn = plan_multi(&instances, Some("do it"), HeadState::Unborn)?;
     assert!(!unborn.worktrees[1].worktree);
     assert_eq!(unborn.worktrees[1].branch, None);
     assert!(agents_json_mismatch(&instances, Some(b"[]")));

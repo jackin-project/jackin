@@ -209,7 +209,7 @@ impl AgentTuple {
 
     pub fn codex_base_url(&self) -> Option<&'static str> {
         match self.id {
-            "T17" => Some("https://api.kimi.com/coding/v1"),
+            "T17" => Some("https://api.kimi.ai/coding/v1"),
             "T18" => Some("https://api.z.ai/api/v1"),
             "T19" => Some("https://api.minimax.io/v1"),
             "T20" => Some("https://token-plan-sgp.xiaomimimo.com/v1"),

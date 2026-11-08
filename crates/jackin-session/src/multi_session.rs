@@ -78,7 +78,11 @@ impl Session {
         } else {
             crate::multi::HeadState::Unborn
         };
-        let layout = crate::multi::plan_multi(instances, None, head);
+        let layout = crate::multi::plan_multi(instances, None, head).map_err(|error| {
+            GatewayError::Protocol {
+                message: error.to_string(),
+            }
+        })?;
         let mkdir = SandboxPath::from_static("/usr/bin/mkdir");
         for directory in layout.directories.iter().filter(|path| {
             path.as_str().starts_with("/sandbox/.jackin/task")
