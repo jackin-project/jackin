@@ -107,6 +107,7 @@ impl fmt::Display for CodexAuthMode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum AuthClass {
     StaticKey,
+    ApiKey,
     OAuth,
     BlockedVendor,
 }
@@ -137,6 +138,8 @@ impl AgentTuple {
             "T10" => Some("moonshot"),
             "T11" => Some("minimax-code"),
             "T12" => Some("xiaomi-token-plan-sgp"),
+            "T21" => Some("anthropic"),
+            "T22" => Some("openai"),
             _ => None,
         }
     }
@@ -147,6 +150,8 @@ impl AgentTuple {
             "T10" => Some("KIMI_API_KEY"),
             "T11" => Some("MINIMAX_CODE_API_KEY"),
             "T12" => Some("XIAOMI_TOKEN_PLAN_SGP_API_KEY"),
+            "T21" => Some("ANTHROPIC_API_KEY"),
+            "T22" => Some("OPENAI_API_KEY"),
             _ => None,
         }
     }
@@ -166,6 +171,8 @@ impl AgentTuple {
             "T10" => &["api.kimi.com"],
             "T11" => &["api.minimax.io"],
             "T12" => &["token-plan-sgp.xiaomimimo.com"],
+            "T21" => &["api.anthropic.com"],
+            "T22" => &["api.openai.com"],
             _ => &[],
         }
     }
@@ -261,10 +268,51 @@ pub fn tuple_profile_asset(tuple: &AgentTuple) -> &'static ProfileAsset {
             id: "omp-minimax",
             yaml: include_str!("assets/t11-omp-minimax.yaml"),
         },
-        _ => &ProfileAsset {
+        "T12" => &ProfileAsset {
             id: "omp-mimo",
             yaml: include_str!("assets/t12-omp-mimo.yaml"),
         },
+        "T13" => &ProfileAsset {
+            id: "t13-claude-kimi",
+            yaml: include_str!("assets/t13-claude-kimi.yaml"),
+        },
+        "T14" => &ProfileAsset {
+            id: "t14-claude-zai",
+            yaml: include_str!("assets/t14-claude-zai.yaml"),
+        },
+        "T15" => &ProfileAsset {
+            id: "t15-claude-minimax",
+            yaml: include_str!("assets/t15-claude-minimax.yaml"),
+        },
+        "T16" => &ProfileAsset {
+            id: "t16-claude-mimo",
+            yaml: include_str!("assets/t16-claude-mimo.yaml"),
+        },
+        "T17" => &ProfileAsset {
+            id: "t17-codex-kimi",
+            yaml: include_str!("assets/t17-codex-kimi.yaml"),
+        },
+        "T18" => &ProfileAsset {
+            id: "t18-codex-zai",
+            yaml: include_str!("assets/t18-codex-zai.yaml"),
+        },
+        "T19" => &ProfileAsset {
+            id: "t19-codex-minimax",
+            yaml: include_str!("assets/t19-codex-minimax.yaml"),
+        },
+        "T20" => &ProfileAsset {
+            id: "t20-codex-mimo",
+            yaml: include_str!("assets/t20-codex-mimo.yaml"),
+        },
+        "T21" => &ProfileAsset {
+            id: "t21-omp-anthropic",
+            yaml: include_str!("assets/t21-omp-anthropic.yaml"),
+        },
+        "T22" => &ProfileAsset {
+            id: "t22-omp-openai",
+            yaml: include_str!("assets/t22-omp-openai.yaml"),
+        },
+        _ => unreachable!("unknown tuple id {}", tuple.id),
     }
 }
 
@@ -740,18 +788,18 @@ static OMP_SPEC: AgentSpec = agent_spec!(
     "/sandbox/.omp/auth.json",
     "/sandbox/.omp/config.toml",
     &["omp"],
-    "18.16.0",
+    "18.18.1",
     "https://github.com/can1357/oh-my-pi/releases/download/v{version}/omp-linux-{target}",
     &[
         InstallTarget {
             platform: Platform::LinuxArm64,
             triple: "arm64",
-            sha256: "c2be1ea85ce17c4270854b57efff2a7ea1d5a03c7557fd08721f2b9bb32698de"
+            sha256: "3bd7699fe7ea63a8eb14f27290d9d3c6a56e55388bef6c560cb139d809330528"
         },
         InstallTarget {
             platform: Platform::LinuxAmd64,
             triple: "x64",
-            sha256: "6498ed785bab00d2926e0387e0ec02362d6d45f1c3d0d1b57c1618b7f95c9264"
+            sha256: "2a75e16550676783b3bc8be0e06513478dd5881efc647954642ab30db8f9be06"
         }
     ],
     AuthClass::StaticKey,
@@ -777,7 +825,7 @@ macro_rules! tuple {
     };
 }
 
-pub static TUPLES: [AgentTuple; 12] = [
+pub static TUPLES: [AgentTuple; 22] = [
     tuple!(
         "T01",
         Agent::Codex,
@@ -897,5 +945,105 @@ pub static TUPLES: [AgentTuple; 12] = [
         Some("no plan key on this host"),
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
+    ),
+    tuple!(
+        "T13",
+        Agent::ClaudeCode,
+        Provider::Kimi,
+        AuthClass::StaticKey,
+        TupleState::Unavailable,
+        Some("not yet proven on a real gateway"),
+        &["kimi-for-coding"],
+        "kimi-for-coding"
+    ),
+    tuple!(
+        "T14",
+        Agent::ClaudeCode,
+        Provider::Zai,
+        AuthClass::StaticKey,
+        TupleState::Unavailable,
+        Some("not yet proven on a real gateway"),
+        &["glm-5.3"],
+        "glm-5.3"
+    ),
+    tuple!(
+        "T15",
+        Agent::ClaudeCode,
+        Provider::Minimax,
+        AuthClass::StaticKey,
+        TupleState::Unavailable,
+        Some("not yet proven on a real gateway"),
+        &["minimax-m3"],
+        "minimax-m3"
+    ),
+    tuple!(
+        "T16",
+        Agent::ClaudeCode,
+        Provider::Mimo,
+        AuthClass::StaticKey,
+        TupleState::Unavailable,
+        Some("not yet proven on a real gateway"),
+        &["mimo-v2.6-pro"],
+        "mimo-v2.6-pro"
+    ),
+    tuple!(
+        "T17",
+        Agent::Codex,
+        Provider::Kimi,
+        AuthClass::StaticKey,
+        TupleState::Unavailable,
+        Some("not yet proven on a real gateway"),
+        &["kimi-for-coding"],
+        "kimi-for-coding"
+    ),
+    tuple!(
+        "T18",
+        Agent::Codex,
+        Provider::Zai,
+        AuthClass::StaticKey,
+        TupleState::Unavailable,
+        Some("not yet proven on a real gateway"),
+        &["glm-5.3"],
+        "glm-5.3"
+    ),
+    tuple!(
+        "T19",
+        Agent::Codex,
+        Provider::Minimax,
+        AuthClass::StaticKey,
+        TupleState::Unavailable,
+        Some("not yet proven on a real gateway"),
+        &["minimax-m3"],
+        "minimax-m3"
+    ),
+    tuple!(
+        "T20",
+        Agent::Codex,
+        Provider::Mimo,
+        AuthClass::StaticKey,
+        TupleState::Unavailable,
+        Some("not yet proven on a real gateway"),
+        &["mimo-v2.6-pro"],
+        "mimo-v2.6-pro"
+    ),
+    tuple!(
+        "T21",
+        Agent::Omp,
+        Provider::Claude,
+        AuthClass::ApiKey,
+        TupleState::Unavailable,
+        Some("no API key on this host"),
+        &["haiku"],
+        "haiku"
+    ),
+    tuple!(
+        "T22",
+        Agent::Omp,
+        Provider::Codex,
+        AuthClass::ApiKey,
+        TupleState::Unavailable,
+        Some("no API key on this host"),
+        &["gpt-5.1-codex"],
+        "gpt-5.1-codex"
     ),
 ];

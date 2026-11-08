@@ -3,7 +3,7 @@
 
 use std::error::Error;
 
-use jackin_core::{Agent, Provider, lookup_tuple, tuple_profile_asset};
+use jackin_core::{Agent, Provider, TUPLES, lookup_tuple, tuple_profile_asset};
 use jackin_openshell::{AuthoredPolicy, ProviderProfile};
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -60,6 +60,238 @@ fn t09_profile_is_omp_zai_only_without_refresh() -> TestResult {
     );
     assert_eq!(hosts(&profile), ["api.z.ai"]);
     assert!(!asset.yaml.contains("refresh:"));
+    Ok(())
+}
+
+struct Row {
+    id: &'static str,
+    asset: &'static str,
+    hosts: &'static [&'static str],
+    env: &'static str,
+    binary: &'static str,
+    refresh: bool,
+}
+
+const PINNED_ROWS: &[Row] = &[
+    Row {
+        id: "T01",
+        asset: "codex",
+        hosts: &[
+            "api.openai.com",
+            "auth.openai.com",
+            "chatgpt.com",
+            "ab.chatgpt.com",
+        ],
+        env: "CODEX_AUTH_ACCESS_TOKEN",
+        binary: "/usr/local/bin/codex",
+        refresh: true,
+    },
+    Row {
+        id: "T02",
+        asset: "claude",
+        hosts: &["api.anthropic.com"],
+        env: "ANTHROPIC_API_KEY",
+        binary: "/usr/local/bin/claude",
+        refresh: false,
+    },
+    Row {
+        id: "T03",
+        asset: "grok",
+        hosts: &["x.ai", "cli-chat-proxy.grok.com", "auth.x.ai"],
+        env: "XAI_API_KEY",
+        binary: "/usr/local/bin/grok",
+        refresh: false,
+    },
+    Row {
+        id: "T04",
+        asset: "muse",
+        hosts: &["api.meta.ai"],
+        env: "META_API_KEY",
+        binary: "/usr/local/bin/muse",
+        refresh: false,
+    },
+    Row {
+        id: "T05",
+        asset: "agy",
+        hosts: &["antigravity.google"],
+        env: "GOOGLE_API_KEY",
+        binary: "/usr/local/bin/agy",
+        refresh: false,
+    },
+    Row {
+        id: "T06",
+        asset: "minimax-code",
+        hosts: &["api.minimax.io"],
+        env: "MINIMAX_API_KEY",
+        binary: "/usr/local/bin/mcode",
+        refresh: false,
+    },
+    Row {
+        id: "T07",
+        asset: "mimo",
+        hosts: &["mimo.mi.com"],
+        env: "MIMO_API_KEY",
+        binary: "/usr/local/bin/mimo",
+        refresh: false,
+    },
+    Row {
+        id: "T08",
+        asset: "kimi",
+        hosts: &["api.kimi.com"],
+        env: "KIMI_API_KEY",
+        binary: "/usr/local/bin/kimi",
+        refresh: false,
+    },
+    Row {
+        id: "T09",
+        asset: "omp-zai",
+        hosts: &["api.z.ai"],
+        env: "ZAI_API_KEY",
+        binary: "/usr/local/bin/omp",
+        refresh: false,
+    },
+    Row {
+        id: "T10",
+        asset: "omp-kimi",
+        hosts: &["api.kimi.com"],
+        env: "KIMI_API_KEY",
+        binary: "/usr/local/bin/omp",
+        refresh: false,
+    },
+    Row {
+        id: "T11",
+        asset: "omp-minimax",
+        hosts: &["api.minimax.io"],
+        env: "MINIMAX_CODE_API_KEY",
+        binary: "/usr/local/bin/omp",
+        refresh: false,
+    },
+    Row {
+        id: "T12",
+        asset: "omp-mimo",
+        hosts: &["token-plan-sgp.xiaomimimo.com"],
+        env: "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+        binary: "/usr/local/bin/omp",
+        refresh: false,
+    },
+    Row {
+        id: "T13",
+        asset: "t13-claude-kimi",
+        hosts: &["api.kimi.ai"],
+        env: "KIMI_API_KEY",
+        binary: "/usr/local/bin/claude",
+        refresh: false,
+    },
+    Row {
+        id: "T14",
+        asset: "t14-claude-zai",
+        hosts: &["api.z.ai"],
+        env: "ZAI_API_KEY",
+        binary: "/usr/local/bin/claude",
+        refresh: false,
+    },
+    Row {
+        id: "T15",
+        asset: "t15-claude-minimax",
+        hosts: &["api.minimax.io"],
+        env: "MINIMAX_CODE_API_KEY",
+        binary: "/usr/local/bin/claude",
+        refresh: false,
+    },
+    Row {
+        id: "T16",
+        asset: "t16-claude-mimo",
+        hosts: &["token-plan-sgp.xiaomimimo.com"],
+        env: "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+        binary: "/usr/local/bin/claude",
+        refresh: false,
+    },
+    Row {
+        id: "T17",
+        asset: "t17-codex-kimi",
+        hosts: &["api.kimi.ai"],
+        env: "KIMI_API_KEY",
+        binary: "/usr/local/bin/codex",
+        refresh: false,
+    },
+    Row {
+        id: "T18",
+        asset: "t18-codex-zai",
+        hosts: &["api.z.ai"],
+        env: "ZAI_API_KEY",
+        binary: "/usr/local/bin/codex",
+        refresh: false,
+    },
+    Row {
+        id: "T19",
+        asset: "t19-codex-minimax",
+        hosts: &["api.minimax.io"],
+        env: "MINIMAX_CODE_API_KEY",
+        binary: "/usr/local/bin/codex",
+        refresh: false,
+    },
+    Row {
+        id: "T20",
+        asset: "t20-codex-mimo",
+        hosts: &["token-plan-sgp.xiaomimimo.com"],
+        env: "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+        binary: "/usr/local/bin/codex",
+        refresh: false,
+    },
+    Row {
+        id: "T21",
+        asset: "t21-omp-anthropic",
+        hosts: &["api.anthropic.com"],
+        env: "ANTHROPIC_API_KEY",
+        binary: "/usr/local/bin/omp",
+        refresh: false,
+    },
+    Row {
+        id: "T22",
+        asset: "t22-omp-openai",
+        hosts: &["api.openai.com"],
+        env: "OPENAI_API_KEY",
+        binary: "/usr/local/bin/omp",
+        refresh: false,
+    },
+];
+
+#[test]
+fn every_tuple_profile_parses_with_exact_asset_hosts_env_binary_and_refresh() -> TestResult {
+    assert_eq!(TUPLES.len(), PINNED_ROWS.len());
+    for row in PINNED_ROWS {
+        let tuple = TUPLES
+            .iter()
+            .find(|tuple| tuple.id == row.id)
+            .unwrap_or_else(|| panic!("missing tuple {}", row.id));
+        let asset = tuple_profile_asset(tuple);
+        assert_eq!(asset.id, row.asset, "{}", row.id);
+        let yaml_id = asset
+            .yaml
+            .lines()
+            .find_map(|line| line.strip_prefix("id:"))
+            .unwrap_or_else(|| panic!("missing id line in {}", row.id))
+            .trim();
+        assert_eq!(yaml_id, row.asset, "{}", row.id);
+        let profile = ProviderProfile::parse(asset)?;
+        assert_eq!(
+            profile
+                .binaries
+                .iter()
+                .map(jackin_core::SandboxPath::as_str)
+                .collect::<Vec<_>>(),
+            [row.binary],
+            "{}",
+            row.id
+        );
+        assert_eq!(hosts(&profile), row.hosts, "{}", row.id);
+        assert!(
+            asset.yaml.contains(&format!("env_vars: [{}]", row.env)),
+            "{}",
+            row.id
+        );
+        assert_eq!(asset.yaml.contains("refresh:"), row.refresh, "{}", row.id);
+    }
     Ok(())
 }
 
