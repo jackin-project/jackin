@@ -340,25 +340,25 @@ impl Run<'_> {
                 .await
                 .map_err(|error| failed(LaunchStep::Provider, error))?;
             self.live()?;
-            if state == ProviderState::Absent {
-                let synced = self
-                    .session
-                    .sync_if_absent(account, name, *agent, self.cancel)
-                    .await
-                    .map_err(|source| match source {
-                        AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
-                        other => failed(
-                            LaunchStep::Provider,
-                            LaunchError::ProviderUnavailable {
-                                account: account.name().clone(),
-                                source: Box::new(other),
-                            },
-                        ),
-                    })?;
-                if !synced {
-                    self.tracker.skip(SkipReason::ProviderPresent);
-                }
-            } else {
+            if state == ProviderState::Present && !Session::holds_static_key(account, *agent) {
+                self.tracker.skip(SkipReason::ProviderPresent);
+                continue;
+            }
+            let synced = self
+                .session
+                .sync_provider(account, name, *agent, self.cancel)
+                .await
+                .map_err(|source| match source {
+                    AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
+                    other => failed(
+                        LaunchStep::Provider,
+                        LaunchError::ProviderUnavailable {
+                            account: account.name().clone(),
+                            source: Box::new(other),
+                        },
+                    ),
+                })?;
+            if !synced {
                 self.tracker.skip(SkipReason::ProviderPresent);
             }
         }
@@ -557,6 +557,12 @@ impl Run<'_> {
                 let file = crate::files::omp_auth_file(tuple);
                 self.write_planned(sandbox, &file).await?;
                 self.write_home_auth(sandbox, instance.agent, &file).await?;
+            }
+        }
+        if let Some(file) = &files.omp_models {
+            self.write_planned(sandbox, file).await?;
+            if self.plan.instances().len() > 1 {
+                self.write_home_auth(sandbox, Agent::Omp, file).await?;
             }
         }
         for file in &files.multi {

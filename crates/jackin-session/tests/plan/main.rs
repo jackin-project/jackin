@@ -17,7 +17,7 @@ mod image_request;
 mod native;
 mod omp;
 mod omp_credentials;
-mod policy_root;
+mod omp_models;
 mod role_engine;
 mod roles;
 mod roles_cancel;

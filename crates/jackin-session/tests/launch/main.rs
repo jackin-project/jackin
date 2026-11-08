@@ -20,7 +20,7 @@ mod hostile_launch;
 mod image_handoff;
 mod modes;
 mod multi_instance;
-mod phases;
+mod omp_models;
 mod proofs;
 mod provider;
 mod recreate;

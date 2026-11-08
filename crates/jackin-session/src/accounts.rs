@@ -7,8 +7,8 @@ use std::time::Duration;
 
 use jackin_core::{
     Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
-    FileLock, GatewayEntry, GatewayName, HostPath, ProcessError, ProcessSpec, ProcessStatus,
-    ProcessStdin, Program, Provider, ProviderName,
+    CredentialSource, FileLock, GatewayEntry, GatewayName, HostPath, ProcessError, ProcessSpec,
+    ProcessStatus, ProcessStdin, Program, Provider, ProviderName,
 };
 use jackin_openshell::{
     Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile,
@@ -681,7 +681,7 @@ impl Session {
         forget_login(self.deps.gateway.as_ref(), account).await
     }
 
-    pub(crate) async fn sync_if_absent(
+    pub(crate) async fn sync_provider(
         &self,
         account: &Account,
         provider: &ProviderName,
@@ -689,7 +689,9 @@ impl Session {
         cancel: &CancellationToken,
     ) -> Result<bool, AccountError> {
         let _held = self.hold_current(account, cancel).await?;
-        if self.deps.gateway.provider_state(provider).await? == ProviderState::Present {
+        if self.deps.gateway.provider_state(provider).await? == ProviderState::Present
+            && !Self::holds_static_key(account, agent)
+        {
             return Ok(false);
         }
         if let Err(original) = self.sync_locked_c(account, agent, cancel).await {
@@ -705,6 +707,21 @@ impl Session {
         Ok(true)
     }
 
+    pub(crate) fn holds_static_key(account: &Account, agent: Agent) -> bool {
+        matches!(
+            account.credential(),
+            CredentialSource::Env { .. }
+                | CredentialSource::OnePassword { .. }
+                | CredentialSource::File { .. }
+                | CredentialSource::OmpHost
+        ) && agent != Agent::Codex
+            && jackin_core::lookup_tuple(agent, account.provider()).is_ok_and(|tuple| {
+                matches!(
+                    tuple.auth_class,
+                    jackin_core::AuthClass::StaticKey | jackin_core::AuthClass::ApiKey
+                )
+            })
+    }
     async fn hold_current(
         &self,
         account: &Account,
@@ -930,7 +947,7 @@ async fn sync_login(
     agent: Agent,
     cancel: &CancellationToken,
 ) -> Result<AccountSync, AccountError> {
-    if let jackin_core::CredentialSource::HostLogin { path } = account.credential() {
+    if let CredentialSource::HostLogin { path } = account.credential() {
         if agent == Agent::GrokBuild && account.provider() == Provider::Grok {
             return sync_grok_login(host, gateway, account, agent, path).await;
         }

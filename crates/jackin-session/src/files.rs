@@ -186,6 +186,71 @@ pub fn omp_auth_file(tuple: &jackin_core::AgentTuple) -> crate::plan::PlannedFil
     }
 }
 
+pub fn render_omp_models(
+    tuple: &'static jackin_core::AgentTuple,
+    model: Option<&str>,
+) -> Result<String, jackin_core::CatalogError> {
+    let model = match model {
+        Some(model) => {
+            tuple.check_model(model)?;
+            model
+        }
+        None => tuple.default_model,
+    };
+    let provider = tuple.omp_provider_id().unwrap_or_default();
+    let env = tuple.omp_credential_env().unwrap_or_default();
+    let mut text = format!("providers:\n  {provider}:\n");
+    if let Some(url) = tuple.omp_base_url() {
+        text.push_str("    baseUrl: ");
+        text.push_str(url);
+        text.push('\n');
+    }
+    if let Some(api) = tuple.omp_model_api() {
+        text.push_str("    api: ");
+        text.push_str(api);
+        text.push('\n');
+    }
+    text.push_str("    apiKey: ");
+    text.push_str(env);
+    text.push('\n');
+    if tuple.omp_auth_header() {
+        text.push_str("    authHeader: true\n");
+    }
+    if tuple.omp_custom_model() {
+        text.push_str("    models:\n      - id: ");
+        text.push_str(model);
+        text.push('\n');
+    }
+    Ok(text)
+}
+
+pub fn omp_models_file(
+    tuple: &'static jackin_core::AgentTuple,
+    model: Option<&str>,
+) -> Result<crate::plan::PlannedFile, crate::plan::PlanError> {
+    let spec = jackin_core::Agent::Omp.spec();
+    let root = spec
+        .auth_file
+        .path
+        .as_str()
+        .rsplit_once('/')
+        .map(|(dir, _)| dir)
+        .unwrap_or_default();
+    let path = SandboxPath::parse(&format!("{root}/agent/models.yml"))
+        .map_err(crate::plan::PlanError::Project)?;
+    Ok(crate::plan::PlannedFile {
+        path,
+        mode: FileMode(0o600),
+        text: render_omp_models(tuple, model).map_err(|_| {
+            crate::plan::PlanError::TupleNotSupported {
+                agent: tuple.agent,
+                provider: tuple.provider,
+                reason: "unknown model".to_owned(),
+            }
+        })?,
+    })
+}
+
 pub fn claude_config_file(
     tuple: &jackin_core::AgentTuple,
 ) -> Result<crate::plan::PlannedFile, jackin_core::CatalogError> {

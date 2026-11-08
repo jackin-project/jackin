@@ -93,6 +93,7 @@ pub struct PlannedFile {
 pub struct PlannedFiles {
     pub codex_config: PlannedFile,
     pub env: PlannedFile,
+    pub omp_models: Option<PlannedFile>,
     pub auth: PlannedFile,
     pub muse_trust: Option<PlannedFile>,
     pub multi: Vec<PlannedFile>,
@@ -578,6 +579,25 @@ fn muse_trust_file(agent: Agent, spec: &jackin_core::AgentSpec) -> Option<Planne
     }
 }
 
+fn plan_omp_models(
+    instances: &jackin_core::AgentInstances,
+) -> Result<Option<PlannedFile>, PlanError> {
+    instances
+        .iter()
+        .find(|instance| instance.agent == Agent::Omp)
+        .map(|instance| {
+            let tuple = jackin_core::lookup_tuple(Agent::Omp, instance.provider).map_err(|_| {
+                PlanError::TupleNotSupported {
+                    agent: Agent::Omp,
+                    provider: instance.provider,
+                    reason: "unknown tuple".to_owned(),
+                }
+            })?;
+            crate::files::omp_models_file(tuple, Some(instance.model.as_str()))
+        })
+        .transpose()
+}
+
 type InstanceAccounts = (Vec<Account>, Vec<(Agent, ChatgptAccountId)>);
 
 fn collect_instance_accounts(
@@ -747,6 +767,7 @@ pub fn plan_launch(
         } else {
             placeholder_file(spec)
         },
+        omp_models: plan_omp_models(&instances)?,
         muse_trust: muse_trust_file(agent, spec),
     };
     let image_request = plan_image_for(
