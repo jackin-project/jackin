@@ -8,7 +8,7 @@ This document records the target design and the decisions behind it. It is a ref
 
 Jackin is developer experience. It is a Rust CLI and a terminal console that run AI coding agents in NVIDIA OpenShell sandboxes. Jackin builds the role images. OpenShell is the only execution engine. Jackin does not run containers and does not enforce isolation. OpenShell runs the containers and enforces the isolation.
 
-The first agent was OpenAI Codex, proven end to end. Decision D29 adds the other agents of the twelve-tuple catalog.
+The first agent was OpenAI Codex, proven end to end. Decision D29 adds the other agents of the twenty-two-tuple catalog.
 
 ## Reference baseline
 
@@ -63,11 +63,11 @@ The repository `mise.toml` and `rust-toolchain.toml` must agree with these pins.
 
 Evidence: `evidence/P0.6-panes.md` (transport research), `evidence/P0.2-gateway.md` (Gaps G1).
 
-### D04. The agent catalog holds twelve tuples (D29)
+### D04. The agent catalog holds twenty-two tuples (D29)
 
 `jackin-core` defines `enum Agent` and a `const` table of `AgentSpec` rows. A row holds the binary path, the state directory, the OpenShell provider profile, the network policy rules, and the launch command. The Codex launch command is `codex --sandbox danger-full-access -c check_for_update_on_startup=false`. The OpenShell sandbox already isolates Codex, and the Codex sandbox fails inside it. Every `match` on `Agent` must stay exhaustive.
 
-Decision D29 (2026-11-06) replaces the Codex-only rule. Jackin supports twelve agent, provider, auth, and platform tuples, listed in `rewrite/GOAL-MULTI-AGENT.md`: Codex with OpenAI, Claude Code with Anthropic, Grok Build with xAI, Muse Code with Meta, Antigravity with Google, MiniMax Code with MiniMax, MiMo Code with MiMo, Kimi Code with Kimi, and `omp` with Z.AI, Kimi, MiniMax, and MiMo. CLI only. A tuple is `supported` only with live gateway evidence that the subscription paid and that no paid fallback can occur. Every other tuple is `unavailable` or `blocked-vendor` with one reason, and a launch refuses it with a typed error before any image build. To add a tuple, add one catalog row and its evidence. Arbitrary user commands and endpoints are not a tuple.
+Decision D29 (2026-11-06, extended 2026-11-08) replaces the Codex-only rule. Jackin supports twenty-two agent, provider, auth, and platform tuples, listed in D29: the twelve tuples of 2026-11-06 plus Claude Code and Codex with Kimi, Z.AI, MiniMax, and MiMo by plan key, and `omp` with Anthropic and OpenAI by API key. CLI only. A tuple is `supported` only with the live gateway evidence of its auth class in D29 and with no paid fallback beyond its class. Every other tuple is `unavailable` or `blocked-vendor` with one reason, and a launch refuses it with a typed error before any image build. To add a tuple, add one catalog row and its evidence. Arbitrary user commands and endpoints are not a tuple.
 
 ### D05. Jackin builds the role image
 
@@ -451,11 +451,11 @@ Jackin has the same screens, the same flows, the same key bindings, and the same
 - The CLI commands in this document stay. The console is the main way to use jackin, as in the demo.
 - The identity gate drives the demo key sequences against the jackin console on the baseline fixture data. Each resulting screen must match its `jackin-preview` tuiscotti baseline.
 
-### D29. Twelve tuples, and many agents in one sandbox
+### D29. Twenty-two tuples, and many agents in one sandbox
 
-This decision is dated 2026-11-06. It replaces the Codex-only rule of the old D04 and the delete-list entry of D16. The task list is `rewrite/GOAL-MULTI-AGENT.md`. The per-pair evidence is `rewrite/research/agent-provider.md`.
+This decision is dated 2026-11-06 and was extended on 2026-11-08. It replaces the Codex-only rule of the old D04 and the delete-list entry of D16. The task list is `rewrite/GOAL-MULTI-AGENT.md`. The per-pair evidence is `rewrite/research/agent-provider.md`.
 
-The catalog holds twelve tuples. CLI only:
+The catalog holds twenty-two tuples. CLI only:
 
 | Tuple | Agent | Provider | Auth class |
 |---|---|---|---|
@@ -471,8 +471,28 @@ The catalog holds twelve tuples. CLI only:
 | T10 | omp | Kimi | S, membership key |
 | T11 | omp | MiniMax | S, coding plan key `minimax-code` |
 | T12 | omp | MiMo | S, region Token Plan key |
+| T13 | Claude Code | Kimi | S, membership key, Anthropic-compatible endpoint |
+| T14 | Claude Code | Z.AI | S, coding plan key, Anthropic-compatible endpoint |
+| T15 | Claude Code | MiniMax | S, coding plan key, Anthropic-compatible endpoint |
+| T16 | Claude Code | MiMo | S, region Token Plan key, Anthropic-compatible endpoint |
+| T17 | Codex | Kimi | S, membership key, OpenAI-compatible endpoint |
+| T18 | Codex | Z.AI | S, coding plan key, OpenAI-compatible endpoint |
+| T19 | Codex | MiniMax | S, coding plan key, OpenAI-compatible endpoint |
+| T20 | Codex | MiMo | S, region Token Plan key, OpenAI-compatible endpoint |
+| T21 | omp | Anthropic | A, API key only |
+| T22 | omp | OpenAI | A, API key only |
 
-Class S is a static subscription key at the gateway. Class O is an OAuth login with gateway refresh. Class B is blocked until the vendor permits the gateway flow in writing. A tuple is `supported` only with live gateway evidence that the subscription paid and that no paid fallback can occur. A launch refuses a tuple that is not `supported`, with a typed error, before any image build.
+Class S is a static plan key at the gateway: a subscription, membership, coding plan, or token plan key. It is not a pay-as-you-go API key. Class O is an OAuth login with gateway refresh. Class B is blocked until the vendor permits the gateway flow in writing. Class A is a static pay-as-you-go API key at the gateway. A launch refuses a tuple that is not `supported`, with a typed error, before any image build.
+
+The `supported` evidence depends on the class. For class S, live gateway evidence that the plan key paid and that no paid fallback can occur. For class O, live gateway evidence that the subscription login paid, with the host login check of its tuple. For class A, live gateway evidence that the named API key was used at the named provider endpoint and that no other credential can occur. In code, classes S and A are distinct: `AuthClass::StaticKey` and `AuthClass::ApiKey`.
+
+Extension of 2026-11-08: for tuples T13 to T20 the keys are the plan keys of T08 to T12 used through a second agent. For T21 and T22 the keys are pay-as-you-go API keys. Claude Code reaches Kimi, Z.AI, MiniMax, and MiMo through the provider Anthropic-compatible endpoint with `ANTHROPIC_BASE_URL` and its auth token env. Codex reaches the same providers through the provider OpenAI-compatible endpoint with a custom model provider in `config.toml`. Allowed model names are proven from vendor docs and a live reply for each pair. Never guess a model name. The catalog rows of T13 to T22 start with the model of the same provider in T01, T02, or T06 to T12. That start is a placeholder, not a supported claim. A tuple flips to `supported` only after its own vendor-doc and live-reply proof replaces or confirms it.
+
+Auth invariant: Claude Code with Anthropic is subscription only. Codex with OpenAI is subscription only. No Anthropic API key enters a Claude Code tuple, and no OpenAI API key enters a Codex tuple. Anthropic and OpenAI API keys are used by omp only, in T21 and T22.
+
+Per-tuple identity: from T13 on, the OpenShell provider profile, its credential env names, its hosts, and the rendered sandbox config are per tuple, not per agent. The profile ID is the tuple asset ID, for example `t14-claude-zai`. The provider name stays `jackin-<account>-<agent>`. Each tuple holds its own profile, its own credential env names, and its own rendered config: for Claude Code the `ANTHROPIC_BASE_URL` and auth token placeholder of its tuple, and for Codex the `model_providers` entry of its tuple. One launch holds at most one instance of each agent type (D07), so two tuples of one agent never share a sandbox. Two tuples of different agents may serve the same host, for example `api.z.ai` for omp and for Claude Code. The host closure rule of D10 then applies to the union of the tuple profiles of all instances in that launch. No credential env name of one tuple may equal a credential env name of another tuple in the same launch.
+
+Operator orders of 2026-11-08: the operator orders a live Claude Code subscription test for T02 and a live Antigravity test for T05. The durable record is `rewrite/evidence/operator-order-2026-11-08.md`. That order satisfies the live-test order condition in `rewrite/blockers/T02-claude.md` and `rewrite/blockers/T05-antigravity.md`. T02 and T05 stay class B until the test passes. Each test still must prove its sandbox condition: for T02 the host login still works after sandbox runs, and for T05 `agy` works with no desktop keyring, or the tuple stays unavailable with the recorded reason.
 
 One sandbox runs many agent instances on one task, issue, or goal. Each instance has its own process, home, provider, account, model, and branch, and its own terminal stream on the transport that task A3M proves. The gateway holds each real credential. A sandbox holds only placeholders. The core rules of D01, D03, D10, and D27 do not change: OpenShell is the only engine, the SDK boundary stays, the gateway holds each credential, and the baseline owns the console visuals. The amended text is in D04, D05, D07, D09, D10, D26, and D28.
 

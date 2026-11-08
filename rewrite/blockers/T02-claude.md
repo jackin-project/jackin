@@ -5,6 +5,8 @@ Reason: vendor clarification pending.
 
 Anthropic permits a person to sign in to the unmodified Claude CLI. Anthropic restricts a third party that collects and routes Claude.ai credentials. It is not clear that the jackin gateway flow is permitted (rewrite/GOAL-MULTI-AGENT.md, Claude block rule).
 
-No written Anthropic clarification is on file. The operator gave no written order for a live Claude subscription test. Task A7 step 1 needs one of the two before any live work.
+No written Anthropic clarification is on file. No clarification arrived on 2026-11-08. What arrived on 2026-11-08 is the operator order recorded below, and no operator order was on file before that date.
 
 To unblock: Anthropic replies in writing that the gateway flow is permitted, or the operator orders a live test in writing. Then do the class O steps of task A6, with the host and sandbox refresh race test. If that test logs out the host, T02 stays unavailable.
+
+Update 2026-11-08: the operator ordered a live subscription test in the session goal. The durable record is rewrite/evidence/operator-order-2026-11-08.md. T02 stays blocked-vendor until the live test passes with the host-login check.
