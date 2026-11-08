@@ -76,7 +76,7 @@ fn omp_plan_names_omp_binary_and_version() -> TestResult {
             "{name}"
         );
     }
-    let tuple = lookup_tuple(Agent::Omp, Provider::Kimi)?;
+    let tuple = lookup_tuple(Agent::ClaudeCode, Provider::Zai)?;
     assert_eq!(tuple.state, TupleState::Unavailable);
     Ok(())
 }
