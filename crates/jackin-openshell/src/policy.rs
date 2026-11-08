@@ -192,6 +192,10 @@ impl PolicyDocument {
         yaml::with_rule(&self.value, &rule)
     }
 
+    pub fn with_read_only(&self, path: &str) -> Result<PolicyDocument, PolicyError> {
+        yaml::with_read_only(&self.value, path)
+    }
+
     pub fn render(&self) -> Result<String, PolicyError> {
         yaml::render(&self.value)
     }
@@ -213,6 +217,10 @@ impl AuthoredPolicy {
     pub fn with_rule(&self, rule: NetworkRule) -> Result<AuthoredPolicy, PolicyError> {
         yaml::check_added(&rule)?;
         self.0.with_rule(rule).map(AuthoredPolicy)
+    }
+
+    pub fn with_read_only(self, path: &str) -> Result<AuthoredPolicy, PolicyError> {
+        self.0.with_read_only(path).map(AuthoredPolicy)
     }
 
     pub fn document(&self) -> &PolicyDocument {
