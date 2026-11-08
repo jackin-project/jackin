@@ -25,9 +25,9 @@ fn blocked_and_unavailable_tuples_carry_reasons() -> TestResult {
     let blocked = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
     assert_eq!(blocked.state, TupleState::BlockedVendor);
     assert_eq!(blocked.reason, Some("vendor clarification pending"));
-    let unavailable = lookup_tuple(Agent::Omp, Provider::Kimi)?;
-    assert_eq!(unavailable.state, TupleState::Unavailable);
-    assert_eq!(unavailable.reason, Some("no plan key on this host"));
+    let supported = lookup_tuple(Agent::Omp, Provider::Kimi)?;
+    assert_eq!(supported.state, TupleState::Supported);
+    assert_eq!(supported.reason, None);
     Ok(())
 }
 

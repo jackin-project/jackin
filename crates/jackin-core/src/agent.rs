@@ -976,8 +976,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Omp,
         Provider::Kimi,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("no plan key on this host"),
+        TupleState::Supported,
+        None,
         &["kimi-for-coding"],
         "kimi-for-coding"
     ),
@@ -986,8 +986,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Omp,
         Provider::Minimax,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("no plan key on this host"),
+        TupleState::Supported,
+        None,
         &["minimax-m3"],
         "minimax-m3"
     ),
@@ -996,8 +996,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Omp,
         Provider::Mimo,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("no plan key on this host"),
+        TupleState::Supported,
+        None,
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
