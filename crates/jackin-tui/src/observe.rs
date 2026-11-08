@@ -352,7 +352,7 @@ impl Inputs {
             .map(|home| CoreWorkspace::new(home, false));
         let loaded = join_all(wanted.into_iter().map(|(name, source)| {
             let anywhere = anywhere.clone();
-            async move {
+            Box::pin(async move {
                 let doc = match &source {
                     CoreRoleSource::Path(path) => {
                         match self.roles.load_path(path, &CancellationToken::new()).await {
@@ -364,10 +364,13 @@ impl Inputs {
                         }
                     }
                     CoreRoleSource::Git { .. } => match &anywhere {
-                        Some(anywhere) => match self
-                            .roles
-                            .load(config, Some(&name), anywhere, &CancellationToken::new())
-                            .await
+                        Some(anywhere) => match Box::pin(self.roles.load(
+                            config,
+                            Some(&name),
+                            anywhere,
+                            &self.cancel,
+                        ))
+                        .await
                         {
                             Ok(role) => Ok(role.manifest().clone()),
                             Err(error) => Err(RoleDocError::Unreadable(error.to_string())),
@@ -376,7 +379,7 @@ impl Inputs {
                     },
                 };
                 (name, (source, doc))
-            }
+            })
         }))
         .await;
         let mut cache = locked(&self.docs);
