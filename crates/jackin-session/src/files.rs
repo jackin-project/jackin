@@ -20,13 +20,13 @@ pub(crate) fn render_codex_config(
     if let Some(id) = tuple.codex_provider_id() {
         let model = match model {
             Some(model) => {
-                tuple
-                    .check_model(model)
-                    .map_err(|_| crate::plan::PlanError::TupleNotSupported {
+                tuple.check_model(model).map_err(|_| {
+                    crate::plan::PlanError::TupleNotSupported {
                         agent: tuple.agent,
                         provider: tuple.provider,
                         reason: format!("unknown model {model}"),
-                    })?;
+                    }
+                })?;
                 model
             }
             None => tuple.default_model,

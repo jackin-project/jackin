@@ -96,13 +96,14 @@ pub fn plan_multi(
         };
         directories.push(workdir.clone());
         if !is_lead && instance.agent == Agent::Codex {
-            let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(
-                |_| crate::plan::PlanError::TupleNotSupported {
-                    agent: instance.agent,
-                    provider: instance.provider,
-                    reason: "unknown tuple".to_owned(),
-                },
-            )?;
+            let tuple =
+                jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(|_| {
+                    crate::plan::PlanError::TupleNotSupported {
+                        agent: instance.agent,
+                        provider: instance.provider,
+                        reason: "unknown tuple".to_owned(),
+                    }
+                })?;
             if tuple.codex_provider_id().is_some() {
                 files.push(crate::files::codex_home_config_file(
                     tuple,

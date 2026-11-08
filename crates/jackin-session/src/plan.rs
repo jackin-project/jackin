@@ -1275,10 +1275,12 @@ mod tests {
     }
 
     fn role_policy(read_only: &[&str]) -> String {
-        let entries: String = read_only
-            .iter()
-            .map(|path| format!("    - {path}\n"))
-            .collect();
+        use std::fmt::Write as _;
+
+        let entries: String = read_only.iter().fold(String::new(), |mut out, path| {
+            writeln!(out, "    - {path}").expect("write to a string");
+            out
+        });
         format!(
             "version: 1\nfilesystem_policy:\n  include_workdir: true\n  read_only:\n{entries}  read_write:\n    - /tmp\n    - /sandbox\nlandlock:\n  compatibility: hard_requirement\nprocess:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  github:\n    name: github\n    endpoints:\n      - host: github.com\n        port: 443\n    binaries:\n      - path: /usr/bin/git\n"
         )

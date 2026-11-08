@@ -7,10 +7,12 @@ use jackin_testkit::RoleFixture;
 use super::support::{Spec, TestResult, built_image, guard, login_account};
 
 fn role_policy(read_only: &[&str]) -> String {
-    let entries: String = read_only
-        .iter()
-        .map(|path| format!("    - {path}\n"))
-        .collect();
+    let mut entries = String::new();
+    for path in read_only {
+        entries.push_str("    - ");
+        entries.push_str(path);
+        entries.push('\n');
+    }
     format!(
         "version: 1\nfilesystem_policy:\n  include_workdir: true\n  read_only:\n{entries}  read_write:\n    - /tmp\n    - /sandbox\nlandlock:\n  compatibility: hard_requirement\nprocess:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  github:\n    name: github\n    endpoints:\n      - host: github.com\n        port: 443\n    binaries:\n      - path: /usr/bin/git\n"
     )

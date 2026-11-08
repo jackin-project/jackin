@@ -131,8 +131,16 @@ fn codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none()
         assert_eq!(lead_worktree.agent, Agent::ClaudeCode, "{id}");
         assert_eq!(lead_worktree.path.as_str(), "/sandbox/project", "{id}");
         let codex_worktree = &layout.worktrees[1];
-        assert_eq!(codex_worktree.path.as_str(), "/sandbox/work/codex/project", "{id}");
-        assert_eq!(codex_worktree.branch.as_deref(), Some("agent/codex"), "{id}");
+        assert_eq!(
+            codex_worktree.path.as_str(),
+            "/sandbox/work/codex/project",
+            "{id}"
+        );
+        assert_eq!(
+            codex_worktree.branch.as_deref(),
+            Some("agent/codex"),
+            "{id}"
+        );
     }
     Ok(())
 }
