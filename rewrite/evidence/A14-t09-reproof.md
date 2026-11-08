@@ -56,3 +56,30 @@ So the sentinel role shipped a breaking probe bump without the matching `probe-s
   2. "the OpenShell registry /Users/donbeave/.config/openshell changed during the run (D03: jac…" — the message is truncated by xtask itself at ~320 bytes, full reason not recoverable from the log. Observed concurrent-lane traffic that can explain a registry change inside the run window: sandbox `jackin-a14-sen-2j75` created 15:24:16Z by another A14 lane, `[accounts.omp-minimax]` added to `~/.config/jackin/config.toml` during the run window (mtime 15:37Z; all 16 pre-run sections intact, none removed), and an `a14-kimi-proof` provider on the gateway. Not investigated further; likely cross-lane contamination of the D03 check rather than a leak from this run.
 - Sandboxes after the run: the ledger removed the run's own sandboxes (`openshell -g jackin-local sandbox list` shows only the other lane's `jackin-a14-sen-2j75`, which was left untouched).
 - No commit, no push; this evidence file is the only main-tree write.
+
+## Re-run 2026-11-08 after the schema-2 fix: PASS=12
+
+Date: 2026-11-08, run window ≈15:53Z–16:02Z. Jackin HEAD `831d46210` "fix(e2e): raise probe contract to schema 2": `rewrite/probe-schema.json` `"const": 1` → `"const": 2` and the report `args` field removed (matching sentinel `33cf977`), with `crates/xtask/tests/e2e/b_probe.rs`, `crates/xtask/tests/e2e/data/probe_host.json`, and `crates/xtask/src/e2e/scenario/report.rs` updated. Sentinel unchanged at `89b2ee8`, clean tree. No code edited in this re-run; nothing committed.
+
+Same gate command as the first run:
+
+```
+mise exec -- mbx +1.99.1 xtask e2e --gateway jackin-local --role ../jackin-sentinel --builder orbstack --platform linux/arm64 --engine-port 2376 --engine-certs ~/.local/share/jackin-e2e-engine/client
+RESULT PASS=12 FAIL=5 SKIP=2 elapsed=569.2s a1_host_login=unchanged
+```
+
+Command exit code 1 (FAIL nonzero). Result versus the first run (PASS=4 FAIL=13 SKIP=2): nine previously-failing journeys flipped to PASS — J00, J04, J05, J06, J10, J13, J14, J16, CLEAN — and J17 flipped PASS→FAIL, net 12/5/2. The schema raise is proven effective: every journey that failed with "the probe output breaks probe-schema.json" now passes, and a live sandbox probe report `{"schema":2,...}` is accepted by the host (J15 shell transcript validates J04 and J15 check sets end-to-end).
+
+### The five FAILs — all environmental, none implicate the schema change or jackin code
+
+- J07, J08, J09, J17 share one cause: the A1 ChatGPT login is expired. J17 usage JSON reports all three accounts `{"state":"unavailable","reason":{"kind":"expired_login"}}` (`J17-usage-stdout.log`). J08 TUI transcript: `Error: account/read failed during TUI bootstrap: account/read failed: workspace routing discovery unauthorized (401) (code -32603)` then `jackin-start: codex exited with code 1 (attempt 2)` (`J08-reflection-transcript.log`); the reflection check times out because the TUI never bootstraps. J07: `jackin-start` supervisor `Exited {attempt: 1, code: 1}` with no codex child. J09: `codex_reaches_api` — `codex exec exit 1 gave no answer` (the J09 `plain`/`wildcard` stderr policy rejections are the journey's own negative cases, not the failure). J17 passed in the first run, so the login went stale between the runs; `a1_host_login=unchanged` — the gate did not touch it. Fix: refresh the A1 login, then re-run.
+- J15: transient engine fault. `docker run -i --rm busybox cat` failed with `Post "https://host.openshell.internal:2376/v1.56/images/create?fromImage=docker.io%2Flibrary%2Fbusybox&tag=latest": EOF` (exit 125), and the very next command in the same journey, `docker run -d busybox sleep 120`, pulled busybox and ran (`J15-shell-transcript.log`). First-pull EOF against the D24 engine, self-healed within seconds.
+- SKIP 2: J11, J12, "blocked by J07 FAIL".
+
+### CLEAN verdict: PASS, uncontaminated
+
+Pre-run (15:52:21Z): `openshell -g jackin-local sandbox list` → no sandboxes (the other lane's `jackin-a14-sen-2j75` was already gone); `~/.config/openshell` mtime 2026-11-06 11:49:27; engine on 2376 zero containers and zero images. Post-run (16:02:31Z): no sandboxes, registry mtime byte-identical (D03 clean — this time no cross-lane registry writes inside the window), engine zero containers. CLEAN itself: "5 sandboxes, 3 providers removed; registry unchanged" — all five sandboxes were this run's own (`jackin-e2e-694-hbjo`, `jackin-e2e-694-ctvh`, and the J08/J14 set), since the pre-run list was empty. No other-lane traffic touched the gateway during the window.
+
+Residue handled: J15 left `busybox:latest` (`a46257e06c82`) and a dangling `hello-world:<none>` (`c567b231f656`) in the engine; removed by ID, engine back to zero images and zero containers.
+
+Run logs preserved at `target/xtask-e2e/6948/`. No commit, no push; this appended section is the only main-tree write of the re-run.
