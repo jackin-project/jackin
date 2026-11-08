@@ -115,7 +115,7 @@ Host: macOS arm64, omp 18.18.1, host profile `zai` (the only host omp store key 
 Command (no secret on the command line; the key stays in the omp store):
 
 ```
-omp --profile zai --model zai/glm-5.3 --thinking max -p "Reply with exactly this token and nothing else: JACKIN_ZAI_GLM53_T09_LIVE_OK"
+omp --profile zai --model zai/glm-5.3 --thinking max -p "Reply with ready."
 ```
 
 Observed stdout:
