@@ -49,6 +49,8 @@ deny = [
     { crate = "podman-api", reason = "Jackin never runs Podman, and Docker runs only through docker buildx in jackin-image; no container client crate (D01)." },
 ]
 skip = [
+    { crate = "windows-sys@0.52.0", reason = "Latest stable ring 0.17.14 requires windows-sys ^0.52 for Windows aarch64; the pinned SDK TLS graph cannot unify that ABI generation with 0.61.2." },
+    { crate = "windows-sys@0.59.0", reason = "Latest stable alacritty_terminal 0.26.0 requires windows-sys ^0.59 on Windows through the required tuiscotti-tui-test identity gate; other parents require 0.61.2." },
     { crate = "block-buffer@0.10.4", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
     { crate = "crypto-common@0.1.7", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
     { crate = "digest@0.10.7", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
