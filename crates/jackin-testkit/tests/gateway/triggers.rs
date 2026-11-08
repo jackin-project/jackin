@@ -89,9 +89,9 @@ async fn trigger_faults_fire_once_at_entry_of_the_matching_call_only() -> TestRe
             error: injected(),
         });
         let second = spec(sh("sleep 3600")?)?;
-        assert!(is_injected(fake.create_sandbox(&second).await));
+        assert!(is_injected(fake.create_contract_sandbox(&second).await));
         assert_eq!(fake.sandboxes().len(), 1);
-        fake.create_sandbox(&second).await?;
+        fake.create_contract_sandbox(&second).await?;
         assert_eq!(fake.sandboxes().len(), 2);
         Ok(())
     })
@@ -190,9 +190,11 @@ async fn a_stale_supervisor_window_keeps_the_old_state_for_n_observations_after_
                 attempt: jackin_core::AttemptId::FIRST
             })
         );
-        fake.set_power(&name, PowerAction::Stop).await?;
+        fake.set_power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
         fake.inject(Fault::StaleSupervisor { observations: 2 });
-        fake.set_power(&name, PowerAction::Start).await?;
+        fake.set_power(&name, PowerAction::Start, &CancellationToken::new())
+            .await?;
         for _ in 0..2 {
             assert_eq!(
                 settled_state(&fake, &name).await?,
@@ -206,8 +208,10 @@ async fn a_stale_supervisor_window_keeps_the_old_state_for_n_observations_after_
 
         fake.inject(Fault::StaleSupervisor { observations: 0 });
         write(&fake, &name, "/sandbox/.jackin/run/start", "1").await?;
-        fake.set_power(&name, PowerAction::Stop).await?;
-        fake.set_power(&name, PowerAction::Start).await?;
+        fake.set_power(&name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
+        fake.set_power(&name, PowerAction::Start, &CancellationToken::new())
+            .await?;
         assert_eq!(
             settled_state(&fake, &name).await?,
             (Phase::Ready, "waiting\n".to_owned())
@@ -238,7 +242,7 @@ async fn force_phase_install_file_and_the_files_snapshot_behave_as_documented() 
         let name = handle.name();
         fake.force_phase(&name, Phase::Suspended);
         let listed = fake
-            .find_sandboxes(&SandboxQuery::Name(name.clone()))
+            .find_sandboxes(&SandboxQuery::Name(name.clone()), &CancellationToken::new())
             .await?;
         assert_eq!(listed[0].phase, Phase::Suspended);
         let blocked = fake

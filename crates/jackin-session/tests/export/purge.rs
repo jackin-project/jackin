@@ -3,9 +3,11 @@
 
 use std::time::Duration;
 
-use jackin_core::{Config, Phase, SandboxName, sandbox_layout};
+use jackin_core::{Config, Labels, Phase, SandboxName, sandbox_layout};
 use jackin_openshell::{Gateway, GatewayError, GatewayOp};
-use jackin_session::{LaunchStep, PurgeError, PurgeMode, PurgeOutcome, UnknownReason, WorkState};
+use jackin_session::{
+    LaunchStep, ManagedIdentityError, PurgeError, PurgeMode, PurgeOutcome, UnknownReason, WorkState,
+};
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard};
 use tokio_util::sync::CancellationToken;
 
@@ -20,13 +22,17 @@ async fn refused(rig: &Rig, config: &Config, name: &SandboxName, case: &str) -> 
     let other = rig.handle(2).await?;
     let (files, other_files) = (digests(&handle), digests(&other));
     let before = snapshot(rig).await?;
-    let shown = rig.world.session.work_state(config, name).await;
+    let shown = rig
+        .world
+        .session
+        .work_state(config, name, &CancellationToken::new())
+        .await;
     assert_ne!(shown, WorkState::Exported);
 
     let result = rig
         .world
         .session
-        .purge(config, name, PurgeMode::Guarded)
+        .purge(config, name, PurgeMode::Guarded, &CancellationToken::new())
         .await;
 
     let Err(PurgeError::WorkNotExported { sandbox, state }) = result else {
@@ -85,7 +91,7 @@ async fn a_guarded_purge_refuses_every_state_that_is_not_exported_and_changes_no
         let blind = rig
             .world
             .session
-            .purge(config, &name, PurgeMode::Guarded)
+            .purge(config, &name, PurgeMode::Guarded, &CancellationToken::new())
             .await;
         assert!(
             matches!(
@@ -137,7 +143,12 @@ async fn an_exported_sandbox_is_deleted_alone_and_a_forced_purge_reports_what_it
         let providers = gateway.providers();
 
         let gone = session
-            .purge(&rig.config, &first, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &first,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await?;
         assert_eq!(
             gone,
@@ -153,7 +164,12 @@ async fn an_exported_sandbox_is_deleted_alone_and_a_forced_purge_reports_what_it
         handle.commit_in_project("w.txt", b"w", "work").await?;
         let shown = state(&rig, &second).await;
         let forced = session
-            .purge(&rig.config, &second, PurgeMode::Forced)
+            .purge(
+                &rig.config,
+                &second,
+                PurgeMode::Forced,
+                &CancellationToken::new(),
+            )
             .await?;
         assert_eq!(
             forced,
@@ -171,7 +187,12 @@ async fn an_exported_sandbox_is_deleted_alone_and_a_forced_purge_reports_what_it
             },
         });
         let blind = session
-            .purge(&rig.config, &third, PurgeMode::Forced)
+            .purge(
+                &rig.config,
+                &third,
+                PurgeMode::Forced,
+                &CancellationToken::new(),
+            )
             .await?;
         assert!(
             matches!(
@@ -206,27 +227,46 @@ async fn a_repeated_purge_is_already_gone_a_failed_delete_keeps_the_sandbox_and_
                 message: "injected".to_owned(),
             },
         });
-        let failed = session.purge(&rig.config, &first, PurgeMode::Guarded).await;
+        let failed = session
+            .purge(
+                &rig.config,
+                &first,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
+            .await;
         assert!(matches!(failed, Err(PurgeError::Gateway(_))), "{failed:?}");
         assert!(gateway.sandbox(&first).is_some());
 
         gateway.force_phase(&second, Phase::Deleting);
         let leaving = session
-            .purge(&rig.config, &second, PurgeMode::Forced)
-            .await?;
-        assert_eq!(
+            .purge(
+                &rig.config,
+                &second,
+                PurgeMode::Forced,
+                &CancellationToken::new(),
+            )
+            .await;
+        assert!(matches!(
             leaving,
-            PurgeOutcome::AlreadyGone {
-                sandbox: second.clone()
-            }
-        );
+            Err(PurgeError::Identity(ManagedIdentityError::Replaced { sandbox }))
+                if sandbox == second
+        ));
+        assert!(gateway.sandbox(&second).is_some());
 
         session
-            .purge(&rig.config, &first, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &first,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await?;
         for mode in [PurgeMode::Guarded, PurgeMode::Forced] {
             for config in [&rig.config, &Config::empty()] {
-                let again = session.purge(config, &first, mode).await?;
+                let again = session
+                    .purge(config, &first, mode, &CancellationToken::new())
+                    .await?;
                 assert_eq!(
                     again,
                     PurgeOutcome::AlreadyGone {
@@ -253,10 +293,11 @@ async fn a_guarded_purge_never_deletes_a_sandbox_that_replaced_the_one_it_inspec
             trigger: held.clone(),
         });
 
+        let cancel = CancellationToken::new();
         let purging = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded);
+            .purge(&rig.config, &name, PurgeMode::Guarded, &cancel);
         let swapping = async {
             assert!(gateway.until_held(&held).await);
             gateway.delete_sandbox(&name).await?;
@@ -268,7 +309,8 @@ async fn a_guarded_purge_never_deletes_a_sandbox_that_replaced_the_one_it_inspec
         let (purged, swapped) = tokio::join!(purging, swapping);
 
         swapped?;
-        let Err(PurgeError::Replaced { sandbox }) = purged else {
+        let Err(PurgeError::Identity(ManagedIdentityError::Unavailable { sandbox })) = purged
+        else {
             return Err(format!("expected a refusal, saw {purged:?}").into());
         };
         assert_eq!(sandbox, name);
@@ -291,10 +333,16 @@ async fn a_guarded_purge_refuses_a_sandbox_whose_creation_time_is_unknown() -> T
         let purged = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await;
 
-        let Err(PurgeError::Replaced { sandbox }) = purged else {
+        let Err(PurgeError::Identity(ManagedIdentityError::Unavailable { sandbox })) = purged
+        else {
             return Err(format!("expected a refusal, saw {purged:?}").into());
         };
         assert_eq!(sandbox, name);
@@ -302,9 +350,140 @@ async fn a_guarded_purge_refuses_a_sandbox_whose_creation_time_is_unknown() -> T
         let forced = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Forced)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Forced,
+                &CancellationToken::new(),
+            )
+            .await;
+        assert!(matches!(
+            forced,
+            Err(PurgeError::Identity(ManagedIdentityError::Unavailable { sandbox }))
+                if sandbox == name
+        ));
+        assert!(rig.world.gateway.sandbox(&name).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn power_and_forced_purge_refuse_incomplete_managed_identity() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        for id in [1, 2, 3] {
+            rig.launch(id).await?;
+        }
+        let handles = [
+            rig.handle(1).await?,
+            rig.handle(2).await?,
+            rig.handle(3).await?,
+        ];
+        let incomplete_labels = [
+            (handles[0].clone(), "jackin.dev/workspace"),
+            (handles[1].clone(), "jackin.dev/launch"),
+        ];
+        for (handle, removed) in incomplete_labels {
+            let labels = Labels::from_pairs(
+                handle
+                    .labels()
+                    .iter()
+                    .filter(|(key, _)| key.to_string() != removed)
+                    .map(|(key, value)| (key.to_string(), value.to_string())),
+            )?;
+            handle.set_labels(labels);
+        }
+        let no_creation = handles[2].clone();
+        no_creation.forget_created_at();
+        for handle in handles {
+            let name = handle.name();
+            let files = digests(&handle);
+            let powered = rig
+                .world
+                .session
+                .power(
+                    &name,
+                    jackin_openshell::PowerAction::Stop,
+                    &CancellationToken::new(),
+                )
+                .await;
+            assert!(matches!(
+                powered,
+                Err(jackin_session::LifecycleError::Identity(
+                    ManagedIdentityError::Unavailable { sandbox }
+                )) if sandbox == name
+            ));
+            let purged = rig
+                .world
+                .session
+                .purge(
+                    &rig.config,
+                    &name,
+                    PurgeMode::Forced,
+                    &CancellationToken::new(),
+                )
+                .await;
+            assert!(matches!(
+                purged,
+                Err(PurgeError::Identity(ManagedIdentityError::Unavailable { sandbox }))
+                    if sandbox == name
+            ));
+            assert_eq!(handle.phase(), Phase::Ready);
+            assert_eq!(digests(&handle), files);
+            assert!(rig.world.gateway.sandbox(&name).is_some());
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn guarded_purge_refuses_unknown_work_for_degraded_labels_but_explicit_force_deletes()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let labels = Labels::from_pairs(
+            handle
+                .labels()
+                .iter()
+                .filter(|(key, _)| key.to_string() != "jackin.dev/lead-agent")
+                .map(|(key, value)| (key.to_string(), value.to_string())),
+        )?;
+        handle.set_labels(labels);
+
+        let guarded = rig
+            .world
+            .session
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
+            .await;
+        assert!(matches!(
+            guarded,
+            Err(PurgeError::WorkNotExported { state, .. })
+                if *state == WorkState::Unknown(UnknownReason::InspectionFailed)
+        ));
+        assert!(rig.world.gateway.sandbox(&name).is_some());
+
+        let forced = rig
+            .world
+            .session
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Forced,
+                &CancellationToken::new(),
+            )
             .await?;
-        assert!(matches!(forced, PurgeOutcome::Deleted { .. }));
+        assert!(matches!(forced, PurgeOutcome::Deleted { sandbox, .. } if sandbox == name));
+        assert!(rig.world.gateway.sandbox(&name).is_none());
         Ok(())
     })
     .await

@@ -10,13 +10,28 @@ use jackin_core::{
     RoleName, SandboxLabels, SandboxName, SandboxPath, WorkspaceName,
 };
 use jackin_openshell::{
-    AuthoredPolicy, ClosedPolicy, GatewayError, InputMode, MainProcess, NetworkRule, RepaintPolicy,
-    SandboxCreate, TermSize, TerminalKind, TerminalRequest,
+    AuthoredPolicy, ClosedPolicy, GatewayContractSandboxCreate, GatewayError, InputMode,
+    MainProcess, NetworkRule, RepaintPolicy, TermSize, TerminalKind, TerminalRequest,
 };
 use openshell_sdk::raw::proto::{ObjectMeta, Sandbox, SandboxPhase, SandboxStatus};
 
 use super::sandbox_rpc::condition;
 use super::server::State;
+
+pub(crate) const fn every_window_has_a_symbol(secret: &str) -> bool {
+    let bytes = secret.as_bytes();
+    let mut start = 0;
+    while start + 3 <= bytes.len() {
+        if bytes[start].is_ascii_alphanumeric()
+            && bytes[start + 1].is_ascii_alphanumeric()
+            && bytes[start + 2].is_ascii_alphanumeric()
+        {
+            return false;
+        }
+        start += 1;
+    }
+    true
+}
 
 pub(crate) const LAUNCH: &str = "01hzy3k5m7p9r2t4v6w8x0abcd";
 pub(crate) const IMAGE_DIGEST: &str =
@@ -86,13 +101,16 @@ pub(crate) fn sandbox_name(text: &str) -> SandboxName {
 }
 
 pub(crate) fn planned(workspace: &str, role: &str, account: &str, launch: &str) -> PlannedLabels {
+    let agents = jackin_core::AgentInstances::single(
+        jackin_core::AgentInstance::lead(Agent::Codex, AccountName::parse(account).unwrap())
+            .expect("valid catalog model"),
+    )
+    .expect("valid catalog agent");
     PlannedLabels {
         workspace: WorkspaceName::parse(workspace).unwrap(),
         role: RoleName::parse(role).unwrap(),
-        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-            Agent::Codex,
-            AccountName::parse(account).unwrap(),
-        )),
+        agents_hash: agents.hash(),
+        lead_agent: Agent::Codex,
         policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse(launch).unwrap(),
     }
@@ -103,8 +121,8 @@ pub(crate) fn labels_for(launch: &str) -> SandboxLabels {
     planned("My.Project", "backend", "work", launch).complete(&image, jackin_core::DockerLabel::Off)
 }
 
-pub(crate) fn create_spec(name: &str, launch: &str) -> SandboxCreate {
-    SandboxCreate::new(
+pub(crate) fn create_spec(name: &str, launch: &str) -> GatewayContractSandboxCreate {
+    GatewayContractSandboxCreate::new(
         sandbox_name(name),
         ImageTag::parse("jackin.invalid/backend:0123456789abcdef").unwrap(),
         labels_for(launch),

@@ -71,6 +71,10 @@ impl SandboxHandle {
         Ok(())
     }
 
+    pub fn set_labels(&self, labels: Labels) {
+        self.cell.state().shown = Some(labels);
+    }
+
     pub fn environment(&self) -> BTreeMap<EnvName, String> {
         self.cell.state().spec.environment()
     }

@@ -8,13 +8,13 @@ use jackin_session::TokioProcessRunner;
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, assert_no_leftover, guarded, wait_for_beat,
+    LOOP_DETACHED, LOOP_HOLDING, Scratch, TestResult, assert_no_leftover, guard, wait_for_beat,
 };
 
 #[tokio::test]
 async fn run_secret_returns_stdout_only_as_secret_bytes_and_obeys_timeout_and_cancel() -> TestResult
 {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let cancel = CancellationToken::new();
         let spec = scratch.spec("printf 'S3cr3t-Value-91\\n'\necho diag >&2\n", &[])?;

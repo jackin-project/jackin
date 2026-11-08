@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{Provider, Timestamp};
+use jackin_testkit::guard;
 use jackin_testkit::{Method, Route};
 use jackin_usage::{Refresh, UnavailableReason, UsageAccount};
 
 use crate::support::{
-    T0, TestResult, UsageHarness, Want, account, assert_windows, env_source, guard, unavailable,
+    T0, TestResult, UsageHarness, Want, account, assert_windows, env_source, unavailable,
 };
 
 mod claude;

@@ -8,9 +8,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     ChatgptAccountId, CredentialKeys, EnvName, FileMode, GatewayName, HostPath, ImageTag,
-    LabelSelector, Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxLabels, SandboxName,
-    SandboxPath, Secret, SecretBytes, Sha256, TerminalText, Timestamp,
+    LabelSelector, Labels, LocalImageRef, Phase, ProfileId, ProjectRoot, ProviderName,
+    SandboxLabels, SandboxName, SandboxPath, Secret, SecretBytes, Sha256, TerminalText, Timestamp,
 };
+use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::error::GatewayError;
@@ -26,11 +27,22 @@ pub trait Gateway: Send + Sync + Debug {
     async fn ensure_profile(&self, profile: &ProviderProfile) -> Result<ProfileSync, GatewayError>;
     async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError>;
     async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError>;
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError>;
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError>;
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError>;
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
-    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError>;
+    async fn create_contract_sandbox(
+        &self,
+        spec: &GatewayContractSandboxCreate,
+    ) -> Result<SandboxView, GatewayError>;
+    async fn find_sandboxes(
+        &self,
+        query: &SandboxQuery,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<SandboxView>, GatewayError>;
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError>;
     async fn sandbox_environment(
         &self,
@@ -40,6 +52,7 @@ pub trait Gateway: Send + Sync + Debug {
         &self,
         name: &SandboxName,
         action: PowerAction,
+        cancel: &CancellationToken,
     ) -> Result<SandboxView, GatewayError>;
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError>;
 
@@ -52,11 +65,13 @@ pub trait Gateway: Send + Sync + Debug {
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
+        cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError>;
     async fn write_file(
         &self,
         sandbox: &SandboxName,
         file: &SandboxFile,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError>;
 
     async fn upload_tree(
@@ -103,7 +118,44 @@ pub enum ProfileSync {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum ProviderState {
     Absent,
+    Unrefreshed,
     Present,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ProviderWriteEffect {
+    NoWrite,
+    Created,
+    Existing,
+    Unknown,
+}
+
+#[derive(Debug, Error)]
+#[error("provider write failed")]
+pub struct ProviderWriteError {
+    #[source]
+    source: GatewayError,
+    effect: ProviderWriteEffect,
+}
+
+impl ProviderWriteError {
+    pub fn new(source: GatewayError, effect: ProviderWriteEffect) -> ProviderWriteError {
+        ProviderWriteError { source, effect }
+    }
+
+    pub fn effect(&self) -> ProviderWriteEffect {
+        self.effect
+    }
+
+    pub fn into_parts(self) -> (GatewayError, ProviderWriteEffect) {
+        (self.source, self.effect)
+    }
+}
+
+impl ProviderState {
+    pub fn exists(self) -> bool {
+        self != ProviderState::Absent
+    }
 }
 
 #[derive(Debug)]
@@ -136,7 +188,7 @@ pub struct MainProcess {
 #[derive(Clone, Debug)]
 pub struct SandboxCreate {
     name: SandboxName,
-    image: ImageTag,
+    image: LocalImageRef,
     labels: SandboxLabels,
     providers: Vec<ProviderName>,
     policy: ClosedPolicy,
@@ -148,13 +200,74 @@ const LAUNCH_ENV: &str = "JACKIN_LAUNCH_ID";
 impl SandboxCreate {
     pub fn new(
         name: SandboxName,
-        image: ImageTag,
+        image: LocalImageRef,
         labels: SandboxLabels,
         providers: Vec<ProviderName>,
         policy: ClosedPolicy,
         main: MainProcess,
     ) -> SandboxCreate {
         SandboxCreate {
+            name,
+            image,
+            labels,
+            providers,
+            policy,
+            main,
+        }
+    }
+
+    pub fn name(&self) -> &SandboxName {
+        &self.name
+    }
+
+    pub fn image(&self) -> &LocalImageRef {
+        &self.image
+    }
+
+    pub fn labels(&self) -> &SandboxLabels {
+        &self.labels
+    }
+
+    pub fn providers(&self) -> &[ProviderName] {
+        &self.providers
+    }
+
+    pub fn policy(&self) -> &PolicyDocument {
+        self.policy.document()
+    }
+
+    pub fn main(&self) -> &MainProcess {
+        &self.main
+    }
+
+    pub fn environment(&self) -> BTreeMap<EnvName, String> {
+        EnvName::parse(LAUNCH_ENV)
+            .map(|name| (name, self.labels.planned.launch.to_string()))
+            .into_iter()
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct GatewayContractSandboxCreate {
+    name: SandboxName,
+    image: ImageTag,
+    labels: SandboxLabels,
+    providers: Vec<ProviderName>,
+    policy: ClosedPolicy,
+    main: MainProcess,
+}
+
+impl GatewayContractSandboxCreate {
+    pub fn new(
+        name: SandboxName,
+        image: ImageTag,
+        labels: SandboxLabels,
+        providers: Vec<ProviderName>,
+        policy: ClosedPolicy,
+        main: MainProcess,
+    ) -> GatewayContractSandboxCreate {
+        GatewayContractSandboxCreate {
             name,
             image,
             labels,
@@ -248,6 +361,14 @@ pub struct ProgramRun {
     pub stdin: ProgramStdin,
     pub touch_on_success: Option<SandboxPath>,
     pub timeout: Duration,
+}
+
+impl ProgramRun {
+    pub fn c_locale() -> BTreeMap<EnvName, String> {
+        EnvName::parse("LC_ALL")
+            .map(|name| BTreeMap::from([(name, "C".to_owned())]))
+            .unwrap_or_default()
+    }
 }
 
 #[derive(Debug)]

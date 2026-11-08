@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_console::domain::instance::{ID_PREFIX, InstanceStatus};
+use jackin_console::domain::instance::{ID_PREFIX, InstanceEntry, InstanceStatus};
 use std::collections::BTreeMap;
 
 use jackin_core::{
@@ -22,8 +22,9 @@ fn status_of(console: &mut ConsoleRig, id: u8) -> Option<InstanceStatus> {
         .world
         .instances
         .iter()
-        .find(|i| i.run_id == run)
-        .map(|i| i.status)
+        .filter_map(InstanceEntry::as_available)
+        .find(|instance| instance.run_id == run)
+        .map(|instance| instance.status)
 }
 
 #[tokio::test]
@@ -61,11 +62,18 @@ async fn roster_maps_phase_and_exit_code() -> TestResult {
         for word in ["running", "crashed", "exited", "restore available"] {
             assert!(screen.contains(word), "{word} is not on:\n{screen}");
         }
-        let first = console.console().app().world.instances[0].clone();
-        assert_eq!(first.role, "sentinel");
-        assert!(first.id.starts_with(ID_PREFIX), "{}", first.id);
+        let first = console.console().app().world.instances[0]
+            .as_available()
+            .ok_or("instance metadata unavailable")?
+            .clone();
+        assert_eq!(first.role.as_deref(), Some("sentinel"));
+        assert!(
+            first.id.short_label().starts_with(ID_PREFIX),
+            "{}",
+            first.id
+        );
         assert_eq!(first.account.as_deref(), None);
-        assert_eq!(first.workdir, "/sandbox/project");
+        assert_eq!(first.workdir.as_deref(), Some("/sandbox/project"));
         Ok(())
     })
     .await
@@ -89,8 +97,32 @@ async fn roster_hides_unmanaged_and_notes_unreadable() -> TestResult {
         )?;
         let mut console = ConsoleRig::seeded(&rig).await?;
         let instances = &console.console().app().world.instances;
-        assert_eq!(instances.len(), 1);
-        assert_eq!(instances[0].status, InstanceStatus::Running);
+        assert_eq!(instances.len(), 2);
+        assert_eq!(
+            instances
+                .iter()
+                .filter_map(InstanceEntry::as_available)
+                .map(|instance| instance.status)
+                .collect::<Vec<_>>(),
+            [InstanceStatus::Running]
+        );
+        let InstanceEntry::Unavailable(unavailable) = instances
+            .iter()
+            .find(|entry| entry.as_available().is_none())
+            .ok_or("degraded sandbox row was dropped")?
+        else {
+            return Err("expected a degraded sandbox row".into());
+        };
+        assert_eq!(unavailable.id.sandbox_name, "jackin-broken-0002");
+        assert_eq!(
+            unavailable.phase,
+            jackin_console::domain::instance::SandboxPhase::Ready
+        );
+        assert_eq!(unavailable.workspace_name, None);
+        assert_eq!(unavailable.role, None);
+        assert!(!unavailable.reason.is_empty());
+        assert!(console.screen().contains("jackin-broken-0002"));
+        assert!(console.screen().contains("Unattributed sandboxes"));
         assert!(
             console
                 .status_line()
@@ -111,15 +143,26 @@ async fn removed_workspace_label_lists_without_workspace() -> TestResult {
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::RemoveWorkspace(WorkspaceName::parse(
-                "platform-backend",
-            )?)])
+            .edit(
+                vec![ConfigEdit::RemoveWorkspace(WorkspaceName::parse(
+                    "platform-backend",
+                )?)],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::new(&rig.world).await?;
         let world = &console.console().app().world;
         assert!(world.workspaces.is_empty());
         assert_eq!(world.instances.len(), 1);
-        assert_eq!(world.instances[0].workspace, None);
+        let InstanceEntry::Unavailable(unavailable) = &world.instances[0] else {
+            return Err("missing workspace label was projected as available".into());
+        };
+        assert_eq!(unavailable.workspace, None);
+        assert_eq!(unavailable.workspace_name, None);
+        assert_eq!(
+            unavailable.id.sandbox_name,
+            rig.sandbox_name(1)?.to_string()
+        );
         Ok(())
     })
     .await
@@ -140,10 +183,13 @@ async fn list_failure_on_one_gateway() -> TestResult {
             .ok_or("the rig has no gateway")?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddGateway {
-                name: lost.clone(),
-                entry,
-            }])
+            .edit(
+                vec![ConfigEdit::AddGateway {
+                    name: lost.clone(),
+                    entry,
+                }],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::builder(&rig.world)
             .gateway(
@@ -270,12 +316,17 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
         let summary = rig
             .world
             .session
-            .list()
+            .list(&rig.world.cancel)
             .await?
             .sandboxes
             .into_iter()
             .next()
             .ok_or("no sandbox")?;
+        let agent_metadata = rig
+            .world
+            .session
+            .agent_metadata(&summary, &rig.world.cancel)
+            .await?;
         let config = rig.world.config.load().await?;
         let facts = Facts {
             version: "test".to_owned(),
@@ -301,10 +352,12 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
                 sandboxes: vec![ObservedSandbox {
                     gateway: rig.world.gateway.name().clone(),
                     summary: summary.clone(),
+                    agent_metadata: Ok(agent_metadata.clone()),
                     supervisor: Some(exited.clone()),
                     work: work.clone(),
                     task: None,
                 }],
+                unreadable_sandboxes: Vec::new(),
                 unreadable: 0,
                 gateways: Vec::new(),
             };
@@ -319,7 +372,12 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
                 },
                 &mut IdTable::new(),
             );
-            let statuses: Vec<_> = snapshot.instances.iter().map(|i| i.status).collect();
+            let statuses: Vec<_> = snapshot
+                .instances
+                .iter()
+                .filter_map(InstanceEntry::as_available)
+                .map(|instance| instance.status)
+                .collect();
             assert_eq!(statuses, vec![expected], "{work:?}");
         }
         Ok(())

@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+Scope: S4 construct base refresh, Linux ARM64 BuildKit image build only.
+Not final-head G-FULL, role proof, or live sandbox evidence.
+Base: debian:trixie@sha256:9c6e381421d0f48d1b8133e573f33c185ee16cbf505eda9c4a8a4791b25ea8a6
+Receipt: /Users/donbeave/Projects/jackin-project/handoff/state-2026-11-05/current/w1-construct-current-base-build-v1
+Command exit: 0
+Source unchanged during build: true
+Image identity: sha256:b94d6fcbd292b0b792f0bc30904a7ad67f19b7418463a6734dd36ad27a159520
+Build log SHA-256: 8f6f10ea787235f273edd3a0ad626ae5b1dcd858e5171ffaf502d847d87c4adf
+Checks: Dockerfile completed static write-file compilation, forbidden-tool refusal, setuid/setgid removal and empty capabilities assertion.

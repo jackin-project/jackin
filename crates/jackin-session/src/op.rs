@@ -17,7 +17,7 @@ use crate::credentials::Document;
 
 const OP_TIMEOUT: Duration = Duration::from_secs(30);
 const TAIL_CHARS: usize = 4;
-const TAIL_MIN_CHARS: usize = 8;
+const TAIL_MIN_CHARS: usize = 15;
 const END_OF_FLAGS: &str = "--";
 const FORMAT: [&str; 2] = ["--format", "json"];
 const ACCOUNT: &str = "--account";
@@ -55,6 +55,8 @@ pub enum OpFault {
     MissingItem { item: String, vault: String },
     #[error("1Password field {} not found in item {}", plain(.field), plain(.item))]
     MissingField { field: String, item: String },
+    #[error("1Password field {} is ambiguous in item {}", plain(.field), plain(.item))]
+    AmbiguousField { field: String, item: String },
     #[error("the 1Password name {} starts with a dash", plain(.name))]
     FlagLikeName { name: String },
     #[error("the 1Password command line tool printed something unexpected")]
@@ -103,6 +105,7 @@ pub struct OpFieldInfo {
     pub label: String,
     pub kind: OpFieldKind,
     pub section: Option<String>,
+    pub section_label: Option<String>,
     pub tail: Zeroizing<String>,
     pub empty: bool,
 }
@@ -114,6 +117,7 @@ impl fmt::Debug for OpFieldInfo {
             .field("label", &self.label)
             .field("kind", &self.kind)
             .field("section", &self.section)
+            .field("section_label", &self.section_label)
             .field("empty", &self.empty)
             .finish_non_exhaustive()
     }
@@ -230,6 +234,12 @@ fn field(raw: &Value) -> Result<OpFieldInfo, OpFault> {
             .get("section")
             .and_then(|section| section.get("id"))
             .and_then(Value::as_str)
+            .map(str::to_owned),
+        section_label: raw
+            .get("section")
+            .and_then(|section| section.get("label"))
+            .and_then(Value::as_str)
+            .filter(|label| !label.is_empty())
             .map(str::to_owned),
         tail,
         empty: value.is_empty(),

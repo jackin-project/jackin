@@ -23,13 +23,15 @@ async fn the_plan_derives_name_labels_and_draft_from_the_launch_id() -> TestResu
         assert!(plan.sandbox_name().as_str().len() <= 19);
         assert_eq!(plan.launch_id(), &launch_id(1));
 
+        let agents = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("work")?,
+        )?)?;
         let expected = PlannedLabels {
             workspace: WorkspaceName::parse("platform-backend")?,
             role: RoleName::parse("sentinel")?,
-            agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-                Agent::Codex,
-                AccountName::parse("work")?,
-            )),
+            agents_hash: agents.hash(),
+            lead_agent: Agent::Codex,
             policy: PolicyLabel::of(&setup.role.policy().document().render()?),
             launch: launch_id(1),
         };
@@ -38,7 +40,7 @@ async fn the_plan_derives_name_labels_and_draft_from_the_launch_id() -> TestResu
 
         let built = built_image(&setup.role, '3')?;
         let create = plan.draft().complete(&built, jackin_core::DockerLabel::Off);
-        assert_eq!(create.image(), &built.tag);
+        assert_eq!(create.image(), &built.local_ref);
         assert_eq!(create.name(), plan.sandbox_name());
         let labels = SandboxLabels::from_labels(&create.labels().to_labels())?;
         assert_eq!(labels.planned, expected);

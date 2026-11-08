@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::error::Error;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
@@ -19,7 +20,7 @@ use jackin_image::{ContextProblem, EngineError, read_regular_file};
 use tempfile::TempDir;
 use tokio::time::timeout;
 
-use crate::support::{TestResult, guarded};
+use crate::support::TestResult;
 
 const SECRET: &[u8] = b"outside secret bytes";
 
@@ -88,7 +89,7 @@ fn refused(result: Result<RegularFile, EngineError>) -> Result<ContextProblem, B
 
 #[tokio::test]
 async fn read_regular_file_returns_bytes_and_mode_and_refuses_every_other_entry() -> TestResult {
-    guarded(async {
+    guard(async {
         let tree = Tree::new()?;
         let root = tree.host()?;
         let accepted: [(&str, &[u8], u32); 4] = [
@@ -258,7 +259,7 @@ impl FileSystem for SwapFs {
 #[tokio::test]
 async fn a_listed_file_swapped_for_a_symlink_between_calls_never_yields_the_outside_bytes()
 -> TestResult {
-    guarded(async {
+    guard(async {
         let tree = Tree::new()?;
         let leaf = HostPath::parse(&tree.root.join("plain.txt"))?;
         let swapping = Arc::new(SwapFs {

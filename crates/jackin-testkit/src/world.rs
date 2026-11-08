@@ -4,12 +4,13 @@
 use std::num::NonZeroU8;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 use jackin_core::{
     Clock, Config, ConfigEdit, ConfigError, ConfigStore, EnvScope, FileSystem, GatewayName,
     HostPath, OpenShellWorkspace, ProcessRunner, Provider, StdFileSystem,
 };
-use jackin_image::ImageEngine;
+use jackin_image::BuildxEngine;
 use jackin_openshell::Gateway;
 use jackin_session::{
     AccountDesk, DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
@@ -17,7 +18,7 @@ use jackin_session::{
 };
 use tempfile::TempDir;
 
-use crate::engine::FakeEngine;
+use crate::docker::DockerBoundary;
 use crate::fixtures::FixtureError;
 use crate::gateway::FakeGateway;
 use crate::host::{FakeClock, TestRunner, WorkingFs};
@@ -26,15 +27,18 @@ use crate::usage::LazyUsageServer;
 #[derive(Debug)]
 pub struct World {
     pub gateway: Arc<FakeGateway>,
-    pub engine: Arc<FakeEngine>,
+    pub engine: Arc<BuildxEngine>,
+    pub docker: Arc<DockerBoundary>,
     pub clock: Arc<FakeClock>,
     pub fs: Arc<dyn FileSystem>,
     pub runner: Arc<TestRunner>,
+    pub cancel: CancellationToken,
     pub session: Session,
     pub roles: Arc<RoleCatalog>,
     pub config: ConfigStore,
     pub usage: LazyUsageServer,
     cache_dir: HostPath,
+    image_work_dir: HostPath,
     home: HostPath,
     _dir: TempDir,
 }
@@ -42,6 +46,7 @@ pub struct World {
 #[derive(Debug)]
 pub struct WorldBuilder {
     limits: LaunchLimits,
+    fs: Option<Arc<dyn FileSystem>>,
 }
 
 pub fn default_limits() -> LaunchLimits {
@@ -63,6 +68,7 @@ impl World {
     pub fn builder() -> WorldBuilder {
         WorldBuilder {
             limits: default_limits(),
+            fs: None,
         }
     }
 
@@ -72,6 +78,10 @@ impl World {
 
     pub fn home(&self) -> &HostPath {
         &self.home
+    }
+
+    pub fn image_work_dir(&self) -> &HostPath {
+        &self.image_work_dir
     }
 
     pub fn desk(&self) -> AccountDesk {
@@ -99,7 +109,7 @@ impl World {
             })
             .collect();
         edits.extend(config.accounts().cloned().map(ConfigEdit::AddAccount));
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &self.cancel).await?;
         Ok(())
     }
 
@@ -111,7 +121,7 @@ impl World {
                 workspace: workspace.clone(),
             })
             .collect();
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &self.cancel).await?;
         Ok(())
     }
 
@@ -187,12 +197,18 @@ impl World {
                 value: Some(value.clone()),
             });
         }
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &self.cancel).await?;
         Ok(())
     }
 }
 
 impl WorldBuilder {
+    #[must_use]
+    pub fn filesystem(mut self, fs: Arc<dyn FileSystem>) -> WorldBuilder {
+        self.fs = Some(fs);
+        self
+    }
+
     #[must_use]
     pub fn limits(mut self, limits: LaunchLimits) -> WorldBuilder {
         self.limits = limits;
@@ -211,18 +227,28 @@ impl WorldBuilder {
             GatewayName::parse("fake-gateway")?,
             OpenShellWorkspace::parse("default")?,
         ));
-        let engine = Arc::new(FakeEngine::new());
-        gateway.link_engine(Arc::clone(&engine));
-        gateway.use_host_home(&home);
         let clock = Arc::new(FakeClock::new());
+        let docker = Arc::new(DockerBoundary::with_fake_clock(Arc::clone(&clock)));
+        gateway.link_image_registry(docker.registry());
+        gateway.use_host_home(&home);
         gateway.link_clock(Arc::clone(&clock));
         let runner = Arc::new(TestRunner::with_home(&home));
-        let fs: Arc<dyn FileSystem> =
-            Arc::new(WorkingFs::new(Arc::new(StdFileSystem::default()), &clock));
+        let cancel = CancellationToken::new();
+        let base_fs: Arc<dyn FileSystem> = self
+            .fs
+            .unwrap_or_else(|| Arc::new(StdFileSystem::default()));
+        let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(base_fs, &clock));
         let gateway_port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&gateway);
-        let engine_port: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&engine);
+        let docker_runner: Arc<dyn ProcessRunner> = Arc::<DockerBoundary>::clone(&docker);
+        let work_dir = HostPath::parse(&canonical.join("image-work"))?;
+        let engine = Arc::new(BuildxEngine::new(
+            docker_runner,
+            Arc::clone(&fs),
+            work_dir.clone(),
+        ));
         let clock_port: Arc<dyn Clock> = Arc::<FakeClock>::clone(&clock);
         let runner_port: Arc<dyn ProcessRunner> = Arc::<TestRunner>::clone(&runner);
+        let engine_port: Arc<dyn jackin_image::ImageEngine> = Arc::<BuildxEngine>::clone(&engine);
         let config = ConfigStore::new(Arc::clone(&fs), Arc::clone(&clock_port), config_path);
         let session = Session::new(SessionDeps {
             gateway: gateway_port,
@@ -247,11 +273,14 @@ impl WorldBuilder {
             usage: LazyUsageServer::default(),
             gateway,
             engine,
+            docker,
             clock,
             fs,
             runner,
+            cancel,
             session,
             cache_dir,
+            image_work_dir: work_dir,
             home,
             _dir: dir,
         })

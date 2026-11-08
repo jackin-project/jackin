@@ -44,7 +44,7 @@ async fn a_cancelled_load_keeps_the_sandbox_names_it_and_a_rerun_completes() -> 
             .stderr
             .lines()
             .find(|line| line.starts_with("cancelled"))
-            .ok_or("no cancelled line")?;
+            .ok_or_else(|| format!("no cancelled line: {:?} {:?}", ran.stdout, ran.stderr))?;
         assert!(
             message.contains(name.as_str()) && message.contains(&id),
             "{}",
@@ -60,6 +60,39 @@ async fn a_cancelled_load_keeps_the_sandbox_names_it_and_a_rerun_completes() -> 
 }
 
 #[tokio::test]
+async fn a_cancel_before_sandbox_dispatch_does_not_claim_that_no_sandbox_exists() -> TestResult {
+    guard(async {
+        let (rig, harness) = rigged().await?;
+        let token = CancellationToken::new();
+        rig.gateway().inject(Fault::CancelAt {
+            trigger: Trigger::Op(GatewayOp::Provider),
+            token: token.clone(),
+        });
+        let id = launch_id(1).to_string();
+        let ran = harness
+            .command(&["load", "--launch-id", &id])
+            .cancel(token)
+            .run()
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        let message = ran
+            .stderr
+            .lines()
+            .find(|line| line.starts_with("cancelled"))
+            .ok_or_else(|| format!("no cancelled line: {:?} {:?}", ran.stdout, ran.stderr))?;
+        assert!(
+            message.contains("could not confirm whether a sandbox exists"),
+            "{message}"
+        );
+        assert!(message.contains(&id), "{message}");
+        assert!(!message.contains("before a sandbox existed"), "{message}");
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_cancelled_build_stores_no_image_and_the_same_build_uncancelled_succeeds() -> TestResult {
     guard(async {
         let (rig, harness) = rigged().await?;
@@ -68,10 +101,10 @@ async fn a_cancelled_build_stores_no_image_and_the_same_build_uncancelled_succee
         let ran = harness.command(&["build"]).cancel(token).run().await?;
         assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
         assert!(ran.stdout.is_empty());
-        assert!(rig.world.engine.images().is_empty());
+        assert!(rig.world.docker.images().is_empty());
 
         harness.run(&["build"]).await?.ok()?;
-        assert!(!rig.world.engine.images().is_empty());
+        assert!(!rig.world.docker.images().is_empty());
         Ok(())
     })
     .await
@@ -241,7 +274,7 @@ async fn cancelling_load_while_it_waits_for_an_environment_value_ends_the_comman
         assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
         assert!(ran.stdout.is_empty());
         assert!(rig.world.gateway.sandboxes().is_empty());
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
         Ok(())
     })
     .await

@@ -7,14 +7,17 @@ use jackin_core::{ProfileId, ProviderName, Redactor};
 use openshell_sdk::raw::proto::{
     ConfigureProviderRefreshRequest, CreateProviderRequest, DeleteProviderProfileRequest,
     DeleteProviderRefreshRequest, DeleteProviderRequest, GetProviderProfileRequest,
-    GetProviderRequest, ImportProviderProfilesRequest, ObjectMeta, Provider,
-    ProviderCredentialRefreshStrategy, ProviderProfile, ProviderProfileDiagnostic,
+    GetProviderRefreshStatusRequest, GetProviderRequest, ImportProviderProfilesRequest, ObjectMeta,
+    Provider, ProviderCredentialRefreshStrategy, ProviderProfile, ProviderProfileDiagnostic,
     ProviderProfileImportItem, UpdateProviderProfilesRequest, UpdateProviderRequest,
 };
 
 use super::Inner;
 use crate::error::{GatewayError, GatewayOp, Missing};
-use crate::gateway::{ProfileSync, ProviderMaterial, ProviderSpec, ProviderState};
+use crate::gateway::{
+    ProfileSync, ProviderMaterial, ProviderSpec, ProviderState, ProviderWriteEffect,
+    ProviderWriteError,
+};
 use crate::policy::ProviderProfile as ProfileModel;
 
 const PROFILE_SOURCE: &str = "jackin";
@@ -222,10 +225,27 @@ impl Inner {
         name: &ProviderName,
     ) -> Result<ProviderState, GatewayError> {
         match self.get_provider(name).await {
-            Ok(_) => Ok(ProviderState::Present),
-            Err(GatewayError::NotFound { .. }) => Ok(ProviderState::Absent),
-            Err(error) => Err(error),
+            Ok(_) => {}
+            Err(GatewayError::NotFound { .. }) => return Ok(ProviderState::Absent),
+            Err(error) => return Err(error),
         }
+        let status = self
+            .unary(
+                GatewayOp::Provider,
+                Some(Missing::Provider(name.clone())),
+                self.grpc()
+                    .get_provider_refresh_status(GetProviderRefreshStatusRequest {
+                        workspace_scope: Some(self.scope()),
+                        provider: name.to_string(),
+                        credential_key: String::new(),
+                    }),
+            )
+            .await?;
+        Ok(if status.credentials.is_empty() {
+            ProviderState::Unrefreshed
+        } else {
+            ProviderState::Present
+        })
     }
 
     async fn get_provider(&self, name: &ProviderName) -> Result<Provider, GatewayError> {
@@ -244,7 +264,10 @@ impl Inner {
         })
     }
 
-    pub(crate) async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    pub(crate) async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         match &spec.material {
             ProviderMaterial::StaticKey { key } => {
                 let redactor = Redactor::new([key]);
@@ -256,24 +279,62 @@ impl Inner {
                         id: spec.profile.to_string(),
                     }),
                 )
-                .await?;
+                .await
+                .map_err(|error| {
+                    ProviderWriteError::new(redact(error, &redactor), ProviderWriteEffect::NoWrite)
+                })?;
                 let credentials =
                     HashMap::from([(spec.keys.access_token.to_owned(), key.expose().to_owned())]);
-                let result = self.write_provider(spec, credentials, None).await;
-                return result.map_err(|error| redact(error, &redactor));
+                self.write_provider(spec, credentials, None)
+                    .await
+                    .map_err(|error| {
+                        let (source, effect) = error.into_parts();
+                        ProviderWriteError::new(redact(source, &redactor), effect)
+                    })
             }
-            ProviderMaterial::ChatgptLogin { .. } => {}
+            ProviderMaterial::ChatgptLogin {
+                access_token,
+                refresh_token,
+                client_id,
+                chatgpt_account_id,
+            } => {
+                let redactor = Redactor::new([access_token, refresh_token]);
+                let credentials = HashMap::from([
+                    (
+                        spec.keys.access_token.to_owned(),
+                        access_token.expose().to_owned(),
+                    ),
+                    (
+                        spec.keys.account_id.to_owned(),
+                        chatgpt_account_id.to_string(),
+                    ),
+                ]);
+                let material = HashMap::from([
+                    (CLIENT_ID_MATERIAL.to_owned(), client_id.clone()),
+                    (
+                        REFRESH_TOKEN_MATERIAL.to_owned(),
+                        refresh_token.expose().to_owned(),
+                    ),
+                ]);
+                self.write_provider(spec, credentials, Some(material))
+                    .await
+                    .map_err(|error| {
+                        let (source, effect) = error.into_parts();
+                        ProviderWriteError::new(redact(source, &redactor), effect)
+                    })
+            }
         }
-        let ProviderMaterial::ChatgptLogin {
-            access_token,
-            refresh_token,
-            client_id,
-            chatgpt_account_id,
-        } = &spec.material
-        else {
-            unreachable!()
-        };
-        let redactor = Redactor::new([access_token, refresh_token]);
+    }
+
+    async fn write_provider(
+        &self,
+        spec: &ProviderSpec,
+        credentials: HashMap<String, String>,
+        material: Option<HashMap<String, String>>,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
+        let mut record =
+            provider_record(&spec.name, spec.profile.as_str(), self.workspace.as_str());
+        record.credentials = credentials;
         self.unary(
             GatewayOp::Profile,
             Some(Missing::Profile(spec.profile.clone())),
@@ -282,69 +343,62 @@ impl Inner {
                 id: spec.profile.to_string(),
             }),
         )
-        .await?;
-        let credentials = HashMap::from([
-            (
-                spec.keys.access_token.to_owned(),
-                access_token.expose().to_owned(),
-            ),
-            (
-                spec.keys.account_id.to_owned(),
-                chatgpt_account_id.to_string(),
-            ),
-        ]);
-        let material = HashMap::from([
-            (CLIENT_ID_MATERIAL.to_owned(), client_id.clone()),
-            (
-                REFRESH_TOKEN_MATERIAL.to_owned(),
-                refresh_token.expose().to_owned(),
-            ),
-        ]);
-        let result = self.write_provider(spec, credentials, Some(material)).await;
-        result.map_err(|error| redact(error, &redactor))
-    }
-
-    async fn write_provider(
-        &self,
-        spec: &ProviderSpec,
-        credentials: HashMap<String, String>,
-        material: Option<HashMap<String, String>>,
-    ) -> Result<(), GatewayError> {
-        let mut record =
-            provider_record(&spec.name, spec.profile.as_str(), self.workspace.as_str());
-        record.credentials = credentials;
-        match self.provider_state(&spec.name).await? {
+        .await
+        .map_err(|error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite))?;
+        let effect = match self
+            .provider_state(&spec.name)
+            .await
+            .map_err(|error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite))?
+        {
             ProviderState::Absent => match self.create_provider(spec, record.clone()).await {
-                Ok(()) => {}
+                Ok(()) => ProviderWriteEffect::Created,
                 Err(error @ GatewayError::AlreadyExists { .. }) => {
-                    match self.provider_state(&spec.name).await? {
-                        ProviderState::Present => self.update_provider(spec, record).await?,
-                        ProviderState::Absent => return Err(error),
+                    if self
+                        .provider_state(&spec.name)
+                        .await
+                        .map_err(|error| {
+                            ProviderWriteError::new(error, ProviderWriteEffect::NoWrite)
+                        })?
+                        .exists()
+                    {
+                        self.update_provider(spec, record).await.map_err(|error| {
+                            ProviderWriteError::new(error, ProviderWriteEffect::Existing)
+                        })?;
+                        ProviderWriteEffect::Existing
+                    } else {
+                        return Err(ProviderWriteError::new(error, ProviderWriteEffect::NoWrite));
                     }
                 }
-                Err(error) => return Err(error),
+                Err(error) => {
+                    return Err(ProviderWriteError::new(error, ProviderWriteEffect::Unknown));
+                }
             },
-            ProviderState::Present => self.update_provider(spec, record).await?,
-        }
-        let Some(material) = material else {
-            return Ok(());
+            ProviderState::Present | ProviderState::Unrefreshed => {
+                self.update_provider(spec, record).await.map_err(|error| {
+                    ProviderWriteError::new(error, ProviderWriteEffect::Existing)
+                })?;
+                ProviderWriteEffect::Existing
+            }
         };
-        self.unary(
-            GatewayOp::Provider,
-            Some(Missing::Provider(spec.name.clone())),
-            self.grpc()
-                .configure_provider_refresh(ConfigureProviderRefreshRequest {
-                    workspace_scope: Some(self.scope()),
-                    provider: spec.name.to_string(),
-                    credential_key: spec.keys.access_token.to_owned(),
-                    strategy: ProviderCredentialRefreshStrategy::Oauth2RefreshToken as i32,
-                    material,
-                    secret_material_keys: vec![REFRESH_TOKEN_MATERIAL.to_owned()],
-                    ..ConfigureProviderRefreshRequest::default()
-                }),
-        )
-        .await?;
-        Ok(())
+        if let Some(material) = material {
+            self.unary(
+                GatewayOp::Provider,
+                Some(Missing::Provider(spec.name.clone())),
+                self.grpc()
+                    .configure_provider_refresh(ConfigureProviderRefreshRequest {
+                        workspace_scope: Some(self.scope()),
+                        provider: spec.name.to_string(),
+                        credential_key: spec.keys.access_token.to_owned(),
+                        strategy: ProviderCredentialRefreshStrategy::Oauth2RefreshToken as i32,
+                        material,
+                        secret_material_keys: vec![REFRESH_TOKEN_MATERIAL.to_owned()],
+                        ..ConfigureProviderRefreshRequest::default()
+                    }),
+            )
+            .await
+            .map_err(|error| ProviderWriteError::new(error, effect))?;
+        }
+        Ok(effect)
     }
 
     async fn create_provider(

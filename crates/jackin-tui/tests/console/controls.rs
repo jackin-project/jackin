@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_console::backend::Effect;
-use jackin_console::domain::instance::InstanceStatus;
+use jackin_console::domain::instance::{InstanceId, InstanceStatus};
 use jackin_core::{
     AttemptId, HookKind, Phase, RoleName, RoleSource, RoleUrl, SupervisorState, sandbox_layout,
 };
@@ -23,11 +23,11 @@ fn flat(screen: &str) -> String {
     screen.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-async fn stopped() -> Result<(Lab, String), Box<dyn std::error::Error>> {
+async fn stopped() -> Result<(Lab, InstanceId), Box<dyn std::error::Error>> {
     stopped_after(None).await
 }
 
-async fn stopped_after(exit: Option<i32>) -> Result<(Lab, String), Box<dyn std::error::Error>> {
+async fn stopped_after(exit: Option<i32>) -> Result<(Lab, InstanceId), Box<dyn std::error::Error>> {
     let rig = Rig::new().await?;
     rig.launch(1).await?;
     if let Some(code) = exit {
@@ -39,7 +39,7 @@ async fn stopped_after(exit: Option<i32>) -> Result<(Lab, String), Box<dyn std::
         .instances
         .first()
         .ok_or("no instance")?
-        .id
+        .id()
         .clone();
     lab.perform(Effect::Stop {
         instance: id.clone(),
@@ -54,7 +54,10 @@ async fn restore_starts_a_stopped_sandbox_as_jackin_start_does() -> TestResult {
         let (mut lab, id) = stopped().await?;
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Stopped);
         assert_eq!(
-            lab.world().instances[0].status,
+            lab.world().instances[0]
+                .as_available()
+                .ok_or("instance metadata unavailable")?
+                .status,
             InstanceStatus::RestoreAvailable
         );
         lab.perform(Effect::Restore { instance: id }).await?;
@@ -270,6 +273,7 @@ async fn restore_of_a_sandbox_whose_codex_started_meanwhile_says_it_is_already_r
                     mode: jackin_core::FileMode(0o600),
                     content: jackin_core::SecretBytes::new(b"1".to_vec()),
                 },
+                &lab.rig.world.cancel,
             )
             .await?;
         gateway.release(&preflight);
@@ -313,10 +317,11 @@ async fn restore_of_a_sandbox_whose_main_process_ended_says_so() -> TestResult {
 async fn restore_of_an_unknown_instance_fails_with_a_typed_reply() -> TestResult {
     guard(async {
         let (mut lab, _) = stopped().await?;
-        lab.perform(Effect::Restore {
-            instance: "jk-0000".to_owned(),
-        })
-        .await?;
+        let unknown = InstanceId::new(
+            lab.rig.world.gateway.name().to_string(),
+            "jackin-ghost-0000",
+        );
+        lab.perform(Effect::Restore { instance: unknown }).await?;
         let screen = lab.console.screen();
         assert!(flat(&screen).contains("jk-0000"), "{screen}");
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Stopped);
@@ -331,16 +336,14 @@ async fn prewarm_builds_the_image_that_jackin_build_makes_and_a_second_prewarm_r
     guard(async {
         let mut lab = Lab::open().await?;
         let id = lab.workspace(WORKSPACE).ok_or("no workspace")?.id;
-        assert!(lab.rig.world.engine.images().is_empty());
+        assert!(lab.rig.world.docker.images().is_empty());
         lab.perform(Effect::Prewarm { workspace: id }).await?;
         let screen = lab.console.screen();
         assert!(!flat(&screen).contains(UNBUILT), "{screen}");
-        let images = lab.rig.world.engine.images();
+        let images = lab.rig.world.docker.images();
         assert!(!images.is_empty(), "{screen}");
-        let builds = lab.rig.world.engine.builds().len();
         lab.perform(Effect::Prewarm { workspace: id }).await?;
-        assert_eq!(lab.rig.world.engine.builds().len(), builds);
-        assert_eq!(lab.rig.world.engine.images(), images);
+        assert_eq!(lab.rig.world.docker.images(), images);
         Ok(())
     })
     .await
@@ -356,7 +359,7 @@ async fn prewarm_with_no_role_to_choose_fails_with_the_build_error_and_builds_no
         lab.perform(Effect::Prewarm { workspace: id }).await?;
         let screen = lab.console.screen();
         assert!(flat(&screen).contains("no role is selected"), "{screen}");
-        assert!(lab.rig.world.engine.images().is_empty());
+        assert!(lab.rig.world.docker.images().is_empty());
         Ok(())
     })
     .await

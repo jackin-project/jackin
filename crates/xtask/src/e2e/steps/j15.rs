@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{CaFingerprint, LaunchId};
+use jackin_core::{CaFingerprint, LaunchId, plain};
 use serde_json::Value;
 
 use super::j12::json_of;
@@ -16,6 +16,8 @@ const RISKS: [&str; 4] = [
     "bind mount names a path on the engine host",
     "engine outlives the sandbox",
 ];
+const BUSYBOX: &str =
+    "busybox@sha256:a46257e06c82ad85242d0d38077d0a52d9896389ca60a1a59d3463db586e5fa4";
 const HELLO_WORLD: &str =
     "hello-world@sha256:c567b231f65614688711a75f31518a064258a51d442117a3e771a3a8fdba78ef";
 const CERTS: [&str; 3] = ["ca.pem", "cert.pem", "key.pem"];
@@ -226,12 +228,12 @@ impl Run<'_> {
             ),
             (
                 "run -i",
-                "echo e2e-ping | docker run -i --rm busybox cat".to_owned(),
+                format!("echo e2e-ping | docker run -i --rm {BUSYBOX} cat"),
             ),
             (
                 "exec",
                 format!(
-                    "docker run -d --name {container}-exec busybox sleep 120 && docker exec {container}-exec echo e2e-exec; code=$?; docker rm -f {container}-exec >/dev/null; exit $code"
+                    "docker run -d --name {container}-exec {BUSYBOX} sleep 120 && docker exec {container}-exec echo e2e-exec; code=$?; docker rm -f {container}-exec >/dev/null; exit $code"
                 ),
             ),
             ("compose", "docker compose version".to_owned()),
@@ -241,7 +243,17 @@ impl Run<'_> {
             shell.push(self.shell_step(&mut session, label, &command).await?);
         }
         let host_id = self.b.engine.engine_id().await.ok();
-        let host_names = self.b.engine.container_names().await.unwrap_or_default();
+        let host_names = match self.b.engine.container_names().await {
+            Ok(names) => names,
+            Err(error) => {
+                session.send(b"exit\n")?;
+                drop(session.wait_exit(timeout).await);
+                return Ok(Verdict::fail(format!(
+                    "cannot list the containers of the host engine: {}",
+                    plain(&error)
+                )));
+            }
+        };
         let mut problems: Vec<String> = report
             .gate("J15")
             .into_iter()

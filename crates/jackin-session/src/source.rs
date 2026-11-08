@@ -230,16 +230,36 @@ impl SourceDesk {
             .item(account, path.vault, path.item, cancel)
             .await
             .map_err(SourceFault::Op)?;
-        let field = detail
-            .fields
-            .iter()
-            .find(|field| field.id == path.field && field.section.as_deref() == path.section)
-            .ok_or_else(|| {
-                SourceFault::Op(OpFault::MissingField {
-                    field: path.field.to_owned(),
-                    item: path.item.to_owned(),
-                })
-            })?;
+        let mut fields = detail.fields.iter().filter(|field| {
+            let field_matches = field.id.eq_ignore_ascii_case(path.field)
+                || field.label.eq_ignore_ascii_case(path.field);
+            let section_matches = match path.section {
+                Some(section) => {
+                    field
+                        .section
+                        .as_deref()
+                        .is_some_and(|id| id.eq_ignore_ascii_case(section))
+                        || field
+                            .section_label
+                            .as_deref()
+                            .is_some_and(|label| label.eq_ignore_ascii_case(section))
+                }
+                None => field.section.is_none(),
+            };
+            field_matches && section_matches
+        });
+        let field = fields.next().ok_or_else(|| {
+            SourceFault::Op(OpFault::MissingField {
+                field: path.field.to_owned(),
+                item: path.item.to_owned(),
+            })
+        })?;
+        if fields.next().is_some() {
+            return Err(SourceFault::Op(OpFault::AmbiguousField {
+                field: path.field.to_owned(),
+                item: path.item.to_owned(),
+            }));
+        }
         if field.kind != OpFieldKind::Concealed {
             return Err(SourceFault::NotConcealed(field.label.clone()));
         }

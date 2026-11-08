@@ -288,8 +288,18 @@ async fn a_late_ending_attachment_of_the_old_generation_does_not_release_or_feed
         let (fake, handle, mut old) = cat_owner().await?;
         let name = handle.name();
         flood(&old).await?;
-        fake.set_power(&name, PowerAction::Stop).await?;
-        fake.set_power(&name, PowerAction::Start).await?;
+        fake.set_power(
+            &name,
+            PowerAction::Stop,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
+        fake.set_power(
+            &name,
+            PowerAction::Start,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
         assert_eq!(observe(&fake, &name).await?.phase, Phase::Ready);
         assert!(handle.main_input().is_empty());
         let mut fresh = attach(&fake, &name, InputMode::Owner).await?;

@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+Scope: current Velnor main Linux runner-label policy, not consumer adoption or live CI execution.
+Fix commit: 5845576644460f727e670178772e46c7949c657d (#538)
+Observed main: ff0f3ce3e7f87c172dbfc3b4ff9640f82c5a6905
+Accepted labels: ubuntu-26.04, ubuntu-26.04-arm
+Rejected by public config case: ubuntu-22.04, ubuntu-22.04-arm, ubuntu-24.04, ubuntu-24.04-arm, ubuntu-latest
+Selected nextest cases: 2 passed, 0 failed, 23 unselected
+Command exit: 0; source unchanged during execution: true
+Immutable main workflow Ubuntu24 label matches: 0
+Source audit: /Users/donbeave/Projects/jackin-project/handoff/state-2026-11-05/current/velnor-ubuntu26-current-main-source-audit-v1.json
+Test receipt: /Users/donbeave/Projects/jackin-project/handoff/state-2026-11-05/current/velnor-ubuntu26-public-contract-v2

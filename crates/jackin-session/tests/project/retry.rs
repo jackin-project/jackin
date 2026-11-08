@@ -37,6 +37,10 @@ fn marker() -> SandboxPath {
     sandbox_layout::uploaded_marker(&launch_id(1))
 }
 
+fn tree_marker() -> SandboxPath {
+    sandbox_layout::project_tree_marker(&launch_id(1))
+}
+
 #[tokio::test]
 async fn a_retry_after_a_host_deletion_ends_ready_without_the_deleted_file() -> TestResult {
     guard(async {
@@ -70,12 +74,15 @@ async fn a_retry_after_a_host_deletion_ends_ready_without_the_deleted_file() -> 
     .await
 }
 
-fn outside(files: &BTreeMap<SandboxPath, Vec<u8>>) -> BTreeMap<SandboxPath, Vec<u8>> {
+fn outside(
+    files: &BTreeMap<SandboxPath, Vec<u8>>,
+    markers: &[SandboxPath],
+) -> BTreeMap<SandboxPath, Vec<u8>> {
     files
         .iter()
         .filter(|(path, _)| {
             !path.as_str().starts_with("/sandbox/project")
-                && !path.as_str().contains("uploaded-")
+                && !markers.contains(path)
                 && !path.as_str().contains("/run/")
         })
         .map(|(path, bytes)| (path.clone(), bytes.clone()))
@@ -106,9 +113,13 @@ async fn the_project_directory_is_emptied_but_nothing_outside_it() -> TestResult
                 mode: FileMode(0o600),
                 content: SecretBytes::new(content.as_bytes().to_vec()),
             };
-            Gateway::write_file(gateway.as_ref(), &handle.name(), &file).await?;
+            Gateway::write_file(gateway.as_ref(), &handle.name(), &file, &rig.world.cancel).await?;
         }
-        let before = outside(&handle.files());
+        let markers = [
+            sandbox_layout::uploaded_marker(&launch_id(1)),
+            sandbox_layout::project_tree_marker(&launch_id(1)),
+        ];
+        let before = outside(&handle.files(), &markers);
         assert!(before.len() >= 5, "{:?}", before.keys());
 
         ready(rig.launch(1).await?)?;
@@ -119,7 +130,7 @@ async fn the_project_directory_is_emptied_but_nothing_outside_it() -> TestResult
                 "{stale}"
             );
         }
-        assert_eq!(outside(&handle.files()), before);
+        assert_eq!(outside(&handle.files(), &markers), before);
         arrived(rig.repo.root().as_path(), &handle.root(), &["?? u.txt"])
     })
     .await
@@ -243,18 +254,22 @@ async fn no_marker_is_written_at_a_corrupt_upload_a_failing_step_or_a_mismatch()
     .await
 }
 
-async fn mark_as_a_peer(rig: &Rig) -> TestResult {
+async fn mark_as_a_peer(rig: &Rig, tree: &[u8], uploaded: &[u8]) -> TestResult {
     let name = rig.handle(1).await?.name();
     for (target, content) in [
-        ("/sandbox/project/peer.txt", "from the peer"),
-        (marker().as_str(), ""),
+        ("/sandbox/project/peer.txt", b"from the peer".as_slice()),
+        (tree_marker().as_str(), tree),
+        (marker().as_str(), uploaded),
     ] {
         let file = SandboxFile {
             path: path(target)?,
             mode: FileMode(0o600),
-            content: SecretBytes::new(content.as_bytes().to_vec()),
+            content: SecretBytes::new(content.to_vec()),
         };
-        rig.world.gateway.write_file(&name, &file).await?;
+        rig.world
+            .gateway
+            .write_file(&name, &file, &CancellationToken::new())
+            .await?;
     }
     Ok(())
 }
@@ -263,12 +278,14 @@ async fn as_a_peer(
     rig: &Rig,
     feed: &mut LaunchFeed,
     held: &mut Option<FileLock>,
+    tree: &[u8],
+    uploaded: &[u8],
 ) -> Result<Option<StepResult>, Box<dyn std::error::Error>> {
     let mut upload = None;
     while let Some(event) = feed.recv().await {
         match event {
             LaunchEvent::StepStarted(LaunchStep::Upload) => {
-                mark_as_a_peer(rig).await?;
+                mark_as_a_peer(rig, tree, uploaded).await?;
                 *held = None;
             }
             LaunchEvent::StepFinished {
@@ -286,6 +303,21 @@ async fn a_launch_that_waits_for_the_upload_lock_skips_the_upload_when_a_peer_ma
 -> TestResult {
     guard(async {
         let rig = Rig::new(base().await?).await?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        let tree = handle
+            .file(&tree_marker())
+            .ok_or("the first launch did not write the project tree marker")?;
+        let uploaded = handle
+            .file(&marker())
+            .ok_or("the first launch did not write the upload marker")?;
+        for marker in [tree_marker(), marker()] {
+            let relative = marker
+                .as_str()
+                .strip_prefix("/sandbox/")
+                .ok_or("the upload marker is outside the sandbox root")?;
+            std::fs::remove_file(handle.root().join(relative))?;
+        }
         rig.world.fs.create_dir_all(rig.world.cache_dir()).await?;
         let lock = HostPath::resolve(
             Path::new(&format!("upload-{}.lock", launch_id(1))),
@@ -297,7 +329,7 @@ async fn a_launch_that_waits_for_the_upload_lock_skips_the_upload_when_a_peer_ma
             .world
             .session
             .launch(rig.plan(1)?, events, CancellationToken::new());
-        let peer = as_a_peer(&rig, &mut feed, &mut held);
+        let peer = as_a_peer(&rig, &mut feed, &mut held, &tree, &uploaded);
         let (outcome, upload) = tokio::join!(launched, peer);
         ready(Outcome { result: outcome })?;
         assert_eq!(
@@ -310,7 +342,7 @@ async fn a_launch_that_waits_for_the_upload_lock_skips_the_upload_when_a_peer_ma
             handle.file(&path("/sandbox/project/peer.txt")?),
             Some(b"from the peer".to_vec())
         );
-        assert!(!handle.root().join("project/.git").exists());
+        assert!(handle.root().join("project/.git").is_dir());
         Ok(())
     })
     .await

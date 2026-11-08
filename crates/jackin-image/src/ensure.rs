@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{BuilderName, FileLock, ImageId, ImageTag, TerminalText};
+use jackin_core::{BuilderName, FileLock, ImageId, ImageTag, LocalImageRef, TerminalText};
 use tokio_util::sync::CancellationToken;
 
 use crate::engine::{EngineError, ImageEngine};
@@ -20,6 +20,7 @@ pub enum ImageSource {
 pub struct BuiltImage {
     pub tag: ImageTag,
     pub id: ImageId,
+    pub local_ref: LocalImageRef,
     pub source: ImageSource,
 }
 
@@ -94,6 +95,14 @@ impl Pipeline<'_> {
         self.live()?;
         self.engine
             .attest(tag, id, self.cancel)
+            .await
+            .map_err(from_engine)
+    }
+
+    async fn publish_local(&self, id: &ImageId) -> Result<LocalImageRef, ImageError> {
+        self.live()?;
+        self.engine
+            .publish_local(id, self.cancel)
             .await
             .map_err(from_engine)
     }
@@ -239,6 +248,7 @@ pub async fn ensure_held(
         pipeline
             .verify(BuildStage::Derived, &id, &construct_image)
             .await?;
+        let local_ref = pipeline.publish_local(&id).await?;
         pipeline
             .emit(ImageEvent::StageCached(BuildStage::Derived))
             .await;
@@ -246,6 +256,7 @@ pub async fn ensure_held(
             image: BuiltImage {
                 tag: final_tag,
                 id,
+                local_ref,
                 source: ImageSource::Cache,
             },
             hold: ImageHold { _lock: hold },
@@ -278,10 +289,12 @@ pub async fn ensure_held(
         .verify(BuildStage::Derived, &built, &construct_image)
         .await?;
     pipeline.attest(&builds.derived.tag, &built).await?;
+    let local_ref = pipeline.publish_local(&built).await?;
     Ok(HeldImage {
         image: BuiltImage {
             tag: builds.derived.tag,
             id: built,
+            local_ref,
             source: ImageSource::Built,
         },
         hold: ImageHold { _lock: hold },

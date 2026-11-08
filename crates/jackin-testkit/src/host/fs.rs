@@ -11,6 +11,8 @@ use jackin_core::{
     DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
     LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
+use tokio::sync::{Notify, oneshot};
+use tokio_util::sync::CancellationToken;
 
 use crate::sync::locked;
 
@@ -48,6 +50,8 @@ struct FsState {
     next_inode: u64,
     calls: HashMap<FsOp, u32>,
     faults: Vec<FsFault>,
+    cancel_after_rename: Option<CancellationToken>,
+    sync_dir_gate: Option<SyncDirGate>,
 }
 
 #[derive(Debug)]
@@ -61,6 +65,13 @@ struct FsFault {
     op: FsOp,
     nth: u32,
     error: Option<FsError>,
+}
+
+#[derive(Debug)]
+struct SyncDirGate {
+    cancel: Option<CancellationToken>,
+    reached: Arc<Notify>,
+    release: oneshot::Receiver<()>,
 }
 
 #[derive(Debug)]
@@ -132,6 +143,23 @@ impl MemFs {
             op,
             nth: due,
             error: Some(error),
+        });
+    }
+
+    pub fn cancel_after_next_rename(&self, cancel: CancellationToken) {
+        locked(&self.state).cancel_after_rename = Some(cancel);
+    }
+
+    pub fn hold_next_sync_dir(
+        &self,
+        cancel: Option<CancellationToken>,
+        reached: Arc<Notify>,
+        release: oneshot::Receiver<()>,
+    ) {
+        locked(&self.state).sync_dir_gate = Some(SyncDirGate {
+            cancel,
+            reached,
+            release,
         });
     }
 
@@ -269,7 +297,11 @@ impl FileSystem for MemFs {
 
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         let mut state = self.enter(FsOp::CreatePrivateDirAll)?;
-        make_dirs(&mut state, dir, FileMode(0o700))
+        make_dirs(&mut state, dir, FileMode(0o700))?;
+        if let Some(mode) = state.dirs.get_mut(dir.as_path()) {
+            *mode = FileMode(mode.0 & 0o700);
+        }
+        Ok(())
     }
 
     async fn write_new(
@@ -316,6 +348,9 @@ impl FileSystem for MemFs {
         if let Some(ino) = state.inodes.remove(from.as_path()) {
             state.inodes.insert(to.as_path().to_path_buf(), ino);
         }
+        if let Some(cancel) = state.cancel_after_rename.take() {
+            cancel.cancel();
+        }
         Ok(())
     }
 
@@ -355,8 +390,33 @@ impl FileSystem for MemFs {
     }
 
     async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
-        let state = self.enter(FsOp::SyncDir)?;
-        if state.is_dir(dir.as_path()) {
+        let (is_dir, fault, gate) = {
+            let mut state = locked(&self.state);
+            let count = state.calls.entry(FsOp::SyncDir).or_insert(0);
+            *count += 1;
+            let nth = *count;
+            let fault = state
+                .faults
+                .iter_mut()
+                .find(|fault| fault.op == FsOp::SyncDir && fault.nth == nth)
+                .and_then(|fault| fault.error.take());
+            (
+                state.is_dir(dir.as_path()),
+                fault,
+                state.sync_dir_gate.take(),
+            )
+        };
+        if let Some(gate) = gate {
+            if let Some(cancel) = gate.cancel {
+                cancel.cancel();
+            }
+            gate.reached.notify_one();
+            let _released = gate.release.await;
+        }
+        if let Some(error) = fault {
+            return Err(error);
+        }
+        if is_dir {
             Ok(())
         } else {
             Err(io_error(dir, ErrorKind::NotFound, "no such directory"))

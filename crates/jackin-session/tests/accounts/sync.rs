@@ -2,19 +2,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Account, AccountName, CodexAuthMode, Config, CredentialSource, EnvName, HostPath, OpReference,
-    ProfileId, Provider, ProviderName,
+    Account, AccountName, CodexAuthMode, Config, CredentialSource, EnvName, HostPath, OpAccountId,
+    OpReference, ProfileId, Provider, ProviderName,
 };
 use jackin_openshell::{GatewayError, GatewayOp, Missing, ProfileSync};
-use jackin_session::{AccountError, AccountSync};
-use jackin_testkit::{Fault, World};
+use jackin_session::{AccountError, AccountSync, CredentialError, HostPorts, resolve_static_key};
+use jackin_testkit::{Fault, ProcessReply, ScriptedProgram, World, guard};
 use serde_json::json;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCESS, ACCOUNT_ID, CLIENT, Home, REFRESH, SECRETS, TestResult, codex_account, guard,
-    login_json, register,
+    ACCESS, ACCOUNT_ID, CLIENT, Home, REFRESH, SECRETS, TestResult, codex_account, login_json,
+    register,
 };
+
+fn assert_credential_error_is_redacted(error: &CredentialError) {
+    let text = format!("{error} {error:?}");
+    for sentinel in [
+        "OP-STDOUT-SENTINEL",
+        "OP-STDERR-SENTINEL",
+        "OP-SPAWN-SENTINEL",
+    ] {
+        assert!(!text.contains(sentinel), "{text}");
+    }
+}
 
 fn assert_clean(text: &str) {
     for secret in SECRETS {
@@ -218,6 +230,72 @@ fn accounts(home: &HostPath) -> Result<Vec<Account>, Box<dyn std::error::Error>>
         .into_iter()
         .map(|source| Ok(Account::new(name.clone(), Provider::Codex, source)?))
         .collect()
+}
+
+#[tokio::test]
+async fn onepassword_account_key_is_trimmed_and_invalid_output_is_rejected_without_leaks()
+-> TestResult {
+    guard(async {
+        let reference = OpReference::parse("op://Dev/OpenAI/credential")?;
+        let account = Account::new(
+            AccountName::parse("work")?,
+            Provider::Codex,
+            CredentialSource::OnePassword {
+                reference: reference.clone(),
+                account: Some(OpAccountId::parse("team")?),
+            },
+        )?;
+        let cases = [
+            (
+                ProcessReply::exited(0, b" \tOP-TRIMMED-SECRET \n", b""),
+                Some("OP-TRIMMED-SECRET"),
+            ),
+            (
+                ProcessReply::exited(0, b" \t\n ", b"OP-STDERR-SENTINEL"),
+                None,
+            ),
+            (
+                ProcessReply::exited(0, &[0xff, 0xfe], b"OP-STDERR-SENTINEL"),
+                None,
+            ),
+            (
+                ProcessReply::exited(7, b"OP-STDOUT-SENTINEL", b"OP-STDERR-SENTINEL"),
+                None,
+            ),
+            (ProcessReply::spawn("OP-SPAWN-SENTINEL"), None),
+        ];
+        for (reply, expected) in cases {
+            let world = World::builder().build()?;
+            world.runner.scripted().expect(
+                ScriptedProgram::Op,
+                &["read", "--account", "team", reference.as_str()],
+                reply,
+            );
+            let clock: Arc<dyn jackin_core::Clock> =
+                Arc::<jackin_testkit::FakeClock>::clone(&world.clock);
+            let runner: Arc<dyn jackin_core::ProcessRunner> =
+                Arc::<jackin_testkit::TestRunner>::clone(&world.runner);
+            let host = HostPorts {
+                clock,
+                fs: Arc::clone(&world.fs),
+                runner,
+            };
+            let result =
+                resolve_static_key(&host, &account, "codex", &CancellationToken::new()).await;
+            if let Some(expected) = expected {
+                assert_eq!(result?.expose(), expected);
+            } else {
+                let error = result.unwrap_err();
+                assert!(
+                    matches!(error, CredentialError::MissingStaticKey),
+                    "{error:?}"
+                );
+                assert_credential_error_is_redacted(&error);
+            }
+        }
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]

@@ -479,6 +479,7 @@ fn every_edit_changes_only_what_it_names() -> TestResult {
 
 fn label(error: &ConfigError) -> String {
     match error {
+        ConfigError::Cancelled => "cancelled".to_owned(),
         ConfigError::Syntax { .. } => "syntax".to_owned(),
         ConfigError::UnknownField { key } => format!("unknown:{key}"),
         ConfigError::MissingField { key } => format!("missing:{key}"),

@@ -6,18 +6,18 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, DockerCapability, DockerLabel, FileLock, FileMode, HookKind, HostPath, LabelSelector,
-    PLACEHOLDER_SCHEME, SandboxLabels, SandboxName, SandboxPath, SecretBytes, StartRequest,
-    sandbox_layout,
+    PLACEHOLDER_SCHEME, ProviderName, SandboxLabels, SandboxName, SandboxPath, SecretBytes,
+    StartRequest, sandbox_layout,
 };
 use jackin_image::{BuiltImage, ImageHold, ImageSource, ensure_held};
 use jackin_openshell::{
-    GatewayError, GatewayOp, Missing, PowerAction, ProgramRun, ProgramStdin, ProviderState,
-    SandboxFile, SandboxQuery, SandboxView,
+    GatewayError, GatewayOp, Missing, PowerAction, ProgramRun, ProgramStdin, SandboxFile,
+    SandboxQuery, SandboxView,
 };
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::accounts::AccountError;
+use crate::accounts::{AccountError, LaunchProvider};
 use crate::files::render_auth_json;
 use crate::launch::certs::{self, Bound};
 use crate::launch::decide::{Act, Boot, Decision, Done, Finish, HookPlan, Observed, Wait, decide};
@@ -26,7 +26,7 @@ use crate::launch::probe;
 use crate::launch::tracker::Tracker;
 use crate::launch::{
     LaunchError, LaunchEvent, LaunchEvents, LaunchFailure, LaunchOutcome, LaunchStep,
-    RestoreCandidate, SkipReason,
+    RestoreCandidate, RestoreFinding, SkipReason,
 };
 use crate::lock::{self, LockError};
 use crate::plan::{LaunchPlan, PlannedFile};
@@ -35,6 +35,7 @@ use crate::service::{POLL, Session};
 use crate::workspace::workspace_lock;
 
 const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
+const RECOVERY_LOOKUP_TIMEOUT: Duration = Duration::from_secs(3);
 const IMAGE_PROGRESS: usize = 64;
 const MARKER_MODE: FileMode = FileMode(0o600);
 
@@ -173,23 +174,33 @@ impl Run<'_> {
     }
 
     async fn cancelled(&self) -> LaunchOutcome {
-        let found = self
-            .session
-            .deps
-            .gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(
-                self.plan.launch_id(),
-            )))
-            .await;
-        let sandbox = match found {
-            Ok(views) if views.len() == 1 => views.first().map(|view| view.name.clone()),
-            Ok(_) => None,
-            Err(_) => self.known.clone(),
+        let finding = match self.recovery_lookup().await {
+            Ok(mut views) if views.len() == 1 => RestoreFinding::Observed(views.remove(0).name),
+            Ok(_) | Err(_) => RestoreFinding::Unconfirmed {
+                last_observed: self.known.clone(),
+            },
         };
         LaunchOutcome::Cancelled(RestoreCandidate {
             launch_id: self.plan.launch_id().clone(),
-            sandbox,
+            finding,
         })
+    }
+
+    async fn recovery_lookup(&self) -> Result<Vec<SandboxView>, GatewayError> {
+        let query = SandboxQuery::Labels(LabelSelector::launch(self.plan.launch_id()));
+        let cancel = CancellationToken::new();
+        tokio::select! {
+            biased;
+            result = self.session.deps.gateway.find_sandboxes(&query, &cancel) => result,
+            () = self.session.deps.host.clock.sleep(RECOVERY_LOOKUP_TIMEOUT) => {
+                cancel.cancel();
+                Err(GatewayError::Timeout {
+                    op: GatewayOp::Find,
+                    after: RECOVERY_LOOKUP_TIMEOUT,
+                    group: None,
+                })
+            }
+        }
     }
 
     async fn finished(&mut self, finish: Finish) -> LaunchOutcome {
@@ -217,9 +228,10 @@ impl Run<'_> {
         let hint = self.tracker.current().unwrap_or(LaunchStep::Sandbox);
         let gateway = self.session.deps.gateway.as_ref();
         let mut views = gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(
-                self.plan.launch_id(),
-            )))
+            .find_sandboxes(
+                &SandboxQuery::Labels(LabelSelector::launch(self.plan.launch_id())),
+                self.cancel,
+            )
             .await
             .map_err(|error| failed(hint, error))?;
         match views.len() {
@@ -256,6 +268,7 @@ impl Run<'_> {
             self.session.deps.gateway.as_ref(),
             &view.name,
             self.plan.launch_id(),
+            self.cancel,
         )
         .await;
         match probe {
@@ -309,68 +322,59 @@ impl Run<'_> {
 
     async fn provider(&mut self) -> Result<(), Stop> {
         self.enter(LaunchStep::Provider).await;
-        let providers: Vec<_> = self.plan.draft().providers().to_vec();
-        let accounts: Vec<_> = self.plan.instance_accounts().to_vec();
-        let agents: Vec<_> = self
+        let accounts = self.plan.instance_accounts().to_vec();
+        if self.plan.instances().len() != accounts.len() {
+            return Err(failed(
+                LaunchStep::Provider,
+                GatewayError::Protocol {
+                    message: "launch instances and provider accounts do not match".to_owned(),
+                },
+            ));
+        }
+        let targets: Vec<_> = self
             .plan
             .instances()
             .iter()
-            .map(|instance| instance.agent)
+            .zip(accounts)
+            .map(|(instance, account)| {
+                (
+                    ProviderName::for_account(account.name(), instance.agent),
+                    account,
+                    instance.agent,
+                )
+            })
             .collect();
-        let names: Vec<_> = if providers.is_empty() {
-            vec![(
-                self.plan.draft().provider().clone(),
-                self.plan.account_entry().clone(),
-                agents.first().copied().unwrap_or(Agent::Codex),
-            )]
-        } else {
-            providers
-                .into_iter()
-                .zip(accounts)
-                .zip(agents.iter().chain(std::iter::repeat(&Agent::Codex)))
-                .map(|((name, account), agent)| (name, account, *agent))
-                .collect()
-        };
-        for (name, account, agent) in &names {
-            let state = self
+        let mut all_present = !targets.is_empty();
+        for (_, account, agent) in targets {
+            let stale = |source: AccountError| match source {
+                AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
+                other => failed(
+                    LaunchStep::Provider,
+                    LaunchError::ProviderUnavailable {
+                        account: account.name().clone(),
+                        source: Box::new(other),
+                    },
+                ),
+            };
+            if self
                 .session
-                .deps
-                .gateway
-                .provider_state(name)
+                .ensure_launch_provider(&account, agent, self.cancel)
                 .await
-                .map_err(|error| failed(LaunchStep::Provider, error))?;
-            self.live()?;
-            if state == ProviderState::Absent {
-                let synced = self
-                    .session
-                    .sync_if_absent(account, name, *agent, self.cancel)
-                    .await
-                    .map_err(|source| match source {
-                        AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
-                        other => failed(
-                            LaunchStep::Provider,
-                            LaunchError::ProviderUnavailable {
-                                account: account.name().clone(),
-                                source: Box::new(other),
-                            },
-                        ),
-                    })?;
-                if !synced {
-                    self.tracker.skip(SkipReason::ProviderPresent);
-                }
-            } else {
-                self.tracker.skip(SkipReason::ProviderPresent);
+                .map_err(stale)?
+                != LaunchProvider::Present
+            {
+                all_present = false;
             }
+            self.live()?;
+        }
+        if all_present {
+            self.tracker.skip(SkipReason::ProviderPresent);
         }
         self.done.steps.insert(LaunchStep::Provider);
         Ok(())
     }
 
     async fn create(&mut self, image: &BuiltImage, docker: DockerLabel) -> Result<(), Stop> {
-        if self.image_hold.is_none() {
-            self.done.image = None;
-            return Ok(());
-        }
         self.enter(LaunchStep::Sandbox).await;
         let create = self.plan.draft().complete(image, docker);
         let _held = self.hold_workspace().await?;
@@ -419,7 +423,7 @@ impl Run<'_> {
             .session
             .deps
             .gateway
-            .find_sandboxes(&SandboxQuery::Name(name.clone()))
+            .find_sandboxes(&SandboxQuery::Name(name.clone()), self.cancel)
             .await
             .map_err(|error| failed(LaunchStep::Sandbox, error))?;
         let Some(view) = found.first() else {
@@ -475,7 +479,7 @@ impl Run<'_> {
         self.session
             .deps
             .gateway
-            .set_power(sandbox, PowerAction::Start)
+            .set_power(sandbox, PowerAction::Start, self.cancel)
             .await
             .map_err(|error| failed(LaunchStep::Ready, error))?;
         self.done.boot = Boot::Powered;
@@ -518,6 +522,7 @@ impl Run<'_> {
                     mode,
                     content: SecretBytes::new(content),
                 },
+                self.cancel,
             )
             .await
             .map_err(|error| failed(step, error))
@@ -765,28 +770,69 @@ impl Run<'_> {
         const STEP: LaunchStep = LaunchStep::Upload;
         let deps = &self.session.deps;
         let launch = self.plan.launch_id();
-        let marker = sandbox_layout::uploaded_marker(launch);
+        let tree_marker = sandbox_layout::project_tree_marker(launch);
+        let uploaded_marker = sandbox_layout::uploaded_marker(launch);
+        let markers = [tree_marker.clone(), uploaded_marker.clone()];
         let found = deps
             .gateway
-            .read_files(sandbox, std::slice::from_ref(&marker))
+            .read_files(sandbox, &markers, self.cancel)
             .await
             .map_err(|error| failed(STEP, error))?;
-        if found.first().is_some_and(Option::is_some) {
-            return Ok(Uploaded::ByPeer);
-        }
+        let uploaded = found.get(1).and_then(Option::as_deref);
+        let transferred = found.first().and_then(Option::as_deref);
         let staged = project::stage(deps, self.plan.project(), dir, self.cancel)
             .await
             .map_err(|error| failed(STEP, error))?;
-        staged
-            .upload(deps, self.plan.project(), sandbox, launch, self.cancel)
+        let source_tree = staged
+            .tree_id(deps, self.plan.project(), self.cancel)
             .await
             .map_err(|error| failed(STEP, error))?;
-        self.write(STEP, sandbox, &marker, MARKER_MODE, Vec::new())
+        let source_id = source_tree.as_str().as_bytes();
+        if uploaded == Some(source_id) {
+            return Ok(Uploaded::ByPeer);
+        }
+        let tree = if transferred == Some(source_id) {
+            source_tree
+        } else {
+            let preserve_repository = transferred.is_some() || uploaded.is_some();
+            let tree = staged
+                .upload(
+                    deps,
+                    self.plan.project(),
+                    sandbox,
+                    launch,
+                    preserve_repository,
+                    self.cancel,
+                )
+                .await
+                .map_err(|error| failed(STEP, error))?;
+            self.write(
+                STEP,
+                sandbox,
+                &tree_marker,
+                MARKER_MODE,
+                tree.as_str().as_bytes().to_vec(),
+            )
             .await?;
+            tree
+        };
         self.session
-            .setup_worktrees(sandbox, self.plan.instances(), self.cancel)
+            .setup_worktrees(
+                sandbox,
+                self.plan.instances(),
+                self.plan.draft().labels().lead_agent,
+                self.cancel,
+            )
             .await
             .map_err(|error| failed(STEP, error))?;
+        self.write(
+            STEP,
+            sandbox,
+            &uploaded_marker,
+            MARKER_MODE,
+            tree.as_str().as_bytes().to_vec(),
+        )
+        .await?;
         Ok(Uploaded::Done)
     }
 
@@ -804,7 +850,7 @@ impl Run<'_> {
                 self.tracker.skip(SkipReason::SetupAlreadyDone);
                 setup = false;
             }
-            let env = crate::state::env_file(gateway, sandbox, self.plan.launch_id())
+            let env = crate::state::env_file(gateway, sandbox, self.plan.launch_id(), self.cancel)
                 .await
                 .map_err(|error| failed(STEP, error))?;
             let timeout = self.session.deps.limits.hook;
@@ -859,7 +905,7 @@ impl Run<'_> {
             .session
             .deps
             .gateway
-            .read_files(sandbox, std::slice::from_ref(&marker))
+            .read_files(sandbox, std::slice::from_ref(&marker), self.cancel)
             .await
             .map_err(|error| failed(LaunchStep::Hooks, error))?;
         Ok(found.first().is_some_and(Option::is_some))

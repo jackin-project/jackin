@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+S6 continuation: verified docs text and dependency unit
+Scope: integrated owner working tree; final published-head gate remains pending.
+Source HEAD: 5076ca2a0a40049bbb04bc72d1d5edddec49c197
+Source tracked working diff SHA-256: 2bfefb8c48a555db95f0ba2b1cd31074ca41e5f67e184753e90e64c5d02960b3
+Integration receipt: handoff/state-2026-11-05/current/docs-four-file-integration-v1/result.json
+Frozen install: docs-owner-frozen-install-v1/result.json; exit 0; source unchanged
+Build: docs-owner-build-v1/result.json; exit 0; source unchanged
+Command: bun run --cwd docs build
+Prerendered routes: 99
+Bun: 1.4.4; Node: v26.13.0
+Prepared rendered-page inspection: docs-prepared-rendered-content-inspection-v1.json
+Raw receipts and logs: /Users/donbeave/Projects/jackin-project/handoff/state-2026-11-05/current/

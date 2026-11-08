@@ -3,12 +3,14 @@
 
 mod clock;
 mod fs;
+mod lock_signal_fs;
 mod runner;
 mod working_fs;
 mod wrappers;
 
 pub use clock::*;
 pub use fs::*;
+pub use lock_signal_fs::*;
 pub use runner::*;
 pub use working_fs::*;
 pub use wrappers::*;

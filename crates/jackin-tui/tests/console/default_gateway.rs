@@ -65,7 +65,7 @@ async fn assemble(peer: Peer, pinned: bool) -> Out<Box<Pair>> {
         name.clone(),
         OpenShellWorkspace::parse("default")?,
     ));
-    second.link_engine(Arc::clone(&world.engine));
+    second.link_image_registry(world.docker.registry());
     second.link_clock(Arc::clone(&world.clock));
     second.use_host_home(world.home());
     let reply = |stdout: &[u8]| ProgramScript {

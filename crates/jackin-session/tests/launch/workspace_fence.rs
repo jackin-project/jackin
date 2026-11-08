@@ -3,9 +3,9 @@
 
 use std::time::Duration;
 
-use jackin_core::{ConfigEdit, WorkspaceName};
+use jackin_core::{ConfigEdit, Labels, WorkspaceName};
 use jackin_openshell::GatewayOp;
-use jackin_session::{Gateways, LaunchError};
+use jackin_session::{Gateways, LaunchError, WorkspaceGuardError};
 use jackin_testkit::{Fault, Trigger};
 use tokio_util::sync::CancellationToken;
 
@@ -35,7 +35,7 @@ async fn a_workspace_removal_waits_for_a_launch_that_is_creating_its_sandbox() -
                 .map_err(|error| error.to_string())?;
             rig.world
                 .config
-                .edit(remove(&workspace))
+                .edit(remove(&workspace), &CancellationToken::new())
                 .await
                 .map_err(|error| error.to_string())?;
             drop(hold);
@@ -72,7 +72,10 @@ async fn a_launch_whose_workspace_was_removed_creates_no_sandbox() -> TestResult
         let rig = launch_rig().await?;
         let plan = rig.plan(1)?;
         let workspace = plan.workspace().clone();
-        rig.world.config.edit(remove(&workspace)).await?;
+        rig.world
+            .config
+            .edit(remove(&workspace), &CancellationToken::new())
+            .await?;
 
         let outcome = rig
             .run_planned(&rig.world.session, plan, CancellationToken::new())
@@ -84,6 +87,71 @@ async fn a_launch_whose_workspace_was_removed_creates_no_sandbox() -> TestResult
             "{failed:?}"
         );
         assert!(rig.world.gateway.sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn unreadable_workspace_holders_remain_attributable_or_conservatively_block_removal()
+-> TestResult {
+    guard(async {
+        let rig = launch_rig().await?;
+        for id in [1, 2] {
+            rig.launch(id).await?;
+        }
+        let workspace = rig.plan(1)?.workspace().clone();
+        let matching = rig.handle(1).await?;
+        let unrelated = rig.handle(2).await?;
+        let matching_labels = Labels::from_pairs(
+            matching
+                .labels()
+                .iter()
+                .filter(|(key, _)| key.to_string() != "jackin.dev/lead-agent")
+                .map(|(key, value)| (key.to_string(), value.to_string())),
+        )?;
+        let unrelated_labels =
+            Labels::from_pairs(unrelated.labels().iter().map(|(key, value)| {
+                let value = if key.to_string() == "jackin.dev/workspace" {
+                    "other-workspace".to_owned()
+                } else {
+                    value.to_string()
+                };
+                (key.to_string(), value)
+            }))?;
+        matching.set_labels(matching_labels);
+        unrelated.set_labels(unrelated_labels);
+        let gateways = Gateways::single(rig.world.session.clone());
+
+        let matched = gateways
+            .ensure_workspace_unused(&rig.config, &workspace, &CancellationToken::new())
+            .await;
+        let Err(WorkspaceGuardError::InUse { holders, .. }) = matched else {
+            return Err(format!("matching unreadable sandbox was ignored: {matched:?}").into());
+        };
+        assert_eq!(holders.readable.len(), 0);
+        assert_eq!(holders.unreadable.len(), 1);
+        assert_eq!(holders.unreadable[0].sandbox, matching.name());
+        assert!(holders.unattributable.is_empty());
+
+        let missing_workspace = Labels::from_pairs(
+            matching
+                .labels()
+                .iter()
+                .filter(|(key, _)| key.to_string() != "jackin.dev/workspace")
+                .map(|(key, value)| (key.to_string(), value.to_string())),
+        )?;
+        matching.set_labels(missing_workspace);
+        let unattributable = gateways
+            .ensure_workspace_unused(&rig.config, &workspace, &CancellationToken::new())
+            .await;
+        let Err(WorkspaceGuardError::InUse { holders, .. }) = unattributable else {
+            return Err(format!("unattributable sandbox was ignored: {unattributable:?}").into());
+        };
+        assert!(holders.readable.is_empty());
+        assert!(holders.unreadable.is_empty());
+        assert_eq!(holders.unattributable.len(), 1);
+        assert_eq!(holders.unattributable[0].sandbox, matching.name());
         Ok(())
     })
     .await

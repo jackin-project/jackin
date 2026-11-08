@@ -9,16 +9,16 @@ use jackin_core::{
     Clock, Config, EngineCert, EnvName, FileSystem, HookKind, HostPath, LabelSelector, LaunchId,
     PlainEnvValue, ProcessRunner, ProjectRoot, RoleName, SandboxName, sandbox_layout,
 };
-use jackin_image::{BuildStage, BuiltImage, ImageEngine, ImageSource};
+use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, SandboxQuery};
 use jackin_session::{
     HostPorts, LaunchEvent, LaunchFailure, LaunchLimits, LaunchOutcome, LaunchPlan, LaunchRequest,
     LineDelivery, LoadedRole, Session, SessionDeps, launch_events, plan_launch,
 };
+use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
 use tempfile::TempDir;
 use tokio_util::sync::CancellationToken;
 
-use crate::engine::FakeEngine;
 use crate::fixtures::{FixtureError, RepoFixture, RoleFixture};
 use crate::gateway::{FakeGateway, ProgramScript, SandboxHandle};
 use crate::host::{FakeClock, TestRunner};
@@ -28,11 +28,16 @@ pub type TestResult = Result<(), FixtureError>;
 
 const GUARD: Duration = Duration::from_secs(170);
 
-pub async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
+pub async fn guard<T>(
+    work: impl Future<Output = Result<T, FixtureError>>,
+) -> Result<T, FixtureError> {
     guard_within(GUARD, work).await
 }
 
-pub async fn guard_within(limit: Duration, work: impl Future<Output = TestResult>) -> TestResult {
+pub async fn guard_within<T>(
+    limit: Duration,
+    work: impl Future<Output = Result<T, FixtureError>>,
+) -> Result<T, FixtureError> {
     tokio::time::timeout(limit, work)
         .await
         .map_err(|_| format!("the test hung for {} s", limit.as_secs()))?
@@ -74,9 +79,51 @@ pub fn engine_pem(cert: EngineCert) -> String {
     format!("-----BEGIN {label}-----\n{body}\n-----END {label}-----\n")
 }
 
+pub struct EngineCertificateSet {
+    pub ca: String,
+    pub cert: String,
+    pub key: String,
+}
+
+impl std::fmt::Debug for EngineCertificateSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("EngineCertificateSet(<redacted>)")
+    }
+}
+
+impl EngineCertificateSet {
+    pub fn generate() -> Result<EngineCertificateSet, FixtureError> {
+        let key = KeyPair::generate()?;
+        let mut params = CertificateParams::new(vec!["localhost".to_owned()])?;
+        params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let certificate = params.self_signed(&key)?;
+        let pem = certificate.pem();
+        Ok(EngineCertificateSet {
+            ca: pem.clone(),
+            cert: pem,
+            key: key.serialize_pem(),
+        })
+    }
+
+    pub fn certificate_for_key(key_pem: &str) -> Result<String, FixtureError> {
+        let key = KeyPair::from_pem(key_pem)?;
+        let params = CertificateParams::new(vec!["rotated.local".to_owned()])?;
+        Ok(params.self_signed(&key)?.pem())
+    }
+
+    pub fn pem(&self, cert: EngineCert) -> &str {
+        match cert {
+            EngineCert::Ca => &self.ca,
+            EngineCert::Cert => &self.cert,
+            EngineCert::Key => &self.key,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct RigBuilder {
     engine: Option<u16>,
+    filesystem: Option<Arc<dyn FileSystem>>,
     workspace_docker: bool,
     role_docker: bool,
     limits: LaunchLimits,
@@ -126,6 +173,7 @@ impl Rig {
     pub fn builder() -> RigBuilder {
         RigBuilder {
             engine: None,
+            filesystem: None,
             workspace_docker: false,
             role_docker: false,
             limits: default_limits(),
@@ -165,8 +213,13 @@ impl Rig {
     pub async fn write_engine_certs(&self) -> Result<(), FixtureError> {
         let directory = self.engine_certs()?;
         tokio::fs::create_dir_all(directory.as_path()).await?;
+        let certificates = EngineCertificateSet::generate()?;
         for cert in EngineCert::ALL {
-            tokio::fs::write(directory.as_path().join(cert.file_name()), engine_pem(cert)).await?;
+            tokio::fs::write(
+                directory.as_path().join(cert.file_name()),
+                certificates.pem(cert),
+            )
+            .await?;
         }
         Ok(())
     }
@@ -255,7 +308,7 @@ impl Rig {
     fn session_of(&self, limits: LaunchLimits, runner: Arc<dyn ProcessRunner>) -> Session {
         let world = &self.world;
         let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
-        let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
+        let engine: Arc<dyn ImageEngine> = Arc::<jackin_image::BuildxEngine>::clone(&world.engine);
         let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
         let fs: Arc<dyn FileSystem> = Arc::clone(&world.fs);
         Session::new(SessionDeps {
@@ -272,7 +325,10 @@ impl Rig {
         let found = self
             .world
             .gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))))
+            .find_sandboxes(
+                &SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))),
+                &self.world.cancel,
+            )
             .await?;
         Ok(found
             .first()
@@ -284,41 +340,15 @@ impl Rig {
             .await?
             .ok_or_else(|| "the launch has no sandbox".into())
     }
-
-    pub fn stages(&self) -> Vec<BuildStage> {
-        self.world
-            .engine
-            .builds()
-            .iter()
-            .map(|build| build.stage)
-            .collect()
-    }
-
-    pub fn final_image(&self) -> Result<BuiltImage, FixtureError> {
-        let build = self
-            .world
-            .engine
-            .builds()
-            .into_iter()
-            .rev()
-            .find(|build| build.stage == BuildStage::Derived)
-            .ok_or("no final image was built")?;
-        let id = self
-            .world
-            .engine
-            .images()
-            .get(&build.tag)
-            .cloned()
-            .ok_or("the final image is not stored")?;
-        Ok(BuiltImage {
-            tag: build.tag,
-            id,
-            source: ImageSource::Built,
-        })
-    }
 }
 
 impl RigBuilder {
+    #[must_use]
+    pub fn filesystem(mut self, fs: Arc<dyn FileSystem>) -> RigBuilder {
+        self.filesystem = Some(fs);
+        self
+    }
+
     #[must_use]
     pub fn limits(mut self, limits: LaunchLimits) -> RigBuilder {
         self.limits = limits;
@@ -375,7 +405,11 @@ impl RigBuilder {
 
     pub async fn build(self) -> Result<Rig, FixtureError> {
         let limits = self.limits;
-        let world = World::builder().limits(limits).build()?;
+        let mut world_builder = World::builder().limits(limits);
+        if let Some(fs) = self.filesystem {
+            world_builder = world_builder.filesystem(fs);
+        }
+        let world = world_builder.build()?;
         let repo = match self.repo {
             Some(repo) => repo,
             None => committed_repo().await?,

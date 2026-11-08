@@ -21,13 +21,12 @@ fn console_fixture_args() -> Result<(), Box<dyn std::error::Error>> {
         ])?;
         assert_eq!(args.scenario, scenario);
         assert_eq!(args.common.frame, 3);
-        let mut app = fixture_app(&args);
+        let app = fixture_app(&args);
         assert!(!app.world.clock.running, "{}", scenario.name());
         assert!(
             app.route() != Route::Capsule
                 || matches!(scenario, Scenario::CapsuleMulti | Scenario::CapsuleTerminal)
         );
-        let _ = &mut app;
     }
     let default = FixtureArgs::try_parse_from(["console-fixture"])?;
     assert_eq!(default.scenario, Scenario::FirstUse);

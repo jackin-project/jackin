@@ -37,9 +37,10 @@ const IMAGE_TAG_HEX_LEN: usize = 16;
 const IMAGE_NAME_MAX: usize = 255;
 const DIGEST_LABEL_HEX_LEN: usize = 32;
 const SHA256_HEX_LEN: usize = 64;
+const AGENT_HASH_HEX_LEN: usize = 32;
 const SLUG_FALLBACK: &str = "ws";
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum IdError {
     #[error("{kind} is empty")]
     Empty { kind: &'static str },
@@ -334,6 +335,7 @@ fn scp_form(text: &str) -> bool {
         return false;
     };
     !path.is_empty()
+        && !path.contains(['?', '#'])
         && !target.contains('/')
         && !user.is_empty()
         && !user.starts_with('-')
@@ -387,6 +389,17 @@ fn check_commit_id(kind: &'static str, text: &str) -> Result<(), IdError> {
 fn check_sha256(kind: &'static str, text: &str) -> Result<(), IdError> {
     non_empty(kind, text)?;
     hex_text(kind, text, 0, &[SHA256_HEX_LEN], "64 lowercase hex digits")
+}
+
+fn check_agent_hash(kind: &'static str, text: &str) -> Result<(), IdError> {
+    non_empty(kind, text)?;
+    hex_text(
+        kind,
+        text,
+        0,
+        &[AGENT_HASH_HEX_LEN],
+        "32 lowercase hex digits",
+    )
 }
 
 fn check_op_reference(kind: &'static str, text: &str) -> Result<(), IdError> {
@@ -619,6 +632,13 @@ string_id!(ChatgptAccountId, "ChatGPT account ID", rule CHATGPT_ACCOUNT);
 string_id!(BranchName, "branch name", with check_branch_name);
 string_id!(CommitId, "commit ID", with check_commit_id);
 string_id!(Sha256, "SHA-256 digest", with check_sha256);
+string_id!(AgentHash, "agent hash", with check_agent_hash);
+
+impl From<&Sha256> for AgentHash {
+    fn from(digest: &Sha256) -> Self {
+        AgentHash(digest.as_str()[..AGENT_HASH_HEX_LEN].to_owned())
+    }
+}
 string_id!(OpReference, "1Password reference", with check_op_reference);
 string_id!(OpAccountId, "1Password account", with check_op_account);
 string_id!(ModelName, "model name", rule MODEL);
@@ -629,6 +649,9 @@ string_id!(RoleRev, "role revision", with check_role_rev);
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 #[serde(try_from = "String")]
 pub struct ImageId(Sha256);
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct LocalImageRef(ImageId);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "u64")]
@@ -836,6 +859,22 @@ impl ImageId {
 
     pub fn full(&self) -> &str {
         &self.0.0
+    }
+}
+
+impl LocalImageRef {
+    pub fn for_image(id: &ImageId) -> LocalImageRef {
+        LocalImageRef(id.clone())
+    }
+
+    pub fn image_id(&self) -> &ImageId {
+        &self.0
+    }
+}
+
+impl fmt::Display for LocalImageRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "openshell/sandbox-from:{}", self.0.full())
     }
 }
 

@@ -3,17 +3,17 @@
 
 use std::collections::BTreeSet;
 use std::error::Error;
-use std::sync::Arc;
 
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, EnvName, ImageId, ImageTag, LabelSelector, Labels,
     LaunchId, Phase, ProfileId, ProviderName, SandboxLabels, SandboxName, Secret,
 };
+use jackin_image::ImageInspect;
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, Missing, PolicyDocument, ProfileSync, ProviderMaterial,
     ProviderProfile, ProviderSpec, ProviderState, Provisioning, SandboxQuery,
 };
-use jackin_testkit::{FakeEngine, FakeGateway, Fault};
+use jackin_testkit::{DockerBoundary, FakeGateway, Fault};
 
 use super::support::{IMAGE, TestResult, fake, guard, observe, sh, spec_with};
 
@@ -51,7 +51,7 @@ async fn create_find_and_delete_round_trip_the_sandbox_state() -> TestResult {
         let launch = LaunchId::generate()?;
         let spec = spec_with(&launch, IMAGE, Vec::new(), sh("sleep 3600")?)?;
         let name = spec.name().clone();
-        let created = fake.create_sandbox(&spec).await?;
+        let created = fake.create_contract_sandbox(&spec).await?;
         assert_eq!(created.phase, Phase::Provisioning);
         assert!(matches!(created.provisioning, Provisioning::Normal));
         let handles = fake.sandboxes();
@@ -63,7 +63,7 @@ async fn create_find_and_delete_round_trip_the_sandbox_state() -> TestResult {
         );
 
         let by_launch = fake
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch)))
+            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch)), &tokio_util::sync::CancellationToken::new())
             .await?;
         assert_eq!(by_launch.len(), 1);
         assert_eq!(by_launch[0].name, name);
@@ -72,21 +72,21 @@ async fn create_find_and_delete_round_trip_the_sandbox_state() -> TestResult {
             *spec.labels()
         );
         let managed = fake
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed()))
+            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed()), &tokio_util::sync::CancellationToken::new())
             .await?;
         assert_eq!(managed.len(), 1);
         let other = LaunchId::generate()?;
         let none = fake
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&other)))
+            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&other)), &tokio_util::sync::CancellationToken::new())
             .await?;
         assert!(none.is_empty());
         let missing = spec_with(&other, IMAGE, Vec::new(), sh("sleep 3600")?)?;
         let none = fake
-            .find_sandboxes(&SandboxQuery::Name(missing.name().clone()))
+            .find_sandboxes(&SandboxQuery::Name(missing.name().clone()), &tokio_util::sync::CancellationToken::new())
             .await?;
         assert!(none.is_empty());
 
-        let duplicate = fake.create_sandbox(&spec).await;
+        let duplicate = fake.create_contract_sandbox(&spec).await;
         assert!(
             matches!(&duplicate, Err(GatewayError::AlreadyExists { what }) if *what == Missing::Sandbox(name.clone())),
             "{duplicate:?}"
@@ -126,7 +126,7 @@ async fn profile_flow(
 ) -> Result<String, Box<dyn Error>> {
     let early = fake.put_provider(&login(&profile.id, provider)?).await;
     let early = match early {
-        Err(error @ GatewayError::NotFound { .. }) => error,
+        Err(error) => error.into_parts().0,
         other => return Err(format!("put without a profile: {other:?}").into()),
     };
     assert!(
@@ -169,7 +169,7 @@ async fn providers_profiles_and_detail_follow_the_gateway_contract() -> TestResu
             vec![provider.clone()],
             sh("sleep 3600")?,
         )?;
-        fake.create_sandbox(&spec).await?;
+        fake.create_contract_sandbox(&spec).await?;
         let detail = fake.sandbox_detail(spec.name()).await?;
         assert_eq!(detail.providers, vec![provider.clone()]);
         assert!(detail.policy.loaded);
@@ -195,19 +195,20 @@ async fn providers_profiles_and_detail_follow_the_gateway_contract() -> TestResu
         );
         assert_eq!(fake.providers(), vec![provider.clone()]);
         let handle = fake.sandboxes();
-        fake.delete_sandbox(spec.name()).await?;
-        fake.delete_provider(&provider).await?;
-        assert_eq!(fake.provider_state(&provider).await?, ProviderState::Absent);
-        fake.delete_provider(&provider).await?;
         for secret in [ACCESS, REFRESH] {
             for text in [
                 format!("{fake:?}"),
                 format!("{handle:?}"),
+                format!("{:?}", fake.provider(&provider)),
                 early_error.clone(),
             ] {
                 assert!(!leaks(&text, secret), "{secret} leaked into {text}");
             }
         }
+        fake.delete_sandbox(spec.name()).await?;
+        fake.delete_provider(&provider).await?;
+        assert_eq!(fake.provider_state(&provider).await?, ProviderState::Absent);
+        fake.delete_provider(&provider).await?;
         Ok(())
     })
     .await
@@ -226,12 +227,19 @@ async fn every_gateway_call_yields_to_the_scheduler_before_it_acts() -> TestResu
         let sandbox = spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), sh("sleep 3600")?)?;
         let selector =
             SandboxQuery::Labels(LabelSelector::launch(&sandbox.labels().planned.launch));
-        assert!(pending_once(fake.find_sandboxes(&selector)));
-        assert!(pending_once(fake.create_sandbox(&sandbox)));
+        assert!(pending_once(fake.find_sandboxes(
+            &selector,
+            &tokio_util::sync::CancellationToken::new()
+        )));
+        assert!(pending_once(fake.create_contract_sandbox(&sandbox)));
         assert!(fake.sandboxes().is_empty());
-        fake.create_sandbox(&sandbox).await?;
+        fake.create_contract_sandbox(&sandbox).await?;
         let name = observe(&fake, sandbox.name()).await?.name;
-        assert!(pending_once(fake.read_files(&name, &[])));
+        assert!(pending_once(fake.read_files(
+            &name,
+            &[],
+            &tokio_util::sync::CancellationToken::new()
+        )));
         assert!(pending_once(
             fake.provider_state(&ProviderName::parse("p")?)
         ));
@@ -254,7 +262,7 @@ async fn a_provider_fault_is_struck_before_the_attached_check_and_clears() -> Te
             vec![attached.clone()],
             sh("sleep 3600")?,
         )?;
-        fake.create_sandbox(&spec).await?;
+        fake.create_contract_sandbox(&spec).await?;
 
         fake.inject(Fault::FailNext {
             op: GatewayOp::Provider,
@@ -296,7 +304,7 @@ async fn delete_provider_is_refused_while_a_sandbox_lists_it_and_ok_after() -> T
             vec![attached.clone()],
             sh("sleep 3600")?,
         )?;
-        fake.create_sandbox(&spec).await?;
+        fake.create_contract_sandbox(&spec).await?;
 
         let refused = fake.delete_provider(&attached).await;
         let Err(GatewayError::FailedPrecondition { message }) = refused else {
@@ -346,7 +354,7 @@ async fn inserting_an_unmanaged_sandbox_over_an_existing_name_is_already_exists_
         assert_eq!((shown.labels, shown.phase), (original, Phase::Ready));
 
         let created = spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), sh("sleep 3600")?)?;
-        fake.create_sandbox(&created).await?;
+        fake.create_contract_sandbox(&created).await?;
         let over = fake.insert_unmanaged(created.name(), replacement, Phase::Stopped);
         assert!(
             matches!(
@@ -376,11 +384,11 @@ fn image_id(digit: char) -> Result<ImageId, Box<dyn Error>> {
 async fn a_sandbox_keeps_the_image_id_its_tag_resolved_to_when_it_was_created() -> TestResult {
     guard(async {
         let fake = fake()?;
-        let engine = Arc::new(FakeEngine::new());
-        fake.link_engine(Arc::clone(&engine));
+        let docker = DockerBoundary::new();
+        fake.link_image_registry(docker.registry());
         let tag = ImageTag::parse("jackin.invalid/rebuilt:0123456789abcdef")?;
         let (old, new) = (image_id('a')?, image_id('b')?);
-        engine.pin_id(&tag, old.clone());
+        docker.seed_image(tag.clone(), old.clone(), ImageInspect::default());
 
         let first = spec_with(
             &LaunchId::generate()?,
@@ -388,13 +396,13 @@ async fn a_sandbox_keeps_the_image_id_its_tag_resolved_to_when_it_was_created() 
             Vec::new(),
             sh("sleep 3600")?,
         )?;
-        fake.create_sandbox(&first).await?;
+        fake.create_contract_sandbox(&first).await?;
         let handle = fake
             .sandbox(first.name())
             .ok_or("the sandbox is not listed")?;
         assert_eq!(handle.image_id(), Some(old.clone()));
 
-        engine.pin_id(&tag, new.clone());
+        docker.retag(tag.clone(), Some(new.clone()));
         assert_eq!(
             handle.image_id(),
             Some(old),
@@ -407,14 +415,14 @@ async fn a_sandbox_keeps_the_image_id_its_tag_resolved_to_when_it_was_created() 
             Vec::new(),
             sh("sleep 3600")?,
         )?;
-        fake.create_sandbox(&second).await?;
+        fake.create_contract_sandbox(&second).await?;
         let later = fake
             .sandbox(second.name())
             .ok_or("the sandbox is not listed")?;
         assert_eq!(later.image_id(), Some(new));
 
         let known = spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), sh("sleep 3600")?)?;
-        fake.create_sandbox(&known).await?;
+        fake.create_contract_sandbox(&known).await?;
         let unresolved = fake
             .sandbox(known.name())
             .ok_or("the sandbox is not listed")?;
@@ -444,7 +452,7 @@ async fn replacing_the_live_policy_of_an_unknown_sandbox_fails_loudly() -> TestR
         }
 
         let spec = spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), sh("sleep 3600")?)?;
-        fake.create_sandbox(&spec).await?;
+        fake.create_contract_sandbox(&spec).await?;
         fake.replace_live_policy(spec.name(), policy)?;
         Ok(())
     })

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::app::Route;
-use jackin_console::domain::instance::RepoRef;
+use jackin_console::domain::instance::{InstanceEntry, RepoRef};
 use jackin_console::screens::Go;
 use jackin_core::{Agent, SupervisorState, sandbox_layout};
 use jackin_openshell::GatewayOp;
@@ -96,12 +96,12 @@ async fn launch_runs_the_seven_stages() -> TestResult {
         assert_eq!(found.planned.workspace.as_str(), "platform-backend");
         assert_eq!(found.planned.role.as_str(), "sentinel");
         assert_eq!(
-            found.planned.agents.agents_label(),
+            found.planned.agents_hash,
             jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
                 Agent::Codex,
                 jackin_core::AccountName::parse("work")?
-            ))
-            .agents_label()
+            )?)?
+            .hash()
         );
         let name = handle.name().to_string();
         assert!(name.len() <= 19, "{name}");
@@ -123,13 +123,16 @@ async fn ready_hands_over_the_backends_instance() -> TestResult {
         let name = handle.name().to_string();
         let suffix = &name[name.len() - 4..];
         let world = &console.console().app().world;
-        let [record] = world.instances.as_slice() else {
+        let [entry] = world.instances.as_slice() else {
             return Err(format!("{} instances", world.instances.len()).into());
         };
-        assert_eq!(record.id, format!("jk-{suffix}"));
-        assert_eq!(record.workdir, "/sandbox/project");
+        let InstanceEntry::Available(record) = entry else {
+            return Err("the launched instance was unavailable".into());
+        };
+        assert_eq!(record.id.short_label(), format!("jk-{suffix}"));
+        assert_eq!(record.workdir.as_deref(), Some("/sandbox/project"));
         assert_eq!(record.run_id, found.planned.launch.to_string());
-        assert_eq!(record.role, "sentinel");
+        assert_eq!(record.role.as_deref(), Some("sentinel"));
         assert_eq!(record.account.as_deref(), None);
         assert!(record.workspace.is_some());
         assert_eq!(record.github, None);
@@ -175,7 +178,7 @@ async fn esc_at_the_picker_creates_nothing() -> TestResult {
         assert_eq!(console.console().app().route(), Route::Manager);
         assert!(rig.gateway().sandboxes().is_empty());
         assert!(rig.gateway().providers().is_empty());
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
         Ok(())
     })
     .await
@@ -231,8 +234,11 @@ async fn ready_instance_carries_the_github_origin() -> TestResult {
         launch(&mut console).await?;
         until_route(&mut console, Route::Capsule).await?;
         let world = &console.console().app().world;
-        let [record] = world.instances.as_slice() else {
+        let [entry] = world.instances.as_slice() else {
             return Err(format!("{} instances", world.instances.len()).into());
+        };
+        let InstanceEntry::Available(record) = entry else {
+            return Err("the launched instance was unavailable".into());
         };
         assert_eq!(
             record.github,
@@ -271,7 +277,7 @@ async fn a_launched_instance_attaches_codex_and_opens_a_shell() -> TestResult {
             .instances
             .first()
             .ok_or("no instance")?
-            .id
+            .id()
             .clone();
         console.console().app().go(Go::NewSession {
             instance,

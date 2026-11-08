@@ -380,6 +380,8 @@ pub enum EngineCertProblem {
     WrongKind,
     #[error("the private key is encrypted")]
     EncryptedKey,
+    #[error("the client certificate and private key do not form a matching pair")]
+    PairMismatch,
     #[error("it changed after the launch bound its fingerprint")]
     Changed,
 }
@@ -432,6 +434,45 @@ impl EngineCert {
             return Err(EngineCertProblem::WrongKind);
         }
         Ok(())
+    }
+
+    pub fn check_pair(cert: &[u8], key: &[u8]) -> Result<(), EngineCertProblem> {
+        EngineCert::Cert.check(cert)?;
+        EngineCert::Key.check(key)?;
+        let cert_text = std::str::from_utf8(cert).map_err(|_| EngineCertProblem::NotPem)?;
+        let cert_chain = pem_blocks(cert_text)?
+            .into_iter()
+            .filter(|block| block.label == "CERTIFICATE")
+            .map(|block| {
+                STANDARD
+                    .decode(block.body.join(""))
+                    .map(rustls::pki_types::CertificateDer::from)
+                    .map_err(|_| EngineCertProblem::NotPem)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let key_text = std::str::from_utf8(key).map_err(|_| EngineCertProblem::NotPem)?;
+        let mut private_keys = pem_blocks(key_text)?.into_iter().filter(|block| {
+            matches!(
+                block.label,
+                "PRIVATE KEY" | "RSA PRIVATE KEY" | "EC PRIVATE KEY"
+            )
+        });
+        let private_key = private_keys.next().ok_or(EngineCertProblem::PairMismatch)?;
+        if private_keys.next().is_some() {
+            return Err(EngineCertProblem::PairMismatch);
+        }
+        let key_der = STANDARD
+            .decode(private_key.body.join(""))
+            .map_err(|_| EngineCertProblem::PairMismatch)?;
+        let key_der = rustls::pki_types::PrivateKeyDer::try_from(key_der)
+            .map_err(|_| EngineCertProblem::PairMismatch)?;
+        let signing_key = rustls::crypto::aws_lc_rs::default_provider()
+            .key_provider
+            .load_private_key(key_der)
+            .map_err(|_| EngineCertProblem::PairMismatch)?;
+        rustls::sign::CertifiedKey::new(cert_chain, signing_key)
+            .keys_match()
+            .map_err(|_| EngineCertProblem::PairMismatch)
     }
 }
 

@@ -1,9 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::hash_map::RandomState;
 use std::collections::{BTreeMap, HashMap};
-use std::hash::BuildHasher;
 use std::time::Duration;
 
 use jackin_core::{EnvName, OutputStream, SandboxName, SandboxPath, TerminalText};
@@ -20,8 +18,7 @@ const STDIN_CHUNK: usize = 32 * 1024;
 pub(crate) const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 const SHELL: &str = "/bin/sh";
 const MARKER_SCRIPT: &str = "marker=$1; shift; \"$@\"; code=$?; if [ \"$code\" -eq 0 ]; then touch -- \"$marker\" || exit 1; fi; exit \"$code\"";
-const NAME_MAX: usize = 255;
-const WRITE_SCRIPT: &str = "umask 077; anchor=$1; dir=$2; name=$3; mode=$4; tmp=$5; trap 'rm -f -- \"./$tmp\"' EXIT HUP INT TERM; cd -P -- \"$anchor\" || exit 1; here=$(pwd -P) || exit 1; set -f; IFS=/; set -- $dir; unset IFS; for part; do [ -L \"./$part\" ] && exit 73; [ -d \"./$part\" ] || mkdir -- \"./$part\" || [ -d \"./$part\" ] || exit 1; cd -P -- \"./$part\" || exit 1; here=$here/$part; [ \"$(pwd -P)\" = \"$here\" ] || exit 73; done; [ -d \"./$name\" ] && exit 73; cat > \"./$tmp\" || exit 1; chmod \"$mode\" \"./$tmp\" || exit 1; mv -f -- \"./$tmp\" \"./$name\" || exit 1";
+const WRITE_FILE: &str = "/usr/local/lib/jackin/write-file";
 const READ_SCRIPT: &str = "[ -f \"$1\" ] || exit 66; exec cat -- \"$1\"";
 const MISSING_FILE: i32 = 66;
 const UNSAFE_PATH: i32 = 73;
@@ -80,18 +77,7 @@ fn command(run: &ProgramRun) -> Vec<String> {
     argv
 }
 
-fn temp_name(base: &str) -> String {
-    let token = format!("{:016x}", RandomState::new().hash_one(0_u8));
-    let suffix = format!(".jackin-{token}");
-    let beside = format!(".{base}{suffix}");
-    if beside.len() <= NAME_MAX {
-        beside
-    } else {
-        suffix
-    }
-}
-
-fn write_split(target: &SandboxPath) -> Result<(&str, &str), GatewayError> {
+fn write_relative(target: &SandboxPath) -> Result<&str, GatewayError> {
     let below = target
         .as_str()
         .strip_prefix(WRITE_ANCHOR)
@@ -100,7 +86,7 @@ fn write_split(target: &SandboxPath) -> Result<(&str, &str), GatewayError> {
             field: "path".to_owned(),
             message: format!("{} is not below {WRITE_ANCHOR}", target.as_str()),
         })?;
-    Ok(below.rsplit_once('/').unwrap_or(("", below)))
+    Ok(below)
 }
 
 fn append(
@@ -157,8 +143,8 @@ impl Inner {
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
+        cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
-        let cancel = CancellationToken::new();
         let mut files = Vec::with_capacity(paths.len());
         for path in paths {
             let argv = [SHELL, "-c", READ_SCRIPT, "jackin-read", path.as_str()]
@@ -171,7 +157,7 @@ impl Inner {
                     sandbox,
                     vec![start_input(start)],
                     self.call_timeout,
-                    &cancel,
+                    cancel,
                 )
                 .await?;
             match outcome.exit_code {
@@ -193,18 +179,14 @@ impl Inner {
         &self,
         sandbox: &SandboxName,
         file: &SandboxFile,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
-        let (dir, name) = write_split(&file.path)?;
+        let relative = write_relative(&file.path)?;
         let argv = [
-            SHELL,
-            "-c",
-            WRITE_SCRIPT,
-            "jackin-write",
-            WRITE_ANCHOR,
-            dir,
-            name,
+            WRITE_FILE,
+            relative,
             &format!("{:o}", file.mode.0),
-            &temp_name(name),
+            &file.content.expose().len().to_string(),
         ]
         .map(str::to_owned)
         .to_vec();
@@ -217,7 +199,7 @@ impl Inner {
                 sandbox,
                 messages,
                 self.call_timeout,
-                &CancellationToken::new(),
+                cancel,
             )
             .await?;
         match outcome.exit_code {

@@ -14,9 +14,9 @@ use jackin_core::{
 };
 use jackin_openshell::contract::{ContractFixture, SHELL_END_TIMEOUT};
 use jackin_openshell::{
-    AuthoredPolicy, Gateway, InputMode, MainProcess, NetworkRule, ProgramOutcome, ProgramRun,
-    ProgramStdin, RepaintPolicy, SandboxCreate, SandboxFile, SandboxQuery, SandboxView, TermSize,
-    TerminalEvent, TerminalKind, TerminalRequest, TerminalSession,
+    AuthoredPolicy, Gateway, GatewayContractSandboxCreate, InputMode, MainProcess, NetworkRule,
+    ProgramOutcome, ProgramRun, ProgramStdin, RepaintPolicy, SandboxFile, SandboxQuery,
+    SandboxView, TermSize, TerminalEvent, TerminalKind, TerminalRequest, TerminalSession,
 };
 use jackin_testkit::{FakeGateway, SandboxHandle};
 use tempfile::TempDir;
@@ -85,14 +85,16 @@ pub(crate) fn spec_with(
     image: &str,
     providers: Vec<ProviderName>,
     main: MainProcess,
-) -> Result<SandboxCreate, Box<dyn Error>> {
+) -> Result<GatewayContractSandboxCreate, Box<dyn Error>> {
+    let agents = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+        Agent::Codex,
+        AccountName::parse("work")?,
+    )?)?;
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("work")?,
         role: RoleName::parse("backend")?,
-        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-            Agent::Codex,
-            AccountName::parse("work")?,
-        )),
+        agents_hash: agents.hash(),
+        lead_agent: Agent::Codex,
         policy: PolicyLabel::of("policy"),
         launch: launch.clone(),
     };
@@ -101,7 +103,7 @@ pub(crate) fn spec_with(
         &SandboxSlug::parse("work")?,
         &NameSuffix::for_launch(launch),
     );
-    Ok(SandboxCreate::new(
+    Ok(GatewayContractSandboxCreate::new(
         name,
         ImageTag::parse(image)?,
         planned.complete(&image_id, jackin_core::DockerLabel::Off),
@@ -115,7 +117,7 @@ pub(crate) fn spec_with(
     ))
 }
 
-pub(crate) fn spec(main: MainProcess) -> Result<SandboxCreate, Box<dyn Error>> {
+pub(crate) fn spec(main: MainProcess) -> Result<GatewayContractSandboxCreate, Box<dyn Error>> {
     spec_with(&LaunchId::generate()?, IMAGE, Vec::new(), main)
 }
 
@@ -123,7 +125,7 @@ pub(crate) async fn observe(
     fake: &FakeGateway,
     name: &SandboxName,
 ) -> Result<SandboxView, Box<dyn Error>> {
-    fake.find_sandboxes(&SandboxQuery::Name(name.clone()))
+    fake.find_sandboxes(&SandboxQuery::Name(name.clone()), &CancellationToken::new())
         .await?
         .into_iter()
         .next()
@@ -135,7 +137,7 @@ pub(crate) async fn ready(
     main: MainProcess,
 ) -> Result<SandboxHandle, Box<dyn Error>> {
     let spec = spec(main)?;
-    fake.create_sandbox(&spec).await?;
+    fake.create_contract_sandbox(&spec).await?;
     let view = observe(fake, spec.name()).await?;
     if view.phase != Phase::Ready {
         return Err(format!("{} is {:?}", view.name, view.phase).into());
@@ -179,7 +181,9 @@ pub(crate) async fn write(
         mode: FileMode(0o600),
         content: SecretBytes::new(content.as_bytes().to_vec()),
     };
-    Ok(fake.write_file(sandbox, &file).await?)
+    Ok(fake
+        .write_file(sandbox, &file, &CancellationToken::new())
+        .await?)
 }
 
 pub(crate) async fn read(
@@ -187,7 +191,9 @@ pub(crate) async fn read(
     sandbox: &SandboxName,
     target: &str,
 ) -> Result<Option<Vec<u8>>, Box<dyn Error>> {
-    let mut files = fake.read_files(sandbox, &[path(target)?]).await?;
+    let mut files = fake
+        .read_files(sandbox, &[path(target)?], &CancellationToken::new())
+        .await?;
     Ok(files.pop().flatten())
 }
 

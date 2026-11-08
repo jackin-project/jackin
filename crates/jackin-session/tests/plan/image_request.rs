@@ -49,6 +49,7 @@ async fn the_image_request_follows_gateway_role_and_workspace_inputs() -> TestRe
         assert_eq!(&for_arm.revision, setup.role.revision());
         assert_eq!(for_arm.rebuild, Rebuild::Yes);
         assert_eq!(for_arm.docker, DockerLayer::Client);
+        assert_eq!(for_arm.read_write, ["/tmp", "/sandbox"]);
 
         let build_only = plan_image(&setup.config, &setup.role, &arm, None, Rebuild::No)?;
         assert_eq!(build_only.docker, DockerLayer::Absent);

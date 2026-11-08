@@ -5,7 +5,6 @@ use std::error::Error;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
@@ -13,14 +12,14 @@ use jackin_core::{
     ProcessRunner, ProcessSpec, ProjectRoot, RoleName, SandboxPath, SecretOutput, StdFileSystem,
     sandbox_layout,
 };
-use jackin_image::ImageEngine;
+use jackin_image::{BuildxEngine, ImageEngine};
 use jackin_openshell::{Gateway, SandboxQuery};
 use jackin_session::{
     HostPorts, LaunchError, LaunchFailure, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery,
     LoadedRole, Session, SessionDeps, TreeMismatch, UnsupportedProject, launch_events, plan_launch,
 };
 use jackin_testkit::{
-    FakeClock, FakeEngine, FakeGateway, RepoFixture, RoleFixture, SandboxHandle, TestRunner, World,
+    FakeClock, FakeGateway, RepoFixture, RoleFixture, SandboxHandle, TestRunner, World,
 };
 use serde_json::json;
 use tempfile::TempDir;
@@ -29,14 +28,8 @@ use tokio_util::sync::CancellationToken;
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const PLACEHOLDER: &str = "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN";
-const GUARD: Duration = Duration::from_secs(170);
+pub(crate) use jackin_testkit::guard;
 const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
-
-pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
-    tokio::time::timeout(GUARD, work)
-        .await
-        .map_err(|_| format!("the test hung for {} s", GUARD.as_secs()))?
-}
 
 #[derive(Clone, Copy)]
 pub(crate) enum Point {
@@ -266,7 +259,7 @@ impl Rig {
     ) -> Result<Outcome, Box<dyn Error>> {
         let world = &self.world;
         let gateway: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&world.gateway);
-        let engine: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&world.engine);
+        let engine: Arc<dyn ImageEngine> = Arc::<BuildxEngine>::clone(&world.engine);
         let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
         let session = Session::new(SessionDeps {
             gateway,
@@ -291,7 +284,10 @@ impl Rig {
         let found = self
             .world
             .gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))))
+            .find_sandboxes(
+                &SandboxQuery::Labels(LabelSelector::launch(&launch_id(id))),
+                &CancellationToken::new(),
+            )
             .await?;
         found
             .first()
@@ -352,8 +348,7 @@ pub(crate) fn assert_nothing_created(rig: &Rig) -> TestResult {
     assert!(rig.world.gateway.sandboxes().is_empty());
     assert!(rig.world.gateway.providers().is_empty());
     assert!(rig.world.gateway.profiles().is_empty());
-    assert!(rig.world.engine.builds().is_empty());
-    assert!(rig.world.engine.images().is_empty());
+    assert!(rig.world.docker.images().is_empty());
     let cache = tree_of(rig.world.cache_dir().as_path())?;
     assert_eq!(
         cache.iter().filter(|name| name.contains("upload-")).count(),

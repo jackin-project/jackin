@@ -279,7 +279,12 @@ async fn an_upload_to_a_sandbox_that_is_not_ready_says_so_an_absent_one_says_not
 
         let stopped = ready(&fake, sh("sleep 3600")?).await?;
         let ended = ready(&fake, sh("sleep 3600")?).await?;
-        fake.set_power(&stopped.name(), PowerAction::Stop).await?;
+        fake.set_power(
+            &stopped.name(),
+            PowerAction::Stop,
+            &CancellationToken::new(),
+        )
+        .await?;
         ended.exit_main(3);
         let attempt = Attempt {
             fake: &fake,
@@ -427,7 +432,8 @@ async fn a_failed_download_never_touches_an_existing_file_leaves_no_temp_and_a_g
         let ready_name = ready_handle.name();
         let stopped_name = stopped_handle.name();
         write(&fake, &ready_name, "/sandbox/export.bin", "bundle-bytes").await?;
-        fake.set_power(&stopped_name, PowerAction::Stop).await?;
+        fake.set_power(&stopped_name, PowerAction::Stop, &CancellationToken::new())
+            .await?;
         let absent = SandboxName::parse("jackin-absent-0001")?;
         let dir = tempfile::tempdir()?;
         let local = HostPath::parse(&dir.path().join("export.bin"))?;

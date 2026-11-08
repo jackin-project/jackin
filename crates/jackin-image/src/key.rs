@@ -79,9 +79,23 @@ fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
     Ok(())
 }
 
+fn read_write_argument(paths: &[String]) -> Result<Option<String>, ImageError> {
+    for path in paths {
+        let safe = path.starts_with('/')
+            && path
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'));
+        if !safe {
+            return Err(ImageError::ReadWritePath { path: path.clone() });
+        }
+    }
+    Ok((!paths.is_empty()).then(|| build_arg("READ_WRITE_PATHS", &paths.join(":"))))
+}
+
 pub(crate) fn derived_arguments_multi(
     agents: &[Agent],
     docker: DockerLayer,
+    read_write: &[String],
 ) -> Result<Vec<String>, ImageError> {
     let mut sorted = agents.to_vec();
     sorted.sort_by_key(|agent| agent.as_str());
@@ -89,7 +103,7 @@ pub(crate) fn derived_arguments_multi(
     if sorted.is_empty() {
         sorted.push(Agent::Codex);
     }
-    let mut args = derived_arguments_prefixed(sorted[0], docker, "AGENT")?;
+    let mut args = derived_arguments_prefixed(sorted[0], docker, "AGENT", read_write)?;
     if sorted.len() == 1 {
         return Ok(args);
     }
@@ -97,7 +111,7 @@ pub(crate) fn derived_arguments_multi(
         "AGENTS",
         &sorted
             .iter()
-            .map(|a| a.as_str())
+            .map(|agent| agent.as_str())
             .collect::<Vec<_>>()
             .join(","),
     ));
@@ -107,6 +121,7 @@ pub(crate) fn derived_arguments_multi(
             *agent,
             DockerLayer::Absent,
             &prefix,
+            &[],
         )?);
     }
     Ok(args)
@@ -116,6 +131,7 @@ pub(crate) fn derived_arguments_prefixed(
     agent: Agent,
     docker: DockerLayer,
     prefix: &str,
+    read_write: &[String],
 ) -> Result<Vec<String>, ImageError> {
     let spec = agent.spec();
     let mut args = vec![
@@ -163,6 +179,7 @@ pub(crate) fn derived_arguments_prefixed(
             ),
         );
     }
+    args.extend(read_write_argument(read_write)?);
     for platform in PLATFORMS {
         let target = install_target(agent, platform)?;
         let name = format!(
@@ -189,7 +206,11 @@ pub(crate) fn derived_arguments_prefixed(
 
 impl ImageKey {
     pub fn derive(request: &ImageRequest, construct: &ImageId) -> Result<ImageKey, ImageError> {
-        let derived_args = derived_arguments_multi(&request.sorted_agents(), request.docker)?;
+        let derived_args = derived_arguments_multi(
+            &request.sorted_agents(),
+            request.docker,
+            &request.read_write,
+        )?;
         Ok(ImageKey::compute(request, &derived_args, construct))
     }
 
@@ -213,6 +234,7 @@ impl ImageKey {
             platform,
             builder: _,
             docker,
+            read_write: _,
             rebuild: _,
         } = request;
         let SourceFile {

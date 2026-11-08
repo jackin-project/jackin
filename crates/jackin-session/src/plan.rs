@@ -7,12 +7,13 @@ use std::num::NonZeroU8;
 use std::time::Duration;
 
 use jackin_core::{
-    Account, AccountName, AccountQuery, AccountSelection, Agent, ChatgptAccountId, CodexAuthMode,
-    Config, ConfigError, DockerCapability, DockerError, DockerLabel, DockerLayer, EnvFile,
-    EnvFileError, EnvName, EnvTable, EnvValueError, FileMode, GatewayName, LaunchId, ModelName,
-    NameSuffix, PathError, PlainEnvValue, PlannedLabels, PolicyLabel, ProjectRoot, Provider,
-    ProviderName, RoleManifest, RoleName, SandboxName, SandboxPath, SelectionError, Workspace,
-    WorkspaceName, plain, plain_list, sandbox_layout,
+    Account, AccountName, AccountQuery, AccountSelection, Agent, AgentInstance, AgentInstanceError,
+    AgentInstances, ChatgptAccountId, CodexAuthMode, Config, ConfigError, DockerCapability,
+    DockerError, DockerLabel, DockerLayer, EnvFile, EnvFileError, EnvName, EnvTable, EnvValueError,
+    FileMode, GatewayName, LaunchId, ModelName, NameSuffix, PathError, PlainEnvValue,
+    PlannedLabels, PolicyLabel, ProjectRoot, Provider, ProviderName, RoleManifest, RoleName,
+    SandboxName, SandboxPath, SelectionError, Workspace, WorkspaceName, plain, plain_list,
+    sandbox_layout,
 };
 use jackin_image::{ImageError, ImageRequest, Rebuild};
 use jackin_openshell::{
@@ -37,7 +38,7 @@ pub struct LaunchRequest {
     agent: Agent,
     provider: Provider,
     model: Option<String>,
-    instances: Option<jackin_core::AgentInstances>,
+    instances: Option<AgentInstances>,
     task: Option<String>,
     rebuild: Rebuild,
     env: BTreeMap<EnvName, PlainEnvValue>,
@@ -116,7 +117,7 @@ pub struct LaunchPlan {
     image_request: ImageRequest,
     draft: SandboxDraft,
     files: PlannedFiles,
-    instances: jackin_core::AgentInstances,
+    instances: AgentInstances,
 }
 
 #[derive(Clone, Debug)]
@@ -132,9 +133,13 @@ pub struct SandboxDraft {
 #[derive(Debug, Error)]
 pub enum PlanError {
     #[error(transparent)]
+    AgentJson(#[from] serde_json::Error),
+    #[error(transparent)]
     Config(#[from] ConfigError),
     #[error(transparent)]
     Selection(#[from] SelectionError),
+    #[error(transparent)]
+    AgentInstances(#[from] AgentInstanceError),
     #[error(transparent)]
     Project(#[from] PathError),
     #[error(transparent)]
@@ -232,8 +237,8 @@ impl LaunchRequest {
     }
 
     #[must_use]
-    pub fn instances(mut self, instances: jackin_core::AgentInstances) -> LaunchRequest {
-        if let Some(lead) = instances.lead_opt() {
+    pub fn instances(mut self, instances: AgentInstances) -> LaunchRequest {
+        if let Some(lead) = instances.as_slice().first() {
             self.agent = lead.agent;
             self.provider = lead.provider;
         }
@@ -404,6 +409,7 @@ pub fn plan_image_for(
         platform: entry.platform,
         builder: entry.builder.clone(),
         docker: layer,
+        read_write: role.policy().document().read_write_paths(),
         rebuild,
     })
 }
@@ -424,7 +430,7 @@ fn launch_policy(
     Ok((document.close_for_tuple(tuple)?, warnings))
 }
 
-fn lead_tuple(
+pub fn catalog_tuple_for_launch(
     agent: Agent,
     provider: Provider,
     model: Option<&str>,
@@ -458,43 +464,27 @@ fn lead_agent_provider(request: &LaunchRequest) -> (Agent, Provider) {
     match request
         .instances
         .as_ref()
-        .and_then(|instances| instances.lead_opt())
+        .and_then(|instances| instances.as_slice().first())
     {
         Some(lead) => (lead.agent, lead.provider),
         None => (request.agent, request.provider),
     }
 }
 
-fn validate_instances(instances: &jackin_core::AgentInstances) -> Result<(), PlanError> {
+fn validate_instances(instances: &AgentInstances) -> Result<(), PlanError> {
     for instance in instances.iter() {
-        let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(|_| {
-            PlanError::TupleNotSupported {
-                agent: instance.agent,
-                provider: instance.provider,
-                reason: "unknown tuple".to_owned(),
-            }
-        })?;
-        if tuple.state != jackin_core::TupleState::Supported {
-            return Err(PlanError::TupleNotSupported {
-                agent: instance.agent,
-                provider: instance.provider,
-                reason: tuple.reason.unwrap_or("not supported").to_owned(),
-            });
-        }
-        tuple
-            .check_model(&instance.model)
-            .map_err(|_| PlanError::TupleNotSupported {
-                agent: instance.agent,
-                provider: instance.provider,
-                reason: format!("unknown model {}", instance.model),
-            })?;
+        catalog_tuple_for_launch(
+            instance.agent,
+            instance.provider,
+            Some(instance.model.as_str()),
+        )?;
     }
     Ok(())
 }
 
 fn validate_instruction_mappings(
     role: &LoadedRole,
-    instances: &jackin_core::AgentInstances,
+    instances: &AgentInstances,
 ) -> Result<(), PlanError> {
     for instance in instances.iter() {
         if !role.manifest().agents.contains_key(&instance.agent) {
@@ -508,50 +498,50 @@ fn validate_instruction_mappings(
     Ok(())
 }
 
-fn agent_config_file(
-    is_omp: bool,
+struct AgentConfigContext<'a> {
     tuple: &'static jackin_core::AgentTuple,
-    codex_model: Option<&ModelName>,
-    model: Option<&str>,
+    spec: &'a jackin_core::AgentSpec,
+    codex_model: Option<&'a ModelName>,
+    model: Option<&'a str>,
     agent: Agent,
     provider: Provider,
-    account: &AccountName,
-) -> Result<PlannedFile, PlanError> {
-    if agent == Agent::KimiCode {
+    account: &'a AccountName,
+}
+
+fn agent_config_file(context: AgentConfigContext<'_>) -> Result<PlannedFile, PlanError> {
+    if context.agent == Agent::KimiCode {
         return Ok(crate::files::render_kimi_config(
-            &ProviderName::for_account(account, agent),
+            &ProviderName::for_account(context.account, context.agent),
         ));
     }
-    if agent == Agent::MimoCode {
+    if context.agent == Agent::MimoCode {
         return Ok(crate::files::render_mimo_config(
-            &ProviderName::for_account(account, agent),
+            &ProviderName::for_account(context.account, context.agent),
         ));
     }
-    if agent == Agent::MuseCode {
-        return Ok(crate::files::render_muse_config(model));
+    if context.agent == Agent::MuseCode {
+        return Ok(crate::files::render_muse_config(context.model));
     }
-    if agent == Agent::GrokBuild {
-        return Ok(crate::files::render_grok_config(model));
+    if context.agent == Agent::GrokBuild {
+        return Ok(crate::files::render_grok_config(context.model));
     }
-    if is_omp {
-        let spec = agent.spec();
+    if context.agent == Agent::Omp {
         return Ok(PlannedFile {
-            path: spec.user_config.path.clone(),
-            mode: spec.user_config.mode,
-            text: crate::files::render_omp_config(tuple, model).map_err(|_| {
+            path: context.spec.user_config.path.clone(),
+            mode: context.spec.user_config.mode,
+            text: crate::files::render_omp_config(context.tuple, context.model).map_err(|_| {
                 PlanError::TupleNotSupported {
-                    agent,
-                    provider,
+                    agent: context.agent,
+                    provider: context.provider,
                     reason: "unknown model".to_owned(),
                 }
             })?,
         });
     }
-    let spec = agent.spec();
     Ok(PlannedFile {
-        path: spec.user_config.path.clone(),
-        mode: spec.user_config.mode,
-        text: render_codex_config(codex_model, &spec.workdir)?,
+        path: context.spec.user_config.path.clone(),
+        mode: context.spec.user_config.mode,
+        text: render_codex_config(context.codex_model, &context.spec.workdir)?,
     })
 }
 
@@ -562,12 +552,67 @@ fn muse_trust_file(agent: Agent, spec: &jackin_core::AgentSpec) -> Option<Planne
     }
 }
 
-type InstanceAccounts = (Vec<Account>, Vec<(Agent, ChatgptAccountId)>);
+struct LaunchAccounts {
+    selection: AccountSelection,
+    account: Account,
+    instances: AgentInstances,
+    instance_accounts: Vec<Account>,
+    chatgpt_accounts: Vec<(Agent, ChatgptAccountId)>,
+    chatgpt_account: Option<ChatgptAccountId>,
+}
 
-fn collect_instance_accounts(
+fn launch_accounts(
     config: &Config,
-    instances: &jackin_core::AgentInstances,
-) -> Result<InstanceAccounts, PlanError> {
+    request: &LaunchRequest,
+    workspace: &WorkspaceName,
+    role: &LoadedRole,
+    agent: Agent,
+    provider: Provider,
+) -> Result<LaunchAccounts, PlanError> {
+    let lead_flag = request
+        .instances
+        .as_ref()
+        .and_then(|instances| instances.as_slice().first())
+        .map(|lead| lead.account.clone())
+        .or_else(|| request.account.clone());
+    let selection = config.select_account(&AccountQuery {
+        flag: lead_flag.as_ref(),
+        workspace,
+        role: &request.role,
+        agent,
+        provider,
+    })?;
+    let instances = if let Some(instances) = request.instances.clone() {
+        instances
+    } else {
+        let model = ModelName::parse(
+            request
+                .model
+                .as_deref()
+                .unwrap_or(agent.spec().default_model),
+        )
+        .map_err(|_| PlanError::TupleNotSupported {
+            agent,
+            provider,
+            reason: "invalid model name".to_owned(),
+        })?;
+        AgentInstances::single(AgentInstance {
+            agent,
+            provider,
+            account: selection.account.clone(),
+            model,
+            branch: format!("agent/{}", agent.as_str()),
+        })?
+    };
+    validate_instances(&instances)?;
+    validate_instruction_mappings(role, &instances)?;
+    let account = config
+        .account(&selection.account)
+        .ok_or_else(|| ConfigError::MissingReference {
+            kind: "account",
+            name: selection.account.to_string(),
+        })?
+        .clone();
     let mut instance_accounts = Vec::new();
     let mut chatgpt_accounts = Vec::new();
     for instance in instances.iter() {
@@ -585,15 +630,7 @@ fn collect_instance_accounts(
             chatgpt_accounts.push((instance.agent, login.account_id.clone()));
         }
     }
-    Ok((instance_accounts, chatgpt_accounts))
-}
-
-fn lead_chatgpt_account(
-    agent: Agent,
-    account: &Account,
-    selection: &AccountSelection,
-) -> Result<Option<ChatgptAccountId>, PlanError> {
-    Ok(if agent == Agent::Codex {
+    let chatgpt_account = if agent == Agent::Codex {
         let mode =
             account
                 .codex_auth_mode()
@@ -612,28 +649,15 @@ fn lead_chatgpt_account(
         )
     } else {
         None
+    };
+    Ok(LaunchAccounts {
+        selection,
+        account,
+        instances,
+        instance_accounts,
+        chatgpt_accounts,
+        chatgpt_account,
     })
-}
-
-fn resolve_instances(
-    request: &LaunchRequest,
-    agent: Agent,
-    provider: Provider,
-    selection: &AccountSelection,
-) -> jackin_core::AgentInstances {
-    match request.instances.clone() {
-        Some(instances) => instances,
-        None => jackin_core::AgentInstances::single(jackin_core::AgentInstance {
-            agent,
-            provider,
-            account: selection.account.clone(),
-            model: request
-                .model
-                .clone()
-                .unwrap_or_else(|| agent.spec().default_model.to_owned()),
-            branch: format!("agent/{}", agent.as_str()),
-        }),
-    }
 }
 
 pub fn plan_launch(
@@ -656,36 +680,17 @@ pub fn plan_launch(
         });
     }
     let (agent, provider) = lead_agent_provider(&request);
-    let tuple = lead_tuple(agent, provider, request.model.as_deref())?;
+    let tuple = catalog_tuple_for_launch(agent, provider, request.model.as_deref())?;
     let spec = agent.spec();
-    let lead_flag = match request
-        .instances
-        .as_ref()
-        .and_then(|items| items.lead_opt())
-    {
-        Some(lead) => Some(lead.account.clone()),
-        None => request.account.clone(),
-    };
-    let selection = config.select_account(&AccountQuery {
-        flag: lead_flag.as_ref(),
-        workspace: workspace_name,
-        role: &request.role,
-        agent,
-        provider,
-    })?;
-    let instances = resolve_instances(&request, agent, provider, &selection);
-    validate_instances(&instances)?;
-    validate_instruction_mappings(role, &instances)?;
-    let account =
-        config
-            .account(&selection.account)
-            .ok_or_else(|| ConfigError::MissingReference {
-                kind: "account",
-                name: selection.account.to_string(),
-            })?;
-    let (instance_accounts, chatgpt_accounts) = collect_instance_accounts(config, &instances)?;
+    let LaunchAccounts {
+        selection,
+        account,
+        instances,
+        instance_accounts,
+        chatgpt_accounts,
+        chatgpt_account,
+    } = launch_accounts(config, &request, workspace_name, role, agent, provider)?;
     let is_omp = agent == Agent::Omp;
-    let chatgpt_account = lead_chatgpt_account(agent, account, &selection)?;
     let docker = DockerCapability::resolve(
         role.manifest().docker.enabled,
         workspace.docker,
@@ -702,24 +707,30 @@ pub fn plan_launch(
     values.extend(docker.environment());
     let layout = crate::multi::plan_multi(
         &instances,
+        agent,
         request.task.as_deref(),
         crate::multi::HeadState::Born,
-    );
+    )?;
+    let lead = instances
+        .as_slice()
+        .first()
+        .ok_or(AgentInstanceError::Empty)?;
     let files = PlannedFiles {
         multi: layout.files.clone(),
         layout: layout.clone(),
-        codex_config: agent_config_file(
-            is_omp,
+        codex_config: agent_config_file(AgentConfigContext {
             tuple,
-            role.manifest()
+            spec,
+            codex_model: role
+                .manifest()
                 .agents
                 .get(&Agent::Codex)
                 .and_then(|section| section.model.as_ref()),
-            Some(instances.lead().model.as_str()),
+            model: Some(lead.model.as_str()),
             agent,
             provider,
-            &selection.account,
-        )?,
+            account: &selection.account,
+        })?,
         env: PlannedFile {
             path: sandbox_layout::env_file(&request.launch),
             mode: ENV_FILE_MODE,
@@ -751,7 +762,8 @@ pub fn plan_launch(
         labels: PlannedLabels {
             workspace: workspace_name.clone(),
             role: request.role.clone(),
-            agents: instances.clone(),
+            agents_hash: instances.hash(),
+            lead_agent: lead.agent,
             policy: policy_label,
             launch: request.launch.clone(),
         },
@@ -860,7 +872,7 @@ impl LaunchPlan {
         &self.files
     }
 
-    pub fn instances(&self) -> &jackin_core::AgentInstances {
+    pub fn instances(&self) -> &AgentInstances {
         &self.instances
     }
 }
@@ -885,7 +897,7 @@ impl SandboxDraft {
     pub fn complete(&self, image: &jackin_image::BuiltImage, docker: DockerLabel) -> SandboxCreate {
         SandboxCreate::new(
             self.name.clone(),
-            image.tag.clone(),
+            image.local_ref.clone(),
             self.labels.clone().complete(&image.id, docker),
             if self.providers.is_empty() {
                 vec![self.provider.clone()]
@@ -910,8 +922,16 @@ mod tests {
     ) -> PlannedFile {
         let tuple = jackin_core::lookup_tuple(agent, provider).expect("tuple");
         let account = AccountName::parse("cfgtest").expect("account");
-        agent_config_file(false, tuple, codex_model, model, agent, provider, &account)
-            .expect("config")
+        agent_config_file(AgentConfigContext {
+            tuple,
+            spec: agent.spec(),
+            codex_model,
+            model,
+            agent,
+            provider,
+            account: &account,
+        })
+        .expect("config")
     }
 
     #[test]

@@ -31,7 +31,7 @@ fn docker_spec(sub: DockerSubcommand, path: &str, args: &[&str]) -> ProcessSpec 
 
 #[tokio::test]
 async fn docker_programs_run_the_docker_binary_with_their_subcommand_words_first() -> TestResult {
-    tokio::time::timeout(Duration::from_secs(30), async {
+    jackin_testkit::guard(async {
         let dir = tempfile::tempdir()?;
         let bin = dir.path().canonicalize()?.join("bin");
         fs::create_dir(&bin)?;
@@ -64,7 +64,6 @@ async fn docker_programs_run_the_docker_binary_with_their_subcommand_words_first
         Ok(())
     })
     .await
-    .map_err(|_| "the test exceeded its 30 s guard")?
 }
 
 const LINES: usize = 5000;
@@ -91,7 +90,7 @@ async fn collect_run(
 #[tokio::test]
 async fn the_scripted_runner_returns_the_same_tail_as_the_live_runner_for_a_long_output()
 -> TestResult {
-    tokio::time::timeout(Duration::from_secs(60), async {
+    jackin_testkit::guard(async {
         let dir = tempfile::tempdir()?;
         let bin = dir.path().canonicalize()?.join("bin");
         fs::create_dir(&bin)?;
@@ -134,7 +133,6 @@ async fn the_scripted_runner_returns_the_same_tail_as_the_live_runner_for_a_long
         Ok(())
     })
     .await
-    .map_err(|_| "the test exceeded its 60 s guard")?
 }
 
 fn inspecting(word: &str) -> ProcessSpec {
@@ -168,7 +166,7 @@ fn cancelled(result: &Result<ProcessOutput, ProcessError>) -> bool {
 #[tokio::test]
 async fn cancels_on_cancels_the_shared_token_at_its_word_and_ends_the_call_of_that_token()
 -> TestResult {
-    tokio::time::timeout(Duration::from_secs(30), async {
+    jackin_testkit::guard(async {
         let runner = inspector();
         let shared = CancellationToken::new();
         let wrapper = CancelsOn::new(&runner, "marked", &shared);
@@ -196,13 +194,12 @@ async fn cancels_on_cancels_the_shared_token_at_its_word_and_ends_the_call_of_th
         Ok(())
     })
     .await
-    .map_err(|_| "the test exceeded its 30 s guard")?
 }
 
 #[tokio::test]
 async fn pauses_on_parks_the_first_call_at_its_word_until_release_and_lets_the_rest_pass()
 -> TestResult {
-    tokio::time::timeout(Duration::from_secs(30), async {
+    jackin_testkit::guard(async {
         let runner = inspector();
         let pause = Arc::new(PausesOn::new(&runner, "marked"));
         let token = CancellationToken::new();
@@ -239,13 +236,12 @@ async fn pauses_on_parks_the_first_call_at_its_word_until_release_and_lets_the_r
         Ok(())
     })
     .await
-    .map_err(|_| "the test exceeded its 30 s guard")?
 }
 
 #[tokio::test]
 async fn a_cancel_of_the_token_a_parked_call_was_handed_ends_the_pause_with_a_cancelled_call()
 -> TestResult {
-    tokio::time::timeout(Duration::from_secs(30), async {
+    jackin_testkit::guard(async {
         let runner = inspector();
         let pause = Arc::new(PausesOn::new(&runner, "marked"));
         let token = CancellationToken::new();
@@ -260,5 +256,4 @@ async fn a_cancel_of_the_token_a_parked_call_was_handed_ends_the_pause_with_a_ca
         Ok(())
     })
     .await
-    .map_err(|_| "the test exceeded its 30 s guard")?
 }

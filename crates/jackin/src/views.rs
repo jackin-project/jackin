@@ -10,6 +10,7 @@ use jackin_core::{
 use serde::{Deserialize, Serialize};
 
 pub const VIEW_SCHEMA: u32 = 1;
+pub const SANDBOX_VIEW_SCHEMA: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GatewayLs {

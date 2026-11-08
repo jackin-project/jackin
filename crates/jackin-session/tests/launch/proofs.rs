@@ -2,24 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{ProfileId, ProviderName, SandboxLabels, SupervisorState, sandbox_layout};
-use jackin_image::BuildStage;
 use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::{LaunchError, LaunchOutcome, LaunchStep};
 
 use super::support::{
-    TestResult, converged, failure, guard, has_file, launch_id, launch_rig, path, ready, running,
-    under_project, unreachable, write,
+    TestResult, converged, failure, final_image, guard, has_file, launch_id, launch_rig, path,
+    ready, running, under_project, unreachable, write,
 };
 use jackin_testkit::{Fault, Trigger};
 
 #[tokio::test]
-async fn two_runs_with_one_launch_id_give_one_build_one_sandbox_one_upload_one_setup() -> TestResult
-{
+async fn two_runs_with_one_launch_id_reuse_the_image_and_one_sandbox() -> TestResult {
     guard(async {
         let rig = launch_rig().await?;
         let first = ready(rig.launch_observed(1).await?)?;
+        let first_image = final_image(&rig, 1).await?;
         rig.repo.file("late.txt", b"late\n").await?;
         let second = ready(rig.launch_observed(1).await?)?;
+        let second_image = final_image(&rig, 1).await?;
         let name = rig.plan(1)?.sandbox_name().clone();
         assert_eq!(name.as_str(), "jackin-platfor-ij4f");
         for target in [first, second] {
@@ -31,19 +31,20 @@ async fn two_runs_with_one_launch_id_give_one_build_one_sandbox_one_upload_one_s
                 }
             );
         }
-        assert_eq!(
-            rig.stages(),
-            [BuildStage::Construct, BuildStage::Role, BuildStage::Derived]
-        );
+        assert_eq!(first_image, second_image);
         assert_eq!(rig.gateway().sandboxes().len(), 1);
         let handle = rig.handle(1).await?;
-        let built = rig.final_image()?;
         let expected = rig
             .plan(1)?
             .draft()
             .labels()
             .clone()
-            .complete(&built.id, jackin_core::DockerLabel::Off);
+            .complete(&first_image.1, jackin_core::DockerLabel::Off);
+        assert_eq!(handle.image_id(), Some(first_image.1.clone()));
+        assert_eq!(
+            rig.world.docker.image_id(&first_image.0),
+            Some(first_image.1)
+        );
         assert_eq!(SandboxLabels::from_labels(&handle.labels())?, expected);
         for present in ["src/main.rs", "README.md", ".git/HEAD", "notes.txt"] {
             assert!(
@@ -104,14 +105,16 @@ async fn a_failure_after_create_leaves_the_sandbox_and_a_retry_continues_it() ->
         ));
         let handle = rig.handle(1).await?;
         assert_eq!(handle.phase(), jackin_core::Phase::Ready);
-        let built = rig.final_image()?;
+        let (tag, image_id) = final_image(&rig, 1).await?;
         let labels = rig
             .plan(1)?
             .draft()
             .labels()
             .clone()
-            .complete(&built.id, jackin_core::DockerLabel::Off);
+            .complete(&image_id, jackin_core::DockerLabel::Off);
         assert_eq!(SandboxLabels::from_labels(&handle.labels())?, labels);
+        assert_eq!(handle.image_id(), Some(image_id.clone()));
+        assert_eq!(rig.world.docker.image_id(&tag), Some(image_id));
         assert!(!has_file(
             &handle,
             &sandbox_layout::uploaded_marker(&launch_id(1))

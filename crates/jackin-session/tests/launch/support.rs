@@ -5,20 +5,22 @@ use std::error::Error;
 use std::time::Duration;
 
 use jackin_core::{
-    AttemptId, FileMode, SandboxName, SandboxPath, SecretBytes, SupervisorState, sandbox_layout,
+    Account, AccountName, AttemptId, Config, ConfigEdit, CredentialSource, EnvName, FileMode,
+    ImageId, ImageTag, Provider, SandboxName, SandboxPath, SecretBytes, SupervisorState,
+    sandbox_layout,
 };
-use jackin_image::BuildStage;
+use jackin_image::{ImageEngine, ImagePlan};
 use jackin_openshell::{Gateway, SandboxFile};
 use jackin_session::{AttachTarget, LaunchFailure, LaunchLimits, LaunchOutcome};
-use jackin_testkit::{Outcome, RepoFixture, Rig, RigBuilder, SandboxHandle, guard_within};
+use jackin_testkit::{
+    DockerBuildReply, DockerIidFile, Outcome, RepoFixture, Rig, RigBuilder, SandboxHandle,
+};
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 pub(crate) use jackin_testkit::{ACCESS, ACCOUNT_ID, PLACEHOLDER, REFRESH, TestResult, launch_id};
 
-const GUARD: Duration = Duration::from_secs(170);
-
-pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
-    guard_within(GUARD, work).await
-}
+pub(crate) use jackin_testkit::guard;
 
 pub(crate) fn path(text: &str) -> Result<SandboxPath, Box<dyn Error>> {
     Ok(SandboxPath::parse(text)?)
@@ -60,6 +62,21 @@ pub(crate) async fn launch_rig() -> Result<Rig, Box<dyn Error>> {
     builder().await?.build().await
 }
 
+pub(crate) async fn add_zai_account(rig: &Rig, name: &str) -> Result<Config, Box<dyn Error>> {
+    let account = Account::new(
+        AccountName::parse(name)?,
+        Provider::Zai,
+        CredentialSource::Env {
+            var: EnvName::parse("ZAI_API_KEY")?,
+        },
+    )?;
+    rig.world
+        .config
+        .edit(vec![ConfigEdit::AddAccount(account)], &rig.world.cancel)
+        .await?;
+    Ok(rig.world.config.load().await?)
+}
+
 pub(crate) fn ready(outcome: Outcome) -> Result<AttachTarget, Box<dyn Error>> {
     match outcome.result {
         Ok(LaunchOutcome::Ready(target)) => Ok(target),
@@ -91,6 +108,63 @@ pub(crate) fn under_project(handle: &SandboxHandle) -> bool {
         .any(|file| file.as_str().starts_with("/sandbox/project"))
 }
 
+pub(crate) async fn actual_final_builds(
+    rig: &Rig,
+    id: u8,
+) -> Result<(ImagePlan, jackin_image::FinalBuilds, ImageId), Box<dyn Error>> {
+    let request = rig.plan(id)?.image_request().clone();
+    let plan = ImagePlan::new(&request)?;
+    let engine = &*rig.world.engine;
+    let cancel = CancellationToken::new();
+    let construct = if let Some(id) = engine.find(&plan.construct_build().tag, &cancel).await? {
+        id
+    } else {
+        let (tx, rx) = mpsc::channel(8);
+        drop(rx);
+        engine.build(plan.construct_build(), &tx, &cancel).await?
+    };
+    if engine
+        .attested(&plan.construct_build().tag, &cancel)
+        .await?
+        .as_ref()
+        != Some(&construct)
+    {
+        engine
+            .attest(&plan.construct_build().tag, &construct, &cancel)
+            .await?;
+    }
+    let builds = plan.final_builds(&construct);
+    Ok((plan, builds, construct))
+}
+
+pub(crate) async fn final_image(rig: &Rig, id: u8) -> Result<(ImageTag, ImageId), Box<dyn Error>> {
+    let (_, builds, _) = actual_final_builds(rig, id).await?;
+    let image = rig
+        .world
+        .engine
+        .find(&builds.derived.tag, &CancellationToken::new())
+        .await?
+        .ok_or("the final image is not present in the external Docker state")?;
+    Ok((builds.derived.tag, image))
+}
+
+pub(crate) fn script_construct_rebuild(
+    rig: &Rig,
+    launch: u8,
+    fill: char,
+) -> Result<(ImageTag, ImageId), Box<dyn Error>> {
+    let plan = ImagePlan::new(rig.plan(launch)?.image_request())?;
+    let tag = plan.construct_build().tag.clone();
+    let id = ImageId::parse(&format!("sha256:{}", fill.to_string().repeat(64)))?;
+    rig.world.docker.script_build(
+        tag.clone(),
+        DockerBuildReply::default()
+            .with_iid_file(DockerIidFile::Text(format!("{id}\n").into_bytes()))
+            .with_published_id(id.clone()),
+    );
+    Ok((tag, id))
+}
+
 pub(crate) fn converged(rig: &Rig, handle: &SandboxHandle, id: u8) -> TestResult {
     assert_eq!(handle.supervisor(), Some(running(1)?));
     assert_eq!(handle.file(&sandbox_layout::RUN_START), Some(b"1".to_vec()));
@@ -102,14 +176,13 @@ pub(crate) fn converged(rig: &Rig, handle: &SandboxHandle, id: u8) -> TestResult
         handle,
         &sandbox_layout::setup_done_marker(&launch_id(id))
     ));
-    let stages = rig.stages();
-    for stage in [BuildStage::Construct, BuildStage::Derived] {
-        assert_eq!(
-            stages.iter().filter(|s| **s == stage).count(),
-            1,
-            "{stages:?}"
-        );
-    }
+    let image = handle
+        .image_id()
+        .ok_or("the sandbox has no image snapshot")?;
+    assert!(
+        rig.world.docker.images().values().any(|id| id == &image),
+        "the sandbox image is absent from the external Docker state"
+    );
     Ok(())
 }
 
@@ -128,6 +201,7 @@ pub(crate) async fn write(
                 mode: FileMode(0o600),
                 content: SecretBytes::new(content.as_bytes().to_vec()),
             },
+            &CancellationToken::new(),
         )
         .await?;
     Ok(())

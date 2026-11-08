@@ -22,6 +22,17 @@ pub(crate) async fn run(
         PowerAction::Start => "started",
         PowerAction::Stop => "stopped",
     };
-    app.io.note(&format!("sandbox {} {word}", summary.name));
+    match summary {
+        jackin_session::SandboxObservation::Readable(summary) => {
+            app.io.note(&format!("sandbox {} {word}", summary.name));
+        }
+        jackin_session::SandboxObservation::Unreadable(sandbox) => {
+            app.io.note(&format!(
+                "sandbox {} {word}; metadata unavailable: {}",
+                sandbox.name,
+                sandbox.reason()
+            ));
+        }
+    }
     Ok(())
 }

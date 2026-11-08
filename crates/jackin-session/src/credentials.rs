@@ -3,15 +3,13 @@
 
 use std::path::Path;
 
-use std::time::Duration;
-
 use jackin_core::{
     Account, ChatgptAccountId, CredentialFileProblem, CredentialSource, FileSystem, FsError,
-    HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret, SecretBytes, plain,
-    read_credential_file,
+    HostPath, Secret, plain, read_credential_file,
 };
 use tokio_util::sync::CancellationToken;
 
+use crate::secret_broker::onepassword_secret;
 use crate::service::HostPorts;
 use serde_json::Value;
 use thiserror::Error;
@@ -100,11 +98,7 @@ pub fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Option<Secret> 
     }
 }
 
-pub fn read_omp_host_key(
-    _fs: &dyn FileSystem,
-    db_path: &HostPath,
-    provider_id: &str,
-) -> Result<Secret, CredentialError> {
+pub fn read_omp_host_key(db_path: &HostPath, provider_id: &str) -> Result<Secret, CredentialError> {
     extract_omp_api_key(db_path.as_path(), provider_id).ok_or_else(|| {
         CredentialError::LoginUnreadable {
             path: db_path.clone(),
@@ -179,16 +173,6 @@ pub async fn read_muse_host_metadata(
         subs_active,
         storage: storage.to_owned(),
     })
-}
-
-pub fn parse_muse_keychain_secret(stdout: &SecretBytes) -> Option<Secret> {
-    let document = Document(serde_json::from_slice(stdout.expose()).ok()?);
-    let access_token = document
-        .0
-        .get("access_token")
-        .and_then(Value::as_str)
-        .filter(|value| !value.trim().is_empty())?;
-    Some(Secret::new(access_token.to_owned()))
 }
 
 pub async fn read_chatgpt_login(
@@ -266,42 +250,19 @@ pub async fn resolve_static_key(
             let home = std::env::var("HOME").map_err(|_| missing())?;
             let db = HostPath::parse(Path::new(&format!("{home}/.omp/agent/agent.db")))
                 .map_err(|_| missing())?;
-            read_omp_host_key(host.fs.as_ref(), &db, provider_id).map_err(|_| missing())
+            read_omp_host_key(&db, provider_id).map_err(|_| missing())
         }
         CredentialSource::OnePassword {
             reference,
             account: op_account,
-        } => {
-            let mut args = vec!["read".to_owned()];
-            if let Some(op_account) = op_account {
-                args.extend(["--account".to_owned(), op_account.as_str().to_owned()]);
-            }
-            args.push(reference.as_str().to_owned());
-            let spec = ProcessSpec {
-                program: Program::Op,
-                args,
-                cwd: None,
-                env: Vec::new(),
-                env_remove_prefixes: Vec::new(),
-                stdin: ProcessStdin::Null,
-                timeout: Duration::from_secs(30),
-            };
-            let output = host
-                .runner
-                .run_secret(&spec, cancel)
-                .await
-                .map_err(|_| missing())?;
-            if output.status != ProcessStatus::Exited(0) {
-                return Err(missing());
-            }
-            let text = std::str::from_utf8(output.stdout.expose()).map_err(|_| missing())?;
-            let value = text.trim().to_owned();
-            if value.is_empty() {
-                Err(missing())
-            } else {
-                Ok(Secret::new(value))
-            }
-        }
+        } => onepassword_secret(
+            host.runner.as_ref(),
+            reference.as_str(),
+            op_account.as_ref().map(jackin_core::OpAccountId::as_str),
+            cancel,
+        )
+        .await
+        .map_err(|_| missing()),
         CredentialSource::CodexLogin { .. } | CredentialSource::HostLogin { .. } => Err(missing()),
     }
 }

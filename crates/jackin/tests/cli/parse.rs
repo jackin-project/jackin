@@ -204,7 +204,7 @@ async fn malformed_invocations_exit_usage_with_a_stderr_message_and_change_nothi
             assert_eq!(harness.config_bytes()?, before, "{bad:?}");
             assert!(world.gateway.sandboxes().is_empty(), "{bad:?}");
             assert!(world.gateway.providers().is_empty(), "{bad:?}");
-            assert!(world.engine.builds().is_empty(), "{bad:?}");
+            assert!(world.docker.images().is_empty(), "{bad:?}");
             let valid = harness.run(good).await?;
             assert_ne!(valid.exit, ExitClass::Usage, "{good:?}: {}", valid.stderr);
         }

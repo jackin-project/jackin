@@ -54,6 +54,7 @@ fn request(role: &str) -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: Vec::new(),
         rebuild: Rebuild::No,
     })
 }

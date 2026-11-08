@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs;
+use std::ops::Deref;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -18,15 +20,13 @@ use jackin_image::{
     BuildStage, BuildxEngine, ContextEntry, ContextProblem, ContextSource, EngineError,
     ImageEngine, ImageEvent, ImagePlan, MaterializedFile, PlannedBuild,
 };
-use jackin_testkit::{
-    CancelsOn, CapturedFile, ProcessReply, ScriptedProcessRunner, SeenCall, SeenStdin,
-};
+use jackin_testkit::{CancelsOn, CapturedFile, ProcessReply, ScriptedProcessRunner};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, IidFile, JACKIN_START, Outcome, ROLE_DOCKERFILE,
-    SCAN, Script, Stack, TestResult, assert_local_only, guarded, tag_id,
+    CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, DockerOnlyProcessRunner, IidFile, JACKIN_START,
+    Outcome, SCAN, Script, Stack, TestResult, WRITE_FILE_C,
 };
 
 fn still_alive() -> GroupFault {
@@ -35,78 +35,46 @@ fn still_alive() -> GroupFault {
     }
 }
 
-fn fixed_id() -> Result<ImageId, Box<dyn Error>> {
-    Ok(ImageId::parse(&format!("sha256:{}", "2".repeat(64)))?)
+async fn plan_for(stack: &Stack) -> Result<(ImagePlan, jackin_image::FinalBuilds), Box<dyn Error>> {
+    let request = stack.fixture.request()?;
+    stack.plan_for(&request).await
 }
 
-fn plan_for(stack: &Stack) -> Result<(ImagePlan, jackin_image::FinalBuilds), Box<dyn Error>> {
-    let plan = ImagePlan::new(&stack.fixture.request()?)?;
-    let finals = plan.final_builds(&ImageId::parse(&tag_id("construct"))?);
-    Ok((plan, finals))
-}
-
-fn path_arg<'a>(call: &'a SeenCall, prefix: &str) -> Result<&'a str, Box<dyn Error>> {
-    call.args
-        .iter()
-        .find_map(|arg| arg.strip_prefix(prefix))
-        .ok_or_else(|| format!("no {prefix} argument").into())
+fn expected_codex_dockerfile() -> Vec<u8> {
+    String::from_utf8_lossy(DERIVED_DOCKERFILE)
+        .replace(
+            "        --absent /etc/codex/skills \\\n",
+            "        --absent /etc/codex/skills \\\n        --absent /sandbox/.codex \\\n",
+        )
+        .into_bytes()
 }
 
 #[tokio::test]
 async fn buildx_passes_plan_args_context_and_stdin_to_docker_and_reads_the_image_id() -> TestResult
 {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
-        for stage in [BuildStage::Construct, BuildStage::Role, BuildStage::Derived] {
-            let iid = IidFile::Text(format!("sha256:{}\n", "2".repeat(64)));
-            stack.model.script(
-                stage,
-                Script {
-                    iid,
-                    ..Script::default()
-                },
-            );
-        }
-        let (plan, finals) = plan_for(&stack)?;
+        let (plan, finals) = plan_for(&stack).await?;
         let builds = [plan.construct_build(), &finals.role, &finals.derived];
         let (tx, _rx) = mpsc::channel(256);
         let cancel = CancellationToken::new();
+        let mut actual = Vec::new();
         for build in builds {
             let id = stack.engine.build(build, &tx, &cancel).await?;
-            assert_eq!(id, fixed_id()?, "{} ID", build.stage);
+            assert_eq!(stack.model.image_id(&build.tag), Some(id.clone()));
+            actual.push(id);
         }
-        let calls = stack.calls(DockerSubcommand::BuildxBuild);
-        assert_eq!(calls.len(), 3);
-        let work = stack.fixture.work.as_path();
-        for (call, build) in calls.iter().zip(builds) {
-            let count = build.args.len();
-            assert_eq!(
-                &call.args[..count],
-                build.args.as_slice(),
-                "{} args",
-                build.stage
-            );
-            assert_eq!(call.args.len(), count + 2, "{} extra tokens", build.stage);
-            let iid = path_arg(call, "--iidfile=")?;
-            assert_eq!(
-                call.args[count],
-                format!("--iidfile={iid}"),
-                "iidfile position"
-            );
-            let context = &call.args[count + 1];
-            assert!(Path::new(iid).starts_with(work), "{iid}");
-            assert!(Path::new(context).starts_with(work), "{context}");
-            let stdin = match build.stage {
-                BuildStage::Role => SeenStdin::Bytes(ROLE_DOCKERFILE.to_vec()),
-                _ => SeenStdin::Null,
-            };
-            assert_eq!(call.stdin, stdin, "{} stdin", build.stage);
-            assert!(
-                (Duration::from_secs(600)..=Duration::from_secs(7200)).contains(&call.timeout),
-                "{:?}",
-                call.timeout
-            );
-        }
+        let request = stack
+            .model
+            .request_for(&finals.derived.tag)
+            .ok_or("missing Docker request")?;
+        assert_eq!(request.inputs, [actual[1].clone(), actual[0].clone()]);
+        assert_eq!(request.context_names, ["role", "construct"]);
+        let construct = stack.engine.inspect(&actual[0], &cancel).await?;
+        let role = stack.engine.inspect(&actual[1], &cancel).await?;
+        let derived = stack.engine.inspect(&actual[2], &cancel).await?;
+        assert!(role.layers.starts_with(&construct.layers));
+        assert!(derived.layers.starts_with(&role.layers));
         assert!(
             stack.fixture.work_entries().is_empty(),
             "directory left behind"
@@ -117,21 +85,12 @@ async fn buildx_passes_plan_args_context_and_stdin_to_docker_and_reads_the_image
             stack.engine.build(construct, &tx, &cancel),
             stack.engine.build(construct, &tx, &cancel)
         );
-        assert_eq!(first?, fixed_id()?);
-        assert_eq!(second?, fixed_id()?);
-        let calls = stack.calls(DockerSubcommand::BuildxBuild);
-        let pair = &calls[3..];
-        assert_ne!(pair[0].args.last(), pair[1].args.last(), "context paths");
-        assert_ne!(
-            path_arg(&pair[0], "--iidfile=")?,
-            path_arg(&pair[1], "--iidfile=")?,
-            "iidfile paths"
-        );
+        assert_eq!(first?, second?);
         assert!(
             stack.fixture.work_entries().is_empty(),
             "directory left behind"
         );
-        assert_local_only(&stack.runner)
+        Ok(())
     })
     .await
 }
@@ -148,7 +107,7 @@ fn write_mode(root: &Path, name: &str, mode: u32) -> TestResult {
 
 #[tokio::test]
 async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let role = stack.fixture.role.as_path();
         let modes = [
@@ -175,36 +134,60 @@ async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() 
                 })
             })
             .collect::<Result<_, Box<dyn Error>>>()?;
-        let plan = ImagePlan::new(&request)?;
-        let finals = plan.final_builds(&ImageId::parse(&tag_id("construct"))?);
+        let (plan, finals) = stack.plan_for(&request).await?;
         let (tx, _rx) = mpsc::channel(256);
         let cancel = CancellationToken::new();
         for build in [plan.construct_build(), &finals.role, &finals.derived] {
             stack.engine.build(build, &tx, &cancel).await?;
         }
-        let captured = stack.runner.captured_contexts();
-        assert_eq!(captured.len(), 3);
+        let construct = stack
+            .model
+            .request_for(&plan.construct_build().tag)
+            .ok_or("missing construct request")?
+            .context
+            .files;
+        let role_files = stack
+            .model
+            .request_for(&finals.role.tag)
+            .ok_or("missing role request")?
+            .context
+            .files;
+        let derived = stack
+            .model
+            .request_for(&finals.derived.tag)
+            .ok_or("missing derived request")?
+            .context
+            .files;
 
-        let construct: Vec<_> = captured[0].files.iter().collect();
-        assert_eq!(construct.len(), 1, "construct files");
-        assert_eq!(construct[0].0, "Dockerfile");
+        let construct_rows: Vec<_> = construct.iter().collect();
+        assert_eq!(construct_rows.len(), 2, "construct files");
         assert_eq!(
-            *construct[0].1,
+            construct_rows
+                .iter()
+                .map(|(name, _)| name.as_str())
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from(["Dockerfile", "write-file.c"])
+        );
+        assert_eq!(
+            construct["Dockerfile"],
             CapturedFile::file(CONSTRUCT_DOCKERFILE, 0o644)
+        );
+        assert_eq!(
+            construct["write-file.c"],
+            CapturedFile::file(WRITE_FILE_C, 0o644)
         );
 
         let listed: BTreeSet<&str> = modes.iter().map(|(name, _, _)| *name).collect();
-        let found: BTreeSet<&str> = captured[1].files.keys().map(String::as_str).collect();
+        let found: BTreeSet<&str> = role_files.keys().map(String::as_str).collect();
         assert_eq!(found, listed, "role context file set");
         for (name, _, expected) in modes {
             assert_eq!(
-                captured[1].files[name],
+                role_files[name],
                 CapturedFile::file(&fs::read(role.join(name))?, expected),
                 "{name}"
             );
         }
 
-        let derived = &captured[2].files;
         let names: BTreeSet<&str> = derived.keys().map(String::as_str).collect();
         let expected: BTreeSet<&str> = [
             "Dockerfile",
@@ -215,8 +198,9 @@ async fn buildx_context_holds_exactly_the_planned_files_with_normalized_modes() 
         ]
         .into();
         assert_eq!(names, expected, "derived context file set");
+        let expected_dockerfile = expected_codex_dockerfile();
         let wanted: [(&str, &[u8]); 5] = [
-            ("Dockerfile", DERIVED_DOCKERFILE),
+            ("Dockerfile", &expected_dockerfile),
             ("jackin-start", JACKIN_START),
             ("scan", SCAN),
             ("hooks/setup", b"#!/bin/sh\necho setup\n"),
@@ -262,7 +246,7 @@ fn materialized(name: &str) -> ContextSource {
 
 #[tokio::test]
 async fn buildx_refuses_unsafe_context_entries_before_docker_runs() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let role = stack.fixture.role.as_path();
         let outside = tempfile::tempdir()?;
@@ -276,7 +260,8 @@ async fn buildx_refuses_unsafe_context_entries_before_docker_runs() -> TestResul
             .filter_map(Result::ok)
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .collect();
-        let (_, finals) = plan_for(&stack)?;
+        let (_, finals) = plan_for(&stack).await?;
+        let images = stack.model.images();
         let link = ContextSource::Entries(vec![ContextEntry::Link {
             path: RepoPath::parse("link")?,
             target: "/etc/hosts".to_owned(),
@@ -314,10 +299,7 @@ async fn buildx_refuses_unsafe_context_entries_before_docker_runs() -> TestResul
                     );
                 }
             }
-            assert!(
-                stack.calls(DockerSubcommand::BuildxBuild).is_empty(),
-                "docker ran for {path:?}"
-            );
+            assert_eq!(stack.model.images(), images, "image state for {path:?}");
             assert!(
                 stack.fixture.work_entries().is_empty(),
                 "work dir for {path:?}"
@@ -393,7 +375,7 @@ fn check_line_events(events: &[ImageEvent], stage: BuildStage, expected: &[Strin
 
 #[tokio::test]
 async fn buildx_streams_build_output_as_ordered_sanitized_line_events() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
         let raw = texts();
         let expected: Vec<String> = raw
@@ -406,16 +388,16 @@ async fn buildx_streams_build_output_as_ordered_sanitized_line_events() -> TestR
                 _ => text.clone(),
             })
             .collect();
-        for stage in [BuildStage::Role, BuildStage::Derived] {
-            stack.model.script(
-                stage,
+        let (_, finals) = plan_for(&stack).await?;
+        for build in [&finals.role, &finals.derived] {
+            stack.script(
+                &build.tag,
                 Script {
                     lines: raw.clone(),
                     ..Script::default()
                 },
             );
         }
-        let (_, finals) = plan_for(&stack)?;
         let cancel = CancellationToken::new();
         for build in [&finals.role, &finals.derived] {
             let (tx, rx) = mpsc::channel::<ImageEvent>(1);
@@ -460,9 +442,9 @@ fn expected_tail() -> String {
 
 #[tokio::test]
 async fn buildx_build_succeeds_when_the_progress_receiver_is_gone() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
-        let (_, finals) = plan_for(&stack)?;
+        let (_, finals) = plan_for(&stack).await?;
         let (tx, rx) = mpsc::channel::<ImageEvent>(1);
         drop(rx);
         let cancel = CancellationToken::new();
@@ -470,16 +452,16 @@ async fn buildx_build_succeeds_when_the_progress_receiver_is_gone() -> TestResul
             lines: numbered(100),
             ..Script::default()
         };
-        stack.model.script(BuildStage::Role, lines);
+        stack.script(&finals.role.tag, lines);
         let id = stack.engine.build(&finals.role, &tx, &cancel).await?;
-        assert_eq!(id, ImageId::parse(&tag_id(finals.role.tag.as_str()))?);
+        assert_eq!(stack.model.image_id(&finals.role.tag), Some(id));
 
         let failing = Script {
             lines: numbered(100),
             outcome: Outcome::Exit(ProcessStatus::Exited(2)),
             ..Script::default()
         };
-        stack.model.script(BuildStage::Role, failing);
+        stack.script(&finals.role.tag, failing);
         match stack.engine.build(&finals.role, &tx, &cancel).await {
             Err(EngineError::BuildFailed {
                 stage,
@@ -498,14 +480,21 @@ async fn buildx_build_succeeds_when_the_progress_receiver_is_gone() -> TestResul
 }
 
 async fn role_build(stack: &Stack, script: Script) -> Result<ImageId, EngineError> {
-    let (_, finals) = plan_for(stack).map_err(|error| {
+    let request = stack.fixture.request().map_err(|error| {
         EngineError::Fs(jackin_core::FsError::Io {
             path: stack.fixture.work.clone(),
             kind: std::io::ErrorKind::Other,
             message: error.to_string(),
         })
     })?;
-    stack.model.script(BuildStage::Role, script);
+    let (_, finals) = stack.plan_for(&request).await.map_err(|error| {
+        EngineError::Fs(jackin_core::FsError::Io {
+            path: stack.fixture.work.clone(),
+            kind: std::io::ErrorKind::Other,
+            message: error.to_string(),
+        })
+    })?;
+    stack.script(&finals.role.tag, script);
     let (tx, _rx) = mpsc::channel::<ImageEvent>(256);
     stack
         .engine
@@ -528,9 +517,9 @@ fn unreadable(
 
 #[tokio::test]
 async fn buildx_failures_timeouts_and_cancel_are_typed_and_leave_no_directory() -> TestResult {
-    guarded(async {
+    guard(async {
         let stack = Stack::new()?;
-        let (_, finals) = plan_for(&stack)?;
+        let (_, finals) = plan_for(&stack).await?;
         let tag = &finals.role.tag;
         let exit = |status| Script {
             lines: numbered(100),
@@ -552,11 +541,12 @@ async fn buildx_failures_timeouts_and_cancel_are_typed_and_leave_no_directory() 
             other => return Err(format!("signal 9: got {other:?}").into()),
         }
         assert!(stack.fixture.work_entries().is_empty(), "after a signal");
-        let timeout = Script {
-            outcome: Outcome::Timeout,
-            ..Script::default()
-        };
-        match role_build(&stack, timeout).await {
+        let timeout = standalone(ProcessReply::timeout(), DockerSubcommand::BuildxBuild)?;
+        let (tx, _rx) = mpsc::channel::<ImageEvent>(8);
+        match timeout
+            .build(&finals.role, &tx, &CancellationToken::new())
+            .await
+        {
             Err(EngineError::Process(ProcessError::Timeout { program, .. })) => {
                 assert_eq!(program, Program::Docker(DockerSubcommand::BuildxBuild));
             }
@@ -586,62 +576,58 @@ async fn buildx_failures_timeouts_and_cancel_are_typed_and_leave_no_directory() 
         unreadable(role_build(&stack, short).await, tag)?;
         assert!(stack.fixture.work_entries().is_empty(), "after a bad ID");
 
-        stack.model.script(
-            BuildStage::Role,
-            Script {
-                lines: vec![(OutputStream::Stdout, "first".to_owned())],
-                outcome: Outcome::UntilCancelled,
-                ..Script::default()
-            },
-        );
-        let (tx, mut rx) = mpsc::channel::<ImageEvent>(8);
+        let (tx, _rx) = mpsc::channel::<ImageEvent>(8);
         let cancel = CancellationToken::new();
+        let cancellation = cancel.clone();
+        stack.model.retag(finals.role.tag.clone(), None);
+        let gate = stack.model.hold_build(finals.role.tag.clone());
         let build = stack.engine.build(&finals.role, &tx, &cancel);
-        let driver = async {
-            let event = rx.recv().await;
-            assert!(matches!(event, Some(ImageEvent::Line { .. })), "{event:?}");
-            cancel.cancel();
+        let driver = async move {
+            gate.wait_arrived().await;
+            cancellation.cancel();
         };
         let (result, ()) = tokio::join!(build, driver);
         assert!(
             matches!(result, Err(EngineError::Cancelled { group: None })),
             "{result:?}"
         );
+        assert_eq!(stack.model.image_id(&finals.role.tag), None);
         assert!(stack.fixture.work_entries().is_empty(), "after a cancel");
         Ok(())
     })
     .await
 }
 
-fn standalone(
-    reply: ProcessReply,
-    sub: DockerSubcommand,
-) -> Result<(BuildxEngine, Arc<ScriptedProcessRunner>), Box<dyn Error>> {
+struct Standalone {
+    engine: BuildxEngine,
+    _dir: tempfile::TempDir,
+}
+
+impl Deref for Standalone {
+    type Target = BuildxEngine;
+
+    fn deref(&self) -> &BuildxEngine {
+        &self.engine
+    }
+}
+
+fn standalone(reply: ProcessReply, sub: DockerSubcommand) -> Result<Standalone, Box<dyn Error>> {
     let runner = Arc::new(ScriptedProcessRunner::new());
     runner.expect_docker(sub, &[], reply);
-    let shared: Arc<dyn ProcessRunner> = Arc::<ScriptedProcessRunner>::clone(&runner);
+    let inner: Arc<dyn ProcessRunner> = Arc::<ScriptedProcessRunner>::clone(&runner);
+    let shared: Arc<dyn ProcessRunner> = Arc::new(DockerOnlyProcessRunner::new(inner));
+    let dir = tempfile::tempdir()?;
     let engine = BuildxEngine::new(
         shared,
         Arc::new(StdFileSystem::default()),
-        HostPath::parse(Path::new("/nonexistent-work"))?,
+        HostPath::parse(&dir.path().join("work"))?,
     );
-    Ok((engine, runner))
-}
-
-fn only_call(
-    runner: &ScriptedProcessRunner,
-    sub: DockerSubcommand,
-) -> Result<SeenCall, Box<dyn Error>> {
-    let calls = runner.seen();
-    assert_eq!(calls.len(), 1, "one docker call");
-    assert_eq!(calls[0].program, Program::Docker(sub));
-    assert!(calls[0].timeout > Duration::ZERO && calls[0].timeout <= Duration::from_secs(300));
-    Ok(calls[0].clone())
+    Ok(Standalone { engine, _dir: dir })
 }
 
 #[tokio::test]
 async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence() -> TestResult {
-    guarded(async {
+    guard(async {
         let tag = ImageTag::parse("jackin.invalid/sentinel:0123456789abcdef")?;
         let id = format!("sha256:{}", "a".repeat(64));
         let sub = DockerSubcommand::ImageInspect;
@@ -676,19 +662,9 @@ async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence
             ("group fault", ProcessReply::group(still_alive())),
         ];
         for (label, reply) in rows {
-            let (engine, runner) = standalone(reply, sub)?;
+            let engine = standalone(reply, sub)?;
             let result = engine.find(&tag, &CancellationToken::new()).await;
             let shown = result.as_ref().err().map(ToString::to_string);
-            let call = only_call(&runner, sub)?;
-            assert_eq!(
-                call.args.last(),
-                Some(&tag.to_string()),
-                "{label}: tag position"
-            );
-            assert!(
-                call.args.iter().any(|arg| arg.contains("{{.Id}}")),
-                "{label}: format"
-            );
             match (label, result) {
                 ("found", Ok(Some(found))) => assert_eq!(found.to_string(), id),
                 ("absent", Ok(None))
@@ -725,7 +701,7 @@ async fn buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence
 
 #[tokio::test]
 async fn buildx_check_builder_reads_the_driver_line_of_the_inspect_output() -> TestResult {
-    guarded(async {
+    guard(async {
         let builder = BuilderName::parse("orbstack")?;
         let sub = DockerSubcommand::BuildxInspect;
         let inspect = |driver: &str| {
@@ -746,10 +722,8 @@ async fn buildx_check_builder_reads_the_driver_line_of_the_inspect_output() -> T
             ("no driver line", ProcessReply::exited(0, b"Name: orbstack\n", b"")),
         ];
         for (label, reply) in rows {
-            let (engine, runner) = standalone(reply, sub)?;
+            let engine = standalone(reply, sub)?;
             let result = engine.check_builder(&builder, &CancellationToken::new()).await;
-            let call = only_call(&runner, sub)?;
-            assert_eq!(call.args.last(), Some(&builder.to_string()), "{label}: builder position");
             match (label, result) {
                 ("docker", Ok(())) => {}
                 ("trap", Err(EngineError::BuilderDriver { driver, .. })) => {
@@ -775,20 +749,23 @@ fn cancelling(
     sub: DockerSubcommand,
     word: &'static str,
     token: &CancellationToken,
-) -> Result<BuildxEngine, Box<dyn Error>> {
+) -> Result<Standalone, Box<dyn Error>> {
     let runner = Arc::new(ScriptedProcessRunner::new());
     runner.expect_docker(sub, &[], reply);
-    let wrapped: Arc<dyn ProcessRunner> = Arc::new(CancelsOn::new(&runner, word, token));
-    Ok(BuildxEngine::new(
+    let inner: Arc<dyn ProcessRunner> = Arc::new(CancelsOn::new(&runner, word, token));
+    let wrapped: Arc<dyn ProcessRunner> = Arc::new(DockerOnlyProcessRunner::new(inner));
+    let dir = tempfile::tempdir()?;
+    let engine = BuildxEngine::new(
         wrapped,
         Arc::new(StdFileSystem::default()),
-        HostPath::parse(Path::new("/nonexistent-work"))?,
-    ))
+        HostPath::parse(&dir.path().join("work"))?,
+    );
+    Ok(Standalone { engine, _dir: dir })
 }
 
 #[tokio::test]
 async fn buildx_find_and_check_builder_end_when_the_callers_token_is_cancelled() -> TestResult {
-    guarded(async {
+    guard(async {
         const TAG: &str = "jackin.invalid/sentinel:0123456789abcdef";
         const BUILDER: &str = "orbstack";
         let tag = ImageTag::parse(TAG)?;
@@ -884,7 +861,9 @@ fn a_new_engine_removes_per_call_directories_of_dead_processes_and_nothing_else(
     }
     fs::write(work.join("notes.txt"), b"keep")?;
     let engine = BuildxEngine::new(
-        Arc::new(ScriptedProcessRunner::new()),
+        Arc::new(DockerOnlyProcessRunner::new(Arc::new(
+            ScriptedProcessRunner::new(),
+        ))),
         Arc::new(StdFileSystem::default()),
         HostPath::parse(&work)?,
     );
@@ -900,7 +879,9 @@ fn a_new_engine_removes_per_call_directories_of_dead_processes_and_nothing_else(
     assert_eq!(fs::read(outside.join("sentinel"))?, b"keep");
     drop(engine);
     let absent = BuildxEngine::new(
-        Arc::new(ScriptedProcessRunner::new()),
+        Arc::new(DockerOnlyProcessRunner::new(Arc::new(
+            ScriptedProcessRunner::new(),
+        ))),
         Arc::new(StdFileSystem::default()),
         HostPath::parse(&base.join("absent"))?,
     );

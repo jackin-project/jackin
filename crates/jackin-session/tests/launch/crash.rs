@@ -7,10 +7,10 @@ use jackin_openshell::GatewayOp;
 use jackin_session::{LaunchError, LaunchStep};
 
 use super::support::{
-    TestResult, converged, failure, guard, has_file, launch_id, launch_rig, path, ready,
-    under_project, unreachable,
+    TestResult, actual_final_builds, converged, failure, guard, has_file, launch_id, launch_rig,
+    path, ready, under_project, unreachable,
 };
-use jackin_testkit::{Fault, Trigger};
+use jackin_testkit::{DockerBuildReply, Fault, Trigger};
 
 fn setup() -> SandboxPath {
     sandbox_layout::hook_path(HookKind::Setup)
@@ -24,7 +24,11 @@ fn preflight() -> SandboxPath {
 async fn a_failure_before_the_sandbox_exists_builds_and_creates_nothing_twice() -> TestResult {
     guard(async {
         let rig = launch_rig().await?;
-        rig.world.engine.fail_next(BuildStage::Derived);
+        let (_, builds, _) = actual_final_builds(&rig, 1).await?;
+        rig.world.docker.script_build(
+            builds.derived.tag.clone(),
+            DockerBuildReply::failed(b"injected external Buildx failure"),
+        );
         let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Image);
         assert!(matches!(
@@ -37,38 +41,32 @@ async fn a_failure_before_the_sandbox_exists_builds_and_creates_nothing_twice() 
         assert_eq!(failed.sandbox, None);
         assert!(rig.gateway().sandboxes().is_empty());
         assert!(rig.gateway().providers().is_empty());
-        assert_eq!(rig.stages(), [BuildStage::Construct, BuildStage::Role]);
+        assert_eq!(rig.world.docker.image_id(&builds.derived.tag), None);
         ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         converged(&rig, &handle, 1)?;
-        let stages = rig.stages();
-        assert_eq!(
-            stages
-                .iter()
-                .filter(|s| **s == BuildStage::Construct)
-                .count(),
-            1
-        );
-        assert_eq!(stages.last(), Some(&BuildStage::Derived));
+        assert!(rig.world.docker.image_id(&builds.derived.tag).is_some());
 
         for (op, step, providers) in [
             (GatewayOp::Provider, LaunchStep::Provider, 0),
             (GatewayOp::Create, LaunchStep::Sandbox, 1),
         ] {
             let rig = launch_rig().await?;
+            let (_, builds, _) = actual_final_builds(&rig, 1).await?;
             rig.gateway().inject(Fault::FailAt {
                 trigger: Trigger::Op(op),
                 error: unreachable(),
             });
             let failed = failure(rig.launch_observed(1).await?)?;
+            let images = rig.world.docker.images();
             assert_eq!(failed.step, step);
             assert_eq!(failed.sandbox, None);
             assert!(rig.gateway().sandboxes().is_empty());
             assert_eq!(rig.gateway().providers().len(), providers);
-            assert_eq!(rig.stages().len(), 3);
+            assert!(rig.world.docker.image_id(&builds.derived.tag).is_some());
             ready(rig.launch_observed(1).await?)?;
             converged(&rig, &rig.handle(1).await?, 1)?;
-            assert_eq!(rig.stages().len(), 3);
+            assert_eq!(rig.world.docker.images(), images);
         }
         Ok(())
     })

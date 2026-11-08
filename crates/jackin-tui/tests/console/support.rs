@@ -56,7 +56,11 @@ impl Lab {
     }
 
     pub(crate) async fn edit(&self, edits: Vec<ConfigEdit>) -> TestResult {
-        self.rig.world.config.edit(edits).await?;
+        self.rig
+            .world
+            .config
+            .edit(edits, &self.rig.world.cancel)
+            .await?;
         Ok(())
     }
 

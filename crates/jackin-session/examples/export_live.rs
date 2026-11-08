@@ -14,17 +14,18 @@ use jackin_core::{
     ProcessSpec, ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName, SandboxName,
     SandboxPath, SandboxSlug, StdFileSystem, WorkspaceName,
 };
+use jackin_image::BuildxEngine;
 use jackin_openshell::contract::{ContractFixture, ContractGroup, SHELL_END_TIMEOUT, run};
 use jackin_openshell::{
-    ClosedPolicy, Gateway, GrpcGateway, GrpcGatewayConfig, MainProcess, ProgramRun, ProgramStdin,
-    SandboxCreate, SandboxQuery, resolve_gateway,
+    ClosedPolicy, Gateway, GatewayContractSandboxCreate, GrpcGateway, GrpcGatewayConfig,
+    MainProcess, ProgramRun, ProgramStdin, SandboxQuery, resolve_gateway,
 };
 use jackin_session::{
     DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
     DEFAULT_EXPORT_TOTAL_BYTES, HostPorts, LaunchLimits, PurgeMode, Session, SessionDeps,
     SystemClock, TokioProcessRunner,
 };
-use jackin_testkit::FakeEngine;
+use jackin_testkit::DockerBoundary;
 use tokio_util::sync::CancellationToken;
 
 const POLICY: &str = "version: 1
@@ -150,6 +151,7 @@ impl HostState {
 struct Live {
     gateway: Arc<GrpcGateway>,
     session: Session,
+    cancel: CancellationToken,
     runner: Arc<TokioProcessRunner>,
     project: ProjectRoot,
     config: Config,
@@ -185,6 +187,7 @@ async fn host_git(
 impl Live {
     async fn connect(options: Options) -> Result<Live, Box<dyn Error>> {
         let runner = Arc::new(TokioProcessRunner);
+        let cancel = CancellationToken::new();
         let port: Arc<dyn ProcessRunner> = Arc::<TokioProcessRunner>::clone(&runner);
         let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
         let resolved = resolve_gateway(
@@ -192,7 +195,7 @@ impl Live {
             fs.as_ref(),
             &HostPath::parse(&options.openshell_home)?,
             &GatewayName::parse(&options.gateway)?,
-            &CancellationToken::new(),
+            &cancel,
         )
         .await?;
         let gateway = Arc::new(
@@ -202,15 +205,21 @@ impl Live {
                 runner: Arc::clone(&port),
                 transfer_timeout: Duration::from_mins(30),
                 call_timeout: Duration::from_secs(120),
-                cancel: CancellationToken::new(),
+                cancel: cancel.clone(),
             })
             .await?,
         );
         std::fs::create_dir_all(&options.work_dir)?;
         let work = options.work_dir.canonicalize()?;
+        let docker: Arc<dyn ProcessRunner> = Arc::new(DockerBoundary::rejecting_builds());
+        let engine = Arc::new(BuildxEngine::new(
+            docker,
+            Arc::clone(&fs),
+            HostPath::parse(&work.join("image"))?,
+        ));
         let session = Session::new(SessionDeps {
             gateway: Arc::<GrpcGateway>::clone(&gateway),
-            engine: Arc::new(FakeEngine::new()),
+            engine,
             host: HostPorts {
                 clock: Arc::new(SystemClock),
                 fs: Arc::clone(&fs),
@@ -244,6 +253,7 @@ impl Live {
         Ok(Live {
             gateway,
             session,
+            cancel,
             runner,
             project,
             config,
@@ -253,18 +263,20 @@ impl Live {
 
     async fn sandbox(&self, launch: &LaunchId) -> Result<SandboxName, Box<dyn Error>> {
         let name = SandboxName::new(&SandboxSlug::parse("p52")?, &NameSuffix::for_launch(launch));
+        let agents = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("p52")?,
+        )?)?;
         let planned = PlannedLabels {
             workspace: WorkspaceName::parse(WORKSPACE_LABEL)?,
             role: RoleName::parse("p52")?,
-            agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-                Agent::Codex,
-                AccountName::parse("p52")?,
-            )),
+            agents_hash: agents.hash(),
+            lead_agent: Agent::Codex,
             policy: PolicyLabel::of("policy"),
             launch: launch.clone(),
         };
         let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64)))?;
-        let create = SandboxCreate::new(
+        let create = GatewayContractSandboxCreate::new(
             name.clone(),
             ImageTag::parse(&self.options.image)?,
             planned.complete(&image_id, jackin_core::DockerLabel::Off),
@@ -275,11 +287,11 @@ impl Live {
                 args: vec!["-c".to_owned(), "sleep 3600".to_owned()],
             },
         );
-        self.gateway.create_sandbox(&create).await?;
+        self.gateway.create_contract_sandbox(&create).await?;
         for _ in 0..READY_ATTEMPTS {
             let found = self
                 .gateway
-                .find_sandboxes(&SandboxQuery::Name(name.clone()))
+                .find_sandboxes(&SandboxQuery::Name(name.clone()), &self.cancel)
                 .await?;
             if found.first().is_some_and(|view| view.phase == Phase::Ready) {
                 return Ok(name);
@@ -303,7 +315,7 @@ impl Live {
                     touch_on_success: None,
                     timeout: EXEC_TIMEOUT,
                 },
-                &CancellationToken::new(),
+                &self.cancel,
             )
             .await?;
         say(&format!(
@@ -375,11 +387,13 @@ impl Live {
         let launch = LaunchId::generate()?;
         let sandbox = self.sandbox(&launch).await?;
         say(&format!("sandbox {sandbox} is Ready"))?;
-        let cancel = CancellationToken::new();
         self.session
-            .upload_project(&self.project, &sandbox, &launch, &cancel)
+            .upload_project(&self.project, &sandbox, &launch, &self.cancel)
             .await?;
-        let state = self.session.work_state(&self.config, &sandbox).await;
+        let state = self
+            .session
+            .work_state(&self.config, &sandbox, &self.cancel)
+            .await;
         say(&format!(
             "work_state after the upload (a fresh sandbox): {state:?}"
         ))?;
@@ -387,12 +401,15 @@ impl Live {
             "echo {SYNTHETIC_MARK}-main >> driver-note.txt && git add driver-note.txt && git -c user.name=driver -c user.email=driver@example.invalid commit -q -m 'driver main' && git checkout -q -b driver/feature && echo {SYNTHETIC_MARK}-feature >> driver-feature.txt && git add driver-feature.txt && git -c user.name=driver -c user.email=driver@example.invalid commit -q -m 'driver feature' && git checkout -q -"
         );
         self.sandbox_git(&sandbox, &work).await?;
-        let state = self.session.work_state(&self.config, &sandbox).await;
+        let state = self
+            .session
+            .work_state(&self.config, &sandbox, &self.cancel)
+            .await;
         say(&format!("work_state after the sandbox commits: {state:?}"))?;
         let before = self.host_state().await?;
         let report = self
             .session
-            .export(&self.config, &sandbox, cancel.clone())
+            .export(&self.config, &sandbox, self.cancel.clone())
             .await;
         say(&format!("export: {report:?}"))?;
         let after = self.host_state().await?;
@@ -407,7 +424,10 @@ impl Live {
             "host refs/heads/jackin/*:\n{}",
             self.exported_refs().await?.trim_end()
         ))?;
-        let state = self.session.work_state(&self.config, &sandbox).await;
+        let state = self
+            .session
+            .work_state(&self.config, &sandbox, &self.cancel)
+            .await;
         say(&format!("work_state after the export: {state:?}"))?;
         self.sandbox_git(
             &sandbox,
@@ -416,12 +436,12 @@ impl Live {
         .await?;
         let refused = self
             .session
-            .purge(&self.config, &sandbox, PurgeMode::Guarded)
+            .purge(&self.config, &sandbox, PurgeMode::Guarded, &self.cancel)
             .await;
         say(&format!("purge (guarded): {refused:?}"))?;
         let still = self
             .gateway
-            .find_sandboxes(&SandboxQuery::Name(sandbox.clone()))
+            .find_sandboxes(&SandboxQuery::Name(sandbox.clone()), &self.cancel)
             .await?;
         say(&format!(
             "sandbox still present after the refused purge: {}",
@@ -429,12 +449,12 @@ impl Live {
         ))?;
         let forced = self
             .session
-            .purge(&self.config, &sandbox, PurgeMode::Forced)
+            .purge(&self.config, &sandbox, PurgeMode::Forced, &self.cancel)
             .await;
         say(&format!("purge (forced): {forced:?}"))?;
         let gone = self
             .gateway
-            .find_sandboxes(&SandboxQuery::Name(sandbox.clone()))
+            .find_sandboxes(&SandboxQuery::Name(sandbox.clone()), &self.cancel)
             .await?;
         say(&format!(
             "sandbox gone after the forced purge: {}",
@@ -442,7 +462,7 @@ impl Live {
         ))?;
         let again = self
             .session
-            .purge(&self.config, &sandbox, PurgeMode::Guarded)
+            .purge(&self.config, &sandbox, PurgeMode::Guarded, &self.cancel)
             .await;
         say(&format!("purge (repeated): {again:?}"))?;
         if self.options.cleanup_refs {

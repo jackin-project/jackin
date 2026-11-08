@@ -29,7 +29,9 @@ async fn request(fake: &FakeGateway, name: &jackin_core::SandboxName, text: &str
         mode: FileMode(0o600),
         content: SecretBytes::new(text.as_bytes().to_vec()),
     };
-    Ok(fake.write_file(name, &file).await?)
+    Ok(fake
+        .write_file(name, &file, &tokio_util::sync::CancellationToken::new())
+        .await?)
 }
 
 async fn attempt_request(
@@ -155,8 +157,18 @@ async fn stop_and_start_reset_the_supervisor_to_waiting_and_keep_project_files()
         handle.exit_codex(0);
         write(&fake, &name, "/sandbox/project/f", "work").await?;
         assert_eq!(state(&fake, &name).await?, Some(exited(2, 0)?));
-        fake.set_power(&name, PowerAction::Stop).await?;
-        fake.set_power(&name, PowerAction::Start).await?;
+        fake.set_power(
+            &name,
+            PowerAction::Stop,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
+        fake.set_power(
+            &name,
+            PowerAction::Start,
+            &tokio_util::sync::CancellationToken::new(),
+        )
+        .await?;
         assert_eq!(
             observe(&fake, &name).await?.phase,
             jackin_core::Phase::Ready

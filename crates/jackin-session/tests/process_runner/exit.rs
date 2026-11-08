@@ -10,11 +10,11 @@ use jackin_core::{
 use jackin_session::TokioProcessRunner;
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{Scratch, TestResult, guarded, text};
+use crate::support::{Scratch, TestResult, guard, text};
 
 #[tokio::test]
 async fn exit_and_signal_statuses_are_reported_as_what_happened() -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let rows = [
             ("exit 0", ProcessStatus::Exited(0)),
@@ -76,7 +76,7 @@ fn assert_spawn_failure(label: &str, error: &ProcessError, program: Program) -> 
 #[tokio::test]
 async fn a_program_or_directory_that_cannot_start_gives_spawn_without_echoing_secrets() -> TestResult
 {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let empty = scratch.root().join("empty-path");
         std::fs::create_dir(&empty)?;

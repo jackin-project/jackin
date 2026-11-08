@@ -5,8 +5,9 @@ use openshell_sdk::raw::proto::{
     ConfigureProviderRefreshRequest, ConfigureProviderRefreshResponse, CreateProviderRequest,
     DeleteProviderProfileRequest, DeleteProviderProfileResponse, DeleteProviderRefreshRequest,
     DeleteProviderRefreshResponse, DeleteProviderRequest, DeleteProviderResponse, DeletionOutcome,
-    GetProviderProfileRequest, GetProviderRequest, ImportProviderProfilesRequest,
-    ImportProviderProfilesResponse, ProviderProfileDiagnostic, ProviderProfileResponse,
+    GetProviderProfileRequest, GetProviderRefreshStatusRequest, GetProviderRefreshStatusResponse,
+    GetProviderRequest, ImportProviderProfilesRequest, ImportProviderProfilesResponse,
+    ProviderCredentialRefreshStatus, ProviderProfileDiagnostic, ProviderProfileResponse,
     ProviderResponse, UpdateProviderProfilesRequest, UpdateProviderProfilesResponse,
     UpdateProviderRequest,
 };
@@ -167,6 +168,9 @@ impl Fake {
             return Err(Status::already_exists("provider already exists"));
         }
         state.providers.insert(key, provider.clone());
+        if let Some(error) = state.create_provider_response_error.take() {
+            return Err(error);
+        }
         Ok(Response::new(ProviderResponse {
             provider: Some(redacted(provider)),
             ..ProviderResponse::default()
@@ -296,6 +300,33 @@ impl Fake {
                 )
             }
         }
+    }
+
+    pub(crate) async fn get_provider_refresh_status_impl(
+        &self,
+        request: Request<GetProviderRefreshStatusRequest>,
+    ) -> Result<Response<GetProviderRefreshStatusResponse>, Status> {
+        self.enter("get_provider_refresh_status").await?;
+        let request = request.into_inner();
+        let workspace = scope_name(request.workspace_scope.as_ref())?;
+        let state = self.shared.lock();
+        let credentials = state
+            .refresh
+            .keys()
+            .filter(|(scope, provider, key)| {
+                *scope == workspace
+                    && *provider == request.provider
+                    && (request.credential_key.is_empty() || *key == request.credential_key)
+            })
+            .map(|(_, provider, key)| ProviderCredentialRefreshStatus {
+                provider: provider.clone(),
+                credential_key: key.clone(),
+                ..ProviderCredentialRefreshStatus::default()
+            })
+            .collect();
+        Ok(Response::new(GetProviderRefreshStatusResponse {
+            credentials,
+        }))
     }
 
     pub(crate) async fn configure_provider_refresh_impl(

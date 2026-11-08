@@ -3,12 +3,12 @@
 
 use jackin_core::{FileMode, FileSystem};
 use jackin_session::{FolderFacts, OpFault, Source, SourceFault, SourceFound};
+use jackin_testkit::guard;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCOUNT_ID, Bench, CANARY, TestResult, chatgpt_login, concealed, exited, failed, guard, host,
-    item,
+    ACCOUNT_ID, Bench, CANARY, TestResult, chatgpt_login, concealed, exited, failed, host, item,
 };
 
 fn token() -> CancellationToken {
@@ -274,6 +274,62 @@ async fn a_reference_is_checked_against_the_item_op_reads() -> TestResult {
         let calls = bench.op_calls();
         assert!(calls.iter().all(|c| c.args[..2] == ["item", "get"]));
         assert!(calls.iter().all(|c| c.args.contains(&"acct-1".to_owned())));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_reference_resolves_field_and_section_ids_or_labels() -> TestResult {
+    guard(async {
+        let fields = json!([
+            concealed("token", "api-key", CANARY),
+            {"id": "prod-key", "label": "shared", "type": "CONCEALED", "value": CANARY, "section": {"id": "production-sec", "label": "Production"}},
+            {"id": "staging-key", "label": "shared", "type": "CONCEALED", "value": CANARY, "section": {"id": "staging-sec", "label": "Staging"}},
+            concealed("duplicate-a", "duplicate", CANARY),
+            concealed("duplicate-b", "Duplicate", CANARY),
+        ]);
+        let bench = Bench::new();
+        for _ in 0..10 {
+            bench.op(&["item", "get"], exited(&item(&fields)));
+        }
+        let desk = bench.desk();
+        let cancel = token();
+        let check = |reference: &'static str| {
+            desk.check(
+                Source::OnePassword {
+                    account: "acct-1",
+                    reference,
+                },
+                &cancel,
+            )
+        };
+        for reference in [
+            "op://vault-1/item-1/API-KEY",
+            "op://vault-1/item-1/TOKEN",
+            "op://vault-1/item-1/production/SHARED",
+            "op://vault-1/item-1/PRODUCTION-SEC/PROD-KEY",
+            "op://vault-1/item-1/Production/PROD-KEY",
+            "op://vault-1/item-1/STAGING/SHARED",
+        ] {
+            assert_eq!(check(reference).await?, SourceFound::OnePassword, "{reference}");
+        }
+        assert!(matches!(
+            check("op://vault-1/item-1/Missing/shared").await,
+            Err(SourceFault::Op(OpFault::MissingField { .. }))
+        ));
+        assert!(matches!(
+            check("op://vault-1/item-1/missing").await,
+            Err(SourceFault::Op(OpFault::MissingField { .. }))
+        ));
+        assert!(matches!(
+            check("op://vault-1/item-1/shared").await,
+            Err(SourceFault::Op(OpFault::MissingField { .. }))
+        ));
+        assert!(matches!(
+            check("op://vault-1/item-1/duplicate").await,
+            Err(SourceFault::Op(OpFault::AmbiguousField { .. }))
+        ));
         Ok(())
     })
     .await

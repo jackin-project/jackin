@@ -13,9 +13,9 @@ use jackin_console::domain::workspace::{
 };
 use jackin_console::world::GlobalConfig;
 use jackin_core::{
-    Account as CoreAccount, AccountName, AllowedRoles, ChatgptAccountId, Config, ConfigEdit,
-    ConfigError, CredentialSource, EnvName, EnvScope, EnvValueError, FsError, HostPath, IdError,
-    OpAccountId, OpReference, PathError, PlainEnvValue, ReservedEnvName, RoleName, RoleSet,
+    Account as CoreAccount, AccountName, AllowedRoles, ChatgptAccountId, ConfigEdit, ConfigError,
+    CredentialSource, EnvName, EnvScope, EnvValueError, FsError, HostPath, IdError, OpAccountId,
+    OpReference, PathError, PlainEnvValue, ReservedEnvName, RoleName, RoleSet,
     Workspace as CoreWorkspace, WorkspaceName,
 };
 use thiserror::Error;
@@ -245,7 +245,6 @@ fn fixed(base: &Workspace, payload: &Workspace) -> Result<(), PersistError> {
 }
 
 fn role_edits(
-    saved_default: bool,
     target: &WorkspaceName,
     base: &Workspace,
     payload: &Workspace,
@@ -268,9 +267,7 @@ fn role_edits(
         .transpose()?;
     let mut edits = Vec::new();
     if roles_changed && default_changed {
-        if saved_default {
-            edits.push(default(None));
-        }
+        edits.push(default(None));
         edits.push(ConfigEdit::SetWorkspaceRoles {
             workspace: target.clone(),
             roles: core_roles(&payload.roles.allowed)?,
@@ -289,11 +286,7 @@ fn role_edits(
     Ok(edits)
 }
 
-fn updated(
-    config: &Config,
-    base: &Workspace,
-    payload: &Workspace,
-) -> Result<Vec<ConfigEdit>, PersistError> {
+fn updated(base: &Workspace, payload: &Workspace) -> Result<Vec<ConfigEdit>, PersistError> {
     fixed(base, payload)?;
     let old = WorkspaceName::parse(&base.name)?;
     let target = WorkspaceName::parse(&payload.name)?;
@@ -310,10 +303,7 @@ fn updated(
             docker: payload.docker,
         });
     }
-    let saved_default = config
-        .workspace(&old)
-        .is_some_and(|saved| saved.default_role.is_some());
-    edits.extend(role_edits(saved_default, &target, base, payload)?);
+    edits.extend(role_edits(&target, base, payload)?);
     edits.extend(env_edits(
         &EnvScope::Workspace(target.clone()),
         &base.env,
@@ -342,14 +332,13 @@ fn updated(
 }
 
 pub fn workspace(
-    config: &Config,
     base: Option<&Workspace>,
     payload: &Workspace,
     resolved: &Resolved,
 ) -> Result<Vec<ConfigEdit>, PersistError> {
     match base {
         None => created(&payload.name, payload, resolved),
-        Some(base) => updated(config, base, payload),
+        Some(base) => updated(base, payload),
     }
 }
 

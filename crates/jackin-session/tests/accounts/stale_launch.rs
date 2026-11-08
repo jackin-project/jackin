@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jackin_core::{
-    AccountName, Config, ConfigEdit, CredentialSource, EnvName, GatewayName, ProviderName,
+    AccountName, ChatgptAccountId, Config, ConfigEdit, CredentialSource, EnvName, GatewayName,
+    ProviderName,
 };
 use jackin_openshell::GatewayOp;
 use jackin_session::{
@@ -17,6 +18,8 @@ use jackin_testkit::{
 };
 use tokio_util::sync::CancellationToken;
 
+use super::support::{ACCOUNT_ID, Home, login_json};
+
 fn work() -> Result<AccountName, FixtureError> {
     Ok(AccountName::parse("work")?)
 }
@@ -24,7 +27,7 @@ fn work() -> Result<AccountName, FixtureError> {
 async fn edit(rig: &Rig, edit: ConfigEdit) -> Result<Config, AccountEditError> {
     let cancel = CancellationToken::new();
     let plan = plan_account_edits(&rig.world.desk(), vec![edit], &cancel).await?;
-    plan.apply(&Gateways::single(rig.world.session.clone()))
+    plan.apply(&Gateways::single(rig.world.session.clone()), &cancel)
         .await
 }
 
@@ -88,14 +91,11 @@ async fn a_launch_waiting_on_the_lock_of_a_running_account_rm_fails_and_creates_
         let session = rig.world.session.clone();
         let account = work()?;
         let removal = tokio::spawn(async move {
-            plan_account_edits(
-                &desk,
-                vec![ConfigEdit::RemoveAccount(account)],
-                &CancellationToken::new(),
-            )
-            .await?
-            .apply(&Gateways::single(session))
-            .await
+            let cancel = CancellationToken::new();
+            plan_account_edits(&desk, vec![ConfigEdit::RemoveAccount(account)], &cancel)
+                .await?
+                .apply(&Gateways::single(session), &cancel)
+                .await
         });
         assert!(
             rig.gateway().until_held(&trigger).await,
@@ -154,6 +154,38 @@ async fn a_launch_planned_before_the_login_became_a_key_fails_and_creates_no_pro
 }
 
 #[tokio::test]
+async fn a_launch_planned_before_the_account_changed_fails_even_when_its_provider_is_already_there()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let plan = rig.plan(2)?;
+        let other = Home::new(&login_json()).await?;
+        edit(
+            &rig,
+            ConfigEdit::SetAccountCredential {
+                account: work()?,
+                credential: CredentialSource::CodexLogin {
+                    home: other.path.clone(),
+                    chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+                },
+            },
+        )
+        .await?;
+
+        let refused = refusal(&rig, launch(&rig, plan).await)?;
+
+        assert!(
+            matches!(&refused, AccountError::Changed { account } if account.as_str() == "work"),
+            "{refused:?}"
+        );
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_launch_planned_before_gateway_rm_fails_and_creates_no_provider() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
@@ -162,7 +194,7 @@ async fn a_launch_planned_before_gateway_rm_fails_and_creates_no_provider() -> T
             .config
             .edit(vec![ConfigEdit::RemoveGateway(GatewayName::parse(
                 "fake-gateway",
-            )?)])
+            )?)], &CancellationToken::new())
             .await?;
 
         let refused = refusal(&rig, launch(&rig, plan).await)?;
@@ -195,7 +227,9 @@ async fn a_launch_waiting_on_the_lock_of_a_running_gateway_rm_fails_and_creates_
             let cancel = CancellationToken::new();
             match plan_gateway_removal(&desk, &name, &cancel).await? {
                 GatewayRemoval::Online(plan) => plan.apply(&connector, &cancel).await,
-                GatewayRemoval::Offline(plan) => Ok::<_, AccountEditError>(plan.apply().await?),
+                GatewayRemoval::Offline(plan) => {
+                    Ok::<_, AccountEditError>(plan.apply(&cancel).await?)
+                }
             }
         });
         assert!(
@@ -238,7 +272,10 @@ async fn an_edit_that_leaves_the_account_and_the_gateway_alone_does_not_stop_a_p
         let plan = rig.plan(1)?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetDefaultAccount { account: work()? }])
+            .edit(
+                vec![ConfigEdit::SetDefaultAccount { account: work()? }],
+                &CancellationToken::new(),
+            )
             .await?;
 
         let outcome = launch(&rig, plan).await;

@@ -3,15 +3,16 @@
 
 use std::time::Duration;
 
-use jackin_core::{Agent, FileMode, ImageId, sandbox_layout};
-use jackin_image::{BuildStage, Rebuild, ensure_image};
+use jackin_core::{Agent, FileMode, sandbox_layout};
+use jackin_image::{Rebuild, ensure_image};
 use jackin_openshell::Gateway;
-use jackin_testkit::{BuildEffect, EngineMoment, SupervisorModel};
+use jackin_testkit::SupervisorModel;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    TestResult, converged, guard, has_file, launch_rig, path, ready, running, write,
+    TestResult, actual_final_builds, converged, guard, has_file, launch_rig, path, ready, running,
+    script_construct_rebuild, write,
 };
 
 #[tokio::test]
@@ -110,9 +111,7 @@ async fn a_sandbox_deleted_after_a_rebuild_moved_the_tag_is_recreated_from_the_i
         rig.gateway()
             .set_supervisor(SupervisorModel::NeverWritesState);
         let name = rig.sandbox_name(1)?;
-        let mut request = rig.plan(1)?.image_request().clone();
-        request.rebuild = Rebuild::Yes;
-        let other = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
+        let (plan, builds, _) = actual_final_builds(&rig, 1).await?;
         let peer = async {
             while !rig
                 .world
@@ -122,39 +121,100 @@ async fn a_sandbox_deleted_after_a_rebuild_moved_the_tag_is_recreated_from_the_i
             {
                 tokio::task::yield_now().await;
             }
-            rig.world.engine.at(EngineMoment::BuildFinished {
-                stage: BuildStage::Derived,
-                effect: BuildEffect::NewId(other.clone()),
-            });
+            let original = rig
+                .world
+                .docker
+                .image_id(&builds.derived.tag)
+                .ok_or("the initial final image is missing")?;
+            let old = rig
+                .gateway()
+                .sandbox(&name)
+                .ok_or("the original sandbox is missing")?;
+            let original_snapshot = old
+                .image_id()
+                .ok_or("the original sandbox has no image snapshot")?;
+            let original_ref = jackin_core::LocalImageRef::for_image(&original_snapshot);
+            let original_label = old
+                .labels()
+                .iter()
+                .find(|(name, _)| name.to_string() == "jackin.dev/image")
+                .map(|(_, value)| value.to_string())
+                .ok_or("the original sandbox has no image label")?;
+            assert_eq!(original_snapshot, original);
+            assert_eq!(original_label, original_snapshot.label_value().to_string());
+            rig.repo
+                .file("while-launch-waits.txt", b"external rebuild\n")
+                .await?;
+            let (construct_tag, construct_id) = script_construct_rebuild(&rig, 1, 'e')?;
+            let mut request = rig.plan(1)?.image_request().clone();
+            request.rebuild = Rebuild::Yes;
             let (progress, _feed) = mpsc::channel(256);
-            ensure_image(
+            let rebuilt = ensure_image(
                 &*rig.world.engine,
                 &request,
                 &progress,
                 &CancellationToken::new(),
             )
             .await?;
+            assert_ne!(rebuilt.id, original);
+            assert_eq!(
+                rig.world.docker.local_image_id(&original_ref),
+                Some(original_snapshot.clone())
+            );
+            assert_eq!(
+                rig.world.docker.local_image_id(&rebuilt.local_ref),
+                Some(rebuilt.id.clone())
+            );
+            assert_eq!(rebuilt.tag, plan.final_tag(&construct_id));
+            assert_eq!(
+                rig.world.docker.image_id(&construct_tag),
+                Some(construct_id)
+            );
+            assert_eq!(
+                rig.world.docker.image_id(&rebuilt.tag),
+                Some(rebuilt.id.clone())
+            );
+            assert_eq!(
+                rig.world.docker.image_id(&builds.derived.tag),
+                Some(original.clone())
+            );
+            rig.world
+                .docker
+                .retag(builds.derived.tag.clone(), Some(rebuilt.id.clone()));
+            assert_eq!(
+                rig.world.docker.image_id(&builds.derived.tag),
+                Some(rebuilt.id.clone())
+            );
             rig.gateway().set_supervisor(SupervisorModel::Cooperative);
             rig.gateway().delete_sandbox(&name).await?;
-            Ok::<_, Box<dyn std::error::Error>>(())
+            Ok::<_, Box<dyn std::error::Error>>((original_snapshot, original_label, rebuilt.id))
         };
-        let (outcome, rebuilt) = tokio::join!(rig.launch_observed(1), peer);
-        rebuilt?;
+        let (outcome, result) = tokio::join!(rig.launch_observed(1), peer);
+        let (original_snapshot, original_label, rebuilt) = result?;
         ready(outcome?)?;
 
-        let final_tag = rig.final_image()?.tag;
-        assert_eq!(rig.world.engine.images().get(&final_tag), Some(&other));
+        assert_eq!(
+            rig.world.docker.image_id(&builds.derived.tag),
+            Some(rebuilt.clone())
+        );
         let handle = rig.handle(1).await?;
         let ran = handle.image_id().ok_or("the sandbox has no image")?;
+        assert_eq!(ran, original_snapshot);
+        assert_eq!(
+            rig.world
+                .docker
+                .local_image_id(&jackin_core::LocalImageRef::for_image(&original_snapshot)),
+            Some(original_snapshot.clone())
+        );
         let labelled = handle
             .labels()
             .iter()
             .find(|(name, _)| name.to_string() == "jackin.dev/image")
             .map(|(_, value)| value.to_string());
         assert_eq!(
-            Some(ran.label_value().to_string()),
+            Some(original_label),
             labelled,
-            "the sandbox runs another image than its label records"
+            "the recreated sandbox changed its captured image label"
         );
         assert_eq!(handle.supervisor(), Some(running(1)?));
         Ok(())

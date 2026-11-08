@@ -260,13 +260,25 @@ impl ScenarioHost {
                 program: "jackin".to_owned(),
                 message: format!("no sandbox {name}"),
             })?;
+        let agents = jackin_core::AgentInstances::single(
+            jackin_core::AgentInstance::lead(
+                Agent::Codex,
+                AccountName::parse(&model.account).expect("account"),
+            )
+            .map_err(|error| HostError::Spawn {
+                program: "jackin".to_owned(),
+                message: error.to_string(),
+            })?,
+        )
+        .map_err(|error| HostError::Spawn {
+            program: "jackin".to_owned(),
+            message: error.to_string(),
+        })?;
         let planned = PlannedLabels {
             workspace: WorkspaceName::parse(&model.workspace).expect("workspace"),
             role: RoleName::parse("sentinel").expect("role"),
-            agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-                Agent::Codex,
-                AccountName::parse(&model.account).expect("account"),
-            )),
+            agents_hash: agents.hash(),
+            lead_agent: Agent::Codex,
             policy: PolicyLabel::of(POLICY),
             launch: LaunchId::parse(&model.launch).expect("launch"),
         };

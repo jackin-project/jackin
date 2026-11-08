@@ -43,8 +43,12 @@ fn path(text: String) -> SandboxPath {
     SandboxPath::parse(&text).unwrap_or_else(|_| SandboxPath::from_static("/sandbox/project"))
 }
 
-pub fn plan_multi(instances: &AgentInstances, task: Option<&str>, head: HeadState) -> MultiLayout {
-    let lead = instances.lead_opt().map(|item| item.agent);
+pub fn plan_multi(
+    instances: &AgentInstances,
+    lead: Agent,
+    task: Option<&str>,
+    head: HeadState,
+) -> Result<MultiLayout, serde_json::Error> {
     let mut files = Vec::new();
     let mut directories = vec![
         path("/sandbox/.jackin/task".to_owned()),
@@ -61,7 +65,7 @@ pub fn plan_multi(instances: &AgentInstances, task: Option<&str>, head: HeadStat
     files.push(PlannedFile {
         path: path("/sandbox/.jackin/agents.json".to_owned()),
         mode: FileMode(0o644),
-        text: instances.agents_json(),
+        text: instances.agents_json()?,
     });
     let mut homes = Vec::new();
     let mut worktrees = Vec::new();
@@ -73,7 +77,7 @@ pub fn plan_multi(instances: &AgentInstances, task: Option<&str>, head: HeadStat
         ));
         homes.push(home.clone());
         directories.push(home.clone());
-        let is_lead = Some(instance.agent) == lead;
+        let is_lead = instance.agent == lead;
         let (workdir, branch, worktree) = if is_lead {
             (path("/sandbox/project".to_owned()), None, false)
         } else {
@@ -114,21 +118,24 @@ pub fn plan_multi(instances: &AgentInstances, task: Option<&str>, head: HeadStat
             argv,
             provider: instance.provider.as_str().to_owned(),
             account: instance.account.as_str().to_owned(),
-            model: instance.model.clone(),
+            model: instance.model.to_string(),
         });
     }
-    MultiLayout {
+    Ok(MultiLayout {
         files,
         directories,
         homes,
         worktrees,
         exec,
-    }
+    })
 }
 
-pub fn agents_json_mismatch(planned: &AgentInstances, found: Option<&[u8]>) -> bool {
-    match found {
-        None => false,
-        Some(bytes) => String::from_utf8_lossy(bytes) != planned.agents_json(),
-    }
+pub fn agents_json_mismatch(
+    planned: &AgentInstances,
+    found: Option<&[u8]>,
+) -> Result<bool, serde_json::Error> {
+    Ok(match found {
+        None => true,
+        Some(bytes) => bytes != planned.agents_json()?.as_bytes(),
+    })
 }

@@ -27,7 +27,7 @@ Keep this section identical in all four repositories. Write the rules for one re
 - Before you write a test, get approval of its plan from an independent reviewer subagent. In the plan, name the behavior, the positive and negative cases, and the reason that no other test covers them.
 - Keep a test only after an independent reviewer subagent sees it fail on broken code and pass on fixed code.
 - Test through public interfaces. Assert the resulting state. Do not assert the sequence of calls.
-- Do not use a fake for code that you own. Use a fake only at an external boundary, behind an interface that you own. The boundaries are the OpenShell gateway, the network, the clock, and the filesystem.
+- Do not use a fake for code that you own. Use a fake only at an external boundary, behind an interface that you own. The boundaries are the OpenShell gateway, the network (including the Docker daemon and external OS Keychain broker IPC), the clock, and the filesystem.
 - Keep tests hermetic and deterministic. Do not use a live network in nextest. Run live tests against a real gateway in `xtask e2e`.
 - Run tests with `cargo nextest` through `mise exec -- mbx`. Never use `cargo test`.
 - If a test is flaky, quarantine it at once. Mark it `#[ignore]` with a tracking reference. Do not weaken, skip, or delete a test to hide broken behavior.

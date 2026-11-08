@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
+use std::task::Poll;
 use std::time::{Duration, UNIX_EPOCH};
 
 use jackin_core::{BranchName, Config, Phase, SandboxName};
@@ -63,6 +64,27 @@ async fn a_fresh_launch_is_exported_and_only_real_changes_make_it_unexported() -
         std::fs::write(handle.root().join("project/README.md"), b"stash me\n")?;
         handle.git(&["stash", "push", "-q"]).await?;
         assert_eq!(state(&rig, &dirty).await, unexported(1, &[])?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_ref_in_a_namespace_that_only_starts_like_the_branches_is_not_a_branch() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        handle
+            .git(&["update-ref", "refs/headsx/foo", "HEAD"])
+            .await?;
+        assert_eq!(state(&rig, &name).await, WorkState::Exported);
+
+        handle
+            .git(&["update-ref", "refs/heads/foo", "HEAD"])
+            .await?;
+        assert_eq!(state(&rig, &name).await, unexported(0, &["foo"])?);
         Ok(())
     })
     .await
@@ -138,7 +160,9 @@ async fn what_jackin_cannot_inspect_is_unknown_and_a_forged_supervisor_changes_n
         gateway.force_phase(&name, Phase::Ready);
 
         let session = &rig.world.session;
-        let bare = session.work_state(&Config::empty(), &name).await;
+        let bare = session
+            .work_state(&Config::empty(), &name, &CancellationToken::new())
+            .await;
         assert!(
             matches!(bare, WorkState::Unknown(UnknownReason::WorkspaceUnknown(_))),
             "{bare:?}"
@@ -166,6 +190,37 @@ async fn what_jackin_cannot_inspect_is_unknown_and_a_forged_supervisor_changes_n
             std::fs::write(handle.root().join(".jackin/run/state"), text)?;
             assert_eq!(state(&rig, &name).await, expected, "{text:?}");
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancelling_a_remote_work_state_observation_returns_unknown_cancelled() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let trigger = Trigger::Program(jackin_core::sandbox_layout::GIT.clone());
+        rig.world.gateway.inject(Fault::HoldAt {
+            trigger: trigger.clone(),
+        });
+        let cancel = CancellationToken::new();
+        let state = rig.world.session.work_state(&rig.config, &name, &cancel);
+        tokio::pin!(state);
+        tokio::select! {
+            held = rig.world.gateway.until_held(&trigger) => assert!(held),
+            state = &mut state => return Err(format!("work-state observation completed before its hold: {state:?}").into()),
+        }
+        cancel.cancel();
+        let polled = std::future::poll_fn(|cx| Poll::Ready(state.as_mut().poll(cx))).await;
+        assert!(rig.world.gateway.release(&trigger));
+        assert!(matches!(
+            polled,
+            Poll::Ready(WorkState::Unknown(UnknownReason::Cancelled))
+        ), "{polled:?}");
+        assert_eq!(handle.phase(), Phase::Ready);
         Ok(())
     })
     .await
@@ -240,7 +295,12 @@ async fn a_corrupt_sandbox_index_still_exports_the_branches_but_the_work_state_i
         let purge = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await;
         assert!(
             matches!(purge, Err(PurgeError::WorkNotExported { .. })),
@@ -279,7 +339,12 @@ async fn a_stash_counts_from_its_ref_so_an_expired_reflog_still_blocks_a_guarded
         let purge = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Guarded)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Guarded,
+                &CancellationToken::new(),
+            )
             .await;
         assert!(
             matches!(purge, Err(PurgeError::WorkNotExported { .. })),
@@ -295,7 +360,12 @@ async fn refuses_a_guarded_purge(rig: &Rig, name: &SandboxName) -> TestResult {
     let result = rig
         .world
         .session
-        .purge(&rig.config, name, PurgeMode::Guarded)
+        .purge(
+            &rig.config,
+            name,
+            PurgeMode::Guarded,
+            &CancellationToken::new(),
+        )
         .await;
     assert!(
         matches!(result, Err(PurgeError::WorkNotExported { .. })),
@@ -325,7 +395,12 @@ async fn a_repository_setting_cannot_hide_an_untracked_file_from_the_purge_check
         let forced = rig
             .world
             .session
-            .purge(&rig.config, &name, PurgeMode::Forced)
+            .purge(
+                &rig.config,
+                &name,
+                PurgeMode::Forced,
+                &CancellationToken::new(),
+            )
             .await?;
         assert!(matches!(forced, PurgeOutcome::Deleted { .. }), "{forced:?}");
         assert!(rig.world.gateway.sandbox(&name).is_none());

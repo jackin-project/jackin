@@ -110,6 +110,7 @@ fn prune(table: toml::Table) -> toml::Table {
 
 fn label(error: &ConfigError) -> String {
     match error {
+        ConfigError::Cancelled => "cancelled".to_owned(),
         ConfigError::Syntax { line, .. } => format!("syntax@{line}"),
         ConfigError::UnknownField { key } => format!("unknown:{key}"),
         ConfigError::MissingField { key } => format!("missing:{key}"),

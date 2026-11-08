@@ -63,7 +63,7 @@ async fn no_account_kind_puts_a_credential_value_into_a_projected_field_or_a_scr
             let account = Account::new(AccountName::parse(name)?, Provider::Codex, source)?;
             rig.world
                 .config
-                .edit(vec![ConfigEdit::AddAccount(account)])
+                .edit(vec![ConfigEdit::AddAccount(account)], &rig.world.cancel)
                 .await?;
         }
         let mut console = ConsoleRig::builder(&rig.world)

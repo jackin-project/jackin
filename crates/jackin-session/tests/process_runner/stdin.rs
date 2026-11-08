@@ -7,13 +7,13 @@ use jackin_core::{
 use jackin_session::TokioProcessRunner;
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{Scratch, TestResult, guarded, same_bytes};
+use crate::support::{Scratch, TestResult, guard, same_bytes};
 
 const FD_ZERO_IS_DEV_NULL: &str = "for t in /dev/stdin /dev/fd/0 /proc/self/fd/0; do [ -e \"$t\" ] && break; done\n[ -e \"$t\" ] || { echo unobservable; exit 9; }\n[ \"$t\" -ef /dev/null ] && echo devnull || echo other\ncat\n";
 
 #[tokio::test]
 async fn stdin_is_dev_null_or_the_given_bytes_followed_by_end_of_input() -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let cancel = CancellationToken::new();
         let null = scratch.spec(FD_ZERO_IS_DEV_NULL, &[])?;
@@ -64,7 +64,7 @@ fn file_stdin(
 
 #[tokio::test]
 async fn file_stdin_feeds_the_file_from_the_offset_to_end_of_input() -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let cancel = CancellationToken::new();
         let content: Vec<u8> = (0..1_usize << 20)
@@ -92,7 +92,7 @@ async fn file_stdin_feeds_the_file_from_the_offset_to_end_of_input() -> TestResu
 
 #[tokio::test]
 async fn file_stdin_of_8_mib_arrives_intact_and_an_early_exit_is_still_the_exit() -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let cancel = CancellationToken::new();
         let content: Vec<u8> = (0..8_usize << 20)
@@ -115,7 +115,7 @@ async fn file_stdin_of_8_mib_arrives_intact_and_an_early_exit_is_still_the_exit(
 
 #[tokio::test]
 async fn file_stdin_of_a_missing_file_or_a_directory_never_starts_the_child() -> TestResult {
-    guarded(async {
+    guard(async {
         let scratch = Scratch::new()?;
         let cancel = CancellationToken::new();
         for (label, path) in [

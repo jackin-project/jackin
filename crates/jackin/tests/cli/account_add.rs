@@ -155,6 +155,43 @@ async fn a_mismatched_or_unreadable_account_fails_and_changes_nothing() -> TestR
 }
 
 #[tokio::test]
+async fn a_chatgpt_login_error_escapes_controls_in_the_path() -> TestResult {
+    guard(async {
+        let (rig, harness, _) = rigged().await?;
+        for name in ["ordinary-login", "login\u{1b}[2J\nforged"] {
+            let directory = rig.home.as_path().join(name);
+            std::fs::create_dir(&directory)?;
+            std::fs::write(directory.join("auth.json"), "not json")?;
+            let home = super::support::host_path(&directory)?;
+            let home_text = home.to_string();
+            let raw_path = home.as_path().display().to_string();
+            let ran = harness
+                .run(&[
+                    "account",
+                    "add",
+                    "codex",
+                    "--name",
+                    "broken",
+                    "--chatgpt-from",
+                    &home_text,
+                ])
+                .await?;
+            assert_eq!(ran.exit, ExitClass::Failure, "{}", ran.stderr);
+            assert!(ran.stdout.is_empty(), "{}", ran.stdout);
+            assert!(ran.stderr.contains(&home_text), "{}", ran.stderr);
+            if name == "ordinary-login" {
+                assert!(ran.stderr.contains(&raw_path), "{}", ran.stderr);
+            } else {
+                assert!(!ran.stderr.contains(&raw_path), "{}", ran.stderr);
+            }
+            assert_eq!(ran.stderr.lines().count(), 1, "{}", ran.stderr);
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_codex_account_without_a_chatgpt_login_is_stored_for_usage_and_never_reaches_the_gateway()
 -> TestResult {
     guard(async {

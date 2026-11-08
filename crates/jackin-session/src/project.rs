@@ -125,6 +125,10 @@ pub enum UnsupportedProject {
     )]
     ForeignGit(HostPath),
     #[error(
+        "the project directory {0} was replaced by another directory after it was chosen; launch again"
+    )]
+    RootReplaced(HostPath),
+    #[error(
         "the object store borrows objects from other repositories through {0}; run `git repack -a -d`, then remove the file"
     )]
     Alternates(HostPath),
@@ -307,21 +311,31 @@ pub(crate) async fn release(deps: &SessionDeps, dir: &HostPath) {
 }
 
 impl Staged {
+    pub(crate) async fn tree_id(
+        &self,
+        deps: &SessionDeps,
+        project: &ProjectRoot,
+        cancel: &CancellationToken,
+    ) -> Result<TreeId, LaunchError> {
+        self.host_tree_id(deps, project, "identity", cancel).await
+    }
+
     pub(crate) async fn upload(
         &self,
         deps: &SessionDeps,
         project: &ProjectRoot,
         sandbox: &SandboxName,
         launch: &LaunchId,
+        preserve_repository: bool,
         cancel: &CancellationToken,
-    ) -> Result<(), LaunchError> {
+    ) -> Result<TreeId, LaunchError> {
         let remote = Sandbox {
             gateway: deps.gateway.as_ref(),
             name: sandbox,
             timeout: deps.limits.upload,
             cancel,
         };
-        remote.empty().await?;
+        remote.empty(preserve_repository).await?;
         let arrived = self
             .arrive(deps, project, sandbox, launch, &remote, cancel)
             .await;
@@ -331,7 +345,7 @@ impl Staged {
                 cancel: &uncancelled,
                 ..remote
             };
-            drop(cleanup.empty().await);
+            drop(cleanup.empty(preserve_repository).await);
         }
         arrived
     }
@@ -344,7 +358,8 @@ impl Staged {
         launch: &LaunchId,
         remote: &Sandbox<'_>,
         cancel: &CancellationToken,
-    ) -> Result<(), LaunchError> {
+    ) -> Result<TreeId, LaunchError> {
+        HostProject::refuse_replaced(deps.host.fs.as_ref(), project).await?;
         deps.gateway
             .upload_tree(sandbox, project, &sandbox_layout::PROJECT, cancel)
             .await?;
@@ -355,6 +370,35 @@ impl Staged {
         let landed = self.send_bundle(deps, sandbox, launch, cancel).await?;
         remote.repository(&self.facts, landed.as_ref()).await?;
         self.verify(deps, project, remote, launch, cancel).await
+    }
+
+    async fn host_tree_id(
+        &self,
+        deps: &SessionDeps,
+        project: &ProjectRoot,
+        label: &str,
+        cancel: &CancellationToken,
+    ) -> Result<TreeId, LaunchError> {
+        let authenticated = HostProject::open(deps, project, cancel).await?;
+        let git = authenticated.git();
+        let fs = deps.host.fs.as_ref();
+        let parent = HostPath::resolve(Path::new(label), &self.dir)?;
+        let objects = HostPath::resolve(Path::new("objects"), &parent)?;
+        fs.create_private_dir_all(&objects).await?;
+        let paths = HostPath::resolve(Path::new("paths"), &parent)?;
+        fs.write_new(&paths, self.listing.as_bytes(), FileMode(0o600))
+            .await?;
+        let shadow = shadow::create(&git, fs, &parent, &self.facts).await?;
+        HostGate {
+            git,
+            shadow,
+            index: HostPath::resolve(Path::new("index"), &parent)?,
+            objects,
+            paths,
+            alternates: &self.facts.objects,
+        }
+        .tree()
+        .await
     }
 
     async fn send_bundle(
@@ -381,31 +425,23 @@ impl Staged {
         remote: &Sandbox<'_>,
         launch: &LaunchId,
         cancel: &CancellationToken,
-    ) -> Result<(), LaunchError> {
+    ) -> Result<TreeId, LaunchError> {
         let gate = sandbox_layout::JACKIN_DIR.join(&format!("gate-{launch}"))?;
         let sandbox_tree = remote.tree(&gate, &self.listing).await?;
-        let objects = HostPath::resolve(Path::new("gate-objects"), &self.dir)?;
-        deps.host.fs.create_private_dir_all(&objects).await?;
-        let paths = HostPath::resolve(Path::new("gate-paths"), &self.dir)?;
-        deps.host
-            .fs
-            .write_new(&paths, self.listing.as_bytes(), FileMode(0o600))
-            .await?;
+        let host_tree = self.host_tree_id(deps, project, "verify", cancel).await?;
+        if host_tree == sandbox_tree {
+            remote.clear(&gate).await?;
+            return Ok(host_tree);
+        }
         let authenticated = HostProject::open(deps, project, cancel).await?;
-        let git = authenticated.git();
-        let shadow = shadow::create(&git, deps.host.fs.as_ref(), &self.dir, &self.facts).await?;
         let host = HostGate {
-            git,
-            shadow,
-            index: HostPath::resolve(Path::new("gate-index"), &self.dir)?,
-            objects,
-            paths,
+            git: authenticated.git(),
+            shadow: HostPath::resolve(Path::new("verify/shadow"), &self.dir)?,
+            index: HostPath::resolve(Path::new("verify/index"), &self.dir)?,
+            objects: HostPath::resolve(Path::new("verify/objects"), &self.dir)?,
+            paths: HostPath::resolve(Path::new("verify/paths"), &self.dir)?,
             alternates: &self.facts.objects,
         };
-        let host_tree = host.tree().await?;
-        if host_tree == sandbox_tree {
-            return remote.clear(&gate).await;
-        }
         let host_entries = host.entries(&host_tree).await?;
         let sandbox_entries = remote.entries(&gate, &sandbox_tree).await?;
         let autocrlf = host.autocrlf().await?;
@@ -430,11 +466,10 @@ impl Session {
         let _held = hold(&self.deps, launch, cancel).await?;
         let dir = staging_dir(&self.deps, launch)?;
         let result = match stage(&self.deps, project, &dir, cancel).await {
-            Ok(staged) => {
-                staged
-                    .upload(&self.deps, project, sandbox, launch, cancel)
-                    .await
-            }
+            Ok(staged) => staged
+                .upload(&self.deps, project, sandbox, launch, false, cancel)
+                .await
+                .map(|_| ()),
             Err(error) => Err(error),
         };
         release(&self.deps, &dir).await;

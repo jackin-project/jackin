@@ -46,7 +46,7 @@ async fn add(app: &App, args: GatewayAddArgs) -> Result<(), CommandError> {
     if args.default {
         edits.push(ConfigEdit::SetDefaultGateway(Some(args.name)));
     }
-    app.store.edit(edits).await?;
+    app.store.edit(edits, &app.cancel).await?;
     Ok(())
 }
 
@@ -70,7 +70,10 @@ async fn rm(app: &mut App, arg: GatewayRmArgs) -> Result<(), CommandError> {
     if arg.offline {
         let edited = app
             .store
-            .edit(vec![ConfigEdit::RemoveGateway(arg.name.clone())])
+            .edit(
+                vec![ConfigEdit::RemoveGateway(arg.name.clone())],
+                &app.cancel,
+            )
             .await;
         if edited.as_ref().err().is_none_or(ConfigError::committed) {
             app.io.note(&format!(
@@ -83,7 +86,7 @@ async fn rm(app: &mut App, arg: GatewayRmArgs) -> Result<(), CommandError> {
     }
     match plan_gateway_removal(&app.desk(), &arg.name, &app.cancel).await? {
         GatewayRemoval::Offline(plan) => {
-            plan.apply().await?;
+            plan.apply(&app.cancel).await?;
         }
         GatewayRemoval::Online(plan) => {
             plan.apply(app.deps.connect.as_ref(), &app.cancel).await?;

@@ -9,7 +9,7 @@ newline='
 '
 
 usage() {
-    echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... [--data PATH]... [--absent PATH]... ROOT PROTECTED..." >&2
+    echo "usage: scan --owner UID:GID --sandbox-owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... [--data PATH]... [--absent PATH]... [--read-write PATH]... ROOT PROTECTED..." >&2
     exit 64
 }
 
@@ -120,6 +120,7 @@ colons() {
 check_passwd() {
     seen=0
     wrong=0
+    wrong_home=0
     number=0
     while IFS= read -r entry || [ -n "$entry" ]; do
         number=$((number + 1))
@@ -129,6 +130,9 @@ check_passwd() {
         entry_uid=${remainder%%:*}
         remainder=${remainder#*:}
         entry_gid=${remainder%%:*}
+        remainder=${remainder#*:}
+        entry_home=${remainder#*:}
+        entry_home=${entry_home%%:*}
         if [ "$count" -ne 6 ] || ! canonical "$entry_uid" || ! canonical "$entry_gid"; then
             report "malformed line $number in /etc/passwd"
             continue
@@ -137,12 +141,14 @@ check_passwd() {
         if [ "$entry_name" = sandbox ]; then
             seen=$((seen + 1))
             [ "$entry_uid:$entry_gid" = 1000:1000 ] || wrong=1
+            [ "$entry_home" = /sandbox ] || wrong_home=1
         elif [ "$entry_uid" = 0 ] && [ "$entry_name" != root ]; then
             report "uid 0 account other than root in /etc/passwd: $(show "$entry_name")"
         fi
     done <"$root/etc/passwd"
     [ "$seen" -eq 1 ] || report "sandbox account is missing or duplicated in /etc/passwd"
     [ "$wrong" -eq 0 ] || report "sandbox account is not 1000:1000 in /etc/passwd"
+    [ "$wrong_home" -eq 0 ] || report "sandbox account home is not /sandbox in /etc/passwd"
 }
 
 check_group() {
@@ -186,6 +192,34 @@ check_accounts() {
     done
 }
 
+sandbox_uid_matches() {
+    [ -n "$(find "$root/sandbox" -maxdepth 0 -uid "$sandbox_uid" -print 2>/dev/null)" ]
+}
+
+sandbox_gid_matches() {
+    [ -n "$(find "$root/sandbox" -maxdepth 0 -gid "$sandbox_gid" -print 2>/dev/null)" ]
+}
+
+sandbox_mode_matches() {
+    [ -n "$(find "$root/sandbox" -maxdepth 0 -perm 0755 -print 2>/dev/null)" ]
+}
+
+check_sandbox_home() {
+    if [ -L "$root/sandbox" ]; then
+        report "sandbox home is a symlink: /sandbox"
+    elif [ ! -e "$root/sandbox" ]; then
+        report "sandbox home is missing: /sandbox"
+    elif [ ! -d "$root/sandbox" ]; then
+        report "sandbox home is not a directory: /sandbox"
+    elif ! sandbox_uid_matches; then
+        report "sandbox home has the wrong owner uid: /sandbox"
+    elif ! sandbox_gid_matches; then
+        report "sandbox home has the wrong group gid: /sandbox"
+    elif ! sandbox_mode_matches; then
+        report "sandbox home mode is not 0755: /sandbox"
+    fi
+}
+
 trusted_of() {
     for pair in $pairs; do
         if [ "${pair%%=*}" = "$1" ]; then
@@ -205,15 +239,22 @@ exempt() {
 }
 
 owner=
+sandbox_owner=
 pairs=
 allow=
 data=
 absent=
+read_write=
 while [ "$#" -gt 0 ]; do
     case $1 in
         --owner)
             [ "$#" -ge 2 ] || usage
             owner=$2
+            shift 2
+            ;;
+        --sandbox-owner)
+            [ "$#" -ge 2 ] || usage
+            sandbox_owner=$2
             shift 2
             ;;
         --same-as)
@@ -236,6 +277,11 @@ while [ "$#" -gt 0 ]; do
             absent="$absent $2"
             shift 2
             ;;
+        --read-write)
+            [ "$#" -ge 2 ] || usage
+            read_write="$read_write $2"
+            shift 2
+            ;;
         -*) usage ;;
         *) break ;;
     esac
@@ -250,7 +296,7 @@ for allowed in $allow; do
         *) usage ;;
     esac
 done
-for listed in $data $absent; do
+for listed in $data $absent $read_write; do
     case $listed in
         /*) ;;
         *) usage ;;
@@ -267,9 +313,18 @@ case $owner in
     *:*) ;;
     *) usage ;;
 esac
+case $sandbox_owner in
+    '' | *[!0-9:]* | :* | *: | *:*:*) usage ;;
+    *:*) ;;
+    *) usage ;;
+esac
 [ "$#" -ge 2 ] || usage
 uid=${owner%%:*}
 gid=${owner#*:}
+sandbox_uid=${sandbox_owner%%:*}
+sandbox_gid=${sandbox_owner#*:}
+canonical "$sandbox_uid" || usage
+canonical "$sandbox_gid" || usage
 root=${1%/}
 shift
 protected=$*
@@ -288,13 +343,13 @@ else
     report "getcap is missing"
 fi
 
-[ -n "$allow" ] || tools="$tools $client_tools"
+tools="$tools $client_tools"
 set --
 for tool in $tools; do
     [ "$#" -eq 0 ] || set -- "$@" -o
     set -- "$@" -name "$tool"
 done
-hits=$(find "$root" \( -type f \( -perm -100 -o -perm -010 -o -perm -001 \) -o -type l \) \( "$@" \)) || report "find failed while looking for forbidden tools"
+hits=$(find "$root" \( -type f -o -type l \) \( "$@" \)) || report "find failed while looking for forbidden tools"
 remaining=
 while IFS= read -r hit; do
     [ -n "$hit" ] || continue
@@ -329,10 +384,35 @@ for path in $data; do
 done
 
 for path in $absent; do
-    check_ancestors "$path"
+    case $path in
+        /sandbox/*)
+            for ancestor in $(ancestors "$path"); do
+                if [ -L "$root$ancestor" ]; then
+                    report "absent path crosses a symlink: $(show "$ancestor")"
+                fi
+            done
+            ;;
+        *) check_ancestors "$path" ;;
+    esac
     if [ -e "$root$path" ] || [ -L "$root$path" ]; then
         report "path must be absent from the role image: $(show "$path")"
     fi
+done
+
+for path in $read_write; do
+    prefix=
+    rest=${path#/}
+    while [ -n "$rest" ]; do
+        prefix=$prefix/${rest%%/*}
+        case $rest in
+            */*) rest=${rest#*/} ;;
+            *) rest= ;;
+        esac
+        if [ -L "$root$prefix" ]; then
+            report "read_write path of the role policy is or crosses a symlink: $(show "$path") (at $(show "$prefix"))"
+            break
+        fi
+    done
 done
 
 for pair in $pairs; do
@@ -344,6 +424,7 @@ for pair in $pairs; do
 done
 
 check_accounts
+check_sandbox_home
 
 [ "$failed" -eq 0 ] || exit 1
 echo "jackin-image-scan 1"

@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{AccountName, Agent, AgentInstance, AgentInstances, ManifestError, Provider};
+use jackin_core::{
+    AccountName, Agent, AgentInstance, AgentInstances, ManifestError, ModelName, Provider,
+};
 use jackin_session::PlanError;
 use jackin_testkit::RoleFixture;
 
@@ -17,13 +19,13 @@ fn codex_and(
             Agent::Codex,
             Provider::Codex,
             AccountName::parse("work")?,
-            "gpt-5.1-codex".to_owned(),
+            ModelName::parse("gpt-5.1-codex")?,
         ),
         AgentInstance::new(
             agent,
             provider,
             AccountName::parse("work")?,
-            model.to_owned(),
+            ModelName::parse(model)?,
         ),
     ])?)
 }

@@ -140,7 +140,7 @@ pub fn session_over(world: &World, gateway: Arc<dyn Gateway>) -> Session {
 }
 
 pub fn session_maker(world: &World) -> impl Fn(Arc<dyn Gateway>) -> Session + Send + Sync + use<> {
-    let engine: Arc<dyn ImageEngine> = Arc::<crate::engine::FakeEngine>::clone(&world.engine);
+    let engine: Arc<dyn ImageEngine> = Arc::<jackin_image::BuildxEngine>::clone(&world.engine);
     let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&world.clock);
     let fs = Arc::clone(&world.fs);
     let runner: Arc<dyn ProcessRunner> = Arc::<crate::host::TestRunner>::clone(&world.runner);
@@ -325,6 +325,18 @@ impl ConsoleRig {
         let clock = Arc::clone(&self.wall.clock);
         tokio::select! {
             () = self.console.drain() => {}
+            () = clock.until_stalled(SETTLE_STALL) => {
+                return Err("the console made no progress for 5 s".into());
+            }
+        }
+        self.render();
+        Ok(())
+    }
+
+    pub async fn settle_all(&mut self) -> Result<(), FixtureError> {
+        let clock = Arc::clone(&self.wall.clock);
+        tokio::select! {
+            () = self.console.drain_all() => {}
             () = clock.until_stalled(SETTLE_STALL) => {
                 return Err("the console made no progress for 5 s".into());
             }

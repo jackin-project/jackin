@@ -45,7 +45,7 @@ impl FileSource for HostFiles {
         let listed = block_on(self.fs.list(&root)).map_err(|error| error_chain(&error))?;
         Ok(listed
             .into_iter()
-            .map(|entry| {
+            .filter_map(|entry| {
                 let path = Path::new(dir)
                     .join(&entry.name)
                     .to_string_lossy()
@@ -53,8 +53,9 @@ impl FileSource for HostFiles {
                 let kind = HostPath::parse(Path::new(&path))
                     .map_or(entry.kind, |full| self.kind(&full, entry.kind));
                 match kind {
-                    FileKind::Dir => FileEntry::dir(&path),
-                    _ => FileEntry::file(&path),
+                    FileKind::Dir => Some(FileEntry::dir(&path)),
+                    FileKind::File | FileKind::Symlink => Some(FileEntry::file(&path)),
+                    FileKind::Socket | FileKind::Other => None,
                 }
             })
             .collect())

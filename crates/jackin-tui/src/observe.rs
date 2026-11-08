@@ -9,7 +9,7 @@ use futures::future::join_all;
 use jackin_console::domain::doctor::{
     DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
 };
-use jackin_console::domain::instance::{Instance, InstanceId};
+use jackin_console::domain::instance::InstanceId;
 use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
@@ -24,13 +24,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::console::ConsoleLimits;
 use crate::doctor::{self, DoctorCell};
-use crate::fleet::{Fleet, ObservedSandbox, WorkCache, read_fleet};
+use crate::fleet::{
+    Fleet, ObservedInstance, ObservedSandbox, ObservedUnreadableSandbox, read_fleet,
+};
 use crate::ids::IdTable;
 use crate::onepassword::OpSnapshot;
 use crate::origin::OriginCache;
 use crate::project::{
-    Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, instance as project_instance,
-    project,
+    Facts, Origins, ProjectInput, RoleChecks, RoleDocError, RoleDocs, observed_instance, project,
 };
 use crate::readings::Readings;
 use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
@@ -77,7 +78,6 @@ pub(crate) struct Inputs {
     pub(crate) home: String,
     pub(crate) config_path: String,
     pub(crate) limits: ConsoleLimits,
-    work: WorkCache,
     pub(crate) ids: Mutex<IdTable>,
     pub(crate) docs: Mutex<DocCache>,
     fleet: Mutex<Fleet>,
@@ -162,7 +162,6 @@ impl Inputs {
             home,
             config_path,
             limits,
-            work: WorkCache::default(),
             ids: Mutex::new(IdTable::new()),
             docs: Mutex::new(DocCache::new()),
             fleet: Mutex::new(Fleet::default()),
@@ -193,7 +192,7 @@ impl Inputs {
     pub(crate) async fn observe(&self) -> Result<Observation, ConfigError> {
         let _turn = self.refresh_gate.lock().await;
         let config = self.reloaded().await?;
-        let fleet = read_fleet(&self.sessions, &config, self.limits, &self.work).await;
+        let fleet = read_fleet(&self.sessions, &config, self.limits, &self.cancel).await;
         Ok(self.observation(&config, fleet).await)
     }
 
@@ -279,8 +278,8 @@ impl Inputs {
         config: &Config,
         observed: ObservedSandbox,
         origins: &Origins,
-    ) -> Option<Instance> {
-        let instance = project_instance(
+    ) -> jackin_console::domain::instance::InstanceEntry {
+        let instance = observed_instance(
             &observed,
             config,
             origins,
@@ -291,8 +290,20 @@ impl Inputs {
         instance
     }
 
-    pub(crate) fn locate(&self, instance: &InstanceId) -> Option<ObservedSandbox> {
-        locked(&self.fleet).locate(instance).cloned()
+    pub(crate) fn admit_unreadable(
+        &self,
+        gateway: jackin_core::GatewayName,
+        sandbox: jackin_session::UnreadableSandbox,
+        config: &Config,
+    ) -> jackin_console::domain::instance::InstanceEntry {
+        let observed = ObservedUnreadableSandbox { gateway, sandbox };
+        let instance = crate::project::unreadable_instance(&observed, config, &locked(&self.ids));
+        locked(&self.fleet).admit_unreadable(observed);
+        instance
+    }
+
+    pub(crate) fn locate(&self, instance: &InstanceId) -> Option<ObservedInstance> {
+        locked(&self.fleet).locate(instance)
     }
 
     pub(crate) async fn run_doctor(&self, reconnect: bool) -> Result<DoctorReport, DoctorFailure> {
@@ -338,33 +349,43 @@ impl Inputs {
     }
 
     async fn role_docs(&self, config: &Config) -> RoleDocs {
-        let wanted: Vec<(RoleName, CoreRoleSource)> = {
-            let cache = locked(&self.docs);
+        let read = join_all(
             config
                 .roles()
-                .filter(|(name, entry)| cache.get(*name).is_none_or(|(s, _)| *s != entry.source))
-                .map(|(name, entry)| (name.clone(), entry.source.clone()))
-                .collect()
-        };
-        let loaded = join_all(wanted.into_iter().map(|(name, source)| async move {
-            let doc = match &source {
-                CoreRoleSource::Path(path) => {
-                    match self.roles.load_path(path, &CancellationToken::new()).await {
-                        Ok(role) => Ok(role.manifest().clone()),
-                        Err(error) => match self.roles.read_manifest(path).await {
+                .filter_map(|(name, entry)| match &entry.source {
+                    CoreRoleSource::Path(path) => Some(async move {
+                        let doc = match self.roles.read_manifest(path).await {
                             Ok(manifest) => Ok(manifest),
-                            Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
-                        },
-                    }
-                }
-                CoreRoleSource::Git { .. } => Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
-            };
-            (name, (source, doc))
-        }))
+                            Err(findings) => Err(RoleDocError::Unreadable(
+                                findings
+                                    .first()
+                                    .map(ToString::to_string)
+                                    .unwrap_or_default(),
+                            )),
+                        };
+                        (name.clone(), entry.source.clone(), doc)
+                    }),
+                    CoreRoleSource::Git { .. } => None,
+                }),
+        )
         .await;
         let mut cache = locked(&self.docs);
-        cache.extend(loaded);
-        cache.retain(|name, _| config.role(name).is_some());
+        cache.retain(|name, (source, _)| {
+            config
+                .role(name)
+                .is_some_and(|entry| entry.source == *source)
+        });
+        for (name, source, doc) in read {
+            cache.insert(name, (source, doc));
+        }
+        for (name, entry) in config.roles() {
+            cache.entry(name.clone()).or_insert_with(|| {
+                (
+                    entry.source.clone(),
+                    Err(RoleDocError::Rejected(Rejection::RoleNotLoaded)),
+                )
+            });
+        }
         cache
             .iter()
             .map(|(name, (_, doc))| (name.clone(), doc.clone()))

@@ -22,10 +22,12 @@ use toml::Value;
 
 const HOST_PATH: &str = "expected an absolute path";
 const PARENT_SEGMENT: &str = "expected a path without .. segments";
+const NOT_UTF8: &str = "expected a UTF-8 path";
 
 fn host_path(text: &str) -> Result<HostPath, &'static str> {
     HostPath::parse(Path::new(text)).map_err(|error| match error {
         PathError::ParentSegment(_) => PARENT_SEGMENT,
+        PathError::NotUtf8(_) => NOT_UTF8,
         _ => HOST_PATH,
     })
 }

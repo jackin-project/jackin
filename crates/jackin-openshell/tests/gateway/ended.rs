@@ -62,37 +62,56 @@ async fn stop_and_start_on_an_ended_main_process() {
     }
     for name in ["jackin-bad", "jackin-done"] {
         let sandbox = sandbox_name(name);
-        let error = guard(gateway.set_power(&sandbox, PowerAction::Stop))
-            .await
-            .unwrap_err();
+        let error = guard(gateway.set_power(
+            &sandbox,
+            PowerAction::Stop,
+            &tokio_util::sync::CancellationToken::new(),
+        ))
+        .await
+        .unwrap_err();
         assert!(
             matches!(error, GatewayError::MainProcessFailed { sandbox: ref failed } if *failed == sandbox),
             "{name}: {error:?}"
         );
     }
     let bad = sandbox_name("jackin-bad");
-    let error = guard(gateway.set_power(&bad, PowerAction::Start))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.set_power(
+        &bad,
+        PowerAction::Start,
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(
         matches!(error, GatewayError::FailedPrecondition { ref message } if message.contains("already running generation")),
         "{error:?}"
     );
-    let found = guard(gateway.find_sandboxes(&SandboxQuery::Name(bad.clone())))
-        .await
-        .unwrap();
+    let found = guard(gateway.find_sandboxes(
+        &SandboxQuery::Name(bad.clone()),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(found[0].phase, Phase::Starting);
-    let error = guard(gateway.set_power(&bad, PowerAction::Stop))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.set_power(
+        &bad,
+        PowerAction::Stop,
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(
         matches!(error, GatewayError::FailedPrecondition { .. }),
         "{error:?}"
     );
     let done = sandbox_name("jackin-done");
-    let error = guard(gateway.set_power(&done, PowerAction::Start))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.set_power(
+        &done,
+        PowerAction::Start,
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(
         matches!(error, GatewayError::FailedPrecondition { .. }),
         "{error:?}"

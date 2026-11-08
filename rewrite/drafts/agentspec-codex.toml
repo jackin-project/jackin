@@ -13,7 +13,7 @@ start = "/usr/local/bin/jackin-start"
 system_config = "/etc/codex/config.toml"
 
 [install]
-version = "0.166.0"
+version = "0.167.0"
 url_template = "https://github.com/openai/codex/releases/download/rust-v{version}/codex-package-{target}.tar.gz"
 archive_members = ["bin/codex", "bin/codex-code-mode-host"]
 version_output = "codex-cli {version}"
@@ -22,12 +22,12 @@ system_config_content = "check_for_update_on_startup = false\n"
 [install.targets.arm64]
 platform = "linux/arm64"
 target = "aarch64-unknown-linux-musl"
-sha256 = "7821b77dda2e6283fb1f63f3165177a271da8833e857cf673c6ca1c9db3bfcc6"
+sha256 = "0de261ecf1e7f3028a7952f03fca2093f749277d38590b78bb32f8567756bbb7"
 
 [install.targets.amd64]
 platform = "linux/amd64"
 target = "x86_64-unknown-linux-musl"
-sha256 = "1d44b28bc4ac9937d7d3532264baa68a507ce364956a0d4ebb856f331cdee254"
+sha256 = "3bbf75e83de6b58aed28f2cf6e33ad423ec31fd4700a1457b94be557ea5a7c6e"
 
 [openshell_provider]
 profile_id = "codex"

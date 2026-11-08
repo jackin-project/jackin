@@ -8,7 +8,8 @@ use rcgen::{
     KeyUsagePurpose, SanType,
 };
 
-pub(crate) const KEY_SENTINEL: &str = "PRIVATE-SENTINEL-Zq7#Xv9!Lm2@Hk4w";
+pub(crate) const KEY_SENTINEL: &str = "PR#IV!AT@E-SE$NT%IN&EL-Zq#7X!v9@Lm$2H%k4";
+const _: () = assert!(super::support::every_window_has_a_symbol(KEY_SENTINEL));
 
 #[derive(Clone, Debug)]
 pub(crate) struct Pki {

@@ -11,8 +11,8 @@ use jackin_core::{
     TerminalText, Timestamp,
 };
 use jackin_openshell::{
-    GatewayError, GatewayOp, NetworkRule, PolicyDocument, ProviderProfile, Provisioning,
-    SandboxCreate, SandboxView,
+    GatewayContractSandboxCreate, GatewayError, GatewayOp, MainProcess, NetworkRule,
+    PolicyDocument, ProviderProfile, Provisioning, SandboxCreate, SandboxView,
 };
 use tempfile::TempDir;
 use tokio::sync::Notify;
@@ -22,7 +22,7 @@ use super::main_process::{Main, MainPlan, PlanEnd};
 use super::{
     HostEdit, ProgramScript, ProviderRecord, RunRecord, ShellWitness, Trigger, UploadKind,
 };
-use crate::engine::FakeEngine;
+use crate::docker::DockerImageRegistry;
 use crate::host::FakeClock;
 use crate::supervisor::{Supervisor, SupervisorModel};
 use crate::sync::locked;
@@ -47,12 +47,43 @@ impl Armed {
 pub(super) enum Action {
     Fail(GatewayError),
     Cancel(CancellationToken),
+    Panic,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum FindVisibility {
+    #[default]
+    Visible,
+    HiddenUntilCreateConflict,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum FindMutation {
+    DuplicateNextResult,
+    HideNextLaunchLookup,
 }
 
 #[derive(Debug)]
 pub(super) struct ArmedTrigger {
     trigger: Trigger,
     action: Action,
+}
+
+fn trigger_matches(armed: &Trigger, actual: &Trigger) -> bool {
+    match (armed, actual) {
+        (Trigger::Program(path), Trigger::ProgramArgs { program, .. }) => path == program,
+        (
+            Trigger::ProgramArgs {
+                program: armed_program,
+                args: armed_args,
+            },
+            Trigger::ProgramArgs {
+                program: actual_program,
+                args: actual_args,
+            },
+        ) => armed_program == actual_program && armed_args == actual_args,
+        _ => armed == actual,
+    }
 }
 
 impl ArmedTrigger {
@@ -117,7 +148,8 @@ pub(super) struct Registry {
     pub(super) profiles: BTreeMap<ProfileId, ProviderProfile>,
     pub(super) images: BTreeSet<ImageTag>,
     pub(super) installed: BTreeMap<SandboxPath, Vec<u8>>,
-    pub(super) engine: Option<Arc<FakeEngine>>,
+    pub(super) baked: BTreeMap<SandboxPath, Vec<u8>>,
+    pub(super) image_registry: Option<DockerImageRegistry>,
     pub(super) clock: Arc<FakeClock>,
     pub(super) faults: Vec<Armed>,
     pub(super) holds: Vec<Hold>,
@@ -129,9 +161,11 @@ pub(super) struct Registry {
     pub(super) corrupt: BTreeSet<Direction>,
     pub(super) provision_polls: u32,
     pub(super) failing_creates: u32,
+    pub(super) cancel_after_create: Option<CancellationToken>,
     pub(super) supervisor: SupervisorModel,
-    pub(super) hidden_until_conflict: bool,
     pub(super) start_ignored: bool,
+    pub(super) find_visibility: FindVisibility,
+    pub(super) find_mutations: BTreeSet<FindMutation>,
     pub(super) serving: bool,
     pub(super) version: String,
     pub(super) host_home: Option<PathBuf>,
@@ -139,6 +173,10 @@ pub(super) struct Registry {
     pub(super) put_fails_after_write: Option<GatewayError>,
     pub(super) delete_fails_after_write: Option<GatewayError>,
     pub(super) calls: HashMap<GatewayOp, u32>,
+    pub(super) inspecting: u32,
+    pub(super) peak_inspecting: u32,
+    pub(super) running_programs: u32,
+    pub(super) peak_programs: u32,
 }
 
 impl Registry {
@@ -149,7 +187,8 @@ impl Registry {
             profiles: BTreeMap::new(),
             images: BTreeSet::new(),
             installed: BTreeMap::new(),
-            engine: None,
+            baked: BTreeMap::new(),
+            image_registry: None,
             clock: Arc::new(FakeClock::new()),
             faults: Vec::new(),
             holds: Vec::new(),
@@ -161,9 +200,11 @@ impl Registry {
             corrupt: BTreeSet::new(),
             provision_polls: 0,
             failing_creates: 0,
+            cancel_after_create: None,
             supervisor: SupervisorModel::Cooperative,
-            hidden_until_conflict: false,
             start_ignored: false,
+            find_visibility: FindVisibility::Visible,
+            find_mutations: BTreeSet::new(),
             serving: true,
             version: "0.1.7".to_owned(),
             host_home: None,
@@ -171,6 +212,10 @@ impl Registry {
             put_fails_after_write: None,
             delete_fails_after_write: None,
             calls: HashMap::new(),
+            inspecting: 0,
+            peak_inspecting: 0,
+            running_programs: 0,
+            peak_programs: 0,
         }
     }
 
@@ -181,7 +226,8 @@ impl Registry {
     pub(super) fn arrive(&mut self, op: GatewayOp, special: Option<&Trigger>) -> Option<Arc<Gate>> {
         let hold = self.holds.iter().find(|hold| {
             !hold.gate.reached.load(Ordering::SeqCst)
-                && (hold.trigger == Trigger::Op(op) || special == Some(&hold.trigger))
+                && (hold.trigger == Trigger::Op(op)
+                    || special.is_some_and(|actual| trigger_matches(&hold.trigger, actual)))
         })?;
         hold.gate.reached.store(true, Ordering::SeqCst);
         Some(Arc::clone(&hold.gate))
@@ -228,12 +274,14 @@ impl Registry {
         *self.calls.entry(op).or_default() += 1;
         self.count_down(op)?;
         let matches = |armed: &ArmedTrigger| {
-            armed.trigger == Trigger::Op(op) || special == Some(&armed.trigger)
+            armed.trigger == Trigger::Op(op)
+                || special.is_some_and(|actual| trigger_matches(&armed.trigger, actual))
         };
         while let Some(index) = self.triggers.iter().position(matches) {
             match self.triggers.remove(index).action {
                 Action::Fail(error) => return Err(error),
                 Action::Cancel(token) => token.cancel(),
+                Action::Panic => std::panic::resume_unwind(Box::new(())),
             }
         }
         Ok(())
@@ -259,6 +307,64 @@ pub(super) struct Cell {
     pub(super) inner: Mutex<Sandbox>,
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct SandboxSpec {
+    name: SandboxName,
+    labels: jackin_core::SandboxLabels,
+    providers: Vec<ProviderName>,
+    policy: PolicyDocument,
+    main: MainProcess,
+    environment: BTreeMap<jackin_core::EnvName, String>,
+}
+
+impl SandboxSpec {
+    pub(super) fn local(spec: &SandboxCreate) -> SandboxSpec {
+        SandboxSpec {
+            name: spec.name().clone(),
+            labels: spec.labels().clone(),
+            providers: spec.providers().to_vec(),
+            policy: spec.policy().clone(),
+            main: spec.main().clone(),
+            environment: spec.environment(),
+        }
+    }
+
+    pub(super) fn contract(spec: &GatewayContractSandboxCreate) -> SandboxSpec {
+        SandboxSpec {
+            name: spec.name().clone(),
+            labels: spec.labels().clone(),
+            providers: spec.providers().to_vec(),
+            policy: spec.policy().clone(),
+            main: spec.main().clone(),
+            environment: spec.environment(),
+        }
+    }
+
+    pub(super) fn name(&self) -> &SandboxName {
+        &self.name
+    }
+
+    pub(super) fn labels(&self) -> &jackin_core::SandboxLabels {
+        &self.labels
+    }
+
+    pub(super) fn providers(&self) -> &[ProviderName] {
+        &self.providers
+    }
+
+    pub(super) fn policy(&self) -> &PolicyDocument {
+        &self.policy
+    }
+
+    pub(super) fn main(&self) -> &MainProcess {
+        &self.main
+    }
+
+    pub(super) fn environment(&self) -> BTreeMap<jackin_core::EnvName, String> {
+        self.environment.clone()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Settling {
     Done,
@@ -272,7 +378,7 @@ pub(super) struct Sandbox {
     pub(super) image_id: Option<ImageId>,
     pub(super) phase: Phase,
     pub(super) provisioning: Provisioning,
-    pub(super) spec: SandboxCreate,
+    pub(super) spec: SandboxSpec,
     pub(super) settling: Settling,
     pub(super) failure: Option<String>,
     pub(super) plan: MainPlan,
@@ -306,7 +412,7 @@ impl Cell {
 
 impl Sandbox {
     pub(super) fn new(
-        spec: SandboxCreate,
+        spec: SandboxSpec,
         plan: MainPlan,
         polls: u32,
         failure: Option<String>,

@@ -103,7 +103,7 @@ async fn docker_without_an_engine_fails_and_creates_nothing() -> TestResult {
         );
         assert!(rig.gateway().sandboxes().is_empty());
         assert!(rig.gateway().providers().is_empty());
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
         assert!(console.console().app().world.instances.is_empty());
         Ok(())
     })
@@ -118,10 +118,13 @@ async fn a_docker_launch_warns_though_the_roster_did_not_know() -> TestResult {
         let mut console = console(&rig).await?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetWorkspaceDocker {
-                workspace: WorkspaceName::parse("platform-backend")?,
-                docker: true,
-            }])
+            .edit(
+                vec![ConfigEdit::SetWorkspaceDocker {
+                    workspace: WorkspaceName::parse("platform-backend")?,
+                    docker: true,
+                }],
+                &rig.world.cancel,
+            )
             .await?;
         launch(&mut console).await?;
         until_shows(&mut console, "Docker is on").await?;

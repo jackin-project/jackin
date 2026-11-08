@@ -35,32 +35,35 @@ async fn the_env_file_follows_the_scope_order() -> TestResult {
         let role = RoleName::parse("sentinel")?;
         rig.world
             .config
-            .edit(vec![
-                set(EnvScope::Global, "ALPHA", "from-global")?,
-                set(EnvScope::Global, "BRAVO", "from-global")?,
-                set(EnvScope::Global, "CHARLIE", "from-global")?,
-                set(EnvScope::Global, "UNDECLARED", "from-global")?,
-                set(
-                    EnvScope::Workspace(workspace.clone()),
-                    "BRAVO",
-                    "from-workspace",
-                )?,
-                set(
-                    EnvScope::Workspace(workspace.clone()),
-                    "CHARLIE",
-                    "from-workspace",
-                )?,
-                set(
-                    EnvScope::Workspace(workspace.clone()),
-                    "LEVEL",
-                    "from-workspace",
-                )?,
-                set(
-                    EnvScope::WorkspaceRole(workspace, role),
-                    "CHARLIE",
-                    "from-role",
-                )?,
-            ])
+            .edit(
+                vec![
+                    set(EnvScope::Global, "ALPHA", "from-global")?,
+                    set(EnvScope::Global, "BRAVO", "from-global")?,
+                    set(EnvScope::Global, "CHARLIE", "from-global")?,
+                    set(EnvScope::Global, "UNDECLARED", "from-global")?,
+                    set(
+                        EnvScope::Workspace(workspace.clone()),
+                        "BRAVO",
+                        "from-workspace",
+                    )?,
+                    set(
+                        EnvScope::Workspace(workspace.clone()),
+                        "CHARLIE",
+                        "from-workspace",
+                    )?,
+                    set(
+                        EnvScope::Workspace(workspace.clone()),
+                        "LEVEL",
+                        "from-workspace",
+                    )?,
+                    set(
+                        EnvScope::WorkspaceRole(workspace, role),
+                        "CHARLIE",
+                        "from-role",
+                    )?,
+                ],
+                &rig.world.cancel,
+            )
             .await?;
         let mut console = console(&rig).await?;
         begin(&mut console)?;

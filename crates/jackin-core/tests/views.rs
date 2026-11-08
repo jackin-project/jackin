@@ -17,13 +17,15 @@ type TestResult = Fallible<()>;
 
 fn summary(phase: Phase) -> Fallible<SandboxSummary> {
     let image = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
+    let agents = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+        Agent::Codex,
+        AccountName::parse("work")?,
+    )?)?;
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("proj")?,
         role: RoleName::parse("sentinel")?,
-        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-            Agent::Codex,
-            AccountName::parse("work")?,
-        )),
+        agents_hash: agents.hash(),
+        lead_agent: Agent::Codex,
         policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
     };

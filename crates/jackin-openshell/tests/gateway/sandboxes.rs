@@ -15,6 +15,7 @@ use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 
 use super::harness::{WORKSPACE, connect, env, guard};
 use super::sandbox_rpc::CREATED_MILLIS;
+use super::server::Paging;
 use super::support::{
     IMAGE_DIGEST, LAUNCH, SANDBOX, add_sandbox, create_spec, planned, policy, policy_text,
     sandbox_name, set_conditions,
@@ -29,7 +30,7 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
     let spec = create_spec(SANDBOX, LAUNCH);
-    let view = guard(gateway.create_sandbox(&spec)).await.unwrap();
+    let view = guard(gateway.create_contract_sandbox(&spec)).await.unwrap();
     assert_eq!(view.phase, Phase::Provisioning);
     assert_eq!(view.created_at, Some(Timestamp(CREATED_MILLIS / 1000)));
     {
@@ -80,11 +81,10 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
         assert!(stored.tty);
         assert_eq!(stored.restart_policy, SandboxRestartPolicy::Never as i32);
     }
-    let found = guard(
-        gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(
-            &LaunchId::parse(LAUNCH).unwrap(),
-        ))),
-    )
+    let found = guard(gateway.find_sandboxes(
+        &SandboxQuery::Labels(LabelSelector::launch(&LaunchId::parse(LAUNCH).unwrap())),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
     .await
     .unwrap();
     assert_eq!(found.len(), 1);
@@ -108,10 +108,12 @@ async fn a_sandbox_the_server_never_stamped_has_no_creation_time() {
         None,
         &managed(),
     );
-    let found =
-        guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-unstamped"))))
-            .await
-            .unwrap();
+    let found = guard(gateway.find_sandboxes(
+        &SandboxQuery::Name(sandbox_name("jackin-unstamped")),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].created_at, None);
 }
@@ -149,9 +151,12 @@ async fn find_follows_every_page_and_managed_hides_foreign_sandboxes() {
             &[],
         );
     }
-    let found = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
-        .await
-        .unwrap();
+    let found = guard(gateway.find_sandboxes(
+        &SandboxQuery::Labels(LabelSelector::managed()),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     let names: BTreeSet<String> = found.iter().map(|view| view.name.to_string()).collect();
     assert_eq!(
         names,
@@ -159,15 +164,20 @@ async fn find_follows_every_page_and_managed_hides_foreign_sandboxes() {
             .map(|index| format!("jackin-s{index}"))
             .collect::<BTreeSet<_>>()
     );
-    let foreign =
-        guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-foreign"))))
-            .await
-            .unwrap();
+    let foreign = guard(gateway.find_sandboxes(
+        &SandboxQuery::Name(sandbox_name("jackin-foreign")),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(foreign.len(), 1);
     assert!(!foreign[0].labels.is_managed());
-    let missing = guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-nope"))))
-        .await
-        .unwrap();
+    let missing = guard(gateway.find_sandboxes(
+        &SandboxQuery::Name(sandbox_name("jackin-nope")),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert!(missing.is_empty());
 }
 
@@ -206,9 +216,12 @@ async fn label_selector_text_is_accepted_by_the_gateway_grammar() {
             ],
         );
         let selector = LabelSelector::launch(&LaunchId::parse(launch).unwrap());
-        let found = guard(gateway.find_sandboxes(&SandboxQuery::Labels(selector)))
-            .await
-            .unwrap();
+        let found = guard(gateway.find_sandboxes(
+            &SandboxQuery::Labels(selector),
+            &tokio_util::sync::CancellationToken::new(),
+        ))
+        .await
+        .unwrap();
         let names: Vec<String> = found.iter().map(|view| view.name.to_string()).collect();
         assert_eq!(names, vec!["jackin-hit".to_owned()], "{launch}");
     }
@@ -250,9 +263,12 @@ async fn phase_and_exit_code_map_to_the_documented_jackin_phase() {
                 .unwrap();
             status.phase = raw;
         }
-        let found = guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name(&name))))
-            .await
-            .unwrap();
+        let found = guard(gateway.find_sandboxes(
+            &SandboxQuery::Name(sandbox_name(&name)),
+            &tokio_util::sync::CancellationToken::new(),
+        ))
+        .await
+        .unwrap();
         assert_eq!(found[0].phase, expected, "{raw}");
     }
 }
@@ -272,8 +288,11 @@ async fn a_completed_sandbox_without_an_exit_code_is_a_protocol_error() {
             &[],
         );
     }
-    let found =
-        guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-bare")))).await;
+    let found = guard(gateway.find_sandboxes(
+        &SandboxQuery::Name(sandbox_name("jackin-bare")),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await;
     assert!(
         matches!(found, Err(jackin_openshell::GatewayError::Protocol { .. })),
         "{found:?}"
@@ -317,13 +336,19 @@ async fn provisioning_failure_condition_is_reported_with_a_sanitized_message() {
         Provisioning::Failed { message } => message.as_str().to_owned(),
         Provisioning::Normal => panic!("expected a failed provisioning"),
     };
-    let by_labels = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
-        .await
-        .unwrap();
+    let by_labels = guard(gateway.find_sandboxes(
+        &SandboxQuery::Labels(LabelSelector::managed()),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert!(failed(&by_labels[0]).contains("Operation not permitted"));
-    let by_name = guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-f2"))))
-        .await
-        .unwrap();
+    let by_name = guard(gateway.find_sandboxes(
+        &SandboxQuery::Name(sandbox_name("jackin-f2")),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     let message = failed(&by_name[0]);
     assert!(!message.contains('\u{1b}') && !message.contains('\u{7}'));
     assert!(message.contains("red"));
@@ -362,17 +387,27 @@ async fn provisioning_failure_condition_is_reported_with_a_sanitized_message() {
             &[("Ready", "False", "DependenciesNotReady", "waiting")],
         );
     }
-    let stopped = guard(gateway.set_power(&sandbox_name("jackin-f3"), PowerAction::Stop))
-        .await
-        .unwrap();
+    let stopped = guard(gateway.set_power(
+        &sandbox_name("jackin-f3"),
+        PowerAction::Stop,
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert!(failed(&stopped).contains("Operation not permitted"));
-    let normal = guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-f4"))))
-        .await
-        .unwrap();
+    let normal = guard(gateway.find_sandboxes(
+        &SandboxQuery::Name(sandbox_name("jackin-f4")),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert!(matches!(normal[0].provisioning, Provisioning::Normal));
-    let none = guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-f1"))))
-        .await
-        .unwrap();
+    let none = guard(gateway.find_sandboxes(
+        &SandboxQuery::Name(sandbox_name("jackin-f1")),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert!(matches!(none[0].provisioning, Provisioning::Failed { .. }));
 }
 
@@ -434,9 +469,13 @@ async fn power_actions_move_the_server_phase_and_return_the_view() {
         &[],
     );
     let name = sandbox_name(SANDBOX);
-    let stopped = guard(gateway.set_power(&name, PowerAction::Stop))
-        .await
-        .unwrap();
+    let stopped = guard(gateway.set_power(
+        &name,
+        PowerAction::Stop,
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(stopped.phase, Phase::Stopped);
     assert_eq!(
         env.server.state().sandboxes[&(WORKSPACE.to_owned(), SANDBOX.to_owned())]
@@ -446,13 +485,20 @@ async fn power_actions_move_the_server_phase_and_return_the_view() {
             .phase,
         SandboxPhase::Stopped as i32
     );
-    let starting = guard(gateway.set_power(&name, PowerAction::Start))
-        .await
-        .unwrap();
+    let starting = guard(gateway.set_power(
+        &name,
+        PowerAction::Start,
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(starting.phase, Phase::Starting);
-    let found = guard(gateway.find_sandboxes(&SandboxQuery::Name(name)))
-        .await
-        .unwrap();
+    let found = guard(gateway.find_sandboxes(
+        &SandboxQuery::Name(name),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(found[0].phase, Phase::Ready);
 }
 
@@ -461,7 +507,7 @@ async fn policy_round_trips_through_create_and_detail() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
     let spec = create_spec(SANDBOX, LAUNCH);
-    guard(gateway.create_sandbox(&spec)).await.unwrap();
+    guard(gateway.create_contract_sandbox(&spec)).await.unwrap();
     let sent = openshell_policy::parse_sandbox_policy(&policy_text()).unwrap();
     {
         let mut state = env.server.state();
@@ -556,7 +602,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
     let base = create_spec(SANDBOX, LAUNCH);
     let name = sandbox_name("jackin-abcdefg-wxyz");
     assert_eq!(name.as_str().len(), 19);
-    let spec = jackin_openshell::SandboxCreate::new(
+    let spec = jackin_openshell::GatewayContractSandboxCreate::new(
         name.clone(),
         base.image().clone(),
         labels.clone(),
@@ -564,16 +610,19 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         policy(),
         base.main().clone(),
     );
-    guard(gateway.create_sandbox(&spec)).await.unwrap();
+    guard(gateway.create_contract_sandbox(&spec)).await.unwrap();
     assert!(
         env.server
             .state()
             .sandboxes
             .contains_key(&(workspace.clone(), name.to_string()))
     );
-    let found = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
-        .await
-        .unwrap();
+    let found = guard(gateway.find_sandboxes(
+        &SandboxQuery::Labels(LabelSelector::managed()),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(
         &SandboxLabels::from_labels(&found[0].labels).unwrap(),
@@ -607,7 +656,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         let stored = &state.providers[&(workspace.clone(), provider.to_string())];
         assert_eq!(stored.metadata.as_ref().unwrap().name, provider.as_str());
     }
-    let with_provider = jackin_openshell::SandboxCreate::new(
+    let with_provider = jackin_openshell::GatewayContractSandboxCreate::new(
         name.clone(),
         base.image().clone(),
         labels,
@@ -615,7 +664,9 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
         policy(),
         base.main().clone(),
     );
-    guard(gateway.create_sandbox(&with_provider)).await.unwrap();
+    guard(gateway.create_contract_sandbox(&with_provider))
+        .await
+        .unwrap();
     assert_eq!(
         env.server.state().sandboxes[&(workspace.clone(), name.to_string())]
             .spec
@@ -657,9 +708,12 @@ async fn a_listed_record_that_cannot_be_read_fails_the_listing_instead_of_vanish
         None,
         &managed(),
     );
-    let error = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.find_sandboxes(
+        &SandboxQuery::Labels(LabelSelector::managed()),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(
         matches!(error, jackin_openshell::GatewayError::Protocol { .. }),
         "{error:?}"
@@ -682,18 +736,54 @@ async fn a_managed_sandbox_with_an_invalid_label_is_listed_without_that_label() 
             ("jackin.dev/role", "backend"),
         ],
     );
-    let found = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
-        .await
-        .unwrap();
+    let found = guard(gateway.find_sandboxes(
+        &SandboxQuery::Labels(LabelSelector::managed()),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].name.to_string(), "jackin-bad-label");
     assert!(found[0].labels.workspace().is_none());
     assert_eq!(found[0].labels.iter().count(), 2);
     assert!(found[0].labels.is_managed());
     assert!(
-        guard(gateway.find_sandboxes(&SandboxQuery::Name(sandbox_name("jackin-bad-label"))))
-            .await
-            .is_err(),
+        guard(gateway.find_sandboxes(
+            &SandboxQuery::Name(sandbox_name("jackin-bad-label")),
+            &tokio_util::sync::CancellationToken::new()
+        ))
+        .await
+        .is_err(),
         "a single-sandbox lookup still refuses invalid labels"
     );
+}
+
+#[tokio::test]
+async fn a_gateway_that_cycles_its_page_tokens_fails_the_listing_at_the_first_repeat() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    {
+        let mut state = env.server.state();
+        state.paging = Paging::Cycling;
+        add_sandbox(
+            &mut state,
+            WORKSPACE,
+            "jackin-s1",
+            SandboxPhase::Ready,
+            None,
+            &[("jackin.dev/managed", "true")],
+        );
+    }
+    let error = guard(gateway.find_sandboxes(
+        &SandboxQuery::Labels(LabelSelector::managed()),
+        &tokio_util::sync::CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("repeated a page token"),
+        "{error}"
+    );
+    let asked = env.server.state().rpc_count;
+    assert!(asked < 10, "{asked} requests before the cycle was seen");
 }

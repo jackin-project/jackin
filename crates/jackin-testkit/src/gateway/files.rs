@@ -33,6 +33,20 @@ fn writable(root: &Path, path: &SandboxPath) -> Result<PathBuf, GatewayError> {
     })
 }
 
+pub(super) fn bake(
+    root: &Path,
+    baked: &BTreeMap<SandboxPath, Vec<u8>>,
+) -> Result<(), GatewayError> {
+    for (path, bytes) in baked {
+        let target = writable(root, path)?;
+        if let Some(dir) = target.parent() {
+            std::fs::create_dir_all(dir).map_err(protocol)?;
+        }
+        std::fs::write(&target, bytes).map_err(protocol)?;
+    }
+    Ok(())
+}
+
 pub(super) async fn read_files(
     root: &Path,
     installed: &BTreeMap<SandboxPath, Vec<u8>>,

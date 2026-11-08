@@ -18,7 +18,10 @@ async fn usage_page_lists_accounts_with_no_windows() -> TestResult {
         )?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddAccount(other)])
+            .edit(
+                vec![ConfigEdit::AddAccount(other)],
+                &tokio_util::sync::CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::new(&rig.world).await?;
         console.skip_intro();

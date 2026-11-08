@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 use jackin_core::{
-    Account, AccountName, ChatgptAccountId, Config, ConfigEdit, CredentialSource, HostPath,
-    ProjectRoot, Provider, ProviderName, RoleName, SandboxPath,
+    Account, AccountName, Agent, AgentInstance, AgentInstances, ChatgptAccountId, Config,
+    ConfigEdit, CredentialSource, HostPath, ModelName, ProjectRoot, Provider, ProviderName,
+    RoleName, SandboxPath,
 };
 use jackin_image::ensure_image;
 use jackin_openshell::{
@@ -19,7 +20,7 @@ use jackin_testkit::{
 use tokio_util::sync::CancellationToken;
 
 use super::docker_support::{rule_keys, split_failure};
-use super::support::{TestResult, guard, launch_rig, ready};
+use super::support::{TestResult, add_zai_account, final_image, guard, launch_rig, ready};
 
 const OTHER_ACCOUNT_ID: &str = "11111111-2222-3333-4444-555555555555";
 const POLICY_KEY: &str = "jackin.dev/policy";
@@ -137,16 +138,20 @@ async fn another_account(default: bool) -> TestResult {
     )
     .await?;
     assert!(shown.contains("jackin.dev/agents"), "{shown}");
-    let work_hash = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-        jackin_core::Agent::Codex,
+    let work_hash = AgentInstances::single(AgentInstance::lead(
+        Agent::Codex,
         AccountName::parse("work")?,
-    ))
-    .agents_label();
-    let other_hash = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-        jackin_core::Agent::Codex,
+    )?)?
+    .hash()
+    .as_str()
+    .to_owned();
+    let other_hash = AgentInstances::single(AgentInstance::lead(
+        Agent::Codex,
         AccountName::parse("other")?,
-    ))
-    .agents_label();
+    )?)?
+    .hash()
+    .as_str()
+    .to_owned();
     assert!(
         shown.contains(&work_hash) && shown.contains(&other_hash),
         "{shown}"
@@ -188,7 +193,7 @@ async fn a_retry_under_another_policy_is_refused_even_when_the_image_id_is_uncha
         ready(rig.launch_observed(1).await?)?;
         let first = rig.handle(1).await?;
         let kept = snapshot(&rig).await?;
-        let old = rig.final_image()?;
+        let (_, old_id) = final_image(&rig, 1).await?;
 
         revoke(&rig)?;
         let changed = rig
@@ -205,7 +210,10 @@ async fn a_retry_under_another_policy_is_refused_even_when_the_image_id_is_uncha
             &CancellationToken::new(),
         )
         .await?;
-        rig.world.engine.pin_id(&built.tag, old.id.clone());
+        rig.world
+            .docker
+            .retag(built.tag.clone(), Some(old_id.clone()));
+        assert_eq!(rig.world.docker.image_id(&built.tag), Some(old_id));
 
         let shown = refused(
             &rig,
@@ -285,6 +293,44 @@ async fn a_rule_the_operator_added_after_creation_does_not_make_an_identical_ret
     .await
 }
 
+#[tokio::test]
+async fn changing_only_the_operator_selected_lead_is_stale_and_changes_nothing() -> TestResult {
+    guard(async {
+        let rig = launch_rig().await?;
+        let config = add_zai_account(&rig, "omp").await?;
+        super::multi_instance::seed_omp_provider(&rig, "omp").await?;
+        let codex = AgentInstance::new(
+            Agent::Codex,
+            Provider::Codex,
+            AccountName::parse("work")?,
+            ModelName::parse("gpt-5.1-codex")?,
+        );
+        let omp = AgentInstance::new(
+            Agent::Omp,
+            Provider::Zai,
+            AccountName::parse("omp")?,
+            ModelName::parse("glm-5.3")?,
+        );
+        let codex_lead = AgentInstances::new(vec![codex.clone(), omp.clone()])?;
+        let omp_lead = AgentInstances::new(vec![omp, codex])?;
+        assert_eq!(codex_lead.hash(), omp_lead.hash());
+        let first = plan_launch(&config, &rig.loaded, rig.request(1)?.instances(codex_lead))?;
+        ready(
+            rig.run_planned(&rig.world.session, first, CancellationToken::new())
+                .await,
+        )?;
+        let kept = snapshot(&rig).await?;
+        let request = rig.request(1)?.instances(omp_lead);
+        let shown = refused(&rig, retry(&rig, &config, &rig.loaded, request).await?).await?;
+        assert!(shown.contains("jackin.dev/lead-agent"), "{shown}");
+        assert!(shown.contains("codex"), "{shown}");
+        assert!(shown.contains("omp"), "{shown}");
+        assert_eq!(snapshot(&rig).await?, kept);
+        Ok(())
+    })
+    .await
+}
+
 struct Second {
     config: Config,
     repo: RepoFixture,
@@ -347,7 +393,7 @@ async fn a_reused_launch_id_under_another_role_with_the_same_image_id_is_refused
         let rig = launch_rig().await?;
         ready(rig.launch_observed(1).await?)?;
         let kept = snapshot(&rig).await?;
-        let old = rig.final_image()?;
+        let (_, old_id) = final_image(&rig, 1).await?;
         let other = second(&rig).await?;
         let request = request_for(&rig, rig.project.clone(), "second")?;
         let plan = plan_launch(&other.config, &other.loaded, request)?;
@@ -359,7 +405,10 @@ async fn a_reused_launch_id_under_another_role_with_the_same_image_id_is_refused
             &CancellationToken::new(),
         )
         .await?;
-        rig.world.engine.pin_id(&built.tag, old.id);
+        rig.world
+            .docker
+            .retag(built.tag.clone(), Some(old_id.clone()));
+        assert_eq!(rig.world.docker.image_id(&built.tag), Some(old_id));
 
         let request = request_for(&rig, rig.project.clone(), "second")?;
         let shown = refused(

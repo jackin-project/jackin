@@ -63,8 +63,8 @@ flate2 = "1.1.10"
 futures = "0.3.34"
 getrandom = "0.4.3"
 globset = { version = "0.4.21", default-features = false }
-jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "f539d9a61b1fe1e9fab13f4e976c872b09b8fb9a", default-features = false }
-junie-tui = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "f539d9a61b1fe1e9fab13f4e976c872b09b8fb9a", default-features = false, features = ["terminal"] }
+jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "7ca3b9eec08d14115355ce46a1070d77b7676a97", default-features = false }
+junie-tui = { version = "0.1.0", git = "https://github.com/tailrocks/terminal-components-baseline", rev = "7ca3b9eec08d14115355ce46a1070d77b7676a97", default-features = false, features = ["terminal"] }
 noyalib = { version = "0.0.58", default-features = false, features = ["std", "lossless-u64"] }
 openshell-core = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
 openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
@@ -158,6 +158,7 @@ undocumented_unsafe_blocks = "deny"
 multiple_unsafe_ops_per_block = "deny"
 mem_forget = "deny"
 disallowed_methods = "deny"
+disallowed_fields = "deny"
 print_stdout = "deny"
 print_stderr = "deny"
 exit = "warn"

@@ -49,6 +49,7 @@ fn attach_error(error: &AttachError) -> String {
         AttachError::MainProcessEnded { sandbox, phase } => main_process_ended(sandbox, *phase),
         AttachError::EnvFile { sandbox, problem } => env_file_problem(sandbox, problem),
         AttachError::Gateway(error) => error_chain(error),
+        AttachError::AgentMetadata(error) => error_chain(error),
     }
 }
 
@@ -82,8 +83,10 @@ fn purge_error(error: &PurgeError) -> String {
             "the work in sandbox {sandbox} is not exported ({state}); run jackin export {sandbox} or pass --force"
         ),
         PurgeError::Replaced { sandbox } => format!(
-            "sandbox {sandbox} was replaced, or cannot be told apart from a replacement, while its work was inspected; nothing was deleted; run jackin purge {sandbox} again"
+            "sandbox {sandbox} was replaced or changed lifecycle identity; nothing was deleted; run jackin purge {sandbox} again"
         ),
+        PurgeError::Identity(error) => error_chain(error),
+        PurgeError::Cancelled => "cancelled".to_owned(),
         PurgeError::Gateway(error) => error_chain(error),
     }
 }

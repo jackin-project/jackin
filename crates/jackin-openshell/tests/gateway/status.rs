@@ -61,9 +61,10 @@ async fn every_grpc_code_maps_to_its_gateway_error() {
         "create_sandbox",
         Fault::Status(Code::AlreadyExists, "exists".to_owned()),
     );
-    let error = guard(gateway.create_sandbox(&create_spec(SANDBOX, "01hzy3k5m7p9r2t4v6w8x0abcd")))
-        .await
-        .unwrap_err();
+    let error =
+        guard(gateway.create_contract_sandbox(&create_spec(SANDBOX, "01hzy3k5m7p9r2t4v6w8x0abcd")))
+            .await
+            .unwrap_err();
     assert!(matches!(
         error,
         GatewayError::AlreadyExists { what: Missing::Sandbox(ref missing) } if *missing == name
@@ -101,7 +102,8 @@ fn file(path: &str) -> SandboxFile {
 async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
     let env = env().await;
     let root = TempDir::new().unwrap();
-    env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+    let exec = host_shell(root.path().to_path_buf()).await;
+    env.server.state().exec = Some(exec);
     add_sandbox(
         &mut env.server.state(),
         WORKSPACE,
@@ -120,13 +122,18 @@ async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
         .await
         .unwrap_err();
     assert!(not_found_named(&error, GONE), "run_program {error:?}");
-    let error = guard(gateway.read_files(&gone, std::slice::from_ref(&probe)))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.read_files(
+        &gone,
+        std::slice::from_ref(&probe),
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(not_found_named(&error, GONE), "read_files {error:?}");
-    let error = guard(gateway.write_file(&gone, &file("/sandbox/probe")))
-        .await
-        .unwrap_err();
+    let error =
+        guard(gateway.write_file(&gone, &file("/sandbox/probe"), &CancellationToken::new()))
+            .await
+            .unwrap_err();
     assert!(not_found_named(&error, GONE), "write_file {error:?}");
     let error = guard(gateway.open_terminal(&shell_terminal(GONE)))
         .await
@@ -146,12 +153,16 @@ async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
         0
     );
     assert_eq!(
-        guard(gateway.read_files(&control, std::slice::from_ref(&probe)))
-            .await
-            .unwrap(),
+        guard(gateway.read_files(
+            &control,
+            std::slice::from_ref(&probe),
+            &CancellationToken::new()
+        ))
+        .await
+        .unwrap(),
         vec![None]
     );
-    guard(gateway.write_file(&control, &file("/sandbox/probe")))
+    guard(gateway.write_file(&control, &file("/sandbox/probe"), &CancellationToken::new()))
         .await
         .unwrap();
 
@@ -166,13 +177,18 @@ async fn absent_sandbox_is_not_found_on_every_exec_entry_point() {
     }));
     let error = guard(gateway.run_program(&ok, &cancel)).await.unwrap_err();
     assert!(not_found_named(&error, SANDBOX), "run_program {error:?}");
-    let error = guard(gateway.read_files(&control, std::slice::from_ref(&probe)))
-        .await
-        .unwrap_err();
+    let error = guard(gateway.read_files(
+        &control,
+        std::slice::from_ref(&probe),
+        &CancellationToken::new(),
+    ))
+    .await
+    .unwrap_err();
     assert!(not_found_named(&error, SANDBOX), "read_files {error:?}");
-    let error = guard(gateway.write_file(&control, &file("/sandbox/probe")))
-        .await
-        .unwrap_err();
+    let error =
+        guard(gateway.write_file(&control, &file("/sandbox/probe"), &CancellationToken::new()))
+            .await
+            .unwrap_err();
     assert!(not_found_named(&error, SANDBOX), "write_file {error:?}");
 }
 
@@ -359,7 +375,7 @@ async fn call_timeouts_report_the_operation_and_the_configured_duration() {
         .faults
         .insert("create_sandbox", Fault::Hang);
     let spec = create_spec(SANDBOX, "01hzy3k5m7p9r2t4v6w8x0abcd");
-    let call = tokio::spawn(async move { short.create_sandbox(&spec).await });
+    let call = tokio::spawn(async move { short.create_contract_sandbox(&spec).await });
     guard(env.server.shared.arrived.notified()).await;
     tokio::time::pause();
     let error = call.await.unwrap().unwrap_err();

@@ -1005,6 +1005,52 @@ mod expose {
     }
 
     #[test]
+    fn docker_stdin_adapter_is_allowlisted_but_its_parent_module_is_not() -> TestResult {
+        let source = "fn f(secret: &SecretBytes) {\n    let _bytes = secret.expose();\n}\n";
+        let violations = run(&[
+            ("crates/jackin-testkit/src/docker/stdin.rs", source),
+            ("crates/jackin-testkit/src/docker.rs", source),
+        ])?;
+        assert_eq!(
+            summary(&violations),
+            [at(CiStep::Layers, "crates/jackin-testkit/src/docker.rs", 2)]
+        );
+        assert_messages(&violations, &[&["Secret::expose", "allowlist"]]);
+        Ok(())
+    }
+
+    #[test]
+    fn secret_broker_exposure_is_allowed_only_in_the_exact_leaf() -> TestResult {
+        let source = "fn f(secret: &Secret) {\n    let _value = secret.expose();\n}\n";
+        let accounts = "crates/jackin-session/src/accounts.rs";
+        let credentials = "crates/jackin-session/src/credentials.rs";
+        let neighbor = "crates/jackin-session/src/secret_broker_helpers.rs";
+        let violations = run(&[
+            ("crates/jackin-session/src/secret_broker.rs", source),
+            (accounts, source),
+            (credentials, source),
+            (neighbor, source),
+        ])?;
+        assert_eq!(
+            summary(&violations),
+            [
+                at(CiStep::Layers, accounts, 2),
+                at(CiStep::Layers, credentials, 2),
+                at(CiStep::Layers, neighbor, 2),
+            ]
+        );
+        assert_messages(
+            &violations,
+            &[
+                &["Secret::expose", "allowlist"],
+                &["Secret::expose", "allowlist"],
+                &["Secret::expose", "allowlist"],
+            ],
+        );
+        Ok(())
+    }
+
+    #[test]
     fn expose_in_strings_and_definitions_is_not_a_call() -> TestResult {
         let source = "impl Secret {\n    pub fn expose(&self) -> &str { &self.0 }\n}\nfn docs() {\n    let a = \"secret.expose()\";\n    let b = r#\"secret.expose()\"#;\n    let expose = 1;\n}\n";
         let violations = run(&[("crates/usage/jackin-usage/src/model.rs", source)])?;
@@ -1350,6 +1396,60 @@ mod containers {
                 at(CiStep::Containers, "crates/xtask/src/tool.rs", 5),
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn computed_commands_are_allowed_only_in_native_gateway_proof_files() -> TestResult {
+        let exec_rpc = text(&[
+            "fn f(program: &str) {",
+            "    let computed = Command::new(program);",
+            "    let docker = Command::new(\"docker\");",
+            "    let podman = Command::new(\"podman\");",
+            "    let container = Command::new(\"container\");",
+            "}",
+        ]);
+        let writer_bootstrap = text(&[
+            "fn f(program: &str) {",
+            "    let computed = Command::new(program);",
+            "    let docker = Command::new(\"docker\");",
+            "    let podman = Command::new(\"podman\");",
+            "    let container = Command::new(\"container\");",
+            "}",
+        ]);
+        let neighboring = "fn f(program: &str) {\n    let computed = Command::new(program);\n}\n";
+        let violations = run(&[
+            (
+                "crates/jackin-openshell/tests/gateway/exec_rpc.rs",
+                &exec_rpc,
+            ),
+            (
+                "crates/jackin-openshell/tests/gateway/writer_bootstrap.rs",
+                &writer_bootstrap,
+            ),
+            (
+                "crates/jackin-openshell/tests/gateway/exec_rpc_neighbor.rs",
+                neighboring,
+            ),
+        ])?;
+        let mut expected = lines(
+            CiStep::Containers,
+            "crates/jackin-openshell/tests/gateway/exec_rpc.rs",
+            &exec_rpc,
+            &["let docker", "let podman", "let container"],
+        );
+        expected.push(at(
+            CiStep::Containers,
+            "crates/jackin-openshell/tests/gateway/exec_rpc_neighbor.rs",
+            2,
+        ));
+        expected.extend(lines(
+            CiStep::Containers,
+            "crates/jackin-openshell/tests/gateway/writer_bootstrap.rs",
+            &writer_bootstrap,
+            &["let docker", "let podman", "let container"],
+        ));
+        assert_eq!(summary(&violations), expected);
         Ok(())
     }
 
@@ -1918,6 +2018,67 @@ mod error_strings {
             "}",
             "#[error(\"struct {}\", plain(.text))]",
             "pub struct S { text: String }",
+        ]);
+        assert_eq!(summary(&run(&source)?), []);
+        Ok(())
+    }
+}
+
+mod error_paths {
+    use super::*;
+
+    const LIB: &str = "crates/jackin-core/src/lib.rs";
+
+    fn run(source: &str) -> Result<Vec<Violation>, Box<dyn Error>> {
+        let fixture = Fixture::new(&bare(&["jackin-core"]))?;
+        fixture.write(LIB, source)?;
+        Ok(ErrorsCheck.run(&fixture.repo()?))
+    }
+
+    #[test]
+    fn a_raw_display_call_in_an_error_message_is_reported_at_the_literal_line() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"named p_named {}\", .path.display())]",
+            "    A { path: PathBuf },",
+            "    #[error(\"as_path p_chain {}\", .0.as_path().display())]",
+            "    B(HostPath),",
+            "    #[error(\"second p_second {} {}\", plain(.message), .dir.display())]",
+            "    C { message: String, dir: PathBuf },",
+            "}",
+            "#[error(\"struct p_struct {}\", .path.display())]",
+            "pub struct S { path: PathBuf }",
+        ]);
+        let violations = run(&source)?;
+        assert_eq!(
+            summary(&violations),
+            lines(
+                CiStep::Errors,
+                LIB,
+                &source,
+                &["p_named", "p_chain", "p_second", "p_struct"]
+            )
+        );
+        assert!(
+            violations[0].message.contains("display"),
+            "{}",
+            violations[0].message
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_display_call_wrapped_in_plain_or_outside_an_error_attribute_passes() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"wrapped {}\", plain(.path.display()))]",
+            "    A { path: PathBuf },",
+            "    #[error(\"nested {}\", plain(.0.as_path().display()))]",
+            "    B(HostPath),",
+            "    #[error(\"typed {}\", .0)]",
+            "    C(HostPath),",
+            "}",
+            "fn shown(path: &Path) -> String { path.display().to_string() }",
         ]);
         assert_eq!(summary(&run(&source)?), []);
         Ok(())

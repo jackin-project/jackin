@@ -17,7 +17,7 @@ Jackin runs Codex in OpenShell sandboxes and has to prove it end to end. Eight c
 3. The image ID is not known when a launch is planned. The cache key hashes the built construct image ID (D05), so the final image tag, and the image label of the sandbox, exist only after the image step. Planning must stay pure anyway.
 4. A sandbox in `Completed` or `Error` refuses exec and attach; in `Error`, `stop` fails and `start` stays in `Starting` (D09, P7.1 F3). The phase must carry the exit code, and the lifecycle code must refuse these phases before it calls the gateway.
 
-Everything a test may fake is a boundary that jackin owns: the OpenShell gateway, the image engine the gateway driver reads (D23), the network, the clock, the filesystem (D18). Terminal sessions, file transfer, and the Docker build cross a boundary and must not leak tonic, russh, SDK, or wire types. Only `jackin-openshell` imports `openshell-sdk`, `openshell-policy`, `tonic`, and `russh` (D03). Only `jackin-image` starts `docker` (D01).
+Tests fake only the allowed external boundaries: the OpenShell gateway, Docker's CLI/daemon protocol, the network, the clock, and the filesystem (D18). `ImageEngine` and every image behavior owned by Jackin run for real. Terminal sessions, file transfer, and the Docker build cross a boundary and must not leak tonic, russh, SDK, or wire types. Only `jackin-openshell` imports `openshell-sdk`, `openshell-policy`, `tonic`, and `russh` (D03). Only `jackin-image` starts `docker` (D01).
 
 Repo constraints that bind the API: no code comments (D17), clap help through attributes, no compatibility code, workspace lints `unwrap_used`, `expect_used`, `panic`, `todo`, `print_stdout`, `print_stderr`, `unreachable_pub`, `missing_debug_implementations`, `mod_module_files` denied, `unsafe_code` forbidden, and clippy `disallowed-methods` for blocking `Command::output`, `thread::sleep`, and `File::open` (`clippy.toml`). The usage crates under `crates/usage/` are outside the workspace members until P6.3 (D25).
 
@@ -159,16 +159,17 @@ The gateway crates are `openshell-sdk`, `openshell-policy`, `tonic`, and `russh`
 
 ### Boundaries and where each one lives
 
-AGENTS.md and D18 allow fakes only at external boundaries, behind interfaces jackin owns. These are all of them. Each has one trait, one real implementation, one fake, and no other seam. Code that jackin owns (planning, cache keys, the credential resolver, the usage dispatch) runs for real in every test.
+AGENTS.md and D18 allow fakes only at external boundaries, behind interfaces jackin owns: OpenShell, Docker's CLI/daemon protocol, the network, the clock, and the filesystem. The image planner, `BuildxEngine`, attestation, image cache, holds, and cleanup are Jackin-owned behavior and run for real in tests.
 
 | Boundary | Trait (owner) | Real | Fake (testkit) | Consumers |
 |---|---|---|---|---|
 | OpenShell gateway, with file transfer, program runs, and terminals | `Gateway` (openshell) | `GrpcGateway`; its private `transfer.rs` runs `openshell sandbox upload` and `download` | `FakeGateway` | session, tui, binary, xtask |
-| Image engine (the Docker engine the gateway driver reads, D23) | `ImageEngine` (image) | `BuildxEngine` over `ProcessRunner` | `FakeEngine` | session, binary |
+| Image engine (the Docker engine the gateway driver reads, D23) | `ImageEngine` (image) | `BuildxEngine` over `ProcessRunner` | none; tests use `BuildxEngine` | session, binary |
+| Docker CLI and daemon protocol | `ProcessRunner` (core) | `TokioProcessRunner` | `DockerBoundary`, an in-process Docker protocol model in testkit | image, testkit |
 | Network (usage providers) | `ProviderEndpoints` (usage) | `ProviderEndpoints::real()` | `UsageServer`, a local HTTP server, through a base URL override | usage, tui, binary |
 | Clock | `Clock` (core) | `SystemClock` (session) | `FakeClock` | session, image, usage, tui |
 | Filesystem | `FileSystem` (core) | `StdFileSystem` (core) | `MemFs` with fault injection | core, image, openshell, session, usage |
-| Host programs | `ProcessRunner` and the closed `Program` enum (core) | `TokioProcessRunner` (session) | `ScriptedProcessRunner`, for `docker`, `openshell`, `ssh`, and `op` only | image, openshell, session, usage |
+| Host programs other than Docker | `ProcessRunner` and the closed `Program` enum (core) | `TokioProcessRunner` (session) | `ScriptedProcessRunner` and `TestRunner` for external programs | openshell, session, usage |
 
 `git` is not a fake. `Program::Git` runs for real on temporary repositories in every test that needs it, and `ScriptedProcessRunner::expect` takes a `ScriptedProgram` enum without a `Git` variant, so faking git is unrepresentable. The CLI transfer runner is not its own trait: a trait there would let a test fake the part of the upload that decides what the upload is. Randomness is not a boundary: `LaunchId::generate` reads the OS and tests pass the launch ID. Attempt IDs are not random: `SupervisorState::next_attempt` derives them.
 
@@ -178,7 +179,7 @@ AGENTS.md and D18 allow fakes only at external boundaries, behind interfaces jac
 
 ### Load-bearing decisions
 
-1. **Launch is a convergent executor over typed observations, and planning is pure.** `plan_launch(config, role, request)` is a free function with no I/O and no randomness. It yields a `LaunchPlan` that holds a `SandboxDraft`: the sandbox name, the labels without the image label, the providers, the merged policy, and the main process, but not the image tag. The plan also holds the two non-secret files that the Credentials step writes, already rendered: the Codex `config.toml` and the env file. `launch` repeats `observe`, then `decide(plan, observed, done, limits)`, then one idempotent act. The image step returns a `BuiltImage`, and `SandboxDraft::complete(&BuiltImage)` produces the `SandboxCreate` with the final tag and the image label. The creation fence is the sandbox name: the suffix derives from the launch ID, so two racing creates for one launch collide on the name and the loser joins the winner.
+1. **Launch is a convergent executor over typed observations, and planning is pure.** `plan_launch(config, role, request)` is a free function with no I/O and no randomness. It yields a `LaunchPlan` that holds a `SandboxDraft`: the sandbox name, the labels without the image label, the providers, the merged policy, and the main process, but not the image reference. The plan also holds the two non-secret files that the Credentials step writes, already rendered: the Codex `config.toml` and the env file. `launch` repeats `observe`, then `decide(plan, observed, done, limits)`, then one idempotent act. The image step returns a `BuiltImage` with a mutable build/cache tag, a resolved image ID, and the corresponding required-local reference. `SandboxDraft::complete(&BuiltImage)` gives `SandboxCreate` the ID-derived local reference and uses the same ID for its image label. The completed image is retained for recreation even after the build-tag lock is released. The creation fence is the sandbox name: the suffix derives from the launch ID, so two racing creates for one launch collide on the name and the loser joins the winner.
 2. **One `Gateway` trait whose methods are semantic, and the fake implements the same semantics.** File reads and writes, typed program runs, project upload, file download, and terminal open are methods. `ProgramRun` carries `touch_on_success`, so the setup hook and its marker are one typed request and the fake never parses a shell line. The real adapter builds these from exec, the `openshell` CLI, `CreateSshSession`, `ForwardTcp`, and `russh`. `TerminalSession` is a concrete channel-pair handle shared by the real and the fake side, so pane code is the same for the Codex pane and a shell pane.
 3. **`jackin-core` owns the vocabulary and parses at the edge.** Every identifier that reaches a label, a sandbox name, a path, or an argv is a validated newtype. `Config` has private fields and one mutation entry, `Config::apply(ConfigEdit)`, so a parsed or edited config is always referentially valid. The agent table is `const` data. The `Provider` enum lives in core and `jackin-usage` matches it exhaustively (D26).
 4. **The Docker capability is one sum type.** `DockerCapability::{Disabled, Enabled(EngineAccess)}` carries the engine and the source that enabled it. The image sees only `DockerLayer`. "Enabled without an engine" cannot exist after `DockerCapability::resolve`.
@@ -191,8 +192,8 @@ AGENTS.md and D18 allow fakes only at external boundaries, behind interfaces jac
 
 | Crate | Public surface | Hidden behind it |
 |---|---|---|
-| jackin-image | `ensure_image` (1 function), `ImageEngine` (3 methods), `ImageRequest`, `BuiltImage`, `validate_dockerfile` | embedded construct and derived Dockerfiles, cache key, builder driver check, three buildx runs, build log parsing, `image inspect` |
-| jackin-openshell | `Gateway` (16 methods), `TerminalSession`, `PolicyDocument`, discovery | SDK, tonic, russh, `openshell-policy`, host key pinning, token minting, status mapping, CLI argv, timeouts, stdin from `/dev/null` |
+| jackin-image | `ensure_image`, `ImageEngine`, `ImageRequest`, `BuiltImage`, `validate_dockerfile` | embedded construct and derived Dockerfiles, cache key, builder driver check, three buildx runs, build log parsing, image inspection and required-local publication |
+| jackin-openshell | `Gateway`, `TerminalSession`, `PolicyDocument`, discovery | SDK, tonic, russh, `openshell-policy`, host key pinning, token minting, status mapping, CLI argv, timeouts, stdin from `/dev/null` |
 | jackin-session | `plan_launch`, `plan_image`, `Session` (12 operations), `RoleCatalog`, `doctor` | convergent executor, probe, hook runs, `auth.json` and `config.toml` rendering, reply filter, bundle export, work-state inspection |
 | jackin-usage | `HostUsage` (1 method) | every provider crate, credential discovery, caches, HTTP |
 | jackin-tui | `Console`, `run_console` | projection, persistence diff, pane tasks and byte inboxes; no pixels, no screen text, no terminal emulation (the baseline owns termpane) |
@@ -308,7 +309,7 @@ Whole-shape alternatives. Crate-level choices follow.
 - **D. Config as a `toml::Value` with ad hoc setters in the console and CLI.** Rejected. Every writer would re-implement the binding rules. `Config::apply(ConfigEdit)` is one door.
 - **E. Console ports (`WorkspacePort`, `FleetPort`, `UsagePort`) that the fixtures implement.** Rejected. The identity gate can seed the real wiring with `jackin-testkit` fakes; ports would repeat `Session` and `Config`.
 - **F. Usage crates imported directly where needed.** Rejected. 34 crates in the import graph, wire types in the console, and a merge that D25 allows would break callers. One facade absorbs merges.
-- **G. A fake of `ImageBuilder::ensure`.** Rejected. It fakes the planning, key, and cache code that jackin owns. The boundary is the engine, so the fake is `FakeEngine` and `ensure_image` runs for real.
+- **G. A fake of `ImageBuilder::ensure` or `ImageEngine`.** Rejected. Planning, keys, cache trust, attestations, locks, and cleanup belong to Jackin, so tests run `ensure_image` and `BuildxEngine` for real. Only Docker's external CLI/daemon protocol is modeled.
 - **H. Plan with a placeholder image tag, patched by the executor.** Rejected. A patched plan is mutable state. A `SandboxDraft` that only `complete(&BuiltImage)` can turn into a `SandboxCreate` makes the missing image impossible to forget.
 
 Per-crate choices that lost are named where they arise: the `docker-container` builder (P0.3), a separate delivery step (D23), one trait per gateway concern, a `CliTransfer` trait, a pane-owned redraw nudge, a local launch journal (D07), reading `run/state` for export or purge (D09), a second event loop (D27), a fake that interprets shell lines, and a second crate list for the layer step.
@@ -411,8 +412,16 @@ pub struct SandboxSlug(String);
 pub struct NameSuffix(String);
 pub struct SandboxName(String);
 pub struct ImageId(Sha256);
+pub struct LocalImageRef(ImageId);
 pub struct ImageLabel(String);
 pub struct ImageTag(String);
+
+impl LocalImageRef {
+    pub fn for_image(id: &ImageId) -> LocalImageRef;
+    pub fn image_id(&self) -> &ImageId;
+}
+
+impl Display for LocalImageRef; // openshell/sandbox-from:<full 64-hex image ID>
 
 impl WorkspaceName {
     pub fn slug(&self) -> SandboxSlug;
@@ -1215,7 +1224,7 @@ Location: `crates/jackin-core/tests/*.rs`, integration tests through the public 
 
 ## 2. jackin-image
 
-Role: turn a loaded role into an image the gateway can start (D05, D06, D23). The only crate that names `Program::Docker`. It builds three images through `docker buildx build` with a builder whose driver is `docker`, and reads image IDs with `docker image inspect`. Under the `docker-local` method (D23) the `--load` into the engine is the delivery, so there is no separate delivery call. It never runs `docker run`, `create`, `start`, `exec`, or a Docker API client.
+Role: turn a loaded role into an image the gateway can start (D05, D06, D23). The only crate that names `Program::Docker`. It builds three images through `docker buildx build` with a builder whose driver is `docker`, reads image IDs with `docker image inspect`, then publishes a required-local `openshell/sandbox-from:<full config ID>` reference by tagging from the resolved image ID and verifying the result. It never runs `docker run`, `create`, `start`, `exec`, or a Docker API client.
 
 ### Module map
 
@@ -1284,7 +1293,12 @@ impl ImagePlan {
 }
 
 pub enum ImageSource { Cache, Built }
-pub struct BuiltImage { pub tag: ImageTag, pub id: ImageId, pub source: ImageSource }
+pub struct BuiltImage {
+    pub tag: ImageTag,
+    pub id: ImageId,
+    pub local_ref: LocalImageRef,
+    pub source: ImageSource,
+}
 pub enum ImageEvent {
     StageStarted(BuildStage),
     StageCached(BuildStage),
@@ -1296,8 +1310,12 @@ pub type ProgressSink = tokio::sync::mpsc::Sender<ImageEvent>;
 #[async_trait]
 pub trait ImageEngine: Send + Sync + Debug {
     async fn find(&self, tag: &ImageTag) -> Result<Option<ImageId>, EngineError>;
+    async fn attested(&self, tag: &ImageTag, cancel: &CancellationToken) -> Result<Option<ImageId>, EngineError>;
+    async fn attest(&self, tag: &ImageTag, id: &ImageId, cancel: &CancellationToken) -> Result<(), EngineError>;
+    async fn inspect(&self, id: &ImageId, cancel: &CancellationToken) -> Result<ImageInspect, EngineError>;
     async fn check_builder(&self, builder: &BuilderName) -> Result<(), EngineError>;
     async fn build(&self, build: &PlannedBuild, progress: &ProgressSink, cancel: &CancellationToken) -> Result<ImageId, EngineError>;
+    async fn publish_local(&self, id: &ImageId, cancel: &CancellationToken) -> Result<LocalImageRef, EngineError>;
 }
 
 pub struct BuildxEngine { }
@@ -1321,8 +1339,8 @@ Semantics.
 - `ImageKey::derive` is the SHA-256 of a length-prefixed concatenation of: role name, `RoleRevision` (commit, plus the content digest when dirty), the role Dockerfile digest, the built construct image ID, the Codex version and the archive checksum of the platform from the `AgentSpec`, the platform, the `DockerLayer`, the digest of the embedded `jackin-start`, the digest of the embedded derived Dockerfile, the digest of the embedded `scan`, and the path and digest of each hook file. The function destructures `ImageRequest` exhaustively, so a new request field that does not feed the key does not compile. The construct image ID, not the construct Dockerfile or its base digest, is the input (D05): a rebuilt construct with a new ID changes every final tag.
 - The final tag is `ImageTag::for_image(role, key)`, and the role-stage tag is `jackin-role/<role>:<16 hex>`. Both come from the key, so tag equals cache key.
 - `final_builds` renders two `PlannedBuild` values: role (`--build-context construct=docker-image://<construct tag>`, context is the role repository) and derived (`--build-context role=docker-image://<role tag>` and `--build-context construct=docker-image://<construct tag>`, context materialized with `jackin-start`, `scan`, and the hook files). Each carries `--builder <name>`, `--platform <platform>`, `--provenance=false`, `--sbom=false`, `--load`, `--progress=plain`, and `--no-cache` when `Rebuild::Yes` (D05). The derived build passes `CODEX_VERSION`, `CODEX_BIN_DIR`, and both archive checksums from the `AgentSpec` row, and the Docker client argument only for `DockerLayer::Client` (D06).
-- `ensure_image` runs in this order. Validate the Dockerfile. `find` the construct tag, or build it when absent or when `Rebuild::Yes`, and take its ID. Derive the final tag. `find` the final tag and return `ImageSource::Cache` on a hit unless `Rebuild::Yes`. Otherwise `check_builder` once, build the role stage, build the derived stage, and return `ImageSource::Built` with the ID that the derived build returned. Build lines stream to `progress` as `Line` events. A cancel kills the build and returns `ImageError::Cancelled`. Each final-stage build re-reads its source tags before it starts and after it ends. The role build fences the construct tag, and the derived build fences the role tag and the construct tag. A tag that no longer holds the ID that `ensure_image` read fails that stage with `ImageError::SourceMoved`, and no later stage starts.
-- `BuildxEngine::check_builder` runs `docker buildx inspect <builder>` and requires the driver `docker` (`EngineError::BuilderDriver`, D05 step 3). `build` writes the materialized context into a fresh per-call directory under `work_dir` through `FileSystem::write_new`, runs `docker buildx build` with a metadata file, reads the image ID, and removes the directory on every exit path. `find` runs `docker image inspect --format {{.Id}}`.
+- `ensure_image` validates the Dockerfile, finds or builds the construct, derives the final build/cache tag, and verifies any cached or newly built final image. It publishes a required-local reference after verification on both cache hits and successful builds, then returns `BuiltImage { tag, id, local_ref, source }`. Build lines stream to `progress` as `Line` events. A cancel kills the build or metadata subprocess and returns `ImageError::Cancelled`; a failed or mismatched delivered image never becomes a successful result. Each final-stage build re-reads its source tags before it starts and after it ends. The role build fences the construct tag, and the derived build fences the role tag and the construct tag. A tag that no longer holds the ID that `ensure_image` read fails that stage with `ImageError::SourceMoved`, and no later stage starts.
+- `BuildxEngine::check_builder` runs `docker buildx inspect <builder>` and requires the driver `docker` (`EngineError::BuilderDriver`, D05 step 3). `build` writes the materialized context into a fresh per-call directory under `work_dir` through `FileSystem::write_new`, runs `docker buildx build` with a metadata file, reads the image ID, and removes the directory on every exit path. `find` runs `docker image inspect --format {{.Id}}`. `publish_local` locks by the full native reference, inspects it, and refuses a reference that resolves to another ID. If it is missing, it runs metadata-only `docker image tag <sha256 image ID> <native reference>`, then inspects the reference again and requires the exact ID. It never tags from a mutable build tag and never removes a correct or uncertain pin during cancellation. The Jackin lock coordinates Jackin writers; it cannot prevent an unrelated Docker administrator from retagging, and live e2e must establish that OpenShell VM and BuildKit use the intended Docker daemon.
 - The derived Dockerfile has four stages after the archive stages. `codex` (from `construct`) installs the pinned Codex files and `/etc/codex/config.toml` and checks `--version`. `assembled` (from `role`) copies the Codex files from `codex` as root with mode 0755, the config with `--chmod=u=rwX,go=rX` so that the created `/etc/codex` stays searchable, then adds `jackin-start` and the hooks and repairs the owner and mode of their directories. `scan` (from `construct`, as root) mounts `assembled` read-only at `/image` and `codex` at `/trusted`, runs `/bin/sh /jackin-scan`, and writes its output to `/verdict`. The final stage (from `assembled`) copies the verdict to `/usr/local/lib/jackin/image-scan` and sets `USER sandbox`. The scan runs only tools from the construct image, so a role cannot replace them. Its exit status gates the stage, and the `COPY --from=scan` of the final stage makes BuildKit build it.
 - `images/derived/scan` refuses a setuid or setgid file, a file capability, one of 19 tool names anywhere in the tree as an executable file or a symlink (`sudo`, `su-exec`, `gosu`, `doas`, `iptables`, `ip6tables`, `nft`, `ufw`, `docker`, `podman`, `nerdctl`, `dockerd`, `containerd`, `containerd-shim`, `containerd-shim-runc-v2`, `runc`, `crun`, `buildkitd`, `rootlesskit`), and a Codex file that differs (`cmp`) from the copy in the `codex` stage. Each protected path (`jackin-start`, both hooks, and the two Codex files) must be a regular executable file, and each of its ancestors a real directory with no symlink, owned by `0:0` and not writable by group or others. A failing or missing `find` or `getcap` fails the build. It never runs a file under its root argument. Because the Codex files are installed in the trusted stage and compared, a planted `codex` file or symlink in the role is replaced or refused.
 - `ensure_image` is idempotent. The tag is the key, so a second call with equal inputs finds the tag and builds nothing. Two concurrent calls for one key may both build and both succeed with the same ID; the cost is a duplicate build, never a wrong image.
@@ -1341,6 +1359,10 @@ pub enum EngineError {
     BuilderDriver { builder: BuilderName, driver: String },
     BuildFailed { stage: BuildStage, status: ProcessStatus, tail: TerminalText },
     DigestUnreadable { tag: ImageTag, output: TerminalText },
+    LocalImageLockTimeout { reference: LocalImageRef },
+    LocalImageMismatch { reference: LocalImageRef, expected: ImageId, found: ImageId },
+    LocalImageInspect { reference: LocalImageRef, output: TerminalText },
+    LocalImageTag { reference: LocalImageRef, id: ImageId, status: ProcessStatus, output: TerminalText },
     Process(ProcessError),
     Fs(FsError),
     Cancelled { group: Option<GroupFault> },
@@ -1358,18 +1380,19 @@ pub enum ImageError {
 
 ### Test plan outline (mark for @"tailrocks-test-reviewer (agent)")
 
-Location: `crates/jackin-image/tests/*.rs`. Boundary faked: the image engine, through `FakeEngine` from `jackin-testkit` (an in-memory image store). `BuildxEngine` argument tests fake the `docker` program only, through `ScriptedProcessRunner`. Pure tests need no fake. Real `ensure_image`, `ImagePlan`, and `ImageKey` code runs in every test.
+Location: `crates/jackin-image/tests/*.rs`. Tests run the real `BuildxEngine`, `ensure_image`, `ImagePlan`, `ImageKey`, filesystem staging, attestation, and holds. `DockerBoundary` models only external Docker CLI/daemon replies and tag/image state; fault-only cases use `ScriptedProcessRunner`. No Docker daemon or container starts under nextest.
 
 | Behavior | Positive | Negative |
 |---|---|---|
 | Dockerfile validation | final stage `FROM construct AS role`; multi-stage with the last `FROM construct`; leading `ARG` and a `# syntax=` line | final stage `FROM ubuntu`; `construct` only in a middle stage; no `FROM`; an unresolvable variable: each with the right `DockerfileError` and line |
-| Key sensitivity (J00, decisions 3 and 4) | changing only one input changes the final tag (table over role name, revision commit, dirty digest, Dockerfile, each hook, Codex version, platform, `DockerLayer`, `jackin-start`, derived Dockerfile, and the construct image ID that `FakeEngine` reports) | equal requests give equal tags; `Clean` and `Dirty` with the same commit differ; hook file order does not change the key |
+| Key sensitivity (J00, decisions 3 and 4) | changing only one input changes the final tag (table over role name, revision commit, dirty digest, Dockerfile, each hook, Codex version, platform, `DockerLayer`, `jackin-start`, derived Dockerfile, and the construct image ID resolved from Docker state) | equal requests give equal tags; `Clean` and `Dirty` with the same commit differ; hook file order does not change the key |
 | Plan arguments | the role and derived builds name the explicit builder, platform, `--provenance=false`, `--sbom=false`, `--load`, and the named contexts; `--no-cache` only with `Rebuild::Yes`; the Docker client argument only for `Client` | a platform without an `InstallTarget` gives `MissingInstallTarget` |
 | Derived layer uses the agent row | the derived build args hold the binary dir and checksums from `Agent::Codex.spec()`; the embedded Dockerfile references only those args | no embedded Dockerfile text contains a literal Codex version or checksum |
-| `ensure_image` builds then caches (J00) | first call builds construct, role, and derived and returns `Built`; the second call with the same request builds nothing and returns `Cache` with the same ID; a changed construct ID rebuilds only role and derived | `Rebuild::Yes` builds all three again; a failing role build returns `BuildFailed { stage: Role }` with a sanitized tail and builds no derived image; a cancel returns `Cancelled` |
+| `ensure_image` builds then caches (J00) | first call returns a `Built` image whose inspected ancestry matches the resolved construct and role IDs; the second call returns `Cache` with the same ID and unchanged external image state; a changed construct ID rekeys dependent images | `Rebuild::Yes` returns the rebuilt image; a failing role build returns `BuildFailed { stage: Role }` with a sanitized tail and leaves no derived image; a cancel returns `Cancelled` without publishing an unfinished external build |
+| Required-local handoff and recreation | fresh and attested-cache results publish `openshell/sandbox-from:<full ID>`; a missing cache pin is republished; a canceled publication can retry; the gateway snapshot and label match the captured ID after the mutable build tag moves | a conflicting local pin is refused without overwrite; a missing local pin fails creation even if the mutable tag still exists; concurrent same-ID publication returns the same reference |
 | Build output is typed | the `RUN` output of the role build arrives as `Line` events in order (J00) | ESC sequences in a build line are removed |
-| Builder check | a builder with driver `docker` passes; a cache hit returns `Cache` even when the configured builder has the `docker-container` driver | a `docker-container` builder fails with `BuilderDriver` and `FakeEngine` holds no new image |
-| Docker subcommands (D01) | every `ProcessSpec` that crossed the scripted runner starts with `buildx build`, `buildx inspect`, or `image inspect` | the xtask container step (not a unit test) rejects `docker run` anywhere in the source |
+| Builder check | a builder with driver `docker` passes; a cache hit returns `Cache` even when the configured builder has the `docker-container` driver | a `docker-container` builder fails with `BuilderDriver` and external image state remains unchanged |
+| Docker subcommands (D01) | image work uses only `buildx build`, `buildx inspect`, `image inspect`, and metadata-only `image tag` | the xtask container step (not a unit test) rejects `docker run` anywhere in the source |
 | `jackin-start` and layout agree | the embedded script text contains each `sandbox_layout` path constant it uses | a changed constant fails the test |
 
 Live proof (outside nextest): P4.3 builds the construct and a minimal role, builds again from the cache, and starts the delivered image on the gateway; `xtask e2e` J00 builds `sentinel` twice and compares the tags.
@@ -1414,6 +1437,7 @@ pub trait Gateway: Send + Sync + Debug {
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError>;
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
+    async fn create_contract_sandbox(&self, spec: &GatewayContractSandboxCreate) -> Result<SandboxView, GatewayError>;
     async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError>;
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError>;
     async fn set_power(&self, name: &SandboxName, action: PowerAction) -> Result<SandboxView, GatewayError>;
@@ -1450,6 +1474,7 @@ pub enum ProviderMaterial {
 }
 pub struct MainProcess { pub program: SandboxPath, pub args: Vec<String> }
 pub struct SandboxCreate { }
+pub struct GatewayContractSandboxCreate { }
 pub struct SandboxView { pub name: SandboxName, pub phase: Phase, pub labels: Labels, pub provisioning: Provisioning, pub created_at: Option<Timestamp> }
 pub enum Provisioning { Normal, Failed { message: TerminalText } }
 pub enum SandboxQuery { Name(SandboxName), Labels(LabelSelector) }
@@ -1477,29 +1502,40 @@ pub struct SandboxFile { pub path: SandboxPath, pub mode: FileMode, pub content:
 impl SandboxCreate {
     pub fn new(
         name: SandboxName,
-        image: ImageTag,
+        image: LocalImageRef,
         labels: SandboxLabels,
         providers: Vec<ProviderName>,
         policy: PolicyDocument,
         main: MainProcess,
     ) -> SandboxCreate;
     pub fn name(&self) -> &SandboxName;
-    pub fn image(&self) -> &ImageTag;
+    pub fn image(&self) -> &LocalImageRef;
     pub fn labels(&self) -> &SandboxLabels;
     pub fn providers(&self) -> &[ProviderName];
     pub fn policy(&self) -> &PolicyDocument;
     pub fn main(&self) -> &MainProcess;
     pub fn environment(&self) -> BTreeMap<EnvName, String>;
 }
+
+impl GatewayContractSandboxCreate {
+    pub fn new(
+        name: SandboxName,
+        image: ImageTag,
+        labels: SandboxLabels,
+        providers: Vec<ProviderName>,
+        policy: ClosedPolicy,
+        main: MainProcess,
+    ) -> GatewayContractSandboxCreate;
+}
 ```
 
-`ProviderMaterial` has one variant. Credential mode A adds a variant when a profile exists (decision 5). `SandboxCreate` has private fields and one constructor. Its spec environment is derived, not passed: it is `JACKIN_LAUNCH_ID` from the launch label and nothing else, so the environment and the label cannot disagree. The role environment is not in the spec; it is the env file (D11). `Provisioning::Failed` is set when a status condition of the sandbox has the reason `ProvisioningFailed`, which the vm driver writes (`openshell-driver-vm`, `driver.rs:1360`); the shape that P7.4 F8 observed is confirmed live in P4.1 (open question 8).
+`ProviderMaterial` has one variant. Credential mode A adds a variant when a profile exists (decision 5). `SandboxCreate` has private fields and accepts only the typed ID-derived required-local image reference. Its spec environment is derived, not passed: it is `JACKIN_LAUNCH_ID` from the launch label and nothing else, so the environment and the label cannot disagree. `GatewayContractSandboxCreate` is separately scoped to contract checks and examples that intentionally use arbitrary `ImageTag` values; session launches do not use it. The role environment is not in the spec; it is the env file (D11). `Provisioning::Failed` is set when a status condition of the sandbox has the reason `ProvisioningFailed`, which the vm driver writes (`openshell-driver-vm`, `driver.rs:1360`); the shape that P7.4 F8 observed is confirmed live in P4.1 (open question 8).
 
 Contract of each method. The fake and the real adapter obey the same text, and `contract::run` checks it.
 
 - `ensure_profile`: imports the profile when its ID is absent and returns `Imported`. A present profile with identical content gives `Unchanged`. A present profile with different content is replaced through `UpdateProviderProfiles` (`openshell.proto:366`), with the resource version that `GetProviderProfile` returned in the same call, and gives `Updated`. That RPC rejects a zero version, so an update is optimistic: a change between the read and the update gives `FailedPrecondition` and writes nothing, and the next launch converges. Idempotent.
 - `put_provider`: creates the provider, or updates its credentials when it exists, and configures refresh for `ChatgptLogin` (access token key, refresh token as secret material, client ID, and token URL, all from `ProviderSpec.keys`, so the adapter holds no agent knowledge). The refresh token is never readable back. Idempotent for equal input.
-- `create_sandbox`: creates with the image tag, labels, the `JACKIN_LAUNCH_ID` environment, providers, policy, and the main process with a kept PTY and restart policy never. It returns when the call returns, not when `Ready` (P0.2). A second create with the same name returns `AlreadyExists`. Names and label values are validated by types, so the gateway never sees an invalid one, and the fake rejects an invalid one the same way the gateway does.
+- `create_sandbox`: creates with the `openshell/sandbox-from:<full config ID>` required-local reference, labels, the `JACKIN_LAUNCH_ID` environment, providers, policy, and the main process with a kept PTY and restart policy never. A missing local reference fails instead of resolving a registry image. It returns when the call returns, not when `Ready` (P0.2). A second create with the same name returns `AlreadyExists`. Names and label values are validated by types, so the gateway never sees an invalid one, and the fake rejects an invalid one the same way the gateway does. `create_contract_sandbox` uses the separate arbitrary-tag contract type.
 - `find_sandboxes`: `Labels` lists every matching sandbox across all pages, and `managed()` returns only sandboxes that carry the jackin label set. `Name` returns zero or one result. A missing sandbox is an empty list, not an error. A view carries `Provisioning::Failed` when the gateway reports a failed provisioning.
 - `sandbox_detail`: the view, the attached OpenShell providers, and the effective policy as a `PolicyDocument`.
 - `set_power`: `Start` on `Stopped` and `Stop` on `Ready` move the phase. OpenShell 0.1.6 behaves differently when the main process has ended (D09, P7.1 F3): `Stop` on `Error` fails with `MainProcessFailed`, and `Start` on `Error` returns a view in `Starting` that never reaches `Ready`. The adapter reports this as it is and the fake reproduces it. `Session::power` refuses both phases before it calls the gateway.
@@ -1992,7 +2028,7 @@ pub enum PlanError {
 
 `plan_launch` and `plan_image` are pure: no I/O, no clock, no randomness. The caller supplies the `LaunchId` (`LaunchId::generate()` in the binary, `--launch-id` or a fixed value in tests). `plan_launch` does, in order: resolve the gateway entry (platform, builder, engine); resolve the workspace from the project path; refuse a role the workspace does not allow (`RoleNotAllowed`, before any account is looked at); select the account with `Config::select_account`; derive the Codex auth mode and require a ChatGPT login (`Account::chatgpt_login`, else `PlanError::Unsupported`); resolve `DockerCapability::resolve(manifest.docker.enabled, workspace.docker, gateway.docker_engine)`, and when enabled merge `NetworkRule::docker_engine(port)` into the role policy with `with_rule`; resolve `[env]` through the public `resolve_env(&EnvLayers, &RoleManifest, &answers, Prompting)` (precedence, highest first: a `--env` or prompt answer, the workspace-and-role table, the workspace table, the global table, the manifest default; a scoped name needs no manifest declaration, and a scoped value means the manifest entry is not asked; with `Prompting::Interactive` every other entry becomes an `EnvQuestion` that carries its prompt and its default, so the TTY prompt shows the default pre-filled; with `Prompting::Never` an entry uses its default, and an entry with neither becomes an `EnvQuestion`; a `--env` name the manifest does not declare is `EnvUndeclared`); render the files (below); build the `ImageRequest` through `plan_image`; build `PlannedLabels`; derive `SandboxName::new(workspace.slug(), NameSuffix::for_launch(launch))`; and build the `SandboxDraft`.
 
-The `SandboxDraft` holds the name, the `PlannedLabels` (no image label), the providers `[ProviderName::for_account]`, the merged policy, and the main process `/usr/local/bin/jackin-start` with `AgentSpec::launch_argv`. It holds no environment: `SandboxCreate::new` derives the spec environment, which is `JACKIN_LAUNCH_ID` only. It does not hold the image tag, which depends on the built construct image ID. `complete(&BuiltImage)` is the only way to a `SandboxCreate`: it sets the image tag from `BuiltImage.tag` and the image label from `PlannedLabels::complete(&BuiltImage.id)`.
+The `SandboxDraft` holds the name, the `PlannedLabels` (no image label), the providers `[ProviderName::for_account]`, the merged policy, and the main process `/usr/local/bin/jackin-start` with `AgentSpec::launch_argv`. It holds no environment: `SandboxCreate::new` derives the spec environment, which is `JACKIN_LAUNCH_ID` only. It does not hold an image reference, which depends on the built construct image ID. `complete(&BuiltImage)` is the only way to a session `SandboxCreate`: it sets the required-local reference from `BuiltImage.local_ref` and the image label from `PlannedLabels::complete(&BuiltImage.id)`.
 
 `LaunchPlan::files` holds the two non-secret files of the Credentials step as text, so a plan test reads the bytes with no gateway. `codex_config` is at `AgentSpec::user_config` and is produced by `render_codex_config`, a pure function that serializes a typed struct with the `toml` crate: the table `[projects."/sandbox/project"]` with `trust_level = "trusted"` for `AgentSpec::workdir` (without it Codex opens a trust question instead of its prompt, P7.4 F1), and `model = "<name>"` first when the manifest has `[codex] model`. `env` is at `sandbox_layout::env_file(launch)` (mode 0600) and holds `EnvFile::new(role values plus DockerCapability::environment())` (D11, D24).
 
@@ -2457,14 +2493,14 @@ All error enums derive `Debug` and `thiserror::Error`, and none holds a secret. 
 
 ### Test plan outline (mark for @"tailrocks-test-reviewer (agent)")
 
-Location: `crates/jackin-session/tests/*.rs`. Boundaries faked: the gateway (`FakeGateway`), the image engine (`FakeEngine`), the clock (`FakeClock`), and the filesystem. Host `git` runs for real on temporary repositories, so those tests use `StdFileSystem` on a temporary directory; the rest use `MemFs`. Tests call `plan_launch` and `Session` methods through `World` from `jackin-testkit` and assert the resulting fake gateway state, the host repository refs, and returned values. They never assert the order of gateway calls. They pass the launch ID, and they read the attempt ID from the fake sandbox file `run/start`, where it equals `next_attempt()` of the state they saw.
+Location: `crates/jackin-session/tests/*.rs`. Tests use `FakeGateway`, `FakeClock`, real `BuildxEngine` over `DockerBoundary`, and a real temporary filesystem. Host `git` also runs for real on temporary repositories. Tests call `plan_launch` and `Session` through `World` from `jackin-testkit` and assert sandbox/gateway state, external Docker tags and IDs, host repository refs, files, labels, and returned values. They pass the launch ID and read the attempt ID from the sandbox's `run/start` file, where it equals `next_attempt()` of the observed state.
 
 | Behavior (PLAN P5.1, P5.2; journey) | Positive | Negative |
 |---|---|---|
 | One launch, one sandbox (J03) | two `launch` runs with one launch ID leave one sandbox, one built final image, one upload, one setup run; the sandbox labels equal `draft.labels()` completed with the built image ID; the name is at most 19 characters | a second launch with a new launch ID makes a second sandbox; two concurrent `launch` calls with one ID end with one sandbox (name fence); a different launch whose suffix collides gives `NameCollision` |
 | Plan is pure and draft-complete (fix 2) | `plan_launch` with no gateway connected returns a plan whose `SandboxDraft` has labels without an image; `complete(&built)` sets the tag and the 32-hex image label, and the spec environment is `JACKIN_LAUNCH_ID` only | `plan_launch` called twice with equal inputs returns equal drafts |
 | Planned files (P7.4 F1, `[codex] model`) | `files().codex_config` is at `/sandbox/.codex/config.toml` and equals the exact text with the `[projects."/sandbox/project"]` trust entry; with `[codex] model` the text starts with `model = "<name>"`; `files().env` parses back to the role values and the `DOCKER_*` names | without `[codex] model` there is no `model` line |
-| Image identity in the cache (decision 3) | a second launch of the same role with a changed construct image ID in the fake engine builds a new final image and creates a sandbox with a different image label | an unchanged construct leaves the image and its label unchanged |
+| Image identity in the cache (decision 3) | after the external construct tag resolves to a different image ID, a second launch builds/reuses the corresponding dependent image and creates a sandbox with the new image label | an unchanged construct leaves the image and its label unchanged |
 | Crash and resume | fault the gateway after `create_sandbox`, then call again: the run continues from the observed row and ends `Ready`; fault after upload before the marker: the second run uploads again and ends `Ready` | a fault in `ensure_image` leaves no sandbox; a fault in the upload leaves the sandbox and `LaunchFailure.sandbox` names it |
 | Observed phases | a `Stopped` sandbox is started and waited; `Provisioning` becomes `Ready` under the fake clock; a `Stopped` sandbox whose old `run/state` says `running 1` is not finished early: the run waits for `waiting` and then starts attempt 1 | `Completed { exit_code: 0 }`, `Error { exit_code: Some(3) }`, and `Suspended` stop with `MainProcessEnded` or `SandboxSuspended` and the sandbox is still there; two sandboxes with the launch label give `AmbiguousLaunch` |
 | Transient create failure (P7.4 F8) | with `Fault::ProvisionFails { creates: 1 }` the run deletes the failed sandbox, creates again, and ends `Ready` with one sandbox | with `creates` above `create_attempts` the run fails with `ProvisioningFailed` naming the last sandbox, which remains; an `Error { exit_code: None }` sandbox from an earlier run is not deleted |
@@ -2690,13 +2726,13 @@ There is no gateway page: `jackin gateway add|ls|rm` stays CLI-only. The D24 war
 
 ### Test plan outline (mark for @"tailrocks-test-reviewer (agent)"; P9.3 and P9.4)
 
-Location: `crates/jackin-tui/tests/*.rs`, one entry test in `crates/jackin/tests/cli/console.rs`, structural tests in `crates/xtask/tests/`. Boundaries faked: the gateway (`FakeGateway`), the image engine, the clock, the filesystem (`MemFs` behind `ConfigStore`), host programs (`ScriptedProcessRunner`) and the network for usage (`LazyUsageServer`). Tests build the console through `build_console` with `ConsoleRig` from `jackin-testkit`, send keys and clicks, and assert the config in the store, the fake gateway state, the raw bytes the transport received, and the rendered text. The full list of rows is `P9.3-test-plan-v6.md` with `P9.3-test-plan-v7-delta.md`. Key behaviors: launch and cancel; first snapshot before the intro; Docker setting; accounts and bindings; usage windows; every Fixed control refuses by key and by click; panes (one Codex pane per main process, size after each layout change, Ctrl-D never delivered, replies gated by the supervisor state and the replay window, focus events and attention, scrollback, selection and copy that joins soft wraps, the clipboard policy, the seven link states, reattach builds a fresh screen); failed gateway; purge dialog; the tie between `project()` and the baseline `OpenshellFixed`; the `baseline` and `demo-gate` steps; the identity gate (P9.4) on the `console-fixture` binary.
+Location: `crates/jackin-tui/tests/*.rs`, one entry test in `crates/jackin/tests/cli/console.rs`, structural tests in `crates/xtask/tests/`. Boundaries faked: `FakeGateway`, the external Docker protocol through `DockerBoundary`, the clock, the filesystem, host programs (`ScriptedProcessRunner`) and the network for usage (`LazyUsageServer`). Tests build the console through `build_console` with `ConsoleRig` from `jackin-testkit`, send keys and clicks, and assert the config in the store, gateway and Docker state, the raw bytes the transport received, and the rendered text. The full list of rows is `P9.3-test-plan-v6.md` with `P9.3-test-plan-v7-delta.md`. Key behaviors: launch and cancel; first snapshot before the intro; Docker setting; accounts and bindings; usage windows; every Fixed control refuses by key and by click; panes (one Codex pane per main process, size after each layout change, Ctrl-D never delivered, replies gated by the supervisor state and the replay window, focus events and attention, scrollback, selection and copy that joins soft wraps, the clipboard policy, the seven link states, reattach builds a fresh screen); failed gateway; purge dialog; the tie between `project()` and the baseline `OpenshellFixed`; the `baseline` and `demo-gate` steps; the identity gate (P9.4) on the `console-fixture` binary.
 
 ---
 
 ## 7. jackin-testkit
 
-Role: in-process fakes for the boundaries and fixtures. It is a dev-dependency of every other crate. The one non-test binary is `console-fixture`, used by the identity gate. The fakes obey the same contracts as the real implementations, proven by the shared contract suite and not by review alone. Boundaries faked here: the gateway, the image engine, the network, the clock, the filesystem, and the host programs `docker`, `openshell`, `ssh`, and `op` (decision 9). Nothing else has a fake.
+Role: test-only external-boundary models and fixtures. It is a dev-dependency of every other crate. The one non-test binary is `console-fixture`, used by the identity gate. `FakeGateway`, `FakeClock`, filesystem doubles, and external-program models stand at their allowed boundaries. Image planning, `BuildxEngine`, attestation, cache trust, locks, and cleanup are never faked. The Docker model represents only Docker's external CLI/daemon protocol; nextest never starts a daemon or container.
 
 ### Module map
 
@@ -2707,7 +2743,7 @@ crates/jackin-testkit/src/
   gateway.rs       FakeGateway, Fault, SandboxHandle
   sandbox.rs       FakeSandbox: files, labels, phase, supervisor model, host-mapped git
   supervisor.rs    SupervisorModel
-  engine.rs        FakeEngine
+  docker.rs        DockerBoundary, DockerImageRegistry, external build and inspect replies
   host.rs          FakeClock, MemFs, ScriptedProcessRunner, ScriptedProgram, TestRunner
   snapshot.rs      HostSnapshot, HostState, object_store_files
   usage.rs         UsageServer (from U13)
@@ -2720,11 +2756,12 @@ crates/jackin-testkit/src/
 ```rust
 pub struct World {
     pub gateway: Arc<FakeGateway>,
-    pub engine: Arc<FakeEngine>,
+    pub engine: Arc<BuildxEngine>,
+    pub docker: Arc<DockerBoundary>,
     pub clock: Arc<FakeClock>,
     pub fs: Arc<dyn FileSystem>,
     pub runner: Arc<TestRunner>,
-    pub usage: Arc<UsageServer>,
+    pub usage: LazyUsageServer,
     pub session: Session,
     pub roles: Arc<RoleCatalog>,
     pub config: ConfigStore,
@@ -2733,16 +2770,16 @@ pub struct WorldBuilder { }
 
 impl World {
     pub fn builder() -> WorldBuilder;
-    pub async fn current_config(&self) -> Config;
+    pub fn cache_dir(&self) -> &HostPath;
+    pub fn home(&self) -> &HostPath;
+    pub fn image_work_dir(&self) -> &HostPath;
+    pub fn desk(&self) -> AccountDesk;
+    pub fn desk_over(&self, store: ConfigStore) -> AccountDesk;
 }
 
 impl WorldBuilder {
-    pub fn role(self, fixture: RoleFixture) -> WorldBuilder;
-    pub fn account(self, account: Account) -> WorldBuilder;
-    pub fn workspace(self, name: WorkspaceName, repo: RepoFixture) -> WorldBuilder;
-    pub fn docker_engine(self, engine: EngineConfig) -> WorldBuilder;
-    pub fn supervisor(self, model: SupervisorModel) -> WorldBuilder;
-    pub async fn build(self) -> World;
+    pub fn limits(self, limits: LaunchLimits) -> WorldBuilder;
+    pub fn build(self) -> Result<World, FixtureError>;
 }
 
 pub struct FakeGateway { }
@@ -2791,17 +2828,47 @@ pub enum Fault {
     ProvisionFails { creates: u32 },
 }
 pub enum SupervisorModel { Cooperative, ExitsOnStart { code: i32 }, NeverWritesState }
-pub struct FakeEngine { }
-
-impl FakeEngine {
-    pub fn new() -> FakeEngine;
-    pub fn images(&self) -> BTreeMap<ImageTag, ImageId>;
-    pub fn builds(&self) -> Vec<BuildRecord>;
-    pub fn pin_id(&self, tag: &ImageTag, id: ImageId);
-    pub fn fail_next(&self, stage: BuildStage);
+pub struct DockerBoundary { }
+pub struct DockerImageRegistry { }
+pub struct DockerRequestGate { }
+pub enum DockerIidFile { Id, Text(Vec<u8>), Missing }
+pub struct DockerBuildRequest {
+    pub args: Vec<String>,
+    pub stdin: Option<Vec<u8>>,
+    pub context: CapturedContext,
+    pub inputs: Vec<ImageId>,
+}
+pub struct DockerBuildReply {
+    pub status: ProcessStatus,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+    pub lines: Vec<(OutputStream, String)>,
+    pub iid_file: DockerIidFile,
+    pub published_id: Option<ImageId>,
+    pub inspect: Option<ImageInspect>,
 }
 
-pub struct BuildRecord { pub stage: BuildStage, pub tag: ImageTag }
+impl DockerBoundary {
+    pub fn new() -> DockerBoundary;
+    pub fn rejecting_builds() -> DockerBoundary;
+    pub fn with_fake_clock(clock: Arc<FakeClock>) -> DockerBoundary;
+    pub fn registry(&self) -> DockerImageRegistry;
+    pub fn seed_image(&self, tag: ImageTag, id: ImageId, inspect: ImageInspect);
+    pub fn retag(&self, tag: ImageTag, id: Option<ImageId>);
+    pub fn image_id(&self, tag: &ImageTag) -> Option<ImageId>;
+    pub fn images(&self) -> BTreeMap<ImageTag, ImageId>;
+    pub fn parents(&self, id: &ImageId) -> Vec<ImageId>;
+    pub fn request_for(&self, tag: &ImageTag) -> Option<DockerBuildRequest>;
+    pub fn set_builder_driver(&self, driver: &str);
+    pub fn script_build(&self, tag: ImageTag, reply: DockerBuildReply);
+    pub fn script_inspect(&self, id: ImageId, reply: DockerCommandReply);
+    pub fn hold_build(&self, tag: ImageTag) -> DockerRequestGate;
+}
+
+impl DockerRequestGate {
+    pub async fn wait_arrived(&self);
+    pub fn release(&self);
+}
 pub struct FakeClock { }
 pub struct MemFs { }
 pub struct UsageServer { }
@@ -2835,7 +2902,7 @@ pub struct RoleFixture { }
 pub struct RepoFixture { }
 ```
 
-`World.usage` and `UsageServer` arrive with U13. `TestRunner` is the `ProcessRunner` of a `World`. It runs `Program::Git` for real and answers `Docker`, `Openshell`, `Ssh`, and `Op` from a `ScriptedProcessRunner`; an unscripted spec is an error that names it. `ScriptedProcessRunner` alone cannot be given a `Git` expectation: `ScriptedProgram` has no such variant, so faking git does not compile. `TestRunner::expect_git_version(reply)` scripts the reply to `git --version` and nothing else; every other git call runs for real. A recorded `ProcessStdin::File` is kept as `SeenStdin::File { path, offset }`. Fixture git is `/usr/bin/git` with `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`. `World` uses `StdFileSystem` over a temporary directory, because upload and export run real `git` on real files; tests that need fault injection or no disk use `MemFs`.
+`World.usage` and `UsageServer` arrive with U13. `World.engine` is the real `BuildxEngine`, backed by `World.fs` (`WorkingFs` over `StdFileSystem`) and a unique temporary image work directory. Its `DockerBoundary` is a Docker-only `ProcessRunner`; the gateway receives only a shared read-only `DockerImageRegistry` and snapshots the resolved image ID when create succeeds. The boundary captures each request by output tag, resolves every `docker-image://` input against actual external tag state, and derives image IDs and ancestry from the request and those resolved inputs. Successful builds publish their tag and inspect metadata; failed or cancelled builds do not. A held request drops the fake-clock runnable-work guard until release. `TestRunner` handles the other host programs and runs `Program::Git` for real. `ScriptedProcessRunner` has no `Git` expectation, so faking git does not compile. `World` uses the real filesystem over a temporary directory; tests may inject `MemFs` only at the filesystem boundary.
 
 Semantics the fakes must match (each is also a contract-suite case or a journey step).
 
@@ -2849,7 +2916,7 @@ Semantics the fakes must match (each is also a contract-suite case or a journey 
 - `open_terminal` returns a `TerminalSession::pair`. The fake serves the driver end from a scripted main process: replay of the retained output (capped at 1 MiB, the window may start mid-sequence when a test asks), resize recorded, detach keeps the process, a Ctrl-D byte detaches, exit delivers `Exited`, and later attaches are refused. It models the 0.1.6 input lease (section 3): the first `Owner` gets `Lease(Owner)` and its input reaches the process (`main_input`), a second attachment gets `Lease(ReadOnly)` and its input is dropped, it takes the lease on its next input after the owner left, a Ctrl-C in a read-only attachment ends only that attachment, and `Viewer` input is always ignored.
 - `FakeClock::sleep` advances virtual time at once and wakes pending sleepers in order. Nothing in the fakes uses wall time.
 - `MemFs` supports `lock`, `write_new` with `AlreadyExists`, and fault injection at the n-th call of an operation, so the atomic config write is tested at every step.
-- `FakeEngine` is an in-memory image store. `find` returns the ID of a built tag. `build` records the stage and tag and returns a deterministic ID derived from the tag, unless `pin_id` set one, which is how a test changes the construct image ID (decision 3). It never interprets build arguments.
+- `DockerBoundary` models Docker's supported CLI/daemon protocol, not Jackin's engine. Build output IDs depend on the parsed request, captured context/stdin, and resolved input IDs; inspect returns the stored config/layers, and parents expose resolved ancestry. Unknown image inputs and unsupported commands fail closed. Tests can seed or move external tags, script process replies, and hold an explicitly named Docker build while exercising the real adapter.
 - `UsageServer` (from U13) serves canned HTTP bodies per provider on a local port, and `endpoints()` returns the override that points `HostUsage` at it.
 - P9.3 J0a additions. `FakeClock::set_utc_offset(i32)` sets `Clock::utc_offset_secs` (0 by default). `FakeGateway` stamps `created_at` from its own clock, or from `link_clock(Arc<dyn Clock>)` (`World` links its `FakeClock`). `SandboxHandle` gains `created_at()`, `resizes()` (each `Resize` the transport received, without the attach size), `raw_input()` (the bytes an `Owner` attachment sent, before the fake supervisor interprets them: `0x04` and `0x10 0x11` stay visible), `advance_repaint()` (fires the pending `NudgeAfter` nudge of every attachment once: `rows-1`, then `rows`, at the attachment's current size), `set_replay_window(Option<usize>)` (a new attachment replays only the last n bytes, which can start inside an escape sequence), `set_stream_exit_status(Option<i32>)` (the `Exited` event of `exit_main` carries this status while the phase keeps the real code), and `shells()`, a `ShellWitness { workdir, env, input, sizes, closed }` for each shell terminal opened. The fake refuses the 21st main-process attachment with `GatewayError::ResourceExhausted` (the cap of OpenShell `MAX_CONNECTIONS_PER_SANDBOX`; `FakeGateway::set_attachment_cap` changes it). `Fault::HoldAt { trigger }` holds the first call that matches a `Trigger` until `FakeGateway::release(&trigger)` or until the call's cancel token fires; `held()` lists the triggers that are held now and `until_held(&trigger)` waits for a call to arrive. `ScriptedConnector` is a `GatewayConnector` with one script per gateway: `Some(error)` fails that call, `None` and an empty script connect; `calls(&name)` counts the attempts.
 - The testkit defines no error enum. Fakes return the real error types of the trait they implement (`GatewayError`, `EngineError`, `FsError`, `ProcessError`), so a test sees what production code sees.
@@ -2864,7 +2931,7 @@ Location: `crates/jackin-testkit/tests/*.rs`. The fakes are code jackin owns, an
 | Ended main process (fix 4) | after `exit_main(3)` the phase is `Error { exit_code: Some(3) }`, `Stop` gives `MainProcessFailed`, `Start` leaves `Starting` | none |
 | Supervisor model | `Cooperative` goes `waiting`, `running 1`, then ignores a stale `0` and a repeated `1`; `ExitsOnStart(3)` ends `exited 1 3`; after `power(Stop)` and `power(Start)` the state is `waiting` and `1` starts again | a request `0` or a repeated ID starts nothing |
 | Fault injection | `FailAfter` triggers on exactly the n-th call; `ProvisionFor` keeps `Provisioning` for n polls | with no fault all calls pass |
-| Engine | a second `build` of one tag returns the same ID; `pin_id` changes it | `find` of an unknown tag is `None` |
+| Docker protocol | a successful Buildx request publishes an inspectable ID with its resolved parents; retagging updates later external lookups | unknown parents, unsupported commands, or failed/cancelled builds do not publish a new image |
 | Clock | two sleepers wake in time order after `advance` | none |
 | Filesystem | `fail_at(Rename, 1, ..)` makes `write_atomic` fail with the old file readable | none |
 | Runner | a scripted `docker` reply is returned and recorded in `seen()` | an unscripted spec errors naming it; `Program::Git` runs for real and is not recorded as scripted |
@@ -2963,7 +3030,7 @@ impl std::fmt::Debug for AppEnv {
 
 `AppEnv` writes `Debug` by hand because its writers are `dyn Write`; it prints the other fields and leaves the writers out. A terminal means a TTY, and `terminal` is `None` without one. `Terminal` is an owned trait. `size` returns the current size. `enter_raw` returns a guard that restores the mode when it drops. `read_line` returns `None` at the end of the input and serves the prompts. `next_input` serves attach and shell with bytes, resizes, or the close of the input. Attach and shell write their output to `AppEnv.stdout`, so the trait has no output method. `Deps.limits` carries the launch limits (`launch_limits()` builds the production value), so the library holds no timing constants. `Deps` holds no usage endpoints, and the binary has no `usage` or `console` command.
 
-`GatewayConnector` is the construction seam of the gateway boundary: production returns `GrpcGateway::connect(resolve_gateway(..))` and tests return `FakeGateway`. The same holds for `Deps.engine` (`BuildxEngine` or `FakeEngine`). `connect` takes the cancel token of the command and returns `ConnectError`: a `DiscoveryError` (so a missing `openshell` binary is not reported as an unreachable gateway) or a `GatewayError`. `GrpcConnector` passes the token to `resolve_gateway`. A handler validates, plans, and prompts before it calls `connect`, and `connect` is lazy: it never runs for `role`, `workspace`, `gateway`, `build`, or `account add` of a provider other than Codex. `doctor` passes the connection error to `GatewayAccess::Failed`; it turns a `Discovery` error into the `GatewayError::Unreachable` that the session type needs, and the `gateway-registered` line carries the discovery detail.
+`GatewayConnector` is the construction seam of the gateway boundary: production returns `GrpcGateway::connect(resolve_gateway(..))` and tests return `FakeGateway`. `Deps.engine` is always `BuildxEngine`; test wiring supplies the Docker-only external protocol model to its `ProcessRunner`. `connect` takes the cancel token of the command and returns `ConnectError`: a `DiscoveryError` (so a missing `openshell` binary is not reported as an unreachable gateway) or a `GatewayError`. `GrpcConnector` passes the token to `resolve_gateway`. A handler validates, plans, and prompts before it calls `connect`, and `connect` is lazy: it never runs for `role`, `workspace`, `gateway`, `build`, or `account add` of a provider other than Codex. `doctor` passes the connection error to `GatewayAccess::Failed`; it turns a `Discovery` error into the `GatewayError::Unreachable` that the session type needs, and the `gateway-registered` line carries the discovery detail.
 
 ### Commands (DESIGN.md CLI table)
 
@@ -3176,11 +3243,11 @@ The stderr form of every failure is `error:` followed by the message and its cau
 
 ### Test plan outline (mark for @"tailrocks-test-reviewer (agent)"; P6.1)
 
-Location: `crates/jackin/tests/*.rs`. Boundaries faked: the gateway through `GatewayConnector` returning `FakeGateway`, the image engine, the clock, the filesystem, the network for usage, and the host programs `docker`, `openshell`, `ssh`, and `op`. Tests call `run(AppEnv, Deps)` with captured writers and assert the exit class, stdout, stderr, the stored config, and the fake gateway state.
+Location: `crates/jackin/tests/*.rs`. Tests run real `BuildxEngine` and use `DockerBoundary` only for external Docker CLI/daemon behavior, with `FakeGateway`, the clock, filesystem, usage network, and other host-program boundaries. Tests call `run(AppEnv, Deps)` with captured writers and assert the exit class, stdout, stderr, stored config, gateway state, and external image IDs/tags.
 
 | Behavior | Positive | Negative |
 |---|---|---|
-| `build` (J03) | prints the final image ID, equal to the ID that `FakeEngine` holds for the tag; `--json` parses into `BuildOutput`; a second `build` prints the same ID and runs no new engine build | a role whose Dockerfile lacks `FROM construct` exits `Failure` and stderr names the line |
+| `build` (J03) | prints the final image ID resolved from the external Docker tag; `--json` parses into `BuildOutput`; a second `build` prints the same cached ID | a role whose Dockerfile lacks `FROM construct` exits `Failure` and stderr names the line |
 | `load` end to end (J03) | exit `Ok`, one sandbox with the labels, config unchanged | `load` in a directory with no workspace exits `Failure` and stderr names `jackin workspace add` (decision 8); a non-TTY run with a missing env value exits `Refused` naming the variable |
 | Gateway choice (decision 7) | `gateway add` stores the entry; `--gateway` overrides `default_gateway`; one configured gateway is used without a default | two gateways and no default exits `Failure` naming both; `gateway rm` of the default clears it |
 | `ls --json` and `inspect --json` (J03) | stdout parses into `LsOutput` and `InspectView` and matches the fake state | `inspect` of a missing sandbox exits `Failure` with empty stdout |

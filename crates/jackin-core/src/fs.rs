@@ -98,6 +98,7 @@ fn lock_file(path: &Path) -> io::Result<Result<File, ()>> {
         .create(true)
         .truncate(false)
         .mode(0o600)
+        .custom_flags(OFlags::NOFOLLOW.bits().cast_signed())
         .open(path)?;
     match file.try_lock() {
         Ok(()) => Ok(Ok(file)),
@@ -279,7 +280,12 @@ impl FileSystem for StdFileSystem {
             for entry in fs::read_dir(p)? {
                 let entry = entry?;
                 entries.push(DirEntry {
-                    name: entry.file_name().to_string_lossy().into_owned(),
+                    name: entry.file_name().into_string().map_err(|_| {
+                        io::Error::new(
+                            ErrorKind::InvalidData,
+                            "directory entry name is not valid UTF-8",
+                        )
+                    })?,
                     kind: kind_of(entry.file_type()?),
                 });
             }
@@ -295,7 +301,16 @@ impl FileSystem for StdFileSystem {
 
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         blocking(dir, |p| {
-            DirBuilder::new().recursive(true).mode(0o700).create(p)
+            DirBuilder::new().recursive(true).mode(0o700).create(p)?;
+            let meta = fs::symlink_metadata(p)?;
+            if meta.is_dir() {
+                let mode = meta.permissions().mode();
+                let private_mode = mode & 0o700;
+                if mode & 0o7777 != private_mode {
+                    fs::set_permissions(p, fs::Permissions::from_mode(private_mode))?;
+                }
+            }
+            Ok(())
         })
         .await
     }

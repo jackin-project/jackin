@@ -44,6 +44,8 @@ const KEYWORDS_BEFORE_ARRAY: [&str; 13] = [
 
 const SILENCING_ATTRIBUTES: [&str; 2] = ["allow", "expect"];
 
+const DRAWING_LINTS: [&str; 2] = ["disallowed_methods", "disallowed_fields"];
+
 const RATATUI_ALLOWED: [&[&str]; 4] = [
     &["Frame"],
     &["layout", "Rect"],
@@ -434,13 +436,15 @@ fn silencing_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         let silences = attribute
             .iter()
             .any(|t| SILENCING_ATTRIBUTES.iter().any(|name| t.is_ident(name)))
-            && attribute.iter().any(|t| t.is_ident("disallowed_methods"));
+            && attribute
+                .iter()
+                .any(|t| DRAWING_LINTS.iter().any(|lint| t.is_ident(lint)));
         if silences {
             violations.push(Violation::at_line(
                 CiStep::Screen,
                 path,
                 token.line,
-                "C1: silences clippy::disallowed_methods; the ban on ratatui drawing methods cannot be allowed or expected in jackin-tui",
+                "C1: silences clippy::disallowed_methods or clippy::disallowed_fields; the ban on ratatui drawing cannot be allowed or expected in jackin-tui",
             ));
         }
     }

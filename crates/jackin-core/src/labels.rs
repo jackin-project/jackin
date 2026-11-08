@@ -7,10 +7,12 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::agent::Agent;
 use crate::display::plain;
 use crate::docker::{CaFingerprint, DockerLabel};
-use crate::ids::{IdError, ImageId, ImageLabel, LaunchId, PolicyLabel, RoleName, WorkspaceName};
-use crate::instance::AgentInstances;
+use crate::ids::{
+    AgentHash, IdError, ImageId, ImageLabel, LaunchId, PolicyLabel, RoleName, WorkspaceName,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct LabelKey(String);
@@ -25,7 +27,8 @@ pub struct Labels(BTreeMap<LabelKey, LabelValue>);
 pub struct PlannedLabels {
     pub workspace: WorkspaceName,
     pub role: RoleName,
-    pub agents: AgentInstances,
+    pub agents_hash: AgentHash,
+    pub lead_agent: Agent,
     pub policy: PolicyLabel,
     pub launch: LaunchId,
 }
@@ -47,7 +50,7 @@ pub struct LabelDifference {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LabelSelector(Vec<(LabelKey, LabelValue)>);
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum LabelError {
     #[error("missing label {key}")]
     Missing { key: &'static str },
@@ -67,6 +70,7 @@ const MANAGED: &str = "jackin.dev/managed";
 const WORKSPACE: &str = "jackin.dev/workspace";
 const ROLE: &str = "jackin.dev/role";
 pub const AGENTS_LABEL: &str = "jackin.dev/agents";
+pub const LEAD_AGENT_LABEL: &str = "jackin.dev/lead-agent";
 const POLICY: &str = "jackin.dev/policy";
 const IMAGE: &str = "jackin.dev/image";
 const LAUNCH: &str = "jackin.dev/launch";
@@ -129,7 +133,8 @@ impl SandboxLabels {
             pair(MANAGED, "true"),
             pair(WORKSPACE, planned.workspace.as_str()),
             pair(ROLE, planned.role.as_str()),
-            pair(AGENTS_LABEL, &planned.agents.agents_label()),
+            pair(AGENTS_LABEL, planned.agents_hash.as_str()),
+            pair(LEAD_AGENT_LABEL, planned.lead_agent.as_str()),
             pair(POLICY, planned.policy.as_str()),
             pair(IMAGE, self.image.as_str()),
             pair(LAUNCH, planned.launch.as_str()),
@@ -138,12 +143,17 @@ impl SandboxLabels {
     }
 
     pub fn from_labels(labels: &Labels) -> Result<SandboxLabels, LabelError> {
-        let agents_hash = labels.value(AGENTS_LABEL)?.to_owned();
         Ok(SandboxLabels {
             planned: PlannedLabels {
                 workspace: labels.parsed(WORKSPACE, WorkspaceName::parse)?,
                 role: labels.parsed(ROLE, RoleName::parse)?,
-                agents: AgentInstances::from_label_value(agents_hash),
+                agents_hash: labels.parsed(AGENTS_LABEL, AgentHash::parse)?,
+                lead_agent: Agent::parse(labels.value(LEAD_AGENT_LABEL)?).map_err(|source| {
+                    LabelError::Invalid {
+                        key: LEAD_AGENT_LABEL,
+                        source,
+                    }
+                })?,
                 policy: labels.parsed(POLICY, PolicyLabel::parse)?,
                 launch: labels.parsed(LAUNCH, LaunchId::parse)?,
             },
@@ -284,6 +294,14 @@ impl Labels {
 
     pub fn workspace(&self) -> Option<WorkspaceName> {
         self.parsed(WORKSPACE, WorkspaceName::parse).ok()
+    }
+
+    pub fn role(&self) -> Option<RoleName> {
+        self.parsed(ROLE, RoleName::parse).ok()
+    }
+
+    pub fn launch(&self) -> Option<LaunchId> {
+        self.parsed(LAUNCH, LaunchId::parse).ok()
     }
 
     pub fn is_managed(&self) -> bool {

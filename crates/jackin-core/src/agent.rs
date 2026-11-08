@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::boundary::FileMode;
 use crate::display::plain;
+use crate::ids::IdError;
 use crate::paths::{PROJECT_PATH, SandboxPath};
 use crate::platform::Platform;
 use crate::provider::Provider;
@@ -86,6 +87,16 @@ impl Agent {
             Agent::KimiCode => "kimi",
             Agent::Omp => "omp",
         }
+    }
+
+    pub fn parse(text: &str) -> Result<Agent, IdError> {
+        Self::ALL
+            .into_iter()
+            .find(|agent| agent.as_str() == text)
+            .ok_or(IdError::BadFormat {
+                kind: "agent",
+                expected: "a catalog agent name",
+            })
     }
 }
 
@@ -444,7 +455,7 @@ static CODEX_SPEC: AgentSpec = AgentSpec {
         "check_for_update_on_startup=false",
     ],
     install: InstallSpec {
-        version: "0.166.0",
+        version: "0.167.0",
         url_template: "https://github.com/openai/codex/releases/download/rust-v{version}/codex-package-{target}.tar.gz",
         archive_members: &["bin/codex", "bin/codex-code-mode-host"],
         version_output: "codex-cli {version}",
@@ -457,17 +468,18 @@ static CODEX_SPEC: AgentSpec = AgentSpec {
             "/etc/codex/rules",
             "/etc/codex/agents",
             "/etc/codex/skills",
+            "/sandbox/.codex",
         ],
         targets: &[
             InstallTarget {
                 platform: Platform::LinuxArm64,
                 triple: "aarch64-unknown-linux-musl",
-                sha256: "7821b77dda2e6283fb1f63f3165177a271da8833e857cf673c6ca1c9db3bfcc6",
+                sha256: "0de261ecf1e7f3028a7952f03fca2093f749277d38590b78bb32f8567756bbb7",
             },
             InstallTarget {
                 platform: Platform::LinuxAmd64,
                 triple: "x86_64-unknown-linux-musl",
-                sha256: "1d44b28bc4ac9937d7d3532264baa68a507ce364956a0d4ebb856f331cdee254",
+                sha256: "3bbf75e83de6b58aed28f2cf6e33ad423ec31fd4700a1457b94be557ea5a7c6e",
             },
         ],
     },

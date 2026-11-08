@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin::ExitClass;
-use jackin_core::BuildOutput;
-use jackin_image::BuildStage;
+use jackin_core::{BuildOutput, ImageId, OutputStream};
+use jackin_image::ImagePlan;
 use jackin_session::LAUNCH_EVENT_CAPACITY;
-use jackin_testkit::{ENGINE_PORT, Rig, RoleFixture, TestResult, World, guard, launch_id};
+use jackin_testkit::{
+    DockerBuildReply, ENGINE_PORT, Rig, RoleFixture, TestResult, World, guard, launch_id,
+};
 
-use super::support::{FixedConnector, Harness, failed, keys, names};
+use super::support::{FixedConnector, Harness, failed, keys, names, script_construct_rebuild};
 
 fn built(rig: &Rig) -> Result<Harness, Box<dyn std::error::Error>> {
     let mut harness = Harness::new(&rig.world);
@@ -24,23 +26,65 @@ async fn build_prints_the_final_image_id_caches_it_and_needs_no_gateway() -> Tes
         let harness = built(&rig)?;
         let first = harness.run(&["build"]).await?;
         first.ok()?;
-        let image = rig.final_image()?;
-        assert_eq!(rig.world.engine.images().get(&image.tag), Some(&image.id));
-        assert_eq!(first.stdout, format!("{}\n", image.id));
-        let builds = rig.world.engine.builds().len();
+        let printed = ImageId::parse(first.stdout.trim())?;
+        let images = rig.world.docker.images();
 
         let json = harness.run(&["build", "--json"]).await?;
         json.ok()?;
         assert_eq!(keys(&json.value()?)?, names(&["schema", "image", "id"]));
         let typed: BuildOutput = json.json()?;
+        assert_eq!(typed.schema, 1);
         assert_eq!(
-            (typed.schema, typed.image, typed.id),
-            (1, image.tag.clone(), image.id.clone())
+            rig.world.docker.image_id(&typed.image),
+            Some(typed.id.clone())
         );
-        assert_eq!(rig.world.engine.builds().len(), builds);
+        assert_eq!(typed.id, printed);
+        assert_eq!(rig.world.docker.images(), images);
 
-        harness.run(&["build", "--rebuild"]).await?.ok()?;
-        assert!(rig.world.engine.builds().len() > builds);
+        let (construct_tag, construct_id) = script_construct_rebuild(&rig, 'a')?;
+        let rebuilt = harness.run(&["build", "--json", "--rebuild"]).await?;
+        rebuilt.ok()?;
+        let rebuilt: BuildOutput = rebuilt.json()?;
+        assert_ne!(rebuilt.id, typed.id);
+        assert_ne!(rebuilt.image, typed.image);
+        let plan = ImagePlan::new(rig.plan(1)?.image_request())?;
+        assert_eq!(rebuilt.image, plan.final_tag(&construct_id));
+        assert_eq!(
+            rig.world.docker.image_id(&construct_tag),
+            Some(construct_id)
+        );
+        assert_eq!(rig.world.docker.image_id(&rebuilt.image), Some(rebuilt.id));
+        assert_eq!(
+            rig.world.docker.image_id(&typed.image),
+            Some(typed.id.clone())
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_build_outside_a_saved_workspace_says_it_uses_the_defaults() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = built(&rig)?;
+        let saved = harness.run(&["build"]).await?;
+        saved.ok()?;
+        assert!(
+            !saved.stderr.contains("not a saved workspace"),
+            "{}",
+            saved.stderr
+        );
+
+        harness.cwd = rig.home.clone();
+        let unsaved = harness.run(&["build"]).await?;
+        unsaved.ok()?;
+        assert!(
+            unsaved.stderr.contains("not a saved workspace"),
+            "{}",
+            unsaved.stderr
+        );
+        assert_eq!(unsaved.stdout, saved.stdout);
         Ok(())
     })
     .await
@@ -51,18 +95,25 @@ async fn a_long_build_log_goes_to_stderr_and_stdout_stays_one_clean_line() -> Te
     guard(async {
         let rig = Rig::new().await?;
         let harness = built(&rig)?;
-        let lines: Vec<String> = (0..4 * LAUNCH_EVENT_CAPACITY)
-            .map(|index| format!("build-line-{index}"))
+        let first = harness.run(&["build", "--json"]).await?;
+        first.ok()?;
+        let lines: Vec<(OutputStream, String)> = (0..4 * LAUNCH_EVENT_CAPACITY)
+            .map(|index| (OutputStream::Stdout, format!("build-line-{index}")))
             .collect();
-        rig.world
-            .engine
-            .script_lines(BuildStage::Derived, lines.clone());
-        let ran = harness.run(&["build"]).await?;
+        let construct = ImagePlan::new(rig.plan(1)?.image_request())?
+            .construct_build()
+            .tag
+            .clone();
+        rig.world.docker.script_build(
+            construct,
+            DockerBuildReply::default().with_lines(lines.clone()),
+        );
+        let ran = harness.run(&["build", "--rebuild"]).await?;
         ran.ok()?;
         assert_eq!(ran.stdout.lines().count(), 1);
         assert!(ran.stdout.starts_with("sha256:"), "{}", ran.stdout);
         let (first, last) = (lines.first().ok_or("empty")?, lines.last().ok_or("empty")?);
-        assert!(ran.stderr.contains(first.as_str()) && ran.stderr.contains(last.as_str()));
+        assert!(ran.stderr.contains(first.1.as_str()) && ran.stderr.contains(last.1.as_str()));
         Ok(())
     })
     .await
@@ -82,7 +133,7 @@ async fn a_role_whose_final_stage_is_not_construct_fails_naming_the_base_and_bui
         ))?;
         let ran = harness.run(&["build"]).await?;
         failed(&ran, ExitClass::Failure, &["zzz-unique-base", "3"])?;
-        assert!(world.engine.builds().is_empty());
+        assert!(world.docker.images().is_empty());
         Ok(())
     })
     .await
@@ -100,21 +151,24 @@ async fn a_load_after_a_build_in_a_docker_workspace_finds_the_image_already_buil
         let mut harness = Harness::new(&rig.world);
         harness.cwd = rig.repo.root().clone();
         harness.write_config(&rig.config.render())?;
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
 
         let made = harness.run(&["build", "--json"]).await?;
         made.ok()?;
         let typed: BuildOutput = made.json()?;
-        let builds = rig.world.engine.builds().len();
-        assert!(builds > 0);
-        assert_eq!(rig.world.engine.images().get(&typed.image), Some(&typed.id));
+        let images = rig.world.docker.images();
+        assert_eq!(
+            rig.world.docker.image_id(&typed.image),
+            Some(typed.id.clone())
+        );
+        assert!(!images.is_empty());
 
         harness
             .run(&["load", "--launch-id", &launch_id(1).to_string()])
             .await?
             .ok()?;
         assert!(rig.sandbox(1).await?.is_some());
-        assert_eq!(rig.world.engine.builds().len(), builds);
+        assert_eq!(rig.world.docker.images(), images);
         Ok(())
     })
     .await

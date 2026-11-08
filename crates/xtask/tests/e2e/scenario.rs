@@ -125,6 +125,7 @@ pub(crate) struct Knobs {
     pub foreign_run_at: Option<String>,
     pub warning_missing: bool,
     pub container_in_default_engine: bool,
+    pub host_engine_unlistable: bool,
     pub same_engine_id: bool,
     pub registry_write: bool,
     pub preflight_fail_exits_zero: bool,
@@ -282,6 +283,9 @@ impl HostEngine for ScenarioEngine {
     }
 
     async fn container_names(&self) -> Result<Vec<String>, String> {
+        if self.shared.knobs().host_engine_unlistable {
+            return Err("the engine did not answer".to_owned());
+        }
         Ok(if self.shared.knobs().container_in_default_engine {
             vec![format!("e2e-{}", self.shared.state().tag)]
         } else {

@@ -15,17 +15,18 @@ use jackin_core::{
     ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, ProjectRoot, RoleName,
     SandboxName, SandboxPath, SandboxSlug, SecretBytes, StdFileSystem, WorkspaceName,
 };
+use jackin_image::BuildxEngine;
 use jackin_openshell::contract::{ContractFixture, ContractGroup, SHELL_END_TIMEOUT, run};
 use jackin_openshell::{
-    ClosedPolicy, Gateway, GrpcGateway, GrpcGatewayConfig, MainProcess, ProgramRun, ProgramStdin,
-    SandboxCreate, SandboxFile, SandboxQuery, resolve_gateway,
+    ClosedPolicy, Gateway, GatewayContractSandboxCreate, GrpcGateway, GrpcGatewayConfig,
+    MainProcess, ProgramRun, ProgramStdin, SandboxFile, SandboxQuery, resolve_gateway,
 };
 use jackin_session::{
     DEFAULT_BUNDLE_BYTES, DEFAULT_EXPORT_ENTRY_BYTES, DEFAULT_EXPORT_OBJECTS,
     DEFAULT_EXPORT_TOTAL_BYTES, HostPorts, LaunchLimits, Session, SessionDeps, SystemClock,
     TokioProcessRunner,
 };
-use jackin_testkit::FakeEngine;
+use jackin_testkit::DockerBoundary;
 use tokio_util::sync::CancellationToken;
 
 const POLICY: &str = "version: 1
@@ -150,6 +151,7 @@ fn say(text: &str) -> Result<(), Box<dyn Error>> {
 struct Live {
     gateway: Arc<GrpcGateway>,
     session: Session,
+    cancel: CancellationToken,
     runner: Arc<TokioProcessRunner>,
     project: ProjectRoot,
     options: Options,
@@ -202,15 +204,21 @@ impl Live {
                 runner: Arc::clone(&port),
                 transfer_timeout: Duration::from_mins(30),
                 call_timeout: Duration::from_secs(120),
-                cancel: CancellationToken::new(),
+                cancel: cancel.clone(),
             })
             .await?,
         );
         std::fs::create_dir_all(&options.work_dir)?;
         let work = options.work_dir.canonicalize()?;
+        let docker: Arc<dyn ProcessRunner> = Arc::new(DockerBoundary::rejecting_builds());
+        let engine = Arc::new(BuildxEngine::new(
+            docker,
+            Arc::clone(&fs),
+            HostPath::parse(&work.join("image"))?,
+        ));
         let session = Session::new(SessionDeps {
             gateway: Arc::<GrpcGateway>::clone(&gateway),
-            engine: Arc::new(FakeEngine::new()),
+            engine,
             host: HostPorts {
                 clock: Arc::new(SystemClock),
                 fs: Arc::clone(&fs),
@@ -243,6 +251,7 @@ impl Live {
         Ok(Live {
             gateway,
             session,
+            cancel,
             runner,
             project,
             options,
@@ -251,18 +260,20 @@ impl Live {
 
     async fn sandbox(&self, launch: &LaunchId) -> Result<SandboxName, Box<dyn Error>> {
         let name = SandboxName::new(&SandboxSlug::parse("p5b")?, &NameSuffix::for_launch(launch));
+        let agents = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("p51b")?,
+        )?)?;
         let planned = PlannedLabels {
             workspace: WorkspaceName::parse("p51b")?,
             role: RoleName::parse("p51b")?,
-            agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-                Agent::Codex,
-                AccountName::parse("p51b")?,
-            )),
+            agents_hash: agents.hash(),
+            lead_agent: Agent::Codex,
             policy: PolicyLabel::of("policy"),
             launch: launch.clone(),
         };
         let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64)))?;
-        let create = SandboxCreate::new(
+        let create = GatewayContractSandboxCreate::new(
             name.clone(),
             ImageTag::parse(&self.options.image)?,
             planned.complete(&image_id, jackin_core::DockerLabel::Off),
@@ -273,11 +284,11 @@ impl Live {
                 args: vec!["-c".to_owned(), "sleep 3600".to_owned()],
             },
         );
-        self.gateway.create_sandbox(&create).await?;
+        self.gateway.create_contract_sandbox(&create).await?;
         for _ in 0..READY_ATTEMPTS {
             let found = self
                 .gateway
-                .find_sandboxes(&SandboxQuery::Name(name.clone()))
+                .find_sandboxes(&SandboxQuery::Name(name.clone()), &self.cancel)
                 .await?;
             if found.first().is_some_and(|view| view.phase == Phase::Ready) {
                 return Ok(name);
@@ -312,7 +323,7 @@ impl Live {
                     touch_on_success: None,
                     timeout: EXEC_TIMEOUT,
                 },
-                &CancellationToken::new(),
+                &self.cancel,
             )
             .await?;
         let mut text = String::from_utf8_lossy(&outcome.stdout).into_owned();
@@ -346,6 +357,7 @@ impl Live {
                         mode: FileMode(0o644),
                         content: SecretBytes::new(content.as_bytes().to_vec()),
                     },
+                    &self.cancel,
                 )
                 .await?;
         }
@@ -414,7 +426,7 @@ impl Live {
         let started = Instant::now();
         let result = self
             .session
-            .upload_project(&self.project, &sandbox, launch, &CancellationToken::new())
+            .upload_project(&self.project, &sandbox, launch, &self.cancel)
             .await;
         say(&format!(
             "upload_project took {:.1} s",
@@ -505,12 +517,7 @@ impl Live {
                 .join(format!("export-{round}.bundle")),
         )?;
         self.gateway
-            .download_file(
-                sandbox,
-                &SandboxPath::parse(remote)?,
-                &local,
-                &CancellationToken::new(),
-            )
+            .download_file(sandbox, &SandboxPath::parse(remote)?, &local, &self.cancel)
             .await?;
         say(&format!(
             "download_file: Ok, digests equal, {}",

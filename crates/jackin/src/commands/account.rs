@@ -5,14 +5,14 @@ use jackin_core::{
     Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, read_credential_file,
 };
 use jackin_session::{
-    AccountPlan, plan_account_edits, plan_account_edits_for_agent, read_chatgpt_login,
+    AccountPlan, Gateways, plan_account_edits, plan_account_edits_for_agent, read_chatgpt_login,
     read_omp_host_key,
 };
 
 use crate::app::App;
 use crate::cli::{
-    AccountAddArgs, AccountArg, AccountCommand, BindArgs, BindScope, CredentialArg, JsonArg,
-    parse_provider,
+    AccountAddArgs, AccountArg, AccountCommand, AccountDefaultArgs, BindArgs, BindScope,
+    CredentialArg, JsonArg, parse_provider,
 };
 use crate::error::CommandError;
 use crate::paths::absolutize;
@@ -90,12 +90,9 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             "{home}/.omp/agent/agent.db"
         )))
         .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
-        let _key =
-            read_omp_host_key(app.deps.host.fs.as_ref(), &db, provider_id).map_err(|_| {
-                CommandError::Argument(
-                    "no omp host credential for the selected provider".to_owned(),
-                )
-            })?;
+        let _key = read_omp_host_key(&db, provider_id).map_err(|_| {
+            CommandError::Argument("no omp host credential for the selected provider".to_owned())
+        })?;
         return Ok(CredentialSource::OmpHost);
     }
     if let Some(path) = &args.chatgpt_from {
@@ -174,11 +171,11 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
     .await?
     {
         AccountPlan::Offline(plan) => {
-            plan.apply().await?;
+            plan.apply(&app.cancel).await?;
         }
         AccountPlan::Gateway(plan) => {
             let gateways = app.gateways(plan.config()).await?;
-            plan.apply(&gateways).await?;
+            plan.apply(&gateways, &app.cancel).await?;
         }
     }
     Ok(())
@@ -187,11 +184,15 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
 async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
     match plan_account_edits(&app.desk(), edits, &app.cancel).await? {
         AccountPlan::Offline(plan) => {
-            plan.apply().await?;
+            plan.apply(&app.cancel).await?;
         }
         AccountPlan::Gateway(plan) => {
-            let gateways = app.gateways(plan.config()).await?;
-            plan.apply(&gateways).await?;
+            let gateways = if plan.needs_every_gateway() {
+                app.gateways(plan.config()).await?
+            } else {
+                Gateways::single(app.session(plan.config()).await?)
+            };
+            plan.apply(&gateways, &app.cancel).await?;
         }
     }
     Ok(())
@@ -224,12 +225,27 @@ async fn rm(app: &App, arg: AccountArg) -> Result<(), CommandError> {
     apply(app, vec![ConfigEdit::RemoveAccount(arg.account)]).await
 }
 
-async fn default(app: &App, arg: AccountArg) -> Result<(), CommandError> {
-    app.store
-        .edit(vec![ConfigEdit::SetDefaultAccount {
+async fn default(app: &App, arg: AccountDefaultArgs) -> Result<(), CommandError> {
+    let edit = if arg.clear {
+        let config = app.store.load().await?;
+        let provider = config
+            .account(&arg.account)
+            .ok_or_else(|| unknown_account(&arg.account))?
+            .provider();
+        if config.default_account(provider) != Some(&arg.account) {
+            return Err(CommandError::Argument(format!(
+                "account {} is not the default of {}",
+                arg.account,
+                provider.as_str()
+            )));
+        }
+        ConfigEdit::ClearDefaultAccount { provider }
+    } else {
+        ConfigEdit::SetDefaultAccount {
             account: arg.account,
-        }])
-        .await?;
+        }
+    };
+    app.store.edit(vec![edit], &app.cancel).await?;
     Ok(())
 }
 
@@ -264,6 +280,6 @@ async fn bind(app: &App, args: &BindArgs) -> Result<(), CommandError> {
             }
         }
     };
-    app.store.edit(vec![edit]).await?;
+    app.store.edit(vec![edit], &app.cancel).await?;
     Ok(())
 }

@@ -73,8 +73,12 @@ impl Origin {
         })
     }
 
-    pub(crate) async fn advance(&self, model: &str) -> Result<String, Box<dyn Error>> {
-        self.role.clone().model(model).commit().await?;
+    pub(crate) async fn advance(&self, revision: &str) -> Result<String, Box<dyn Error>> {
+        self.role
+            .clone()
+            .env("ROLE_REVISION", Some(revision), None)
+            .commit()
+            .await?;
         git(self.role.root().as_path(), &["rev-parse", "HEAD"]).await
     }
 

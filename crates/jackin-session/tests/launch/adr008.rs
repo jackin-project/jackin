@@ -8,11 +8,13 @@ use jackin_core::{
     AccountName, Agent, NameSuffix, Phase, PlannedLabels, PolicyLabel, RoleName, SandboxName,
     SandboxPath, SandboxSlug, SupervisorState, WorkspaceName, sandbox_layout,
 };
-use jackin_openshell::{ClosedPolicy, Gateway, MainProcess, SandboxCreate, SandboxQuery};
+use jackin_openshell::{
+    ClosedPolicy, Gateway, GatewayContractSandboxCreate, MainProcess, SandboxQuery,
+};
 use jackin_session::{LaunchError, LaunchStep};
 
 use super::support::{
-    TestResult, failure, guard, has_file, launch_id, launch_rig, path, ready, running,
+    TestResult, failure, final_image, guard, has_file, launch_id, launch_rig, path, ready, running,
 };
 use jackin_testkit::{Rig, SandboxHandle};
 
@@ -60,7 +62,18 @@ async fn a_new_launch_id_makes_a_new_sandbox_and_leaves_the_live_one_untouched()
                 &other,
                 &sandbox_layout::setup_done_marker(&launch_id(2))
             ));
-            assert_eq!(rig.world.engine.builds().len(), 3);
+            let (first_tag, first_id) = final_image(&rig, 1).await?;
+            let (second_tag, second_id) = final_image(&rig, 2).await?;
+            assert_eq!(
+                (first_tag, first_id.clone()),
+                (second_tag.clone(), second_id.clone())
+            );
+            assert_eq!(
+                rig.world.docker.image_id(&second_tag),
+                Some(second_id.clone())
+            );
+            assert_eq!(first.image_id(), Some(first_id.clone()));
+            assert_eq!(other.image_id(), Some(second_id));
             let label = |handle: &SandboxHandle| {
                 handle
                     .labels()
@@ -81,23 +94,24 @@ async fn foreign(
     name: SandboxName,
     launch: u8,
 ) -> Result<SandboxHandle, Box<dyn Error>> {
-    let image = rig.final_image()?;
+    let (tag, image_id) = final_image(rig, 9).await?;
+    let agents = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+        Agent::Codex,
+        AccountName::parse("work")?,
+    )?)?;
     let labels = PlannedLabels {
         workspace: WorkspaceName::parse("platform-backend")?,
         role: RoleName::parse("sentinel")?,
-        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-            Agent::Codex,
-            AccountName::parse("work")?,
-        )),
+        agents_hash: agents.hash(),
+        lead_agent: Agent::Codex,
         policy: PolicyLabel::of("policy"),
         launch: launch_id(launch),
     }
-    .complete(&image.id, jackin_core::DockerLabel::Off);
-    rig.gateway().add_image(&image.tag);
+    .complete(&image_id, jackin_core::DockerLabel::Off);
     rig.gateway()
-        .create_sandbox(&SandboxCreate::new(
+        .create_contract_sandbox(&GatewayContractSandboxCreate::new(
             name.clone(),
-            image.tag,
+            tag,
             labels,
             Vec::new(),
             ClosedPolicy::parse(&rig.loaded.policy().document().render()?)?,
@@ -108,7 +122,10 @@ async fn foreign(
         ))
         .await?;
     rig.gateway()
-        .find_sandboxes(&SandboxQuery::Name(name.clone()))
+        .find_sandboxes(
+            &SandboxQuery::Name(name.clone()),
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await?;
     rig.gateway()
         .sandbox(&name)

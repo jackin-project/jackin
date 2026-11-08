@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::cell::Cell;
 use std::sync::Arc;
 
@@ -17,8 +18,8 @@ use jackin_testkit::{FakeGateway, ScriptedConnector, World};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, guard, hold_account, login_json,
-    register, until_polling,
+    ACCOUNT_ID, Home, REFRESH, TestResult, codex_account, hold_account, login_json, register,
+    until_polling,
 };
 
 async fn put_provider(world: &World, account: &str) -> TestResult {
@@ -71,10 +72,13 @@ async fn an_account_edit_chooses_offline_or_gateway_from_the_config_it_reads_und
             until_polling(&world, 1).await;
             world
                 .config
-                .edit(vec![ConfigEdit::SetAccountCredential {
-                    account: AccountName::parse("work")?,
-                    credential: login.credential().clone(),
-                }])
+                .edit(
+                    vec![ConfigEdit::SetAccountCredential {
+                        account: AccountName::parse("work")?,
+                        credential: login.credential().clone(),
+                    }],
+                    &CancellationToken::new(),
+                )
                 .await?;
             drop(held);
             Ok::<(), Box<dyn std::error::Error>>(())
@@ -84,7 +88,8 @@ async fn an_account_edit_chooses_offline_or_gateway_from_the_config_it_reads_und
 
         let plan = plan?;
         assert!(plan.needs_gateway());
-        plan.apply(&Gateways::single(world.session.clone())).await?;
+        plan.apply(&Gateways::single(world.session.clone()), &cancel)
+            .await?;
         assert!(world.gateway.providers().is_empty());
         assert_eq!(world.config.load().await?.accounts().count(), 0);
         Ok(())
@@ -137,7 +142,10 @@ async fn a_gateway_removal_takes_the_lock_of_a_login_account_that_appeared_while
             until_polling(&world, 1).await;
             world
                 .config
-                .edit(vec![ConfigEdit::AddAccount(other.clone())])
+                .edit(
+                    vec![ConfigEdit::AddAccount(other.clone())],
+                    &CancellationToken::new(),
+                )
                 .await?;
             drop(held_work);
             let seen = world.clock.slept().len();
@@ -176,12 +184,13 @@ async fn a_gateway_removal_without_login_accounts_connects_to_nothing() -> TestR
         register(&world, &key).await?;
         let name = GatewayName::parse("fake-gateway")?;
 
-        let removal = plan_gateway_removal(&world.desk(), &name, &CancellationToken::new()).await?;
+        let cancel = CancellationToken::new();
+        let removal = plan_gateway_removal(&world.desk(), &name, &cancel).await?;
 
         let GatewayRemoval::Offline(plan) = removal else {
             return Err("a gateway without providers needs no connection".into());
         };
-        plan.apply().await?;
+        plan.apply(&cancel).await?;
         assert!(world.config.load().await?.gateway(&name).is_none());
         assert!(matches!(
             plan_account_edits(&world.desk(), Vec::new(), &CancellationToken::new()).await?,

@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use jackin_core::Sha256;
 use openshell_sdk::raw::proto::{
@@ -12,12 +13,12 @@ use openshell_sdk::raw::proto::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
-use tokio::sync::{Barrier, mpsc};
+use tokio::sync::{Barrier, Notify, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 
 use super::sandbox_rpc::phase_of;
-use super::server::{ExecBackend, ExecCtx, Fake, scope_name};
+use super::server::{ExecBackend, ExecCtx, Fake, Shared, scope_name};
 use super::service::Boxed;
 
 pub(crate) enum Step {
@@ -112,13 +113,41 @@ async fn pump_output(
 
 const GATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const HOST_SHELL: &str = "/bin/sh";
+const REMOTE_WRITER: &str = "/usr/local/lib/jackin/write-file";
 const MISSING_PROGRAM: i32 = 127;
+
+#[derive(Clone, Copy)]
+pub(crate) enum WriterMutation {
+    TargetMode,
+    ParentMode,
+    OrphanDataStage,
+    OrphanIdentityStage,
+    UnrelatedHiddenEntry,
+    ForeignIdentity,
+    LockMode,
+    ExtraNamespace,
+    NamespaceSymlink,
+    DanglingNamespaceSymlink,
+    MissingIdentity,
+    MissingLock,
+}
 
 #[derive(Clone)]
 enum Hook {
     Plain,
-    AbortAfter(usize),
+    GatedAbortAfter(usize, Arc<Notify>, Arc<Barrier>),
     GateAfter(usize, Arc<Barrier>),
+    GateFirstAfter(
+        usize,
+        Arc<AtomicBool>,
+        Arc<Notify>,
+        Arc<Barrier>,
+        Arc<AtomicUsize>,
+        Arc<Notify>,
+    ),
+    ShortInputAfter(usize),
+    ExtraInput,
+    WriterMutationAfter(usize, WriterMutation, Arc<AtomicUsize>),
 }
 
 const SANDBOX_TOOLS: [&str; 2] = ["/usr/bin/stat", "/usr/bin/sha256sum"];
@@ -160,8 +189,8 @@ fn sandbox_tool(root: &Path, command: &[String]) -> Option<Vec<Step>> {
     }
 }
 
-pub(crate) fn host_tools(root: PathBuf) -> ExecBackend {
-    let shell = host_shell(root.clone());
+pub(crate) async fn host_tools(root: PathBuf) -> ExecBackend {
+    let shell = host_shell(root.clone()).await;
     let tools = scripted(move |start, _| {
         sandbox_tool(&root, &start.command).unwrap_or_else(|| vec![Step::Exit(MISSING_PROGRAM)])
     });
@@ -175,34 +204,183 @@ pub(crate) fn host_tools(root: PathBuf) -> ExecBackend {
     })
 }
 
-pub(crate) fn host_shell(root: PathBuf) -> ExecBackend {
-    host_shell_with(root, Hook::Plain)
+pub(crate) async fn host_shell(root: PathBuf) -> ExecBackend {
+    host_shell_with(root, Hook::Plain).await
 }
 
-pub(crate) fn host_shell_aborting(root: PathBuf, abort_after_chunks: Option<usize>) -> ExecBackend {
+pub(crate) async fn host_shell_writer_mutating(
+    root: PathBuf,
+    mutation: WriterMutation,
+) -> ExecBackend {
     host_shell_with(
         root,
-        abort_after_chunks.map_or(Hook::Plain, Hook::AbortAfter),
+        Hook::WriterMutationAfter(2, mutation, Arc::new(AtomicUsize::new(0))),
     )
+    .await
 }
 
-pub(crate) fn host_shell_gated(
+pub(crate) async fn host_shell_gated(
     root: PathBuf,
     after_chunks: usize,
     rendezvous: Arc<Barrier>,
 ) -> ExecBackend {
-    host_shell_with(root, Hook::GateAfter(after_chunks, rendezvous))
+    host_shell_with(root, Hook::GateAfter(after_chunks, rendezvous)).await
 }
 
-fn host_shell_with(root: PathBuf, hook: Hook) -> ExecBackend {
+pub(crate) async fn host_shell_gated_aborting(
+    root: PathBuf,
+    abort_after_chunks: usize,
+    reached: Arc<Notify>,
+    release: Arc<Barrier>,
+) -> ExecBackend {
+    host_shell_with(
+        root,
+        Hook::GatedAbortAfter(abort_after_chunks, reached, release),
+    )
+    .await
+}
+
+pub(crate) async fn host_shell_gated_first_after(
+    root: PathBuf,
+    chunks: usize,
+    reached: Arc<Notify>,
+    release: Arc<Barrier>,
+    second_started: Arc<Notify>,
+) -> ExecBackend {
+    host_shell_with(
+        root,
+        Hook::GateFirstAfter(
+            chunks,
+            Arc::new(AtomicBool::new(false)),
+            reached,
+            release,
+            Arc::new(AtomicUsize::new(0)),
+            second_started,
+        ),
+    )
+    .await
+}
+
+pub(crate) async fn host_shell_short_input_after(root: PathBuf, chunks: usize) -> ExecBackend {
+    host_shell_with(root, Hook::ShortInputAfter(chunks)).await
+}
+
+pub(crate) async fn host_shell_extra_input(root: PathBuf) -> ExecBackend {
+    host_shell_with(root, Hook::ExtraInput).await
+}
+
+async fn host_shell_with(root: PathBuf, hook: Hook) -> ExecBackend {
+    let writer = root.join("jackin-write-file");
+    let source =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../jackin-image/images/construct/write-file.c");
+    let sandbox_root = root.join("sandbox");
+    let compile = Command::new("cc")
+        .args(["-std=c11", "-O2", "-Wall", "-Wextra", "-Werror"])
+        .arg(format!(
+            "-DJACKIN_SANDBOX_ROOT=\"{}\"",
+            sandbox_root.display()
+        ))
+        .arg(source)
+        .arg("-o")
+        .arg(&writer)
+        .output()
+        .await
+        .expect("the native C compiler must run the gateway writer test fixture");
+    assert!(
+        compile.status.success(),
+        "native gateway writer compile failed: {}",
+        String::from_utf8_lossy(&compile.stderr)
+    );
     Arc::new(move |ctx: ExecCtx| {
         let root = root.clone();
+        let writer = writer.clone();
         let hook = hook.clone();
-        Box::pin(async move { run_host(ctx, root, hook).await })
+        Box::pin(async move { run_host(ctx, root, writer, hook).await })
     })
 }
 
-async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
+fn mutate_writer_state(root: &Path, mutation: WriterMutation) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let parent = root.join("sandbox/.contract");
+    let namespace = std::fs::read_dir(&parent)
+        .expect("the contract writer parent must exist")
+        .filter_map(Result::ok)
+        .find(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".jackin-write-")
+        })
+        .expect("the contract writer namespace must exist")
+        .path();
+    let target = parent.join("secret.json");
+    let set_mode = |path: &Path, mode| {
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+            .expect("the contract fixture mode mutation must succeed");
+    };
+    match mutation {
+        WriterMutation::TargetMode => set_mode(&target, 0o644),
+        WriterMutation::ParentMode => set_mode(&parent, 0o755),
+        WriterMutation::OrphanDataStage => {
+            let stage = namespace.join("data.ffffffffffffffff");
+            std::fs::write(&stage, b"orphan data stage")
+                .expect("the contract fixture data stage must be created");
+            set_mode(&stage, 0o600);
+        }
+        WriterMutation::OrphanIdentityStage => {
+            let stage = namespace.join("identity.ffffffffffffffff");
+            std::fs::write(&stage, b"orphan identity stage")
+                .expect("the contract fixture identity stage must be created");
+            set_mode(&stage, 0o600);
+        }
+        WriterMutation::UnrelatedHiddenEntry => {
+            std::fs::write(parent.join(".foreign"), b"foreign")
+                .expect("the unrelated hidden entry must be created");
+        }
+        WriterMutation::ForeignIdentity => {
+            std::fs::write(namespace.join("identity"), b"/sandbox/.contract/other.json")
+                .expect("the foreign writer identity must be written");
+        }
+        WriterMutation::LockMode => set_mode(&namespace.join("lock"), 0o644),
+        WriterMutation::ExtraNamespace => {
+            let extra = parent.join(".jackin-write-0000000000000000");
+            std::fs::create_dir(&extra).expect("the extra writer namespace must be created");
+            set_mode(&extra, 0o700);
+        }
+        WriterMutation::NamespaceSymlink => {
+            let real = root.join("retained-writer-namespace");
+            std::fs::rename(&namespace, &real)
+                .expect("the real writer namespace must be moved outside the parent");
+            std::os::unix::fs::symlink(&real, &namespace)
+                .expect("the writer namespace symlink must be created");
+        }
+        WriterMutation::DanglingNamespaceSymlink => {
+            std::fs::remove_dir_all(&namespace).expect("the real writer namespace must be removed");
+            std::os::unix::fs::symlink(root.join("missing-writer-namespace"), &namespace)
+                .expect("the dangling writer namespace symlink must be created");
+        }
+        WriterMutation::MissingIdentity => {
+            std::fs::remove_file(namespace.join("identity"))
+                .expect("the writer identity must be removed");
+        }
+        WriterMutation::MissingLock => {
+            std::fs::remove_file(namespace.join("lock")).expect("the writer lock must be removed");
+        }
+    }
+}
+
+fn notify_child_killed(shared: &Shared, sender: Option<tokio::sync::oneshot::Sender<()>>) {
+    if let Some(sender) = sender {
+        match sender.send(()) {
+            Ok(()) | Err(()) => {}
+        }
+    }
+    shared.lock().observed.child_killed = true;
+    shared.child_killed.notify_one();
+}
+
+async fn run_host(ctx: ExecCtx, root: PathBuf, writer: PathBuf, hook: Hook) {
     let ExecCtx {
         start,
         mut inputs,
@@ -214,17 +392,31 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
         .iter()
         .map(|part| rewrite(&root, part))
         .collect();
+    let is_writer = start
+        .command
+        .first()
+        .is_some_and(|program| program == REMOTE_WRITER);
+    let is_contract_writer = is_writer
+        && start
+            .command
+            .get(1)
+            .is_some_and(|path| path == ".contract/secret.json");
+    let host_program = if is_writer {
+        writer.as_os_str()
+    } else {
+        std::ffi::OsStr::new(HOST_SHELL)
+    };
     let workdir = if start.workdir.is_empty() {
         root.join("sandbox")
     } else {
         PathBuf::from(rewrite(&root, &start.workdir))
     };
-    if argv.first().map(String::as_str) != Some(HOST_SHELL) {
+    if !is_writer && argv.first().map(String::as_str) != Some(HOST_SHELL) {
         drop(events.send(Ok(exit_event(MISSING_PROGRAM))).await);
         return;
     }
     tokio::fs::create_dir_all(&workdir).await.unwrap();
-    let mut command = Command::new("/bin/sh");
+    let mut command = Command::new(host_program);
     command
         .args(&argv[1..])
         .current_dir(&workdir)
@@ -240,6 +432,11 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
             return;
         }
     };
+    if let Hook::GateFirstAfter(_, _, _, _, starts, second_started) = &hook
+        && starts.fetch_add(1, Ordering::AcqRel) == 1
+    {
+        second_started.notify_one();
+    }
     shared.lock().observed.child_started = true;
     shared.child_started.notify_one();
     let mut stdin = child.stdin.take();
@@ -248,20 +445,26 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
     let out_task = tokio::spawn(pump_output(stdout, events.clone(), false));
     let err_task = tokio::spawn(pump_output(stderr, events.clone(), true));
     let (abort_tx, abort_rx) = tokio::sync::oneshot::channel::<()>();
+    let (child_killed_tx, child_killed_rx) = tokio::sync::oneshot::channel::<()>();
+    let mut child_killed_tx = Some(child_killed_tx);
     let abort_events = events.clone();
+    let feeder_hook = hook.clone();
     let feeder = tokio::spawn(async move {
+        let child_killed = child_killed_rx;
         let mut chunks = 0_usize;
         while let Some(payload) = inputs.recv().await {
             let exec_sandbox_input::Payload::Stdin(bytes) = payload else {
                 continue;
             };
             chunks += 1;
-            if let Hook::AbortAfter(limit) = hook
-                && chunks > limit
+            if let Hook::GatedAbortAfter(limit, reached, release) = &feeder_hook
+                && chunks > *limit
             {
-                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                reached.notify_one();
+                drop(tokio::time::timeout(GATE_TIMEOUT, release.wait()).await);
                 drop(abort_events.send(Err(Status::unavailable("aborted"))).await);
                 let _sent = abort_tx.send(());
+                drop(child_killed.await);
                 return;
             }
             if let Some(pipe) = stdin.as_mut()
@@ -269,11 +472,31 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
             {
                 break;
             }
-            if let Hook::GateAfter(limit, rendezvous) = &hook
+            if let Hook::GateAfter(limit, rendezvous) = &feeder_hook
                 && chunks == *limit
             {
                 drop(tokio::time::timeout(GATE_TIMEOUT, rendezvous.wait()).await);
             }
+            if let Hook::GateFirstAfter(limit, claimed, reached, release, _, _) = &feeder_hook
+                && chunks == *limit
+                && claimed
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok()
+            {
+                reached.notify_one();
+                drop(tokio::time::timeout(GATE_TIMEOUT, release.wait()).await);
+            }
+            if let Hook::ShortInputAfter(limit) = &feeder_hook
+                && chunks == *limit
+            {
+                drop(stdin.take());
+                return;
+            }
+        }
+        if matches!(feeder_hook, Hook::ExtraInput)
+            && let Some(pipe) = stdin.as_mut()
+        {
+            drop(pipe.write_all(&[0xff]).await);
         }
         drop(stdin);
     });
@@ -282,17 +505,22 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
             drop(out_task.await);
             drop(err_task.await);
             let code = status.ok().and_then(|status| status.code()).unwrap_or(-1);
+            if code == 0
+                && is_contract_writer
+                && let Hook::WriterMutationAfter(after, mutation, writers) = &hook
+                && writers.fetch_add(1, Ordering::AcqRel) + 1 == *after
+            {
+                mutate_writer_state(&root, *mutation);
+            }
             drop(events.send(Ok(exit_event(code))).await);
         }
         () = events.closed() => {
             drop(child.kill().await);
-            shared.lock().observed.child_killed = true;
-            shared.child_killed.notify_one();
+            notify_child_killed(&shared, child_killed_tx.take());
         }
         Ok(()) = abort_rx => {
             drop(child.kill().await);
-            shared.lock().observed.child_killed = true;
-            shared.child_killed.notify_one();
+            notify_child_killed(&shared, child_killed_tx.take());
         }
     }
     feeder.abort();

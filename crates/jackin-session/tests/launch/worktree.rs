@@ -3,7 +3,7 @@
 
 use std::error::Error;
 
-use jackin_core::{AccountName, Agent, AgentInstance, AgentInstances, Provider};
+use jackin_core::{AccountName, Agent, AgentInstance, AgentInstances, ModelName, Provider};
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{guard, launch_rig, ready};
@@ -23,18 +23,23 @@ async fn worktree_setup_creates_home_branch_and_checkout() -> Result<(), Box<dyn
                 Agent::Codex,
                 Provider::Codex,
                 AccountName::parse("work")?,
-                "gpt-5.1-codex".to_owned(),
+                ModelName::parse("gpt-5.1-codex")?,
             ),
             AgentInstance::new(
                 Agent::Omp,
                 Provider::Zai,
                 AccountName::parse("work")?,
-                "glm-5.3".to_owned(),
+                ModelName::parse("glm-5.3")?,
             ),
         ])?;
         rig.world
             .session
-            .setup_worktrees(&target.sandbox, &instances, &CancellationToken::new())
+            .setup_worktrees(
+                &target.sandbox,
+                &instances,
+                instances.as_slice()[0].agent,
+                &CancellationToken::new(),
+            )
             .await?;
         let root = handle.root();
         assert!(root.join(".jackin/homes/codex").is_dir());

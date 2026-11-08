@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use std::time::Duration;
 
 use jackin_core::Provider;
@@ -8,7 +9,7 @@ use jackin_testkit::{Method, Route};
 use jackin_usage::{Refresh, UnavailableReason, UsageOutcome};
 
 use crate::support::{
-    CODEX_PATH, TestResult, UsageHarness, assert_only_state_written, codex_body, codex_login, guard,
+    CODEX_PATH, TestResult, UsageHarness, assert_only_state_written, codex_body, codex_login,
 };
 
 const AUTH: &str = include_str!("fixtures/codex/auth_chatgpt.json");

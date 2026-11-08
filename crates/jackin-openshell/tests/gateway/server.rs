@@ -84,6 +84,12 @@ pub(crate) enum Broken {
 
 pub(crate) type ProfileHook = Box<dyn FnMut(&mut State) + Send>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Paging {
+    Finite,
+    Cycling,
+}
+
 pub(crate) struct State {
     pub(crate) sandboxes: BTreeMap<Key, Sandbox>,
     pub(crate) providers: BTreeMap<Key, Provider>,
@@ -93,6 +99,7 @@ pub(crate) struct State {
     pub(crate) faults: HashMap<&'static str, Fault>,
     pub(crate) rpc_count: usize,
     pub(crate) page_cap: usize,
+    pub(crate) paging: Paging,
     pub(crate) store_labels: bool,
     pub(crate) store_environment: bool,
     pub(crate) known_images: Option<HashSet<String>>,
@@ -104,6 +111,7 @@ pub(crate) struct State {
     pub(crate) after_get_profile: Option<ProfileHook>,
     pub(crate) before_import: Option<ProfileHook>,
     pub(crate) before_create_provider: Option<ProfileHook>,
+    pub(crate) create_provider_response_error: Option<Status>,
     pub(crate) after_ssh_session: Option<ProfileHook>,
     pub(crate) import_rejection: Option<(String, String)>,
     pub(crate) forward_error: Option<Status>,
@@ -182,6 +190,7 @@ fn fresh_state() -> State {
         faults: HashMap::new(),
         rpc_count: 0,
         page_cap: 2,
+        paging: Paging::Finite,
         store_labels: true,
         store_environment: true,
         known_images: None,
@@ -193,6 +202,7 @@ fn fresh_state() -> State {
         after_get_profile: None,
         before_import: None,
         before_create_provider: None,
+        create_provider_response_error: None,
         after_ssh_session: None,
         import_rejection: None,
         forward_error: None,

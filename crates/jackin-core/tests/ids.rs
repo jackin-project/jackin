@@ -8,8 +8,8 @@ use std::process::Stdio;
 use std::str::FromStr;
 
 use jackin_core::{
-    AccountName, Agent, AttemptId, BranchName, BuilderName, ChatgptAccountId, CommitId, EnvName,
-    GatewayName, IdError, ImageId, ImageLabel, ImageTag, LaunchId, ModelName, NameSuffix,
+    AccountName, Agent, AgentHash, AttemptId, BranchName, BuilderName, ChatgptAccountId, CommitId,
+    EnvName, GatewayName, IdError, ImageId, ImageLabel, ImageTag, LaunchId, ModelName, NameSuffix,
     OpAccountId, OpReference, OpenShellWorkspace, ProfileId, ProviderName, RoleName, SandboxName,
     SandboxSlug, Sha256, WorkspaceName,
 };
@@ -132,6 +132,22 @@ fn label_value_ids_follow_the_gateway_grammar() -> TestResult {
         grammar::<LaunchId>(&accept, &reject)?,
         grammar::<ImageLabel>(&accept, &reject)?,
     ]);
+    Ok(())
+}
+
+#[test]
+fn agent_hash_is_exactly_thirty_two_lowercase_hex_characters() -> TestResult {
+    let accepted = "0123456789abcdef0123456789abcdef";
+    assert_eq!(AgentHash::parse(accepted)?.as_str(), accepted);
+    for invalid in [
+        "",
+        "0123456789abcdef0123456789abcde",
+        "0123456789abcdef0123456789abcdef0",
+        "0123456789abcdef0123456789abcdeG",
+        "0123456789ABCDEF0123456789ABCDEF",
+    ] {
+        assert!(AgentHash::parse(invalid).is_err(), "{invalid:?}");
+    }
     Ok(())
 }
 
@@ -408,6 +424,7 @@ fn other_ids_reject_one_input_of_each_violated_class() -> TestResult {
         &[
             rej("", Want::Empty),
             rej(rep('a', 65), Want::TooLong(64, 65)),
+            rej("vendor,model", Want::CharAt(',', 6)),
             rej("-gpt", Want::Edge),
             rej("gpt\"x", Want::CharAt('"', 3)),
             rej("gpt x", Want::CharAt(' ', 3)),

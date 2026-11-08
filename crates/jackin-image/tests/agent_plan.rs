@@ -33,6 +33,7 @@ fn request(agent: Agent) -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: Vec::new(),
         rebuild: Rebuild::No,
     })
 }
@@ -110,24 +111,32 @@ fn derived_dockerfile(agent: Agent) -> Result<String, Box<dyn Error>> {
     Ok(String::from_utf8(file.bytes.clone())?)
 }
 
+fn expected_codex_dockerfile() -> Result<String, Box<dyn Error>> {
+    let source = String::from_utf8(
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/images/derived/Dockerfile"
+        ))
+        .to_vec(),
+    )?;
+    Ok(source.replace(
+        "        --absent /etc/codex/skills \\\n",
+        "        --absent /etc/codex/skills \\\n        --absent /sandbox/.codex \\\n",
+    ))
+}
+
 #[test]
-fn codex_scan_absent_paths_unchanged() -> TestResult {
+fn codex_scan_absent_paths_include_the_user_state_directory() -> TestResult {
     let map = args(Agent::Codex)?;
     assert_eq!(
         map.get("AGENT_SCAN_ABSENT").map(String::as_str),
         Some(
-            "/etc/codex/requirements.toml /etc/codex/managed_config.toml /etc/codex/hooks.json /etc/codex/rules /etc/codex/agents /etc/codex/skills"
+            "/etc/codex/requirements.toml /etc/codex/managed_config.toml /etc/codex/hooks.json /etc/codex/rules /etc/codex/agents /etc/codex/skills /sandbox/.codex"
         )
     );
     assert_eq!(
         derived_dockerfile(Agent::Codex)?,
-        String::from_utf8(
-            include_bytes!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/images/derived/Dockerfile"
-            ))
-            .to_vec()
-        )?
+        expected_codex_dockerfile()?
     );
     Ok(())
 }
@@ -268,11 +277,7 @@ fn two_agent_plan_installs_and_scans_both_binaries() -> TestResult {
         .ok_or("single Dockerfile")?;
     assert_eq!(
         single_dockerfile.bytes,
-        include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/images/derived/Dockerfile"
-        ))
-        .to_vec()
+        expected_codex_dockerfile()?.into_bytes()
     );
     Ok(())
 }

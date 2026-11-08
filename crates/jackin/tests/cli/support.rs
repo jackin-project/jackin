@@ -15,12 +15,14 @@ use async_trait::async_trait;
 use jackin::{AppEnv, Deps, ExitClass, GrpcConnector, RawMode, Terminal, TerminalInput};
 use jackin_core::{
     Clock, Config, ConfigStore, EnvSnapshot, FileSystem, GatewayEntry, GatewayName, HostPath,
-    ProcessRunner, Provider,
+    ImageId, ImageTag, ProcessRunner, Provider,
 };
-use jackin_image::ImageEngine;
+use jackin_image::{ImageEngine, ImagePlan};
 use jackin_openshell::{Gateway, GatewayError, TermSize};
 use jackin_session::{ConnectError, GatewayConnector, HostPorts};
-use jackin_testkit::{ProcessReply, ScriptedProgram, World, default_limits};
+use jackin_testkit::{
+    DockerBuildReply, DockerIidFile, ProcessReply, Rig, ScriptedProgram, World, default_limits,
+};
 use jackin_usage::ProviderEndpoints;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -30,6 +32,22 @@ use tokio_util::sync::CancellationToken;
 use super::console::ScriptedConsole;
 
 pub(crate) type Failure = Box<dyn std::error::Error>;
+
+pub(crate) fn script_construct_rebuild(
+    rig: &Rig,
+    fill: char,
+) -> Result<(ImageTag, ImageId), Failure> {
+    let plan = ImagePlan::new(rig.plan(1)?.image_request())?;
+    let tag = plan.construct_build().tag.clone();
+    let id = ImageId::parse(&format!("sha256:{}", fill.to_string().repeat(64)))?;
+    rig.world.docker.script_build(
+        tag.clone(),
+        DockerBuildReply::default()
+            .with_iid_file(DockerIidFile::Text(format!("{id}\n").into_bytes()))
+            .with_published_id(id.clone()),
+    );
+    Ok((tag, id))
+}
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Shared(Arc<Mutex<Vec<u8>>>);
@@ -315,7 +333,7 @@ impl Harness {
         let clock: Arc<dyn Clock> = Arc::<jackin_testkit::FakeClock>::clone(&world.clock);
         let runner: Arc<dyn ProcessRunner> =
             Arc::<jackin_testkit::TestRunner>::clone(&world.runner);
-        let engine: Arc<dyn ImageEngine> = Arc::<jackin_testkit::FakeEngine>::clone(&world.engine);
+        let engine: Arc<dyn ImageEngine> = Arc::<jackin_image::BuildxEngine>::clone(&world.engine);
         let gateway: Arc<dyn Gateway> = Arc::<jackin_testkit::FakeGateway>::clone(&world.gateway);
         Harness {
             connector: FixedConnector::empty().with(gateway),

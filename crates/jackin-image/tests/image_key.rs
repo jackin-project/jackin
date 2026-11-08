@@ -27,6 +27,10 @@ const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
 const JACKIN_START: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
 const SCAN: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
+const WRITE_FILE_C: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/images/construct/write-file.c"
+));
 
 const DOCKERFILE: &[u8] = b"FROM construct AS role\n";
 const SETUP: &[u8] = b"#!/bin/sh\necho setup\n";
@@ -72,6 +76,7 @@ fn base() -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: Vec::new(),
         rebuild: Rebuild::No,
     })
 }
@@ -361,11 +366,16 @@ fn key_is_the_documented_sha256_encoding_including_the_embedded_digests() -> Tes
     check_tags(&second_request()?, &construct, &expected, "agent-smith")
 }
 
-fn construct_hex(platform: Platform) -> String {
+fn construct_digest(platform: Platform, writer: &[u8]) -> String {
     let mut out = Vec::new();
     field(&mut out, hex(CONSTRUCT_DOCKERFILE).as_bytes());
+    field(&mut out, hex(writer).as_bytes());
     field(&mut out, platform.docker_arg().as_bytes());
-    hex(&out)[..16].to_owned()
+    hex(&out)
+}
+
+fn construct_hex(platform: Platform) -> String {
+    construct_digest(platform, WRITE_FILE_C)[..16].to_owned()
 }
 
 fn construct_tag(request: &ImageRequest) -> Result<String, Box<dyn Error>> {
@@ -375,6 +385,22 @@ fn construct_tag(request: &ImageRequest) -> Result<String, Box<dyn Error>> {
 #[test]
 fn construct_tag_depends_on_the_platform_only() -> TestResult {
     let request = base()?;
+    let arm_digest = construct_digest(Platform::LinuxArm64, WRITE_FILE_C);
+    let amd_digest = construct_digest(Platform::LinuxAmd64, WRITE_FILE_C);
+    assert_eq!(
+        arm_digest,
+        "b9b62c574059a5eb9e7c6c1e3908c517a5a4e4d6e84808f08fcc070a0d1e7c65"
+    );
+    assert_eq!(
+        amd_digest,
+        "cb353d46a3234563288a123437fc8bbdaeb7855890d79d782c63887546014524"
+    );
+    let mut changed_writer = WRITE_FILE_C.to_vec();
+    changed_writer.push(b'\n');
+    assert_ne!(
+        construct_digest(Platform::LinuxArm64, &changed_writer),
+        arm_digest
+    );
     let arm = construct_tag(&request)?;
     assert_eq!(
         arm,

@@ -20,13 +20,6 @@ use tokio_util::sync::CancellationToken;
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
 pub(crate) const T0: i64 = 1_767_225_600;
-const GUARD: Duration = Duration::from_secs(20);
-
-pub(crate) async fn guard(work: impl Future<Output = TestResult>) -> TestResult {
-    tokio::time::timeout(GUARD, work)
-        .await
-        .map_err(|_| "the test hung for 20 s")?
-}
 
 pub(crate) fn host_path(path: &str) -> HostPath {
     HostPath::parse(Path::new(path)).expect("absolute path")

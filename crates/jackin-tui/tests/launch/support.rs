@@ -5,7 +5,8 @@ use std::error::Error;
 use std::time::Duration;
 
 use jackin_console::app::Route;
-use jackin_core::{ConfigEdit, RoleName, RoleSource, SandboxLabels, sandbox_layout};
+use jackin_console::domain::instance::InstanceId;
+use jackin_core::{ConfigEdit, GatewayName, RoleName, RoleSource, SandboxLabels, sandbox_layout};
 use jackin_testkit::{ConsoleRig, Rig, RoleFixture, SandboxHandle};
 
 pub(crate) type Failure = Box<dyn Error>;
@@ -171,9 +172,8 @@ pub(crate) fn only(rig: &Rig) -> Result<SandboxHandle, Failure> {
     }
 }
 
-pub(crate) fn record_id(handle: &SandboxHandle) -> String {
-    let name = handle.name().to_string();
-    format!("jk-{}", &name[name.len() - 4..])
+pub(crate) fn record_id(gateway: &GatewayName, handle: &SandboxHandle) -> InstanceId {
+    InstanceId::new(gateway.to_string(), handle.name().to_string())
 }
 
 pub(crate) fn labels(handle: &SandboxHandle) -> Result<SandboxLabels, Failure> {
@@ -195,10 +195,13 @@ pub(crate) async fn two_roles() -> Result<(Rig, RoleFixture), Failure> {
     other.commit().await?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddRole {
-            name: RoleName::parse("other")?,
-            source: RoleSource::Path(other.root().clone()),
-        }])
+        .edit(
+            vec![ConfigEdit::AddRole {
+                name: RoleName::parse("other")?,
+                source: RoleSource::Path(other.root().clone()),
+            }],
+            &rig.world.cancel,
+        )
         .await?;
     Ok((rig, other))
 }

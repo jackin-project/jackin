@@ -103,7 +103,7 @@ async fn the_plan_selects_the_account_by_the_d26_order_and_names_the_missing_bin
                 plan.account(),
                 &AccountSelection { account: account.clone(), via: row.via }
             );
-            assert_eq!(plan.draft().labels().agents.lead().account, account);
+            assert_eq!(plan.instances().as_slice()[0].account, account);
             let created = plan.draft().complete(&built_image(&setup.role, '5')?, jackin_core::DockerLabel::Off);
             assert_eq!(
                 created.providers(),

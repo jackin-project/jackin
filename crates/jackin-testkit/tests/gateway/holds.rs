@@ -190,7 +190,7 @@ async fn until_held_waits_for_an_arrival_however_late_it_comes() -> TestResult {
             let fake = Arc::clone(&fake);
             async move {
                 tokio::time::sleep(late).await;
-                fake.create_sandbox(&request).await
+                fake.create_contract_sandbox(&request).await
             }
         });
 

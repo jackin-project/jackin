@@ -19,8 +19,9 @@ use tokio_util::sync::CancellationToken;
 use crate::discovery::ResolvedGateway;
 use crate::error::{GatewayError, GatewayOp};
 use crate::gateway::{
-    Gateway, GatewayHealth, PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProviderSpec,
-    ProviderState, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView,
+    Gateway, GatewayContractSandboxCreate, GatewayHealth, PowerAction, ProfileSync, ProgramOutcome,
+    ProgramRun, ProviderSpec, ProviderState, ProviderWriteEffect, ProviderWriteError,
+    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView,
 };
 use crate::policy::ProviderProfile;
 use crate::terminal::{TerminalRequest, TerminalSession};
@@ -117,7 +118,10 @@ impl Gateway for GrpcGateway {
         self.inner.provider_state(name).await
     }
 
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         self.inner.put_provider(spec).await
     }
 
@@ -129,8 +133,23 @@ impl Gateway for GrpcGateway {
         self.inner.create_sandbox(spec).await
     }
 
-    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
-        self.inner.find_sandboxes(query).await
+    async fn create_contract_sandbox(
+        &self,
+        spec: &GatewayContractSandboxCreate,
+    ) -> Result<SandboxView, GatewayError> {
+        self.inner.create_contract_sandbox(spec).await
+    }
+
+    async fn find_sandboxes(
+        &self,
+        query: &SandboxQuery,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<SandboxView>, GatewayError> {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(GatewayError::Cancelled { op: GatewayOp::Find, group: None }),
+            found = self.inner.find_sandboxes(query) => found,
+        }
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
@@ -148,8 +167,13 @@ impl Gateway for GrpcGateway {
         &self,
         name: &SandboxName,
         action: PowerAction,
+        cancel: &CancellationToken,
     ) -> Result<SandboxView, GatewayError> {
-        self.inner.set_power(name, action).await
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(GatewayError::Cancelled { op: GatewayOp::Power, group: None }),
+            powered = self.inner.set_power(name, action) => powered,
+        }
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
@@ -168,16 +192,18 @@ impl Gateway for GrpcGateway {
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
+        cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
-        self.inner.read_files(sandbox, paths).await
+        self.inner.read_files(sandbox, paths, cancel).await
     }
 
     async fn write_file(
         &self,
         sandbox: &SandboxName,
         file: &SandboxFile,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
-        self.inner.write_file(sandbox, file).await
+        self.inner.write_file(sandbox, file, cancel).await
     }
 
     async fn upload_tree(

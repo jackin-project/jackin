@@ -21,6 +21,7 @@ use jackin_openshell::{
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
+use crate::agent_metadata::AgentMetadataError;
 use crate::launch::hooks::{self, HookRun};
 use crate::launch::{AttachTarget, LaunchEvent, LaunchEvents, LaunchStep, StepResult};
 use crate::service::{POLL, Session};
@@ -47,6 +48,7 @@ pub struct AttachedTerminal {
     gateway: Arc<dyn Gateway>,
     sandbox: SandboxName,
     supervisor: SupervisorReading,
+    cancel: CancellationToken,
     held: Vec<u8>,
 }
 
@@ -54,11 +56,12 @@ pub struct AttachedTerminal {
 struct SupervisorProbe {
     gateway: Arc<dyn Gateway>,
     sandbox: SandboxName,
+    cancel: CancellationToken,
 }
 
 impl SupervisorProbe {
     async fn read(&self) -> SupervisorReading {
-        run_state(self.gateway.as_ref(), &self.sandbox)
+        run_state(self.gateway.as_ref(), &self.sandbox, &self.cancel)
             .await
             .unwrap_or(SupervisorReading::Unreadable)
     }
@@ -130,6 +133,8 @@ pub struct ShellRequest {
 pub enum AttachError {
     #[error(transparent)]
     Gateway(#[from] GatewayError),
+    #[error(transparent)]
+    AgentMetadata(#[from] AgentMetadataError),
     #[error("sandbox {0} was not found")]
     NotFound(SandboxName),
     #[error("the main process of {sandbox} has ended: {phase}")]
@@ -145,6 +150,8 @@ pub enum AttachError {
 pub enum RestartError {
     #[error(transparent)]
     Gateway(#[from] GatewayError),
+    #[error(transparent)]
+    AgentMetadata(#[from] AgentMetadataError),
     #[error("the main process of {sandbox} has ended: {phase}")]
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     #[error("the agent in {sandbox} is already running as attempt {attempt}")]
@@ -357,6 +364,7 @@ impl AttachedTerminal {
         SupervisorProbe {
             gateway: Arc::clone(&self.gateway),
             sandbox: self.sandbox.clone(),
+            cancel: self.cancel.clone(),
         }
     }
 
@@ -424,55 +432,61 @@ fn not_found(sandbox: &SandboxName) -> GatewayError {
 }
 
 impl Session {
-    pub async fn attach(&self, request: AttachRequest) -> Result<AttachedTerminal, AttachError> {
+    pub async fn attach(
+        &self,
+        request: AttachRequest,
+        cancel: &CancellationToken,
+    ) -> Result<AttachedTerminal, AttachError> {
         let sandbox = &request.sandbox;
         let view = self
-            .find_managed(sandbox)
+            .find_managed(sandbox, cancel)
             .await?
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;
-        if let Some(agent) = request.agent {
-            let names = self
-                .sandbox_agent_names(sandbox)
-                .await
-                .map_err(AttachError::Gateway)?;
-            let is_lead = names.first().is_none_or(|lead| lead == agent.as_str());
-            if !is_lead {
-                if !names.iter().any(|name| name == agent.as_str()) {
-                    return Err(AttachError::NotFound(sandbox.clone()));
-                }
-                let spec = agent.spec();
-                let mut env = BTreeMap::new();
-                env.insert(
-                    EnvName::parse("HOME").map_err(|_| AttachError::NotFound(sandbox.clone()))?,
-                    format!("/sandbox/.jackin/homes/{}", agent.as_str()),
-                );
-                let session = self
-                    .deps
-                    .gateway
-                    .open_terminal(&TerminalRequest {
-                        sandbox: sandbox.clone(),
-                        kind: TerminalKind::Exec {
-                            argv: spec.launch_argv(),
-                            workdir: jackin_core::SandboxPath::parse(&format!(
-                                "/sandbox/work/{}/project",
-                                agent.as_str()
-                            ))
-                            .map_err(|_| AttachError::NotFound(sandbox.clone()))?,
-                            env,
-                        },
-                        size: request.size,
-                    })
-                    .await?;
-                let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
-                return Ok(AttachedTerminal {
-                    session,
-                    gateway: Arc::clone(&self.deps.gateway),
+        let metadata = self.agent_metadata_for_view(&view, cancel).await?;
+        let agent = request.agent.unwrap_or_else(|| metadata.lead_agent());
+        if !metadata
+            .instances
+            .iter()
+            .any(|instance| instance.agent == agent)
+        {
+            return Err(AgentMetadataError::UnknownAgent { agent }.into());
+        }
+        self.revalidate_agent_identity(&metadata.identity, cancel)
+            .await?;
+        if agent != metadata.lead_agent() {
+            let spec = agent.spec();
+            let mut env = BTreeMap::new();
+            env.insert(
+                EnvName::parse("HOME").map_err(|_| AttachError::NotFound(sandbox.clone()))?,
+                format!("/sandbox/.jackin/homes/{}", agent.as_str()),
+            );
+            let session = self
+                .deps
+                .gateway
+                .open_terminal(&TerminalRequest {
                     sandbox: sandbox.clone(),
-                    supervisor,
-                    held: Vec::new(),
-                });
-            }
+                    kind: TerminalKind::Exec {
+                        argv: spec.launch_argv(),
+                        workdir: jackin_core::SandboxPath::parse(&format!(
+                            "/sandbox/work/{}/project",
+                            agent.as_str()
+                        ))
+                        .map_err(|_| AttachError::NotFound(sandbox.clone()))?,
+                        env,
+                    },
+                    size: request.size,
+                })
+                .await?;
+            let supervisor = run_state(self.deps.gateway.as_ref(), sandbox, cancel).await?;
+            return Ok(AttachedTerminal {
+                session,
+                gateway: Arc::clone(&self.deps.gateway),
+                sandbox: sandbox.clone(),
+                supervisor,
+                cancel: cancel.clone(),
+                held: Vec::new(),
+            });
         }
         let session = self
             .deps
@@ -486,27 +500,32 @@ impl Session {
                 size: request.size,
             })
             .await?;
-        let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
+        let supervisor = run_state(self.deps.gateway.as_ref(), sandbox, cancel).await?;
         Ok(AttachedTerminal {
             session,
             gateway: Arc::clone(&self.deps.gateway),
             sandbox: sandbox.clone(),
             supervisor,
+            cancel: cancel.clone(),
             held: Vec::new(),
         })
     }
 
-    pub async fn open_shell(&self, request: ShellRequest) -> Result<TerminalSession, AttachError> {
+    pub async fn open_shell(
+        &self,
+        request: ShellRequest,
+        cancel: &CancellationToken,
+    ) -> Result<TerminalSession, AttachError> {
         let sandbox = &request.sandbox;
         let view = self
-            .find_managed(sandbox)
+            .find_managed(sandbox, cancel)
             .await?
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;
         let gateway = self.deps.gateway.as_ref();
         let values = async {
             let launch = launch_of(&view.labels)?;
-            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch).await?)
+            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch, cancel).await?)
         }
         .await
         .map_err(|failure| AttachError::env(sandbox, failure))?;
@@ -525,8 +544,9 @@ impl Session {
     pub async fn supervisor_state(
         &self,
         sandbox: &SandboxName,
+        cancel: &CancellationToken,
     ) -> Result<SupervisorReading, GatewayError> {
-        run_state(self.deps.gateway.as_ref(), sandbox).await
+        run_state(self.deps.gateway.as_ref(), sandbox, cancel).await
     }
 
     pub async fn restart_agent(
@@ -537,21 +557,24 @@ impl Session {
     ) -> Result<AttachTarget, RestartError> {
         let gateway = self.deps.gateway.as_ref();
         let view = self
-            .find_managed(sandbox)
+            .find_managed(sandbox, &cancel)
             .await?
             .ok_or_else(|| not_found(sandbox))?;
         require_ready::<RestartError>(view.phase, sandbox)?;
+        let metadata = self.agent_metadata_for_view(&view, &cancel).await?;
         let values = async {
             let launch = launch_of(&view.labels)?;
-            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch).await?)
+            Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch, &cancel).await?)
         }
         .await
         .map_err(|failure| RestartError::env(sandbox, failure))?;
         let _held = self.restart_lock(sandbox).await?;
-        self.restartable(sandbox).await?;
+        self.restartable(sandbox, &cancel).await?;
         self.restart_preflight(sandbox, &values, &events, &cancel)
             .await?;
-        let attempt = self.restartable(sandbox).await?;
+        let attempt = self.restartable(sandbox, &cancel).await?;
+        self.revalidate_agent_identity(&metadata.identity, &cancel)
+            .await?;
         self.request_attempt(sandbox, attempt, &events, &cancel)
             .await
     }
@@ -571,8 +594,12 @@ impl Session {
         }
     }
 
-    async fn restartable(&self, sandbox: &SandboxName) -> Result<AttemptId, RestartError> {
-        let state = match run_state(self.deps.gateway.as_ref(), sandbox).await? {
+    async fn restartable(
+        &self,
+        sandbox: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<AttemptId, RestartError> {
+        let state = match run_state(self.deps.gateway.as_ref(), sandbox, cancel).await? {
             SupervisorReading::Reported(state) => state,
             SupervisorReading::Unreadable | SupervisorReading::Invalid(_) => {
                 return Err(RestartError::StateUnreadable {
@@ -606,7 +633,7 @@ impl Session {
             .await;
         let hook = sandbox_layout::hook_path(HookKind::Preflight);
         let mut found = gateway
-            .read_files(sandbox, std::slice::from_ref(&hook))
+            .read_files(sandbox, std::slice::from_ref(&hook), cancel)
             .await?;
         let present = found.pop().flatten().is_some_and(|bytes| !bytes.is_empty());
         if present {
@@ -660,12 +687,13 @@ impl Session {
                         StartRequest(attempt).render().into_bytes(),
                     ),
                 },
+                cancel,
             )
             .await?;
         let limit = self.deps.limits.attempt;
         let mut waited = Duration::ZERO;
         loop {
-            let seen_state = run_state(gateway, sandbox).await?;
+            let seen_state = run_state(gateway, sandbox, cancel).await?;
             if let SupervisorReading::Reported(
                 state @ (SupervisorState::Running { attempt: seen }
                 | SupervisorState::Exited { attempt: seen, .. }),

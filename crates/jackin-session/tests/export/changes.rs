@@ -113,6 +113,32 @@ async fn changes_lists_tracked_edits_deletions_and_untracked_files_with_their_hu
 }
 
 #[tokio::test]
+async fn changes_lists_the_work_of_a_linked_worktree_under_its_name() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let path = handle.root().join("side").display().to_string();
+        handle
+            .git(&["worktree", "add", "-q", "--detach", &path])
+            .await?;
+        write(&handle, "main-only.txt", b"main\n")?;
+        std::fs::write(handle.root().join("side/side-only.txt"), b"side\n")?;
+
+        let found = changes(&rig, &name).await?;
+        let paths: Vec<String> = found
+            .files
+            .iter()
+            .map(|changed| changed.path.to_string())
+            .collect();
+        assert_eq!(paths, ["main-only.txt", "side/side-only.txt"]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_staged_rename_is_one_renamed_file_and_a_new_staged_file_is_added() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
@@ -309,6 +335,42 @@ async fn untracked_files_beyond_the_first_five_hundred_are_counted_not_listed() 
             (500, Some("f499.txt"), 1)
         );
         assert!(listed == first, "the listed paths are not the first 500");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn untracked_file_limit_is_shared_across_linked_checkouts() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let side = handle.root().join("side");
+        let side_path = side.display().to_string();
+        handle
+            .git(&["worktree", "add", "-q", "--detach", &side_path])
+            .await?;
+        for index in 0..300 {
+            write(&handle, &format!("main-{index:03}.txt"), b"x\n")?;
+        }
+        for index in 0..201 {
+            std::fs::write(side.join(format!("side-{index:03}.txt")), b"x\n")?;
+        }
+
+        let found = changes(&rig, &name).await?;
+        let paths: Vec<&str> = found
+            .files
+            .iter()
+            .map(|changed| changed.path.as_str())
+            .collect();
+        let unique: std::collections::BTreeSet<&str> = paths.iter().copied().collect();
+        assert_eq!(paths.len(), 500);
+        assert_eq!(unique.len(), paths.len());
+        assert!(paths.iter().any(|path| path.starts_with("main-")));
+        assert!(paths.iter().any(|path| path.starts_with("side/side-")));
+        assert_eq!(found.omitted, 1);
         Ok(())
     })
     .await

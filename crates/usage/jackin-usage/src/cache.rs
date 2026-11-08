@@ -101,6 +101,7 @@ impl Cache {
         let mut file = read(deps, &self.path).await?;
         for (key, edit) in &self.edits {
             match edit {
+                Some(entry) if newer_than(file.entries.get(key), entry) => None,
                 Some(entry) => file.entries.insert(key.clone(), entry.clone()),
                 None => file.entries.remove(key),
             };
@@ -111,6 +112,13 @@ impl Cache {
             .await
             .map_err(|error| store(&self.path, &error))
     }
+}
+
+fn newer_than(stored: Option<&Entry>, edit: &Entry) -> bool {
+    let fetched = |entry: &Entry| entry.good.as_ref().map(|good| good.fetched_at);
+    stored.is_some_and(|stored| {
+        stored.fingerprint == edit.fingerprint && fetched(stored) > fetched(edit)
+    })
 }
 
 async fn read(deps: &UsageDeps, path: &HostPath) -> Result<CacheFile, UsageError> {

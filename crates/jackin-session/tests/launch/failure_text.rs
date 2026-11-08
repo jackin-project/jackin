@@ -97,13 +97,15 @@ fn a_failure_reads_as_one_summary_and_names_the_retry_when_a_sandbox_remains() -
 
 #[test]
 fn a_stale_sandbox_is_never_offered_a_retry_under_the_same_launch() -> Fallible<()> {
+    let agents = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+        Agent::Codex,
+        AccountName::parse("work")?,
+    )?)?;
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("proj")?,
         role: RoleName::parse("backend")?,
-        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-            Agent::Codex,
-            AccountName::parse("work")?,
-        )),
+        agents_hash: agents.hash(),
+        lead_agent: Agent::Codex,
         policy: PolicyLabel::of("found"),
         launch: launch()?,
     };

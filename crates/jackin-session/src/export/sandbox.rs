@@ -4,9 +4,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use jackin_core::{
-    BranchName, CommitId, EnvName, SandboxName, SandboxPath, TerminalText, sandbox_layout,
-};
+use jackin_core::{BranchName, CommitId, SandboxName, SandboxPath, TerminalText, sandbox_layout};
 
 use super::diff::{ChangedFile, Unread, added_file, parse_patch};
 use jackin_openshell::{Gateway, GatewayError, ProgramOutcome, ProgramRun, ProgramStdin};
@@ -144,9 +142,6 @@ impl Remote<'_> {
         program: &SandboxPath,
         args: Vec<String>,
     ) -> Result<ProgramOutcome, GatewayError> {
-        let env = EnvName::parse("LC_ALL")
-            .map(|name| BTreeMap::from([(name, "C".to_owned())]))
-            .unwrap_or_default();
         self.gateway
             .run_program(
                 &ProgramRun {
@@ -154,7 +149,7 @@ impl Remote<'_> {
                     program: program.clone(),
                     args,
                     workdir: Some(sandbox_layout::PROJECT.clone()),
-                    env,
+                    env: ProgramRun::c_locale(),
                     stdin: ProgramStdin::Closed,
                     touch_on_success: None,
                     timeout,
@@ -362,9 +357,33 @@ impl Remote<'_> {
         &self,
         repository: &Repository,
     ) -> Result<(Vec<ChangedFile>, usize), RemoteError> {
-        let root = repository.checkouts.first().ok_or(RemoteError::Malformed(
-            "git worktree list printed no checkout",
-        ))?;
+        if repository.checkouts.is_empty() {
+            return Err(RemoteError::Malformed(
+                "git worktree list printed no checkout",
+            ));
+        }
+        let mut files = Vec::new();
+        let mut more = 0;
+        let mut remaining = UNTRACKED_FILES;
+        for (index, root) in repository.checkouts.iter().enumerate() {
+            let (found, rest) = self.changes_in(root, &mut remaining).await?;
+            more += rest;
+            files.extend(found.into_iter().map(|file| {
+                if index == 0 {
+                    file
+                } else {
+                    in_checkout(root, file)
+                }
+            }));
+        }
+        Ok((files, more))
+    }
+
+    async fn changes_in(
+        &self,
+        root: &str,
+        remaining: &mut usize,
+    ) -> Result<(Vec<ChangedFile>, usize), RemoteError> {
         let head = self
             .git(&["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"])
             .await?;
@@ -412,7 +431,8 @@ impl Remote<'_> {
         let mut names = listed
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty());
-        for name in names.by_ref().take(UNTRACKED_FILES) {
+        let mut included = 0;
+        for name in names.by_ref().take(*remaining) {
             let content = match std::str::from_utf8(name) {
                 Ok(name) => self.read_untracked(root, name).await?,
                 Err(_) => Err(Unread::UndecodableName),
@@ -421,7 +441,9 @@ impl Remote<'_> {
                 name,
                 content.as_deref().map_err(|unread| *unread),
             ));
+            included += 1;
         }
+        *remaining -= included;
         Ok((files, names.count()))
     }
 
@@ -496,4 +518,10 @@ impl Remote<'_> {
             Err(failure(&outcome))
         }
     }
+}
+
+fn in_checkout(root: &str, mut file: ChangedFile) -> ChangedFile {
+    let name = root.rsplit('/').next().unwrap_or(root);
+    file.path = TerminalText::sanitize(format!("{name}/{}", file.path).as_bytes());
+    file
 }

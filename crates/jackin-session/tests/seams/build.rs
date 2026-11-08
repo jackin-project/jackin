@@ -1,13 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Config, ConfigError, GatewayName, HostPath, RoleName};
-use jackin_image::{BuiltImage, ImageError, ImageRequest, ImageSource, Rebuild, ensure_image};
+use jackin_core::{Config, ConfigError, GatewayName, HostPath, ImageId, RoleName};
+use jackin_image::{
+    BuiltImage, ImageError, ImagePlan, ImageRequest, ImageSource, Rebuild, ensure_image,
+};
 use jackin_session::{
     BuildError, BuildRequest, LAUNCH_EVENT_CAPACITY, RoleError, build_for_workspace, plan_image,
     plan_launch,
 };
-use jackin_testkit::{ENGINE_PORT, Rig, RoleFixture, TestResult, guard};
+use jackin_testkit::{
+    DockerBuildReply, DockerIidFile, ENGINE_PORT, Rig, RoleFixture, TestResult, guard,
+};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -46,7 +50,8 @@ fn here(rig: &Rig) -> HostPath {
 }
 
 #[tokio::test]
-async fn a_build_makes_the_role_image_once_and_a_rebuild_makes_it_again() -> TestResult {
+async fn a_build_returns_the_cached_image_and_a_rebuild_replaces_the_external_image() -> TestResult
+{
     guard(async {
         let rig = Rig::new().await?;
         let path = here(&rig);
@@ -57,20 +62,42 @@ async fn a_build_makes_the_role_image_once_and_a_rebuild_makes_it_again() -> Tes
             rebuild: Rebuild::No,
         };
         let first = build(&rig, &rig.config, &request).await?;
-        assert_eq!(rig.world.engine.images().get(&first.tag), Some(&first.id));
-        let builds = rig.world.engine.builds().len();
+        assert_eq!(
+            rig.world.docker.image_id(&first.tag),
+            Some(first.id.clone())
+        );
+        let images = rig.world.docker.images();
         let again = build(&rig, &rig.config, &request).await?;
         assert_eq!(
             (again.tag.clone(), again.id.clone()),
             (first.tag.clone(), first.id.clone())
         );
-        assert_eq!(rig.world.engine.builds().len(), builds);
+        assert_eq!(again.source, ImageSource::Cache);
+        assert_eq!(rig.world.docker.images(), images);
+        let plan = ImagePlan::new(rig.plan(1)?.image_request())?;
+        let construct_tag = plan.construct_build().tag.clone();
+        let construct_id = ImageId::parse(&format!("sha256:{}", "d".repeat(64)))?;
+        rig.world.docker.script_build(
+            construct_tag.clone(),
+            DockerBuildReply::default()
+                .with_iid_file(DockerIidFile::Text(
+                    format!("{construct_id}\n").into_bytes(),
+                ))
+                .with_published_id(construct_id.clone()),
+        );
         let forced = BuildRequest {
             rebuild: Rebuild::Yes,
             ..request
         };
-        build(&rig, &rig.config, &forced).await?;
-        assert!(rig.world.engine.builds().len() > builds);
+        let forced = build(&rig, &rig.config, &forced).await?;
+        assert_eq!(forced.source, ImageSource::Built);
+        assert_ne!(forced.id, first.id);
+        assert_eq!(forced.tag, plan.final_tag(&construct_id));
+        assert_eq!(
+            rig.world.docker.image_id(&construct_tag),
+            Some(construct_id)
+        );
+        assert_eq!(rig.world.docker.image_id(&forced.tag), Some(forced.id));
         Ok(())
     })
     .await
@@ -148,7 +175,7 @@ async fn an_unknown_gateway_is_refused_before_any_role_is_read() -> TestResult {
             build(&rig, &rig.config, &request).await,
             Err(BuildError::Config(ConfigError::UnknownGateway(name))) if name == ghost
         ));
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
         Ok(())
     })
     .await
@@ -189,7 +216,7 @@ async fn a_build_makes_the_image_that_a_launch_of_the_same_workspace_finds_alrea
             let mut tags = Vec::new();
             for (label, config) in [("workspace docker off", &rig.config), ("on", &flagged)] {
                 let built = build(&rig, config, &request_for(None, &path)).await?;
-                let builds = rig.world.engine.builds().len();
+                let images = rig.world.docker.images();
                 let plan = plan_launch(config, &rig.loaded, rig.request(1)?)?;
                 let found = reuse(&rig, plan.image_request()).await?;
                 assert_eq!(
@@ -197,7 +224,7 @@ async fn a_build_makes_the_image_that_a_launch_of_the_same_workspace_finds_alrea
                     (&built.tag, &built.id, ImageSource::Cache),
                     "role docker {role_docker}, {label}"
                 );
-                assert_eq!(rig.world.engine.builds().len(), builds);
+                assert_eq!(rig.world.docker.images(), images);
                 tags.push(built.tag);
             }
             assert_eq!(tags[0] == tags[1], role_docker);
@@ -242,10 +269,10 @@ async fn a_role_the_workspace_does_not_allow_is_refused_before_anything_is_built
             "{:?}",
             refused.err()
         );
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
 
-        build(&rig, &restricted, &request_for(None, &path)).await?;
-        assert!(!rig.world.engine.builds().is_empty());
+        let built = build(&rig, &restricted, &request_for(None, &path)).await?;
+        assert_eq!(rig.world.docker.image_id(&built.tag), Some(built.id));
         Ok(())
     })
     .await

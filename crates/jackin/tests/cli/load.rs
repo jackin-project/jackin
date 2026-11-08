@@ -3,9 +3,12 @@
 
 use jackin::ExitClass;
 use jackin_core::{AccountName, AttemptId, SandboxLabels, SupervisorState};
+use jackin_image::ImagePlan;
 use jackin_testkit::{ACCOUNT_ID, Rig, TestResult, guard, launch_id};
 
-use super::support::{Failure, Harness, ScriptedTerminal, Step, failed, host_path};
+use super::support::{
+    Failure, Harness, ScriptedTerminal, Step, failed, host_path, script_construct_rebuild,
+};
 
 const DETACH: &[u8] = b"\x10\x11";
 
@@ -98,7 +101,11 @@ async fn load_without_a_terminal_prints_the_sandbox_and_launch_id_and_uses_the_c
         let parent = rig.repo.root().as_path().parent().ok_or("no parent")?;
         let dir = rig.repo.root().as_path().file_name().ok_or("no name")?;
         harness.cwd = host_path(parent)?;
-        let builds = rig.world.engine.builds().len();
+        let first_snapshot = rig
+            .handle(1)
+            .await?
+            .image_id()
+            .ok_or("the first sandbox has no image snapshot")?;
         let relative = dir.to_string_lossy().into_owned();
         let args = [
             "load",
@@ -110,18 +117,30 @@ async fn load_without_a_terminal_prints_the_sandbox_and_launch_id_and_uses_the_c
             "--launch-id",
             &launch_id(2).to_string(),
         ];
+        let (construct_tag, construct_id) = script_construct_rebuild(&rig, 'b')?;
         harness.run(&args).await?.ok()?;
         let handle = rig.handle(2).await?;
         let labels = SandboxLabels::from_labels(&handle.labels())?;
         assert_eq!(
-            labels.planned.agents.agents_label(),
+            labels.planned.agents_hash,
             jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
                 jackin_core::Agent::Codex,
                 AccountName::parse("second")?
-            ))
-            .agents_label()
+            )?)?
+            .hash()
         );
-        assert!(rig.world.engine.builds().len() > builds);
+        let rebuilt_tag = ImagePlan::new(rig.plan(1)?.image_request())?.final_tag(&construct_id);
+        let rebuilt_id = rig
+            .world
+            .docker
+            .image_id(&rebuilt_tag)
+            .ok_or("the rebuilt final image is missing")?;
+        assert_eq!(handle.image_id(), Some(rebuilt_id.clone()));
+        assert_ne!(rebuilt_id, first_snapshot);
+        assert_eq!(
+            rig.world.docker.image_id(&construct_tag),
+            Some(construct_id)
+        );
         assert_eq!(rig.world.gateway.sandboxes().len(), 2);
         Ok(())
     })
@@ -228,7 +247,7 @@ async fn a_path_without_a_workspace_or_an_unknown_role_fails_and_creates_nothing
         failed(&ran, ExitClass::Failure, &["ghostrole"])?;
         assert!(rig.world.gateway.sandboxes().is_empty());
         assert!(rig.world.gateway.providers().is_empty());
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
         Ok(())
     })
     .await
@@ -245,7 +264,7 @@ async fn an_unknown_role_is_named_as_a_plain_word() -> TestResult {
         assert_eq!(ran.stderr, "error: unknown role ghostrole\n");
         assert!(rig.world.gateway.sandboxes().is_empty());
         assert!(rig.world.gateway.providers().is_empty());
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
         Ok(())
     })
     .await

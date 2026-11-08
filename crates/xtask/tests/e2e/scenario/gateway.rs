@@ -9,10 +9,10 @@ use jackin_core::{
     ProviderName, SandboxName, SandboxPath, Secret, Sha256,
 };
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, PowerAction, ProfileSync,
-    ProgramOutcome, ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState,
-    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalRequest,
-    TerminalSession,
+    Gateway, GatewayContractSandboxCreate, GatewayError, GatewayHealth, GatewayOp, Missing,
+    PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProviderMaterial, ProviderProfile,
+    ProviderSpec, ProviderState, ProviderWriteEffect, ProviderWriteError, SandboxCreate,
+    SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TerminalRequest, TerminalSession,
 };
 use jackin_testkit::FakeGateway;
 use tokio_util::sync::CancellationToken;
@@ -92,6 +92,8 @@ impl ScenarioGateway {
                 },
             })
             .await
+            .map(|_| ())
+            .map_err(|error| error.into_parts().0)
     }
 
     pub(crate) fn add_sandbox(
@@ -239,7 +241,10 @@ impl Gateway for ScenarioGateway {
         self.fake.provider_state(name).await
     }
 
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         self.fake.put_provider(spec).await
     }
 
@@ -261,8 +266,19 @@ impl Gateway for ScenarioGateway {
         self.fake.create_sandbox(spec).await
     }
 
-    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
-        self.fake.find_sandboxes(query).await
+    async fn create_contract_sandbox(
+        &self,
+        spec: &GatewayContractSandboxCreate,
+    ) -> Result<SandboxView, GatewayError> {
+        self.fake.create_contract_sandbox(spec).await
+    }
+
+    async fn find_sandboxes(
+        &self,
+        query: &SandboxQuery,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<SandboxView>, GatewayError> {
+        self.fake.find_sandboxes(query, cancel).await
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
@@ -312,8 +328,9 @@ impl Gateway for ScenarioGateway {
         &self,
         name: &SandboxName,
         action: PowerAction,
+        cancel: &CancellationToken,
     ) -> Result<SandboxView, GatewayError> {
-        self.fake.set_power(name, action).await
+        self.fake.set_power(name, action, cancel).await
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
@@ -373,7 +390,14 @@ impl Gateway for ScenarioGateway {
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
+        cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
+        if cancel.is_cancelled() {
+            return Err(GatewayError::Cancelled {
+                op: GatewayOp::ReadFiles,
+                group: None,
+            });
+        }
         let knobs = self.shared.knobs().clone();
         let _ = sandbox;
         Ok(paths
@@ -419,8 +443,9 @@ impl Gateway for ScenarioGateway {
         &self,
         sandbox: &SandboxName,
         file: &SandboxFile,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
-        self.fake.write_file(sandbox, file).await
+        self.fake.write_file(sandbox, file, cancel).await
     }
 
     async fn upload_tree(

@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
-use std::time::Duration;
 
 use jackin_core::{
     Account, AccountName, ChatgptAccountId, Config, ConfigEdit, CredentialSource, FileLock,
@@ -21,15 +20,6 @@ pub(crate) const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
 pub(crate) const API_KEY: &str = "API-SECRET-91b2";
 pub(crate) const SECRETS: [&str; 3] = [ACCESS, REFRESH, API_KEY];
 const OWNER: &str = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG";
-const GUARD: Duration = Duration::from_secs(10);
-
-pub(crate) async fn guard<T>(
-    work: impl Future<Output = Result<T, Box<dyn Error>>>,
-) -> Result<T, Box<dyn Error>> {
-    tokio::time::timeout(GUARD, work)
-        .await
-        .map_err(|_| "the test hung for 10 s")?
-}
 
 pub(crate) fn login_json() -> Value {
     json!({
@@ -56,7 +46,7 @@ pub(crate) async fn register(world: &World, account: &Account) -> TestResult {
     world.seed_all(&Config::parse(GATEWAY)?).await?;
     world
         .config
-        .edit(vec![ConfigEdit::AddAccount(account.clone())])
+        .edit(vec![ConfigEdit::AddAccount(account.clone())], &world.cancel)
         .await?;
     Ok(())
 }

@@ -149,7 +149,7 @@ pub(super) fn decide(
     let Some(image) = &done.image else {
         return Decision::Run(Act::Image);
     };
-    if let Some(stale) = stale(plan, docker, image, observed) {
+    if let Some(stale) = stale(plan, docker, image, observed, done) {
         return Decision::Fail(LaunchStep::Sandbox, stale);
     }
     if !done.steps.contains(&LaunchStep::Provider) {
@@ -174,6 +174,7 @@ fn stale(
     docker: DockerLabel,
     image: &BuiltImage,
     observed: &Observed,
+    done: &Done,
 ) -> Option<LaunchError> {
     let (Observed::Settling(view) | Observed::Ready(view, _)) = observed else {
         return None;
@@ -186,14 +187,25 @@ fn stale(
         });
     }
     let mut differences = view.labels.differences(&wanted);
-    if let Observed::Ready(_, probe) = observed
-        && crate::multi::agents_json_mismatch(plan.instances(), probe.agents_json.as_deref())
-    {
-        differences.push(jackin_core::LabelDifference {
-            key: jackin_core::LabelKey::from_static(jackin_core::AGENTS_LABEL),
-            found: jackin_core::LabelValue::from_static("agents.json mismatch"),
-            wanted: jackin_core::LabelValue::from_static("agents.json match"),
-        });
+    if let Observed::Ready(_, probe) = observed {
+        let metadata_required =
+            done.steps.contains(&LaunchStep::Credentials) || probe.uploaded || probe.setup_done;
+        let mismatch = if probe.agents_json.is_some() || metadata_required {
+            match crate::multi::agents_json_mismatch(plan.instances(), probe.agents_json.as_deref())
+            {
+                Ok(mismatch) => mismatch,
+                Err(error) => return Some(LaunchError::AgentJson(error)),
+            }
+        } else {
+            false
+        };
+        if mismatch {
+            differences.push(jackin_core::LabelDifference {
+                key: jackin_core::LabelKey::from_static(jackin_core::AGENTS_LABEL),
+                found: jackin_core::LabelValue::from_static("agents.json mismatch"),
+                wanted: jackin_core::LabelValue::from_static("agents.json match"),
+            });
+        }
     }
     (!differences.is_empty()).then(|| LaunchError::StaleSandbox {
         launch: plan.launch_id().clone(),

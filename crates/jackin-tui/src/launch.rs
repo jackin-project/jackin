@@ -10,7 +10,7 @@ use std::sync::{Arc, mpsc};
 use jackin_console::backend::{Backend, OnePassword, PlainKey};
 use jackin_console::domain::agent::Agent;
 use jackin_console::domain::docker::DockerCapability;
-use jackin_console::domain::instance::Instance;
+use jackin_console::domain::instance::InstanceEntry;
 use jackin_console::domain::launch::{LaunchContent, LaunchFailure, NextStep, RefusalReason};
 use jackin_console::launch::{
     EnvAnswer, EnvQuestion, FailedLaunch, LaunchEvent, LaunchFeed, LaunchTarget, ReadyInstance,
@@ -27,9 +27,9 @@ use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountError, LaunchError, LaunchEvent as SessionEvent, LaunchFailure as SessionFailure,
     LaunchNextStep, LaunchOutcome, LaunchPlan, LaunchRequest, LaunchStep, LaunchWarning,
-    LineDelivery, PlanError, Prompting, RestoreCandidate, RoleError, Session, StepResult,
-    WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events, lookup_workspace,
-    plan_launch,
+    LineDelivery, PlanError, Prompting, RestoreCandidate, RestoreFinding, RoleError,
+    SandboxInspection, Session, StepResult, WorkspaceLookup, adhoc_workspace_name, error_chain,
+    launch_events, lookup_workspace, plan_launch,
 };
 use junie_tui::widgets::steps::StepState;
 use thiserror::Error;
@@ -89,7 +89,9 @@ fn plan_stage(error: &PlanError) -> Stage {
         PlanError::Selection(_)
         | PlanError::Unsupported { .. }
         | PlanError::EnvFile(_)
-        | PlanError::EnvDefault { .. } => Stage::Credentials,
+        | PlanError::EnvDefault { .. }
+        | PlanError::AgentInstances(_)
+        | PlanError::AgentJson(_) => Stage::Credentials,
         PlanError::Docker(_) | PlanError::Policy(_) | PlanError::Closure(_) => Stage::Sandbox,
         PlanError::Config(_)
         | PlanError::Project(_)
@@ -344,10 +346,13 @@ async fn resolve(
                     let workspace = Workspace::new(path, false);
                     let saved = inputs
                         .config
-                        .edit(vec![ConfigEdit::AddWorkspace {
-                            name: name.clone(),
-                            workspace: workspace.clone(),
-                        }])
+                        .edit(
+                            vec![ConfigEdit::AddWorkspace {
+                                name: name.clone(),
+                                workspace: workspace.clone(),
+                            }],
+                            &inputs.cancel,
+                        )
                         .await?;
                     Ok((saved, name, workspace))
                 }
@@ -359,9 +364,50 @@ async fn resolve(
 type Choice = (
     jackin_core::Agent,
     jackin_core::Provider,
-    Option<AccountName>,
+    AccountName,
     String,
 );
+
+fn tuple_refusal(
+    agent: jackin_core::Agent,
+    provider: jackin_core::Provider,
+    reason: &str,
+) -> Option<RefusalReason> {
+    let (state, catalog_reason) = match jackin_core::lookup_tuple(agent, provider) {
+        Ok(tuple) => match tuple.state {
+            jackin_core::TupleState::Supported => return None,
+            jackin_core::TupleState::Unavailable => (
+                jackin_console::domain::tuple::TupleState::Unavailable,
+                tuple.reason.map(str::to_owned),
+            ),
+            jackin_core::TupleState::BlockedVendor => (
+                jackin_console::domain::tuple::TupleState::BlockedVendor,
+                tuple.reason.map(str::to_owned),
+            ),
+        },
+        Err(_) => (
+            jackin_console::domain::tuple::TupleState::Unavailable,
+            Some(reason.to_owned()),
+        ),
+    };
+    Some(RefusalReason::TupleNotLaunchable {
+        agent: crate::project::agent(agent),
+        provider: crate::project::provider(provider)?,
+        state,
+        reason: catalog_reason.or_else(|| Some(reason.to_owned())),
+    })
+}
+
+fn tuple_refusal_from_plan(error: &PlanError) -> Option<RefusalReason> {
+    match error {
+        PlanError::TupleNotSupported {
+            agent,
+            provider,
+            reason,
+        } => tuple_refusal(*agent, *provider, reason),
+        _ => None,
+    }
+}
 
 fn resolve_choices(
     wanted: &Wanted,
@@ -371,65 +417,64 @@ fn resolve_choices(
 ) -> Result<Vec<Choice>, Stop> {
     let mut choices = Vec::new();
     for choice in &wanted.instances {
-        if choice.agent != Agent::Codex {
-            return Err(Stop::Refused(RefusalReason::AgentNotLaunchable {
-                agent: choice.agent,
-                launchable: Agent::Codex,
-            }));
-        }
         let Some(core) = crate::project::core_agent(choice.agent) else {
-            return Err(Stop::Refused(RefusalReason::AgentNotLaunchable {
+            return Err(Stop::Refused(RefusalReason::TupleNotLaunchable {
                 agent: choice.agent,
-                launchable: Agent::Codex,
+                provider: choice.provider,
+                state: jackin_console::domain::tuple::TupleState::Unavailable,
+                reason: Some("the agent and provider are not in the Jackin catalog".to_owned()),
             }));
         };
         let core_provider = crate::project::core_provider(choice.provider);
-        let account = match &choice.account {
-            Some(id) => {
-                Some(AccountName::parse(id).map_err(|error| Stop::at(Stage::Credentials, &error))?)
-            }
-            None => config
-                .select_account(&jackin_core::AccountQuery {
-                    flag: None,
-                    workspace: name,
-                    role: role_name,
-                    agent: core,
-                    provider: core_provider,
-                })
-                .map(|selection| selection.account)
-                .ok()
-                .or_else(|| config.default_account(core_provider).cloned()),
+        let tuple = match jackin_session::catalog_tuple_for_launch(
+            core,
+            core_provider,
+            (!choice.model.is_empty()).then_some(choice.model.as_str()),
+        ) {
+            Ok(tuple) => tuple,
+            Err(error) => match tuple_refusal_from_plan(&error) {
+                Some(refusal) => return Err(Stop::Refused(refusal)),
+                None => return Err(Stop::at(Stage::Image, &error)),
+            },
         };
-        choices.push((core, core_provider, account, choice.model.clone()));
-    }
-    if choices.is_empty() {
-        choices.push((
-            jackin_core::Agent::Codex,
-            jackin_core::Provider::Codex,
-            None,
-            String::new(),
-        ));
+        let flag = choice
+            .account
+            .as_ref()
+            .map(|id| AccountName::parse(id))
+            .transpose()
+            .map_err(|error| Stop::at(Stage::Credentials, &error))?;
+        let account = config
+            .select_account(&jackin_core::AccountQuery {
+                flag: flag.as_ref(),
+                workspace: name,
+                role: role_name,
+                agent: core,
+                provider: core_provider,
+            })
+            .map_err(|error| Stop::at(Stage::Credentials, &error))?
+            .account;
+        let model = if choice.model.is_empty() {
+            tuple.default_model.to_owned()
+        } else {
+            choice.model.clone()
+        };
+        choices.push((core, core_provider, account, model));
     }
     Ok(choices)
 }
 
-fn instances_of(choices: &[Choice]) -> Option<jackin_core::AgentInstances> {
+fn instances_of(choices: &[Choice]) -> Result<jackin_core::AgentInstances, Stop> {
     let mut items = Vec::new();
     for (core, core_provider, account, model) in choices {
-        let account = account.clone()?;
-        let model = if model.is_empty() {
-            core.spec().default_model.to_owned()
-        } else {
-            model.clone()
-        };
         items.push(jackin_core::AgentInstance::new(
             *core,
             *core_provider,
-            account,
-            model,
+            account.clone(),
+            jackin_core::ModelName::parse(model)
+                .map_err(|error| Stop::at(Stage::Credentials, &error))?,
         ));
     }
-    jackin_core::AgentInstances::new(items).ok()
+    jackin_core::AgentInstances::new(items).map_err(|error| Stop::at(Stage::Credentials, &error))
 }
 
 impl Run {
@@ -533,9 +578,7 @@ impl Run {
             Err(error) => return Err(Stop::at(Stage::Image, &error)),
         };
         let choices = resolve_choices(&self.wanted, &config, &name, &role_name)?;
-        let account = choices
-            .first()
-            .and_then(|(_, _, account, _)| account.clone());
+        let account = choices.first().map(|(_, _, account, _)| account.clone());
         let mut values = BTreeMap::new();
         loop {
             let mut request = LaunchRequest::new(
@@ -548,13 +591,8 @@ impl Run {
             .prompting(Prompting::Interactive)
             .env(values.clone())
             .task(self.wanted.task.clone());
-            let first_has_account = choices
-                .first()
-                .is_some_and(|(_, _, account, _)| account.is_some());
-            if (self.wanted.instances.len() > 1 || choices.len() != 1 || first_has_account)
-                && let Some(instances) = instances_of(&choices)
-            {
-                request = request.instances(instances);
+            if !choices.is_empty() {
+                request = request.instances(instances_of(&choices)?);
             }
             match plan_launch(&config, &role, request) {
                 Ok(plan) => {
@@ -574,7 +612,10 @@ impl Run {
                         role: role.to_string(),
                     }));
                 }
-                Err(error) => return Err(Stop::at(plan_stage(&error), &error)),
+                Err(error) => {
+                    return Err(tuple_refusal_from_plan(&error)
+                        .map_or_else(|| Stop::at(plan_stage(&error), &error), Stop::Refused));
+                }
             }
         }
     }
@@ -651,7 +692,8 @@ impl Run {
         gateway: &GatewayName,
         left: RestoreCandidate,
     ) {
-        let Some(sandbox) = left.sandbox else {
+        let RestoreFinding::Observed(sandbox) = left.finding else {
+            self.backend.refresh();
             return;
         };
         match self
@@ -672,20 +714,40 @@ impl Run {
         gateway: &GatewayName,
         sandbox: &SandboxName,
         origins: &Origins,
-    ) -> Result<Instance, jackin_session::LifecycleError> {
-        let inspected = session.inspect(sandbox).await?;
-        let work = session.work_state(config, sandbox).await;
+    ) -> Result<InstanceEntry, jackin_session::LifecycleError> {
+        let inspection = session
+            .inspect(sandbox, &self.backend.inputs.cancel)
+            .await?;
+        let inspected = match inspection {
+            SandboxInspection::Readable(view) => view,
+            SandboxInspection::Unreadable(sandbox) => {
+                return Ok(self
+                    .backend
+                    .inputs
+                    .admit_unreadable(gateway.clone(), sandbox, config));
+            }
+        };
+        let agent_metadata = session
+            .agent_metadata(&inspected.summary, &self.backend.inputs.cancel)
+            .await;
+        let work = if agent_metadata.is_ok() {
+            Some(
+                session
+                    .work_state(config, sandbox, &self.backend.inputs.cancel)
+                    .await,
+            )
+        } else {
+            None
+        };
         let observed = ObservedSandbox {
             gateway: gateway.clone(),
             summary: inspected.summary,
+            agent_metadata,
             supervisor: Some(inspected.supervisor),
-            work: Some(work),
+            work,
             task: None,
         };
-        self.backend
-            .inputs
-            .admit(config, observed, origins)
-            .ok_or(jackin_session::LifecycleError::NotFound(sandbox.clone()))
+        Ok(self.backend.inputs.admit(config, observed, origins))
     }
 
     async fn ready(
@@ -696,7 +758,7 @@ impl Run {
         name: &WorkspaceName,
         gateway: &GatewayName,
         sandbox: &SandboxName,
-    ) -> Result<Instance, jackin_session::LifecycleError> {
+    ) -> Result<InstanceEntry, jackin_session::LifecycleError> {
         let origins: Origins = session
             .project_origin(project, &self.cancel)
             .await
@@ -744,7 +806,7 @@ impl LaunchFeed for SessionLaunch {
         drop(self.answers.send(answers));
     }
 
-    fn cancel(&mut self, _world: &World) -> Option<Instance> {
+    fn cancel(&mut self, _world: &World) -> Option<InstanceEntry> {
         self.cancel.cancel();
         None
     }

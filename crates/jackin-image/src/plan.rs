@@ -5,7 +5,7 @@ use std::fmt;
 
 use jackin_core::{FileMode, HookKind, ImageId, ImageTag, SandboxPath, Sha256, sandbox_layout};
 
-use crate::assets::{CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, JACKIN_START, SCAN};
+use crate::assets::{CONSTRUCT_DOCKERFILE, DERIVED_DOCKERFILE, JACKIN_START, SCAN, WRITE_FILE_C};
 use crate::dockerfile::{DockerfileError, validate_dockerfile};
 use crate::error::ImageError;
 use crate::key::{Fields, ImageKey, derived_arguments_multi};
@@ -74,7 +74,11 @@ impl ImagePlan {
         Ok(ImagePlan {
             request: request.clone(),
             construct: construct_build(request),
-            derived_args: derived_arguments_multi(&request.sorted_agents(), request.docker)?,
+            derived_args: derived_arguments_multi(
+                &request.sorted_agents(),
+                request.docker,
+                &request.read_write,
+            )?,
         })
     }
 
@@ -155,13 +159,17 @@ fn common_arguments(request: &ImageRequest, tag: &ImageTag) -> Vec<String> {
 fn construct_build(request: &ImageRequest) -> PlannedBuild {
     let mut fields = Fields::default();
     fields.push(Sha256::of(CONSTRUCT_DOCKERFILE).as_str());
+    fields.push(Sha256::of(WRITE_FILE_C).as_str());
     fields.push(request.platform.docker_arg());
     let tag = ImageTag::for_construct(&fields.digest());
     PlannedBuild {
         stage: BuildStage::Construct,
         args: common_arguments(request, &tag),
         tag,
-        context: ContextSource::Materialized(vec![file("Dockerfile", CONSTRUCT_DOCKERFILE)]),
+        context: ContextSource::Materialized(vec![
+            file("Dockerfile", CONSTRUCT_DOCKERFILE),
+            file("write-file.c", WRITE_FILE_C),
+        ]),
         stdin: None,
     }
 }

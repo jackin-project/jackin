@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{AccountName, Agent, AgentInstance, AgentInstances, FileMode, Provider};
+use jackin_core::{
+    AccountName, Agent, AgentInstance, AgentInstances, FileMode, ModelName, Provider,
+};
 use jackin_session::{HeadState, agents_json_mismatch, plan_multi};
 
 fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
@@ -10,13 +12,13 @@ fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
             Agent::Codex,
             Provider::Codex,
             AccountName::parse("work")?,
-            "gpt-5.1-codex".to_owned(),
+            ModelName::parse("gpt-5.1-codex")?,
         ),
         AgentInstance::new(
             Agent::Omp,
             Provider::Zai,
             AccountName::parse("work")?,
-            "glm-5.3".to_owned(),
+            ModelName::parse("glm-5.3")?,
         ),
     ])?)
 }
@@ -24,7 +26,7 @@ fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
 #[test]
 fn layout_born_and_unborn() -> Result<(), Box<dyn std::error::Error>> {
     let instances = instances()?;
-    let layout = plan_multi(&instances, Some("do it"), HeadState::Born);
+    let layout = plan_multi(&instances, Agent::Codex, Some("do it"), HeadState::Born)?;
     let task = layout
         .files
         .iter()
@@ -44,14 +46,14 @@ fn layout_born_and_unborn() -> Result<(), Box<dyn std::error::Error>> {
     let other = &layout.worktrees[1];
     assert!(other.worktree);
     assert_eq!(other.branch.as_deref(), Some("agent/omp"));
-    let unborn = plan_multi(&instances, Some("do it"), HeadState::Unborn);
+    let unborn = plan_multi(&instances, Agent::Codex, Some("do it"), HeadState::Unborn)?;
     assert!(!unborn.worktrees[1].worktree);
     assert_eq!(unborn.worktrees[1].branch, None);
-    assert!(agents_json_mismatch(&instances, Some(b"[]")));
-    assert!(!agents_json_mismatch(&instances, None));
+    assert!(agents_json_mismatch(&instances, Some(b"[]"))?);
+    assert!(agents_json_mismatch(&instances, None)?);
     assert!(!agents_json_mismatch(
         &instances,
-        Some(instances.agents_json().as_bytes())
-    ));
+        Some(instances.agents_json()?.as_bytes())
+    )?);
     Ok(())
 }

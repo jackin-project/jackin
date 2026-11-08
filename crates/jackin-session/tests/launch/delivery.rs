@@ -1,14 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{SandboxName, TerminalText};
+use jackin_core::{OutputStream, SandboxName, TerminalText};
 use jackin_image::{BuildStage, ImageEvent};
 use jackin_session::{
     LAUNCH_EVENT_CAPACITY, LaunchEvent, LaunchEvents, LaunchStep, LineDelivery, launch_events,
 };
 
 use super::support::{TestResult, guard, launch_rig, ready};
-use jackin_testkit::Outcome;
+use jackin_testkit::{DockerBuildReply, Outcome};
 
 const CAP: usize = LAUNCH_EVENT_CAPACITY;
 
@@ -126,9 +126,17 @@ async fn slow_launch(
     lines: &[String],
 ) -> Result<Vec<LaunchEvent>, Box<dyn std::error::Error>> {
     let rig = launch_rig().await?;
-    rig.world
-        .engine
-        .script_lines(BuildStage::Role, lines.to_vec());
+    let (_, builds, _) = super::support::actual_final_builds(&rig, 1).await?;
+    rig.world.docker.script_build(
+        builds.role.tag.clone(),
+        DockerBuildReply::default().with_lines(
+            lines
+                .iter()
+                .cloned()
+                .map(|line| (OutputStream::Stderr, line))
+                .collect(),
+        ),
+    );
     let plan = rig.plan(1)?;
     let (events, mut feed) = launch_events(delivery);
     let consume = async {

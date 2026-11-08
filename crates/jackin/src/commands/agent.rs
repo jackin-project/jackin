@@ -18,11 +18,33 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
     let agent = parse_agent(&args.agent)?;
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
-    let names = session
-        .sandbox_agent_names(&args.sandbox)
+    let listing = session
+        .list(&app.cancel)
+        .await
+        .map_err(CommandError::Lifecycle)?;
+    if let Some(unreadable) = listing
+        .unreadable
+        .iter()
+        .find(|entry| entry.name == args.sandbox)
+    {
+        return Err(CommandError::Argument(format!(
+            "sandbox {} has unavailable metadata: {}",
+            unreadable.name,
+            unreadable.reason()
+        )));
+    }
+    let summary = listing
+        .sandboxes
+        .iter()
+        .find(|summary| summary.name == args.sandbox)
+        .ok_or_else(|| {
+            CommandError::Argument(format!("sandbox {} is not managed", args.sandbox))
+        })?;
+    let metadata = session
+        .agent_metadata(summary, &app.cancel)
         .await
         .map_err(|error| CommandError::Argument(error.to_string()))?;
-    let is_lead = names.first().is_none_or(|lead| lead == agent.as_str());
+    let is_lead = metadata.lead_agent() == agent;
     if is_lead {
         let size = app
             .terminal
@@ -46,8 +68,18 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
         .restart_instance(&args.sandbox, agent, &app.cancel.clone())
         .await
         .map_err(|error| CommandError::Argument(error.to_string()))?;
-    app.io.line(&format!("{} ready", agent.as_str()))?;
-    Ok(())
+    let size = app
+        .terminal
+        .as_ref()
+        .ok_or(CommandError::NoTerminal)?
+        .size();
+    let request = AttachRequest {
+        sandbox: args.sandbox,
+        size,
+        input: jackin_openshell::InputMode::Owner,
+        agent: Some(agent),
+    };
+    term::attach(app, &session, request).await
 }
 
 pub(crate) async fn integrate(app: &mut App, args: SandboxArg) -> Result<(), CommandError> {

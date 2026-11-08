@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use jackin_core::{EnvName, Labels, Phase, ProviderName, SandboxName, TerminalText, Timestamp};
 use openshell_sdk::raw::proto::GetSandboxConfigRequest;
@@ -14,8 +14,8 @@ use openshell_sdk::raw::proto::{
 use super::Inner;
 use crate::error::{GatewayError, GatewayOp, Missing};
 use crate::gateway::{
-    PolicyReport, PowerAction, Provisioning, SandboxCreate, SandboxDetail, SandboxQuery,
-    SandboxView,
+    GatewayContractSandboxCreate, MainProcess, PolicyReport, PowerAction, Provisioning,
+    SandboxCreate, SandboxDetail, SandboxQuery, SandboxView,
 };
 use crate::policy::PolicyDocument;
 
@@ -109,16 +109,49 @@ fn create_request(
     spec: &SandboxCreate,
     scope: openshell_sdk::raw::proto::WorkspaceSelector,
 ) -> CreateSandboxRequest {
-    let main = spec.main();
+    create_request_with(
+        spec.name(),
+        &spec.image().to_string(),
+        spec.labels(),
+        spec.providers(),
+        spec.policy(),
+        spec.main(),
+        scope,
+    )
+}
+
+fn create_contract_request(
+    spec: &GatewayContractSandboxCreate,
+    scope: openshell_sdk::raw::proto::WorkspaceSelector,
+) -> CreateSandboxRequest {
+    create_request_with(
+        spec.name(),
+        &spec.image().to_string(),
+        spec.labels(),
+        spec.providers(),
+        spec.policy(),
+        spec.main(),
+        scope,
+    )
+}
+
+fn create_request_with(
+    name: &SandboxName,
+    image: &str,
+    labels: &jackin_core::SandboxLabels,
+    providers: &[ProviderName],
+    policy: &PolicyDocument,
+    main: &MainProcess,
+    scope: openshell_sdk::raw::proto::WorkspaceSelector,
+) -> CreateSandboxRequest {
     let mut command = vec![main.program.as_str().to_owned()];
     command.extend(main.args.iter().cloned());
-    let environment: HashMap<String, String> = spec
-        .environment()
+    let environment: HashMap<String, String> = EnvName::parse("JACKIN_LAUNCH_ID")
+        .map(|name| (name, labels.planned.launch.to_string()))
         .into_iter()
         .map(|(name, value)| (name.to_string(), value))
         .collect();
-    let labels: HashMap<String, String> = spec
-        .labels()
+    let gateway_labels: HashMap<String, String> = labels
         .to_labels()
         .iter()
         .map(|(key, value)| (key.to_string(), value.to_string()))
@@ -128,22 +161,18 @@ fn create_request(
         spec: Some(SandboxSpec {
             environment,
             template: Some(SandboxTemplate {
-                image: spec.image().to_string(),
+                image: image.to_owned(),
                 ..SandboxTemplate::default()
             }),
-            policy: Some(spec.policy().proto().clone()),
-            providers: spec
-                .providers()
-                .iter()
-                .map(ProviderName::to_string)
-                .collect(),
+            policy: Some(policy.proto().clone()),
+            providers: providers.iter().map(ProviderName::to_string).collect(),
             command,
             tty: true,
             restart_policy: SandboxRestartPolicy::Never as i32,
             ..SandboxSpec::default()
         }),
-        name: spec.name().to_string(),
-        labels,
+        name: name.to_string(),
+        labels: gateway_labels,
         ..CreateSandboxRequest::default()
     }
 }
@@ -154,6 +183,21 @@ impl Inner {
         spec: &SandboxCreate,
     ) -> Result<SandboxView, GatewayError> {
         let request = create_request(spec, self.scope());
+        let response = self
+            .unary(
+                GatewayOp::Create,
+                Some(Missing::Sandbox(spec.name().clone())),
+                self.grpc().create_sandbox(request),
+            )
+            .await?;
+        response_view(response)
+    }
+
+    pub(crate) async fn create_contract_sandbox(
+        &self,
+        spec: &GatewayContractSandboxCreate,
+    ) -> Result<SandboxView, GatewayError> {
+        let request = create_contract_request(spec, self.scope());
         let response = self
             .unary(
                 GatewayOp::Create,
@@ -222,6 +266,7 @@ impl Inner {
     async fn list_by_selector(&self, selector: &str) -> Result<Vec<SandboxView>, GatewayError> {
         let mut views = Vec::new();
         let mut token = String::new();
+        let mut seen = HashSet::new();
         for _ in 0..MAX_PAGES {
             let page = self
                 .unary(
@@ -241,7 +286,7 @@ impl Inner {
             if page.next_page_token.is_empty() {
                 return Ok(views);
             }
-            if page.next_page_token == token {
+            if !seen.insert(page.next_page_token.clone()) {
                 return Err(protocol("the gateway repeated a page token"));
             }
             token = page.next_page_token;
@@ -326,6 +371,7 @@ impl Inner {
     ) -> Result<Vec<ProviderName>, GatewayError> {
         let mut providers = Vec::new();
         let mut token = String::new();
+        let mut seen = HashSet::new();
         for _ in 0..MAX_PAGES {
             let page = self
                 .unary(
@@ -350,7 +396,7 @@ impl Inner {
             if page.next_page_token.is_empty() {
                 return Ok(providers);
             }
-            if page.next_page_token == token {
+            if !seen.insert(page.next_page_token.clone()) {
                 return Err(protocol("the gateway repeated a page token"));
             }
             token = page.next_page_token;

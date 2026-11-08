@@ -152,7 +152,11 @@ impl Run<'_> {
             .iter()
             .map(|path| SandboxPath::parse(path))
             .collect::<Result<_, _>>()?;
-        let contents = self.b.gateway.read_files(&sandbox, &parsed).await?;
+        let contents = self
+            .b
+            .gateway
+            .read_files(&sandbox, &parsed, &self.token())
+            .await?;
         let mut problems = Vec::new();
         for (label, content) in ["env file", "auth.json", "env-kinds"].iter().zip(contents) {
             let Some(bytes) = content else { continue };
@@ -267,6 +271,7 @@ impl Run<'_> {
                     mode: FileMode(0o755),
                     content: SecretBytes::new(reflect_script(placeholder).into_bytes()),
                 },
+                &self.token(),
             )
             .await?;
         let main = self.projects.main.clone();
@@ -280,7 +285,11 @@ impl Run<'_> {
             .map(SandboxPath::parse)
             .into_iter()
             .collect::<Result<Vec<_>, _>>()?;
-        let files = self.b.gateway.read_files(sandbox, &paths).await?;
+        let files = self
+            .b
+            .gateway
+            .read_files(sandbox, &paths, &self.token())
+            .await?;
         let chain = files[0]
             .clone()
             .map(|bytes| text_of(&bytes))

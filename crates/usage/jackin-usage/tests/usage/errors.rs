@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Provider;
+use jackin_testkit::guard;
 use jackin_testkit::{Method, Route};
 use jackin_usage::{Refresh, UnavailableReason, UsageOutcome};
 
-use crate::support::{
-    CODEX_PATH, TestResult, UsageHarness, codex_route, guard, unavailable, windows_of,
-};
+use crate::support::{CODEX_PATH, TestResult, UsageHarness, codex_route, unavailable, windows_of};
 
 const FULL: &str = include_str!("fixtures/codex/usage_full.json");
 

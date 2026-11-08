@@ -48,6 +48,14 @@ pub(crate) fn reply(effect: &Effect) -> Msg {
             instance: instance.clone(),
             result: Err(error),
         },
+        Effect::PowerStart { instance } => Msg::PowerStarted {
+            instance: instance.clone(),
+            result: Err(error),
+        },
+        Effect::PowerStop { instance } => Msg::PowerStopped {
+            instance: instance.clone(),
+            result: Err(error),
+        },
         Effect::Purge { instance } => Msg::Purged {
             instance: instance.clone(),
             result: Err(error),

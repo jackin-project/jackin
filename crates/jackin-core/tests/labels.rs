@@ -16,13 +16,15 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
     let digest = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
     let launch = LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?;
+    let agents = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+        Agent::Codex,
+        AccountName::parse("work")?,
+    )?)?;
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("My.Project")?,
         role: RoleName::parse("backend")?,
-        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-            Agent::Codex,
-            AccountName::parse("work")?,
-        )),
+        agents_hash: agents.hash(),
+        lead_agent: Agent::Codex,
         policy: PolicyLabel::of("policy"),
         launch: launch.clone(),
     };
@@ -41,6 +43,7 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
             "jackin.dev/agents",
             "235f80276e0174fa411c641b8bc2f777".to_owned(),
         ),
+        ("jackin.dev/lead-agent", "codex".to_owned()),
         (
             "jackin.dev/policy",
             "823412d1eacb67956220e532959f0104".to_owned(),
@@ -59,16 +62,49 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
 }
 
 fn planned() -> Result<PlannedLabels, Box<dyn std::error::Error>> {
+    let agents = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+        Agent::Codex,
+        AccountName::parse("work")?,
+    )?)?;
     Ok(PlannedLabels {
         workspace: WorkspaceName::parse("proj")?,
         role: RoleName::parse("backend")?,
-        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-            Agent::Codex,
-            AccountName::parse("work")?,
-        )),
+        agents_hash: agents.hash(),
+        lead_agent: Agent::Codex,
         policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
     })
+}
+
+#[test]
+fn lead_agent_label_is_required_and_typed() -> TestResult {
+    let image = ImageId::parse(&format!("sha256:{}", "ab".repeat(32)))?;
+    let set = planned()?.complete(&image, DockerLabel::Off).to_labels();
+    let without_lead = Labels::from_pairs(
+        set.iter()
+            .filter(|(key, _)| key.to_string() != "jackin.dev/lead-agent")
+            .map(|(key, value)| (key.to_string(), value.to_string())),
+    )?;
+    assert!(matches!(
+        SandboxLabels::from_labels(&without_lead),
+        Err(LabelError::Missing {
+            key: "jackin.dev/lead-agent"
+        })
+    ));
+    let invalid_lead = Labels::from_pairs(
+        set.iter()
+            .filter(|(key, _)| key.to_string() != "jackin.dev/lead-agent")
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .chain([("jackin.dev/lead-agent".to_owned(), "unknown".to_owned())]),
+    )?;
+    assert!(matches!(
+        SandboxLabels::from_labels(&invalid_lead),
+        Err(LabelError::Invalid {
+            key: "jackin.dev/lead-agent",
+            ..
+        })
+    ));
+    Ok(())
 }
 
 fn docker_value(set: &Labels) -> Option<String> {

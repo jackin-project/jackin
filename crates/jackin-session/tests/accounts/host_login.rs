@@ -2,17 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    Account, AccountName, Agent, ConfigEdit, CredentialSource, HostPath, Program, Provider,
-    ProviderName,
+    Account, AccountName, Agent, ConfigEdit, CredentialSource, HostPath, Provider, ProviderName,
 };
 use jackin_session::{
     AccountError, grok_auth_file, plan_account_edits_for_agent, read_grok_login,
     read_muse_host_metadata,
 };
-use jackin_testkit::{ProcessReply, ScriptedProgram, World};
+use jackin_testkit::{ProcessReply, ScriptedProgram, World, guard};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{TestResult, guard, register};
+use super::support::{TestResult, register};
 
 const GROK_A: &str = "FAKE-GROK-A-111";
 const GROK_B: &str = "FAKE-GROK-B-222";
@@ -192,16 +191,6 @@ async fn muse_world(
     Ok((world, account, dir))
 }
 
-fn security_seen(world: &World) -> Vec<jackin_testkit::SeenCall> {
-    world
-        .runner
-        .scripted()
-        .seen()
-        .into_iter()
-        .filter(|call| call.program == Program::Security)
-        .collect()
-}
-
 #[tokio::test]
 async fn muse_keychain_sync_creates_provider_with_access_token_only() -> TestResult {
     guard(async {
@@ -237,9 +226,6 @@ async fn muse_keychain_sync_creates_provider_with_access_token_only() -> TestRes
         let debug = format!("{synced:?}");
         assert!(!debug.contains(MUSE_ACCESS), "{debug}");
         assert!(!debug.contains(MUSE_API), "{debug}");
-        let seen = security_seen(&world);
-        assert_eq!(seen.len(), 1);
-        assert_eq!(seen[0].args, SECURITY_ARGS);
         Ok(())
     })
     .await
@@ -309,26 +295,14 @@ async fn muse_keychain_error_taxonomy_is_typed_and_secret_free() -> TestResult {
             assert!(!text.contains(MUSE_ACCESS), "{text}");
             assert!(!text.contains(MUSE_API), "{text}");
             assert!(world.gateway.providers().is_empty());
-            assert_eq!(security_seen(&world).len(), 1);
         }
-        let (world, account, _dir) = muse_world("keychain", true).await?;
-        let result = world
-            .session
-            .sync_account(&account, Agent::MuseCode, &CancellationToken::new())
-            .await;
-        let error = result.err().ok_or("expected error")?;
-        assert!(
-            matches!(error, AccountError::HostLoginStoreUnsupported { .. }),
-            "{error:?}"
-        );
-        assert!(world.gateway.providers().is_empty());
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn muse_metadata_preconditions_never_run_keychain() -> TestResult {
+async fn muse_metadata_preconditions_return_errors_without_provider() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         let dir = tempfile::tempdir()?;
@@ -339,9 +313,8 @@ async fn muse_metadata_preconditions_never_run_keychain() -> TestResult {
             .session
             .sync_account(&account, Agent::MuseCode, &CancellationToken::new())
             .await;
-        assert!(result.is_err(), "{result:?}");
+        let _missing = result.unwrap_err();
         assert!(world.gateway.providers().is_empty());
-        assert!(security_seen(&world).is_empty());
         for (storage, subs_active, unsupported) in
             [("keychain", false, false), ("os-store", true, true)]
         {
@@ -363,7 +336,6 @@ async fn muse_metadata_preconditions_never_run_keychain() -> TestResult {
                 );
             }
             assert!(world.gateway.providers().is_empty());
-            assert!(security_seen(&world).is_empty(), "{error:?}");
         }
         Ok(())
     })

@@ -130,6 +130,14 @@ impl PolicyDocument {
         yaml::build(text, yaml::Source::Live)
     }
 
+    pub fn read_write_paths(&self) -> Vec<String> {
+        self.proto
+            .filesystem
+            .as_ref()
+            .map(|filesystem| filesystem.read_write.clone())
+            .unwrap_or_default()
+    }
+
     pub fn network_rules(&self) -> Vec<NetworkRule> {
         yaml::scan(&self.proto)
             .into_iter()

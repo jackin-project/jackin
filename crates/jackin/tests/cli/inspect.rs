@@ -41,15 +41,18 @@ async fn inspect_json_pins_every_key_set_and_reports_the_live_closure_violation(
         assert_eq!(
             keys(&value)?,
             names(&[
+                "status",
                 "schema",
                 "summary",
                 "providers",
                 "policy",
                 "closure_violations",
-                "supervisor"
+                "supervisor",
+                "agent_metadata"
             ])
         );
-        assert_eq!(value["schema"], 1);
+        assert_eq!(value["status"], "readable");
+        assert_eq!(value["schema"], 2);
         assert_eq!(
             keys(&value["summary"])?,
             names(&["name", "labels", "phase", "created_at"])
@@ -152,6 +155,64 @@ async fn inspect_escapes_an_unparsable_live_policy_host_in_the_human_output() ->
         assert_eq!(rows.len(), 1, "{:?}", ran.stdout);
         assert!(rows[0].contains("\\u{1b}"), "{:?}", rows[0]);
         assert!(rows[0].contains("\\n"), "{:?}", rows[0]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn inspect_reports_a_named_unreadable_sandbox_in_json_and_human_output() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let labels = Labels::from_pairs(
+            handle
+                .labels()
+                .iter()
+                .filter(|(key, _)| key.to_string() != "jackin.dev/lead-agent")
+                .map(|(key, value)| (key.to_string(), value.to_string())),
+        )?;
+        handle.set_labels(labels);
+        let harness = Harness::new(&rig.world);
+        harness.write_config(&rig.config.render())?;
+
+        let json = harness.run(&["inspect", name.as_str(), "--json"]).await?;
+        json.ok()?;
+        let value = json.value()?;
+        assert_eq!(
+            keys(&value)?,
+            names(&[
+                "status",
+                "schema",
+                "name",
+                "phase",
+                "created_at",
+                "workspace",
+                "role",
+                "launch",
+                "reason",
+            ])
+        );
+        assert_eq!(value["status"], "unreadable");
+        assert_eq!(value["schema"], 2);
+        assert_eq!(value["name"], name.as_str());
+        assert_eq!(value["phase"], "Ready");
+        assert_eq!(value["workspace"], "platform-backend");
+        assert_eq!(value["role"], "sentinel");
+        assert!(
+            value["reason"]
+                .as_str()
+                .is_some_and(|reason| !reason.is_empty())
+        );
+        assert!(!json.stdout.contains("jackin.dev/lead-agent"));
+
+        let human = harness.run(&["inspect", name.as_str()]).await?;
+        human.ok()?;
+        assert!(human.stdout.contains(name.as_str()));
+        assert!(human.stdout.contains("phase\tready"));
+        assert!(human.stdout.contains("metadata\tunavailable"));
         Ok(())
     })
     .await

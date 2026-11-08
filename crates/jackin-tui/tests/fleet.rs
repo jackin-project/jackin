@@ -1,16 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_console::domain::instance::InstanceStatus;
-use jackin_core::{ConfigEdit, GatewayName, OpenShellWorkspace};
-use jackin_openshell::{Gateway, GatewayError, GatewayOp, PowerAction};
+use jackin_core::{ConfigEdit, GatewayName, OpenShellWorkspace, SandboxName};
+use jackin_openshell::{Gateway, GatewayError, GatewayOp};
+use jackin_session::WorkState;
 use jackin_testkit::{
     ConsoleRig, FakeGateway, Fault, Rig, TestResult, Trigger, guard, session_over,
 };
-use jackin_tui::GatewayState;
+use jackin_tui::{
+    ConsoleLimits, DefaultGateway, Fleet, GatewayState, SessionSet, read_fleet as inspect_fleet,
+};
 use tokio_util::sync::CancellationToken;
 
 const DEADLINE: Duration = Duration::from_secs(1);
@@ -23,17 +28,62 @@ async fn refresh(console: &mut ConsoleRig) -> TestResult {
     Ok(())
 }
 
-fn statuses(console: &mut ConsoleRig) -> Vec<InstanceStatus> {
+fn statuses(console: &mut ConsoleRig) -> Result<Vec<InstanceStatus>, Box<dyn std::error::Error>> {
     let mut found: Vec<InstanceStatus> = console
         .console()
         .app()
         .world
         .instances
         .iter()
-        .map(|instance| instance.status)
-        .collect();
+        .map(|instance| {
+            instance
+                .as_available()
+                .map(|instance| instance.status)
+                .ok_or("instance is unavailable")
+        })
+        .collect::<Result<_, _>>()?;
     found.sort_by_key(|status| format!("{status:?}"));
-    found
+    Ok(found)
+}
+
+fn fleet_sessions(rig: &Rig) -> SessionSet {
+    let name = rig.world.gateway.name().clone();
+    let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&rig.world.gateway);
+    let session = session_over(&rig.world, port);
+    SessionSet::new(
+        &rig.config,
+        DefaultGateway::Pinned(name.clone()),
+        BTreeMap::from([(name, GatewayState::Connected(Box::new(session)))]),
+    )
+}
+
+async fn fleet_read(rig: &Rig, sessions: &SessionSet, work_reads: NonZeroUsize) -> Fleet {
+    let limits = ConsoleLimits {
+        connect_deadline: DEADLINE,
+        work_reads,
+        pane_inbox_bytes: NonZeroUsize::MIN,
+        supervisor_poll: Duration::from_millis(20),
+    };
+    inspect_fleet(sessions, &rig.config, limits, &CancellationToken::new()).await
+}
+
+fn work_for(fleet: &Fleet, sandbox: &SandboxName) -> Option<WorkState> {
+    fleet
+        .sandboxes
+        .iter()
+        .find(|observed| observed.summary.name == *sandbox)
+        .and_then(|observed| observed.work.clone())
+}
+
+struct ReleaseProgramHold<'a> {
+    gateway: &'a FakeGateway,
+    trigger: Trigger,
+}
+
+impl Drop for ReleaseProgramHold<'_> {
+    fn drop(&mut self) {
+        self.gateway.release(&self.trigger);
+    }
 }
 
 fn second_gateway(
@@ -56,10 +106,13 @@ async fn configure(rig: &Rig, name: &GatewayName) -> TestResult {
         .ok_or("the rig has no gateway")?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddGateway {
-            name: name.clone(),
-            entry,
-        }])
+        .edit(
+            vec![ConfigEdit::AddGateway {
+                name: name.clone(),
+                entry,
+            }],
+            &rig.world.cancel,
+        )
         .await?;
     Ok(())
 }
@@ -82,7 +135,7 @@ async fn slow_gateway_keeps_the_fast_listing() -> TestResult {
             .deadline(DEADLINE)
             .build()
             .await?;
-        assert_eq!(statuses(&mut console), [InstanceStatus::Running]);
+        assert_eq!(statuses(&mut console)?, [InstanceStatus::Running]);
         let status = console.status_line();
         assert!(status.contains("slow-gateway"), "{status}");
         assert!(status.contains("no answer within 1s"), "{status}");
@@ -107,7 +160,7 @@ async fn slow_inspect_keeps_the_sandbox_listed() -> TestResult {
             .build()
             .await?;
         assert_eq!(
-            statuses(&mut console),
+            statuses(&mut console)?,
             [InstanceStatus::RestoreAvailable, InstanceStatus::Running]
         );
         assert!(
@@ -136,7 +189,7 @@ async fn slow_work_read_keeps_the_sandbox_listed() -> TestResult {
             .build()
             .await?;
         assert_eq!(
-            statuses(&mut console),
+            statuses(&mut console)?,
             [InstanceStatus::CleanExited, InstanceStatus::Running]
         );
         assert!(
@@ -150,89 +203,96 @@ async fn slow_work_read_keeps_the_sandbox_listed() -> TestResult {
 }
 
 #[tokio::test]
-async fn work_state_is_read_once_per_state() -> TestResult {
+async fn host_recovery_refs_change_fleet_work_classification() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
-        rig.launch(2).await?;
-        rig.handle(1).await?.exit_codex(0);
-        let gateway = Arc::clone(&rig.world.gateway);
-        let program = || gateway.calls(GatewayOp::Program);
-        let before = program();
-        let mut console = ConsoleRig::seeded(&rig).await?;
-        console.skip_intro();
-        let one_read = program() - before;
-        assert!(one_read > 0, "the exited sandbox is read at start");
+        let sandbox = rig.handle(1).await?;
+        sandbox
+            .commit_in_project("src/recovery.rs", b"fn recovery() {}\n", "recovery")
+            .await?;
+        let branch = sandbox.git(&["branch", "--show-current"]).await?;
+        sandbox.exit_codex(0);
+        let name = sandbox.name();
+        let recovery = format!("refs/heads/jackin/{name}/{}", branch.trim());
+        let sessions = fleet_sessions(&rig);
+        let initial = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert!(matches!(work_for(&initial, &name), Some(WorkState::Unexported(state)) if state.uncommitted == 0 && !state.branches.is_empty()));
 
-        refresh(&mut console).await?;
-        refresh(&mut console).await?;
-        assert_eq!(
-            program() - before,
-            one_read,
-            "an unchanged sandbox is not read again"
-        );
+        rig.world
+            .session
+            .export(&rig.config, &name, CancellationToken::new())
+            .await?;
+        let refs = rig
+            .repo
+            .git(&["for-each-ref", "--format=%(refname)", "refs/heads/jackin"])
+            .await?;
+        assert!(refs.lines().any(|reference| reference == recovery));
+        let exported = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert_eq!(work_for(&exported, &name), Some(WorkState::Exported));
+        let unchanged = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert_eq!(work_for(&unchanged, &name), Some(WorkState::Exported));
 
-        rig.handle(2).await?.exit_codex(0);
-        refresh(&mut console).await?;
-        assert_eq!(
-            program() - before,
-            2 * one_read,
-            "a changed sandbox is read once more"
-        );
-
-        refresh(&mut console).await?;
-        assert_eq!(
-            program() - before,
-            2 * one_read,
-            "an unchanged sandbox is not read again"
-        );
-        assert_eq!(
-            statuses(&mut console),
-            [InstanceStatus::CleanExited, InstanceStatus::CleanExited]
-        );
-
-        let first = rig.sandbox_name(1)?;
-        for action in [PowerAction::Stop, PowerAction::Start] {
-            rig.world
-                .session
-                .power(&first, action, &CancellationToken::new())
-                .await?;
-        }
-        refresh(&mut console).await?;
-        assert_eq!(
-            program() - before,
-            3 * one_read,
-            "a restarted sandbox is read once more"
-        );
+        rig.repo.git(&["update-ref", "-d", &recovery]).await?;
+        let missing_ref = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert!(matches!(work_for(&missing_ref, &name), Some(WorkState::Unexported(state)) if state.uncommitted == 0 && !state.branches.is_empty()));
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn an_unknown_work_state_is_read_again_and_a_known_one_is_not() -> TestResult {
+async fn sandbox_changes_after_exit_change_fleet_work_classification() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
-        rig.handle(1).await?.exit_codex(0);
-        let gateway = Arc::clone(&rig.world.gateway);
-        let program = || gateway.calls(GatewayOp::Program);
+        let sandbox = rig.handle(1).await?;
+        sandbox.exit_codex(0);
+        let name = sandbox.name();
+        let sessions = fleet_sessions(&rig);
+        let initial = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert_eq!(work_for(&initial, &name), Some(WorkState::Exported));
+
+        let dirty = sandbox.root().join("project/after-exit.txt");
+        tokio::fs::write(&dirty, b"written after exit\n").await?;
+        let changed = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert!(matches!(work_for(&changed, &name), Some(WorkState::Unexported(state)) if state.uncommitted == 1 && state.unpushed() == 0));
+
+        tokio::fs::remove_file(dirty).await?;
+        let restored = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert_eq!(work_for(&restored, &name), Some(WorkState::Exported));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_unknown_work_state_retries_and_does_not_hide_a_read_failure() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let sandbox = rig.handle(1).await?;
+        sandbox
+            .commit_in_project("src/retry.rs", b"fn retry() {}\n", "retry")
+            .await?;
+        sandbox.exit_codex(0);
+        let name = sandbox.name();
+        let sessions = fleet_sessions(&rig);
+        let known = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert!(matches!(work_for(&known, &name), Some(WorkState::Unexported(state)) if !state.branches.is_empty()));
+
         rig.world.gateway.inject(Fault::FailNext {
             op: GatewayOp::Program,
             error: refused(),
         });
-        let mut console = ConsoleRig::seeded(&rig).await?;
-        console.skip_intro();
-        let failed = program();
-        refresh(&mut console).await?;
-        let read = program();
-        assert!(
-            read > failed,
-            "an unknown state is read again on the next refresh"
-        );
-        refresh(&mut console).await?;
-        refresh(&mut console).await?;
-        assert_eq!(program(), read, "a known state is not read again");
+        let unknown = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert!(matches!(work_for(&unknown, &name), Some(WorkState::Unknown(_))));
+
+        let recovered = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        let recovered_state = work_for(&recovered, &name);
+        assert!(matches!(&recovered_state, Some(WorkState::Unexported(state)) if !state.branches.is_empty()));
+        let unchanged = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert_eq!(work_for(&unchanged, &name), recovered_state);
         Ok(())
     })
     .await
@@ -298,7 +358,96 @@ async fn recovered_gateway_shows_healthy() -> TestResult {
         refresh(&mut console).await?;
         let screen = console.screen();
         assert!(!screen.contains(STALE), "{screen}");
-        assert_eq!(statuses(&mut console), [InstanceStatus::Running]);
+        assert_eq!(statuses(&mut console)?, [InstanceStatus::Running]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_sandbox_reads_of_one_gateway_stay_within_the_read_limit() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        for launch in 1..=6 {
+            rig.launch(launch).await?;
+            let sandbox = rig.handle(launch).await?;
+            if launch <= 3 {
+                let path = format!("src/work-{launch}.rs");
+                let content = format!("fn work_{launch}() {{}}\n");
+                sandbox
+                    .commit_in_project(
+                        &path,
+                        content.as_bytes(),
+                        "work",
+                    )
+                    .await?;
+            }
+            sandbox.exit_codex(0);
+        }
+        let sessions = fleet_sessions(&rig);
+        let initial = fleet_read(&rig, &sessions, NonZeroUsize::new(2).unwrap()).await;
+        assert_eq!(initial.sandboxes.len(), 6);
+        assert_eq!(
+            initial.sandboxes.iter()
+                .filter(|observed| matches!(observed.work, Some(WorkState::Unexported(ref state)) if state.unpushed() > 0))
+                .count(),
+            3,
+            "{initial:?}"
+        );
+        assert_eq!(
+            initial.sandboxes.iter()
+                .filter(|observed| observed.work == Some(WorkState::Exported))
+                .count(),
+            3,
+            "{initial:?}"
+        );
+
+        let gateway = Arc::clone(&rig.world.gateway);
+        gateway.reset_program_peak();
+        let trigger = Trigger::Op(GatewayOp::Program);
+        gateway.inject(Fault::HoldAt {
+            trigger: trigger.clone(),
+        });
+        let _release = ReleaseProgramHold {
+            gateway: &gateway,
+            trigger: trigger.clone(),
+        };
+        let task_config = rig.config.clone();
+        let task_sessions = fleet_sessions(&rig);
+        let task_cancel = CancellationToken::new();
+        let read = tokio::spawn(async move {
+            let limits = ConsoleLimits {
+                connect_deadline: DEADLINE,
+                work_reads: NonZeroUsize::new(2).unwrap(),
+                pane_inbox_bytes: NonZeroUsize::MIN,
+                supervisor_poll: Duration::from_millis(20),
+            };
+            inspect_fleet(&task_sessions, &task_config, limits, &task_cancel).await
+        });
+        let held = tokio::time::timeout(DEADLINE, gateway.until_held(&trigger))
+            .await
+            .is_ok_and(|reached| reached);
+        let overlapped = tokio::time::timeout(DEADLINE, gateway.until_peak_programs(2))
+            .await
+            .is_ok();
+        let released = gateway.release(&trigger);
+        let refreshed = read.await?;
+        assert!(held, "a work inspection did not reach the gate");
+        assert!(released, "the held work inspection was not released");
+        assert!(overlapped, "work reads did not overlap");
+        let peak = gateway.peak_programs();
+        assert!(peak >= 2, "work reads did not overlap: {peak}");
+        assert!(peak <= 2, "{peak} work reads exceeded the configured limit");
+        assert_eq!(refreshed.sandboxes.len(), initial.sandboxes.len());
+        for launch in 1..=6 {
+            let name = rig.sandbox_name(launch)?;
+            let work = work_for(&refreshed, &name);
+            if launch <= 3 {
+                assert!(matches!(work, Some(WorkState::Unexported(ref state)) if state.unpushed() > 0));
+            } else {
+                assert_eq!(work, Some(WorkState::Exported));
+            }
+        }
         Ok(())
     })
     .await

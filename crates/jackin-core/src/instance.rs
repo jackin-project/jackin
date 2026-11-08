@@ -3,19 +3,20 @@
 
 use std::collections::BTreeSet;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 use crate::agent::Agent;
-use crate::ids::{AccountName, Sha256};
+use crate::ids::{AccountName, AgentHash, IdError, ModelName, Sha256};
 use crate::provider::Provider;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AgentInstance {
     pub agent: Agent,
     pub provider: Provider,
     pub account: AccountName,
-    pub model: String,
+    pub model: ModelName,
     pub branch: String,
 }
 
@@ -24,7 +25,7 @@ impl AgentInstance {
         agent: Agent,
         provider: Provider,
         account: AccountName,
-        model: String,
+        model: ModelName,
     ) -> AgentInstance {
         AgentInstance {
             branch: format!("agent/{}", agent.as_str()),
@@ -35,9 +36,14 @@ impl AgentInstance {
         }
     }
 
-    pub fn lead(agent: Agent, account: AccountName) -> AgentInstance {
+    pub fn lead(agent: Agent, account: AccountName) -> Result<AgentInstance, IdError> {
         let spec = agent.spec();
-        AgentInstance::new(agent, spec.provider, account, spec.default_model.to_owned())
+        Ok(AgentInstance::new(
+            agent,
+            spec.provider,
+            account,
+            ModelName::parse(spec.default_model)?,
+        ))
     }
 
     pub fn item(&self) -> String {
@@ -51,10 +57,9 @@ impl AgentInstance {
     }
 }
 
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgentInstances {
     items: Vec<AgentInstance>,
-    label_override: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
@@ -63,16 +68,10 @@ pub enum AgentInstanceError {
     Empty,
     #[error("agent {} is repeated in one launch", .agent.as_str())]
     RepeatedAgent { agent: Agent },
-}
-
-impl PartialEq for AgentInstances {
-    fn eq(&self, other: &AgentInstances) -> bool {
-        if self.label_override.is_some() || other.label_override.is_some() {
-            self.agents_label() == other.agents_label()
-        } else {
-            self.items == other.items
-        }
-    }
+    #[error("agent {} has no catalog tuple for provider {}", .agent.as_str(), .provider.as_str())]
+    UnknownTuple { agent: Agent, provider: Provider },
+    #[error("agent {} has an invalid branch", .agent.as_str())]
+    InvalidBranch { agent: Agent },
 }
 
 impl AgentInstances {
@@ -85,33 +84,21 @@ impl AgentInstances {
             if !seen.insert(item.agent) {
                 return Err(AgentInstanceError::RepeatedAgent { agent: item.agent });
             }
+            if crate::lookup_tuple(item.agent, item.provider).is_err() {
+                return Err(AgentInstanceError::UnknownTuple {
+                    agent: item.agent,
+                    provider: item.provider,
+                });
+            }
+            if item.branch != format!("agent/{}", item.agent.as_str()) {
+                return Err(AgentInstanceError::InvalidBranch { agent: item.agent });
+            }
         }
-        Ok(AgentInstances {
-            items,
-            label_override: None,
-        })
+        Ok(AgentInstances { items })
     }
 
-    pub fn single(item: AgentInstance) -> AgentInstances {
-        AgentInstances {
-            items: vec![item],
-            label_override: None,
-        }
-    }
-
-    pub fn from_label_value(label: String) -> AgentInstances {
-        AgentInstances {
-            items: Vec::new(),
-            label_override: Some(label),
-        }
-    }
-
-    pub fn lead(&self) -> &AgentInstance {
-        &self.items[0]
-    }
-
-    pub fn lead_opt(&self) -> Option<&AgentInstance> {
-        self.items.first()
+    pub fn single(item: AgentInstance) -> Result<AgentInstances, AgentInstanceError> {
+        AgentInstances::new(vec![item])
     }
 
     pub fn len(&self) -> usize {
@@ -136,64 +123,26 @@ impl AgentInstances {
         items
     }
 
-    pub fn agents_label(&self) -> String {
-        if let Some(label) = &self.label_override {
-            return label.clone();
-        }
+    pub fn hash(&self) -> AgentHash {
         let items: Vec<String> = self.sorted().iter().map(AgentInstance::item).collect();
-        Sha256::of(items.join(",").as_bytes()).as_str()[..32].to_owned()
+        let digest = Sha256::of(items.join(",").as_bytes());
+        AgentHash::from(&digest)
     }
 
-    pub fn agents_json(&self) -> String {
-        let entries: Vec<String> = self
-            .sorted()
-            .iter()
-            .map(|item| {
-                format!(
-                    "{{\"agent\":\"{}\",\"provider\":\"{}\",\"account\":\"{}\",\"model\":\"{}\",\"branch\":\"{}\"}}",
-                    json_escape(item.agent.as_str()),
-                    json_escape(item.provider.as_str()),
-                    json_escape(item.account.as_str()),
-                    json_escape(&item.model),
-                    json_escape(&item.branch)
-                )
-            })
-            .collect();
-        format!("[{}]", entries.join(","))
+    pub fn agents_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(&self.sorted())
     }
-}
-
-fn json_escape(text: &str) -> String {
-    text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 impl Serialize for AgentInstances {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        if self.label_override.is_some() {
-            serializer.serialize_str(&self.agents_label())
-        } else {
-            self.items.serialize(serializer)
-        }
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.sorted().serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for AgentInstances {
-    fn deserialize<D: serde::Deserializer<'de>>(
-        deserializer: D,
-    ) -> Result<AgentInstances, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum Form {
-            Label(String),
-            Items(Vec<AgentInstance>),
-        }
-        match Form::deserialize(deserializer)? {
-            Form::Label(label) => Ok(AgentInstances::from_label_value(label)),
-            Form::Items(items) if items.is_empty() => Ok(AgentInstances {
-                items,
-                label_override: None,
-            }),
-            Form::Items(items) => AgentInstances::new(items).map_err(serde::de::Error::custom),
-        }
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<AgentInstances, D::Error> {
+        let items = Vec::<AgentInstance>::deserialize(deserializer)?;
+        AgentInstances::new(items).map_err(serde::de::Error::custom)
     }
 }

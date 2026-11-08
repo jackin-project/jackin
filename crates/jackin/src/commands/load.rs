@@ -7,7 +7,7 @@ use jackin_core::{EnvName, LaunchId, PlainEnvValue, ProjectRoot, TerminalText};
 use jackin_image::Rebuild;
 use jackin_session::{
     AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, PlanError,
-    Prompting, RestoreCandidate, launch_events, lookup_workspace, plan_launch,
+    Prompting, RestoreCandidate, RestoreFinding, launch_events, lookup_workspace, plan_launch,
 };
 
 use super::progress::launch_event;
@@ -83,12 +83,19 @@ async fn plan(
 
 fn cancelled(candidate: &RestoreCandidate) -> CommandError {
     let launch = &candidate.launch_id;
-    CommandError::Cancelled(match &candidate.sandbox {
-        Some(sandbox) => format!(
+    CommandError::Cancelled(match &candidate.finding {
+        RestoreFinding::Observed(sandbox) => format!(
             "cancelled; sandbox {sandbox} remains as a restore candidate (launch {launch}); rerun with: jackin load --launch-id {launch}"
         ),
-        None => format!(
-            "cancelled before a sandbox existed (launch {launch}); rerun with: jackin load --launch-id {launch}"
+        RestoreFinding::Unconfirmed {
+            last_observed: Some(sandbox),
+        } => format!(
+            "cancelled; sandbox {sandbox} was last observed, but its current state is unconfirmed (launch {launch}); rerun with: jackin load --launch-id {launch}"
+        ),
+        RestoreFinding::Unconfirmed {
+            last_observed: None,
+        } => format!(
+            "cancelled; the gateway could not confirm whether a sandbox exists (launch {launch}); rerun with: jackin load --launch-id {launch}"
         ),
     })
 }
@@ -125,16 +132,6 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
     let provider = match &args.provider {
         Some(text) => parse_provider(text)?,
         None => agent.provider(),
-    };
-    let parse_for = |entries: &[String]| -> Result<BTreeMap<String, String>, CommandError> {
-        let mut map = BTreeMap::new();
-        for entry in entries {
-            let (name, value) = entry.split_once('=').ok_or_else(|| {
-                CommandError::Argument(format!("expected <agent>=<value>, got {entry}"))
-            })?;
-            map.insert(name.to_owned(), value.to_owned());
-        }
-        Ok(map)
     };
     let providers_for = parse_for(&args.provider_for)?;
     let accounts_for = parse_for(&args.account_for)?;
@@ -195,6 +192,8 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         tuple
             .check_model(&instance_model)
             .map_err(|error| CommandError::Argument(error.to_string()))?;
+        let instance_model = jackin_core::ModelName::parse(&instance_model)
+            .map_err(|error| CommandError::Argument(error.to_string()))?;
         instances.push(jackin_core::AgentInstance::new(
             *instance_agent,
             instance_provider,
@@ -241,6 +240,17 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
             None => app.io.line(&format!("{}\t{launch}", target.sandbox)),
         },
     }
+}
+
+fn parse_for(entries: &[String]) -> Result<BTreeMap<String, String>, CommandError> {
+    let mut map = BTreeMap::new();
+    for entry in entries {
+        let (name, value) = entry.split_once('=').ok_or_else(|| {
+            CommandError::Argument(format!("expected <agent>=<value>, got {entry}"))
+        })?;
+        map.insert(name.to_owned(), value.to_owned());
+    }
+    Ok(map)
 }
 
 async fn resolve_task(

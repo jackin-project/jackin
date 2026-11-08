@@ -53,6 +53,26 @@ async fn empty_fleet_plays_and_enter_skips() -> TestResult {
 }
 
 #[tokio::test]
+async fn reduced_motion_follows_the_rule_of_the_baseline() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.world.seed_all(&rig.config).await?;
+        let mut zeros = ConsoleRig::builder(&rig.world)
+            .env("JACKIN_NO_MOTION", "00")
+            .build()
+            .await?;
+        assert_eq!(zeros.console().app().shell.motion, Motion::Reduced);
+        let mut empty = ConsoleRig::builder(&rig.world)
+            .env("JACKIN_NO_MOTION", "")
+            .build()
+            .await?;
+        assert_eq!(empty.console().app().shell.motion, Motion::Full);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn reduced_motion_from_env() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;

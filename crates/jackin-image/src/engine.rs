@@ -5,8 +5,8 @@ use std::fmt::Debug;
 
 use async_trait::async_trait;
 use jackin_core::{
-    BuilderName, FileLock, FsError, GroupFault, ImageId, ImageTag, ProcessError, ProcessStatus,
-    TerminalText, plain,
+    BuilderName, FileLock, FsError, GroupFault, ImageId, ImageTag, LocalImageRef, ProcessError,
+    ProcessStatus, TerminalText, plain,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -56,6 +56,11 @@ pub trait ImageEngine: Send + Sync + Debug {
         progress: &ProgressSink,
         cancel: &CancellationToken,
     ) -> Result<ImageId, EngineError>;
+    async fn publish_local(
+        &self,
+        id: &ImageId,
+        cancel: &CancellationToken,
+    ) -> Result<LocalImageRef, EngineError>;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
@@ -106,6 +111,28 @@ pub enum EngineError {
     Fs(#[from] FsError),
     #[error("gave up waiting for another process to finish building {key}")]
     LockTimeout { key: ImageTag },
+    #[error("gave up waiting for another process to publish {reference}")]
+    LocalImageLockTimeout { reference: LocalImageRef },
+    #[error("the local image pin {reference} points to {found}, expected {expected}")]
+    LocalImageMismatch {
+        reference: LocalImageRef,
+        expected: ImageId,
+        found: ImageId,
+    },
+    #[error("cannot inspect local image pin {reference}: {output}")]
+    LocalImageInspect {
+        reference: LocalImageRef,
+        output: TerminalText,
+    },
+    #[error(
+        "cannot publish local image pin {reference} for {id}; image tag ended with {status}: {output}"
+    )]
+    LocalImageTag {
+        reference: LocalImageRef,
+        id: ImageId,
+        status: ProcessStatus,
+        output: TerminalText,
+    },
     #[error("cancelled{}", GroupFault::note(.group.as_ref()))]
     Cancelled { group: Option<GroupFault> },
 }

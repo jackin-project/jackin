@@ -109,12 +109,13 @@ impl Sandbox<'_> {
                     mode: FILE_MODE,
                     content: SecretBytes::new(content.to_vec()),
                 },
+                self.cancel,
             )
             .await?;
         Ok(())
     }
 
-    pub(super) async fn empty(&self) -> Result<(), LaunchError> {
+    pub(super) async fn empty(&self, preserve_repository: bool) -> Result<(), LaunchError> {
         let project = path_arg(&sandbox_layout::PROJECT);
         self.exec(
             ProjectStep::Empty,
@@ -124,19 +125,35 @@ impl Sandbox<'_> {
             false,
         )
         .await?;
-        self.exec(
-            ProjectStep::Empty,
-            &FIND,
+        let args = if preserve_repository {
+            let git = format!("{project}/.git");
+            let git_contents = format!("{git}/*");
+            vec![
+                project,
+                "-mindepth".to_owned(),
+                "1".to_owned(),
+                "!".to_owned(),
+                "(".to_owned(),
+                "-path".to_owned(),
+                git,
+                "-type".to_owned(),
+                "d".to_owned(),
+                ")".to_owned(),
+                "!".to_owned(),
+                "-path".to_owned(),
+                git_contents,
+                "-delete".to_owned(),
+            ]
+        } else {
             vec![
                 project,
                 "-mindepth".to_owned(),
                 "1".to_owned(),
                 "-delete".to_owned(),
-            ],
-            BTreeMap::new(),
-            false,
-        )
-        .await?;
+            ]
+        };
+        self.exec(ProjectStep::Empty, &FIND, args, BTreeMap::new(), false)
+            .await?;
         Ok(())
     }
 

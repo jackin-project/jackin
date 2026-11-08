@@ -3,7 +3,6 @@
 
 mod exec;
 mod files;
-pub(crate) use self::files::apply_host_edit;
 mod handle;
 mod main_process;
 mod state;
@@ -16,15 +15,17 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use async_trait::async_trait;
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, EnvName, FileMode, GatewayName, HostPath, ImageId,
-    ImageTag, Labels, LaunchId, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel, ProfileId,
-    ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath, Sha256, WorkspaceName,
+    ImageTag, Labels, LaunchId, LocalImageRef, OpenShellWorkspace, Phase, PlannedLabels,
+    PolicyLabel, ProfileId, ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath, Sha256,
+    WorkspaceName,
 };
 use jackin_openshell::{
-    ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
-    Missing, NetworkRule, PolicyDocument, PolicyReport, PowerAction, ProfileSync, ProgramOutcome,
-    ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint,
-    RuleKey, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TermSize,
-    TerminalKind, TerminalRequest, TerminalSession, TlsMode, TransferOp,
+    ClosedPolicy, EndpointProtocol, Gateway, GatewayContractSandboxCreate, GatewayError,
+    GatewayHealth, GatewayOp, MainProcess, Missing, NetworkRule, PolicyDocument, PolicyReport,
+    PowerAction, ProfileSync, ProgramOutcome, ProgramRun, ProviderMaterial, ProviderProfile,
+    ProviderSpec, ProviderState, ProviderWriteEffect, ProviderWriteError, RuleEndpoint, RuleKey,
+    SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalKind,
+    TerminalRequest, TerminalSession, TlsMode, TransferOp,
 };
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
@@ -33,9 +34,10 @@ pub use handle::SandboxHandle;
 
 use self::main_process::MainPlan;
 use self::state::{
-    Action, Armed, ArmedTrigger, Cell, Direction, Hold, HoldStatus, Registry, Sandbox, Settling,
+    Action, Armed, ArmedTrigger, Cell, Direction, FindMutation, FindVisibility, Hold, HoldStatus,
+    Registry, Sandbox, SandboxSpec, Settling,
 };
-use crate::engine::FakeEngine;
+use crate::docker::DockerImageRegistry;
 use crate::host::{FakeClock, Working};
 use crate::supervisor::SupervisorModel;
 use crate::sync::locked;
@@ -46,6 +48,7 @@ pub struct FakeGateway {
     workspace: OpenShellWorkspace,
     registry: Mutex<Registry>,
     holds_changed: Notify,
+    programs_changed: Notify,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,6 +80,10 @@ pub enum Trigger {
     Op(GatewayOp),
     Write(SandboxPath),
     Program(SandboxPath),
+    ProgramArgs {
+        program: SandboxPath,
+        args: Vec<String>,
+    },
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -88,6 +95,7 @@ pub struct ProviderRecord {
     pub refresh_token: String,
     pub client_id: String,
     pub chatgpt_account_id: ChatgptAccountId,
+    pub refreshing: bool,
 }
 
 impl std::fmt::Debug for ProviderRecord {
@@ -147,11 +155,19 @@ pub enum Fault {
         trigger: Trigger,
         error: GatewayError,
     },
+    PanicAt {
+        trigger: Trigger,
+    },
     CancelAt {
         trigger: Trigger,
         token: CancellationToken,
     },
+    CancelAfterCreate {
+        token: CancellationToken,
+    },
+    DuplicateNextFind,
     HideUntilCreateConflict,
+    HideNextLaunchLookup,
     StartIgnored,
     HoldAt {
         trigger: Trigger,
@@ -170,6 +186,10 @@ fn protocol(message: impl ToString) -> GatewayError {
     }
 }
 
+fn cancelled(op: GatewayOp) -> GatewayError {
+    GatewayError::Cancelled { op, group: None }
+}
+
 impl FakeGateway {
     pub fn new(name: GatewayName, workspace: OpenShellWorkspace) -> FakeGateway {
         FakeGateway {
@@ -177,6 +197,7 @@ impl FakeGateway {
             workspace,
             registry: Mutex::new(Registry::new()),
             holds_changed: Notify::new(),
+            programs_changed: Notify::new(),
         }
     }
 
@@ -205,10 +226,26 @@ impl FakeGateway {
             Fault::FailAt { trigger, error } => registry
                 .triggers
                 .push(ArmedTrigger::new(trigger, Action::Fail(error))),
+            Fault::PanicAt { trigger } => registry
+                .triggers
+                .push(ArmedTrigger::new(trigger, Action::Panic)),
             Fault::CancelAt { trigger, token } => registry
                 .triggers
                 .push(ArmedTrigger::new(trigger, Action::Cancel(token))),
-            Fault::HideUntilCreateConflict => registry.hidden_until_conflict = true,
+            Fault::CancelAfterCreate { token } => registry.cancel_after_create = Some(token),
+            Fault::DuplicateNextFind => {
+                registry
+                    .find_mutations
+                    .insert(FindMutation::DuplicateNextResult);
+            }
+            Fault::HideUntilCreateConflict => {
+                registry.find_visibility = FindVisibility::HiddenUntilCreateConflict;
+            }
+            Fault::HideNextLaunchLookup => {
+                registry
+                    .find_mutations
+                    .insert(FindMutation::HideNextLaunchLookup);
+            }
             Fault::StartIgnored => registry.start_ignored = true,
             Fault::HoldAt { trigger } => registry.holds.push(Hold::new(trigger)),
             Fault::PutProviderFailsAfterWrite { error } => {
@@ -258,14 +295,29 @@ impl FakeGateway {
         special: Option<&Trigger>,
         cancel: Option<&CancellationToken>,
     ) -> Result<(), GatewayError> {
+        if let Some(token) = cancel
+            && token.is_cancelled()
+        {
+            return Err(cancelled(op));
+        }
         let Some(gate) = self.registry().arrive(op, special) else {
+            if cancel.is_some_and(CancellationToken::is_cancelled) {
+                return Err(cancelled(op));
+            }
             return Ok(());
         };
         self.holds_changed.notify_waiters();
         if let Some(token) = cancel {
             tokio::select! {
-                () = gate.wait() => Ok(()),
-                () = token.cancelled() => Err(GatewayError::Cancelled { op, group: None }),
+                biased;
+                () = token.cancelled() => Err(cancelled(op)),
+                () = gate.wait() => {
+                    if token.is_cancelled() {
+                        Err(cancelled(op))
+                    } else {
+                        Ok(())
+                    }
+                },
             }
         } else {
             gate.wait().await;
@@ -291,7 +343,7 @@ impl FakeGateway {
         let plan = MainPlan::parse(spec.main())?;
         let created_at = self.registry().now();
         let mut sandbox = Sandbox::new(
-            spec,
+            SandboxSpec::local(&spec),
             plan,
             0,
             None,
@@ -348,6 +400,35 @@ impl FakeGateway {
         self.registry().installed.insert(path.clone(), bytes);
     }
 
+    pub fn peak_inspections(&self) -> u32 {
+        self.registry().peak_inspecting
+    }
+
+    pub fn peak_programs(&self) -> u32 {
+        self.registry().peak_programs
+    }
+
+    pub fn reset_program_peak(&self) {
+        let mut registry = self.registry();
+        registry.peak_programs = registry.running_programs;
+    }
+
+    pub async fn until_peak_programs(&self, count: u32) {
+        loop {
+            let changed = self.programs_changed.notified();
+            let mut changed = std::pin::pin!(changed);
+            changed.as_mut().enable();
+            if self.registry().peak_programs >= count {
+                return;
+            }
+            changed.await;
+        }
+    }
+
+    pub fn bake_file(&self, path: &SandboxPath, bytes: Vec<u8>) {
+        self.registry().baked.insert(path.clone(), bytes);
+    }
+
     pub fn provider(&self, name: &ProviderName) -> Option<ProviderRecord> {
         self.registry().providers.get(name).cloned()
     }
@@ -368,8 +449,8 @@ impl FakeGateway {
         self.registry().host_home = Some(home.as_path().to_path_buf());
     }
 
-    pub fn link_engine(&self, engine: Arc<FakeEngine>) {
-        self.registry().engine = Some(engine);
+    pub fn link_image_registry(&self, images: DockerImageRegistry) {
+        self.registry().image_registry = Some(images);
     }
 
     pub fn link_clock(&self, clock: Arc<FakeClock>) {
@@ -508,7 +589,7 @@ impl FakeGateway {
         }
     }
 
-    fn generated_rules(&self, create: &SandboxCreate) -> Vec<NetworkRule> {
+    fn generated_rules(&self, create: &SandboxSpec) -> Vec<NetworkRule> {
         let registry = self.registry();
         create
             .providers()
@@ -521,6 +602,79 @@ impl FakeGateway {
                 Some(provider_rule(provider, profile))
             })
             .collect()
+    }
+
+    async fn create_sandbox_model(
+        &self,
+        spec: SandboxSpec,
+        image_id: Option<ImageId>,
+        image_present: bool,
+        image_ref: String,
+        required_local: bool,
+    ) -> Result<SandboxView, GatewayError> {
+        tokio::task::yield_now().await;
+        self.pause(GatewayOp::Create, None, None).await?;
+        let mut registry = self.registry();
+        registry.strike(GatewayOp::Create)?;
+        if registry.sandboxes.contains_key(spec.name()) {
+            registry.find_visibility = FindVisibility::Visible;
+            return Err(GatewayError::AlreadyExists {
+                what: Missing::Sandbox(spec.name().clone()),
+            });
+        }
+        if let Some(missing) = spec
+            .providers()
+            .iter()
+            .find(|provider| !registry.providers.contains_key(provider))
+        {
+            return Err(GatewayError::FailedPrecondition {
+                message: format!("provider '{missing}' not found"),
+            });
+        }
+        if required_local && !image_present {
+            return Err(GatewayError::FailedPrecondition {
+                message: format!("required local image '{image_ref}' is unavailable"),
+            });
+        }
+        let plan = MainPlan::parse(spec.main())?;
+        let failure = if registry.failing_creates > 0 {
+            registry.failing_creates -= 1;
+            Some("provisioning failed (injected by the fake)".to_owned())
+        } else if image_present {
+            None
+        } else {
+            Some(format!("failed to resolve image '{image_ref}'"))
+        };
+        let dir = tempfile::Builder::new()
+            .prefix("jackin-fake-sandbox-")
+            .tempdir()
+            .map_err(protocol)?;
+        std::fs::create_dir(dir.path().join("sandbox")).map_err(protocol)?;
+        files::bake(&dir.path().join("sandbox"), &registry.baked)?;
+        let mut sandbox = Sandbox::new(
+            spec,
+            plan,
+            registry.provision_polls,
+            failure,
+            registry.supervisor,
+            registry.now(),
+        );
+        sandbox.image_id = image_id;
+        let view = sandbox.view();
+        let sandbox_name = sandbox.spec.name().clone();
+        registry.sandboxes.insert(
+            sandbox_name.clone(),
+            Arc::new(Cell {
+                name: sandbox_name,
+                dir,
+                closed: CancellationToken::new(),
+                inner: Mutex::new(sandbox),
+            }),
+        );
+        if let Some(cancel) = registry.cancel_after_create.take() {
+            cancel.cancel();
+        }
+        Ok(view)
     }
 }
 
@@ -539,20 +693,26 @@ process:
 ";
 
 fn foreign_spec(name: &SandboxName) -> Result<SandboxCreate, GatewayError> {
+    let agents = jackin_core::AgentInstances::single(
+        jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("foreign").map_err(protocol)?,
+        )
+        .map_err(protocol)?,
+    )
+    .map_err(protocol)?;
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("foreign").map_err(protocol)?,
         role: RoleName::parse("foreign").map_err(protocol)?,
-        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-            Agent::Codex,
-            AccountName::parse("foreign").map_err(protocol)?,
-        )),
+        agents_hash: agents.hash(),
+        lead_agent: Agent::Codex,
         policy: PolicyLabel::of("policy"),
         launch: LaunchId::from_entropy(&[0; 26]),
     };
     let image_id = ImageId::parse(&format!("sha256:{}", "0".repeat(64))).map_err(protocol)?;
     Ok(SandboxCreate::new(
         name.clone(),
-        ImageTag::parse("jackin.invalid/foreign:0000000000000000").map_err(protocol)?,
+        LocalImageRef::for_image(&image_id),
         planned.complete(&image_id, jackin_core::DockerLabel::Off),
         Vec::new(),
         ClosedPolicy::parse(FOREIGN_POLICY).map_err(protocol)?,
@@ -644,23 +804,39 @@ impl Gateway for FakeGateway {
         tokio::task::yield_now().await;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Provider)?;
-        Ok(if registry.providers.contains_key(name) {
-            ProviderState::Present
-        } else {
-            ProviderState::Absent
+        Ok(match registry.providers.get(name) {
+            None => ProviderState::Absent,
+            Some(record) if record.refreshing => ProviderState::Present,
+            Some(_) => ProviderState::Unrefreshed,
         })
     }
 
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::Provider, None, None).await?;
+        self.pause(GatewayOp::Provider, None, None)
+            .await
+            .map_err(|error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite))?;
         let mut registry = self.registry();
-        registry.strike(GatewayOp::Provider)?;
+        registry
+            .strike(GatewayOp::Provider)
+            .map_err(|error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite))?;
         if !registry.profiles.contains_key(&spec.profile) {
-            return Err(GatewayError::NotFound {
-                what: Missing::Profile(spec.profile.clone()),
-            });
+            return Err(ProviderWriteError::new(
+                GatewayError::NotFound {
+                    what: Missing::Profile(spec.profile.clone()),
+                },
+                ProviderWriteEffect::NoWrite,
+            ));
         }
+        let effect = if registry.providers.contains_key(&spec.name) {
+            ProviderWriteEffect::Existing
+        } else {
+            ProviderWriteEffect::Created
+        };
+        let refreshing = registry.put_fails_after_write.is_none();
         let record = match &spec.material {
             ProviderMaterial::ChatgptLogin {
                 access_token,
@@ -675,6 +851,7 @@ impl Gateway for FakeGateway {
                 refresh_token: refresh_token.expose().to_owned(),
                 client_id: client_id.clone(),
                 chatgpt_account_id: chatgpt_account_id.clone(),
+                refreshing,
             },
             ProviderMaterial::StaticKey { key } => ProviderRecord {
                 profile: spec.profile.clone(),
@@ -688,17 +865,21 @@ impl Gateway for FakeGateway {
                 ) {
                     Ok(id) => id,
                     Err(_) => {
-                        return Err(GatewayError::Protocol {
-                            message: "static id".to_owned(),
-                        });
+                        return Err(ProviderWriteError::new(
+                            GatewayError::Protocol {
+                                message: "static id".to_owned(),
+                            },
+                            ProviderWriteEffect::NoWrite,
+                        ));
                     }
                 },
+                refreshing,
             },
         };
         registry.providers.insert(spec.name.clone(), record);
         match registry.put_fails_after_write.take() {
-            Some(error) => Err(error),
-            None => Ok(()),
+            Some(error) => Err(ProviderWriteError::new(error, effect)),
+            None => Ok(effect),
         }
     }
 
@@ -729,76 +910,76 @@ impl Gateway for FakeGateway {
     }
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError> {
-        tokio::task::yield_now().await;
-        self.pause(GatewayOp::Create, None, None).await?;
-        let mut registry = self.registry();
-        registry.strike(GatewayOp::Create)?;
-        if registry.sandboxes.contains_key(spec.name()) {
-            registry.hidden_until_conflict = false;
-            return Err(GatewayError::AlreadyExists {
-                what: Missing::Sandbox(spec.name().clone()),
-            });
-        }
-        if let Some(missing) = spec
-            .providers()
-            .iter()
-            .find(|provider| !registry.providers.contains_key(provider))
-        {
-            return Err(GatewayError::FailedPrecondition {
-                message: format!("provider '{missing}' not found"),
-            });
-        }
-        let plan = MainPlan::parse(spec.main())?;
-        let image_id = registry
-            .engine
-            .as_ref()
-            .and_then(|engine| engine.images().get(spec.image()).cloned());
-        let failure = if registry.failing_creates > 0 {
-            registry.failing_creates -= 1;
-            Some("provisioning failed (injected by the fake)".to_owned())
-        } else if registry.images.contains(spec.image()) || image_id.is_some() {
-            None
-        } else {
-            Some(format!("failed to resolve image '{}'", spec.image()))
-        };
-        let dir = tempfile::Builder::new()
-            .prefix("jackin-fake-sandbox-")
-            .tempdir()
-            .map_err(protocol)?;
-        std::fs::create_dir(dir.path().join("sandbox")).map_err(protocol)?;
-        let mut sandbox = Sandbox::new(
-            spec.clone(),
-            plan,
-            registry.provision_polls,
-            failure,
-            registry.supervisor,
-            registry.now(),
-        );
-        sandbox.image_id = image_id;
-        let view = sandbox.view();
-        registry.sandboxes.insert(
-            spec.name().clone(),
-            Arc::new(Cell {
-                name: spec.name().clone(),
-                dir,
-                closed: CancellationToken::new(),
-                inner: Mutex::new(sandbox),
-            }),
-        );
-        Ok(view)
+        let images = self.registry().image_registry.clone();
+        let image_id = images.and_then(|images| images.local_image_id(spec.image()));
+        let image_ref = spec.image().to_string();
+        self.create_sandbox_model(
+            SandboxSpec::local(spec),
+            image_id.clone(),
+            image_id.is_some(),
+            image_ref,
+            true,
+        )
+        .await
     }
 
-    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
+    async fn create_contract_sandbox(
+        &self,
+        spec: &GatewayContractSandboxCreate,
+    ) -> Result<SandboxView, GatewayError> {
+        let image_ref = spec.image().to_string();
+        let (images, image_present) = {
+            let registry = self.registry();
+            (
+                registry.image_registry.clone(),
+                registry.images.contains(spec.image()),
+            )
+        };
+        let image_id = images.and_then(|images| images.image_id(spec.image()));
+        self.create_sandbox_model(
+            SandboxSpec::contract(spec),
+            image_id.clone(),
+            image_present || image_id.is_some(),
+            image_ref,
+            false,
+        )
+        .await
+    }
+
+    async fn find_sandboxes(
+        &self,
+        query: &SandboxQuery,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<SandboxView>, GatewayError> {
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::Find, None, None).await?;
-        let cells: Vec<Arc<Cell>> = {
+        self.pause(GatewayOp::Find, None, Some(cancel)).await?;
+        if cancel.is_cancelled() {
+            return Err(cancelled(GatewayOp::Find));
+        }
+        let (cells, duplicate): (Vec<Arc<Cell>>, bool) = {
             let mut registry = self.registry();
             registry.strike(GatewayOp::Find)?;
-            match query {
+            let duplicate = registry
+                .find_mutations
+                .remove(&FindMutation::DuplicateNextResult);
+            let hide_launch = matches!(
+                query,
+                SandboxQuery::Labels(selector)
+                    if selector.render().split(',').count() > 1
+                        && registry
+                            .find_mutations
+                            .remove(&FindMutation::HideNextLaunchLookup)
+            );
+            let cells = match query {
                 SandboxQuery::Name(name) => {
                     registry.sandboxes.get(name).cloned().into_iter().collect()
                 }
-                SandboxQuery::Labels(_) if registry.hidden_until_conflict => Vec::new(),
+                SandboxQuery::Labels(_)
+                    if registry.find_visibility == FindVisibility::HiddenUntilCreateConflict
+                        || hide_launch =>
+                {
+                    Vec::new()
+                }
                 SandboxQuery::Labels(selector) => {
                     let wanted = selector_pairs(&selector.render());
                     registry
@@ -815,12 +996,18 @@ impl Gateway for FakeGateway {
                         .cloned()
                         .collect()
                 }
-            }
+            };
+            (cells, duplicate)
         };
-        Ok(cells.iter().map(|cell| observed(cell)).collect())
+        let mut views: Vec<_> = cells.iter().map(|cell| observed(cell)).collect();
+        if duplicate && let Some(first) = views.first().cloned() {
+            views.push(first);
+        }
+        Ok(views)
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
+        let _gauge = Inspecting::enter(self);
         tokio::task::yield_now().await;
         self.pause(GatewayOp::Detail, None, None).await?;
         let cell = self.cell(GatewayOp::Detail, name)?;
@@ -873,9 +1060,13 @@ impl Gateway for FakeGateway {
         &self,
         name: &SandboxName,
         action: PowerAction,
+        cancel: &CancellationToken,
     ) -> Result<SandboxView, GatewayError> {
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::Power, None, None).await?;
+        self.pause(GatewayOp::Power, None, Some(cancel)).await?;
+        if cancel.is_cancelled() {
+            return Err(cancelled(GatewayOp::Power));
+        }
         let cell = self.cell(GatewayOp::Power, name)?;
         let (stale, start_ignored) = {
             let registry = self.registry();
@@ -949,8 +1140,12 @@ impl Gateway for FakeGateway {
         cancel: &CancellationToken,
     ) -> Result<ProgramOutcome, GatewayError> {
         let _working = self.working();
+        let _gauge = RunningProgram::enter(self);
         tokio::task::yield_now().await;
-        let trigger = Trigger::Program(run.program.clone());
+        let trigger = Trigger::ProgramArgs {
+            program: run.program.clone(),
+            args: run.args.clone(),
+        };
         self.pause(GatewayOp::Program, Some(&trigger), Some(cancel))
             .await?;
         let cell = self.exec_cell_at(GatewayOp::Program, Some(&trigger), &run.sandbox)?;
@@ -968,25 +1163,35 @@ impl Gateway for FakeGateway {
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
+        cancel: &CancellationToken,
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
         let _working = self.working();
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::ReadFiles, None, None).await?;
+        self.pause(GatewayOp::ReadFiles, None, Some(cancel)).await?;
         let cell = self.exec_cell(GatewayOp::ReadFiles, sandbox)?;
         let installed = self.registry().installed.clone();
-        files::read_files(&cell.root(), &installed, paths).await
+        let root = cell.root();
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(cancelled(GatewayOp::ReadFiles)),
+            result = files::read_files(&root, &installed, paths) => result,
+        }
     }
 
     async fn write_file(
         &self,
         sandbox: &SandboxName,
         file: &SandboxFile,
+        cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
         let _working = self.working();
         tokio::task::yield_now().await;
         let trigger = Trigger::Write(file.path.clone());
-        self.pause(GatewayOp::WriteFile, Some(&trigger), None)
+        self.pause(GatewayOp::WriteFile, Some(&trigger), Some(cancel))
             .await?;
+        if cancel.is_cancelled() {
+            return Err(cancelled(GatewayOp::WriteFile));
+        }
         let cell = self.exec_cell_at(GatewayOp::WriteFile, Some(&trigger), sandbox)?;
         files::write_file(&cell, file).await
     }
@@ -1088,5 +1293,43 @@ impl Gateway for FakeGateway {
 fn already_running() -> GatewayError {
     GatewayError::FailedPrecondition {
         message: "start sandbox failed: VM sandbox is already running generation".to_owned(),
+    }
+}
+
+struct RunningProgram<'a>(&'a FakeGateway);
+
+impl<'a> RunningProgram<'a> {
+    fn enter(gateway: &'a FakeGateway) -> RunningProgram<'a> {
+        let mut registry = gateway.registry();
+        registry.running_programs += 1;
+        registry.peak_programs = registry.peak_programs.max(registry.running_programs);
+        drop(registry);
+        gateway.programs_changed.notify_waiters();
+        RunningProgram(gateway)
+    }
+}
+
+impl Drop for RunningProgram<'_> {
+    fn drop(&mut self) {
+        self.0.registry().running_programs -= 1;
+        self.0.programs_changed.notify_waiters();
+    }
+}
+
+struct Inspecting<'a>(&'a FakeGateway);
+
+impl<'a> Inspecting<'a> {
+    fn enter(gateway: &'a FakeGateway) -> Inspecting<'a> {
+        let mut registry = gateway.registry();
+        registry.inspecting += 1;
+        registry.peak_inspecting = registry.peak_inspecting.max(registry.inspecting);
+        drop(registry);
+        Inspecting(gateway)
+    }
+}
+
+impl Drop for Inspecting<'_> {
+    fn drop(&mut self) {
+        self.0.registry().inspecting -= 1;
     }
 }

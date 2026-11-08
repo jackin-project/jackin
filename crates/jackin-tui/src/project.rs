@@ -9,10 +9,11 @@ use jackin_console::domain::account::{
 };
 use jackin_console::domain::agent::{Agent, AuthMode, Provider};
 use jackin_console::domain::docker::{DockerRiskText, DockerSetting, EngineEndpoint, EngineState};
-use jackin_console::domain::instance::RepoRef;
 use jackin_console::domain::instance::{
-    DaemonSnapshot, Instance, InstanceId, InstanceStatus, SessionRecord, SessionStatus, instance_id,
+    DaemonSnapshot, Instance, InstanceEntry, InstanceId, InstanceStatus, SessionRecord,
+    SessionStatus,
 };
+use jackin_console::domain::instance::{RepoRef, SandboxPhase, UnavailableInstance};
 use jackin_console::domain::onepassword::OpReference;
 use jackin_console::domain::openshell as normalize;
 use jackin_console::domain::role::{
@@ -33,10 +34,10 @@ use jackin_core::{
     Phase, RoleName, RoleSource as CoreRoleSource, SandboxName, SandboxSummary, SupervisorReading,
     SupervisorState, WorkspaceName,
 };
-use jackin_session::{GithubOrigin, WorkState};
+use jackin_session::{AgentMetadataError, GithubOrigin, VerifiedAgentMetadata, WorkState};
 use thiserror::Error;
 
-use crate::fleet::{Fleet, ObservedSandbox};
+use crate::fleet::{Fleet, ObservedSandbox, ObservedUnreadableSandbox};
 use crate::ids::IdTable;
 use crate::persist::sentence;
 
@@ -470,15 +471,8 @@ fn session_record(
     };
     vec![SessionRecord {
         id: summary.labels.planned.launch.to_string(),
-        agent: Some(agent(
-            summary
-                .labels
-                .planned
-                .agents
-                .lead_opt()
-                .map_or(jackin_core::Agent::Codex, |i| i.agent),
-        )),
-        label: Agent::Codex.label().to_owned(),
+        agent: Some(agent(summary.labels.planned.lead_agent)),
+        label: agent(summary.labels.planned.lead_agent).label().to_owned(),
         status,
         started_secs: summary.created_at.map_or(0, |t| t.0),
     }]
@@ -489,8 +483,121 @@ fn split_name(name: &str) -> (&str, &str) {
     name.split_at_checked(split).unwrap_or((name, name))
 }
 
-pub fn sandbox_id(name: &SandboxName) -> InstanceId {
-    instance_id(split_name(name.as_str()).1)
+pub fn sandbox_id(gateway: &GatewayName, name: &SandboxName) -> InstanceId {
+    InstanceId::new(gateway.to_string(), name.to_string())
+}
+
+fn sandbox_phase(phase: Phase) -> SandboxPhase {
+    match phase {
+        Phase::Provisioning => SandboxPhase::Provisioning,
+        Phase::Starting => SandboxPhase::Starting,
+        Phase::Ready => SandboxPhase::Ready,
+        Phase::Stopping => SandboxPhase::Stopping,
+        Phase::Stopped => SandboxPhase::Stopped,
+        Phase::Completed { exit_code } => SandboxPhase::Completed { exit_code },
+        Phase::Error { exit_code } => SandboxPhase::Error { exit_code },
+        Phase::Deleting => SandboxPhase::Deleting,
+        Phase::Suspending => SandboxPhase::Suspending,
+        Phase::Suspended => SandboxPhase::Suspended,
+        Phase::Unknown => SandboxPhase::Unknown,
+    }
+}
+
+struct UnavailableData<'a> {
+    gateway: &'a GatewayName,
+    name: &'a SandboxName,
+    phase: Phase,
+    created_at: Option<jackin_core::Timestamp>,
+    workspace: Option<&'a WorkspaceName>,
+    role: Option<&'a RoleName>,
+    reason: String,
+}
+
+fn unavailable_instance(
+    data: UnavailableData<'_>,
+    config: &Config,
+    ids: &IdTable,
+) -> InstanceEntry {
+    let UnavailableData {
+        gateway,
+        name,
+        phase,
+        created_at,
+        workspace,
+        role,
+        reason,
+    } = data;
+    let workspace_name = workspace.map(ToString::to_string);
+    let workspace_id = workspace
+        .filter(|name| config.workspace(name).is_some())
+        .and_then(|name| ids.lookup(name));
+    InstanceEntry::Unavailable(UnavailableInstance::new(
+        sandbox_id(gateway, name),
+        workspace_id,
+        workspace_name,
+        role.map(ToString::to_string),
+        sandbox_phase(phase),
+        created_at.map(|created| created.0),
+        reason,
+    ))
+}
+
+pub(crate) fn unreadable_instance(
+    observed: &ObservedUnreadableSandbox,
+    config: &Config,
+    ids: &IdTable,
+) -> InstanceEntry {
+    let sandbox = &observed.sandbox;
+    unavailable_instance(
+        UnavailableData {
+            gateway: &observed.gateway,
+            name: &sandbox.name,
+            phase: sandbox.phase,
+            created_at: sandbox.created_at,
+            workspace: sandbox.workspace.as_ref(),
+            role: sandbox.role.as_ref(),
+            reason: sandbox.reason(),
+        },
+        config,
+        ids,
+    )
+}
+
+fn metadata_unavailable_instance(
+    observed: &ObservedSandbox,
+    error: &AgentMetadataError,
+    config: &Config,
+    ids: &IdTable,
+) -> InstanceEntry {
+    let labels = &observed.summary.labels.planned;
+    unavailable_instance(
+        UnavailableData {
+            gateway: &observed.gateway,
+            name: &observed.summary.name,
+            phase: observed.summary.phase,
+            created_at: observed.summary.created_at,
+            workspace: Some(&labels.workspace),
+            role: Some(&labels.role),
+            reason: error.to_string(),
+        },
+        config,
+        ids,
+    )
+}
+
+pub(crate) fn observed_instance(
+    observed: &ObservedSandbox,
+    config: &Config,
+    origins: &Origins,
+    ids: &IdTable,
+    now_secs: i64,
+) -> InstanceEntry {
+    match &observed.agent_metadata {
+        Ok(metadata) => InstanceEntry::Available(Box::new(instance(
+            observed, config, origins, ids, metadata, now_secs,
+        ))),
+        Err(error) => metadata_unavailable_instance(observed, error, config, ids),
+    }
 }
 
 fn repo_ref(origin: &GithubOrigin) -> RepoRef {
@@ -531,18 +638,21 @@ pub(crate) fn instance(
     config: &Config,
     origins: &Origins,
     ids: &IdTable,
+    metadata: &VerifiedAgentMetadata,
     now_secs: i64,
-) -> Option<Instance> {
+) -> Instance {
     let ObservedSandbox {
-        gateway: _,
+        gateway,
         summary,
         supervisor,
         work,
         task,
+        ..
     } = observed;
     let (head, _) = split_name(summary.name.as_str());
     let labels = &summary.labels.planned;
     let origin = origins.get(&labels.workspace);
+    let lead = metadata.lead_agent();
     let status = preserved(status_of(summary.phase, supervisor.as_ref()), work.as_ref());
     let (uncommitted, unpushed, branch) = match work {
         Some(WorkState::Unexported(left)) => (
@@ -553,19 +663,14 @@ pub(crate) fn instance(
         Some(WorkState::Exported | WorkState::Unknown(_)) | None => (0, 0, None),
     };
     let mut record = Instance {
-        id: sandbox_id(&summary.name),
+        id: sandbox_id(gateway, &summary.name),
         container: head.trim_end_matches('-').to_owned(),
         workspace: config
             .workspace(&labels.workspace)
             .and_then(|_| ids.lookup(&labels.workspace)),
-        workdir: String::new(),
-        role: labels.role.to_string(),
-        agent: agent(
-            labels
-                .agents
-                .lead_opt()
-                .map_or(jackin_core::Agent::Codex, |i| i.agent),
-        ),
+        workdir: Some("/sandbox/project".to_owned()),
+        role: Some(labels.role.to_string()),
+        agent: agent(lead),
         status,
         created_secs: summary.created_at.map_or(0, |t| t.0),
         last_seen_secs: now_secs,
@@ -581,14 +686,18 @@ pub(crate) fn instance(
         github: origin.map(repo_ref),
         uncommitted,
         unpushed,
-        account: labels.agents.lead_opt().map(|i| i.account.to_string()),
-        accounts: labels
-            .agents
+        account: metadata
+            .instances
             .iter()
-            .map(|i| i.account.to_string())
+            .find(|instance| instance.agent == lead)
+            .map(|instance| instance.account.to_string()),
+        accounts: metadata
+            .instances
+            .iter()
+            .map(|instance| instance.account.to_string())
             .collect(),
-        agents: labels
-            .agents
+        agents: metadata
+            .instances
             .iter()
             .filter_map(|item| {
                 provider(item.provider).map(|found| {
@@ -596,7 +705,7 @@ pub(crate) fn instance(
                         agent: agent(item.agent),
                         provider: found,
                         account: Some(item.account.to_string()),
-                        model: item.model.clone(),
+                        model: item.model.to_string(),
                         branch: Some(item.branch.clone()),
                         state: match status {
                             InstanceStatus::Running => {
@@ -631,7 +740,7 @@ pub(crate) fn instance(
             }),
     };
     normalize::instance(&mut record);
-    Some(record)
+    record
 }
 
 pub fn manifest_doc(doc: &jackin_core::RoleManifest) -> RoleManifestDoc {
@@ -661,7 +770,7 @@ pub fn manifest_doc(doc: &jackin_core::RoleManifest) -> RoleManifestDoc {
 
 fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmin {
     RoleAdmin {
-        agents: vec![Agent::Codex],
+        agents: CoreAgent::ALL.into_iter().map(agent).collect(),
         order: AccountOrder::Jackin,
         roles: config
             .roles()
@@ -814,7 +923,13 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
     let instances = fleet
         .sandboxes
         .iter()
-        .filter_map(|observed| instance(observed, config, origins, ids, facts.now_secs))
+        .map(|observed| observed_instance(observed, config, origins, ids, facts.now_secs))
+        .chain(
+            fleet
+                .unreadable_sandboxes
+                .iter()
+                .map(|observed| unreadable_instance(observed, config, ids)),
+        )
         .collect();
     Snapshot {
         workspaces,

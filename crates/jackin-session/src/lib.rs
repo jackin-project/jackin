@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod accounts;
+mod agent_metadata;
 mod attach;
 mod build;
 mod clipboard;
@@ -25,6 +26,7 @@ mod process_group;
 mod project;
 mod report;
 mod roles;
+mod secret_broker;
 mod service;
 mod source;
 mod state;
@@ -35,6 +37,7 @@ pub use crate::files::{
     render_muse_config, render_muse_trust, render_omp_config,
 };
 pub use accounts::*;
+pub use agent_metadata::*;
 pub use attach::*;
 pub use build::*;
 pub use clipboard::*;

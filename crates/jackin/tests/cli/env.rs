@@ -38,7 +38,7 @@ async fn values(rig: &Rig, id: u8) -> Result<BTreeMap<String, String>, Failure> 
 fn nothing_created(rig: &Rig) -> bool {
     rig.world.gateway.sandboxes().is_empty()
         && rig.world.gateway.providers().is_empty()
-        && rig.world.engine.builds().is_empty()
+        && rig.world.docker.images().is_empty()
 }
 
 fn lines(answers: &[&str]) -> Result<ScriptedTerminal, Failure> {

@@ -3,14 +3,17 @@
 
 use std::error::Error;
 use std::fs;
+use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::net::UnixStream;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::Duration;
 
 use jackin_core::Agent;
 use tempfile::TempDir;
+use tokio::process::Command as TokioCommand;
 use tokio::time::{Instant, sleep};
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -19,6 +22,29 @@ const SCRIPT: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/j
 const POLL: Duration = Duration::from_millis(50);
 const STEP: Duration = Duration::from_secs(10);
 const QUIET_POLLS: u32 = 7;
+const MONITOR: &str = r#"group=$1
+ready=$2
+exec 4<&3 || exit 112
+printf '%s\n' "$$" > "$ready" || exit 113
+/bin/cat <&4 >/dev/null 2>&1 || :
+/bin/kill -KILL -- "-$group"
+"#;
+const GUARDIAN: &str = r#"set -eu
+group=$$
+exec 3<&0 || exit 111
+/bin/sh -c "$1" jackin-start-guardian "$group" "$2" 3<&3 </dev/null >/dev/null 2>&1 &
+attempt=0
+while [ ! -s "$2" ]; do
+  if [ "$attempt" -ge 500 ]; then exit 114; fi
+  /bin/sleep 0.01
+  attempt=$((attempt + 1))
+done
+supervisor=$3
+shift 3
+exec 3<&-
+exec </dev/null
+exec /bin/sh "$supervisor" "$@"
+"#;
 const LAUNCH: [&str; 5] = [
     "codex",
     "--sandbox",
@@ -40,6 +66,13 @@ struct Supervisor {
     _dir: TempDir,
     root: PathBuf,
     child: Option<Child>,
+    lifetime: Option<UnixStream>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SupervisorScript {
+    Present,
+    Missing,
 }
 
 struct Setup<'a> {
@@ -48,6 +81,8 @@ struct Setup<'a> {
     args: Vec<&'a str>,
     slow_record: bool,
     missing_awk: bool,
+    supervisor_script: SupervisorScript,
+    capture_env_read: bool,
 }
 
 impl<'a> Setup<'a> {
@@ -58,6 +93,8 @@ impl<'a> Setup<'a> {
             args: LAUNCH.to_vec(),
             slow_record: false,
             missing_awk: false,
+            supervisor_script: SupervisorScript::Present,
+            capture_env_read: false,
         }
     }
 }
@@ -111,6 +148,16 @@ impl Supervisor {
             ),
             ("sleep 0.5", format!("sleep {}", POLL.as_secs_f64())),
         ];
+        if setup.capture_env_read {
+            let capture = root.join("env-captured").display().to_string();
+            let release = root.join("env-release").display().to_string();
+            let snapshot = root.join("env-snapshot").display().to_string();
+            let reader = format!(
+                "#!/bin/sh\nif [ -e '{capture}' ]; then exec /bin/cat \"$@\"; fi\n/bin/cat \"$1\" > '{snapshot}' || exit\n: > '{capture}'\nattempt=0\nwhile [ ! -e '{release}' ]; do\n  if [ \"$attempt\" -ge 500 ]; then exit 97; fi\n  /bin/sleep 0.01\n  attempt=$((attempt + 1))\ndone\nexec /bin/cat '{snapshot}'\n"
+            );
+            install(&root.join("capture-cat"), &reader)?;
+            replacements.push(("/bin/cat", format!("{r}/capture-cat")));
+        }
         if setup.slow_record {
             install(
                 &root.join("slowmv"),
@@ -125,8 +172,18 @@ impl Supervisor {
             text = substitute(&text, from, &to)?;
         }
         fs::write(root.join("jackin-start"), text)?;
+        if setup.supervisor_script == SupervisorScript::Missing {
+            fs::remove_file(root.join("jackin-start"))?;
+        }
+        let (reader, lifetime) = UnixStream::pair()?;
+        let reader = OwnedFd::from(reader);
         let mut command = Command::new("/bin/sh");
         command
+            .arg("-c")
+            .arg(GUARDIAN)
+            .arg("jackin-start-guardian")
+            .arg(MONITOR)
+            .arg(root.join("guardian-ready"))
             .arg(root.join("jackin-start"))
             .args(&setup.args)
             .env_clear()
@@ -137,7 +194,7 @@ impl Supervisor {
             .env("DUMP", root.join("dump"))
             .envs(setup.env.iter().copied())
             .current_dir(&root)
-            .stdin(Stdio::null())
+            .stdin(Stdio::from(reader))
             .stdout(fs::File::create(root.join("stdout"))?)
             .stderr(fs::File::create(root.join("stderr"))?)
             .process_group(0);
@@ -146,6 +203,7 @@ impl Supervisor {
             _dir: dir,
             root,
             child: Some(child),
+            lifetime: Some(lifetime),
         })
     }
 
@@ -196,6 +254,36 @@ impl Supervisor {
         self.wait_until(STEP, want, |state| state == want).await
     }
 
+    async fn wait_for_file(&self, name: &str, limit: Duration) -> TestResult {
+        let path = self.root.join(name);
+        let deadline = Instant::now() + limit;
+        while !path.exists() {
+            if Instant::now() >= deadline {
+                return Err(format!("{} was not created", path.display()).into());
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+        Ok(())
+    }
+
+    async fn wait_exit(&mut self, limit: Duration) -> Result<ExitStatus, Box<dyn Error>> {
+        let deadline = Instant::now() + limit;
+        loop {
+            if let Some(status) = self
+                .child
+                .as_mut()
+                .ok_or("the supervisor child was already taken")?
+                .try_wait()?
+            {
+                return Ok(status);
+            }
+            if Instant::now() >= deadline {
+                return Err("the supervisor did not exit".into());
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    }
+
     fn request(&self, id: &str) -> TestResult {
         let run = self.run_dir();
         fs::write(run.join("start.tmp"), format!("{id}\n"))?;
@@ -214,13 +302,332 @@ impl Supervisor {
 
 impl Drop for Supervisor {
     fn drop(&mut self) {
+        drop(self.lifetime.take());
         if let Some(mut child) = self.child.take() {
-            let group = format!("-{}", child.id());
-            drop(Command::new("kill").args(["-KILL", "--", &group]).status());
-            drop(child.kill());
             drop(child.wait());
         }
     }
+}
+
+#[derive(Debug)]
+struct ProcessInfo {
+    pid: u32,
+    group: u32,
+    state: String,
+    command: String,
+}
+
+async fn process_table() -> Result<Vec<ProcessInfo>, Box<dyn Error>> {
+    let output = TokioCommand::new("/bin/ps")
+        .args([
+            "-ww", "-A", "-o", "pid=", "-o", "pgid=", "-o", "stat=", "-o", "command=",
+        ])
+        .output()
+        .await?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).into_owned().into());
+    }
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let mut fields = line.split_whitespace();
+            let pid = fields
+                .next()
+                .ok_or("process listing omitted a pid")?
+                .parse()?;
+            let group = fields
+                .next()
+                .ok_or("process listing omitted a process group")?
+                .parse()?;
+            let state = fields
+                .next()
+                .ok_or("process listing omitted a process state")?
+                .to_owned();
+            let command = fields.collect::<Vec<_>>().join(" ");
+            Ok(ProcessInfo {
+                pid,
+                group,
+                state,
+                command,
+            })
+        })
+        .collect()
+}
+
+async fn process_is_active(pid: u32, group: u32, command: &str) -> Result<bool, Box<dyn Error>> {
+    Ok(process_table().await?.iter().any(|process| {
+        process.pid == pid
+            && process.group == group
+            && !process.state.starts_with('Z')
+            && process.command.contains(command)
+    }))
+}
+
+async fn wait_process_gone(pid: u32, group: u32, command: &str, limit: Duration) -> TestResult {
+    let deadline = Instant::now() + limit;
+    while process_is_active(pid, group, command).await? {
+        if Instant::now() >= deadline {
+            return Err(format!("process {pid} remained active in group {group}").into());
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+    Ok(())
+}
+
+async fn wait_group_quiet(group: u32, limit: Duration) -> TestResult {
+    let deadline = Instant::now() + limit;
+    loop {
+        if process_table()
+            .await?
+            .iter()
+            .all(|process| process.group != group || process.state.starts_with('Z'))
+        {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(format!("process group {group} remained active").into());
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+}
+
+fn held_processes(supervisor: &Supervisor) -> Result<(u32, u32), Box<dyn Error>> {
+    let text = fs::read_to_string(supervisor.root.join("held-pids"))?;
+    let mut fields = text.split_whitespace();
+    let helper = fields
+        .next()
+        .ok_or("held Codex pid was not recorded")?
+        .parse()?;
+    let child = fields
+        .next()
+        .ok_or("held Codex child pid was not recorded")?
+        .parse()?;
+    Ok((helper, child))
+}
+
+fn guardian_pid(supervisor: &Supervisor) -> Result<u32, Box<dyn Error>> {
+    Ok(fs::read_to_string(supervisor.root.join("guardian-ready"))?
+        .trim()
+        .parse()?)
+}
+
+fn fixture_group(supervisor: &Supervisor) -> Result<u32, Box<dyn Error>> {
+    Ok(supervisor
+        .child
+        .as_ref()
+        .ok_or("the supervisor child was already taken")?
+        .id())
+}
+
+async fn assert_process_active(pid: u32, group: u32, command: &str) -> TestResult {
+    assert!(
+        process_is_active(pid, group, command).await?,
+        "process {pid} was not active in group {group} as {command}"
+    );
+    Ok(())
+}
+
+fn install_held_codex(root: &Path) -> TestResult {
+    let root = root.display().to_string();
+    install(
+        &PathBuf::from(&root).join("bin/codex"),
+        &format!(
+            "#!/bin/sh\nif [ -e '{root}/held-release' ]; then exit 0; fi\n/bin/sleep 60 &\nchild=$!\nprintf '%s %s\\n' \"$$\" \"$child\" > '{root}/held-pids'\nwhile [ ! -e '{root}/held-release' ]; do /bin/sleep 0.01; done\n/bin/kill -TERM \"$child\" 2>/dev/null || :\nwait \"$child\" 2>/dev/null || :\nexit 0\n"
+        ),
+    )
+}
+
+async fn held_supervisor() -> Result<Supervisor, Box<dyn Error>> {
+    let setup = Setup::new();
+    let (dir, root) = Supervisor::prepare(&setup)?;
+    install_held_codex(&root)?;
+    let supervisor = Supervisor::spawn(setup, dir, root)?;
+    supervisor
+        .wait_for_file("guardian-ready", Duration::from_secs(5))
+        .await?;
+    supervisor.wait_state("waiting").await?;
+    supervisor.request("1")?;
+    supervisor
+        .wait_for_file("held-pids", Duration::from_secs(5))
+        .await?;
+    Ok(supervisor)
+}
+
+#[tokio::test]
+async fn dropping_one_live_fixture_cleans_its_group_without_affecting_a_peer() -> TestResult {
+    let first = held_supervisor().await?;
+    let first_group = fixture_group(&first)?;
+    let (first_helper, first_child) = held_processes(&first)?;
+    let first_guardian = guardian_pid(&first)?;
+    let first_leader = first
+        .child
+        .as_ref()
+        .ok_or("the first supervisor child was already taken")?
+        .id();
+    let first_helper_command = first.root.join("bin/codex").display().to_string();
+    let first_supervisor_command = first.root.join("jackin-start").display().to_string();
+    for (pid, command) in [
+        (first_leader, first_supervisor_command.as_str()),
+        (first_guardian, "jackin-start-guardian"),
+        (first_helper, first_helper_command.as_str()),
+        (first_child, "sleep 60"),
+    ] {
+        assert_process_active(pid, first_group, command).await?;
+    }
+
+    let second = held_supervisor().await?;
+    let second_group = fixture_group(&second)?;
+    assert_ne!(first_group, second_group);
+    let (second_helper, second_child) = held_processes(&second)?;
+    let second_guardian = guardian_pid(&second)?;
+    let second_leader = second
+        .child
+        .as_ref()
+        .ok_or("the second supervisor child was already taken")?
+        .id();
+    let second_helper_command = second.root.join("bin/codex").display().to_string();
+    let second_supervisor_command = second.root.join("jackin-start").display().to_string();
+    for (pid, command) in [
+        (second_leader, second_supervisor_command.as_str()),
+        (second_guardian, "jackin-start-guardian"),
+        (second_helper, second_helper_command.as_str()),
+        (second_child, "sleep 60"),
+    ] {
+        assert_process_active(pid, second_group, command).await?;
+    }
+
+    drop(first);
+    for (pid, command) in [
+        (first_leader, first_supervisor_command.as_str()),
+        (first_guardian, "jackin-start-guardian"),
+        (first_helper, first_helper_command.as_str()),
+        (first_child, "sleep 60"),
+    ] {
+        wait_process_gone(pid, first_group, command, Duration::from_secs(5)).await?;
+    }
+    wait_group_quiet(first_group, Duration::from_secs(5)).await?;
+    for (pid, command) in [
+        (second_leader, second_supervisor_command.as_str()),
+        (second_guardian, "jackin-start-guardian"),
+        (second_helper, second_helper_command.as_str()),
+        (second_child, "sleep 60"),
+    ] {
+        assert_process_active(pid, second_group, command).await?;
+    }
+    fs::write(second.root.join("held-release"), b"")?;
+    second.wait_state("exited 1 0").await?;
+    second.attempt(2).await?;
+    drop(second);
+    for (pid, command) in [
+        (second_leader, second_supervisor_command.as_str()),
+        (second_guardian, "jackin-start-guardian"),
+        (second_helper, second_helper_command.as_str()),
+        (second_child, "sleep 60"),
+    ] {
+        wait_process_gone(pid, second_group, command, Duration::from_secs(5)).await?;
+    }
+    wait_group_quiet(second_group, Duration::from_secs(5)).await
+}
+
+#[tokio::test]
+async fn a_guardian_cleans_held_descendants_after_the_supervisor_leader_exits() -> TestResult {
+    let mut supervisor = held_supervisor().await?;
+    let group = fixture_group(&supervisor)?;
+    let leader = supervisor
+        .child
+        .as_ref()
+        .ok_or("the supervisor child was already taken")?
+        .id();
+    let guardian = guardian_pid(&supervisor)?;
+    let (helper, child) = held_processes(&supervisor)?;
+    let supervisor_command = supervisor.root.join("jackin-start").display().to_string();
+    let helper_command = supervisor.root.join("bin/codex").display().to_string();
+    assert_process_active(leader, group, &supervisor_command).await?;
+    assert_process_active(guardian, group, "jackin-start-guardian").await?;
+    assert_process_active(helper, group, &helper_command).await?;
+    assert_process_active(child, group, "sleep 60").await?;
+
+    let status = TokioCommand::new("/bin/kill")
+        .args(["-KILL", &leader.to_string()])
+        .status()
+        .await?;
+    assert!(status.success());
+    assert!(
+        !supervisor
+            .wait_exit(Duration::from_secs(5))
+            .await?
+            .success()
+    );
+    assert_process_active(guardian, group, "jackin-start-guardian").await?;
+    assert_process_active(helper, group, &helper_command).await?;
+    assert_process_active(child, group, "sleep 60").await?;
+
+    drop(supervisor);
+    wait_process_gone(leader, group, &supervisor_command, Duration::from_secs(5)).await?;
+    wait_process_gone(
+        guardian,
+        group,
+        "jackin-start-guardian",
+        Duration::from_secs(5),
+    )
+    .await?;
+    wait_process_gone(helper, group, &helper_command, Duration::from_secs(5)).await?;
+    wait_process_gone(child, group, "sleep 60", Duration::from_secs(5)).await?;
+    wait_group_quiet(group, Duration::from_secs(5)).await
+}
+
+#[tokio::test]
+async fn unwinding_a_fixture_cleans_its_held_descendants() -> TestResult {
+    let supervisor = held_supervisor().await?;
+    let group = fixture_group(&supervisor)?;
+    let leader = supervisor
+        .child
+        .as_ref()
+        .ok_or("the supervisor child was already taken")?
+        .id();
+    let guardian = guardian_pid(&supervisor)?;
+    let (helper, child) = held_processes(&supervisor)?;
+    let supervisor_command = supervisor.root.join("jackin-start").display().to_string();
+    let helper_command = supervisor.root.join("bin/codex").display().to_string();
+    let unwind = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _supervisor = supervisor;
+        panic!("fixture unwind");
+    }));
+    assert!(unwind.is_err());
+    wait_process_gone(leader, group, &supervisor_command, Duration::from_secs(5)).await?;
+    wait_process_gone(
+        guardian,
+        group,
+        "jackin-start-guardian",
+        Duration::from_secs(5),
+    )
+    .await?;
+    wait_process_gone(helper, group, &helper_command, Duration::from_secs(5)).await?;
+    wait_process_gone(child, group, "sleep 60", Duration::from_secs(5)).await?;
+    wait_group_quiet(group, Duration::from_secs(5)).await
+}
+
+#[tokio::test]
+async fn a_supervisor_exec_failure_is_reported_and_its_guardian_cleans_up() -> TestResult {
+    let mut setup = Setup::new();
+    setup.supervisor_script = SupervisorScript::Missing;
+    let (dir, root) = Supervisor::prepare(&setup)?;
+    let mut supervisor = Supervisor::spawn(setup, dir, root)?;
+    let group = fixture_group(&supervisor)?;
+    let status = supervisor.wait_exit(Duration::from_secs(5)).await?;
+    assert!(!status.success());
+    let guardian = guardian_pid(&supervisor)?;
+    assert_process_active(guardian, group, "jackin-start-guardian").await?;
+    drop(supervisor);
+    wait_process_gone(
+        guardian,
+        group,
+        "jackin-start-guardian",
+        Duration::from_secs(5),
+    )
+    .await?;
+    wait_group_quiet(group, Duration::from_secs(5)).await
 }
 
 fn install(path: &Path, body: &str) -> TestResult {
@@ -573,8 +980,6 @@ async fn a_stale_record_is_removed_when_the_classifier_fails() -> TestResult {
     Ok(())
 }
 
-const BIG_STEP: Duration = Duration::from_secs(150);
-
 fn replace_env_file(root: &Path, text: &str) -> TestResult {
     let dir = root.join("sandbox/.jackin");
     fs::write(dir.join("env-L1.tmp"), text)?;
@@ -599,78 +1004,43 @@ fn marks(supervisor: &Supervisor) -> Result<Vec<String>, Box<dyn Error>> {
 
 #[tokio::test]
 async fn jackin_start_applies_only_the_bytes_it_validated() -> TestResult {
-    let big = "export V='x'\n".repeat(200_000);
-    let mut setup = Setup::new();
-    setup.env_file = Some(&big);
-    let (dir, root) = Supervisor::prepare(&setup)?;
-    install(
-        &root.join("evil/prog"),
-        &format!("#!/bin/sh\n: > '{}/marks/evil'\n", root.display()),
-    )?;
-    let supervisor = Supervisor::spawn(setup, dir, root)?;
-    supervisor.wait_state("waiting").await?;
-    let started = Instant::now();
-    supervisor.request("1")?;
-    supervisor
-        .wait_until(BIG_STEP, "exited 1 0", |state| state == "exited 1 0")
-        .await?;
-    let control = started.elapsed();
-    let swap_delay = (control / 10).clamp(Duration::from_millis(300), Duration::from_millis(1200));
-    assert_eq!(
-        dump_value(&supervisor, "V")?.as_deref(),
-        Some("x"),
-        "control"
-    );
-    let root = supervisor.root.display().to_string();
-    let swaps = [
-        format!("export V='second'\nexec {root}/evil/prog\n"),
-        format!("touch {root}/marks/touched\n"),
-    ];
-    let mut applied = 0;
-    for (index, swap) in swaps.iter().enumerate() {
-        let id = index + 2;
-        replace_env_file(&supervisor.root, &big)?;
-        let before = supervisor.state();
-        fs::write(supervisor.root.join("swap"), swap)?;
-        supervisor.request(&id.to_string())?;
-        sleep(swap_delay).await;
-        assert_eq!(
-            supervisor.state(),
-            before,
-            "invalid instrument: validation of attempt {id} ended before the swap ({control:?} per attempt)"
-        );
-        fs::rename(
-            supervisor.root.join("swap"),
-            supervisor.root.join("sandbox/.jackin/env-L1"),
+    for replacement in ["exec-evil", "touch"] {
+        let valid = "export V='x'\n";
+        let mut setup = Setup::new();
+        setup.env_file = Some(valid);
+        setup.capture_env_read = true;
+        let (dir, root) = Supervisor::prepare(&setup)?;
+        install(
+            &root.join("evil/prog"),
+            &format!("#!/bin/sh\n: > '{}/marks/evil'\n", root.display()),
         )?;
-        let prefix = format!("exited {id} ");
+        let supervisor = Supervisor::spawn(setup, dir, root)?;
+        supervisor.wait_state("waiting").await?;
+        supervisor.request("1")?;
         supervisor
-            .wait_until(BIG_STEP, &prefix, |state| state.starts_with(&prefix))
+            .wait_for_file("env-captured", Duration::from_secs(5))
             .await?;
-        assert_eq!(
-            marks(&supervisor)?,
-            Vec::<String>::new(),
-            "attempt {id} ran a swapped byte"
-        );
-        if supervisor.state() == format!("exited {id} 0\n") {
-            applied += 1;
-            assert_eq!(
-                dump_value(&supervisor, "V")?.as_deref(),
-                Some("x"),
-                "attempt {id}"
-            );
+        let replacement = if replacement == "exec-evil" {
+            format!(
+                "export V='second'\nexec {}/evil/prog\n",
+                supervisor.root.display()
+            )
         } else {
-            assert_eq!(
-                supervisor.state(),
-                format!("exited {id} 65\n"),
-                "attempt {id}"
-            );
-        }
+            format!(
+                "export V='second'\ntouch {}/marks/touched\n",
+                supervisor.root.display()
+            )
+        };
+        replace_env_file(&supervisor.root, &replacement)?;
+        fs::write(supervisor.root.join("env-release"), b"")?;
+        supervisor.wait_state("exited 1 0").await?;
+        assert_eq!(
+            dump_value(&supervisor, "V")?.as_deref(),
+            Some("x"),
+            "the program received bytes other than the validated snapshot"
+        );
+        assert_eq!(marks(&supervisor)?, Vec::<String>::new());
     }
-    assert!(
-        applied >= 1,
-        "no swap attempt reached Codex with the validated file ({control:?} per attempt)"
-    );
     Ok(())
 }
 

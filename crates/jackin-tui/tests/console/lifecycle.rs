@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::backend::Effect;
-use jackin_console::domain::instance::InstanceStatus;
+use jackin_console::domain::instance::{InstanceId, InstanceStatus};
 use jackin_core::{Phase, WorkspaceName};
 use jackin_testkit::{TestResult, guard};
 
 use super::support::Lab;
 
-async fn launched() -> Result<(Lab, String), Box<dyn std::error::Error>> {
+async fn launched() -> Result<(Lab, InstanceId), Box<dyn std::error::Error>> {
     let rig = jackin_testkit::Rig::new().await?;
     rig.launch(1).await?;
     let mut lab = Lab::with(rig).await?;
@@ -17,7 +17,7 @@ async fn launched() -> Result<(Lab, String), Box<dyn std::error::Error>> {
         .instances
         .first()
         .ok_or("no instance")?
-        .id
+        .id()
         .clone();
     Ok((lab, id))
 }
@@ -28,7 +28,10 @@ async fn stop_moves_a_ready_sandbox_to_stopped() -> TestResult {
         let (mut lab, id) = launched().await?;
         lab.perform(Effect::Stop { instance: id }).await?;
         assert_eq!(
-            lab.world().instances[0].status,
+            lab.world().instances[0]
+                .as_available()
+                .ok_or("instance metadata unavailable")?
+                .status,
             InstanceStatus::RestoreAvailable
         );
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Stopped);

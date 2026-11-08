@@ -93,29 +93,35 @@ async fn the_refusal_view_has_no_demo_words() -> TestResult {
         let workspace = WorkspaceName::parse("platform-backend")?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::SetWorkspaceDefaultRole {
-                workspace: workspace.clone(),
-                role: Some(RoleName::parse("sentinel")?),
-            }])
+            .edit(
+                vec![ConfigEdit::SetWorkspaceDefaultRole {
+                    workspace: workspace.clone(),
+                    role: Some(RoleName::parse("sentinel")?),
+                }],
+                &rig.world.cancel,
+            )
             .await?;
         let mut view = console(&rig).await?;
         view.keys("down enter")?;
         until_shows(&mut view, "Launch · choose Agent").await?;
         rig.world
             .config
-            .edit(vec![
-                ConfigEdit::SetWorkspaceDefaultRole {
-                    workspace: workspace.clone(),
-                    role: None,
-                },
-                ConfigEdit::SetWorkspaceRoles {
-                    workspace,
-                    roles: AllowedRoles::Only(
-                        jackin_core::RoleSet::new([RoleName::parse("other")?])
-                            .ok_or("an empty role set")?,
-                    ),
-                },
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::SetWorkspaceDefaultRole {
+                        workspace: workspace.clone(),
+                        role: None,
+                    },
+                    ConfigEdit::SetWorkspaceRoles {
+                        workspace,
+                        roles: AllowedRoles::Only(
+                            jackin_core::RoleSet::new([RoleName::parse("other")?])
+                                .ok_or("an empty role set")?,
+                        ),
+                    },
+                ],
+                &rig.world.cancel,
+            )
             .await?;
         view.keys("space enter")?;
         until_shows(&mut view, "does not allow role").await?;

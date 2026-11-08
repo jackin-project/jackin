@@ -14,14 +14,14 @@ use jackin_console::panes::{
     PaneRequest, PaneSize, Sent,
 };
 use jackin_console::world::Msg;
-use jackin_core::{SandboxName, SupervisorReading, SupervisorState, plain};
+use jackin_core::{Agent as CoreAgent, SandboxName, SupervisorReading, SupervisorState, plain};
 use jackin_openshell::{
     EndReason, GatewayError, InputLease, InputMode, SessionClosed, TermSize, TerminalEvent,
     TerminalSession,
 };
 use jackin_session::{
-    AttachError, AttachRequest, AttachedTerminal, LineDelivery, RestartError, Session,
-    ShellRequest, SupervisorReads, error_chain, launch_events,
+    AgentMetadataError, AttachError, AttachRequest, AttachedTerminal, IntegrateError, LineDelivery,
+    RestartError, Session, ShellRequest, SupervisorReads, error_chain, launch_events,
 };
 use tokio::runtime::Handle;
 use tokio::sync::{Notify, mpsc, watch};
@@ -197,10 +197,10 @@ impl PaneHub {
             .is_ok()
     }
 
-    pub(crate) fn leave(&self, instance: &str) {
+    pub(crate) fn leave(&self, instance: &InstanceId) {
         let mut agents = locked(&self.shared.agents);
         agents.retain(|agent| {
-            let leaving = agent.instance == instance;
+            let leaving = &agent.instance == instance;
             if leaving {
                 agent.detach.cancel();
             }
@@ -215,6 +215,12 @@ impl PaneHub {
         size: PaneSize,
         attempt: Attempt,
     ) -> Result<Box<dyn PaneLink>, LinkFault> {
+        let agent = match request.agent() {
+            Some(agent) => Some(crate::project::core_agent(agent).ok_or_else(|| {
+                LinkFault::new("the selected pane agent is not supported by this session")
+            })?),
+            None => None,
+        };
         let (session, sandbox) = self.shared.inputs.pane_target(&request.instance)?;
         let id = self.shared.next.fetch_add(1, Ordering::SeqCst);
         let bridge = self.shared.bridge.clone();
@@ -232,8 +238,7 @@ impl PaneHub {
         let (size_tx, size_rx) = watch::channel(size);
         let detach = CancellationToken::new();
         let gone = self.shared.inputs.cancel.child_token();
-        let agent = request.agent().is_some();
-        if agent {
+        if agent.is_some() {
             locked(&self.shared.agents).push(Registered {
                 id,
                 instance: request.instance.clone(),
@@ -413,7 +418,8 @@ fn attach_fault(error: &AttachError) -> LinkFault {
         AttachError::Gateway(gateway) => fault(error, Some(gateway)),
         AttachError::NotFound(_)
         | AttachError::MainProcessEnded { .. }
-        | AttachError::EnvFile { .. } => fault(error, None),
+        | AttachError::EnvFile { .. }
+        | AttachError::AgentMetadata(_) => fault(error, None),
     }
 }
 
@@ -422,6 +428,14 @@ fn restart_fault(error: &RestartError) -> LinkFault {
         RestartError::Gateway(gateway) => fault(error, Some(gateway)),
         _ => fault(error, None),
     }
+}
+
+fn agent_metadata_fault(error: &AgentMetadataError) -> LinkFault {
+    LinkFault::new(plain(error_chain(error)))
+}
+
+fn integrate_fault(error: &IntegrateError) -> LinkFault {
+    LinkFault::new(plain(error_chain(error)))
 }
 
 fn link_event(event: TerminalEvent) -> LinkEvent {
@@ -451,7 +465,7 @@ struct Run {
     gone: CancellationToken,
     session: Session,
     sandbox: SandboxName,
-    agent: bool,
+    agent: Option<CoreAgent>,
     attempt: Attempt,
     initial: PaneSize,
     poll: Duration,
@@ -467,32 +481,50 @@ impl Run {
 
     async fn start(&self) -> Result<Terminal, LinkFault> {
         let size = term_size(self.initial);
-        if !self.agent {
+        let Some(agent) = self.agent else {
             return self
                 .session
-                .open_shell(ShellRequest {
-                    sandbox: self.sandbox.clone(),
-                    size,
-                })
+                .open_shell(
+                    ShellRequest {
+                        sandbox: self.sandbox.clone(),
+                        size,
+                    },
+                    &self.gone,
+                )
                 .await
                 .map(Terminal::Shell)
                 .map_err(|error| attach_fault(&error));
-        }
+        };
         if self.attempt == Attempt::Restart {
-            let (events, feed) = launch_events(LineDelivery::BestEffort);
-            drop(feed);
-            self.session
-                .restart_agent(&self.sandbox, events, self.gone.clone())
+            let metadata = self
+                .session
+                .agent_metadata_for_sandbox(&self.sandbox, &self.gone)
                 .await
-                .map_err(|error| restart_fault(&error))?;
+                .map_err(|error| agent_metadata_fault(&error))?;
+            if metadata.lead_agent() == agent {
+                let (events, feed) = launch_events(LineDelivery::BestEffort);
+                drop(feed);
+                self.session
+                    .restart_agent(&self.sandbox, events, self.gone.clone())
+                    .await
+                    .map_err(|error| restart_fault(&error))?;
+            } else {
+                self.session
+                    .restart_instance(&self.sandbox, agent, &self.gone)
+                    .await
+                    .map_err(|error| integrate_fault(&error))?;
+            }
         }
         self.session
-            .attach(AttachRequest {
-                sandbox: self.sandbox.clone(),
-                size,
-                input: InputMode::Owner,
-                agent: None,
-            })
+            .attach(
+                AttachRequest {
+                    sandbox: self.sandbox.clone(),
+                    size,
+                    input: InputMode::Owner,
+                    agent: Some(agent),
+                },
+                &self.gone,
+            )
             .await
             .map(Terminal::Main)
             .map_err(|error| attach_fault(&error))
@@ -517,7 +549,7 @@ impl Run {
         };
         let mut detaching = false;
         let mut reads = match &terminal {
-            Terminal::Main(main) if self.agent => main.reads(),
+            Terminal::Main(main) if self.agent.is_some() => main.reads(),
             Terminal::Main(_) | Terminal::Shell(_) => SupervisorReads::idle(),
         };
         let mut watch =
@@ -551,8 +583,8 @@ impl Run {
                         }
                     }
                 }
-                _ = watch.tick(), if self.agent && !detaching => reads.begin(),
-                reading = reads.finished(), if self.agent && !detaching => {
+                _ = watch.tick(), if self.agent.is_some() && !detaching => reads.begin(),
+                reading = reads.finished(), if self.agent.is_some() && !detaching => {
                     if let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
                         reading
                     {

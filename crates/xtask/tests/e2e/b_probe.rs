@@ -84,7 +84,7 @@ async fn each_schema_violation_is_rejected_with_its_json_pointer() {
     parse(&base, &steps).expect("the unmutated report is the control");
     type Mutate = fn(&mut Value);
     let table: Vec<(&str, Mutate, &str)> = vec![
-        ("schema 2", |v| v["schema"] = json!(2), "/schema"),
+        ("schema 3", |v| v["schema"] = json!(3), "/schema"),
         (
             "extra property",
             |v| v["steps"]["J04"]["extra"] = json!(1),
@@ -156,7 +156,7 @@ async fn each_schema_violation_is_rejected_with_its_json_pointer() {
     }
 
     let mut two = base.clone();
-    two["schema"] = json!(2);
+    two["schema"] = json!(3);
     two["steps"]["J05"]["facts"]["files"][0]["sha256"] = json!("abc");
     let message = schema_error(parse(&two, &steps));
     assert!(message.contains("/schema"), "{message}");
@@ -256,6 +256,61 @@ async fn report_coverage_must_match_the_request() {
         ),
         "docker"
     );
+}
+
+#[tokio::test]
+async fn process_report_without_arguments_validates() {
+    let scenario = Scenario::new().await;
+    let report = scenario.probe_json(&["J11"], false);
+    let processes = &report["steps"]["J11"]["facts"]["processes"];
+    assert!(processes["main"].is_object(), "main process record exists");
+    assert!(processes["self"].is_object(), "probe process record exists");
+    assert!(
+        processes["codex"]
+            .as_array()
+            .is_some_and(|processes| !processes.is_empty()),
+        "at least one codex process record exists"
+    );
+    ProbeReport::parse(
+        report.to_string().as_bytes(),
+        &request(&["J11"], false, ProbeMode::Sandbox),
+        &Redactor::none(),
+    )
+    .expect("process records without arguments validate");
+}
+
+async fn process_report_with_arguments_is_rejected(pointer: &str) {
+    let scenario = Scenario::new().await;
+    let mut report = scenario.probe_json(&["J11"], false);
+    report
+        .pointer_mut(pointer)
+        .and_then(Value::as_object_mut)
+        .expect("process object")
+        .insert("args".to_owned(), json!("sentinel-process-arguments"));
+    let rejected = ProbeReport::parse(
+        report.to_string().as_bytes(),
+        &request(&["J11"], false, ProbeMode::Sandbox),
+        &Redactor::none(),
+    );
+    assert!(
+        matches!(rejected, Err(ProbeError::Schema(_))),
+        "args at {pointer} must be rejected: {rejected:?}"
+    );
+}
+
+#[tokio::test]
+async fn process_report_rejects_arguments_for_main() {
+    process_report_with_arguments_is_rejected("/steps/J11/facts/processes/main").await;
+}
+
+#[tokio::test]
+async fn process_report_rejects_arguments_for_probe() {
+    process_report_with_arguments_is_rejected("/steps/J11/facts/processes/self").await;
+}
+
+#[tokio::test]
+async fn process_report_rejects_arguments_for_codex() {
+    process_report_with_arguments_is_rejected("/steps/J11/facts/processes/codex/0").await;
 }
 
 fn skip_check(scenario: &Scenario, step: &str, check: &str) {

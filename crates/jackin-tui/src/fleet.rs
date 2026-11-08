@@ -1,20 +1,21 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
 use std::fmt;
 use std::future::Future;
-use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use futures::future::join_all;
 use jackin_core::{
     Config, GatewayName, Phase, SandboxName, SandboxSummary, SupervisorReading, SupervisorState,
-    Timestamp,
 };
-use jackin_session::{Session, WorkState};
+use jackin_session::{
+    AgentMetadataError, SandboxInspection, Session, UnreadableSandbox, VerifiedAgentMetadata,
+    WorkState,
+};
 use thiserror::Error;
 use tokio::sync::Semaphore;
+use tokio_util::sync::CancellationToken;
 
 use jackin_console::domain::instance::InstanceId;
 
@@ -35,6 +36,23 @@ pub struct ObservedSandbox {
     pub supervisor: Option<SupervisorReading>,
     pub work: Option<WorkState>,
     pub task: Option<ObservedTask>,
+    pub agent_metadata: Result<VerifiedAgentMetadata, AgentMetadataError>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ObservedUnreadableSandbox {
+    pub gateway: GatewayName,
+    pub sandbox: UnreadableSandbox,
+}
+
+#[derive(Clone, Debug)]
+pub enum ObservedInstance {
+    Available(Box<ObservedSandbox>),
+    Unavailable {
+        gateway: GatewayName,
+        sandbox: SandboxName,
+        reason: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -46,6 +64,7 @@ pub struct GatewayReading {
 #[derive(Clone, Debug, Default)]
 pub struct Fleet {
     pub sandboxes: Vec<ObservedSandbox>,
+    pub unreadable_sandboxes: Vec<ObservedUnreadableSandbox>,
     pub unreadable: usize,
     pub gateways: Vec<GatewayReading>,
 }
@@ -54,7 +73,6 @@ impl Fleet {
     pub fn failed(&self) -> impl Iterator<Item = &GatewayReading> {
         self.gateways.iter().filter(|g| g.failure.is_some())
     }
-
     pub fn all_failed(&self) -> bool {
         !self.gateways.is_empty() && self.gateways.iter().all(|g| g.failure.is_some())
     }
@@ -63,51 +81,47 @@ impl Fleet {
         self.sandboxes.retain(|seen| {
             seen.gateway != observed.gateway || seen.summary.name != observed.summary.name
         });
-        self.sandboxes.push(observed);
-    }
-
-    pub(crate) fn locate(&self, instance: &InstanceId) -> Option<&ObservedSandbox> {
-        self.sandboxes
-            .iter()
-            .find(|observed| &sandbox_id(&observed.summary.name) == instance)
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct WorkCache {
-    entries: Mutex<BTreeMap<(GatewayName, SandboxName), (WorkKey, WorkState)>>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct WorkKey {
-    phase: Phase,
-    created_at: Option<Timestamp>,
-    supervisor: Option<SupervisorReading>,
-}
-
-impl WorkCache {
-    fn get(&self, at: &(GatewayName, SandboxName), key: &WorkKey) -> Option<WorkState> {
-        let entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries
-            .get(at)
-            .filter(|(cached, _)| cached == key)
-            .map(|(_, state)| state.clone())
-    }
-
-    fn put(&self, at: (GatewayName, SandboxName), key: WorkKey, state: WorkState) {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.insert(at, (key, state));
-    }
-
-    fn keep_seen(&self, fleet: &Fleet) {
-        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
-        entries.retain(|(gateway, sandbox), _| {
-            fleet.failed().any(|g| g.name == *gateway)
-                || fleet
-                    .sandboxes
-                    .iter()
-                    .any(|seen| seen.gateway == *gateway && seen.summary.name == *sandbox)
+        self.unreadable_sandboxes.retain(|seen| {
+            seen.gateway != observed.gateway || seen.sandbox.name != observed.summary.name
         });
+        self.sandboxes.push(observed);
+        self.unreadable = self.unreadable_sandboxes.len();
+    }
+
+    pub(crate) fn admit_unreadable(&mut self, observed: ObservedUnreadableSandbox) {
+        self.sandboxes.retain(|seen| {
+            seen.gateway != observed.gateway || seen.summary.name != observed.sandbox.name
+        });
+        self.unreadable_sandboxes.retain(|seen| {
+            seen.gateway != observed.gateway || seen.sandbox.name != observed.sandbox.name
+        });
+        self.unreadable_sandboxes.push(observed);
+        self.unreadable = self.unreadable_sandboxes.len();
+    }
+
+    pub(crate) fn locate(&self, instance: &InstanceId) -> Option<ObservedInstance> {
+        if let Some(observed) = self
+            .sandboxes
+            .iter()
+            .find(|observed| &sandbox_id(&observed.gateway, &observed.summary.name) == instance)
+        {
+            return Some(match &observed.agent_metadata {
+                Ok(_) => ObservedInstance::Available(Box::new(observed.clone())),
+                Err(error) => ObservedInstance::Unavailable {
+                    gateway: observed.gateway.clone(),
+                    sandbox: observed.summary.name.clone(),
+                    reason: error.to_string(),
+                },
+            });
+        }
+        self.unreadable_sandboxes
+            .iter()
+            .find(|observed| &sandbox_id(&observed.gateway, &observed.sandbox.name) == instance)
+            .map(|observed| ObservedInstance::Unavailable {
+                gateway: observed.gateway.clone(),
+                sandbox: observed.sandbox.name.clone(),
+                reason: observed.sandbox.reason(),
+            })
     }
 }
 
@@ -131,23 +145,22 @@ pub(crate) async fn within<T>(deadline: Duration, work: impl Future<Output = T>)
 struct Inspected {
     summary: SandboxSummary,
     supervisor: Option<SupervisorReading>,
+    agent_metadata: Result<VerifiedAgentMetadata, AgentMetadataError>,
+}
+
+enum InspectionOutcome {
+    Readable(Inspected),
+    Unreadable(UnreadableSandbox),
 }
 
 impl Inspected {
     fn needs_work(&self) -> bool {
-        self.summary.phase == Phase::Ready
+        self.agent_metadata.is_ok()
+            && self.summary.phase == Phase::Ready
             && !matches!(
                 self.supervisor,
                 Some(SupervisorReading::Reported(SupervisorState::Running { .. }))
             )
-    }
-
-    fn work_key(&self) -> WorkKey {
-        WorkKey {
-            phase: self.summary.phase,
-            created_at: self.summary.created_at,
-            supervisor: self.supervisor.clone(),
-        }
     }
 }
 
@@ -155,7 +168,7 @@ pub async fn read_fleet(
     sessions: &SessionSet,
     config: &Config,
     limits: ConsoleLimits,
-    cache: &WorkCache,
+    cancel: &CancellationToken,
 ) -> Fleet {
     let readings = join_all(
         sessions
@@ -165,33 +178,37 @@ pub async fn read_fleet(
                 match reached {
                     Reached::Down(error) => unreadable(&name, error.to_string()),
                     Reached::Up(session) => {
-                        read_gateway(&name, &session, config, limits, cache).await
+                        read_gateway(&name, &session, config, limits, cancel).await
                     }
                 }
             }),
     )
     .await;
     let mut fleet = Fleet::default();
-    for (reading, sandboxes, unreadable) in readings {
+    for (reading, sandboxes, unreadable_sandboxes) in readings {
         fleet.gateways.push(reading);
         fleet.sandboxes.extend(sandboxes);
-        fleet.unreadable += unreadable;
+        fleet.unreadable += unreadable_sandboxes.len();
+        fleet.unreadable_sandboxes.extend(unreadable_sandboxes);
     }
-    cache.keep_seen(&fleet);
     fleet
 }
 
 fn unreadable(
     name: &GatewayName,
     failure: String,
-) -> (GatewayReading, Vec<ObservedSandbox>, usize) {
+) -> (
+    GatewayReading,
+    Vec<ObservedSandbox>,
+    Vec<ObservedUnreadableSandbox>,
+) {
     (
         GatewayReading {
             name: name.clone(),
             failure: Some(failure),
         },
         Vec::new(),
-        0,
+        Vec::new(),
     )
 }
 
@@ -200,34 +217,62 @@ async fn read_gateway(
     session: &Session,
     config: &Config,
     limits: ConsoleLimits,
-    cache: &WorkCache,
-) -> (GatewayReading, Vec<ObservedSandbox>, usize) {
+    cancel: &CancellationToken,
+) -> (
+    GatewayReading,
+    Vec<ObservedSandbox>,
+    Vec<ObservedUnreadableSandbox>,
+) {
     let deadline = limits.connect_deadline;
-    let listing = match within(deadline, session.list()).await {
+    let listing = match within(deadline, session.list(cancel)).await {
         Some(Ok(listing)) => listing,
         Some(Err(error)) => return unreadable(name, error.to_string()),
         None => return unreadable(name, TimedOut(Waited(deadline)).to_string()),
     };
-    let unreadable = listing.unreadable.len();
+    let mut unreadable_sandboxes: Vec<_> = listing
+        .unreadable
+        .into_iter()
+        .map(|sandbox| ObservedUnreadableSandbox {
+            gateway: name.clone(),
+            sandbox,
+        })
+        .collect();
+    let slots = Semaphore::new(limits.work_reads.get());
     let inspected = join_all(
         listing
             .sandboxes
             .into_iter()
-            .map(|summary| inspect(session, summary, deadline)),
+            .map(|summary| inspect(session, summary, deadline, &slots, cancel)),
     )
     .await;
-    let slots = Semaphore::new(limits.work_reads.get());
+    let inspected: Vec<Inspected> = inspected
+        .into_iter()
+        .filter_map(|outcome| match outcome {
+            InspectionOutcome::Readable(sandbox) => Some(sandbox),
+            InspectionOutcome::Unreadable(sandbox) => {
+                unreadable_sandboxes.push(ObservedUnreadableSandbox {
+                    gateway: name.clone(),
+                    sandbox,
+                });
+                None
+            }
+        })
+        .collect();
     let works = join_all(
         inspected
             .iter()
-            .map(|sandbox| read_work(name, session, config, sandbox, deadline, (cache, &slots))),
+            .map(|sandbox| read_work(session, config, sandbox, deadline, &slots, cancel)),
     )
     .await;
-    let tasks = join_all(
-        inspected
-            .iter()
-            .map(|sandbox| read_task(session, &sandbox.summary, deadline)),
-    )
+    let tasks = join_all(inspected.iter().map(|sandbox| {
+        read_task(
+            session,
+            &sandbox.summary,
+            &sandbox.agent_metadata,
+            deadline,
+            cancel,
+        )
+    }))
     .await;
     let sandboxes = inspected
         .into_iter()
@@ -239,6 +284,7 @@ async fn read_gateway(
                     Inspected {
                         summary,
                         supervisor,
+                        agent_metadata,
                     },
                     work,
                 ),
@@ -249,6 +295,7 @@ async fn read_gateway(
                 supervisor,
                 work,
                 task,
+                agent_metadata,
             },
         )
         .collect();
@@ -258,68 +305,93 @@ async fn read_gateway(
             failure: None,
         },
         sandboxes,
-        unreadable,
+        unreadable_sandboxes,
     )
 }
 
-async fn inspect(session: &Session, summary: SandboxSummary, deadline: Duration) -> Inspected {
-    let supervisor = if summary.phase == Phase::Ready {
-        within(deadline, session.inspect(&summary.name))
-            .await
-            .and_then(Result::ok)
-            .map(|view| view.supervisor)
+async fn inspect(
+    session: &Session,
+    summary: SandboxSummary,
+    deadline: Duration,
+    slots: &Semaphore,
+    cancel: &CancellationToken,
+) -> InspectionOutcome {
+    let slot = if summary.phase == Phase::Ready {
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => None,
+            permit = slots.acquire() => permit.ok(),
+        }
     } else {
         None
     };
-    Inspected {
+    let (supervisor, agent_metadata) = if slot.is_some() {
+        let inspection = within(deadline, session.inspect(&summary.name, cancel)).await;
+        let supervisor = match inspection {
+            Some(Ok(SandboxInspection::Readable(view))) => Some(view.supervisor),
+            Some(Ok(SandboxInspection::Unreadable(sandbox))) => {
+                return InspectionOutcome::Unreadable(sandbox);
+            }
+            Some(Err(_)) | None => None,
+        };
+        let metadata = within(deadline, session.agent_metadata(&summary, cancel)).await;
+        let agent_metadata = metadata.unwrap_or(Err(AgentMetadataError::TimedOut));
+        (supervisor, agent_metadata)
+    } else {
+        let error = if cancel.is_cancelled() {
+            AgentMetadataError::Cancelled
+        } else {
+            AgentMetadataError::NotReady(summary.phase)
+        };
+        (None, Err(error))
+    };
+    InspectionOutcome::Readable(Inspected {
         summary,
         supervisor,
-    }
+        agent_metadata,
+    })
 }
 
 async fn read_work(
-    gateway: &GatewayName,
     session: &Session,
     config: &Config,
     sandbox: &Inspected,
     deadline: Duration,
-    (cache, slots): (&WorkCache, &Semaphore),
+    slots: &Semaphore,
+    cancel: &CancellationToken,
 ) -> Option<WorkState> {
     if !sandbox.needs_work() {
         return None;
     }
-    let at = (gateway.clone(), sandbox.summary.name.clone());
-    let key = sandbox.work_key();
-    if let Some(state) = cache.get(&at, &key) {
-        return Some(state);
-    }
-    let _slot = slots.acquire().await.ok()?;
-    let state = within(deadline, session.work_state(config, &sandbox.summary.name)).await?;
-    if !matches!(state, WorkState::Unknown(_)) {
-        cache.put(at, key, state.clone());
-    }
-    Some(state)
+    let _slot = tokio::select! {
+        biased;
+        () = cancel.cancelled() => return None,
+        permit = slots.acquire() => permit.ok()?,
+    };
+    within(
+        deadline,
+        session.work_state(config, &sandbox.summary.name, cancel),
+    )
+    .await
 }
 
 async fn read_task(
     session: &Session,
     summary: &SandboxSummary,
+    metadata: &Result<VerifiedAgentMetadata, AgentMetadataError>,
     deadline: Duration,
+    cancel: &CancellationToken,
 ) -> Option<ObservedTask> {
-    let agents: Vec<jackin_core::Agent> = summary
-        .labels
-        .planned
-        .agents
-        .iter()
-        .map(|item| item.agent)
-        .collect();
+    let metadata = metadata.as_ref().ok()?;
+    let agents: Vec<jackin_core::Agent> =
+        metadata.instances.iter().map(|item| item.agent).collect();
     let mut paths = vec![jackin_core::sandbox_layout::TASK_FILE.clone()];
     for core_agent in &agents {
         paths.push(jackin_core::sandbox_layout::task_status(*core_agent));
     }
     let found = within(
         deadline,
-        session.gateway().read_files(&summary.name, &paths),
+        session.gateway().read_files(&summary.name, &paths, cancel),
     )
     .await
     .and_then(Result::ok)?;

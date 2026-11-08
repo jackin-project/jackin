@@ -79,7 +79,8 @@ async fn a_failing_hook_stops_the_launch_with_name_code_and_sanitized_output() -
             rig.gateway()
                 .read_files(
                     &handle.name(),
-                    std::slice::from_ref(&sandbox_layout::RUN_STATE)
+                    std::slice::from_ref(&sandbox_layout::RUN_STATE),
+                    &CancellationToken::new()
                 )
                 .await?[0]
                 .is_some()

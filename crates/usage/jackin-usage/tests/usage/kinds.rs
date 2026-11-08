@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_testkit::guard;
 use jackin_usage::{AccountUsage, Refresh, UnavailableReason, WindowKind};
 
 use crate::support::{
-    Left, TestResult, UsageHarness, assert_window, assert_windows, guard, unavailable, want,
-    windows_of,
+    Left, TestResult, UsageHarness, assert_window, assert_windows, unavailable, want, windows_of,
 };
 
 async fn usage_for(body: &str) -> Result<AccountUsage, Box<dyn std::error::Error>> {

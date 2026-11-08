@@ -84,14 +84,14 @@ pub(crate) fn warnings(events: &[LaunchEvent]) -> usize {
 pub(crate) async fn nothing_was_created(rig: &Rig) -> Result<(), Box<dyn Error>> {
     assert!(rig.gateway().sandboxes().is_empty());
     assert!(rig.gateway().providers().is_empty());
-    assert!(rig.world.engine.builds().is_empty());
-    assert!(rig.world.engine.images().is_empty());
+    assert!(rig.world.docker.images().is_empty());
     let found = rig
         .world
         .gateway
-        .find_sandboxes(&jackin_openshell::SandboxQuery::Labels(
-            LabelSelector::managed(),
-        ))
+        .find_sandboxes(
+            &jackin_openshell::SandboxQuery::Labels(LabelSelector::managed()),
+            &tokio_util::sync::CancellationToken::new(),
+        )
         .await?;
     assert!(found.is_empty());
     Ok(())

@@ -25,6 +25,57 @@ use jackin_openshell::PowerAction;
 
 use crate::cli::Command;
 use crate::error::CommandError;
+use jackin_core::{Agent, AgentInstances};
+use jackin_session::{AgentMetadataError, VerifiedAgentMetadata};
+use serde::Serialize;
+
+#[derive(Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub(crate) enum AgentMetadataReport {
+    Verified {
+        lead_agent: Agent,
+        instances: AgentInstances,
+    },
+    Unavailable {
+        reason: String,
+    },
+}
+
+impl From<Result<VerifiedAgentMetadata, AgentMetadataError>> for AgentMetadataReport {
+    fn from(result: Result<VerifiedAgentMetadata, AgentMetadataError>) -> Self {
+        match result {
+            Ok(metadata) => AgentMetadataReport::Verified {
+                lead_agent: metadata.lead_agent(),
+                instances: metadata.instances,
+            },
+            Err(error) => AgentMetadataReport::Unavailable {
+                reason: error.to_string(),
+            },
+        }
+    }
+}
+
+impl AgentMetadataReport {
+    pub(crate) fn human(&self) -> String {
+        match self {
+            AgentMetadataReport::Verified {
+                lead_agent,
+                instances,
+            } => format!(
+                "verified lead={} agents={}",
+                lead_agent.as_str(),
+                instances
+                    .iter()
+                    .map(|instance| instance.agent.as_str())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            AgentMetadataReport::Unavailable { reason } => {
+                format!("unavailable: {reason}")
+            }
+        }
+    }
+}
 
 pub(crate) async fn dispatch(app: &mut App, command: Command) -> Result<(), CommandError> {
     match command {

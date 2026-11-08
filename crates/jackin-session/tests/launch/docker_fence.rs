@@ -4,22 +4,23 @@
 use std::collections::BTreeMap;
 
 use jackin_core::{
-    CaFingerprint, Config, ConfigEdit, DockerLabel, EngineCert, EngineCertProblem, HostPath,
-    ImageId, Phase, SandboxLabels, SandboxPath, WorkspaceName, sandbox_layout,
+    CaFingerprint, Config, ConfigEdit, DockerLabel, EngineCert, EngineCertProblem, Phase,
+    SandboxLabels, SandboxPath, WorkspaceName, sandbox_layout,
 };
-use jackin_image::{BuildStage, Rebuild};
+use jackin_image::{ImageEngine, Rebuild};
 use jackin_openshell::GatewayOp;
 use jackin_session::{
     LaunchError, LaunchEvent, LaunchFailure, LaunchOutcome, LaunchPlan, LaunchStep, LaunchWarning,
     plan_launch,
 };
-use jackin_testkit::{
-    BuildEffect, ENGINE_PORT, EngineMoment, Fault, HostEdit, Outcome, Rig, Trigger, launch_id,
-};
+use jackin_testkit::{ENGINE_PORT, EngineCertificateSet, Fault, Outcome, Rig, Trigger, launch_id};
 use tokio_util::sync::CancellationToken;
 
 use super::docker_support::{Engine, docker_files, docker_rig, rule_keys, split_failure};
-use super::support::{TestResult, failure, guard, ready, write};
+use super::support::{
+    TestResult, actual_final_builds, failure, final_image, guard, ready, script_construct_rebuild,
+    write,
+};
 
 type Snapshot = (
     BTreeMap<SandboxPath, Vec<u8>>,
@@ -142,10 +143,57 @@ async fn a_retry_with_another_image_a_rebuild_that_changes_the_image_or_another_
         let rig = docker_rig(false, true, Engine::WithCerts).await?;
         ready(rig.launch_observed(1).await?)?;
         let kept = snapshot(&rig).await?;
-        let same = retry(&rig, &rig.config, Rebuild::Yes).await?;
-        let builds = rig.world.engine.builds().len();
-        ready(same)?;
-        assert!(builds > 3, "the rebuild did not run: {builds}");
+        let (tag, original) = final_image(&rig, 1).await?;
+        let (plan, _, original_construct) = actual_final_builds(&rig, 1).await?;
+        let (construct_tag, changed_construct) = script_construct_rebuild(&rig, 1, 'c')?;
+        assert_eq!(construct_tag, plan.construct_build().tag);
+        let gate = rig
+            .world
+            .docker
+            .hold_build(plan.construct_build().tag.clone());
+        let mut rebuilding = Box::pin(retry(&rig, &rig.config, Rebuild::Yes));
+        tokio::select! {
+            outcome = rebuilding.as_mut() => return Err(format!("rebuild completed before the construct build: {outcome:?}").into()),
+            () = gate.wait_arrived() => {}
+        }
+        gate.release();
+        let (_, failed) = split_failure(rebuilding.await?)?;
+        assert_eq!(failed.step, LaunchStep::Sandbox);
+        assert_eq!(stale(&failed)?, [IMAGE_KEY]);
+        assert_eq!(snapshot(&rig).await?, kept);
+        assert_eq!(rig.world.docker.image_id(&tag), Some(original.clone()));
+        let (plan, builds, construct) = actual_final_builds(&rig, 1).await?;
+        assert_eq!(construct, changed_construct);
+        assert_ne!(construct, original_construct);
+        assert_eq!(
+            rig.world
+                .engine
+                .attested(&plan.construct_build().tag, &CancellationToken::new())
+                .await?,
+            Some(construct.clone())
+        );
+        assert_ne!(builds.derived.tag, tag);
+        let rebuilt = rig
+            .world
+            .engine
+            .find(&builds.derived.tag, &CancellationToken::new())
+            .await?
+            .ok_or("the rebuilt final image is missing")?;
+        assert_eq!(
+            rig.world.docker.image_id(&builds.derived.tag),
+            Some(rebuilt.clone())
+        );
+        let rebuilt_inspect = rig
+            .world
+            .engine
+            .inspect(&rebuilt, &CancellationToken::new())
+            .await?;
+        let construct_inspect = rig
+            .world
+            .engine
+            .inspect(&construct, &CancellationToken::new())
+            .await?;
+        assert!(rebuilt_inspect.layers.starts_with(&construct_inspect.layers));
         assert_eq!(rig.gateway().sandboxes().len(), 1);
 
         let moved = Config::parse(
@@ -154,14 +202,25 @@ async fn a_retry_with_another_image_a_rebuild_that_changes_the_image_or_another_
                 .replace(&format!("port = {ENGINE_PORT}"), "port = 2377"),
         )?;
         let (_, failed) = split_failure(retry(&rig, &moved, Rebuild::No).await?)?;
-        assert_eq!(stale(&failed)?, [DOCKER_KEY, POLICY_KEY]);
+        assert_eq!(stale(&failed)?, [DOCKER_KEY, IMAGE_KEY, POLICY_KEY]);
         assert_eq!(snapshot(&rig).await?, kept);
 
-        let tag = rig.final_image()?.tag;
-        let other = ImageId::parse(&format!("sha256:{}", "9".repeat(64)))?;
-        rig.world.engine.pin_id(&tag, other);
+        let dockerfile = rig.loaded.root().as_path().join("Dockerfile");
+        let mut changed = std::fs::read(&dockerfile)?;
+        changed.extend_from_slice(b"\n");
+        std::fs::write(dockerfile, changed)?;
+        let loaded = rig
+            .world
+            .roles
+            .load_path(rig.loaded.root(), &CancellationToken::new())
+            .await?;
         for rebuild in [Rebuild::No, Rebuild::Yes] {
-            let (_, failed) = split_failure(retry(&rig, &rig.config, rebuild).await?)?;
+            let request = rig.request(1)?.rebuild(rebuild);
+            let plan = plan_launch(&rig.config, &loaded, request)?;
+            let outcome = rig
+                .run_planned(&rig.world.session, plan, CancellationToken::new())
+                .await;
+            let (_, failed) = split_failure(outcome)?;
             assert_eq!(failed.step, LaunchStep::Sandbox);
             assert_eq!(stale(&failed)?, [IMAGE_KEY]);
             assert_eq!(snapshot(&rig).await?, kept);
@@ -241,16 +300,18 @@ async fn a_retry_after_rotating_only_the_client_certificate_and_key_continues() 
         let rig = docker_rig(false, true, Engine::WithCerts).await?;
         ready(rig.launch_observed(1).await?)?;
         let labels = rig.handle(1).await?.labels();
-        let fresh_cert = "-----BEGIN CERTIFICATE-----\nRlJFU0hDRVJURlJFU0hDRVJURlJFU0g=\n-----END CERTIFICATE-----\n";
-        let fresh_key = "-----BEGIN PRIVATE KEY-----\nRlJFU0hLRVlGUkVTSEtFWUZSRVNIS0U=\n-----END PRIVATE KEY-----\n";
-        rewrite(&rig, EngineCert::Cert, fresh_cert)?;
-        rewrite(&rig, EngineCert::Key, fresh_key)?;
+        let fresh = EngineCertificateSet::generate()?;
+        rewrite(&rig, EngineCert::Cert, &fresh.cert)?;
+        rewrite(&rig, EngineCert::Key, &fresh.key)?;
         ready(retry(&rig, &rig.config, Rebuild::No).await?)?;
         assert_eq!(rig.gateway().sandboxes().len(), 1);
         let handle = rig.handle(1).await?;
         assert_eq!(handle.labels(), labels);
         let files = docker_files(&handle);
-        for (cert, text) in [(EngineCert::Cert, fresh_cert), (EngineCert::Key, fresh_key)] {
+        for (cert, text) in [
+            (EngineCert::Cert, &fresh.cert),
+            (EngineCert::Key, &fresh.key),
+        ] {
             assert_eq!(
                 files.get(&cert.sandbox_path()).map(Vec::as_slice),
                 Some(text.as_bytes()),
@@ -286,14 +347,17 @@ async fn a_ca_changed_during_the_build_never_reaches_the_sandbox_under_the_old_f
         let rig = docker_rig(false, true, Engine::WithCerts).await?;
         let ca = certs_dir(&rig)?.join("ca.pem");
         let original = std::fs::read(&ca)?;
-        rig.world.engine.at(EngineMoment::BuildFinished {
-            stage: BuildStage::Derived,
-            effect: BuildEffect::EditHost(HostEdit::Write {
-                path: HostPath::parse(&ca)?,
-                bytes: OTHER_CA.as_bytes().to_vec(),
-            }),
-        });
-        let failed = failure(rig.launch_observed(1).await?)?;
+        let (_, builds, _) = actual_final_builds(&rig, 1).await?;
+        let gate = rig.world.docker.hold_build(builds.role.tag.clone());
+        let mut launch = Box::pin(rig.launch_observed(1));
+        tokio::select! {
+            outcome = launch.as_mut() => return Err(format!("launch ended before the Docker build: {outcome:?}").into()),
+            () = gate.wait_arrived() => {}
+        }
+        std::fs::write(&ca, OTHER_CA)?;
+        gate.release();
+        let outcome = launch.await?;
+        let failed = failure(outcome)?;
         assert_eq!(failed.step, LaunchStep::Credentials);
         assert!(
             matches!(

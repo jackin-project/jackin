@@ -35,7 +35,10 @@ async fn launched(rig: &Rig) -> Result<(String, String), Failure> {
     let picked = console.screen();
     answer(&mut console, None).await?;
     until_route(&mut console, Route::Capsule).await?;
-    Ok((labels(&only(rig)?)?.planned.agents.agents_label(), picked))
+    Ok((
+        labels(&only(rig)?)?.planned.agents_hash.as_str().to_owned(),
+        picked,
+    ))
 }
 
 async fn launches(
@@ -68,7 +71,7 @@ async fn launches(
             account: name("by-default")?,
         });
     }
-    rig.world.config.edit(edits).await?;
+    rig.world.config.edit(edits, &rig.world.cancel).await?;
     let config = rig.world.config.load().await?;
     let workspace_name = WorkspaceName::parse(WORKSPACE)?;
     let role_name = RoleName::parse("sentinel")?;
@@ -86,8 +89,9 @@ async fn launches(
         jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
             Agent::Codex,
             name(expected)?
-        ))
-        .agents_label(),
+        )?)?
+        .hash()
+        .as_str(),
         "{picked}"
     );
     let flat = picked.split_whitespace().collect::<Vec<_>>().join(" ");

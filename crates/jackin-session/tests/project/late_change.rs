@@ -19,6 +19,7 @@ enum Change {
     NestedRepository,
     Commit,
     SymlinkParent,
+    RootReplaced,
 }
 
 async fn base() -> Result<RepoFixture, Box<dyn Error>> {
@@ -53,6 +54,17 @@ async fn during_the_lock_wait(rig: &Rig, change: Change) -> Result<Outcome, Box<
             Change::Commit => {
                 rig.repo.file("b.txt", b"beta\n").await?;
                 rig.repo.commit().await?;
+            }
+            Change::RootReplaced => {
+                let root = rig.repo.root().as_path();
+                let parked = root.with_extension("parked");
+                std::fs::rename(root, &parked)?;
+                let copied = std::process::Command::new("/bin/cp")
+                    .arg("-a")
+                    .arg(&parked)
+                    .arg(root)
+                    .status()?;
+                assert!(copied.success(), "cp failed");
             }
             Change::SymlinkParent => {
                 let root = rig.repo.root().as_path();
@@ -316,6 +328,28 @@ async fn a_shallow_boundary_moved_during_the_upload_fails_the_launch() -> TestRe
         let shallow = source.clone_of(&["--depth", "1"]).await?;
         let rig = Rig::new(shallow).await?;
         refused_for_history(&rig, UploadChange::Deepen).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_project_directory_replaced_by_a_copy_after_it_was_chosen_is_refused() -> TestResult {
+    guard(async {
+        let rig = Rig::new(base().await?).await?;
+        let outcome = during_the_lock_wait(&rig, Change::RootReplaced).await?;
+        let failed = failure(outcome)?;
+        assert_eq!(failed.step, LaunchStep::Upload);
+        assert!(
+            matches!(
+                *failed.error,
+                LaunchError::Unsupported(UnsupportedProject::RootReplaced(_))
+            ),
+            "{:?}",
+            failed.error
+        );
+        let handle = rig.handle(1).await?;
+        assert!(!handle.root().join("project/.git").exists());
+        Ok(())
     })
     .await
 }

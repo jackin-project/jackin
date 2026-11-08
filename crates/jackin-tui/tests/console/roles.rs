@@ -246,6 +246,51 @@ async fn a_linked_manifest_is_neither_shown_nor_saved_through() -> TestResult {
     .await
 }
 
+async fn refresh(lab: &mut Lab) -> TestResult {
+    lab.world().refresh_now();
+    lab.console.settle().await
+}
+
+#[tokio::test]
+async fn a_manifest_changed_on_disk_shows_on_the_next_refresh_and_a_broken_one_is_not_remembered()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (base, file) = sentinel_docs(&mut lab)?;
+        let original = std::fs::read_to_string(&file)?;
+        let flipped = if base.docker {
+            original.replace("enabled = true", "enabled = false")
+        } else {
+            original.replace("enabled = false", "enabled = true")
+        };
+        assert_ne!(flipped, original, "the manifest has no docker row to flip");
+
+        std::fs::write(&file, &flipped)?;
+        refresh(&mut lab).await?;
+        let (shown, _) = sentinel_docs(&mut lab)?;
+        assert_eq!(shown.docker, !base.docker);
+
+        std::fs::write(&file, "schema = [\n")?;
+        refresh(&mut lab).await?;
+        let broken = lab
+            .world()
+            .surfaces
+            .roles
+            .as_ref()
+            .and_then(|admin| admin.role("sentinel"))
+            .cloned()
+            .ok_or("role")?;
+        assert!(broken.manifest.is_err(), "{:?}", broken.manifest);
+
+        std::fs::write(&file, &original)?;
+        refresh(&mut lab).await?;
+        let (restored, _) = sentinel_docs(&mut lab)?;
+        assert_eq!(restored.docker, base.docker);
+        Ok(())
+    })
+    .await
+}
+
 async fn edited_check(
     lab: &mut Lab,
     to_field: &str,

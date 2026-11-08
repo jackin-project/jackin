@@ -32,10 +32,10 @@ use jackin_session::{
     plan_account_edits, read_chatgpt_login,
 };
 use thiserror::Error;
-use tokio_util::sync::CancellationToken;
 
 use crate::bridge::Settled;
 use crate::changes::read_changes;
+use crate::fleet::ObservedInstance;
 use crate::observe::{Inputs, Observation, locked};
 use crate::persist::{self, Folder, PersistError, Resolved, sentence};
 use crate::project::manifest_doc;
@@ -155,7 +155,7 @@ impl Inputs {
         if edits.is_empty() {
             return Ok(config.clone());
         }
-        Ok(self.config.edit(edits).await?)
+        Ok(self.config.edit(edits, &self.cancel).await?)
     }
 
     async fn snapshot_of(&self, config: &Config) -> Box<Snapshot> {
@@ -191,7 +191,7 @@ impl Inputs {
         }
     }
 
-    async fn login_file(
+    pub(crate) async fn login_file(
         &self,
         provider: jackin_core::Provider,
         folder: &HostPath,
@@ -260,7 +260,7 @@ impl Inputs {
             project,
             folders: BTreeMap::new(),
         };
-        let edits = persist::workspace(&config, base, workspace, &resolved)?;
+        let edits = persist::workspace(base, workspace, &resolved)?;
         let saved = self.applied(&config, edits).await?;
         let name = WorkspaceName::parse(&workspace.name).map_err(PersistError::from)?;
         if let Some(old) = base.filter(|b| b.name != workspace.name) {
@@ -301,7 +301,7 @@ impl Inputs {
         let _hold = self.ensure_unused(&config, &name).await?;
         let saved = self
             .config
-            .edit(vec![ConfigEdit::RemoveWorkspace(name)])
+            .edit(vec![ConfigEdit::RemoveWorkspace(name)], &self.cancel)
             .await?;
         Ok(self.snapshot_of(&saved).await)
     }
@@ -378,10 +378,10 @@ impl Inputs {
             .await
             .map_err(|error| Refused::Text(text(&error)))?;
         match plan {
-            AccountPlan::Offline(plan) => Ok(plan.apply().await?),
+            AccountPlan::Offline(plan) => Ok(plan.apply(&self.cancel).await?),
             AccountPlan::Gateway(plan) => {
                 let gateways = self.gateways(plan.config()).await?;
-                plan.apply(&gateways)
+                plan.apply(&gateways, &self.cancel)
                     .await
                     .map_err(|error| Refused::Text(text(&error)))
             }
@@ -470,13 +470,52 @@ impl Inputs {
         &self,
         instance: &InstanceId,
     ) -> Result<(jackin_core::GatewayName, jackin_core::SandboxName), Refused> {
-        self.locate(instance)
-            .map(|observed| (observed.gateway, observed.summary.name))
-            .ok_or_else(|| {
-                Refused::Rejected(Rejection::NotInRoster {
-                    instance: instance.clone(),
-                })
-            })
+        match self.locate(instance) {
+            Some(ObservedInstance::Available(observed)) => {
+                Ok((observed.gateway, observed.summary.name))
+            }
+            Some(ObservedInstance::Unavailable { reason, .. }) => Err(Refused::Text(format!(
+                "agent metadata is unavailable: {reason}"
+            ))),
+            None => Err(Refused::Rejected(Rejection::NotInRoster {
+                instance: instance.to_string(),
+            })),
+        }
+    }
+
+    fn sandbox_target(
+        &self,
+        instance: &InstanceId,
+    ) -> Result<(jackin_core::GatewayName, jackin_core::SandboxName), Refused> {
+        match self.locate(instance) {
+            Some(ObservedInstance::Available(observed)) => {
+                Ok((observed.gateway, observed.summary.name))
+            }
+            Some(ObservedInstance::Unavailable {
+                gateway, sandbox, ..
+            }) => Ok((gateway, sandbox)),
+            None => Err(Refused::Rejected(Rejection::NotInRoster {
+                instance: instance.to_string(),
+            })),
+        }
+    }
+
+    fn unavailable_sandbox(
+        &self,
+        instance: &InstanceId,
+    ) -> Result<(jackin_core::GatewayName, jackin_core::SandboxName), Refused> {
+        match self.locate(instance) {
+            Some(ObservedInstance::Unavailable {
+                gateway, sandbox, ..
+            }) => Ok((gateway, sandbox)),
+            Some(ObservedInstance::Available(_)) => Err(Refused::Text(
+                "the explicit power action is only available for metadata-unavailable sandboxes"
+                    .to_owned(),
+            )),
+            None => Err(Refused::Rejected(Rejection::NotInRoster {
+                instance: instance.to_string(),
+            })),
+        }
     }
 
     pub(crate) fn pane_target(
@@ -532,10 +571,61 @@ impl Inputs {
         }
     }
 
+    async fn power_unavailable(
+        &self,
+        instance: &InstanceId,
+        action: PowerAction,
+    ) -> Result<Box<Snapshot>, String> {
+        async {
+            let (gateway, name) = self
+                .unavailable_sandbox(instance)
+                .map_err(|error| text(&error))?;
+            self.session(&gateway)
+                .map_err(|error| text(&error))?
+                .power(&name, action, &self.cancel)
+                .await
+                .map_err(|error| text(&error))?;
+            self.after_lifecycle().await.map_err(|error| text(&error))
+        }
+        .await
+    }
+
+    pub(crate) async fn power_start(&self, instance: &InstanceId) -> Msg {
+        Msg::PowerStarted {
+            instance: instance.clone(),
+            result: self.power_unavailable(instance, PowerAction::Start).await,
+        }
+    }
+
+    pub(crate) async fn power_stop(&self, instance: &InstanceId) -> Msg {
+        Msg::PowerStopped {
+            instance: instance.clone(),
+            result: self.power_unavailable(instance, PowerAction::Stop).await,
+        }
+    }
+
     pub(crate) async fn restore(&self, instance: &InstanceId) -> Msg {
         let result = async {
             let (gateway, name) = self.sandbox(instance)?;
             let session = self.session(&gateway)?;
+            match session
+                .inspect(&name, &self.cancel)
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?
+            {
+                jackin_session::SandboxInspection::Readable(view) => {
+                    session
+                        .agent_metadata(&view.summary, &self.cancel)
+                        .await
+                        .map_err(|error| Refused::Text(text(&error)))?;
+                }
+                jackin_session::SandboxInspection::Unreadable(sandbox) => {
+                    return Err(Refused::Text(format!(
+                        "agent metadata is unavailable: {}",
+                        sandbox.reason()
+                    )));
+                }
+            }
             session
                 .power(&name, PowerAction::Start, &self.cancel)
                 .await
@@ -561,7 +651,7 @@ impl Inputs {
             SUPERVISOR_WAIT,
             &self.cancel,
             || async {
-                let reading = session.supervisor_state(name).await?;
+                let reading = session.supervisor_state(name, &self.cancel).await?;
                 Ok::<_, GatewayError>(match reading {
                     SupervisorReading::Reported(SupervisorState::Waiting) => Poll::Ready(()),
                     _ => Poll::Pending,
@@ -634,10 +724,10 @@ impl Inputs {
 
     pub(crate) async fn purge(&self, instance: &InstanceId) -> Msg {
         let result = async {
-            let (gateway, name) = self.sandbox(instance)?;
+            let (gateway, name) = self.sandbox_target(instance)?;
             let config = self.config.load().await?;
             self.session(&gateway)?
-                .purge(&config, &name, PurgeMode::Guarded)
+                .purge(&config, &name, PurgeMode::Guarded, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             self.after_lifecycle().await
@@ -666,7 +756,7 @@ impl Inputs {
                 },
                 None => ConfigEdit::UnbindRoleAccount { role: name, agent },
             };
-            let saved = self.config.edit(vec![edit]).await?;
+            let saved = self.config.edit(vec![edit], &self.cancel).await?;
             Ok::<_, Refused>(self.snapshot_of(&saved).await)
         }
         .await;
@@ -684,7 +774,10 @@ impl Inputs {
     pub(crate) async fn remove_role(&self, role: &str) -> Settled {
         let result = async {
             let name = RoleName::parse(role).map_err(PersistError::from)?;
-            let saved = self.config.edit(vec![ConfigEdit::RemoveRole(name)]).await?;
+            let saved = self
+                .config
+                .edit(vec![ConfigEdit::RemoveRole(name)], &self.cancel)
+                .await?;
             Ok::<_, Refused>(self.snapshot_of(&saved).await)
         }
         .await;
@@ -722,17 +815,20 @@ impl Inputs {
             let root = self.folder(location).await?;
             let loaded = self
                 .roles
-                .load_path(&root, &CancellationToken::new())
+                .load_path(&root, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             (loaded.name().clone(), RoleSource::Path(root))
         };
         let saved = self
             .config
-            .edit(vec![ConfigEdit::AddRole {
-                name: name.clone(),
-                source,
-            }])
+            .edit(
+                vec![ConfigEdit::AddRole {
+                    name: name.clone(),
+                    source,
+                }],
+                &self.cancel,
+            )
             .await?;
         Ok((name.to_string(), self.snapshot_of(&saved).await))
     }
@@ -752,7 +848,7 @@ impl Inputs {
                 );
                 let loaded = self
                     .roles
-                    .load(config, Some(name), &anywhere, &CancellationToken::new())
+                    .load(config, Some(name), &anywhere, &self.cancel)
                     .await
                     .map_err(|error| Refused::Text(text(&error)))?;
                 Ok(loaded.root().clone())
@@ -767,7 +863,7 @@ impl Inputs {
             let root = self.role_root(&config, &name).await?;
             let loaded = self
                 .roles
-                .load_path(&root, &CancellationToken::new())
+                .load_path(&root, &self.cancel)
                 .await
                 .map_err(|error| Refused::Text(text(&error)))?;
             if let Some(entry) = config.role(&name) {

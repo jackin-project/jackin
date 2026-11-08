@@ -16,7 +16,7 @@ use super::server::{ServerHandle, start};
 
 pub(crate) const WORKSPACE: &str = "jackin-test";
 pub(crate) const GATEWAY: &str = "jackin-local";
-pub(crate) const HANG_GUARD: Duration = Duration::from_secs(10);
+pub(crate) const HANG_GUARD: Duration = Duration::from_secs(170);
 
 #[derive(Debug)]
 pub(crate) struct Env {

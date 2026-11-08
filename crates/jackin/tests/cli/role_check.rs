@@ -468,7 +468,7 @@ async fn role_check_and_load_refuse_a_policy_that_names_a_host_gateway_alias_on_
         )?;
         assert!(rig.gateway().sandboxes().is_empty());
         assert!(rig.gateway().providers().is_empty());
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
         Ok(())
     })
     .await
@@ -509,7 +509,7 @@ async fn role_check_and_load_refuse_a_dockerfile_env_that_names_the_docker_engin
         let ran = harness.run(&["load"]).await?;
         failed(&ran, ExitClass::Failure, &["line 2", "DOCKER_HOST"])?;
         assert!(rig.gateway().sandboxes().is_empty());
-        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.docker.images().is_empty());
         Ok(())
     })
     .await

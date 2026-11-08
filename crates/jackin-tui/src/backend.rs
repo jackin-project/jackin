@@ -94,6 +94,12 @@ impl JackinBackend {
             Effect::Stop { instance } => self
                 .bridge
                 .spawn(failure, async move { inputs.stop(&instance).await }),
+            Effect::PowerStart { instance } => self
+                .bridge
+                .spawn(failure, async move { inputs.power_start(&instance).await }),
+            Effect::PowerStop { instance } => self
+                .bridge
+                .spawn(failure, async move { inputs.power_stop(&instance).await }),
             Effect::Purge { instance } => self
                 .bridge
                 .spawn(failure, async move { inputs.purge(&instance).await }),
@@ -357,7 +363,11 @@ impl Backend for JackinBackend {
         }
     }
 
-    fn capsule_left(&self, _world: &World, instance: &str) {
+    fn capsule_left(
+        &self,
+        _world: &World,
+        instance: &jackin_console::domain::instance::InstanceId,
+    ) {
         self.panes.leave(instance);
     }
 

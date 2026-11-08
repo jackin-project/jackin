@@ -10,8 +10,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use jackin_core::{
     BuilderName, DockerSubcommand, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
-    ImageId, ImageTag, OutputLine, ProcessError, ProcessOutput, ProcessRunner, ProcessSpec,
-    ProcessStatus, ProcessStdin, Program, RepoPath, SecretBytes, Sha256, TerminalText,
+    ImageId, ImageTag, LocalImageRef, OutputLine, ProcessError, ProcessOutput, ProcessRunner,
+    ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath, SecretBytes, Sha256, TerminalText,
     write_atomic,
 };
 use rustix::io::Errno;
@@ -249,6 +249,74 @@ impl BuildxEngine {
         }
         self.read_id(&iid, &build.tag).await
     }
+
+    async fn inspect_local(
+        &self,
+        reference: &LocalImageRef,
+        cancel: &CancellationToken,
+    ) -> Result<Option<ImageId>, EngineError> {
+        let spec = spec(
+            DockerSubcommand::ImageInspect,
+            vec![
+                "--format".to_owned(),
+                "{{.Id}}".to_owned(),
+                reference.to_string(),
+            ],
+            ProcessStdin::Null,
+            QUERY_TIMEOUT,
+        );
+        let output = self.query(&spec, cancel).await?;
+        match output.status {
+            ProcessStatus::Exited(0) => {
+                ImageId::parse(String::from_utf8_lossy(&output.stdout).trim())
+                    .map(Some)
+                    .map_err(|_| EngineError::LocalImageInspect {
+                        reference: reference.clone(),
+                        output: combined(&output),
+                    })
+            }
+            ProcessStatus::Exited(1)
+                if mentions(&output.stderr, "No such image")
+                    || mentions(&output.stderr, "No such object") =>
+            {
+                Ok(None)
+            }
+            _ => Err(EngineError::LocalImageInspect {
+                reference: reference.clone(),
+                output: combined(&output),
+            }),
+        }
+    }
+
+    async fn hold_key(
+        &self,
+        key: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Option<FileLock>, EngineError> {
+        let dir = child(&self.work_dir, LOCKS_DIR)?;
+        self.fs.create_dir_all(&dir).await?;
+        let digest = Sha256::of(key.as_bytes());
+        let file = child(&dir, &format!("{}.lock", digest.as_str()))?;
+        let started = Instant::now();
+        loop {
+            if cancel.is_cancelled() {
+                return Err(EngineError::Cancelled { group: None });
+            }
+            match self.fs.lock(&file).await {
+                Ok(lock) => return Ok(Some(lock)),
+                Err(FsError::LockHeld(_)) => {}
+                Err(other) => return Err(other.into()),
+            }
+            if started.elapsed() >= BUILD_TIMEOUT {
+                return Ok(None);
+            }
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => return Err(EngineError::Cancelled { group: None }),
+                () = sleep(LOCK_POLL) => {}
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -411,30 +479,74 @@ impl ImageEngine for BuildxEngine {
         self.build_in(&call, build, progress, cancel).await
     }
 
+    async fn publish_local(
+        &self,
+        id: &ImageId,
+        cancel: &CancellationToken,
+    ) -> Result<LocalImageRef, EngineError> {
+        let reference = LocalImageRef::for_image(id);
+        let Some(_hold) = self.hold_key(&reference.to_string(), cancel).await? else {
+            return Err(EngineError::LocalImageLockTimeout {
+                reference: reference.clone(),
+            });
+        };
+        match self.inspect_local(&reference, cancel).await? {
+            Some(found) if found == *id => return Ok(reference),
+            Some(found) => {
+                return Err(EngineError::LocalImageMismatch {
+                    reference,
+                    expected: id.clone(),
+                    found,
+                });
+            }
+            None => {}
+        }
+        if cancel.is_cancelled() {
+            return Err(EngineError::Cancelled { group: None });
+        }
+        let output = self
+            .query(
+                &spec(
+                    DockerSubcommand::ImageTag,
+                    vec![id.to_string(), reference.to_string()],
+                    ProcessStdin::Null,
+                    QUERY_TIMEOUT,
+                ),
+                cancel,
+            )
+            .await?;
+        if output.status != ProcessStatus::Exited(0) {
+            return Err(EngineError::LocalImageTag {
+                reference,
+                id: id.clone(),
+                status: output.status,
+                output: combined(&output),
+            });
+        }
+        let Some(found) = self.inspect_local(&reference, cancel).await? else {
+            return Err(EngineError::LocalImageInspect {
+                reference,
+                output: TerminalText::sanitize(b"the published image reference is missing"),
+            });
+        };
+        if found != *id {
+            return Err(EngineError::LocalImageMismatch {
+                reference,
+                expected: id.clone(),
+                found,
+            });
+        }
+        Ok(reference)
+    }
+
     async fn hold(
         &self,
         key: &ImageTag,
         cancel: &CancellationToken,
     ) -> Result<Option<FileLock>, EngineError> {
-        let dir = child(&self.work_dir, LOCKS_DIR)?;
-        self.fs.create_dir_all(&dir).await?;
-        let digest = Sha256::of(key.to_string().as_bytes());
-        let file = child(&dir, &format!("{}.lock", digest.as_str()))?;
-        let started = Instant::now();
-        loop {
-            match self.fs.lock(&file).await {
-                Ok(lock) => return Ok(Some(lock)),
-                Err(FsError::LockHeld(_)) => {}
-                Err(other) => return Err(other.into()),
-            }
-            if started.elapsed() >= BUILD_TIMEOUT {
-                return Err(EngineError::LockTimeout { key: key.clone() });
-            }
-            tokio::select! {
-                biased;
-                () = cancel.cancelled() => return Err(EngineError::Cancelled { group: None }),
-                () = sleep(LOCK_POLL) => {}
-            }
-        }
+        self.hold_key(&key.to_string(), cancel)
+            .await?
+            .ok_or_else(|| EngineError::LockTimeout { key: key.clone() })
+            .map(Some)
     }
 }
