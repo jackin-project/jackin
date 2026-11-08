@@ -419,9 +419,12 @@ fn manifest_agents_sections_validate_and_render() -> TestResult {
     RoleManifest::parse(&format!(
         "{MIN}[agents.omp]\nmodel = \"glm-5.3\"\ninstructions = \"i.md\"\n"
     ))?;
+    RoleManifest::parse(&format!(
+        "{MIN}[agents.codex]\nmodel = \"glm-5.3\"\ninstructions = \"i.md\"\n"
+    ))?;
     assert_eq!(
         outcome(&format!(
-            "{MIN}[agents.codex]\nmodel = \"glm-5.3\"\ninstructions = \"i.md\"\n"
+            "{MIN}[agents.codex]\nmodel = \"kimi-for-coding\"\ninstructions = \"i.md\"\n"
         )),
         "invalid:agents.codex.model"
     );

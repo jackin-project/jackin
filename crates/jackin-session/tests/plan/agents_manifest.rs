@@ -54,10 +54,10 @@ async fn agent_instruction_mapping_is_checked_after_tuple_support() -> TestResul
         );
         let setup = Spec::new(role).build().await?;
         let err = setup
-            .plan(setup.request(3)?.instances(codex_and(Agent::ClaudeCode, Provider::Zai, "glm-5.3")?))
+            .plan(setup.request(3)?.instances(codex_and(Agent::ClaudeCode, Provider::Minimax, "minimax-m3")?))
             .err()
             .ok_or("expected error")?;
-        assert!(matches!(err, PlanError::TupleNotSupported { agent: Agent::ClaudeCode, provider: Provider::Zai, .. }), "{err}");
+        assert!(matches!(err, PlanError::TupleNotSupported { agent: Agent::ClaudeCode, provider: Provider::Minimax, .. }), "{err}");
         Ok(())
     })
     .await

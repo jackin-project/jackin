@@ -1025,8 +1025,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::ClaudeCode,
         Provider::Zai,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        TupleState::Supported,
+        None,
         &["glm-5.3"],
         "glm-5.3"
     ),
@@ -1065,8 +1065,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Codex,
         Provider::Zai,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        TupleState::Supported,
+        None,
         &["glm-5.3"],
         "glm-5.3"
     ),

@@ -32,7 +32,7 @@ fn blocked_and_unavailable_tuples_carry_reasons() -> TestResult {
 }
 
 #[test]
-fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
+fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
     assert_eq!(TUPLES.len(), 22);
     let unproven = "not yet proven on a real gateway";
     let no_key = "no API key on this host";
@@ -43,7 +43,8 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Kimi,
             AuthClass::StaticKey,
             "kimi-for-coding",
-            unproven,
+            TupleState::Unavailable,
+            Some(unproven),
         ),
         (
             "T14",
@@ -51,7 +52,8 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Zai,
             AuthClass::StaticKey,
             "glm-5.3",
-            unproven,
+            TupleState::Supported,
+            None,
         ),
         (
             "T15",
@@ -59,7 +61,8 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Minimax,
             AuthClass::StaticKey,
             "minimax-m3",
-            unproven,
+            TupleState::Unavailable,
+            Some(unproven),
         ),
         (
             "T16",
@@ -67,7 +70,8 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Mimo,
             AuthClass::StaticKey,
             "mimo-v2.6-pro",
-            unproven,
+            TupleState::Unavailable,
+            Some(unproven),
         ),
         (
             "T17",
@@ -75,7 +79,8 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Kimi,
             AuthClass::StaticKey,
             "kimi-for-coding",
-            unproven,
+            TupleState::Unavailable,
+            Some(unproven),
         ),
         (
             "T18",
@@ -83,7 +88,8 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Zai,
             AuthClass::StaticKey,
             "glm-5.3",
-            unproven,
+            TupleState::Supported,
+            None,
         ),
         (
             "T19",
@@ -91,7 +97,8 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Minimax,
             AuthClass::StaticKey,
             "minimax-m3",
-            unproven,
+            TupleState::Unavailable,
+            Some(unproven),
         ),
         (
             "T20",
@@ -99,7 +106,8 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Mimo,
             AuthClass::StaticKey,
             "mimo-v2.6-pro",
-            unproven,
+            TupleState::Unavailable,
+            Some(unproven),
         ),
         (
             "T21",
@@ -107,7 +115,8 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Claude,
             AuthClass::ApiKey,
             "haiku",
-            no_key,
+            TupleState::Unavailable,
+            Some(no_key),
         ),
         (
             "T22",
@@ -115,17 +124,18 @@ fn t13_through_t22_resolve_as_unavailable_with_exact_reasons() -> TestResult {
             Provider::Codex,
             AuthClass::ApiKey,
             "gpt-5.1-codex",
-            no_key,
+            TupleState::Unavailable,
+            Some(no_key),
         ),
     ];
-    for (id, agent, provider, class, model, reason) in cases {
+    for (id, agent, provider, class, model, state, reason) in cases {
         let tuple = lookup_tuple(agent, provider)?;
         assert_eq!(tuple.id, id);
         assert_eq!(tuple.agent, agent);
         assert_eq!(tuple.provider, provider);
         assert_eq!(tuple.auth_class, class);
-        assert_eq!(tuple.state, TupleState::Unavailable);
-        assert_eq!(tuple.reason, Some(reason));
+        assert_eq!(tuple.state, state);
+        assert_eq!(tuple.reason, reason);
         assert_eq!(tuple.allowed_models, [model]);
         assert_eq!(tuple.default_model, model);
         tuple.check_model(model)?;
