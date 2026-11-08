@@ -11,11 +11,36 @@ use toml::{Table, Value};
 const AUTH_MODE: &str = "chatgptAuthTokens";
 
 pub(crate) fn render_codex_config(
-    model: Option<&ModelName>,
+    tuple: &'static jackin_core::AgentTuple,
+    chatgpt_model: Option<&ModelName>,
+    model: Option<&str>,
     workdir: &SandboxPath,
 ) -> Result<String, toml::ser::Error> {
     let mut config = Table::new();
-    if let Some(model) = model {
+    if let Some(id) = tuple.codex_provider_id() {
+        config.insert(
+            "model".to_owned(),
+            Value::String(model.unwrap_or(tuple.default_model).to_owned()),
+        );
+        config.insert("model_provider".to_owned(), Value::String(id.to_owned()));
+        let mut provider = Table::new();
+        provider.insert(
+            "name".to_owned(),
+            Value::String(tuple.codex_provider_name().unwrap_or_default().to_owned()),
+        );
+        provider.insert(
+            "base_url".to_owned(),
+            Value::String(tuple.codex_base_url().unwrap_or_default().to_owned()),
+        );
+        provider.insert(
+            "env_key".to_owned(),
+            Value::String(tuple.codex_credential_env().unwrap_or_default().to_owned()),
+        );
+        provider.insert("wire_api".to_owned(), Value::String("responses".to_owned()));
+        let mut providers = Table::new();
+        providers.insert(id.to_owned(), Value::Table(provider));
+        config.insert("model_providers".to_owned(), Value::Table(providers));
+    } else if let Some(model) = chatgpt_model {
         config.insert("model".to_owned(), Value::String(model.as_str().to_owned()));
     }
     let mut trusted = Table::new();

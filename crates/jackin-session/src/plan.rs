@@ -551,7 +551,7 @@ fn agent_config_file(
     Ok(PlannedFile {
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
-        text: render_codex_config(codex_model, &spec.workdir)?,
+        text: render_codex_config(tuple, codex_model, model, &spec.workdir)?,
     })
 }
 

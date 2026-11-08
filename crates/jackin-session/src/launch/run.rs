@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, DockerCapability, DockerLabel, FileLock, FileMode, HookKind, HostPath, LabelSelector,
-    PLACEHOLDER_SCHEME, SandboxLabels, SandboxName, SandboxPath, SecretBytes, StartRequest,
-    sandbox_layout,
+    PLACEHOLDER_SCHEME, Provider, SandboxLabels, SandboxName, SandboxPath, SecretBytes,
+    StartRequest, sandbox_layout,
 };
 use jackin_image::{BuiltImage, ImageHold, ImageSource, ensure_held};
 use jackin_openshell::{
@@ -527,12 +527,11 @@ impl Run<'_> {
         const STEP: LaunchStep = LaunchStep::Credentials;
         self.enter(STEP).await;
         let files = self.plan.files();
-        let has_codex = self
-            .plan
-            .instances()
-            .iter()
-            .any(|instance| instance.agent == Agent::Codex);
-        if has_codex {
+        let chatgpt_codex =
+            self.plan.instances().iter().any(|instance| {
+                instance.agent == Agent::Codex && instance.provider == Provider::Codex
+            });
+        if chatgpt_codex {
             self.write_codex_auth(sandbox).await?;
         }
         if !files.auth.text.is_empty() {

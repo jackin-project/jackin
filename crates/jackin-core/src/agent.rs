@@ -170,6 +170,46 @@ impl AgentTuple {
         }
     }
 
+    pub fn codex_provider_id(&self) -> Option<&'static str> {
+        match self.id {
+            "T17" => Some("kimi"),
+            "T18" => Some("zai"),
+            "T19" => Some("minimax"),
+            "T20" => Some("mimo"),
+            _ => None,
+        }
+    }
+
+    pub fn codex_provider_name(&self) -> Option<&'static str> {
+        match self.id {
+            "T17" => Some("Kimi"),
+            "T18" => Some("Z.AI"),
+            "T19" => Some("MiniMax"),
+            "T20" => Some("MiMo"),
+            _ => None,
+        }
+    }
+
+    pub fn codex_credential_env(&self) -> Option<&'static str> {
+        match self.id {
+            "T17" => Some("KIMI_API_KEY"),
+            "T18" => Some("ZAI_API_KEY"),
+            "T19" => Some("MINIMAX_CODE_API_KEY"),
+            "T20" => Some("XIAOMI_TOKEN_PLAN_SGP_API_KEY"),
+            _ => None,
+        }
+    }
+
+    pub fn codex_base_url(&self) -> Option<&'static str> {
+        match self.id {
+            "T17" => Some("https://api.kimi.com/coding/v1"),
+            "T18" => Some("https://api.z.ai/api/v1"),
+            "T19" => Some("https://api.minimax.io/v1"),
+            "T20" => Some("https://token-plan-sgp.xiaomimimo.com/v1"),
+            _ => None,
+        }
+    }
+
     pub fn check_model(&'static self, model: &str) -> Result<&'static AgentTuple, CatalogError> {
         if self.allowed_models.contains(&model) {
             Ok(self)
