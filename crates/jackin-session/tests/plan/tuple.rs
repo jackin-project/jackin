@@ -12,10 +12,24 @@ async fn unavailable_tuple_is_rejected_before_image_and_codex_succeeds() -> Test
     guard(async {
         let setup = Spec::new(RoleFixture::new("sentinel")?).build().await?;
         let err = setup
-            .plan(setup.request(1)?.tuple(Agent::Omp, Provider::Kimi))
+            .plan(
+                setup
+                    .request(1)?
+                    .tuple(Agent::MinimaxCode, Provider::Minimax),
+            )
             .err()
             .ok_or("expected error")?;
-        assert!(matches!(err, PlanError::TupleNotSupported { .. }), "{err}");
+        assert!(
+            matches!(
+                &err,
+                PlanError::TupleNotSupported {
+                    agent: Agent::MinimaxCode,
+                    provider: Provider::Minimax,
+                    reason,
+                } if !reason.is_empty()
+            ),
+            "{err}"
+        );
         let plan = setup.plan(setup.request(2)?)?;
         assert_eq!(plan.account().account.as_str(), "work");
         Ok(())

@@ -77,7 +77,7 @@ fn omp_plan_names_omp_binary_and_version() -> TestResult {
         );
     }
     let tuple = lookup_tuple(Agent::Omp, Provider::Kimi)?;
-    assert_eq!(tuple.state, TupleState::Unavailable);
+    assert_eq!(tuple.state, TupleState::Supported);
     Ok(())
 }
 
