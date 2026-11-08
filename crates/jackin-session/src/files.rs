@@ -82,6 +82,30 @@ pub fn render_omp_config(
     ))
 }
 
+pub fn render_claude_config(
+    tuple: &jackin_core::AgentTuple,
+) -> Result<String, jackin_core::CatalogError> {
+    let base_url = tuple
+        .claude_base_url()
+        .ok_or(jackin_core::CatalogError::UnknownTuple {
+            agent: tuple.agent,
+            provider: tuple.provider,
+        })?;
+    let auth_env = tuple
+        .claude_auth_env()
+        .ok_or(jackin_core::CatalogError::UnknownTuple {
+            agent: tuple.agent,
+            provider: tuple.provider,
+        })?;
+    Ok(json!({
+        "env": {
+            "ANTHROPIC_BASE_URL": base_url,
+            auth_env: "placeholder",
+        }
+    })
+    .to_string())
+}
+
 pub fn grok_auth_file(issuer: &str) -> crate::plan::PlannedFile {
     let spec = jackin_core::Agent::GrokBuild.spec();
     crate::plan::PlannedFile {
@@ -99,6 +123,17 @@ pub fn omp_auth_file(tuple: &jackin_core::AgentTuple) -> crate::plan::PlannedFil
         mode: spec.auth_file.mode,
         text: format!("{{\"{provider}\": {{\"type\": \"api_key\", \"key\": \"placeholder\"}}}}"),
     }
+}
+
+pub fn claude_config_file(
+    tuple: &jackin_core::AgentTuple,
+) -> Result<crate::plan::PlannedFile, jackin_core::CatalogError> {
+    let spec = jackin_core::Agent::ClaudeCode.spec();
+    Ok(crate::plan::PlannedFile {
+        path: spec.user_config.path.clone(),
+        mode: spec.user_config.mode,
+        text: render_claude_config(tuple)?,
+    })
 }
 
 pub(crate) fn placeholder_file(spec: &jackin_core::AgentSpec) -> crate::plan::PlannedFile {

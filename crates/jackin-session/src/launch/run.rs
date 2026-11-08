@@ -564,6 +564,34 @@ impl Run<'_> {
             self.write_planned(sandbox, file).await?;
         }
         self.write_planned(sandbox, &files.codex_config).await?;
+        for instance in self
+            .plan
+            .instances()
+            .iter()
+            .filter(|instance| instance.agent == Agent::ClaudeCode)
+        {
+            if self.plan.instances().len() > 1 {
+                let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(
+                    |error| {
+                        failed(
+                            STEP,
+                            GatewayError::Protocol {
+                                message: error.to_string(),
+                            },
+                        )
+                    },
+                )?;
+                let file = crate::files::claude_config_file(tuple).map_err(|error| {
+                    failed(
+                        STEP,
+                        GatewayError::Protocol {
+                            message: error.to_string(),
+                        },
+                    )
+                })?;
+                self.write_home_auth(sandbox, instance.agent, &file).await?;
+            }
+        }
         if let Some(trust) = &files.muse_trust {
             self.write_planned(sandbox, trust).await?;
         }
