@@ -43,7 +43,11 @@ fn path(text: String) -> SandboxPath {
     SandboxPath::parse(&text).unwrap_or_else(|_| SandboxPath::from_static("/sandbox/project"))
 }
 
-pub fn plan_multi(instances: &AgentInstances, task: Option<&str>, head: HeadState) -> MultiLayout {
+pub fn plan_multi(
+    instances: &AgentInstances,
+    task: Option<&str>,
+    head: HeadState,
+) -> Result<MultiLayout, crate::plan::PlanError> {
     let lead = instances.lead_opt().map(|item| item.agent);
     let mut files = Vec::new();
     let mut directories = vec![
@@ -91,6 +95,22 @@ pub fn plan_multi(instances: &AgentInstances, task: Option<&str>, head: HeadStat
             }
         };
         directories.push(workdir.clone());
+        if !is_lead && instance.agent == Agent::Codex {
+            let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(
+                |_| crate::plan::PlanError::TupleNotSupported {
+                    agent: instance.agent,
+                    provider: instance.provider,
+                    reason: "unknown tuple".to_owned(),
+                },
+            )?;
+            if tuple.codex_provider_id().is_some() {
+                files.push(crate::files::codex_home_config_file(
+                    tuple,
+                    Some(instance.model.as_str()),
+                    &workdir,
+                )?);
+            }
+        }
         if !is_lead {
             directories.push(path(format!(
                 "/sandbox/.jackin/run/{}",
@@ -117,13 +137,13 @@ pub fn plan_multi(instances: &AgentInstances, task: Option<&str>, head: HeadStat
             model: instance.model.clone(),
         });
     }
-    MultiLayout {
+    Ok(MultiLayout {
         files,
         directories,
         homes,
         worktrees,
         exec,
-    }
+    })
 }
 
 pub fn agents_json_mismatch(planned: &AgentInstances, found: Option<&[u8]>) -> bool {

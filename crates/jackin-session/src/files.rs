@@ -11,11 +11,46 @@ use toml::{Table, Value};
 const AUTH_MODE: &str = "chatgptAuthTokens";
 
 pub(crate) fn render_codex_config(
-    model: Option<&ModelName>,
+    tuple: &'static jackin_core::AgentTuple,
+    chatgpt_model: Option<&ModelName>,
+    model: Option<&str>,
     workdir: &SandboxPath,
-) -> Result<String, toml::ser::Error> {
+) -> Result<String, crate::plan::PlanError> {
     let mut config = Table::new();
-    if let Some(model) = model {
+    if let Some(id) = tuple.codex_provider_id() {
+        let model = match model {
+            Some(model) => {
+                tuple
+                    .check_model(model)
+                    .map_err(|_| crate::plan::PlanError::TupleNotSupported {
+                        agent: tuple.agent,
+                        provider: tuple.provider,
+                        reason: format!("unknown model {model}"),
+                    })?;
+                model
+            }
+            None => tuple.default_model,
+        };
+        config.insert("model".to_owned(), Value::String(model.to_owned()));
+        config.insert("model_provider".to_owned(), Value::String(id.to_owned()));
+        let mut provider = Table::new();
+        provider.insert(
+            "name".to_owned(),
+            Value::String(tuple.codex_provider_name().unwrap_or_default().to_owned()),
+        );
+        provider.insert(
+            "base_url".to_owned(),
+            Value::String(tuple.codex_base_url().unwrap_or_default().to_owned()),
+        );
+        provider.insert(
+            "env_key".to_owned(),
+            Value::String(tuple.codex_credential_env().unwrap_or_default().to_owned()),
+        );
+        provider.insert("wire_api".to_owned(), Value::String("responses".to_owned()));
+        let mut providers = Table::new();
+        providers.insert(id.to_owned(), Value::Table(provider));
+        config.insert("model_providers".to_owned(), Value::Table(providers));
+    } else if let Some(model) = chatgpt_model {
         config.insert("model".to_owned(), Value::String(model.as_str().to_owned()));
     }
     let mut trusted = Table::new();
@@ -26,7 +61,33 @@ pub(crate) fn render_codex_config(
     let mut projects = Table::new();
     projects.insert(workdir.as_str().to_owned(), Value::Table(trusted));
     config.insert("projects".to_owned(), Value::Table(projects));
-    toml::to_string(&config)
+    Ok(toml::to_string(&config)?)
+}
+
+pub(crate) fn codex_home_config_file(
+    tuple: &'static jackin_core::AgentTuple,
+    model: Option<&str>,
+    workdir: &SandboxPath,
+) -> Result<crate::plan::PlannedFile, crate::plan::PlanError> {
+    if tuple.codex_provider_id().is_none() {
+        return Err(crate::plan::PlanError::TupleNotSupported {
+            agent: tuple.agent,
+            provider: tuple.provider,
+            reason: "no custom model provider".to_owned(),
+        });
+    }
+    let spec = jackin_core::Agent::Codex.spec();
+    let relative = spec
+        .user_config
+        .path
+        .as_str()
+        .strip_prefix("/sandbox")
+        .unwrap_or(spec.user_config.path.as_str());
+    Ok(crate::plan::PlannedFile {
+        path: SandboxPath::parse(&format!("/sandbox/.jackin/homes/codex{relative}"))?,
+        mode: spec.user_config.mode,
+        text: render_codex_config(tuple, None, model, workdir)?,
+    })
 }
 
 pub(crate) fn render_auth_json(
