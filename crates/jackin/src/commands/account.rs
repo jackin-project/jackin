@@ -163,7 +163,23 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
         Some(text) => Some(crate::cli::parse_agent(text)?),
         None => None,
     };
-    let account = Account::new(args.name.clone(), provider, source(app, &args).await?)?;
+    let credential = source(app, &args).await?;
+    if agent.is_none()
+        && matches!(
+            provider,
+            jackin_core::Provider::Claude | jackin_core::Provider::Codex
+        )
+        && matches!(
+            credential,
+            CredentialSource::Env { .. }
+                | CredentialSource::OnePassword { .. }
+                | CredentialSource::File { .. }
+                | CredentialSource::OmpHost
+        )
+    {
+        return Err(CommandError::ApiKeyNeedsAgent { provider });
+    }
+    let account = Account::new(args.name.clone(), provider, credential)?;
     let agent = agent.unwrap_or(default_agent(provider));
     match plan_account_edits_for_agent(
         &app.desk(),

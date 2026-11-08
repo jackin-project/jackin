@@ -163,14 +163,14 @@ async fn a_gateway_removal_takes_the_lock_of_a_login_account_that_appeared_while
 }
 
 #[tokio::test]
-async fn a_gateway_removal_without_login_accounts_connects_to_nothing() -> TestResult {
+async fn a_gateway_removal_without_provider_accounts_connects_to_nothing() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         let key = Account::new(
             AccountName::parse("work")?,
-            Provider::Codex,
+            Provider::Grok,
             CredentialSource::Env {
-                var: EnvName::parse("OPENAI_KEY")?,
+                var: EnvName::parse("GROK_KEY")?,
             },
         )?;
         register(&world, &key).await?;

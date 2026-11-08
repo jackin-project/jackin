@@ -176,12 +176,16 @@ async fn removing_a_login_account_forgets_its_provider_on_every_gateway() -> Tes
 }
 
 #[tokio::test]
-async fn taking_the_login_off_an_account_forgets_its_provider_on_every_gateway() -> TestResult {
+async fn taking_the_login_off_an_account_replaces_its_provider_on_every_gateway() -> TestResult {
     guard(async {
         let fleet = fleet([true, true, true]).await?;
-        let key = jackin_core::CredentialSource::Env {
-            var: jackin_core::EnvName::parse("OPENAI_KEY")?,
-        };
+        let path = jackin_core::HostPath::parse(&fleet.world.home().as_path().join("work.key"))?;
+        fleet
+            .world
+            .fs
+            .write_new(&path, b"KEY-SECRET-1", jackin_core::FileMode(0o600))
+            .await?;
+        let key = jackin_core::CredentialSource::File { path };
         fleet
             .apply(
                 &[&fleet.second, &fleet.third],
@@ -192,6 +196,15 @@ async fn taking_the_login_off_an_account_forgets_its_provider_on_every_gateway()
             )
             .await?;
         assert_eq!(fleet.holders()?, [false, false, false]);
+        let omp = ProviderName::parse("jackin-work-omp")?;
+        let on_home = fleet
+            .world
+            .gateway
+            .provider(&omp)
+            .ok_or("no omp provider on the home gateway")?;
+        assert_eq!(on_home.access_token, "KEY-SECRET-1");
+        assert!(fleet.second.provider(&omp).is_none());
+        assert!(fleet.third.provider(&omp).is_none());
         Ok(())
     })
     .await

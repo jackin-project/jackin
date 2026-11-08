@@ -5,7 +5,7 @@ use jackin::ExitClass;
 use jackin_core::{AccountName, Agent, CredentialSource, ProfileId, ProviderName};
 use jackin_testkit::{ACCESS, ACCOUNT_ID, Rig, TestResult, World, guard};
 
-use super::support::{FixedConnector, Harness, failed};
+use super::support::{FixedConnector, GATEWAY_CONFIG, Harness, failed};
 
 const GATEWAY_ONLY: &str = "default_gateway = \"fake-gateway\"
 
@@ -40,8 +40,8 @@ async fn rigged() -> Result<(Rig, Harness, String), Box<dyn std::error::Error>> 
 }
 
 #[tokio::test]
-async fn a_chatgpt_account_syncs_the_provider_first_and_other_providers_never_connect() -> TestResult
-{
+async fn a_chatgpt_account_syncs_the_provider_first_and_a_claude_api_key_needs_agent_omp()
+-> TestResult {
     guard(async {
         let (rig, mut harness, home) = rigged().await?;
         harness
@@ -74,7 +74,8 @@ async fn a_chatgpt_account_syncs_the_provider_first_and_other_providers_never_co
         harness
             .env
             .push(("CLAUDE_KEY".to_owned(), "fake-value".to_owned()));
-        harness
+        let before = harness.config_bytes()?;
+        let refused = harness
             .run(&[
                 "account",
                 "add",
@@ -84,14 +85,9 @@ async fn a_chatgpt_account_syncs_the_provider_first_and_other_providers_never_co
                 "--credential",
                 "env:CLAUDE_KEY",
             ])
-            .await?
-            .ok()?;
-        let config = harness.stored().await?;
-        let claude = config.account(&account("c")?).ok_or("no claude account")?;
-        assert!(matches!(
-            claude.credential(),
-            CredentialSource::Env { var } if var.as_str() == "CLAUDE_KEY"
-        ));
+            .await?;
+        failed(&refused, ExitClass::Usage, &["--agent omp"])?;
+        assert_eq!(harness.config_bytes()?, before);
         assert_eq!(rig.gateway().providers(), vec![provider("work")?]);
         Ok(())
     })
@@ -155,16 +151,16 @@ async fn a_mismatched_or_unreadable_account_fails_and_changes_nothing() -> TestR
 }
 
 #[tokio::test]
-async fn a_codex_account_without_a_chatgpt_login_is_stored_for_usage_and_never_reaches_the_gateway()
--> TestResult {
+async fn a_codex_api_key_account_requires_agent_omp_and_a_refusal_touches_nothing() -> TestResult {
     guard(async {
         let (rig, mut harness, _home) = rigged().await?;
         harness.connector = FixedConnector::empty();
         harness
             .env
             .push(("OPENAI_KEY".to_owned(), "fake-value".to_owned()));
+        let before = harness.config_bytes()?;
         for (name, credential) in [("api", "env:OPENAI_KEY"), ("vault", "op://Dev/OpenAI/key")] {
-            harness
+            let refused = harness
                 .run(&[
                     "account",
                     "add",
@@ -174,25 +170,13 @@ async fn a_codex_account_without_a_chatgpt_login_is_stored_for_usage_and_never_r
                     "--credential",
                     credential,
                 ])
-                .await?
-                .ok()?;
+                .await?;
+            failed(&refused, ExitClass::Usage, &["--agent omp"])?;
+            assert_eq!(harness.config_bytes()?, before, "{name}");
         }
-        let config = harness.stored().await?;
-        assert!(matches!(
-            config.account(&account("api")?).ok_or("no api")?.credential(),
-            CredentialSource::Env { var } if var.as_str() == "OPENAI_KEY"
-        ));
-        assert!(matches!(
-            config
-                .account(&account("vault")?)
-                .ok_or("no vault")?
-                .credential(),
-            CredentialSource::OnePassword { account: None, .. }
-        ));
+        assert!(harness.stored().await?.accounts().next().is_none());
         assert!(rig.gateway().providers().is_empty());
         assert!(rig.gateway().profiles().is_empty());
-        harness.run(&["account", "rm", "api"]).await?.ok()?;
-        assert!(harness.stored().await?.account(&account("api")?).is_none());
         Ok(())
     })
     .await
@@ -233,6 +217,7 @@ async fn a_credential_source_must_exist_where_the_account_is_added_and_a_refusal
     guard(async {
         let world = World::builder().build()?;
         let mut harness = Harness::new(&world);
+        harness.write_config(GATEWAY_CONFIG)?;
         let long = "A".repeat(129);
         harness.env.push((long.clone(), "fake-value".to_owned()));
         harness
@@ -272,21 +257,30 @@ async fn a_credential_source_must_exist_where_the_account_is_added_and_a_refusal
             assert!(!ran.stderr.contains(&long), "{}", ran.stderr);
             assert_eq!(harness.config_bytes()?, before, "{credential}");
         }
-        for (name, credential) in [("by-env", "env:SET_VAR"), ("by-file", "file:present.key")] {
+        harness
+            .run(&[
+                "account",
+                "add",
+                "codex",
+                "--name",
+                "by-file",
+                "--agent",
+                "omp",
+                "--credential",
+                "file:present.key",
+            ])
+            .await?
+            .ok()?;
+        assert!(
             harness
-                .run(&[
-                    "account",
-                    "add",
-                    "codex",
-                    "--name",
-                    name,
-                    "--credential",
-                    credential,
-                ])
+                .stored()
                 .await?
-                .ok()?;
-            assert!(harness.stored().await?.account(&account(name)?).is_some());
-        }
+                .account(&account("by-file")?)
+                .is_some()
+        );
+        let omp = ProviderName::for_account(&account("by-file")?, Agent::Omp);
+        let record = world.gateway.provider(&omp).ok_or("no omp provider")?;
+        assert_eq!(record.access_token, "fake-key");
         Ok(())
     })
     .await
@@ -298,6 +292,7 @@ async fn a_credential_file_link_is_followed_and_an_oversized_file_or_a_link_to_a
     guard(async {
         let world = World::builder().build()?;
         let harness = Harness::new(&world);
+        harness.write_config(GATEWAY_CONFIG)?;
         let home = world.home().as_path();
         std::fs::write(home.join("real.key"), "fake-key")?;
         std::os::unix::fs::symlink(home.join("real.key"), home.join("linked.key"))?;
@@ -318,6 +313,8 @@ async fn a_credential_file_link_is_followed_and_an_oversized_file_or_a_link_to_a
                 "codex",
                 "--name",
                 "linked",
+                "--agent",
+                "omp",
                 "--credential",
                 "file:linked.key",
             ])

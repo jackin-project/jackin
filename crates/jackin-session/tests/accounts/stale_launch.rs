@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jackin_core::{
-    AccountName, Config, ConfigEdit, CredentialSource, EnvName, GatewayName, ProviderName,
+    AccountName, Config, ConfigEdit, CredentialSource, GatewayName, HostPath, ProviderName,
 };
 use jackin_openshell::GatewayOp;
 use jackin_session::{
@@ -125,8 +125,8 @@ async fn a_launch_waiting_on_the_lock_of_a_running_account_rm_fails_and_creates_
 }
 
 #[tokio::test]
-async fn a_launch_planned_before_the_login_became_a_key_fails_and_creates_no_provider() -> TestResult
-{
+async fn a_launch_planned_before_the_account_lost_its_provider_fails_and_creates_no_provider()
+-> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         let plan = rig.plan(1)?;
@@ -134,8 +134,8 @@ async fn a_launch_planned_before_the_login_became_a_key_fails_and_creates_no_pro
             &rig,
             ConfigEdit::SetAccountCredential {
                 account: work()?,
-                credential: CredentialSource::Env {
-                    var: EnvName::parse("OPENAI_API_KEY")?,
+                credential: CredentialSource::HostLogin {
+                    path: HostPath::parse(std::path::Path::new("/home/nobody/.grok/auth.json"))?,
                 },
             },
         )
