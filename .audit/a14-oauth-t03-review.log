@@ -1,0 +1,86 @@
+# CHANGES REQUIRED
+
+The correction direction is sound, but the test plan needs four substantive changes: resolve the T03 availability gate, separate refresh material from sandbox credentials, move placeholder-stability proof to a real synthetic gateway, and tighten fail-closed helper/import behavior.
+
+## Required design corrections
+
+1. **Do not claim full `plan_launch` coverage while T03 remains unavailable.**  
+   `T03` is `TupleState::Unavailable` at `crates/jackin-core/src/agent.rs:972-979`. Both lead and secondary planning reject it at `crates/jackin-session/src/plan.rs:450-477` and `crates/jackin-session/src/plan.rs:491-515`. No `LaunchPlan` can exist for the proposed hermetic launch/executor tests without a support flip or test-only override, both of which should be rejected.
+
+   Introduce a **production public per-instance credential-file planner**, called by `plan_launch`, which returns the lead files and all secondary-home files. Test that seam directly. Prefer making the executor write this complete planned file set generically rather than adding another Grok-only branch to `credentials()`; the current split between generic planning and agent-specific executor branches enabled this defect at `crates/jackin-session/src/plan.rs:753-780` and `crates/jackin-session/src/launch/run.rs:526-607`.
+
+2. **Refresh material is not sandbox-brokered material.**  
+   The T03 profile should declare exactly one injectable credential:
+   - `access_token`, with only `GROK_SESSION_TOKEN` in `env_vars`;
+   - nested `refresh` configuration;
+   - required refresh material `client_id` and secret `refresh_token`;
+   - `discovery.credentials: [access_token]`.
+
+   Do not add a refresh-token environment variable, account ID, ID token, or refresh token to the helper JSON or sandbox. The access token belongs in provider credentials; the refresh token belongs only in `ConfigureProviderRefreshRequest.material`. The token URL belongs in the profile, never in refresh material.
+
+   Generalize `ProviderMaterial` rather than reusing `ChatgptLogin` with a dummy ChatGPT account ID (`crates/jackin-openshell/src/gateway.rs:117-128`). The Grok gRPC result must not contain an empty account-ID credential (`crates/jackin-openshell/src/grpc/provider.rs:286-303`).
+
+3. **Make helper and import failure behavior explicit.**
+   - The helper must emit exactly `access_token` and `issuer`; no `refresh_token` or client-driven expiry is needed because the gateway owns OAuth refresh.
+   - Missing, empty, literal `placeholder`, raw-looking, or non-`openshell:resolve:` session material must not produce `{"access_token":""}` or a successful helper result. Reuse typed `PlaceholderMissing`/`PlaceholderInvalid` validation before Grok files are written, and make the shell helper fail closed as well.
+   - Host import must require nonempty `key`, `refresh_token`, and `oidc_client_id`, issuer exactly `https://auth.x.ai`, and a session/OIDC auth mode. Missing material, an API-key auth mode, or a different issuer must fail before profile or provider publication.
+   - `jq` is genuinely guaranteed by `crates/jackin-image/images/construct/Dockerfile:20`.
+
+4. **Correct the endpoint and placeholder assertions.**
+   - Runtime endpoints should be exactly `cli-chat-proxy.grok.com` and `auth.x.ai`. xAI documents `x.ai` as installer/update infrastructure; with `auto_update = false`, retaining it needs separate runtime evidence. `api.x.ai` remains forbidden.
+   - Do not set `stable_placeholder: true`: OpenShell forbids combining it with gateway-managed refresh. Gateway-managed refresh already has its own stable workload-placeholder lifecycle.
+   - A fake gRPC server cannot prove placeholder stability. Hermetic tests can prove provider/update/refresh resulting state only. Same-placeholder A→B resolution belongs in `xtask e2e` against a real synthetic gateway.
+   - For secondary environment assertions, distinguish the exec overlay from inherited sandbox environment. Assert that other agents’ overlays and homes receive no Grok-specific additions; do not assert that inherited sandbox-wide opaque placeholders are absent unless environment isolation is separately redesigned.
+
+## Refined hermetic test plan and seams
+
+1. **Spec and profile**
+   - Files: `crates/jackin-core/tests/agent_table.rs`, `crates/jackin-openshell/tests/gateway/providers.rs`.
+   - Public seams: `Agent::GrokBuild.spec()`, `lookup_tuple`, `tuple_profile_asset`, `ProviderProfile::parse`, `Gateway::ensure_profile`.
+   - Positive: exact argv `["grok", "--trust"]`; configured/default model remains `grok-4.7`; only `GROK_SESSION_TOKEN` is injectable; exact runtime hosts; refresh strategy, required material, and token URL are exact.
+   - Negative: no `XAI_API_KEY`, `api.x.ai`, refresh-token env alias, account/ID-token credential, unknown URL, or `stable_placeholder`.
+   - Keep an explicit assertion that T03 remains unavailable.
+
+2. **Active config and credential-file planning**
+   - Files: `crates/jackin-session/src/plan.rs`, `crates/jackin-session/src/files.rs`, new Grok cases under `crates/jackin-session/tests/plan/`.
+   - Seam: the new public per-instance planner used by `plan_launch`, not the currently unused `grok_auth_file`.
+   - Positive: parsed TOML has `cli.auto_update = false`, `models.default = "grok-4.7"`, `[auth] auth_provider_command`, and `disable_api_key_auth = true`; the command uses guaranteed `jq` and issuer `https://auth.x.ai`.
+   - Negative: planned output contains no generic Grok `auth.json`, no `XAI_API_KEY`, no literal-placeholder credential, and no refresh token. Invalid/missing placeholder cases return typed errors without writes or secret-bearing events.
+   - Remove the obsolete direct `grok_auth_file` assertion at `crates/jackin-session/tests/accounts/host_login.rs:145-149`.
+
+3. **Secondary Grok**
+   - Files: `crates/jackin-session/tests/launch/multi_instance.rs`, `crates/jackin-session/tests/launch/instance_identity.rs`.
+   - Positive: the per-instance planner emits the Grok config at `/sandbox/.jackin/homes/grok/.grok/config.toml`, with mode `0600`, using the secondary instance’s model.
+   - Negative: no Grok file appears in other agents’ homes and no generic Grok auth file is planned.
+   - Through `Session::attach`, using a manually seeded managed sandbox as existing tests do, inspect `AttachedTerminal.session.kind()`: secondary argv includes `--trust`, `HOME` is the Grok secondary home, and the exec overlay contains no additional Grok credential entries. Current attach construction is at `crates/jackin-session/src/attach.rs:443-462`.
+
+4. **Host import and gateway refresh configuration**
+   - Files: `crates/jackin-session/tests/accounts/host_login.rs`, `crates/jackin-session/tests/accounts/sync.rs`, `crates/jackin-openshell/tests/gateway/providers.rs`.
+   - Public seams: `read_grok_login`, `Session::sync_account`, `Gateway::put_provider`.
+   - Positive: synthetic OIDC login imports access token, refresh token, and client ID; provider credentials contain only `GROK_SESSION_TOKEN`; refresh material contains exactly `client_id` and `refresh_token`, with only the latter marked secret; updates converge on the same provider and refresh key.
+   - Negative: missing/empty access token, refresh token, or client ID; wrong issuer; API-key auth mode; malformed JSON. Each fails with no profile/provider publication. Assert unique synthetic access and refresh values never appear in errors, debug output, config, events, or sandbox files.
+   - Assert refresh material contains neither `token_url` nor `token_uri`. The embedded profile alone owns the verified URL.
+
+5. **Regression and red/green**
+   - Run existing planner, policy, account, `jackin-start`, and gateway provider suites as controls.
+   - Independently demonstrate red/green for every behavior using:
+     - old generic `placeholder_file` routing;
+     - missing `--trust`;
+     - `XAI_API_KEY` or `api.x.ai` wrong-direction mutants;
+     - omitted `disable_api_key_auth`;
+     - helper accepting empty/literal/raw material;
+     - missing secondary-home file;
+     - static-key fallback or missing refresh material;
+     - refresh URL supplied through material instead of the profile.
+   - Retain each test only after an independent reviewer sees the targeted red and restored green.
+
+## Verified upstream facts
+
+- The vendor’s [stable channel](https://x.ai/cli/stable) reports **`1.0.77`**.
+- The verified vendor refresh URL is **`https://auth.x.ai/oauth2/token`**, returned as `token_endpoint` by [xAI OIDC discovery](https://auth.x.ai/.well-known/openid-configuration). Do not use `/oauth/token` or an `api.x.ai` URL.
+- xAI’s pinned-revision [authentication guide](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md) documents JSON `access_token` and `issuer`, helper reruns with `GROK_AUTH_EXPIRED=1`, and session precedence over `XAI_API_KEY`.
+- The pinned [external provider implementation](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-login/src/external_auth.rs) confirms that JSON becomes an external-session `GrokAuth`; the [model](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-login/src/model.rs) confirms that the xAI issuer makes it first-party session auth.
+- The pinned [configuration source](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-login/src/config.rs) confirms `auth_provider_command`, `disable_api_key_auth`, and `XAI_OAUTH2_ISSUER = "https://auth.x.ai"`. The [project-rules guide](https://github.com/xai-org/grok-build/blob/2bdd1d6a6369de0e8c68132ea4539e9abd9e14a8/crates/codegen/xai-grok-pager/docs/user-guide/12-project-rules.md) documents `--trust`.
+- OpenShell’s [profile documentation](https://github.com/NVIDIA/OpenShell/blob/v0.1.7/docs/how-it-works/providers/profiles.mdx) confirms profile-owned token URLs, gateway-managed stable placeholders, and the incompatibility of `stable_placeholder` with gateway refresh.
+
+No further repository exploration is needed. There is no public Git tag/release mapping establishing source parity with the 1.0.77 binary, so these source facts do not replace the pinned synthetic and subscription `xtask e2e` gates. Those gates must still prove helper login and headless rerun, gateway A→B refresh with an unchanged placeholder, effective `grok-4.7`, trusted supervised launch, bounded prompt completion, subscription attribution, host usability, and second-sandbox isolation before any support flip.

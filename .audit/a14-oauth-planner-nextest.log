@@ -1,0 +1,104 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized] target(s) in 2.21s
+────────────
+ Nextest run ID fdb5dea2-44c7-49e9-892f-4a0dce08de98 with nextest profile: default
+    Starting 94 tests across 1 binary (6 tests skipped)
+        PASS [   0.027s] ( 1/94) jackin-session::plan claude::t02_subscription_credential_names_one_oauth_env
+        PASS [   0.026s] ( 2/94) jackin-session::plan claude::claude_config_pins_only_the_base_url_and_no_auth_env
+        PASS [   0.037s] ( 3/94) jackin-session::plan claude::claude_base_url_host_matches_the_tuple_profile_endpoint_host
+        PASS [   0.039s] ( 4/94) jackin-session::plan claude::t02_subscription_settings_carry_no_base_url_and_no_auth_env
+        PASS [   0.037s] ( 5/94) jackin-session::plan claude::t15_accepts_uppercase_model_validation_but_refuses_launch_while_unproven
+        PASS [   0.057s] ( 6/94) jackin-session::plan codex::codex_base_url_host_matches_the_tuple_profile_endpoint_host
+        PASS [   0.091s] ( 7/94) jackin-session::plan codex::codex_home_config_takes_the_explicit_model_and_refuses_an_unknown_one
+        PASS [   0.113s] ( 8/94) jackin-session::plan codex::codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none
+        PASS [   0.036s] ( 9/94) jackin-session::plan codex::t17_refuses_launch_while_unproven
+        PASS [   0.092s] (10/94) jackin-session::plan codex::t19_accepts_uppercase_model_validation_but_refuses_launch_while_unproven
+        PASS [   1.072s] (11/94) jackin-session::plan allowed_roles::a_workspace_without_a_roles_list_allows_every_role
+        PASS [   1.069s] (12/94) jackin-session::plan codex::plan_model_selection_allows_explicit_refuses_outside_and_defaults_without_one
+        PASS [   1.180s] (13/94) jackin-session::plan allowed_roles::a_role_outside_the_allowed_roles_is_refused_naming_the_workspace_and_the_role
+        PASS [   1.193s] (14/94) jackin-session::plan allowed_roles::a_role_inside_the_allowed_roles_launches
+        PASS [   0.037s] (15/94) jackin-session::plan error_text::env_file_and_work_state_problems_print_as_sentences
+        PASS [   0.028s] (16/94) jackin-session::plan error_text::launch_and_project_steps_print_as_words
+        PASS [   0.031s] (17/94) jackin-session::plan error_text::launch_errors_name_sandboxes_phases_durations_and_launches_plainly
+        PASS [   0.025s] (18/94) jackin-session::plan error_text::lists_in_errors_join_with_commas_and_an_empty_list_reads_none
+        PASS [   0.021s] (19/94) jackin-session::plan error_text::role_errors_name_the_directory_the_file_and_leave_the_cause_to_the_source
+        PASS [   0.018s] (20/94) jackin-session::plan error_text::string_fields_of_session_errors_are_shown_without_control_characters
+        PASS [   1.877s] (21/94) jackin-session::plan codex::t01_lead_config_stays_trust_only_with_no_model_provider
+        PASS [   1.118s] (22/94) jackin-session::plan env::env_values_follow_flags_defaults_and_prompts
+        PASS [   2.180s] (23/94) jackin-session::plan docker::enabled_docker_without_an_engine_is_a_typed_plan_error
+        PASS [   2.635s] (24/94) jackin-session::plan agents_manifest::agent_instruction_mapping_is_checked_after_tuple_support
+        PASS [   0.046s] (25/94) jackin-session::plan native::kimi_config_renders_the_vendor_model_and_provider_shape
+        PASS [   0.042s] (26/94) jackin-session::plan native::mimo_config_renders_the_vendor_json_at_the_mimocode_path
+        PASS [   0.026s] (27/94) jackin-session::plan omp::omp_auth_file_holds_exactly_one_account_at_mode_0600
+        PASS [   0.039s] (28/94) jackin-session::plan omp::omp_config_names_each_tuples_provider_env_model_and_one_placeholder
+        PASS [   0.048s] (29/94) jackin-session::plan omp::omp_config_unknown_model_is_a_typed_error
+        PASS [   0.073s] (30/94) jackin-session::plan omp_credentials::omp_api_key_comes_from_the_selected_providers_sqlite_row
+        PASS [   2.204s] (31/94) jackin-session::plan docker::the_image_tag_follows_the_capability_and_never_the_engine_port_certificate_directory_or_source
+        PASS [   1.142s] (32/94) jackin-session::plan identity::the_plan_derives_name_labels_and_draft_from_the_launch_id
+        PASS [   2.257s] (33/94) jackin-session::plan errors::plan_errors_are_typed_for_unsupported_modes_unknown_gateways_and_unregistered_projects
+        PASS [   1.296s] (34/94) jackin-session::plan image_request::the_image_request_follows_gateway_role_and_workspace_inputs
+        PASS [   3.995s] (35/94) jackin-session::plan allowed_roles::a_refused_role_wins_over_an_account_that_cannot_launch
+        PASS [   0.356s] (36/94) jackin-session::plan role_engine::every_refused_rule_is_listed_in_key_order_each_with_its_own_alias
+        PASS [   4.250s] (37/94) jackin-session::plan docker::docker_is_off_by_default_and_adds_exactly_one_rule_one_layer_and_one_warning_when_enabled
+        PASS [   1.848s] (38/94) jackin-session::plan policy_root::role_granted_root_read_only_reaches_supported_launches_once
+        PASS [   1.173s] (39/94) jackin-session::plan role_engine::a_trailing_dot_a_tld_wildcard_and_a_later_label_wildcard_are_refused_for_another_reason
+        PASS [   3.734s] (40/94) jackin-session::plan docker::plan_image_and_plan_launch_agree_on_the_layer_for_the_four_flag_pairs
+        PASS [   1.990s] (41/94) jackin-session::plan policy_root::supported_tuples_launch_with_the_role_read_only_and_no_added_root
+        PASS [   3.639s] (42/94) jackin-session::plan files::planned_files_carry_the_trust_entry_the_model_and_the_env_with_exact_paths_and_modes
+        PASS [   1.071s] (43/94) jackin-session::plan roles::a_dirty_role_digest_tells_a_link_from_a_file_with_the_same_bytes
+        PASS [   1.623s] (44/94) jackin-session::plan roles::a_dirty_role_digest_follows_the_target_text_of_a_link
+        PASS [   1.174s] (45/94) jackin-session::plan roles::context_files_skip_deleted_tracked_files_and_submodule_paths
+        PASS [   1.508s] (46/94) jackin-session::plan roles::a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway
+        PASS [   3.393s] (47/94) jackin-session::plan roles::a_dirty_role_digest_follows_the_executable_bit_and_no_other_mode_bit
+        PASS [   8.109s] (48/94) jackin-session::plan accounts::the_plan_selects_the_account_by_the_d26_order_and_names_the_missing_binding
+        PASS [   1.704s] (49/94) jackin-session::plan roles::role_findings_apply_the_context_limits_that_load_applies
+        PASS [   1.296s] (50/94) jackin-session::plan roles_cancel::a_cancel_at_an_inspection_call_ends_load_path
+        PASS [   4.163s] (51/94) jackin-session::plan roles::a_path_that_leaves_the_repository_or_is_not_a_regular_file_rejects_the_role
+        PASS [   5.429s] (52/94) jackin-session::plan roles::a_dirty_role_tree_hashes_tracked_and_untracked_files_but_not_ignored_ones
+        PASS [   4.390s] (53/94) jackin-session::plan roles::load_refuses_a_bypass_host_or_a_weaker_landlock_mode
+        PASS [   3.432s] (54/94) jackin-session::plan roles::role_findings_come_in_one_pass_and_load_path_returns_the_first
+        PASS [   7.271s] (55/94) jackin-session::plan role_engine::a_role_policy_that_names_a_host_gateway_alias_is_refused_with_the_alias_found
+        PASS [   5.436s] (56/94) jackin-session::plan roles::a_role_policy_that_overlaps_a_codex_host_is_rejected_before_any_plan
+        PASS [   7.237s] (57/94) jackin-session::plan role_engine::hosts_that_only_look_like_an_alias_are_accepted
+        PASS [   4.021s] (58/94) jackin-session::plan roles_cancel::a_cancel_at_clone_fetch_or_checkout_ends_the_load_and_moves_nothing
+        PASS [   1.567s] (59/94) jackin-session::plan roles_hidden::an_unchanged_or_ignored_role_file_keeps_the_image_key
+        PASS [   3.807s] (60/94) jackin-session::plan roles_git::a_git_role_loads_the_new_commit_when_origin_moves_a_tag
+        PASS [   0.667s] (61/94) jackin-session::plan roles_inputs::a_fifo_as_a_role_input_is_refused_at_once
+        PASS [   0.523s] (62/94) jackin-session::plan roles_inputs::a_manifest_name_that_differs_from_the_configured_role_is_refused
+        PASS [   3.052s] (63/94) jackin-session::plan roles_git::a_git_role_whose_branch_was_deleted_at_the_origin_no_longer_loads
+        PASS [   0.601s] (64/94) jackin-session::plan roles_inputs::a_role_input_swapped_for_a_symlink_after_it_was_checked_never_yields_outside_bytes
+        PASS [   0.973s] (65/94) jackin-session::plan roles_inputs::a_role_directory_replaced_by_another_during_the_load_is_refused
+        PASS [   3.358s] (66/94) jackin-session::plan roles_git::a_git_role_whose_tag_was_deleted_at_the_origin_no_longer_loads
+        PASS [   5.262s] (67/94) jackin-session::plan roles_git::a_git_role_follows_a_non_default_branch_and_its_remote_updates
+        PASS [   0.846s] (68/94) jackin-session::plan roles_inputs::a_tracked_file_whose_name_is_not_utf8_is_refused
+        PASS [   3.584s] (69/94) jackin-session::plan roles_git::a_git_role_without_a_revision_follows_the_default_branch_as_it_moves
+        PASS [   0.877s] (70/94) jackin-session::plan roles_inputs::a_tracked_path_below_a_directory_swapped_for_a_link_is_refused
+        PASS [   5.895s] (71/94) jackin-session::plan roles_git::a_git_role_loads_a_tag_and_a_commit_and_refuses_an_unknown_revision
+        PASS [   0.773s] (72/94) jackin-session::plan roles_inputs::the_staged_dockerfile_is_the_validated_dockerfile_even_when_the_file_changes_after_the_check
+        PASS [   3.555s] (73/94) jackin-session::plan roles_inputs::a_cached_role_follows_the_default_branch_when_the_origin_renames_it
+        PASS [   0.746s] (74/94) jackin-session::plan roles_load::a_role_outside_the_allowed_roles_is_refused_by_name
+        PASS [   1.344s] (75/94) jackin-session::plan roles_inputs::the_bytes_the_image_build_stages_are_the_bytes_the_image_key_covers
+        PASS [   4.649s] (76/94) jackin-session::plan roles_hidden::a_change_the_git_index_hides_still_changes_the_image_key
+        PASS [   0.806s] (77/94) jackin-session::plan roles_load::load_refuses_an_ambiguous_or_unknown_role_selection
+        PASS [   1.679s] (78/94) jackin-session::plan roles_load::a_git_role_outside_the_allowed_roles_is_refused_before_anything_is_checked_out
+        PASS [   2.088s] (79/94) jackin-session::plan roles_inputs::the_role_cache_is_private_to_the_operator
+        PASS [   0.020s] (80/94) jackin-session::plan scoped_env::a_manifest_default_that_is_a_reference_or_a_placeholder_is_refused_without_echoing_it
+        PASS [   0.027s] (81/94) jackin-session::plan scoped_env::a_scoped_value_answers_the_question_but_a_declared_name_without_one_is_still_asked
+        PASS [   0.026s] (82/94) jackin-session::plan scoped_env::a_value_comes_from_the_nearest_scope_and_a_scoped_name_needs_no_declaration
+        PASS [   0.029s] (83/94) jackin-session::plan scoped_env::an_answer_for_an_undeclared_name_is_still_refused_even_when_a_scope_sets_it
+        PASS [   1.843s] (84/94) jackin-session::plan roles_load::load_picks_the_explicit_role_then_the_workspace_default_then_the_only_role
+        PASS [   3.716s] (85/94) jackin-session::plan roles_inputs::a_role_file_over_the_size_limit_is_refused
+        PASS [   0.930s] (86/94) jackin-session::plan scoped_env::the_launch_plan_reads_the_three_scopes_of_the_config_into_the_env_file
+        PASS [   2.187s] (87/94) jackin-session::plan roles_race::a_load_cancelled_while_it_waits_for_the_cache_lock_changes_nothing
+        PASS [   1.072s] (88/94) jackin-session::plan tuple::unavailable_tuple_is_rejected_before_image_and_codex_succeeds
+        PASS [   2.818s] (89/94) jackin-session::plan roles_load::the_only_role_fallback_counts_only_the_roles_the_workspace_allows
+        PASS [   3.111s] (90/94) jackin-session::plan roles_race::concurrent_loads_of_one_role_each_read_the_revision_they_asked_for
+        PASS [   2.866s] (91/94) jackin-session::plan roles_race::two_first_loads_of_one_role_both_succeed
+        PASS [   3.883s] (92/94) jackin-session::plan roles_url::a_changed_role_url_drops_the_tags_and_branches_of_the_old_origin
+        PASS [   5.490s] (93/94) jackin-session::plan roles_url::a_changed_role_url_never_reuses_the_old_origins_checkout
+        PASS [  11.249s] (94/94) jackin-session::plan roles_path::loading_a_path_role_runs_no_program_named_by_its_repository_config
+────────────
+     Summary [  26.040s] 94 tests run: 94 passed, 6 skipped

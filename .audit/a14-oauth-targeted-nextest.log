@@ -1,0 +1,212 @@
+   Compiling jackin-openshell v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-openshell)
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-tui)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-testkit)
+   Compiling jackin-core v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-core)
+    Finished `test` profile [unoptimized] target(s) in 41.63s
+────────────
+ Nextest run ID b3c1108c-1da2-46a9-8bf3-1511c48053b1 with nextest profile: default
+    Starting 199 tests across 5 binaries
+        PASS [   0.019s] (  1/199) jackin-core::agent_table codex_row_launches_codex_with_the_d04_command_and_paths
+        PASS [   0.026s] (  2/199) jackin-core::agent_table public_agent_pins_match_the_current_stable_release_matrix
+        PASS [   0.026s] (  3/199) jackin-core::agent_table agent_all_rows_match_their_provider
+        PASS [   0.031s] (  4/199) jackin-core::catalog blocked_and_unavailable_tuples_carry_reasons
+        PASS [   0.029s] (  5/199) jackin-core::catalog availability_states_and_reasons_are_exact
+        PASS [   0.033s] (  6/199) jackin-core::agent_table codex_profiles_are_chatgpt_only_and_match_their_asset
+        PASS [   0.028s] (  7/199) jackin-core::agent_table codex_row_reserves_every_credential_env_name
+        PASS [   0.036s] (  8/199) jackin-core::agent_table codex_install_matches_the_compatibility_lock_and_covers_each_platform_once
+        PASS [   0.020s] (  9/199) jackin-core::catalog changed_model_declarations_agree_between_specs_and_tuples
+        PASS [   0.033s] ( 10/199) jackin-core::agent_table grok_row_uses_the_session_alias_and_trusted_launch_without_flipping_availability
+        PASS [   0.021s] ( 11/199) jackin-core::catalog codex_tuple_is_supported
+        PASS [   0.046s] ( 12/199) jackin-core::agent_table provider_all_lists_each_provider_once_with_one_spelling
+        PASS [   0.027s] ( 13/199) jackin-core::catalog each_provider_lists_exactly_its_catalog_tuples
+        PASS [   0.022s] ( 14/199) jackin-core::catalog model_acceptance_is_exact_and_independent_of_launch_availability
+        PASS [   0.024s] ( 15/199) jackin-core::catalog grok_build_with_kimi_is_a_typed_error
+        PASS [   0.026s] ( 16/199) jackin-core::catalog t13_through_t22_resolve_with_exact_states_and_reasons
+        PASS [   0.025s] ( 17/199) jackin-core::catalog unknown_model_is_a_typed_error_and_default_model_is_accepted
+        PASS [   0.077s] ( 18/199) jackin-openshell::gateway attach::main_attach_on_an_absent_sandbox_is_not_found_at_session_and_relay_steps
+        PASS [   0.080s] ( 19/199) jackin-openshell::gateway attach::relay_open_errors_are_reported_with_their_cause_not_as_a_dropped_ssh_stream
+        PASS [   0.271s] ( 20/199) jackin-openshell::gateway attach_ssh::output_and_notices_keep_the_order_the_supervisor_sent_them
+        PASS [   0.304s] ( 21/199) jackin-openshell::gateway attach_ssh::dropping_the_open_future_during_the_handshake_revokes_the_token
+        PASS [   0.059s] ( 22/199) jackin-openshell::gateway connect::a_token_cancelled_before_connect_opens_no_connection
+        PASS [   0.069s] ( 23/199) jackin-openshell::gateway connect::cancelling_while_the_tls_handshake_waits_ends_connect_with_cancelled
+        PASS [   0.087s] ( 24/199) jackin-openshell::gateway connect::mtls_connect_health_and_debug_hygiene
+        PASS [   0.109s] ( 25/199) jackin-openshell::gateway connect::unreachable_and_untrusted_servers_map_to_unreachable_and_tls
+        PASS [   1.069s] ( 26/199) jackin-openshell::gateway attach_ssh::the_host_key_pin_accepts_the_advertised_key_and_refuses_every_other
+        PASS [   1.388s] ( 27/199) jackin-openshell::gateway attach_ssh::exit_statuses_and_ctrl_c_under_a_read_only_lease_are_reported_as_sent
+        PASS [   1.465s] ( 28/199) jackin-openshell::gateway attach_ssh::the_lease_follows_the_supervisor_notices_and_the_input_mode
+        PASS [   1.586s] ( 29/199) jackin-openshell::gateway attach_ssh::a_viewer_never_sends_input_but_still_ends_on_the_detach_keys
+        PASS [   1.648s] ( 30/199) jackin-openshell::gateway attach_ssh::the_session_token_is_revoked_once_on_every_way_a_session_ends
+        PASS [   1.389s] ( 31/199) jackin-openshell::gateway contract::a_gateway_that_finds_a_missing_file_and_fails_later_fails_the_size_check
+        PASS [   1.954s] ( 32/199) jackin-openshell::gateway attach_ssh::the_repaint_nudge_follows_tokio_time_for_every_shared_case
+        PASS [   0.925s] ( 33/199) jackin-openshell::gateway contract::a_sandbox_that_never_reaches_ready_is_deleted_by_the_check
+        PASS [   2.092s] ( 34/199) jackin-openshell::gateway attach_ssh::the_detach_keys_end_the_session_without_an_exit_status
+        PASS [   1.461s] ( 35/199) jackin-openshell::gateway contract::an_ended_main_process_attach_that_is_refused_passes_the_check_and_one_that_grants_the_lease_fails_it
+        PASS [   3.720s] ( 36/199) jackin-openshell::gateway attach_ssh::the_repaint_nudge_resizes_one_row_less_and_back_after_the_delay
+        PASS [   4.337s] ( 37/199) jackin-openshell::gateway contract::an_upload_to_an_absent_sandbox_passes_the_check_when_the_cli_fails_and_fails_it_when_the_cli_succeeds
+        PASS [   6.533s] ( 38/199) jackin-openshell::gateway contract::an_upload_through_a_symlinked_parent_passes_the_check_only_when_the_cli_exits_1_with_the_tar_text
+        PASS [   1.225s] ( 39/199) jackin-openshell::gateway contract::shell_exit_code_cannot_hang_the_run
+        PASS [   0.109s] ( 40/199) jackin-openshell::gateway contract::terminal_group_reports_exactly_the_published_checks_and_a_refused_attach_fails_the_attach_checks
+        PASS [   8.970s] ( 41/199) jackin-openshell::gateway contract::a_server_that_deletes_an_attached_provider_fails_only_that_check_and_leaves_nothing
+        PASS [   0.021s] ( 42/199) jackin-openshell::gateway discovery::registered_gateways_failure_modes
+        PASS [   0.016s] ( 43/199) jackin-openshell::gateway discovery::registered_gateways_parses_the_cli_json_without_connecting
+        PASS [   0.082s] ( 44/199) jackin-openshell::gateway discovery::resolve_gateway_refuses_a_fifo_or_an_oversized_certificate_file
+        PASS [   0.021s] ( 45/199) jackin-openshell::gateway discovery::resolve_gateway_refuses_a_plaintext_or_non_mtls_entry
+        PASS [   7.130s] ( 46/199) jackin-openshell::gateway contract::an_upload_to_a_stopped_sandbox_passes_the_check_only_when_the_cli_refuses_it_as_not_ready
+        PASS [   0.024s] ( 47/199) jackin-openshell::gateway discovery::resolve_gateway_refuses_an_https_endpoint_with_credentials_without_echoing_them
+        PASS [   0.024s] ( 48/199) jackin-openshell::gateway discovery::resolve_gateway_selects_by_name_reads_exactly_three_files_and_writes_nothing
+        PASS [   8.695s] ( 49/199) jackin-openshell::gateway contract::a_server_that_refuses_the_second_delete_of_a_provider_fails_the_put_and_delete_check
+        PASS [   0.189s] ( 50/199) jackin-openshell::gateway download_bound::an_operator_cancel_while_the_file_streams_stops_the_cli_and_removes_the_staging_directory
+        PASS [   0.222s] ( 51/199) jackin-openshell::gateway ended::a_main_attach_on_an_ended_sandbox_is_refused_and_on_a_stopped_one_not_ready
+        PASS [   9.511s] ( 52/199) jackin-openshell::gateway contract::a_server_that_deletes_a_provider_while_refusing_the_delete_fails_only_the_presence_assertion
+        PASS [   9.184s] ( 53/199) jackin-openshell::gateway contract::a_server_that_drops_the_environment_fails_only_the_environment_check
+        PASS [   0.026s] ( 54/199) jackin-openshell::gateway error_text::a_missing_thing_is_named_as_a_word_and_its_name
+        PASS [   0.017s] ( 55/199) jackin-openshell::gateway error_text::an_authentication_read_from_the_registry_is_shown_without_control_characters
+        PASS [   0.018s] ( 56/199) jackin-openshell::gateway error_text::operations_phases_and_durations_print_as_words
+        PASS [   9.347s] ( 57/199) jackin-openshell::gateway contract::a_server_that_drops_labels_fails_the_labels_check_and_runs_the_rest
+        PASS [   0.015s] ( 58/199) jackin-openshell::gateway error_text::policy_and_registry_text_fields_are_shown_without_control_characters
+        PASS [   0.014s] ( 59/199) jackin-openshell::gateway error_text::text_supplied_by_the_gateway_is_shown_without_control_characters
+        PASS [   0.017s] ( 60/199) jackin-openshell::gateway error_text::registry_and_policy_errors_name_gateways_paths_and_violations_plainly
+        PASS [   0.167s] ( 61/199) jackin-openshell::gateway ended::stop_and_start_on_an_ended_main_process
+        PASS [   0.080s] ( 62/199) jackin-openshell::gateway exec::a_failed_write_names_the_path_and_the_exit_code_and_carries_no_sandbox_output
+        PASS [  10.560s] ( 63/199) jackin-openshell::gateway contract::a_leftover_profile_and_provider_from_an_aborted_run_do_not_fail_the_core_group
+        PASS [   0.211s] ( 64/199) jackin-openshell::gateway exec::program_timeout_and_cancel_stop_the_remote_process
+        PASS [   1.222s] ( 65/199) jackin-openshell::gateway contract::the_download_checks_pass_on_the_adapter_when_the_sandbox_answers_like_the_real_tools
+        PASS [   0.275s] ( 66/199) jackin-openshell::gateway exec::concurrent_writes_to_one_target_each_succeed_and_the_last_rename_wins
+        PASS [   0.629s] ( 67/199) jackin-openshell::gateway download_bound::a_file_that_grows_after_the_size_check_is_stopped_while_it_streams_and_leaves_nothing
+        PASS [   0.220s] ( 68/199) jackin-openshell::gateway exec::run_program_returns_exit_code_stdout_stderr_and_forwards_stdin
+        PASS [   0.086s] ( 69/199) jackin-openshell::gateway exec::shell_terminal_stream_shape_and_raw_output
+        PASS [   0.311s] ( 70/199) jackin-openshell::gateway exec::read_files_returns_one_entry_per_path_and_none_for_missing
+        PASS [   0.143s] ( 71/199) jackin-openshell::gateway exec::shell_failure_refusal_and_drop
+        PASS [   0.083s] ( 72/199) jackin-openshell::gateway exec::write_file_refuses_a_target_outside_the_sandbox_home_without_running_anything
+        PASS [   0.495s] ( 73/199) jackin-openshell::gateway exec::interrupted_write_leaves_the_old_file_intact
+        PASS [   0.118s] ( 74/199) jackin-openshell::gateway providers::claude_and_grok_profiles_have_exact_oauth_refresh_contracts
+        PASS [   0.247s] ( 75/199) jackin-openshell::gateway exec::touch_on_success_creates_the_marker_only_after_exit_zero_in_one_exec
+        PASS [   0.185s] ( 76/199) jackin-openshell::gateway exec::write_file_to_a_name_near_the_filesystem_limit_succeeds
+        PASS [   0.160s] ( 77/199) jackin-openshell::gateway providers::delete_profile_removes_only_the_configured_workspaces_profile_and_is_idempotent
+        PASS [   0.087s] ( 78/199) jackin-openshell::gateway providers::ensure_profile_stale_version_keeps_the_concurrent_writers_content
+        PASS [   9.734s] ( 79/199) jackin-openshell::gateway contract::a_server_that_refuses_stop_on_a_stopped_sandbox_fails_only_that_check
+        PASS [   0.165s] ( 80/199) jackin-openshell::gateway providers::ensure_profile_imports_then_reports_unchanged_then_updates
+        PASS [   0.211s] ( 81/199) jackin-openshell::gateway providers::ensure_profile_converges_when_a_concurrent_writer_imports_first
+        PASS [   0.174s] ( 82/199) jackin-openshell::gateway providers::put_provider_converges_when_a_concurrent_writer_creates_first
+        PASS [   0.204s] ( 83/199) jackin-openshell::gateway providers::provider_state_delete_and_missing_profile
+        PASS [   0.470s] ( 84/199) jackin-openshell::gateway exec::write_file_applies_mode_and_exact_bytes_and_keeps_content_off_argv
+        PASS [   0.171s] ( 85/199) jackin-openshell::gateway providers::put_provider_converts_between_oauth_and_static_without_stale_refresh
+        PASS [   0.456s] ( 86/199) jackin-openshell::gateway exec::write_file_refuses_a_symlinked_directory_or_a_directory_target_and_replaces_a_link_leaf
+        PASS [   0.111s] ( 87/199) jackin-openshell::gateway sandboxes::a_completed_sandbox_without_an_exit_code_is_a_protocol_error
+        PASS [   0.086s] ( 88/199) jackin-openshell::gateway sandboxes::a_listed_record_that_cannot_be_read_fails_the_listing_instead_of_vanishing
+        PASS [   0.128s] ( 89/199) jackin-openshell::gateway sandboxes::create_then_find_by_launch_label_round_trips_the_server_state
+        PASS [   0.233s] ( 90/199) jackin-openshell::gateway providers::put_provider_omits_empty_optional_oauth_state
+        PASS [   0.191s] ( 91/199) jackin-openshell::gateway sandboxes::a_sandbox_the_server_never_stamped_has_no_creation_time
+        PASS [   0.394s] ( 92/199) jackin-openshell::gateway providers::put_provider_creates_updates_and_configures_refresh
+        PASS [   0.238s] ( 93/199) jackin-openshell::gateway sandboxes::a_managed_sandbox_with_an_invalid_label_is_listed_without_that_label
+        PASS [   0.259s] ( 94/199) jackin-openshell::gateway sandboxes::delete_removes_only_the_configured_workspaces_sandbox
+        PASS [   0.328s] ( 95/199) jackin-openshell::gateway sandboxes::find_follows_every_page_and_managed_hides_foreign_sandboxes
+        PASS [   0.304s] ( 96/199) jackin-openshell::gateway sandboxes::label_selector_text_is_accepted_by_the_gateway_grammar
+        PASS [   0.147s] ( 97/199) jackin-openshell::gateway sandboxes::power_actions_move_the_server_phase_and_return_the_view
+        PASS [   0.272s] ( 98/199) jackin-openshell::gateway sandboxes::phase_and_exit_code_map_to_the_documented_jackin_phase
+        PASS [   0.269s] ( 99/199) jackin-openshell::gateway sandboxes::policy_round_trips_through_create_and_detail
+        PASS [   0.208s] (100/199) jackin-openshell::gateway status::absent_sandbox_is_not_found_on_every_exec_entry_point
+        PASS [   0.065s] (101/199) jackin-openshell::gateway status::invalid_argument_field_comes_from_the_error_details
+        PASS [   0.030s] (102/199) jackin-openshell::gateway status::is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted
+        PASS [   0.132s] (103/199) jackin-openshell::gateway status::call_timeouts_report_the_operation_and_the_configured_duration
+        PASS [   0.371s] (104/199) jackin-openshell::gateway sandboxes::maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gateway_rules
+        PASS [   0.277s] (105/199) jackin-openshell::gateway sandboxes::provisioning_failure_condition_is_reported_with_a_sanitized_message
+        PASS [   0.216s] (106/199) jackin-openshell::gateway status::failed_precondition_is_not_ready_only_when_the_phase_cannot_exec
+        PASS [   0.209s] (107/199) jackin-openshell::gateway status::supervisor_relay_failure_names_the_sandbox_and_stays_retryable
+        PASS [   0.314s] (108/199) jackin-openshell::gateway status::every_grpc_code_maps_to_its_gateway_error
+        PASS [   0.028s] (109/199) jackin-openshell::tuple_policy every_tuple_profile_parses_with_exact_asset_hosts_env_binary_and_refresh
+        PASS [   0.028s] (110/199) jackin-openshell::tuple_policy role_rule_matching_provider_host_is_rejected
+        PASS [   0.020s] (111/199) jackin-openshell::tuple_policy t01_profile_is_codex_only_with_refresh
+        PASS [   0.141s] (112/199) jackin-openshell::gateway transfer::upload_tree_and_upload_file_run_one_scoped_call_each_and_compare_the_file_digest
+        PASS [   0.023s] (113/199) jackin-openshell::tuple_policy t02_role_rules_matching_provider_hosts_are_rejected
+        PASS [   0.020s] (114/199) jackin-openshell::tuple_policy t02_spec_permits_supervised_claude_hosts
+        PASS [   0.033s] (115/199) jackin-openshell::tuple_policy t09_profile_is_omp_zai_only_without_refresh
+        PASS [   0.272s] (116/199) jackin-openshell::gateway transfer::download_names_the_targets_and_verifies_the_digest
+        PASS [   0.358s] (117/199) jackin-openshell::gateway transfer::a_failed_download_never_touches_the_destination_leaves_no_temp_and_the_size_limit_is_inclusive
+        PASS [   0.360s] (118/199) jackin-openshell::gateway transfer::failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_digest
+        PASS [   0.186s] (119/199) jackin-session::accounts edit::accounts_without_a_provider_credential_never_need_the_gateway
+        PASS [   0.245s] (120/199) jackin-session::accounts edit::a_chatgpt_login_account_gets_its_provider_before_it_reaches_the_config
+        PASS [   0.266s] (121/199) jackin-session::accounts edit::an_invalid_edit_is_refused_while_planning_and_nothing_is_written
+        PASS [   0.300s] (122/199) jackin-session::accounts edit::removing_a_login_account_deletes_its_provider_first_and_a_refusal_keeps_the_config
+        PASS [   0.654s] (123/199) jackin-openshell::gateway transfer::the_upload_env_makes_the_cli_git_ignore_a_hostile_project_config_and_keep_the_user_excludes
+        PASS [   0.472s] (124/199) jackin-session::accounts edit::a_new_credential_re_syncs_forgets_or_creates_the_provider_as_its_kind_changes
+        PASS [   0.349s] (125/199) jackin-session::accounts edit::the_plan_needs_the_gateway_exactly_when_an_account_gains_changes_or_loses_a_provider
+        PASS [   0.137s] (126/199) jackin-session::accounts failed_add::an_add_whose_provider_write_fails_after_it_landed_leaves_no_provider
+        PASS [   0.179s] (127/199) jackin-session::accounts failed_add::a_renewal_whose_provider_write_fails_keeps_the_provider_of_the_account_in_the_config
+        PASS [   0.122s] (128/199) jackin-session::accounts failed_add::an_add_whose_provider_write_fails_before_it_landed_leaves_nothing_and_reports_that_error
+        PASS [   0.083s] (129/199) jackin-session::accounts host_login::claude_and_antigravity_host_login_accounts_plan_gateway_sync
+        PASS [   0.146s] (130/199) jackin-session::accounts host_login::antigravity_keychain_sync_creates_t05_provider
+        PASS [   0.264s] (131/199) jackin-session::accounts host_login::claude_file_sync_creates_t02_provider_with_oauth_refresh
+        PASS [   0.176s] (132/199) jackin-session::accounts host_login::claude_keychain_sync_creates_provider_when_no_file_login_exists
+        PASS [   0.118s] (133/199) jackin-session::accounts host_login::claude_reader_taxonomy_is_typed_and_secret_free
+        PASS [   0.381s] (134/199) jackin-session::accounts host_login::grok_accounts_are_isolated_in_providers_and_launch_plan_names
+        PASS [   0.118s] (135/199) jackin-session::accounts host_login::grok_reader_taxonomy_is_typed_and_secret_free
+        PASS [   5.864s] (136/199) jackin-openshell::gateway contract::core_group_passes_against_grpc_gateway_on_the_in_process_server
+        PASS [   0.882s] (137/199) jackin-session::accounts host_login::claude_keychain_error_taxonomy_is_typed_and_secret_free
+        PASS [   0.121s] (138/199) jackin-session::accounts host_login::muse_host_login_account_plans_gateway_sync
+        PASS [   0.234s] (139/199) jackin-session::accounts host_login::grok_sync_creates_t03_provider_with_oauth_refresh
+        PASS [   1.203s] (140/199) jackin-session::accounts host_login::antigravity_keychain_error_taxonomy_is_typed_and_secret_free
+        PASS [   3.475s] (141/199) jackin-openshell::gateway exec::collected_output_is_capped_per_stream
+        PASS [   0.276s] (142/199) jackin-session::accounts host_login::muse_keychain_sync_creates_provider_with_access_token_only
+        PASS [   0.081s] (143/199) jackin-session::accounts host_login::muse_metadata_reader
+        PASS [   1.898s] (144/199) jackin-session::accounts failed_add::a_launch_that_cannot_remove_the_provider_it_wrote_reports_both_failures
+        PASS [   0.607s] (145/199) jackin-session::accounts host_login::muse_metadata_preconditions_never_run_keychain
+        PASS [   0.438s] (146/199) jackin-session::accounts locked_view::a_gateway_removal_takes_the_lock_of_a_login_account_that_appeared_while_it_waited
+        PASS [   0.250s] (147/199) jackin-session::accounts locked_view::a_gateway_removal_without_provider_accounts_connects_to_nothing
+        PASS [   2.267s] (148/199) jackin-session::accounts failed_add::a_launch_whose_provider_write_fails_after_it_landed_leaves_no_provider
+        PASS [   0.042s] (149/199) jackin-session::accounts login::a_missing_unreadable_or_malformed_login_is_a_typed_secret_free_error
+        PASS [   0.020s] (150/199) jackin-session::accounts login::a_real_shaped_codex_login_parses_into_secrets_and_the_account_id_without_leaking
+        PASS [   0.165s] (151/199) jackin-session::accounts login::a_linked_login_is_read_and_a_pipe_or_oversized_login_is_refused_without_reading_it
+        PASS [   0.367s] (152/199) jackin-session::accounts locked_view::an_account_edit_chooses_offline_or_gateway_from_the_config_it_reads_under_the_lock
+        PASS [   1.353s] (153/199) jackin-session::accounts host_login::muse_keychain_error_taxonomy_is_typed_and_secret_free
+        PASS [   0.348s] (154/199) jackin-session::accounts peers::a_new_login_account_needs_only_the_home_gateway
+        PASS [   0.531s] (155/199) jackin-session::accounts peers::a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached
+        PASS [   0.214s] (156/199) jackin-session::accounts peers::a_plan_that_must_reach_a_gateway_it_cannot_reach_changes_nothing
+        PASS [   0.238s] (157/199) jackin-session::accounts peers::a_refusal_on_a_later_gateway_restores_the_providers_it_removed_and_adds_none
+        PASS [   0.307s] (158/199) jackin-session::accounts peers::a_refusal_on_a_peer_names_that_gateway_and_a_retry_finishes_the_removal
+        PASS [   0.603s] (159/199) jackin-session::accounts peers::a_peer_that_fails_a_renewal_leaves_every_gateway_on_the_old_material
+        PASS [   0.297s] (160/199) jackin-session::accounts peers::a_renewed_login_reaches_every_gateway_that_holds_the_provider_and_no_other
+        PASS [   2.051s] (161/199) jackin-session::accounts host_login::grok_sync_rejects_incomplete_or_wrong_grants_before_publication
+        PASS [   0.238s] (162/199) jackin-session::accounts peers::a_restore_that_cannot_read_the_old_login_names_the_account_and_the_gateway
+        PASS [   0.135s] (163/199) jackin-session::accounts peers::an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publishes_nothing
+        PASS [   0.191s] (164/199) jackin-session::accounts peers::gateways_connected_before_a_gateway_was_added_are_refused_and_nothing_changes
+        PASS [   0.190s] (165/199) jackin-session::accounts peers::removing_a_login_account_forgets_its_provider_on_every_gateway
+        PASS [   0.211s] (166/199) jackin-session::accounts race::a_failed_config_write_after_a_changed_credential_restores_the_old_material
+        PASS [   0.267s] (167/199) jackin-session::accounts race::a_config_write_that_committed_before_its_directory_sync_failed_is_not_undone
+        PASS [   0.292s] (168/199) jackin-session::accounts peers::taking_the_login_off_an_account_replaces_its_provider_on_every_gateway
+        PASS [   0.168s] (169/199) jackin-session::accounts race::a_failed_config_write_after_a_gateway_rm_deleted_the_providers_restores_them
+        PASS [   0.234s] (170/199) jackin-session::accounts race::a_failed_config_write_keeps_a_provider_that_existed_before_the_edit
+        PASS [   0.160s] (171/199) jackin-session::accounts race::a_failed_config_write_removes_the_provider_that_this_add_created
+        PASS [   0.163s] (172/199) jackin-session::accounts race::a_provider_delete_that_landed_and_then_failed_is_restored
+        PASS [   0.261s] (173/199) jackin-session::accounts race::two_adds_of_one_name_leave_the_config_and_the_provider_on_the_winning_login
+        PASS [   0.232s] (174/199) jackin-session::accounts renewal::a_changed_key_file_without_a_sync_keeps_the_old_gateway_material
+        PASS [   0.194s] (175/199) jackin-session::accounts renewal::a_peer_put_provider_failure_rolls_every_holding_gateway_back_to_the_old_key
+        PASS [   4.561s] (176/199) jackin-openshell::gateway transfer::a_group_fault_rides_through_each_transfer_and_a_missing_one_stays_missing
+        PASS [   0.206s] (177/199) jackin-session::accounts renewal::an_account_for_a_provider_without_an_omp_id_publishes_no_provider
+        PASS [   0.309s] (178/199) jackin-session::accounts renewal::a_renewed_file_credential_publishes_the_new_key_and_keeps_the_old_file
+        PASS [   0.336s] (179/199) jackin-session::accounts renewal::a_renewal_to_a_file_with_the_same_key_keeps_one_equal_record
+        PASS [   3.591s] (180/199) jackin-session::accounts host_login::claude_sync_rejects_incomplete_grants_before_publication
+        PASS [   2.441s] (181/199) jackin-session::accounts lock::the_lock_is_per_account_and_a_cancelled_wait_ends_the_launch
+        PASS [   0.268s] (182/199) jackin-session::accounts sync::a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_right_material
+        PASS [   0.366s] (183/199) jackin-session::accounts sync::a_failed_sync_stops_at_the_failing_call_and_a_retry_converges
+        PASS [   0.168s] (184/199) jackin-session::accounts sync::a_kimi_file_key_sync_for_kimi_code_creates_the_t08_provider
+        PASS [   0.146s] (185/199) jackin-session::accounts sync::a_login_of_another_chatgpt_account_is_refused_and_writes_nothing
+        PASS [   0.202s] (186/199) jackin-session::accounts sync::a_mimo_file_key_sync_for_mimo_code_creates_the_t07_provider
+        PASS [   0.157s] (187/199) jackin-session::accounts sync::an_omp_account_with_a_missing_key_fails_without_a_secret
+        PASS [   0.130s] (188/199) jackin-session::accounts sync::an_omp_static_key_account_creates_the_tuple_provider_with_only_the_key
+        PASS [   0.458s] (189/199) jackin-session::accounts sync::sync_account_refuses_an_account_the_config_no_longer_holds_as_given_and_writes_nothing
+        PASS [   0.638s] (190/199) jackin-session::accounts sync::mode_a_is_unsupported_and_other_providers_are_host_only_and_neither_touches_the_gateway
+        PASS [   1.740s] (191/199) jackin-session::accounts stale_launch::a_launch_planned_before_account_rm_fails_and_creates_no_provider
+        PASS [   0.183s] (192/199) jackin-session::accounts sync::the_same_kimi_account_synced_for_omp_creates_the_omp_provider
+        PASS [   2.199s] (193/199) jackin-session::accounts stale_launch::a_launch_planned_before_the_account_lost_its_provider_fails_and_creates_no_provider
+        PASS [   2.351s] (194/199) jackin-session::accounts stale_launch::a_launch_planned_before_gateway_rm_fails_and_creates_no_provider
+        PASS [   2.283s] (195/199) jackin-session::accounts stale_launch::a_launch_waiting_on_the_lock_of_a_running_gateway_rm_fails_and_creates_no_provider
+        PASS [   2.410s] (196/199) jackin-session::accounts stale_launch::a_launch_waiting_on_the_lock_of_a_running_account_rm_fails_and_creates_no_provider
+        PASS [   4.951s] (197/199) jackin-session::accounts lock::a_launch_waits_for_a_peer_that_syncs_the_account_and_keeps_the_rotated_token
+        PASS [   4.636s] (198/199) jackin-session::accounts stale_launch::an_edit_that_leaves_the_account_and_the_gateway_alone_does_not_stop_a_planned_launch
+        PASS [  15.353s] (199/199) jackin-session::accounts edit::after_any_two_account_edits_the_gateway_holds_a_provider_for_exactly_the_provider_accounts
+────────────
+     Summary [  27.891s] 199 tests run: 199 passed, 0 skipped
+mbx[cache]: 0 hits, 0 misses, 9 not looked up, 9 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: found 515.6 GiB logical of target/ whose checkouts left long ago. the estate has been settled.

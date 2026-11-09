@@ -689,7 +689,7 @@ static CLAUDE_CODE_SPEC: AgentSpec = agent_spec!(
     ],
     AuthClass::BlockedVendor,
     &["api.anthropic.com", "platform.claude.com"],
-    &["ANTHROPIC_API_KEY"],
+    &["CLAUDE_CODE_OAUTH_TOKEN"],
     &["haiku"],
     "haiku",
     &["CLAUDE_CONFIG_DIR"]
@@ -701,7 +701,7 @@ static GROK_BUILD_SPEC: AgentSpec = agent_spec!(
     "/sandbox/.grok",
     "/sandbox/.grok/auth.json",
     "/sandbox/.grok/config.toml",
-    &["grok"],
+    &["grok", "--trust"],
     "1.0.77",
     "https://x.ai/cli/grok-{version}-linux-{target}",
     &[
@@ -717,8 +717,8 @@ static GROK_BUILD_SPEC: AgentSpec = agent_spec!(
         }
     ],
     AuthClass::OAuth,
-    &["x.ai", "cli-chat-proxy.grok.com", "auth.x.ai"],
-    &["XAI_API_KEY"],
+    &["cli-chat-proxy.grok.com", "auth.x.ai"],
+    &["GROK_SESSION_TOKEN"],
     &["grok-4.7"],
     "grok-4.7",
     &["GROK_HOME"]

@@ -1,0 +1,150 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling aws-lc-sys v0.47.0
+   Compiling psm v0.1.32
+   Compiling libsqlite3-sys v0.39.1
+   Compiling regex-automata v0.4.18
+   Compiling regex v1.13.1
+   Compiling alacritty_terminal v0.26.0
+   Compiling fancy-regex v0.11.0
+   Compiling stacker v0.1.25
+   Compiling pest_stack_guard v1.0.1
+   Compiling rusqlite v0.41.1
+   Compiling pest v2.9.5
+   Compiling pest_meta v2.9.5
+   Compiling pest_generator v2.9.5
+   Compiling pest_derive v2.9.5
+   Compiling termwiz v0.23.3
+   Compiling aws-lc-rs v1.19.0
+   Compiling rustls v0.23.46
+   Compiling rustls-webpki v0.103.16
+   Compiling rcgen v0.14.10
+   Compiling jsonwebtoken v10.4.0
+   Compiling russh v0.65.1
+   Compiling tokio-rustls v0.26.6
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling tungstenite v0.26.2
+   Compiling hyper-rustls v0.27.10
+   Compiling tonic v0.14.9
+   Compiling tokio-tungstenite v0.26.2
+   Compiling reqwest v0.13.5
+   Compiling reqwest v0.12.28
+   Compiling openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling tonic-prost v0.14.9
+   Compiling tonic-types v0.14.9
+   Compiling openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-core)
+   Compiling openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling oauth2 v5.0.0
+   Compiling jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-openrouter)
+   Compiling jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-claude)
+   Compiling jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-gemini)
+   Compiling jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-minimax)
+   Compiling jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-zai)
+   Compiling jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-codex)
+   Compiling jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-grok)
+   Compiling jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-opencode)
+   Compiling jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-cursor)
+   Compiling openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-kimi)
+   Compiling openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage)
+   Compiling jackin-openshell v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-openshell)
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-tui)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-testkit)
+   Compiling jackin-image v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-image)
+    Finished `test` profile [unoptimized] target(s) in 43.86s
+────────────
+ Nextest run ID 19c3c991-60b4-4a88-bb94-a22f8c8301cd with nextest profile: default
+    Starting 116 tests across 2 binaries
+        PASS [   1.611s] (  1/116) jackin-image::jackin_start jackin_start_record_describes_the_environment_codex_really_receives
+        PASS [   1.623s] (  2/116) jackin-image::jackin_start jackin_start_names_credential_variables_by_the_shared_rule
+        PASS [   1.624s] (  3/116) jackin-image::jackin_start jackin_start_calls_no_program_by_bare_name_after_sourcing_the_env_file
+        PASS [   1.656s] (  4/116) jackin-image::jackin_start a_stale_record_is_removed_when_the_classifier_fails
+        PASS [   2.065s] (  5/116) jackin-image::jackin_start a_failed_record_write_does_not_stop_the_supervisor
+        PASS [   2.087s] (  6/116) jackin-image::jackin_start jackin_start_gives_codex_every_env_value_byte_for_byte
+        PASS [   2.149s] (  7/116) jackin-image::jackin_start jackin_start_record_never_holds_a_value
+        PASS [   0.063s] (  8/116) jackin-image::jackin_start launch_command_name_resolves_to_the_agent_binary_path
+        PASS [   0.775s] (  9/116) jackin-image::jackin_start jackin_start_reports_an_unreadable_env_file_and_accepts_a_missing_one
+        PASS [   1.232s] ( 10/116) jackin-image::jackin_start jackin_start_replaces_the_whole_record_at_each_attempt
+        PASS [   3.274s] ( 11/116) jackin-image::jackin_start jackin_start_accepts_only_the_successor_of_the_last_attempt
+        PASS [   1.284s] ( 12/116) jackin-image::jackin_start jackin_start_runs_the_agent_by_absolute_path_whatever_path_the_env_file_sets
+        PASS [   2.106s] ( 13/116) jackin-image::jackin_start jackin_start_records_credential_variable_names_and_kinds_of_both_environments
+        PASS [   0.025s] ( 14/116) jackin-session::plan claude::claude_base_url_host_matches_the_tuple_profile_endpoint_host
+        PASS [   0.048s] ( 15/116) jackin-session::plan claude::claude_config_pins_only_the_base_url_and_no_auth_env
+        PASS [   0.027s] ( 16/116) jackin-session::plan claude::t02_subscription_credential_names_one_oauth_env
+        PASS [   0.026s] ( 17/116) jackin-session::plan claude::t02_subscription_settings_carry_no_base_url_and_no_auth_env
+        PASS [   0.027s] ( 18/116) jackin-session::plan claude::t15_accepts_uppercase_model_validation_but_refuses_launch_while_unproven
+        PASS [   0.125s] ( 19/116) jackin-session::plan codex::codex_base_url_host_matches_the_tuple_profile_endpoint_host
+        PASS [   0.069s] ( 20/116) jackin-session::plan codex::codex_home_config_takes_the_explicit_model_and_refuses_an_unknown_one
+        PASS [   0.049s] ( 21/116) jackin-session::plan codex::codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none
+        PASS [   1.353s] ( 22/116) jackin-session::plan allowed_roles::a_role_inside_the_allowed_roles_launches
+        PASS [   1.306s] ( 23/116) jackin-session::plan allowed_roles::a_role_outside_the_allowed_roles_is_refused_naming_the_workspace_and_the_role
+        PASS [   0.125s] ( 24/116) jackin-session::plan codex::t17_refuses_launch_while_unproven
+        PASS [   0.113s] ( 25/116) jackin-session::plan codex::t19_accepts_uppercase_model_validation_but_refuses_launch_while_unproven
+        PASS [   1.612s] ( 26/116) jackin-session::plan allowed_roles::a_workspace_without_a_roles_list_allows_every_role
+        PASS [   3.261s] ( 27/116) jackin-session::plan agents_manifest::agent_instruction_mapping_is_checked_after_tuple_support
+        PASS [   4.148s] ( 28/116) jackin-image::jackin_start jackin_start_refuses_every_malformed_env_file_and_runs_nothing
+        PASS [   2.255s] ( 29/116) jackin-session::plan codex::plan_model_selection_allows_explicit_refuses_outside_and_defaults_without_one
+        PASS [   3.422s] ( 30/116) jackin-session::plan env::env_values_follow_flags_defaults_and_prompts
+        PASS [   5.588s] ( 31/116) jackin-session::plan codex::t01_lead_config_stays_trust_only_with_no_model_provider
+        PASS [   0.112s] ( 32/116) jackin-session::plan error_text::env_file_and_work_state_problems_print_as_sentences
+        PASS [   0.108s] ( 33/116) jackin-session::plan error_text::launch_errors_name_sandboxes_phases_durations_and_launches_plainly
+        PASS [   0.239s] ( 34/116) jackin-session::plan error_text::launch_and_project_steps_print_as_words
+        PASS [   0.198s] ( 35/116) jackin-session::plan error_text::role_errors_name_the_directory_the_file_and_leave_the_cause_to_the_source
+        PASS [   5.324s] ( 36/116) jackin-session::plan docker::enabled_docker_without_an_engine_is_a_typed_plan_error
+        PASS [   0.381s] ( 37/116) jackin-session::plan error_text::lists_in_errors_join_with_commas_and_an_empty_list_reads_none
+        PASS [   0.249s] ( 38/116) jackin-session::plan error_text::string_fields_of_session_errors_are_shown_without_control_characters
+        PASS [   9.298s] ( 39/116) jackin-session::plan allowed_roles::a_refused_role_wins_over_an_account_that_cannot_launch
+        PASS [   6.589s] ( 40/116) jackin-session::plan docker::the_image_tag_follows_the_capability_and_never_the_engine_port_certificate_directory_or_source
+        PASS [   0.284s] ( 41/116) jackin-session::plan native::kimi_config_renders_the_vendor_model_and_provider_shape
+        PASS [   0.241s] ( 42/116) jackin-session::plan native::mimo_config_renders_the_vendor_json_at_the_mimocode_path
+        PASS [   0.228s] ( 43/116) jackin-session::plan omp::omp_auth_file_holds_exactly_one_account_at_mode_0600
+        PASS [   0.191s] ( 44/116) jackin-session::plan omp::omp_config_names_each_tuples_provider_env_model_and_one_placeholder
+        PASS [   2.932s] ( 45/116) jackin-session::plan identity::the_plan_derives_name_labels_and_draft_from_the_launch_id
+        FAIL [   0.177s] ( 46/116) jackin-session::plan omp::omp_config_sets_the_exact_plan_base_url_per_tuple
+  stdout ───
+
+    running 1 test
+    test omp::omp_config_sets_the_exact_plan_base_url_per_tuple ... FAILED
+
+    failures:
+
+    failures:
+        omp::omp_config_sets_the_exact_plan_base_url_per_tuple
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 99 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'omp::omp_config_sets_the_exact_plan_base_url_per_tuple' (90798395) panicked at crates/jackin-session/tests/plan/omp.rs:51:26:
+    providers:
+      zai:
+        baseUrl: https://api.z.ai/api/anthropic
+        apiKey: placeholder
+    credentialEnv: ZAI_API_KEY
+    modelRoles:
+      default: zai/glm-5.3
+
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 9 tests still running
+        PASS [   0.340s] ( 47/116) jackin-session::plan omp::omp_config_unknown_model_is_a_typed_error
+        PASS [   3.596s] ( 48/116) jackin-session::plan image_request::the_image_request_follows_gateway_role_and_workspace_inputs
+        PASS [   6.338s] ( 49/116) jackin-session::plan errors::plan_errors_are_typed_for_unsupported_modes_unknown_gateways_and_unregistered_projects
+        PASS [  11.818s] ( 50/116) jackin-session::plan docker::docker_is_off_by_default_and_adds_exactly_one_rule_one_layer_and_one_warning_when_enabled
+        PASS [  12.047s] ( 51/116) jackin-session::plan docker::plan_image_and_plan_launch_agree_on_the_layer_for_the_four_flag_pairs
+        PASS [  18.068s] ( 52/116) jackin-image::jackin_start a_role_variable_name_cannot_change_what_the_supervisor_does
+        PASS [  16.764s] ( 53/116) jackin-session::plan accounts::the_plan_selects_the_account_by_the_d26_order_and_names_the_missing_binding
+        PASS [   9.530s] ( 54/116) jackin-session::plan files::planned_files_carry_the_trust_entry_the_model_and_the_env_with_exact_paths_and_modes
+        SLOW [> 60.000s] (───────) jackin-image::jackin_start jackin_start_applies_only_the_bytes_it_validated
+        PASS [ 108.585s] ( 55/116) jackin-image::jackin_start jackin_start_applies_only_the_bytes_it_validated
+────────────
+     Summary [ 108.587s] 55/116 tests run: 54 passed (1 slow), 1 failed, 0 skipped
+        FAIL [   0.177s] ( 46/116) jackin-session::plan omp::omp_config_sets_the_exact_plan_base_url_per_tuple
+warning: 61/116 tests were not run due to test failure (run with --no-fail-fast to run all tests, or run with --max-fail)
+error: test run failed
+mbx[cache]: 57 hits, 0 misses, 7 not looked up, 7 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 20h 50m of compiling skipped across 4855 builds. rustc suspects nothing.

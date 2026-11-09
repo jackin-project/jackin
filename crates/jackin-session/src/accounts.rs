@@ -815,7 +815,20 @@ async fn sync_grok_login(
     path: &HostPath,
 ) -> Result<AccountSync, AccountError> {
     let login = read_grok_login(host.fs.as_ref(), path).await?;
-    publish_static_login(gateway, account, agent, login.session_key).await
+    publish_login(
+        gateway,
+        account,
+        agent,
+        ProviderMaterial::OAuth2RefreshToken {
+            access_token: login.access_token,
+            refresh_token: login.refresh_token,
+            client_id: login.client_id,
+            scopes: Vec::new(),
+            expires_at: None,
+            additional_credentials: BTreeMap::new(),
+        },
+    )
+    .await
 }
 
 async fn publish_static_login(
@@ -823,6 +836,15 @@ async fn publish_static_login(
     account: &Account,
     agent: Agent,
     key: jackin_core::Secret,
+) -> Result<AccountSync, AccountError> {
+    publish_login(gateway, account, agent, ProviderMaterial::StaticKey { key }).await
+}
+
+async fn publish_login(
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    material: ProviderMaterial,
 ) -> Result<AccountSync, AccountError> {
     let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
         AccountError::MissingCredential {
@@ -850,7 +872,7 @@ async fn publish_static_login(
                 id_token: "",
                 token_url: "",
             },
-            material: ProviderMaterial::StaticKey { key },
+            material,
         })
         .await?;
     Ok(AccountSync::ProviderReady {
@@ -927,7 +949,7 @@ async fn sync_claude_login(
     path: &HostPath,
     cancel: &CancellationToken,
 ) -> Result<AccountSync, AccountError> {
-    let key = read_claude_host_login(host, path, cancel)
+    let login = read_claude_host_login(host, path, cancel)
         .await
         .map_err(|error| match error {
             CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
@@ -937,7 +959,20 @@ async fn sync_claude_login(
                 account: account.name().clone(),
             },
         })?;
-    publish_static_login(gateway, account, agent, key).await
+    publish_login(
+        gateway,
+        account,
+        agent,
+        ProviderMaterial::OAuth2RefreshToken {
+            access_token: login.access_token,
+            refresh_token: login.refresh_token,
+            client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e".to_owned(),
+            scopes: login.scopes,
+            expires_at: Some(login.expires_at),
+            additional_credentials: BTreeMap::new(),
+        },
+    )
+    .await
 }
 
 async fn sync_antigravity_login(
@@ -1060,11 +1095,16 @@ async fn sync_login(
             name: name.clone(),
             profile: profile.id,
             keys: spec.codex.openshell.keys,
-            material: ProviderMaterial::ChatgptLogin {
+            material: ProviderMaterial::OAuth2RefreshToken {
                 access_token: login.access_token,
                 refresh_token: login.refresh_token,
                 client_id: login.client_id,
-                chatgpt_account_id: login.account_id,
+                scopes: Vec::new(),
+                expires_at: None,
+                additional_credentials: BTreeMap::from([(
+                    spec.codex.openshell.keys.account_id.to_owned(),
+                    login.account_id.to_string(),
+                )]),
             },
         })
         .await?;

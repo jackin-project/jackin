@@ -339,6 +339,9 @@ impl Fake {
                 strategy: request.strategy,
                 material: request.material,
                 secret_keys: request.secret_material_keys,
+                expiration_time: request
+                    .expiration_time
+                    .map(|timestamp| (timestamp.seconds, timestamp.nanos)),
             },
         );
         Ok(Response::new(ConfigureProviderRefreshResponse::default()))

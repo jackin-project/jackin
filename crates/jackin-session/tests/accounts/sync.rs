@@ -56,11 +56,18 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
         let record = world.gateway.provider(&name).ok_or("no provider record")?;
         assert_eq!(record.profile.as_str(), "codex");
         assert_eq!(record.access_key, "CODEX_AUTH_ACCESS_TOKEN");
-        assert_eq!(record.account_id_key, "CODEX_AUTH_ACCOUNT_ID");
         assert_eq!(record.access_token, ACCESS);
         assert_eq!(record.refresh_token, REFRESH);
         assert_eq!(record.client_id, CLIENT);
-        assert_eq!(record.chatgpt_account_id.as_str(), ACCOUNT_ID);
+        assert!(record.scopes.is_empty());
+        assert_eq!(record.expires_at, None);
+        assert_eq!(
+            record.additional_credentials,
+            std::collections::BTreeMap::from([(
+                "CODEX_AUTH_ACCOUNT_ID".to_owned(),
+                ACCOUNT_ID.to_owned()
+            )])
+        );
 
         let second = world
             .session

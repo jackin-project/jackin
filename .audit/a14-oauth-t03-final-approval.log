@@ -1,0 +1,5 @@
+APPROVED
+
+The revised plan satisfies the review protocol: public production seams, no T03 support flip or test-only override, coordinated generic planning/execution, strict credential and refresh boundaries, fail-closed behavior, verified vendor endpoints, precise secondary assertions, and real-gateway proofs confined to `xtask e2e`.
+
+Proceed with independent red/green verification for every new behavior and retain the existing regression controls.

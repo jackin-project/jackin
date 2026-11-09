@@ -1,0 +1,203 @@
+# APPROVED
+
+The plan covers the confirmed class-O defects without introducing a Claude-specific alternative to the approved T03 architecture. The following exact seams, assertions, and mutants should be used during implementation and independent red/green review.
+
+## 1. Complete Claude grant import
+
+**Production seams and files**
+
+- `read_claude_login` in `crates/jackin-session/src/credentials.rs:224`
+- `parse_claude_keychain_secret` in `crates/jackin-session/src/credentials.rs:236`
+- `read_claude_host_login` in `crates/jackin-session/src/credentials.rs:289`
+- These are publicly re-exported through `crates/jackin-session/src/lib.rs:44`.
+- Tests belong in `crates/jackin-session/tests/accounts/host_login.rs`.
+
+Both import routes must return the same complete `ClaudeLogin`: access token, refresh token, expiry, and scopes. Preserve scope order and exact epoch-millisecond expiry. Require nonblank tokens, a positive representable integer expiry, and a nonempty array of nonblank scope strings. Reject wrong containers and members, strings/floats used as expiry, negative or overflowing expiry, malformed JSON, and access-only/setup-token-shaped input. Do not add an API-key or setup-token fallback.
+
+For fail-closed coverage, exercise representative malformed inputs through `Session::sync_account` as well as directly through the parsers, asserting no profile/provider publication. Errors, debug output, and returned login debug output must not contain either synthetic token.
+
+**Why current tests miss it**
+
+- The fixture at `crates/jackin-session/tests/accounts/host_login.rs:444` omits `scopes`.
+- Positive assertions inspect only `access_token`.
+- Existing negative cases cover malformed JSON, missing OAuth/access token, and empty access token, but not refresh token, expiry, scopes, numeric conversion, or wrong field types.
+
+**Targeted red/green mutants**
+
+- Existing parser, which discards all but `accessToken`.
+- Defaulting absent expiry/scopes.
+- Accepting an access-only grant or `ANTHROPIC_API_KEY` document.
+- String-to-number expiry coercion, seconds-versus-milliseconds confusion, negative-to-`SystemTime` conversion.
+- Accepting empty scopes or blank scope members.
+- Echoing a malformed token in an error.
+
+## 2. Publication through `Session`
+
+**Production seams and files**
+
+- Call the public `Session::sync_account` at `crates/jackin-session/src/accounts.rs:780`, not private `sync_claude_login`.
+- Implementation changes belong in `sync_claude_login` and a shared OAuth publication helper in `crates/jackin-session/src/accounts.rs:810-860` and `:922-941`.
+- Extend the shared fake model in `crates/jackin-testkit/src/gateway.rs:83-100` and `:654-697` to retain the generic refresh record, including scopes, expiry, and additional credentials. Do not add a Claude-only fake variant.
+- Tests: `crates/jackin-session/tests/accounts/host_login.rs`; T01 controls in `crates/jackin-session/tests/accounts/sync.rs`.
+
+Assert the resulting provider has:
+
+- Profile `claude`.
+- Access credential only under `CLAUDE_CODE_OAUTH_TOKEN`.
+- The exact access token and no refresh token in provider credentials.
+- Public client ID `9d1c250a-e61b-44d9-88ed-5944d1962f5e`.
+- Original scopes and exact expiry.
+- Refresh token only as secret refresh material.
+- No dummy/empty ChatGPT account-ID credential and no additional credentials for Claude.
+
+Run file and Keychain positives. The existing T01 test must continue proving that the real ChatGPT account ID is published through generic `additional_credentials`, including account-ID mismatch refusal and update behavior.
+
+**Why current tests miss it**
+
+`claude_file_sync_creates_t02_provider_with_key_only_in_record` and its Keychain counterpart currently bless static publication. The fake `ProviderRecord` cannot represent exact scope/expiry or a refresh-secrecy contract.
+
+**Targeted red/green mutants**
+
+- Existing `publish_static_login` route.
+- A Claude-specific `ProviderMaterial` variant instead of the shared generic variant.
+- Reusing `ChatgptLogin` with a dummy account ID.
+- Hard-coded, dropped, or reordered scopes.
+- Dropped expiry or incorrect millisecond conversion.
+- Refresh token copied into injectable credentials.
+- T01 account ID lost while converting to the generic path.
+
+## 3. Generic gRPC OAuth adapter
+
+**Production seams and files**
+
+- Public `Gateway::put_provider` using `ProviderMaterial::OAuth2RefreshToken` from `crates/jackin-openshell/src/gateway.rs:109-128`.
+- Shared writer in `crates/jackin-openshell/src/grpc/provider.rs:247-348`.
+- Tests in `crates/jackin-openshell/tests/gateway/providers.rs`.
+- Extend `RefreshRecord` in `crates/jackin-openshell/tests/gateway/server.rs:27-32` with `expiration_time`.
+- Capture it in `crates/jackin-openshell/tests/gateway/provider_rpc.rs:301-344`.
+
+Use only the owned in-process gRPC fake. Assert exact resulting proto state:
+
+- Material is exactly `client_id`, `refresh_token`, and optional space-joined `scope`.
+- Only `refresh_token` is listed in `secret_material_keys`.
+- No `token_url`, `token_uri`, `client_secret`, or access token in refresh material.
+- Provider credentials contain the access credential and only explicitly supplied additional credentials.
+- Empty scopes and empty additional credentials produce no empty entries.
+- `expires_at: None` produces no `expiration_time`.
+- A millisecond value with a fractional second produces exact seconds/nanoseconds; for example, `1794237825974` must become seconds `1794237825`, nanos `974000000`.
+- Update A→B replaces credentials, scope, expiry, and refresh material on the same keys.
+- Repeated identical configuration converges to one provider and one refresh record.
+- OAuth→static removes refresh state; static→OAuth recreates it.
+- Provider deletion removes both provider and refresh state; idempotent deletion remains safe.
+- Injected failures redact access and refresh tokens and a subsequent retry converges.
+
+**Why current tests miss it**
+
+Current tests cover only ChatGPT material, omit expiration entirely, do not exercise scopes or optional additional credentials, and deletion asserts only provider removal.
+
+**Targeted red/green mutants**
+
+- Seconds used as milliseconds, milliseconds used as nanoseconds, or truncated nanos.
+- Scope omitted, comma-joined, or hard-coded.
+- `token_url` sent as material.
+- Empty account-ID or empty additional-credential insertion.
+- Refresh token marked nonsecret or exposed through an error.
+- Refresh configuration omitted on create/update.
+- Stale refresh state retained after update, static conversion, or deletion.
+
+## 4. Exact T02 profile and unchanged availability
+
+**Production seams and files**
+
+- Asset: `crates/jackin-core/src/assets/t02-claude.yaml`.
+- Public parsing: `lookup_tuple`, `tuple_profile_asset`, and `ProviderProfile::parse`.
+- Use `Gateway::ensure_profile` and inspect the stored proto when typed refresh assertions are needed; raw YAML substring checks alone are insufficient.
+- Tests: `crates/jackin-openshell/tests/tuple_policy.rs`, with typed profile assertions suitable for `crates/jackin-openshell/tests/gateway/providers.rs`.
+- Availability control: `crates/jackin-core/tests/catalog.rs:23-31`.
+
+Require the nested credential refresh block with:
+
+- `strategy: oauth2_refresh_token`
+- `token_url: https://platform.claude.com/v1/oauth/token`
+- `refresh_before_seconds: 300`
+- Required nonsecret `client_id`
+- Required secret `refresh_token`
+
+Retain exactly `api.anthropic.com` and `platform.claude.com`, the Claude binary, bearer authorization, and `CLAUDE_CODE_OAUTH_TOKEN`. Assert no `stable_placeholder`, no `ANTHROPIC_API_KEY`, no API-key auth style, and no profile-wide hard-coded grant scopes. T02 must remain `AuthClass::BlockedVendor` and `TupleState::BlockedVendor` with the existing reason.
+
+**Why current tests miss it**
+
+`crates/jackin-openshell/tests/tuple_policy.rs:97-104` explicitly requires `refresh: false`; other assertions merely check whether the string `refresh:` exists.
+
+**Targeted red/green mutants**
+
+- Existing no-refresh profile.
+- Refresh placed at the wrong YAML level.
+- Wrong token URL or omitted platform host.
+- Missing client ID or unmarked refresh-token secrecy.
+- `stable_placeholder: true`.
+- Static profile scopes replacing per-grant scopes.
+- API-key credential/env substitution.
+- Accidental support/state flip.
+
+## 5. Native per-instance placeholder planning
+
+**Production seams and files**
+
+- Use the same production public per-instance credential-file planner required by T03 in `crates/jackin-session/src/plan.rs`.
+- Tuple-specific rendering belongs in `crates/jackin-session/src/files.rs`.
+- The complete planned file set must be consumed generically by `crates/jackin-session/src/launch/run.rs:526-607`.
+- Direct unit cases belong in `crates/jackin-session/tests/plan/claude.rs`; lead/secondary integration belongs to the coordinated all-agent work, including `crates/jackin-session/tests/launch/multi_instance.rs`.
+
+Do not merely export the existing spec-based, crate-private `placeholder_file`. Test the new public per-instance seam directly with T02 as lead and as secondary, without flipping availability or calling `plan_launch`.
+
+Assert exact paths, including the secondary home, mode `0600`, and exact JSON structure. The native object must have a nonblank placeholder `claudeAiOauth.accessToken`, `refreshToken: ""`, numeric `expiresAt`, and a string-array `scopes`; no host access/refresh token or host expiry may appear. Assert the complete object contains no `ANTHROPIC_API_KEY` or other API-key credential. Preserve the existing T13–T16 behavior as a control.
+
+The [official 2.1.311 artifact](https://registry.npmjs.org/@anthropic-ai/claude-code-linux-arm64/-/claude-code-linux-arm64-2.1.311.tgz) supports the native field names and types. It does **not** establish a canonical synthetic placeholder or justify inventing a far-future expiry, hard-coded scope set, or extra `clientId`. The hermetic test should pin Jackin’s exact safe placeholder as a product contract, not claim that those synthetic values prove vendor compatibility.
+
+**Why current tests miss it**
+
+`plan/claude.rs` currently checks only settings and the environment name. Launch credential tests are Codex-only, and multi-instance equivalence is Codex-only. The generic renderer at `crates/jackin-session/src/files.rs:118-128` currently produces `ANTHROPIC_API_KEY`-shaped JSON from the agent-wide spec.
+
+**Targeted red/green mutants**
+
+- Existing generic `placeholder_file(spec)` route.
+- Spec-based rather than tuple-based rendering.
+- Real refresh token or imported expiry written into the sandbox.
+- Empty access token or nonempty refresh token.
+- Wrong mode or wrong secondary-home path.
+- Lead-only implementation with the secondary executor branch omitted.
+- Native T02 shape accidentally applied to T13–T16.
+- A test-only T02 support flip used to make the test launchable.
+
+## 6. Controls and live boundary
+
+Run existing Codex refresh, account, planner, policy, and `jackin-start` suites as controls, especially:
+
+- `crates/jackin-openshell/tests/gateway/providers.rs`
+- `crates/jackin-session/tests/accounts/`
+- `crates/jackin-session/tests/plan/`
+- `crates/jackin-session/tests/launch/`
+- `crates/jackin-openshell/tests/tuple_policy.rs`
+- `crates/jackin-image/tests/jackin_start.rs`
+
+Every new test still needs independent observation of its targeted red on old or wrong-direction code and green on the fixed code. Finish the unit with G-FAST:
+
+```sh
+mise exec -- mbx +1.99.1 xtask ci --fast
+```
+
+No live Anthropic call, refresh, or placeholder-resolution assertion belongs in nextest.
+
+## Vendor facts still unverified
+
+- Anthropic’s acceptance of OpenShell’s form-encoded refresh request, actual rotation, replacement-refresh-token persistence, and repeated rotations.
+- Stable placeholder resolution and successful supervised Claude requests after each rotation.
+- Runtime compatibility of the exact synthetic placeholder while `CLAUDE_CODE_OAUTH_TOKEN` is present. Anthropic’s [authentication precedence](https://code.claude.com/docs/en/authentication) treats that variable as the setup-token credential class, so file shape alone does not prove which credential path Claude selects.
+- Host safety and two-gateway isolation using independent grants for each refresh owner. Reusing the host’s current grant is not a valid concurrency proof.
+- The cause of the observed `OAuth token revoked` response.
+- The remaining live requirements in `rewrite/evidence/A14-t02-live-fixed.md:153-161`, including `jackin-local`, replay, post-shell process state, export, and billing attribution.
+
+The documented 30-day refresh-grant cap still requires periodic interactive reauthorization. None of the hermetic tests justifies flipping T02 from `BlockedVendor`.
+
+No files or credentials were modified or accessed, and no tests were run during this read-only review.

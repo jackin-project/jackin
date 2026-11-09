@@ -14,6 +14,19 @@ credentials:
     required: true
     auth_style: bearer
     header_name: authorization
+    refresh:
+      strategy: oauth2_refresh_token
+      token_url: https://platform.claude.com/v1/oauth/token
+      refresh_before_seconds: 300
+      material:
+        - name: client_id
+          description: Claude Code public OAuth client ID
+          required: true
+          secret: false
+        - name: refresh_token
+          description: Claude Code OAuth refresh token
+          required: true
+          secret: true
 discovery:
   credentials: [access_token]
 endpoints:

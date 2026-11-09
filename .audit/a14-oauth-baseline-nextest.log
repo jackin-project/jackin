@@ -1,0 +1,706 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling subtle v2.6.1
+   Compiling memchr v2.8.3
+   Compiling typenum v1.20.1
+   Compiling bitflags v2.13.2
+   Compiling rand_core v0.10.1
+   Compiling getrandom v0.4.3
+   Compiling log v0.4.35
+   Compiling cmov v0.5.4
+   Compiling smallvec v1.16.4
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling autocfg v1.5.1
+   Compiling ctutils v0.4.8
+   Compiling itoa v1.0.18
+   Compiling serde_core v1.0.229
+   Compiling bytes v1.12.1
+   Compiling equivalent v1.0.3
+   Compiling num-traits v0.2.19
+   Compiling parking_lot_core v0.9.12
+   Compiling pin-project-lite v0.2.17
+   Compiling scopeguard v1.2.0
+   Compiling critical-section v1.2.0
+   Compiling lock_api v0.4.14
+   Compiling allocator-api2 v0.2.21
+   Compiling futures-core v0.3.34
+   Compiling foldhash v0.2.0
+   Compiling pkg-config v0.3.34
+   Compiling hashbrown v0.17.1
+   Compiling portable-atomic v1.15.0
+   Compiling thiserror v2.0.21
+   Compiling futures-sink v0.3.34
+   Compiling fs_extra v1.3.0
+   Compiling dunce v1.0.5
+   Compiling stable_deref_trait v1.2.1
+   Compiling slab v0.4.12
+   Compiling const-oid v0.10.2
+   Compiling aws-lc-rs v1.19.0
+   Compiling futures-channel v0.3.34
+   Compiling errno v0.3.14
+   Compiling mio v1.2.4
+   Compiling once_cell v1.21.4
+   Compiling socket2 v0.6.5
+   Compiling http v1.5.0
+   Compiling syn v2.0.119
+   Compiling syn v3.0.9
+   Compiling jobserver v0.1.35
+   Compiling signal-hook-registry v1.4.8
+   Compiling indexmap v2.14.2
+   Compiling untrusted v0.7.1
+   Compiling parking_lot v0.12.5
+   Compiling writeable v0.6.4
+   Compiling futures-io v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling cc v1.11.0
+   Compiling tracing-core v0.1.36
+   Compiling serde v1.0.229
+   Compiling litemap v0.8.3
+   Compiling core-foundation-sys v0.8.7
+   Compiling zeroize_derive v1.5.0
+   Compiling tracing-attributes v0.1.31
+   Compiling percent-encoding v2.3.2
+   Compiling synstructure v0.14.0
+   Compiling displaydoc v0.2.7
+   Compiling tokio-macros v2.7.2
+   Compiling cmake v0.1.58
+   Compiling thiserror-impl v2.0.21
+   Compiling zerovec-derive v0.11.7
+   Compiling futures-macro v0.3.34
+   Compiling tracing v0.1.44
+   Compiling zerofrom-derive v0.1.8
+   Compiling zeroize v1.9.1
+   Compiling yoke-derive v0.8.4
+   Compiling futures-util v0.3.34
+   Compiling tokio v1.54.1
+   Compiling zerofrom v0.1.8
+   Compiling aws-lc-sys v0.47.0
+   Compiling serde_derive v1.0.229
+   Compiling hybrid-array v0.4.15
+   Compiling rustls-pki-types v1.15.1
+   Compiling http-body v1.1.0
+   Compiling httparse v1.10.1
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling yoke v0.8.4
+   Compiling utf_types v1.0.0
+   Compiling base64 v0.23.1
+   Compiling untrusted v0.9.0
+   Compiling digest v0.11.3
+   Compiling tokio-util v0.7.20
+   Compiling utf8_iter v1.1.0
+   Compiling zerovec v0.11.9
+   Compiling zerotrie v0.2.5
+   Compiling fnv v1.0.7
+   Compiling rustls v0.23.46
+   Compiling tower-service v0.3.3
+   Compiling block-padding v0.4.2
+   Compiling security-framework-sys v2.17.0
+   Compiling core-foundation v0.10.1
+   Compiling zmij v1.0.23
+   Compiling try-lock v0.2.5
+   Compiling inout v0.2.5
+   Compiling tinystr v0.8.5
+   Compiling potential_utf v0.1.6
+   Compiling atomic-waker v1.1.2
+   Compiling security-framework v3.7.0
+   Compiling cpufeatures v0.3.1
+   Compiling sync_wrapper v1.0.2
+   Compiling icu_locale_core v2.4.0
+   Compiling want v0.3.2
+   Compiling icu_collections v2.4.0
+   Compiling h2 v0.4.20
+   Compiling tower-layer v0.3.3
+   Compiling httpdate v1.0.3
+   Compiling ipnet v2.12.2
+   Compiling cipher v0.5.2
+   Compiling icu_properties_data v2.4.0
+   Compiling icu_provider v2.4.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling tower v0.5.3
+   Compiling rustls-native-certs v0.8.5
+   Compiling http-body-util v0.1.5
+   Compiling either v1.19.0
+   Compiling serde_json v1.0.154
+   Compiling form_urlencoded v1.2.2
+   Compiling rustix v1.1.6
+   Compiling hyper v1.12.0
+   Compiling cpubits v0.1.1
+   Compiling num-conv v0.2.2
+   Compiling time-core v0.1.9
+   Compiling base64ct v1.8.3
+   Compiling num_threads v0.1.8
+   Compiling deranged v0.5.9
+   Compiling hyper-util v0.1.21
+   Compiling time-macros v0.2.32
+   Compiling heck v0.5.0
+   Compiling anyhow v1.0.104
+   Compiling powerfmt v0.2.1
+   Compiling icu_normalizer v2.4.0
+   Compiling pem-rfc7468 v1.0.0
+   Compiling iana-time-zone v0.1.65
+   Compiling icu_properties v2.4.0
+   Compiling time v0.3.55
+   Compiling sha2 v0.11.1
+   Compiling chrono v0.4.45
+   Compiling hmac v0.13.0
+   Compiling universal-hash v0.6.1
+   Compiling version_check v0.9.5
+   Compiling unicode-width v0.2.3
+   Compiling idna_adapter v1.2.2
+   Compiling polyval v0.7.3
+   Compiling itertools v0.14.0
+   Compiling rustversion v1.0.23
+   Compiling generic-array v0.14.7
+   Compiling strsim v0.11.1
+   Compiling cfg_aliases v0.2.2
+   Compiling idna v1.1.0
+   Compiling ryu v1.0.23
+   Compiling base64 v0.22.1
+   Compiling ghash v0.6.0
+   Compiling prost-derive v0.14.4
+   Compiling pbkdf2 v0.13.0
+   Compiling der v0.8.3
+   Compiling aes v0.9.4
+   Compiling url v2.5.8
+   Compiling ctr v0.10.1
+   Compiling aead v0.6.1
+   Compiling salsa20 v0.11.0
+   Compiling minimal-lexical v0.2.1
+   Compiling cbc v0.2.1
+   Compiling tower-http v0.6.11
+   Compiling async-trait v0.1.92
+   Compiling block-buffer v0.10.4
+   Compiling spki v0.8.1
+   Compiling nom v7.1.3
+   Compiling aes-gcm v0.11.1
+   Compiling scrypt v0.12.0
+   Compiling crypto-common v0.1.7
+   Compiling num-integer v0.1.47
+   Compiling thiserror v1.0.69
+   Compiling crypto-bigint v0.7.10
+   Compiling thiserror-impl v1.0.69
+   Compiling cpufeatures v0.2.17
+   Compiling ff v0.14.0
+   Compiling pkcs5 v0.8.1
+   Compiling unicode-segmentation v1.13.3
+   Compiling digest v0.10.7
+   Compiling adler2 v2.0.1
+   Compiling prettyplease v0.2.37
+   Compiling icu_locale_fallback_data v2.4.0
+   Compiling mime v0.3.17
+   Compiling pulldown-cmark v0.13.6
+   Compiling simd-adler32 v0.3.10
+   Compiling zerocopy v0.8.63
+   Compiling axum-core v0.5.6
+   Compiling miniz_oxide v0.9.1
+   Compiling pkcs8 v0.11.0
+   Compiling pin-project-internal v1.1.13
+   Compiling synstructure v0.13.2
+   Compiling matchit v0.8.4
+   Compiling unicase v2.10.0
+   Compiling data-encoding v2.11.1
+   Compiling regex-syntax v0.8.11
+   Compiling fastrand v2.5.0
+   Compiling icu_segmenter_data v2.4.0
+   Compiling foldhash v0.1.5
+   Compiling getrandom v0.3.4
+   Compiling pin-project v1.1.13
+   Compiling asn1-rs-derive v0.6.0
+   Compiling regex-automata v0.4.18
+   Compiling prost v0.14.4
+   Compiling hashbrown v0.15.5
+   Compiling axum v0.8.9
+   Compiling group v0.14.0
+   Compiling num-bigint v0.4.8
+   Compiling rusticata-macros v4.1.0
+   Compiling hyper-timeout v0.5.2
+   Compiling tokio-stream v0.1.19
+   Compiling asn1-rs-impl v0.2.0
+   Compiling gimli v0.34.0
+   Compiling libm v0.2.16
+   Compiling fixedbitset v0.5.7
+   Compiling base16ct v1.0.0
+   Compiling lazy_static v1.5.1
+   Compiling addr2line v0.27.1
+   Compiling petgraph v0.8.3
+   Compiling ppv-lite86 v0.2.21
+   Compiling tempfile v3.27.0
+   Compiling asn1-rs v0.7.2
+   Compiling icu_locale_fallback v2.4.0
+   Compiling sec1 v0.8.1
+   Compiling regex v1.13.1
+   Compiling prost-types v0.14.4
+   Compiling pulldown-cmark-to-cmark v22.0.3
+   Compiling castaway v0.2.4
+   Compiling hkdf v0.13.0
+   Compiling chacha20 v0.10.2
+   Compiling signature v3.0.0
+   Compiling memoffset v0.9.1
+   Compiling object v0.40.0
+   Compiling static_assertions v1.1.0
+   Compiling multimap v0.10.1
+   Compiling ident_case v1.0.1
+   Compiling bytemuck v1.25.2
+   Compiling object v0.39.1
+   Compiling oid-registry v0.8.1
+   Compiling rustc-demangle v0.1.28
+   Compiling darling_core v0.24.1
+   Compiling elliptic-curve v0.14.3
+   Compiling atomic v0.6.1
+   Compiling prost-build v0.14.4
+   Compiling backtrace v0.3.77
+   Compiling icu_segmenter v2.4.0
+   Compiling tonic-build v0.14.9
+   Compiling primefield v0.14.0
+   Compiling sha2 v0.10.9
+   Compiling nix v0.29.0
+   Compiling nix v0.31.3
+   Compiling protoc-bin-vendored-linux-x86_32 v3.3.0
+   Compiling is_ci v1.2.0
+   Compiling protoc-bin-vendored-macos-x86_64 v3.3.0
+   Compiling protoc-bin-vendored-linux-s390_64 v3.3.0
+   Compiling noyalib v0.0.53
+   Compiling protoc-bin-vendored-macos-aarch_64 v3.3.0
+   Compiling protoc-bin-vendored-linux-ppcle_64 v3.3.0
+   Compiling semver v1.0.28
+   Compiling signal-hook v0.3.18
+   Compiling protoc-bin-vendored-linux-x86_64 v3.3.0
+   Compiling protoc-bin-vendored-linux-aarch_64 v3.3.0
+   Compiling rustc-hash v2.1.3
+   Compiling protoc-bin-vendored-win32 v3.3.0
+   Compiling supports-color v3.0.2
+   Compiling darling_macro v0.24.1
+   Compiling rustc_version v0.4.1
+   Compiling protoc-bin-vendored v3.3.0
+   Compiling backtrace-ext v0.2.1
+   Compiling wnaf v0.14.1
+   Compiling tonic-prost-build v0.14.9
+   Compiling textwrap v0.16.4
+   Compiling uuid v1.29.0
+   Compiling der-parser v10.0.0
+   Compiling simple_asn1 v0.6.4
+   Compiling rfc6979 v0.6.0
+   Compiling pem v3.0.6
+   Compiling serde_urlencoded v0.7.1
+   Compiling terminal_size v0.4.4
+   Compiling yasna v0.6.0
+   Compiling strum_macros v0.28.0
+   Compiling pem v4.0.0
+   Compiling miette-derive v7.6.0
+   Compiling serde_path_to_error v0.1.20
+   Compiling signature v2.2.0
+   Compiling supports-unicode v3.0.0
+   Compiling unicode-width v0.1.14
+   Compiling utf8parse v0.2.2
+   Compiling owo-colors v4.4.0
+   Compiling supports-hyperlinks v3.2.0
+   Compiling ar_archive_writer v0.5.3
+   Compiling unicode-truncate v2.0.1
+   Compiling x509-parser v0.18.1
+   Compiling strum v0.28.0
+   Compiling ecdsa v0.17.0
+   Compiling darling v0.24.1
+   Compiling miette v7.6.0
+   Compiling openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling primeorder v0.14.0
+   Compiling curve25519-dalek v5.0.0
+   Compiling compact_str v0.9.1
+   Compiling rand v0.10.3
+   Compiling rand_core v0.9.5
+   Compiling convert_case v0.10.0
+   Compiling kasuari v0.4.13
+   Compiling getrandom v0.2.17
+   Compiling lru v0.18.5
+   Compiling winnow v1.0.5
+   Compiling indoc v2.0.8
+   Compiling tinyvec v1.13.3
+   Compiling rand_core v0.6.4
+   Compiling rand_chacha v0.9.0
+   Compiling openshell-policy-schema v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling derive_more-impl v2.1.1
+   Compiling ratatui-core v0.1.2
+   Compiling instability v0.3.14
+   Compiling toml_parser v1.1.5+spec-1.1.0
+   Compiling psm v0.1.32
+   Compiling ssh-encoding v0.3.0
+   Compiling keccak v0.2.2
+   Compiling futures-executor v0.3.34
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling serde_spanned v1.1.2
+   Compiling toml_writer v1.2.0+spec-1.1.0
+   Compiling litrs v1.0.1
+   Compiling sponge-cursor v0.1.0
+   Compiling glob v0.3.4
+   Compiling crc32fast v1.5.4
+   Compiling siphasher v1.0.4
+   Compiling byteorder v1.5.0
+   Compiling document-features v0.2.12
+   Compiling futures v0.3.34
+   Compiling toml v1.2.0+spec-1.1.0
+   Compiling derive_more v2.1.1
+   Compiling rand_chacha v0.3.1
+   Compiling blowfish v0.10.0
+   Compiling rand v0.9.5
+   Compiling signal-hook-mio v0.2.5
+   Compiling anstyle-parse v1.0.0
+   Compiling ed25519 v3.0.0
+   Compiling sha1 v0.10.7
+   Compiling poly1305 v0.9.1
+   Compiling blake2 v0.11.0
+   Compiling stacker v0.1.25
+   Compiling line-clipping v0.3.8
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstyle v1.0.14
+   Compiling anstyle-query v1.1.5
+   Compiling hex v0.4.3
+   Compiling utf-8 v0.7.6
+   Compiling arrayvec v0.7.8
+   Compiling vcpkg v0.2.15
+   Compiling colorchoice v1.0.5
+   Compiling cursor-icon v1.2.0
+   Compiling ratatui-widgets v0.3.2
+   Compiling rand v0.8.8
+   Compiling ssh-cipher v0.3.0
+   Compiling libsqlite3-sys v0.39.1
+   Compiling argon2 v0.6.0
+   Compiling vte v0.15.0
+   Compiling anstream v1.0.0
+   Compiling crossterm v0.29.0
+   Compiling ed25519-dalek v3.0.0
+   Compiling bcrypt-pbkdf v0.11.0
+   Compiling jackin-core v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-core)
+   Compiling shake v0.1.0
+   Compiling sha3 v0.12.0
+   Compiling phf_shared v0.11.3
+   Compiling hickory-proto v0.26.3
+   Compiling p521 v0.14.0
+   Compiling p256 v0.14.0
+   Compiling p384 v0.14.0
+   Compiling sha1 v0.11.0
+   Compiling kem v0.3.0
+   Compiling module-lattice v0.2.4
+   Compiling async-stream-impl v0.3.6
+   Compiling noyalib v0.0.58
+   Compiling clap_lex v1.1.1
+   Compiling ssh-key v0.7.0-rc.11
+   Compiling phf_generator v0.11.3
+   Compiling ml-kem v0.3.4
+   Compiling flate2 v1.1.10
+   Compiling clap_builder v4.6.7
+   Compiling async-stream v0.3.6
+   Compiling ratatui-crossterm v0.1.2
+   Compiling ratatui-macros v0.7.2
+   Compiling russh-cryptovec v0.62.0
+   Compiling num-bigint v0.5.1
+   Compiling compact_str v0.10.0
+   Compiling enum_dispatch v0.3.13
+   Compiling generic-array v1.4.5
+   Compiling clap_derive v4.6.7
+   Compiling russh-util v0.52.0
+   Compiling delegate v0.13.5
+   Compiling md5 v0.8.1
+   Compiling cfg_aliases v0.1.1
+   Compiling pest_stack_guard v1.0.1
+   Compiling hex-literal v1.1.0
+   Compiling clap v4.6.7
+   Compiling termpane v0.1.1 (https://github.com/tailrocks/termpane?rev=46cc0977d8ee95d5284f75080d507ca2d116c007#46cc0977)
+   Compiling ratatui v0.30.2
+   Compiling nix v0.28.0
+   Compiling unicode-normalization v0.1.26
+   Compiling aho-corasick v1.1.5
+   Compiling fallible-iterator v0.3.0
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling syn v1.0.109
+   Compiling caseless v0.2.2
+   Compiling junie-tui v0.1.0 (https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63db)
+   Compiling rusqlite v0.41.1
+   Compiling filedescriptor v0.8.3
+   Compiling serial2 v0.2.39
+   Compiling downcast-rs v1.2.1
+   Compiling shell-words v1.1.1
+   Compiling phf_macros v0.11.3
+   Compiling jackin-console v0.1.0 (https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63db)
+   Compiling ordered-float v4.6.0
+   Compiling ucd-trie v0.1.7
+   Compiling phf v0.11.3
+   Compiling pest v2.9.5
+   Compiling phf_codegen v0.11.3
+   Compiling bit-vec v0.6.3
+   Compiling wezterm-dynamic-derive v0.1.1
+   Compiling portable-pty v0.9.0
+   Compiling signal-hook v0.4.6
+   Compiling pest_meta v2.9.5
+   Compiling terminfo v0.9.0
+   Compiling lab v0.11.0
+   Compiling bit-set v0.5.3
+   Compiling wezterm-dynamic v0.2.1
+   Compiling pest_generator v2.9.5
+   Compiling csscolorparser v0.6.2
+   Compiling mac_address v1.2.1
+   Compiling euclid v0.22.14
+   Compiling bstr v1.13.1
+   Compiling bitflags v1.3.2
+   Compiling deltae v0.3.2
+   Compiling wezterm-blob-leases v0.1.1
+   Compiling fancy-regex v0.11.0
+   Compiling wezterm-input-types v0.1.0
+   Compiling pest_derive v2.9.5
+   Compiling globset v0.4.21
+   Compiling wezterm-color-types v0.3.0
+   Compiling wezterm-bidi v0.2.3
+   Compiling vtparse v0.6.2
+   Compiling rustix-openpty v0.2.0
+   Compiling polling v3.11.0
+   Compiling num-derive v0.4.2
+   Compiling termios v0.3.3
+   Compiling fixedbitset v0.4.2
+   Compiling home v0.5.12
+   Compiling memmem v0.1.1
+   Compiling finl_unicode v1.5.1
+   Compiling alacritty_terminal v0.26.0
+   Compiling termwiz v0.23.3
+   Compiling jackin-image v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-image)
+   Compiling rustls-webpki v0.103.16
+   Compiling rcgen v0.14.10
+   Compiling jsonwebtoken v10.4.0
+   Compiling russh v0.65.1
+   Compiling tokio-rustls v0.26.6
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling tungstenite v0.26.2
+   Compiling hyper-rustls v0.27.10
+   Compiling tonic v0.14.9
+   Compiling tokio-tungstenite v0.26.2
+   Compiling reqwest v0.13.5
+   Compiling reqwest v0.12.28
+   Compiling tonic-types v0.14.9
+   Compiling openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling tonic-prost v0.14.9
+   Compiling jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-core)
+   Compiling oauth2 v5.0.0
+   Compiling jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-zai)
+   Compiling jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-codex)
+   Compiling jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-grok)
+   Compiling jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-opencode)
+   Compiling jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-cursor)
+   Compiling jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-kimi)
+   Compiling jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-openrouter)
+   Compiling jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-claude)
+   Compiling jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-gemini)
+   Compiling jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-minimax)
+   Compiling jackin-usage v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage)
+   Compiling openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-openshell v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-openshell)
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-tui)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 2m 17s
+────────────
+ Nextest run ID 0bd8bad8-e50f-42fb-b3b0-374362300091 with nextest profile: default
+    Starting 193 tests across 5 binaries
+        PASS [   0.033s] (  1/193) jackin-core::agent_table codex_profiles_are_chatgpt_only_and_match_their_asset
+        PASS [   0.034s] (  2/193) jackin-core::agent_table codex_row_reserves_every_credential_env_name
+        PASS [   0.036s] (  3/193) jackin-core::agent_table codex_row_launches_codex_with_the_d04_command_and_paths
+        PASS [   0.039s] (  4/193) jackin-core::agent_table public_agent_pins_match_the_current_stable_release_matrix
+        PASS [   0.054s] (  5/193) jackin-core::catalog blocked_and_unavailable_tuples_carry_reasons
+        PASS [   0.059s] (  6/193) jackin-core::agent_table agent_all_rows_match_their_provider
+        PASS [   0.060s] (  7/193) jackin-core::agent_table codex_install_matches_the_compatibility_lock_and_covers_each_platform_once
+        PASS [   0.076s] (  8/193) jackin-core::agent_table provider_all_lists_each_provider_once_with_one_spelling
+        PASS [   0.073s] (  9/193) jackin-core::catalog changed_model_declarations_agree_between_specs_and_tuples
+        PASS [   0.076s] ( 10/193) jackin-core::catalog availability_states_and_reasons_are_exact
+        PASS [   0.050s] ( 11/193) jackin-core::catalog codex_tuple_is_supported
+        PASS [   0.047s] ( 12/193) jackin-core::catalog grok_build_with_kimi_is_a_typed_error
+        PASS [   0.043s] ( 13/193) jackin-core::catalog model_acceptance_is_exact_and_independent_of_launch_availability
+        PASS [   0.056s] ( 14/193) jackin-core::catalog each_provider_lists_exactly_its_catalog_tuples
+        PASS [   0.037s] ( 15/193) jackin-core::catalog t13_through_t22_resolve_with_exact_states_and_reasons
+        PASS [   0.037s] ( 16/193) jackin-core::catalog unknown_model_is_a_typed_error_and_default_model_is_accepted
+        PASS [   0.137s] ( 17/193) jackin-openshell::gateway attach::main_attach_on_an_absent_sandbox_is_not_found_at_session_and_relay_steps
+        PASS [   0.199s] ( 18/193) jackin-openshell::gateway attach::relay_open_errors_are_reported_with_their_cause_not_as_a_dropped_ssh_stream
+        PASS [   0.257s] ( 19/193) jackin-openshell::gateway attach_ssh::output_and_notices_keep_the_order_the_supervisor_sent_them
+        PASS [   0.294s] ( 20/193) jackin-openshell::gateway attach_ssh::dropping_the_open_future_during_the_handshake_revokes_the_token
+        PASS [   0.047s] ( 21/193) jackin-openshell::gateway connect::a_token_cancelled_before_connect_opens_no_connection
+        PASS [   0.063s] ( 22/193) jackin-openshell::gateway connect::cancelling_while_the_tls_handshake_waits_ends_connect_with_cancelled
+        PASS [   0.065s] ( 23/193) jackin-openshell::gateway connect::mtls_connect_health_and_debug_hygiene
+        PASS [   0.063s] ( 24/193) jackin-openshell::gateway connect::unreachable_and_untrusted_servers_map_to_unreachable_and_tls
+        PASS [   0.840s] ( 25/193) jackin-openshell::gateway attach_ssh::the_host_key_pin_accepts_the_advertised_key_and_refuses_every_other
+        PASS [   1.254s] ( 26/193) jackin-openshell::gateway attach_ssh::exit_statuses_and_ctrl_c_under_a_read_only_lease_are_reported_as_sent
+        PASS [   0.946s] ( 27/193) jackin-openshell::gateway contract::a_gateway_that_finds_a_missing_file_and_fails_later_fails_the_size_check
+        PASS [   1.383s] ( 28/193) jackin-openshell::gateway attach_ssh::a_viewer_never_sends_input_but_still_ends_on_the_detach_keys
+        PASS [   0.578s] ( 29/193) jackin-openshell::gateway contract::a_sandbox_that_never_reaches_ready_is_deleted_by_the_check
+        PASS [   1.416s] ( 30/193) jackin-openshell::gateway attach_ssh::the_lease_follows_the_supervisor_notices_and_the_input_mode
+        PASS [   1.444s] ( 31/193) jackin-openshell::gateway attach_ssh::the_session_token_is_revoked_once_on_every_way_a_session_ends
+        PASS [   1.870s] ( 32/193) jackin-openshell::gateway attach_ssh::the_repaint_nudge_follows_tokio_time_for_every_shared_case
+        PASS [   1.987s] ( 33/193) jackin-openshell::gateway attach_ssh::the_detach_keys_end_the_session_without_an_exit_status
+        PASS [   1.756s] ( 34/193) jackin-openshell::gateway contract::an_ended_main_process_attach_that_is_refused_passes_the_check_and_one_that_grants_the_lease_fails_it
+        PASS [   3.694s] ( 35/193) jackin-openshell::gateway attach_ssh::the_repaint_nudge_resizes_one_row_less_and_back_after_the_delay
+        PASS [   3.330s] ( 36/193) jackin-openshell::gateway contract::an_upload_to_an_absent_sandbox_passes_the_check_when_the_cli_fails_and_fails_it_when_the_cli_succeeds
+        PASS [   5.501s] ( 37/193) jackin-openshell::gateway contract::an_upload_through_a_symlinked_parent_passes_the_check_only_when_the_cli_exits_1_with_the_tar_text
+        PASS [   7.959s] ( 38/193) jackin-openshell::gateway contract::a_leftover_profile_and_provider_from_an_aborted_run_do_not_fail_the_core_group
+        PASS [   1.158s] ( 39/193) jackin-openshell::gateway contract::shell_exit_code_cannot_hang_the_run
+        PASS [   7.437s] ( 40/193) jackin-openshell::gateway contract::a_server_that_deletes_an_attached_provider_fails_only_that_check_and_leaves_nothing
+        PASS [   0.037s] ( 41/193) jackin-openshell::gateway discovery::registered_gateways_failure_modes
+        PASS [   0.037s] ( 42/193) jackin-openshell::gateway discovery::registered_gateways_parses_the_cli_json_without_connecting
+        PASS [   0.078s] ( 43/193) jackin-openshell::gateway discovery::resolve_gateway_refuses_a_fifo_or_an_oversized_certificate_file
+        PASS [   0.025s] ( 44/193) jackin-openshell::gateway discovery::resolve_gateway_refuses_a_plaintext_or_non_mtls_entry
+        PASS [   0.028s] ( 45/193) jackin-openshell::gateway discovery::resolve_gateway_refuses_an_https_endpoint_with_credentials_without_echoing_them
+        PASS [   0.040s] ( 46/193) jackin-openshell::gateway discovery::resolve_gateway_selects_by_name_reads_exactly_three_files_and_writes_nothing
+        PASS [   0.823s] ( 47/193) jackin-openshell::gateway contract::terminal_group_reports_exactly_the_published_checks_and_a_refused_attach_fails_the_attach_checks
+        PASS [   7.926s] ( 48/193) jackin-openshell::gateway contract::a_server_that_drops_the_environment_fails_only_the_environment_check
+        PASS [   0.310s] ( 49/193) jackin-openshell::gateway download_bound::an_operator_cancel_while_the_file_streams_stops_the_cli_and_removes_the_staging_directory
+        PASS [   8.133s] ( 50/193) jackin-openshell::gateway contract::a_server_that_refuses_stop_on_a_stopped_sandbox_fails_only_that_check
+        PASS [   0.040s] ( 51/193) jackin-openshell::gateway error_text::a_missing_thing_is_named_as_a_word_and_its_name
+        PASS [   0.622s] ( 52/193) jackin-openshell::gateway download_bound::a_file_that_grows_after_the_size_check_is_stopped_while_it_streams_and_leaves_nothing
+        PASS [   0.031s] ( 53/193) jackin-openshell::gateway error_text::an_authentication_read_from_the_registry_is_shown_without_control_characters
+        PASS [   0.024s] ( 54/193) jackin-openshell::gateway error_text::operations_phases_and_durations_print_as_words
+        PASS [   0.025s] ( 55/193) jackin-openshell::gateway error_text::policy_and_registry_text_fields_are_shown_without_control_characters
+        PASS [   0.015s] ( 56/193) jackin-openshell::gateway error_text::registry_and_policy_errors_name_gateways_paths_and_violations_plainly
+        PASS [   0.024s] ( 57/193) jackin-openshell::gateway error_text::text_supplied_by_the_gateway_is_shown_without_control_characters
+        PASS [   0.224s] ( 58/193) jackin-openshell::gateway ended::stop_and_start_on_an_ended_main_process
+        PASS [   8.171s] ( 59/193) jackin-openshell::gateway contract::a_server_that_refuses_the_second_delete_of_a_provider_fails_the_put_and_delete_check
+        PASS [   0.236s] ( 60/193) jackin-openshell::gateway exec::a_failed_write_names_the_path_and_the_exit_code_and_carries_no_sandbox_output
+        PASS [   0.593s] ( 61/193) jackin-openshell::gateway ended::a_main_attach_on_an_ended_sandbox_is_refused_and_on_a_stopped_one_not_ready
+        PASS [   0.131s] ( 62/193) jackin-openshell::gateway exec::program_timeout_and_cancel_stop_the_remote_process
+        PASS [   8.727s] ( 63/193) jackin-openshell::gateway contract::a_server_that_drops_labels_fails_the_labels_check_and_runs_the_rest
+        PASS [   0.383s] ( 64/193) jackin-openshell::gateway exec::concurrent_writes_to_one_target_each_succeed_and_the_last_rename_wins
+        PASS [   1.468s] ( 65/193) jackin-openshell::gateway contract::the_download_checks_pass_on_the_adapter_when_the_sandbox_answers_like_the_real_tools
+        PASS [   0.412s] ( 66/193) jackin-openshell::gateway exec::interrupted_write_leaves_the_old_file_intact
+        PASS [   0.279s] ( 67/193) jackin-openshell::gateway exec::read_files_returns_one_entry_per_path_and_none_for_missing
+        PASS [   0.222s] ( 68/193) jackin-openshell::gateway exec::run_program_returns_exit_code_stdout_stderr_and_forwards_stdin
+        PASS [   6.612s] ( 69/193) jackin-openshell::gateway contract::an_upload_to_a_stopped_sandbox_passes_the_check_only_when_the_cli_refuses_it_as_not_ready
+        PASS [   0.148s] ( 70/193) jackin-openshell::gateway exec::shell_terminal_stream_shape_and_raw_output
+        PASS [   0.167s] ( 71/193) jackin-openshell::gateway exec::shell_failure_refusal_and_drop
+        PASS [   0.073s] ( 72/193) jackin-openshell::gateway exec::write_file_refuses_a_target_outside_the_sandbox_home_without_running_anything
+        PASS [   0.303s] ( 73/193) jackin-openshell::gateway exec::touch_on_success_creates_the_marker_only_after_exit_zero_in_one_exec
+        PASS [   0.144s] ( 74/193) jackin-openshell::gateway providers::ensure_profile_imports_then_reports_unchanged_then_updates
+        PASS [   0.212s] ( 75/193) jackin-openshell::gateway providers::delete_profile_removes_only_the_configured_workspaces_profile_and_is_idempotent
+        PASS [   0.233s] ( 76/193) jackin-openshell::gateway exec::write_file_to_a_name_near_the_filesystem_limit_succeeds
+        PASS [   0.271s] ( 77/193) jackin-openshell::gateway providers::ensure_profile_converges_when_a_concurrent_writer_imports_first
+        PASS [   0.397s] ( 78/193) jackin-openshell::gateway exec::write_file_refuses_a_symlinked_directory_or_a_directory_target_and_replaces_a_link_leaf
+        PASS [   0.115s] ( 79/193) jackin-openshell::gateway sandboxes::a_completed_sandbox_without_an_exit_code_is_a_protocol_error
+        PASS [   0.262s] ( 80/193) jackin-openshell::gateway providers::ensure_profile_stale_version_keeps_the_concurrent_writers_content
+        PASS [   0.552s] ( 81/193) jackin-openshell::gateway exec::write_file_applies_mode_and_exact_bytes_and_keeps_content_off_argv
+        PASS [   0.165s] ( 82/193) jackin-openshell::gateway sandboxes::a_listed_record_that_cannot_be_read_fails_the_listing_instead_of_vanishing
+        PASS [   0.339s] ( 83/193) jackin-openshell::gateway providers::put_provider_converges_when_a_concurrent_writer_creates_first
+        PASS [   0.130s] ( 84/193) jackin-openshell::gateway sandboxes::a_sandbox_the_server_never_stamped_has_no_creation_time
+        PASS [   0.164s] ( 85/193) jackin-openshell::gateway sandboxes::a_managed_sandbox_with_an_invalid_label_is_listed_without_that_label
+        PASS [   0.089s] ( 86/193) jackin-openshell::gateway sandboxes::create_then_find_by_launch_label_round_trips_the_server_state
+        PASS [   0.427s] ( 87/193) jackin-openshell::gateway providers::provider_state_delete_and_missing_profile
+        PASS [   0.190s] ( 88/193) jackin-openshell::gateway sandboxes::delete_removes_only_the_configured_workspaces_sandbox
+        PASS [   0.550s] ( 89/193) jackin-openshell::gateway providers::put_provider_creates_updates_and_configures_refresh
+        PASS [   0.143s] ( 90/193) jackin-openshell::gateway sandboxes::policy_round_trips_through_create_and_detail
+        PASS [   0.229s] ( 91/193) jackin-openshell::gateway sandboxes::label_selector_text_is_accepted_by_the_gateway_grammar
+        PASS [   9.797s] ( 92/193) jackin-openshell::gateway contract::a_server_that_deletes_a_provider_while_refusing_the_delete_fails_only_the_presence_assertion
+        PASS [   0.271s] ( 93/193) jackin-openshell::gateway sandboxes::find_follows_every_page_and_managed_hides_foreign_sandboxes
+        PASS [   0.083s] ( 94/193) jackin-openshell::gateway status::call_timeouts_report_the_operation_and_the_configured_duration
+        PASS [   0.159s] ( 95/193) jackin-openshell::gateway sandboxes::power_actions_move_the_server_phase_and_return_the_view
+        PASS [   0.281s] ( 96/193) jackin-openshell::gateway sandboxes::phase_and_exit_code_map_to_the_documented_jackin_phase
+        PASS [   0.030s] ( 97/193) jackin-openshell::gateway status::is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted
+        PASS [   0.351s] ( 98/193) jackin-openshell::gateway sandboxes::maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gateway_rules
+        PASS [   0.059s] ( 99/193) jackin-openshell::gateway status::invalid_argument_field_comes_from_the_error_details
+        PASS [   0.170s] (100/193) jackin-openshell::gateway status::failed_precondition_is_not_ready_only_when_the_phase_cannot_exec
+        PASS [   0.208s] (101/193) jackin-openshell::gateway status::every_grpc_code_maps_to_its_gateway_error
+        PASS [   0.251s] (102/193) jackin-openshell::gateway sandboxes::provisioning_failure_condition_is_reported_with_a_sanitized_message
+        PASS [   0.252s] (103/193) jackin-openshell::gateway status::absent_sandbox_is_not_found_on_every_exec_entry_point
+        PASS [   0.125s] (104/193) jackin-openshell::gateway transfer::download_names_the_targets_and_verifies_the_digest
+        PASS [   0.025s] (105/193) jackin-openshell::tuple_policy every_tuple_profile_parses_with_exact_asset_hosts_env_binary_and_refresh
+        PASS [   0.027s] (106/193) jackin-openshell::tuple_policy role_rule_matching_provider_host_is_rejected
+        PASS [   0.031s] (107/193) jackin-openshell::tuple_policy t01_profile_is_codex_only_with_refresh
+        PASS [   0.205s] (108/193) jackin-openshell::gateway status::supervisor_relay_failure_names_the_sandbox_and_stays_retryable
+        PASS [   0.020s] (109/193) jackin-openshell::tuple_policy t02_role_rules_matching_provider_hosts_are_rejected
+        PASS [   0.025s] (110/193) jackin-openshell::tuple_policy t02_spec_permits_supervised_claude_hosts
+        PASS [   0.026s] (111/193) jackin-openshell::tuple_policy t09_profile_is_omp_zai_only_without_refresh
+        PASS [   0.190s] (112/193) jackin-openshell::gateway transfer::failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_digest
+        PASS [   0.109s] (113/193) jackin-session::accounts edit::accounts_without_a_provider_credential_never_need_the_gateway
+        PASS [   0.123s] (114/193) jackin-session::accounts edit::a_chatgpt_login_account_gets_its_provider_before_it_reaches_the_config
+        PASS [   0.199s] (115/193) jackin-openshell::gateway transfer::upload_tree_and_upload_file_run_one_scoped_call_each_and_compare_the_file_digest
+        PASS [   0.337s] (116/193) jackin-openshell::gateway transfer::a_failed_download_never_touches_the_destination_leaves_no_temp_and_the_size_limit_is_inclusive
+        PASS [   0.285s] (117/193) jackin-session::accounts edit::a_new_credential_re_syncs_forgets_or_creates_the_provider_as_its_kind_changes
+        PASS [   0.175s] (118/193) jackin-session::accounts edit::an_invalid_edit_is_refused_while_planning_and_nothing_is_written
+        PASS [   0.245s] (119/193) jackin-session::accounts edit::removing_a_login_account_deletes_its_provider_first_and_a_refusal_keeps_the_config
+        PASS [   0.242s] (120/193) jackin-session::accounts edit::the_plan_needs_the_gateway_exactly_when_an_account_gains_changes_or_loses_a_provider
+        PASS [   0.134s] (121/193) jackin-session::accounts failed_add::a_renewal_whose_provider_write_fails_keeps_the_provider_of_the_account_in_the_config
+        PASS [   0.117s] (122/193) jackin-session::accounts failed_add::an_add_whose_provider_write_fails_after_it_landed_leaves_no_provider
+        PASS [   0.142s] (123/193) jackin-session::accounts failed_add::an_add_whose_provider_write_fails_before_it_landed_leaves_nothing_and_reports_that_error
+        PASS [   0.669s] (124/193) jackin-openshell::gateway transfer::the_upload_env_makes_the_cli_git_ignore_a_hostile_project_config_and_keep_the_user_excludes
+        PASS [   0.079s] (125/193) jackin-session::accounts host_login::claude_and_antigravity_host_login_accounts_plan_gateway_sync
+        PASS [   0.121s] (126/193) jackin-session::accounts host_login::antigravity_keychain_sync_creates_t05_provider
+        PASS [   0.149s] (127/193) jackin-session::accounts host_login::claude_file_sync_creates_t02_provider_with_key_only_in_record
+        PASS [   0.165s] (128/193) jackin-session::accounts host_login::claude_keychain_sync_creates_provider_when_no_file_login_exists
+        PASS [   0.082s] (129/193) jackin-session::accounts host_login::claude_reader_taxonomy_is_typed_and_secret_free
+        PASS [   0.099s] (130/193) jackin-session::accounts host_login::grok_reader_taxonomy_is_typed_and_secret_free
+        PASS [   0.260s] (131/193) jackin-session::accounts host_login::grok_accounts_are_isolated_in_providers_and_launch_plan_names
+        PASS [   0.065s] (132/193) jackin-session::accounts host_login::muse_host_login_account_plans_gateway_sync
+        PASS [   0.207s] (133/193) jackin-session::accounts host_login::grok_sync_creates_t03_provider_with_key_only_in_record
+        PASS [   0.165s] (134/193) jackin-session::accounts host_login::muse_keychain_sync_creates_provider_with_access_token_only
+        PASS [   0.852s] (135/193) jackin-session::accounts host_login::claude_keychain_error_taxonomy_is_typed_and_secret_free
+        PASS [   1.014s] (136/193) jackin-session::accounts host_login::antigravity_keychain_error_taxonomy_is_typed_and_secret_free
+        PASS [   1.224s] (137/193) jackin-session::accounts failed_add::a_launch_whose_provider_write_fails_after_it_landed_leaves_no_provider
+        PASS [   0.128s] (138/193) jackin-session::accounts host_login::muse_metadata_reader
+        PASS [   1.620s] (139/193) jackin-session::accounts failed_add::a_launch_that_cannot_remove_the_provider_it_wrote_reports_both_failures
+        PASS [   0.530s] (140/193) jackin-session::accounts host_login::muse_metadata_preconditions_never_run_keychain
+        PASS [   0.163s] (141/193) jackin-session::accounts locked_view::a_gateway_removal_without_provider_accounts_connects_to_nothing
+        PASS [   0.356s] (142/193) jackin-session::accounts locked_view::a_gateway_removal_takes_the_lock_of_a_login_account_that_appeared_while_it_waited
+        PASS [   0.016s] (143/193) jackin-session::accounts login::a_missing_unreadable_or_malformed_login_is_a_typed_secret_free_error
+        PASS [   0.017s] (144/193) jackin-session::accounts login::a_real_shaped_codex_login_parses_into_secrets_and_the_account_id_without_leaking
+        PASS [   0.120s] (145/193) jackin-session::accounts login::a_linked_login_is_read_and_a_pipe_or_oversized_login_is_refused_without_reading_it
+        PASS [   0.250s] (146/193) jackin-session::accounts locked_view::an_account_edit_chooses_offline_or_gateway_from_the_config_it_reads_under_the_lock
+        PASS [   0.957s] (147/193) jackin-session::accounts host_login::muse_keychain_error_taxonomy_is_typed_and_secret_free
+        PASS [   0.167s] (148/193) jackin-session::accounts peers::a_plan_that_must_reach_a_gateway_it_cannot_reach_changes_nothing
+        PASS [   0.219s] (149/193) jackin-session::accounts peers::a_new_login_account_needs_only_the_home_gateway
+        PASS [   0.341s] (150/193) jackin-session::accounts peers::a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached
+        PASS [   0.123s] (151/193) jackin-session::accounts peers::a_refusal_on_a_later_gateway_restores_the_providers_it_removed_and_adds_none
+        PASS [   0.294s] (152/193) jackin-session::accounts peers::a_peer_that_fails_a_renewal_leaves_every_gateway_on_the_old_material
+        PASS [   0.151s] (153/193) jackin-session::accounts peers::a_refusal_on_a_peer_names_that_gateway_and_a_retry_finishes_the_removal
+        PASS [   0.163s] (154/193) jackin-session::accounts peers::a_restore_that_cannot_read_the_old_login_names_the_account_and_the_gateway
+        PASS [   0.208s] (155/193) jackin-session::accounts peers::a_renewed_login_reaches_every_gateway_that_holds_the_provider_and_no_other
+        PASS [   0.194s] (156/193) jackin-session::accounts peers::an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publishes_nothing
+        PASS [   0.195s] (157/193) jackin-session::accounts peers::gateways_connected_before_a_gateway_was_added_are_refused_and_nothing_changes
+        PASS [   4.349s] (158/193) jackin-openshell::gateway exec::collected_output_is_capped_per_stream
+        PASS [   0.247s] (159/193) jackin-session::accounts peers::removing_a_login_account_forgets_its_provider_on_every_gateway
+        PASS [   0.312s] (160/193) jackin-session::accounts peers::taking_the_login_off_an_account_replaces_its_provider_on_every_gateway
+        PASS [   0.300s] (161/193) jackin-session::accounts race::a_config_write_that_committed_before_its_directory_sync_failed_is_not_undone
+        PASS [   0.252s] (162/193) jackin-session::accounts race::a_failed_config_write_after_a_changed_credential_restores_the_old_material
+        PASS [   0.178s] (163/193) jackin-session::accounts race::a_failed_config_write_keeps_a_provider_that_existed_before_the_edit
+        PASS [   0.261s] (164/193) jackin-session::accounts race::a_failed_config_write_after_a_gateway_rm_deleted_the_providers_restores_them
+        PASS [   0.128s] (165/193) jackin-session::accounts race::a_failed_config_write_removes_the_provider_that_this_add_created
+        PASS [   0.156s] (166/193) jackin-session::accounts race::a_provider_delete_that_landed_and_then_failed_is_restored
+        PASS [   0.235s] (167/193) jackin-session::accounts race::two_adds_of_one_name_leave_the_config_and_the_provider_on_the_winning_login
+        PASS [   0.176s] (168/193) jackin-session::accounts renewal::a_changed_key_file_without_a_sync_keeps_the_old_gateway_material
+        PASS [   0.180s] (169/193) jackin-session::accounts renewal::a_peer_put_provider_failure_rolls_every_holding_gateway_back_to_the_old_key
+        PASS [   0.158s] (170/193) jackin-session::accounts renewal::an_account_for_a_provider_without_an_omp_id_publishes_no_provider
+        PASS [   0.261s] (171/193) jackin-session::accounts renewal::a_renewed_file_credential_publishes_the_new_key_and_keeps_the_old_file
+        PASS [   0.311s] (172/193) jackin-session::accounts renewal::a_renewal_to_a_file_with_the_same_key_keeps_one_equal_record
+        PASS [   3.455s] (173/193) jackin-openshell::gateway transfer::a_group_fault_rides_through_each_transfer_and_a_missing_one_stays_missing
+        PASS [   2.090s] (174/193) jackin-session::accounts lock::the_lock_is_per_account_and_a_cancelled_wait_ends_the_launch
+        PASS [   0.149s] (175/193) jackin-session::accounts sync::a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_right_material
+        PASS [   0.309s] (176/193) jackin-session::accounts sync::a_failed_sync_stops_at_the_failing_call_and_a_retry_converges
+        PASS [   8.406s] (177/193) jackin-openshell::gateway contract::core_group_passes_against_grpc_gateway_on_the_in_process_server
+        PASS [   0.201s] (178/193) jackin-session::accounts sync::a_kimi_file_key_sync_for_kimi_code_creates_the_t08_provider
+        PASS [   0.183s] (179/193) jackin-session::accounts sync::a_login_of_another_chatgpt_account_is_refused_and_writes_nothing
+        PASS [   0.202s] (180/193) jackin-session::accounts sync::a_mimo_file_key_sync_for_mimo_code_creates_the_t07_provider
+        PASS [   0.160s] (181/193) jackin-session::accounts sync::an_omp_account_with_a_missing_key_fails_without_a_secret
+        PASS [   1.455s] (182/193) jackin-session::accounts stale_launch::a_launch_planned_before_account_rm_fails_and_creates_no_provider
+        PASS [   0.202s] (183/193) jackin-session::accounts sync::an_omp_static_key_account_creates_the_tuple_provider_with_only_the_key
+        PASS [   0.282s] (184/193) jackin-session::accounts sync::sync_account_refuses_an_account_the_config_no_longer_holds_as_given_and_writes_nothing
+        PASS [   0.235s] (185/193) jackin-session::accounts sync::the_same_kimi_account_synced_for_omp_creates_the_omp_provider
+        PASS [   1.852s] (186/193) jackin-session::accounts stale_launch::a_launch_planned_before_gateway_rm_fails_and_creates_no_provider
+        PASS [   1.762s] (187/193) jackin-session::accounts stale_launch::a_launch_planned_before_the_account_lost_its_provider_fails_and_creates_no_provider
+        PASS [   1.793s] (188/193) jackin-session::accounts stale_launch::a_launch_waiting_on_the_lock_of_a_running_gateway_rm_fails_and_creates_no_provider
+        PASS [   1.848s] (189/193) jackin-session::accounts stale_launch::a_launch_waiting_on_the_lock_of_a_running_account_rm_fails_and_creates_no_provider
+        PASS [   0.613s] (190/193) jackin-session::accounts sync::mode_a_is_unsupported_and_other_providers_are_host_only_and_neither_touches_the_gateway
+        PASS [   4.124s] (191/193) jackin-session::accounts lock::a_launch_waits_for_a_peer_that_syncs_the_account_and_keeps_the_rotated_token
+        PASS [   3.152s] (192/193) jackin-session::accounts stale_launch::an_edit_that_leaves_the_account_and_the_gateway_alone_does_not_stop_a_planned_launch
+        PASS [  19.425s] (193/193) jackin-session::accounts edit::after_any_two_account_edits_the_gateway_holds_a_provider_for_exactly_the_provider_accounts
+────────────
+     Summary [  30.955s] 193 tests run: 193 passed, 0 skipped
+mbx[cache]: 864 hits, 169 misses, 4 bypassed; 0 B downloaded, 0 B uploaded, 302.2 MiB stored locally
+mbx[savings]: 270.9 GiB of outputs materialized without a copy. the copy machine stays off.

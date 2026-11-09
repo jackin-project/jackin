@@ -1,0 +1,75 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling h2 v0.4.20
+   Compiling tokio-rustls v0.26.6
+   Compiling tower v0.5.3
+   Compiling jsonwebtoken v10.4.0
+   Compiling jackin-core v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-core)
+   Compiling russh v0.65.1
+   Compiling junie-tui v0.1.0 (https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63db)
+   Compiling regex-syntax v0.8.11
+   Compiling tempfile v3.27.0
+   Compiling regex-automata v0.4.18
+   Compiling tokio-tungstenite v0.26.2
+   Compiling jackin-console v0.1.0 (https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63db)
+   Compiling regex v1.13.1
+   Compiling tower-http v0.6.11
+   Compiling axum v0.8.9
+   Compiling jackin-image v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-image)
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling hyper-rustls v0.27.10
+   Compiling hyper-timeout v0.5.2
+   Compiling tonic v0.14.9
+   Compiling reqwest v0.13.5
+   Compiling reqwest v0.12.28
+   Compiling jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-core)
+   Compiling oauth2 v5.0.0
+   Compiling jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-codex)
+   Compiling jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-grok)
+   Compiling jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-opencode)
+   Compiling jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-cursor)
+   Compiling jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-kimi)
+   Compiling tonic-prost v0.14.9
+   Compiling openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling tonic-types v0.14.9
+   Compiling openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-openrouter)
+   Compiling jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-claude)
+   Compiling jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-gemini)
+   Compiling jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-minimax)
+   Compiling jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage-provider-zai)
+   Compiling openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/usage/jackin-usage)
+   Compiling openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-openshell v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-openshell)
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-tui)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a14-grok-session/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 1m 18s
+────────────
+ Nextest run ID 8b11893d-6404-453f-b8d7-a8e83fbaa5c0 with nextest profile: default
+    Starting 16 tests across 1 binary
+        PASS [   0.443s] ( 1/16) jackin-image::jackin_start jackin_start_names_credential_variables_by_the_shared_rule
+        PASS [   0.927s] ( 2/16) jackin-image::jackin_start a_stale_record_is_removed_when_the_classifier_fails
+        PASS [   1.033s] ( 3/16) jackin-image::jackin_start jackin_start_gives_codex_every_env_value_byte_for_byte
+        PASS [   1.031s] ( 4/16) jackin-image::jackin_start jackin_start_record_describes_the_environment_codex_really_receives
+        PASS [   1.039s] ( 5/16) jackin-image::jackin_start jackin_start_calls_no_program_by_bare_name_after_sourcing_the_env_file
+        PASS [   1.127s] ( 6/16) jackin-image::jackin_start a_failed_record_write_does_not_stop_the_supervisor
+        PASS [   0.024s] ( 7/16) jackin-image::jackin_start launch_command_name_resolves_to_the_agent_binary_path
+        PASS [   1.399s] ( 8/16) jackin-image::jackin_start jackin_start_record_never_holds_a_value
+        PASS [   0.821s] ( 9/16) jackin-image::jackin_start jackin_start_reports_an_unreadable_env_file_and_accepts_a_missing_one
+        PASS [   1.174s] (10/16) jackin-image::jackin_start jackin_start_replaces_the_whole_record_at_each_attempt
+        PASS [   1.367s] (11/16) jackin-image::jackin_start jackin_start_runs_the_agent_by_absolute_path_whatever_path_the_env_file_sets
+        PASS [   2.086s] (12/16) jackin-image::jackin_start jackin_start_records_credential_variable_names_and_kinds_of_both_environments
+        PASS [   2.683s] (13/16) jackin-image::jackin_start jackin_start_accepts_only_the_successor_of_the_last_attempt
+        PASS [   4.640s] (14/16) jackin-image::jackin_start jackin_start_refuses_every_malformed_env_file_and_runs_nothing
+        PASS [  10.459s] (15/16) jackin-image::jackin_start a_role_variable_name_cannot_change_what_the_supervisor_does
+        SLOW [> 60.000s] (─────) jackin-image::jackin_start jackin_start_applies_only_the_bytes_it_validated
+        PASS [  74.675s] (16/16) jackin-image::jackin_start jackin_start_applies_only_the_bytes_it_validated
+────────────
+     Summary [  74.700s] 16 tests run: 16 passed (1 slow), 0 skipped
+mbx[cache]: 9 hits, 40 misses; 0 B downloaded, 0 B uploaded, 254.2 MiB stored locally
+mbx[savings]: 277.6 GiB of outputs, one copy, several very confident checkouts.

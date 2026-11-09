@@ -84,11 +84,16 @@ impl ScenarioGateway {
                 name: ProviderName::parse(&format!("jackin-{account}-codex")).expect("provider"),
                 profile: profile.id,
                 keys: spec.codex.openshell.keys,
-                material: ProviderMaterial::ChatgptLogin {
+                material: ProviderMaterial::OAuth2RefreshToken {
                     access_token: Secret::new(ACCESS.to_owned()),
                     refresh_token: Secret::new(REFRESH.to_owned()),
                     client_id: CLIENT_ID.to_owned(),
-                    chatgpt_account_id: account_id,
+                    scopes: Vec::new(),
+                    expires_at: None,
+                    additional_credentials: std::collections::BTreeMap::from([(
+                        spec.codex.openshell.keys.account_id.to_owned(),
+                        account_id.to_string(),
+                    )]),
                 },
             })
             .await
