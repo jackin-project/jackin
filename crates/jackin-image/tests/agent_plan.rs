@@ -297,7 +297,14 @@ fn minimax_code_tuple_is_unavailable_and_image_plan_has_no_install_target() -> T
 fn antigravity_plan_pins_the_stable_tarball_and_renames_the_member() -> TestResult {
     let tuple = lookup_tuple(Agent::Antigravity, Provider::Antigravity)?;
     assert_eq!(tuple.id, "T05");
-    assert_eq!(tuple.state, TupleState::BlockedVendor);
+    assert_eq!(tuple.state, TupleState::Unavailable);
+    assert_eq!(
+        tuple.reason,
+        Some("subscription requires a desktop keyring in the sandbox")
+    );
+    assert_eq!(tuple.auth_class, jackin_core::AuthClass::BlockedVendor);
+    assert_ne!(tuple.state, TupleState::Supported);
+    assert_ne!(tuple.state, TupleState::BlockedVendor);
     let map = args(Agent::Antigravity)?;
     let spec = Agent::Antigravity.spec();
     assert_eq!(
