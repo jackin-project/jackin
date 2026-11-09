@@ -46,6 +46,14 @@ fn t01_profile_is_codex_only_with_refresh() -> TestResult {
 }
 
 #[test]
+fn t02_spec_permits_supervised_claude_hosts() {
+    assert_eq!(
+        Agent::ClaudeCode.spec().provider_hosts,
+        &["api.anthropic.com", "platform.claude.com"]
+    );
+}
+
+#[test]
 fn t09_profile_is_omp_zai_only_without_refresh() -> TestResult {
     let tuple = lookup_tuple(Agent::Omp, Provider::Zai)?;
     let asset = tuple_profile_asset(tuple);
@@ -89,7 +97,7 @@ const PINNED_ROWS: &[Row] = &[
     Row {
         id: "T02",
         asset: "claude",
-        hosts: &["api.anthropic.com"],
+        hosts: &["api.anthropic.com", "platform.claude.com"],
         env: "CLAUDE_CODE_OAUTH_TOKEN",
         binary: "/usr/local/bin/claude",
         refresh: false,
@@ -301,5 +309,18 @@ fn role_rule_matching_provider_host_is_rejected() -> TestResult {
     let text = "version: 1\nfilesystem_policy:\n  include_workdir: true\n  read_only:\n    - /usr\n  read_write:\n    - /sandbox\nlandlock:\n  compatibility: hard_requirement\nprocess:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  custom:\n    name: custom\n    endpoints:\n      - host: api.z.ai\n        port: 443\n    binaries:\n      - path: /usr/local/bin/omp\n";
     let result = AuthoredPolicy::parse(text)?.close_for_tuple(tuple);
     assert!(result.is_err(), "{result:?}");
+    Ok(())
+}
+
+#[test]
+fn t02_role_rules_matching_provider_hosts_are_rejected() -> TestResult {
+    let tuple = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
+    for host in ["api.anthropic.com", "platform.claude.com"] {
+        let text = format!(
+            "version: 1\nfilesystem_policy:\n  include_workdir: true\n  read_only:\n    - /usr\n  read_write:\n    - /sandbox\nlandlock:\n  compatibility: hard_requirement\nprocess:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  custom:\n    name: custom\n    endpoints:\n      - host: {host}\n        port: 443\n    binaries:\n      - path: /usr/local/bin/claude\n"
+        );
+        let result = AuthoredPolicy::parse(&text)?.close_for_tuple(tuple);
+        assert!(result.is_err(), "{host}: {result:?}");
+    }
     Ok(())
 }

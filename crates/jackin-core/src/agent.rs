@@ -687,7 +687,7 @@ static CLAUDE_CODE_SPEC: AgentSpec = agent_spec!(
         }
     ],
     AuthClass::BlockedVendor,
-    &["api.anthropic.com"],
+    &["api.anthropic.com", "platform.claude.com"],
     &["ANTHROPIC_API_KEY"],
     &["haiku"],
     "haiku",
