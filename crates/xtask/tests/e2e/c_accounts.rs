@@ -7,7 +7,10 @@ use super::scenario::{Scenario, UsageScript};
 use super::support::fault;
 
 fn windows() -> Value {
-    json!({"state": "windows", "windows": [{"kind": "weekly", "label": "Weekly", "used_percent": 12.5, "resets_at": 1_800_000_000}]})
+    json!({"state": "windows", "windows": [
+        {"kind": "weekly", "label": "Weekly", "used_percent": 12.5, "resets_at": 1_800_000_000},
+        {"kind": "credits", "label": "Credits", "used_percent": null, "remaining": {"kind": "amount", "value": "10", "unit": "credits"}, "resets_at": null},
+    ]})
 }
 
 fn unavailable(kind: &str) -> Value {
@@ -62,6 +65,16 @@ async fn j17_selection_faults() {
         "J17 workspace binding: the agents label",
         |scenario| {
             scenario.knobs().bound_ignored = true;
+        },
+    )
+    .await;
+    fault(
+        "role resolution falls back to the provider default",
+        "J17",
+        "J17 role binding: the agents label",
+        |scenario| {
+            scenario.knobs().account_override =
+                Some(("e2e-abcd-fxr".to_owned(), "e2e-abcd-a1".to_owned()));
         },
     )
     .await;
@@ -170,21 +183,71 @@ async fn j17_usage_content_faults() {
         )]),
     )
     .await;
-    let other_rate = Scenario::new().await;
-    usage(vec![script(
-        json!({"state": "windows", "windows": [{"kind": "other", "label": "o", "used_percent": 3.0, "resets_at": 1}]}),
-        expired.clone(),
-    )])(&other_rate);
-    other_rate
+    fault(
+        "an other window is not declared for T01",
+        "J17",
+        "undeclared window",
+        |scenario| {
+            let mut value = windows();
+            value["windows"]
+                .as_array_mut()
+                .expect("windows")
+                .push(json!({"kind": "other", "label": "o", "used_percent": 3.0, "resets_at": 1}));
+            usage(vec![script(value, expired.clone())])(scenario);
+        },
+    )
+    .await;
+    fault(
+        "weekly is required",
+        "J17",
+        "lacks required weekly",
+        usage(vec![script(
+            json!({"state": "windows", "windows": [{"kind": "credits", "label": "c", "used_percent": null, "remaining": {"kind": "amount", "value": "5", "unit": "credits"}, "resets_at": null}]}),
+            expired.clone(),
+        )]),
+    )
+    .await;
+    fault(
+        "credits is required",
+        "J17",
+        "lacks required credits",
+        usage(vec![script(
+            json!({"state": "windows", "windows": [{"kind": "weekly", "label": "w", "used_percent": 1.0, "resets_at": 1}]}),
+            expired.clone(),
+        )]),
+    )
+    .await;
+    fault(
+        "five-hour is forbidden",
+        "J17",
+        "undeclared window five_hour",
+        |scenario| {
+            let mut value = windows();
+            value["windows"].as_array_mut().expect("windows").push(
+                json!({"kind": "five_hour", "label": "5h", "used_percent": 1.0, "resets_at": 1}),
+            );
+            usage(vec![script(value, expired.clone())])(scenario);
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn j17_usage_rejects_unsupported_and_accepts_complete_windows() {
+    let expired = unavailable("expired_login");
+    fault(
+        "A1 unsupported is fatal",
+        "J17",
+        "A1 usage is unavailable: unsupported",
+        usage(vec![script(unavailable("unsupported"), expired.clone())]),
+    )
+    .await;
+    let complete = Scenario::new().await;
+    usage(vec![script(windows(), expired)])(&complete);
+    complete
         .run()
         .await
-        .expect("an other window with a percentage only passes", &[]);
-    let weekly_only = Scenario::new().await;
-    usage(vec![script(windows(), expired)])(&weekly_only);
-    weekly_only
-        .run()
-        .await
-        .expect("a weekly window without a 5-hour window passes", &[]);
+        .expect("weekly and credits without five-hour pass", &[]);
 }
 
 #[tokio::test]
@@ -230,10 +293,12 @@ async fn j17_transient_usage_failures_are_retried_then_fail() {
     }
     let fixture_transient = Scenario::new().await;
     usage(vec![script(windows(), unavailable("network"))])(&fixture_transient);
-    fixture_transient
-        .run()
-        .await
-        .expect("a fixture account is judged once", &[]);
+    let ran = fixture_transient.run().await;
+    ran.expect(
+        "a fixture transient reason is not expired_login",
+        &[("J17", "FAIL")],
+    );
+    ran.reason_has("fixture reason", "J17", "expected expired_login");
     assert_eq!(
         fixture_transient.state().usage_calls,
         1,

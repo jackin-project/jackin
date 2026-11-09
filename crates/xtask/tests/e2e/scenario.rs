@@ -88,6 +88,7 @@ impl Rule {
 )]
 pub(crate) struct Knobs {
     pub probes: Vec<ProbePatch>,
+    pub report_patches: Vec<ProbePatch>,
     pub drop_steps: Vec<String>,
     pub exec: Vec<Rule>,
     pub host: Vec<Rule>,
@@ -157,6 +158,16 @@ pub(crate) struct Knobs {
     pub reflect_done_code: i32,
     pub auth_id_token: Option<String>,
     pub create_env_extra: Option<(String, String)>,
+    pub target_args_fault: Option<String>,
+    pub age_reply: Option<AgeReply>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum AgeReply {
+    NoChild,
+    WrongComm,
+    WrongParent,
+    Young,
 }
 
 #[derive(Clone, Debug)]
@@ -221,6 +232,11 @@ pub(crate) struct State {
     pub attaches: u32,
     pub rule_hits: BTreeMap<String, u32>,
     pub links: Vec<PathBuf>,
+    pub fresh_replies: Vec<String>,
+    pub fresh_reply_envs: Vec<BTreeMap<String, String>>,
+    pub probe_specs: Vec<Vec<u8>>,
+    pub probe_argvs: Vec<Vec<String>>,
+    pub shell_commands: Vec<String>,
     pub tag: String,
 }
 
@@ -235,7 +251,7 @@ pub(crate) struct SandboxModel {
     pub launch: String,
     pub kind: String,
     pub supervisor: String,
-    pub codex_pid: u32,
+    pub agent_pid: u32,
     pub setup_runs: u32,
     pub preflight_runs: u32,
     pub preflight_failures: u32,
@@ -434,8 +450,6 @@ impl Scenario {
         let args: Vec<String> = [
             "--docker",
             if docker { "on" } else { "off" },
-            "--engine",
-            "host.openshell.internal:2376",
             "--only",
             &steps.join(","),
         ]
@@ -447,6 +461,15 @@ impl Scenario {
 
     pub(crate) fn patch(&self, step: &str, call: Option<u32>, pointer: &str, value: Value) {
         self.knobs().probes.push(ProbePatch {
+            step: step.to_owned(),
+            call,
+            pointer: pointer.to_owned(),
+            value,
+        });
+    }
+
+    pub(crate) fn patch_report(&self, step: &str, call: Option<u32>, pointer: &str, value: Value) {
+        self.knobs().report_patches.push(ProbePatch {
             step: step.to_owned(),
             call,
             pointer: pointer.to_owned(),

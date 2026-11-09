@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{CaFingerprint, LaunchId};
-use serde_json::Value;
 
-use super::j12::json_of;
-use crate::e2e::probe::{FactsJ04, FactsJ15, ProbeMode, ProbeReport, ProbeRequest};
-use crate::e2e::run::{ENGINE_HOST, Fail, PROBE, Res, Run, fail, labels_of};
+use super::j12::{json_of, shell_quote};
+use crate::e2e::probe::{FactsJ04, FactsJ15};
+use crate::e2e::run::{Fail, Res, Run, fail, labels_of};
 use crate::e2e::verdict::Verdict;
 
 pub(crate) const WARNING: &str = "warning: the Docker capability is enabled for this sandbox";
@@ -164,7 +163,7 @@ impl Run<'_> {
         let launch = LaunchId::generate().map_err(|error| fail(error.to_string()))?;
         let project = dock.display().to_string();
         let loaded = self
-            .jackin(
+            .jackin_target(
                 "J15 load",
                 &[
                     "load",
@@ -201,22 +200,19 @@ impl Run<'_> {
         self.w.container_created = true;
         let mut session = self.open_pty(&["shell", d.as_str()], &dock)?;
         let timeout = self.b.budgets.exec;
-        let probe_line =
-            format!("{PROBE} --docker on --engine {ENGINE_HOST}:{port} --only J04,J15");
+        let invocation = self.probe_invocation(true, true, &["J04", "J15"])?;
+        self.write_probe_spec(&d).await?;
+        let probe_line = invocation
+            .argv
+            .iter()
+            .map(|part| shell_quote(part))
+            .collect::<Vec<_>>()
+            .join(" ");
         let probed = session.run_shell(&probe_line, timeout).await;
         self.finish_pty("J15 shell", &session);
         let (body, code) = probed?;
-        if code != 0 {
-            return Err(fail(format!("the probe in the shell exited {code}")));
-        }
         let json = json_of(&body).ok_or_else(|| fail("the probe in the shell printed no JSON"))?;
-        let value: Value = serde_json::from_str(json)?;
-        let request = ProbeRequest {
-            only: vec!["J04".to_owned(), "J15".to_owned()],
-            docker: true,
-            mode: ProbeMode::Sandbox,
-        };
-        let report = ProbeReport::parse(value.to_string().as_bytes(), &request, &self.redactor)?;
+        let report = self.parse_probe(code, json.as_bytes(), b"", &invocation.request)?;
         let facts: FactsJ15 = report.facts("J15")?;
         let identity: FactsJ04 = report.facts("J04")?;
         if let (Some(host), Some(path)) =

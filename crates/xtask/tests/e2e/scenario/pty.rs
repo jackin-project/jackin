@@ -131,7 +131,7 @@ impl Link {
                         .clone()
                         .unwrap_or_else(|| "running 2".to_owned());
                     if !same {
-                        model.codex_pid = 4243;
+                        model.agent_pid = 4243;
                     }
                 }
                 self.out.push_back(self.header().into_bytes());
@@ -231,6 +231,9 @@ impl Link {
     }
 
     fn answer(&mut self, command: &str) -> (String, i32) {
+        if command.contains("jackin-sentinel-probe") {
+            self.shared.state().shell_commands.push(command.to_owned());
+        }
         let forced = self
             .shared
             .knobs()
@@ -252,7 +255,7 @@ impl Link {
             let args: Vec<String> = command
                 .split_whitespace()
                 .skip(1)
-                .map(str::to_owned)
+                .map(|part| part.trim_matches('\'').to_owned())
                 .collect();
             let name = SandboxName::parse(&self.sandbox).expect("sandbox");
             let model = self.model();

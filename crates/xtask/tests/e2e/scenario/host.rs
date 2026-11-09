@@ -163,7 +163,7 @@ impl ScenarioHost {
                 launch: launch.to_owned(),
                 kind,
                 supervisor: "waiting".to_owned(),
-                codex_pid: 0,
+                agent_pid: 0,
                 boot: 1,
                 ..SandboxModel::default()
             },
@@ -198,9 +198,36 @@ impl ScenarioHost {
         done(0, &format!("{}\n", lines.join("\n")), "")
     }
 
+    fn target_selected(words: &[&str], wrong: bool) -> bool {
+        let value = |flag: &str| {
+            words
+                .iter()
+                .position(|word| *word == flag)
+                .and_then(|at| words.get(at + 1))
+                .copied()
+        };
+        let (agent, provider, model) = if wrong {
+            ("omp", "zai", "glm-5.3")
+        } else {
+            ("codex", "codex", "gpt-6.1-sol")
+        };
+        value("--agent") == Some(agent)
+            && value("--provider") == Some(provider)
+            && value("--model") == Some(model)
+            && !words.contains(&"--account")
+            && !words.contains(&"--account-for")
+    }
+
     fn build(&self, words: &[&str]) -> Result<HostOutput, HostError> {
-        let first = words.contains(&"--rebuild");
         let knobs = self.shared.knobs().clone();
+        if !Self::target_selected(words, knobs.target_args_fault.as_deref() == Some("build")) {
+            return done(
+                2,
+                "",
+                "scenario: build target selectors are missing or wrong\n",
+            );
+        }
+        let first = words.contains(&"--rebuild");
         self.shared.state().builds += 1;
         let id = if first {
             IMAGE_ID.to_owned()
@@ -306,6 +333,16 @@ impl ScenarioHost {
     }
 
     async fn load(&self, words: &[&str]) -> Result<HostOutput, HostError> {
+        if !Self::target_selected(
+            words,
+            self.shared.knobs().target_args_fault.as_deref() == Some("load"),
+        ) {
+            return done(
+                2,
+                "",
+                "scenario: load target selectors are missing or wrong\n",
+            );
+        }
         let path = words.get(2).copied().unwrap_or_default();
         let launch = words
             .iter()
@@ -408,7 +445,7 @@ impl ScenarioHost {
             return done(1, "", &stderr);
         }
         model.supervisor = "running 1".to_owned();
-        model.codex_pid = 4242;
+        model.agent_pid = 4242;
         drop(state);
         self.fake
             .force_phase(&SandboxName::parse(&name).expect("name"), Phase::Ready);
@@ -583,7 +620,7 @@ impl ScenarioHost {
                     && let Some(first) = self.first_main()
                     && let Some(model) = self.shared.state().sandboxes.get_mut(first.as_str())
                 {
-                    model.codex_pid = 9999;
+                    model.agent_pid = 9999;
                 }
                 if let Some(model) = self.shared.state().sandboxes.get_mut(*name) {
                     model.stopped = false;
@@ -632,6 +669,21 @@ impl ScenarioHost {
         );
         self.shared.state().sandboxes.remove(name);
         done(0, "", "")
+    }
+
+    fn fresh_reply(&self, command: &HostCommand) -> Result<HostOutput, HostError> {
+        let prompt = command.args.last().map(String::as_str).unwrap_or_default();
+        let expected = prompt
+            .strip_prefix("Reply with exactly ")
+            .and_then(|text| text.strip_suffix(" and no other text"))
+            .unwrap_or_default()
+            .to_owned();
+        self.shared.state().fresh_replies.push(expected.clone());
+        self.shared
+            .state()
+            .fresh_reply_envs
+            .push(command.env.clone());
+        done(0, &format!("{expected}\n"), "")
     }
 
     fn openshell(&self, command: &HostCommand) -> Result<HostOutput, HostError> {
@@ -756,6 +808,8 @@ impl HostProcess for ScenarioHost {
         }
         let result = if command.program == "openshell" {
             self.openshell(command)
+        } else if command.program == "codex" {
+            self.fresh_reply(command)
         } else {
             self.jackin(command).await
         };

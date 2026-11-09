@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod a1;
+mod adapter;
 mod args;
 mod clock;
+mod credential;
 mod engine;
 mod host;
 mod ledger;
@@ -18,6 +20,7 @@ mod scratch;
 mod setup;
 mod steps;
 mod sweep;
+mod target;
 mod verdict;
 mod world;
 
@@ -37,19 +40,30 @@ use tokio_util::sync::CancellationToken;
 pub use a1::{
     A1_LOCK_FILE, A1Error, A1Lock, A1Login, a1_lock_dir, fixture_login, host_login_state,
 };
+pub use adapter::{
+    AgentBehaviorSpec, AnswerMatcher, AuthFileBehavior, CompleteBehaviorSpec, CredentialBehavior,
+    CredentialClassification, ProcessBehavior, PromptBehavior, ProviderBehavior,
+    ProviderBodyMatcher, ReflectionBehavior, TerminalBehavior, UsageBehavior, UsageWindow,
+    VersionBehavior, t01_behavior,
+};
 pub use args::E2eArgs;
 pub use clock::{Budgets, Clock, SystemClock};
+pub use credential::{CredentialError, CredentialSession, ResolvedCredential};
 pub use engine::{HostEngine, SocketEngine};
 pub use host::{Exit, HostCommand, HostError, HostOutput, HostProcess, RealHost};
 pub use probe::{
-    ProbeCheck, ProbeError, ProbeMode, ProbeReport, ProbeRequest, ProbeResult, ProbeStep,
-    SCHEMA_TEXT, schema_step_drift,
+    EngineExpectation, ProbeCheck, ProbeError, ProbeMode, ProbeReport, ProbeRequest, ProbeResult,
+    ProbeStep, SCHEMA_TEXT, schema_step_drift,
 };
 pub use production::{ProductionError, ToolRunner, production};
 pub use pty::{PortablePty, PtyError, PtyHost, PtyLink, PtySession, PtySpec};
 pub use redact::Redactor;
 pub use report::{Capture, Sink};
 pub use scratch::{Scratch, ScratchError, base_env, child_env, scratch_dir_name, snapshot_tree};
+pub use target::{
+    BehaviorCategory, E2eCredential, E2eTarget, PROBE_SPEC_PATH, ProbeSpec, TargetError,
+    TargetIdentity,
+};
 pub use verdict::{ExitStatus, LineId, STEP_IDS, Status, StepId, StepLine, Verdict, render};
 
 use report::{OrderedPrinter, Printer};
@@ -219,9 +233,30 @@ async fn execute(args: &E2eArgs, b: &Boundaries, printer: &Printer) -> ExitStatu
         verdict,
         elapsed: b.clock.now().saturating_sub(clean_started),
     });
-    let login = host_login_state(&b.codex_home, &run.a1);
+    let fresh_ok = if interrupted {
+        true
+    } else {
+        match run.credentials.fresh_host_reply(b, "after").await {
+            Ok(_) => true,
+            Err(error) => {
+                printer.out(&format!(
+                    "HOST_REPLY FAIL {}",
+                    run.credentials.scrubbed_failure(&error)
+                ));
+                false
+            }
+        }
+    };
+    let login = run
+        .credentials
+        .host_login_state(&b.codex_home)
+        .unwrap_or("not-applicable");
     ordered.result(b.clock.now().saturating_sub(started), login);
-    ExitStatus::of(&ordered.lines(), interrupted)
+    if fresh_ok {
+        ExitStatus::of(&ordered.lines(), interrupted)
+    } else {
+        ExitStatus::Failed
+    }
 }
 
 async fn drive(run: &mut run::Run<'_>, ordered: &mut OrderedPrinter, started: Duration) {

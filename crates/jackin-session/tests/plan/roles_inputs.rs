@@ -14,7 +14,7 @@ use jackin_core::{
     WorkspaceName,
 };
 use jackin_image::{BuildxEngine, ContextEntry, ImageEngine, ImagePlan, Rebuild};
-use jackin_session::{RoleCatalog, RoleError, plan_image};
+use jackin_session::{RoleCatalog, RoleError, plan_image_for};
 use jackin_testkit::{
     CapturedFile, FakeClock, ProcessEffect, ProcessReply, RoleFixture, ScriptedProcessRunner,
     ScriptedProgram, TestRunner,
@@ -272,7 +272,14 @@ async fn the_bytes_the_image_build_stages_are_the_bytes_the_image_key_covers() -
         let loaded = setup.role;
         setup.role_fixture.file("README.md", b"two\n").await?;
 
-        let request = plan_image(&setup.config, &loaded, &setup.gateway, None, Rebuild::No)?;
+        let request = plan_image_for(
+            &setup.config,
+            &loaded,
+            &setup.gateway,
+            None,
+            Rebuild::No,
+            jackin_core::Agent::Codex,
+        )?;
         let construct = ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
         let build = ImagePlan::new(&request)?.final_builds(&construct).role;
 

@@ -3,9 +3,10 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{InspectView, LaunchId, Phase, SandboxName};
+use jackin_core::{AccountName, AgentInstanceError, InspectView, LaunchId, Phase, SandboxName};
 
 use crate::e2e::run::{Fail, Res, Run, fail, labels_of, text_of};
+use crate::e2e::target::E2eTarget;
 use crate::e2e::verdict::Verdict;
 use crate::e2e::world::LoadObs;
 
@@ -22,15 +23,19 @@ const KEYS: [&str; 8] = [
 
 pub(crate) struct Expect<'a> {
     pub workspace: &'a str,
-    pub account: &'a str,
+    pub agents: String,
     pub image_id: &'a str,
     pub launch: &'a str,
     pub docker: &'a str,
 }
 
-pub(crate) fn agents_label(account: &str) -> String {
-    jackin_core::Sha256::of(format!("codex:zai:{account}:glm-5.3").as_bytes()).as_str()[..32]
-        .to_owned()
+pub(crate) fn agents_label(
+    target: &E2eTarget,
+    account: &AccountName,
+) -> Result<String, AgentInstanceError> {
+    target
+        .instances(account)
+        .map(|instances| instances.agents_label())
 }
 
 pub(crate) fn image_label(image_id: &str) -> String {
@@ -84,7 +89,7 @@ pub(crate) fn judge_launch(
         ("jackin.dev/managed", "true"),
         ("jackin.dev/workspace", expect.workspace),
         ("jackin.dev/role", "sentinel"),
-        ("jackin.dev/agents", &agents_label(expect.account)),
+        ("jackin.dev/agents", &expect.agents),
         ("jackin.dev/launch", expect.launch),
         ("jackin.dev/docker", expect.docker),
     ];
@@ -164,16 +169,10 @@ impl Run<'_> {
             project.as_str(),
             "--launch-id",
             launch.as_str(),
-            "--provider",
-            "zai",
-            "--model",
-            "glm-5.3",
-            "--account",
-            "zai",
         ];
         let mut failing = base.to_vec();
         failing.extend(["--env", "SENTINEL_FAIL_PREFLIGHT=1"]);
-        let first = self.jackin("J03 load 1", &failing, &main).await?;
+        let first = self.jackin_target("J03 load 1", &failing, &main).await?;
         let first_text = format!("{}{}", first.stdout_text(), first.stderr_text());
         let mut obs1 = self.after_load(&launch, first_text, first.ok()).await?;
         if let Some(name) = obs1.sandboxes.first() {
@@ -185,7 +184,7 @@ impl Run<'_> {
             obs1.export_ok = Some(exported.ok());
         }
         self.w.load1 = Some(obs1);
-        let second = self.jackin("J03 load 2", &base, &main).await?;
+        let second = self.jackin_target("J03 load 2", &base, &main).await?;
         let second_text = format!("{}{}", second.stdout_text(), second.stderr_text());
         let obs2 = self.after_load(&launch, second_text, second.ok()).await?;
         let sandboxes2 = obs2.sandboxes.clone();
@@ -210,9 +209,13 @@ impl Run<'_> {
         let found = self.find_launch(&launch).await?;
         let labels = found.first().map(labels_of).unwrap_or_default();
         let image = self.w.image_id.clone().unwrap_or_default();
+        let account =
+            AccountName::parse(&self.names.a1).map_err(|error| fail(error.to_string()))?;
+        let agents = agents_label(&self.credentials.target, &account)
+            .map_err(|error| fail(error.to_string()))?;
         let expect = Expect {
             workspace: &self.names.main,
-            account: "zai",
+            agents,
             image_id: &image,
             launch: launch.as_str(),
             docker: "off",

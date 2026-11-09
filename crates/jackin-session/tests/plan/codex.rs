@@ -250,14 +250,12 @@ async fn plan_model_selection_allows_explicit_refuses_outside_and_defaults_witho
         )?;
         assert_eq!(plan.instances().lead().model, "glm-5.3");
 
-        let removed = setup
-            .plan(setup.request(1)?.model(Some("gpt-5.1-codex".to_owned())))
-            .err()
-            .ok_or("expected removed model refusal")?;
-        assert!(
-            matches!(&removed, PlanError::TupleNotSupported { reason, .. } if reason == "unknown model gpt-5.1-codex"),
-            "{removed}"
-        );
+        let alternate = setup.plan(
+            setup
+                .request(1)?
+                .model(Some("gpt-5.1-codex".to_owned())),
+        )?;
+        assert_eq!(alternate.instances().lead().model, "gpt-5.1-codex");
 
         let err = setup
             .plan(setup.request(1)?.model(Some("no-such-model".to_owned())))

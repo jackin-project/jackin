@@ -77,7 +77,7 @@ impl Run<'_> {
             detail.view.phase,
             labels_of(&detail.view),
             inspected.supervisor,
-            super::j07::codex_of(&rows)
+            super::j07::agent_of(&rows, &self.credentials.target.behavior().process.comm)
         ))
     }
 
@@ -122,7 +122,7 @@ impl Run<'_> {
         let launch = LaunchId::generate().map_err(|error| fail(error.to_string()))?;
         let project = life.display().to_string();
         let loaded = self
-            .jackin(
+            .jackin_target(
                 "J14 load",
                 &[
                     "load",

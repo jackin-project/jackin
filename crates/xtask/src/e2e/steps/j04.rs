@@ -93,14 +93,26 @@ impl Run<'_> {
     }
 
     pub(crate) async fn wait_for_codex(&mut self, sandbox: &SandboxName) -> Res<()> {
-        let wanted = self.b.budgets.codex_age.as_secs();
-        let script = "ps -eo etimes=,comm= | awk '$2 == \"codex\" {print $1; exit}'";
+        let behavior = self.credentials.target.behavior().process.clone();
+        let wanted = behavior.minimum_age_seconds;
+        let script = format!(
+            "main=$(ps -eo pid=,comm= | awk '$2 == \"jackin-start\" {{print $1; exit}}'); \
+             ps -eo pid=,ppid=,etimes=,comm= | awk -v main=\"$main\" -v comm=\"{}\" -v age=\"{}\" \
+             '$2 == main && $4 == comm && $3 >= age {{print $3; exit}}'",
+            behavior.comm, wanted
+        );
         let deadline = tokio::time::Instant::now() + self.b.budgets.exec;
         loop {
-            let outcome = self.exec(sandbox, "J04 codex age", script).await?;
+            let outcome = self.exec(sandbox, "J04 agent age", &script).await?;
             let age = text_of(&outcome.stdout).trim().parse::<u64>().ok();
-            if age.is_some_and(|age| age >= wanted) || tokio::time::Instant::now() >= deadline {
+            if age.is_some_and(|age| age >= wanted) {
                 return Ok(());
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(fail(format!(
+                    "no direct {} child of jackin-start reached age {wanted}s before the J04 deadline",
+                    behavior.comm
+                )));
             }
             tokio::time::sleep(self.b.budgets.poll).await;
         }

@@ -298,6 +298,15 @@ pub struct InspectArgs {
 pub struct BuildArgs {
     #[arg(help = "Role name; defaults to the workspace default role")]
     pub role: Option<RoleName>,
+    #[arg(long, help = "Agent whose image bytes are built; default: codex")]
+    pub agent: Option<String>,
+    #[arg(
+        long,
+        help = "Provider tuple to validate; default: the agent's native provider"
+    )]
+    pub provider: Option<String>,
+    #[arg(long, help = "Model tuple to validate; default: the tuple default")]
+    pub model: Option<String>,
     #[arg(long, help = "Build the image again")]
     pub rebuild: bool,
     #[arg(long, help = "Print JSON")]

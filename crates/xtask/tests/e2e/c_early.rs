@@ -102,7 +102,7 @@ async fn j00_image_build_faults() {
         scenario.patch(
             "J00",
             None,
-            "/facts/codex/version",
+            "/facts/agent/version",
             json!("codex-cli 0.165.0"),
         );
     })

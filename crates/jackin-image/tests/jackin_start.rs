@@ -256,14 +256,14 @@ async fn jackin_start_records_credential_variable_names_and_kinds_of_both_enviro
     supervisor.wait_state("waiting").await?;
     assert_eq!(
         supervisor.record().as_deref(),
-        Some(format!("jackin-env-kinds 1\nattempt 0\n{MAIN_LINES}").as_str()),
+        Some(format!("jackin-env-kinds 2\nattempt 0\n{MAIN_LINES}").as_str()),
         "the record at the moment the state reads waiting"
     );
     supervisor.attempt(1).await?;
-    let codex = "codex AWS_SECRET_ACCESS_KEY other\ncodex CODEX_AUTH_ACCESS_TOKEN placeholder\ncodex GITHUB_TOKEN empty\ncodex MULTI_KEY other\ncodex OPENAI_API_KEY placeholder\ncodex STRIPE_SECRET other\n";
+    let codex = "agent AWS_SECRET_ACCESS_KEY other\nagent CODEX_AUTH_ACCESS_TOKEN placeholder\nagent GITHUB_TOKEN empty\nagent MULTI_KEY other\nagent OPENAI_API_KEY placeholder\nagent STRIPE_SECRET other\n";
     assert_eq!(
         supervisor.record().as_deref(),
-        Some(format!("jackin-env-kinds 1\nattempt 1\n{MAIN_LINES}{codex}").as_str())
+        Some(format!("jackin-env-kinds 2\nattempt 1\n{MAIN_LINES}{codex}").as_str())
     );
     Ok(())
 }
@@ -362,7 +362,7 @@ fn classify(dump: &str) -> Result<Vec<String>, regex::Error> {
             } else {
                 "other"
             };
-            format!("codex {name} {kind}")
+            format!("agent {name} {kind}")
         })
         .collect();
     lines.sort();
@@ -383,13 +383,13 @@ async fn jackin_start_record_describes_the_environment_codex_really_receives() -
     let record = supervisor.record().ok_or("no record")?;
     let mut recorded: Vec<String> = record
         .lines()
-        .filter(|line| line.starts_with("codex "))
+        .filter(|line| line.starts_with("agent "))
         .map(str::to_owned)
         .collect();
     recorded.sort();
     assert_eq!(recorded, received, "record:\n{record}");
-    assert!(recorded.contains(&"codex P_TOKEN empty".to_owned()));
-    assert!(recorded.contains(&"codex STRIPE_SECRET other".to_owned()));
+    assert!(recorded.contains(&"agent P_TOKEN empty".to_owned()));
+    assert!(recorded.contains(&"agent STRIPE_SECRET other".to_owned()));
     assert!(record.contains("main P_TOKEN other\n"));
     Ok(())
 }
@@ -404,7 +404,7 @@ async fn jackin_start_replaces_the_whole_record_at_each_attempt() -> TestResult 
     supervisor.attempt(2).await?;
     let record = supervisor.record().ok_or("no record")?;
     assert!(
-        record.starts_with("jackin-env-kinds 1\nattempt 2\n"),
+        record.starts_with("jackin-env-kinds 2\nattempt 2\n"),
         "{record}"
     );
     assert_eq!(record.matches("attempt ").count(), 1, "{record}");
@@ -418,7 +418,7 @@ async fn jackin_start_replaces_the_whole_record_at_each_attempt() -> TestResult 
     supervisor.wait_state("exited 3 65").await?;
     assert_eq!(
         supervisor.record().as_deref(),
-        Some(format!("jackin-env-kinds 1\nattempt 3\n{MAIN_LINES}").as_str())
+        Some(format!("jackin-env-kinds 2\nattempt 3\n{MAIN_LINES}").as_str())
     );
     Ok(())
 }
@@ -440,7 +440,7 @@ async fn jackin_start_calls_no_program_by_bare_name_after_sourcing_the_env_file(
     let supervisor = Supervisor::spawn(setup, dir, root)?;
     supervisor.attempt(1).await?;
     let record = supervisor.record().ok_or("no record")?;
-    assert!(record.contains("codex STRIPE_SECRET other\n"), "{record}");
+    assert!(record.contains("agent STRIPE_SECRET other\n"), "{record}");
     assert_eq!(supervisor.runs(), 1, "the real fake Codex ran once");
     let marks: Vec<String> = fs::read_dir(supervisor.root.join("marks"))?
         .map(|e| e.map(|e| e.file_name().to_string_lossy().into_owned()))
@@ -802,7 +802,7 @@ async fn jackin_start_reports_an_unreadable_env_file_and_accepts_a_missing_one()
 const HOSTILE: &str = "/definitely-not-present-jackin-review";
 const CONTROL: &str = "ROLE_NOTE";
 const RESET_BY_ANY_SHELL: [&str; 1] = ["IFS"];
-const GOLDEN_CODEX_LINES: &str = "codex AWS_SECRET_ACCESS_KEY other\ncodex GITHUB_TOKEN empty\ncodex MULTI_KEY other\ncodex OPENAI_API_KEY placeholder\n";
+const GOLDEN_CODEX_LINES: &str = "agent AWS_SECRET_ACCESS_KEY other\nagent GITHUB_TOKEN empty\nagent MULTI_KEY other\nagent OPENAI_API_KEY placeholder\n";
 const COLLISION_FLOOR: [&str; 21] = [
     "project",
     "run",
@@ -869,7 +869,7 @@ async fn attempt_exporting(
         problems.push(format!("{name}: Codex ran in {:?}", cwd.trim_end()));
     }
     let record = supervisor.record().unwrap_or_default();
-    let wanted = format!("jackin-env-kinds 1\nattempt {id}\n{MAIN_LINES}{GOLDEN_CODEX_LINES}");
+    let wanted = format!("jackin-env-kinds 2\nattempt {id}\n{MAIN_LINES}{GOLDEN_CODEX_LINES}");
     if record != wanted {
         problems.push(format!("{name}: record {record:?}"));
     }

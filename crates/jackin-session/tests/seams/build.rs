@@ -4,8 +4,8 @@
 use jackin_core::{Config, ConfigError, GatewayName, HostPath, RoleName};
 use jackin_image::{BuiltImage, ImageError, ImageRequest, ImageSource, Rebuild, ensure_image};
 use jackin_session::{
-    BuildError, BuildRequest, LAUNCH_EVENT_CAPACITY, RoleError, build_for_workspace, plan_image,
-    plan_launch,
+    BuildError, BuildRequest, LAUNCH_EVENT_CAPACITY, RoleError, build_for_workspace,
+    plan_image_for, plan_launch,
 };
 use jackin_testkit::{ENGINE_PORT, Rig, RoleFixture, TestResult, guard};
 use tokio::sync::mpsc;
@@ -37,6 +37,9 @@ fn request_for<'a>(role: Option<&'a RoleName>, path: &'a HostPath) -> BuildReque
         gateway: None,
         role,
         path,
+        agent: jackin_core::Agent::Codex,
+        provider: jackin_core::Provider::Codex,
+        model: None,
         rebuild: Rebuild::No,
     }
 }
@@ -54,6 +57,9 @@ async fn a_build_makes_the_role_image_once_and_a_rebuild_makes_it_again() -> Tes
             gateway: None,
             role: None,
             path: &path,
+            agent: jackin_core::Agent::Codex,
+            provider: jackin_core::Provider::Codex,
+            model: None,
             rebuild: Rebuild::No,
         };
         let first = build(&rig, &rig.config, &request).await?;
@@ -142,6 +148,9 @@ async fn an_unknown_gateway_is_refused_before_any_role_is_read() -> TestResult {
             gateway: Some(&ghost),
             role: None,
             path: &path,
+            agent: jackin_core::Agent::Codex,
+            provider: jackin_core::Provider::Codex,
+            model: None,
             rebuild: Rebuild::No,
         };
         assert!(matches!(
@@ -206,7 +215,14 @@ async fn a_build_makes_the_image_that_a_launch_of_the_same_workspace_finds_alrea
             let unsaved = HostPath::parse(&std::fs::canonicalize(unsaved_dir.path())?)?;
             let elsewhere = build(&rig, &flagged, &request_for(None, &unsaved)).await?;
             let (gateway, _) = flagged.resolve_gateway(None)?;
-            let role_only = plan_image(&flagged, &rig.loaded, gateway, None, Rebuild::No)?;
+            let role_only = plan_image_for(
+                &flagged,
+                &rig.loaded,
+                gateway,
+                None,
+                Rebuild::No,
+                jackin_core::Agent::Codex,
+            )?;
             let found = reuse(&rig, &role_only).await?;
             assert_eq!(
                 (&found.tag, found.source),
@@ -246,6 +262,82 @@ async fn a_role_the_workspace_does_not_allow_is_refused_before_anything_is_built
 
         build(&rig, &restricted, &request_for(None, &path)).await?;
         assert!(!rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn unavailable_tuples_and_invalid_models_are_refused_before_image_effects() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let path = here(&rig);
+        let unavailable = BuildRequest {
+            agent: jackin_core::Agent::ClaudeCode,
+            provider: jackin_core::Provider::Claude,
+            ..request_for(None, &path)
+        };
+        assert!(matches!(
+            build(&rig, &rig.config, &unavailable).await,
+            Err(BuildError::Plan(
+                jackin_session::PlanError::TupleNotSupported { .. }
+            ))
+        ));
+        assert!(rig.world.engine.builds().is_empty());
+
+        let invalid = BuildRequest {
+            model: Some("not-a-model"),
+            ..request_for(None, &path)
+        };
+        assert!(matches!(
+            build(&rig, &rig.config, &invalid).await,
+            Err(BuildError::Plan(
+                jackin_session::PlanError::TupleNotSupported { .. }
+            ))
+        ));
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn default_and_explicit_t01_selection_share_identity_across_build_and_load() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let path = here(&rig);
+        let default = build(&rig, &rig.config, &request_for(None, &path)).await?;
+        let builds = rig.world.engine.builds().len();
+        let explicit = BuildRequest {
+            model: Some("gpt-6.1-sol"),
+            ..request_for(None, &path)
+        };
+        let selected = build(&rig, &rig.config, &explicit).await?;
+        assert_eq!(
+            (selected.tag, selected.id),
+            (default.tag.clone(), default.id.clone())
+        );
+        assert_eq!(rig.world.engine.builds().len(), builds);
+
+        let other_model = BuildRequest {
+            model: Some("gpt-5.1-codex"),
+            ..request_for(None, &path)
+        };
+        let changed_model = build(&rig, &rig.config, &other_model).await?;
+        assert_eq!(
+            (changed_model.tag, changed_model.id),
+            (default.tag.clone(), default.id.clone())
+        );
+        assert_eq!(rig.world.engine.builds().len(), builds);
+
+        let request = rig.request(1)?.model(Some("gpt-5.1-codex".to_owned()));
+        let plan = plan_launch(&rig.config, &rig.loaded, request)?;
+        let found = reuse(&rig, plan.image_request()).await?;
+        assert_eq!(
+            (found.tag, found.id, found.source),
+            (default.tag, default.id, ImageSource::Cache)
+        );
+        assert_eq!(rig.world.engine.builds().len(), builds);
         Ok(())
     })
     .await

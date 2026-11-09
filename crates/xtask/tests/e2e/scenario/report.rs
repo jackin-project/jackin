@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use jackin_core::SandboxName;
+use jackin_xtask::E2eTarget;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -25,23 +26,23 @@ fn proc(pid: u32, ppid: u32, comm: &str, ticks: u64, tty: Option<&str>) -> Value
 }
 
 fn processes(model: &SandboxModel, own_tty: &str, descends: bool) -> Value {
-    let pid = model.codex_pid.max(4242);
+    let pid = model.agent_pid.max(4242);
     json!({
         "boot_id": format!("boot-{}", model.boot),
         "run_state": "running",
         "main": proc(100, 1, "jackin-start", 1000, None),
-        "codex": [proc(pid, 100, "codex", u64::from(pid) * 10, Some("pts/0"))],
+        "agent": [proc(pid, 100, "codex", u64::from(pid) * 10, Some("pts/0"))],
         "self": proc(9000, 8000, "jackin-sentinel-probe", 90000, Some(own_tty)),
         "self_descends_from_main": descends,
     })
 }
 
 fn exec_ok() -> Value {
-    json!({"attempted": true, "credential": "chatgpt_login", "exit_code": 0, "answered": true, "output_bytes": 5})
+    json!({"attempted": true, "credential": "oauth_login", "exit_code": 0, "answered": true, "output_bytes": 5})
 }
 
 fn egress(code: u32, exit: u32) -> Value {
-    json!({"url": "https://example.invalid/", "curl_found": true, "curl_exit": exit, "http_code": code})
+    json!({"url": "https://example.invalid/", "curl_found": true, "curl_exit": exit, "http_code": code, "body": null})
 }
 
 fn project_files(dir: &Path) -> Vec<Value> {
@@ -78,7 +79,7 @@ fn facts(
     ]);
     match step {
         "J00" => {
-            json!({"codex": {"path": "/usr/local/bin/codex", "present": true, "executable": true, "version": "codex-cli 0.167.0"}})
+            json!({"agent": {"path": "/usr/local/bin/codex", "present": true, "executable": true, "version": "codex-cli 0.167.0"}})
         }
         "J04" => {
             json!({"user": "sandbox", "uid": 1000, "gid": 1000, "home": "/sandbox", "sudo": {"found": false, "works": false}, "docker_binary": docker})
@@ -119,19 +120,19 @@ fn facts(
             "preflight_failures": model.preflight_failures,
             "hooks": hooks,
         }),
-        "J07" => json!({"processes": processes(model, "pts/1", false), "codex_exec": exec_ok()}),
+        "J07" => json!({"processes": processes(model, "pts/1", false), "agent_exec": exec_ok()}),
         "J08" => json!({
-            "environment": [{"name": "ZAI_API_KEY", "kind": "placeholder", "source": "launch_env"}],
-            "agent_environment": {"main": "record", "codex": "record"},
+            "environment": [{"name": "CODEX_AUTH_ACCESS_TOKEN", "kind": "placeholder", "source": "launch_env"}],
+            "agent_environment": {"main": "record", "agent": "record"},
             "start_record": {"state": "read", "attempt": 1},
-            "auth_file": null,
+            "auth_file": {"state": "present", "path": "/sandbox/.codex/auth.json", "mode": "600", "access_token": "placeholder", "refresh_token": "empty", "id_token": "empty"},
             "leaks": [],
         }),
         "J09" => json!({
             "outside_host": egress(0, 7),
             "metadata_host": egress(0, 7),
-            "provider_host": egress(401, 0),
-            "codex_exec": exec_ok(),
+            "provider_host": json!({"url": "https://chatgpt.com/backend-api/models", "curl_found": true, "curl_exit": 0, "http_code": 401, "body": "invalid_api_key"}),
+            "agent_exec": exec_ok(),
         }),
         "J10" => json!({"writes": [
             {"path": "/etc/e2e-probe", "expected": "denied", "dac_writable": true, "created": false},
@@ -228,8 +229,8 @@ pub(crate) fn build_report(
         );
     }
     let mut report = json!({
-        "schema": 2, "probe": "jackin-sentinel-probe", "mode": "sandbox",
-        "docker": if docker { "on" } else { "off" }, "steps": Value::Object(steps),
+        "schema": 3, "probe": "jackin-sentinel-probe", "target": E2eTarget::t01().expect("T01 target").identity(), "mode": "sandbox",
+        "docker": if docker { "on" } else { "off" }, "engine": engine, "steps": Value::Object(steps),
     });
     let knobs = gateway.shared.knobs().clone();
     for patch in &knobs.probes {
@@ -249,6 +250,27 @@ pub(crate) fn build_report(
         if let Some(slot) = report.pointer_mut(&full) {
             *slot = patch.value.clone();
         } else if let Some((parent, key)) = full.rsplit_once('/')
+            && let Some(Value::Object(map)) = report.pointer_mut(parent)
+        {
+            map.insert(key.to_owned(), patch.value.clone());
+        }
+    }
+    for patch in &knobs.report_patches {
+        if report["steps"].get(&patch.step).is_none() {
+            continue;
+        }
+        let call = gateway
+            .shared
+            .state()
+            .sandboxes
+            .get(sandbox.as_str())
+            .and_then(|found| found.probe_calls.get(&patch.step).copied());
+        if patch.call.is_some() && patch.call != call {
+            continue;
+        }
+        if let Some(slot) = report.pointer_mut(&patch.pointer) {
+            *slot = patch.value.clone();
+        } else if let Some((parent, key)) = patch.pointer.rsplit_once('/')
             && let Some(Value::Object(map)) = report.pointer_mut(parent)
         {
             map.insert(key.to_owned(), patch.value.clone());

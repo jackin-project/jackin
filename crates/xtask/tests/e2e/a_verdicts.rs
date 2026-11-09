@@ -294,7 +294,7 @@ async fn a_failed_prerequisite_blocks_dependents_with_skip_and_exit_one() {
             scenario.patch(
                 "J00",
                 None,
-                "/facts/codex/version",
+                "/facts/agent/version",
                 json!("codex-cli 0.165.0"),
             );
         },

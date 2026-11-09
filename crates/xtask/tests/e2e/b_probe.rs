@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_xtask::{
-    ProbeError, ProbeMode, ProbeReport, ProbeRequest, Redactor, SCHEMA_TEXT, STEP_IDS,
-    schema_step_drift,
+    E2eTarget, EngineExpectation, ProbeError, ProbeMode, ProbeReport, ProbeRequest, Redactor,
+    SCHEMA_TEXT, STEP_IDS, schema_step_drift,
 };
 use serde_json::{Value, json};
 
@@ -13,9 +13,11 @@ use super::support::{blocking_fault, fault};
 
 fn request(only: &[&str], docker: bool, mode: ProbeMode) -> ProbeRequest {
     ProbeRequest {
+        target: E2eTarget::t01().expect("T01 target").identity().clone(),
         only: only.iter().map(|id| (*id).to_owned()).collect(),
         docker,
         mode,
+        engine: EngineExpectation::Absent,
     }
 }
 
@@ -377,12 +379,12 @@ async fn a_probe_skip_in_a_complete_run_is_a_fail_except_the_start_record_case()
     )
     .await;
     blocking_fault(
-        "codex_exec SKIP",
+        "agent_exec SKIP",
         "J07",
-        "probe skipped codex_exec",
+        "probe skipped agent_exec",
         &["J11", "J12"],
         |scenario| {
-            skip_check(scenario, "J07", "codex_exec");
+            skip_check(scenario, "J07", "agent_exec");
         },
     )
     .await;
@@ -402,6 +404,165 @@ async fn a_probe_skip_in_a_complete_run_is_a_fail_except_the_start_record_case()
         |scenario| {
             skip_check(scenario, "J15", "docker_capability");
         },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn target_identity_and_engine_coverage_have_exact_errors() {
+    let scenario = Scenario::new().await;
+    let base = scenario.probe_json(&["J11"], false);
+    for field in [
+        "tuple",
+        "agent",
+        "provider",
+        "model",
+        "adapter",
+        "spec_sha256",
+    ] {
+        let mut changed = base.clone();
+        changed["target"][field] = if field == "spec_sha256" {
+            json!("0".repeat(64))
+        } else {
+            json!("different")
+        };
+        let error = parse(&changed, &["J11"]).expect_err(field);
+        match error {
+            ProbeError::Coverage(message) => {
+                assert!(message.contains(field), "{field}: {message}");
+            }
+            other => panic!("{field}: {other:?}"),
+        }
+    }
+    type Mutate = fn(&mut Value);
+    let cases: Vec<(&str, Mutate)> = vec![
+        ("target absent", |value: &mut Value| {
+            value.as_object_mut().expect("report").remove("target");
+        }),
+        ("agent malformed", |value| {
+            value["target"]["agent"] = json!(1);
+        }),
+        ("digest absent", |value| {
+            value["target"]
+                .as_object_mut()
+                .expect("target")
+                .remove("spec_sha256");
+        }),
+    ];
+    for (name, mutate) in cases {
+        let mut changed = base.clone();
+        mutate(&mut changed);
+        assert!(
+            matches!(parse(&changed, &["J11"]), Err(ProbeError::Schema(_))),
+            "{name}"
+        );
+    }
+    for (report_engine, request_engine) in [
+        (None, Some("host.openshell.internal:2376")),
+        (Some("host.openshell.internal:2376"), None),
+        (
+            Some("host.openshell.internal:2376"),
+            Some("other.internal:2377"),
+        ),
+    ] {
+        let mut changed = base.clone();
+        changed["engine"] = report_engine
+            .map(str::to_owned)
+            .map_or(Value::Null, Value::String);
+        let mut wanted = request(&["J11"], false, ProbeMode::Sandbox);
+        wanted.engine = request_engine.map_or(EngineExpectation::Absent, |endpoint| {
+            EngineExpectation::Present(endpoint.to_owned())
+        });
+        let error = ProbeReport::parse(changed.to_string().as_bytes(), &wanted, &Redactor::none())
+            .expect_err("engine mismatch");
+        assert!(
+            matches!(error, ProbeError::Coverage(ref message) if message.contains("engine")),
+            "{error}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn schema_v3_rejects_old_and_incomplete_auth_and_identity_shapes() {
+    let scenario = Scenario::new().await;
+    let base = scenario.probe_json(&["J08"], false);
+    type Mutate = fn(&mut Value);
+    let cases: Vec<(&str, Mutate)> = vec![
+        ("schema 2", |value: &mut Value| value["schema"] = json!(2)),
+        ("null auth", |value| {
+            value["steps"]["J08"]["facts"]["auth_file"] = Value::Null;
+        }),
+        ("missing state", |value| {
+            value["steps"]["J08"]["facts"]["auth_file"]
+                .as_object_mut()
+                .expect("auth")
+                .remove("state");
+        }),
+        ("missing path", |value| {
+            value["steps"]["J08"]["facts"]["auth_file"]
+                .as_object_mut()
+                .expect("auth")
+                .remove("path");
+        }),
+        ("missing mode", |value| {
+            value["steps"]["J08"]["facts"]["auth_file"]
+                .as_object_mut()
+                .expect("auth")
+                .remove("mode");
+        }),
+        ("missing field", |value| {
+            value["steps"]["J08"]["facts"]["auth_file"]
+                .as_object_mut()
+                .expect("auth")
+                .remove("access_token");
+        }),
+    ];
+    for (name, mutate) in cases {
+        let mut changed = base.clone();
+        mutate(&mut changed);
+        assert!(
+            matches!(parse(&changed, &["J08"]), Err(ProbeError::Schema(_))),
+            "{name}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn credentialed_exec_and_provider_evidence_cannot_be_skipped_or_absent() {
+    for step in ["J07", "J09"] {
+        for (name, pointer, value) in [
+            ("not attempted", "/facts/agent_exec/attempted", json!(false)),
+            (
+                "no credential",
+                "/facts/agent_exec/credential",
+                json!("none"),
+            ),
+        ] {
+            let scenario = Scenario::new().await;
+            scenario.patch(step, None, pointer, value);
+            let ran = scenario.run().await;
+            let blocked: &[(&str, &str)] = if step == "J07" {
+                &[("J07", "FAIL"), ("J11", "SKIP"), ("J12", "SKIP")]
+            } else {
+                &[("J09", "FAIL")]
+            };
+            ran.expect(&format!("{step} {name}"), blocked);
+        }
+        let scenario = Scenario::new().await;
+        skip_check(&scenario, step, "agent_exec");
+        let ran = scenario.run().await;
+        let blocked: &[(&str, &str)] = if step == "J07" {
+            &[("J07", "FAIL"), ("J11", "SKIP"), ("J12", "SKIP")]
+        } else {
+            &[("J09", "FAIL")]
+        };
+        ran.expect(&format!("{step} skipped execution"), blocked);
+    }
+    fault(
+        "provider probe absent",
+        "J09",
+        "no provider host result",
+        |scenario| scenario.patch("J09", None, "/facts/provider_host", Value::Null),
     )
     .await;
 }

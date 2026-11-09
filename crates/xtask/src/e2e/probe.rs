@@ -12,6 +12,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 use super::redact::Redactor;
+use super::target::TargetIdentity;
 use super::verdict::STEP_IDS;
 
 pub const SCHEMA_TEXT: &str = include_str!("../../../../rewrite/probe-schema.json");
@@ -41,11 +42,25 @@ pub enum ProbeMode {
     Host,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EngineExpectation {
+    Absent,
+    Present(String),
+}
+
 #[derive(Clone, Debug)]
 pub struct ProbeRequest {
+    pub target: TargetIdentity,
     pub only: Vec<String>,
     pub docker: bool,
     pub mode: ProbeMode,
+    pub engine: EngineExpectation,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ProbeInvocation {
+    pub(crate) argv: Vec<String>,
+    pub(crate) request: ProbeRequest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -73,8 +88,10 @@ pub struct ProbeStep {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ProbeReport {
+    pub target: TargetIdentity,
     pub mode: String,
     pub docker: String,
+    pub engine: Option<String>,
     pub steps: BTreeMap<String, ProbeStep>,
 }
 
@@ -159,6 +176,35 @@ impl ProbeReport {
     }
 
     fn check_coverage(&self, request: &ProbeRequest) -> Result<(), ProbeError> {
+        let expected = &request.target;
+        for (field, found, wanted) in [
+            ("tuple", &self.target.tuple, &expected.tuple),
+            ("agent", &self.target.agent, &expected.agent),
+            ("provider", &self.target.provider, &expected.provider),
+            ("model", &self.target.model, &expected.model),
+            ("adapter", &self.target.adapter, &expected.adapter),
+            (
+                "spec_sha256",
+                &self.target.spec_sha256,
+                &expected.spec_sha256,
+            ),
+        ] {
+            if found != wanted {
+                return Err(ProbeError::Coverage(format!(
+                    "target {field} is {found:?} but {wanted:?} was expected"
+                )));
+            }
+        }
+        let engine = match &request.engine {
+            EngineExpectation::Absent => None,
+            EngineExpectation::Present(endpoint) => Some(endpoint.as_str()),
+        };
+        if self.engine.as_deref() != engine {
+            return Err(ProbeError::Coverage(format!(
+                "engine is {:?} but {engine:?} was expected",
+                self.engine
+            )));
+        }
         let mode = match request.mode {
             ProbeMode::Sandbox => "sandbox",
             ProbeMode::Host => "host",
@@ -220,6 +266,21 @@ impl ProbeReport {
                 )),
             }
         }
+        if matches!(step, "J07" | "J09")
+            && let Some(exec) = found
+                .facts
+                .as_ref()
+                .and_then(|facts| facts.get("agent_exec"))
+        {
+            if exec.get("attempted").and_then(Value::as_bool) != Some(true) {
+                problems.push(format!("{step} agent_exec was not attempted"));
+            }
+            if exec.get("credential").and_then(Value::as_str) == Some("none") {
+                problems.push(format!(
+                    "{step} agent_exec has credential classification none"
+                ));
+            }
+        }
         (!problems.is_empty()).then(|| problems.join("; "))
     }
 
@@ -255,7 +316,8 @@ pub fn schema_step_drift(schema: &Value) -> Option<String> {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct Codex {
+pub(crate) struct AgentBinary {
+    pub(crate) path: String,
     pub(crate) present: bool,
     pub(crate) executable: bool,
     pub(crate) version: Option<String>,
@@ -263,7 +325,7 @@ pub(crate) struct Codex {
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct FactsJ00 {
-    pub(crate) codex: Codex,
+    pub(crate) agent: AgentBinary,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -310,6 +372,7 @@ pub(crate) struct FactsJ06 {
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct ProcessInfo {
+    pub(crate) comm: String,
     pub(crate) pid: u32,
     pub(crate) ppid: u32,
     pub(crate) start_ticks: u64,
@@ -319,21 +382,23 @@ pub(crate) struct ProcessInfo {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Processes {
     pub(crate) main: Option<ProcessInfo>,
-    pub(crate) codex: Vec<ProcessInfo>,
+    pub(crate) agent: Vec<ProcessInfo>,
     #[serde(rename = "self")]
     pub(crate) probe: ProcessInfo,
     pub(crate) self_descends_from_main: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct CodexExec {
+pub(crate) struct AgentExec {
+    pub(crate) attempted: bool,
+    pub(crate) credential: String,
     pub(crate) answered: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct FactsJ07 {
     pub(crate) processes: Processes,
-    pub(crate) codex_exec: CodexExec,
+    pub(crate) agent_exec: AgentExec,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -349,6 +414,9 @@ pub(crate) struct StartRecord {
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct AuthFile {
+    pub(crate) state: String,
+    pub(crate) path: String,
+    pub(crate) mode: Option<String>,
     pub(crate) access_token: String,
     pub(crate) refresh_token: String,
     pub(crate) id_token: String,
@@ -358,12 +426,13 @@ pub(crate) struct AuthFile {
 pub(crate) struct FactsJ08 {
     pub(crate) environment: Vec<EnvVar>,
     pub(crate) start_record: StartRecord,
-    pub(crate) auth_file: Option<AuthFile>,
+    pub(crate) auth_file: AuthFile,
     pub(crate) leaks: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Egress {
+    pub(crate) body: Option<String>,
     pub(crate) curl_found: bool,
     pub(crate) curl_exit: Option<i64>,
     pub(crate) http_code: u32,
@@ -421,7 +490,7 @@ pub(crate) struct FactsJ09 {
     pub(crate) outside_host: Egress,
     pub(crate) metadata_host: Egress,
     pub(crate) provider_host: Option<Egress>,
-    pub(crate) codex_exec: CodexExec,
+    pub(crate) agent_exec: AgentExec,
 }
 
 #[derive(Clone, Debug, Deserialize)]

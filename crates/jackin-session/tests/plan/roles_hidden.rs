@@ -3,7 +3,7 @@
 
 use jackin_core::ImageId;
 use jackin_image::{ImagePlan, Rebuild};
-use jackin_session::plan_image;
+use jackin_session::plan_image_for;
 use jackin_testkit::RoleFixture;
 
 use super::roles_origin::git;
@@ -23,7 +23,14 @@ async fn tag(setup: &Setup) -> Result<String, Box<dyn std::error::Error>> {
             &tokio_util::sync::CancellationToken::new(),
         )
         .await?;
-    let request = plan_image(&setup.config, &loaded, &setup.gateway, None, Rebuild::No)?;
+    let request = plan_image_for(
+        &setup.config,
+        &loaded,
+        &setup.gateway,
+        None,
+        Rebuild::No,
+        jackin_core::Agent::Codex,
+    )?;
     let construct = ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
     Ok(ImagePlan::new(&request)?.final_tag(&construct).to_string())
 }

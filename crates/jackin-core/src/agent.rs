@@ -620,7 +620,7 @@ static CODEX_SPEC: AgentSpec = AgentSpec {
         "CODEX_AUTH_ACCOUNT_ID",
         "CODEX_AUTH_ID_TOKEN",
     ],
-    allowed_models: &["gpt-6.1-sol"],
+    allowed_models: &["gpt-6.1-sol", "gpt-5.1-codex"],
     default_model: "gpt-6.1-sol",
     codex: &CODEX_EXTRA,
     auth_file: AuthFileSpec {
@@ -962,7 +962,7 @@ pub static TUPLES: [AgentTuple; 22] = [
         AuthClass::OAuth,
         TupleState::Supported,
         None,
-        &["gpt-6.1-sol"],
+        &["gpt-6.1-sol", "gpt-5.1-codex"],
         "gpt-6.1-sol"
     ),
     tuple!(

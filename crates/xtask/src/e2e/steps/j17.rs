@@ -1,10 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::LaunchId;
+use jackin_core::{AccountName, LaunchId};
 use serde_json::Value;
 
-use crate::e2e::run::{Fail, Names, Res, Run, fail, labels_of, tail_of};
+use crate::e2e::adapter::{UsageBehavior, UsageWindow};
+use crate::e2e::run::{Fail, Res, Run, fail, labels_of, tail_of};
+use crate::e2e::target::E2eTarget;
 use crate::e2e::verdict::Verdict;
 
 pub(crate) const USAGE_ATTEMPTS: u32 = 4;
@@ -97,16 +99,60 @@ fn judge_window(window: &Value) -> Option<String> {
     }
 }
 
-pub(crate) fn judge_a1(row: Option<&UsageRow>) -> A1Usage {
+fn window_name(window: &UsageWindow) -> &str {
+    match window {
+        UsageWindow::FiveHour => "five_hour",
+        UsageWindow::Weekly => "weekly",
+        UsageWindow::Monthly => "monthly",
+        UsageWindow::Credits => "credits",
+        UsageWindow::Spend => "spend",
+        UsageWindow::Other(_) => "other",
+    }
+}
+
+pub(crate) fn judge_a1(row: Option<&UsageRow>, behavior: &UsageBehavior) -> A1Usage {
     let Some(row) = row else {
         return A1Usage::Broken("there is no usage record for the A1 account".to_owned());
     };
-    if let Some(windows) = &row.windows {
-        if windows.is_empty() {
-            return A1Usage::Broken("A1 reports no limit window".to_owned());
+    if let UsageBehavior::Unsupported { reason: expected } = behavior {
+        if row.windows.is_some() {
+            return A1Usage::Broken(
+                "A1 returned windows with an unsupported usage contract".to_owned(),
+            );
         }
+        return if row.reason.as_deref() == Some(expected.as_str()) {
+            A1Usage::Good
+        } else {
+            A1Usage::Broken(format!(
+                "A1 usage reason {:?} does not match the declared unsupported reason {expected}",
+                row.reason
+            ))
+        };
+    }
+    let UsageBehavior::Windows { required, optional } = behavior else {
+        unreachable!()
+    };
+    if let Some(windows) = &row.windows {
         if let Some(problem) = windows.iter().find_map(judge_window) {
             return A1Usage::Broken(problem);
+        }
+        let kinds: Vec<&str> = windows
+            .iter()
+            .filter_map(|window| window.get("kind").and_then(Value::as_str))
+            .collect();
+        for required in required {
+            let name = window_name(required);
+            if !kinds.contains(&name) {
+                return A1Usage::Broken(format!("A1 usage lacks required {name}"));
+            }
+        }
+        if let Some(unexpected) = kinds.iter().find(|kind| {
+            !required
+                .iter()
+                .chain(optional)
+                .any(|declared| window_name(declared) == **kind)
+        }) {
+            return A1Usage::Broken(format!("A1 usage has undeclared window {unexpected}"));
         }
         return A1Usage::Good;
     }
@@ -129,7 +175,10 @@ pub(crate) fn judge_fixture(account: &str, row: Option<&UsageRow>) -> Option<Str
         return Some(format!("the fixture account {account} returned windows"));
     }
     match row.reason.as_deref() {
-        Some(reason) if KINDS.contains(&reason) => None,
+        Some("expired_login") => None,
+        Some(reason) if KINDS.contains(&reason) => Some(format!(
+            "the fixture account {account} returned {reason}, expected expired_login"
+        )),
         other => Some(format!(
             "the fixture account {account} has an untyped reason {other:?}"
         )),
@@ -140,10 +189,18 @@ pub(crate) fn judge_selection(
     step: &str,
     label: Option<&str>,
     providers: &[String],
+    target: &E2eTarget,
     expected: &str,
 ) -> Option<String> {
-    let provider = Names::provider(expected);
-    let agents = crate::e2e::steps::j03::agents_label(expected);
+    let account = match AccountName::parse(expected) {
+        Ok(account) => account,
+        Err(error) => return Some(format!("{step}: invalid account {expected}: {error}")),
+    };
+    let provider = target.provider_name(&account).to_string();
+    let agents = match crate::e2e::steps::j03::agents_label(target, &account) {
+        Ok(agents) => agents,
+        Err(error) => return Some(format!("{step}: cannot derive the agents label: {error}")),
+    };
     if label != Some(agents.as_str()) {
         return Some(format!(
             "{step}: the agents label is {label:?}, expected {agents}"
@@ -163,7 +220,7 @@ impl Run<'_> {
         let launch = LaunchId::generate().map_err(|error| fail(error.to_string()))?;
         let project = main.display().to_string();
         let loaded = self
-            .jackin(
+            .jackin_target(
                 label,
                 &[
                     "load",
@@ -197,6 +254,7 @@ impl Run<'_> {
             label,
             labels.get("jackin.dev/agents").map(String::as_str),
             &providers,
+            &self.credentials.target,
             expected,
         ))
     }
@@ -219,6 +277,7 @@ impl Run<'_> {
     async fn usage_problems(&mut self) -> Res<Vec<String>> {
         let a1 = self.names.a1.clone();
         let fixtures = [self.names.fxr.clone(), self.names.fxw.clone()];
+        let behavior = self.credentials.target.behavior().usage.clone();
         let mut problems = Vec::new();
         for attempt in 1..=USAGE_ATTEMPTS {
             let rows = self.usage_once().await?;
@@ -228,7 +287,7 @@ impl Run<'_> {
                     problems.extend(judge_fixture(fixture, find(fixture)));
                 }
             }
-            match judge_a1(find(&a1)) {
+            match judge_a1(find(&a1), &behavior) {
                 A1Usage::Good => return Ok(problems),
                 A1Usage::Broken(problem) => {
                     problems.push(problem);

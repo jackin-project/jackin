@@ -10,13 +10,17 @@ use jackin_openshell::{
     GatewayError, ProgramOutcome, ProgramRun, ProgramStdin, SandboxQuery, SandboxView,
 };
 
-use super::a1::{A1Error, A1Lock, A1Login};
+use super::a1::A1Error;
+use super::credential::CredentialSession;
 use super::host::{HostCommand, HostError, HostOutput};
-use super::probe::{ProbeError, ProbeMode, ProbeReport, ProbeRequest};
+use super::probe::{
+    EngineExpectation, ProbeError, ProbeInvocation, ProbeMode, ProbeReport, ProbeRequest,
+};
 use super::pty::{PtyError, PtySession, PtySpec};
 use super::redact::Redactor;
 use super::report::Printer;
 use super::scratch::{Scratch, ScratchError};
+use super::target::PROBE_SPEC_PATH;
 use super::verdict::Verdict;
 use super::world::World;
 use super::{Boundaries, E2eArgs};
@@ -85,10 +89,6 @@ impl Names {
         }
     }
 
-    pub(crate) fn provider(account: &str) -> String {
-        format!("jackin-{account}-codex")
-    }
-
     pub(crate) fn workspace_prefix(&self) -> String {
         format!("e2e-{}-", self.tag)
     }
@@ -116,8 +116,7 @@ pub(crate) struct Run<'a> {
     pub jackin: String,
     pub role: PathBuf,
     pub names: Names,
-    pub a1: A1Login,
-    pub lock: Option<A1Lock>,
+    pub credentials: CredentialSession,
     pub projects: Projects,
     pub registry: PathBuf,
     pub registry_before: Vec<(String, u128, u64)>,
@@ -206,6 +205,18 @@ impl Run<'_> {
             .await
     }
 
+    pub(crate) async fn jackin_target(
+        &mut self,
+        label: &str,
+        args: &[&str],
+        cwd: &Path,
+    ) -> Res<HostOutput> {
+        let mut selected: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+        selected.extend(self.credentials.target.selection_args());
+        let refs: Vec<&str> = selected.iter().map(String::as_str).collect();
+        self.jackin(label, &refs, cwd).await
+    }
+
     pub(crate) async fn openshell(&mut self, label: &str, args: &[&str]) -> Res<HostOutput> {
         let mut full: Vec<String> = vec!["-g".to_owned(), self.args.gateway.clone()];
         full.extend(args.iter().map(|arg| (*arg).to_owned()));
@@ -268,6 +279,58 @@ impl Run<'_> {
         .await
     }
 
+    pub(crate) fn probe_invocation(
+        &self,
+        docker: bool,
+        engine: bool,
+        only: &[&str],
+    ) -> Res<ProbeInvocation> {
+        let endpoint = if engine {
+            Some(format!("{ENGINE_HOST}:{}", self.engine_port()?))
+        } else {
+            None
+        };
+        let mut argv = vec![
+            PROBE.to_owned(),
+            "--spec".to_owned(),
+            PROBE_SPEC_PATH.to_owned(),
+            "--docker".to_owned(),
+            flag_docker(docker).to_owned(),
+        ];
+        if let Some(endpoint) = &endpoint {
+            argv.push("--engine".to_owned());
+            argv.push(endpoint.clone());
+        }
+        argv.push("--only".to_owned());
+        argv.push(only.join(","));
+        Ok(ProbeInvocation {
+            argv,
+            request: ProbeRequest {
+                target: self.credentials.target.identity().clone(),
+                only: only.iter().map(|id| (*id).to_owned()).collect(),
+                docker,
+                mode: ProbeMode::Sandbox,
+                engine: endpoint.map_or(EngineExpectation::Absent, EngineExpectation::Present),
+            },
+        })
+    }
+
+    pub(crate) async fn write_probe_spec(&self, sandbox: &SandboxName) -> Res<()> {
+        let spec = self.credentials.target.probe_spec_bytes()?;
+        self.b
+            .gateway
+            .write_file(
+                sandbox,
+                &jackin_openshell::SandboxFile {
+                    path: SandboxPath::parse(PROBE_SPEC_PATH)?,
+                    mode: jackin_core::FileMode(0o600),
+                    content: jackin_core::SecretBytes::new(spec),
+                },
+            )
+            .await?;
+        Ok(())
+    }
+
     pub(crate) async fn probe(
         &mut self,
         sandbox: &SandboxName,
@@ -276,33 +339,31 @@ impl Run<'_> {
         engine: bool,
         only: &[&str],
     ) -> Res<ProbeReport> {
-        let mut args: Vec<String> = vec!["--docker".to_owned(), flag_docker(docker).to_owned()];
-        if engine {
-            let port = self.engine_port()?;
-            args.push("--engine".to_owned());
-            args.push(format!("{ENGINE_HOST}:{port}"));
-        }
-        args.push("--only".to_owned());
-        args.push(only.join(","));
+        let invocation = self.probe_invocation(docker, engine, only)?;
+        self.write_probe_spec(sandbox).await?;
         let outcome = self
-            .exec_with(sandbox, label, PROBE, args, BTreeMap::new())
+            .exec_with(
+                sandbox,
+                label,
+                PROBE,
+                invocation.argv.into_iter().skip(1).collect(),
+                BTreeMap::new(),
+            )
             .await?;
-        self.read_probe(
+        self.parse_probe(
             outcome.exit_code,
             &outcome.stdout,
             &outcome.stderr,
-            docker,
-            only,
+            &invocation.request,
         )
     }
 
-    pub(crate) fn read_probe(
+    pub(crate) fn parse_probe(
         &self,
         exit_code: i32,
         stdout: &[u8],
         stderr: &[u8],
-        docker: bool,
-        only: &[&str],
+        request: &ProbeRequest,
     ) -> Res<ProbeReport> {
         if exit_code != 0 {
             return Err(ProbeError::Exit {
@@ -311,12 +372,7 @@ impl Run<'_> {
             }
             .into());
         }
-        let request = ProbeRequest {
-            only: only.iter().map(|id| (*id).to_owned()).collect(),
-            docker,
-            mode: ProbeMode::Sandbox,
-        };
-        Ok(ProbeReport::parse(stdout, &request, &self.redactor)?)
+        Ok(ProbeReport::parse(stdout, request, &self.redactor)?)
     }
 
     pub(crate) fn engine_port(&self) -> Res<u16> {

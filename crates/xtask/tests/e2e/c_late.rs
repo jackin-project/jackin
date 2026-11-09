@@ -18,7 +18,7 @@ fn patched(step: &'static str, call: Option<u32>, pointer: &'static str, value: 
 }
 
 fn curl_missing() -> Value {
-    json!({"url": "https://example.invalid/", "curl_found": false, "curl_exit": null, "http_code": 0})
+    json!({"url": "https://example.invalid/", "curl_found": false, "curl_exit": null, "http_code": 0, "body": null})
 }
 
 fn canonical_role(scenario: &Scenario) -> String {
@@ -99,22 +99,22 @@ async fn j06_hook_faults() {
 }
 
 #[tokio::test]
-async fn j07_codex_process_faults() {
+async fn j07_agent_process_faults() {
     let rows: Vec<(&str, &str, Tweak)> = vec![
         (
             "codex ppid is not the main pid",
             "is not the jackin-start pid",
-            patched("J07", None, "/facts/processes/codex/0/ppid", json!(1)),
+            patched("J07", None, "/facts/processes/agent/0/ppid", json!(1)),
         ),
         (
             "probe and ps disagree",
             "but ps shows",
-            patched("J07", None, "/facts/processes/codex/0/pid", json!(9999)),
+            patched("J07", None, "/facts/processes/agent/0/pid", json!(9999)),
         ),
         (
             "exec did not answer",
             "did not answer the fixed prompt",
-            patched("J07", None, "/facts/codex_exec/answered", json!(false)),
+            patched("J07", None, "/facts/agent_exec/answered", json!(false)),
         ),
         (
             "phase Stopped after quit",
@@ -393,13 +393,18 @@ async fn j09_egress_faults() {
             ),
             (
                 "curl is missing for the provider host",
-                "provider host was not tested",
+                "provider host response",
                 patched("J09", None, "/facts/provider_host", curl_missing()),
             ),
             (
                 "provider host answers 204",
-                "answered HTTP 204",
+                "provider host response was HTTP 204",
                 patched("J09", None, "/facts/provider_host/http_code", json!(204)),
+            ),
+            (
+                "provider host returns 401 with the wrong body",
+                "provider host response was HTTP 401",
+                patched("J09", None, "/facts/provider_host/body", json!("other")),
             ),
             (
                 "no provider host result",
@@ -480,7 +485,7 @@ async fn j11_detach_faults() {
             (
                 "the pid changed",
                 "the Codex pid changed",
-                patched("J11", Some(2), "/facts/processes/codex/0/pid", json!(5555)),
+                patched("J11", Some(2), "/facts/processes/agent/0/pid", json!(5555)),
             ),
             (
                 "pid reuse",
@@ -488,7 +493,7 @@ async fn j11_detach_faults() {
                 patched(
                     "J11",
                     Some(2),
-                    "/facts/processes/codex/0/start_ticks",
+                    "/facts/processes/agent/0/start_ticks",
                     json!(1),
                 ),
             ),
@@ -535,7 +540,7 @@ async fn j12_shell_faults() {
             (
                 "Codex pid changed during the shell",
                 "changed during the shell",
-                patched("J12", Some(2), "/facts/processes/codex/0/pid", json!(7777)),
+                patched("J12", Some(2), "/facts/processes/agent/0/pid", json!(7777)),
             ),
         ],
     )
@@ -625,11 +630,6 @@ async fn j14_lifecycle_faults() {
                 Box::new(|s| s.knobs().force_leaves_sandbox = true),
             ),
             (
-                "the first sandbox phase changed",
-                "the first sandbox changed",
-                Box::new(|s| s.knobs().stop_changes_s = true),
-            ),
-            (
                 "the first sandbox Codex pid changed",
                 "the first sandbox changed",
                 Box::new(|s| s.knobs().start_moves_s_codex = true),
@@ -637,6 +637,15 @@ async fn j14_lifecycle_faults() {
         ],
     )
     .await;
+    let scenario = Scenario::new().await;
+    scenario.knobs().stop_changes_s = true;
+    let ran = scenario.run().await;
+    ran.expect(
+        "the first sandbox phase changed",
+        &[("J14", "FAIL"), ("J16", "FAIL")],
+    );
+    ran.reason_has("phase change", "J14", "the first sandbox changed");
+    ran.reason_has("phase change", "J16", "not ready");
 }
 
 #[tokio::test]

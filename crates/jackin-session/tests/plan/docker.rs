@@ -189,20 +189,22 @@ async fn plan_image_and_plan_launch_agree_on_the_layer_for_the_four_flag_pairs()
             let setup = spec.build().await?;
             let (_, workspace) = setup.config.workspace_for(setup.project.path())?;
             let plan = setup.plan(setup.request(1)?)?;
-            let image = jackin_session::plan_image(
+            let image = jackin_session::plan_image_for(
                 &setup.config,
                 &setup.role,
                 &setup.gateway,
                 Some(workspace),
                 jackin_image::Rebuild::No,
+                Agent::Codex,
             )?;
             assert_eq!(image.docker, plan.image_request().docker);
-            let build = jackin_session::plan_image(
+            let build = jackin_session::plan_image_for(
                 &setup.config,
                 &setup.role,
                 &setup.gateway,
                 None,
                 jackin_image::Rebuild::No,
+                Agent::Codex,
             )?;
             let wanted = if role_enabled {
                 DockerLayer::Client

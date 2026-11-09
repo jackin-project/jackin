@@ -311,21 +311,28 @@ fn each_provider_lists_exactly_its_catalog_tuples() -> TestResult {
 #[test]
 fn changed_model_declarations_agree_between_specs_and_tuples() -> TestResult {
     for (agent, id, accepted, rejected) in [
-        (Agent::Codex, "T01", "gpt-6.1-sol", "gpt-5.1-codex"),
+        (
+            Agent::Codex,
+            "T01",
+            &["gpt-6.1-sol", "gpt-5.1-codex"][..],
+            "not-a-model",
+        ),
         (
             Agent::Antigravity,
             "T05",
-            "gemini-4-argon-medium",
+            &["gemini-4-argon-medium"][..],
             "gemini-4-argon",
         ),
     ] {
         let spec = agent.spec();
-        assert_eq!(spec.allowed_models, [accepted], "{id} spec");
-        assert_eq!(spec.default_model, accepted, "{id} spec");
+        assert_eq!(spec.allowed_models, accepted, "{id} spec");
+        assert_eq!(spec.default_model, accepted[0], "{id} spec");
         let tuple = TUPLES.iter().find(|tuple| tuple.id == id).ok_or(id)?;
-        assert_eq!(tuple.allowed_models, [accepted], "{id} tuple");
-        assert_eq!(tuple.default_model, accepted, "{id} tuple");
-        assert_eq!(tuple.check_model(accepted)?.id, id);
+        assert_eq!(tuple.allowed_models, accepted, "{id} tuple");
+        assert_eq!(tuple.default_model, accepted[0], "{id} tuple");
+        for model in accepted {
+            assert_eq!(tuple.check_model(model)?.id, id);
+        }
         assert!(matches!(
             tuple.check_model(rejected),
             Err(CatalogError::UnknownModel { ref model, .. }) if model == rejected

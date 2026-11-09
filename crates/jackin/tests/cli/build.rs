@@ -119,3 +119,75 @@ async fn a_load_after_a_build_in_a_docker_workspace_finds_the_image_already_buil
     })
     .await
 }
+
+#[tokio::test]
+async fn build_and_load_agree_on_explicit_t01_selection_and_model_independent_identity()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        harness.write_config(&rig.config.render())?;
+        let default = harness.run(&["build", "--json"]).await?;
+        default.ok()?;
+        let image: BuildOutput = default.json()?;
+        let builds = rig.world.engine.builds().len();
+
+        let explicit = harness
+            .run(&[
+                "build",
+                "--agent",
+                "codex",
+                "--provider",
+                "codex",
+                "--model",
+                "gpt-5.1-codex",
+                "--json",
+            ])
+            .await?;
+        explicit.ok()?;
+        let selected: BuildOutput = explicit.json()?;
+        assert_eq!(
+            (selected.image, selected.id),
+            (image.image.clone(), image.id.clone())
+        );
+        assert_eq!(rig.world.engine.builds().len(), builds);
+
+        harness
+            .run(&[
+                "load",
+                "--agent",
+                "codex",
+                "--provider",
+                "codex",
+                "--model",
+                "gpt-5.1-codex",
+                "--launch-id",
+                &launch_id(1).to_string(),
+            ])
+            .await?
+            .ok()?;
+        assert!(rig.sandbox(1).await?.is_some());
+        assert_eq!(rig.world.engine.builds().len(), builds);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn invalid_build_tuples_and_models_never_start_an_image_build() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let harness = built(&rig)?;
+        for args in [
+            vec!["build", "--agent", "claude", "--provider", "claude"],
+            vec!["build", "--model", "not-a-model"],
+        ] {
+            let ran = harness.run(&args).await?;
+            failed(&ran, ExitClass::Failure, &["not supported"])?;
+            assert!(rig.world.engine.builds().is_empty(), "{args:?}");
+        }
+        Ok(())
+    })
+    .await
+}

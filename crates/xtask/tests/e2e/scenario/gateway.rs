@@ -114,6 +114,7 @@ impl ScenarioGateway {
     }
 
     fn answer_probe(&self, run: &ProgramRun) -> Result<ProgramOutcome, GatewayError> {
+        self.shared.state().probe_argvs.push(run.args.clone());
         let young = self.shared.knobs().codex_young_polls;
         if run.args.join(" ").contains("J04")
             && self.shared.state().age_polls <= young
@@ -154,6 +155,16 @@ impl ScenarioGateway {
         let mut state = self.shared.state();
         if script.contains("etimes=") {
             state.age_polls += 1;
+            if let Some(mode) = self.shared.knobs().age_reply {
+                let answer = match mode {
+                    super::AgeReply::NoChild => "",
+                    super::AgeReply::WrongComm if script.contains("$4 == comm") => "",
+                    super::AgeReply::WrongParent if script.contains("$2 == main") => "",
+                    super::AgeReply::Young if script.contains("$3 >= age") => "1\n",
+                    _ => "999\n",
+                };
+                return outcome(0, answer);
+            }
             let young = state.age_polls <= self.shared.knobs().codex_young_polls;
             return outcome(0, if young { "1\n" } else { "999\n" });
         }
@@ -170,7 +181,7 @@ impl ScenarioGateway {
             let codex = if model.crashed {
                 String::new()
             } else {
-                format!(" {} 100 codex codex\n", model.codex_pid.max(4242))
+                format!(" {} 100 codex codex\n", model.agent_pid.max(4242))
             };
             return outcome(
                 0,
@@ -423,6 +434,12 @@ impl Gateway for ScenarioGateway {
         sandbox: &SandboxName,
         file: &SandboxFile,
     ) -> Result<(), GatewayError> {
+        if file.path.as_str().ends_with("/e2e/probe-spec.json") {
+            self.shared
+                .state()
+                .probe_specs
+                .push(file.content.expose().to_vec());
+        }
         self.fake.write_file(sandbox, file).await
     }
 

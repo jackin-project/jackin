@@ -737,6 +737,9 @@ impl Inputs {
             gateway: Some(&gateway),
             role: None,
             path: &workspace.path,
+            agent: jackin_core::Agent::Codex,
+            provider: jackin_core::Provider::Codex,
+            model: None,
             rebuild: Rebuild::No,
         };
         build_observed(

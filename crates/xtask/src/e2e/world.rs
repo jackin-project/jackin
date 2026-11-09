@@ -30,7 +30,7 @@ pub(crate) struct World {
     pub load2: Option<LoadObs>,
     pub status_before: Option<Vec<u8>>,
     pub shared: Option<Result<ProbeReport, String>>,
-    pub codex_pid: Option<u32>,
+    pub agent_pid: Option<u32>,
     pub verdicts: BTreeMap<StepId, Verdict>,
     pub held: BTreeMap<StepId, (Verdict, Duration)>,
     pub d: Option<SandboxName>,
