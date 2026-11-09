@@ -22,5 +22,10 @@ endpoints:
     protocol: rest
     access: read-write
     enforcement: enforce
+  - host: platform.claude.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
 binaries:
   - /usr/local/bin/claude
