@@ -175,8 +175,13 @@ impl CredentialSession {
 
     #[must_use]
     pub fn host_login_state(&self, codex_home: &Path) -> Option<&'static str> {
-        self.a1()
-            .map(|login| super::a1::host_login_state(codex_home, login))
+        self.a1().map(|login| {
+            if self.lock.is_some() {
+                super::a1::host_login_state(codex_home, login)
+            } else {
+                "CHANGED"
+            }
+        })
     }
 
     pub fn scrubbed_failure(&self, error: &CredentialError) -> String {

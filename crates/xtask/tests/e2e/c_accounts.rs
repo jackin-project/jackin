@@ -21,6 +21,7 @@ fn script(a1: Value, fixtures: Value) -> UsageScript {
     UsageScript {
         a1,
         fixtures,
+        fxw: None,
         drop_account: None,
     }
 }
@@ -291,19 +292,44 @@ async fn j17_transient_usage_failures_are_retried_then_fail() {
         ran.expect(kind, &[("J17", "FAIL")]);
         assert_eq!(broken.state().usage_calls, 1, "{kind}: no retry");
     }
-    let fixture_transient = Scenario::new().await;
-    usage(vec![script(windows(), unavailable("network"))])(&fixture_transient);
-    let ran = fixture_transient.run().await;
-    ran.expect(
-        "a fixture transient reason is not expired_login",
-        &[("J17", "FAIL")],
-    );
-    ran.reason_has("fixture reason", "J17", "expected expired_login");
-    assert_eq!(
-        fixture_transient.state().usage_calls,
-        1,
-        "a fixture is never retried"
-    );
+    for kind in [
+        "no_credentials",
+        "unsupported",
+        "rate_limited",
+        "provider",
+        "network",
+    ] {
+        for (account, only_fxw) in [("e2e-abcd-fxr", false), ("e2e-abcd-fxw", true)] {
+            let fixture = Scenario::new().await;
+            let mut scripted = script(windows(), unavailable("expired_login"));
+            if only_fxw {
+                scripted.fxw = Some(unavailable(kind));
+            } else {
+                scripted.fixtures = unavailable(kind);
+            }
+            usage(vec![scripted])(&fixture);
+            let ran = fixture.run().await;
+            let case = format!("{account} returns {kind}");
+            ran.expect(&case, &[("J17", "FAIL")]);
+            ran.reason_has(
+                &case,
+                "J17",
+                &format!("the fixture account {account} returned {kind}, expected expired_login"),
+            );
+            assert_eq!(
+                fixture.state().usage_calls,
+                1,
+                "{case}: a fixture is never retried"
+            );
+        }
+    }
+    let both = Scenario::new().await;
+    let mut scripted = script(windows(), unavailable("expired_login"));
+    scripted.fxw = Some(unavailable("expired_login"));
+    usage(vec![scripted])(&both);
+    both.run()
+        .await
+        .expect("expired_login for both fixtures passes", &[]);
 }
 
 #[tokio::test]

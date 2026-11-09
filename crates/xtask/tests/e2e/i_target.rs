@@ -276,8 +276,16 @@ async fn selection_errors_precede_every_secret_gateway_scratch_and_image_effect(
         assert!(state.accounts.is_empty(), "{name}");
         assert!(state.fresh_replies.is_empty(), "{name}");
         assert!(state.probe_specs.is_empty(), "{name}");
+        assert_eq!(state.health_calls, 0, "{name}");
         drop(state);
         assert!(!scenario.world.scratch_root.exists(), "{name}");
+        assert_eq!(
+            std::fs::read_dir(&scenario.world.lock_dir)
+                .expect("lock directory")
+                .count(),
+            0,
+            "{name}: no lock entry was created"
+        );
     }
 }
 
@@ -541,7 +549,21 @@ async fn j12_normal_and_shell_probes_share_the_private_invocation() {
 #[tokio::test]
 async fn j12_rejects_shell_target_digest_and_engine_mismatches() {
     for (name, pointer, value, expected) in [
-        ("target", "/target/model", json!("other"), "model"),
+        ("target", "/target/model", json!("other"), "target model is"),
+        ("tuple", "/target/tuple", json!("T99"), "target tuple is"),
+        ("agent", "/target/agent", json!("omp"), "target agent is"),
+        (
+            "provider",
+            "/target/provider",
+            json!("zai"),
+            "target provider is",
+        ),
+        (
+            "adapter",
+            "/target/adapter",
+            json!("other-adapter"),
+            "target adapter is",
+        ),
         (
             "digest",
             "/target/spec_sha256",
@@ -560,6 +582,72 @@ async fn j12_rejects_shell_target_digest_and_engine_mismatches() {
         let ran = scenario.run().await;
         ran.expect(name, &[("J12", "FAIL")]);
         ran.reason_has(name, "J12", expected);
+    }
+}
+
+#[tokio::test]
+async fn j15_docker_shell_probe_uses_the_private_invocation_with_docker_and_engine() {
+    let scenario = Scenario::new().await;
+    let ran = scenario.run().await;
+    ran.expect("J15 invocation control", &[]);
+    let state = scenario.state();
+    let shell: Vec<&String> = state
+        .shell_commands
+        .iter()
+        .filter(|command| command.contains("J15"))
+        .collect();
+    assert_eq!(shell.len(), 1, "{shell:?}");
+    assert_eq!(
+        shell[0],
+        "'/usr/local/bin/jackin-sentinel-probe' '--spec' '/sandbox/.jackin/e2e/probe-spec.json' '--docker' 'on' '--engine' 'host.openshell.internal:2376' '--only' 'J04,J15'"
+    );
+    assert!(!state.probe_specs.is_empty());
+    assert!(
+        state
+            .probe_specs
+            .iter()
+            .all(|spec| spec == &state.probe_specs[0])
+    );
+}
+
+#[tokio::test]
+async fn j15_rejects_shell_target_digest_engine_mode_and_docker_mismatches() {
+    for (name, pointer, value, expected) in [
+        ("target", "/target/model", json!("other"), "target model is"),
+        ("tuple", "/target/tuple", json!("T99"), "target tuple is"),
+        ("agent", "/target/agent", json!("omp"), "target agent is"),
+        (
+            "provider",
+            "/target/provider",
+            json!("zai"),
+            "target provider is",
+        ),
+        (
+            "adapter",
+            "/target/adapter",
+            json!("other-adapter"),
+            "target adapter is",
+        ),
+        (
+            "digest",
+            "/target/spec_sha256",
+            json!("0".repeat(64)),
+            "spec_sha256",
+        ),
+        (
+            "engine",
+            "/engine",
+            json!("host.openshell.internal:9999"),
+            "engine is",
+        ),
+        ("mode", "/mode", json!("host"), "mode is host"),
+        ("docker", "/docker", json!("off"), "docker is off"),
+    ] {
+        let scenario = Scenario::new().await;
+        scenario.patch_report("J15", None, pointer, value);
+        let ran = scenario.run().await;
+        ran.expect(name, &[("J15", "FAIL"), ("CLEAN", "FAIL")]);
+        ran.reason_has(name, "J15", expected);
     }
 }
 
@@ -735,6 +823,7 @@ async fn fresh_host_replies_are_distinct_exact_and_required() {
 
     for phase in ["before", "after"] {
         let other = if phase == "before" { "after" } else { "before" };
+        let expected = format!("e2e-fresh-{phase}-abcd");
         let cases = [
             (
                 "wrong text with exit 0",
@@ -743,6 +832,24 @@ async fn fresh_host_replies_are_distinct_exact_and_required() {
                 String::new(),
             ),
             ("empty text with exit 0", String::new(), 0, String::new()),
+            (
+                "the expected text behind a prefix with exit 0",
+                format!("X{expected}\n"),
+                0,
+                String::new(),
+            ),
+            (
+                "the expected text before a suffix with exit 0",
+                format!("{expected}X\n"),
+                0,
+                String::new(),
+            ),
+            (
+                "the expected text inside other lines with exit 0",
+                format!("noise\n{expected}\nnoise\n"),
+                0,
+                String::new(),
+            ),
             (
                 "the other phase's reply with exit 0",
                 format!("e2e-fresh-{other}-abcd\n"),
@@ -807,6 +914,11 @@ async fn the_refresh_lock_is_held_through_both_fresh_replies_and_stops_a_contend
     assert_eq!(ran.status.code(), 0, "{} {}", ran.stdout, ran.stderr);
     assert_eq!(scenario.state().fresh_reply_lock_refused, vec![true, true]);
     assert!(
+        ran.stdout.contains("a1_host_login=unchanged"),
+        "{}",
+        ran.stdout
+    );
+    assert!(
         jackin_xtask::A1Lock::acquire(&scenario.world.lock_dir).is_ok(),
         "the lock is released once the run ends"
     );
@@ -825,6 +937,11 @@ async fn the_refresh_lock_is_held_through_both_fresh_replies_and_stops_a_contend
         assert!(state.commands.is_empty(), "{:?}", state.commands);
         assert_eq!(state.builds, 0);
         assert_eq!(state.loads, 0);
+        assert_eq!(state.health_calls, 0);
+        assert!(state.probe_specs.is_empty());
+        assert!(state.accounts.is_empty());
+        drop(state);
+        assert!(!contended.world.scratch_root.exists());
     }
     drop(held);
 }
@@ -999,6 +1116,25 @@ async fn credential_descriptors_follow_cli_grammar_without_echoing_rejected_inpu
     ] {
         assert!(E2eCredential::parse(source).is_ok(), "{source}");
     }
+    let longest = format!("env:{}", "A".repeat(128));
+    assert!(E2eCredential::parse(&longest).is_ok(), "128-character name");
+    let overlong = format!("env:{}", "A".repeat(129));
+    {
+        let source = overlong.as_str();
+        let error = E2eCredential::parse(source).expect_err("overlong name");
+        assert!(matches!(error, TargetError::CredentialDescriptor));
+        assert_eq!(error.to_string(), FORMS);
+        assert_eq!(format!("{error:?}"), "CredentialDescriptor");
+        let output = public_output(&E2eArgs {
+            credential: Some(source.to_owned()),
+            ..args()
+        });
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(stderr, format!("xtask: {FORMS}\n"));
+        assert!(!stderr.contains(&"A".repeat(129)));
+    }
     for source in [
         "op://",
         "op://vault",
@@ -1007,6 +1143,12 @@ async fn credential_descriptors_follow_cli_grammar_without_echoing_rejected_inpu
         "op://vault//synthetic-canary-empty-field",
         "synthetic-raw-credential-canary-7f3a9c",
         "env:not a name",
+        "env:",
+        "file:",
+        "omp-host-synthetic-canary-7f3a9c",
+        "omp-hostile",
+        "omp-host ",
+        "OMP-HOST",
     ] {
         let error = E2eCredential::parse(source).expect_err(source);
         assert!(
@@ -1025,10 +1167,153 @@ async fn credential_descriptors_follow_cli_grammar_without_echoing_rejected_inpu
         assert!(output.stdout.is_empty(), "{source}");
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert_eq!(stderr, format!("xtask: {FORMS}\n"), "{source}");
-        if source != "op://" {
+        if !["op://", "env:", "file:"].contains(&source) {
             assert!(!display.contains(source), "{source}");
             assert!(!debug.contains(source), "{source}");
             assert!(!stderr.contains(source), "{source}");
         }
+    }
+}
+
+#[test]
+fn t01_credential_source_errors_never_echo_the_parsed_descriptor() {
+    const CANARY: &str = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9";
+    for source in [
+        format!("env:{CANARY}_KEY"),
+        format!("file:/tmp/{CANARY}.payload.signature"),
+        format!("op://vault/{CANARY}/field"),
+        "omp-host".to_owned(),
+    ] {
+        assert!(E2eCredential::parse(&source).is_ok(), "{source}");
+        let selection = E2eArgs {
+            credential: Some(source.clone()),
+            ..args()
+        };
+        let error = E2eTarget::resolve(&selection, Some(Path::new("/home/test")))
+            .expect_err("T01 accepts no explicit credential");
+        assert!(
+            matches!(error, TargetError::CredentialSource { .. }),
+            "{error}"
+        );
+        let display = error.to_string();
+        let debug = format!("{error:?}");
+        for text in [&display, &debug] {
+            assert!(!text.contains(CANARY), "{text}");
+            assert!(!text.contains(source.as_str()) || source == "omp-host");
+        }
+        let output = public_output(&selection);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(stderr, format!("xtask: {display}\n"));
+        assert!(!stderr.contains(CANARY), "{stderr}");
+    }
+}
+
+fn fake_cargo_output(selection: &E2eArgs, dir: &Path) -> Output {
+    use std::os::unix::fs::PermissionsExt;
+
+    let cargo = dir.join("cargo");
+    std::fs::write(
+        &cargo,
+        "#!/bin/sh\nprintf called > \"$0.called\"\nprintf 'fake cargo refuses\\n' >&2\nexit 1\n",
+    )
+    .expect("fake cargo");
+    std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jackin-xtask"));
+    command
+        .arg("e2e")
+        .args([
+            "--gateway",
+            "jackin-local",
+            "--role",
+            "/nonexistent-role",
+            "--codex-home",
+            "/nonexistent-codex",
+        ])
+        .env_clear()
+        .env("PATH", format!("{}:/usr/bin:/bin", dir.display()))
+        .env("HOME", "/nonexistent-home");
+    for (flag, value) in [
+        ("--agent", &selection.agent),
+        ("--provider", &selection.provider),
+        ("--model", &selection.model),
+        ("--credential", &selection.credential),
+    ] {
+        if let Some(value) = value {
+            command.arg(flag).arg(value);
+        }
+    }
+    capture(&mut command)
+}
+
+#[test]
+fn the_binary_rejects_an_invalid_target_before_it_starts_cargo_or_reaches_a_gateway() {
+    let control_dir = tempfile::tempdir().expect("tempdir");
+    let control = fake_cargo_output(&args(), control_dir.path());
+    assert_eq!(control.status.code(), Some(2));
+    assert!(
+        control_dir.path().join("cargo.called").exists(),
+        "a valid target does start the fake cargo"
+    );
+    assert!(String::from_utf8_lossy(&control.stderr).contains("cargo build of jackin exited"));
+
+    for (name, selection, expected) in [
+        (
+            "unknown pair",
+            E2eArgs {
+                agent: Some("grok".to_owned()),
+                provider: Some("kimi".to_owned()),
+                ..args()
+            },
+            "no catalog tuple",
+        ),
+        (
+            "unsupported pair",
+            E2eArgs {
+                agent: Some("claude".to_owned()),
+                provider: Some("claude".to_owned()),
+                ..args()
+            },
+            "tuple T02 is unavailable",
+        ),
+        (
+            "supported pair without adapter",
+            E2eArgs {
+                agent: Some("codex".to_owned()),
+                provider: Some("zai".to_owned()),
+                ..args()
+            },
+            "tuple T18 has no complete E2E adapter",
+        ),
+        (
+            "invalid model",
+            E2eArgs {
+                model: Some("not-a-model".to_owned()),
+                ..args()
+            },
+            "not allowed",
+        ),
+        (
+            "malformed credential",
+            E2eArgs {
+                credential: Some("op://".to_owned()),
+                ..args()
+            },
+            "--credential expects env:NAME",
+        ),
+    ] {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let output = fake_cargo_output(&selection, dir.path());
+        assert_eq!(output.status.code(), Some(2), "{name}");
+        assert!(output.stdout.is_empty(), "{name}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.starts_with("xtask: "), "{name}: {stderr}");
+        assert!(stderr.contains(expected), "{name}: {stderr}");
+        assert!(!stderr.contains("cargo"), "{name}: {stderr}");
+        assert!(
+            !dir.path().join("cargo.called").exists(),
+            "{name}: cargo was started before the target was validated"
+        );
     }
 }

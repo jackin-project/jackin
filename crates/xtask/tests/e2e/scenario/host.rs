@@ -513,16 +513,26 @@ impl ScenarioHost {
         ]});
         let expired = json!({"state": "unavailable", "reason": {"kind": "expired_login"}});
         let mut dropped = None;
-        let (a1, fixtures) = scripts.map_or((default.clone(), expired.clone()), |list| {
-            let at = usize::try_from(call)
-                .unwrap_or(1)
-                .saturating_sub(1)
-                .min(list.len().saturating_sub(1));
-            dropped.clone_from(&list[at].drop_account);
-            (list[at].a1.clone(), list[at].fixtures.clone())
-        });
+        let (a1, fixtures, fxw) = scripts.map_or(
+            (default.clone(), expired.clone(), expired.clone()),
+            |list| {
+                let at = usize::try_from(call)
+                    .unwrap_or(1)
+                    .saturating_sub(1)
+                    .min(list.len().saturating_sub(1));
+                dropped.clone_from(&list[at].drop_account);
+                (
+                    list[at].a1.clone(),
+                    list[at].fixtures.clone(),
+                    list[at]
+                        .fxw
+                        .clone()
+                        .unwrap_or_else(|| list[at].fixtures.clone()),
+                )
+            },
+        );
         let tag = self.shared.state().tag.clone();
-        let accounts: Vec<Value> = [(format!("e2e-{tag}-a1"), a1), (format!("e2e-{tag}-fxr"), fixtures.clone()), (format!("e2e-{tag}-fxw"), fixtures)]
+        let accounts: Vec<Value> = [(format!("e2e-{tag}-a1"), a1), (format!("e2e-{tag}-fxr"), fixtures), (format!("e2e-{tag}-fxw"), fxw)]
             .into_iter()
             .filter(|(account, _)| dropped.as_ref() != Some(account))
             .map(|(account, outcome)| json!({"account": account, "provider": "codex", "freshness": {"state": "fresh"}, "outcome": outcome}))
@@ -557,7 +567,15 @@ impl ScenarioHost {
                 }
                 done(0, "", "")
             }
-            ["account", "add", "codex" | "zai", "--name", name, ..] => {
+            ["account", "add", "codex" | "zai", "--name", name, rest @ ..] => {
+                if let ["--chatgpt-from", home] = rest
+                    && let Ok(bytes) = std::fs::read(Path::new(home).join("auth.json"))
+                {
+                    self.shared
+                        .state()
+                        .supplied_logins
+                        .insert((*name).to_owned(), bytes);
+                }
                 if self.shared.knobs().registry_write
                     && let Some(base) = command.env.get("XDG_CONFIG_HOME")
                 {

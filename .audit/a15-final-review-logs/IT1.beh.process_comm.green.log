@@ -1,9 +1,0 @@
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Finished `test` profile [unoptimized] target(s) in 1.36s
-────────────
- Nextest run ID a0ed6928-4bad-404a-98f2-1f614847ffdc with nextest profile: default
-    Starting 1 test across 1 binary (95 tests and 4 binaries skipped)
-        PASS [   0.044s] (1/1) jackin-xtask::e2e i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
-────────────
-     Summary [   0.045s] 1 test run: 1 passed, 95 skipped

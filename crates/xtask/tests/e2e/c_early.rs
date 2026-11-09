@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_openshell::Gateway as _;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::scenario::{ExportMode, J05Fault, Scenario};
 use super::support::{blocking_fault, fault};
@@ -106,6 +106,38 @@ async fn j00_image_build_faults() {
             json!("codex-cli 0.165.0"),
         );
     })
+    .await;
+    for (case, pointer, value) in [
+        (
+            "agent path is another file (late)",
+            "/facts/agent/path",
+            json!("/usr/bin/codex"),
+        ),
+        (
+            "agent binary is absent (late)",
+            "/facts/agent/present",
+            json!(false),
+        ),
+        (
+            "agent binary is not executable (late)",
+            "/facts/agent/executable",
+            json!(false),
+        ),
+    ] {
+        fault(
+            case,
+            "J00",
+            "/usr/local/bin/codex is not an executable file in the image",
+            |scenario| scenario.patch("J00", None, pointer, value),
+        )
+        .await;
+    }
+    fault(
+        "agent version is missing (late)",
+        "J00",
+        "no version",
+        |scenario| scenario.patch("J00", None, "/facts/agent/version", Value::Null),
+    )
     .await;
     fault(
         "probe digest differs (late)",

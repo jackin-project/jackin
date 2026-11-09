@@ -69,10 +69,16 @@ pub(crate) fn judge_agent(
                     probe_main.pid, probe_codex.pid
                 ));
             }
-            if probe_codex.ppid != probe_main.pid || probe_codex.comm != comm {
+            if probe_codex.ppid != probe_main.pid {
                 problems.push(format!(
-                    "agent ppid {} is not the jackin-start pid {} or comm {} does not match {comm}",
-                    probe_codex.ppid, probe_main.pid, probe_codex.comm
+                    "agent ppid {} is not the jackin-start pid {}",
+                    probe_codex.ppid, probe_main.pid
+                ));
+            }
+            if probe_codex.comm != comm {
+                problems.push(format!(
+                    "agent comm {} does not match the adapter comm {comm}",
+                    probe_codex.comm
                 ));
             }
         }

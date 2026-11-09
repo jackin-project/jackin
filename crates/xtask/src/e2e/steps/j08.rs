@@ -98,10 +98,16 @@ pub(crate) fn judge_kinds(
             auth.state, wanted.required_state
         ));
     }
-    if auth.path != wanted.path || auth.mode.as_deref() != Some(wanted.mode.as_str()) {
+    if auth.path != wanted.path {
         problems.push(format!(
-            "auth.json identity is {} mode {:?}, expected {} mode {}",
-            auth.path, auth.mode, wanted.path, wanted.mode
+            "auth.json path is {}, expected {}",
+            auth.path, wanted.path
+        ));
+    }
+    if auth.mode.as_deref() != Some(wanted.mode.as_str()) {
+        problems.push(format!(
+            "auth.json mode is {:?}, expected {}",
+            auth.mode, wanted.mode
         ));
     }
     for (name, kind) in [

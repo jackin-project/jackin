@@ -38,6 +38,11 @@ fn outcome(code: i32, stdout: &str) -> ProgramOutcome {
     }
 }
 
+fn selects_codex_under_jackin_start(script: &str) -> bool {
+    script.contains("awk '$2 == \"jackin-start\" {print $1; exit}'")
+        && script.contains(" -v comm=\"codex\" ")
+}
+
 impl ScenarioGateway {
     pub(crate) fn new(
         fake: Arc<FakeGateway>,
@@ -155,8 +160,10 @@ impl ScenarioGateway {
         let mut state = self.shared.state();
         if script.contains("etimes=") {
             state.age_polls += 1;
+            let qualified = selects_codex_under_jackin_start(&script);
             if let Some(mode) = self.shared.knobs().age_reply {
                 let answer = match mode {
+                    _ if !qualified => "",
                     super::AgeReply::NoChild => "",
                     super::AgeReply::WrongComm if script.contains("$4 == comm") => "",
                     super::AgeReply::WrongParent if script.contains("$2 == main") => "",
@@ -166,7 +173,14 @@ impl ScenarioGateway {
                 return outcome(0, answer);
             }
             let young = state.age_polls <= self.shared.knobs().codex_young_polls;
-            return outcome(0, if young { "1\n" } else { "999\n" });
+            let answer = if !qualified {
+                ""
+            } else if young {
+                "1\n"
+            } else {
+                "999\n"
+            };
+            return outcome(0, answer);
         }
         if script == "/usr/bin/env" {
             return outcome(
@@ -238,6 +252,7 @@ impl Gateway for ScenarioGateway {
     }
 
     async fn health(&self) -> Result<GatewayHealth, GatewayError> {
+        self.shared.state().health_calls += 1;
         self.fake.health().await
     }
 

@@ -210,6 +210,7 @@ pub(crate) enum ExportMode {
 pub(crate) struct UsageScript {
     pub a1: Value,
     pub fixtures: Value,
+    pub fxw: Option<Value>,
     pub drop_account: Option<String>,
 }
 
@@ -238,6 +239,8 @@ pub(crate) struct State {
     pub probe_specs: Vec<Vec<u8>>,
     pub probe_argvs: Vec<Vec<String>>,
     pub shell_commands: Vec<String>,
+    pub health_calls: u32,
+    pub supplied_logins: BTreeMap<String, Vec<u8>>,
     pub tag: String,
 }
 

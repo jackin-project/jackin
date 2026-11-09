@@ -21,6 +21,16 @@ fn curl_missing() -> Value {
     json!({"url": "https://example.invalid/", "curl_found": false, "curl_exit": null, "http_code": 0, "body": null})
 }
 
+const PS: &str = "ps -eo pid,ppid,comm,args";
+
+fn ps_with(children: &[(u32, &str)]) -> String {
+    let mut text = "  PID  PPID COMMAND ARGS\n  100     1 jackin-start jackin-start\n".to_owned();
+    for (pid, comm) in children {
+        text.push_str(&format!(" {pid} 100 {comm} {comm}\n"));
+    }
+    text
+}
+
 fn canonical_role(scenario: &Scenario) -> String {
     let path = std::fs::canonicalize(&scenario.world.role).expect("role");
     format!("role check {}", path.display())
@@ -112,6 +122,16 @@ async fn j07_agent_process_faults() {
             patched("J07", None, "/facts/processes/agent/0/pid", json!(9999)),
         ),
         (
+            "probe agent comm differs from the adapter comm",
+            "agent comm node does not match the adapter comm codex",
+            patched("J07", None, "/facts/processes/agent/0/comm", json!("node")),
+        ),
+        (
+            "ps shows only a child with another comm",
+            "ps shows no codex child of jackin-start",
+            Box::new(|s| s.exec_rule(PS, 0, &ps_with(&[(200, "node")]))),
+        ),
+        (
             "exec did not answer",
             "did not answer the fixed prompt",
             patched("J07", None, "/facts/agent_exec/answered", json!(false)),
@@ -143,6 +163,27 @@ async fn j07_agent_process_faults() {
         })
         .await;
     }
+}
+
+#[tokio::test]
+async fn j07_looks_up_the_agent_by_the_adapter_comm_among_the_children_of_jackin_start() {
+    let scenario = Scenario::new().await;
+    scenario.exec_rule(PS, 0, &ps_with(&[(200, "node"), (4242, "codex")]));
+    let ran = scenario.run().await;
+    ran.expect(
+        "another child sorts before the agent",
+        &[("J07", "FAIL"), ("J11", "SKIP"), ("J12", "SKIP")],
+    );
+    ran.reason_has(
+        "another child sorts before the agent",
+        "J07",
+        "did not start a new codex process",
+    );
+    assert!(
+        !ran.reason_of("J07").contains("but ps shows"),
+        "{}",
+        ran.reason_of("J07")
+    );
 }
 
 #[tokio::test]
@@ -221,6 +262,41 @@ async fn j08_credential_faults() {
                         CODEX_PLACEHOLDER_ID_TOKEN.replace(".placeholder", ".other-signature"),
                     );
                 }),
+            ),
+            (
+                "auth.json is absent",
+                "auth.json state is absent, expected present",
+                patched("J08", None, "/facts/auth_file/state", json!("absent")),
+            ),
+            (
+                "auth.json is unreadable",
+                "auth.json state is unreadable, expected present",
+                patched("J08", None, "/facts/auth_file/state", json!("unreadable")),
+            ),
+            (
+                "auth.json is malformed",
+                "auth.json state is malformed, expected present",
+                patched("J08", None, "/facts/auth_file/state", json!("malformed")),
+            ),
+            (
+                "auth.json is at another path",
+                "auth.json path is /sandbox/auth.json, expected /sandbox/.codex/auth.json",
+                patched(
+                    "J08",
+                    None,
+                    "/facts/auth_file/path",
+                    json!("/sandbox/auth.json"),
+                ),
+            ),
+            (
+                "auth.json has another mode",
+                "auth.json mode is Some(\"644\"), expected 600",
+                patched("J08", None, "/facts/auth_file/mode", json!("644")),
+            ),
+            (
+                "auth.json has no mode",
+                "auth.json mode is None, expected 600",
+                patched("J08", None, "/facts/auth_file/mode", Value::Null),
             ),
             (
                 "sandbox get is unreadable",
@@ -402,6 +478,21 @@ async fn j09_egress_faults() {
                 patched("J09", None, "/facts/provider_host/http_code", json!(204)),
             ),
             (
+                "provider host answers 403 with the 401 body",
+                "provider host response was HTTP 403",
+                patched("J09", None, "/facts/provider_host/http_code", json!(403)),
+            ),
+            (
+                "provider host answers 429 with the 401 body",
+                "provider host response was HTTP 429",
+                patched("J09", None, "/facts/provider_host/http_code", json!(429)),
+            ),
+            (
+                "credentialed exec attempted but unanswered",
+                "codex exec did not reach its API",
+                patched("J09", None, "/facts/agent_exec/answered", json!(false)),
+            ),
+            (
                 "provider host returns 401 with the wrong body",
                 "provider host response was HTTP 401",
                 patched("J09", None, "/facts/provider_host/body", json!("other")),
@@ -432,6 +523,36 @@ async fn j09_egress_faults() {
         ],
     )
     .await;
+}
+
+#[tokio::test]
+async fn j09_passes_a_policy_refusal_and_the_exact_401_provider_body() {
+    let provider = |code: u32, exit: i64, body: Value| json!({"url": "https://chatgpt.com/backend-api/models", "curl_found": true, "curl_exit": exit, "http_code": code, "body": body});
+    for (name, facts) in [
+        (
+            "exact 401 invalid_api_key",
+            provider(401, 0, json!("invalid_api_key")),
+        ),
+        (
+            "policy refusal, connection refused",
+            provider(0, 7, Value::Null),
+        ),
+    ] {
+        let scenario = Scenario::new().await;
+        scenario.patch("J09", None, "/facts/provider_host", facts);
+        scenario.run().await.expect(name, &[]);
+    }
+    for (name, facts) in [
+        ("unresolved provider host", provider(0, 6, Value::Null)),
+        ("provider host timeout", provider(0, 28, Value::Null)),
+        ("401 with no body", provider(401, 0, Value::Null)),
+    ] {
+        let scenario = Scenario::new().await;
+        scenario.patch("J09", None, "/facts/provider_host", facts);
+        let ran = scenario.run().await;
+        ran.expect(name, &[("J09", "FAIL")]);
+        ran.reason_has(name, "J09", "provider host");
+    }
 }
 
 #[tokio::test]
