@@ -234,6 +234,7 @@ pub(crate) struct State {
     pub links: Vec<PathBuf>,
     pub fresh_replies: Vec<String>,
     pub fresh_reply_envs: Vec<BTreeMap<String, String>>,
+    pub fresh_reply_lock_refused: Vec<bool>,
     pub probe_specs: Vec<Vec<u8>>,
     pub probe_argvs: Vec<Vec<String>>,
     pub shell_commands: Vec<String>,
@@ -482,7 +483,18 @@ impl Scenario {
     }
 
     pub(crate) fn host_rule(&self, needle: &str, nth: Option<u32>, exit: i32, stderr: &str) {
-        let mut rule = Rule::exit(needle, exit, "");
+        self.host_reply_rule(needle, nth, exit, "", stderr);
+    }
+
+    pub(crate) fn host_reply_rule(
+        &self,
+        needle: &str,
+        nth: Option<u32>,
+        exit: i32,
+        stdout: &str,
+        stderr: &str,
+    ) {
+        let mut rule = Rule::exit(needle, exit, stdout);
         rule.nth = nth;
         rule.stderr = stderr.to_owned();
         self.knobs().host.push(rule);
@@ -538,8 +550,17 @@ impl Scenario {
     }
 
     pub(crate) async fn run(&self) -> Ran {
+        self.run_with_env(&[]).await
+    }
+
+    pub(crate) async fn run_with_env(&self, extra: &[(&str, &str)]) -> Ran {
         self.state().tag.clone_from(&self.tag);
-        let (boundaries, out, err) = self.boundaries();
+        let (mut boundaries, out, err) = self.boundaries();
+        for (name, value) in extra {
+            boundaries
+                .env
+                .insert((*name).to_owned(), (*value).to_owned());
+        }
         let status = run_e2e(&self.args, boundaries).await;
         Ran {
             status,

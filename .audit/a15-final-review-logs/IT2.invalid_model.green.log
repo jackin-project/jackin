@@ -1,0 +1,12 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized] target(s) in 2.52s
+────────────
+ Nextest run ID c220425f-e17e-4453-a7c2-966d2729820d with nextest profile: default
+    Starting 1 test across 1 binary (95 tests and 4 binaries skipped)
+        PASS [   0.046s] (1/1) jackin-xtask::e2e i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract
+────────────
+     Summary [   0.048s] 1 test run: 1 passed, 95 skipped

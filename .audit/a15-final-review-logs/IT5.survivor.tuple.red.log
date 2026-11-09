@@ -1,0 +1,32 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized] target(s) in 0.58s
+────────────
+ Nextest run ID 4b4ead7b-3e7e-479e-ba98-79d35c72c414 with nextest profile: default
+    Starting 1 test across 5 binaries (244 tests skipped)
+        FAIL [   0.014s] (1/1) jackin-xtask e2e::target::tests::every_target_identity_input_changes_the_digest
+  stdout ───
+
+    running 1 test
+    test e2e::target::tests::every_target_identity_input_changes_the_digest ... FAILED
+
+    failures:
+
+    failures:
+        e2e::target::tests::every_target_identity_input_changes_the_digest
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'e2e::target::tests::every_target_identity_input_changes_the_digest' (90335515) panicked at crates/xtask/src/e2e/target.rs:565:13:
+    assertion `left != right` failed: tuple
+      left: "6ccd039711ef4156fae4d5c9799c21ced4cf67803183b5b6ed04699857dac338"
+     right: "6ccd039711ef4156fae4d5c9799c21ced4cf67803183b5b6ed04699857dac338"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.015s] 1 test run: 0 passed, 1 failed, 244 skipped
+        FAIL [   0.014s] (1/1) jackin-xtask e2e::target::tests::every_target_identity_input_changes_the_digest
+error: test run failed

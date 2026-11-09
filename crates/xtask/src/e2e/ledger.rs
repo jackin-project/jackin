@@ -294,7 +294,6 @@ impl Run<'_> {
                 self.scratch.root().display()
             ));
         }
-        self.credentials.release_refresh_lock();
         if snapshot_tree(&self.registry) != self.registry_before {
             residue.push(format!(
                 "the OpenShell registry {} changed during the run (D03: jackin never writes it)",

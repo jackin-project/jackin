@@ -342,3 +342,73 @@ async fn default_and_explicit_t01_selection_share_identity_across_build_and_load
     })
     .await
 }
+
+#[tokio::test]
+async fn a_build_installs_the_selected_agent_and_refuses_mismatched_selectors() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let path = here(&rig);
+        let default = build(&rig, &rig.config, &request_for(None, &path)).await?;
+        let builds = rig.world.engine.builds().len();
+
+        for (agent, provider) in [
+            (jackin_core::Agent::Omp, jackin_core::Provider::Codex),
+            (jackin_core::Agent::Codex, jackin_core::Provider::Claude),
+            (jackin_core::Agent::Omp, jackin_core::Provider::Claude),
+        ] {
+            let mismatched = BuildRequest {
+                agent,
+                provider,
+                ..request_for(None, &path)
+            };
+            assert!(
+                matches!(
+                    build(&rig, &rig.config, &mismatched).await,
+                    Err(BuildError::Plan(
+                        jackin_session::PlanError::TupleNotSupported { .. }
+                    ))
+                ),
+                "{agent:?} with {provider:?}"
+            );
+            assert_eq!(rig.world.engine.builds().len(), builds);
+        }
+
+        let omp = BuildRequest {
+            agent: jackin_core::Agent::Omp,
+            provider: jackin_core::Provider::Zai,
+            model: Some("glm-5.3"),
+            ..request_for(None, &path)
+        };
+        let built = build(&rig, &rig.config, &omp).await?;
+        assert_ne!(built.tag, default.tag);
+        assert_ne!(built.id, default.id);
+        let (gateway, _) = rig.config.resolve_gateway(None)?;
+        let omp_image = plan_image_for(
+            &rig.config,
+            &rig.loaded,
+            gateway,
+            Some(&jackin_session::lookup_workspace(&rig.config, &path).workspace()),
+            Rebuild::No,
+            jackin_core::Agent::Omp,
+        )?;
+        let found = reuse(&rig, &omp_image).await?;
+        assert_eq!(
+            (found.tag, found.id, found.source),
+            (built.tag.clone(), built.id.clone(), ImageSource::Cache)
+        );
+
+        let codex_on_zai = BuildRequest {
+            agent: jackin_core::Agent::Codex,
+            provider: jackin_core::Provider::Zai,
+            model: Some("glm-5.3"),
+            ..request_for(None, &path)
+        };
+        let shared = build(&rig, &rig.config, &codex_on_zai).await?;
+        assert_eq!(
+            (shared.tag, shared.id),
+            (default.tag.clone(), default.id.clone())
+        );
+        Ok(())
+    })
+    .await
+}

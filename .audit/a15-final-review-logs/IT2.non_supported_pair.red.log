@@ -1,0 +1,31 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized] target(s) in 2.47s
+────────────
+ Nextest run ID 361e7d31-fbf7-4878-9bb8-e62a7311bffb with nextest profile: default
+    Starting 1 test across 1 binary (95 tests and 4 binaries skipped)
+        FAIL [   0.015s] (1/1) jackin-xtask::e2e i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract
+  stdout ───
+
+    running 1 test
+    test i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract ... FAILED
+
+    failures:
+
+    failures:
+        i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract' (89526273) panicked at crates/xtask/tests/e2e/i_target.rs:155:9:
+    non-supported pair: tuple T02 has no complete E2E adapter
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.025s] 1 test run: 0 passed, 1 failed, 95 skipped
+        FAIL [   0.015s] (1/1) jackin-xtask::e2e i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract
+error: test run failed

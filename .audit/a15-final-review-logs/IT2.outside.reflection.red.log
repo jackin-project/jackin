@@ -1,0 +1,32 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized] target(s) in 1.71s
+────────────
+ Nextest run ID ecac863a-5c7a-4f90-881e-e273393db0a5 with nextest profile: default
+    Starting 1 test across 1 binary (95 tests and 4 binaries skipped)
+        FAIL [   0.043s] (1/1) jackin-xtask::e2e i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract
+  stdout ───
+
+    running 1 test
+    test i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract ... FAILED
+
+    failures:
+
+    failures:
+        i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract' (89762684) panicked at crates/xtask/tests/e2e/i_target.rs:228:10:
+    invalid behavior: E2eTarget { tuple: AgentTuple { id: "T01", agent: Codex, provider: Codex, auth_class: OAuth, state: Supported, reason: None, allowed_models: ["gpt-6.1-sol", "gpt-5.1-codex"], default_model: "gpt-6.1-sol" }, model: ModelName("gpt-6.1-sol"), credential: CodexLogin { home: "/home/test/.codex" }, behavior: CompleteBehaviorSpec { version: VersionBehavior { binary: "/usr/local/bin/codex", exact_output: "codex-cli 0.167.0" }, process: ProcessBehavior { comm: "codex", minimum_age_seconds: 15 }, prompt: PromptBehavior { argv: ["/usr/local/bin/codex", "exec", "--skip-git-repo-check", "Reply with the word ready"], answer: WordCaseInsensitive { word: "ready" } }, terminal: TerminalBehavior { ready_text: "OpenAI Codex (v0.167.0)", interrupt: 3, quit_interrupts: 2, exit_notice: "codex exited with code" }, credential: CredentialBehavior { classification: OauthLogin, environment: ["CODEX_AUTH_ACCESS_TOKEN", "CODEX_AUTH_REFRESH_TOKEN", "CODEX_AUTH_ACCOUNT_ID", "CODEX_AUTH_ID_TOKEN"], auth_file: AuthFileBehavior { required_state: "present", path: "/sandbox/.codex/auth.json", mode: "600", fields: ["access_token", "refresh_token", "id_token"] } }, reflection: ReflectionBehavior { url: "https://outside.invalid/reflect", descendant_comm: "codex" }, provider: ProviderBehavior { probe_url: "https://chatgpt.com/backend-api/models", accepted_status: 401, accepted_body: JsonErrorCode { code: "invalid_api_key" }, policy_hosts: ["chatgpt.com", "*.chatgpt.com"] }, usage: Windows { required: [Weekly, Credits], optional: [] } }, provider_hosts: ["api.openai.com", "auth.openai.com", "chatgpt.com", "ab.chatgpt.com"], identity: TargetIdentity { tuple: "T01", agent: "codex", provider: "codex", model: "gpt-6.1-sol", adapter: "t01-codex-v1", spec_sha256: "f89f3838ea7830fd34dcad69f5d15debae1f9ec00f82126f9423c2b1b0dcc086" } }
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.047s] 1 test run: 0 passed, 1 failed, 95 skipped
+        FAIL [   0.043s] (1/1) jackin-xtask::e2e i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract
+error: test run failed

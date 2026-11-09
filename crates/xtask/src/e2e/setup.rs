@@ -37,12 +37,11 @@ fn registry_dir(parent: &std::collections::BTreeMap<String, String>) -> Option<P
 }
 
 pub(crate) async fn prepare<'a>(
+    target: E2eTarget,
     args: &'a E2eArgs,
     b: &'a Boundaries,
     printer: &Printer,
 ) -> Result<Run<'a>, SetupError> {
-    let target = E2eTarget::resolve(args, b.env.get("HOME").map(Path::new))
-        .map_err(|error| setup(error.to_string()))?;
     let credentials =
         CredentialSession::open(target, b).map_err(|error| setup(error.to_string()))?;
     let redactor = credentials.redactor();

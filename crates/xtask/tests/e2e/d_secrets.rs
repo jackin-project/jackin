@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -133,6 +134,72 @@ fn codex_home(dir: &Path, text: &str) {
     fs::write(dir.join("auth.json"), text).expect("write");
 }
 
+fn tampered(path: &[&str], replacement: Option<Value>) -> String {
+    let mut document: Value =
+        serde_json::from_str(&auth_json(ACCESS, REFRESH, ID_TOKEN, ACCOUNT_ID)).expect("json");
+    let (last, parents) = path.split_last().expect("path");
+    let mut node = &mut document;
+    for key in parents {
+        node = node.get_mut(*key).expect("parent");
+    }
+    let object = node.as_object_mut().expect("object");
+    match replacement {
+        Some(value) => {
+            object.insert((*last).to_owned(), value);
+        }
+        None => {
+            object.remove(*last).expect("present");
+        }
+    }
+    document.to_string()
+}
+
+fn field_cases() -> Vec<(&'static str, &'static str, String)> {
+    let empty = || Some(json!(""));
+    vec![
+        (
+            "access token absent",
+            "access_token",
+            tampered(&["tokens", "access_token"], None),
+        ),
+        (
+            "access token empty",
+            "access_token",
+            tampered(&["tokens", "access_token"], empty()),
+        ),
+        (
+            "refresh token absent",
+            "refresh_token",
+            tampered(&["tokens", "refresh_token"], None),
+        ),
+        (
+            "client id absent",
+            "oauth_provenance.client_id",
+            tampered(&["tokens", "oauth_provenance", "client_id"], None),
+        ),
+        (
+            "client id empty",
+            "oauth_provenance.client_id",
+            tampered(&["tokens", "oauth_provenance", "client_id"], empty()),
+        ),
+        (
+            "provenance absent",
+            "oauth_provenance.client_id",
+            tampered(&["tokens", "oauth_provenance"], None),
+        ),
+        (
+            "account id absent",
+            "account_id",
+            tampered(&["tokens", "account_id"], None),
+        ),
+        (
+            "account id empty",
+            "account_id",
+            tampered(&["tokens", "account_id"], empty()),
+        ),
+    ]
+}
+
 #[test]
 fn a1_login_never_prints_through_debug_or_error_text() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -165,6 +232,11 @@ fn a1_login_never_prints_through_debug_or_error_text() {
             Some(format!("{{ \"tokens\": {ACCESS} nonsense")),
         ),
     ];
+    let cases = cases.into_iter().chain(
+        field_cases()
+            .into_iter()
+            .map(|(case, _, text)| (case, Some(text))),
+    );
     for (case, content) in cases {
         let home = dir.path().join(case.replace(' ', "-"));
         if let Some(text) = content {
@@ -193,7 +265,7 @@ async fn only_a_chatgpt_login_is_an_a1_source() {
         &auth_json(ACCESS, REFRESH, ID_TOKEN, ACCOUNT_ID),
     );
     A1Login::read(dir.path()).unwrap();
-    for (case, text) in [
+    for (case, field, text) in [
         (
             "api key only",
             json!({"OPENAI_API_KEY": REFRESH}).to_string(),
@@ -206,7 +278,14 @@ async fn only_a_chatgpt_login_is_an_a1_source() {
             "empty refresh token",
             auth_json(ACCESS, "", ID_TOKEN, ACCOUNT_ID),
         ),
-    ] {
+    ]
+    .into_iter()
+    .map(|(case, text)| (case, None, text))
+    .chain(
+        field_cases()
+            .into_iter()
+            .map(|(case, field, text)| (case, Some(field), text)),
+    ) {
         let scenario = Scenario::new().await;
         codex_home(&scenario.world.codex_home, &text);
         let ran = scenario.run().await;
@@ -216,15 +295,25 @@ async fn only_a_chatgpt_login_is_an_a1_source() {
             "{case}: {}",
             ran.stderr
         );
+        if let Some(field) = field {
+            assert!(
+                ran.stderr.contains(&format!("{field} is empty or absent")),
+                "{case}: {}",
+                ran.stderr
+            );
+        }
+        for needle in needles() {
+            assert!(!ran.stderr.contains(&needle), "{case}: stderr leaks");
+        }
         assert!(ran.stdout.is_empty(), "{case}: nothing runs");
+        assert_eq!(scenario.state().builds, 0, "{case}: nothing builds");
     }
 }
 
 #[test]
 fn fixture_logins_share_nothing_with_the_a1_login() {
     let root = tempfile::tempdir().expect("tempdir");
-    let mut refresh: Vec<String> = Vec::new();
-    let mut accounts: Vec<String> = Vec::new();
+    let mut collected: BTreeMap<&str, Vec<String>> = BTreeMap::new();
     for index in 0..10 {
         let dir = root.path().join(format!("fx{index}"));
         fixture_login(&dir, CLIENT_ID).expect("fixture");
@@ -239,27 +328,14 @@ fn fixture_logins_share_nothing_with_the_a1_login() {
         }
         let value: Value = serde_json::from_str(&text).expect("json");
         assert_eq!(value["auth_mode"], "chatgpt");
-        for key in ["access_token", "refresh_token", "account_id"] {
-            assert!(
-                value["tokens"][key]
-                    .as_str()
-                    .is_some_and(|text| !text.is_empty()),
-                "tokens.{key}"
-            );
+        for key in ["access_token", "refresh_token", "id_token", "account_id"] {
+            let token = value["tokens"][key]
+                .as_str()
+                .filter(|text| !text.is_empty())
+                .unwrap_or_else(|| panic!("tokens.{key} is empty or absent"));
+            collected.entry(key).or_default().push(token.to_owned());
         }
         assert_eq!(value["tokens"]["oauth_provenance"]["client_id"], CLIENT_ID);
-        refresh.push(
-            value["tokens"]["refresh_token"]
-                .as_str()
-                .expect("refresh")
-                .to_owned(),
-        );
-        accounts.push(
-            value["tokens"]["account_id"]
-                .as_str()
-                .expect("account")
-                .to_owned(),
-        );
         use std::os::unix::fs::PermissionsExt;
         assert_eq!(
             fs::metadata(dir.join("auth.json"))
@@ -270,13 +346,19 @@ fn fixture_logins_share_nothing_with_the_a1_login() {
             0o600
         );
     }
-    refresh.sort();
-    refresh.dedup();
-    accounts.sort();
-    accounts.dedup();
-    assert_eq!(refresh.len(), 10, "refresh tokens differ");
-    assert_eq!(accounts.len(), 10, "account ids differ");
-    assert!(!accounts.iter().any(|id| id == ACCOUNT_ID));
+    for (key, a1) in [
+        ("access_token", ACCESS),
+        ("refresh_token", REFRESH),
+        ("id_token", ID_TOKEN),
+        ("account_id", ACCOUNT_ID),
+    ] {
+        let mut values = collected.remove(key).expect("collected");
+        assert_eq!(values.len(), 10, "{key} collected");
+        assert!(!values.iter().any(|value| value == a1), "{key} reuses A1");
+        values.sort();
+        values.dedup();
+        assert_eq!(values.len(), 10, "{key} values differ across fixtures");
+    }
 }
 
 #[test]

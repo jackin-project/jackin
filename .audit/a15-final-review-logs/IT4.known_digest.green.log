@@ -1,0 +1,11 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Finished `test` profile [unoptimized] target(s) in 2.30s
+────────────
+ Nextest run ID b73a3791-66eb-452c-b6c5-ace35ddcfa73 with nextest profile: default
+    Starting 1 test across 1 binary (95 tests and 4 binaries skipped)
+        PASS [   0.035s] (1/1) jackin-xtask::e2e i_target::canonical_digest_matches_independent_fixture_and_excludes_runtime_values
+────────────
+     Summary [   0.038s] 1 test run: 1 passed, 95 skipped

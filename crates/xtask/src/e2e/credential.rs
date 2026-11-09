@@ -115,10 +115,6 @@ impl CredentialSession {
         self.lock.is_some()
     }
 
-    pub fn release_refresh_lock(&mut self) {
-        self.lock = None;
-    }
-
     pub fn selected_host_environment(
         &self,
         parent: &BTreeMap<String, String>,

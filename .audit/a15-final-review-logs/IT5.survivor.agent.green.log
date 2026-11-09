@@ -1,0 +1,7 @@
+    Finished `test` profile [unoptimized] target(s) in 0.87s
+────────────
+ Nextest run ID 73c5abca-a5b5-43e0-9f2e-8061af1fd294 with nextest profile: default
+    Starting 1 test across 5 binaries (244 tests skipped)
+        PASS [   0.019s] (1/1) jackin-xtask e2e::target::tests::every_target_identity_input_changes_the_digest
+────────────
+     Summary [   0.020s] 1 test run: 1 passed, 244 skipped

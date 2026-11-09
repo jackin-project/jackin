@@ -1,16 +1,22 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::future::poll_fn;
 use std::path::Path;
+use std::process::{Command, Output};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::task::Poll;
 
 use jackin_xtask::{
     AgentBehaviorSpec, AnswerMatcher, BehaviorCategory, E2eArgs, E2eCredential, E2eTarget,
-    TargetError, UsageBehavior, UsageWindow, t01_behavior,
+    TargetError, UsageBehavior, UsageWindow, e2e_command, t01_behavior,
 };
 use serde_json::{Value, json};
 
 use super::scenario::world::{ACCESS, ID_TOKEN, REFRESH};
-use super::scenario::{AgeReply, Scenario};
+use super::scenario::{AgeReply, Ran, Scenario};
+use super::support::capture;
 
 fn args() -> E2eArgs {
     E2eArgs {
@@ -294,29 +300,85 @@ fn canonical_digest_matches_independent_fixture_and_excludes_runtime_values() {
     let first = target.probe_spec_bytes().expect("spec");
     let second = target.probe_spec_bytes().expect("idempotent spec");
     assert_eq!(first, second);
-    let text = String::from_utf8(first).expect("UTF-8");
-    for excluded in [
-        ACCESS,
-        REFRESH,
-        ID_TOKEN,
-        "op://vault/api-key",
-        "account-name",
-        "actual-usage-value",
-        "/another/home",
-        "/different/host",
-    ] {
-        assert!(!text.contains(excluded), "spec contains {excluded}");
+    let other_first = other_home.probe_spec_bytes().expect("other home spec");
+    assert_eq!(other_first, other_home.probe_spec_bytes().expect("again"));
+    assert_eq!(first, other_first);
+    for (name, bytes) in [("default", &first), ("other home", &other_first)] {
+        let text = String::from_utf8(bytes.clone()).expect("UTF-8");
+        for excluded in [
+            ACCESS,
+            REFRESH,
+            ID_TOKEN,
+            "op://",
+            "op://vault/api-key",
+            "env:",
+            "omp-host",
+            "CodexLogin",
+            "account-name",
+            "actual-usage-value",
+            "/tmp/.codex",
+            "/another/home",
+            "/different/host",
+        ] {
+            assert!(!text.contains(excluded), "{name} spec contains {excluded}");
+        }
+        let value: Value = serde_json::from_str(&text).expect("spec JSON");
+        let keys = |value: &Value| -> Vec<String> {
+            let mut keys: Vec<String> =
+                value.as_object().expect("object").keys().cloned().collect();
+            keys.sort();
+            keys
+        };
+        assert_eq!(keys(&value), ["behavior", "provider_hosts", "target"]);
+        assert_eq!(
+            keys(&value["behavior"]),
+            [
+                "credential",
+                "process",
+                "prompt",
+                "provider",
+                "reflection",
+                "terminal",
+                "usage",
+                "version"
+            ]
+        );
+        assert_eq!(
+            keys(&value["target"]),
+            [
+                "adapter",
+                "agent",
+                "model",
+                "provider",
+                "spec_sha256",
+                "tuple"
+            ]
+        );
+        assert_eq!(
+            value["provider_hosts"],
+            json!([
+                "api.openai.com",
+                "auth.openai.com",
+                "chatgpt.com",
+                "ab.chatgpt.com"
+            ]),
+            "{name}"
+        );
+        assert_eq!(value["provider_hosts"], json!(target.provider_hosts()));
+        assert!(value["behavior"]["prompt"]["argv"].is_array());
+        assert_eq!(
+            value["behavior"]["prompt"]["answer"],
+            json!({"word_case_insensitive": {"word": "ready"}})
+        );
+        assert_eq!(
+            value["target"],
+            serde_json::to_value(target.identity()).expect("identity")
+        );
+        assert_eq!(
+            value["behavior"],
+            serde_json::to_value(target.behavior()).expect("behavior")
+        );
     }
-    let value: Value = serde_json::from_str(&text).expect("spec JSON");
-    assert!(value["behavior"]["prompt"]["argv"].is_array());
-    assert_eq!(
-        value["behavior"]["prompt"]["answer"],
-        json!({"word_case_insensitive": {"word": "ready"}})
-    );
-    assert_eq!(
-        value["target"],
-        serde_json::to_value(target.identity()).expect("identity")
-    );
 }
 
 #[test]
@@ -586,21 +648,71 @@ async fn j00_and_j03_reject_build_and_load_identity_faults() {
     );
 }
 
+const SIBLINGS: [(&str, &str); 2] = [
+    ("ZAI_API_KEY", "sibling-zai-secret-0123456789"),
+    ("KIMI_API_KEY", "sibling-kimi-secret-0123456789"),
+];
+
+fn files_under(root: &Path) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                found.push((
+                    path.display().to_string(),
+                    String::from_utf8_lossy(&std::fs::read(&path).unwrap_or_default()).into_owned(),
+                ));
+            }
+        }
+    }
+    found
+}
+
+fn assert_siblings_absent(case: &str, scenario: &Scenario, ran: &Ran) {
+    let mut haystacks = vec![
+        ("stdout".to_owned(), ran.stdout.clone()),
+        ("stderr".to_owned(), ran.stderr.clone()),
+    ];
+    haystacks.extend(files_under(&scenario.world.root));
+    {
+        let state = scenario.state();
+        for spec in &state.probe_specs {
+            haystacks.push((
+                "probe spec".to_owned(),
+                String::from_utf8_lossy(spec).into_owned(),
+            ));
+        }
+        haystacks.push(("host commands".to_owned(), state.commands.join("\n")));
+        for env in &state.fresh_reply_envs {
+            for (name, value) in SIBLINGS {
+                assert!(!env.contains_key(name), "{case}: child env carries {name}");
+                assert!(
+                    !env.values().any(|found| found == value),
+                    "{case}: child env"
+                );
+            }
+        }
+    }
+    for (place, text) in &haystacks {
+        for (name, value) in SIBLINGS {
+            assert!(!text.contains(name), "{case}: {place} names {name}");
+            assert!(
+                !text.contains(value),
+                "{case}: {place} carries {name}'s value"
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn fresh_host_replies_are_distinct_exact_and_required() {
     let plain = Scenario::new().await;
-    plain.state().tag.clone_from(&plain.tag);
-    let mut boundaries = plain.boundaries();
-    boundaries.0.env.insert(
-        "ZAI_API_KEY".to_owned(),
-        "sibling-zai-secret-0123456789".to_owned(),
-    );
-    boundaries.0.env.insert(
-        "KIMI_API_KEY".to_owned(),
-        "sibling-kimi-secret-0123456789".to_owned(),
-    );
-    let status = jackin_xtask::run_e2e(&plain.args, boundaries.0).await;
-    assert_eq!(status.code(), 0);
+    let ran = plain.run_with_env(&SIBLINGS).await;
+    assert_eq!(ran.status.code(), 0, "{} {}", ran.stdout, ran.stderr);
     {
         let state = plain.state();
         assert_eq!(
@@ -616,29 +728,307 @@ async fn fresh_host_replies_are_distinct_exact_and_required() {
             assert!(env.contains_key("HOME"));
             assert!(env.contains_key("PATH"));
             assert!(env.contains_key("CODEX_HOME"));
-            assert!(!env.contains_key("ZAI_API_KEY"));
-            assert!(!env.contains_key("KIMI_API_KEY"));
         }
-        let serialized = state.probe_specs.concat();
-        let text = String::from_utf8(serialized).expect("spec text");
-        assert!(!text.contains("sibling-zai-secret"));
-        assert!(!text.contains("sibling-kimi-secret"));
+        assert!(!state.probe_specs.is_empty());
+    }
+    assert_siblings_absent("successful run", &plain, &ran);
+
+    for phase in ["before", "after"] {
+        let other = if phase == "before" { "after" } else { "before" };
+        let cases = [
+            (
+                "wrong text with exit 0",
+                format!("{ACCESS}\n"),
+                0,
+                String::new(),
+            ),
+            ("empty text with exit 0", String::new(), 0, String::new()),
+            (
+                "the other phase's reply with exit 0",
+                format!("e2e-fresh-{other}-abcd\n"),
+                0,
+                String::new(),
+            ),
+            (
+                "exact text with a nonzero exit",
+                format!("e2e-fresh-{phase}-abcd\n"),
+                1,
+                ACCESS.to_owned(),
+            ),
+        ];
+        for (case, stdout, exit, stderr) in cases {
+            let case = format!("{phase}: {case}");
+            let scenario = Scenario::new().await;
+            scenario.host_reply_rule(&format!("fresh-{phase}"), None, exit, &stdout, &stderr);
+            let ran = scenario.run_with_env(&SIBLINGS).await;
+            if phase == "before" {
+                assert_eq!(
+                    ran.status.code(),
+                    2,
+                    "{case}: {} {}",
+                    ran.stdout,
+                    ran.stderr
+                );
+                assert!(ran.stdout.is_empty(), "{case}");
+                assert!(
+                    ran.stderr.contains("fresh host Codex reply before failed"),
+                    "{case}: {}",
+                    ran.stderr
+                );
+                assert_eq!(scenario.state().builds, 0, "{case}");
+            } else {
+                assert_eq!(
+                    ran.status.code(),
+                    1,
+                    "{case}: {} {}",
+                    ran.stdout,
+                    ran.stderr
+                );
+                assert!(
+                    ran.stdout.contains("HOST_REPLY FAIL"),
+                    "{case}: {}",
+                    ran.stdout
+                );
+                assert!(ran.stdout.contains("a1_host_login=unchanged"), "{case}");
+            }
+            for secret in [ACCESS, REFRESH, ID_TOKEN] {
+                assert!(!ran.stdout.contains(secret), "{case}: stdout leaks");
+                assert!(!ran.stderr.contains(secret), "{case}: stderr leaks");
+            }
+            assert_siblings_absent(&case, &scenario, &ran);
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_refresh_lock_is_held_through_both_fresh_replies_and_stops_a_contended_run() {
+    let scenario = Scenario::new().await;
+    let ran = scenario.run().await;
+    assert_eq!(ran.status.code(), 0, "{} {}", ran.stdout, ran.stderr);
+    assert_eq!(scenario.state().fresh_reply_lock_refused, vec![true, true]);
+    assert!(
+        jackin_xtask::A1Lock::acquire(&scenario.world.lock_dir).is_ok(),
+        "the lock is released once the run ends"
+    );
+
+    let contended = Scenario::new().await;
+    std::fs::write(contended.world.codex_home.join("auth.json"), "not a login").expect("corrupt");
+    let held = jackin_xtask::A1Lock::acquire(&contended.world.lock_dir).expect("another holder");
+    let ran = contended.run().await;
+    assert_eq!(ran.status.code(), 2, "{} {}", ran.stdout, ran.stderr);
+    assert!(ran.stderr.contains("holds the A1 lock"), "{}", ran.stderr);
+    assert!(!ran.stderr.contains("no usable source"), "{}", ran.stderr);
+    assert!(ran.stdout.is_empty(), "{}", ran.stdout);
+    {
+        let state = contended.state();
+        assert!(state.fresh_replies.is_empty());
+        assert!(state.commands.is_empty(), "{:?}", state.commands);
+        assert_eq!(state.builds, 0);
+        assert_eq!(state.loads, 0);
+    }
+    drop(held);
+}
+
+struct ProbeRun {
+    code: u8,
+    polls: usize,
+    stdout: String,
+    stderr: String,
+    scratch: bool,
+}
+
+async fn command_with_poll_probe(selection: &E2eArgs) -> ProbeRun {
+    let mut scenario = Scenario::new().await;
+    scenario.args.agent.clone_from(&selection.agent);
+    scenario.args.provider.clone_from(&selection.provider);
+    scenario.args.model.clone_from(&selection.model);
+    scenario.args.credential.clone_from(&selection.credential);
+    scenario.state().tag.clone_from(&scenario.tag);
+    let args = scenario.args.clone();
+    let (boundaries, out, err) = scenario.boundaries();
+    let mut boundaries = Some(boundaries);
+    let polls = Arc::new(AtomicUsize::new(0));
+    let counted = Arc::clone(&polls);
+    let future = poll_fn(move |_| {
+        counted.fetch_add(1, Ordering::SeqCst);
+        Poll::Ready(Ok::<_, jackin_xtask::ProductionError>(
+            boundaries.take().expect("one production boundary"),
+        ))
+    });
+    let code = e2e_command(&args, future).await;
+    ProbeRun {
+        code,
+        polls: polls.load(Ordering::SeqCst),
+        stdout: out.text(),
+        stderr: err.text(),
+        scratch: scenario.world.scratch_root.exists(),
+    }
+}
+
+fn public_output(selection: &E2eArgs) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jackin-xtask"));
+    command
+        .arg("e2e")
+        .args([
+            "--gateway",
+            "jackin-local",
+            "--role",
+            "/nonexistent-role",
+            "--jackin",
+            "/bin/echo",
+            "--codex-home",
+            "/nonexistent-codex",
+        ])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", "/nonexistent-home");
+    for (flag, value) in [
+        ("--agent", &selection.agent),
+        ("--provider", &selection.provider),
+        ("--model", &selection.model),
+        ("--credential", &selection.credential),
+    ] {
+        if let Some(value) = value {
+            command.arg(flag).arg(value);
+        }
+    }
+    capture(&mut command)
+}
+
+#[tokio::test]
+async fn invalid_targets_never_poll_production_and_valid_t01_polls_once() {
+    for (name, selection, expected) in [
+        (
+            "unknown pair",
+            E2eArgs {
+                agent: Some("grok".to_owned()),
+                provider: Some("kimi".to_owned()),
+                ..args()
+            },
+            "no catalog tuple",
+        ),
+        (
+            "unsupported pair",
+            E2eArgs {
+                agent: Some("claude".to_owned()),
+                provider: Some("claude".to_owned()),
+                ..args()
+            },
+            "tuple T02 is unavailable",
+        ),
+        (
+            "supported pair without adapter",
+            E2eArgs {
+                agent: Some("codex".to_owned()),
+                provider: Some("zai".to_owned()),
+                ..args()
+            },
+            "tuple T18 has no complete E2E adapter",
+        ),
+        (
+            "invalid model",
+            E2eArgs {
+                model: Some("not-a-model".to_owned()),
+                ..args()
+            },
+            "not allowed",
+        ),
+        (
+            "malformed credential",
+            E2eArgs {
+                credential: Some("op://".to_owned()),
+                ..args()
+            },
+            "--credential expects env:NAME",
+        ),
+    ] {
+        let error = E2eTarget::resolve(&selection, Some(Path::new("/home/test"))).expect_err(name);
+        match name {
+            "unknown pair" | "invalid model" => {
+                assert!(matches!(error, TargetError::Catalog(_)), "{name}");
+            }
+            "unsupported pair" => {
+                assert!(
+                    matches!(error, TargetError::TupleUnavailable { .. }),
+                    "{name}"
+                );
+            }
+            "supported pair without adapter" => {
+                assert!(
+                    matches!(error, TargetError::AdapterUnavailable { .. }),
+                    "{name}"
+                );
+            }
+            "malformed credential" => {
+                assert!(matches!(error, TargetError::CredentialDescriptor), "{name}");
+            }
+            _ => unreachable!(),
+        }
+        assert!(error.to_string().contains(expected), "{name}: {error}");
+        let ran = command_with_poll_probe(&selection).await;
+        assert_eq!(ran.code, 2, "{name}");
+        assert_eq!(ran.polls, 0, "{name}");
+        assert!(ran.stdout.is_empty(), "{name}");
+        assert!(ran.stderr.is_empty(), "{name}");
+        assert!(!ran.scratch, "{name}");
+        let output = public_output(&selection);
+        assert_eq!(output.status.code(), Some(2), "{name}");
+        assert!(output.stdout.is_empty(), "{name}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            format!("xtask: {error}\n"),
+            "{name}"
+        );
     }
 
-    let before = Scenario::new().await;
-    before.host_rule("fresh-before", None, 1, ACCESS);
-    let ran = before.run().await;
-    assert_eq!(ran.status.code(), 2);
-    assert!(ran.stdout.is_empty());
-    assert!(ran.stderr.contains("fresh host Codex reply before failed"));
-    assert!(!ran.stderr.contains(ACCESS));
+    let ran = command_with_poll_probe(&args()).await;
+    assert_eq!(ran.code, 0, "{}", ran.stdout);
+    assert_eq!(ran.polls, 1);
+    assert!(ran.stdout.contains("RESULT PASS=19 FAIL=0 SKIP=0"));
+    assert!(ran.stdout.contains("CLEAN PASS"));
+}
 
-    let after = Scenario::new().await;
-    after.host_rule("fresh-after", None, 1, ACCESS);
-    let ran = after.run().await;
-    assert_eq!(ran.status.code(), 1, "{}", ran.stdout);
-    assert!(ran.stdout.contains("HOST_REPLY FAIL"));
-    assert!(ran.stdout.contains("a1_host_login=unchanged"));
-    assert!(!ran.stdout.contains(ACCESS));
-    assert!(!ran.stderr.contains(ACCESS));
+#[tokio::test]
+async fn credential_descriptors_follow_cli_grammar_without_echoing_rejected_input() {
+    const FORMS: &str = "--credential expects env:NAME, an op:// reference, file:PATH, or omp-host";
+    for source in [
+        "env:ZAI_API_KEY",
+        "file:/tmp/synthetic-key",
+        "op://vault/item",
+        "omp-host",
+    ] {
+        assert!(E2eCredential::parse(source).is_ok(), "{source}");
+    }
+    for source in [
+        "op://",
+        "op://vault",
+        "op:///item",
+        "op://vault//field",
+        "op://vault//synthetic-canary-empty-field",
+        "synthetic-raw-credential-canary-7f3a9c",
+        "env:not a name",
+    ] {
+        let error = E2eCredential::parse(source).expect_err(source);
+        assert!(
+            matches!(error, TargetError::CredentialDescriptor),
+            "{source}"
+        );
+        let display = error.to_string();
+        let debug = format!("{error:?}");
+        assert_eq!(display, FORMS, "{source}");
+        assert_eq!(debug, "CredentialDescriptor", "{source}");
+        let output = public_output(&E2eArgs {
+            credential: Some(source.to_owned()),
+            ..args()
+        });
+        assert_eq!(output.status.code(), Some(2), "{source}");
+        assert!(output.stdout.is_empty(), "{source}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert_eq!(stderr, format!("xtask: {FORMS}\n"), "{source}");
+        if source != "op://" {
+            assert!(!display.contains(source), "{source}");
+            assert!(!debug.contains(source), "{source}");
+            assert!(!stderr.contains(source), "{source}");
+        }
+    }
 }

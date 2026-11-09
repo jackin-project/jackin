@@ -12,7 +12,9 @@ use jackin_core::{
 };
 use jackin_openshell::Gateway;
 use jackin_testkit::FakeGateway;
-use jackin_xtask::{Exit, HostCommand, HostError, HostOutput, HostProcess, RealHost};
+use jackin_xtask::{
+    A1Error, A1Lock, Exit, HostCommand, HostError, HostOutput, HostProcess, RealHost,
+};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -678,7 +680,12 @@ impl ScenarioHost {
             .and_then(|text| text.strip_suffix(" and no other text"))
             .unwrap_or_default()
             .to_owned();
+        let refused = matches!(
+            A1Lock::acquire(&self.world.lock_dir),
+            Err(A1Error::LockHeld(_))
+        );
         self.shared.state().fresh_replies.push(expected.clone());
+        self.shared.state().fresh_reply_lock_refused.push(refused);
         self.shared
             .state()
             .fresh_reply_envs
