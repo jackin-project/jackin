@@ -282,6 +282,7 @@ impl Session {
                             args: vec![
                                 "diff".to_owned(),
                                 "--name-only".to_owned(),
+                                "-z".to_owned(),
                                 "--diff-filter=U".to_owned(),
                             ],
                             workdir: Some(SandboxPath::from_static("/sandbox/project")),
@@ -293,9 +294,7 @@ impl Session {
                         cancel,
                     )
                     .await?;
-                if paths.exit_code == 0
-                    && paths.stdout.iter().any(|byte| !byte.is_ascii_whitespace())
-                {
+                if paths.exit_code == 0 && !paths.stdout.is_empty() {
                     return Err(IntegrateError::Conflict { branch });
                 }
                 let output = if outcome.stderr.is_empty() {

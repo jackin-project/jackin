@@ -522,10 +522,10 @@ async fn integrate_merges_the_secondary_branch_into_the_persisted_nonlexical_lea
                 .trim()
                 .is_empty()
         );
-        std::fs::write(
-            secondary.join("secondary-result.txt"),
-            b"secondary conflict\n",
-        )?;
+        std::fs::write(secondary.join(" "), b"secondary conflict\n")?;
+        handle
+            .git(&["-C", "../work/codex/project", "add", "--", " "])
+            .await?;
         handle
             .git(&[
                 "-C",
@@ -536,11 +536,7 @@ async fn integrate_merges_the_secondary_branch_into_the_persisted_nonlexical_lea
             ])
             .await?;
         handle
-            .commit_in_project(
-                "secondary-result.txt",
-                b"lead conflict\n",
-                "test: lead conflict",
-            )
+            .commit_in_project(" ", b"lead conflict\n", "test: lead conflict")
             .await?;
         let lead_head = handle.git(&["rev-parse", "HEAD"]).await?;
         let result = rig
@@ -555,9 +551,8 @@ async fn integrate_merges_the_secondary_branch_into_the_persisted_nonlexical_lea
         assert_eq!(handle.git(&["rev-parse", "HEAD"]).await?, lead_head);
         assert!(
             !handle
-                .git(&["diff", "--name-only", "--diff-filter=U"])
+                .git(&["diff", "--name-only", "-z", "--diff-filter=U"])
                 .await?
-                .trim()
                 .is_empty()
         );
         Ok(())
