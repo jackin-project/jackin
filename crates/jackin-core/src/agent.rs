@@ -158,7 +158,7 @@ impl AgentTuple {
 
     pub fn omp_base_url(&self) -> Option<&'static str> {
         match self.id {
-            "T09" => Some("https://api.z.ai/api/coding/paas/v4"),
+            "T09" => Some("https://api.z.ai/api/anthropic"),
             "T10" => Some("https://api.kimi.com/coding/v1"),
             "T12" => Some("https://token-plan-sgp.xiaomimimo.com/v1"),
             _ => None,
@@ -183,6 +183,7 @@ impl AgentTuple {
 
     pub fn omp_model_api(&self) -> Option<&'static str> {
         match self.id {
+            "T09" => Some("anthropic-messages"),
             "T10" => Some("openai-completions"),
             _ => None,
         }
