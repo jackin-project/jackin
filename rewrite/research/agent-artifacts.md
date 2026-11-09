@@ -192,6 +192,7 @@ No flag is documented.
 - Product: MiMo Code.
 - Binary: `mimo`.
 - Artifact binary name in archive: `mimocode`.
+- Correction 2026-11-09 at the A14 fix: both v0.1.16 tarballs (arm64 and amd64, SHA-256 re-verified against the pins above) hold exactly one member, `mimo`. The `mimocode` name above was wrong for this release.
 - Binary source: [MiMo-Code repo](https://github.com/XiaomiMiMo/MiMo-Code).
 - Latest stable: `0.1.16`.
 - Release tag: `v0.1.16`.
@@ -238,6 +239,7 @@ No flag is documented.
 - Linux amd64 URL: https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%402.5.1/kimi-code-linux-x64.tar.gz
 - Linux amd64 SHA-256: `d3fe0696e2ed244200c6c42344cbd71429eff40dc9761fdcb5f994057b78bee9`.
 - Vendor checksum file: `kimi-code-linux-x64.tar.gz.sha256` in the same release.
+- Archive members 2026-11-09 at the A14 fix: both 2.5.1 tarballs (arm64 and amd64, SHA-256 re-verified against the pins above) hold exactly one member, `kimi`.
 - State dir: `~/.kimi-code`.
 - State dir override: `KIMI_CODE_HOME`.
 - Config file: `~/.kimi-code/config.toml`.

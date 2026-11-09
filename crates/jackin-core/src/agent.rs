@@ -813,64 +813,94 @@ static MINIMAX_CODE_SPEC: AgentSpec = agent_spec!(
     "minimax-m3",
     &["MINIMAX_DATA_DIR"]
 );
-static MIMO_CODE_SPEC: AgentSpec = agent_spec!(
-    Agent::MimoCode,
-    Provider::Mimo,
-    "/usr/local/bin/mimo",
-    "/sandbox/.mimo",
-    "/sandbox/.mimo/auth.json",
-    "/sandbox/.mimo/config.toml",
-    &["mimo"],
-    "0.1.16",
-    "https://github.com/XiaomiMiMo/MiMo-Code/releases/download/v{version}/mimocode-linux-{target}.tar.gz",
-    &[
-        InstallTarget {
-            platform: Platform::LinuxArm64,
-            triple: "arm64",
-            sha256: "220c621eb61a175ba0bc8e9c45c217abfed8dace1f17111c3717bceb95ad2ab3"
-        },
-        InstallTarget {
-            platform: Platform::LinuxAmd64,
-            triple: "x64",
-            sha256: "3793d8b08ae7c1c6cee707645da1b1c827e0f13faa5d40d076f08ea4ee1d9a5e"
-        }
-    ],
-    AuthClass::StaticKey,
-    &["mimo.mi.com"],
-    &["MIMO_API_KEY"],
-    &["mimo-v2.6-pro"],
-    "mimo-v2.6-pro",
-    &[]
-);
-static KIMI_CODE_SPEC: AgentSpec = agent_spec!(
-    Agent::KimiCode,
-    Provider::Kimi,
-    "/usr/local/bin/kimi",
-    "/sandbox/.kimi-code",
-    "/sandbox/.kimi-code/credentials/kimi-code.json",
-    "/sandbox/.kimi-code/config.toml",
-    &["kimi"],
-    "2.5.1",
-    "https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%40{version}/kimi-code-linux-{target}.tar.gz",
-    &[
-        InstallTarget {
-            platform: Platform::LinuxArm64,
-            triple: "arm64",
-            sha256: "70c3a09506f7d3d0f211077eb100d34186fef1017347c73ed0d944bb2b474cf3"
-        },
-        InstallTarget {
-            platform: Platform::LinuxAmd64,
-            triple: "x64",
-            sha256: "d3fe0696e2ed244200c6c42344cbd71429eff40dc9761fdcb5f994057b78bee9"
-        }
-    ],
-    AuthClass::StaticKey,
-    &["api.kimi.com"],
-    &["KIMI_API_KEY"],
-    &["kimi-for-coding"],
-    "kimi-for-coding",
-    &["KIMI_CODE_HOME"]
-);
+static MIMO_CODE_SPEC: AgentSpec = AgentSpec {
+    agent: Agent::MimoCode,
+    provider: Provider::Mimo,
+    binary: SandboxPath::from_static("/usr/local/bin/mimo"),
+    state_dir: SandboxPath::from_static("/sandbox/.mimo"),
+    workdir: SandboxPath::from_static(PROJECT_PATH),
+    launch_command: &["mimo"],
+    install: InstallSpec {
+        version: "0.1.16",
+        url_template: "https://github.com/XiaomiMiMo/MiMo-Code/releases/download/v{version}/mimocode-linux-{target}.tar.gz",
+        archive_members: &["mimo"],
+        version_output: "",
+        system_config: SandboxPath::from_static(""),
+        system_config_content: "",
+        scan_absent_paths: &[],
+        targets: &[
+            InstallTarget {
+                platform: Platform::LinuxArm64,
+                triple: "arm64",
+                sha256: "220c621eb61a175ba0bc8e9c45c217abfed8dace1f17111c3717bceb95ad2ab3",
+            },
+            InstallTarget {
+                platform: Platform::LinuxAmd64,
+                triple: "x64",
+                sha256: "3793d8b08ae7c1c6cee707645da1b1c827e0f13faa5d40d076f08ea4ee1d9a5e",
+            },
+        ],
+    },
+    auth_class: AuthClass::StaticKey,
+    provider_hosts: &["mimo.mi.com"],
+    credential_env_names: &["MIMO_API_KEY"],
+    allowed_models: &["mimo-v2.6-pro"],
+    default_model: "mimo-v2.6-pro",
+    codex: &EMPTY_CODEX_SPEC,
+    auth_file: AuthFileSpec {
+        path: SandboxPath::from_static("/sandbox/.mimo/auth.json"),
+        mode: FileMode(0o600),
+    },
+    user_config: ConfigFileSpec {
+        path: SandboxPath::from_static("/sandbox/.mimo/config.toml"),
+        mode: FileMode(0o600),
+    },
+    reserved_env: &[],
+};
+static KIMI_CODE_SPEC: AgentSpec = AgentSpec {
+    agent: Agent::KimiCode,
+    provider: Provider::Kimi,
+    binary: SandboxPath::from_static("/usr/local/bin/kimi"),
+    state_dir: SandboxPath::from_static("/sandbox/.kimi-code"),
+    workdir: SandboxPath::from_static(PROJECT_PATH),
+    launch_command: &["kimi"],
+    install: InstallSpec {
+        version: "2.5.1",
+        url_template: "https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%40{version}/kimi-code-linux-{target}.tar.gz",
+        archive_members: &["kimi"],
+        version_output: "",
+        system_config: SandboxPath::from_static(""),
+        system_config_content: "",
+        scan_absent_paths: &[],
+        targets: &[
+            InstallTarget {
+                platform: Platform::LinuxArm64,
+                triple: "arm64",
+                sha256: "70c3a09506f7d3d0f211077eb100d34186fef1017347c73ed0d944bb2b474cf3",
+            },
+            InstallTarget {
+                platform: Platform::LinuxAmd64,
+                triple: "x64",
+                sha256: "d3fe0696e2ed244200c6c42344cbd71429eff40dc9761fdcb5f994057b78bee9",
+            },
+        ],
+    },
+    auth_class: AuthClass::StaticKey,
+    provider_hosts: &["api.kimi.com"],
+    credential_env_names: &["KIMI_API_KEY"],
+    allowed_models: &["kimi-for-coding"],
+    default_model: "kimi-for-coding",
+    codex: &EMPTY_CODEX_SPEC,
+    auth_file: AuthFileSpec {
+        path: SandboxPath::from_static("/sandbox/.kimi-code/credentials/kimi-code.json"),
+        mode: FileMode(0o600),
+    },
+    user_config: ConfigFileSpec {
+        path: SandboxPath::from_static("/sandbox/.kimi-code/config.toml"),
+        mode: FileMode(0o600),
+    },
+    reserved_env: &["KIMI_CODE_HOME"],
+};
 static OMP_SPEC: AgentSpec = agent_spec!(
     Agent::Omp,
     Provider::Zai,
