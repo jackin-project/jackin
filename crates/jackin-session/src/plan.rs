@@ -434,6 +434,20 @@ fn launch_policy(
     Ok((document.close_for_instances(instances)?, warnings))
 }
 
+fn apply_agent_env_defaults(
+    instances: &jackin_core::AgentInstances,
+    values: &mut BTreeMap<EnvName, String>,
+) {
+    if instances
+        .iter()
+        .any(|instance| instance.agent == Agent::MimoCode)
+    {
+        values
+            .entry(EnvName::parse("TMPDIR").expect("TMPDIR is a valid env name"))
+            .or_insert_with(|| "/tmp".to_owned());
+    }
+}
+
 fn lead_tuple(
     agent: Agent,
     provider: Provider,
@@ -533,9 +547,7 @@ fn agent_config_file(
         ));
     }
     if agent == Agent::MimoCode {
-        return Ok(crate::files::render_mimo_config(
-            &ProviderName::for_account(account, agent),
-        ));
+        return Ok(crate::files::render_mimo_config());
     }
     if agent == Agent::MuseCode {
         return Ok(crate::files::render_muse_config(model));
@@ -733,6 +745,7 @@ pub fn plan_launch(
             .map(|(name, value)| (name, value.as_str().to_owned()))
             .collect();
     values.extend(docker.environment());
+    apply_agent_env_defaults(&instances, &mut values);
     let layout = crate::multi::plan_multi(
         &instances,
         request.task.as_deref(),
@@ -1208,5 +1221,46 @@ mod tests {
                 tuple.id
             );
         }
+    }
+
+    fn mimo_instances() -> AgentInstances {
+        AgentInstances::single(AgentInstance::lead(Agent::MimoCode, account()))
+    }
+
+    #[test]
+    fn mimo_instance_gains_tmpdir_default_in_the_agent_env() {
+        let mut values = BTreeMap::new();
+        apply_agent_env_defaults(&mimo_instances(), &mut values);
+        assert_eq!(
+            values,
+            BTreeMap::from([(
+                EnvName::parse("TMPDIR").expect("env name"),
+                "/tmp".to_owned()
+            )])
+        );
+    }
+
+    #[test]
+    fn mimo_instance_keeps_an_existing_tmpdir_from_the_role_layers() {
+        let mut values = BTreeMap::from([(
+            EnvName::parse("TMPDIR").expect("env name"),
+            "/sandbox/tmp".to_owned()
+        )]);
+        apply_agent_env_defaults(&mimo_instances(), &mut values);
+        assert_eq!(
+            values,
+            BTreeMap::from([(
+                EnvName::parse("TMPDIR").expect("env name"),
+                "/sandbox/tmp".to_owned()
+            )])
+        );
+    }
+
+    #[test]
+    fn non_mimo_instances_get_no_tmpdir_default() {
+        let instances = AgentInstances::single(AgentInstance::lead(Agent::Codex, account()));
+        let mut values = BTreeMap::new();
+        apply_agent_env_defaults(&instances, &mut values);
+        assert_eq!(values, BTreeMap::new());
     }
 }

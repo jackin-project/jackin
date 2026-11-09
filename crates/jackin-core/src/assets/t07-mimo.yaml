@@ -16,7 +16,7 @@ credentials:
 discovery:
   credentials: [access_token]
 endpoints:
-  - host: mimo.mi.com
+  - host: token-plan-sgp.xiaomimimo.com
     port: 443
     protocol: rest
     access: read-write

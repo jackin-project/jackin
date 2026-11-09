@@ -129,7 +129,7 @@ const PINNED_ROWS: &[Row] = &[
     Row {
         id: "T07",
         asset: "mimo",
-        hosts: &["mimo.mi.com"],
+        hosts: &["token-plan-sgp.xiaomimimo.com"],
         env: "MIMO_API_KEY",
         binary: "/usr/local/bin/mimo",
         refresh: false,

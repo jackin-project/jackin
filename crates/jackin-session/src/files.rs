@@ -262,11 +262,10 @@ pub(crate) fn placeholder_file(spec: &jackin_core::AgentSpec) -> crate::plan::Pl
     }
 }
 
-fn render_native_config(
-    agent: jackin_core::Agent,
-    provider: &ProviderName,
-) -> crate::plan::PlannedFile {
-    let spec = agent.spec();
+pub fn render_kimi_config(provider: &ProviderName) -> crate::plan::PlannedFile {
+    let spec = jackin_core::Agent::KimiCode.spec();
+    let model = spec.default_model;
+    let host = spec.provider_hosts.first().copied().unwrap_or_default();
     let env = spec
         .credential_env_names
         .first()
@@ -276,17 +275,37 @@ fn render_native_config(
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
         text: format!(
-            "[providers.{provider}]\napi_key_env = \"{env}\"\napi_key = \"placeholder\"\n"
+            "default_model = \"{model}\"\n\n[providers.{provider}]\ntype = \"kimi\"\nbase_url = \"https://{host}/coding/v1\"\napi_key_env = \"{env}\"\n\n[models.\"{model}\"]\nprovider = \"{provider}\"\nmodel = \"{model}\"\nmax_context_size = 1048576\n"
         ),
     }
 }
 
-pub fn render_kimi_config(provider: &ProviderName) -> crate::plan::PlannedFile {
-    render_native_config(jackin_core::Agent::KimiCode, provider)
-}
-
-pub fn render_mimo_config(provider: &ProviderName) -> crate::plan::PlannedFile {
-    render_native_config(jackin_core::Agent::MimoCode, provider)
+pub fn render_mimo_config() -> crate::plan::PlannedFile {
+    let spec = jackin_core::Agent::MimoCode.spec();
+    let model = format!("xiaomi/{}", spec.default_model);
+    let host = spec.provider_hosts.first().copied().unwrap_or_default();
+    let env = spec
+        .credential_env_names
+        .first()
+        .copied()
+        .unwrap_or_default();
+    crate::plan::PlannedFile {
+        path: spec.user_config.path.clone(),
+        mode: spec.user_config.mode,
+        text: json!({
+            "model": model,
+            "small_model": model.clone(),
+            "provider": {
+                "xiaomi": {
+                    "options": {
+                        "baseURL": format!("https://{host}/v1"),
+                        "apiKey": format!("{{env:{env}}}"),
+                    }
+                }
+            }
+        })
+        .to_string(),
+    }
 }
 
 pub fn render_muse_config(model: Option<&str>) -> crate::plan::PlannedFile {
