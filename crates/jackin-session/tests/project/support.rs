@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Clock, Config, HostPath, LabelSelector, LaunchId, LineSink, ProcessError, ProcessOutput,
-    ProcessRunner, ProcessSpec, ProjectRoot, RoleName, SandboxPath, SecretOutput, StdFileSystem,
-    sandbox_layout,
+    Agent, Clock, Config, HostPath, LabelSelector, LaunchId, LineSink, ProcessError, ProcessOutput,
+    ProcessRunner, ProcessSpec, ProjectRoot, Provider, RoleName, SandboxPath, SecretOutput,
+    StdFileSystem, sandbox_layout,
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{Gateway, SandboxQuery};
@@ -28,7 +28,7 @@ use tokio_util::sync::CancellationToken;
 
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
-pub(crate) const PLACEHOLDER: &str = "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN";
+pub(crate) const PLACEHOLDER: &str = "openshell:resolve:env:ZAI_API_KEY";
 const GUARD: Duration = Duration::from_secs(170);
 const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
 
@@ -192,8 +192,9 @@ impl Rig {
             "last_refresh": "2026-11-02T10:11:12.123456789Z",
         });
         tokio::fs::write(home.as_path().join("auth.json"), login.to_string()).await?;
+        tokio::fs::write(home.as_path().join("zai.txt"), "project-test-key").await?;
         let config = Config::parse(&format!(
-            "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n",
+            "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n",
             home.as_path().display(),
             role.root().as_path().display(),
             at.as_path()
@@ -235,7 +236,9 @@ impl Rig {
             self.project.clone(),
             RoleName::parse("sentinel")?,
             launch_id(id),
-        ))
+        )
+        .tuple(Agent::Codex, Provider::Zai)
+        .model(Some("glm-5.3".to_owned())))
     }
 
     pub(crate) fn plan(&self, id: u8) -> Result<LaunchPlan, Box<dyn Error>> {

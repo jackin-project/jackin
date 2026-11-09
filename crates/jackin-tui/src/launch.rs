@@ -141,7 +141,10 @@ fn next_step(failure: &SessionFailure) -> NextStep {
     let credential = match &*failure.error {
         LaunchError::Credential(_) => true,
         LaunchError::ProviderUnavailable { source, .. } => {
-            matches!(**source, AccountError::Credential(_))
+            matches!(
+                **source,
+                AccountError::Credential(_) | AccountError::MissingCredential { .. }
+            )
         }
         _ => false,
     };
@@ -384,11 +387,8 @@ fn resolve_choices(
             }));
         };
         let core_provider = crate::project::core_provider(choice.provider);
-        let account = match &choice.account {
-            Some(id) => {
-                Some(AccountName::parse(id).map_err(|error| Stop::at(Stage::Credentials, &error))?)
-            }
-            None => config
+        let select = || {
+            config
                 .select_account(&jackin_core::AccountQuery {
                     flag: None,
                     workspace: name,
@@ -398,7 +398,22 @@ fn resolve_choices(
                 })
                 .map(|selection| selection.account)
                 .ok()
-                .or_else(|| config.default_account(core_provider).cloned()),
+                .or_else(|| config.default_account(core_provider).cloned())
+        };
+        let account = match &choice.account {
+            Some(id) => {
+                let name =
+                    AccountName::parse(id).map_err(|error| Stop::at(Stage::Credentials, &error))?;
+                if config
+                    .account(&name)
+                    .is_some_and(|entry| entry.provider() == core_provider)
+                {
+                    Some(name)
+                } else {
+                    select()
+                }
+            }
+            None => select(),
         };
         choices.push((core, core_provider, account, choice.model.clone()));
     }

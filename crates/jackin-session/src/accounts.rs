@@ -685,8 +685,16 @@ impl Session {
         self.sync_locked_c(account, agent, cancel).await
     }
 
-    async fn forget_locked(&self, account: &Account) -> Result<(), AccountError> {
-        forget_login(self.deps.gateway.as_ref(), account).await
+    async fn forget_locked(
+        &self,
+        account: &Account,
+        provider: &ProviderName,
+    ) -> Result<(), AccountError> {
+        if !account.has_provider() {
+            return Ok(());
+        }
+        self.deps.gateway.delete_provider(provider).await?;
+        Ok(())
     }
 
     pub(crate) async fn sync_provider(
@@ -703,7 +711,7 @@ impl Session {
             return Ok(false);
         }
         if let Err(original) = self.sync_locked_c(account, agent, cancel).await {
-            return Err(match self.forget_locked(account).await {
+            return Err(match self.forget_locked(account, provider).await {
                 Ok(()) => original,
                 Err(rollback) => AccountError::RollbackFailed {
                     account: account.name().clone(),
@@ -797,14 +805,22 @@ async fn forget_login(gateway: &dyn Gateway, account: &Account) -> Result<(), Ac
     if !account.has_provider() {
         return Ok(());
     }
-    let provider = ProviderName::for_account(account.name(), account_agent(account));
-    gateway.delete_provider(&provider).await?;
+    for agent in Agent::ALL {
+        gateway
+            .delete_provider(&ProviderName::for_account(account.name(), agent))
+            .await?;
+    }
     Ok(())
 }
 
 async fn holds(gateway: &dyn Gateway, account: &Account) -> Result<bool, AccountError> {
-    let provider = ProviderName::for_account(account.name(), account_agent(account));
-    Ok(gateway.provider_state(&provider).await? == ProviderState::Present)
+    for agent in Agent::ALL {
+        let provider = ProviderName::for_account(account.name(), agent);
+        if gateway.provider_state(&provider).await? == ProviderState::Present {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 async fn sync_grok_login(

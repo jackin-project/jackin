@@ -13,7 +13,7 @@ fn parsed(text: &str) -> Result<toml::Table, toml::de::Error> {
     toml::from_str(text)
 }
 
-fn check_config(plan: &LaunchPlan, model: Option<&str>) -> TestResult {
+fn check_config(plan: &LaunchPlan, model: &str) -> TestResult {
     let file = &plan.files().codex_config;
     assert_eq!(
         file.path,
@@ -25,17 +25,13 @@ fn check_config(plan: &LaunchPlan, model: Option<&str>) -> TestResult {
         file.text.matches("[projects.\"/sandbox/project\"]").count(),
         1
     );
-    let mut expected = parsed(TRUST)?;
-    match model {
-        Some(model) => {
-            assert_eq!(
-                file.text.lines().next(),
-                Some(format!("model = \"{model}\"").as_str())
-            );
-            expected.insert("model".to_owned(), model.into());
-        }
-        None => assert!(!file.text.contains("model")),
-    }
+    assert_eq!(
+        file.text.lines().next(),
+        Some(format!("model = \"{model}\"").as_str())
+    );
+    let expected = parsed(&format!(
+        "model = \"{model}\"\nmodel_provider = \"zai\"\n\n[model_providers.zai]\nname = \"Z.AI\"\nbase_url = \"https://api.z.ai/api/v1\"\nenv_key = \"ZAI_API_KEY\"\nwire_api = \"responses\"\n\n{TRUST}"
+    ))?;
     assert_eq!(parsed(&file.text)?, expected);
     Ok(())
 }
@@ -52,7 +48,7 @@ async fn planned_files_carry_the_trust_entry_the_model_and_the_env_with_exact_pa
         .build()
         .await?;
         let plan = plain.plan(plain.request(1)?)?;
-        check_config(&plan, None)?;
+        check_config(&plan, "glm-5.3")?;
         let env = &plan.files().env;
         assert_eq!(
             env.path,
@@ -70,14 +66,14 @@ async fn planned_files_carry_the_trust_entry_the_model_and_the_env_with_exact_pa
             &env_values(&[("GREETING", "hi")])?
         );
 
-        let modelled = Spec::new(RoleFixture::new("sentinel")?.model("gpt-6.1-sol").env(
+        let modelled = Spec::new(RoleFixture::new("sentinel")?.model("glm-5.3").env(
             "GREETING",
             Some("hello"),
             None,
         ))
         .build()
         .await?;
-        check_config(&modelled.plan(modelled.request(1)?)?, Some("gpt-6.1-sol"))?;
+        check_config(&modelled.plan(modelled.request(1)?)?, "glm-5.3")?;
 
         let mut spec =
             Spec::new(RoleFixture::new("sentinel")?.env("GREETING", Some("hello"), None));

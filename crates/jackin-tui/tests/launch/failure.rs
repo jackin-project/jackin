@@ -85,7 +85,7 @@ async fn a_launch_with_no_gateway_selected_fails_before_any_stage_and_says_to_ru
             .build()
             .await?;
         console.skip_intro();
-        begin(&mut console)?;
+        begin(&mut console).await?;
         until_shows(&mut console, "Run id").await?;
         let screen = console.screen();
         assert_eq!(stage(&screen, "01 Image"), Some(Stage::Failed), "{screen}");
@@ -208,7 +208,7 @@ async fn env_answers_reach_the_env_file() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         let mut console = console(&rig).await?;
-        begin(&mut console)?;
+        begin(&mut console).await?;
         answer(&mut console, Some("world")).await?;
         until_route(&mut console, Route::Capsule).await?;
         let file = env_file(&only(&rig)?)?;
@@ -224,7 +224,7 @@ async fn esc_in_the_env_form_creates_nothing() -> TestResult {
         let rig = Rig::new().await?;
         let mut console = console(&rig).await?;
         let builds = rig.world.engine.builds().len();
-        begin(&mut console)?;
+        begin(&mut console).await?;
         until_shows(&mut console, "Values for this launch").await?;
         console.keys("esc")?;
         until_route(&mut console, Route::Manager).await?;
@@ -241,7 +241,7 @@ async fn a_launch_that_leaves_nothing_returns_to_the_manager() -> TestResult {
     guard(async {
         let rig = Rig::builder().workspace_docker(true).build().await?;
         let mut console = console(&rig).await?;
-        begin(&mut console)?;
+        begin(&mut console).await?;
         until_shows(&mut console, "Run id").await?;
         assert!(rig.gateway().sandboxes().is_empty());
         console.keys("esc")?;

@@ -4,9 +4,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use jackin_console::domain::agent::{Agent as ConsoleAgent, Provider as ConsoleProvider};
 use jackin_console::domain::doctor::DoctorFailure;
 use jackin_console::domain::launch::{LaunchContent, NextStep};
+use jackin_console::domain::tuple::InstanceChoice;
 use jackin_console::domain::vocabulary::Vocabulary;
+use jackin_console::launch::{LaunchEvent, LaunchTarget};
 use jackin_core::{Config, Program};
 use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::{CheckId, GatewayConnector};
@@ -314,34 +317,56 @@ async fn launch_on_failed_gateway() -> TestResult {
             .size(200, 40)
             .build()
             .await?;
-        console.keys("down enter enter")?;
-        let mut agents_confirmed = 0;
+        rig.world.gateway.set_serving(false);
+        let app = console.console().app();
+        let world = &app.world;
+        let workspace = world
+            .workspaces
+            .iter()
+            .find(|found| found.name == "platform-backend")
+            .map(|found| found.id)
+            .ok_or("no platform-backend workspace")?;
+        let mut feed = world.backend.launch(
+            world,
+            &LaunchTarget {
+                workspace: Some(workspace),
+                role: "sentinel".to_owned(),
+                instances: vec![InstanceChoice {
+                    agent: ConsoleAgent::Codex,
+                    provider: ConsoleProvider::Zai,
+                    account: Some("work".to_owned()),
+                    model: "glm-5.3".to_owned(),
+                }],
+                task: None,
+            },
+        );
+        let mut events = Vec::new();
         for _ in 0..400 {
-            console.tick(1);
-            console.settle().await?;
-            if agents_confirmed < 1 && console.screen().contains("choose Agent") {
-                console.keys("space enter")?;
-                agents_confirmed += 1;
-                continue;
-            }
-            if console.screen().contains("connection refused") {
+            events.extend(feed.poll(world));
+            if events.iter().any(|event| matches!(
+                event,
+                LaunchEvent::Failed(failed)
+                    if failed.failure.next_step == NextStep::RunDoctor
+                        && failed.failure.detail.iter().any(|line| line.contains("connection refused"))
+            )) {
                 break;
             }
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            tokio::time::sleep(Duration::from_millis(5)).await;
         }
-        let screen = console.screen();
-        assert!(screen.contains("connection refused"), "{screen}");
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                LaunchEvent::Failed(failed)
+                    if failed.failure.next_step == NextStep::RunDoctor
+                        && failed.failure.detail.iter().any(|line| line.contains("connection refused"))
+            )),
+            "{events:?}"
+        );
         let doctor = LaunchContent::openshell()
             .words
             .next_step(&NextStep::RunDoctor)
             .ok_or("the doctor step has no words")?;
-        let shown = screen
-            .lines()
-            .filter_map(|line| line.split('│').nth(1))
-            .flat_map(str::split_whitespace)
-            .collect::<Vec<_>>()
-            .join(" ");
-        assert!(shown.contains(&doctor), "{doctor}\n{screen}");
+        assert_eq!(doctor, "Run jackin doctor, fix the failing check, then launch again.");
         assert!(rig.world.gateway.sandboxes().is_empty());
         Ok(())
     })

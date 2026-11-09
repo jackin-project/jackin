@@ -165,7 +165,19 @@ impl Run<'_> {
         let loaded = self
             .jackin(
                 label,
-                &["load", "sentinel", &project, "--launch-id", launch.as_str()],
+                &[
+                    "load",
+                    "sentinel",
+                    &project,
+                    "--launch-id",
+                    launch.as_str(),
+                    "--provider",
+                    "zai",
+                    "--model",
+                    "glm-5.3",
+                    "--account",
+                    expected,
+                ],
                 &main,
             )
             .await?;
@@ -237,14 +249,13 @@ impl Run<'_> {
 
     async fn j17_inner(&mut self) -> Res<Verdict> {
         let main = self.projects.main.clone();
-        let (a1, fxr, fxw, workspace) = (
-            self.names.a1.clone(),
+        let (fxr, fxw, workspace) = (
             self.names.fxr.clone(),
             self.names.fxw.clone(),
             self.names.main.clone(),
         );
         let mut problems: Vec<String> = Vec::new();
-        problems.extend(self.load_for_account("J17 provider default", &a1).await?);
+        problems.extend(self.load_for_account("J17 provider default", "zai").await?);
         let bound = self
             .jackin(
                 "J17 bind role",

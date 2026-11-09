@@ -4,8 +4,8 @@
 use std::collections::BTreeMap;
 
 use jackin::ExitClass;
-use jackin_core::{EnvName, Phase, SandboxPath};
-use jackin_testkit::{Rig, SandboxHandle, TestResult, guard};
+use jackin_core::{EnvName, Phase, SandboxPath, sandbox_layout};
+use jackin_testkit::{Fault, Rig, SandboxHandle, TestResult, Trigger, guard, launch_id};
 
 use super::support::{Failure, Harness, ScriptedTerminal, Step, failed};
 
@@ -72,7 +72,13 @@ async fn a_shell_needs_a_terminal_an_env_file_and_a_ready_sandbox() -> TestResul
 #[tokio::test]
 async fn a_sandbox_whose_launch_never_wrote_the_env_file_gets_no_shell() -> TestResult {
     guard(async {
-        let rig = Rig::builder().printenv_exit(1).build().await?;
+        let rig = Rig::new().await?;
+        rig.gateway().inject(Fault::FailAt {
+            trigger: Trigger::Write(sandbox_layout::env_file(&launch_id(1))),
+            error: jackin_openshell::GatewayError::Protocol {
+                message: "injected".to_owned(),
+            },
+        });
         let failure = rig
             .launch_with(1, tokio_util::sync::CancellationToken::new())
             .await?;

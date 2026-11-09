@@ -166,7 +166,19 @@ impl Run<'_> {
         let loaded = self
             .jackin(
                 "J15 load",
-                &["load", "sentinel", &project, "--launch-id", launch.as_str()],
+                &[
+                    "load",
+                    "sentinel",
+                    &project,
+                    "--launch-id",
+                    launch.as_str(),
+                    "--provider",
+                    "zai",
+                    "--model",
+                    "glm-5.3",
+                    "--account",
+                    "zai",
+                ],
                 &dock,
             )
             .await?;

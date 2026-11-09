@@ -51,9 +51,9 @@ fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
     Ok(AgentInstances::new(vec![
         AgentInstance::new(
             Agent::Codex,
-            Provider::Codex,
+            Provider::Zai,
             AccountName::parse("work")?,
-            "gpt-6.1-sol".to_owned(),
+            "glm-5.3".to_owned(),
         ),
         AgentInstance::new(
             Agent::Omp,
@@ -109,7 +109,10 @@ async fn an_omp_lead_launch_gets_the_lead_models_file_and_no_home_copy() -> Test
             .edit(vec![ConfigEdit::AddAccount(account)])
             .await?;
         let config = rig.world.config.load().await?;
-        let request = rig.request(22)?.tuple(Agent::Omp, Provider::Zai);
+        let request = rig
+            .request(22)?
+            .tuple(Agent::Omp, Provider::Zai)
+            .account(Some(AccountName::parse("zai-work")?));
         let plan = plan_launch(&config, &rig.loaded, request)?;
         let outcome = rig
             .run_planned(&rig.world.session, plan, CancellationToken::new())

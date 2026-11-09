@@ -5,8 +5,15 @@ use std::error::Error;
 use std::time::Duration;
 
 use jackin_console::app::Route;
-use jackin_core::{ConfigEdit, RoleName, RoleSource, SandboxLabels, sandbox_layout};
-use jackin_testkit::{ConsoleRig, Rig, RoleFixture, SandboxHandle};
+use jackin_console::domain::agent::{Agent as ConsoleAgent, Provider as ConsoleProvider};
+use jackin_console::domain::tuple::InstanceChoice;
+use jackin_console::domain::workspace::WorkspaceId;
+use jackin_console::screens::Go;
+use jackin_core::{
+    Account, AccountName, ChatgptAccountId, ConfigEdit, CredentialSource, Provider, RoleName,
+    RoleSource, SandboxLabels, sandbox_layout,
+};
+use jackin_testkit::{ACCOUNT_ID, ConsoleRig, Rig, RoleFixture, SandboxHandle};
 
 pub(crate) type Failure = Box<dyn Error>;
 
@@ -23,8 +30,32 @@ pub(crate) enum Stage {
     Failed,
 }
 
+pub(crate) async fn picker_account(rig: &Rig) -> Result<(), Failure> {
+    let account = AccountName::parse("picker-codex")?;
+    if rig.world.config.load().await?.account(&account).is_none() {
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::AddAccount(Account::new(
+                account,
+                Provider::Codex,
+                CredentialSource::CodexLogin {
+                    home: rig.home.clone(),
+                    chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+                },
+            )?)])
+            .await?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn console(rig: &Rig) -> Result<ConsoleRig, Failure> {
     rig.world.seed_all(&rig.config).await?;
+    rig.world
+        .config
+        .edit(vec![ConfigEdit::SetDefaultAccount {
+            account: AccountName::parse("work")?,
+        }])
+        .await?;
     let mut console = ConsoleRig::builder(&rig.world)
         .size(160, 44)
         .build()
@@ -106,8 +137,43 @@ pub(crate) fn dialog(screen: &str) -> String {
         .join(" ")
 }
 
-pub(crate) fn begin(console: &mut ConsoleRig) -> Result<(), Failure> {
-    console.keys("down enter enter space enter")
+pub(crate) fn go_launch(
+    console: &mut ConsoleRig,
+    workspace: Option<WorkspaceId>,
+    role: &str,
+) -> Result<(), Failure> {
+    console.console().app().go(Go::LaunchMany {
+        workspace,
+        role: role.to_owned(),
+        instances: vec![InstanceChoice {
+            agent: ConsoleAgent::Codex,
+            provider: ConsoleProvider::Zai,
+            account: Some("work".to_owned()),
+            model: "glm-5.3".to_owned(),
+        }],
+        task: None,
+    });
+    Ok(())
+}
+
+pub(crate) async fn begin_named(
+    console: &mut ConsoleRig,
+    workspace: &str,
+    role: &str,
+) -> Result<(), Failure> {
+    let app = console.console().app();
+    let workspace = app
+        .world
+        .workspaces
+        .iter()
+        .find(|found| found.name == workspace)
+        .map(|found| found.id)
+        .ok_or_else(|| format!("no {workspace} workspace"))?;
+    go_launch(console, Some(workspace), role)
+}
+
+pub(crate) async fn begin(console: &mut ConsoleRig) -> Result<(), Failure> {
+    begin_named(console, "platform-backend", "sentinel").await
 }
 
 pub(crate) async fn answer(console: &mut ConsoleRig, value: Option<&str>) -> Result<(), Failure> {
@@ -124,7 +190,7 @@ pub(crate) async fn answer(console: &mut ConsoleRig, value: Option<&str>) -> Res
 }
 
 pub(crate) async fn launch(console: &mut ConsoleRig) -> Result<(), Failure> {
-    begin(console)?;
+    begin(console).await?;
     answer(console, None).await
 }
 

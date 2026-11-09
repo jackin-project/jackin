@@ -24,13 +24,12 @@ enum Point {
 }
 
 fn trigger(point: Point) -> Option<Trigger> {
-    let spec = Agent::Codex.spec();
     match point {
         Point::Before => None,
         Point::Provider => Some(Trigger::Op(GatewayOp::Provider)),
         Point::Create => Some(Trigger::Op(GatewayOp::Create)),
         Point::Probe => Some(Trigger::Op(GatewayOp::ReadFiles)),
-        Point::Auth => Some(Trigger::Write(spec.auth_file.path.clone())),
+        Point::Auth => Some(Trigger::Write(sandbox_layout::env_file(&launch_id(1)))),
         Point::Upload => Some(Trigger::Op(GatewayOp::UploadTree)),
         Point::Setup => Some(Trigger::Program(sandbox_layout::hook_path(HookKind::Setup))),
         Point::Start => Some(Trigger::Write(sandbox_layout::RUN_START.clone())),
@@ -83,8 +82,9 @@ async fn cancel_at(point: Point) -> TestResult {
                 assert!(!has_file(handle, &Agent::Codex.spec().auth_file.path));
             }
             (Point::Auth, Some(handle)) => {
-                assert!(has_file(handle, &Agent::Codex.spec().auth_file.path));
-                assert!(!has_file(handle, &Agent::Codex.spec().user_config.path));
+                assert!(has_file(handle, &sandbox_layout::env_file(&launch_id(1))));
+                assert!(!has_file(handle, &Agent::Codex.spec().auth_file.path));
+                assert!(has_file(handle, &Agent::Codex.spec().user_config.path));
             }
             (Point::Upload, Some(handle)) => {
                 assert!(!has_file(

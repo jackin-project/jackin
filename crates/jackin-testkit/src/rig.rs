@@ -6,8 +6,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Clock, Config, EngineCert, EnvName, FileSystem, HookKind, HostPath, LabelSelector, LaunchId,
-    PlainEnvValue, ProcessRunner, ProjectRoot, RoleName, SandboxName, sandbox_layout,
+    Agent, Clock, Config, EngineCert, EnvName, FileSystem, HookKind, HostPath, LabelSelector,
+    LaunchId, PlainEnvValue, ProcessRunner, ProjectRoot, Provider, RoleName, SandboxName,
+    sandbox_layout,
 };
 use jackin_image::{BuildStage, BuiltImage, ImageEngine, ImageSource};
 use jackin_openshell::{Gateway, SandboxQuery};
@@ -42,6 +43,7 @@ pub const ACCESS: &str = "ACCESS-SECRET-7f3a91";
 pub const REFRESH: &str = "REFRESH-SECRET-c20e44";
 pub const ACCOUNT_ID: &str = "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f";
 pub const PLACEHOLDER: &str = "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN";
+pub const ZAI_PLACEHOLDER: &str = "openshell:resolve:env:ZAI_API_KEY";
 
 #[derive(Debug)]
 pub struct Rig {
@@ -151,7 +153,9 @@ impl Rig {
             self.project.clone(),
             RoleName::parse("sentinel")?,
             launch_id(id),
-        ))
+        )
+        .tuple(Agent::Codex, Provider::Zai)
+        .model(Some("glm-5.3".to_owned())))
     }
 
     pub fn plan(&self, id: u8) -> Result<LaunchPlan, FixtureError> {
@@ -394,6 +398,7 @@ impl RigBuilder {
         let home = HostPath::parse(&std::fs::canonicalize(home_dir.path())?)?;
         if self.login {
             tokio::fs::write(home.as_path().join("auth.json"), login_text()).await?;
+            tokio::fs::write(home.as_path().join("zai.txt"), ACCESS).await?;
         }
         let engine = self.engine.map_or_else(String::new, |port| {
             format!(
@@ -407,7 +412,7 @@ impl RigBuilder {
             ""
         };
         let config = Config::parse(&format!(
-            "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n{engine}\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n{workspace_docker}",
+            "default_gateway = \"fake-gateway\"\n\n[gateways.fake-gateway]\nopenshell_workspace = \"default\"\nbuilder = \"jackin-builder\"\nplatform = \"linux/arm64\"\n{engine}\n[accounts.work]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.platform-backend]\npath = \"{}\"\n{workspace_docker}",
             home.as_path().display(),
             role.root().as_path().display(),
             repo.root().as_path().display(),
@@ -418,7 +423,10 @@ impl RigBuilder {
         let gateway = &world.gateway;
         gateway.script_program(
             &sandbox_layout::PRINTENV,
-            script(self.printenv_exit, format!("{PLACEHOLDER}\n").as_bytes()),
+            script(
+                self.printenv_exit,
+                format!("{ZAI_PLACEHOLDER}\n").as_bytes(),
+            ),
         );
         for (kind, exit) in [
             (HookKind::Setup, 0),

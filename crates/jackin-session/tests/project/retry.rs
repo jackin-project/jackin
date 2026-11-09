@@ -125,7 +125,7 @@ async fn the_project_directory_is_emptied_but_nothing_outside_it() -> TestResult
     .await
 }
 
-const PROGRAM_RUNS: usize = 13;
+const PROGRAM_RUNS: usize = 12;
 
 #[tokio::test]
 async fn the_cuts_cover_every_sandbox_program_run_of_a_clean_launch() -> TestResult {
@@ -201,7 +201,23 @@ cut_tests! {
     a_failure_after_9_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 9,
     a_failure_after_10_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 10,
     a_failure_after_11_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 11,
-    a_failure_after_12_sandbox_program_runs_retries_to_the_state_of_a_clean_run: 12,
+}
+
+#[tokio::test]
+async fn a_failure_at_the_env_file_retries_to_the_state_of_a_clean_run() -> TestResult {
+    guard(async {
+        let rig = Rig::new(base().await?).await?;
+        rig.world.gateway.inject(Fault::FailAt {
+            trigger: Trigger::Write(sandbox_layout::env_file(&launch_id(1))),
+            error: injected(),
+        });
+        failure(rig.launch(1).await?)?;
+        ready(rig.launch(1).await?)?;
+        let handle = rig.handle(1).await?;
+        assert!(handle.file(&marker()).is_some());
+        arrived(rig.repo.root().as_path(), &handle.root(), &["?? u.txt"])
+    })
+    .await
 }
 
 #[tokio::test]

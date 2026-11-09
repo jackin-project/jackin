@@ -97,9 +97,11 @@ async fn launch_runs_the_seven_stages() -> TestResult {
         assert_eq!(found.planned.role.as_str(), "sentinel");
         assert_eq!(
             found.planned.agents.agents_label(),
-            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
                 Agent::Codex,
-                jackin_core::AccountName::parse("work")?
+                jackin_core::Provider::Zai,
+                jackin_core::AccountName::parse("work")?,
+                "glm-5.3".to_owned(),
             ))
             .agents_label()
         );
@@ -189,7 +191,7 @@ async fn a_second_launch_makes_a_second_sandbox() -> TestResult {
         launch(&mut first).await?;
         until_route(&mut first, Route::Capsule).await?;
         let mut second = console(&rig).await?;
-        begin(&mut second)?;
+        begin(&mut second).await?;
         super::support::answer(&mut second, None).await?;
         until_route(&mut second, Route::Capsule).await?;
         let all = rig.gateway().sandboxes();

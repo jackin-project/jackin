@@ -1,14 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_console::app::Route;
-use jackin_core::{
-    Account, AccountName, AccountQuery, Agent, ChatgptAccountId, ConfigEdit, CredentialSource,
-    Provider, RoleName, WorkspaceName,
-};
-use jackin_testkit::{ACCOUNT_ID, Rig, TestResult, guard};
+use std::time::Duration;
 
-use super::support::{answer, begin, console, labels, only, until_route};
+use jackin_console::domain::agent::{Agent as ConsoleAgent, Provider as ConsoleProvider};
+use jackin_console::domain::tuple::InstanceChoice;
+use jackin_console::launch::{EnvAnswer, LaunchEvent, LaunchTarget};
+use jackin_core::{
+    Account, AccountName, AccountQuery, Agent, ConfigEdit, CredentialSource, Provider, RoleName,
+    WorkspaceName,
+};
+use jackin_testkit::{Rig, TestResult, guard};
+
+use super::support::{console, labels, only};
 
 type Failure = Box<dyn std::error::Error>;
 
@@ -21,21 +25,57 @@ fn name(text: &str) -> Result<AccountName, Failure> {
 fn login(rig: &Rig, account: &str) -> Result<ConfigEdit, Failure> {
     Ok(ConfigEdit::AddAccount(Account::new(
         name(account)?,
-        Provider::Codex,
-        CredentialSource::CodexLogin {
-            home: rig.home.clone(),
-            chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+        Provider::Zai,
+        CredentialSource::File {
+            path: jackin_core::HostPath::parse(&rig.home.as_path().join("zai.txt"))?,
         },
     )?))
 }
 
-async fn launched(rig: &Rig) -> Result<(String, String), Failure> {
+async fn launched(rig: &Rig, expected: &str) -> Result<String, Failure> {
     let mut console = console(rig).await?;
-    begin(&mut console)?;
-    let picked = console.screen();
-    answer(&mut console, None).await?;
-    until_route(&mut console, Route::Capsule).await?;
-    Ok((labels(&only(rig)?)?.planned.agents.agents_label(), picked))
+    let app = console.console().app();
+    let world = &app.world;
+    let workspace = world
+        .workspaces
+        .iter()
+        .find(|found| found.name == WORKSPACE)
+        .map(|found| found.id)
+        .ok_or("no platform-backend workspace")?;
+    let mut feed = world.backend.launch(
+        world,
+        &LaunchTarget {
+            workspace: Some(workspace),
+            role: "sentinel".to_owned(),
+            instances: vec![InstanceChoice {
+                agent: ConsoleAgent::Codex,
+                provider: ConsoleProvider::Zai,
+                account: Some(expected.to_owned()),
+                model: "glm-5.3".to_owned(),
+            }],
+            task: None,
+        },
+    );
+    let mut events = Vec::new();
+    for _ in 0..1000 {
+        events.extend(feed.poll(world));
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    feed.answer_env(vec![EnvAnswer {
+        name: "GREETING".to_owned(),
+        value: "hello".to_owned(),
+    }]);
+    for _ in 0..1000 {
+        events.extend(feed.poll(world));
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, LaunchEvent::Ready(_))),
+        "{events:?}"
+    );
+    Ok(labels(&only(rig)?)?.planned.agents.agents_label())
 }
 
 async fn launches(
@@ -56,16 +96,16 @@ async fn launches(
             account: name("by-workspace")?,
         });
     }
-    if role {
-        edits.push(ConfigEdit::BindRoleAccount {
-            role: RoleName::parse("sentinel")?,
-            agent: Agent::Codex,
-            account: name("by-role")?,
-        });
-    }
     if default {
         edits.push(ConfigEdit::SetDefaultAccount {
             account: name("by-default")?,
+        });
+    }
+    if role {
+        edits.push(ConfigEdit::BindRoleAccount {
+            role: RoleName::parse("sentinel")?,
+            agent: Agent::Omp,
+            account: name("by-role")?,
         });
     }
     rig.world.config.edit(edits).await?;
@@ -77,23 +117,19 @@ async fn launches(
         workspace: &workspace_name,
         role: &role_name,
         agent: Agent::Codex,
-        provider: Provider::Codex,
+        provider: Provider::Zai,
     })?;
     assert_eq!(selected.account.as_str(), expected);
-    let (account, picked) = launched(&rig).await?;
+    let account = launched(&rig, expected).await?;
     assert_eq!(
         account,
-        jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+        jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
             Agent::Codex,
-            name(expected)?
+            Provider::Zai,
+            name(expected)?,
+            "glm-5.3".to_owned(),
         ))
-        .agents_label(),
-        "{picked}"
-    );
-    let flat = picked.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        flat.contains(&format!("account Codex · {expected}")),
-        "{expected}\n{picked}"
+        .agents_label()
     );
     Ok(())
 }

@@ -29,7 +29,7 @@ pub(crate) struct Expect<'a> {
 }
 
 pub(crate) fn agents_label(account: &str) -> String {
-    jackin_core::Sha256::of(format!("codex:codex:{account}:gpt-6.1-sol").as_bytes()).as_str()[..32]
+    jackin_core::Sha256::of(format!("codex:zai:{account}:glm-5.3").as_bytes()).as_str()[..32]
         .to_owned()
 }
 
@@ -164,6 +164,12 @@ impl Run<'_> {
             project.as_str(),
             "--launch-id",
             launch.as_str(),
+            "--provider",
+            "zai",
+            "--model",
+            "glm-5.3",
+            "--account",
+            "zai",
         ];
         let mut failing = base.to_vec();
         failing.extend(["--env", "SENTINEL_FAIL_PREFLIGHT=1"]);
@@ -206,7 +212,7 @@ impl Run<'_> {
         let image = self.w.image_id.clone().unwrap_or_default();
         let expect = Expect {
             workspace: &self.names.main,
-            account: &self.names.a1,
+            account: "zai",
             image_id: &image,
             launch: launch.as_str(),
             docker: "off",

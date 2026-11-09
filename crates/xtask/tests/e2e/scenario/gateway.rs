@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Agent, ChatgptAccountId, GatewayName, HostPath, Labels, Phase, ProfileId, ProjectRoot,
-    ProviderName, SandboxName, SandboxPath, Secret, Sha256,
+    Agent, GatewayName, HostPath, Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxName,
+    SandboxPath, Secret, Sha256,
 };
 use jackin_openshell::{
     Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, PowerAction, ProfileSync,
@@ -19,7 +19,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::Shared;
 use super::report;
-use super::world::{ACCESS, ACCOUNT_ID, CLIENT_ID, REFRESH, World};
+use super::world::{ACCESS, World};
 
 pub(crate) const PROBE: &str = "/usr/local/bin/jackin-sentinel-probe";
 
@@ -59,7 +59,7 @@ impl ScenarioGateway {
             ("jackin.dev/role".to_owned(), "other".to_owned()),
             (
                 "jackin.dev/agents".to_owned(),
-                Sha256::of(b"codex:codex:mine:gpt-6.1-sol").as_str()[..32].to_owned(),
+                Sha256::of(b"codex:zai:mine:glm-5.3").as_str()[..32].to_owned(),
             ),
             ("jackin.dev/image".to_owned(), "0".repeat(32)),
             ("jackin.dev/launch".to_owned(), "foreignlaunch".to_owned()),
@@ -74,21 +74,24 @@ impl ScenarioGateway {
     }
 
     pub(crate) async fn put_codex_provider(&self, account: &str) -> Result<(), GatewayError> {
-        let spec = Agent::Codex.spec();
+        let tuple =
+            jackin_core::lookup_tuple(Agent::Codex, jackin_core::Provider::Zai).expect("T18 tuple");
         let profile =
-            ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile).expect("profile");
+            ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple)).expect("T18 profile");
         self.fake.ensure_profile(&profile).await?;
-        let account_id = ChatgptAccountId::parse(ACCOUNT_ID).expect("account id");
         self.fake
             .put_provider(&ProviderSpec {
                 name: ProviderName::parse(&format!("jackin-{account}-codex")).expect("provider"),
                 profile: profile.id,
-                keys: spec.codex.openshell.keys,
-                material: ProviderMaterial::ChatgptLogin {
-                    access_token: Secret::new(ACCESS.to_owned()),
-                    refresh_token: Secret::new(REFRESH.to_owned()),
-                    client_id: CLIENT_ID.to_owned(),
-                    chatgpt_account_id: account_id,
+                keys: jackin_core::CredentialKeys {
+                    access_token: "ZAI_API_KEY",
+                    refresh_token: "",
+                    account_id: "",
+                    id_token: "",
+                    token_url: "",
+                },
+                material: ProviderMaterial::StaticKey {
+                    key: Secret::new(ACCESS.to_owned()),
                 },
             })
             .await
@@ -157,7 +160,7 @@ impl ScenarioGateway {
         if script == "/usr/bin/env" {
             return outcome(
                 0,
-                "PATH=/usr/bin\nCODEX_AUTH_ACCESS_TOKEN=openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN\n",
+                "PATH=/usr/bin\nZAI_API_KEY=openshell:resolve:env:ZAI_API_KEY\n",
             );
         }
         if script.contains("echo uid=") {
@@ -363,7 +366,7 @@ impl Gateway for ScenarioGateway {
             PROBE => self.answer_probe(run),
             "/usr/bin/env" => Ok(outcome(
                 0,
-                "PATH=/usr/bin\nCODEX_AUTH_ACCESS_TOKEN=openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN\n",
+                "PATH=/usr/bin\nZAI_API_KEY=openshell:resolve:env:ZAI_API_KEY\n",
             )),
             _ => Ok(self.answer_sh(run)),
         }

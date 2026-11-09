@@ -6,9 +6,13 @@ use jackin_core::{Agent, AuthClass, CatalogError, Provider, TUPLES, TupleState, 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[test]
-fn codex_tuple_is_supported() -> TestResult {
+fn codex_tuple_is_unavailable_until_the_host_login_is_renewed() -> TestResult {
     let tuple = lookup_tuple(Agent::Codex, Provider::Codex)?;
-    assert_eq!(tuple.state, TupleState::Supported);
+    assert_eq!(tuple.state, TupleState::Unavailable);
+    assert_eq!(
+        tuple.reason,
+        Some("host Codex login expired; interactive re-login required")
+    );
     assert_eq!(tuple.agent, Agent::Codex);
     assert_eq!(tuple.provider, Provider::Codex);
     Ok(())
@@ -25,7 +29,7 @@ fn blocked_and_unavailable_tuples_carry_reasons() -> TestResult {
     let blocked = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
     assert_eq!(blocked.state, TupleState::BlockedVendor);
     assert_eq!(blocked.reason, Some("vendor clarification pending"));
-    let supported = lookup_tuple(Agent::Omp, Provider::Kimi)?;
+    let supported = lookup_tuple(Agent::Omp, Provider::Zai)?;
     assert_eq!(supported.state, TupleState::Supported);
     assert_eq!(supported.reason, None);
     Ok(())
@@ -70,8 +74,8 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Provider::Mimo,
             AuthClass::StaticKey,
             "mimo-v2.6-pro",
-            TupleState::Supported,
-            None,
+            TupleState::Unavailable,
+            Some("no MiMo Token Plan key on this host"),
         ),
         (
             "T17",
@@ -106,8 +110,8 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Provider::Mimo,
             AuthClass::StaticKey,
             "mimo-v2.6-pro",
-            TupleState::Supported,
-            None,
+            TupleState::Unavailable,
+            Some("no MiMo Token Plan key on this host"),
         ),
         (
             "T21",
@@ -223,15 +227,36 @@ fn model_acceptance_is_exact_and_independent_of_launch_availability() -> TestRes
 #[test]
 fn availability_states_and_reasons_are_exact() -> TestResult {
     let uppercase_pending = "uppercase MiniMax-M3 live proof pending";
+    let mimo_key = "no MiMo Token Plan key on this host";
     for (id, state, reason) in [
+        (
+            "T01",
+            TupleState::Unavailable,
+            Some("host Codex login expired; interactive re-login required"),
+        ),
         (
             "T05",
             TupleState::Unavailable,
             Some("subscription requires a desktop keyring in the sandbox"),
         ),
-        ("T11", TupleState::Supported, None),
+        ("T09", TupleState::Supported, None),
+        (
+            "T10",
+            TupleState::Unavailable,
+            Some("no Kimi Code membership key on this host"),
+        ),
+        (
+            "T11",
+            TupleState::Unavailable,
+            Some("no MiniMax coding plan key on this host"),
+        ),
+        ("T12", TupleState::Unavailable, Some(mimo_key)),
+        ("T14", TupleState::Supported, None),
         ("T15", TupleState::Unavailable, Some(uppercase_pending)),
+        ("T16", TupleState::Unavailable, Some(mimo_key)),
+        ("T18", TupleState::Supported, None),
         ("T19", TupleState::Unavailable, Some(uppercase_pending)),
+        ("T20", TupleState::Unavailable, Some(mimo_key)),
         (
             "T21",
             TupleState::Unavailable,

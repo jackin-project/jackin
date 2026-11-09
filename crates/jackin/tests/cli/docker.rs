@@ -66,11 +66,11 @@ async fn a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plai
             &[
                 "account",
                 "add",
-                "codex",
+                "zai",
                 "--name",
                 "work",
-                "--chatgpt-from",
-                &home,
+                "--credential",
+                &format!("file:{home}/zai.txt"),
             ],
             &["workspace", "add", "platform-backend", &repo, "--docker"],
         ];

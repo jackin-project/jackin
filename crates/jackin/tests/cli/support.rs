@@ -406,9 +406,31 @@ impl Harness {
     }
 
     pub(crate) fn command(&self, args: &[&str]) -> Invocation<'_> {
+        let mut owned: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
+        if args.contains(&"load") {
+            let explicit_provider = args.iter().any(|arg| {
+                *arg == "--provider"
+                    || arg.starts_with("--provider=")
+                    || arg.starts_with("--provider-for=codex=")
+            }) || args
+                .windows(2)
+                .any(|pair| pair[0] == "--provider-for" && pair[1].starts_with("codex="));
+            if !explicit_provider {
+                owned.extend([
+                    "--provider".to_owned(),
+                    "zai".to_owned(),
+                    "--provider-for".to_owned(),
+                    "codex=zai".to_owned(),
+                    "--model".to_owned(),
+                    "glm-5.3".to_owned(),
+                    "--model-for".to_owned(),
+                    "codex=glm-5.3".to_owned(),
+                ]);
+            }
+        }
         Invocation {
             harness: self,
-            args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+            args: owned,
             terminal: None,
             cancel: CancellationToken::new(),
         }

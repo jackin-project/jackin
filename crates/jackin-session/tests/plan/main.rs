@@ -4,6 +4,7 @@
 mod accounts;
 mod agents_manifest;
 mod allowed_roles;
+mod availability;
 mod claude;
 mod codex;
 mod docker;

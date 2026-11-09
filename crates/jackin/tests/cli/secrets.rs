@@ -134,7 +134,7 @@ async fn no_secret_reaches_any_output_json_config_or_debug_text() -> TestResult 
         haystack.push(broken.stderr);
         haystack.extend(harness.config_bytes()?);
 
-        let failing = Rig::builder().printenv_exit(1).build().await?;
+        let failing = Rig::builder().login(false).build().await?;
         let mut other = Harness::new(&failing.world);
         other.cwd = failing.repo.root().clone();
         other.env.push(("CLAUDE_KEY".to_owned(), KEY.to_owned()));

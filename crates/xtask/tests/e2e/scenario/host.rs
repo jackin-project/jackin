@@ -116,8 +116,8 @@ impl ScenarioHost {
             ("jackin.dev/role".to_owned(), "sentinel".to_owned()),
             (
                 "jackin.dev/agents".to_owned(),
-                jackin_core::Sha256::of(format!("codex:codex:{account}:gpt-6.1-sol").as_bytes())
-                    .as_str()[..32]
+                jackin_core::Sha256::of(format!("codex:zai:{account}:glm-5.3").as_bytes()).as_str()
+                    [..32]
                     .to_owned(),
             ),
             (
@@ -518,7 +518,7 @@ impl ScenarioHost {
                 }
                 done(0, "", "")
             }
-            ["account", "add", "codex", "--name", name, ..] => {
+            ["account", "add", "codex" | "zai", "--name", name, ..] => {
                 if self.shared.knobs().registry_write
                     && let Some(base) = command.env.get("XDG_CONFIG_HOME")
                 {

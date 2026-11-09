@@ -128,7 +128,7 @@ async fn a_failure_in_credentials_or_upload_resumes_without_repeating_finished_s
                 handle.file(&config),
                 Some(plan.files().codex_config.text.clone().into_bytes())
             );
-            assert!(has_file(&handle, &Agent::Codex.spec().auth_file.path));
+            assert!(!has_file(&handle, &Agent::Codex.spec().auth_file.path));
             assert!(has_file(&handle, &plan.files().env.path));
             if index == 2 {
                 assert!(has_file(&handle, &path("/sandbox/project/late.txt")?));

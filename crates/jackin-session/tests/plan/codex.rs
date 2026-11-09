@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    AccountName, Agent, AgentInstance, AgentInstances, FileMode, Provider, lookup_tuple,
-    tuple_profile_asset,
+    AccountName, Agent, AgentInstance, AgentInstances, FileMode, ModelName, Provider, SandboxPath,
+    lookup_tuple, tuple_profile_asset,
 };
 use jackin_openshell::ProviderProfile;
-use jackin_session::{HeadState, MultiLayout, PlanError, plan_multi};
+use jackin_session::{HeadState, MultiLayout, PlanError, plan_multi, render_codex_config};
 use jackin_testkit::RoleFixture;
 
 use super::support::{Spec, TestResult, guard};
@@ -24,26 +24,15 @@ type Case = (
 );
 
 fn cases() -> Vec<Case> {
-    vec![
-        (
-            Provider::Zai,
-            "zai",
-            "Z.AI",
-            "https://api.z.ai/api/v1",
-            "ZAI_API_KEY",
-            "glm-5.3",
-            None,
-        ),
-        (
-            Provider::Mimo,
-            "mimo",
-            "MiMo",
-            "https://token-plan-sgp.xiaomimimo.com/v1",
-            "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
-            "mimo-v2.6-pro",
-            Some("disabled"),
-        ),
-    ]
+    vec![(
+        Provider::Zai,
+        "zai",
+        "Z.AI",
+        "https://api.z.ai/api/v1",
+        "ZAI_API_KEY",
+        "glm-5.3",
+        None,
+    )]
 }
 
 fn mirror_instances(
@@ -203,33 +192,34 @@ fn t19_accepts_uppercase_model_validation_but_refuses_launch_while_unproven()
     Ok(())
 }
 
-#[tokio::test]
-async fn t01_lead_config_stays_trust_only_with_no_model_provider() -> TestResult {
-    guard(async {
-        let bare = Spec::new(RoleFixture::new("sentinel")?).build().await?;
-        let plan = bare.plan(bare.request(1)?.model(Some("gpt-6.1-sol".to_owned())))?;
-        let file = &plan.files().codex_config;
-        assert_eq!(
-            file.path,
-            jackin_core::SandboxPath::parse("/sandbox/.codex/config.toml")?
-        );
-        assert_eq!(file.mode, FileMode(0o600));
-        let expected: toml::Table =
-            toml::from_str("[projects.\"/sandbox/project\"]\ntrust_level = \"trusted\"\n")?;
-        assert_eq!(toml::from_str::<toml::Table>(&file.text)?, expected);
+#[test]
+fn t01_pure_rendering_stays_trust_only_with_no_model_provider() -> TestResult {
+    let tuple = lookup_tuple(Agent::Codex, Provider::Codex)?;
+    let workdir = SandboxPath::parse("/sandbox/project")?;
+    let bare = render_codex_config(tuple, None, Some("gpt-6.1-sol"), &workdir)?;
+    let expected: toml::Table =
+        toml::from_str("[projects.\"/sandbox/project\"]\ntrust_level = \"trusted\"\n")?;
+    assert_eq!(toml::from_str::<toml::Table>(&bare)?, expected);
 
-        let modelled = Spec::new(RoleFixture::new("sentinel")?.model("gpt-6.1-sol"))
-            .build()
-            .await?;
-        let plan = modelled.plan(modelled.request(2)?)?;
-        let file = &plan.files().codex_config;
-        let expected: toml::Table = toml::from_str(
-            "model = \"gpt-6.1-sol\"\n\n[projects.\"/sandbox/project\"]\ntrust_level = \"trusted\"\n",
-        )?;
-        assert_eq!(toml::from_str::<toml::Table>(&file.text)?, expected);
-        Ok(())
-    })
-    .await
+    let model = ModelName::parse("gpt-6.1-sol")?;
+    let modelled = render_codex_config(tuple, Some(&model), Some("gpt-6.1-sol"), &workdir)?;
+    let expected: toml::Table = toml::from_str(
+        "model = \"gpt-6.1-sol\"\n\n[projects.\"/sandbox/project\"]\ntrust_level = \"trusted\"\n",
+    )?;
+    assert_eq!(toml::from_str::<toml::Table>(&modelled)?, expected);
+    Ok(())
+}
+
+#[test]
+fn t20_pure_rendering_disables_web_search() -> TestResult {
+    let tuple = lookup_tuple(Agent::Codex, Provider::Mimo)?;
+    let workdir = SandboxPath::parse("/sandbox/work/codex/project")?;
+    let text = render_codex_config(tuple, None, Some("mimo-v2.6-pro"), &workdir)?;
+    let expected: toml::Table = toml::from_str(
+        "model = \"mimo-v2.6-pro\"\nmodel_provider = \"mimo\"\nweb_search = \"disabled\"\n\n[model_providers.mimo]\nname = \"MiMo\"\nbase_url = \"https://token-plan-sgp.xiaomimimo.com/v1\"\nenv_key = \"XIAOMI_TOKEN_PLAN_SGP_API_KEY\"\nwire_api = \"responses\"\n\n[projects.\"/sandbox/work/codex/project\"]\ntrust_level = \"trusted\"\n",
+    )?;
+    assert_eq!(toml::from_str::<toml::Table>(&text)?, expected);
+    Ok(())
 }
 
 #[tokio::test]
@@ -240,9 +230,9 @@ async fn plan_model_selection_allows_explicit_refuses_outside_and_defaults_witho
         let plan = setup.plan(
             setup
                 .request(1)?
-                .model(Some("gpt-6.1-sol".to_owned())),
+                .model(Some("glm-5.3".to_owned())),
         )?;
-        assert_eq!(plan.instances().lead().model, "gpt-6.1-sol");
+        assert_eq!(plan.instances().lead().model, "glm-5.3");
 
         let removed = setup
             .plan(setup.request(1)?.model(Some("gpt-5.1-codex".to_owned())))
@@ -263,7 +253,7 @@ async fn plan_model_selection_allows_explicit_refuses_outside_and_defaults_witho
         );
 
         let plan = setup.plan(setup.request(2)?)?;
-        assert_eq!(plan.instances().lead().model, "gpt-6.1-sol");
+        assert_eq!(plan.instances().lead().model, "glm-5.3");
         Ok(())
     })
     .await

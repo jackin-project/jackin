@@ -86,7 +86,7 @@ async fn docker_without_an_engine_fails_and_creates_nothing() -> TestResult {
     guard(async {
         let rig = Rig::builder().workspace_docker(true).build().await?;
         let mut console = console(&rig).await?;
-        begin(&mut console)?;
+        begin(&mut console).await?;
         until_shows(&mut console, "Run id").await?;
         let screen = console.screen();
         let shown = dialog(&screen);

@@ -379,12 +379,12 @@ async fn a_cached_role_follows_the_default_branch_when_the_origin_renames_it() -
             &["branch", "-m", "main", "trunk"],
         )
         .await?;
-        let moved = origin.advance("gpt-6.1-sol").await?;
+        let moved = origin.advance("glm-5.3").await?;
         let (commit, model) = origin
             .load(&cache, None)
             .await?
             .map_err(|e| format!("{e:?}"))?;
-        assert_eq!((commit, model.as_deref()), (moved, Some("gpt-6.1-sol")));
+        assert_eq!((commit, model.as_deref()), (moved, Some("glm-5.3")));
         Ok(())
     })
     .await

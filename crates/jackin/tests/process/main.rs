@@ -132,16 +132,22 @@ async fn a_load_that_needs_a_missing_env_value_exits_with_the_refused_code_befor
         repo.commit().await?;
         let config_dir = home.path().join(".config/jackin");
         std::fs::create_dir_all(&config_dir)?;
+        std::fs::write(home.path().join("zai.txt"), "process-test-key")?;
         std::fs::write(
             config_dir.join("config.toml"),
             format!(
-                "default_gateway = \"nowhere\"\n\n[gateways.nowhere]\nopenshell_workspace = \"default\"\nbuilder = \"b\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.proj]\npath = \"{}\"\n",
+                "default_gateway = \"nowhere\"\n\n[gateways.nowhere]\nopenshell_workspace = \"default\"\nbuilder = \"b\"\nplatform = \"linux/arm64\"\n\n[accounts.work]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n\n[roles.sentinel]\nsource = {{ path = \"{}\" }}\n\n[workspaces.proj]\npath = \"{}\"\n",
                 home.path().display(),
                 role.root().as_path().display(),
                 repo.root().as_path().display(),
             ),
         )?;
-        let refused = jackin(home.path(), repo.root().as_path(), &["load"]).await?;
+        let refused = jackin(
+            home.path(),
+            repo.root().as_path(),
+            &["load", "--provider", "zai", "--model", "glm-5.3"],
+        )
+        .await?;
         assert_eq!(code(&refused), Some(3), "{}", String::from_utf8_lossy(&refused.stderr));
         assert!(refused.stdout.is_empty());
         assert!(String::from_utf8_lossy(&refused.stderr).contains("TOKENISH"));

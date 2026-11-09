@@ -42,9 +42,10 @@ async fn a_sandbox_deleted_after_it_was_ready_is_recreated_and_gets_its_credenti
         let handle = rig.handle(1).await?;
         let spec = Agent::Codex.spec();
         assert_eq!(
-            handle.file_mode(&spec.auth_file.path),
+            handle.file_mode(&sandbox_layout::env_file(&super::support::launch_id(1))),
             Some(FileMode(0o600))
         );
+        assert!(handle.file(&spec.auth_file.path).is_none());
         assert!(has_file(
             &handle,
             &sandbox_layout::env_file(&super::support::launch_id(1))
