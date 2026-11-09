@@ -32,7 +32,7 @@ fn cases() -> Vec<(Provider, &'static str, &'static str, &'static str)> {
 
 fn base_urls() -> Vec<(Provider, Option<&'static str>)> {
     vec![
-        (Provider::Zai, Some("https://api.z.ai/api/coding/paas/v4")),
+        (Provider::Zai, Some("https://api.z.ai/api/anthropic")),
         (Provider::Kimi, Some("https://api.kimi.com/coding/v1")),
         (Provider::Minimax, None),
         (

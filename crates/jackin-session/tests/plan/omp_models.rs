@@ -25,8 +25,8 @@ fn cases() -> Vec<Case> {
             provider: Provider::Zai,
             id: "zai",
             env: "ZAI_API_KEY",
-            base_url: Some("https://api.z.ai/api/coding/paas/v4"),
-            api: None,
+            base_url: Some("https://api.z.ai/api/anthropic"),
+            api: Some("anthropic-messages"),
             auth_header: false,
             model: "glm-5.3",
             custom_model: false,
@@ -165,7 +165,7 @@ fn omp_config_and_auth_goldens_stay_unchanged_for_every_omp_tuple() -> TestResul
     let goldens = [
         (
             Provider::Zai,
-            "providers:\n  zai:\n    baseUrl: https://api.z.ai/api/coding/paas/v4\n    apiKey: placeholder\ncredentialEnv: ZAI_API_KEY\nmodelRoles:\n  default: zai/glm-5.3\n",
+            "providers:\n  zai:\n    baseUrl: https://api.z.ai/api/anthropic\n    apiKey: placeholder\ncredentialEnv: ZAI_API_KEY\nmodelRoles:\n  default: zai/glm-5.3\n",
         ),
         (
             Provider::Kimi,
