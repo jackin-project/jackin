@@ -35,7 +35,7 @@ Use the latest stable release of every tool and every dependency. Do not use a p
 | Rust | 1.99.1 | mise `rust`, with tool option `mr_boxington = true` |
 | mr-boxington (`mbx`) | 1.29.2 | mise `mr-boxington` |
 | OpenShell | 0.1.7 (`5d25211b25a8fc887e8d5c606d57d6ab22f1d76c`, 2026-11-03) | Homebrew `openshell`, git tag `v0.1.7` |
-| Codex CLI | 0.166.0 (2026-10-29) | `@openai/codex` |
+| Codex CLI | 0.167.0 (2026-11-06) | `@openai/codex` |
 | cargo-nextest | 0.9.151 (P8.0a) | mise aqua |
 | Docker CLI (D24 client layer) | 29.9.3 | `download.docker.com` static archive, hash fixed on first fetch (no published checksum file) |
 | docker-buildx | 0.38.2 | GitHub release, published checksum |
