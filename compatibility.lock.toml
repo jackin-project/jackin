@@ -11,9 +11,9 @@ sdk_path = "crates/openshell-sdk"
 repository = "https://github.com/NVIDIA/OpenShell"
 
 [codex]
-version = "0.166.0"
+version = "0.167.0"
 package = "@openai/codex"
-date = "2026-10-29"
+date = "2026-11-06"
 
 [docker]
 cli_version = "29.9.3"

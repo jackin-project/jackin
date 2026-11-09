@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Agent, Provider, lookup_tuple, tuple_profile_asset};
+use jackin_core::{
+    AccountName, Agent, AgentInstance, AgentInstances, Provider, lookup_tuple, tuple_profile_asset,
+};
 use jackin_openshell::ProviderProfile;
-use jackin_session::render_claude_config;
+use jackin_session::{HeadState, PlanError, plan_multi, render_claude_config};
 use serde_json::{Value, json};
 
 use super::support::TestResult;
@@ -74,6 +76,30 @@ fn claude_base_url_host_matches_the_tuple_profile_endpoint_host() -> TestResult 
             tuple.id
         );
     }
+    Ok(())
+}
+
+#[test]
+fn t15_accepts_uppercase_model_validation_but_refuses_launch_while_unproven() -> TestResult {
+    let tuple = lookup_tuple(Agent::ClaudeCode, Provider::Minimax)?;
+    assert_eq!(tuple.check_model("MiniMax-M3")?.id, "T15");
+    let instances = AgentInstances::single(AgentInstance::new(
+        Agent::ClaudeCode,
+        Provider::Minimax,
+        AccountName::parse("work")?,
+        "MiniMax-M3".to_owned(),
+    ));
+    let error = plan_multi(&instances, None, HeadState::Born)
+        .err()
+        .ok_or("expected unavailable tuple refusal")?;
+    assert!(
+        matches!(
+            error,
+            PlanError::TupleNotSupported { ref reason, .. }
+                if reason == "uppercase MiniMax-M3 live proof pending"
+        ),
+        "{error}"
+    );
     Ok(())
 }
 

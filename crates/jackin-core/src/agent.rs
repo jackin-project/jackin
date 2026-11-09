@@ -577,7 +577,7 @@ static CODEX_SPEC: AgentSpec = AgentSpec {
         "check_for_update_on_startup=false",
     ],
     install: InstallSpec {
-        version: "0.166.0",
+        version: "0.167.0",
         url_template: "https://github.com/openai/codex/releases/download/rust-v{version}/codex-package-{target}.tar.gz",
         archive_members: &["bin/codex", "bin/codex-code-mode-host"],
         version_output: "codex-cli {version}",
@@ -595,12 +595,12 @@ static CODEX_SPEC: AgentSpec = AgentSpec {
             InstallTarget {
                 platform: Platform::LinuxArm64,
                 triple: "aarch64-unknown-linux-musl",
-                sha256: "7821b77dda2e6283fb1f63f3165177a271da8833e857cf673c6ca1c9db3bfcc6",
+                sha256: "0de261ecf1e7f3028a7952f03fca2093f749277d38590b78bb32f8567756bbb7",
             },
             InstallTarget {
                 platform: Platform::LinuxAmd64,
                 triple: "x86_64-unknown-linux-musl",
-                sha256: "1d44b28bc4ac9937d7d3532264baa68a507ce364956a0d4ebb856f331cdee254",
+                sha256: "3bbf75e83de6b58aed28f2cf6e33ad423ec31fd4700a1457b94be557ea5a7c6e",
             },
         ],
     },
@@ -612,8 +612,8 @@ static CODEX_SPEC: AgentSpec = AgentSpec {
         "CODEX_AUTH_ACCOUNT_ID",
         "CODEX_AUTH_ID_TOKEN",
     ],
-    allowed_models: &["gpt-5.1-codex"],
-    default_model: "gpt-5.1-codex",
+    allowed_models: &["gpt-6.1-sol"],
+    default_model: "gpt-6.1-sol",
     codex: &CODEX_EXTRA,
     auth_file: AuthFileSpec {
         path: SandboxPath::from_static("/sandbox/.codex/auth.json"),
@@ -782,8 +782,8 @@ static ANTIGRAVITY_SPEC: AgentSpec = AgentSpec {
     auth_class: AuthClass::BlockedVendor,
     provider_hosts: &["antigravity.google"],
     credential_env_names: &["GOOGLE_API_KEY"],
-    allowed_models: &["gemini-4-argon"],
-    default_model: "gemini-4-argon",
+    allowed_models: &["gemini-4-argon-medium"],
+    default_model: "gemini-4-argon-medium",
     codex: &EMPTY_CODEX_SPEC,
     auth_file: AuthFileSpec {
         path: SandboxPath::from_static("/sandbox/.gemini/antigravity-cli/settings.json"),
@@ -865,7 +865,7 @@ static KIMI_CODE_SPEC: AgentSpec = AgentSpec {
     workdir: SandboxPath::from_static(PROJECT_PATH),
     launch_command: &["kimi"],
     install: InstallSpec {
-        version: "2.5.1",
+        version: "2.5.2",
         url_template: "https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%40{version}/kimi-code-linux-{target}.tar.gz",
         archive_members: &["kimi"],
         version_output: "",
@@ -876,12 +876,12 @@ static KIMI_CODE_SPEC: AgentSpec = AgentSpec {
             InstallTarget {
                 platform: Platform::LinuxArm64,
                 triple: "arm64",
-                sha256: "70c3a09506f7d3d0f211077eb100d34186fef1017347c73ed0d944bb2b474cf3",
+                sha256: "ac941c80c8b2b34451432323397a8e8c2e376948bc6d878fc7d2630be235b678",
             },
             InstallTarget {
                 platform: Platform::LinuxAmd64,
                 triple: "x64",
-                sha256: "d3fe0696e2ed244200c6c42344cbd71429eff40dc9761fdcb5f994057b78bee9",
+                sha256: "6614a511048219d53996454cac8594c9541bbb6cf6e8f0a081d4e878be511ce2",
             },
         ],
     },
@@ -909,18 +909,18 @@ static OMP_SPEC: AgentSpec = agent_spec!(
     "/sandbox/.omp/auth.json",
     "/sandbox/.omp/config.toml",
     &["omp"],
-    "18.18.1",
+    "18.18.3",
     "https://github.com/can1357/oh-my-pi/releases/download/v{version}/omp-linux-{target}",
     &[
         InstallTarget {
             platform: Platform::LinuxArm64,
             triple: "arm64",
-            sha256: "3bd7699fe7ea63a8eb14f27290d9d3c6a56e55388bef6c560cb139d809330528"
+            sha256: "c49a84875d915c7d0de8bb69fe180b3bf53c16600bc4d5a61ea22ac2b3ac45c9"
         },
         InstallTarget {
             platform: Platform::LinuxAmd64,
             triple: "x64",
-            sha256: "2a75e16550676783b3bc8be0e06513478dd5881efc647954642ab30db8f9be06"
+            sha256: "8c9a178fed74ec1da21aafb7d28cd9839b3b0c9e7d607c86cc3b6177355729f4"
         }
     ],
     AuthClass::StaticKey,
@@ -954,8 +954,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         AuthClass::OAuth,
         TupleState::Supported,
         None,
-        &["gpt-5.1-codex"],
-        "gpt-5.1-codex"
+        &["gpt-6.1-sol"],
+        "gpt-6.1-sol"
     ),
     tuple!(
         "T02",
@@ -994,8 +994,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         AuthClass::BlockedVendor,
         TupleState::Unavailable,
         Some("subscription requires a desktop keyring in the sandbox"),
-        &["gemini-4-argon"],
-        "gemini-4-argon"
+        &["gemini-4-argon-medium"],
+        "gemini-4-argon-medium"
     ),
     tuple!(
         "T06",
@@ -1092,10 +1092,10 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::ClaudeCode,
         Provider::Minimax,
         AuthClass::StaticKey,
-        TupleState::Supported,
-        None,
-        &["minimax-m3"],
-        "minimax-m3"
+        TupleState::Unavailable,
+        Some("uppercase MiniMax-M3 live proof pending"),
+        &["MiniMax-M3"],
+        "MiniMax-M3"
     ),
     tuple!(
         "T16",
@@ -1132,10 +1132,10 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Codex,
         Provider::Minimax,
         AuthClass::StaticKey,
-        TupleState::Supported,
-        None,
-        &["minimax-m3"],
-        "minimax-m3"
+        TupleState::Unavailable,
+        Some("uppercase MiniMax-M3 live proof pending"),
+        &["MiniMax-M3"],
+        "MiniMax-M3"
     ),
     tuple!(
         "T20",
@@ -1154,8 +1154,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         AuthClass::ApiKey,
         TupleState::Unavailable,
         Some("no API key on this host"),
-        &["claude-haiku-4-5"],
-        "claude-haiku-4-5"
+        &["claude-haiku-5-5"],
+        "claude-haiku-5-5"
     ),
     tuple!(
         "T22",

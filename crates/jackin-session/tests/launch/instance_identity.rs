@@ -22,7 +22,7 @@ fn members(lead: Agent) -> Result<AgentInstances, Box<dyn std::error::Error>> {
         Agent::Codex,
         Provider::Codex,
         AccountName::parse("work")?,
-        "gpt-5.1-codex".to_owned(),
+        "gpt-6.1-sol".to_owned(),
     );
     let omp = AgentInstance::new(
         Agent::Omp,

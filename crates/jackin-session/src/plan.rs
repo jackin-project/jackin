@@ -488,7 +488,7 @@ fn lead_agent_provider(request: &LaunchRequest) -> (Agent, Provider) {
     }
 }
 
-fn validate_instances(instances: &jackin_core::AgentInstances) -> Result<(), PlanError> {
+pub(crate) fn validate_instances(instances: &jackin_core::AgentInstances) -> Result<(), PlanError> {
     for instance in instances.iter() {
         let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(|_| {
             PlanError::TupleNotSupported {
@@ -1039,12 +1039,12 @@ mod tests {
 
     #[test]
     fn agent_config_codex_stays_toml() {
-        let codex_model = ModelName::parse("gpt-5.1-codex").expect("model");
+        let codex_model = ModelName::parse("gpt-6.1-sol").expect("model");
         let file = fixture(
             Agent::Codex,
             Provider::Codex,
             Some(&codex_model),
-            Some("gpt-5.1-codex"),
+            Some("gpt-6.1-sol"),
         );
         let value: toml::Table = toml::from_str(&file.text).expect("toml");
         assert!(value.contains_key("model"));
@@ -1062,7 +1062,7 @@ mod tests {
             (Provider::Claude, "haiku"),
             (Provider::Kimi, "kimi-for-coding"),
             (Provider::Zai, "glm-5.3"),
-            (Provider::Minimax, "minimax-m3"),
+            (Provider::Minimax, "MiniMax-M3"),
             (Provider::Mimo, "mimo-v2.6-pro"),
         ] {
             let tuple = jackin_core::lookup_tuple(Agent::ClaudeCode, provider).expect("tuple");

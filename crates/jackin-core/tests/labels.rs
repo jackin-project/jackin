@@ -39,7 +39,7 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
         ("jackin.dev/role", "backend".to_owned()),
         (
             "jackin.dev/agents",
-            "235f80276e0174fa411c641b8bc2f777".to_owned(),
+            "ac08b3690e95435c804daa2a6dacb9dc".to_owned(),
         ),
         (
             "jackin.dev/policy",

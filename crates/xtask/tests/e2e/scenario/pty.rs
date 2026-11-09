@@ -111,7 +111,7 @@ impl Link {
         fault
             .filter(|fault| attaches >= fault.from)
             .and_then(|fault| fault.header)
-            .unwrap_or_else(|| "\x1b[2J\x1b[1;1H\x1b[32mOpenAI Codex (v0.166.0)\x1b[0m\r\n> Ask Codex to do anything\r\n".to_owned())
+            .unwrap_or_else(|| "\x1b[2J\x1b[1;1H\x1b[32mOpenAI Codex (v0.167.0)\x1b[0m\r\n> Ask Codex to do anything\r\n".to_owned())
     }
 
     fn start(&mut self) {

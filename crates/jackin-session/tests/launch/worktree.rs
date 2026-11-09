@@ -23,7 +23,7 @@ async fn worktree_setup_creates_home_branch_and_checkout() -> Result<(), Box<dyn
                 Agent::Codex,
                 Provider::Codex,
                 AccountName::parse("work")?,
-                "gpt-5.1-codex".to_owned(),
+                "gpt-6.1-sol".to_owned(),
             ),
             AgentInstance::new(
                 Agent::Omp,

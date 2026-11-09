@@ -149,7 +149,7 @@ async fn a_role_policy_that_overlaps_a_codex_host_is_rejected_before_any_plan() 
 async fn a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway() -> TestResult {
     guard(async {
         let role = RoleFixture::new("sentinel")?
-            .model("gpt-5.1-codex")
+            .model("gpt-6.1-sol")
             .dockerfile_path("build/role.Dockerfile")
             .dockerfile("FROM construct\nRUN echo role\n")
             .policy_path("net/egress.yaml")
@@ -179,7 +179,7 @@ async fn a_valid_role_loads_from_the_paths_its_manifest_names_with_no_gateway() 
                 .get(&jackin_core::Agent::Codex)
                 .and_then(|s| s.model.as_ref())
                 .map(jackin_core::ModelName::as_str),
-            Some("gpt-5.1-codex")
+            Some("gpt-6.1-sol")
         );
         assert_eq!(loaded.dockerfile().path.as_str(), "build/role.Dockerfile");
         assert_eq!(

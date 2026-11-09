@@ -48,13 +48,13 @@ impl Origin {
     }
 
     pub(crate) async fn at(url: &str) -> Result<Origin, Box<dyn Error>> {
-        let role = RoleFixture::new("sentinel")?.model("gpt-5.1-codex");
+        let role = RoleFixture::new("sentinel")?.model("gpt-6.1-sol");
         role.commit().await?;
         let root = role.root().as_path();
         git(root, &["tag", "v1"]).await?;
         let first = git(root, &["rev-parse", "HEAD"]).await?;
         git(root, &["checkout", "-q", "-b", "dev"]).await?;
-        role.clone().model("gpt-5.1-codex").commit().await?;
+        role.clone().model("gpt-6.1-sol").commit().await?;
         let dev = git(root, &["rev-parse", "HEAD"]).await?;
         git(root, &["checkout", "-q", "main"]).await?;
         let home_dir = tempfile::tempdir()?;

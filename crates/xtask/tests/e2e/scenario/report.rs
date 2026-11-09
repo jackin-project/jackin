@@ -78,7 +78,7 @@ fn facts(
     ]);
     match step {
         "J00" => {
-            json!({"codex": {"path": "/usr/local/bin/codex", "present": true, "executable": true, "version": "codex-cli 0.166.0"}})
+            json!({"codex": {"path": "/usr/local/bin/codex", "present": true, "executable": true, "version": "codex-cli 0.167.0"}})
         }
         "J04" => {
             json!({"user": "sandbox", "uid": 1000, "gid": 1000, "home": "/sandbox", "sudo": {"found": false, "works": false}, "docker_binary": docker})

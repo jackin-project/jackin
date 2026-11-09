@@ -70,14 +70,14 @@ async fn planned_files_carry_the_trust_entry_the_model_and_the_env_with_exact_pa
             &env_values(&[("GREETING", "hi")])?
         );
 
-        let modelled = Spec::new(RoleFixture::new("sentinel")?.model("gpt-5.1-codex").env(
+        let modelled = Spec::new(RoleFixture::new("sentinel")?.model("gpt-6.1-sol").env(
             "GREETING",
             Some("hello"),
             None,
         ))
         .build()
         .await?;
-        check_config(&modelled.plan(modelled.request(1)?)?, Some("gpt-5.1-codex"))?;
+        check_config(&modelled.plan(modelled.request(1)?)?, Some("gpt-6.1-sol"))?;
 
         let mut spec =
             Spec::new(RoleFixture::new("sentinel")?.env("GREETING", Some("hello"), None));
