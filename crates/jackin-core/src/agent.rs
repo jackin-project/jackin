@@ -750,24 +750,50 @@ static MUSE_CODE_SPEC: AgentSpec = agent_spec!(
     "muse-spark-1.2",
     &["MUSE_AUTH_PATH"]
 );
-static ANTIGRAVITY_SPEC: AgentSpec = agent_spec!(
-    Agent::Antigravity,
-    Provider::Antigravity,
-    "/usr/local/bin/agy",
-    "/sandbox/.gemini/antigravity-cli",
-    "/sandbox/.gemini/antigravity-cli/settings.json",
-    "/sandbox/.gemini/antigravity-cli/settings.json",
-    &["agy"],
-    "1.5.1",
-    "https://storage.googleapis.com/antigravity-public/antigravity-cli/{version}/linux-{target}",
-    &[],
-    AuthClass::BlockedVendor,
-    &["antigravity.google"],
-    &["GOOGLE_API_KEY"],
-    &["gemini-4-argon"],
-    "gemini-4-argon",
-    &[]
-);
+static ANTIGRAVITY_SPEC: AgentSpec = AgentSpec {
+    agent: Agent::Antigravity,
+    provider: Provider::Antigravity,
+    binary: SandboxPath::from_static("/usr/local/bin/agy"),
+    state_dir: SandboxPath::from_static("/sandbox/.gemini/antigravity-cli"),
+    workdir: SandboxPath::from_static(PROJECT_PATH),
+    launch_command: &["agy"],
+    install: InstallSpec {
+        version: "1.5.3-6604829099950080",
+        url_template: "https://storage.googleapis.com/antigravity-public/antigravity-cli/{version}/linux-{target}",
+        archive_members: &["antigravity"],
+        version_output: "",
+        system_config: SandboxPath::from_static(""),
+        system_config_content: "",
+        scan_absent_paths: &[],
+        targets: &[
+            InstallTarget {
+                platform: Platform::LinuxArm64,
+                triple: "arm/cli_linux_arm64.tar.gz",
+                sha256: "2d50060c7b1327995e5c81ec58829c91c2564ebb9fec165d3f9f1325ec188675",
+            },
+            InstallTarget {
+                platform: Platform::LinuxAmd64,
+                triple: "x64/cli_linux_x64.tar.gz",
+                sha256: "1b4850599cce73a17f94ffb422df3bf9531531b77dbddc40c1a435e0c2c16807",
+            },
+        ],
+    },
+    auth_class: AuthClass::BlockedVendor,
+    provider_hosts: &["antigravity.google"],
+    credential_env_names: &["GOOGLE_API_KEY"],
+    allowed_models: &["gemini-4-argon"],
+    default_model: "gemini-4-argon",
+    codex: &EMPTY_CODEX_SPEC,
+    auth_file: AuthFileSpec {
+        path: SandboxPath::from_static("/sandbox/.gemini/antigravity-cli/settings.json"),
+        mode: FileMode(0o600),
+    },
+    user_config: ConfigFileSpec {
+        path: SandboxPath::from_static("/sandbox/.gemini/antigravity-cli/settings.json"),
+        mode: FileMode(0o600),
+    },
+    reserved_env: &[],
+};
 static MINIMAX_CODE_SPEC: AgentSpec = agent_spec!(
     Agent::MinimaxCode,
     Provider::Minimax,

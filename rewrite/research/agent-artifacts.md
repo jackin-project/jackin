@@ -121,6 +121,17 @@ Source: https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/ma
 Computed SHA-256, arm64: `c43a50831006d95a7637aa9cad7000fda9b9bb4b3ece8c53cc6c5089b92542ea`
 Computed SHA-256, amd64: `2a64ccfc5f6679c253769f0760614af5de04d8dc1eeeec9b9752ba4c8dd92250`
 Computed values are not vendor values.
+Recheck 2026-11-09 at the T05 pin: latest stable is `1.5.3`, build `1.5.3-6604829099950080`.
+The updater manifests for both platforms answered `1.5.3` with the URLs below, and both tarballs were downloaded and hashed.
+Linux arm64 artifact: https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.3-6604829099950080/linux-arm/cli_linux_arm64.tar.gz
+SHA-512 (vendor): `c2fac818b3c1bb224079df03a714ccba99728b6a3a41d86d247ab2feb8582a43840c5032f1c2b75e72667623d5503e7ffda2712c4f37b6ee19f99c3fcfb25bae`
+Computed SHA-256, arm64: `2d50060c7b1327995e5c81ec58829c91c2564ebb9fec165d3f9f1325ec188675`
+Linux amd64 artifact: https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.3-6604829099950080/linux-x64/cli_linux_x64.tar.gz
+SHA-512 (vendor): `e363e1b17daaac2589f18e6973429c039fd5a5e5c15e9c0852fa349836f3992b10fe84732bc8d8c8208e149f0304f15aba9dec696d12efeed03917492c0580eb`
+Computed SHA-256, amd64: `1b4850599cce73a17f94ffb422df3bf9531531b77dbddc40c1a435e0c2c16807`
+Both computed SHA-512 values match the manifest values; the SHA-256 values are first-fetch hashes in the sense of D02.
+The tarball holds one member, `antigravity`; the vendor installer extracts it and installs it as `agy` (https://antigravity.google/cli/install.sh).
+No raw (non-tar) Linux binary exists: probes of `agy`, `antigravity`, and `cli_linux_arm64` under the same prefix, and of the bare `1.5.3` prefix, all returned 404.
 Version command: `agy --version`
 Exact output format: not documented by vendor.
 Prior repo research observed bare `1.5.1`.
