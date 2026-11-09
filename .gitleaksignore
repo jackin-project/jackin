@@ -277,3 +277,6 @@ crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:8
 crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:14
 # Reason: prose in Markdown documentation matched by a keyword rule, no literal credential
 crates/services/jackin-usage-provider-kimi/README.md:generic-api-key:3
+
+# Reason: synthetic model-probe sentinel in research notes, not a credential
+06b087a580ff79b49fba6b80b02747565924b4eb:rewrite/research/t13-t22-models.md:generic-api-key:118
