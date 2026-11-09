@@ -441,10 +441,9 @@ fn apply_agent_env_defaults(
     if instances
         .iter()
         .any(|instance| instance.agent == Agent::MimoCode)
+        && let Ok(name) = EnvName::parse("TMPDIR")
     {
-        if let Ok(name) = EnvName::parse("TMPDIR") {
-            values.entry(name).or_insert_with(|| "/tmp".to_owned());
-        }
+        values.entry(name).or_insert_with(|| "/tmp".to_owned());
     }
 }
 
