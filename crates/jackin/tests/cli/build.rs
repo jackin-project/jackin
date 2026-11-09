@@ -191,3 +191,66 @@ async fn invalid_build_tuples_and_models_never_start_an_image_build() -> TestRes
     })
     .await
 }
+
+#[tokio::test]
+async fn build_selectors_choose_the_installed_agent_and_never_silently_fall_back() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let harness = built(&rig)?;
+        let default = harness.run(&["build", "--json"]).await?;
+        default.ok()?;
+        let codex: BuildOutput = default.json()?;
+        let builds = rig.world.engine.builds().len();
+
+        for args in [
+            vec!["build", "--agent", "omp", "--provider", "codex"],
+            vec!["build", "--agent", "omp", "--provider", "claude"],
+            vec!["build", "--agent", "codex", "--provider", "claude"],
+            vec!["build", "--provider", "claude"],
+            vec!["build", "--agent", "omp", "--model", "gpt-6.1-sol"],
+        ] {
+            let ran = harness.run(&args).await?;
+            failed(&ran, ExitClass::Failure, &["not supported"])?;
+            assert_eq!(rig.world.engine.builds().len(), builds, "{args:?}");
+        }
+
+        let omp = harness
+            .run(&[
+                "build",
+                "--agent",
+                "omp",
+                "--provider",
+                "zai",
+                "--model",
+                "glm-5.3",
+                "--json",
+            ])
+            .await?;
+        omp.ok()?;
+        let installed: BuildOutput = omp.json()?;
+        assert_ne!(installed.image, codex.image);
+        assert_ne!(installed.id, codex.id);
+        let builds = rig.world.engine.builds().len();
+        assert!(builds > 0);
+
+        let native = harness
+            .run(&["build", "--agent", "omp", "--provider", "zai", "--json"])
+            .await?;
+        native.ok()?;
+        let native: BuildOutput = native.json()?;
+        assert_eq!(
+            (native.image, native.id),
+            (installed.image.clone(), installed.id.clone())
+        );
+
+        let shared = harness
+            .run(&["build", "--provider", "zai", "--model", "glm-5.3", "--json"])
+            .await?;
+        shared.ok()?;
+        let shared: BuildOutput = shared.json()?;
+        assert_eq!((shared.image, shared.id), (codex.image, codex.id));
+        assert_eq!(rig.world.engine.builds().len(), builds);
+        Ok(())
+    })
+    .await
+}

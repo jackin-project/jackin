@@ -1,0 +1,36 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+    Finished `test` profile [unoptimized] target(s) in 2.13s
+────────────
+ Nextest run ID f51d8d96-cb03-429c-b2dc-441b16b29f83 with nextest profile: default
+    Starting 1 test across 1 binary (95 tests and 4 binaries skipped)
+        FAIL [   0.031s] (1/1) jackin-xtask::e2e i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+  stdout ───
+
+    running 1 test
+    test i_target::t01_resolution_defaults_partial_selection_and_complete_behavior ... FAILED
+
+    failures:
+
+    failures:
+        i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'i_target::t01_resolution_defaults_partial_selection_and_complete_behavior' (89396447) panicked at crates/xtask/tests/e2e/i_target.rs:35:5:
+    assertion `left == right` failed
+      left: CodexLogin { home: "/home/test/.codex" }
+     right: CodexLogin { home: "/other/login" }
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.052s] 1 test run: 0 passed, 1 failed, 95 skipped
+        FAIL [   0.031s] (1/1) jackin-xtask::e2e i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+error: test run failed

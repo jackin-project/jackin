@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use jackin_core::{
     AccountName, Agent, AgentInstance, AgentInstances, AgentTuple, CatalogError, EnvName,
-    ModelName, Provider, ProviderName, TupleState, lookup_tuple, plain, tuple_profile_asset,
+    ModelName, OpReference, Provider, ProviderName, TupleState, lookup_tuple, plain,
+    tuple_profile_asset,
 };
 use jackin_openshell::{PolicyError, ProviderProfile};
 use serde::{Deserialize, Serialize};
@@ -62,28 +63,31 @@ pub enum E2eCredential {
 
 impl E2eCredential {
     pub fn parse(text: &str) -> Result<E2eCredential, TargetError> {
+        const MAX_ENV_NAME: usize = 128;
         if let Some(name) = text.strip_prefix("env:") {
+            if name.len() > MAX_ENV_NAME {
+                return Err(TargetError::CredentialDescriptor);
+            }
             return EnvName::parse(name)
                 .map(|name| Self::Env { name })
-                .map_err(|_| TargetError::CredentialDescriptor(text.to_owned()));
-        }
-        if let Some(path) = text.strip_prefix("file:") {
-            if path.is_empty() {
-                return Err(TargetError::CredentialDescriptor(text.to_owned()));
-            }
-            return Ok(Self::File {
-                path: PathBuf::from(path),
-            });
-        }
-        if text.starts_with("op://") {
-            return Ok(Self::OnePassword {
-                reference: text.to_owned(),
-            });
+                .map_err(|_| TargetError::CredentialDescriptor);
         }
         if text == "omp-host" {
             return Ok(Self::OmpHost);
         }
-        Err(TargetError::CredentialDescriptor(text.to_owned()))
+        if text.starts_with("op://") {
+            return OpReference::parse(text)
+                .map(|reference| Self::OnePassword {
+                    reference: reference.to_string(),
+                })
+                .map_err(|_| TargetError::CredentialDescriptor);
+        }
+        match text.strip_prefix("file:") {
+            Some(path) if !path.is_empty() => Ok(Self::File {
+                path: PathBuf::from(path),
+            }),
+            _ => Err(TargetError::CredentialDescriptor),
+        }
     }
 
     #[must_use]
@@ -116,8 +120,8 @@ pub enum TargetError {
     },
     #[error("credential source {} is not valid for tuple {}", plain(.kind), plain(.id))]
     CredentialSource { id: String, kind: String },
-    #[error("invalid credential descriptor `{}`", plain(.0))]
-    CredentialDescriptor(String),
+    #[error("--credential expects env:NAME, an op:// reference, file:PATH, or omp-host")]
+    CredentialDescriptor,
     #[error("T01 needs --codex-home or HOME for its ChatGPT login")]
     CodexHome,
     #[error(transparent)]

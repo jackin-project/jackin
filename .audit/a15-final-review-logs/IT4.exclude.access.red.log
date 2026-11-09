@@ -1,0 +1,34 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+    Finished `test` profile [unoptimized] target(s) in 2.31s
+────────────
+ Nextest run ID 1fc1d048-161b-4358-9104-c73c9263322d with nextest profile: default
+    Starting 1 test across 1 binary (95 tests and 4 binaries skipped)
+        FAIL [   0.036s] (1/1) jackin-xtask::e2e i_target::canonical_digest_matches_independent_fixture_and_excludes_runtime_values
+  stdout ───
+
+    running 1 test
+    test i_target::canonical_digest_matches_independent_fixture_and_excludes_runtime_values ... FAILED
+
+    failures:
+
+    failures:
+        i_target::canonical_digest_matches_independent_fixture_and_excludes_runtime_values
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'i_target::canonical_digest_matches_independent_fixture_and_excludes_runtime_values' (89922675) panicked at crates/xtask/tests/e2e/i_target.rs:308:9:
+    spec contains eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLWExLWFjY2Vzcy1wYXlsb2FkIn0.c2lnbmF0dXJlLWExLWFjY2Vzcy1zZWNyZXQtYnl0ZXM
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.045s] 1 test run: 0 passed, 1 failed, 95 skipped
+        FAIL [   0.036s] (1/1) jackin-xtask::e2e i_target::canonical_digest_matches_independent_fixture_and_excludes_runtime_values
+error: test run failed

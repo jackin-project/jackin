@@ -1,0 +1,29 @@
+    Finished `test` profile [unoptimized] target(s) in 1.02s
+────────────
+ Nextest run ID 7edd29e8-4153-4e19-b4ab-b3b2d1905232 with nextest profile: default
+    Starting 1 test across 5 binaries (244 tests skipped)
+        FAIL [   0.031s] (1/1) jackin-xtask e2e::target::tests::every_target_identity_input_changes_the_digest
+  stdout ───
+
+    running 1 test
+    test e2e::target::tests::every_target_identity_input_changes_the_digest ... FAILED
+
+    failures:
+
+    failures:
+        e2e::target::tests::every_target_identity_input_changes_the_digest
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'e2e::target::tests::every_target_identity_input_changes_the_digest' (90330288) panicked at crates/xtask/src/e2e/target.rs:565:13:
+    assertion `left != right` failed: model
+      left: "e228d550116dc68033b9687ba01861f398b03c6a04cf0d0e7fed3d75e4cc8d32"
+     right: "e228d550116dc68033b9687ba01861f398b03c6a04cf0d0e7fed3d75e4cc8d32"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.035s] 1 test run: 0 passed, 1 failed, 244 skipped
+        FAIL [   0.031s] (1/1) jackin-xtask e2e::target::tests::every_target_identity_input_changes_the_digest
+error: test run failed

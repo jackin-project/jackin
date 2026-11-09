@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::io::Write;
 use std::panic::AssertUnwindSafe;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -150,17 +150,39 @@ impl Drop for QuietPanics {
 
 pub async fn run_e2e(args: &E2eArgs, boundaries: Boundaries) -> ExitStatus {
     let printer = Printer::new(boundaries.stdout.clone(), boundaries.stderr.clone());
+    let target = match E2eTarget::resolve(args, boundaries.env.get("HOME").map(Path::new)) {
+        Ok(target) => target,
+        Err(error) => {
+            printer.progress(&format!("xtask e2e: {error}"));
+            return ExitStatus::Setup;
+        }
+    };
+    run_e2e_target(target, args, boundaries).await
+}
+
+async fn run_e2e_target(target: E2eTarget, args: &E2eArgs, boundaries: Boundaries) -> ExitStatus {
+    let printer = Printer::new(boundaries.stdout.clone(), boundaries.stderr.clone());
     let _quiet = QuietPanics::install();
     let _signals = Signals::start(boundaries.cancel.clone(), printer.clone());
-    execute(args, &boundaries, &printer).await
+    execute(target, args, &boundaries, &printer).await
 }
 
 pub async fn e2e_command(
     args: &E2eArgs,
     boundaries: impl Future<Output = Result<Boundaries, ProductionError>>,
 ) -> u8 {
+    let home = std::env::var_os("HOME");
+    let target = match E2eTarget::resolve(args, home.as_deref().map(Path::new)) {
+        Ok(target) => target,
+        Err(error) => {
+            match writeln!(std::io::stderr().lock(), "xtask: {error}") {
+                Ok(()) | Err(_) => {}
+            }
+            return ExitStatus::Setup.code();
+        }
+    };
     match boundaries.await {
-        Ok(boundaries) => run_e2e(args, boundaries).await.code(),
+        Ok(boundaries) => run_e2e_target(target, args, boundaries).await.code(),
         Err(error) => {
             match writeln!(std::io::stderr().lock(), "xtask: {error}") {
                 Ok(()) | Err(_) => {}
@@ -199,11 +221,16 @@ async fn guarded<T>(
     }
 }
 
-async fn execute(args: &E2eArgs, b: &Boundaries, printer: &Printer) -> ExitStatus {
+async fn execute(
+    target: E2eTarget,
+    args: &E2eArgs,
+    b: &Boundaries,
+    printer: &Printer,
+) -> ExitStatus {
     if args.sweep {
         return run_sweep(args, b, printer).await;
     }
-    let mut run = match setup::prepare(args, b, printer).await {
+    let mut run = match setup::prepare(target, args, b, printer).await {
         Ok(run) => run,
         Err(error) => {
             printer.progress(&format!("xtask e2e: {}", error.0));

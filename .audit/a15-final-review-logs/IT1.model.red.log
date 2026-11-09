@@ -1,0 +1,35 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+    Finished `test` profile [unoptimized] target(s) in 31.78s
+────────────
+ Nextest run ID 02f328a8-c798-4443-baf9-ce4a7245e0cf with nextest profile: default
+    Starting 1 test across 1 binary (95 tests and 4 binaries skipped)
+        FAIL [   0.081s] (1/1) jackin-xtask::e2e i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+  stdout ───
+
+    running 1 test
+    test i_target::t01_resolution_defaults_partial_selection_and_complete_behavior ... FAILED
+
+    failures:
+
+    failures:
+        i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'i_target::t01_resolution_defaults_partial_selection_and_complete_behavior' (89352313) panicked at crates/xtask/tests/e2e/i_target.rs:34:5:
+    assertion `left == right` failed
+      left: "gpt-6.1-sol"
+     right: "gpt-5.1-codex"
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.085s] 1 test run: 0 passed, 1 failed, 95 skipped
+        FAIL [   0.081s] (1/1) jackin-xtask::e2e i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+error: test run failed

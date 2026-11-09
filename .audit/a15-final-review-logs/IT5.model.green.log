@@ -1,0 +1,10 @@
+   Compiling jackin-xtask v0.1.0 (/private/tmp/jackin-a15-final-review/crates/xtask)
+    Finished `test` profile [unoptimized] target(s) in 12.19s
+────────────
+ Nextest run ID edfa3c2c-81f9-4f7f-9d9b-1174887a94f8 with nextest profile: default
+    Starting 1 test across 5 binaries (244 tests skipped)
+        PASS [   0.050s] (1/1) jackin-xtask e2e::target::tests::every_target_identity_input_changes_the_digest
+────────────
+     Summary [   0.054s] 1 test run: 1 passed, 244 skipped
+mbx[cache]: 0 hits, 0 misses, 5 not looked up, 7 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: the sweep found 625.7 GiB logical nobody would miss. nobody has.

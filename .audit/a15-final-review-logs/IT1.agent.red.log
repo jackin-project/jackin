@@ -1,0 +1,34 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling jackin-xtask v0.1.0 (/private/tmp/jackin-a15-final-review/crates/xtask)
+    Finished `test` profile [unoptimized] target(s) in 32.00s
+────────────
+ Nextest run ID a8604e3b-1436-420c-ab55-2cb69a686c71 with nextest profile: default
+    Starting 1 test across 1 binary (95 tests and 4 binaries skipped)
+        FAIL [   0.051s] (1/1) jackin-xtask::e2e i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+  stdout ───
+
+    running 1 test
+    test i_target::t01_resolution_defaults_partial_selection_and_complete_behavior ... FAILED
+
+    failures:
+
+    failures:
+        i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 95 filtered out; finished in 0.01s
+
+  stderr ───
+
+    thread 'i_target::t01_resolution_defaults_partial_selection_and_complete_behavior' (89352241) panicked at crates/xtask/tests/e2e/i_target.rs:70:83:
+    T01: SelectionName("mutation")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.052s] 1 test run: 0 passed, 1 failed, 95 skipped
+        FAIL [   0.051s] (1/1) jackin-xtask::e2e i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+error: test run failed
+mbx[cache]: 0 hits, 2 misses, 5 not looked up, 7 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: your deleted worktrees left 515.6 GiB logical behind. left. past tense.
