@@ -442,9 +442,9 @@ fn apply_agent_env_defaults(
         .iter()
         .any(|instance| instance.agent == Agent::MimoCode)
     {
-        values
-            .entry(EnvName::parse("TMPDIR").expect("TMPDIR is a valid env name"))
-            .or_insert_with(|| "/tmp".to_owned());
+        if let Ok(name) = EnvName::parse("TMPDIR") {
+            values.entry(name).or_insert_with(|| "/tmp".to_owned());
+        }
     }
 }
 
@@ -1244,7 +1244,7 @@ mod tests {
     fn mimo_instance_keeps_an_existing_tmpdir_from_the_role_layers() {
         let mut values = BTreeMap::from([(
             EnvName::parse("TMPDIR").expect("env name"),
-            "/sandbox/tmp".to_owned()
+            "/sandbox/tmp".to_owned(),
         )]);
         apply_agent_env_defaults(&mimo_instances(), &mut values);
         assert_eq!(
