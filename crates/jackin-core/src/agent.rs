@@ -992,8 +992,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Antigravity,
         Provider::Antigravity,
         AuthClass::BlockedVendor,
-        TupleState::BlockedVendor,
-        Some("vendor clarification pending"),
+        TupleState::Unavailable,
+        Some("subscription requires a desktop keyring in the sandbox"),
         &["gemini-4-argon"],
         "gemini-4-argon"
     ),
