@@ -1,20 +1,11 @@
 import ImageResponse from '@takumi-rs/image-response'
 import { source } from '@/lib/source'
-import { createFileRoute, notFound } from '@tanstack/react-router'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-const root = join(import.meta.dirname, '..', '..', '..')
+const root = process.cwd()
 const interBold = readFileSync(join(root, 'node_modules', '@fontsource', 'inter', 'files', 'inter-latin-800-normal.woff2'))
 const interRegular = readFileSync(join(root, 'node_modules', '@fontsource', 'inter', 'files', 'inter-latin-500-normal.woff2'))
-
-function slugsFromParam(value: string | undefined) {
-  if (!value) return []
-  return value
-    .split('/')
-    .filter(Boolean)
-    .map((segment, index, segments) => (index === segments.length - 1 ? segment.replace(/\.webp$/, '') : segment))
-}
 
 function Card({ title, description }: { title: string; description?: string }) {
   return (
@@ -61,28 +52,17 @@ function Card({ title, description }: { title: string; description?: string }) {
   )
 }
 
-export const Route = createFileRoute('/og/{$}.webp')({
-  server: {
-    handlers: {
-      GET: async ({ params }) => {
-        const page = source.getPage(slugsFromParam(params._splat))
-        if (!page) throw notFound()
-
-        const response = new ImageResponse(<Card title={page.data.title} description={page.data.description} />, {
-          width: 1200,
-          height: 630,
-          format: 'webp',
-          fonts: [
-            { name: 'Inter', data: interBold, weight: 800, style: 'normal' },
-            { name: 'Inter', data: interRegular, weight: 500, style: 'normal' },
-          ],
-          headers: {
-            'Cache-Control': 'public, immutable, max-age=31536000',
-          },
-        })
-        await response.ready
-        return response
-      },
-    },
-  },
-})
+export async function renderOg(page: (typeof source)['$inferPage']) {
+  const response = new ImageResponse(<Card title={page.data.title} description={page.data.description} />, {
+    width: 1200,
+    height: 630,
+    format: 'webp',
+    fonts: [
+      { name: 'Inter', data: interBold, weight: 800, style: 'normal' },
+      { name: 'Inter', data: interRegular, weight: 500, style: 'normal' },
+    ],
+    headers: { 'Cache-Control': 'public, immutable, max-age=31536000' },
+  })
+  await response.ready
+  return response
+}

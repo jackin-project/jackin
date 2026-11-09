@@ -32,6 +32,25 @@ repositories:
     line: 524
     first_seen_at: 2026-11-03T11:07:30.629497+00:00
     last_updated_at: 2026-11-03T11:07:30.629497+00:00
+# Three historical reserved example.invalid URIs in an isolation test; synthetic fixtures, not credentials.
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '1356602536997001057'
+    rule_id: betterleaks.generic-credential-uri
+    line: 220
+    first_seen_at: 2026-11-09T00:00:00+00:00
+    last_updated_at: 2026-11-09T00:00:00+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '9277373708473336356'
+    rule_id: betterleaks.generic-credential-uri
+    line: 229
+    first_seen_at: 2026-11-09T00:00:00+00:00
+    last_updated_at: 2026-11-09T00:00:00+00:00
+  - path: crates/jackin-session/tests/project/secrets.rs
+    fingerprint: '13501730554302553755'
+    rule_id: betterleaks.generic-credential-uri
+    line: 235
+    first_seen_at: 2026-11-09T00:00:00+00:00
+    last_updated_at: 2026-11-09T00:00:00+00:00
   - path: crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs
     fingerprint: '18085921644036203508'
     rule_id: betterleaks.generic-credential-uri

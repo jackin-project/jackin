@@ -25,6 +25,8 @@ Commands:
   build      Build the role image and print its image ID
   load       Build the image if needed, launch a sandbox, and attach to Codex
   attach     Reattach to the Codex terminal of a sandbox
+  agent      Manage agent instances in a sandbox
+  integrate  Merge each agent branch into the lead branch in the sandbox
   shell      Open a new shell in a sandbox
   ls         List the jackin sandboxes
   usage      Show the limit windows of each account
@@ -193,7 +195,7 @@ Options:
 ```text
 Add an account
 
-Usage: jackin account add [OPTIONS] --name <NAME> <--chatgpt-from <CODEX_HOME>|--credential <SOURCE>> <PROVIDER>
+Usage: jackin account add [OPTIONS] --name <NAME> <--chatgpt-from <CODEX_HOME>|--credential <SOURCE>|--from-host-login> <PROVIDER>
 
 Arguments:
   <PROVIDER>  Provider of the account
@@ -201,8 +203,10 @@ Arguments:
 Options:
       --gateway <GATEWAY>          Gateway name from the jackin config
       --name <NAME>                Account name
+      --agent <AGENT>              Agent to sync this account for; defaults to the provider native agent, or omp for omp-only providers
       --chatgpt-from <CODEX_HOME>  Import a Codex ChatGPT login
-      --credential <SOURCE>        Credential as env:NAME, an op:// reference, or file:PATH
+      --from-host-login            Import the host login for the provider
+      --credential <SOURCE>        Credential as env:NAME, an op:// reference, file:PATH, or omp-host
   -h, --help                       Print help
 ```
 
@@ -307,12 +311,21 @@ Arguments:
   [PATH]  Project directory [default: .]
 
 Options:
-      --account <ACCOUNT>      Account to use for this launch
-      --gateway <GATEWAY>      Gateway name from the jackin config
-      --rebuild                Build the image again
-      --launch-id <LAUNCH_ID>  Continue an earlier launch
-      --env <NAME=VALUE>       Value for a role env entry
-  -h, --help                   Print help
+      --account <ACCOUNT>              Account to use for this launch
+      --gateway <GATEWAY>              Gateway name from the jackin config
+      --agent <AGENT>                  Agent to run for this launch; repeat for more instances
+      --provider <PROVIDER>            Provider to use for this launch
+      --provider-for <AGENT=PROVIDER>  Provider for one instance
+      --account-for <AGENT=ACCOUNT>    Account for one instance
+      --model-for <AGENT=MODEL>        Model for one instance
+      --model <MODEL>                  Model to use for this launch
+      --task <TASK>                    Task text for the instances
+      --task-file <TASK_FILE>          Host file that holds the task text
+      --issue <ISSUE>                  GitHub issue URL that holds the task
+      --rebuild                        Build the image again
+      --launch-id <LAUNCH_ID>          Continue an earlier launch
+      --env <NAME=VALUE>               Value for a role env entry
+  -h, --help                           Print help
 ```
 
 ## jackin attach
@@ -328,6 +341,54 @@ Arguments:
 Options:
       --gateway <GATEWAY>  Gateway name from the jackin config
       --restart            Run preflight and start Codex again after it exited
+      --agent <AGENT>      Attach to this agent instance instead of the lead
+  -h, --help               Print help
+```
+
+## jackin agent
+
+```text
+Manage agent instances in a sandbox
+
+Usage: jackin agent [OPTIONS] <COMMAND>
+
+Commands:
+  restart  Restart one agent instance in a sandbox
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+      --gateway <GATEWAY>  Gateway name from the jackin config
+  -h, --help               Print help
+```
+
+### jackin agent restart
+
+```text
+Restart one agent instance in a sandbox
+
+Usage: jackin agent restart [OPTIONS] <SANDBOX> <AGENT>
+
+Arguments:
+  <SANDBOX>  Sandbox name
+  <AGENT>    Agent name
+
+Options:
+      --gateway <GATEWAY>  Gateway name from the jackin config
+  -h, --help               Print help
+```
+
+## jackin integrate
+
+```text
+Merge each agent branch into the lead branch in the sandbox
+
+Usage: jackin integrate [OPTIONS] <SANDBOX>
+
+Arguments:
+  <SANDBOX>  Sandbox name
+
+Options:
+      --gateway <GATEWAY>  Gateway name from the jackin config
   -h, --help               Print help
 ```
 

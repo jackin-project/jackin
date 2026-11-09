@@ -453,3 +453,6 @@ crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:293
 crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:295
 rewrite/reconciliation/P13.3.md:generic-credential-uri:151
 rewrite/reconciliation/P13.3.md:generic-credential-uri:162
+
+# Reason: one historical research output marker in a fenced example command; synthetic response marker, not a credential.
+06b087a580ff79b49fba6b80b02747565924b4eb:rewrite/research/t13-t22-models.md:generic-api-key:118
