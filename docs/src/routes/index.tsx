@@ -1,4 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Route as rootRoute } from './__root'
+import { createRoute } from '@tanstack/react-router'
 import { Landing } from '@/components/landing/Landing'
 import { site } from '@/lib/shared'
 
@@ -29,7 +30,9 @@ const softwareApplication = {
   },
 }
 
-export const Route = createFileRoute('/')({
+export const Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
   head: () => ({
     meta: [
       { title },

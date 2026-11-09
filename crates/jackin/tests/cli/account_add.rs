@@ -151,6 +151,47 @@ async fn a_mismatched_or_unreadable_account_fails_and_changes_nothing() -> TestR
 }
 
 #[tokio::test]
+async fn a_broken_login_at_a_hostile_path_prints_one_escaped_diagnostic_line() -> TestResult {
+    guard(async {
+        let (rig, harness, _) = rigged().await?;
+        let home = rig.world.home().as_path().join("hostile\u{1b}[2J\nlogin");
+        std::fs::create_dir(&home)?;
+        std::fs::write(home.join("auth.json"), "not json")?;
+        let home_arg = home.to_str().ok_or("host path is not utf-8")?;
+        let before = harness.config_bytes()?;
+        let ran = harness
+            .run(&[
+                "account",
+                "add",
+                "codex",
+                "--name",
+                "bad",
+                "--chatgpt-from",
+                home_arg,
+            ])
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Failure);
+        assert!(
+            ran.stderr.contains("hostile\\u{1b}[2J\\nlogin"),
+            "{}",
+            ran.stderr
+        );
+        assert_eq!(ran.stderr.lines().count(), 1, "{:?}", ran.stderr);
+        assert!(
+            !ran.stderr
+                .trim_end_matches('\n')
+                .contains(['\u{1b}', '\n', '\r']),
+            "{:?}",
+            ran.stderr
+        );
+        assert_eq!(harness.config_bytes()?, before);
+        assert!(rig.gateway().providers().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_codex_api_key_account_requires_agent_omp_and_a_refusal_touches_nothing() -> TestResult {
     guard(async {
         let (rig, mut harness, _home) = rigged().await?;

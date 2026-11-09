@@ -292,3 +292,6 @@ f7cfedabddc937daa7993cb93ed7c2fd9460e9cf:crates/xtask/tests/e2e/scenario/world.r
 f7cfedabddc937daa7993cb93ed7c2fd9460e9cf:crates/xtask/tests/e2e/scenario/world.rs:jwt:11
 f7cfedabddc937daa7993cb93ed7c2fd9460e9cf:crates/xtask/tests/e2e/d_secrets.rs:generic-api-key:197
 57978a9933e18cf28214da75402fba80b6f948f3:crates/jackin-core/tests/config_schema.rs:generic-api-key:726
+
+# Reason: one historical research output marker in a fenced example command; synthetic response marker, not a credential.
+06b087a580ff79b49fba6b80b02747565924b4eb:rewrite/research/t13-t22-models.md:generic-api-key:118

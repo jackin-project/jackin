@@ -12,6 +12,21 @@ This plan rebuilds jackin from zero around OpenShell, with Codex as the only age
 - A task that cannot finish because OpenShell lacks a capability is `BLOCKED`. Write a report for it in [blockers/](blockers/). Do not mark its box.
 - Tests alone do not prove a task. A task that changes behavior is proven only when its unit tests pass and its live proof exists.
 
+## Active S1–S10 continuation acceptance
+
+Historical P13 and extension receipts below describe their recorded commits. They do not prove the current final feature heads. The continuation contract remains the full S1–S10 program; none of its final acceptance conditions is waived.
+
+- [ ] S1: finish account, terminal, export and role corrective work and its independent witnesses; preserve published and owner changes.
+- [ ] S2: finish baseline guard qualification, Linux selectors, review closure and the required auxiliary merge.
+- [ ] S3: complete Velnor follow-up, approved release, adoption and consumer regeneration.
+- [ ] S4: complete the latest-stable sweep, including the accepted SSH transport and pinned image digests.
+- [ ] S5: adopt final baseline/termpane revisions and prove D27 on the resulting Jackin head.
+- [ ] S6: retain the [static docs unit evidence](evidence/S6-static-docs-2026-11-09.md), publish it and verify the final-head documentation gate.
+- [ ] S7: reconcile every plan/backlog/fix row and decision with current evidence or an independently established constraint.
+- [ ] S8: complete final code and security reviews of all five repositories and close all four original PRs' review threads.
+- [ ] S9: pass final-head G-FULL, real J00–J17, all three lanes, ended-main-process and Architect positive/negative live proofs.
+- [ ] S10: merge every created auxiliary PR, keep the four original PRs open/ready/unmerged, retain the required PR JSON and clean owned finished worktrees safely.
+
 ## Repositories
 
 All five repositories are under `/Users/donbeave/Projects/jackin-project/`. Each one has the branch `feature/openshell-native`. It was created from `origin/main` on 2026-11-02.

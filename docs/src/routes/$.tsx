@@ -1,13 +1,12 @@
+import { Route as rootRoute } from './__root'
 import { useMDXComponents } from '@/components/mdx'
 import { SocialIcons } from '@/components/chrome/SocialIcons'
 import { ThemeToggle } from '@/components/chrome/ThemeToggle'
 import { baseOptions } from '@/lib/layout.shared'
-import { pageSeo } from '@/lib/seo'
-import { slugsToMarkdownPath, splatToSlugs } from '@/lib/source-paths'
+import { splatToSlugs } from '@/lib/source-paths'
+import { pages } from 'collections/pages.generated'
 import { gitConfig } from '@/lib/shared'
-import { createFileRoute, Link, notFound } from '@tanstack/react-router'
-import { createServerFn } from '@tanstack/react-start'
-import { staticFunctionMiddleware } from '@tanstack/start-static-server-functions'
+import { createRoute, notFound } from '@tanstack/react-router'
 import browserCollections from 'collections/browser'
 import { useFumadocsLoader } from 'fumadocs-core/source/client'
 import { DocsLayout } from 'fumadocs-ui/layouts/docs'
@@ -33,63 +32,19 @@ type PageFooterItems = {
   next?: PageFooterItem
 }
 
-export const Route = createFileRoute('/$')({
+export const Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/$',
   component: Page,
   loader: async ({ params }) => {
     const slugs = splatToSlugs(params._splat)
-    const data = await serverLoader({ data: slugs })
+    const data = pages[`/${slugs.join('/')}`]
+    if (!data) throw notFound()
     await clientLoader.preload(data.path)
     return data
   },
   head: ({ loaderData }) => loaderData?.seo ?? {},
 })
-
-const serverLoader = createServerFn({
-  method: 'GET',
-})
-  .validator((slugs: string[]) => slugs)
-  .middleware([staticFunctionMiddleware])
-  .handler(async ({ data: slugs }) => {
-    const { freshSerializedPageTree, publicPageUrls, source } = await import('@/lib/source')
-    const { findNeighbour } = await import('fumadocs-core/page-tree')
-    const page = source.getPage(slugs)
-    if (!page) throw notFound()
-
-    const footerItems = findNeighbour(source.getPageTree(), page.url, { separateRoot: false })
-    const serializeFooterItem = (item: typeof footerItems.previous): PageFooterItem | undefined => {
-      if (!item) return undefined
-
-      return {
-        name: typeof item.name === 'string' ? item.name : String(item.name),
-        description: typeof item.description === 'string' ? item.description : undefined,
-        url: item.url,
-      }
-    }
-
-    const slug = page.slugs.join('/')
-    const sectionSegment = page.slugs[0]
-    const section = sectionSegment
-      ? sectionSegment.charAt(0).toUpperCase() + sectionSegment.slice(1).replace(/-/g, ' ')
-      : undefined
-
-    return {
-      path: page.path,
-      markdownUrl: slugsToMarkdownPath(page.slugs).url,
-      publicUrls: publicPageUrls,
-      footerItems: {
-        previous: serializeFooterItem(footerItems.previous),
-        next: serializeFooterItem(footerItems.next),
-      },
-      pageTree: await freshSerializedPageTree(),
-      seo: pageSeo({
-        title: page.data.title,
-        description: page.data.description,
-        path: page.url,
-        slug,
-        section,
-      }),
-    }
-  })
 
 const clientLoader = browserCollections.docs.createClientLoader({
   component(
@@ -158,7 +113,7 @@ function Page() {
         ),
       }}
     >
-      <Link to={markdownUrl} hidden />
+      <a href={markdownUrl} hidden />
       <Suspense>{clientLoader.useContent(path, { markdownUrl, footerItems, path })}</Suspense>
     </DocsLayout>
   )

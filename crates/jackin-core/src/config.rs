@@ -420,7 +420,7 @@ pub enum ConfigError {
     #[error(
         "workspaces {} share the path {}",
         join_display(.workspaces),
-        .path.as_path().display()
+        .path
     )]
     DuplicatePath {
         path: HostPath,
@@ -435,7 +435,7 @@ pub enum ConfigError {
     AmbiguousGateway { names: Vec<GatewayName> },
     #[error("unknown gateway {0}")]
     UnknownGateway(GatewayName),
-    #[error("no workspace for {}; run jackin workspace add", .0.as_path().display())]
+    #[error("no workspace for {}; run jackin workspace add", .0)]
     NoWorkspaceForPath(HostPath),
     #[error(transparent)]
     Fs(#[from] FsError),
