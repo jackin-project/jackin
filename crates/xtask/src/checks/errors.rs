@@ -20,7 +20,7 @@ impl Check for ErrorsCheck {
     fn run(&self, repo: &Repo) -> Vec<Violation> {
         let mut violations = Vec::new();
         for file in repo.files() {
-            if file.kind() == FileKind::Rust {
+            if file.kind() == FileKind::Rust && !file.is_third_party_source() {
                 let tokens = lex_rust(file.text()).tokens;
                 violations.extend(
                     (0..tokens.len())

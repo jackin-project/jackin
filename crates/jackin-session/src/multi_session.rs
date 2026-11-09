@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, AgentInstance, AgentInstances, SandboxLabels, SandboxName, SandboxPath, plain,
+    Agent, AgentInstance, AgentInstances, SandboxLabels, SandboxName, SandboxPath, TerminalText,
+    plain,
 };
 use jackin_openshell::{GatewayError, Missing, ProgramRun, ProgramStdin};
 use thiserror::Error;
@@ -271,7 +272,52 @@ impl Session {
                 )
                 .await?;
             if outcome.exit_code != 0 {
-                return Err(IntegrateError::Conflict { branch });
+                let paths = self
+                    .deps
+                    .gateway
+                    .run_program(
+                        &ProgramRun {
+                            sandbox: sandbox.clone(),
+                            program: SandboxPath::from_static("/usr/bin/git"),
+                            args: vec![
+                                "diff".to_owned(),
+                                "--name-only".to_owned(),
+                                "-z".to_owned(),
+                                "--diff-filter=U".to_owned(),
+                            ],
+                            workdir: Some(SandboxPath::from_static("/sandbox/project")),
+                            env: BTreeMap::new(),
+                            stdin: ProgramStdin::Closed,
+                            touch_on_success: None,
+                            timeout: Duration::from_secs(30),
+                        },
+                        cancel,
+                    )
+                    .await?;
+                if paths.exit_code == 0 && !paths.stdout.is_empty() {
+                    return Err(IntegrateError::Conflict { branch });
+                }
+                let output = if outcome.stderr.is_empty() {
+                    &outcome.stdout
+                } else {
+                    &outcome.stderr
+                };
+                let message = if paths.exit_code == 0 {
+                    format!(
+                        "git merge {branch} exited {} without unmerged paths: {}",
+                        outcome.exit_code,
+                        TerminalText::sanitize(output)
+                    )
+                } else {
+                    format!(
+                        "git merge {branch} exited {}: {}; checking unmerged paths exited {}: {}",
+                        outcome.exit_code,
+                        TerminalText::sanitize(output),
+                        paths.exit_code,
+                        TerminalText::sanitize(&paths.stderr)
+                    )
+                };
+                return Err(GatewayError::Protocol { message }.into());
             }
             merged.push(branch);
         }

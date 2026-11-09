@@ -10,3 +10,9 @@ path = "**"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Alexey Zhokhov"
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "vendor/sqlx-sqlite/**"
+precedence = "closest"
+SPDX-FileCopyrightText = ["Copyright (C) SQLx Contributors", "Portions of this work Copyright (C) LaunchBadge, LLC"]
+SPDX-License-Identifier = "MIT OR Apache-2.0"

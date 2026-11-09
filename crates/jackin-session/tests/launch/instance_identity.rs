@@ -479,25 +479,125 @@ async fn integrate_merges_the_secondary_branch_into_the_persisted_nonlexical_lea
         let rig = configured().await?;
         let target = ready(run(&rig, rig.request(38)?.instances(members(Agent::Omp)?)).await?)?;
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        handle.git(&["config", "user.name", "jackin-test"]).await?;
+        handle
+            .git(&["config", "user.email", "test@example.invalid"])
+            .await?;
         let secondary = handle.root().join("work/codex/project");
-        std::fs::write(secondary.join("secondary-result.txt"), b"secondary result\n")?;
-        handle.git(&["-C", "../work/codex/project", "add", "secondary-result.txt"]).await?;
-        handle.git(&["-C", "../work/codex/project", "commit", "-q", "-m", "test: add secondary result"]).await?;
-        let secondary_head = handle.git(&["-C", "../work/codex/project", "rev-parse", "HEAD"]).await?;
-        let merged = rig.world.session.integrate(&target.sandbox, &CancellationToken::new()).await?;
+        std::fs::write(
+            secondary.join("secondary-result.txt"),
+            b"secondary result\n",
+        )?;
+        handle
+            .git(&["-C", "../work/codex/project", "add", "secondary-result.txt"])
+            .await?;
+        handle
+            .git(&[
+                "-C",
+                "../work/codex/project",
+                "commit",
+                "-q",
+                "-m",
+                "test: add secondary result",
+            ])
+            .await?;
+        let secondary_head = handle
+            .git(&["-C", "../work/codex/project", "rev-parse", "HEAD"])
+            .await?;
+        let merged = rig
+            .world
+            .session
+            .integrate(&target.sandbox, &CancellationToken::new())
+            .await?;
         assert_eq!(merged, ["agent/codex"]);
         assert_eq!(handle.git(&["rev-parse", "HEAD"]).await?, secondary_head);
-        assert_eq!(std::fs::read(handle.root().join("project/secondary-result.txt"))?, b"secondary result\n");
-        assert!(handle.git(&["branch", "--list", "agent/omp"]).await?.trim().is_empty());
-        std::fs::write(secondary.join("secondary-result.txt"), b"secondary conflict\n")?;
-        handle.git(&["-C", "../work/codex/project", "commit", "-qam", "test: secondary conflict"]).await?;
-        handle.commit_in_project("secondary-result.txt", b"lead conflict\n", "test: lead conflict").await?;
+        assert_eq!(
+            std::fs::read(handle.root().join("project/secondary-result.txt"))?,
+            b"secondary result\n"
+        );
+        assert!(
+            handle
+                .git(&["branch", "--list", "agent/omp"])
+                .await?
+                .trim()
+                .is_empty()
+        );
+        std::fs::write(secondary.join(" "), b"secondary conflict\n")?;
+        handle
+            .git(&["-C", "../work/codex/project", "add", "--", " "])
+            .await?;
+        handle
+            .git(&[
+                "-C",
+                "../work/codex/project",
+                "commit",
+                "-qam",
+                "test: secondary conflict",
+            ])
+            .await?;
+        handle
+            .commit_in_project(" ", b"lead conflict\n", "test: lead conflict")
+            .await?;
         let lead_head = handle.git(&["rev-parse", "HEAD"]).await?;
-        assert!(matches!(rig.world.session.integrate(&target.sandbox, &CancellationToken::new()).await, Err(IntegrateError::Conflict { branch }) if branch == "agent/codex"));
+        let result = rig
+            .world
+            .session
+            .integrate(&target.sandbox, &CancellationToken::new())
+            .await;
+        assert!(
+            matches!(&result, Err(IntegrateError::Conflict { branch }) if branch == "agent/codex"),
+            "{result:?}"
+        );
         assert_eq!(handle.git(&["rev-parse", "HEAD"]).await?, lead_head);
-        assert!(!handle.git(&["diff", "--name-only", "--diff-filter=U"]).await?.trim().is_empty());
+        assert!(
+            !handle
+                .git(&["diff", "--name-only", "-z", "--diff-filter=U"])
+                .await?
+                .is_empty()
+        );
         Ok(())
-    }).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn integrate_reports_a_missing_secondary_branch_as_a_git_failure() -> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let target = ready(run(&rig, rig.request(41)?.instances(members(Agent::Omp)?)).await?)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        handle
+            .git(&["update-ref", "-d", "refs/heads/agent/codex"])
+            .await?;
+        let head = handle.git(&["rev-parse", "HEAD"]).await?;
+        let error = rig
+            .world
+            .session
+            .integrate(&target.sandbox, &CancellationToken::new())
+            .await
+            .expect_err("a missing secondary branch must fail");
+        assert!(
+            matches!(
+                &error,
+                IntegrateError::Gateway(GatewayError::Protocol { message })
+                    if message.starts_with("git merge agent/codex exited ")
+                        && message
+                            .rsplit_once(": ")
+                            .is_some_and(|(_, output)| !output.trim().is_empty())
+            ),
+            "{error:?}"
+        );
+        assert_eq!(handle.git(&["rev-parse", "HEAD"]).await?, head);
+        assert!(
+            handle
+                .git(&["diff", "--name-only", "--diff-filter=U"])
+                .await?
+                .trim()
+                .is_empty()
+        );
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]
