@@ -2,8 +2,11 @@
 
 This directory vendors the published `sqlx-sqlite` 0.9.0 crate with its
 `libsqlite3-sys` upper bound updated to `<0.40.0`. No Rust source is changed.
-Only the normalized `Cargo.toml` differs from the archive; `Cargo.toml.orig`
-and all crate source files remain as published.
+The normalized `Cargo.toml` has the backported bound. The upstream crate's
+standalone `Cargo.lock` is omitted because the workspace lockfile owns
+resolution for this path dependency; retaining a nested lock would make
+repository tooling resolve the vendored crate as an independent project.
+`Cargo.toml.orig` and all crate source files remain as published.
 
 The source archive is `sqlx-sqlite-0.9.0.crate`, SHA-256
 `488e99c397a62007e4229aec669a179816339afc6d2620ca6fa420dbee2e982c`. The

@@ -24,6 +24,7 @@ members = [
   "crates/usage/jackin-usage-provider-zai",
   "crates/xtask",
 ]
+exclude = ["vendor/sqlx-sqlite"]
 resolver = "3"
 
 [workspace.package]
