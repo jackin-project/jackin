@@ -4,8 +4,11 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use jackin_core::{Agent, AgentInstances, SandboxName, SandboxPath, plain};
-use jackin_openshell::{GatewayError, ProgramRun, ProgramStdin};
+use jackin_core::{
+    Agent, AgentInstance, AgentInstances, SandboxLabels, SandboxName, SandboxPath, TerminalText,
+    plain,
+};
+use jackin_openshell::{GatewayError, Missing, ProgramRun, ProgramStdin};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -25,19 +28,10 @@ fn layout_worktree_lead(instances: &AgentInstances) -> Option<Agent> {
     instances.lead_opt().map(|item| item.agent)
 }
 
-fn agent_names(json: &str) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut rest = json;
-    while let Some(pos) = rest.find("\"agent\":\"") {
-        let after = &rest[pos + 9..];
-        if let Some(end) = after.find('"') {
-            names.push(after[..end].to_owned());
-            rest = &after[end + 1..];
-        } else {
-            break;
-        }
+fn invalid_instance_identity() -> GatewayError {
+    GatewayError::Protocol {
+        message: "sandbox instance identity is invalid".to_owned(),
     }
-    names
 }
 
 impl Session {
@@ -182,12 +176,37 @@ impl Session {
         &self,
         sandbox: &SandboxName,
     ) -> Result<Vec<String>, GatewayError> {
+        let view = self
+            .find_managed(sandbox)
+            .await?
+            .ok_or_else(|| GatewayError::NotFound {
+                what: Missing::Sandbox(sandbox.clone()),
+            })?;
+        let labels =
+            SandboxLabels::from_labels(&view.labels).map_err(|_| invalid_instance_identity())?;
         let path = SandboxPath::from_static("/sandbox/.jackin/agents.json");
         let found = self.deps.gateway.read_files(sandbox, &[path]).await?;
-        let Some(bytes) = found.into_iter().next().flatten() else {
-            return Ok(Vec::new());
-        };
-        Ok(agent_names(&String::from_utf8_lossy(&bytes)))
+        let bytes = found
+            .into_iter()
+            .next()
+            .flatten()
+            .ok_or_else(invalid_instance_identity)?;
+        let items: Vec<AgentInstance> =
+            serde_json::from_slice(&bytes).map_err(|_| invalid_instance_identity())?;
+        let instances = AgentInstances::new(items).map_err(|_| invalid_instance_identity())?;
+        for instance in instances.iter() {
+            jackin_core::lookup_tuple(instance.agent, instance.provider)
+                .and_then(|tuple| tuple.check_model(&instance.model))
+                .map_err(|_| invalid_instance_identity())?;
+        }
+        if instances.agents_label() != labels.planned.agents.agents_label() {
+            return Err(invalid_instance_identity());
+        }
+        Ok(instances
+            .canonical()
+            .into_iter()
+            .map(|item| item.agent.as_str().to_owned())
+            .collect())
     }
 
     pub async fn stop_instance(
@@ -253,7 +272,52 @@ impl Session {
                 )
                 .await?;
             if outcome.exit_code != 0 {
-                return Err(IntegrateError::Conflict { branch });
+                let paths = self
+                    .deps
+                    .gateway
+                    .run_program(
+                        &ProgramRun {
+                            sandbox: sandbox.clone(),
+                            program: SandboxPath::from_static("/usr/bin/git"),
+                            args: vec![
+                                "diff".to_owned(),
+                                "--name-only".to_owned(),
+                                "-z".to_owned(),
+                                "--diff-filter=U".to_owned(),
+                            ],
+                            workdir: Some(SandboxPath::from_static("/sandbox/project")),
+                            env: BTreeMap::new(),
+                            stdin: ProgramStdin::Closed,
+                            touch_on_success: None,
+                            timeout: Duration::from_secs(30),
+                        },
+                        cancel,
+                    )
+                    .await?;
+                if paths.exit_code == 0 && !paths.stdout.is_empty() {
+                    return Err(IntegrateError::Conflict { branch });
+                }
+                let output = if outcome.stderr.is_empty() {
+                    &outcome.stdout
+                } else {
+                    &outcome.stderr
+                };
+                let message = if paths.exit_code == 0 {
+                    format!(
+                        "git merge {branch} exited {} without unmerged paths: {}",
+                        outcome.exit_code,
+                        TerminalText::sanitize(output)
+                    )
+                } else {
+                    format!(
+                        "git merge {branch} exited {}: {}; checking unmerged paths exited {}: {}",
+                        outcome.exit_code,
+                        TerminalText::sanitize(output),
+                        paths.exit_code,
+                        TerminalText::sanitize(&paths.stderr)
+                    )
+                };
+                return Err(GatewayError::Protocol { message }.into());
             }
             merged.push(branch);
         }

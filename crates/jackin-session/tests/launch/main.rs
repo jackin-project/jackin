@@ -18,6 +18,7 @@ mod hooks;
 mod hostile_git;
 mod hostile_launch;
 mod image_handoff;
+mod instance_identity;
 mod modes;
 mod multi_instance;
 mod omp_models;

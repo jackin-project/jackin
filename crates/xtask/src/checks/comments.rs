@@ -18,6 +18,9 @@ impl Check for CommentsCheck {
     fn run(&self, repo: &Repo) -> Vec<Violation> {
         let mut violations = Vec::new();
         for file in repo.files() {
+            if file.is_third_party_source() {
+                continue;
+            }
             let found = match file.kind() {
                 FileKind::Rust => rust_comments(file.text()),
                 FileKind::Toml => toml_comments(file.text()),

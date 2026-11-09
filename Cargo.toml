@@ -24,6 +24,7 @@ members = [
   "crates/usage/jackin-usage-provider-zai",
   "crates/xtask",
 ]
+exclude = ["vendor/sqlx-sqlite"]
 resolver = "3"
 
 [workspace.package]
@@ -87,7 +88,7 @@ tempfile = "3.27.0"
 termwiz = { version = "0.23.3", default-features = false }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", default-features = false, features = ["sync"] }
-rusqlite = { version = "0.37.0", default-features = false, features = ["bundled"] }
+rusqlite = { version = "0.41.1", default-features = false, features = ["bundled"] }
 toml = { version = "1.2.0", default-features = false, features = ["display", "parse", "serde"] }
 tokio-stream = "0.1.19"
 tokio-util = "0.7.20"
@@ -231,3 +232,6 @@ strip = "symbols"
 [profile.preview]
 inherits = "release"
 lto = "off"
+
+[patch.crates-io]
+sqlx-sqlite = { path = "vendor/sqlx-sqlite" }

@@ -71,6 +71,11 @@ impl RepoFile {
     pub fn text(&self) -> &str {
         &self.text
     }
+
+    #[must_use]
+    pub fn is_third_party_source(&self) -> bool {
+        self.path.starts_with("vendor/sqlx-sqlite/")
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -436,4 +441,66 @@ fn read_files(root: &Path) -> Result<Vec<RepoFile>, CiError> {
     files.sort_by(|a, b| a.path.as_os_str().cmp(b.path.as_os_str()));
     files.dedup_by(|a, b| a.path == b.path);
     Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FileKind, Repo, RepoFile};
+    use crate::checks::{Check, CommentsCheck, ErrorsCheck};
+    use std::path::PathBuf;
+
+    #[test]
+    fn comments_check_exempts_only_the_classified_sqlx_vendor_source() {
+        let repo = Repo {
+            root: PathBuf::new(),
+            files: [
+                (
+                    "vendor/sqlx-sqlite/src/lib.rs",
+                    "// upstream comment\n#[error(\"{source}\")]\nstruct Bad { #[source] source: std::io::Error }\n",
+                ),
+                (
+                    "vendor/other/src/lib.rs",
+                    "// unclassified vendor comment\n#[error(\"{source}\")]\nstruct Bad { #[source] source: std::io::Error }\n",
+                ),
+                (
+                    "crates/example/src/lib.rs",
+                    "// first-party comment\n#[error(\"{source}\")]\nstruct Bad { #[source] source: std::io::Error }\n",
+                ),
+            ]
+            .into_iter()
+            .map(|(path, text)| RepoFile {
+                path: PathBuf::from(path),
+                kind: FileKind::Rust,
+                text: text.to_owned(),
+            })
+            .collect(),
+            members: Vec::new(),
+        };
+
+        let violations = CommentsCheck.run(&repo);
+        let paths: Vec<_> = violations
+            .iter()
+            .map(|violation| violation.path.clone().expect("file violation has a path"))
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                PathBuf::from("crates/example/src/lib.rs"),
+                PathBuf::from("vendor/other/src/lib.rs"),
+            ]
+        );
+
+        let violations = ErrorsCheck.run(&repo);
+        let paths: Vec<_> = violations
+            .iter()
+            .map(|violation| violation.path.clone().expect("file violation has a path"))
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                PathBuf::from("crates/example/src/lib.rs"),
+                PathBuf::from("vendor/other/src/lib.rs"),
+            ]
+        );
+    }
 }

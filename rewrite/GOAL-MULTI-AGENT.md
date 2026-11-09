@@ -124,9 +124,9 @@ If neither route keeps one instance alive while another instance restarts, stop.
 ### Labels and retry
 
 1. The current labels `jackin.dev/agent` and `jackin.dev/account` hold one value. Replace them.
-2. Write one label `jackin.dev/agents`: the first 32 hex characters of the SHA-256 of the sorted instance list. One list item is `<agent>:<provider>:<account>:<model>`. Sort the items as text. Join them with one comma and no spaces. Hash the joined text as UTF-8 with no final newline. The lead is the first instance of the launch list as the operator gave it. Sorting changes only the hash and `agents.json`, never the lead.
-3. Write the full sorted instance list, with no secret, to `/sandbox/.jackin/agents.json` at launch.
-4. On retry, compare the label and `agents.json` with the planned list. If one item differs, stop with `StaleSandbox`. Change nothing.
+2. Write one label `jackin.dev/agents`: the first 32 hex characters of the SHA-256 of the canonical instance list. One list item is `<agent>:<provider>:<account>:<model>`. Keep the operator-selected lead first and sort only the remaining items as text. Join them with one comma and no spaces. For multiple instances prefix the joined text with the literal `lead-first-v1:` before hashing; for a single instance hash its item without a prefix. Hash as UTF-8 with no final newline. The multi-instance domain separation rejects ambiguous old fully sorted identities even when their JSON matches a new request. Changing the lead changes the identity; permuting only secondaries does not.
+3. Write the full instance list in that same canonical order, with no secret, to `/sandbox/.jackin/agents.json` at launch. Its first item identifies the main process for attach and integration.
+4. On retry, compare the label and `agents.json` with the planned canonical list. If either differs, stop with `StaleSandbox` before any change. Before direct attach or integration effects, parse the typed instance list and verify its recomputed current identity against the managed sandbox label; refuse malformed or mismatched identities. Do not migrate or fall back to previously written fully sorted multi-instance lists.
 5. Keep the other D07 labels. Keep the sandbox name rule. The name does not hold an agent name.
 
 ### CLI form for many agents

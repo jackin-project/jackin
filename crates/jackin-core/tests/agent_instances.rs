@@ -53,16 +53,35 @@ fn one_and_three_valid_and_repeated_and_empty() -> Result<(), Box<dyn std::error
 }
 
 #[test]
-fn label_and_json_order_invariant_lead_preserved() -> Result<(), Box<dyn std::error::Error>> {
-    let a = inst(Agent::Omp, Provider::Zai, "work", "glm-5.3")?;
-    let b = inst(Agent::Codex, Provider::Codex, "work", "gpt-5.1-codex")?;
-    let first = AgentInstances::new(vec![a.clone(), b.clone()])?;
-    let second = AgentInstances::new(vec![b, a])?;
+fn persisted_identity_preserves_the_lead_and_distinguishes_a_lead_swap()
+-> Result<(), Box<dyn std::error::Error>> {
+    let omp = inst(Agent::Omp, Provider::Zai, "work", "glm-5.3")?;
+    let codex = inst(Agent::Codex, Provider::Codex, "work", "gpt-5.1-codex")?;
+    let first = AgentInstances::new(vec![omp.clone(), codex.clone()])?;
+    let second = AgentInstances::new(vec![codex, omp])?;
+    let persisted: AgentInstances = serde_json::from_str(&first.agents_json())?;
+    assert_eq!(persisted.lead().agent, Agent::Omp);
+    assert_ne!(first.agents_label(), second.agents_label());
+    assert_ne!(first.agents_json(), second.agents_json());
+    let old = jackin_core::Sha256::of(b"codex:codex:work:gpt-5.1-codex,omp:zai:work:glm-5.3");
+    assert_ne!(second.agents_label(), &old.as_str()[..32]);
+    Ok(())
+}
+
+#[test]
+fn canonical_identity_sorts_only_the_secondary_instances() -> Result<(), Box<dyn std::error::Error>>
+{
+    let omp = inst(Agent::Omp, Provider::Zai, "work", "glm-5.3")?;
+    let codex = inst(Agent::Codex, Provider::Codex, "work", "gpt-5.1-codex")?;
+    let grok = inst(Agent::GrokBuild, Provider::Grok, "work", "grok-code")?;
+    let first = AgentInstances::new(vec![omp.clone(), grok.clone(), codex.clone()])?;
+    let second = AgentInstances::new(vec![omp, codex, grok])?;
     assert_eq!(first.agents_label(), second.agents_label());
     assert_eq!(first.agents_json(), second.agents_json());
-    assert_eq!(first.lead().agent, Agent::Omp);
-    assert_eq!(second.lead().agent, Agent::Codex);
-    assert_eq!(first.agents_label(), "d078d2b7f62254df8287c7e52ba9bc5f");
+    let persisted: AgentInstances = serde_json::from_str(&first.agents_json())?;
+    assert_eq!(persisted.lead().agent, Agent::Omp);
+    assert_eq!(persisted.as_slice()[1].agent, Agent::Codex);
+    assert_eq!(persisted.as_slice()[2].agent, Agent::GrokBuild);
     Ok(())
 }
 

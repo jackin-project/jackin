@@ -97,7 +97,11 @@ export function CodePanel() {
         await new Promise(r => setTimeout(r, holdDurationMs));
       }
     }
-    run(body);
+    void run(body).catch((error: unknown) => {
+      if (myToken === tokenRef.current) {
+        console.error('Code panel animation failed', error);
+      }
+    });
 
     return () => { tokenRef.current += 1; };
   }, [active]);
