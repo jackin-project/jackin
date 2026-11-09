@@ -1,0 +1,1111 @@
+xtask: fmt
+xtask: clippy
+    Checking aws-lc-sys v0.47.0
+    Checking libsqlite3-sys v0.39.1
+   Compiling psm v0.1.32
+    Checking rusqlite v0.41.1
+   Compiling stacker v0.1.25
+   Compiling pest_stack_guard v1.0.1
+    Checking aws-lc-rs v1.19.0
+    Checking pest v2.9.5
+    Checking rustls-webpki v0.103.16
+    Checking rcgen v0.14.10
+    Checking jsonwebtoken v10.4.0
+    Checking russh v0.65.1
+    Checking rustls v0.23.46
+   Compiling pest_meta v2.9.5
+   Compiling pest_generator v2.9.5
+   Compiling pest_derive v2.9.5
+    Checking termwiz v0.23.3
+    Checking tokio-rustls v0.26.6
+    Checking rustls-platform-verifier v0.7.1
+    Checking tungstenite v0.26.2
+    Checking hyper-rustls v0.27.10
+    Checking tonic v0.14.9
+    Checking reqwest v0.13.5
+    Checking reqwest v0.12.28
+    Checking tokio-tungstenite v0.26.2
+    Checking jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-core)
+    Checking jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-zai)
+    Checking jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-codex)
+    Checking jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-grok)
+    Checking jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-opencode)
+    Checking jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-cursor)
+    Checking jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-kimi)
+    Checking jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-openrouter)
+    Checking jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-claude)
+    Checking jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-gemini)
+    Checking jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-minimax)
+    Checking jackin-usage v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage)
+    Checking oauth2 v5.0.0
+    Checking openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking tonic-prost v0.14.9
+    Checking openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking tonic-types v0.14.9
+    Checking openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking jackin-openshell v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-openshell)
+    Checking jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+    Checking jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+    Checking jackin-xtask v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/xtask)
+    Checking jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+    Checking jackin v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin)
+    Checking jackin-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-core)
+    Checking jackin-image v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-image)
+    Finished `dev` profile [unoptimized] target(s) in 50.76s
+xtask: nextest
+   Compiling tokio-rustls v0.26.6
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling jsonwebtoken v10.4.0
+   Compiling russh v0.65.1
+   Compiling rusqlite v0.41.1
+   Compiling stacker v0.1.25
+   Compiling hyper-rustls v0.27.10
+   Compiling tonic v0.14.9
+   Compiling tokio-tungstenite v0.26.2
+   Compiling pest_stack_guard v1.0.1
+   Compiling pest v2.9.5
+   Compiling reqwest v0.13.5
+   Compiling reqwest v0.12.28
+   Compiling termwiz v0.23.3
+   Compiling jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-core)
+   Compiling oauth2 v5.0.0
+   Compiling jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-opencode)
+   Compiling jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-cursor)
+   Compiling jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-kimi)
+   Compiling openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling tonic-prost v0.14.9
+   Compiling openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling tonic-types v0.14.9
+   Compiling jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-openrouter)
+   Compiling jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-claude)
+   Compiling jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-gemini)
+   Compiling jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-minimax)
+   Compiling jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-zai)
+   Compiling openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-codex)
+   Compiling jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-grok)
+   Compiling jackin-usage v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage)
+   Compiling openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-openshell v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-openshell)
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+   Compiling jackin-xtask v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/xtask)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+   Compiling jackin v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin)
+   Compiling jackin-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-core)
+   Compiling jackin-image v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-image)
+    Finished `test` profile [unoptimized] target(s) in 1m 26s
+────────────
+ Nextest run ID fd8c389d-f3dd-4494-860a-dd6fb918f445 with nextest profile: default
+    Starting 2177 tests across 104 binaries
+        PASS [   0.088s] (   1/2177) jackin::cli account_manage::account_ls_json_has_a_pinned_shape_and_no_credential_material
+        PASS [   0.128s] (   2/2177) jackin::cli account_manage::binding_an_unknown_or_mismatched_account_fails_without_a_write
+        PASS [   0.152s] (   3/2177) jackin::cli account_add::a_credential_source_must_exist_where_the_account_is_added_and_a_refusal_never_echoes_it
+        PASS [   0.237s] (   4/2177) jackin::cli account_add::a_credential_file_link_is_followed_and_an_oversized_file_or_a_link_to_a_pipe_is_refused
+        PASS [   0.268s] (   5/2177) jackin::cli account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home
+        PASS [   0.309s] (   6/2177) jackin::cli account_manage::default_and_bind_change_exactly_the_named_entry
+        PASS [   1.364s] (   7/2177) jackin::cli account_add::a_broken_login_at_a_hostile_path_prints_one_escaped_diagnostic_line
+        PASS [   1.533s] (   8/2177) jackin::cli account_add::a_codex_api_key_account_requires_agent_omp_and_a_refusal_touches_nothing
+        PASS [   0.245s] (   9/2177) jackin::cli account_manage::rm_of_an_account_without_a_provider_credential_never_connects_and_succeeds_with_the_gateway_down
+        PASS [   1.662s] (  10/2177) jackin::cli account_add::a_mismatched_or_unreadable_account_fails_and_changes_nothing
+        PASS [   1.680s] (  11/2177) jackin::cli account_add::a_chatgpt_account_syncs_the_provider_first_and_a_claude_api_key_needs_agent_omp
+        PASS [   1.762s] (  12/2177) jackin::cli account_add::adding_the_same_account_twice_fails_before_the_gateway_is_touched
+        PASS [   1.666s] (  13/2177) jackin::cli account_manage::ctrl_c_while_an_account_edit_waits_for_the_host_lock_exits_130
+        PASS [   1.418s] (  14/2177) jackin::cli account_manage::rm_of_a_bound_account_lists_its_references_and_keeps_the_provider
+        PASS [   1.503s] (  15/2177) jackin::cli account_manage::rm_fails_closed_naming_a_gateway_it_cannot_reach_and_changes_nothing
+        PASS [   2.085s] (  16/2177) jackin::cli account_manage::add_publishes_nothing_to_a_gateway_that_was_removed_while_it_waited_for_the_lock
+        PASS [   1.264s] (  17/2177) jackin::cli account_manage::rm_removes_the_provider_from_every_configured_gateway_and_then_the_account_is_unknown
+        PASS [   1.325s] (  18/2177) jackin::cli account_manage::rm_succeeds_when_a_gateway_never_held_the_provider
+        PASS [   1.768s] (  19/2177) jackin::cli account_manage::rm_reaches_a_gateway_that_was_added_while_it_waited_for_the_account_lock
+        PASS [   5.789s] (  20/2177) jackin::cli account_manage::rm_checks_the_gateway_before_the_config_and_removes_both_when_nothing_uses_the_account
+        PASS [   4.766s] (  21/2177) jackin::cli attach::a_restart_on_a_running_codex_is_refused_and_a_missing_terminal_touches_nothing
+        PASS [   4.911s] (  22/2177) jackin::cli attach::a_lone_escape_key_reaches_the_sandbox_before_any_later_input
+        PASS [   5.064s] (  23/2177) jackin::cli attach::a_codex_exit_while_attached_prints_one_hint_and_the_pump_keeps_running
+        PASS [   5.127s] (  24/2177) jackin::cli attach::a_running_codex_never_shows_the_exit_hint
+        PASS [   5.217s] (  25/2177) jackin::cli attach::a_stalled_supervisor_read_never_freezes_the_terminal_or_delays_a_detach
+        PASS [   0.297s] (  26/2177) jackin::cli build::a_role_whose_final_stage_is_not_construct_fails_naming_the_base_and_builds_nothing
+        PASS [   4.983s] (  27/2177) jackin::cli attach::an_exit_before_the_attach_is_hinted_once_even_after_polls
+        PASS [   0.910s] (  28/2177) jackin::cli build::a_long_build_log_goes_to_stderr_and_stdout_stays_one_clean_line
+        PASS [   4.794s] (  29/2177) jackin::cli attach::attach_pumps_input_output_and_resizes_and_a_detach_leaves_codex_running
+        PASS [   5.138s] (  30/2177) jackin::cli attach::an_exited_codex_shows_its_code_filters_replies_and_restart_runs_preflight_and_attempt_two
+        PASS [   1.249s] (  31/2177) jackin::cli build::build_prints_the_final_image_id_caches_it_and_needs_no_gateway
+        PASS [   0.981s] (  32/2177) jackin::cli cancel::a_cancelled_build_stores_no_image_and_the_same_build_uncancelled_succeeds
+        PASS [   0.799s] (  33/2177) jackin::cli cancel::cancelling_load_while_it_waits_for_an_environment_value_ends_the_command
+        PASS [   0.061s] (  34/2177) jackin::cli config_io::a_bad_config_fails_every_reader_naming_the_key_and_is_never_repaired
+        PASS [   0.029s] (  35/2177) jackin::cli config_io::a_failed_write_surfaces_as_a_failure_with_the_old_bytes_intact
+        PASS [   0.031s] (  36/2177) jackin::cli config_io::a_gateway_removal_warns_about_the_left_behind_providers_only_when_it_committed
+        PASS [   0.056s] (  37/2177) jackin::cli config_io::a_missing_file_reads_as_empty_without_creating_anything_and_an_edit_leaves_a_parsable_file
+        PASS [   0.018s] (  38/2177) jackin::cli connect::a_cancel_during_discovery_exits_cancelled_at_once
+        PASS [   0.021s] (  39/2177) jackin::cli connect::a_cancel_whose_group_stop_failed_is_still_a_cancel_and_names_the_fault
+        PASS [   0.020s] (  40/2177) jackin::cli connect::a_missing_openshell_is_a_discovery_error_and_not_an_unreachable_gateway
+        PASS [   0.026s] (  41/2177) jackin::cli connect::a_timeout_or_a_group_fault_in_discovery_is_a_failure_and_never_a_cancel
+        PASS [   0.018s] (  42/2177) jackin::cli connect::an_unregistered_gateway_is_named_as_a_plain_word
+        PASS [   4.022s] (  43/2177) jackin::cli attach::attaching_an_error_phase_sandbox_names_its_exit_code_and_an_absent_one_is_refused
+        PASS [   0.023s] (  44/2177) jackin::cli console::a_bare_run_without_a_terminal_prints_help_and_never_starts_the_console
+        PASS [   0.075s] (  45/2177) jackin::cli console::a_bare_run_on_a_terminal_opens_the_console_over_the_config_and_quit_is_ok
+        PASS [   0.063s] (  46/2177) jackin::cli console::a_config_without_a_gateway_still_opens_the_console
+        PASS [   0.096s] (  47/2177) jackin::cli console::a_gateway_that_cannot_be_reached_does_not_stop_the_console
+        PASS [   0.058s] (  48/2177) jackin::cli console::a_terminal_failure_in_the_console_is_a_failure_on_stderr_with_empty_stdout
+        PASS [   0.024s] (  49/2177) jackin::cli console::an_invalid_config_stops_before_the_console
+        PASS [   0.054s] (  50/2177) jackin::cli console::several_gateways_with_no_default_open_the_console_with_none_selected
+        PASS [   0.060s] (  51/2177) jackin::cli console::the_gateway_flag_picks_the_default_and_an_unknown_one_stops_before_the_console
+        PASS [   3.775s] (  52/2177) jackin::cli attach::osc52_is_blocked_in_both_directions_while_other_bytes_pass
+        PASS [   0.029s] (  53/2177) jackin::cli doctor::a_failed_check_fails_the_run_names_its_id_and_never_hides_the_others
+        PASS [   0.029s] (  54/2177) jackin::cli doctor::a_git_that_is_too_old_prints_the_upgrade_fix_and_not_the_install_fix
+        PASS [   0.020s] (  55/2177) jackin::cli doctor::a_missing_engine_socket_is_only_a_warning
+        PASS [   8.719s] (  56/2177) jackin::cli attach::a_main_stream_that_ends_shows_its_exit_code_and_only_zero_is_a_success
+        PASS [   0.020s] (  57/2177) jackin::cli doctor::doctor_cancelled_while_the_gateway_is_being_discovered_exits_cancelled_at_once
+        PASS [   0.018s] (  58/2177) jackin::cli doctor::doctor_under_a_cancel_exits_cancelled_and_prints_no_report
+        PASS [   0.018s] (  59/2177) jackin::cli doctor::doctor_without_a_gateway_fails_and_names_the_command_that_adds_one
+        PASS [   0.020s] (  60/2177) jackin::cli doctor::healthy_fakes_exit_ok_and_print_one_line_per_check_id_on_stdout_only
+        PASS [   3.850s] (  61/2177) jackin::cli build::a_load_after_a_build_in_a_docker_workspace_finds_the_image_already_built
+        PASS [   0.848s] (  62/2177) jackin::cli env::a_missing_value_undeclared_name_or_closed_input_stops_before_anything_is_created
+        PASS [   3.049s] (  63/2177) jackin::cli cancel::a_restart_cancelled_after_preflight_exits_cancelled_and_leaves_the_start_request_alone
+        PASS [   4.523s] (  64/2177) jackin::cli cancel::a_cancelled_export_writes_no_ref_and_the_same_export_uncancelled_succeeds
+        PASS [   4.541s] (  65/2177) jackin::cli cancel::a_cancelled_load_keeps_the_sandbox_names_it_and_a_rerun_completes
+        PASS [   0.022s] (  66/2177) jackin::cli exit::every_exit_class_has_its_documented_number
+        PASS [   6.623s] (  67/2177) jackin::cli attach::the_terminal_is_restored_after_a_session_error_and_a_cancel_detaches_with_code_130
+        PASS [   2.836s] (  68/2177) jackin::cli env::a_flag_value_that_is_a_reference_or_a_placeholder_is_refused_without_echoing_it
+        PASS [   3.036s] (  69/2177) jackin::cli env::a_prompt_and_a_default_from_the_role_reach_the_terminal_as_printable_text
+        PASS [   3.669s] (  70/2177) jackin::cli docker::a_refused_stale_retry_prints_the_refusal_and_no_retry_hint
+        PASS [   2.861s] (  71/2177) jackin::cli env::an_answer_that_is_a_reference_or_a_placeholder_is_refused_and_asked_again
+        PASS [   0.093s] (  72/2177) jackin::cli gateway::gateway_add_refuses_the_plaintext_docker_port_and_leaves_the_config_unchanged
+        PASS [   0.089s] (  73/2177) jackin::cli gateway::gateway_add_stores_every_flag_and_the_host_platform_by_default
+        PASS [   0.114s] (  74/2177) jackin::cli gateway::gateway_ls_json_has_a_pinned_shape_and_an_empty_list_is_a_literal
+        PASS [   0.127s] (  75/2177) jackin::cli gateway::gateway_rm_clears_a_default_and_duplicates_and_unknown_names_fail_without_a_write
+        PASS [   5.983s] (  76/2177) jackin::cli docker::a_docker_workspace_gets_the_engine_variables_and_one_warning_and_a_plain_one_gets_neither
+        PASS [   8.476s] (  77/2177) jackin::cli cancel::a_cancel_during_the_role_fetch_ends_load_and_build_and_leaves_the_cache_at_the_old_commit
+        PASS [   3.536s] (  78/2177) jackin::cli export::export_of_a_sandbox_with_only_uncommitted_work_says_that_work_is_not_exported
+        PASS [   3.610s] (  79/2177) jackin::cli export::export_of_a_stopped_unknown_or_unregistered_sandbox_fails_and_writes_no_ref
+        PASS [   0.666s] (  80/2177) jackin::cli gateway_rm::an_unreachable_gateway_error_names_the_offline_removal_as_the_way_out
+        PASS [   5.263s] (  81/2177) jackin::cli env::on_a_terminal_each_entry_is_asked_with_its_prompt_and_default_and_flags_skip_the_question
+        PASS [   0.063s] (  82/2177) jackin::cli gateway_rm::gateway_rm_never_connects_when_no_account_has_an_openshell_provider
+        PASS [   0.572s] (  83/2177) jackin::cli gateway_rm::gateway_rm_fails_closed_naming_a_gateway_it_cannot_reach_and_changes_nothing
+        PASS [   0.021s] (  84/2177) jackin::cli help::every_command_and_argument_has_attribute_help_and_the_command_set_is_the_documented_one
+        PASS [   0.036s] (  85/2177) jackin::cli help::help_and_version_print_to_stdout_and_a_bare_invocation_prints_help_without_a_gateway
+        PASS [   0.017s] (  86/2177) jackin::cli help::the_clap_definition_is_consistent
+        PASS [   3.615s] (  87/2177) jackin::cli export::export_that_cannot_read_the_uncommitted_state_still_publishes_and_says_it_did_not_check
+        PASS [   2.992s] (  88/2177) jackin::cli gateway_choice::an_ambiguous_unknown_or_missing_gateway_fails_naming_the_remedy
+        PASS [   0.698s] (  89/2177) jackin::cli gateway_rm::gateway_rm_forgets_the_providers_of_that_gateway_only_and_then_removes_the_entry
+        PASS [   0.683s] (  90/2177) jackin::cli gateway_rm::gateway_rm_needs_no_gateway_but_the_one_it_removes
+        PASS [   5.287s] (  91/2177) jackin::cli env::without_a_terminal_defaults_apply_and_the_env_flag_wins
+        PASS [   0.751s] (  92/2177) jackin::cli gateway_rm::gateway_rm_offline_removes_an_unreachable_gateway_and_warns_on_stderr
+        PASS [   0.635s] (  93/2177) jackin::cli inspect::inspect_of_a_missing_or_unmanaged_sandbox_fails_with_empty_stdout
+        PASS [   0.665s] (  94/2177) jackin::cli load::a_path_without_a_workspace_or_an_unknown_role_fails_and_creates_nothing
+        PASS [   0.603s] (  95/2177) jackin::cli load::an_unknown_role_is_named_as_a_plain_word
+        PASS [   0.032s] (  96/2177) jackin::cli ls::a_gateway_message_with_control_characters_reaches_the_user_escaped
+        PASS [   0.034s] (  97/2177) jackin::cli ls::an_empty_gateway_prints_no_sandboxes_in_human_output_only
+        PASS [   2.641s] (  98/2177) jackin::cli gateway_choice::the_default_the_flag_and_a_single_gateway_choose_the_gateway
+        PASS [   2.671s] (  99/2177) jackin::cli inspect::inspect_escapes_an_unparsable_live_policy_host_in_the_human_output
+        PASS [   0.038s] ( 100/2177) jackin::cli parse::a_rejected_credential_is_never_echoed_and_the_error_names_the_expected_forms
+        PASS [   2.649s] ( 101/2177) jackin::cli inspect::inspect_json_pins_every_key_set_and_reports_the_live_closure_violation
+        PASS [   0.036s] ( 102/2177) jackin::cli parse::a_rejected_env_assignment_is_never_echoed_and_the_error_names_the_expected_form
+        PASS [   0.046s] ( 103/2177) jackin::cli parse::no_parse_error_prints_a_value_the_user_typed_and_each_names_the_expected_form
+        PASS [   7.967s] ( 104/2177) jackin::cli export::export_fetches_each_branch_into_the_jackin_namespace_without_touching_the_host_tree
+        PASS [   0.934s] ( 105/2177) jackin::cli parse::malformed_invocations_exit_usage_with_a_stderr_message_and_change_nothing_while_their_valid_counterparts_do_not
+        PASS [   3.541s] ( 106/2177) jackin::cli load::load_on_a_terminal_launches_one_labelled_sandbox_attaches_and_restarts_on_the_same_launch_id
+        PASS [   3.633s] ( 107/2177) jackin::cli load_fail::a_failing_preflight_hook_fails_the_load_with_clean_output_and_a_retry_completes
+        PASS [   8.484s] ( 108/2177) jackin::cli export::export_prints_every_ref_it_published_including_a_detached_linked_worktree
+        PASS [   0.019s] ( 109/2177) jackin::cli role_check::a_directory_without_a_manifest_names_both
+        PASS [   0.020s] ( 110/2177) jackin::cli role_check::a_file_in_place_of_the_directory_is_named
+        PASS [   0.293s] ( 111/2177) jackin::cli role_check::a_bad_dockerfile_is_reported_in_plain_text
+        PASS [   0.028s] ( 112/2177) jackin::cli role_check::a_missing_directory_is_named
+        PASS [   0.683s] ( 113/2177) jackin::cli role_check::a_manifest_error_names_the_file_and_states_its_cause_once
+        PASS [   2.583s] ( 114/2177) jackin::cli power::an_errored_unknown_or_unmanaged_sandbox_cannot_be_stopped_or_started
+        PASS [   4.755s] ( 115/2177) jackin::cli ls::ls_json_pins_the_schema_and_lists_exactly_the_readable_managed_sandboxes
+        PASS [   0.040s] ( 116/2177) jackin::cli role_check::a_symlink_to_a_file_in_place_of_the_directory_is_named
+        PASS [   5.770s] ( 117/2177) jackin::cli load::account_for_and_provider_scoped_global_account_resolve_per_instance
+        PASS [   2.947s] ( 118/2177) jackin::cli power::stop_then_start_keeps_the_files_and_returns_the_supervisor_to_waiting
+        PASS [   5.327s] ( 119/2177) jackin::cli load::load_without_a_terminal_prints_the_sandbox_and_launch_id_and_uses_the_cwd_account_and_rebuild
+        PASS [   0.328s] ( 120/2177) jackin::cli role_check::a_symlink_to_a_role_directory_is_checked_like_the_directory
+        PASS [   0.884s] ( 121/2177) jackin::cli role_check::a_role_policy_without_landlock_hard_requirement_fails_naming_the_setting
+        PASS [   0.316s] ( 122/2177) jackin::cli role_check::a_valid_role_passes_with_no_config_no_gateway_and_a_relative_path
+        PASS [   0.297s] ( 123/2177) jackin::cli role_check::two_findings_in_one_manifest_give_two_lines_with_one_cause_each
+        PASS [   0.060s] ( 124/2177) jackin::cli role_workspace::a_role_source_that_is_not_a_directory_or_a_url_is_refused_without_echoing_it
+        PASS [   5.411s] ( 125/2177) jackin::cli ls::ls_without_json_prints_the_managed_names_and_an_empty_gateway_is_a_literal
+        PASS [   0.029s] ( 126/2177) jackin::cli role_workspace::command_error_text_is_shown_without_control_characters
+        PASS [   0.203s] ( 127/2177) jackin::cli role_workspace::a_workspace_or_role_path_is_stored_by_its_real_path_and_must_be_an_existing_directory
+        PASS [   0.114s] ( 128/2177) jackin::cli role_workspace::ls_escapes_bidi_controls_in_a_git_role_source
+        PASS [   0.895s] ( 129/2177) jackin::cli role_check::an_invalid_role_fails_naming_the_field_the_stage_or_the_rule
+        PASS [   0.250s] ( 130/2177) jackin::cli role_workspace::duplicates_shared_paths_and_roles_in_use_fail_and_leave_the_config_bytes_alone
+        PASS [   1.775s] ( 131/2177) jackin::cli role_check::a_role_policy_naming_the_root_fails_role_check_naming_the_path
+        PASS [   0.239s] ( 132/2177) jackin::cli role_workspace::ls_escapes_control_characters_in_stored_paths_and_json_stays_the_stored_path
+        PASS [   0.208s] ( 133/2177) jackin::cli role_workspace::role_add_stores_a_path_or_a_git_source_and_ls_pins_both_shapes
+        PASS [   0.197s] ( 134/2177) jackin::cli role_workspace::workspace_add_stores_the_docker_flag_and_an_absolute_path_and_ls_pins_the_shape
+        PASS [   3.233s] ( 135/2177) jackin::cli role_check::a_role_host_the_sandbox_would_match_to_a_provider_host_fails_in_every_dialect
+        PASS [   2.039s] ( 136/2177) jackin::cli role_check::role_check_and_load_refuse_a_dockerfile_env_that_names_the_docker_engine_client
+        PASS [   0.029s] ( 137/2177) jackin::cli signals::sighup_cancels_like_sigint
+        PASS [   0.033s] ( 138/2177) jackin::cli signals::sigint_cancels_and_a_second_signal_forces_the_exit
+        PASS [   0.035s] ( 139/2177) jackin::cli signals::sigterm_cancels_like_sigint
+        PASS [   0.025s] ( 140/2177) jackin::cli signals::the_signals_count_together_toward_the_forced_exit
+        PASS [   1.079s] ( 141/2177) jackin::cli shell::a_sandbox_whose_launch_never_wrote_the_env_file_gets_no_shell
+        PASS [   0.037s] ( 142/2177) jackin::cli usage::a_cache_directory_that_cannot_be_written_fails_the_command
+        PASS [   0.030s] ( 143/2177) jackin::cli usage::a_cache_file_that_cannot_be_read_fails_the_command
+        PASS [   0.019s] ( 144/2177) jackin::cli usage::a_harness_that_sets_no_usage_endpoints_points_every_provider_at_a_closed_port
+        PASS [   2.092s] ( 145/2177) jackin::cli role_check::role_check_refuses_a_tcp_endpoint_host_that_is_an_ip_literal_as_the_gateway_does
+        PASS [   0.031s] ( 146/2177) jackin::cli usage::a_cancelled_usage_run_exits_cancelled_with_no_output
+        PASS [   0.031s] ( 147/2177) jackin::cli usage::an_unusable_cache_location_fails_the_command_and_names_the_path
+        PASS [   0.066s] ( 148/2177) jackin::cli usage::usage_json_prints_the_report_compactly_and_unchanged
+        PASS [   0.071s] ( 149/2177) jackin::cli usage::usage_needs_no_gateway_while_ls_fails_without_one
+        PASS [   0.135s] ( 150/2177) jackin::cli usage::usage_prints_one_line_per_window_in_account_order_and_marks_stale_and_unavailable
+        PASS [   0.092s] ( 151/2177) jackin::cli usage::usage_shows_decimals_money_left_and_a_dash_for_no_reset
+        PASS [   0.133s] ( 152/2177) jackin::cli usage::usage_reads_the_cache_inside_the_ttl_and_fetches_again_after_it
+        PASS [   0.093s] ( 153/2177) jackin::cli usage::usage_without_accounts_prints_nothing_and_an_empty_json_report
+        PASS [   2.586s] ( 154/2177) jackin::cli role_check::role_check_and_load_refuse_a_policy_that_names_a_host_gateway_alias_on_any_port
+        PASS [   0.545s] ( 155/2177) jackin::cli workspace_in_use::the_refusal_names_the_gateway_option_when_the_gateway_is_not_the_default
+        PASS [   0.535s] ( 156/2177) jackin::cli workspace_in_use::workspace_rm_ignores_a_sandbox_with_unreadable_labels_that_names_another_workspace
+        PASS [   0.502s] ( 157/2177) jackin::cli workspace_in_use::workspace_rm_is_refused_when_a_gateway_cannot_be_asked_about_its_sandboxes
+        PASS [   5.344s] ( 158/2177) jackin::cli purge::purging_an_absent_sandbox_is_ok_and_an_unmanaged_one_is_never_deleted
+        PASS [   0.454s] ( 159/2177) jackin::cli workspace_in_use::workspace_rm_is_refused_while_a_sandbox_without_a_workspace_label_cannot_be_attributed
+        PASS [   0.488s] ( 160/2177) jackin::cli workspace_in_use::workspace_rm_is_refused_while_a_sandbox_whose_labels_name_it_cannot_be_read
+        PASS [   2.389s] ( 161/2177) jackin::cli shell::a_shell_runs_in_the_project_with_the_launched_env_and_leaves_the_main_process_alone
+        PASS [   2.450s] ( 162/2177) jackin::cli shell::a_shell_needs_a_terminal_an_env_file_and_a_ready_sandbox
+        PASS [   6.114s] ( 163/2177) jackin::cli purge::purge_deletes_an_exported_sandbox_refuses_unexported_work_and_force_deletes_it
+        PASS [   2.072s] ( 164/2177) jackin::cli shell::osc52_is_blocked_in_both_directions_of_a_shell
+        PASS [   3.582s] ( 165/2177) jackin::cli secrets::no_secret_reaches_any_output_json_config_or_debug_text
+        PASS [   0.019s] ( 166/2177) jackin-core::account_selection selection_errors_name_the_missing_binding_and_the_bad_flag
+        PASS [   0.013s] ( 167/2177) jackin-core::account_selection selection_follows_flag_workspace_role_default_then_only
+        PASS [   0.015s] ( 168/2177) jackin-core::agent_instances canonical_identity_sorts_only_the_secondary_instances
+        PASS [   0.012s] ( 169/2177) jackin-core::agent_instances golden_label_and_exact_json_keys
+        PASS [   0.013s] ( 170/2177) jackin-core::agent_instances one_and_three_valid_and_repeated_and_empty
+        PASS [   0.012s] ( 171/2177) jackin-core::agent_instances persisted_identity_preserves_the_lead_and_distinguishes_a_lead_swap
+        PASS [   0.014s] ( 172/2177) jackin-core::agent_table agent_all_rows_match_their_provider
+        PASS [   0.012s] ( 173/2177) jackin-core::agent_table codex_install_matches_the_compatibility_lock_and_covers_each_platform_once
+        PASS [   0.012s] ( 174/2177) jackin-core::agent_table codex_profiles_are_chatgpt_only_and_match_their_asset
+        PASS [   0.013s] ( 175/2177) jackin-core::agent_table codex_row_launches_codex_with_the_d04_command_and_paths
+        PASS [   0.022s] ( 176/2177) jackin-core::agent_table codex_row_reserves_every_credential_env_name
+        PASS [   2.080s] ( 177/2177) jackin::cli workspace_in_use::workspace_rm_is_refused_while_a_sandbox_carries_its_label_and_works_after_the_purge
+        PASS [   0.019s] ( 178/2177) jackin-core::agent_table provider_all_lists_each_provider_once_with_one_spelling
+        PASS [   0.019s] ( 179/2177) jackin-core::agent_table public_agent_pins_match_the_current_stable_release_matrix
+        PASS [   0.014s] ( 180/2177) jackin-core::catalog availability_states_and_reasons_are_exact
+        PASS [   0.018s] ( 181/2177) jackin-core::catalog blocked_and_unavailable_tuples_carry_reasons
+        PASS [   0.021s] ( 182/2177) jackin-core::catalog changed_model_declarations_agree_between_specs_and_tuples
+        PASS [   1.852s] ( 183/2177) jackin::cli workspace_in_use::workspace_rm_reports_every_kind_of_blocking_sandbox_in_one_refusal
+        PASS [   0.027s] ( 184/2177) jackin-core::catalog codex_tuple_is_supported
+        PASS [   0.027s] ( 185/2177) jackin-core::catalog each_provider_lists_exactly_its_catalog_tuples
+        PASS [   0.019s] ( 186/2177) jackin-core::catalog grok_build_with_kimi_is_a_typed_error
+        PASS [   0.020s] ( 187/2177) jackin-core::catalog model_acceptance_is_exact_and_independent_of_launch_availability
+        PASS [   0.017s] ( 188/2177) jackin-core::catalog t13_through_t22_resolve_with_exact_states_and_reasons
+        PASS [   0.021s] ( 189/2177) jackin-core::catalog unknown_model_is_a_typed_error_and_default_model_is_accepted
+        PASS [   0.022s] ( 190/2177) jackin-core::config_edit a_plain_env_value_refuses_a_1password_reference_and_control_characters
+        PASS [   0.025s] ( 191/2177) jackin-core::config_edit a_plain_env_value_refuses_a_credential_reference_in_any_case_after_leading_space
+        PASS [   0.014s] ( 192/2177) jackin-core::config_edit a_role_that_a_workspace_allows_or_gives_variables_cannot_be_removed
+        PASS [   0.017s] ( 193/2177) jackin-core::config_edit a_scoped_env_name_is_never_a_name_jackin_reserves
+        PASS [   0.015s] ( 194/2177) jackin-core::config_edit account_in_use_lists_every_kind_of_reference
+        PASS [   0.016s] ( 195/2177) jackin-core::config_edit a_workspace_path_is_free_again_after_its_workspace_is_removed
+        PASS [   0.020s] ( 196/2177) jackin-core::config_edit env_edits_replace_unset_and_drop_an_emptied_role_table
+        PASS [   0.021s] ( 197/2177) jackin-core::config_edit moving_a_variable_between_scopes_is_an_unset_and_a_set_in_one_edit_list
+        PASS [   0.041s] ( 198/2177) jackin-core::config_edit every_edit_changes_only_what_it_names
+        PASS [   0.021s] ( 199/2177) jackin-core::config_edit removing_a_bound_account_with_its_bindings_clears_exactly_the_references_it_listed
+        PASS [   0.032s] ( 200/2177) jackin-core::config_edit rejected_edits_name_the_reason_and_leave_the_config_unchanged
+        PASS [   0.015s] ( 201/2177) jackin-core::config_edit replacing_a_credential_keeps_the_bindings_and_never_creates_a_default
+        PASS [   0.016s] ( 202/2177) jackin-core::config_edit the_default_role_must_stay_inside_the_allowed_roles
+        PASS [   0.021s] ( 203/2177) jackin-core::config_schema a_one_password_credential_keeps_its_account_through_render_and_parse
+        PASS [   0.013s] ( 204/2177) jackin-core::config_schema account_new_allows_codex_login_only_for_codex_and_derives_the_codex_auth_mode
+        PASS [   0.012s] ( 205/2177) jackin-core::config_schema config_accepts_every_engine_port_except_the_plaintext_docker_port
+        PASS [   0.014s] ( 206/2177) jackin-core::config_schema config_errors_never_echo_a_pasted_secret
+        PASS [   0.012s] ( 207/2177) jackin-core::config_schema config_git_role_sources_are_typed_and_bad_ones_name_their_key
+        PASS [   0.020s] ( 208/2177) jackin-core::config_schema config_parse_enforces_the_cross_reference_invariants
+        PASS [   0.017s] ( 209/2177) jackin-core::config_schema config_parse_rejects_workspaces_that_share_a_normalized_path
+        PASS [   0.017s] ( 210/2177) jackin-core::config_schema config_parses_the_full_documented_file_and_exposes_every_value
+        PASS [   0.014s] ( 211/2177) jackin-core::config_schema config_rejects_invalid_values_missing_keys_and_syntax_naming_the_key
+        PASS [   0.021s] ( 212/2177) jackin-core::config_schema config_rejects_an_unknown_key_at_every_level_naming_its_path
+        PASS [   0.022s] ( 213/2177) jackin-core::config_schema config_render_round_trips_and_writes_the_documented_keys
+        PASS [   0.018s] ( 214/2177) jackin-core::config_schema config_roles_and_workspaces_keep_their_sources_and_bindings
+        PASS [   0.017s] ( 215/2177) jackin-core::config_schema env_at_three_scopes_and_the_allowed_roles_parse_into_the_config
+        PASS [   1.598s] ( 216/2177) jackin::process console::jackin_with_no_arguments_prints_help_when_stdin_is_not_a_terminal
+        PASS [   1.485s] ( 217/2177) jackin::process console::jackin_with_no_arguments_prints_help_when_stdout_is_not_a_terminal
+        PASS [   0.015s] ( 218/2177) jackin-core::config_schema every_provider_can_hold_an_account_a_default_and_a_binding
+        PASS [   1.061s] ( 219/2177) jackin::process the_binary_prints_help_without_a_terminal_and_maps_a_usage_error_to_code_two
+        PASS [   0.018s] ( 220/2177) jackin-core::config_schema optional_config_keys_default_and_an_empty_file_is_the_empty_config
+        PASS [   0.020s] ( 221/2177) jackin-core::config_schema resolve_gateway_follows_request_default_then_the_only_gateway
+        PASS [   0.022s] ( 222/2177) jackin-core::config_schema workspace_lookup_matches_by_exact_path_and_lists_bound_accounts
+        PASS [   0.081s] ( 223/2177) jackin-core::config_store a_lock_released_during_the_wait_lets_the_edit_succeed
+        PASS [   1.505s] ( 224/2177) jackin::process the_binary_keeps_its_config_under_the_home_and_honors_the_xdg_override
+        PASS [   0.125s] ( 225/2177) jackin-core::config_store a_held_lock_is_retried_on_a_fixed_interval_then_edit_gives_up_with_lock_held
+        PASS [   0.142s] ( 226/2177) jackin-core::config_store a_rename_keeps_what_another_handle_wrote_after_the_caller_read
+        PASS [   0.157s] ( 227/2177) jackin-core::config_store an_edit_sweeps_the_crash_leftovers_of_its_file_and_keeps_every_other_file
+        PASS [   0.195s] ( 228/2177) jackin-core::config_store a_failing_edit_or_a_corrupt_file_leaves_the_file_untouched_and_the_lock_free
+        PASS [   0.032s] ( 229/2177) jackin-core::credential_file a_credential_file_over_the_cap_is_refused_after_reading_at_most_one_byte_past_it
+        PASS [   0.013s] ( 230/2177) jackin-core::display config_path_errors_escape_hostile_paths_and_preserve_plain_paths
+        PASS [   0.013s] ( 231/2177) jackin-core::display file_and_process_errors_name_paths_programs_and_streams_plainly
+        PASS [   0.010s] ( 232/2177) jackin-core::display lists_join_with_commas_an_empty_list_is_none_and_durations_keep_their_units
+        PASS [   0.010s] ( 233/2177) jackin-core::display operand_types_print_words_and_never_rust_syntax
+        PASS [   0.098s] ( 234/2177) jackin-core::config_store store_creates_the_file_applies_edits_in_order_and_reads_them_back
+        PASS [   0.011s] ( 235/2177) jackin-core::display string_fields_of_core_errors_are_shown_without_control_characters
+        PASS [   0.011s] ( 236/2177) jackin-core::display plain_shows_printable_text_as_is_and_escapes_each_control_character
+        PASS [   0.151s] ( 237/2177) jackin-core::config_store concurrent_edits_serialise_on_the_lock_and_lose_no_update
+        PASS [   0.114s] ( 238/2177) jackin-core::config_store edit_through_a_symlinked_config_is_refused_and_leaves_the_target_untouched
+        PASS [   0.097s] ( 239/2177) jackin-core::credential_file a_credential_file_follows_the_operator_link_and_refuses_everything_but_a_small_regular_file
+        PASS [   0.020s] ( 240/2177) jackin-core::docker_capability docker_risk_all_lists_the_four_d24_warnings_once
+        PASS [   2.050s] ( 241/2177) jackin::process a_load_that_needs_a_missing_env_value_exits_with_the_refused_code_before_any_gateway
+        PASS [   0.022s] ( 242/2177) jackin-core::display supervisor_readings_print_words_and_escape_the_text_the_sandbox_wrote
+        PASS [   0.023s] ( 243/2177) jackin-core::docker_capability docker_capability_resolves_from_parsed_manifest_workspace_and_gateway
+        PASS [   0.015s] ( 244/2177) jackin-core::engine_cert a_ca_fingerprint_round_trips_through_text_and_json_and_refuses_other_spellings
+        PASS [   0.024s] ( 245/2177) jackin-core::docker_client docker_client_row_matches_the_compatibility_lock_and_pins_six_distinct_checksums
+        PASS [   0.025s] ( 246/2177) jackin-core::docker_capability docker_risk_text_is_the_approved_baseline_wording
+        PASS [   0.020s] ( 247/2177) jackin-core::engine_cert key_check_accepts_parameter_blocks_before_or_after_a_key_as_the_docker_cli_does
+        PASS [   0.023s] ( 248/2177) jackin-core::engine_cert pem_check_refuses_everything_else_without_echoing_the_content
+        PASS [   0.019s] ( 249/2177) jackin-core::engine_cert the_ca_fingerprint_ignores_line_endings_blank_lines_and_text_between_blocks
+        PASS [   0.026s] ( 250/2177) jackin-core::engine_cert key_check_still_refuses_parameters_without_a_usable_key_and_foreign_blocks
+        PASS [   0.026s] ( 251/2177) jackin-core::engine_cert pem_check_accepts_the_right_kind_in_each_slot_up_to_64_kib
+        PASS [   0.016s] ( 252/2177) jackin-core::engine_cert the_ca_fingerprint_refuses_what_is_not_a_decodable_certificate_bundle
+        PASS [   0.026s] ( 253/2177) jackin-core::engine_cert the_ca_fingerprint_is_the_first_sixteen_hex_digits_of_sha256_over_the_sorted_der_certificates
+        PASS [   0.016s] ( 254/2177) jackin-core::engine_cert the_table_names_three_files_with_the_documented_modes_under_the_docker_directory
+        PASS [   0.019s] ( 255/2177) jackin-core::ids account_name_and_openshell_workspace_are_capped_dns_labels
+        PASS [   0.020s] ( 256/2177) jackin-core::env_file invalid_values_and_malformed_files_are_rejected_with_name_or_line
+        PASS [   0.022s] ( 257/2177) jackin-core::ids an_invalid_character_is_shown_as_plain_text_even_when_it_is_a_control_character
+        PASS [   0.016s] ( 258/2177) jackin-core::ids attempt_id_parses_one_to_eighteen_digits_and_steps_to_the_next
+        PASS [   0.029s] ( 259/2177) jackin-core::env_file render_writes_sorted_quoted_export_lines_and_parse_reads_them_back
+        PASS [   0.035s] ( 260/2177) jackin-core::env_file a_posix_shell_reads_back_every_value
+        PASS [   0.022s] ( 261/2177) jackin-core::ids env_name_is_a_posix_name_and_reserved_names_are_detected
+        PASS [   0.024s] ( 262/2177) jackin-core::ids engine_client_variables_are_only_names_that_start_with_docker_or_buildx_underscore
+        PASS [   0.022s] ( 263/2177) jackin-core::ids label_value_ids_follow_the_gateway_grammar
+        PASS [   0.028s] ( 264/2177) jackin-core::ids launch_id_generate_yields_valid_distinct_ids
+        PASS [   0.042s] ( 265/2177) jackin-core::ids launch_id_encodes_entropy_one_byte_per_character_and_generate_uses_every_symbol_at_every_position
+        PASS [   0.036s] ( 266/2177) jackin-core::ids other_ids_reject_one_input_of_each_violated_class
+        PASS [   0.025s] ( 267/2177) jackin-core::ids provider_name_for_every_valid_account_name_is_a_valid_provider_name
+        PASS [   0.032s] ( 268/2177) jackin-core::ids sandbox_name_parse_enforces_prefix_length_and_single_hyphens
+        PASS [   0.021s] ( 269/2177) jackin-core::labels differences_compare_the_whole_label_set_in_both_directions
+        PASS [   0.027s] ( 270/2177) jackin-core::ids sha256_image_tag_and_image_label_match_known_vectors
+        PASS [   0.025s] ( 271/2177) jackin-core::ids slug_and_suffix_have_exact_grammars
+        PASS [   0.015s] ( 272/2177) jackin-core::labels every_docker_label_value_passes_the_label_grammar_and_round_trips
+        PASS [   0.018s] ( 273/2177) jackin-core::labels docker_label_refuses_anything_but_off_or_a_canonical_port_and_a_lowercase_fingerprint
+        PASS [   0.019s] ( 274/2177) jackin-core::labels from_pairs_keeps_foreign_labels_that_the_gateway_grammar_allows_and_rejects_the_rest
+        PASS [   0.013s] ( 275/2177) jackin-core::labels planned_labels_complete_into_the_documented_label_set
+        PASS [   0.024s] ( 276/2177) jackin-core::manifest manifest_agents_sections_validate_and_render
+        PASS [   1.946s] ( 277/2177) jackin::process role_check_through_the_binary_passes_a_valid_role_and_fails_an_invalid_one
+        PASS [   0.027s] ( 278/2177) jackin-core::manifest manifest_optional_sections_default_and_env_entries_keep_default_and_prompt_distinct
+        PASS [   0.026s] ( 279/2177) jackin-core::manifest manifest_findings_report_every_problem_in_one_pass
+        PASS [   0.028s] ( 280/2177) jackin-core::manifest manifest_env_default_and_prompt_reject_newline_and_nul_exactly_when_the_env_file_does
+        PASS [   0.014s] ( 281/2177) jackin-core::manifest manifest_parses_the_d11_example
+        PASS [   0.015s] ( 282/2177) jackin-core::manifest manifest_rejects_an_unknown_field_at_every_level_naming_its_path
+        PASS [   0.018s] ( 283/2177) jackin-core::manifest manifest_rejects_invalid_values_naming_the_key
+        PASS [   0.016s] ( 284/2177) jackin-core::manifest manifest_render_escapes_arbitrary_env_text
+        PASS [   0.030s] ( 285/2177) jackin-core::manifest manifest_rejects_the_removed_t01_model_with_a_typed_invalid_value
+        PASS [   0.020s] ( 286/2177) jackin-core::manifest manifest_render_round_trips_and_writes_the_documented_keys
+        PASS [   0.023s] ( 287/2177) jackin-core::paths host_path_rejects_parent_segments_and_folds_dots_and_slashes
+        PASS [   0.027s] ( 288/2177) jackin-core::manifest manifest_syntax_errors_never_echo_a_pasted_secret
+        PASS [   0.028s] ( 289/2177) jackin-core::paths path_errors_show_the_rejected_text_as_plain_text
+        PASS [   0.035s] ( 290/2177) jackin-core::paths path_newtypes_print_their_value_as_plain_text
+        PASS [   0.018s] ( 291/2177) jackin-core::paths repo_path_is_relative_without_dot_or_empty_segments
+        PASS [   0.018s] ( 292/2177) jackin-core::paths sandbox_layout_matches_the_documented_literals
+        PASS [   0.041s] ( 293/2177) jackin-core::paths project_root_prints_its_host_path
+        PASS [   0.012s] ( 294/2177) jackin-core::paths sandbox_path_normalizes_and_rejects_non_absolute_or_parent_paths
+        PASS [   0.234s] ( 295/2177) jackin-core::ids git_accepts_the_control_and_format_names_that_branch_name_deliberately_refuses
+        PASS [   0.014s] ( 296/2177) jackin-core::phase every_phase_prints_its_words
+        PASS [   0.018s] ( 297/2177) jackin-core::phase phase_predicates_follow_the_gateway_mapping
+        PASS [   0.065s] ( 298/2177) jackin-core::paths project_root_open_requires_a_directory_with_a_git_entry
+        PASS [   0.093s] ( 299/2177) jackin-core::manifest manifest_write_replaces_the_file_atomically
+        PASS [   0.014s] ( 300/2177) jackin-core::poll poll_until_cuts_a_probe_that_never_returns_at_the_timeout
+        PASS [   0.017s] ( 301/2177) jackin-core::poll poll_until_returns_the_ready_value_after_exactly_the_waits_it_needed
+        PASS [   0.016s] ( 302/2177) jackin-core::poll poll_until_returns_a_probe_error_at_once
+        PASS [   0.018s] ( 303/2177) jackin-core::poll poll_until_times_out_after_exactly_the_timeout
+        PASS [   0.020s] ( 304/2177) jackin-core::poll poll_until_stops_a_hanging_probe_when_cancelled
+        PASS [   0.019s] ( 305/2177) jackin-core::poll poll_until_stops_after_cancellation
+        PASS [   0.019s] ( 306/2177) jackin-core::read_link read_link_reports_a_non_utf8_target_as_a_problem_and_a_utf8_target_as_text
+        PASS [   0.013s] ( 307/2177) jackin-core::role_source role_rev_accepts_ref_names_and_rejects_options_and_revspec_syntax
+        PASS [   0.014s] ( 308/2177) jackin-core::role_source role_url_accepts_only_https_ssh_and_scp_forms_without_secrets_or_options
+        PASS [   0.013s] ( 309/2177) jackin-core::sandbox_name name_suffix_is_stable_and_differs_across_launch_ids
+        PASS [   0.012s] ( 310/2177) jackin-core::sandbox_name workspace_slug_follows_the_d07_rules
+        PASS [   0.012s] ( 311/2177) jackin-core::secrets credential_adjacent_ids_never_echo_a_rejected_character
+        PASS [   0.016s] ( 312/2177) jackin-core::sandbox_name sandbox_name_always_fits_the_gateway
+        PASS [   0.012s] ( 313/2177) jackin-core::secrets redactor_masks_every_occurrence_of_every_secret
+        PASS [   0.013s] ( 314/2177) jackin-core::secrets errors_never_echo_a_secret_bearing_input
+        PASS [   0.014s] ( 315/2177) jackin-core::secrets process_boundary_debug_prints_names_and_lengths_never_values
+        PASS [   0.018s] ( 316/2177) jackin-core::secrets redactor_handles_overlap_empty_and_absent_secrets
+        PASS [   0.018s] ( 317/2177) jackin-core::secrets redactor_masks_each_line_of_a_multi_line_secret_and_merges_overlapping_matches
+        PASS [   0.012s] ( 318/2177) jackin-core::secrets secret_debug_output_hides_the_value_wherever_it_is_nested
+        PASS [   0.015s] ( 319/2177) jackin-core::secrets secret_types_cannot_be_displayed_or_serialized
+        PASS [   0.027s] ( 320/2177) jackin-core::std_filesystem file_lock_is_exclusive_until_dropped
+        PASS [   0.032s] ( 321/2177) jackin-core::std_filesystem file_len_reports_the_size_of_a_local_file
+        PASS [   0.654s] ( 322/2177) jackin-core::config_store a_crash_during_the_write_leaves_the_old_file_and_the_next_edit_succeeds
+        PASS [   0.047s] ( 323/2177) jackin-core::std_filesystem a_fifo_is_reported_as_other_and_never_as_a_file
+        PASS [   0.045s] ( 324/2177) jackin-core::std_filesystem read_at_returns_the_requested_slice_never_pads_and_refuses_a_missing_file_or_a_directory
+        PASS [   0.054s] ( 325/2177) jackin-core::std_filesystem private_dirs_are_created_with_mode_0700_at_every_new_level
+        PASS [   0.026s] ( 326/2177) jackin-core::std_filesystem stat_following_resolves_links_and_reports_sockets
+        PASS [   0.014s] ( 327/2177) jackin-core::supervisor next_attempt_is_the_only_way_to_choose_a_start_request
+        PASS [   0.013s] ( 328/2177) jackin-core::supervisor supervisor_errors_show_the_words_read_from_the_sandbox_as_plain_text
+        PASS [   0.058s] ( 329/2177) jackin-core::std_filesystem read_regular_returns_at_most_the_cap_plus_one_byte_and_keeps_every_refusal
+        PASS [   0.013s] ( 330/2177) jackin-core::supervisor supervisor_state_parses_what_jackin_start_writes
+        PASS [   0.013s] ( 331/2177) jackin-core::terminal_text display_prints_the_sanitized_text
+        PASS [   0.013s] ( 332/2177) jackin-core::terminal_text sanitize_output_contains_no_control_characters
+        PASS [   0.011s] ( 333/2177) jackin-core::terminal_text unterminated_string_sequences_end_at_the_line_and_bidi_controls_are_stripped
+        PASS [   0.015s] ( 334/2177) jackin-core::supervisor supervisor_state_rejects_each_malformed_text_with_its_reason
+        PASS [   0.012s] ( 335/2177) jackin-core::terminal_text sanitize_strips_escape_sequences_and_control_bytes
+        PASS [   0.051s] ( 336/2177) jackin-core::std_filesystem std_filesystem_reads_writes_lists_and_stats
+        PASS [   0.014s] ( 337/2177) jackin-core::tuple_account omp_kimi_precedence
+        PASS [   0.013s] ( 338/2177) jackin-core::views the_docker_label_shows_as_off_or_an_engine_object_with_the_port_and_the_ca
+        PASS [   0.014s] ( 339/2177) jackin-core::views json_views_round_trip_and_keep_the_documented_keys
+        PASS [   0.126s] ( 340/2177) jackin-core::std_filesystem std_filesystem_removes_trees_and_reports_modes
+        PASS [   0.088s] ( 341/2177) jackin-core::write_atomic a_locked_write_refuses_a_lock_that_is_not_the_targets_own
+        PASS [   0.084s] ( 342/2177) jackin-core::write_symlink write_symlink_creates_the_exact_link_text_and_refuses_an_existing_path
+        PASS [   0.016s] ( 343/2177) jackin-image::agent_plan antigravity_plan_pins_the_stable_tarball_and_renames_the_member
+        PASS [   0.014s] ( 344/2177) jackin-image::agent_plan codex_plan_unchanged
+        PASS [   0.016s] ( 345/2177) jackin-image::agent_plan codex_scan_absent_paths_unchanged
+        PASS [   0.011s] ( 346/2177) jackin-image::agent_plan minimax_code_tuple_is_unavailable_and_image_plan_has_no_install_target
+        PASS [   0.018s] ( 347/2177) jackin-image::agent_plan omp_plan_names_omp_binary_and_version
+        PASS [   0.018s] ( 348/2177) jackin-image::agent_plan omp_plan_has_no_system_config_entries
+        PASS [   0.136s] ( 349/2177) jackin-core::write_atomic two_writers_of_one_target_both_succeed_and_leave_one_whole_file
+        PASS [   0.015s] ( 350/2177) jackin-image::agent_plan omp_scan_absent_paths_have_no_codex_paths
+        PASS [   0.017s] ( 351/2177) jackin-image::agent_plan two_agent_plan_installs_and_scans_both_binaries
+        PASS [   0.151s] ( 352/2177) jackin-core::write_atomic write_atomic_refuses_a_symlink_target_and_replaces_a_regular_file
+        PASS [   0.027s] ( 353/2177) jackin-image::build_plan build_contexts_hold_exactly_the_documented_files
+        PASS [   0.029s] ( 354/2177) jackin-image::build_plan both_dockerfiles_pin_the_buildkit_frontend_by_the_same_digest
+        PASS [   0.037s] ( 355/2177) jackin-image::build_plan buildx_arguments_are_explicit_single_tokens_for_all_three_stages
+        PASS [   0.166s] ( 356/2177) jackin-core::write_atomic write_atomic_replaces_the_target_and_leaves_no_temp_file
+        PASS [   0.037s] ( 357/2177) jackin-image::build_plan construct_dockerfile_removes_setuid_and_rejects_file_capabilities
+        PASS [   0.028s] ( 358/2177) jackin-image::build_plan derived_build_args_come_from_the_codex_row
+        PASS [   0.024s] ( 359/2177) jackin-image::build_plan derived_dockerfile_installs_the_docker_client_from_pinned_checksummed_sources
+        PASS [   0.035s] ( 360/2177) jackin-image::build_plan derived_dockerfile_installs_jackin_start_and_hooks_at_the_layout_paths
+        PASS [   0.037s] ( 361/2177) jackin-image::build_plan derived_dockerfile_copies_the_client_once_and_scans_it_against_the_client_stage
+        PASS [   0.028s] ( 362/2177) jackin-image::build_plan derived_dockerfile_installs_what_the_codex_row_describes
+        PASS [   0.027s] ( 363/2177) jackin-image::build_plan derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stage
+        PASS [   0.227s] ( 364/2177) jackin-core::write_atomic write_atomic_failure_keeps_the_old_file_and_leaves_no_temp_file
+        PASS [   0.608s] ( 365/2177) jackin-core::ids branch_name_agrees_with_git_check_ref_format
+        PASS [   0.024s] ( 366/2177) jackin-image::build_plan role_build_is_planned_with_the_dockerfile_on_stdin_and_the_listed_context
+        PASS [   0.026s] ( 367/2177) jackin-image::build_plan final_builds_substitute_the_current_stable_agent_pins_exactly
+        PASS [   0.026s] ( 368/2177) jackin-image::build_plan no_role_program_runs_after_the_trusted_files_land
+        PASS [   0.027s] ( 369/2177) jackin-image::build_plan the_docker_layer_adds_only_build_args_from_the_core_row
+        PASS [   0.019s] ( 370/2177) jackin-image::build_plan the_scan_compares_the_six_protected_files_with_copies_the_role_cannot_write
+        PASS [   0.150s] ( 371/2177) jackin-image::build_plan embedded_jackin_start_publishes_what_the_supervisor_parser_accepts
+        PASS [   0.610s] ( 372/2177) jackin-image::build_plan embedded_jackin_start_reads_start_requests_exactly_as_attempt_id_parses
+        PASS [   0.593s] ( 373/2177) jackin-image::derived_scan scan_leaves_the_client_names_alone_when_the_capability_is_on
+        PASS [   0.706s] ( 374/2177) jackin-image::derived_scan scan_never_executes_a_file_under_its_root_argument
+        PASS [   3.397s] ( 375/2177) jackin::process console::jackin_with_no_arguments_opens_the_console_on_a_terminal_and_quit_restores_it
+        PASS [   1.106s] ( 376/2177) jackin-image::derived_scan scan_accepts_non_ascii_names_that_hold_no_control_character
+        PASS [   3.411s] ( 377/2177) jackin-core::ids branch_name_rejects_every_control_and_format_character_and_nothing_else
+        PASS [   4.081s] ( 378/2177) jackin-image::derived_scan scan_checks_the_data_file_like_a_protected_path_without_demanding_the_executable_bit
+        PASS [   3.937s] ( 379/2177) jackin-image::derived_scan scan_reads_an_unterminated_final_line_of_each_account_file
+        PASS [   3.438s] ( 380/2177) jackin-image::derived_scan scan_refuses_a_role_image_that_already_holds_the_verdict_path
+        PASS [   4.586s] ( 381/2177) jackin-image::derived_scan scan_exempts_only_the_exact_client_paths_that_hold_the_trusted_bytes
+        PASS [   4.508s] ( 382/2177) jackin-image::derived_scan scan_never_passes_when_one_of_its_tools_is_missing
+        PASS [   4.230s] ( 383/2177) jackin-image::derived_scan scan_refuses_a_path_with_a_control_character_instead_of_splitting_it_into_lines
+        PASS [   1.309s] ( 384/2177) jackin-image::derived_scan scan_refuses_an_account_file_that_holds_a_nul_byte
+        PASS [   2.014s] ( 385/2177) jackin-image::derived_scan scan_refuses_setuid_and_setgid_files
+        PASS [   0.011s] ( 386/2177) jackin-image::dockerfile a_role_dockerfile_may_name_only_the_docker_dockerfile_frontend
+        PASS [   0.014s] ( 387/2177) jackin-image::dockerfile an_onbuild_env_is_checked_as_the_env_it_defers
+        PASS [   0.014s] ( 388/2177) jackin-image::dockerfile an_onbuild_heredoc_body_is_data_for_the_parser
+        PASS [   0.012s] ( 389/2177) jackin-image::dockerfile directive_parsing_follows_buildkit_whitespace_and_bom_rules
+        PASS [   0.010s] ( 390/2177) jackin-image::dockerfile dockerfile_errors_quote_what_they_found_as_plain_text
+        PASS [   0.016s] ( 391/2177) jackin-image::dockerfile env_may_not_name_the_docker_engine_client_in_the_final_stage
+        PASS [   0.011s] ( 392/2177) jackin-image::dockerfile final_stage_must_be_exactly_construct_and_no_stage_may_be_named_construct
+        PASS [   0.016s] ( 393/2177) jackin-image::dockerfile onbuild_and_syntax_text_that_does_not_defer_or_select_anything_is_unchanged
+        PASS [   0.017s] ( 394/2177) jackin-image::dockerfile only_an_unescaped_escape_followed_by_blanks_continues_a_line
+        PASS [   0.014s] ( 395/2177) jackin-image::dockerfile parser_noise_never_changes_the_verdict
+        PASS [   0.014s] ( 396/2177) jackin-image::dockerfile plan_new_applies_the_same_validation_to_the_request_bytes
+        PASS [   0.020s] ( 397/2177) jackin-image::engine_errors engine_failure_messages_show_names_and_build_output_as_plain_text
+        PASS [   0.020s] ( 398/2177) jackin-image::engine_errors engine_text_fields_are_shown_without_control_characters
+        PASS [   0.059s] ( 399/2177) jackin-image::image_io buildx::a_new_engine_removes_per_call_directories_of_dead_processes_and_nothing_else
+        PASS [   0.139s] ( 400/2177) jackin-image::image_io buildx::buildx_build_succeeds_when_the_progress_receiver_is_gone
+        PASS [   0.021s] ( 401/2177) jackin-image::image_io buildx::buildx_check_builder_reads_the_driver_line_of_the_inspect_output
+        PASS [   0.275s] ( 402/2177) jackin-image::image_io buildx::buildx_context_holds_exactly_the_planned_files_with_normalized_modes
+        PASS [   7.720s] ( 403/2177) jackin-image::derived_scan scan_fails_closed_when_getcap_or_find_is_missing_or_fails
+        PASS [   0.020s] ( 404/2177) jackin-image::image_io buildx::buildx_find_and_check_builder_end_when_the_callers_token_is_cancelled
+        PASS [   0.022s] ( 405/2177) jackin-image::image_io buildx::buildx_find_reads_the_image_id_and_never_mistakes_a_failure_for_absence
+        PASS [   0.423s] ( 406/2177) jackin-image::image_io buildx::buildx_failures_timeouts_and_cancel_are_typed_and_leave_no_directory
+        PASS [   0.066s] ( 407/2177) jackin-image::image_io buildx::buildx_refuses_unsafe_context_entries_before_docker_runs
+        PASS [   0.322s] ( 408/2177) jackin-image::image_io buildx::buildx_passes_plan_args_context_and_stdin_to_docker_and_reads_the_image_id
+        PASS [   0.205s] ( 409/2177) jackin-image::image_io buildx::buildx_streams_build_output_as_ordered_sanitized_line_events
+        PASS [   0.027s] ( 410/2177) jackin-image::image_io ensure::a_cancel_whose_group_stop_failed_reaches_the_image_error_with_its_fault
+        PASS [   0.035s] ( 411/2177) jackin-image::image_io ensure::a_cancelled_token_stops_ensure_image_before_any_engine_work_and_between_stages
+        PASS [   0.044s] ( 412/2177) jackin-image::image_io ensure::a_changed_construct_id_rebuilds_role_and_derived_only_and_rebuild_forces_all
+        PASS [   0.028s] ( 413/2177) jackin-image::image_io ensure::a_construct_tag_that_jackin_did_not_build_is_rebuilt_not_trusted
+        PASS [   0.028s] ( 414/2177) jackin-image::image_io ensure::a_derived_tag_that_jackin_did_not_build_is_rebuilt_not_trusted
+        PASS [   0.040s] ( 415/2177) jackin-image::image_io ensure::a_failed_role_build_stops_before_derived_and_the_next_call_reuses_the_construct
+        PASS [   0.046s] ( 416/2177) jackin-image::image_io ensure::a_source_tag_that_moved_before_a_dependent_build_stops_the_pipeline_before_that_build_starts
+        PASS [   0.026s] ( 417/2177) jackin-image::image_io ensure::a_source_tag_that_moved_during_a_dependent_build_fails_that_stage_and_starts_nothing_after_it
+        PASS [   0.424s] ( 418/2177) jackin-image::image_io ensure::build_output_reaches_the_sink_between_stage_events_and_a_failure_stops_the_pipeline
+        PASS [   0.876s] ( 419/2177) jackin-image::image_io ensure::a_built_image_must_be_present_in_the_engine_under_its_final_tag
+        PASS [   4.933s] ( 420/2177) jackin-image::derived_scan scan_refuses_every_codex_system_layer_path_the_role_image_holds
+        PASS [   0.825s] ( 421/2177) jackin-image::image_io ensure::buildx_rebuilds_a_construct_whose_image_moved_after_jackin_recorded_it
+        PASS [   5.303s] ( 422/2177) jackin-image::derived_scan scan_refuses_block_and_character_device_nodes_anywhere_in_the_tree
+        PASS [   0.243s] ( 423/2177) jackin-image::image_io ensure::cancel_during_a_build_returns_cancelled_and_stops_the_pipeline
+        PASS [   0.233s] ( 424/2177) jackin-image::image_io ensure::dropping_ensure_image_mid_build_leaves_no_copy_of_the_context
+        PASS [   0.023s] ( 425/2177) jackin-image::image_io ensure::ensure_image_builds_in_order_then_serves_the_second_call_from_cache_on_the_fake_engine
+        PASS [   0.043s] ( 426/2177) jackin-image::image_io ensure::ensure_image_rejects_a_role_dockerfile_without_construct_before_any_engine_call
+        PASS [   0.717s] ( 427/2177) jackin-image::image_io ensure::buildx_rebuilds_a_derived_image_that_moved_after_jackin_recorded_it
+        PASS [   1.470s] ( 428/2177) jackin-image::image_io ensure::buildx_does_not_trust_an_attestation_record_that_is_not_a_plain_file
+        PASS [   0.471s] ( 429/2177) jackin-image::image_io ensure::ensure_image_builds_in_order_then_serves_the_second_call_from_cache_on_buildx_over_scripted_docker
+        PASS [   0.402s] ( 430/2177) jackin-image::image_io ensure::source_checks_read_image_inspect_and_fail_closed
+        PASS [   0.561s] ( 431/2177) jackin-image::image_io ensure::the_builder_is_checked_once_before_the_first_build_and_never_on_a_cache_hit
+        PASS [   0.069s] ( 432/2177) jackin-image::image_io env_file::jackin_start_treats_an_unreadable_env_file_as_malformed
+        PASS [   0.038s] ( 433/2177) jackin-image::image_io links::buildx_checks_each_listed_link_on_its_own_text_and_never_resolves_chains
+        PASS [   0.347s] ( 434/2177) jackin-image::image_io env_file::jackin_start_reads_the_env_file_before_every_attempt_and_a_missing_file_means_no_values
+        PASS [   0.101s] ( 435/2177) jackin-image::image_io links::buildx_refuses_a_link_whose_text_can_leave_the_role_root
+        PASS [   0.154s] ( 436/2177) jackin-image::image_io links::buildx_stages_listed_links_as_links_with_their_own_target_text
+        PASS [   0.920s] ( 437/2177) jackin-image::image_io env_file::jackin_start_does_not_start_the_agent_on_a_malformed_env_file_and_reports_it
+        PASS [   0.640s] ( 438/2177) jackin-image::image_io lock::a_cached_role_is_served_without_waiting_for_a_peers_role_build
+        PASS [   0.782s] ( 439/2177) jackin-image::image_io lock::a_cache_hit_keeps_the_final_tag_held_until_the_caller_drops_the_returned_hold
+        PASS [   0.841s] ( 440/2177) jackin-image::image_io lock::a_peer_rebuild_waits_while_the_role_and_derived_builds_read_the_construct
+        PASS [   0.791s] ( 441/2177) jackin-image::image_io lock::a_rebuild_of_the_same_key_waits_until_the_caller_drops_the_returned_hold
+        PASS [   1.955s] ( 442/2177) jackin-image::image_io env_file::jackin_start_exports_env_file_values_to_the_child_exactly_as_env_file_renders_them
+        PASS [   0.731s] ( 443/2177) jackin-image::image_io lock::different_final_keys_share_only_the_construct_lock_and_both_build
+        PASS [   0.467s] ( 444/2177) jackin-image::image_io lock::two_calls_for_one_final_key_build_once_and_the_second_is_served_from_cache
+        PASS [   0.035s] ( 445/2177) jackin-image::image_io regular_file::a_listed_file_swapped_for_a_symlink_between_calls_never_yields_the_outside_bytes
+        PASS [   0.063s] ( 446/2177) jackin-image::image_io regular_file::read_regular_file_refuses_a_fifo_without_blocking
+        PASS [   0.043s] ( 447/2177) jackin-image::image_io regular_file::read_regular_file_returns_bytes_and_mode_and_refuses_every_other_entry
+        PASS [   0.627s] ( 448/2177) jackin-image::image_io lock::two_roles_that_both_miss_the_construct_build_it_once_and_neither_sees_a_moved_source
+        PASS [   0.022s] ( 449/2177) jackin-image::image_io rules::a_role_image_built_on_construct_with_an_ordinary_config_is_delivered
+        PASS [   0.029s] ( 450/2177) jackin-image::image_io rules::a_final_image_that_breaks_a_rule_is_never_delivered_and_is_not_served_from_cache
+        PASS [   0.027s] ( 451/2177) jackin-image::image_io rules::a_role_image_that_does_not_start_with_the_construct_layers_is_refused_before_the_derived_build
+        PASS [   0.025s] ( 452/2177) jackin-image::image_io rules::a_role_image_whose_env_names_the_docker_engine_client_is_refused
+        PASS [   0.052s] ( 453/2177) jackin-image::image_io rules::a_role_image_whose_onbuild_could_set_the_docker_engine_client_is_refused
+        PASS [   1.508s] ( 454/2177) jackin-image::image_io lock::the_key_lock_is_released_on_failure_cancel_and_drop_and_waiting_honors_cancel
+        PASS [   0.015s] ( 455/2177) jackin-image::image_key construct_dockerfile_pins_its_base_image_by_digest
+        PASS [   0.015s] ( 456/2177) jackin-image::image_key construct_tag_depends_on_the_platform_only
+        PASS [   0.018s] ( 457/2177) jackin-image::image_key each_input_changes_the_key_and_unused_inputs_do_not
+        PASS [   0.023s] ( 458/2177) jackin-image::image_key key_is_the_documented_sha256_encoding_including_the_embedded_digests
+        PASS [   0.615s] ( 459/2177) jackin-image::image_io rules::an_inspect_the_engine_cannot_read_stops_the_build_without_a_rule_verdict
+        PASS [   0.024s] ( 460/2177) jackin-image::image_tags image_tag_parse_enforces_the_docker_reference_grammar
+        PASS [   0.014s] ( 461/2177) jackin-image::image_tags role_names_map_to_documented_repositories
+        PASS [   0.633s] ( 462/2177) jackin-image::image_io rules::the_buildx_engine_reads_the_config_and_layers_that_docker_prints
+        PASS [   0.580s] ( 463/2177) jackin-image::jackin_start a_failed_record_write_does_not_stop_the_supervisor
+        PASS [   0.223s] ( 464/2177) jackin-image::jackin_start a_stale_record_is_removed_when_the_classifier_fails
+        PASS [  10.406s] ( 465/2177) jackin-image::derived_scan scan_refuses_every_other_tool_and_a_missing_pair_in_the_client_form
+        PASS [  12.888s] ( 466/2177) jackin-image::derived_scan scan_refuses_account_files_that_are_not_real_root_owned_files
+        PASS [   0.376s] ( 467/2177) jackin-image::jackin_start jackin_start_calls_no_program_by_bare_name_after_sourcing_the_env_file
+        PASS [   1.511s] ( 468/2177) jackin-image::jackin_start jackin_start_accepts_only_the_successor_of_the_last_attempt
+        PASS [   0.074s] ( 469/2177) jackin-image::jackin_start jackin_start_names_credential_variables_by_the_shared_rule
+        PASS [   0.465s] ( 470/2177) jackin-image::jackin_start jackin_start_gives_codex_every_env_value_byte_for_byte
+        PASS [   0.347s] ( 471/2177) jackin-image::jackin_start jackin_start_record_describes_the_environment_codex_really_receives
+        PASS [   0.382s] ( 472/2177) jackin-image::jackin_start jackin_start_record_never_holds_a_value
+        PASS [   3.998s] ( 473/2177) jackin-image::jackin_start a_role_variable_name_cannot_change_what_the_supervisor_does
+        PASS [   1.650s] ( 474/2177) jackin-image::jackin_start jackin_start_records_credential_variable_names_and_kinds_of_both_environments
+        PASS [   1.532s] ( 475/2177) jackin-image::jackin_start jackin_start_replaces_the_whole_record_at_each_attempt
+        PASS [   1.184s] ( 476/2177) jackin-image::jackin_start jackin_start_reports_an_unreadable_env_file_and_accepts_a_missing_one
+        PASS [   0.022s] ( 477/2177) jackin-image::jackin_start launch_command_name_resolves_to_the_agent_binary_path
+        PASS [   0.224s] ( 478/2177) jackin-openshell::gateway attach::main_attach_on_an_absent_sandbox_is_not_found_at_session_and_relay_steps
+        PASS [   0.539s] ( 479/2177) jackin-openshell::gateway attach::relay_open_errors_are_reported_with_their_cause_not_as_a_dropped_ssh_stream
+        PASS [   3.396s] ( 480/2177) jackin-image::jackin_start jackin_start_refuses_every_malformed_env_file_and_runs_nothing
+        PASS [   0.409s] ( 481/2177) jackin-openshell::gateway attach_ssh::dropping_the_open_future_during_the_handshake_revokes_the_token
+        PASS [   1.367s] ( 482/2177) jackin-image::jackin_start jackin_start_runs_the_agent_by_absolute_path_whatever_path_the_env_file_sets
+        PASS [   0.608s] ( 483/2177) jackin-openshell::gateway attach_ssh::output_and_notices_keep_the_order_the_supervisor_sent_them
+        PASS [   1.904s] ( 484/2177) jackin-openshell::gateway attach_ssh::a_viewer_never_sends_input_but_still_ends_on_the_detach_keys
+        PASS [   1.774s] ( 485/2177) jackin-openshell::gateway attach_ssh::exit_statuses_and_ctrl_c_under_a_read_only_lease_are_reported_as_sent
+        PASS [   1.220s] ( 486/2177) jackin-openshell::gateway attach_ssh::the_host_key_pin_accepts_the_advertised_key_and_refuses_every_other
+        PASS [   2.685s] ( 487/2177) jackin-openshell::gateway attach_ssh::the_detach_keys_end_the_session_without_an_exit_status
+        PASS [   1.779s] ( 488/2177) jackin-openshell::gateway attach_ssh::the_lease_follows_the_supervisor_notices_and_the_input_mode
+        PASS [   2.058s] ( 489/2177) jackin-openshell::gateway attach_ssh::the_repaint_nudge_follows_tokio_time_for_every_shared_case
+        PASS [   0.073s] ( 490/2177) jackin-openshell::gateway connect::a_token_cancelled_before_connect_opens_no_connection
+        PASS [   0.091s] ( 491/2177) jackin-openshell::gateway connect::cancelling_while_the_tls_handshake_waits_ends_connect_with_cancelled
+        PASS [   0.121s] ( 492/2177) jackin-openshell::gateway connect::mtls_connect_health_and_debug_hygiene
+        PASS [   0.142s] ( 493/2177) jackin-openshell::gateway connect::unreachable_and_untrusted_servers_map_to_unreachable_and_tls
+        PASS [   1.853s] ( 494/2177) jackin-openshell::gateway attach_ssh::the_session_token_is_revoked_once_on_every_way_a_session_ends
+        PASS [   1.546s] ( 495/2177) jackin-openshell::gateway contract::a_gateway_that_finds_a_missing_file_and_fails_later_fails_the_size_check
+        PASS [  23.153s] ( 496/2177) jackin-image::derived_scan scan_refuses_forbidden_tools_by_name_anywhere_in_the_tree
+        PASS [   3.820s] ( 497/2177) jackin-openshell::gateway attach_ssh::the_repaint_nudge_resizes_one_row_less_and_back_after_the_delay
+        PASS [   1.417s] ( 498/2177) jackin-openshell::gateway contract::a_sandbox_that_never_reaches_ready_is_deleted_by_the_check
+        PASS [  19.762s] ( 499/2177) jackin-image::image_tags every_valid_role_name_gives_docker_valid_distinct_tags
+        PASS [  29.025s] ( 500/2177) jackin-image::derived_scan scan_requires_the_sandbox_account_at_1000_and_no_other_uid_0_account
+        PASS [   7.539s] ( 501/2177) jackin-openshell::gateway contract::a_server_that_deletes_a_provider_while_refusing_the_delete_fails_only_the_presence_assertion
+        PASS [  34.616s] ( 502/2177) jackin-image::derived_scan scan_refuses_a_protected_file_that_differs_from_the_trusted_copy
+        PASS [  34.557s] ( 503/2177) jackin-image::derived_scan scan_refuses_a_protected_path_that_is_not_a_real_root_owned_path
+        PASS [   7.594s] ( 504/2177) jackin-openshell::gateway contract::a_server_that_deletes_an_attached_provider_fails_only_that_check_and_leaves_nothing
+        PASS [  10.095s] ( 505/2177) jackin-openshell::gateway contract::a_leftover_profile_and_provider_from_an_aborted_run_do_not_fail_the_core_group
+        PASS [   1.267s] ( 506/2177) jackin-openshell::gateway contract::an_ended_main_process_attach_that_is_refused_passes_the_check_and_one_that_grants_the_lease_fails_it
+        PASS [   9.163s] ( 507/2177) jackin-openshell::gateway contract::a_server_that_drops_labels_fails_the_labels_check_and_runs_the_rest
+        PASS [   1.273s] ( 508/2177) jackin-openshell::gateway contract::shell_exit_code_cannot_hang_the_run
+        PASS [   0.160s] ( 509/2177) jackin-openshell::gateway contract::terminal_group_reports_exactly_the_published_checks_and_a_refused_attach_fails_the_attach_checks
+        PASS [   3.560s] ( 510/2177) jackin-openshell::gateway contract::an_upload_to_an_absent_sandbox_passes_the_check_when_the_cli_fails_and_fails_it_when_the_cli_succeeds
+        PASS [   0.016s] ( 511/2177) jackin-openshell::gateway discovery::registered_gateways_failure_modes
+        PASS [   0.019s] ( 512/2177) jackin-openshell::gateway discovery::registered_gateways_parses_the_cli_json_without_connecting
+        PASS [   0.027s] ( 513/2177) jackin-openshell::gateway discovery::resolve_gateway_refuses_a_fifo_or_an_oversized_certificate_file
+        PASS [   0.017s] ( 514/2177) jackin-openshell::gateway discovery::resolve_gateway_refuses_a_plaintext_or_non_mtls_entry
+        PASS [   0.030s] ( 515/2177) jackin-openshell::gateway discovery::resolve_gateway_refuses_an_https_endpoint_with_credentials_without_echoing_them
+        PASS [   0.016s] ( 516/2177) jackin-openshell::gateway discovery::resolve_gateway_selects_by_name_reads_exactly_three_files_and_writes_nothing
+        PASS [   0.507s] ( 517/2177) jackin-openshell::gateway download_bound::a_file_that_grows_after_the_size_check_is_stopped_while_it_streams_and_leaves_nothing
+        PASS [   0.160s] ( 518/2177) jackin-openshell::gateway download_bound::an_operator_cancel_while_the_file_streams_stops_the_cli_and_removes_the_staging_directory
+        PASS [   5.167s] ( 519/2177) jackin-openshell::gateway contract::an_upload_through_a_symlinked_parent_passes_the_check_only_when_the_cli_exits_1_with_the_tar_text
+        PASS [   0.124s] ( 520/2177) jackin-openshell::gateway ended::stop_and_start_on_an_ended_main_process
+        PASS [   0.024s] ( 521/2177) jackin-openshell::gateway error_text::a_missing_thing_is_named_as_a_word_and_its_name
+        PASS [   0.016s] ( 522/2177) jackin-openshell::gateway error_text::an_authentication_read_from_the_registry_is_shown_without_control_characters
+        PASS [   0.025s] ( 523/2177) jackin-openshell::gateway error_text::operations_phases_and_durations_print_as_words
+        PASS [   0.020s] ( 524/2177) jackin-openshell::gateway error_text::policy_and_registry_text_fields_are_shown_without_control_characters
+        PASS [   1.434s] ( 525/2177) jackin-openshell::gateway contract::the_download_checks_pass_on_the_adapter_when_the_sandbox_answers_like_the_real_tools
+        PASS [   0.033s] ( 526/2177) jackin-openshell::gateway error_text::registry_and_policy_errors_name_gateways_paths_and_violations_plainly
+        PASS [   0.034s] ( 527/2177) jackin-openshell::gateway error_text::text_supplied_by_the_gateway_is_shown_without_control_characters
+        PASS [   0.113s] ( 528/2177) jackin-openshell::gateway exec::a_failed_write_names_the_path_and_the_exit_code_and_carries_no_sandbox_output
+        PASS [   0.387s] ( 529/2177) jackin-openshell::gateway ended::a_main_attach_on_an_ended_sandbox_is_refused_and_on_a_stopped_one_not_ready
+        PASS [   0.314s] ( 530/2177) jackin-openshell::gateway exec::concurrent_writes_to_one_target_each_succeed_and_the_last_rename_wins
+        PASS [   0.187s] ( 531/2177) jackin-openshell::gateway exec::program_timeout_and_cancel_stop_the_remote_process
+        PASS [   6.061s] ( 532/2177) jackin-openshell::gateway contract::an_upload_to_a_stopped_sandbox_passes_the_check_only_when_the_cli_refuses_it_as_not_ready
+        PASS [   0.556s] ( 533/2177) jackin-openshell::gateway exec::interrupted_write_leaves_the_old_file_intact
+        PASS [   0.147s] ( 534/2177) jackin-openshell::gateway exec::shell_failure_refusal_and_drop
+        PASS [   0.221s] ( 535/2177) jackin-openshell::gateway exec::run_program_returns_exit_code_stdout_stderr_and_forwards_stdin
+        PASS [   0.305s] ( 536/2177) jackin-openshell::gateway exec::read_files_returns_one_entry_per_path_and_none_for_missing
+        PASS [   0.196s] ( 537/2177) jackin-openshell::gateway exec::shell_terminal_stream_shape_and_raw_output
+        PASS [   8.403s] ( 538/2177) jackin-openshell::gateway contract::a_server_that_drops_the_environment_fails_only_the_environment_check
+        PASS [   0.241s] ( 539/2177) jackin-openshell::gateway exec::touch_on_success_creates_the_marker_only_after_exit_zero_in_one_exec
+        PASS [   0.077s] ( 540/2177) jackin-openshell::gateway exec::write_file_refuses_a_target_outside_the_sandbox_home_without_running_anything
+        PASS [   0.115s] ( 541/2177) jackin-openshell::gateway exec::write_file_to_a_name_near_the_filesystem_limit_succeeds
+        PASS [   0.348s] ( 542/2177) jackin-openshell::gateway exec::write_file_applies_mode_and_exact_bytes_and_keeps_content_off_argv
+        PASS [   0.463s] ( 543/2177) jackin-openshell::gateway exec::write_file_refuses_a_symlinked_directory_or_a_directory_target_and_replaces_a_link_leaf
+        PASS [   0.251s] ( 544/2177) jackin-openshell::gateway providers::ensure_profile_imports_then_reports_unchanged_then_updates
+        PASS [   0.284s] ( 545/2177) jackin-openshell::gateway providers::ensure_profile_converges_when_a_concurrent_writer_imports_first
+        PASS [   0.420s] ( 546/2177) jackin-openshell::gateway providers::delete_profile_removes_only_the_configured_workspaces_profile_and_is_idempotent
+        PASS [   0.166s] ( 547/2177) jackin-openshell::gateway providers::ensure_profile_stale_version_keeps_the_concurrent_writers_content
+        PASS [   0.145s] ( 548/2177) jackin-openshell::gateway providers::provider_state_delete_and_missing_profile
+        PASS [   0.054s] ( 549/2177) jackin-openshell::gateway sandboxes::a_completed_sandbox_without_an_exit_code_is_a_protocol_error
+        PASS [   0.058s] ( 550/2177) jackin-openshell::gateway sandboxes::a_listed_record_that_cannot_be_read_fails_the_listing_instead_of_vanishing
+        PASS [   0.145s] ( 551/2177) jackin-openshell::gateway providers::put_provider_creates_updates_and_configures_refresh
+        PASS [   0.202s] ( 552/2177) jackin-openshell::gateway providers::put_provider_converges_when_a_concurrent_writer_creates_first
+        PASS [   0.070s] ( 553/2177) jackin-openshell::gateway sandboxes::a_managed_sandbox_with_an_invalid_label_is_listed_without_that_label
+        PASS [   0.130s] ( 554/2177) jackin-openshell::gateway sandboxes::a_sandbox_the_server_never_stamped_has_no_creation_time
+        PASS [   0.126s] ( 555/2177) jackin-openshell::gateway sandboxes::delete_removes_only_the_configured_workspaces_sandbox
+        PASS [   0.159s] ( 556/2177) jackin-openshell::gateway sandboxes::create_then_find_by_launch_label_round_trips_the_server_state
+        PASS [   0.104s] ( 557/2177) jackin-openshell::gateway sandboxes::maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gateway_rules
+        PASS [   0.098s] ( 558/2177) jackin-openshell::gateway sandboxes::phase_and_exit_code_map_to_the_documented_jackin_phase
+        PASS [   0.234s] ( 559/2177) jackin-openshell::gateway sandboxes::find_follows_every_page_and_managed_hides_foreign_sandboxes
+        PASS [   8.471s] ( 560/2177) jackin-openshell::gateway contract::a_server_that_refuses_stop_on_a_stopped_sandbox_fails_only_that_check
+        PASS [   0.195s] ( 561/2177) jackin-openshell::gateway sandboxes::label_selector_text_is_accepted_by_the_gateway_grammar
+        PASS [   0.171s] ( 562/2177) jackin-openshell::gateway sandboxes::power_actions_move_the_server_phase_and_return_the_view
+        PASS [   0.162s] ( 563/2177) jackin-openshell::gateway status::call_timeouts_report_the_operation_and_the_configured_duration
+        PASS [   0.232s] ( 564/2177) jackin-openshell::gateway status::absent_sandbox_is_not_found_on_every_exec_entry_point
+        PASS [   0.323s] ( 565/2177) jackin-openshell::gateway sandboxes::policy_round_trips_through_create_and_detail
+        PASS [   0.273s] ( 566/2177) jackin-openshell::gateway sandboxes::provisioning_failure_condition_is_reported_with_a_sanitized_message
+        PASS [   0.020s] ( 567/2177) jackin-openshell::gateway status::is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted
+        PASS [   0.180s] ( 568/2177) jackin-openshell::gateway status::failed_precondition_is_not_ready_only_when_the_phase_cannot_exec
+        PASS [   0.125s] ( 569/2177) jackin-openshell::gateway status::invalid_argument_field_comes_from_the_error_details
+        PASS [   0.173s] ( 570/2177) jackin-openshell::gateway status::supervisor_relay_failure_names_the_sandbox_and_stays_retryable
+        PASS [   0.310s] ( 571/2177) jackin-openshell::gateway status::every_grpc_code_maps_to_its_gateway_error
+        PASS [   0.180s] ( 572/2177) jackin-openshell::gateway transfer::download_names_the_targets_and_verifies_the_digest
+        PASS [   8.136s] ( 573/2177) jackin-openshell::gateway contract::a_server_that_refuses_the_second_delete_of_a_provider_fails_the_put_and_delete_check
+        PASS [   0.040s] ( 574/2177) jackin-openshell::host_dialect closure_covers_every_glob_form_that_reaches_a_provider_host
+        PASS [   0.346s] ( 575/2177) jackin-openshell::gateway transfer::a_failed_download_never_touches_the_destination_leaves_no_temp_and_the_size_limit_is_inclusive
+        PASS [   0.203s] ( 576/2177) jackin-openshell::gateway transfer::failed_tree_and_file_uploads_name_their_own_step_and_never_ask_for_a_digest
+        PASS [   0.036s] ( 577/2177) jackin-openshell::host_dialect the_sandbox_model_reproduces_the_recorded_rego_answers
+        PASS [   0.027s] ( 578/2177) jackin-openshell::policy a_closed_policy_exists_only_for_an_authored_policy_that_passes_the_closure_check
+        PASS [   0.034s] ( 579/2177) jackin-openshell::policy an_authored_policy_refuses_an_added_rule_that_the_authored_checks_would_refuse
+        PASS [   0.038s] ( 580/2177) jackin-openshell::policy an_authored_policy_must_set_landlock_hard_requirement
+        PASS [   0.034s] ( 581/2177) jackin-openshell::policy an_authored_read_write_list_refuses_every_path_that_names_the_root_or_aliases_it
+        PASS [   0.037s] ( 582/2177) jackin-openshell::policy an_authored_policy_with_no_filesystem_paths_is_refused
+        PASS [   0.038s] ( 583/2177) jackin-openshell::policy closure_check_reports_hosts_it_cannot_parse_instead_of_skipping_them
+        PASS [   0.049s] ( 584/2177) jackin-openshell::policy authored_policies_reject_reserved_keys_while_the_live_parse_accepts_them
+        PASS [   0.022s] ( 585/2177) jackin-openshell::policy closure_violations_follow_d10_for_hosts_ports_and_binaries
+        PASS [   0.032s] ( 586/2177) jackin-openshell::policy every_ascii_byte_outside_the_label_alphabet_is_refused_in_any_position
+        PASS [   0.028s] ( 587/2177) jackin-openshell::policy every_read_write_entry_is_checked_not_only_the_first
+        PASS [   0.037s] ( 588/2177) jackin-openshell::policy hosts_inside_the_alphabet_keep_their_d10_outcomes
+        PASS [   0.039s] ( 589/2177) jackin-openshell::policy hosts_the_upstream_matcher_rejects_are_unparsable_in_both_parses
+        PASS [   0.018s] ( 590/2177) jackin-openshell::policy only_an_authored_policy_can_be_closed_and_a_live_parse_cannot_stand_in_for_it
+        PASS [   0.109s] ( 591/2177) jackin-openshell::policy host_labels_outside_the_dns_alphabet_are_refused_in_both_parses
+        PASS [   0.030s] ( 592/2177) jackin-openshell::policy policy_errors_print_no_control_sequences
+        PASS [   0.023s] ( 593/2177) jackin-openshell::policy role_check_gives_the_policy_crate_verdict_of_the_gateway_create_check_for_every_tcp_endpoint_host
+        PASS [   0.435s] ( 594/2177) jackin-openshell::gateway transfer::upload_tree_and_upload_file_run_one_scoped_call_each_and_compare_the_file_digest
+        PASS [   0.020s] ( 595/2177) jackin-openshell::policy role_check_refuses_each_gateway_violation_class
+        PASS [   0.190s] ( 596/2177) jackin-openshell::policy role_check_refuses_every_host_shape_the_gateway_refuses
+        PASS [   0.291s] ( 597/2177) jackin-openshell::policy read_write_refuses_every_path_equal_or_below_proc_and_sys
+        PASS [   0.048s] ( 598/2177) jackin-openshell::policy the_live_parse_accepts_any_landlock_mode_and_any_filesystem_lists
+        PASS [   0.816s] ( 599/2177) jackin-openshell::gateway transfer::the_upload_env_makes_the_cli_git_ignore_a_hostile_project_config_and_keep_the_user_excludes
+        PASS [   0.030s] ( 600/2177) jackin-openshell::policy the_live_parse_still_accepts_the_same_paths
+        PASS [   0.027s] ( 601/2177) jackin-openshell::policy with_rule_adds_exactly_one_docker_rule_and_keeps_every_other_node
+        PASS [   0.022s] ( 602/2177) jackin-openshell::terminal_pair closed_driver_makes_commands_fail_with_session_closed
+        PASS [   0.020s] ( 603/2177) jackin-openshell::terminal_pair dropping_a_main_process_session_detaches_and_a_shell_session_closes_the_stream
+        PASS [   0.017s] ( 604/2177) jackin-openshell::terminal_pair session_forwards_commands_to_the_driver_and_events_to_the_owner
+        PASS [   0.024s] ( 605/2177) jackin-openshell::tuple_policy t01_profile_is_codex_only_with_refresh
+        PASS [   0.026s] ( 606/2177) jackin-openshell::tuple_policy role_rule_matching_provider_host_is_rejected
+        PASS [   0.034s] ( 607/2177) jackin-openshell::tuple_policy every_tuple_profile_parses_with_exact_asset_hosts_env_binary_and_refresh
+        PASS [   0.021s] ( 608/2177) jackin-openshell::tuple_policy t02_spec_permits_supervised_claude_hosts
+        PASS [   0.023s] ( 609/2177) jackin-openshell::tuple_policy t09_profile_is_omp_zai_only_without_refresh
+        PASS [   0.028s] ( 610/2177) jackin-openshell::tuple_policy t02_role_rules_matching_provider_hosts_are_rejected
+        PASS [   0.019s] ( 611/2177) jackin-session plan::tests::agent_config_claude_lead_slot_pins_the_settings_file
+        PASS [   0.034s] ( 612/2177) jackin-openshell::union_policy union_closure
+        PASS [   7.630s] ( 613/2177) jackin-openshell::gateway contract::core_group_passes_against_grpc_gateway_on_the_in_process_server
+        PASS [   0.032s] ( 614/2177) jackin-session plan::tests::agent_config_codex_stays_toml
+        PASS [   0.036s] ( 615/2177) jackin-session plan::tests::agent_config_grok_no_model
+        PASS [   0.027s] ( 616/2177) jackin-session plan::tests::agent_config_grok_toml
+        PASS [   0.036s] ( 617/2177) jackin-session plan::tests::agent_config_muse_default_model
+        PASS [   0.043s] ( 618/2177) jackin-session plan::tests::agent_config_muse_json
+        PASS [   0.017s] ( 619/2177) jackin-session plan::tests::mimo_instance_gains_tmpdir_default_in_the_agent_env
+        PASS [   0.015s] ( 620/2177) jackin-session plan::tests::mimo_instance_keeps_an_existing_tmpdir_from_the_role_layers
+        PASS [   0.616s] ( 621/2177) jackin-openshell::policy role_check_refuses_every_filesystem_path_shape_the_gateway_refuses
+        PASS [   0.030s] ( 622/2177) jackin-session plan::tests::muse_trust_file_only_for_muse
+        PASS [   0.026s] ( 623/2177) jackin-session plan::tests::muse_trust_renderer_uses_given_workdir
+        PASS [   0.039s] ( 624/2177) jackin-session plan::tests::non_mimo_instances_get_no_tmpdir_default
+        PASS [   0.602s] ( 625/2177) jackin-session plan::tests::docker_enabled_muse_launch_keeps_read_only_without_root
+        PASS [   0.571s] ( 626/2177) jackin-session plan::tests::muse_non_lead_instance_gains_root_read_only_at_launch
+        PASS [   0.582s] ( 627/2177) jackin-session plan::tests::muse_lead_instance_gains_root_read_only_at_launch
+        PASS [   0.239s] ( 628/2177) jackin-session::accounts edit::accounts_without_a_provider_credential_never_need_the_gateway
+        PASS [   0.259s] ( 629/2177) jackin-session::accounts edit::a_chatgpt_login_account_gets_its_provider_before_it_reaches_the_config
+        PASS [   1.015s] ( 630/2177) jackin-session plan::tests::every_non_muse_tuple_keeps_read_only_unchanged
+        PASS [   0.470s] ( 631/2177) jackin-session::accounts edit::a_new_credential_re_syncs_forgets_or_creates_the_provider_as_its_kind_changes
+        PASS [   0.205s] ( 632/2177) jackin-session::accounts edit::an_invalid_edit_is_refused_while_planning_and_nothing_is_written
+        PASS [   2.105s] ( 633/2177) jackin-openshell::gateway transfer::a_group_fault_rides_through_each_transfer_and_a_missing_one_stays_missing
+        PASS [   0.342s] ( 634/2177) jackin-session::accounts edit::removing_a_login_account_deletes_its_provider_first_and_a_refusal_keeps_the_config
+        PASS [   0.488s] ( 635/2177) jackin-session::accounts edit::the_plan_needs_the_gateway_exactly_when_an_account_gains_changes_or_loses_a_provider
+        PASS [   0.254s] ( 636/2177) jackin-session::accounts failed_add::a_renewal_whose_provider_write_fails_keeps_the_provider_of_the_account_in_the_config
+        PASS [   0.149s] ( 637/2177) jackin-session::accounts failed_add::an_add_whose_provider_write_fails_after_it_landed_leaves_no_provider
+        PASS [   0.147s] ( 638/2177) jackin-session::accounts failed_add::an_add_whose_provider_write_fails_before_it_landed_leaves_nothing_and_reports_that_error
+        PASS [   0.161s] ( 639/2177) jackin-session::accounts host_login::antigravity_keychain_sync_creates_t05_provider
+        PASS [   1.661s] ( 640/2177) jackin-session plan::tests::role_granted_root_forms_gain_no_duplicate_for_muse
+        PASS [   0.065s] ( 641/2177) jackin-session::accounts host_login::claude_and_antigravity_host_login_accounts_plan_gateway_sync
+        PASS [   0.166s] ( 642/2177) jackin-session::accounts host_login::claude_file_sync_creates_t02_provider_with_key_only_in_record
+        PASS [   0.177s] ( 643/2177) jackin-session::accounts host_login::claude_keychain_sync_creates_provider_when_no_file_login_exists
+        PASS [   0.076s] ( 644/2177) jackin-session::accounts host_login::claude_reader_taxonomy_is_typed_and_secret_free
+        PASS [   0.854s] ( 645/2177) jackin-session::accounts host_login::antigravity_keychain_error_taxonomy_is_typed_and_secret_free
+        PASS [   3.380s] ( 646/2177) jackin-openshell::host_dialect the_closure_agrees_with_the_sandbox_matcher_on_every_accepted_pattern
+        PASS [   6.077s] ( 647/2177) jackin-openshell::gateway exec::collected_output_is_capped_per_stream
+        PASS [   0.316s] ( 648/2177) jackin-session::accounts host_login::grok_accounts_are_isolated_in_providers_and_launch_plan_names
+        PASS [   0.741s] ( 649/2177) jackin-session::accounts host_login::claude_keychain_error_taxonomy_is_typed_and_secret_free
+        PASS [   0.085s] ( 650/2177) jackin-session::accounts host_login::muse_host_login_account_plans_gateway_sync
+        PASS [   0.171s] ( 651/2177) jackin-session::accounts host_login::grok_reader_taxonomy_is_typed_and_secret_free
+        PASS [   0.241s] ( 652/2177) jackin-session::accounts host_login::grok_sync_creates_t03_provider_with_key_only_in_record
+        PASS [   0.149s] ( 653/2177) jackin-session::accounts host_login::muse_metadata_reader
+        PASS [   1.837s] ( 654/2177) jackin-session::accounts failed_add::a_launch_whose_provider_write_fails_after_it_landed_leaves_no_provider
+        PASS [   0.222s] ( 655/2177) jackin-session::accounts host_login::muse_keychain_sync_creates_provider_with_access_token_only
+        PASS [   1.902s] ( 656/2177) jackin-session::accounts failed_add::a_launch_that_cannot_remove_the_provider_it_wrote_reports_both_failures
+        PASS [   0.284s] ( 657/2177) jackin-session::accounts locked_view::a_gateway_removal_without_provider_accounts_connects_to_nothing
+        PASS [   0.376s] ( 658/2177) jackin-session::accounts locked_view::a_gateway_removal_takes_the_lock_of_a_login_account_that_appeared_while_it_waited
+        PASS [   0.017s] ( 659/2177) jackin-session::accounts login::a_missing_unreadable_or_malformed_login_is_a_typed_secret_free_error
+        PASS [   0.019s] ( 660/2177) jackin-session::accounts login::a_real_shaped_codex_login_parses_into_secrets_and_the_account_id_without_leaking
+        PASS [   0.368s] ( 661/2177) jackin-session::accounts locked_view::an_account_edit_chooses_offline_or_gateway_from_the_config_it_reads_under_the_lock
+        PASS [   0.097s] ( 662/2177) jackin-session::accounts login::a_linked_login_is_read_and_a_pipe_or_oversized_login_is_refused_without_reading_it
+        PASS [   0.690s] ( 663/2177) jackin-session::accounts host_login::muse_metadata_preconditions_never_run_keychain
+        PASS [   0.242s] ( 664/2177) jackin-session::accounts peers::a_new_login_account_needs_only_the_home_gateway
+        PASS [   0.181s] ( 665/2177) jackin-session::accounts peers::a_plan_that_must_reach_a_gateway_it_cannot_reach_changes_nothing
+        PASS [   0.287s] ( 666/2177) jackin-session::accounts peers::a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached
+        PASS [   1.030s] ( 667/2177) jackin-session::accounts host_login::muse_keychain_error_taxonomy_is_typed_and_secret_free
+        PASS [   0.387s] ( 668/2177) jackin-session::accounts peers::a_peer_that_fails_a_renewal_leaves_every_gateway_on_the_old_material
+        PASS [   0.157s] ( 669/2177) jackin-session::accounts peers::a_refusal_on_a_later_gateway_restores_the_providers_it_removed_and_adds_none
+        PASS [   0.276s] ( 670/2177) jackin-session::accounts peers::a_refusal_on_a_peer_names_that_gateway_and_a_retry_finishes_the_removal
+        PASS [   0.278s] ( 671/2177) jackin-session::accounts peers::a_renewed_login_reaches_every_gateway_that_holds_the_provider_and_no_other
+        PASS [   0.177s] ( 672/2177) jackin-session::accounts peers::an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publishes_nothing
+        PASS [   0.174s] ( 673/2177) jackin-session::accounts peers::gateways_connected_before_a_gateway_was_added_are_refused_and_nothing_changes
+        PASS [   0.186s] ( 674/2177) jackin-session::accounts peers::a_restore_that_cannot_read_the_old_login_names_the_account_and_the_gateway
+        PASS [   0.171s] ( 675/2177) jackin-session::accounts peers::removing_a_login_account_forgets_its_provider_on_every_gateway
+        PASS [   0.178s] ( 676/2177) jackin-session::accounts race::a_failed_config_write_after_a_changed_credential_restores_the_old_material
+        PASS [   0.197s] ( 677/2177) jackin-session::accounts race::a_config_write_that_committed_before_its_directory_sync_failed_is_not_undone
+        PASS [   0.277s] ( 678/2177) jackin-session::accounts peers::removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_that_account
+        PASS [   0.259s] ( 679/2177) jackin-session::accounts peers::taking_the_login_off_an_account_replaces_its_provider_on_every_gateway
+        PASS [   0.235s] ( 680/2177) jackin-session::accounts race::a_failed_config_write_after_a_gateway_rm_deleted_the_providers_restores_them
+        PASS [   0.232s] ( 681/2177) jackin-session::accounts race::a_failed_config_write_after_account_removal_restores_every_original_zai_provider
+        PASS [   0.241s] ( 682/2177) jackin-session::accounts race::a_failed_config_write_after_gateway_removal_restores_every_original_zai_provider
+        PASS [   0.192s] ( 683/2177) jackin-session::accounts race::a_failed_config_write_removes_the_provider_that_this_add_created
+        PASS [   0.208s] ( 684/2177) jackin-session::accounts race::a_failed_config_write_keeps_a_provider_that_existed_before_the_edit
+        PASS [   0.165s] ( 685/2177) jackin-session::accounts race::a_provider_delete_that_landed_and_then_failed_is_restored
+        PASS [   0.228s] ( 686/2177) jackin-session::accounts race::exact_undo_removes_only_the_codex_provider_created_by_the_failed_account_edit
+        PASS [   0.216s] ( 687/2177) jackin-session::accounts race::two_adds_of_one_name_leave_the_config_and_the_provider_on_the_winning_login
+        PASS [   0.200s] ( 688/2177) jackin-session::accounts renewal::a_peer_put_provider_failure_rolls_every_holding_gateway_back_to_the_old_key
+        PASS [   0.227s] ( 689/2177) jackin-session::accounts renewal::a_changed_key_file_without_a_sync_keeps_the_old_gateway_material
+        PASS [   0.318s] ( 690/2177) jackin-session::accounts renewal::a_renewal_to_a_file_with_the_same_key_keeps_one_equal_record
+        PASS [   0.183s] ( 691/2177) jackin-session::accounts renewal::an_account_for_a_provider_without_an_omp_id_publishes_no_provider
+        PASS [   0.252s] ( 692/2177) jackin-session::accounts renewal::a_renewed_file_credential_publishes_the_new_key_and_keeps_the_old_file
+        PASS [   2.388s] ( 693/2177) jackin-session::accounts lock::the_lock_is_per_account_and_a_cancelled_wait_ends_the_launch
+        PASS [   1.598s] ( 694/2177) jackin-session::accounts stale_launch::a_launch_planned_before_gateway_rm_fails_and_creates_no_provider
+        PASS [   1.532s] ( 695/2177) jackin-session::accounts stale_launch::a_launch_waiting_on_the_lock_of_a_running_account_rm_fails_and_creates_no_provider
+        PASS [   0.155s] ( 696/2177) jackin-session::accounts sync::a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_right_material
+        PASS [   1.765s] ( 697/2177) jackin-session::accounts stale_launch::a_launch_planned_before_account_rm_fails_and_creates_no_provider
+        PASS [   1.588s] ( 698/2177) jackin-session::accounts stale_launch::a_launch_waiting_on_the_lock_of_a_running_gateway_rm_fails_and_creates_no_provider
+        PASS [   1.643s] ( 699/2177) jackin-session::accounts stale_launch::a_launch_planned_before_the_account_lost_its_provider_fails_and_creates_no_provider
+        PASS [   0.177s] ( 700/2177) jackin-session::accounts sync::a_kimi_file_key_sync_for_kimi_code_creates_the_t08_provider
+        PASS [   0.231s] ( 701/2177) jackin-session::accounts sync::a_login_of_another_chatgpt_account_is_refused_and_writes_nothing
+        PASS [   0.208s] ( 702/2177) jackin-session::accounts sync::a_mimo_file_key_sync_for_mimo_code_creates_the_t07_provider
+        PASS [   0.207s] ( 703/2177) jackin-session::accounts sync::an_omp_account_with_a_missing_key_fails_without_a_secret
+        PASS [   0.352s] ( 704/2177) jackin-session::accounts sync::a_failed_sync_stops_at_the_failing_call_and_a_retry_converges
+        PASS [   0.223s] ( 705/2177) jackin-session::accounts sync::an_omp_static_key_account_creates_the_tuple_provider_with_only_the_key
+        PASS [   0.295s] ( 706/2177) jackin-session::accounts sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home
+        PASS [   0.183s] ( 707/2177) jackin-session::accounts sync::the_same_kimi_account_synced_for_omp_creates_the_omp_provider
+        PASS [   0.334s] ( 708/2177) jackin-session::accounts sync::omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials
+        PASS [   0.284s] ( 709/2177) jackin-session::accounts sync::sync_account_refuses_an_account_the_config_no_longer_holds_as_given_and_writes_nothing
+        PASS [   0.024s] ( 710/2177) jackin-session::attach clipboard::a_cancelled_or_restarted_string_or_csi_ends_where_a_terminal_ends_it
+        PASS [   0.029s] ( 711/2177) jackin-session::attach clipboard::a_cancelled_osc_ends_at_can_or_sub_and_later_output_stays_visible
+        PASS [   0.020s] ( 712/2177) jackin-session::attach clipboard::an_allowed_sequence_with_a_hidden_control_or_c1_byte_is_dropped_whole
+        PASS [   0.021s] ( 713/2177) jackin-session::attach clipboard::alt_right_bracket_and_the_escape_key_from_the_operator_are_not_held_back
+        PASS [   0.031s] ( 714/2177) jackin-session::attach clipboard::a_sequence_split_at_any_byte_of_the_stream_is_still_stripped
+        PASS [   0.019s] ( 715/2177) jackin-session::attach clipboard::an_escape_inside_an_osc_body_ends_it_and_starts_the_next_sequence
+        PASS [   0.027s] ( 716/2177) jackin-session::attach clipboard::an_oversized_csi_is_dropped_and_later_output_survives
+        PASS [   0.021s] ( 717/2177) jackin-session::attach clipboard::csi_sgr_and_plain_text_pass_unchanged_in_both_directions_at_every_cut
+        PASS [   0.021s] ( 718/2177) jackin-session::attach clipboard::directions_keep_separate_state
+        PASS [   0.022s] ( 719/2177) jackin-session::attach clipboard::operator_input_keeps_color_replies_and_drops_every_other_osc
+        PASS [   0.017s] ( 720/2177) jackin-session::attach clipboard::other_csi_sequences_still_reach_the_terminal_from_the_sandbox_at_every_split
+        PASS [   0.019s] ( 721/2177) jackin-session::attach clipboard::operator_input_loses_every_osc52_reply
+        PASS [   0.017s] ( 722/2177) jackin-session::attach clipboard::sandbox_output_loses_csi_window_operations_at_every_split
+        PASS [   0.018s] ( 723/2177) jackin-session::attach clipboard::sandbox_output_loses_dcs_apc_pm_and_sos_strings_at_every_split
+        PASS [   0.023s] ( 724/2177) jackin-session::attach clipboard::sandbox_output_keeps_titles_hyperlinks_and_color_queries_and_drops_every_other_osc
+        PASS [   0.465s] ( 725/2177) jackin-session::accounts sync::mode_a_is_unsupported_and_other_providers_are_host_only_and_neither_touches_the_gateway
+        PASS [   0.020s] ( 726/2177) jackin-session::attach clipboard::sandbox_output_loses_every_osc52_sequence_and_keeps_every_other_byte
+        PASS [   0.022s] ( 727/2177) jackin-session::attach clipboard::the_operator_keeps_the_terminal_replies_that_the_sandbox_cannot_provoke
+        PASS [   0.114s] ( 728/2177) jackin-session::attach clipboard::an_oversized_osc_is_dropped_without_growing_memory_and_later_output_survives
+        PASS [   4.274s] ( 729/2177) jackin-session::accounts lock::a_launch_waits_for_a_peer_that_syncs_the_account_and_keeps_the_rotated_token
+        PASS [   2.743s] ( 730/2177) jackin-session::accounts stale_launch::an_edit_that_leaves_the_account_and_the_gateway_alone_does_not_stop_a_planned_launch
+        PASS [   1.955s] ( 731/2177) jackin-session::attach lease::ctrl_c_on_a_read_only_attachment_ends_only_that_attachment
+        PASS [   1.964s] ( 732/2177) jackin-session::attach open::attach_opens_the_main_terminal_reads_the_state_at_attach_and_detach_leaves_the_sandbox
+        PASS [   1.977s] ( 733/2177) jackin-session::attach open::attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_without_a_terminal
+        PASS [   2.147s] ( 734/2177) jackin-session::attach lease::a_second_owner_is_read_only_until_the_first_leaves_and_a_viewer_never_writes
+        PASS [   2.274s] ( 735/2177) jackin-session::attach replies::reply_drops_in_every_other_state
+        PASS [   1.975s] ( 736/2177) jackin-session::attach replies::reply_passes_only_while_running
+        PASS [   1.934s] ( 737/2177) jackin-session::attach restart::a_failing_preflight_stops_the_restart_before_any_request_is_written
+        PASS [   1.925s] ( 738/2177) jackin-session::attach restart::a_restart_on_a_sandbox_whose_main_process_ended_is_main_process_ended_and_writes_nothing
+        PASS [   2.019s] ( 739/2177) jackin-session::attach replies::terminal_replies_reach_the_agent_only_while_it_runs_and_typed_keys_always_pass
+        PASS [   4.388s] ( 740/2177) jackin-session::attach replies::a_reply_split_across_two_reads_is_dropped_whole_unless_the_agent_runs
+        PASS [   0.835s] ( 741/2177) jackin-session::attach shell::a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_sandbox
+        PASS [   1.846s] ( 742/2177) jackin-session::attach restart::restart_refuses_a_running_agent_and_otherwise_runs_preflight_and_requests_the_next_attempt
+        PASS [   3.321s] ( 743/2177) jackin-session::attach restart::concurrent_restarts_of_one_sandbox_are_serialized_by_a_per_sandbox_lock
+        PASS [   1.934s] ( 744/2177) jackin-session::attach shell::a_shell_on_a_sandbox_whose_main_process_ended_is_main_process_ended
+        PASS [   0.018s] ( 745/2177) jackin-session::attach terminals::two_hostile_sequences_in_a_row_leave_the_second_one_dead_too
+        PASS [   1.943s] ( 746/2177) jackin-session::attach shell::a_shell_sees_the_role_env_untouched_and_starts_in_the_project_without_touching_codex
+        PASS [   0.329s] ( 747/2177) jackin-session::clipboard_writer a_missing_tool_falls_through_to_the_next_with_its_arguments
+        PASS [   0.446s] ( 748/2177) jackin-session::clipboard_writer a_large_text_reaches_the_tool_in_full
+        PASS [  12.576s] ( 749/2177) jackin-session::accounts edit::after_any_two_account_edits_the_gateway_holds_a_provider_for_exactly_the_provider_accounts
+        PASS [   0.319s] ( 750/2177) jackin-session::clipboard_writer a_tool_that_exits_while_a_child_still_holds_its_input_does_not_hold_the_write
+        PASS [   0.316s] ( 751/2177) jackin-session::clipboard_writer a_tool_that_fails_or_is_absent_is_not_a_write
+        PASS [   0.319s] ( 752/2177) jackin-session::clipboard_writer a_tool_that_hangs_past_the_deadline_is_not_a_write
+        PASS [   0.014s] ( 753/2177) jackin-session::clipboard_writer the_tools_follow_the_host_and_its_display
+        PASS [   0.029s] ( 754/2177) jackin-session::doctor git::the_git_check_agrees_with_the_launch_check_for_the_same_version_output
+        PASS [   0.016s] ( 755/2177) jackin-session::doctor matrix::a_symlink_to_a_live_socket_passes_like_the_socket_itself
+        PASS [   0.323s] ( 756/2177) jackin-session::clipboard_writer a_write_reaches_the_tool_on_its_stdin_unchanged
+        PASS [   0.020s] ( 757/2177) jackin-session::doctor matrix::healthy_fakes_pass_every_check_in_order
+        PASS [   0.045s] ( 758/2177) jackin-session::doctor matrix::each_problem_flips_only_its_own_check_and_nothing_is_repaired
+        PASS [   0.021s] ( 759/2177) jackin-session::doctor matrix::the_gateway_version_detail_carries_no_terminal_control_or_bidi_characters
+        PASS [   0.026s] ( 760/2177) jackin-session::doctor matrix::no_chosen_gateway_skips_only_the_gateway_checks
+        PASS [   0.027s] ( 761/2177) jackin-session::doctor matrix::version_details_carry_no_terminal_control_or_bidi_characters
+        PASS [   0.028s] ( 762/2177) jackin-session::doctor text::every_check_has_one_label_and_one_fix_and_the_report_lists_them_in_order
+        PASS [   0.032s] ( 763/2177) jackin-session::doctor text::the_git_fix_names_the_cause_and_every_other_check_keeps_its_one_fix
+        PASS [   2.625s] ( 764/2177) jackin-session::attach terminals::no_filtered_operator_input_reaches_the_clipboard_of_alacritty_or_wezterm
+        PASS [   2.652s] ( 765/2177) jackin-session::attach terminals::no_filtered_sandbox_output_reaches_the_clipboard_of_alacritty_or_wezterm
+        PASS [   5.539s] ( 766/2177) jackin-session::attach restart::a_state_change_between_preflight_and_the_write_is_refused_or_restarts_from_the_fresh_attempt
+        PASS [   2.326s] ( 767/2177) jackin-session::attach terminals::the_corpus_really_reaches_the_clipboard_of_both_parsers_unfiltered
+        PASS [   2.037s] ( 768/2177) jackin-session::clipboard_writer a_tool_that_hangs_past_the_deadline_is_killed
+        PASS [   3.552s] ( 769/2177) jackin-session::export abort::a_gateway_cancel_or_timeout_with_a_group_fault_keeps_the_fault_through_the_export
+        PASS [   3.579s] ( 770/2177) jackin-session::export abort::cleanup_of_the_sandbox_bundle_has_its_own_short_bound_and_never_changes_the_result
+        PASS [   5.494s] ( 771/2177) jackin-session::export abort::an_interrupted_export_leaves_no_ref_and_no_staging_file_and_a_retry_succeeds
+        PASS [   9.142s] ( 772/2177) jackin-session::attach terminals::a_hostile_sequence_split_at_every_byte_is_still_harmless
+        PASS [   2.679s] ( 773/2177) jackin-session::export changes::a_staged_file_in_a_repository_with_an_unborn_head_is_listed_before_the_untracked_ones
+        PASS [   9.342s] ( 774/2177) jackin-session::export abort::a_cancel_that_ends_a_host_git_call_is_cancelled_and_leaves_nothing
+        PASS [   9.200s] ( 775/2177) jackin-session::export abort::a_host_git_call_cancelled_with_a_group_fault_exports_a_cancel_that_carries_it
+        PASS [   5.421s] ( 776/2177) jackin-session::export bundle_limits::a_bundle_over_the_size_limit_is_refused_before_any_host_import
+        PASS [   5.831s] ( 777/2177) jackin-session::export cancel::a_cancel_during_the_first_read_of_a_long_walk_ends_the_export_with_nothing_left
+        PASS [   3.996s] ( 778/2177) jackin-session::export changes::a_staged_rename_is_one_renamed_file_and_a_new_staged_file_is_added
+        SLOW [> 60.000s] (─────────) jackin-image::image_io lock::waiting_behind_a_live_peer_gives_up_after_3600_seconds_with_the_construct_key
+        PASS [   4.897s] ( 779/2177) jackin-session::export changes::an_untracked_file_over_the_read_limit_is_listed_unread_even_when_it_is_larger_than_the_output_limit
+        PASS [   5.182s] ( 780/2177) jackin-session::export changes::asking_for_the_work_state_never_rewrites_the_sandbox_index
+        PASS [   5.294s] ( 781/2177) jackin-session::export changes::asking_for_the_changes_never_rewrites_the_sandbox_index
+        SLOW [> 60.000s] (─────────) jackin-image::jackin_start jackin_start_applies_only_the_bytes_it_validated
+        PASS [   6.601s] ( 782/2177) jackin-session::export changes::changes_lists_tracked_edits_deletions_and_untracked_files_with_their_hunks
+        PASS [   5.555s] ( 783/2177) jackin-session::export changes::changes_refuses_a_stopped_or_absent_sandbox_and_a_project_that_is_not_a_repository
+        PASS [   9.970s] ( 784/2177) jackin-session::export concurrent::an_export_finishes_the_refs_that_another_run_has_not_published_yet
+        PASS [  13.882s] ( 785/2177) jackin-session::export concurrent::an_export_never_ships_a_replacement_sandbox_into_the_recovery_refs
+        PASS [  10.710s] ( 786/2177) jackin-session::export concurrent::an_export_that_bundled_an_older_tip_never_moves_the_recovery_ref_back
+        PASS [  74.950s] ( 787/2177) jackin-image::jackin_start jackin_start_applies_only_the_bytes_it_validated
+        PASS [  12.804s] ( 788/2177) jackin-session::export concurrent::an_older_export_never_moves_a_ref_an_earlier_export_created_back
+        PASS [  78.402s] ( 789/2177) jackin-image::image_io lock::waiting_behind_a_live_peer_gives_up_after_3600_seconds_with_the_construct_key
+        PASS [   1.014s] ( 790/2177) jackin-session::export foreign::a_sandbox_without_jackin_labels_is_never_purged_stopped_started_or_exported
+        PASS [   9.100s] ( 791/2177) jackin-session::export concurrent::two_concurrent_exports_of_one_sandbox_both_succeed_and_leave_no_staging_and_no_bundle
+        PASS [  11.785s] ( 792/2177) jackin-session::export detached::a_detached_head_commit_is_unexported_until_it_is_exported_as_the_head_ref
+        PASS [   8.975s] ( 793/2177) jackin-session::export detached::a_sandbox_launched_from_a_detached_host_head_is_exported_and_exports_nothing
+        PASS [  39.856s] ( 794/2177) jackin-session::export aliases::an_unborn_worktree_branch_that_aliases_a_target_ref_blocks_the_export
+        PASS [  10.719s] ( 795/2177) jackin-session::export empty::a_repository_with_no_commits_exports_a_sandbox_branch_into_a_missing_bundle_directory
+        PASS [  14.426s] ( 796/2177) jackin-session::export fsck::repository_config_cannot_weaken_the_strict_import
+        PASS [  52.983s] ( 797/2177) jackin-session::export aliases::a_branch_that_aliases_an_exported_host_ref_is_refused_until_that_ref_is_deleted
+        PASS [  13.664s] ( 798/2177) jackin-session::export git::a_stale_lock_on_one_target_ref_fails_the_update_as_a_host_git_error_and_exports_no_ref
+        PASS [  14.926s] ( 799/2177) jackin-session::export git::a_ref_name_collision_is_a_ref_conflict_and_the_update_is_all_or_nothing
+        PASS [  23.842s] ( 800/2177) jackin-session::export fsck::a_bundle_with_a_malformed_tree_is_refused_by_the_strict_import_and_writes_no_ref
+        PASS [  54.030s] ( 801/2177) jackin-session::export aliases::sandbox_branches_that_differ_only_by_case_or_normalization_are_refused_before_any_ref_is_written
+        PASS [  16.873s] ( 802/2177) jackin-session::export heads::a_bundle_whose_heads_differ_from_the_requested_set_is_refused_before_any_ref_is_written
+        PASS [  18.165s] ( 803/2177) jackin-session::export git::sandbox_git_failures_are_typed_without_invented_exit_codes_and_change_nothing
+        PASS [   5.681s] ( 804/2177) jackin-session::export honest::a_v3_header_naming_the_sha1_format_is_exported
+        PASS [  32.286s] ( 805/2177) jackin-session::export detached::a_head_symbolic_to_a_ref_outside_heads_is_unexported_work_until_it_is_exported
+        PASS [   4.931s] ( 806/2177) jackin-session::export host_calls::every_host_git_call_is_hardened_and_the_import_carries_its_memory_pins
+        PASS [  48.143s] ( 807/2177) jackin-session::export changes::untracked_files_beyond_the_first_five_hundred_are_counted_not_listed
+        PASS [   4.550s] ( 808/2177) jackin-session::export non_utf8::a_host_worktree_on_a_non_utf8_branch_is_not_taken_for_one_that_holds_the_target_ref
+        PASS [   5.111s] ( 809/2177) jackin-session::export non_utf8::a_host_branch_with_a_non_utf8_name_is_not_taken_for_a_sandbox_branch_with_replacement_characters
+        PASS [   5.532s] ( 810/2177) jackin-session::export non_utf8::a_sandbox_branch_with_a_non_utf8_name_is_unusable_and_never_exported
+        PASS [   3.674s] ( 811/2177) jackin-session::export purge::a_guarded_purge_refuses_a_sandbox_whose_creation_time_is_unknown
+        PASS [   5.219s] ( 812/2177) jackin-session::export purge::a_guarded_purge_never_deletes_a_sandbox_that_replaced_the_one_it_inspected
+        PASS [   3.526s] ( 813/2177) jackin-session::export purge::a_launch_without_a_repository_is_refused_too
+        PASS [  19.720s] ( 814/2177) jackin-session::export heads::export_takes_at_most_1024_heads_and_refuses_more_without_writing_anything
+        PASS [   3.350s] ( 815/2177) jackin-session::export redirect::an_export_from_a_workspace_whose_gitfile_names_another_repository_writes_no_ref_there
+        PASS [   5.190s] ( 816/2177) jackin-session::export purge::a_repeated_purge_is_already_gone_a_failed_delete_keeps_the_sandbox_and_a_deleting_one_is_gone
+        PASS [  14.499s] ( 817/2177) jackin-session::export honest::each_limit_at_its_exact_value_lands_and_one_under_is_refused_with_its_variant
+        PASS [  12.754s] ( 818/2177) jackin-session::export nesting::three_export_rounds_keep_a_flat_ref_set_with_only_changed_branches
+        PASS [   4.376s] ( 819/2177) jackin-session::export refuse::a_git_directory_replaced_by_a_link_during_the_download_never_receives_the_export
+        PASS [   6.777s] ( 820/2177) jackin-session::export refs::export_writes_only_the_changed_branches_under_the_sandbox_prefix_and_never_the_host_state
+        PASS [   4.087s] ( 821/2177) jackin-session::export refuse::export_refuses_before_any_sandbox_or_host_write
+        PASS [  19.423s] ( 822/2177) jackin-session::export honest::bundles_with_ofs_delta_and_bitmap_ref_delta_entries_are_exported_in_both_hash_formats
+        PASS [   9.160s] ( 823/2177) jackin-session::export purge::an_exported_sandbox_is_deleted_alone_and_a_forced_purge_reports_what_it_deleted
+        PASS [   4.917s] ( 824/2177) jackin-session::export staging::the_staging_directory_is_private_even_under_an_open_umask
+        PASS [   5.614s] ( 825/2177) jackin-session::export refuse::a_worktree_gitfile_repointed_during_the_download_still_exports_into_its_own_repository
+        PASS [  15.288s] ( 826/2177) jackin-session::export purge::a_guarded_purge_refuses_every_state_that_is_not_exported_and_changes_nothing
+        PASS [   6.127s] ( 827/2177) jackin-session::export symref::every_target_of_a_multi_branch_export_is_replaced_when_all_of_them_are_symbolic_refs
+        PASS [   6.374s] ( 828/2177) jackin-session::export unusable::a_sandbox_branch_under_jackin_fails_the_export_and_is_never_exported
+        PASS [   9.827s] ( 829/2177) jackin-session::export thin::a_thin_pack_is_never_completed_from_host_objects
+        PASS [   9.806s] ( 830/2177) jackin-session::export unusable::a_worktree_that_takes_a_target_ref_during_the_download_still_blocks_the_update
+        PASS [  16.571s] ( 831/2177) jackin-session::export symref::a_symbolic_ref_at_the_target_is_replaced_and_never_written_through
+        PASS [  14.032s] ( 832/2177) jackin-session::export unusable::a_target_ref_checked_out_in_any_host_worktree_is_refused_with_no_ref_change
+        PASS [  16.133s] ( 833/2177) jackin-session::export walker_header::a_bundle_with_a_prerequisite_from_real_git_is_refused
+        PASS [  19.873s] ( 834/2177) jackin-session::export walker_header::a_v2_header_against_a_sha256_host_and_the_reverse_name_both_formats
+        PASS [  26.518s] ( 835/2177) jackin-session::export walker_limits::a_delta_instruction_stream_is_capped_and_must_match_its_declared_size
+        PASS [  30.846s] ( 836/2177) jackin-session::export walker_header::the_header_is_bounded_at_1_mib_and_1024_heads_before_the_head_set_is_compared
+        PASS [  27.449s] ( 837/2177) jackin-session::export walker_limits::a_delta_stream_is_charged_to_the_total_before_it_is_inflated
+        PASS [  35.436s] ( 838/2177) jackin-session::export walker_limits::a_delta_bomb_is_refused_by_its_declared_base_result_and_sum_before_any_host_import
+        PASS [  47.220s] ( 839/2177) jackin-session::export unusable::a_branch_name_with_a_control_or_format_character_is_unusable_and_plain_unicode_still_exports
+        PASS [  54.598s] ( 840/2177) jackin-session::export refuse::a_store_tampered_with_after_launch_fails_the_export_before_index_pack
+        PASS [  22.812s] ( 841/2177) jackin-session::export walker_limits::the_object_count_is_checked_from_the_pack_header_before_any_entry
+        PASS [   8.315s] ( 842/2177) jackin-session::export work_state::a_corrupt_sandbox_index_still_exports_the_branches_but_the_work_state_is_unknown
+        PASS [  10.693s] ( 843/2177) jackin-session::export walker_limits::two_deltas_whose_results_overflow_the_sum_are_refused_by_a_checked_add
+        PASS [   3.666s] ( 844/2177) jackin-session::export work_state::a_launch_that_failed_before_the_upload_has_no_repository
+        PASS [  17.361s] ( 845/2177) jackin-session::export walker_limits::the_sum_of_declared_results_is_capped_for_blobs_and_for_deltas
+        PASS [   8.324s] ( 846/2177) jackin-session::export work_state::a_repository_setting_cannot_hide_an_untracked_file_from_the_purge_check
+        PASS [  12.429s] ( 847/2177) jackin-session::export work_state::a_host_ref_deleted_or_a_branch_advanced_after_the_export_lists_the_branch
+        PASS [   9.480s] ( 848/2177) jackin-session::export work_state::a_stash_counts_from_its_ref_so_an_expired_reflog_still_blocks_a_guarded_purge
+        SLOW [> 60.000s] (─────────) jackin-session::export walker_frame::a_pack_with_bad_framing_is_refused_before_any_host_import
+        PASS [  42.264s] ( 849/2177) jackin-session::export walker_limits::every_entry_kind_is_capped_at_the_entry_limit_and_its_size_must_be_honest
+        PASS [   6.531s] ( 850/2177) jackin-session::export work_state::an_untracked_file_alone_counts_as_uncommitted
+        SLOW [> 60.000s] (─────────) jackin-session::export walker_header::a_malformed_header_line_is_refused_before_any_host_import
+        PASS [  21.242s] ( 851/2177) jackin-session::export work_state::a_fresh_launch_is_exported_and_only_real_changes_make_it_unexported
+        PASS [  68.396s] ( 852/2177) jackin-session::export walker_frame::a_pack_with_bad_framing_is_refused_before_any_host_import
+        PASS [  17.291s] ( 853/2177) jackin-session::export work_state::an_index_flag_cannot_hide_a_modified_file_from_the_purge_check
+        PASS [  10.918s] ( 854/2177) jackin-session::export work_state::what_jackin_cannot_inspect_is_unknown_and_a_forged_supervisor_changes_nothing
+        PASS [  10.141s] ( 855/2177) jackin-session::export worktree::export_from_a_linked_worktree_writes_the_shared_repository_and_no_worktree_state
+        PASS [  12.450s] ( 856/2177) jackin-session::export work_state::unpushed_counts_each_ref_whose_commits_the_host_lacks
+        PASS [  28.051s] ( 857/2177) jackin-session::export work_state::a_repository_setting_cannot_hide_a_tracked_change_from_the_purge_check
+        PASS [  17.097s] ( 858/2177) jackin-session::export worktrees::a_detached_worktree_whose_directory_moved_keeps_its_unique_commit_in_view
+        PASS [  14.082s] ( 859/2177) jackin-session::export worktrees::a_linked_worktree_whose_head_is_symbolic_outside_heads_is_unexported_work
+        PASS [  22.836s] ( 860/2177) jackin-session::export worktrees::a_detached_head_in_a_linked_worktree_is_exported_under_the_unique_worktree_name
+        PASS [   8.710s] ( 861/2177) jackin-session::launch cancel::a_cancel_at_the_create_leaves_a_restore_candidate_and_a_retry_completes
+        PASS [  15.509s] ( 862/2177) jackin-session::launch adr008::a_name_collision_or_an_ambiguous_label_is_a_typed_stop_that_changes_nothing
+        PASS [  17.551s] ( 863/2177) jackin-session::export worktrees::a_locked_worktree_whose_directory_moved_keeps_its_unique_commit_in_view
+        PASS [  83.376s] ( 864/2177) jackin-session::export walker_header::a_malformed_header_line_is_refused_before_any_host_import
+        PASS [   7.506s] ( 865/2177) jackin-session::launch cancel::a_cancel_at_the_credentials_leaves_a_restore_candidate_and_a_retry_completes
+        PASS [   7.445s] ( 866/2177) jackin-session::launch cancel::a_cancel_at_the_probe_leaves_a_restore_candidate_and_a_retry_completes
+        PASS [  20.568s] ( 867/2177) jackin-session::export worktrees::work_in_any_linked_worktree_counts_and_a_missing_worktree_does_not
+        PASS [   6.000s] ( 868/2177) jackin-session::launch cancel::a_cancel_at_the_provider_sync_leaves_a_restore_candidate_and_a_retry_completes
+        PASS [  22.679s] ( 869/2177) jackin-session::export worktrees::targets_that_collide_or_nest_are_refused_before_any_import_and_a_retry_exports_all
+        PASS [   7.086s] ( 870/2177) jackin-session::launch cancel::a_cancel_at_the_setup_hook_leaves_a_restore_candidate_and_a_retry_completes
+        PASS [   7.166s] ( 871/2177) jackin-session::launch cancel::a_cancel_at_the_start_leaves_a_restore_candidate_and_a_retry_completes
+        PASS [   6.575s] ( 872/2177) jackin-session::launch cancel::a_cancel_before_the_launch_leaves_a_restore_candidate_and_a_retry_completes
+        PASS [   0.053s] ( 873/2177) jackin-session::launch delivery::a_dropped_feed_never_blocks_the_emitter
+        PASS [   0.046s] ( 874/2177) jackin-session::launch delivery::best_effort_delivery_drops_only_lines_when_full_and_keeps_order
+        PASS [  24.418s] ( 875/2177) jackin-session::launch adr008::a_new_launch_id_makes_a_new_sandbox_and_leaves_the_live_one_untouched
+        PASS [   0.058s] ( 876/2177) jackin-session::launch delivery::reliable_delivery_applies_back_pressure_to_lines_and_loses_none
+        PASS [   7.682s] ( 877/2177) jackin-session::launch cancel::a_cancel_stops_a_running_hook_and_the_retry_runs_it_once
+        PASS [  10.405s] ( 878/2177) jackin-session::launch cancel::a_cancel_at_the_upload_leaves_a_restore_candidate_and_a_retry_completes
+        PASS [   3.645s] ( 879/2177) jackin-session::launch docker::a_client_certificate_rotated_between_the_reads_never_reaches_the_sandbox_with_the_old_key
+        PASS [   3.782s] ( 880/2177) jackin-session::launch docker::a_client_key_rotated_between_the_reads_never_reaches_the_sandbox_with_the_old_certificate
+        PASS [  10.044s] ( 881/2177) jackin-session::launch credentials::a_printenv_value_without_the_placeholder_prefix_is_refused_and_never_written_or_named
+        PASS [   2.606s] ( 882/2177) jackin-session::launch docker::a_missing_certificate_directory_is_a_typed_error_that_names_the_directory
+        PASS [   6.758s] ( 883/2177) jackin-session::launch docker::disabled_leaves_no_client_rule_file_or_variable_even_with_a_gateway_engine
+        PASS [  18.253s] ( 884/2177) jackin-session::launch credentials::credentials_files_have_the_documented_content_and_modes
+        PASS [  21.022s] ( 885/2177) jackin-session::launch credentials::no_fixture_secret_reaches_a_sandbox_file_an_event_or_an_error
+        PASS [  11.933s] ( 886/2177) jackin-session::launch docker::directory_symlink_and_symlinked_parent_shapes_are_refused_or_accepted_as_documented
+        PASS [  25.582s] ( 887/2177) jackin-session::launch crash::a_failure_before_the_sandbox_exists_builds_and_creates_nothing_twice
+        PASS [  21.899s] ( 888/2177) jackin-session::launch delivery::build_lines_reach_the_feed_through_launch_by_the_chosen_delivery
+        PASS [  17.050s] ( 889/2177) jackin-session::launch docker::a_crash_between_the_certificates_and_the_env_file_never_leaves_docker_host_alone
+        PASS [   5.983s] ( 890/2177) jackin-session::launch docker::every_certificate_read_asks_the_filesystem_for_no_more_than_the_size_cap
+        PASS [  26.211s] ( 891/2177) jackin-session::launch crash::a_failure_in_hooks_or_start_resumes_without_repeating_setup
+        PASS [   3.843s] ( 892/2177) jackin-session::launch docker_fence::a_flipped_retry_is_refused_while_the_sandbox_is_still_provisioning
+        PASS [  25.698s] ( 893/2177) jackin-session::launch docker::a_certificate_changed_during_the_build_is_refused_at_the_write_and_the_retry_continues
+        PASS [  31.228s] ( 894/2177) jackin-session::launch crash::a_failure_in_credentials_or_upload_resumes_without_repeating_finished_steps
+        PASS [   8.628s] ( 895/2177) jackin-session::launch docker::the_key_content_reaches_only_the_key_file
+        PASS [   8.409s] ( 896/2177) jackin-session::launch docker_fence::a_ca_changed_during_the_build_never_reaches_the_sandbox_under_the_old_fingerprint
+        PASS [   8.434s] ( 897/2177) jackin-session::launch docker_fence::a_retry_after_rotating_only_the_client_certificate_and_key_continues
+        PASS [   7.969s] ( 898/2177) jackin-session::launch docker_fence::a_retry_with_another_ca_on_the_same_port_is_refused_and_changes_nothing
+        PASS [   8.774s] ( 899/2177) jackin-session::launch docker_fence::a_retry_with_the_same_ca_saved_with_other_line_endings_continues
+        PASS [  16.757s] ( 900/2177) jackin-session::launch docker::the_warning_is_the_first_event_once_per_launch_and_never_for_a_refusal_or_a_disabled_launch
+        PASS [   7.578s] ( 901/2177) jackin-session::launch events::a_recreated_sandbox_keeps_the_events_forward_only
+        PASS [   0.039s] ( 902/2177) jackin-session::launch failure_text::a_failure_reads_as_one_summary_and_names_the_retry_when_a_sandbox_remains
+        PASS [   0.031s] ( 903/2177) jackin-session::launch failure_text::a_stale_sandbox_is_never_offered_a_retry_under_the_same_launch
+        PASS [   0.056s] ( 904/2177) jackin-session::launch failure_text::an_error_chain_prints_each_cause_once_and_drops_only_a_repeat_of_the_line_before
+        PASS [   8.734s] ( 905/2177) jackin-session::launch events::an_ended_sandbox_enters_the_ready_step_before_the_run_fails
+        PASS [   3.290s] ( 906/2177) jackin-session::launch exists::repeated_name_clashes_with_no_sandbox_stop_at_the_create_attempt_limit
+        PASS [  13.362s] ( 907/2177) jackin-session::launch docker_fence::a_retry_with_another_image_a_rebuild_that_changes_the_image_or_another_engine_port_is_refused
+        PASS [  17.413s] ( 908/2177) jackin-session::launch docker_fence::a_retry_whose_capability_differs_from_the_sandbox_is_refused_and_changes_nothing
+        PASS [  25.595s] ( 909/2177) jackin-session::launch docker::each_source_writes_the_certificates_modes_variables_and_rule_and_a_rerun_changes_nothing
+        PASS [  13.788s] ( 910/2177) jackin-session::launch events::a_failed_or_cancelled_run_ends_its_events_at_the_failing_step
+        PASS [   9.400s] ( 911/2177) jackin-session::launch events::events_come_in_step_order_with_skips_named
+        PASS [  24.932s] ( 912/2177) jackin-session::launch docker::unusable_certificate_content_is_refused_before_anything_is_created
+        PASS [   6.550s] ( 913/2177) jackin-session::launch fence::a_retry_against_a_sandbox_with_a_label_outside_the_jackin_set_is_refused
+        PASS [   8.531s] ( 914/2177) jackin-session::launch fence::a_retry_after_the_default_account_changed_is_refused_and_changes_nothing
+        PASS [  11.539s] ( 915/2177) jackin-session::launch exists::a_create_that_reports_a_name_clash_with_no_sandbox_pauses_before_it_retries
+        PASS [   7.870s] ( 916/2177) jackin-session::launch fence::a_retry_with_another_account_flag_is_refused_and_changes_nothing
+        PASS [   6.781s] ( 917/2177) jackin-session::launch fence::a_rule_the_operator_added_after_creation_does_not_make_an_identical_retry_stale
+        PASS [   8.932s] ( 918/2177) jackin-session::launch fence::a_reused_launch_id_under_another_role_with_the_same_image_id_is_refused
+        PASS [   9.191s] ( 919/2177) jackin-session::launch fence::a_reused_launch_id_under_another_workspace_is_refused_and_changes_nothing
+        PASS [   6.397s] ( 920/2177) jackin-session::launch hooks::a_launch_that_waits_for_the_hook_lock_skips_a_setup_a_peer_finished_meanwhile
+        PASS [  12.071s] ( 921/2177) jackin-session::launch fence::a_retry_under_another_policy_is_refused_even_when_the_image_id_is_unchanged
+        PASS [   5.944s] ( 922/2177) jackin-session::launch hooks::a_role_with_only_a_preflight_hook_never_writes_the_setup_marker
+        PASS [   6.119s] ( 923/2177) jackin-session::launch hooks::an_installed_hook_with_no_bytes_is_absent_and_never_runs
+        PASS [   4.648s] ( 924/2177) jackin-session::launch image_handoff::a_rebuild_after_the_image_step_never_changes_the_image_the_sandbox_runs
+        PASS [   5.919s] ( 925/2177) jackin-session::launch hooks::hooks_run_with_the_env_file_values_and_a_retry_replaces_them
+        PASS [   4.598s] ( 926/2177) jackin-session::launch instance_identity::direct_instance_operations_refuse_missing_malformed_empty_and_duplicate_manifests
+        PASS [   5.193s] ( 927/2177) jackin-session::launch instance_identity::direct_instance_operations_refuse_delimiter_and_control_models_even_with_matching_hash
+        PASS [   5.885s] ( 928/2177) jackin-session::launch instance_identity::explicit_attach_refuses_ambiguous_old_identity_before_opening_a_terminal
+        PASS [   5.886s] ( 929/2177) jackin-session::launch instance_identity::implicit_attach_refuses_ambiguous_old_identity_before_opening_a_terminal
+        PASS [   6.948s] ( 930/2177) jackin-session::launch instance_identity::integrate_merges_the_secondary_branch_into_the_persisted_nonlexical_lead
+        PASS [  16.913s] ( 931/2177) jackin-session::launch hooks::a_failing_hook_stops_the_launch_with_name_code_and_sanitized_output
+        PASS [   6.506s] ( 932/2177) jackin-session::launch instance_identity::integrate_refuses_ambiguous_old_identity_without_merging_a_branch
+        PASS [   7.266s] ( 933/2177) jackin-session::launch instance_identity::integrate_reports_a_missing_secondary_branch_as_a_git_failure
+        PASS [   2.622s] ( 934/2177) jackin-session::launch multi_instance::failed_codex_provider_publication_cleans_up_only_codex_and_preserves_sibling_providers
+        PASS [   7.063s] ( 935/2177) jackin-session::launch instance_identity::nonlexical_lead_attach_routes_main_and_secondary_terminal_contexts
+        PASS [   6.347s] ( 936/2177) jackin-session::launch instance_identity::public_instance_reader_canonicalizes_secondaries_but_preserves_the_lead_identity
+        PASS [  16.517s] ( 937/2177) jackin-session::launch hostile_launch::a_launch_runs_no_program_named_by_the_project_repository_config
+        PASS [   6.317s] ( 938/2177) jackin-session::launch modes::the_host_staging_directory_and_every_cache_directory_are_owner_only
+        PASS [  18.337s] ( 939/2177) jackin-session::launch hostile_git::a_launch_and_an_export_run_no_program_named_by_the_project_repository_config
+        PASS [  10.317s] ( 940/2177) jackin-session::launch instance_identity::old_sorted_identity_that_matches_new_lead_order_is_refused_on_retry
+        PASS [   6.713s] ( 941/2177) jackin-session::launch multi_instance::restart_omp_stops_omp_only_and_starts_no_process
+        PASS [   7.073s] ( 942/2177) jackin-session::launch multi_instance::two_instance_launch_leaves_non_lead_ready_and_supervises_only_lead
+        PASS [  12.141s] ( 943/2177) jackin-session::launch instance_identity::retry_keeps_the_current_lead_but_refuses_a_lead_only_change_without_mutation
+        PASS [   7.827s] ( 944/2177) jackin-session::launch omp_models::a_codex_only_launch_writes_no_models_file
+        FAIL [   8.614s] ( 945/2177) jackin-session::launch omp_models::a_non_lead_omp_instance_gets_the_lead_models_file_and_a_home_copy
+  stdout ───
+
+    running 1 test
+    test omp_models::a_non_lead_omp_instance_gets_the_lead_models_file_and_a_home_copy ... FAILED
+
+    failures:
+
+    failures:
+        omp_models::a_non_lead_omp_instance_gets_the_lead_models_file_and_a_home_copy
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 109 filtered out; finished in 8.54s
+
+  stderr ───
+
+    thread 'omp_models::a_non_lead_omp_instance_gets_the_lead_models_file_and_a_home_copy' (88458995) panicked at crates/jackin-session/tests/launch/omp_models.rs:69:5:
+    assertion `left == right` failed
+      left: [112, 114, 111, 118, 105, 100, 101, 114, 115, 58, 10, 32, 32, 122, 97, 105, 58, 10, 32, 32, 32, 32, 98, 97, 115, 101, 85, 114, 108, 58, 32, 104, 116, 116, 112, 115, 58, 47, 47, 97, 112, 105, 46, 122, 46, 97, 105, 47, 97, 112, 105, 47, 97, 110, 116, 104, 114, 111, 112, 105, 99, 10, 32, 32, 32, 32, 97, 112, 105, 58, 32, 97, 110, 116, 104, 114, 111, 112, 105, 99, 45, 109, 101, 115, 115, 97, 103, 101, 115, 10, 32, 32, 32, 32, 97, 112, 105, 75, 101, 121, 58, 32, 90, 65, 73, 95, 65, 80, 73, 95, 75, 69, 89, 10]
+     right: [112, 114, 111, 118, 105, 100, 101, 114, 115, 58, 10, 32, 32, 122, 97, 105, 58, 10, 32, 32, 32, 32, 98, 97, 115, 101, 85, 114, 108, 58, 32, 104, 116, 116, 112, 115, 58, 47, 47, 97, 112, 105, 46, 122, 46, 97, 105, 47, 97, 112, 105, 47, 99, 111, 100, 105, 110, 103, 47, 112, 97, 97, 115, 47, 118, 52, 10, 32, 32, 32, 32, 97, 112, 105, 75, 101, 121, 58, 32, 90, 65, 73, 95, 65, 80, 73, 95, 75, 69, 89, 10]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 9 tests still running
+        FAIL [   7.817s] ( 946/2177) jackin-session::launch omp_models::an_omp_lead_launch_gets_the_lead_models_file_and_no_home_copy
+  stdout ───
+
+    running 1 test
+    test omp_models::an_omp_lead_launch_gets_the_lead_models_file_and_no_home_copy ... FAILED
+
+    failures:
+
+    failures:
+        omp_models::an_omp_lead_launch_gets_the_lead_models_file_and_no_home_copy
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 109 filtered out; finished in 7.80s
+
+  stderr ───
+
+    thread 'omp_models::an_omp_lead_launch_gets_the_lead_models_file_and_no_home_copy' (88461950) panicked at crates/jackin-session/tests/launch/omp_models.rs:69:5:
+    assertion `left == right` failed
+      left: [112, 114, 111, 118, 105, 100, 101, 114, 115, 58, 10, 32, 32, 122, 97, 105, 58, 10, 32, 32, 32, 32, 98, 97, 115, 101, 85, 114, 108, 58, 32, 104, 116, 116, 112, 115, 58, 47, 47, 97, 112, 105, 46, 122, 46, 97, 105, 47, 97, 112, 105, 47, 97, 110, 116, 104, 114, 111, 112, 105, 99, 10, 32, 32, 32, 32, 97, 112, 105, 58, 32, 97, 110, 116, 104, 114, 111, 112, 105, 99, 45, 109, 101, 115, 115, 97, 103, 101, 115, 10, 32, 32, 32, 32, 97, 112, 105, 75, 101, 121, 58, 32, 90, 65, 73, 95, 65, 80, 73, 95, 75, 69, 89, 10]
+     right: [112, 114, 111, 118, 105, 100, 101, 114, 115, 58, 10, 32, 32, 122, 97, 105, 58, 10, 32, 32, 32, 32, 98, 97, 115, 101, 85, 114, 108, 58, 32, 104, 116, 116, 112, 115, 58, 47, 47, 97, 112, 105, 46, 122, 46, 97, 105, 47, 97, 112, 105, 47, 99, 111, 100, 105, 110, 103, 47, 112, 97, 97, 115, 47, 118, 52, 10, 32, 32, 32, 32, 97, 112, 105, 75, 101, 121, 58, 32, 90, 65, 73, 95, 65, 80, 73, 95, 75, 69, 89, 10]
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        PASS [   8.143s] ( 947/2177) jackin-session::launch omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home
+        PASS [   8.106s] ( 948/2177) jackin-session::launch phases::a_settling_sandbox_is_waited_for_on_the_clock_until_ready
+        PASS [  10.629s] ( 949/2177) jackin-session::launch phases::a_sandbox_in_an_unknown_phase_times_out_on_the_clock_and_stays
+        PASS [   9.786s] ( 950/2177) jackin-session::launch phases::a_stale_exited_state_after_power_start_is_waited_out_and_attempt_one_starts
+        PASS [  12.249s] ( 951/2177) jackin-session::launch phases::a_sandbox_that_settles_too_slowly_times_out_on_the_clock_and_a_patient_launch_joins_it
+        PASS [  16.139s] ( 952/2177) jackin-session::launch multi_instance::two_instance_launch_writes_codex_placeholder_auth_like_single_instance
+        PASS [   9.076s] ( 953/2177) jackin-session::launch phases::a_stale_running_state_after_power_start_is_not_accepted
+        PASS [   9.821s] ( 954/2177) jackin-session::launch phases::a_start_the_gateway_ignores_is_waited_out_on_the_clock_to_a_ready_timeout
+────────────
+     Summary [ 337.080s] 954/2177 tests run: 952 passed (4 slow), 2 failed, 0 skipped
+        FAIL [   8.614s] ( 945/2177) jackin-session::launch omp_models::a_non_lead_omp_instance_gets_the_lead_models_file_and_a_home_copy
+        FAIL [   7.817s] ( 946/2177) jackin-session::launch omp_models::an_omp_lead_launch_gets_the_lead_models_file_and_no_home_copy
+warning: 1223/2177 tests were not run due to test failure (run with --no-fail-fast to run all tests, or run with --max-fail)
+error: test run failed
+xtask: nextest failed with status 100

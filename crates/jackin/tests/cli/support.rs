@@ -333,6 +333,7 @@ impl Harness {
                 clock,
                 fs: Arc::clone(&world.fs),
                 runner,
+                home: world.home().clone(),
             },
             engine,
         }
@@ -352,6 +353,7 @@ impl Harness {
                 clock: Arc::clone(&self.host.clock),
                 fs,
                 runner: Arc::clone(&self.host.runner),
+                home: self.host.home.clone(),
             },
             engine: Arc::clone(&self.engine),
         }
@@ -371,6 +373,7 @@ impl Harness {
                 clock: Arc::clone(&self.host.clock),
                 fs: Arc::clone(&self.host.fs),
                 runner,
+                home: self.host.home.clone(),
             },
             engine: Arc::clone(&self.engine),
         }

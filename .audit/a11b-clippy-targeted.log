@@ -1,0 +1,141 @@
+    Blocking waiting for file lock on package cache
+    Checking bitflags v2.13.2
+    Checking tokio v1.54.1
+    Checking security-framework v3.7.0
+    Checking rustix v1.1.6
+    Checking simd-adler32 v0.3.10
+   Compiling libm v0.2.16
+    Checking bytemuck v1.25.2
+   Compiling crc32fast v1.5.4
+    Checking tokio-util v0.7.20
+    Checking tokio-rustls v0.26.6
+    Checking rustls-native-certs v0.8.5
+    Checking miniz_oxide v0.9.1
+    Checking rustls-platform-verifier v0.7.1
+    Checking tokio-stream v0.1.19
+    Checking toml_parser v1.1.5+spec-1.1.0
+    Checking atomic v0.6.1
+    Checking serde_spanned v1.1.2
+    Checking toml_writer v1.2.0+spec-1.1.0
+    Checking h2 v0.4.20
+    Checking tower v0.5.3
+    Checking backtrace v0.3.77
+    Checking uuid v1.29.0
+    Checking terminal_size v0.4.4
+    Checking ratatui-core v0.1.2
+    Checking backtrace-ext v0.2.1
+    Checking nix v0.31.3
+    Checking nix v0.29.0
+    Checking vte v0.15.0
+    Checking line-clipping v0.3.8
+    Checking tower-http v0.6.11
+    Checking hyper v1.12.0
+    Checking axum v0.8.9
+    Checking miette v7.6.0
+    Checking hyper-util v0.1.21
+    Checking toml v1.2.0+spec-1.1.0
+    Checking crossterm v0.29.0
+    Checking tokio-tungstenite v0.26.2
+    Checking russh-cryptovec v0.62.0
+    Checking hyper-rustls v0.27.10
+    Checking hyper-timeout v0.5.2
+    Checking flate2 v1.1.10
+    Checking tonic v0.14.9
+    Checking jackin-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-core)
+    Checking noyalib v0.0.53
+    Checking russh-util v0.52.0
+    Checking noyalib v0.0.58
+    Checking russh v0.65.1
+    Checking rusqlite v0.41.1
+    Checking openshell-policy-schema v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking nix v0.28.0
+    Checking regex-syntax v0.8.11
+    Checking regex-automata v0.4.18
+    Checking termpane v0.1.1 (https://github.com/tailrocks/termpane?rev=46cc0977d8ee95d5284f75080d507ca2d116c007#46cc0977)
+    Checking portable-pty v0.9.0
+    Checking tonic-prost v0.14.9
+    Checking reqwest v0.13.5
+    Checking reqwest v0.12.28
+    Checking openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking tonic-types v0.14.9
+    Checking openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking tempfile v3.27.0
+    Checking polling v3.11.0
+    Checking ratatui-widgets v0.3.2
+    Checking ratatui-crossterm v0.1.2
+    Checking rustix-openpty v0.2.0
+    Checking mac_address v1.2.1
+   Compiling zstd-sys v2.1.2+zstd.1.5.7
+    Checking wezterm-blob-leases v0.1.1
+    Checking core_maths v0.1.1
+    Checking fdeflate v0.3.7
+    Checking miniz_oxide v0.8.9
+   Compiling slotmap v1.1.1
+    Checking ttf-parser v0.25.1
+    Checking weezl v0.1.12
+    Checking arrayref v0.3.9
+    Checking option-ext v0.2.0
+    Checking strict-num v0.1.1
+    Checking color_quant v1.1.0
+    Checking dirs-sys v0.5.0
+    Checking toml_datetime v0.7.5+spec-1.1.0
+    Checking tiny-skia-path v0.11.4
+    Checking gif v0.14.2
+    Checking jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-core)
+    Checking unicode-properties v0.1.5
+    Checking unicode-bidi-mirroring v0.4.0
+    Checking unicode-script v0.5.9
+   Compiling zstd-safe v8.2.0
+    Checking unicode-ccc v0.4.0
+    Checking pxfm v0.1.30
+    Checking winnow v0.7.15
+    Checking tiny-skia v0.11.4
+    Checking rustybuzz v0.20.1
+    Checking toml v0.9.12+spec-1.1.0
+    Checking dirs v6.0.0
+    Checking fontdb v0.23.0
+    Checking png v0.18.1
+    Checking png v0.17.16
+    Checking moxcms v0.8.1
+   Compiling tuiscotti v0.4.0 (https://github.com/tailrocks/tuiscotti?rev=92ef2d9ee082b35f68e066c5129fedbf07675a80#92ef2d9e)
+    Checking byteorder-lite v0.1.0
+    Checking fs2 v0.4.3
+    Checking openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking oauth2 v5.0.0
+    Checking image v0.25.10
+    Checking jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-codex)
+    Checking jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-grok)
+    Checking jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-opencode)
+    Checking jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-cursor)
+    Checking jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-kimi)
+    Checking ratatui-macros v0.7.2
+    Checking jackin-image v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-image)
+    Checking jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-openrouter)
+    Checking jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-claude)
+    Checking jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-gemini)
+    Checking jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-minimax)
+    Checking ratatui v0.30.2
+    Checking jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-zai)
+    Checking regex v1.13.1
+    Checking alacritty_terminal v0.26.0
+    Checking junie-tui v0.1.0 (https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63db)
+    Checking fancy-regex v0.11.0
+    Checking jackin-usage v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage)
+    Checking termwiz v0.23.3
+    Checking tuiscotti-tui-test v0.2.1
+mbx[progress]: 15s elapsed; 98 hits, 28 misses, 0 bypassed, 8 not looked up; ~39.69s compiler work saved
+    Checking jackin-console v0.1.0 (https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63db)
+    Checking openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+    Checking openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+mbx[progress]: 30s elapsed; 98 hits, 30 misses, 0 bypassed, 10 not looked up; ~39.69s compiler work saved
+    Checking jackin-openshell v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-openshell)
+    Checking jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+mbx[progress]: 45s elapsed; 98 hits, 33 misses, 0 bypassed, 11 not looked up; ~39.69s compiler work saved
+    Checking jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+    Checking jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+    Checking jackin v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin)
+mbx[progress]: 1m elapsed; 98 hits, 33 misses, 0 bypassed, 30 not looked up; ~39.69s compiler work saved
+    Finished `dev` profile [unoptimized] target(s) in 1m 09s
+mbx[cache]: 98 hits, 33 misses, 47 not looked up; 0 B downloaded, 0 B uploaded, 137.2 MiB stored locally
+mbx[savings]: the running total stands at 20h 23m across 4611 builds. nobody is counting except the box.

@@ -1,0 +1,155 @@
+    Finished `test` profile [unoptimized] target(s) in 1.84s
+────────────
+ Nextest run ID 40d473eb-5487-4a4a-90e7-06f20e4a0145 with nextest profile: default
+    Starting 8 tests across 2 binaries (183 tests skipped)
+        PASS [   0.234s] (1/8) jackin-session::accounts race::a_failed_config_write_after_account_removal_restores_every_original_zai_provider
+        PASS [   0.274s] (2/8) jackin-session::accounts race::a_failed_config_write_after_gateway_removal_restores_every_original_zai_provider
+        FAIL [   0.296s] (3/8) jackin-session::accounts race::exact_undo_removes_only_the_codex_provider_created_by_the_failed_account_edit
+  stdout ───
+
+    running 1 test
+    test race::exact_undo_removes_only_the_codex_provider_created_by_the_failed_account_edit ... FAILED
+
+    failures:
+
+    failures:
+        race::exact_undo_removes_only_the_codex_provider_created_by_the_failed_account_edit
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.27s
+
+  stderr ───
+
+    thread 'race::exact_undo_removes_only_the_codex_provider_created_by_the_failed_account_edit' (82803674) panicked at crates/jackin-session/tests/accounts/race.rs:590:9:
+    assertion failed: world.gateway.provider(&codex).is_none()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 5 tests still running
+        FAIL [   0.373s] (4/8) jackin-session::accounts sync::omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials
+  stdout ───
+
+    running 1 test
+    test sync::omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials ... FAILED
+
+    failures:
+
+    failures:
+        sync::omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.33s
+
+  stderr ───
+
+    thread 'sync::omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials' (82803714) panicked at crates/jackin-session/tests/accounts/sync.rs:533:9:
+    assertion failed: matches!(&missing_provider, Err(AccountError::MissingCredential { account })
+        if account.as_str() == "work")
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.392s] (5/8) jackin-session::accounts sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home
+  stdout ───
+
+    running 1 test
+
+    running 1 test
+    test sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home ... FAILED
+
+    failures:
+
+    failures:
+        sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.33s
+
+    test sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home ... FAILED
+
+    failures:
+
+    failures:
+        sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.37s
+
+  stderr ───
+
+    thread 'sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home' (82803788) panicked at crates/jackin-session/tests/accounts/sync.rs:512:9:
+    assertion failed: record.access_token == OMP_WORLD_KEY
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+    Error: "the isolated OmpHost test failed with exit status: 101"
+
+        FAIL [   0.426s] (6/8) jackin-session::accounts peers::removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_that_account
+  stdout ───
+
+    running 1 test
+    test peers::removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_that_account ... FAILED
+
+    failures:
+
+    failures:
+        peers::removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_that_account
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.39s
+
+  stderr ───
+
+    thread 'peers::removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_that_account' (82803689) panicked at crates/jackin-session/tests/accounts/peers.rs:682:13:
+    assertion failed: world.gateway.provider(name).is_none()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   2.174s] (7/8) jackin-session::launch multi_instance::failed_codex_provider_publication_cleans_up_only_codex_and_preserves_sibling_providers
+  stdout ───
+
+    running 1 test
+    test multi_instance::failed_codex_provider_publication_cleans_up_only_codex_and_preserves_sibling_providers ... FAILED
+
+    failures:
+
+    failures:
+        multi_instance::failed_codex_provider_publication_cleans_up_only_codex_and_preserves_sibling_providers
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 109 filtered out; finished in 2.15s
+
+  stderr ───
+
+    thread 'multi_instance::failed_codex_provider_publication_cleans_up_only_codex_and_preserves_sibling_providers' (82803671) panicked at crates/jackin-session/tests/launch/multi_instance.rs:267:9:
+    assertion failed: rig.gateway().provider(&codex).is_none()
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   5.010s] (8/8) jackin-session::launch omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home
+  stdout ───
+
+    running 1 test
+
+    running 1 test
+    test omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home ... FAILED
+
+    failures:
+
+    failures:
+        omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 109 filtered out; finished in 4.97s
+
+    test omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home ... FAILED
+
+    failures:
+
+    failures:
+        omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 109 filtered out; finished in 4.99s
+
+  stderr ───
+
+    thread 'omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home' (82803715) panicked at crates/jackin-session/tests/launch/omp_models.rs:179:9:
+    assertion failed: record.access_token == WORLD_KEY
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+    Error: "the isolated OmpHost test failed with exit status: 101"
+
+────────────
+     Summary [   5.012s] 8 tests run: 2 passed, 6 failed, 183 skipped
+        FAIL [   0.296s] (3/8) jackin-session::accounts race::exact_undo_removes_only_the_codex_provider_created_by_the_failed_account_edit
+        FAIL [   0.373s] (4/8) jackin-session::accounts sync::omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials
+        FAIL [   0.392s] (5/8) jackin-session::accounts sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home
+        FAIL [   0.426s] (6/8) jackin-session::accounts peers::removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_that_account
+        FAIL [   2.174s] (7/8) jackin-session::launch multi_instance::failed_codex_provider_publication_cleans_up_only_codex_and_preserves_sibling_providers
+        FAIL [   5.010s] (8/8) jackin-session::launch omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home
+error: test run failed

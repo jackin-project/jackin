@@ -1,0 +1,26 @@
+xtask: deny
+xtask: shear
+xtask: comments
+xtask: layers
+xtask: pins
+xtask: containers
+xtask: errors
+xtask: baseline
+xtask: screen
+xtask: demo-gate
+xtask: reuse
+advisories ok, bans ok, licenses ok, sources ok
+shear/summary
+  ✓ no issues found
+# SUMMARY
+* Bad licenses: 0
+* Deprecated licenses: 0
+* Licenses without file extension: 0
+* Missing licenses: 0
+* Unused licenses: 0
+* Used licenses: Apache-2.0, MIT
+* Read errors: 0
+* Invalid SPDX License Expressions: 0
+* Files with copyright information: 1240 / 1240
+* Files with license information: 1240 / 1240
+Congratulations! Your project is compliant with version 3.3 of the REUSE Specification :-)

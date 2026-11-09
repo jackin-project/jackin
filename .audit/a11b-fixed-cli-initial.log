@@ -1,0 +1,13 @@
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+   Compiling jackin v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 48.87s
+────────────
+ Nextest run ID 2f3c6f4d-7027-4dcd-9b09-7dee8159f2ea with nextest profile: default
+    Starting 1 test across 1 binary (166 tests skipped)
+        PASS [   0.056s] (1/1) jackin::cli account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home
+────────────
+     Summary [   0.056s] 1 test run: 1 passed, 166 skipped
+mbx[cache]: 0 hits, 1 misses, 5 not looked up, 6 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: your deleted worktrees left 477.1 GiB logical behind. left. past tense.

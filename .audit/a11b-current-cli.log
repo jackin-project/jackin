@@ -1,0 +1,115 @@
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling rustix v1.1.6
+   Compiling nix v0.29.0
+   Compiling nix v0.31.3
+   Compiling uuid v1.29.0
+   Compiling hex v0.4.3
+   Compiling vte v0.15.0
+   Compiling ssh-key v0.7.0-rc.11
+   Compiling termpane v0.1.1 (https://github.com/tailrocks/termpane?rev=46cc0977d8ee95d5284f75080d507ca2d116c007#46cc0977)
+   Compiling indexmap v2.14.2
+   Compiling serde_json v1.0.154
+   Compiling serde_path_to_error v0.1.20
+   Compiling serde_spanned v1.1.2
+   Compiling toml_datetime v1.1.2+spec-1.1.0
+   Compiling russh-cryptovec v0.62.0
+   Compiling h2 v0.4.20
+   Compiling tower v0.5.3
+   Compiling noyalib v0.0.53
+   Compiling toml v1.2.0+spec-1.1.0
+   Compiling noyalib v0.0.58
+   Compiling url v2.5.8
+   Compiling chrono v0.4.45
+   Compiling serde_urlencoded v0.7.1
+   Compiling jsonwebtoken v10.4.0
+   Compiling terminal_size v0.4.4
+   Compiling hyper v1.12.0
+   Compiling tower-http v0.6.11
+   Compiling axum v0.8.9
+   Compiling hickory-proto v0.26.3
+   Compiling jackin-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-core)
+   Compiling crossterm v0.29.0
+   Compiling miette v7.6.0
+   Compiling russh v0.65.1
+   Compiling tempfile v3.27.0
+   Compiling hyper-util v0.1.21
+   Compiling ratatui-crossterm v0.1.2
+   Compiling openshell-policy-schema v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling hyper-rustls v0.27.10
+   Compiling hyper-timeout v0.5.2
+   Compiling ratatui v0.30.2
+   Compiling jackin-image v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-image)
+   Compiling tonic v0.14.9
+   Compiling junie-tui v0.1.0 (https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63db)
+   Compiling reqwest v0.13.5
+   Compiling reqwest v0.12.28
+   Compiling jackin-console v0.1.0 (https://github.com/tailrocks/terminal-components-baseline?rev=1d7f63dbb13ecb2bf3e3295e7a296dc2080a62b1#1d7f63db)
+   Compiling tonic-types v0.14.9
+   Compiling openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling tonic-prost v0.14.9
+   Compiling openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling oauth2 v5.0.0
+   Compiling jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-core)
+   Compiling openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-openrouter)
+   Compiling jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-claude)
+   Compiling jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-gemini)
+   Compiling jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-minimax)
+   Compiling jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-zai)
+   Compiling jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-codex)
+   Compiling jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-grok)
+   Compiling jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-opencode)
+   Compiling jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-cursor)
+   Compiling jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-kimi)
+   Compiling jackin-usage v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage)
+   Compiling openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-openshell v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-openshell)
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+   Compiling jackin v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 1m 29s
+────────────
+ Nextest run ID ac6c3ada-5900-45bf-91cd-e50b724f77af with nextest profile: default
+    Starting 1 test across 1 binary (166 tests skipped)
+        FAIL [   0.127s] (1/1) jackin::cli account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home
+  stdout ───
+
+    running 1 test
+
+    running 1 test
+    test account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home ... FAILED
+
+    failures:
+
+    failures:
+        account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 166 filtered out; finished in 0.09s
+
+    test account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home ... FAILED
+
+    failures:
+
+    failures:
+        account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 166 filtered out; finished in 0.11s
+
+  stderr ───
+
+    thread 'account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home' (83020650) panicked at crates/jackin/tests/cli/account_manage.rs:655:9:
+    assertion failed: record.access_token == WORLD_KEY
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+    Error: "the isolated OmpHost test failed with exit status: 101"
+
+  Cancelling due to test failure
+────────────
+     Summary [   0.131s] 1 test run: 0 passed, 1 failed, 166 skipped
+        FAIL [   0.127s] (1/1) jackin::cli account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home
+error: test run failed
+mbx[cache]: 74 hits, 9 misses, 2 not looked up; 0 B downloaded, 0 B uploaded, 361.6 MiB stored locally
+mbx[savings]: 168496 compilations. rustc did each once; mbx did the rest of the showing up.

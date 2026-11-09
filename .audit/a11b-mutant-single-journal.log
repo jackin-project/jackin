@@ -1,0 +1,57 @@
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 5.53s
+────────────
+ Nextest run ID 5328bdcf-ea68-42b2-a0b2-1cd8fc570dc6 with nextest profile: default
+    Starting 2 tests across 1 binary (79 tests skipped)
+        FAIL [   0.089s] (1/2) jackin-session::accounts race::a_failed_config_write_after_gateway_removal_restores_every_original_zai_provider
+  stdout ───
+
+    running 1 test
+    test race::a_failed_config_write_after_gateway_removal_restores_every_original_zai_provider ... FAILED
+
+    failures:
+
+    failures:
+        race::a_failed_config_write_after_gateway_removal_restores_every_original_zai_provider
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.08s
+
+  stderr ───
+
+    thread 'race::a_failed_config_write_after_gateway_removal_restores_every_original_zai_provider' (83799027) panicked at crates/jackin-session/tests/accounts/race.rs:492:9:
+    assertion `left == right` failed
+      left: None
+     right: Some(ProviderRecord { profile: ProfileId("t18-codex-zai"), access_key: "ZAI_API_KEY", account_id_key: "", chatgpt_account_id: ChatgptAccountId("00000000-0000-4000-8000-000000000000"), .. })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 1 test still running
+        FAIL [   0.091s] (2/2) jackin-session::accounts race::a_failed_config_write_after_account_removal_restores_every_original_zai_provider
+  stdout ───
+
+    running 1 test
+    test race::a_failed_config_write_after_account_removal_restores_every_original_zai_provider ... FAILED
+
+    failures:
+
+    failures:
+        race::a_failed_config_write_after_account_removal_restores_every_original_zai_provider
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 80 filtered out; finished in 0.08s
+
+  stderr ───
+
+    thread 'race::a_failed_config_write_after_account_removal_restores_every_original_zai_provider' (83799026) panicked at crates/jackin-session/tests/accounts/race.rs:492:9:
+    assertion `left == right` failed
+      left: None
+     right: Some(ProviderRecord { profile: ProfileId("t18-codex-zai"), access_key: "ZAI_API_KEY", account_id_key: "", chatgpt_account_id: ChatgptAccountId("00000000-0000-4000-8000-000000000000"), .. })
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.091s] 2 tests run: 0 passed, 2 failed, 79 skipped
+        FAIL [   0.089s] (1/2) jackin-session::accounts race::a_failed_config_write_after_gateway_removal_restores_every_original_zai_provider
+        FAIL [   0.091s] (2/2) jackin-session::accounts race::a_failed_config_write_after_account_removal_restores_every_original_zai_provider
+error: test run failed
+mbx[cache]: 0 hits, 0 misses, 3 not looked up, 4 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 581.7 GiB logical of old build output has been shown the door.

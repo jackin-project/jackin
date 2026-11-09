@@ -418,3 +418,192 @@ async fn a_provider_delete_that_landed_and_then_failed_is_restored() -> TestResu
     })
     .await
 }
+
+async fn zai_account(world: &World, name: &str) -> Result<Account, Box<dyn std::error::Error>> {
+    let path = HostPath::parse(&world.home().as_path().join(format!("{name}.key")))?;
+    world
+        .fs
+        .write_new(&path, b"ZAI-FIXTURE-KEY", jackin_core::FileMode(0o600))
+        .await?;
+    Ok(Account::new(
+        AccountName::parse(name)?,
+        jackin_core::Provider::Zai,
+        CredentialSource::File { path },
+    )?)
+}
+
+fn zai_providers(account: &Account) -> [ProviderName; 2] {
+    [jackin_core::Agent::Omp, jackin_core::Agent::Codex]
+        .map(|agent| ProviderName::for_account(account.name(), agent))
+}
+
+async fn sync_zai_pair(world: &World, account: &Account) -> TestResult {
+    for agent in [jackin_core::Agent::Omp, jackin_core::Agent::Codex] {
+        world
+            .session
+            .sync_account(account, agent, &CancellationToken::new())
+            .await?;
+    }
+    Ok(())
+}
+
+async fn zai_rollback_fixture() -> Result<
+    (
+        World,
+        Account,
+        Arc<MemFs>,
+        ConfigStore,
+        Vec<ProviderName>,
+        Vec<jackin_testkit::ProviderRecord>,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let world = registered().await?;
+    let account = zai_account(&world, "work").await?;
+    world
+        .config
+        .edit(vec![ConfigEdit::AddAccount(account.clone())])
+        .await?;
+    sync_zai_pair(&world, &account).await?;
+    let (fs, store) = failing_store(&world).await?;
+    store
+        .edit(vec![ConfigEdit::AddAccount(account.clone())])
+        .await?;
+    let names = zai_providers(&account).to_vec();
+    let records = names
+        .iter()
+        .map(|name| {
+            world
+                .gateway
+                .provider(name)
+                .ok_or_else(|| "missing original provider".into())
+        })
+        .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
+    Ok((world, account, fs, store, names, records))
+}
+
+fn assert_zai_restored(
+    world: &World,
+    account: &Account,
+    names: &[ProviderName],
+    records: &[jackin_testkit::ProviderRecord],
+) -> TestResult {
+    for (name, original) in names.iter().zip(records) {
+        assert_eq!(world.gateway.provider(name).as_ref(), Some(original));
+    }
+    let absent = ProviderName::for_account(account.name(), jackin_core::Agent::ClaudeCode);
+    assert!(world.gateway.provider(&absent).is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_failed_config_write_after_account_removal_restores_every_original_zai_provider()
+-> TestResult {
+    guard(async {
+        let (world, account, fs, store, names, records) = zai_rollback_fixture().await?;
+        let before = store.load().await?;
+        fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
+        let failed = plan_account_edits(
+            &world.desk_over(store.clone()),
+            vec![ConfigEdit::RemoveAccount(work()?)],
+            &CancellationToken::new(),
+        )
+        .await?
+        .apply(&Gateways::single(world.session.clone()))
+        .await;
+
+        assert!(
+            matches!(failed, Err(AccountEditError::Config(ConfigError::Fs(_)))),
+            "{failed:?}"
+        );
+        assert_eq!(store.load().await?, before);
+        assert_zai_restored(&world, &account, &names, &records)?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_failed_config_write_after_gateway_removal_restores_every_original_zai_provider()
+-> TestResult {
+    guard(async {
+        let (world, account, fs, store, names, records) = zai_rollback_fixture().await?;
+        let before = store.load().await?;
+        let name = GatewayName::parse("fake-gateway")?;
+        let connector =
+            ScriptedConnector::new().gateway(Arc::<FakeGateway>::clone(&world.gateway), Vec::new());
+        let cancel = CancellationToken::new();
+        let GatewayRemoval::Online(plan) =
+            plan_gateway_removal(&world.desk_over(store.clone()), &name, &cancel).await?
+        else {
+            return Err("the Z.AI account needs the gateway".into());
+        };
+        fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
+        let failed = plan.apply(&connector, &cancel).await;
+
+        assert!(
+            matches!(failed, Err(AccountEditError::Config(ConfigError::Fs(_)))),
+            "{failed:?}"
+        );
+        assert_eq!(store.load().await?, before);
+        assert_zai_restored(&world, &account, &names, &records)?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn exact_undo_removes_only_the_codex_provider_created_by_the_failed_account_edit()
+-> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let account = zai_account(&world, "work").await?;
+        let other = Account::new(
+            AccountName::parse("other")?,
+            jackin_core::Provider::Zai,
+            account.credential().clone(),
+        )?;
+        world
+            .config
+            .edit(vec![
+                ConfigEdit::AddAccount(account.clone()),
+                ConfigEdit::AddAccount(other.clone()),
+            ])
+            .await?;
+        world
+            .session
+            .sync_account(&account, jackin_core::Agent::Omp, &CancellationToken::new())
+            .await?;
+        world
+            .session
+            .sync_account(&other, jackin_core::Agent::Omp, &CancellationToken::new())
+            .await?;
+        let omp = ProviderName::for_account(account.name(), jackin_core::Agent::Omp);
+        let codex = ProviderName::for_account(account.name(), jackin_core::Agent::Codex);
+        let other_provider = ProviderName::for_account(other.name(), jackin_core::Agent::Omp);
+        let original_omp = world.gateway.provider(&omp);
+        let original_other = world.gateway.provider(&other_provider);
+        let (fs, store) = failing_store(&world).await?;
+        fs.fail_at(FsOp::Rename, 1, io_failure("/config/jackin/config.toml")?);
+        let failed = jackin_session::plan_account_edits_for_agent(
+            &world.desk_over(store.clone()),
+            vec![ConfigEdit::AddAccount(account.clone())],
+            jackin_core::Agent::Codex,
+            &CancellationToken::new(),
+        )
+        .await?
+        .apply(&Gateways::single(world.session.clone()))
+        .await;
+
+        assert!(
+            matches!(failed, Err(AccountEditError::Config(ConfigError::Fs(_)))),
+            "{failed:?}"
+        );
+        assert!(store.load().await?.account(account.name()).is_none());
+        assert!(world.gateway.provider(&codex).is_none());
+        assert_eq!(world.gateway.provider(&omp), original_omp);
+        assert_eq!(world.gateway.provider(&other_provider), original_other);
+        Ok(())
+    })
+    .await
+}

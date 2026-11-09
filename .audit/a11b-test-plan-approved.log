@@ -1,0 +1,3 @@
+APPROVED
+
+The revised plan satisfies the repository test protocol: public-interface coverage, distinct positive and negative cases, no duplication of existing tests, hermetic boundary fakes, required nextest/gate commands, and an honest red/green matrix including both broad-deletion and exact-cleanup mutants.

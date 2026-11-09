@@ -96,16 +96,10 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
         let provider_id = tuple.omp_provider_id().ok_or_else(|| {
             CommandError::Argument("omp-host needs an omp tuple provider".to_owned())
         })?;
-        let home = app
-            .env
-            .get(
-                &jackin_core::EnvName::parse("HOME")
-                    .map_err(|_| CommandError::Argument("HOME is not set".to_owned()))?,
-            )
-            .ok_or_else(|| CommandError::Argument("HOME is not set".to_owned()))?;
-        let db = jackin_core::HostPath::parse(std::path::Path::new(&format!(
-            "{home}/.omp/agent/agent.db"
-        )))
+        let db = jackin_core::HostPath::resolve(
+            std::path::Path::new(".omp/agent/agent.db"),
+            &app.deps.host.home,
+        )
         .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
         let _key =
             read_omp_host_key(app.deps.host.fs.as_ref(), &db, provider_id).map_err(|_| {

@@ -429,12 +429,12 @@ impl RemovalPlan {
                 let held = holds(gateway.as_ref(), account)
                     .await
                     .map_err(|error| on_gateway(&self.name, error))?;
-                if held {
+                for (agent, _) in held {
                     journal.push(Undo {
                         host,
                         gateway: gateway.as_ref(),
                         account,
-                        agent: account_agent(account),
+                        agent,
                         action: Action::Restore,
                     });
                 }
@@ -470,7 +470,11 @@ struct Undo<'a> {
 impl Undo<'_> {
     async fn run(&self) -> Result<(), AccountError> {
         match self.action {
-            Action::Remove => forget_login(self.gateway, self.account).await,
+            Action::Remove => {
+                let provider = ProviderName::for_account(self.account.name(), self.agent);
+                self.gateway.delete_provider(&provider).await?;
+                Ok(())
+            }
             Action::Restore => sync_login(
                 self.host,
                 self.gateway,
@@ -583,8 +587,8 @@ async fn forget<'a>(
             let held = holds(session.deps.gateway.as_ref(), account)
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error))?;
-            if held {
-                journal.push(session.undo(Action::Restore, account, account_agent(account)));
+            for (agent, _) in held {
+                journal.push(session.undo(Action::Restore, account, agent));
             }
             forget_login(session.deps.gateway.as_ref(), account)
                 .await
@@ -685,8 +689,9 @@ impl Session {
         self.sync_locked_c(account, agent, cancel).await
     }
 
-    async fn forget_locked(&self, account: &Account) -> Result<(), AccountError> {
-        forget_login(self.deps.gateway.as_ref(), account).await
+    async fn forget_locked(&self, provider: &ProviderName) -> Result<(), AccountError> {
+        self.deps.gateway.delete_provider(provider).await?;
+        Ok(())
     }
 
     pub(crate) async fn sync_provider(
@@ -703,7 +708,7 @@ impl Session {
             return Ok(false);
         }
         if let Err(original) = self.sync_locked_c(account, agent, cancel).await {
-            return Err(match self.forget_locked(account).await {
+            return Err(match self.forget_locked(provider).await {
                 Ok(()) => original,
                 Err(rollback) => AccountError::RollbackFailed {
                     account: account.name().clone(),
@@ -793,18 +798,34 @@ impl Session {
     }
 }
 
+fn account_providers(account: &Account) -> impl Iterator<Item = (Agent, ProviderName)> + '_ {
+    let name = account.name().clone();
+    jackin_core::TUPLES
+        .iter()
+        .filter(move |tuple| {
+            tuple.provider == account.provider() && account.has_provider_for(tuple.agent)
+        })
+        .map(move |tuple| (tuple.agent, ProviderName::for_account(&name, tuple.agent)))
+}
+
 async fn forget_login(gateway: &dyn Gateway, account: &Account) -> Result<(), AccountError> {
-    if !account.has_provider() {
-        return Ok(());
+    for (_, provider) in account_providers(account) {
+        gateway.delete_provider(&provider).await?;
     }
-    let provider = ProviderName::for_account(account.name(), account_agent(account));
-    gateway.delete_provider(&provider).await?;
     Ok(())
 }
 
-async fn holds(gateway: &dyn Gateway, account: &Account) -> Result<bool, AccountError> {
-    let provider = ProviderName::for_account(account.name(), account_agent(account));
-    Ok(gateway.provider_state(&provider).await? == ProviderState::Present)
+async fn holds(
+    gateway: &dyn Gateway,
+    account: &Account,
+) -> Result<Vec<(Agent, ProviderName)>, AccountError> {
+    let mut held = Vec::new();
+    for (agent, provider) in account_providers(account) {
+        if gateway.provider_state(&provider).await? == ProviderState::Present {
+            held.push((agent, provider));
+        }
+    }
+    Ok(held)
 }
 
 async fn sync_grok_login(

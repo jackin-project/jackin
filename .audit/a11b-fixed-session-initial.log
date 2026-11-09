@@ -1,0 +1,26 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 1m 02s
+────────────
+ Nextest run ID 84ab1ecc-5e52-4dd8-8be9-2298865a36a2 with nextest profile: default
+    Starting 8 tests across 2 binaries (183 tests skipped)
+        PASS [   0.262s] (1/8) jackin-session::accounts race::a_failed_config_write_after_account_removal_restores_every_original_zai_provider
+        PASS [   0.267s] (2/8) jackin-session::accounts race::exact_undo_removes_only_the_codex_provider_created_by_the_failed_account_edit
+        PASS [   0.272s] (3/8) jackin-session::accounts race::a_failed_config_write_after_gateway_removal_restores_every_original_zai_provider
+        PASS [   0.322s] (4/8) jackin-session::accounts peers::removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_that_account
+        PASS [   0.327s] (5/8) jackin-session::accounts sync::omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials
+        PASS [   0.327s] (6/8) jackin-session::accounts sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home
+        PASS [   1.774s] (7/8) jackin-session::launch multi_instance::failed_codex_provider_publication_cleans_up_only_codex_and_preserves_sibling_providers
+        PASS [   3.455s] (8/8) jackin-session::launch omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home
+────────────
+     Summary [   3.476s] 8 tests run: 8 passed, 183 skipped
+mbx[cache]: 0 hits, 1 misses, 4 not looked up, 5 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 168711 compilations old. not one compiled twice.

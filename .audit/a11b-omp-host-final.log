@@ -1,0 +1,106 @@
+   Compiling aws-lc-sys v0.47.0
+   Compiling psm v0.1.32
+   Compiling libsqlite3-sys v0.39.1
+   Compiling stacker v0.1.25
+   Compiling pest_stack_guard v1.0.1
+   Compiling rusqlite v0.41.1
+   Compiling pest v2.9.5
+   Compiling pest_meta v2.9.5
+   Compiling pest_generator v2.9.5
+   Compiling pest_derive v2.9.5
+   Compiling termwiz v0.23.3
+   Compiling aws-lc-rs v1.19.0
+   Compiling rustls v0.23.46
+   Compiling rustls-webpki v0.103.16
+   Compiling rcgen v0.14.10
+   Compiling jsonwebtoken v10.4.0
+   Compiling russh v0.65.1
+   Compiling tokio-rustls v0.26.6
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling tungstenite v0.26.2
+   Compiling hyper-rustls v0.27.10
+   Compiling tonic v0.14.9
+   Compiling tokio-tungstenite v0.26.2
+   Compiling reqwest v0.13.5
+   Compiling reqwest v0.12.28
+   Compiling tonic-prost v0.14.9
+   Compiling openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling tonic-types v0.14.9
+   Compiling openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling oauth2 v5.0.0
+   Compiling jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-core)
+   Compiling jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-zai)
+   Compiling jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-codex)
+   Compiling jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-grok)
+   Compiling jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-opencode)
+   Compiling jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-cursor)
+   Compiling jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-kimi)
+   Compiling jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-openrouter)
+   Compiling jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-claude)
+   Compiling jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-gemini)
+   Compiling openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-minimax)
+   Compiling jackin-usage v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage)
+   Compiling jackin-openshell v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-openshell)
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 38.79s
+────────────
+ Nextest run ID 1207e722-a5ac-49f2-af49-bde3c1aafaee with nextest profile: default
+    Starting 3 tests across 2 binaries (188 tests skipped)
+        PASS [   0.138s] (1/3) jackin-session::accounts sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home
+        PASS [   0.143s] (2/3) jackin-session::accounts sync::omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials
+        PASS [   2.362s] (3/3) jackin-session::launch omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home
+────────────
+     Summary [   2.365s] 3 tests run: 3 passed, 188 skipped
+mbx[cache]: 55 hits, 3 misses, 2 not looked up, 3 incremental; 0 B downloaded, 0 B uploaded, 45.7 MiB stored locally
+mbx[savings]: across 4732 builds, rustc has been excused from 20h 27m of its duties.
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling hyper-rustls v0.27.10
+   Compiling tonic v0.14.9
+   Compiling jsonwebtoken v10.4.0
+   Compiling russh v0.65.1
+   Compiling reqwest v0.13.5
+   Compiling reqwest v0.12.28
+   Compiling tonic-types v0.14.9
+   Compiling openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling tonic-prost v0.14.9
+   Compiling openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-core)
+   Compiling oauth2 v5.0.0
+   Compiling openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-opencode)
+   Compiling jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-cursor)
+   Compiling jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-kimi)
+   Compiling jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-openrouter)
+   Compiling jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-claude)
+   Compiling jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-gemini)
+   Compiling jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-minimax)
+   Compiling jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-zai)
+   Compiling jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-codex)
+   Compiling openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage-provider-grok)
+   Compiling openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/usage/jackin-usage)
+   Compiling jackin-openshell v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-openshell)
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+   Compiling jackin v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 19.23s
+────────────
+ Nextest run ID 38e6e4c3-0d81-478c-bca7-022141247296 with nextest profile: default
+    Starting 1 test across 1 binary (166 tests skipped)
+        PASS [   0.109s] (1/1) jackin::cli account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home
+────────────
+     Summary [   0.117s] 1 test run: 1 passed, 166 skipped
+mbx[cache]: 30 hits, 2 misses, 1 not looked up, 3 incremental; 0 B downloaded, 0 B uploaded, 8.5 MiB stored locally
+mbx[savings]: has quietly disposed of 625.7 GiB logical of build leftovers. nobody saw anything.

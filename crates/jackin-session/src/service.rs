@@ -19,6 +19,7 @@ pub struct HostPorts {
     pub clock: Arc<dyn Clock>,
     pub fs: Arc<dyn FileSystem>,
     pub runner: Arc<dyn ProcessRunner>,
+    pub home: HostPath,
 }
 
 #[derive(Clone, Debug)]

@@ -312,6 +312,7 @@ fn session_on(rig: &Rig, gateway: &Arc<FakeGateway>) -> Session {
             clock: Arc::<jackin_testkit::FakeClock>::clone(&rig.world.clock),
             fs: Arc::clone(&rig.world.fs),
             runner: Arc::<jackin_testkit::TestRunner>::clone(&rig.world.runner),
+            home: rig.world.home().clone(),
         },
         cache_dir: rig.world.cache_dir().clone(),
         config: rig.world.config.clone(),
@@ -602,6 +603,61 @@ async fn ctrl_c_while_an_account_edit_waits_for_the_host_lock_exits_130() -> Tes
                 .account(&AccountName::parse("work")?)
                 .is_some()
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn omp_host_account_add_validates_and_publishes_from_the_injected_home() -> TestResult {
+    const WORLD_KEY: &str = "OMP-CLI-WORLD-FIXTURE-KEY";
+    const AMBIENT_KEY: &str = "OMP-CLI-AMBIENT-FIXTURE-KEY";
+    if World::isolated_omp_ambient(
+        "account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home",
+        "zai",
+        AMBIENT_KEY,
+    )? {
+        return Ok(());
+    }
+    guard(async {
+        let world = World::builder().build()?;
+        world.seed_omp_agent_db("zai", Some(WORLD_KEY))?;
+        let harness = Harness::new(&world);
+        harness.write_config(GATEWAY_CONFIG)?;
+        let ran = harness
+            .run(&[
+                "account",
+                "add",
+                "zai",
+                "--name",
+                "work",
+                "--credential",
+                "omp-host",
+                "--agent",
+                "omp",
+            ])
+            .await?;
+        assert!(!ran.stdout.contains(WORLD_KEY));
+        assert!(!ran.stdout.contains(AMBIENT_KEY));
+        assert!(!ran.stderr.contains(WORLD_KEY));
+        assert!(!ran.stderr.contains(AMBIENT_KEY));
+        ran.ok()?;
+        let stored = harness.stored().await?;
+        let account = stored
+            .account(&AccountName::parse("work")?)
+            .ok_or("no OmpHost account")?;
+        assert!(matches!(
+            account.credential(),
+            jackin_core::CredentialSource::OmpHost
+        ));
+        let name = ProviderName::for_account(account.name(), Agent::Omp);
+        let record = world.gateway.provider(&name).ok_or("no OmpHost provider")?;
+        let selected_world_key = record.access_token == WORLD_KEY;
+        let rejected_ambient_key = record.access_token != AMBIENT_KEY;
+        assert!(selected_world_key);
+        assert!(rejected_ambient_key);
+        assert!(!format!("{record:?}").contains(WORLD_KEY));
+        assert!(!format!("{record:?}").contains(AMBIENT_KEY));
         Ok(())
     })
     .await

@@ -1,0 +1,71 @@
+CHANGES REQUIRED
+
+The plan targets the correct defects and generally avoids duplicating existing tests, but several cases need tighter fixtures, public entry points, and red/green requirements.
+
+1. **Make account removal genuinely multi-agent and multi-gateway.**
+
+   Use a Z.AI file-credential account synchronized through `Session::sync_account` for both:
+   - `Agent::Omp` — T09, profile `omp-zai`
+   - `Agent::Codex` — T18, profile `t18-codex-zai`
+
+   This is the useful fixture because `account_agent` infers `Omp` for Z.AI, leaving Codex as the non-inferred provider (`crates/jackin-session/src/accounts.rs:106`).
+
+   In `crates/jackin-session/tests/accounts/peers.rs`, seed both providers on the home gateway and a peer, then remove through `plan_account_edits` and `AccountPlan::apply`. Assert:
+   - Both `jackin-work-omp` and `jackin-work-codex` are absent on every gateway.
+   - The target account is removed, but an unrelated account remains.
+   - An unrelated account’s providers, including providers for the same agents, remain unchanged.
+
+   Existing coverage only combines multiple gateways with one provider (`accounts/peers.rs:161`) or multiple edits with inferred single providers (`accounts/edit.rs:415`).
+
+2. **Split account-edit and gateway-removal rollback into explicit cases, and add the masked-journal mutant.**
+
+   Put these in `crates/jackin-session/tests/accounts/race.rs`, exercising separately:
+   - `plan_account_edits` → `AccountPlan::apply`
+   - `plan_gateway_removal` → `RemovalPlan::apply`
+
+   These have independent journaling paths at `accounts.rs:405` and `accounts.rs:576`. For each, seed the same Omp+Codex providers, leave another valid tuple-agent provider absent, snapshot the original `ProviderRecord`s, and force the existing `MemFs`/`FsOp::Rename` config-write failure after deletion through `World::desk_over`.
+
+   Assert the operation fails, config is unchanged, every original record is restored with its original provider name and profile, and the initially absent provider remains absent.
+
+   **Important red-proof limitation:** this final-state assertion can pass on the current code. Since current deletion never removes the non-inferred provider, there is nothing missing to restore. Therefore add an explicit broken mutant with **broad deletion but only one journaled `Restore`** and require case 2 to fail there. Do not claim a baseline red result if the baseline passes. Optionally use a failure on a later provider deletion to obtain a baseline red as well.
+
+3. **Change case 3 from “or” to two mandatory tests.**
+
+   Both `Action::Remove` and launch cleanup have separate call sites and both must survive broad deletion:
+
+   - **Account-edit exact undo:** in `accounts/race.rs`, preseed the inferred Omp provider, then use `plan_account_edits_for_agent(..., Agent::Codex, ...)` to publish a previously absent Codex provider and fail the config rename. That creates the `Action::Remove` journal entry at `accounts.rs:653`. Assert Codex is absent afterward, while the original Omp record and unrelated providers survive.
+   - **Launch exact cleanup:** in `accounts/failed_add.rs` or `launch/multi_instance.rs`, launch shared-account Codex+Omp instances with Codex leading, preseed Omp, and inject `Fault::PutProviderFailsAfterWrite` on the first Codex write. Assert `LaunchStep::Provider`, no Codex provider, unchanged Omp and unrelated providers, and no sandbox.
+
+   These fixtures fail on current code because cleanup deletes inferred Omp instead of failed Codex (`accounts.rs:688`, `accounts.rs:796`). They also fail on a naïve account-wide deletion mutant because Omp is incorrectly removed. That satisfies both required mutation directions.
+
+4. **Specify OmpHost coverage for account synchronization, launch, and validation.**
+
+   The direct SQLite behavior is already covered by `crates/jackin-session/tests/plan/omp_credentials.rs:8`; do not duplicate it.
+
+   Add the real-database fixture through the proposed testkit helper, likely in `crates/jackin-testkit/src/world.rs`, with workspace `rusqlite` added to `crates/jackin-testkit/Cargo.toml`. Then cover:
+
+   - `Session::sync_account` in `accounts/sync.rs`: the World.home row is selected; missing provider and present-row-without-`key` both return `AccountError::MissingCredential`.
+   - `Session::launch`: an OmpHost account successfully publishes the same provider using `HostPorts.home`, proving the launch path at `launch/run.rs:347` no longer depends on ambient `HOME`.
+   - CLI validation/first publication in `crates/jackin/tests/cli/account_manage.rs`: `account add --credential omp-host --agent omp` reads the injected home consistently through `crates/jackin/src/commands/account.rs:88`.
+
+   Use distinct fake keys in World.home and a temporary ambient-home database. Assert selection with boolean comparisons rather than printing key values, and check result/error debug text for leakage. The ambient fixture must be hermetic: use nextest process isolation or a subprocess, never write the real `$HOME/.omp`, and avoid shared process-environment mutation in a multithreaded test process.
+
+   Home injection must be consistent in `HostPorts` (`jackin-session/src/service.rs:18`), its production constructor (`jackin-session/src/host.rs:56`), and the World/Rig/console session factories.
+
+5. **Make the regression and red/green matrix explicit.**
+
+   Run the targeted suites and gate with:
+
+   ```text
+   mise exec -- mbx +1.99.1 nextest run -p jackin-session --test accounts --test launch --test plan
+   mise exec -- mbx +1.99.1 nextest run -p jackin --test cli account
+   mise exec -- mbx +1.99.1 xtask ci --fast
+   ```
+
+   Independent review should record:
+   - Current code: removal, both exact-cleanup cases, and OmpHost cases fail.
+   - Broad-deletion/single-journal mutant: both rollback cases fail.
+   - Broad-deletion/account-wide-cleanup mutant: both exact-cleanup cases fail.
+   - Fixed code: every new and existing test passes.
+
+With those adjustments, the suite would cover the A11b behavior through public interfaces without duplicating the existing one-provider and direct-SQLite tests.

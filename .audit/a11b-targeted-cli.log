@@ -1,0 +1,40 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-tui)
+   Compiling jackin v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 1m 11s
+────────────
+ Nextest run ID bb1f5724-91fe-423e-8b4e-496ac577da8f with nextest profile: default
+    Starting 25 tests across 1 binary (142 tests skipped)
+        PASS [   0.069s] ( 1/25) jackin::cli account_manage::binding_an_unknown_or_mismatched_account_fails_without_a_write
+        PASS [   0.136s] ( 2/25) jackin::cli account_manage::account_ls_json_has_a_pinned_shape_and_no_credential_material
+        PASS [   0.147s] ( 3/25) jackin::cli account_add::a_credential_file_link_is_followed_and_an_oversized_file_or_a_link_to_a_pipe_is_refused
+        PASS [   0.182s] ( 4/25) jackin::cli account_add::a_credential_source_must_exist_where_the_account_is_added_and_a_refusal_never_echoes_it
+        PASS [   0.138s] ( 5/25) jackin::cli account_manage::default_and_bind_change_exactly_the_named_entry
+        PASS [   0.146s] ( 6/25) jackin::cli account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home
+        PASS [   1.471s] ( 7/25) jackin::cli account_add::adding_the_same_account_twice_fails_before_the_gateway_is_touched
+        PASS [   1.523s] ( 8/25) jackin::cli account_add::a_mismatched_or_unreadable_account_fails_and_changes_nothing
+        PASS [   1.557s] ( 9/25) jackin::cli account_add::a_codex_api_key_account_requires_agent_omp_and_a_refusal_touches_nothing
+        PASS [   1.592s] (10/25) jackin::cli account_add::a_broken_login_at_a_hostile_path_prints_one_escaped_diagnostic_line
+        PASS [   1.554s] (11/25) jackin::cli account_manage::ctrl_c_while_an_account_edit_waits_for_the_host_lock_exits_130
+        PASS [   1.345s] (12/25) jackin::cli account_manage::rm_fails_closed_naming_a_gateway_it_cannot_reach_and_changes_nothing
+        PASS [   1.624s] (13/25) jackin::cli account_add::a_chatgpt_account_syncs_the_provider_first_and_a_claude_api_key_needs_agent_omp
+        PASS [   1.360s] (14/25) jackin::cli account_manage::rm_of_a_bound_account_lists_its_references_and_keeps_the_provider
+        PASS [   0.180s] (15/25) jackin::cli account_manage::rm_of_an_account_without_a_provider_credential_never_connects_and_succeeds_with_the_gateway_down
+        PASS [   1.670s] (16/25) jackin::cli account_manage::add_publishes_nothing_to_a_gateway_that_was_removed_while_it_waited_for_the_lock
+        PASS [   0.144s] (17/25) jackin::cli gateway_rm::gateway_rm_never_connects_when_no_account_has_an_openshell_provider
+        PASS [   0.224s] (18/25) jackin::cli usage::usage_without_accounts_prints_nothing_and_an_empty_json_report
+        PASS [   0.393s] (19/25) jackin::cli usage::usage_prints_one_line_per_window_in_account_order_and_marks_stale_and_unavailable
+        PASS [   1.481s] (20/25) jackin::cli account_manage::rm_removes_the_provider_from_every_configured_gateway_and_then_the_account_is_unknown
+        PASS [   1.521s] (21/25) jackin::cli account_manage::rm_reaches_a_gateway_that_was_added_while_it_waited_for_the_account_lock
+        PASS [   1.457s] (22/25) jackin::cli account_manage::rm_succeeds_when_a_gateway_never_held_the_provider
+        PASS [   5.225s] (23/25) jackin::cli account_manage::rm_checks_the_gateway_before_the_config_and_removes_both_when_nothing_uses_the_account
+        PASS [   9.659s] (24/25) jackin::cli load::load_without_a_terminal_prints_the_sandbox_and_launch_id_and_uses_the_cwd_account_and_rebuild
+        PASS [  11.111s] (25/25) jackin::cli load::account_for_and_provider_scoped_global_account_resolve_per_instance
+────────────
+     Summary [  12.743s] 25 tests run: 25 passed, 142 skipped
+mbx[cache]: 0 hits, 4 misses, 2 not looked up, 4 incremental; 0 B downloaded, 0 B uploaded, 45.8 MiB stored locally
+mbx[savings]: 20h 4m of compiling skipped across 4491 builds. rustc suspects nothing.

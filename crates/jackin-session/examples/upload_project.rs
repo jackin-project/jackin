@@ -215,6 +215,7 @@ impl Live {
                 clock: Arc::new(SystemClock),
                 fs: Arc::clone(&fs),
                 runner: Arc::clone(&port),
+                home: HostPath::parse(&home_dir()?)?,
             },
             cache_dir: HostPath::parse(&work.join("cache"))?,
             config: ConfigStore::new(

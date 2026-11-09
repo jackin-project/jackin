@@ -2651,6 +2651,7 @@ dependencies = [
  "junie-tui",
  "portable-pty",
  "ratatui",
+ "rusqlite",
  "serde_json",
  "tempfile",
  "tokio",

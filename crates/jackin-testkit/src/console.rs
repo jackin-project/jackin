@@ -146,6 +146,7 @@ pub fn session_maker(world: &World) -> impl Fn(Arc<dyn Gateway>) -> Session + Se
     let runner: Arc<dyn ProcessRunner> = Arc::<crate::host::TestRunner>::clone(&world.runner);
     let cache_dir = world.cache_dir().clone();
     let config = world.config.clone();
+    let home = world.home().clone();
     move |gateway| {
         Session::new(SessionDeps {
             gateway,
@@ -154,6 +155,7 @@ pub fn session_maker(world: &World) -> impl Fn(Arc<dyn Gateway>) -> Session + Se
                 clock: Arc::clone(&clock),
                 fs: Arc::clone(&fs),
                 runner: Arc::clone(&runner),
+                home: home.clone(),
             },
             cache_dir: cache_dir.clone(),
             config: config.clone(),
@@ -542,6 +544,7 @@ impl ConsoleRigBuilder<'_> {
                 clock,
                 fs: Arc::clone(&world.fs),
                 runner: Arc::<crate::host::TestRunner>::clone(&world.runner),
+                home: world.home().clone(),
             },
             wall: wall_port,
             env: EnvSnapshot::from_pairs(self.env),

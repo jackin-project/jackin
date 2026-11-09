@@ -1,0 +1,7 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Checking jackin-session v0.1.0 (/private/tmp/jackin-a11b-account-hardening/crates/jackin-session)
+    Finished `dev` profile [unoptimized] target(s) in 4.59s
+mbx[cache]: 0 hits, 1 misses; 0 B downloaded, 0 B uploaded, 116.1 KiB stored locally
+mbx[savings]: every checkout believes it owns 270.9 GiB of outputs. the disk keeps one copy and says nothing.
