@@ -687,7 +687,7 @@ static CLAUDE_CODE_SPEC: AgentSpec = agent_spec!(
     ],
     AuthClass::BlockedVendor,
     &["api.anthropic.com"],
-    &[],
+    &["ANTHROPIC_API_KEY"],
     &["haiku"],
     "haiku",
     &["CLAUDE_CONFIG_DIR"]
@@ -763,7 +763,7 @@ static ANTIGRAVITY_SPEC: AgentSpec = agent_spec!(
     &[],
     AuthClass::BlockedVendor,
     &["antigravity.google"],
-    &[],
+    &["GOOGLE_API_KEY"],
     &["gemini-4-argon"],
     "gemini-4-argon",
     &[]

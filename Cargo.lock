@@ -2620,6 +2620,7 @@ version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
  "async-trait",
+ "base64 0.23.1",
  "caseless",
  "chrono",
  "flate2",

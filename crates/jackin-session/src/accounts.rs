@@ -19,8 +19,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::connect::{ConnectError, GatewayConnector};
 use crate::credentials::{
-    CredentialError, parse_muse_keychain_secret, read_chatgpt_login, read_grok_login,
-    read_muse_host_metadata, resolve_static_key,
+    CredentialError, parse_muse_keychain_secret, read_antigravity_host_login, read_chatgpt_login,
+    read_claude_host_login, read_grok_login, read_muse_host_metadata, resolve_static_key,
 };
 use crate::gateways::{Gateways, UnreachableGateway};
 use crate::lock::{self, LockError};
@@ -111,6 +111,14 @@ pub(crate) fn account_agent(account: &Account) -> Agent {
         Provider::Muse => Agent::MuseCode,
         Provider::Kimi => Agent::KimiCode,
         Provider::Mimo => Agent::MimoCode,
+        Provider::Claude if matches!(account.credential(), CredentialSource::HostLogin { .. }) => {
+            Agent::ClaudeCode
+        }
+        Provider::Antigravity
+            if matches!(account.credential(), CredentialSource::HostLogin { .. }) =>
+        {
+            Agent::Antigravity
+        }
         provider if jackin_core::lookup_tuple(Agent::Omp, provider).is_ok() => Agent::Omp,
         _ => Agent::Codex,
     }
@@ -807,6 +815,15 @@ async fn sync_grok_login(
     path: &HostPath,
 ) -> Result<AccountSync, AccountError> {
     let login = read_grok_login(host.fs.as_ref(), path).await?;
+    publish_static_login(gateway, account, agent, login.session_key).await
+}
+
+async fn publish_static_login(
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    key: jackin_core::Secret,
+) -> Result<AccountSync, AccountError> {
     let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
         AccountError::MissingCredential {
             account: account.name().clone(),
@@ -835,9 +852,7 @@ async fn sync_grok_login(
                 id_token: "",
                 token_url: "",
             },
-            material: ProviderMaterial::StaticKey {
-                key: login.session_key,
-            },
+            material: ProviderMaterial::StaticKey { key },
         })
         .await?;
     Ok(AccountSync::ProviderReady {
@@ -903,41 +918,48 @@ async fn sync_muse_login(
             account: account.name().clone(),
         }
     })?;
-    let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
-        AccountError::MissingCredential {
-            account: account.name().clone(),
-        }
-    })?;
-    let asset = jackin_core::tuple_profile_asset(tuple);
-    let profile = ProviderProfile::parse(asset)?;
-    let env_key = agent
-        .spec()
-        .credential_env_names
-        .first()
-        .copied()
-        .ok_or_else(|| AccountError::MissingCredential {
-            account: account.name().clone(),
-        })?;
-    let synced = gateway.ensure_profile(&profile).await?;
-    let name = ProviderName::for_account(account.name(), agent);
-    gateway
-        .put_provider(&ProviderSpec {
-            name: name.clone(),
-            profile: profile.id,
-            keys: jackin_core::CredentialKeys {
-                access_token: env_key,
-                refresh_token: "",
-                account_id: "",
-                id_token: "",
-                token_url: "",
+    publish_static_login(gateway, account, agent, access_token).await
+}
+
+async fn sync_claude_login(
+    host: &HostPorts,
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    path: &HostPath,
+    cancel: &CancellationToken,
+) -> Result<AccountSync, AccountError> {
+    let key = read_claude_host_login(host, path, cancel)
+        .await
+        .map_err(|error| match error {
+            CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
+                account: account.name().clone(),
             },
-            material: ProviderMaterial::StaticKey { key: access_token },
-        })
-        .await?;
-    Ok(AccountSync::ProviderReady {
-        provider: name,
-        profile: synced,
-    })
+            _ => AccountError::MissingCredential {
+                account: account.name().clone(),
+            },
+        })?;
+    publish_static_login(gateway, account, agent, key).await
+}
+
+async fn sync_antigravity_login(
+    host: &HostPorts,
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    cancel: &CancellationToken,
+) -> Result<AccountSync, AccountError> {
+    let key = read_antigravity_host_login(host, cancel)
+        .await
+        .map_err(|error| match error {
+            CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
+                account: account.name().clone(),
+            },
+            _ => AccountError::MissingCredential {
+                account: account.name().clone(),
+            },
+        })?;
+    publish_static_login(gateway, account, agent, key).await
 }
 
 async fn sync_login(
@@ -953,6 +975,12 @@ async fn sync_login(
         }
         if agent == Agent::MuseCode && account.provider() == Provider::Muse {
             return sync_muse_login(host, gateway, account, agent, path, cancel).await;
+        }
+        if agent == Agent::ClaudeCode && account.provider() == Provider::Claude {
+            return sync_claude_login(host, gateway, account, agent, path, cancel).await;
+        }
+        if agent == Agent::Antigravity && account.provider() == Provider::Antigravity {
+            return sync_antigravity_login(host, gateway, account, agent, cancel).await;
         }
         return Err(AccountError::MissingCredential {
             account: account.name().clone(),

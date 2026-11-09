@@ -41,9 +41,12 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
         let relative = match provider {
             jackin_core::Provider::Grok => ".grok/auth.json",
             jackin_core::Provider::Muse => ".config/muse/auth.json",
+            jackin_core::Provider::Claude => ".claude/.credentials.json",
+            jackin_core::Provider::Antigravity => ".gemini/antigravity-cli/settings.json",
             _ => {
                 return Err(CommandError::Argument(
-                    "--from-host-login needs the grok or muse provider".to_owned(),
+                    "--from-host-login needs the grok, muse, claude, or antigravity provider"
+                        .to_owned(),
                 ));
             }
         };
@@ -56,6 +59,20 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
                     .await
                     .map_err(|_| {
                         CommandError::Argument("no grok host login is available".to_owned())
+                    })?;
+            }
+            jackin_core::Provider::Claude => {
+                jackin_session::read_claude_host_login(&app.deps.host, &path, &app.cancel)
+                    .await
+                    .map_err(|_| {
+                        CommandError::Argument("no claude host login is available".to_owned())
+                    })?;
+            }
+            jackin_core::Provider::Antigravity => {
+                jackin_session::read_antigravity_host_login(&app.deps.host, &app.cancel)
+                    .await
+                    .map_err(|_| {
+                        CommandError::Argument("no antigravity host login is available".to_owned())
                     })?;
             }
             _ => {
@@ -150,6 +167,8 @@ fn default_agent(provider: jackin_core::Provider) -> Agent {
     match provider {
         jackin_core::Provider::Grok => Agent::GrokBuild,
         jackin_core::Provider::Muse => Agent::MuseCode,
+        jackin_core::Provider::Claude => Agent::ClaudeCode,
+        jackin_core::Provider::Antigravity => Agent::Antigravity,
         jackin_core::Provider::Kimi => Agent::KimiCode,
         jackin_core::Provider::Mimo => Agent::MimoCode,
         jackin_core::Provider::Codex => Agent::Codex,

@@ -5,10 +5,12 @@ use std::path::Path;
 
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jackin_core::{
     Account, ChatgptAccountId, CredentialFileProblem, CredentialSource, FileSystem, FsError,
-    HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret, SecretBytes, plain,
-    read_credential_file,
+    HostPath, ProcessError, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret, SecretBytes,
+    plain, read_credential_file,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -19,6 +21,21 @@ use zeroize::{Zeroize, Zeroizing};
 
 const AUTH_FILE: &str = "auth.json";
 const CHATGPT_MODE: &str = "chatgpt";
+const CLAUDE_CREDENTIALS_FILE: &str = ".credentials.json";
+pub const CLAUDE_KEYCHAIN_ARGS: [&str; 4] = [
+    "find-generic-password",
+    "-s",
+    "Claude Code-credentials",
+    "-w",
+];
+pub const ANTIGRAVITY_KEYCHAIN_ARGS: [&str; 6] = [
+    "find-generic-password",
+    "-s",
+    "gemini",
+    "-a",
+    "antigravity",
+    "-w",
+];
 
 #[derive(Debug)]
 pub struct ChatgptLogin {
@@ -42,6 +59,10 @@ pub enum CredentialError {
     AuthJsonInvalid { key: String },
     #[error("auth.json is not a ChatGPT login")]
     NotAChatgptLogin,
+    #[error("the host credential store is unavailable")]
+    KeychainUnavailable,
+    #[error("the host credential store has no usable login")]
+    KeychainLoginMissing,
     #[error(transparent)]
     Fs(#[from] FsError),
 }
@@ -124,7 +145,11 @@ pub struct MuseHostMetadata {
     pub storage: String,
 }
 
-async fn read_host_auth(fs: &dyn FileSystem, path: &HostPath) -> Result<Document, CredentialError> {
+async fn read_host_auth(
+    fs: &dyn FileSystem,
+    path: &HostPath,
+    file: &str,
+) -> Result<Document, CredentialError> {
     let bytes = match read_credential_file(fs, path).await? {
         Ok(bytes) => Zeroizing::new(bytes),
         Err(CredentialFileProblem::Missing) => {
@@ -138,7 +163,7 @@ async fn read_host_auth(fs: &dyn FileSystem, path: &HostPath) -> Result<Document
         }
     };
     Ok(Document(
-        serde_json::from_slice(&bytes).map_err(|_| invalid(AUTH_FILE))?,
+        serde_json::from_slice(&bytes).map_err(|_| invalid(file))?,
     ))
 }
 
@@ -146,7 +171,7 @@ pub async fn read_grok_login(
     fs: &dyn FileSystem,
     path: &HostPath,
 ) -> Result<GrokLogin, CredentialError> {
-    let document = read_host_auth(fs, path).await?;
+    let document = read_host_auth(fs, path, AUTH_FILE).await?;
     let root = document.0.as_object().ok_or_else(|| invalid(AUTH_FILE))?;
     let mut entries = root.iter();
     let (issuer, entry) = entries.next().ok_or_else(|| invalid(AUTH_FILE))?;
@@ -168,7 +193,7 @@ pub async fn read_muse_host_metadata(
     fs: &dyn FileSystem,
     path: &HostPath,
 ) -> Result<MuseHostMetadata, CredentialError> {
-    let document = read_host_auth(fs, path).await?;
+    let document = read_host_auth(fs, path, AUTH_FILE).await?;
     let providers = field(&document.0, "providers", "providers")?;
     let meta = field(providers, "meta", "providers.meta")?;
     let subs_active = field(meta, "subs_active", "providers.meta.subs_active")?
@@ -189,6 +214,96 @@ pub fn parse_muse_keychain_secret(stdout: &SecretBytes) -> Option<Secret> {
         .and_then(Value::as_str)
         .filter(|value| !value.trim().is_empty())?;
     Some(Secret::new(access_token.to_owned()))
+}
+
+#[derive(Debug)]
+pub struct ClaudeLogin {
+    pub access_token: Secret,
+}
+
+pub async fn read_claude_login(
+    fs: &dyn FileSystem,
+    path: &HostPath,
+) -> Result<ClaudeLogin, CredentialError> {
+    let document = read_host_auth(fs, path, CLAUDE_CREDENTIALS_FILE).await?;
+    let oauth = field(&document.0, "claudeAiOauth", "claudeAiOauth")?;
+    let access_token = text(oauth, "accessToken", "claudeAiOauth.accessToken")?;
+    Ok(ClaudeLogin {
+        access_token: Secret::new(access_token.to_owned()),
+    })
+}
+
+pub fn parse_claude_keychain_secret(stdout: &SecretBytes) -> Option<Secret> {
+    let document = Document(serde_json::from_slice(stdout.expose()).ok()?);
+    let access_token = document
+        .0
+        .get("claudeAiOauth")?
+        .get("accessToken")?
+        .as_str()
+        .filter(|value| !value.trim().is_empty())?;
+    Some(Secret::new(access_token.to_owned()))
+}
+
+pub fn parse_antigravity_keychain_secret(stdout: &SecretBytes) -> Option<Secret> {
+    let value = std::str::from_utf8(stdout.expose()).ok()?.trim();
+    let payload = value.split_once(':')?.1;
+    let bytes = URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')).ok()?;
+    let document = Document(serde_json::from_slice(&bytes).ok()?);
+    let access_token = document
+        .0
+        .get("token")?
+        .get("access_token")?
+        .as_str()
+        .filter(|value| !value.trim().is_empty())?;
+    Some(Secret::new(access_token.to_owned()))
+}
+
+async fn keychain_secret(
+    host: &HostPorts,
+    cancel: &CancellationToken,
+    args: &[&str],
+) -> Result<SecretBytes, CredentialError> {
+    let spec = ProcessSpec {
+        program: Program::Security,
+        args: args.iter().map(|arg| (*arg).to_owned()).collect(),
+        cwd: None,
+        env: Vec::new(),
+        env_remove_prefixes: Vec::new(),
+        stdin: ProcessStdin::Null,
+        timeout: Duration::from_secs(30),
+    };
+    let output = host
+        .runner
+        .run_secret(&spec, cancel)
+        .await
+        .map_err(|error| match error {
+            ProcessError::Spawn { .. } => CredentialError::KeychainUnavailable,
+            _ => CredentialError::KeychainLoginMissing,
+        })?;
+    if output.status != ProcessStatus::Exited(0) {
+        return Err(CredentialError::KeychainLoginMissing);
+    }
+    Ok(output.stdout)
+}
+
+pub async fn read_claude_host_login(
+    host: &HostPorts,
+    path: &HostPath,
+    cancel: &CancellationToken,
+) -> Result<Secret, CredentialError> {
+    if let Ok(login) = read_claude_login(host.fs.as_ref(), path).await {
+        return Ok(login.access_token);
+    }
+    let stdout = keychain_secret(host, cancel, &CLAUDE_KEYCHAIN_ARGS).await?;
+    parse_claude_keychain_secret(&stdout).ok_or(CredentialError::KeychainLoginMissing)
+}
+
+pub async fn read_antigravity_host_login(
+    host: &HostPorts,
+    cancel: &CancellationToken,
+) -> Result<Secret, CredentialError> {
+    let stdout = keychain_secret(host, cancel, &ANTIGRAVITY_KEYCHAIN_ARGS).await?;
+    parse_antigravity_keychain_secret(&stdout).ok_or(CredentialError::KeychainLoginMissing)
 }
 
 pub async fn read_chatgpt_login(

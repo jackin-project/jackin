@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jackin_core::{
     Account, AccountName, Agent, ConfigEdit, CredentialSource, HostPath, Program, Provider,
     ProviderName,
 };
 use jackin_session::{
-    AccountError, grok_auth_file, plan_account_edits_for_agent, read_grok_login,
-    read_muse_host_metadata,
+    ANTIGRAVITY_KEYCHAIN_ARGS, AccountError, CLAUDE_KEYCHAIN_ARGS, grok_auth_file,
+    plan_account_edits_for_agent, read_claude_login, read_grok_login, read_muse_host_metadata,
 };
 use jackin_testkit::{ProcessReply, ScriptedProgram, World};
 use tokio_util::sync::CancellationToken;
@@ -19,6 +21,11 @@ const GROK_B: &str = "FAKE-GROK-B-222";
 const ISSUER: &str = "https://auth.x.ai";
 const MUSE_API: &str = "FAKE-MUSE-API-333";
 const MUSE_ACCESS: &str = "FAKE-MUSE-ACCESS-444";
+const CLAUDE_ACCESS: &str = "FAKE-CLAUDE-ACCESS-555";
+const CLAUDE_REFRESH: &str = "FAKE-CLAUDE-REFRESH-666";
+const AGY_ACCESS: &str = "FAKE-AGY-ACCESS-777";
+const AGY_REFRESH: &str = "FAKE-AGY-REFRESH-888";
+const AGY_PREFIX: &str = "antigravity-store-id";
 const SECURITY_ARGS: [&str; 6] = [
     "find-generic-password",
     "-s",
@@ -429,6 +436,409 @@ async fn grok_accounts_are_isolated_in_providers_and_launch_plan_names() -> Test
         assert_eq!(launch_providers, [b]);
         assert!(!format!("{launch_providers:?}").contains(GROK_A));
         assert!(!format!("{launch_providers:?}").contains("alpha"));
+        Ok(())
+    })
+    .await
+}
+
+fn claude_file_json() -> String {
+    serde_json::json!({"claudeAiOauth": {"accessToken": CLAUDE_ACCESS, "refreshToken": CLAUDE_REFRESH, "expiresAt": 1794237825974_i64}})
+        .to_string()
+}
+
+fn claude_keychain_stdout() -> Vec<u8> {
+    claude_file_json().into_bytes()
+}
+
+fn agy_keychain_stdout() -> Vec<u8> {
+    let payload = serde_json::json!({
+        "auth_method": "consumer",
+        "id_token_email": "operator@example.com",
+        "token": {
+            "access_token": AGY_ACCESS,
+            "token_type": "Bearer",
+            "refresh_token": AGY_REFRESH,
+            "expiry": "2026-11-09T08:24:53.123456789Z",
+            "expires_in": 3599
+        }
+    });
+    let secret = format!(
+        "{AGY_PREFIX}:{}",
+        URL_SAFE_NO_PAD.encode(payload.to_string())
+    );
+    format!("{secret}\n").into_bytes()
+}
+
+async fn agy_world() -> Result<(World, Account, tempfile::TempDir), Box<dyn std::error::Error>> {
+    let world = World::builder().build()?;
+    let dir = tempfile::tempdir()?;
+    let file = dir.path().join("settings.json");
+    write_file(&file, "{}").await?;
+    let account = host_login_account("agyone", Provider::Antigravity, &HostPath::parse(&file)?)?;
+    register(&world, &account).await?;
+    Ok((world, account, dir))
+}
+
+#[tokio::test]
+async fn claude_reader_taxonomy_is_typed_and_secret_free() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let dir = tempfile::tempdir()?;
+        let base = dir.path().join(".credentials.json");
+        let hp = HostPath::parse(&base)?;
+        read_claude_login(world.fs.as_ref(), &hp).await.unwrap_err();
+        write_file(&base, "{not json").await?;
+        let malformed = read_claude_login(world.fs.as_ref(), &hp).await.unwrap_err();
+        write_file(
+            &base,
+            &serde_json::json!({"claudeAiOauth": {"refreshToken": CLAUDE_REFRESH}}).to_string(),
+        )
+        .await?;
+        let no_access = read_claude_login(world.fs.as_ref(), &hp).await.unwrap_err();
+        write_file(
+            &base,
+            &serde_json::json!({"other": {"accessToken": CLAUDE_ACCESS}}).to_string(),
+        )
+        .await?;
+        let no_oauth = read_claude_login(world.fs.as_ref(), &hp).await.unwrap_err();
+        let dirpath = dir.path().join("dir.json");
+        tokio::fs::create_dir(&dirpath).await?;
+        let not_regular = read_claude_login(world.fs.as_ref(), &HostPath::parse(&dirpath)?)
+            .await
+            .unwrap_err();
+        write_file(&base, &"x".repeat(1024 * 1024 + 1)).await?;
+        let oversized = read_claude_login(world.fs.as_ref(), &hp).await.unwrap_err();
+        for error in [&malformed, &no_access, &no_oauth, &not_regular, &oversized] {
+            let text = format!("{error} {error:?}");
+            assert!(!text.contains(CLAUDE_ACCESS), "{text}");
+            assert!(!text.contains(CLAUDE_REFRESH), "{text}");
+        }
+        assert_ne!(format!("{malformed:?}"), format!("{no_access:?}"));
+        assert_ne!(format!("{no_access:?}"), format!("{no_oauth:?}"));
+        assert!(format!("{malformed}").contains(".credentials.json"));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn claude_file_sync_creates_t02_provider_with_key_only_in_record() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join(".credentials.json");
+        write_file(&file, &claude_file_json()).await?;
+        let parsed = jackin_core::Config::parse(&format!(
+            "[accounts.claudeone]\nprovider = \"claude\"\ncredential = {{ source = \"host-login\", path = \"{}\" }}\n",
+            file.display()
+        ))?;
+        assert!(parsed.render().contains("source = \"host-login\""));
+        let account = host_login_account("claudeone", Provider::Claude, &HostPath::parse(&file)?)?;
+        register(&world, &account).await?;
+        let synced = world
+            .session
+            .sync_account(&account, Agent::ClaudeCode, &CancellationToken::new())
+            .await?;
+        let name = ProviderName::for_account(&AccountName::parse("claudeone")?, Agent::ClaudeCode);
+        assert_eq!(name.as_str(), "jackin-claudeone-claude");
+        assert!(matches!(synced, jackin_session::AccountSync::ProviderReady { ref provider, .. } if *provider == name));
+        let record = world.gateway.provider(&name).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "claude");
+        assert_eq!(record.access_token, CLAUDE_ACCESS);
+        assert_eq!(record.access_key, "ANTHROPIC_API_KEY");
+        assert!(
+            profile_env_vars(Agent::ClaudeCode, Provider::Claude)?.contains(&record.access_key),
+            "{}",
+            record.access_key
+        );
+        let debug = format!("{synced:?}");
+        assert!(!debug.contains(CLAUDE_ACCESS), "{debug}");
+        assert!(!debug.contains(CLAUDE_REFRESH), "{debug}");
+        assert_eq!(security_seen(&world).len(), 0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn claude_keychain_sync_creates_provider_when_no_file_login_exists() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join(".credentials.json");
+        write_file(&file, "{not json").await?;
+        let account = host_login_account("claudekey", Provider::Claude, &HostPath::parse(&file)?)?;
+        register(&world, &account).await?;
+        world.runner.scripted().expect(
+            ScriptedProgram::Security,
+            &CLAUDE_KEYCHAIN_ARGS,
+            ProcessReply::exited(0, &claude_keychain_stdout(), b""),
+        );
+        let synced = world
+            .session
+            .sync_account(&account, Agent::ClaudeCode, &CancellationToken::new())
+            .await?;
+        let name = ProviderName::for_account(&AccountName::parse("claudekey")?, Agent::ClaudeCode);
+        assert!(matches!(synced, jackin_session::AccountSync::ProviderReady { ref provider, .. } if *provider == name));
+        let record = world.gateway.provider(&name).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "claude");
+        assert_eq!(record.access_token, CLAUDE_ACCESS);
+        assert_eq!(record.access_key, "ANTHROPIC_API_KEY");
+        let seen = security_seen(&world);
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].args, CLAUDE_KEYCHAIN_ARGS);
+        assert!(!format!("{synced:?}").contains(CLAUDE_ACCESS));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn claude_keychain_error_taxonomy_is_typed_and_secret_free() -> TestResult {
+    guard(async {
+        let cases: Vec<(&str, ProcessReply, bool)> = vec![
+            (
+                "malformed",
+                ProcessReply::exited(0, b"{not json FAKE-CLAUDE-ACCESS-555", b""),
+                false,
+            ),
+            (
+                "missing-oauth",
+                ProcessReply::exited(
+                    0,
+                    serde_json::json!({"other": {"accessToken": CLAUDE_ACCESS}})
+                        .to_string()
+                        .as_bytes(),
+                    b"",
+                ),
+                false,
+            ),
+            (
+                "empty",
+                ProcessReply::exited(
+                    0,
+                    serde_json::json!({"claudeAiOauth": {"accessToken": "  "}})
+                        .to_string()
+                        .as_bytes(),
+                    b"",
+                ),
+                false,
+            ),
+            (
+                "nonzero",
+                ProcessReply::exited(44, b"", b"not found"),
+                false,
+            ),
+            ("spawn", ProcessReply::spawn("no binary"), true),
+        ];
+        for (_name, reply, spawn) in cases {
+            let world = World::builder().build()?;
+            let dir = tempfile::tempdir()?;
+            let file = dir.path().join(".credentials.json");
+            let account =
+                host_login_account("claudekey", Provider::Claude, &HostPath::parse(&file)?)?;
+            register(&world, &account).await?;
+            world
+                .runner
+                .scripted()
+                .expect(ScriptedProgram::Security, &CLAUDE_KEYCHAIN_ARGS, reply);
+            let result = world
+                .session
+                .sync_account(&account, Agent::ClaudeCode, &CancellationToken::new())
+                .await;
+            let error = result.err().ok_or("expected error")?;
+            if spawn {
+                assert!(
+                    matches!(error, AccountError::HostLoginStoreUnsupported { .. }),
+                    "{error:?}"
+                );
+            } else {
+                assert!(
+                    matches!(error, AccountError::MissingCredential { .. }),
+                    "{error:?}"
+                );
+            }
+            let text = format!("{error} {error:?}");
+            assert!(!text.contains(CLAUDE_ACCESS), "{text}");
+            assert!(!text.contains(CLAUDE_REFRESH), "{text}");
+            assert!(world.gateway.providers().is_empty());
+            assert_eq!(security_seen(&world).len(), 1);
+        }
+        let world = World::builder().build()?;
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join(".credentials.json");
+        let account = host_login_account("claudekey", Provider::Claude, &HostPath::parse(&file)?)?;
+        register(&world, &account).await?;
+        let result = world
+            .session
+            .sync_account(&account, Agent::ClaudeCode, &CancellationToken::new())
+            .await;
+        let error = result.err().ok_or("expected error")?;
+        assert!(
+            matches!(error, AccountError::HostLoginStoreUnsupported { .. }),
+            "{error:?}"
+        );
+        assert!(world.gateway.providers().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn antigravity_keychain_sync_creates_t05_provider() -> TestResult {
+    guard(async {
+        let (world, account, _dir) = agy_world().await?;
+        world.runner.scripted().expect(
+            ScriptedProgram::Security,
+            &ANTIGRAVITY_KEYCHAIN_ARGS,
+            ProcessReply::exited(0, &agy_keychain_stdout(), b""),
+        );
+        let synced = world
+            .session
+            .sync_account(&account, Agent::Antigravity, &CancellationToken::new())
+            .await?;
+        let name = ProviderName::for_account(&AccountName::parse("agyone")?, Agent::Antigravity);
+        assert_eq!(name.as_str(), "jackin-agyone-agy");
+        assert!(matches!(synced, jackin_session::AccountSync::ProviderReady { ref provider, .. } if *provider == name));
+        let record = world.gateway.provider(&name).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "agy");
+        assert_eq!(record.access_token, AGY_ACCESS);
+        assert_eq!(record.access_key, "GOOGLE_API_KEY");
+        assert!(
+            profile_env_vars(Agent::Antigravity, Provider::Antigravity)?
+                .contains(&record.access_key),
+            "{}",
+            record.access_key
+        );
+        let debug = format!("{synced:?}");
+        assert!(!debug.contains(AGY_ACCESS), "{debug}");
+        assert!(!debug.contains(AGY_REFRESH), "{debug}");
+        assert!(!debug.contains("operator@example.com"), "{debug}");
+        let seen = security_seen(&world);
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].args, ANTIGRAVITY_KEYCHAIN_ARGS);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn antigravity_keychain_error_taxonomy_is_typed_and_secret_free() -> TestResult {
+    guard(async {
+        let encoded = |payload: serde_json::Value| URL_SAFE_NO_PAD.encode(payload.to_string());
+        let cases: Vec<(&str, ProcessReply, bool)> = vec![
+            (
+                "no-colon",
+                ProcessReply::exited(0, format!("{AGY_ACCESS}x").as_bytes(), b""),
+                false,
+            ),
+            (
+                "bad-base64",
+                ProcessReply::exited(
+                    0,
+                    format!("{AGY_PREFIX}:!!not-base64-{AGY_ACCESS}").as_bytes(),
+                    b"",
+                ),
+                false,
+            ),
+            (
+                "missing-token",
+                ProcessReply::exited(
+                    0,
+                    format!(
+                        "{AGY_PREFIX}:{}",
+                        encoded(serde_json::json!({"auth_method": "consumer"}))
+                    )
+                    .as_bytes(),
+                    b"",
+                ),
+                false,
+            ),
+            (
+                "empty",
+                ProcessReply::exited(
+                    0,
+                    format!(
+                        "{AGY_PREFIX}:{}",
+                        encoded(serde_json::json!({"token": {"access_token": " "}}))
+                    )
+                    .as_bytes(),
+                    b"",
+                ),
+                false,
+            ),
+            (
+                "nonzero",
+                ProcessReply::exited(44, b"", b"not found"),
+                false,
+            ),
+            ("spawn", ProcessReply::spawn("no binary"), true),
+        ];
+        for (_name, reply, spawn) in cases {
+            let (world, account, _dir) = agy_world().await?;
+            world.runner.scripted().expect(
+                ScriptedProgram::Security,
+                &ANTIGRAVITY_KEYCHAIN_ARGS,
+                reply,
+            );
+            let result = world
+                .session
+                .sync_account(&account, Agent::Antigravity, &CancellationToken::new())
+                .await;
+            let error = result.err().ok_or("expected error")?;
+            if spawn {
+                assert!(
+                    matches!(error, AccountError::HostLoginStoreUnsupported { .. }),
+                    "{error:?}"
+                );
+            } else {
+                assert!(
+                    matches!(error, AccountError::MissingCredential { .. }),
+                    "{error:?}"
+                );
+            }
+            let text = format!("{error} {error:?}");
+            assert!(!text.contains(AGY_ACCESS), "{text}");
+            assert!(!text.contains(AGY_REFRESH), "{text}");
+            assert!(world.gateway.providers().is_empty());
+            assert_eq!(security_seen(&world).len(), 1);
+        }
+        let (world, account, _dir) = agy_world().await?;
+        let result = world
+            .session
+            .sync_account(&account, Agent::Antigravity, &CancellationToken::new())
+            .await;
+        let error = result.err().ok_or("expected error")?;
+        assert!(
+            matches!(error, AccountError::HostLoginStoreUnsupported { .. }),
+            "{error:?}"
+        );
+        assert!(world.gateway.providers().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn claude_and_antigravity_host_login_accounts_plan_gateway_sync() -> TestResult {
+    guard(async {
+        for (provider, agent) in [
+            (Provider::Claude, Agent::ClaudeCode),
+            (Provider::Antigravity, Agent::Antigravity),
+        ] {
+            let world = World::builder().build()?;
+            let dir = tempfile::tempdir()?;
+            let file = dir.path().join("login.json");
+            let account = host_login_account("laneone", provider, &HostPath::parse(&file)?)?;
+            let plan = plan_account_edits_for_agent(
+                &world.desk(),
+                vec![ConfigEdit::AddAccount(account)],
+                agent,
+                &CancellationToken::new(),
+            )
+            .await?;
+            assert!(plan.needs_gateway());
+        }
         Ok(())
     })
     .await
