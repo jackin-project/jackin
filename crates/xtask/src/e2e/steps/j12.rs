@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use serde_json::Value;
-
-use crate::e2e::probe::{FactsProcesses, ProbeMode, ProbeReport, ProbeRequest};
-use crate::e2e::run::{Fail, PROBE, Res, Run, fail};
+use crate::e2e::probe::FactsProcesses;
+use crate::e2e::run::{Fail, Res, Run, fail};
 use crate::e2e::verdict::Verdict;
+
+pub(crate) fn shell_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
 
 pub(crate) fn json_of(body: &str) -> Option<&str> {
     let start = body.find('{')?;
@@ -25,7 +27,7 @@ pub(crate) fn judge_shell(
     }
     match (
         &processes.probe.tty,
-        processes.codex.first().and_then(|c| c.tty.as_ref()),
+        processes.agent.first().and_then(|c| c.tty.as_ref()),
     ) {
         (Some(mine), Some(theirs)) if mine == theirs => {
             problems.push(format!("the shell shares the terminal {mine} with Codex"));
@@ -33,7 +35,7 @@ pub(crate) fn judge_shell(
         (Some(_), Some(_)) => {}
         _ => problems.push("the terminal of the shell or of Codex is unknown".to_owned()),
     }
-    let during = processes.codex.first().map(|c| (c.pid, c.start_ticks));
+    let during = processes.agent.first().map(|c| (c.pid, c.start_ticks));
     for (label, seen) in [
         ("during the shell", during),
         ("after the shell", Some(after)),
@@ -54,29 +56,25 @@ impl Run<'_> {
 
     async fn j12_inner(&mut self) -> Res<Verdict> {
         let sandbox = self.sandbox_s()?;
-        let before = self.codex_process(&sandbox, "J12 before", "J12").await?;
+        let before = self.agent_process(&sandbox, "J12 before", "J12").await?;
         let main = self.projects.main.clone();
         let mut session = self.open_pty(&["shell", sandbox.as_str()], &main)?;
         let timeout = self.b.budgets.expect;
-        let ran = session
-            .run_shell(&format!("{PROBE} --docker off --only J12"), timeout)
-            .await;
+        let invocation = self.probe_invocation(false, false, &["J12"])?;
+        let command = invocation
+            .argv
+            .iter()
+            .map(|part| shell_quote(part))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let ran = session.run_shell(&command, timeout).await;
         self.finish_pty("J12 shell", &session);
         let (body, code) = ran?;
-        if code != 0 {
-            return Err(fail(format!("the probe in the shell exited {code}")));
-        }
         let json = json_of(&body).ok_or_else(|| fail("the probe in the shell printed no JSON"))?;
-        let value: Value = serde_json::from_str(json)?;
-        let request = ProbeRequest {
-            only: vec!["J12".to_owned()],
-            docker: false,
-            mode: ProbeMode::Sandbox,
-        };
-        let report = ProbeReport::parse(value.to_string().as_bytes(), &request, &self.redactor)?;
+        let report = self.parse_probe(code, json.as_bytes(), b"", &invocation.request)?;
         let mut problems: Vec<String> = report.gate("J12").into_iter().collect();
         let inside: FactsProcesses = report.facts("J12")?;
-        let after = self.codex_process(&sandbox, "J12 after", "J12").await?;
+        let after = self.agent_process(&sandbox, "J12 after", "J12").await?;
         problems.extend(judge_shell(before, &inside, after));
         session.send(b"exit\n")?;
         drop(session.wait_exit(timeout).await);

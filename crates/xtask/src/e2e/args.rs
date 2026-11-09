@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use clap::Args;
 
-#[derive(Args, Clone, Debug)]
+#[derive(Args, Clone, Debug, Default)]
 pub struct E2eArgs {
     #[arg(
         long,
@@ -33,6 +33,30 @@ pub struct E2eArgs {
         help = "Codex home with the A1 ChatGPT login; default: $HOME/.codex"
     )]
     pub codex_home: Option<PathBuf>,
+    #[arg(
+        long,
+        value_name = "AGENT",
+        help = "Agent tuple to prove; default: codex"
+    )]
+    pub agent: Option<String>,
+    #[arg(
+        long,
+        value_name = "PROVIDER",
+        help = "Provider tuple to prove; default: the agent's native provider"
+    )]
+    pub provider: Option<String>,
+    #[arg(
+        long,
+        value_name = "MODEL",
+        help = "Model to prove; default: the tuple default"
+    )]
+    pub model: Option<String>,
+    #[arg(
+        long,
+        value_name = "SOURCE",
+        help = "Reference-only credential source for a non-T01 tuple"
+    )]
+    pub credential: Option<String>,
     #[arg(
         long,
         value_name = "NAME",

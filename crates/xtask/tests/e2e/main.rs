@@ -17,5 +17,6 @@ mod e_scratch;
 mod f_pty;
 mod g_cleanup;
 mod h_args;
+mod i_target;
 mod scenario;
 mod support;

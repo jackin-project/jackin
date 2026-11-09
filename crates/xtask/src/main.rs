@@ -44,7 +44,7 @@ enum Command {
         about = "Run the sentinel journey J00 to J17 against a gateway",
         after_help = E2E_HELP
     )]
-    E2e(E2eArgs),
+    E2e(Box<E2eArgs>),
 }
 
 #[tokio::main]

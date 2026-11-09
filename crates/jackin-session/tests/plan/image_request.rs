@@ -3,7 +3,7 @@
 
 use jackin_core::{DockerLayer, HookKind, ImageId, Platform, WorkspaceName};
 use jackin_image::{ImagePlan, Rebuild};
-use jackin_session::plan_image;
+use jackin_session::plan_image_for;
 use jackin_testkit::RoleFixture;
 
 use super::support::{Spec, TestResult, guard};
@@ -24,19 +24,21 @@ async fn the_image_request_follows_gateway_role_and_workspace_inputs() -> TestRe
             .ok_or("no workspace")?;
         let arm = jackin_core::GatewayName::parse("gw-arm")?;
         let amd = jackin_core::GatewayName::parse("gw-amd")?;
-        let for_arm = plan_image(
+        let for_arm = plan_image_for(
             &setup.config,
             &setup.role,
             &arm,
             Some(workspace),
             Rebuild::Yes,
+            jackin_core::Agent::Codex,
         )?;
-        let for_amd = plan_image(
+        let for_amd = plan_image_for(
             &setup.config,
             &setup.role,
             &amd,
             Some(workspace),
             Rebuild::Yes,
+            jackin_core::Agent::Codex,
         )?;
         assert_eq!(for_arm.platform, Platform::LinuxArm64);
         assert_eq!(for_arm.builder.as_str(), "arm-builder");
@@ -50,7 +52,14 @@ async fn the_image_request_follows_gateway_role_and_workspace_inputs() -> TestRe
         assert_eq!(for_arm.rebuild, Rebuild::Yes);
         assert_eq!(for_arm.docker, DockerLayer::Client);
 
-        let build_only = plan_image(&setup.config, &setup.role, &arm, None, Rebuild::No)?;
+        let build_only = plan_image_for(
+            &setup.config,
+            &setup.role,
+            &arm,
+            None,
+            Rebuild::No,
+            jackin_core::Agent::Codex,
+        )?;
         assert_eq!(build_only.docker, DockerLayer::Absent);
         assert_eq!(build_only.rebuild, Rebuild::No);
 
@@ -67,7 +76,14 @@ async fn the_image_request_follows_gateway_role_and_workspace_inputs() -> TestRe
                 &tokio_util::sync::CancellationToken::new(),
             )
             .await?;
-        let request = plan_image(&setup.config, &dirty, &arm, None, Rebuild::No)?;
+        let request = plan_image_for(
+            &setup.config,
+            &dirty,
+            &arm,
+            None,
+            Rebuild::No,
+            jackin_core::Agent::Codex,
+        )?;
         assert_ne!(request.revision.digest, setup.role.revision().digest);
         assert_eq!(&request.revision, dirty.revision());
         Ok(())

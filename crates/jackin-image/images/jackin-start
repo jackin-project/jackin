@@ -124,17 +124,17 @@ startup_kinds() {
 write_record() {
     [ "$JACKIN_MAIN_OK" = 1 ] || return 0
     {
-        printf 'jackin-env-kinds 1\nattempt %s\n' "$1"
+        printf 'jackin-env-kinds 2\nattempt %s\n' "$1"
         [ -z "$JACKIN_MAIN_LINES" ] || printf '%s\n' "$JACKIN_MAIN_LINES"
         [ -z "$2" ] || printf '%s\n' "$2"
     } >"$JACKIN_RUN/env-kinds.tmp" && /bin/mv -f "$JACKIN_RUN/env-kinds.tmp" "$JACKIN_RUN/env-kinds"
     return 0
 }
 
-record_codex() {
+record_agent() {
     [ "$JACKIN_MAIN_OK" = 1 ] || return 0
-    JACKIN_CODEX_LINES=$(kinds codex </dev/null) || return 0
-    write_record "$1" "$JACKIN_CODEX_LINES"
+    JACKIN_AGENT_LINES=$(kinds agent </dev/null) || return 0
+    write_record "$1" "$JACKIN_AGENT_LINES"
 }
 
 drain() {
@@ -176,7 +176,7 @@ run_attempt() {
     (
         eval "$JACKIN_ENV_TEXT"
         cd "$JACKIN_PROJECT" || exit 66
-        record_codex "$JACKIN_ATTEMPT_ID"
+        record_agent "$JACKIN_ATTEMPT_ID"
         exec "$@"
     ) || JACKIN_RC=$?
     publish "exited $JACKIN_ATTEMPT_ID $JACKIN_RC"

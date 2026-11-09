@@ -3,15 +3,17 @@
 
 use std::path::{Path, PathBuf};
 
-use jackin_core::ProviderName;
+use jackin_core::AccountName;
 use jackin_openshell::ProviderState;
 
-use super::a1::{A1Lock, A1Login, fixture_login};
+use super::a1::fixture_login;
+use super::credential::CredentialSession;
 use super::redact::Redactor;
 use super::report::Printer;
 use super::run::{Names, Projects, Run, tail_of};
 use super::scratch::{Scratch, base_env, child_env, snapshot_tree};
 use super::sweep::find_stale;
+use super::target::E2eTarget;
 use super::world::World;
 use super::{Boundaries, E2eArgs};
 
@@ -39,6 +41,16 @@ pub(crate) async fn prepare<'a>(
     b: &'a Boundaries,
     printer: &Printer,
 ) -> Result<Run<'a>, SetupError> {
+    let target = E2eTarget::resolve(args, b.env.get("HOME").map(Path::new))
+        .map_err(|error| setup(error.to_string()))?;
+    let credentials =
+        CredentialSession::open(target, b).map_err(|error| setup(error.to_string()))?;
+    let redactor = credentials.redactor();
+    printer.set_redactor(redactor.clone());
+    credentials
+        .fresh_host_reply(b, "before")
+        .await
+        .map_err(|error| setup(credentials.scrubbed_failure(&error)))?;
     let health = b.gateway.health().await.map_err(|error| {
         setup(format!(
             "the gateway {} is unreachable: {error}",
@@ -75,10 +87,6 @@ pub(crate) async fn prepare<'a>(
             role_arg.display()
         ))
     })?;
-    let lock = A1Lock::acquire(&b.lock_dir).map_err(|error| setup(error.to_string()))?;
-    let a1 = A1Login::read(&b.codex_home).map_err(|error| setup(error.to_string()))?;
-    let redactor = Redactor::new(a1.secrets());
-    printer.set_redactor(redactor.clone());
     let registry = registry_dir(&b.env)
         .filter(|dir| dir.is_dir())
         .ok_or_else(|| setup("no OpenShell registry directory under XDG_CONFIG_HOME or HOME"))?;
@@ -90,8 +98,7 @@ pub(crate) async fn prepare<'a>(
         printer,
         BuildParts {
             role,
-            lock,
-            a1,
+            credentials,
             redactor,
             registry,
             scratch: scratch.clone(),
@@ -106,8 +113,7 @@ pub(crate) async fn prepare<'a>(
 
 struct BuildParts {
     role: PathBuf,
-    lock: A1Lock,
-    a1: A1Login,
+    credentials: CredentialSession,
     redactor: Redactor,
     registry: PathBuf,
     scratch: Scratch,
@@ -121,12 +127,15 @@ async fn build_run<'a>(
 ) -> Result<Run<'a>, SetupError> {
     let BuildParts {
         role,
-        lock,
-        a1,
+        credentials,
         redactor,
         registry,
         scratch,
     } = parts;
+    let client_id = credentials
+        .a1()
+        .map(|login| login.client_id().to_owned())
+        .ok_or_else(|| setup("T01 requires its ChatGPT credential session"))?;
     scratch
         .link_registry(&registry)
         .map_err(|error| setup(error.to_string()))?;
@@ -149,7 +158,7 @@ async fn build_run<'a>(
         dock: fixture(names.dock.clone()).await?,
     };
     for account in [&names.fxr, &names.fxw] {
-        fixture_login(&scratch.codex_homes().join(account), a1.client_id())
+        fixture_login(&scratch.codex_homes().join(account), &client_id)
             .map_err(|error| setup(error.to_string()))?;
     }
     let mut run = Run {
@@ -163,8 +172,7 @@ async fn build_run<'a>(
         jackin: b.jackin.display().to_string(),
         role,
         names,
-        a1,
-        lock: Some(lock),
+        credentials,
         projects,
         registry_before: snapshot_tree(&registry),
         registry,
@@ -244,8 +252,9 @@ impl Run<'_> {
             ),
         ];
         for (account, home) in accounts {
-            let provider = ProviderName::parse(&Names::provider(&account))
-                .map_err(|error| setup(error.to_string()))?;
+            let account_name =
+                AccountName::parse(&account).map_err(|error| setup(error.to_string()))?;
+            let provider = self.credentials.target.provider_name(&account_name);
             let state = self
                 .b
                 .gateway

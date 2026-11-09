@@ -369,16 +369,6 @@ pub fn resolve_env(
     }
 }
 
-pub fn plan_image(
-    config: &Config,
-    role: &LoadedRole,
-    gateway: &GatewayName,
-    workspace: Option<&Workspace>,
-    rebuild: Rebuild,
-) -> Result<ImageRequest, PlanError> {
-    plan_image_for(config, role, gateway, workspace, rebuild, Agent::Codex)
-}
-
 pub fn plan_image_for(
     config: &Config,
     role: &LoadedRole,
@@ -447,7 +437,7 @@ fn apply_agent_env_defaults(
     }
 }
 
-fn lead_tuple(
+pub fn validate_tuple_selection(
     agent: Agent,
     provider: Provider,
     model: Option<&str>,
@@ -700,7 +690,7 @@ pub fn plan_launch(
         });
     }
     let (agent, provider) = lead_agent_provider(&request);
-    let tuple = lead_tuple(agent, provider, request.model.as_deref())?;
+    let tuple = validate_tuple_selection(agent, provider, request.model.as_deref())?;
     let spec = agent.spec();
     let lead_flag = match request
         .instances

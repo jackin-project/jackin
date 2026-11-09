@@ -22,7 +22,6 @@ const EXIT_POLL: Duration = Duration::from_millis(25);
 const TAIL_CHARS: usize = 400;
 
 pub(crate) const DETACH: u8 = 0x04;
-pub(crate) const INTERRUPT: u8 = 0x03;
 
 #[derive(Debug, Error)]
 pub enum PtyError {

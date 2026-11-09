@@ -50,7 +50,7 @@ impl Run<'_> {
         self.j11_inner().await.unwrap_or_else(Fail::verdict)
     }
 
-    pub(crate) async fn codex_process(
+    pub(crate) async fn agent_process(
         &mut self,
         sandbox: &SandboxName,
         label: &str,
@@ -63,7 +63,7 @@ impl Run<'_> {
         let facts: FactsProcesses = report.facts(step)?;
         let codex = facts
             .processes
-            .codex
+            .agent
             .first()
             .ok_or_else(|| fail(format!("the {step} probe found no Codex process")))?;
         Ok((codex.pid, codex.start_ticks))
@@ -80,9 +80,9 @@ impl Run<'_> {
 
     async fn j11_inner(&mut self) -> Res<Verdict> {
         let sandbox = self.sandbox_s()?;
-        let before = self.codex_process(&sandbox, "J11 before", "J11").await?;
+        let before = self.agent_process(&sandbox, "J11 before", "J11").await?;
         let first = self.attach_once(&sandbox, "J11 attach 1").await?;
-        let after = self.codex_process(&sandbox, "J11 after", "J11").await?;
+        let after = self.agent_process(&sandbox, "J11 after", "J11").await?;
         let second = self.attach_once(&sandbox, "J11 attach 2").await?;
         let problems = judge_detach(before, after, &first, &second);
         if problems.is_empty() {

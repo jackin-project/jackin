@@ -7,13 +7,15 @@
   "required": [
     "schema",
     "probe",
+    "target",
     "mode",
     "docker",
+    "engine",
     "steps"
   ],
   "properties": {
     "schema": {
-      "const": 2,
+      "const": 3,
       "description": "The version of this contract. A breaking change raises it."
     },
     "probe": {
@@ -59,7 +61,7 @@
               }
             }
           ],
-          "description": "Image. PASS when /usr/local/bin/codex is an executable file and codex --version exits 0. The host compares the version with the pin."
+          "description": "Image. PASS when /usr/local/bin/agent is an executable file and agent --version exits 0. The host compares the version with the pin."
         },
         "J04": {
           "allOf": [
@@ -147,7 +149,7 @@
               }
             }
           ],
-          "description": "Codex. The process check is SKIP when jackin-start is not in the state running. The codex exec check is SKIP when the sandbox holds no credential. PASS when the main process is jackin-start, Codex is its child, and codex exec answers the fixed prompt."
+          "description": "agent. The process check is SKIP when jackin-start is not in the state running. The agent exec check is SKIP when the sandbox holds no credential. PASS when the main process is jackin-start, agent is its child, and agent exec answers the fixed prompt."
         },
         "J08": {
           "allOf": [
@@ -169,7 +171,7 @@
               }
             }
           ],
-          "description": "Credential. The credential check is SKIP when the sandbox holds no credential. The environment check is PASS only when a fresh, valid start record (facts.start_record.state read) covers the main process and Codex and every credential variable is a placeholder or empty; it is FAIL for a variable of kind other in a known environment or a malformed record, and SKIP for an absent, unreadable or stale record or an environment that Codex has not yet received. A readable /proc/PID/environ adds evidence and wins over the record for that environment; it never replaces the record. The record is written by jackin-start and the agent can rewrite it, so a PASS shows the launch path of jackin, not a hostile agent. The step is PASS when every check passes and the file scan finds no token-shaped string. facts.agent_environment records how each environment was known. A denied environment is not evidence that it is clean."
+          "description": "Credential. The credential check is SKIP when the sandbox holds no credential. The environment check is PASS only when a fresh, valid start record (facts.start_record.state read) covers the main process and agent and every credential variable is a placeholder or empty; it is FAIL for a variable of kind other in a known environment or a malformed record, and SKIP for an absent, unreadable or stale record or an environment that agent has not yet received. A readable /proc/PID/environ adds evidence and wins over the record for that environment; it never replaces the record. The record is written by jackin-start and the agent can rewrite it, so a PASS shows the launch path of jackin, not a hostile agent. The step is PASS when every check passes and the file scan finds no token-shaped string. facts.agent_environment records how each environment was known. A denied environment is not evidence that it is clean."
         },
         "J09": {
           "allOf": [
@@ -191,7 +193,7 @@
               }
             }
           ],
-          "description": "Egress. PASS when codex exec reached its API, a host outside the policy and the metadata address each refuse the connection (curl exit 7 with no HTTP response; a DNS failure, a missing curl and any other exit are FAIL), and curl, which is not Codex, gets no 2xx answer from a provider host when it sends the placeholder. The provider host check and the codex exec check are SKIP without a credential."
+          "description": "Egress. PASS when agent exec reached its API, a host outside the policy and the metadata address each refuse the connection (curl exit 7 with no HTTP response; a DNS failure, a missing curl and any other exit are FAIL), and curl, which is not agent, gets no 2xx answer from a provider host when it sends the placeholder. The provider host check and the agent exec check are SKIP without a credential."
         },
         "J10": {
           "allOf": [
@@ -235,7 +237,7 @@
               }
             }
           ],
-          "description": "Detach and reattach. PASS when a Codex process is a child of the main process. The host compares pid and start_ticks before and after the detach. SKIP when no Codex runs."
+          "description": "Detach and reattach. PASS when a agent process is a child of the main process. The host compares pid and start_ticks before and after the detach. SKIP when no agent runs."
         },
         "J12": {
           "allOf": [
@@ -257,7 +259,7 @@
               }
             }
           ],
-          "description": "Shell. PASS when the probe is not a descendant of the main process and, when both are known, its tty differs from the tty of Codex. The host compares the Codex process before and after the shell opens."
+          "description": "Shell. PASS when the probe is not a descendant of the main process and, when both are known, its tty differs from the tty of agent. The host compares the agent process before and after the shell opens."
         },
         "J13": {
           "allOf": [
@@ -348,6 +350,20 @@
           "description": "Docker capability off. SKIP when docker is on. PASS when there is no docker binary, no DOCKER_ variable, and a curl to the engine endpoint refuses the connection (curl exit 7 with no HTTP response). Curl exit 6 passes only when the control name in resolver_control resolves and is refused (curl exit 7) in the same run. A missing curl is FAIL. The connection check is SKIP when no --engine endpoint was given."
         }
       }
+    },
+    "target": {
+      "$ref": "#/$defs/TargetIdentity"
+    },
+    "engine": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The exact configured engine endpoint, or null when no engine was selected."
     }
   },
   "$defs": {
@@ -495,7 +511,7 @@
         "boot_id",
         "run_state",
         "main",
-        "codex",
+        "agent",
         "self",
         "self_descends_from_main"
       ],
@@ -521,56 +537,18 @@
           ],
           "description": "The process whose command line holds /usr/local/bin/jackin-start and whose parent does not."
         },
-        "codex": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ProcessInfo"
-          },
-          "description": "The children of main whose comm is codex."
-        },
         "self": {
           "$ref": "#/$defs/ProcessInfo"
         },
         "self_descends_from_main": {
           "type": "boolean"
-        }
-      }
-    },
-    "CodexExec": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "attempted",
-        "credential",
-        "exit_code",
-        "answered",
-        "output_bytes"
-      ],
-      "properties": {
-        "attempted": {
-          "type": "boolean"
         },
-        "credential": {
-          "enum": [
-            "chatgpt_login",
-            "api_key",
-            "none"
-          ],
-          "description": "chatgpt_login is a /sandbox/.codex/auth.json with an access token. api_key is an OPENAI_API_KEY variable. none gives attempted false."
-        },
-        "exit_code": {
-          "type": [
-            "integer",
-            "null"
-          ]
-        },
-        "answered": {
-          "type": "boolean",
-          "description": "True when the output of codex exec --skip-git-repo-check 'Reply with the word ready' holds the word ready in any case."
-        },
-        "output_bytes": {
-          "type": "integer",
-          "minimum": 0
+        "agent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProcessInfo"
+          },
+          "description": "The children of main whose comm is agent."
         }
       }
     },
@@ -581,7 +559,8 @@
         "url",
         "curl_found",
         "curl_exit",
-        "http_code"
+        "http_code",
+        "body"
       ],
       "properties": {
         "url": {
@@ -604,6 +583,13 @@
           "minimum": 0,
           "maximum": 999,
           "description": "0 when no HTTP response came."
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Closed response-body classification, never the response body itself. null when there was no classifiable response."
         }
       },
       "allOf": [
@@ -636,10 +622,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "codex"
+        "agent"
       ],
       "properties": {
-        "codex": {
+        "agent": {
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -820,14 +806,14 @@
       "additionalProperties": false,
       "required": [
         "processes",
-        "codex_exec"
+        "agent_exec"
       ],
       "properties": {
         "processes": {
           "$ref": "#/$defs/Processes"
         },
-        "codex_exec": {
-          "$ref": "#/$defs/CodexExec"
+        "agent_exec": {
+          "$ref": "#/$defs/AgentExec"
         }
       }
     },
@@ -877,9 +863,9 @@
                   "probe",
                   "launch_env",
                   "main",
-                  "codex"
+                  "agent"
                 ],
-                "description": "probe is the environment of the probe process. launch_env is an export file /sandbox/.jackin/env-*, which jackin-start sources before it starts Codex. main and codex are the environment of that process, read from /proc/PID/environ or from a fresh start record."
+                "description": "probe is the environment of the probe process. launch_env is an export file /sandbox/.jackin/env-*, which jackin-start sources before it starts agent. main and agent are the environment of that process, read from /proc/PID/environ or from a fresh start record."
               }
             }
           },
@@ -890,17 +876,17 @@
           "additionalProperties": false,
           "required": [
             "main",
-            "codex"
+            "agent"
           ],
           "properties": {
             "main": {
               "$ref": "#/$defs/EnvironRead"
             },
-            "codex": {
+            "agent": {
               "$ref": "#/$defs/EnvironRead"
             }
           },
-          "description": "How the probe knows the variables of the main process and of Codex: read from /proc/PID/environ, from the start record, or not at all. denied and absent mean the variables of that process are unknown, never clean; the environment check is then SKIP."
+          "description": "How the probe knows the variables of the main process and of agent: read from /proc/PID/environ, from the start record, or not at all. denied and absent mean the variables of that process are unknown, never clean; the environment check is then SKIP."
         },
         "start_record": {
           "type": "object",
@@ -932,39 +918,48 @@
           "description": "The start record. jackin-start writes names and kinds, never values. The agent runs as the same user and can rewrite the file, so a record proves the launch path of jackin, not a hostile agent. With no fresh record the environment check is SKIP, never PASS."
         },
         "auth_file": {
-          "anyOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "path",
-                "mode",
-                "access_token",
-                "refresh_token",
-                "id_token"
-              ],
-              "properties": {
-                "path": {
-                  "type": "string"
-                },
-                "mode": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "path",
+            "mode",
+            "access_token",
+            "refresh_token",
+            "id_token"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "mode": {
+              "anyOf": [
+                {
                   "$ref": "#/$defs/Mode"
                 },
-                "access_token": {
-                  "$ref": "#/$defs/TokenKind"
-                },
-                "refresh_token": {
-                  "$ref": "#/$defs/TokenKind"
-                },
-                "id_token": {
-                  "$ref": "#/$defs/TokenKind"
+                {
+                  "type": "null"
                 }
-              }
+              ]
             },
-            {
-              "type": "null"
+            "access_token": {
+              "$ref": "#/$defs/TokenKind"
+            },
+            "refresh_token": {
+              "$ref": "#/$defs/TokenKind"
+            },
+            "id_token": {
+              "$ref": "#/$defs/TokenKind"
+            },
+            "state": {
+              "enum": [
+                "present",
+                "absent",
+                "unreadable",
+                "malformed"
+              ]
             }
-          ]
+          }
         },
         "leaks": {
           "type": "array",
@@ -982,7 +977,7 @@
         "outside_host",
         "metadata_host",
         "provider_host",
-        "codex_exec"
+        "agent_exec"
       ],
       "properties": {
         "outside_host": {
@@ -1000,10 +995,10 @@
               "type": "null"
             }
           ],
-          "description": "A curl to a Codex provider host with the placeholder as the bearer value. null without a credential."
+          "description": "A curl to a agent provider host with the placeholder as the bearer value. null without a credential."
         },
-        "codex_exec": {
-          "$ref": "#/$defs/CodexExec"
+        "agent_exec": {
+          "$ref": "#/$defs/AgentExec"
         }
       }
     },
@@ -1362,6 +1357,82 @@
             }
           ],
           "description": "A curl to https://example.com in the same run. It shows that name resolution works and that policy refuses the connection, so curl exit 6 for the engine name is a policy refusal and not a resolver fault. null when no --engine endpoint was given."
+        }
+      }
+    },
+    "TargetIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tuple",
+        "agent",
+        "provider",
+        "model",
+        "adapter",
+        "spec_sha256"
+      ],
+      "properties": {
+        "tuple": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1
+        },
+        "spec_sha256": {
+          "$ref": "#/$defs/Sha256"
+        }
+      }
+    },
+    "AgentExec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempted",
+        "credential",
+        "exit_code",
+        "answered",
+        "output_bytes"
+      ],
+      "properties": {
+        "attempted": {
+          "type": "boolean"
+        },
+        "credential": {
+          "enum": [
+            "oauth_login",
+            "static_key",
+            "api_key",
+            "none"
+          ],
+          "description": "The selected credential class. none is never accepted for a credentialed full run."
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "answered": {
+          "type": "boolean",
+          "description": "True when the output of agent exec --skip-git-repo-check 'Reply with the word ready' holds the word ready in any case."
+        },
+        "output_bytes": {
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

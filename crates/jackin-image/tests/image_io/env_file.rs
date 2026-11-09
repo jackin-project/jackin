@@ -47,7 +47,7 @@ fn functions() -> Result<String, Box<dyn Error>> {
         "park",
         "kinds",
         "write_record",
-        "record_codex",
+        "record_agent",
         "drain",
         "check_env",
         "run_attempt",

@@ -7,11 +7,23 @@ use jackin_session::{BuildRequest, build_observed};
 
 use super::progress::image_event;
 use crate::app::App;
-use crate::cli::BuildArgs;
+use crate::cli::{BuildArgs, parse_agent, parse_provider};
 use crate::error::CommandError;
 use crate::views::VIEW_SCHEMA;
 
 pub(crate) async fn run(app: &mut App, args: BuildArgs) -> Result<(), CommandError> {
+    let agent = args
+        .agent
+        .as_deref()
+        .map(parse_agent)
+        .transpose()?
+        .unwrap_or(jackin_core::Agent::Codex);
+    let provider = args
+        .provider
+        .as_deref()
+        .map(parse_provider)
+        .transpose()?
+        .unwrap_or_else(|| agent.provider());
     let config = app.store.load().await?;
     let catalog = app.catalog();
     let (gateway, path) = (app.gateway.clone(), app.cwd.clone());
@@ -19,6 +31,9 @@ pub(crate) async fn run(app: &mut App, args: BuildArgs) -> Result<(), CommandErr
         gateway: gateway.as_ref(),
         role: args.role.as_ref(),
         path: &path,
+        agent,
+        provider,
+        model: args.model.as_deref(),
         rebuild: Rebuild::from(args.rebuild),
     };
     let built = show_build(app, &config, &catalog, &request).await?;

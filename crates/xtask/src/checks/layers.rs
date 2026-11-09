@@ -34,6 +34,7 @@ pub const EXPOSE_ALLOWLIST: &[&str] = &[
     "crates/usage/jackin-usage/src/credential.rs",
     "crates/usage/jackin-usage/src/dispatch.rs",
     "crates/xtask/src/e2e/a1.rs",
+    "crates/xtask/src/e2e/credential.rs",
     "crates/xtask/src/e2e/redact.rs",
 ];
 

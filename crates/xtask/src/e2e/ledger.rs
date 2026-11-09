@@ -5,10 +5,10 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::time::Duration;
 
-use jackin_core::{EnvName, ProviderName, SandboxName};
+use jackin_core::{AccountName, EnvName, ProviderName, SandboxName};
 use jackin_openshell::ProviderState;
 
-use super::run::{Names, Res, Run, fail, labels_of, text_of};
+use super::run::{Res, Run, fail, labels_of, text_of};
 use super::scratch::snapshot_tree;
 use super::verdict::Verdict;
 
@@ -173,10 +173,10 @@ impl Run<'_> {
                     .await,
                 );
             }
-            let provider_text = Names::provider(&account);
-            let Ok(provider) = ProviderName::parse(&provider_text) else {
+            let Ok(account_name) = AccountName::parse(&account) else {
                 continue;
             };
+            let provider = self.credentials.target.provider_name(&account_name);
             let mut state = self.provider_state(&provider).await;
             if state != Some(ProviderState::Absent) {
                 let cap = self.b.budgets.cleanup_action;
@@ -192,7 +192,7 @@ impl Run<'_> {
                 removed += 1;
             } else {
                 residue.push(format!(
-                    "provider {provider_text} remains; remove it with `openshell -g {} provider delete {provider_text}`",
+                    "provider {provider} remains; remove it with `openshell -g {} provider delete {provider}`",
                     self.args.gateway
                 ));
             }
@@ -294,7 +294,7 @@ impl Run<'_> {
                 self.scratch.root().display()
             ));
         }
-        self.lock = None;
+        self.credentials.release_refresh_lock();
         if snapshot_tree(&self.registry) != self.registry_before {
             residue.push(format!(
                 "the OpenShell registry {} changed during the run (D03: jackin never writes it)",

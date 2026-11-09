@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Config, ConfigError, GatewayName, HostPath, RoleName};
+use jackin_core::{Agent, Config, ConfigError, GatewayName, HostPath, Provider, RoleName};
 use jackin_image::{
     BuiltImage, ImageEngine, ImageError, ImageEvent, ProgressSink, Rebuild, ensure_image,
 };
@@ -10,7 +10,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::launch::LAUNCH_EVENT_CAPACITY;
-use crate::plan::{PlanError, plan_image};
+use crate::plan::{PlanError, plan_image_for, validate_tuple_selection};
 use crate::roles::{RoleCatalog, RoleError};
 use crate::workspace::lookup_workspace;
 
@@ -19,6 +19,9 @@ pub struct BuildRequest<'a> {
     pub gateway: Option<&'a GatewayName>,
     pub role: Option<&'a RoleName>,
     pub path: &'a HostPath,
+    pub agent: Agent,
+    pub provider: Provider,
+    pub model: Option<&'a str>,
     pub rebuild: Rebuild,
 }
 
@@ -42,12 +45,20 @@ pub async fn build_for_workspace(
     progress: &ProgressSink,
     cancel: &CancellationToken,
 ) -> Result<BuiltImage, BuildError> {
+    validate_tuple_selection(request.agent, request.provider, request.model)?;
     let (gateway, _) = config.resolve_gateway(request.gateway)?;
     let workspace = lookup_workspace(config, request.path).workspace();
     let role = catalog
         .load(config, request.role, &workspace, cancel)
         .await?;
-    let image = plan_image(config, &role, gateway, Some(&workspace), request.rebuild)?;
+    let image = plan_image_for(
+        config,
+        &role,
+        gateway,
+        Some(&workspace),
+        request.rebuild,
+        request.agent,
+    )?;
     Ok(ensure_image(engine, &image, progress, cancel).await?)
 }
 

@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use jackin_core::{CODEX_PLACEHOLDER_ID_TOKEN, EnvName, FileMode, SandboxPath, SecretBytes};
 use serde_json::Value;
 
+use crate::e2e::adapter::CredentialBehavior;
 use crate::e2e::probe::FactsJ08;
 use crate::e2e::run::{Fail, Res, Run, fail, tail_of, text_of};
 use crate::e2e::verdict::Verdict;
@@ -66,7 +67,10 @@ pub(crate) fn judge_create_env(
     problems
 }
 
-pub(crate) fn judge_kinds(facts: &FactsJ08) -> (Vec<String>, Option<String>) {
+pub(crate) fn judge_kinds(
+    facts: &FactsJ08,
+    behavior: &CredentialBehavior,
+) -> (Vec<String>, Option<String>) {
     let mut problems = Vec::new();
     let mut skip = None;
     for var in &facts.environment {
@@ -86,15 +90,27 @@ pub(crate) fn judge_kinds(facts: &FactsJ08) -> (Vec<String>, Option<String>) {
         }
         state => problems.push(format!("the start record is {state}")),
     }
-    if let Some(auth) = &facts.auth_file {
-        for (name, kind) in [
-            ("access_token", &auth.access_token),
-            ("refresh_token", &auth.refresh_token),
-            ("id_token", &auth.id_token),
-        ] {
-            if kind == "other" {
-                problems.push(format!("auth.json {name} is a real token"));
-            }
+    let auth = &facts.auth_file;
+    let wanted = &behavior.auth_file;
+    if auth.state != wanted.required_state {
+        problems.push(format!(
+            "auth.json state is {}, expected {}",
+            auth.state, wanted.required_state
+        ));
+    }
+    if auth.path != wanted.path || auth.mode.as_deref() != Some(wanted.mode.as_str()) {
+        problems.push(format!(
+            "auth.json identity is {} mode {:?}, expected {} mode {}",
+            auth.path, auth.mode, wanted.path, wanted.mode
+        ));
+    }
+    for (name, kind) in [
+        ("access_token", &auth.access_token),
+        ("refresh_token", &auth.refresh_token),
+        ("id_token", &auth.id_token),
+    ] {
+        if kind == "other" {
+            problems.push(format!("auth.json {name} is a real token"));
         }
     }
     if !facts.leaks.is_empty() {
@@ -169,7 +185,8 @@ impl Run<'_> {
         let report = self.shared("J08")?.clone();
         let facts: FactsJ08 = report.facts("J08")?;
         let mut problems: Vec<String> = report.gate("J08").into_iter().collect();
-        let (kind_problems, skip) = judge_kinds(&facts);
+        let behavior = self.credentials.target.behavior().credential.clone();
+        let (kind_problems, skip) = judge_kinds(&facts, &behavior);
         problems.extend(kind_problems);
         problems.extend(self.read_sandbox_files().await?);
         problems.extend(self.create_environment(&sandbox).await);

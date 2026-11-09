@@ -453,9 +453,14 @@ fn manifest_agents_sections_validate_and_render() -> TestResult {
 }
 
 #[test]
-fn manifest_rejects_the_removed_t01_model_with_a_typed_invalid_value() -> TestResult {
+fn manifest_accepts_declared_t01_models_and_rejects_an_unknown_model() -> TestResult {
+    for model in ["gpt-6.1-sol", "gpt-5.1-codex"] {
+        RoleManifest::parse(&format!(
+            "{MIN}[agents.codex]\nmodel = \"{model}\"\ninstructions = \"instructions/codex.md\"\n"
+        ))?;
+    }
     let error = RoleManifest::parse(&format!(
-        "{MIN}[agents.codex]\nmodel = \"gpt-5.1-codex\"\ninstructions = \"instructions/codex.md\"\n"
+        "{MIN}[agents.codex]\nmodel = \"not-a-model\"\ninstructions = \"instructions/codex.md\"\n"
     ))
     .err()
     .ok_or("expected invalid model")?;

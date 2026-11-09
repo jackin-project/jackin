@@ -5,6 +5,7 @@ use jackin_core::{Agent, Compatibility};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+use crate::e2e::adapter::VersionBehavior;
 use crate::e2e::host::HostOutput;
 use crate::e2e::probe::FactsJ00;
 use crate::e2e::redact::hex;
@@ -63,21 +64,24 @@ pub(crate) fn judge_pins(lock: &str, spec: &str) -> Option<String> {
 }
 
 pub(crate) fn judge_late(
-    pin: &str,
+    behavior: &VersionBehavior,
     facts: &FactsJ00,
     host_digest: &str,
     sandbox_digest: &str,
 ) -> Vec<String> {
     let mut problems = Vec::new();
-    let codex = &facts.codex;
-    if !codex.present || !codex.executable {
-        problems.push("codex is not an executable file in the image".to_owned());
-    }
-    let wanted = format!("codex-cli {pin}");
-    if codex.version.as_deref() != Some(wanted.as_str()) {
+    let agent = &facts.agent;
+    if agent.path != behavior.binary || !agent.present || !agent.executable {
         problems.push(format!(
-            "the image holds {:?}, not {wanted}",
-            codex.version.as_deref().unwrap_or("no version")
+            "{} is not an executable file in the image",
+            behavior.binary
+        ));
+    }
+    if agent.version.as_deref() != Some(behavior.exact_output.as_str()) {
+        problems.push(format!(
+            "the image holds {:?}, not {}",
+            agent.version.as_deref().unwrap_or("no version"),
+            behavior.exact_output
         ));
     }
     if host_digest != sandbox_digest {
@@ -93,7 +97,7 @@ impl Run<'_> {
 
     async fn build_once(&mut self, label: &str, args: &[&str]) -> Res<BuildRun> {
         let cwd = self.projects.main.clone();
-        let output = self.jackin(label, args, &cwd).await?;
+        let output = self.jackin_target(label, args, &cwd).await?;
         Ok(BuildRun {
             ok: output.ok(),
             id: image_id(&output),
@@ -177,8 +181,9 @@ impl Run<'_> {
             .unwrap_or_default()
             .to_owned();
         let pin = Agent::Codex.spec().install.version;
+        let behavior = self.credentials.target.behavior().version.clone();
         problems.extend(judge_late(
-            pin,
+            &behavior,
             &facts,
             self.w.probe_digest.as_deref().unwrap_or_default(),
             &sandbox_digest,
