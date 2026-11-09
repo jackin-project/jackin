@@ -1062,7 +1062,12 @@ mod tests {
                 tuple.id
             );
             assert_eq!(file.mode, FileMode(0o600), "{}", tuple.id);
-            assert_eq!(file.text, crate::files::render_claude_config(tuple), "{}", tuple.id);
+            assert_eq!(
+                file.text,
+                crate::files::render_claude_config(tuple),
+                "{}",
+                tuple.id
+            );
         }
     }
 
