@@ -328,11 +328,17 @@ fn fixture_logins_share_nothing_with_the_a1_login() {
         }
         let value: Value = serde_json::from_str(&text).expect("json");
         assert_eq!(value["auth_mode"], "chatgpt");
+        let mut within: Vec<String> = Vec::new();
         for key in ["access_token", "refresh_token", "id_token", "account_id"] {
             let token = value["tokens"][key]
                 .as_str()
                 .filter(|text| !text.is_empty())
                 .unwrap_or_else(|| panic!("tokens.{key} is empty or absent"));
+            assert!(
+                !within.iter().any(|earlier| earlier == token),
+                "fixture {index} reuses one value for {key} and an earlier field"
+            );
+            within.push(token.to_owned());
             collected.entry(key).or_default().push(token.to_owned());
         }
         assert_eq!(value["tokens"]["oauth_provenance"]["client_id"], CLIENT_ID);
@@ -358,7 +364,76 @@ fn fixture_logins_share_nothing_with_the_a1_login() {
         values.sort();
         values.dedup();
         assert_eq!(values.len(), 10, "{key} values differ across fixtures");
+        collected.insert(key, values);
     }
+    let mut every: Vec<&String> = collected.values().flatten().collect();
+    let total = every.len();
+    assert_eq!(total, 40);
+    every.sort();
+    every.dedup();
+    assert_eq!(every.len(), total, "no value repeats across any field");
+    for a1 in [ACCESS, REFRESH, ID_TOKEN, ACCOUNT_ID] {
+        assert!(!every.iter().any(|value| value.as_str() == a1));
+    }
+}
+
+#[tokio::test]
+async fn setup_supplies_three_independent_logins_to_the_account_boundary() {
+    let scenario = Scenario::new().await;
+    let ran = scenario.run().await;
+    assert_eq!(ran.status.code(), 0, "{} {}", ran.stdout, ran.stderr);
+    let supplied = scenario.state().supplied_logins.clone();
+    let names = ["e2e-abcd-a1", "e2e-abcd-fxr", "e2e-abcd-fxw"];
+    let documents: Vec<Value> = names
+        .iter()
+        .map(|name| {
+            let bytes = supplied
+                .get(*name)
+                .unwrap_or_else(|| panic!("no login was supplied for {name}"));
+            serde_json::from_slice(bytes).unwrap_or_else(|_| panic!("{name} login is not JSON"))
+        })
+        .collect();
+    assert_eq!(
+        supplied["e2e-abcd-a1"],
+        fs::read(scenario.world.codex_home.join("auth.json")).expect("a1 login"),
+        "A1 supplies the host login as it is"
+    );
+    for first in 0..3 {
+        for second in (first + 1)..3 {
+            assert_ne!(
+                supplied[names[first]], supplied[names[second]],
+                "{} and {} supply one document",
+                names[first], names[second]
+            );
+            assert_ne!(
+                documents[first], documents[second],
+                "{} and {} supply one login",
+                names[first], names[second]
+            );
+        }
+    }
+    let mut seen: Vec<(String, String)> = Vec::new();
+    for (index, document) in documents.iter().enumerate() {
+        for key in ["access_token", "refresh_token", "id_token", "account_id"] {
+            let value = document["tokens"][key]
+                .as_str()
+                .filter(|text| !text.is_empty())
+                .unwrap_or_else(|| panic!("{} has no tokens.{key}", names[index]))
+                .to_owned();
+            assert!(
+                !seen.iter().any(|(_, earlier)| *earlier == value),
+                "{} tokens.{key} repeats a value of another account or field",
+                names[index]
+            );
+            seen.push((format!("{}.{key}", names[index]), value));
+        }
+        assert_eq!(document["auth_mode"], "chatgpt");
+        assert_eq!(
+            document["tokens"]["oauth_provenance"]["client_id"],
+            CLIENT_ID
+        );
+    }
+    assert_eq!(seen.len(), 12);
 }
 
 #[test]

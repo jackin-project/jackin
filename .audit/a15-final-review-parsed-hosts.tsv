@@ -1,1 +1,0 @@
-IT5.parsed_hosts	jackin-xtask	binary(e2e) & test(~every_behavior_and_identity_input_changes_the_digest)	A15_OMIT=/provider_hosts	red=RED exit=100 pass=0 fail=2	green=GREEN exit=0 pass=1 fail=0	instrumentation-dormant	/tmp/jackin-a15-e2e-t01/.audit/a15-final-review-logs/IT5.parsed_hosts.red.log	/tmp/jackin-a15-e2e-t01/.audit/a15-final-review-logs/IT5.parsed_hosts.green.log

@@ -12,6 +12,9 @@ use super::gateway::ScenarioGateway;
 use super::{J05Fault, SandboxModel};
 use crate::support::{capture, hex};
 
+const IMAGE_AGENT_BINARY: &str = "/usr/local/bin/codex";
+const IMAGE_AGENT_VERSION: &str = "codex-cli 0.167.0";
+
 pub(crate) fn head_of(dir: &Path) -> String {
     let output = capture(
         jackin_testkit::git_command()
@@ -79,7 +82,23 @@ fn facts(
     ]);
     match step {
         "J00" => {
-            json!({"agent": {"path": "/usr/local/bin/codex", "present": true, "executable": true, "version": "codex-cli 0.167.0"}})
+            let spec = gateway
+                .shared
+                .state()
+                .probe_specs
+                .last()
+                .and_then(|bytes| serde_json::from_slice::<Value>(bytes).ok())
+                .unwrap_or(Value::Null);
+            let declared = spec
+                .pointer("/behavior/version/binary")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            if declared == IMAGE_AGENT_BINARY {
+                json!({"agent": {"path": declared, "present": true, "executable": true, "version": IMAGE_AGENT_VERSION}})
+            } else {
+                json!({"agent": {"path": declared, "present": false, "executable": false, "version": null}})
+            }
         }
         "J04" => {
             json!({"user": "sandbox", "uid": 1000, "gid": 1000, "home": "/sandbox", "sudo": {"found": false, "works": false}, "docker_binary": docker})

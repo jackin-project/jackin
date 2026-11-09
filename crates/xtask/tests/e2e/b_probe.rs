@@ -486,45 +486,45 @@ async fn target_identity_and_engine_coverage_have_exact_errors() {
 async fn schema_v3_rejects_old_and_incomplete_auth_and_identity_shapes() {
     let scenario = Scenario::new().await;
     let base = scenario.probe_json(&["J08"], false);
-    type Mutate = fn(&mut Value);
-    let cases: Vec<(&str, Mutate)> = vec![
-        ("schema 2", |value: &mut Value| value["schema"] = json!(2)),
-        ("null auth", |value| {
-            value["steps"]["J08"]["facts"]["auth_file"] = Value::Null;
-        }),
-        ("missing state", |value| {
-            value["steps"]["J08"]["facts"]["auth_file"]
-                .as_object_mut()
-                .expect("auth")
-                .remove("state");
-        }),
-        ("missing path", |value| {
-            value["steps"]["J08"]["facts"]["auth_file"]
-                .as_object_mut()
-                .expect("auth")
-                .remove("path");
-        }),
-        ("missing mode", |value| {
-            value["steps"]["J08"]["facts"]["auth_file"]
-                .as_object_mut()
-                .expect("auth")
-                .remove("mode");
-        }),
-        ("missing field", |value| {
-            value["steps"]["J08"]["facts"]["auth_file"]
-                .as_object_mut()
-                .expect("auth")
-                .remove("access_token");
-        }),
-    ];
-    for (name, mutate) in cases {
+    const AUTH: &str = "/steps/J08/facts/auth_file";
+    let mut cases: Vec<(String, Value, &str, Option<&str>)> = Vec::new();
+    let mut schema_two = base.clone();
+    schema_two["schema"] = json!(2);
+    cases.push(("schema 2".to_owned(), schema_two, "/schema", None));
+    let mut null_auth = base.clone();
+    null_auth["steps"]["J08"]["facts"]["auth_file"] = Value::Null;
+    cases.push(("null auth".to_owned(), null_auth, AUTH, None));
+    for member in [
+        "state",
+        "path",
+        "mode",
+        "access_token",
+        "refresh_token",
+        "id_token",
+    ] {
         let mut changed = base.clone();
-        mutate(&mut changed);
-        assert!(
-            matches!(parse(&changed, &["J08"]), Err(ProbeError::Schema(_))),
-            "{name}"
-        );
+        changed["steps"]["J08"]["facts"]["auth_file"]
+            .as_object_mut()
+            .expect("auth")
+            .remove(member);
+        cases.push((format!("missing {member}"), changed, AUTH, Some(member)));
     }
+    for (name, changed, pointer, member) in cases {
+        let Err(ProbeError::Schema(message)) = parse(&changed, &["J08"]) else {
+            panic!("{name}: not a schema error");
+        };
+        assert!(message.contains(pointer), "{name}: {message}");
+        if let Some(member) = member {
+            assert!(
+                message.contains(&format!("\"{member}\"")),
+                "{name}: {message}"
+            );
+        }
+    }
+    assert!(
+        parse(&base, &["J08"]).is_ok(),
+        "the complete report is accepted"
+    );
 }
 
 #[tokio::test]
