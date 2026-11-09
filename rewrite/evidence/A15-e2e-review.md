@@ -2,9 +2,9 @@
 
 Date: 2026-11-10. Reviewer: independent final reviewer agent-58, not implementer agent-41.
 
-Jackin commit: `b667957821df7008aeb6b6ed7be0f99902499e04`. Sentinel commit: `c3928c31497e5219a5e1457b43c7642fe940ef5f`.
+Reviewed jackin commits: `b667957821df7008aeb6b6ed7be0f99902499e04` and `7d5e450e3a4810bf9968ce43117893a563c6f773`. Sentinel commit: `c3928c31497e5219a5e1457b43c7642fe940ef5f`.
 
-Verdict: **CHANGES REQUIRED**.
+Final verdict: **APPROVE**. The previous verdict was **CHANGES REQUIRED** at `b667957821df7008aeb6b6ed7be0f99902499e04`.
 
 ## Blocking findings
 
@@ -50,3 +50,21 @@ Commands and observed results:
 - `rtk mise run test` in the sentinel worktree: first attempt killed by the 15-minute tool limit while running `probe/tests/j08.sh`; unrestricted rerun exited 0 in 970 seconds. Gitleaks, shellcheck, shfmt, hadolint, J08, setup-hook, and egress checks passed.
 
 The final `jackin` binary was built from `b66795782` before the role check. Mutation worktrees are clean after restoration. No full G-FAST rerun was needed. No live gateway, sandbox, container, or real credential was used. No review documentation commit was created because the verdict is CHANGES REQUIRED.
+
+## Final approval at the clean fix commit
+
+The final review used only `/tmp/jackin-a15-final-clean`, exactly `7d5e450e3a4810bf9968ce43117893a563c6f773` with no uncommitted changes. No file from the contaminated worktree was used.
+
+Finding F1 is resolved. `e2e_command` resolves the immutable target before awaiting the production future and passes that target into setup. On the broken baseline, the independent poll probe observed one production poll instead of zero for an invalid target. On this clean head, every unavailable-target class returns exit 2 with zero production polls, and valid T01 polls once and completes all 19 journey lines plus CLEAN.
+
+Finding F2 is resolved. `TargetError::CredentialDescriptor` is a unit variant with the fixed expected-forms diagnostic. Parsing uses `OpReference::parse` and preserves no rejected input. The broken baseline accepted `op://`, returned rejected input in raw `Debug`, and printed rejected input in public stderr. The clean head rejects `op://`, `op://vault`, `op:///item`, and `op://vault//field`, accepts `omp-host`, and contains no rejected input in `Display`, `Debug`, or public stderr.
+
+The independent broken-baseline evidence is in `/tmp/a15-fix-review-red2.log` and `/tmp/a15-fix-review-debug-red.log`. The corresponding fixed-head evidence is in `/tmp/a15-fix-review-green2.log` and `/tmp/a15-fix-review-debug-green.log`. The red runs reported one production poll instead of zero, accepted `op://`, and exposed synthetic values in `Debug` and stderr. The green runs passed all four regression checks.
+
+The clean isolated verification command was:
+
+```sh
+rtk env NEXTEST_TEST_THREADS=2 mise exec -- mbx +1.99.1 nextest run -p jackin-xtask -E 'test(~invalid_targets_never_poll_production_and_valid_t01_polls_once) | test(~credential_descriptors_follow_cli_grammar_without_echoing_rejected_input)' --no-fail-fast
+```
+
+Result: 2 tests passed, 0 failed, 246 skipped. The implementer separately reported full G-FAST with 2,195 tests passed and zero skipped. No live gateway, sandbox, container, or real credential was used. No blocking finding remains.
