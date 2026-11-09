@@ -292,3 +292,58 @@ fn minimax_code_tuple_is_unavailable_and_image_plan_has_no_install_target() -> T
     );
     Ok(())
 }
+
+#[test]
+fn antigravity_plan_pins_the_stable_tarball_and_renames_the_member() -> TestResult {
+    let tuple = lookup_tuple(Agent::Antigravity, Provider::Antigravity)?;
+    assert_eq!(tuple.id, "T05");
+    assert_eq!(tuple.state, TupleState::BlockedVendor);
+    let map = args(Agent::Antigravity)?;
+    let spec = Agent::Antigravity.spec();
+    assert_eq!(
+        map.get("AGENT_ARCHIVE_MEMBERS").map(String::as_str),
+        Some("antigravity")
+    );
+    assert_eq!(
+        map.get("AGENT_BINARY").map(String::as_str),
+        Some(spec.binary.as_str())
+    );
+    assert_eq!(
+        map.get("AGENT_VERSION").map(String::as_str),
+        Some(spec.install.version)
+    );
+    for (platform, url, member) in [
+        (
+            Platform::LinuxArm64,
+            "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.3-6604829099950080/linux-arm/cli_linux_arm64.tar.gz",
+            "arm/cli_linux_arm64.tar.gz",
+        ),
+        (
+            Platform::LinuxAmd64,
+            "https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.3-6604829099950080/linux-x64/cli_linux_x64.tar.gz",
+            "x64/cli_linux_x64.tar.gz",
+        ),
+    ] {
+        let target = spec.install_target(platform).ok_or("missing platform")?;
+        assert_eq!(target.triple, member);
+        let arch = platform.target_arch().to_ascii_uppercase();
+        let sha_name = format!("AGENT_SHA256_{arch}");
+        assert_eq!(
+            map.get(&sha_name).map(String::as_str),
+            Some(target.sha256),
+            "{sha_name}"
+        );
+        let url_name = format!("AGENT_URL_{arch}");
+        assert_eq!(
+            map.get(&url_name).map(String::as_str),
+            Some(url),
+            "{url_name}"
+        );
+    }
+    let text = derived_dockerfile(Agent::Antigravity)?;
+    assert!(
+        text.contains("install -D -m 0755 -o root -g root \"$work/$1\" \"/out${AGENT_BINARY}\""),
+        "{text}"
+    );
+    Ok(())
+}

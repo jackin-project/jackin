@@ -51,7 +51,7 @@ USER root
 RUN --mount=type=bind,from=agent-archive,source=/,target=/archive \
     work="$(mktemp -d -p /root)" \
     && mkdir "$work/home" \
-    && if [ -n "${AGENT_ARCHIVE_MEMBERS}" ]; then tar -xzf /archive/agent-artifact --no-same-owner -C "$work" ${AGENT_ARCHIVE_MEMBERS}; for member in ${AGENT_ARCHIVE_MEMBERS}; do install -D -m 0755 -o root -g root "$work/$member" "/out${AGENT_BIN_DIR}/$(basename "$member")"; done; else install -D -m 0755 -o root -g root /archive/agent-artifact "/out${AGENT_BINARY}"; fi \
+    && if [ -n "${AGENT_ARCHIVE_MEMBERS}" ]; then set -- ${AGENT_ARCHIVE_MEMBERS}; tar -xzf /archive/agent-artifact --no-same-owner -C "$work" "$@"; install -D -m 0755 -o root -g root "$work/$1" "/out${AGENT_BINARY}"; shift; for member in "$@"; do install -D -m 0755 -o root -g root "$work/$member" "/out${AGENT_BIN_DIR}/$(basename "$member")"; done; else install -D -m 0755 -o root -g root /archive/agent-artifact "/out${AGENT_BINARY}"; fi \
     && install -d -m 0755 -o root -g root "/out$(dirname "${AGENT_SYSTEM_CONFIG}")" \
     && printf '%s' "${AGENT_SYSTEM_CONFIG_CONTENT}" > "/out${AGENT_SYSTEM_CONFIG}" \
     && if [ -n "${AGENT_VERSION_OUTPUT}" ]; then test "$(/out${AGENT_BINARY} --version)" = "${AGENT_VERSION_OUTPUT}"; fi \
