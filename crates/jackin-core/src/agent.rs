@@ -204,6 +204,7 @@ impl AgentTuple {
 
     pub fn claude_auth_env(&self) -> Option<&'static str> {
         match self.id {
+            "T02" => Some("CLAUDE_CODE_OAUTH_TOKEN"),
             "T13" => Some("ANTHROPIC_API_KEY"),
             "T14" => Some("ANTHROPIC_AUTH_TOKEN"),
             "T15" => Some("ANTHROPIC_AUTH_TOKEN"),

@@ -586,14 +586,7 @@ impl Run<'_> {
                         )
                     },
                 )?;
-                let file = crate::files::claude_config_file(tuple).map_err(|error| {
-                    failed(
-                        STEP,
-                        GatewayError::Protocol {
-                            message: error.to_string(),
-                        },
-                    )
-                })?;
+                let file = crate::files::claude_config_file(tuple);
                 self.write_home_auth(sandbox, instance.agent, &file).await?;
             }
         }

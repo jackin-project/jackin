@@ -544,11 +544,7 @@ fn agent_config_file(
         return Ok(crate::files::render_grok_config(model));
     }
     if agent == Agent::ClaudeCode {
-        return crate::files::claude_config_file(tuple).map_err(|_| PlanError::TupleNotSupported {
-            agent,
-            provider,
-            reason: "no anthropic-compatible base url".to_owned(),
-        });
+        return Ok(crate::files::claude_config_file(tuple));
     }
     if is_omp {
         let spec = agent.spec();
@@ -1049,37 +1045,9 @@ mod tests {
     }
 
     #[test]
-    fn agent_config_claude_refuses_tuples_without_an_anthropic_base_url() {
-        let account = AccountName::parse("cfgtest").expect("account");
-        for (tuple_agent, tuple_provider, model) in [
-            (Agent::ClaudeCode, Provider::Claude, "haiku"),
-            (Agent::Omp, Provider::Zai, "glm-5.3"),
-        ] {
-            let tuple = jackin_core::lookup_tuple(tuple_agent, tuple_provider).expect("tuple");
-            let error = agent_config_file(
-                false,
-                tuple,
-                None,
-                Some(model),
-                Agent::ClaudeCode,
-                tuple_provider,
-                &account,
-            )
-            .expect_err("refused config");
-            assert!(
-                matches!(
-                    &error,
-                    PlanError::TupleNotSupported { agent, provider, .. }
-                        if *agent == Agent::ClaudeCode && *provider == tuple_provider
-                ),
-                "{error}"
-            );
-        }
-    }
-
-    #[test]
     fn agent_config_claude_lead_slot_pins_the_settings_file() {
         for (provider, model) in [
+            (Provider::Claude, "haiku"),
             (Provider::Kimi, "kimi-for-coding"),
             (Provider::Zai, "glm-5.3"),
             (Provider::Minimax, "minimax-m3"),
@@ -1094,10 +1062,7 @@ mod tests {
                 tuple.id
             );
             assert_eq!(file.mode, FileMode(0o600), "{}", tuple.id);
-            assert_eq!(
-                file.text,
-                crate::files::render_claude_config(tuple).expect("text")
-            );
+            assert_eq!(file.text, crate::files::render_claude_config(tuple), "{}", tuple.id);
         }
     }
 

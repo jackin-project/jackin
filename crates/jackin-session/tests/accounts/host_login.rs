@@ -545,7 +545,7 @@ async fn claude_file_sync_creates_t02_provider_with_key_only_in_record() -> Test
         let record = world.gateway.provider(&name).ok_or("no provider")?;
         assert_eq!(record.profile.as_str(), "claude");
         assert_eq!(record.access_token, CLAUDE_ACCESS);
-        assert_eq!(record.access_key, "ANTHROPIC_API_KEY");
+        assert_eq!(record.access_key, "CLAUDE_CODE_OAUTH_TOKEN");
         assert!(
             profile_env_vars(Agent::ClaudeCode, Provider::Claude)?.contains(&record.access_key),
             "{}",
@@ -583,7 +583,7 @@ async fn claude_keychain_sync_creates_provider_when_no_file_login_exists() -> Te
         let record = world.gateway.provider(&name).ok_or("no provider")?;
         assert_eq!(record.profile.as_str(), "claude");
         assert_eq!(record.access_token, CLAUDE_ACCESS);
-        assert_eq!(record.access_key, "ANTHROPIC_API_KEY");
+        assert_eq!(record.access_key, "CLAUDE_CODE_OAUTH_TOKEN");
         let seen = security_seen(&world);
         assert_eq!(seen.len(), 1);
         assert_eq!(seen[0].args, CLAUDE_KEYCHAIN_ARGS);

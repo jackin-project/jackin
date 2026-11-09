@@ -90,7 +90,7 @@ const PINNED_ROWS: &[Row] = &[
         id: "T02",
         asset: "claude",
         hosts: &["api.anthropic.com"],
-        env: "ANTHROPIC_API_KEY",
+        env: "CLAUDE_CODE_OAUTH_TOKEN",
         binary: "/usr/local/bin/claude",
         refresh: false,
     },

@@ -37,7 +37,7 @@ fn cases() -> Vec<(Provider, &'static str, &'static str)> {
 fn claude_config_pins_only_the_base_url_and_no_auth_env() -> TestResult {
     for (provider, base_url, auth_env) in cases() {
         let tuple = lookup_tuple(Agent::ClaudeCode, provider)?;
-        let rendered = render_claude_config(tuple)?;
+        let rendered = render_claude_config(tuple);
         let value: Value = serde_json::from_str(&rendered)?;
         assert_eq!(
             value,
@@ -74,5 +74,27 @@ fn claude_base_url_host_matches_the_tuple_profile_endpoint_host() -> TestResult 
             tuple.id
         );
     }
+    Ok(())
+}
+
+#[test]
+fn t02_subscription_settings_carry_no_base_url_and_no_auth_env() -> TestResult {
+    let tuple = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
+    let value: Value = serde_json::from_str(&render_claude_config(tuple))?;
+    assert_eq!(value, json!({}), "{}", tuple.id);
+    Ok(())
+}
+
+#[test]
+fn t02_subscription_credential_names_one_oauth_env() -> TestResult {
+    let tuple = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
+    assert_eq!(tuple.claude_auth_env(), Some("CLAUDE_CODE_OAUTH_TOKEN"));
+    assert!(
+        tuple_profile_asset(tuple)
+            .yaml
+            .contains("env_vars: [CLAUDE_CODE_OAUTH_TOKEN]"),
+        "{}",
+        tuple.id
+    );
     Ok(())
 }

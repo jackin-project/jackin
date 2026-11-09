@@ -831,11 +831,9 @@ async fn publish_static_login(
     })?;
     let asset = jackin_core::tuple_profile_asset(tuple);
     let profile = ProviderProfile::parse(asset)?;
-    let access_key = agent
-        .spec()
-        .credential_env_names
-        .first()
-        .copied()
+    let access_key = tuple
+        .credential_env()
+        .or_else(|| agent.spec().credential_env_names.first().copied())
         .ok_or_else(|| AccountError::MissingCredential {
             account: account.name().clone(),
         })?;
