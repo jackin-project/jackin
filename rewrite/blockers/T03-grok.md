@@ -2,12 +2,14 @@
 
 Tuple: T03.
 State: unavailable.
-Reason: host Grok subscription usage balance exhausted (HTTP 402).
+Reason: host Grok answers fixed prompts, but sandbox Grok 1.0.77 reports `You are using XAI_API_KEY`, default model `grok-4.6`, and available models `grok-4.6` and `grok-4.5`. Fixed one-shot prompts hang without a response on both gateways, and supervised Grok stops at the directory-trust prompt. Subscription billing attribution is unproven.
 
-Dated evidence:
-- 2026-11-06: the host live run `grok -p "ping" --no-auto-update --output-format json` returned HTTP 402 "Grok Build usage balance exhausted", so no sandbox prompt can succeed and billing attribution cannot be verified. Login stayed intact. Full record: rewrite/evidence/A6-grok.md.
-- 2026-11-08T13:05:49Z: re-check `grok -p "Reply with exactly: PONG" --no-auto-update --output-format json` returned the same HTTP 402, exit 1. `grok models` at 13:05:58Z still answers "You are logged in with grok.com. Default model: grok-4.7". Quota still exhausted, login intact. Record: rewrite/evidence/A14-live-prep.md.
+Current evidence, 2026-11-09:
+- `rewrite/evidence/A14-oauth-final.md` records host responses, successful host-login imports on both gateways, the sandbox model-list mismatch, both fixed-prompt hangs, and the supervised directory-trust stop. It records no sandbox fixed-prompt response and no proof of subscription billing attribution.
+- `rewrite/evidence/A14-oauth-verifier.md` independently reproduces the host response, sandbox model-list mismatch, bounded fixed-prompt timeout, directory-trust stop, and unproven billing attribution on `jackin-local`.
 
-Closed defect: `jackin account add grok --name grok-host --from-host-login` failed with "provider credentials are not declared by profile 'grok': access_token". The cause was a jackin bug, not a gateway bug. OpenShell v0.1.7 accepts only the profile credential env var names as stored keys. Jackin stored the key under the logical name `access_token`. The fix stores the Grok key under `XAI_API_KEY` (commit 7c30d78c4). Account creation is no longer blocked by this defect.
+The host-login import succeeds, but the rendered `auth.json` contains a placeholder and `XAI_API_KEY` contains an `openshell:resolve:` broker reference. The import and placeholder/session shape defect needs a separately reviewed code unit. The fixed-prompt hang and directory-trust stop also need product-code review before another support disposition.
 
-Re-prove condition: the cheap quota re-check (`grok -p "Reply with exactly: PONG" --no-auto-update --output-format json`) returns a reply instead of HTTP 402. Then run the class O steps of rewrite/evidence/A14-live-prep.md: `jackin account add grok --name grok-live --from-host-login`, flip T03 in a temp worktree, add `[agents.grok]` to the sentinel role, launch, sandbox prompt, `/sandbox/.grok/auth.json` placeholder scan, refresh and concurrency (host and sandbox logged in in the same window), subscription billing basis (Auto Top-up off, prepaid balance zero, the reply billed to the subscription), and second-sandbox isolation. When that gate passes, flip T03 to supported.
+The earlier HTTP 402 results are historical. Current host responses do not establish persistent HTTP 402, and neither evidence file records a live sandbox fixed-prompt response.
+
+Re-prove condition: complete the separately reviewed code work, then obtain fixed-prompt and supervised launch-task responses on both gateways. Prove subscription billing attribution, refresh and host concurrency, and second-sandbox isolation before changing T03 to supported.

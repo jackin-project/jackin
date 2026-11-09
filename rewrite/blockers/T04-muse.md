@@ -1,10 +1,12 @@
 # T04 Muse Code with Meta: blocked
 
 State: unavailable.
-Reason: Muse 1.4.14 fails in the sandbox before any provider work: `Agent Definition filesystem source failed: IoError`.
+Reason: host Muse 1.4.14 answers and reports active subscription metadata, but a fresh account import times out at the interactive 30-second Keychain read on both gateways. The failed import creates no provider or sandbox.
 
-Four live proof rounds are in rewrite/evidence/A6-muse.md. The gateway path works: `jackin account add muse --from-host-login` creates provider jackin-muse-live-muse, the sandbox holds only a placeholder, and the host CLI keeps working at the same time. The sandbox run never starts. The error occurs with every provider mode (meta, echo, local), every cwd, a clean HOME, and all documented flags. The failing filesystem path cannot be seen from inside the sandbox: ptrace, seccomp tracing, and user namespaces are all denied there, and failed opens give no inotify event.
+Current evidence, 2026-11-09:
+- `rewrite/evidence/A14-oauth-final.md` records host `HOST-PONG` responses, `providers.meta.subs_active=True`, and fresh-import failures after about 30 seconds on `jackin-docker` and `jackin-local`. Neither attempt created a provider, and no sandbox was created.
+- `rewrite/evidence/A14-oauth-verifier.md` independently reproduces the 30.09-second fresh-import timeout on `jackin-local`, the missing-credential error, and the absence of a new provider or sandbox. Host Muse answered before and after the failure.
 
-One jackin gap from the same proof is fixed separately: jackin now writes the Muse trust store at launch (see the A6 trust change). That change is necessary but not sufficient.
+The prior Landlock evidence for read-only `/` remains valid in `rewrite/evidence/A14-muse-strace.md`. The current gate stops before image build, so this run neither downgrades nor re-certifies the earlier Landlock result and proves no T04 sandbox requirement.
 
-To unblock: run the Muse 1.4.14 Linux binary under strace in an environment that permits ptrace and matches the role image, record the failing openat path, create that path in the role image or launch setup, and re-run the A6 live gate. Then flip T04 to supported.
+Re-prove condition: complete the interactive Keychain approval or land a separately reviewed credential-lifecycle change. Then import a fresh credential on both gateways, create the provider and sandbox, and pass the full T04 live gate before changing T04 to supported.
