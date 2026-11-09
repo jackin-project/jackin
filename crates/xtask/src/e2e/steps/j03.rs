@@ -29,8 +29,7 @@ pub(crate) struct Expect<'a> {
 }
 
 pub(crate) fn agents_label(account: &str) -> String {
-    jackin_core::Sha256::of(format!("codex:codex:{account}:gpt-5.1-codex").as_bytes()).as_str()
-        [..32]
+    jackin_core::Sha256::of(format!("codex:codex:{account}:gpt-6.1-sol").as_bytes()).as_str()[..32]
         .to_owned()
 }
 

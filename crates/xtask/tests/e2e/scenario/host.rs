@@ -116,7 +116,7 @@ impl ScenarioHost {
             ("jackin.dev/role".to_owned(), "sentinel".to_owned()),
             (
                 "jackin.dev/agents".to_owned(),
-                jackin_core::Sha256::of(format!("codex:codex:{account}:gpt-5.1-codex").as_bytes())
+                jackin_core::Sha256::of(format!("codex:codex:{account}:gpt-6.1-sol").as_bytes())
                     .as_str()[..32]
                     .to_owned(),
             ),

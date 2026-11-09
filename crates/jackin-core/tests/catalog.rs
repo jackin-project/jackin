@@ -60,9 +60,9 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Agent::ClaudeCode,
             Provider::Minimax,
             AuthClass::StaticKey,
-            "minimax-m3",
-            TupleState::Supported,
-            None,
+            "MiniMax-M3",
+            TupleState::Unavailable,
+            Some("uppercase MiniMax-M3 live proof pending"),
         ),
         (
             "T16",
@@ -96,9 +96,9 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Agent::Codex,
             Provider::Minimax,
             AuthClass::StaticKey,
-            "minimax-m3",
-            TupleState::Supported,
-            None,
+            "MiniMax-M3",
+            TupleState::Unavailable,
+            Some("uppercase MiniMax-M3 live proof pending"),
         ),
         (
             "T20",
@@ -114,7 +114,7 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Agent::Omp,
             Provider::Claude,
             AuthClass::ApiKey,
-            "claude-haiku-4-5",
+            "claude-haiku-5-5",
             TupleState::Unavailable,
             Some(no_key),
         ),
@@ -170,5 +170,82 @@ fn unknown_model_is_a_typed_error_and_default_model_is_accepted() -> TestResult 
     ));
     let accepted = tuple.check_model(tuple.default_model)?;
     assert_eq!(accepted.agent, Agent::Codex);
+    Ok(())
+}
+
+#[test]
+fn changed_model_declarations_agree_between_specs_and_tuples() -> TestResult {
+    for (agent, id, accepted, rejected) in [
+        (Agent::Codex, "T01", "gpt-6.1-sol", "gpt-5.1-codex"),
+        (
+            Agent::Antigravity,
+            "T05",
+            "gemini-4-argon-medium",
+            "gemini-4-argon",
+        ),
+    ] {
+        let spec = agent.spec();
+        assert_eq!(spec.allowed_models, [accepted], "{id} spec");
+        assert_eq!(spec.default_model, accepted, "{id} spec");
+        let tuple = TUPLES.iter().find(|tuple| tuple.id == id).ok_or(id)?;
+        assert_eq!(tuple.allowed_models, [accepted], "{id} tuple");
+        assert_eq!(tuple.default_model, accepted, "{id} tuple");
+        assert_eq!(tuple.check_model(accepted)?.id, id);
+        assert!(matches!(
+            tuple.check_model(rejected),
+            Err(CatalogError::UnknownModel { ref model, .. }) if model == rejected
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn model_acceptance_is_exact_and_independent_of_launch_availability() -> TestResult {
+    for (id, accepted, rejected) in [
+        ("T11", "minimax-m3", "MiniMax-M3"),
+        ("T15", "MiniMax-M3", "minimax-m3"),
+        ("T19", "MiniMax-M3", "minimax-m3"),
+        ("T21", "claude-haiku-5-5", "claude-haiku-4-5"),
+        ("T22", "gpt-5.1-codex", "gpt-6.1-sol"),
+    ] {
+        let tuple = TUPLES.iter().find(|tuple| tuple.id == id).ok_or(id)?;
+        assert_eq!(tuple.allowed_models, [accepted], "{id}");
+        assert_eq!(tuple.default_model, accepted, "{id}");
+        assert_eq!(tuple.check_model(accepted)?.id, id);
+        assert!(matches!(
+            tuple.check_model(rejected),
+            Err(CatalogError::UnknownModel { ref model, .. }) if model == rejected
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn availability_states_and_reasons_are_exact() -> TestResult {
+    let uppercase_pending = "uppercase MiniMax-M3 live proof pending";
+    for (id, state, reason) in [
+        (
+            "T05",
+            TupleState::Unavailable,
+            Some("subscription requires a desktop keyring in the sandbox"),
+        ),
+        ("T11", TupleState::Supported, None),
+        ("T15", TupleState::Unavailable, Some(uppercase_pending)),
+        ("T19", TupleState::Unavailable, Some(uppercase_pending)),
+        (
+            "T21",
+            TupleState::Unavailable,
+            Some("no API key on this host"),
+        ),
+        (
+            "T22",
+            TupleState::Unavailable,
+            Some("no API key on this host"),
+        ),
+    ] {
+        let tuple = TUPLES.iter().find(|tuple| tuple.id == id).ok_or(id)?;
+        assert_eq!(tuple.state, state, "{id}");
+        assert_eq!(tuple.reason, reason, "{id}");
+    }
     Ok(())
 }

@@ -1,6 +1,6 @@
 # Agent artifacts (A1)
 
-Date of check: 2026-11-06. Scope: official vendor sources only. No agent was run. No credential was read.
+Date of check: 2026-11-09. Scope: official vendor sources only. No agent was run. No credential was read.
 A pin is set in task A2 from this file. Recheck each version and checksum at pin time.
 Grok Build has no vendor checksum file. Record the computed hash as a first-fetch hash, as D02 does for the Docker CLI. Do not call it a vendor hash.
 MiniMax Code has no stable standalone Linux binary. Tuple T06 is `unavailable: no stable Linux artifact` until MiniMax publishes one. Do not install it from npm in an image.
@@ -225,21 +225,21 @@ No flag is documented.
 - Product: Kimi Code.
 - Binary: `kimi`.
 - Binary source: [kimi-code repo](https://github.com/MoonshotAI/kimi-code).
-- Latest stable: `2.5.1`.
-- Release tag: `@moonshot-ai/kimi-code@2.5.1`.
-- Release date: 2026-11-05.
-- Release: [2.5.1](https://github.com/MoonshotAI/kimi-code/releases/tag/%40moonshot-ai%2Fkimi-code%402.5.1).
+- Latest stable: `2.5.2`.
+- Release tag: `@moonshot-ai/kimi-code@2.5.2`.
+- Release date: 2026-11-06.
+- Release: [2.5.2](https://github.com/MoonshotAI/kimi-code/releases/tag/%40moonshot-ai%2Fkimi-code%402.5.2).
 - Vendor installer: https://code.kimi.com/kimi-code/install.sh
 - Installer source: [README](https://github.com/MoonshotAI/kimi-code#install).
 - Linux arm64 artifact: `kimi-code-linux-arm64.tar.gz`.
-- Linux arm64 URL: https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%402.5.1/kimi-code-linux-arm64.tar.gz
-- Linux arm64 SHA-256: `70c3a09506f7d3d0f211077eb100d34186fef1017347c73ed0d944bb2b474cf3`.
+- Linux arm64 URL: https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%402.5.2/kimi-code-linux-arm64.tar.gz
+- Linux arm64 SHA-256: `ac941c80c8b2b34451432323397a8e8c2e376948bc6d878fc7d2630be235b678`.
 - Vendor checksum file: `kimi-code-linux-arm64.tar.gz.sha256` in the same release.
 - Linux amd64 artifact: `kimi-code-linux-x64.tar.gz`.
-- Linux amd64 URL: https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%402.5.1/kimi-code-linux-x64.tar.gz
-- Linux amd64 SHA-256: `d3fe0696e2ed244200c6c42344cbd71429eff40dc9761fdcb5f994057b78bee9`.
+- Linux amd64 URL: https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%402.5.2/kimi-code-linux-x64.tar.gz
+- Linux amd64 SHA-256: `6614a511048219d53996454cac8594c9541bbb6cf6e8f0a081d4e878be511ce2`.
 - Vendor checksum file: `kimi-code-linux-x64.tar.gz.sha256` in the same release.
-- Archive members 2026-11-09 at the A14 fix: both 2.5.1 tarballs (arm64 and amd64, SHA-256 re-verified against the pins above) hold exactly one member, `kimi`.
+- Both 2.5.2 tarballs hold exactly one member, `kimi`.
 - State dir: `~/.kimi-code`.
 - State dir override: `KIMI_CODE_HOME`.
 - Config file: `~/.kimi-code/config.toml`.
@@ -263,21 +263,20 @@ No flag is documented.
 - Binary: `omp`.
 - Binary source: [oh-my-pi repo](https://github.com/can1357/oh-my-pi).
 - Site: [omp.sh](https://omp.sh/).
-- Latest stable: `18.16.0`.
-- Release tag: `v18.16.0`.
-- Release date: 2026-11-02.
-- Release: [v18.16.0](https://github.com/can1357/oh-my-pi/releases/tag/v18.16.0).
+- Latest stable: `18.18.3`.
+- Release tag: `v18.18.3`.
+- Release date: 2026-11-09.
+- Release: [v18.18.3](https://github.com/can1357/oh-my-pi/releases/tag/v18.18.3).
 - Vendor installer: https://omp.sh/install
 - Installer source: [README](https://github.com/can1357/oh-my-pi#install).
 - Linux arm64 artifact: `omp-linux-arm64`.
-- Linux arm64 URL: https://github.com/can1357/oh-my-pi/releases/download/v18.16.0/omp-linux-arm64
-- Linux arm64 SHA-256: `c2be1ea85ce17c4270854b57efff2a7ea1d5a03c7557fd08721f2b9bb32698de`.
+- Linux arm64 URL: https://github.com/can1357/oh-my-pi/releases/download/v18.18.3/omp-linux-arm64
+- Linux arm64 SHA-256: `c49a84875d915c7d0de8bb69fe180b3bf53c16600bc4d5a61ea22ac2b3ac45c9`.
 - Linux amd64 artifact: `omp-linux-x64`.
-- Linux amd64 URL: https://github.com/can1357/oh-my-pi/releases/download/v18.16.0/omp-linux-x64
-- Linux amd64 SHA-256: `6498ed785bab00d2926e0387e0ec02362d6d45f1c3d0d1b57c1618b7f95c9264`.
+- Linux amd64 URL: https://github.com/can1357/oh-my-pi/releases/download/v18.18.3/omp-linux-x64
+- Linux amd64 SHA-256: `8c9a178fed74ec1da21aafb7d28cd9839b3b0c9e7d607c86cc3b6177355729f4`.
 - Vendor checksum file: `SHA256SUMS.txt` in the same release.
-- Checksum file URL: https://github.com/can1357/oh-my-pi/releases/download/v18.16.0/SHA256SUMS.txt
-- Repo observed output for 18.16.0: `omp/18.16.0`.
+- Checksum file URL: https://github.com/can1357/oh-my-pi/releases/download/v18.18.3/SHA256SUMS.txt
 - Version command: `omp --version`.
 - Exact format: `omp/<version>`.
 - State dir: unverified from official docs in this pass.
@@ -292,12 +291,10 @@ No flag is documented.
 - Product: Codex CLI.
 - Binary: `codex`.
 - Binary source: [codex repo](https://github.com/OpenAI/codex).
-- Known good reference in repo: `0.166.0`.
-- Latest stable found: `0.167.0`.
+- Current pin and latest stable: `0.167.0`.
 - Release tag: `rust-v0.167.0`.
 - Release date: 2026-11-06.
 - Release: [rust-v0.167.0](https://github.com/OpenAI/codex/releases/tag/rust-v0.167.0).
-- Plan should pin `0.166.0` until the operator approves a bump.
 - Pin rule source: repo DESIGN D02.
 - Linux arm64 package artifact: `codex-package-aarch64-unknown-linux-musl.tar.gz`.
 - Linux arm64 URL: https://github.com/OpenAI/codex/releases/download/rust-v0.167.0/codex-package-aarch64-unknown-linux-musl.tar.gz
@@ -306,7 +303,7 @@ No flag is documented.
 - Linux amd64 URL: https://github.com/OpenAI/codex/releases/download/rust-v0.167.0/codex-package-x86_64-unknown-linux-musl.tar.gz
 - Linux amd64 SHA-256: `3bbf75e83de6b58aed28f2cf6e33ad423ec31fd4700a1457b94be557ea5a7c6e`.
 - Vendor checksum file: `codex-package_SHA256SUMS` in the same release.
-- Repo pinned 0.166.0 arm64 SHA-256: `7821b77dda2e6283fb1f63f3165177a271da8833e857cf673c6ca1c9db3bfcc6`.
+- Both archives contain `bin/codex` and `bin/codex-code-mode-host`.
 - State dir: `~/.codex`.
 - State dir env: `CODEX_HOME`.
 - Auth file: `$CODEX_HOME/auth.json`.
@@ -315,7 +312,6 @@ No flag is documented.
 - Config file: `$CODEX_HOME/config.toml`.
 - Config file default: `~/.codex/config.toml`.
 - Version command: `codex --version`.
-- Repo observed output for 0.166.0: `codex-cli 0.166.0`.
 - Exact format: `codex-cli <version>`.
 - Interactive launch: `codex --sandbox danger-full-access -c check_for_update_on_startup=false`.
 - Launch source: repo DESIGN D04.

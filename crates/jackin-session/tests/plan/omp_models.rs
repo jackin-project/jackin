@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Agent, FileMode, Provider, SandboxPath, lookup_tuple};
+use jackin_core::{Agent, CatalogError, FileMode, Provider, SandboxPath, lookup_tuple};
 use jackin_session::{omp_auth_file, omp_models_file, render_omp_config, render_omp_models};
 use jackin_testkit::RoleFixture;
 use noyalib::Value;
@@ -68,7 +68,7 @@ fn cases() -> Vec<Case> {
             base_url: None,
             api: None,
             auth_header: false,
-            model: "claude-haiku-4-5",
+            model: "claude-haiku-5-5",
             custom_model: false,
         },
         Case {
@@ -181,7 +181,7 @@ fn omp_config_and_auth_goldens_stay_unchanged_for_every_omp_tuple() -> TestResul
         ),
         (
             Provider::Claude,
-            "providers:\n  anthropic:\n    apiKey: placeholder\ncredentialEnv: ANTHROPIC_API_KEY\nmodelRoles:\n  default: anthropic/claude-haiku-4-5\n",
+            "providers:\n  anthropic:\n    apiKey: placeholder\ncredentialEnv: ANTHROPIC_API_KEY\nmodelRoles:\n  default: anthropic/claude-haiku-5-5\n",
         ),
         (
             Provider::Codex,
@@ -200,6 +200,26 @@ fn omp_config_and_auth_goldens_stay_unchanged_for_every_omp_tuple() -> TestResul
             format!("{{\"{id}\": {{\"type\": \"api_key\", \"key\": \"placeholder\"}}}}")
         );
     }
+    Ok(())
+}
+
+#[test]
+fn t21_renderers_reject_the_removed_model_with_catalog_errors() -> TestResult {
+    let tuple = lookup_tuple(Agent::Omp, Provider::Claude)?;
+    let config = render_omp_config(tuple, Some("claude-haiku-4-5"))
+        .err()
+        .ok_or("expected config model refusal")?;
+    assert!(matches!(
+        config,
+        CatalogError::UnknownModel { ref model, .. } if model == "claude-haiku-4-5"
+    ));
+    let models = render_omp_models(tuple, Some("claude-haiku-4-5"))
+        .err()
+        .ok_or("expected models model refusal")?;
+    assert!(matches!(
+        models,
+        CatalogError::UnknownModel { ref model, .. } if model == "claude-haiku-4-5"
+    ));
     Ok(())
 }
 

@@ -66,31 +66,31 @@ async fn expect_returns_text_before_the_match_and_keeps_the_rest() {
 
 #[tokio::test]
 async fn ansi_sequences_do_not_defeat_matching() {
-    let header = "OpenAI Codex (v0.166.0)";
+    let header = "OpenAI Codex (v0.167.0)";
     for (case, script) in [
         (
             "csi colors",
-            "printf '\\033[31mOpenAI \\033[0mCodex (v0.166.0)'",
+            "printf '\\033[31mOpenAI \\033[0mCodex (v0.167.0)'",
         ),
         (
             "cursor moves",
-            "printf '\\033[2;3HOpenAI Codex\\033[1A (v0.166.0)'",
+            "printf '\\033[2;3HOpenAI Codex\\033[1A (v0.167.0)'",
         ),
         (
             "osc with bel",
-            "printf '\\033]0;title\\007OpenAI Codex (v0.166.0)'",
+            "printf '\\033]0;title\\007OpenAI Codex (v0.167.0)'",
         ),
         (
             "osc with st",
-            "printf '\\033]0;title\\033\\\\OpenAI Codex (v0.166.0)'",
+            "printf '\\033]0;title\\033\\\\OpenAI Codex (v0.167.0)'",
         ),
         (
             "dec private mode",
-            "printf '\\033[?25lOpenAI Codex (v0.166.0)\\033[?25h'",
+            "printf '\\033[?25lOpenAI Codex (v0.167.0)\\033[?25h'",
         ),
         (
             "split sequence",
-            "printf '\\033[3'; sleep 0.3; printf '1mOpenAI Codex (v0.166.0)'",
+            "printf '\\033[3'; sleep 0.3; printf '1mOpenAI Codex (v0.167.0)'",
         ),
     ] {
         let mut screen = session(&format!("{script}; sleep 1"), Redactor::none());

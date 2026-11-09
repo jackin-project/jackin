@@ -477,6 +477,49 @@ fn derived_build_args_come_from_the_codex_row() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn final_builds_substitute_the_current_stable_agent_pins_exactly() -> TestResult {
+    let cases = [
+        (
+            Agent::Codex,
+            "0.167.0",
+            "0de261ecf1e7f3028a7952f03fca2093f749277d38590b78bb32f8567756bbb7",
+            "3bbf75e83de6b58aed28f2cf6e33ad423ec31fd4700a1457b94be557ea5a7c6e",
+            "https://github.com/openai/codex/releases/download/rust-v0.167.0/codex-package-aarch64-unknown-linux-musl.tar.gz",
+            "https://github.com/openai/codex/releases/download/rust-v0.167.0/codex-package-x86_64-unknown-linux-musl.tar.gz",
+        ),
+        (
+            Agent::KimiCode,
+            "2.5.2",
+            "ac941c80c8b2b34451432323397a8e8c2e376948bc6d878fc7d2630be235b678",
+            "6614a511048219d53996454cac8594c9541bbb6cf6e8f0a081d4e878be511ce2",
+            "https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%402.5.2/kimi-code-linux-arm64.tar.gz",
+            "https://github.com/MoonshotAI/kimi-code/releases/download/%40moonshot-ai%2Fkimi-code%402.5.2/kimi-code-linux-x64.tar.gz",
+        ),
+        (
+            Agent::Omp,
+            "18.18.3",
+            "c49a84875d915c7d0de8bb69fe180b3bf53c16600bc4d5a61ea22ac2b3ac45c9",
+            "8c9a178fed74ec1da21aafb7d28cd9839b3b0c9e7d607c86cc3b6177355729f4",
+            "https://github.com/can1357/oh-my-pi/releases/download/v18.18.3/omp-linux-arm64",
+            "https://github.com/can1357/oh-my-pi/releases/download/v18.18.3/omp-linux-x64",
+        ),
+    ];
+    for (agent, version, arm_sha, amd_sha, arm_url, amd_url) in cases {
+        let mut request = base()?;
+        request.agent = agent;
+        request.agents = vec![agent];
+        let built = ImagePlan::new(&request)?.final_builds(&construct_id()?);
+        let args = build_arg_map(&built.derived.args)?;
+        assert_eq!(args["AGENT_VERSION"], version, "{agent:?}");
+        assert_eq!(args["AGENT_SHA256_ARM64"], arm_sha, "{agent:?}");
+        assert_eq!(args["AGENT_SHA256_AMD64"], amd_sha, "{agent:?}");
+        assert_eq!(args["AGENT_URL_ARM64"], arm_url, "{agent:?}");
+        assert_eq!(args["AGENT_URL_AMD64"], amd_url, "{agent:?}");
+    }
+    Ok(())
+}
+
 fn derived_files(docker: DockerLayer) -> Result<Vec<MaterializedFile>, Box<dyn Error>> {
     let mut request = base()?;
     request.docker = docker;

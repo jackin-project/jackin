@@ -17,7 +17,7 @@ fn codex_and(
             Agent::Codex,
             Provider::Codex,
             AccountName::parse("work")?,
-            "gpt-5.1-codex".to_owned(),
+            "gpt-6.1-sol".to_owned(),
         ),
         AgentInstance::new(
             agent,

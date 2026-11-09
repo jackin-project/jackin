@@ -48,6 +48,7 @@ pub fn plan_multi(
     task: Option<&str>,
     head: HeadState,
 ) -> Result<MultiLayout, crate::plan::PlanError> {
+    crate::plan::validate_instances(instances)?;
     let lead = instances.lead_opt().map(|item| item.agent);
     let mut files = Vec::new();
     let mut directories = vec![

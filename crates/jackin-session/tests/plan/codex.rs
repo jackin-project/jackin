@@ -26,30 +26,12 @@ type Case = (
 fn cases() -> Vec<Case> {
     vec![
         (
-            Provider::Kimi,
-            "kimi",
-            "Kimi",
-            "https://api.kimi.ai/coding/v1",
-            "KIMI_API_KEY",
-            "kimi-for-coding",
-            None,
-        ),
-        (
             Provider::Zai,
             "zai",
             "Z.AI",
             "https://api.z.ai/api/v1",
             "ZAI_API_KEY",
             "glm-5.3",
-            None,
-        ),
-        (
-            Provider::Minimax,
-            "minimax",
-            "MiniMax",
-            "https://api.minimax.io/v1",
-            "MINIMAX_CODE_API_KEY",
-            "minimax-m3",
             None,
         ),
         (
@@ -71,9 +53,9 @@ fn mirror_instances(
     Ok(AgentInstances::new(vec![
         AgentInstance::new(
             Agent::ClaudeCode,
-            Provider::Kimi,
+            Provider::Zai,
             AccountName::parse("work")?,
-            "kimi-for-coding".to_owned(),
+            "glm-5.3".to_owned(),
         ),
         AgentInstance::new(
             Agent::Codex,
@@ -178,11 +160,54 @@ fn codex_home_config_takes_the_explicit_model_and_refuses_an_unknown_one()
     Ok(())
 }
 
+#[test]
+fn t17_refuses_launch_while_unproven() -> Result<(), Box<dyn std::error::Error>> {
+    let error = plan_multi(
+        &mirror_instances(Provider::Kimi, "kimi-for-coding")?,
+        Some("do it"),
+        HeadState::Born,
+    )
+    .err()
+    .ok_or("expected unavailable tuple refusal")?;
+    assert!(
+        matches!(
+            error,
+            PlanError::TupleNotSupported { ref reason, .. }
+                if reason == "not yet proven on a real gateway"
+        ),
+        "{error}"
+    );
+    Ok(())
+}
+
+#[test]
+fn t19_accepts_uppercase_model_validation_but_refuses_launch_while_unproven()
+-> Result<(), Box<dyn std::error::Error>> {
+    let tuple = lookup_tuple(Agent::Codex, Provider::Minimax)?;
+    assert_eq!(tuple.check_model("MiniMax-M3")?.id, "T19");
+    let error = plan_multi(
+        &mirror_instances(Provider::Minimax, "MiniMax-M3")?,
+        Some("do it"),
+        HeadState::Born,
+    )
+    .err()
+    .ok_or("expected unavailable tuple refusal")?;
+    assert!(
+        matches!(
+            error,
+            PlanError::TupleNotSupported { ref reason, .. }
+                if reason == "uppercase MiniMax-M3 live proof pending"
+        ),
+        "{error}"
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn t01_lead_config_stays_trust_only_with_no_model_provider() -> TestResult {
     guard(async {
         let bare = Spec::new(RoleFixture::new("sentinel")?).build().await?;
-        let plan = bare.plan(bare.request(1)?.model(Some("gpt-5.1-codex".to_owned())))?;
+        let plan = bare.plan(bare.request(1)?.model(Some("gpt-6.1-sol".to_owned())))?;
         let file = &plan.files().codex_config;
         assert_eq!(
             file.path,
@@ -193,13 +218,13 @@ async fn t01_lead_config_stays_trust_only_with_no_model_provider() -> TestResult
             toml::from_str("[projects.\"/sandbox/project\"]\ntrust_level = \"trusted\"\n")?;
         assert_eq!(toml::from_str::<toml::Table>(&file.text)?, expected);
 
-        let modelled = Spec::new(RoleFixture::new("sentinel")?.model("gpt-5.1-codex"))
+        let modelled = Spec::new(RoleFixture::new("sentinel")?.model("gpt-6.1-sol"))
             .build()
             .await?;
         let plan = modelled.plan(modelled.request(2)?)?;
         let file = &plan.files().codex_config;
         let expected: toml::Table = toml::from_str(
-            "model = \"gpt-5.1-codex\"\n\n[projects.\"/sandbox/project\"]\ntrust_level = \"trusted\"\n",
+            "model = \"gpt-6.1-sol\"\n\n[projects.\"/sandbox/project\"]\ntrust_level = \"trusted\"\n",
         )?;
         assert_eq!(toml::from_str::<toml::Table>(&file.text)?, expected);
         Ok(())
@@ -215,9 +240,18 @@ async fn plan_model_selection_allows_explicit_refuses_outside_and_defaults_witho
         let plan = setup.plan(
             setup
                 .request(1)?
-                .model(Some("gpt-5.1-codex".to_owned())),
+                .model(Some("gpt-6.1-sol".to_owned())),
         )?;
-        assert_eq!(plan.instances().lead().model, "gpt-5.1-codex");
+        assert_eq!(plan.instances().lead().model, "gpt-6.1-sol");
+
+        let removed = setup
+            .plan(setup.request(1)?.model(Some("gpt-5.1-codex".to_owned())))
+            .err()
+            .ok_or("expected removed model refusal")?;
+        assert!(
+            matches!(&removed, PlanError::TupleNotSupported { reason, .. } if reason == "unknown model gpt-5.1-codex"),
+            "{removed}"
+        );
 
         let err = setup
             .plan(setup.request(1)?.model(Some("no-such-model".to_owned())))
@@ -229,7 +263,7 @@ async fn plan_model_selection_allows_explicit_refuses_outside_and_defaults_witho
         );
 
         let plan = setup.plan(setup.request(2)?)?;
-        assert_eq!(plan.instances().lead().model, "gpt-5.1-codex");
+        assert_eq!(plan.instances().lead().model, "gpt-6.1-sol");
         Ok(())
     })
     .await
