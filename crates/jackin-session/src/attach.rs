@@ -431,16 +431,16 @@ impl Session {
             .await?
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;
+        let names = self
+            .sandbox_agent_names(sandbox)
+            .await
+            .map_err(AttachError::Gateway)?;
         if let Some(agent) = request.agent {
-            let names = self
-                .sandbox_agent_names(sandbox)
-                .await
-                .map_err(AttachError::Gateway)?;
-            let is_lead = names.first().is_none_or(|lead| lead == agent.as_str());
+            if !names.iter().any(|name| name == agent.as_str()) {
+                return Err(AttachError::NotFound(sandbox.clone()));
+            }
+            let is_lead = names.first().is_some_and(|lead| lead == agent.as_str());
             if !is_lead {
-                if !names.iter().any(|name| name == agent.as_str()) {
-                    return Err(AttachError::NotFound(sandbox.clone()));
-                }
                 let spec = agent.spec();
                 let mut env = BTreeMap::new();
                 env.insert(

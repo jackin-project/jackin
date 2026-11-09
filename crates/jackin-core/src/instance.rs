@@ -130,9 +130,11 @@ impl AgentInstances {
         &self.items
     }
 
-    pub fn sorted(&self) -> Vec<AgentInstance> {
+    pub fn canonical(&self) -> Vec<AgentInstance> {
         let mut items = self.items.clone();
-        items.sort_by_key(AgentInstance::item);
+        if let Some((_, secondary)) = items.split_first_mut() {
+            secondary.sort_by_key(AgentInstance::item);
+        }
         items
     }
 
@@ -140,13 +142,19 @@ impl AgentInstances {
         if let Some(label) = &self.label_override {
             return label.clone();
         }
-        let items: Vec<String> = self.sorted().iter().map(AgentInstance::item).collect();
-        Sha256::of(items.join(",").as_bytes()).as_str()[..32].to_owned()
+        let items: Vec<String> = self.canonical().iter().map(AgentInstance::item).collect();
+        let joined = items.join(",");
+        let preimage = if self.items.len() > 1 {
+            format!("lead-first-v1:{joined}")
+        } else {
+            joined
+        };
+        Sha256::of(preimage.as_bytes()).as_str()[..32].to_owned()
     }
 
     pub fn agents_json(&self) -> String {
         let entries: Vec<String> = self
-            .sorted()
+            .canonical()
             .iter()
             .map(|item| {
                 format!(
