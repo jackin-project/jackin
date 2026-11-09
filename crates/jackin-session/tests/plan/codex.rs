@@ -13,14 +13,17 @@ use super::support::{Spec, TestResult, guard};
 
 const HOME_CONFIG: &str = "/sandbox/.jackin/homes/codex/.codex/config.toml";
 
-fn cases() -> Vec<(
+type Case = (
     Provider,
     &'static str,
     &'static str,
     &'static str,
     &'static str,
     &'static str,
-)> {
+    Option<&'static str>,
+);
+
+fn cases() -> Vec<Case> {
     vec![
         (
             Provider::Kimi,
@@ -29,6 +32,7 @@ fn cases() -> Vec<(
             "https://api.kimi.ai/coding/v1",
             "KIMI_API_KEY",
             "kimi-for-coding",
+            None,
         ),
         (
             Provider::Zai,
@@ -37,6 +41,7 @@ fn cases() -> Vec<(
             "https://api.z.ai/api/v1",
             "ZAI_API_KEY",
             "glm-5.3",
+            None,
         ),
         (
             Provider::Minimax,
@@ -45,6 +50,7 @@ fn cases() -> Vec<(
             "https://api.minimax.io/v1",
             "MINIMAX_CODE_API_KEY",
             "minimax-m3",
+            None,
         ),
         (
             Provider::Mimo,
@@ -53,6 +59,7 @@ fn cases() -> Vec<(
             "https://token-plan-sgp.xiaomimimo.com/v1",
             "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
             "mimo-v2.6-pro",
+            Some("disabled"),
         ),
     ]
 }
@@ -98,7 +105,7 @@ fn home_config(
 #[test]
 fn codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none()
 -> Result<(), Box<dyn std::error::Error>> {
-    for (provider, id, name, base_url, env_key, model) in cases() {
+    for (provider, id, name, base_url, env_key, model, web_search) in cases() {
         let (layout, text) = home_config(provider, model)?;
         let file = layout
             .files
@@ -107,8 +114,11 @@ fn codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none()
             .ok_or("no codex home config")?;
         assert_eq!(file.mode, FileMode(0o600), "{id}");
         assert!(file.text.ends_with('\n'), "{id}");
+        let web_search = web_search
+            .map(|value| format!("web_search = \"{value}\"\n"))
+            .unwrap_or_default();
         let expected: toml::Table = toml::from_str(&format!(
-            "model = \"{model}\"\nmodel_provider = \"{id}\"\n\n[model_providers.{id}]\nname = \"{name}\"\nbase_url = \"{base_url}\"\nenv_key = \"{env_key}\"\nwire_api = \"responses\"\n\n[projects.\"/sandbox/work/codex/project\"]\ntrust_level = \"trusted\"\n"
+            "model = \"{model}\"\nmodel_provider = \"{id}\"\n{web_search}\n[model_providers.{id}]\nname = \"{name}\"\nbase_url = \"{base_url}\"\nenv_key = \"{env_key}\"\nwire_api = \"responses\"\n\n[projects.\"/sandbox/work/codex/project\"]\ntrust_level = \"trusted\"\n"
         ))?;
         assert_eq!(toml::from_str::<toml::Table>(&text)?, expected, "{id}");
         assert_eq!(
@@ -148,7 +158,7 @@ fn codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none()
 #[test]
 fn codex_home_config_takes_the_explicit_model_and_refuses_an_unknown_one()
 -> Result<(), Box<dyn std::error::Error>> {
-    for (provider, id, _, _, _, model) in cases() {
+    for (provider, id, _, _, _, model, _) in cases() {
         let (_, text) = home_config(provider, model)?;
         let parsed: toml::Table = toml::from_str(&text)?;
         assert_eq!(parsed["model"].as_str(), Some(model), "{id}");
@@ -228,7 +238,7 @@ async fn plan_model_selection_allows_explicit_refuses_outside_and_defaults_witho
 #[test]
 fn codex_base_url_host_matches_the_tuple_profile_endpoint_host()
 -> Result<(), Box<dyn std::error::Error>> {
-    for (provider, id, _, base_url, _, _) in cases() {
+    for (provider, id, _, base_url, _, _, _) in cases() {
         let tuple = lookup_tuple(Agent::Codex, provider)?;
         assert_eq!(tuple.codex_base_url(), Some(base_url), "{id}");
         let host = base_url

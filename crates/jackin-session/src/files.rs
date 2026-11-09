@@ -33,6 +33,12 @@ pub(crate) fn render_codex_config(
         };
         config.insert("model".to_owned(), Value::String(model.to_owned()));
         config.insert("model_provider".to_owned(), Value::String(id.to_owned()));
+        if tuple.id == "T20" {
+            config.insert(
+                "web_search".to_owned(),
+                Value::String("disabled".to_owned()),
+            );
+        }
         let mut provider = Table::new();
         provider.insert(
             "name".to_owned(),

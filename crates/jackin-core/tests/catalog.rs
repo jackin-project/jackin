@@ -61,8 +61,8 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Provider::Minimax,
             AuthClass::StaticKey,
             "minimax-m3",
-            TupleState::Unavailable,
-            Some(unproven),
+            TupleState::Supported,
+            None,
         ),
         (
             "T16",
@@ -70,8 +70,8 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Provider::Mimo,
             AuthClass::StaticKey,
             "mimo-v2.6-pro",
-            TupleState::Unavailable,
-            Some(unproven),
+            TupleState::Supported,
+            None,
         ),
         (
             "T17",
@@ -97,8 +97,8 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Provider::Minimax,
             AuthClass::StaticKey,
             "minimax-m3",
-            TupleState::Unavailable,
-            Some(unproven),
+            TupleState::Supported,
+            None,
         ),
         (
             "T20",
@@ -106,8 +106,8 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             Provider::Mimo,
             AuthClass::StaticKey,
             "mimo-v2.6-pro",
-            TupleState::Unavailable,
-            Some(unproven),
+            TupleState::Supported,
+            None,
         ),
         (
             "T21",

@@ -1035,8 +1035,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::ClaudeCode,
         Provider::Minimax,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        TupleState::Supported,
+        None,
         &["minimax-m3"],
         "minimax-m3"
     ),
@@ -1045,8 +1045,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::ClaudeCode,
         Provider::Mimo,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        TupleState::Supported,
+        None,
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
@@ -1075,8 +1075,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Codex,
         Provider::Minimax,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        TupleState::Supported,
+        None,
         &["minimax-m3"],
         "minimax-m3"
     ),
@@ -1085,8 +1085,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Codex,
         Provider::Mimo,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        TupleState::Supported,
+        None,
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
