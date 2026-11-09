@@ -2,6 +2,9 @@
 # Each block gives the written reason. Entries are exact finding fingerprints (commit:file:rule:line); the rules are NOT weakened.
 # A possibly real credential is never listed here; those are tracked for rotation by the owner.
 
+# Reason: synthetic model-probe sentinel in research notes, not a credential
+06b087a580ff79b49fba6b80b02747565924b4eb:rewrite/research/t13-t22-models.md:generic-api-key:118
+
 # Reason: generated CI matrix key / task digest / cache key, not a credential
 # 141 finding(s); rules: generic-api-key; files: .github/workflows/ci.yml (138), .github/workflows/hygiene.yml (3)
 0aa821a088e1bacf3d4d85a4c9faaa67faa85132:.github/workflows/ci.yml:generic-api-key:5334
@@ -277,6 +280,3 @@ crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:8
 crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:14
 # Reason: prose in Markdown documentation matched by a keyword rule, no literal credential
 crates/services/jackin-usage-provider-kimi/README.md:generic-api-key:3
-
-# Reason: synthetic model-probe sentinel in research notes, not a credential
-06b087a580ff79b49fba6b80b02747565924b4eb:rewrite/research/t13-t22-models.md:generic-api-key:118
