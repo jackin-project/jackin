@@ -17,12 +17,18 @@ struct Case {
     model: &'static str,
 }
 
-const SUPPORTED: [Case; 13] = [
+const SUPPORTED: [Case; 14] = [
     Case {
         id: "T01",
         agent: Agent::Codex,
         provider: Provider::Codex,
         model: "gpt-6.1-sol",
+    },
+    Case {
+        id: "T03",
+        agent: Agent::GrokBuild,
+        provider: Provider::Grok,
+        model: "grok-4.7",
     },
     Case {
         id: "T09",
@@ -105,7 +111,7 @@ struct Refusal {
 }
 
 const UNPROVEN: &str = "not yet proven on a real gateway";
-const REFUSALS: [Refusal; 9] = [
+const REFUSALS: [Refusal; 8] = [
     Refusal {
         case: Case {
             id: "T02",
@@ -115,16 +121,6 @@ const REFUSALS: [Refusal; 9] = [
         },
         state: TupleState::BlockedVendor,
         reason: "vendor clarification pending",
-    },
-    Refusal {
-        case: Case {
-            id: "T03",
-            agent: Agent::GrokBuild,
-            provider: Provider::Grok,
-            model: "grok-4.7",
-        },
-        state: TupleState::Unavailable,
-        reason: UNPROVEN,
     },
     Refusal {
         case: Case {
@@ -164,7 +160,7 @@ const REFUSALS: [Refusal; 9] = [
             model: "mimo-v2.6-pro",
         },
         state: TupleState::Unavailable,
-        reason: UNPROVEN,
+        reason: "native login has no refresh grant",
     },
     Refusal {
         case: Case {
@@ -174,7 +170,7 @@ const REFUSALS: [Refusal; 9] = [
             model: "kimi-for-coding",
         },
         state: TupleState::Unavailable,
-        reason: UNPROVEN,
+        reason: "native refresh and final live proof pending",
     },
     Refusal {
         case: Case {
@@ -204,7 +200,7 @@ fn account(case: &Case) -> Result<AccountName, Box<dyn std::error::Error>> {
 
 fn role() -> Result<RoleFixture, Box<dyn std::error::Error>> {
     Ok(RoleFixture::new("sentinel")?.manifest_text(
-        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n".to_owned(),
+        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.grok]\ninstructions = \"instructions/grok.md\"\n".to_owned(),
     ))
 }
 
@@ -214,6 +210,8 @@ async fn setup() -> Result<super::support::Setup, Box<dyn std::error::Error>> {
         let name = tuple.id.to_lowercase();
         let credential = if tuple.id == "T01" {
             "source = \"codex-login\", home = \"/tmp/codex-home\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\"".to_owned()
+        } else if tuple.id == "T03" {
+            "source = \"host-login\", path = \"/tmp/grok-home/auth.json\"".to_owned()
         } else {
             "source = \"file\", path = \"/tmp/credential\"".to_owned()
         };

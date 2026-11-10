@@ -319,7 +319,6 @@ macro_rules! unavailable_tuple_tests {
 
 unavailable_tuple_tests! {
     t02_load_refusal => ("claude", "claude", "vendor clarification pending"),
-    t03_load_refusal => ("grok", "grok", "not yet proven on a real gateway"),
     t04_load_refusal => ("muse", "muse", "not yet proven on a real gateway"),
     t05_load_refusal => ("agy", "antigravity", "subscription requires a desktop keyring in the sandbox"),
     t06_load_refusal => ("minimax-code", "minimax", "no stable Linux artifact"),

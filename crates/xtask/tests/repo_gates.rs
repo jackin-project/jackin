@@ -2502,7 +2502,6 @@ mod promotion_records {
         }
         for name in [
             "T02-claude.md",
-            "T03-grok.md",
             "T04-muse.md",
             "T05-antigravity.md",
             "T06-minimax-code.md",
@@ -2539,6 +2538,32 @@ mod promotion_records {
         assert!(blocker.contains("State: unavailable."));
         assert!(blocker.contains(REASON));
         assert!(blocker.contains("rewrite/evidence/A14-claude-final-live.md"));
+        Ok(())
+    }
+
+    #[test]
+    fn t03_live_record_distinguishes_models_and_closes_only_its_blocker() -> TestResult {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let evidence = fs::read_to_string(root.join("rewrite/evidence/A14-t03-live-final.md"))?;
+        for required in [
+            "**PASS**",
+            "jackin-docker",
+            "jackin-local",
+            "grok-4.7",
+            "grok-4.7-build",
+            "OAuth2RefreshToken",
+            "grok --trust",
+            "GROK_SESSION_TOKEN",
+            "XAI_API_KEY",
+            "false-positive detector observation",
+            "does not claim that no HTTP 402 occurred",
+        ] {
+            assert!(evidence.contains(required), "missing {required:?}");
+        }
+        assert!(!root.join("rewrite/blockers/T03-grok.md").exists());
+        let t02 = fs::read_to_string(root.join("rewrite/blockers/T02-claude.md"))?;
+        assert!(t02.contains("State: blocked-vendor."));
+        assert!(t02.contains("Reason: vendor clarification pending."));
         Ok(())
     }
 }

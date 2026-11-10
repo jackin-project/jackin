@@ -5,6 +5,7 @@ mod account;
 mod docker;
 mod env;
 mod failure;
+mod grok;
 mod picker;
 mod ready;
 mod support;
