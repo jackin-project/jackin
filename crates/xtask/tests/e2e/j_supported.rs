@@ -619,42 +619,91 @@ async fn onepassword_discovery_requires_whoami_and_one_zai_item() {
 
 #[tokio::test]
 async fn static_key_sessions_isolate_a1_and_invalid_fixture_accounts() {
-    for id in ["T09", "T14", "T18"] {
-        let scenario = zai_scenario(id).await;
-        let ran = scenario.run_with_env(&[("ZAI_API_KEY", ZAI)]).await;
-        expect_full_success(id, &ran);
-        assert!(ran.stdout.contains("a1_host_login=not-applicable"));
-        let state = scenario.state();
-        assert!(state.fresh_replies.is_empty());
-        assert!(state.fresh_reply_lock_refused.is_empty());
-        let a1 = "e2e-abcd-a1".to_owned();
-        let fxr = "e2e-abcd-fxr".to_owned();
-        let fxw = "e2e-abcd-fxw".to_owned();
-        assert_eq!(
-            state.static_provider_keys.get(&a1).map(String::as_str),
-            Some(ZAI)
-        );
-        assert_ne!(
-            state.static_provider_keys.get(&fxr).map(String::as_str),
-            Some(ZAI)
-        );
-        assert_ne!(
-            state.static_provider_keys.get(&fxw).map(String::as_str),
-            Some(ZAI)
-        );
-        assert_ne!(
-            state.static_provider_keys.get(&fxr),
-            state.static_provider_keys.get(&fxw)
-        );
-        assert_eq!(state.accounts, [a1, fxr, fxw]);
-        for command in &state.commands {
-            assert!(!command.contains("op://"));
-            assert!(!command.contains("SYNTHETIC_PLAN_SOURCE"));
-            assert!(!command.contains(ZAI));
-            assert!(!command.contains("--chatgpt-from"));
+    fn prefix_of(value: &str) -> &str {
+        match value
+            .char_indices()
+            .filter(|(_, c)| !c.is_ascii_alphanumeric())
+            .last()
+        {
+            Some((index, c)) => &value[..index + c.len_utf8()],
+            None => "",
         }
-        assert!(!ran.stdout.contains(ZAI));
-        assert!(!ran.stderr.contains(ZAI));
+    }
+    fn class_of(c: char) -> u8 {
+        if c.is_ascii_lowercase() {
+            0
+        } else if c.is_ascii_uppercase() {
+            1
+        } else if c.is_ascii_digit() {
+            2
+        } else {
+            3
+        }
+    }
+    for id in ["T09", "T14", "T18"] {
+        for key in [ZAI, "other-plan-key-xyz9"] {
+            let scenario = zai_scenario(id).await;
+            let ran = scenario.run_with_env(&[("ZAI_API_KEY", key)]).await;
+            expect_full_success(id, &ran);
+            assert!(ran.stdout.contains("a1_host_login=not-applicable"));
+            let state = scenario.state();
+            assert!(state.fresh_replies.is_empty());
+            assert!(state.fresh_reply_lock_refused.is_empty());
+            let a1 = "e2e-abcd-a1".to_owned();
+            let fxr = "e2e-abcd-fxr".to_owned();
+            let fxw = "e2e-abcd-fxw".to_owned();
+            assert_eq!(
+                state.static_provider_keys.get(&a1).map(String::as_str),
+                Some(key)
+            );
+            assert_ne!(
+                state.static_provider_keys.get(&fxr).map(String::as_str),
+                Some(key)
+            );
+            assert_ne!(
+                state.static_provider_keys.get(&fxw).map(String::as_str),
+                Some(key)
+            );
+            assert_ne!(
+                state.static_provider_keys.get(&fxr),
+                state.static_provider_keys.get(&fxw)
+            );
+            let fxr_value = state.static_provider_keys.get(&fxr).expect("fxr key");
+            let fxw_value = state.static_provider_keys.get(&fxw).expect("fxw key");
+            assert_eq!(fxr_value.len(), key.len());
+            assert_eq!(fxw_value.len(), key.len());
+            let key_prefix = prefix_of(key);
+            assert!(fxr_value.starts_with(key_prefix));
+            assert!(fxw_value.starts_with(key_prefix));
+            for (index, c) in key.chars().enumerate() {
+                let fxr_char = fxr_value.chars().nth(index).expect("fxr char");
+                let fxw_char = fxw_value.chars().nth(index).expect("fxw char");
+                assert_eq!(
+                    c.is_ascii_alphanumeric(),
+                    fxr_char.is_ascii_alphanumeric(),
+                    "{id} fxr separator position {index}"
+                );
+                assert_eq!(
+                    c.is_ascii_alphanumeric(),
+                    fxw_char.is_ascii_alphanumeric(),
+                    "{id} fxw separator position {index}"
+                );
+                assert_eq!(class_of(c), class_of(fxr_char), "{id} fxr class {index}");
+                assert_eq!(class_of(c), class_of(fxw_char), "{id} fxw class {index}");
+            }
+            assert_eq!(state.accounts, [a1, fxr, fxw]);
+            for command in &state.commands {
+                assert!(!command.contains("op://"));
+                assert!(!command.contains("SYNTHETIC_PLAN_SOURCE"));
+                assert!(!command.contains(ZAI));
+                assert!(!command.contains(key));
+                assert!(!command.contains("--chatgpt-from"));
+            }
+            assert!(!ran.stdout.contains(ZAI));
+            assert!(!ran.stderr.contains(ZAI));
+            assert!(!ran.stdout.contains(key));
+            assert!(!ran.stderr.contains(key));
+        }
     }
 }
 

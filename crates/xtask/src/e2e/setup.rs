@@ -24,6 +24,42 @@ fn setup(message: impl Into<String>) -> SetupError {
     SetupError(message.into())
 }
 
+fn rotate_ascii(c: char, steps: u8) -> char {
+    if c.is_ascii_lowercase() {
+        let offset = (c as u8 - b'a' + steps % 26) % 26;
+        (b'a' + offset) as char
+    } else if c.is_ascii_uppercase() {
+        let offset = (c as u8 - b'A' + steps % 26) % 26;
+        (b'A' + offset) as char
+    } else if c.is_ascii_digit() {
+        let offset = (c as u8 - b'0' + steps % 10) % 10;
+        (b'0' + offset) as char
+    } else {
+        c
+    }
+}
+
+fn derive_invalid(selected: &str, steps: u8) -> Result<String, SetupError> {
+    let separator = selected
+        .char_indices()
+        .filter(|(_, c)| !c.is_ascii_alphanumeric())
+        .last()
+        .map(|(index, c)| (index, c.len_utf8()));
+    let (prefix, suffix) = match separator {
+        Some((index, width)) => (&selected[..index + width], &selected[index + width..]),
+        None => ("", selected),
+    };
+    if suffix.is_empty() {
+        return Err(setup("unusable fixture credential shape"));
+    }
+    let mut derived = String::with_capacity(selected.len());
+    derived.push_str(prefix);
+    for c in suffix.chars() {
+        derived.push(rotate_ascii(c, steps));
+    }
+    Ok(derived)
+}
+
 fn registry_dir(parent: &std::collections::BTreeMap<String, String>) -> Option<PathBuf> {
     parent
         .get("XDG_CONFIG_HOME")
@@ -279,6 +315,8 @@ impl Run<'_> {
                 .next()
                 .ok_or_else(|| setup("the static-key session has no credential"))?
                 .to_owned();
+            let fxr_key = derive_invalid(&selected, 1)?;
+            let fxw_key = derive_invalid(&selected, 2)?;
             let accounts = [
                 (
                     self.names.a1.clone(),
@@ -288,12 +326,12 @@ impl Run<'_> {
                 (
                     self.names.fxr.clone(),
                     "JACKIN_E2E_FXR_KEY".to_owned(),
-                    format!("zai-invalid-fxr-{}", self.b.tag),
+                    fxr_key,
                 ),
                 (
                     self.names.fxw.clone(),
                     "JACKIN_E2E_FXW_KEY".to_owned(),
-                    format!("zai-invalid-fxw-{}", self.b.tag),
+                    fxw_key,
                 ),
             ];
             for (account, variable, value) in accounts {
