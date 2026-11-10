@@ -127,7 +127,11 @@ async fn build_and_load_agree_on_explicit_t01_selection_and_model_independent_id
         let rig = Rig::new().await?;
         let mut harness = Harness::new(&rig.world);
         harness.cwd = rig.repo.root().clone();
-        harness.write_config(&rig.config.render())?;
+        harness.write_config(&format!(
+            "{}\n[accounts.t01]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }}\n",
+            rig.config.render(),
+            rig.home.as_path().display()
+        ))?;
         let default = harness.run(&["build", "--json"]).await?;
         default.ok()?;
         let image: BuildOutput = default.json()?;
@@ -141,7 +145,7 @@ async fn build_and_load_agree_on_explicit_t01_selection_and_model_independent_id
                 "--provider",
                 "codex",
                 "--model",
-                "gpt-5.1-codex",
+                "gpt-6.1-sol",
                 "--json",
             ])
             .await?;
@@ -161,7 +165,7 @@ async fn build_and_load_agree_on_explicit_t01_selection_and_model_independent_id
                 "--provider",
                 "codex",
                 "--model",
-                "gpt-5.1-codex",
+                "gpt-6.1-sol",
                 "--launch-id",
                 &launch_id(1).to_string(),
             ])
