@@ -132,7 +132,7 @@ async fn load_without_a_terminal_prints_the_sandbox_and_launch_id_and_uses_the_c
 
 fn multi_account_config(rig: &Rig) -> String {
     format!(
-        "{}\n[defaults.accounts]\nzai = \"work\"\n\n[accounts.second]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n\n[accounts.zaiacct]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n\n[accounts.codexacct]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }}\n",
+        "{}\n[defaults.accounts]\nzai = \"work\"\n\n[accounts.second]\nprovider = \"kimi\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n\n[accounts.zaiacct]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n\n[accounts.codexacct]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }}\n",
         rig.config.render(),
         rig.home.as_path().display(),
         rig.home.as_path().display(),
@@ -154,6 +154,8 @@ async fn account_for_and_provider_scoped_global_account_resolve_per_instance() -
             "codex",
             "--agent",
             "omp",
+            "--provider-for",
+            "codex=kimi",
             "--provider-for",
             "omp=zai",
         ];
@@ -186,13 +188,17 @@ async fn account_for_and_provider_scoped_global_account_resolve_per_instance() -
         assert!(text.contains("\"account\":\"second\""), "{text}");
         assert!(text.contains("\"account\":\"zaiacct\""), "{text}");
 
-        let mut args2: Vec<String> = base.iter().map(|s| (*s).to_owned()).collect();
-        args2.extend(
-            ["--account", "second", "--launch-id"]
-                .iter()
-                .map(|s| (*s).to_owned()),
-        );
-        args2.push(launch_id(4).to_string());
+        let args2 = [
+            "load".to_owned(),
+            "--agent".to_owned(),
+            "codex".to_owned(),
+            "--provider".to_owned(),
+            "kimi".to_owned(),
+            "--account".to_owned(),
+            "second".to_owned(),
+            "--launch-id".to_owned(),
+            launch_id(4).to_string(),
+        ];
         harness
             .run(&args2.iter().map(String::as_str).collect::<Vec<_>>())
             .await?
