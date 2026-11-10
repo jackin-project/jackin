@@ -729,8 +729,10 @@ async fn promoted_console_launch(
     agent: jackin_core::Agent,
     provider: Provider,
     account: &str,
-    model: &str,
+    model: Option<&str>,
 ) -> TestResult {
+    let tuple = jackin_core::lookup_tuple(agent, provider)?;
+    let expected_model = model.unwrap_or(tuple.default_model);
     let rig = availability_rig().await?;
     if provider == Provider::Mimo {
         rig.world
@@ -761,7 +763,7 @@ async fn promoted_console_launch(
                 agent: console_agent(agent).ok_or("unsupported console agent")?,
                 provider: console_provider(provider),
                 account: Some(account.to_owned()),
-                model: model.to_owned(),
+                model: model.unwrap_or_default().to_owned(),
             }],
             task: None,
         },
@@ -780,7 +782,7 @@ async fn promoted_console_launch(
             agent,
             provider,
             AccountName::parse(account)?,
-            model.to_owned(),
+            expected_model.to_owned(),
         ))
     );
     Ok(())
@@ -792,7 +794,7 @@ async fn t01_console_launch_is_ready_with_exact_chatgpt_labels() -> TestResult {
         jackin_core::Agent::Codex,
         Provider::Codex,
         "picker-codex",
-        "gpt-6.1-sol",
+        Some("gpt-6.1-sol"),
     ))
     .await
 }
@@ -803,7 +805,18 @@ async fn t20_console_launch_is_ready_with_exact_mimo_labels() -> TestResult {
         jackin_core::Agent::Codex,
         Provider::Mimo,
         "mimo",
-        "mimo-v2.6-pro",
+        Some("mimo-v2.6-pro"),
+    ))
+    .await
+}
+
+#[tokio::test]
+async fn t20_blank_model_console_launch_uses_the_tuple_default() -> TestResult {
+    guard(promoted_console_launch(
+        jackin_core::Agent::Codex,
+        Provider::Mimo,
+        "mimo",
+        None,
     ))
     .await
 }

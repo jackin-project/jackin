@@ -811,10 +811,7 @@ fn tuple_offers(roles: &RoleDocs) -> Vec<jackin_console::domain::tuple::TupleOff
                         jackin_console::domain::tuple::TupleState::BlockedVendor
                     }
                 },
-                reason: match tuple.state {
-                    jackin_core::TupleState::Supported => None,
-                    _ => tuple.reason.map(str::to_owned),
-                },
+                reason: tuple.reason.map(str::to_owned),
                 allowed_models: tuple
                     .allowed_models
                     .iter()
