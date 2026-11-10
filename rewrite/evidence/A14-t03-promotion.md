@@ -66,10 +66,12 @@ The focused suites used `NEXTEST_TEST_THREADS=2` and `mise exec -- mbx +1.99.1` 
 
 The first root G-FAST run stopped at clippy because the console test cloned a provider name to create a one-item slice. The test now uses `std::slice::from_ref`. Nextest run `76cf751e-8d96-442c-82fb-20768d7b5e96` passed the console test, and package clippy passed before the full gate rerun.
 
-The final root gate is pending:
+The second full run reached 2,116 passing tests with no test failure but stopped at the 30-minute command timeout. The exact gate command then ran without a command timeout and exited 0 in 1,559.943 seconds:
 
 ```sh
 rtk env NEXTEST_TEST_THREADS=2 mise exec -- mbx +1.99.1 xtask ci --fast
 ```
+
+Nextest ran 2,314 tests in 1,516.835 seconds with 2,314 passed and 0 skipped. All 14 gate steps passed: fmt, clippy, nextest, deny, shear, comments, layers, pins, containers, errors, baseline, screen, demo-gate, and reuse. REUSE reported 1,251 compliant files. The fast gate skipped the docs build as defined by the repository gate.
 
 No live gateway, Docker command, real credential, or live agent ran during this promotion unit. No `.audit` file is included in the commit. No push occurred. A different independent reviewer still needs to verify the final change before integration.
