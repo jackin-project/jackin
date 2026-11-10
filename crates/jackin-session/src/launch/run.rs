@@ -527,6 +527,19 @@ impl Run<'_> {
         const STEP: LaunchStep = LaunchStep::Credentials;
         self.enter(STEP).await;
         let files = self.plan.files();
+        for tuple in self
+            .plan
+            .instances()
+            .iter()
+            .filter_map(|instance| {
+                jackin_core::lookup_tuple(instance.agent, instance.provider).ok()
+            })
+            .filter(|tuple| matches!(tuple.id, "T02" | "T03"))
+        {
+            if let Some(key) = tuple.credential_env() {
+                self.read_placeholder(sandbox, key).await?;
+            }
+        }
         let chatgpt_codex =
             self.plan.instances().iter().any(|instance| {
                 instance.agent == Agent::Codex && instance.provider == Provider::Codex
@@ -534,76 +547,13 @@ impl Run<'_> {
         if chatgpt_codex {
             self.write_codex_auth(sandbox).await?;
         }
-        if !files.auth.text.is_empty() {
-            self.write_planned(sandbox, &files.auth).await?;
-        }
-        for instance in self
-            .plan
-            .instances()
-            .iter()
-            .filter(|instance| instance.agent == Agent::Omp)
-        {
-            if self.plan.instances().len() > 1 {
-                let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(
-                    |error| {
-                        failed(
-                            STEP,
-                            GatewayError::Protocol {
-                                message: error.to_string(),
-                            },
-                        )
-                    },
-                )?;
-                let file = crate::files::omp_auth_file(tuple);
-                self.write_planned(sandbox, &file).await?;
-                self.write_home_auth(sandbox, instance.agent, &file).await?;
-            }
-        }
-        if let Some(file) = &files.omp_models {
-            self.write_planned(sandbox, file).await?;
-            if self.plan.instances().len() > 1 {
-                self.write_home_auth(sandbox, Agent::Omp, file).await?;
+        for file in &files.static_files {
+            if !file.text.is_empty() {
+                self.write_planned(sandbox, file).await?;
             }
         }
         for file in &files.multi {
             self.write_planned(sandbox, file).await?;
-        }
-        self.write_planned(sandbox, &files.codex_config).await?;
-        for instance in self
-            .plan
-            .instances()
-            .iter()
-            .filter(|instance| instance.agent == Agent::ClaudeCode)
-        {
-            if self.plan.instances().len() > 1 {
-                let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(
-                    |error| {
-                        failed(
-                            STEP,
-                            GatewayError::Protocol {
-                                message: error.to_string(),
-                            },
-                        )
-                    },
-                )?;
-                let file = crate::files::claude_config_file(tuple);
-                self.write_home_auth(sandbox, instance.agent, &file).await?;
-            }
-        }
-        if let Some(trust) = &files.muse_trust {
-            self.write_planned(sandbox, trust).await?;
-        }
-        for instance in self
-            .plan
-            .instances()
-            .iter()
-            .filter(|instance| instance.agent == Agent::MuseCode)
-        {
-            if self.plan.instances().len() > 1
-                && let Some(trust) = &files.muse_trust
-            {
-                self.write_home_auth(sandbox, instance.agent, trust).await?;
-            }
         }
         self.engine_certs(sandbox, bound).await?;
         self.write_planned(sandbox, &files.env).await?;
@@ -637,10 +587,12 @@ impl Run<'_> {
         .await
     }
 
-    async fn write_codex_auth(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
+    async fn read_placeholder(
+        &self,
+        sandbox: &SandboxName,
+        key: &'static str,
+    ) -> Result<String, Stop> {
         const STEP: LaunchStep = LaunchStep::Credentials;
-        let spec = Agent::Codex.spec();
-        let key = spec.codex.openshell.keys.access_token;
         let outcome = self
             .session
             .deps
@@ -672,7 +624,11 @@ impl Run<'_> {
                 },
             ));
         }
-        if !placeholder.starts_with(PLACEHOLDER_SCHEME) || placeholder.contains(['\n', '\r']) {
+        if placeholder
+            .strip_prefix(PLACEHOLDER_SCHEME)
+            .is_none_or(str::is_empty)
+            || placeholder.contains(['\n', '\r'])
+        {
             return Err(failed(
                 STEP,
                 LaunchError::PlaceholderInvalid {
@@ -681,6 +637,14 @@ impl Run<'_> {
                 },
             ));
         }
+        Ok(placeholder)
+    }
+
+    async fn write_codex_auth(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
+        const STEP: LaunchStep = LaunchStep::Credentials;
+        let spec = Agent::Codex.spec();
+        let key = spec.codex.openshell.keys.access_token;
+        let placeholder = self.read_placeholder(sandbox, key).await?;
         let codex_instance = self
             .plan
             .instances()

@@ -91,11 +91,8 @@ pub struct PlannedFile {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlannedFiles {
-    pub codex_config: PlannedFile,
+    pub static_files: Vec<PlannedFile>,
     pub env: PlannedFile,
-    pub omp_models: Option<PlannedFile>,
-    pub auth: PlannedFile,
-    pub muse_trust: Option<PlannedFile>,
     pub multi: Vec<PlannedFile>,
     pub layout: crate::multi::MultiLayout,
 }
@@ -532,17 +529,16 @@ fn validate_instruction_mappings(
 }
 
 fn agent_config_file(
-    is_omp: bool,
     tuple: &'static jackin_core::AgentTuple,
     codex_model: Option<&ModelName>,
     model: Option<&str>,
-    agent: Agent,
-    provider: Provider,
-    account: &AccountName,
+    instance: &jackin_core::AgentInstance,
+    workdir: &SandboxPath,
 ) -> Result<PlannedFile, PlanError> {
+    let agent = instance.agent;
     if agent == Agent::KimiCode {
         return Ok(crate::files::render_kimi_config(
-            &ProviderName::for_account(account, agent),
+            &ProviderName::for_account(&instance.account, agent),
         ));
     }
     if agent == Agent::MimoCode {
@@ -557,7 +553,7 @@ fn agent_config_file(
     if agent == Agent::ClaudeCode {
         return Ok(crate::files::claude_config_file(tuple));
     }
-    if is_omp {
+    if agent == Agent::Omp {
         let spec = agent.spec();
         return Ok(PlannedFile {
             path: spec.user_config.path.clone(),
@@ -565,8 +561,8 @@ fn agent_config_file(
             text: crate::files::render_omp_config(tuple, model).map_err(|_| {
                 PlanError::TupleNotSupported {
                     agent,
-                    provider,
-                    reason: "unknown model".to_owned(),
+                    provider: instance.provider,
+                    reason: format!("unknown model {}", instance.model),
                 }
             })?,
         });
@@ -575,40 +571,72 @@ fn agent_config_file(
     Ok(PlannedFile {
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
-        text: render_codex_config(tuple, codex_model, model, &spec.workdir)?,
+        text: render_codex_config(tuple, codex_model, model, workdir)?,
     })
 }
 
-fn muse_trust_file(agent: Agent, spec: &jackin_core::AgentSpec) -> Option<PlannedFile> {
-    match agent {
-        Agent::MuseCode => Some(render_muse_trust(&spec.workdir)),
-        _ => None,
-    }
+fn relocate_file(file: &mut PlannedFile, home: &SandboxPath) -> Result<(), PlanError> {
+    let relative = file
+        .path
+        .as_str()
+        .strip_prefix("/sandbox")
+        .unwrap_or(file.path.as_str());
+    file.path = SandboxPath::parse(&format!("{}{relative}", home.as_str()))?;
+    Ok(())
 }
 
-fn plan_omp_models(
-    instances: &jackin_core::AgentInstances,
-) -> Result<Option<PlannedFile>, PlanError> {
-    instances
-        .iter()
-        .find(|instance| instance.agent == Agent::Omp)
-        .map(|instance| {
-            let tuple = jackin_core::lookup_tuple(Agent::Omp, instance.provider).map_err(|_| {
-                PlanError::TupleNotSupported {
-                    agent: Agent::Omp,
-                    provider: instance.provider,
-                    reason: "unknown tuple".to_owned(),
-                }
-            })?;
-            crate::files::omp_models_file(tuple, Some(instance.model.as_str()))
-        })
-        .transpose()
+pub fn plan_static_files(
+    instance: &jackin_core::AgentInstance,
+    home: &SandboxPath,
+    workdir: &SandboxPath,
+    codex_model: Option<&ModelName>,
+) -> Result<Vec<PlannedFile>, PlanError> {
+    let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(|_| {
+        PlanError::TupleNotSupported {
+            agent: instance.agent,
+            provider: instance.provider,
+            reason: "unknown tuple".to_owned(),
+        }
+    })?;
+    if matches!(tuple.id, "T06" | "T07" | "T08") {
+        return Ok(Vec::new());
+    }
+    let mut files = vec![agent_config_file(
+        tuple,
+        codex_model,
+        Some(instance.model.as_str()),
+        instance,
+        workdir,
+    )?];
+    let auth = if instance.agent == Agent::Omp {
+        crate::files::omp_auth_file(tuple)
+    } else {
+        placeholder_file(tuple)
+    };
+    if !auth.text.is_empty() {
+        files.push(auth);
+    }
+    if instance.agent == Agent::Omp {
+        files.push(crate::files::omp_models_file(
+            tuple,
+            Some(instance.model.as_str()),
+        )?);
+    }
+    if instance.agent == Agent::MuseCode {
+        files.push(render_muse_trust(workdir));
+    }
+    for file in &mut files {
+        relocate_file(file, home)?;
+    }
+    Ok(files)
 }
 
 type InstanceAccounts = (Vec<Account>, Vec<(Agent, ChatgptAccountId)>);
 
 fn collect_instance_accounts(
     config: &Config,
+    workspace: &WorkspaceName,
+    role: &RoleName,
     instances: &jackin_core::AgentInstances,
 ) -> Result<InstanceAccounts, PlanError> {
     let mut instance_accounts = Vec::new();
@@ -621,6 +649,13 @@ fn collect_instance_accounts(
                     kind: "account",
                     name: instance.account.to_string(),
                 })?;
+        config.select_account(&AccountQuery {
+            flag: Some(&instance.account),
+            workspace,
+            role,
+            agent: instance.agent,
+            provider: instance.provider,
+        })?;
         instance_accounts.push(entry.clone());
         if instance.agent == Agent::Codex
             && let Some(login) = entry.chatgpt_login()
@@ -661,21 +696,20 @@ fn lead_chatgpt_account(
 
 fn resolve_instances(
     request: &LaunchRequest,
-    agent: Agent,
-    provider: Provider,
+    tuple: &jackin_core::AgentTuple,
     selection: &AccountSelection,
 ) -> jackin_core::AgentInstances {
     match request.instances.clone() {
         Some(instances) => instances,
         None => jackin_core::AgentInstances::single(jackin_core::AgentInstance {
-            agent,
-            provider,
+            agent: tuple.agent,
+            provider: tuple.provider,
             account: selection.account.clone(),
             model: request
                 .model
                 .clone()
-                .unwrap_or_else(|| agent.spec().default_model.to_owned()),
-            branch: format!("agent/{}", agent.as_str()),
+                .unwrap_or_else(|| tuple.default_model.to_owned()),
+            branch: format!("agent/{}", tuple.agent.as_str()),
         }),
     }
 }
@@ -717,7 +751,7 @@ pub fn plan_launch(
         agent,
         provider,
     })?;
-    let instances = resolve_instances(&request, agent, provider, &selection);
+    let instances = resolve_instances(&request, tuple, &selection);
     validate_instances(&instances)?;
     validate_instruction_mappings(role, &instances)?;
     let account =
@@ -727,8 +761,8 @@ pub fn plan_launch(
                 kind: "account",
                 name: selection.account.to_string(),
             })?;
-    let (instance_accounts, chatgpt_accounts) = collect_instance_accounts(config, &instances)?;
-    let is_omp = agent == Agent::Omp;
+    let (instance_accounts, chatgpt_accounts) =
+        collect_instance_accounts(config, workspace_name, &request.role, &instances)?;
     let chatgpt_account = lead_chatgpt_account(agent, provider, account, &selection)?;
     let docker = DockerCapability::resolve(
         role.manifest().docker.enabled,
@@ -750,33 +784,34 @@ pub fn plan_launch(
         request.task.as_deref(),
         crate::multi::HeadState::Born,
     )?;
+    let codex_model = role
+        .manifest()
+        .agents
+        .get(&Agent::Codex)
+        .and_then(|section| section.model.as_ref());
+    let mut static_files = Vec::new();
+    for (index, (instance, exec)) in instances.iter().zip(&layout.exec).enumerate() {
+        let home = if index == 0 {
+            SandboxPath::from_static("/sandbox")
+        } else {
+            exec.home.clone()
+        };
+        static_files.extend(plan_static_files(
+            instance,
+            &home,
+            &exec.workdir,
+            codex_model,
+        )?);
+    }
     let files = PlannedFiles {
+        static_files,
         multi: layout.files.clone(),
         layout: layout.clone(),
-        codex_config: agent_config_file(
-            is_omp,
-            tuple,
-            role.manifest()
-                .agents
-                .get(&Agent::Codex)
-                .and_then(|section| section.model.as_ref()),
-            Some(instances.lead().model.as_str()),
-            agent,
-            provider,
-            &selection.account,
-        )?,
         env: PlannedFile {
             path: sandbox_layout::env_file(&request.launch),
             mode: ENV_FILE_MODE,
             text: EnvFile::new(values)?.render(),
         },
-        auth: if is_omp {
-            crate::files::omp_auth_file(tuple)
-        } else {
-            placeholder_file(spec)
-        },
-        omp_models: plan_omp_models(&instances)?,
-        muse_trust: muse_trust_file(agent, spec),
     };
     let image_request = plan_image_for(
         config,
@@ -954,7 +989,22 @@ mod tests {
         AgentInstance, AgentInstances, DockerSource, EngineAccess, EngineConfig, HostPath,
         StdFileSystem,
     };
-    use jackin_testkit::{FakeClock, RoleFixture, TestRunner};
+    use jackin_testkit::{FakeClock, RepoFixture, RoleFixture, TestRunner};
+
+    #[tokio::test]
+    async fn launch_request_new_keeps_the_codex_openai_unspecified_model_and_instances() {
+        let repo = RepoFixture::new().await.expect("repo");
+        let request = LaunchRequest::new(
+            GatewayName::parse("local").expect("gateway"),
+            repo.project().await.expect("project"),
+            RoleName::parse("sentinel").expect("role"),
+            LaunchId::from_entropy(&[1; 26]),
+        );
+        assert_eq!(request.agent, Agent::Codex);
+        assert_eq!(request.provider, Provider::Codex);
+        assert_eq!(request.model, None);
+        assert!(request.instances.is_none());
+    }
 
     fn fixture(
         agent: Agent,
@@ -964,7 +1014,13 @@ mod tests {
     ) -> PlannedFile {
         let tuple = jackin_core::lookup_tuple(agent, provider).expect("tuple");
         let account = AccountName::parse("cfgtest").expect("account");
-        agent_config_file(false, tuple, codex_model, model, agent, provider, &account)
+        let instance = AgentInstance::new(
+            agent,
+            provider,
+            account,
+            model.unwrap_or(tuple.default_model).to_owned(),
+        );
+        agent_config_file(tuple, codex_model, model, &instance, &agent.spec().workdir)
             .expect("config")
     }
 
@@ -993,7 +1049,21 @@ mod tests {
     #[test]
     fn muse_trust_file_only_for_muse() {
         let spec = Agent::MuseCode.spec();
-        let file = muse_trust_file(Agent::MuseCode, spec).expect("muse trust");
+        let instance = AgentInstance::lead(
+            Agent::MuseCode,
+            AccountName::parse("cfgtest").expect("account"),
+        );
+        let files = plan_static_files(
+            &instance,
+            &SandboxPath::from_static("/sandbox"),
+            &spec.workdir,
+            None,
+        )
+        .expect("static files");
+        let file = files
+            .iter()
+            .find(|file| file.path.as_str().ends_with("trust.json"))
+            .expect("muse trust");
         assert_eq!(
             file.path,
             SandboxPath::parse("/sandbox/.config/muse/trust.json").expect("path")
@@ -1005,7 +1075,22 @@ mod tests {
             value["projects"][spec.workdir.as_str()]["decision"],
             "trusted"
         );
-        assert!(muse_trust_file(Agent::Codex, Agent::Codex.spec()).is_none());
+        let codex = AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("cfgtest").expect("account"),
+        );
+        let files = plan_static_files(
+            &codex,
+            &Agent::Codex.spec().workdir,
+            &Agent::Codex.spec().workdir,
+            None,
+        )
+        .expect("static files");
+        assert!(
+            !files
+                .iter()
+                .any(|file| file.path.as_str().ends_with("trust.json"))
+        );
     }
 
     #[test]

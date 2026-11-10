@@ -26,7 +26,7 @@ async fn worktree_setup_creates_home_branch_and_checkout() -> Result<(), Box<dyn
                 "glm-5.3".to_owned(),
             ),
             AgentInstance::new(
-                Agent::Omp,
+                Agent::ClaudeCode,
                 Provider::Zai,
                 AccountName::parse("work")?,
                 "glm-5.3".to_owned(),
@@ -38,13 +38,13 @@ async fn worktree_setup_creates_home_branch_and_checkout() -> Result<(), Box<dyn
             .await?;
         let root = handle.root();
         assert!(root.join(".jackin/homes/codex").is_dir());
-        assert!(root.join(".jackin/homes/omp").is_dir());
-        assert!(root.join("work/omp/project/README.md").is_file());
-        assert!(root.join("work/omp/project/.git").is_file());
-        let gitdir = std::fs::read_to_string(root.join("work/omp/project/.git"))?;
+        assert!(root.join(".jackin/homes/claude").is_dir());
+        assert!(root.join("work/claude/project/README.md").is_file());
+        assert!(root.join("work/claude/project/.git").is_file());
+        let gitdir = std::fs::read_to_string(root.join("work/claude/project/.git"))?;
         let gitdir = gitdir.trim().strip_prefix("gitdir: ").ok_or("gitdir")?;
         let head = std::fs::read_to_string(format!("{gitdir}/HEAD"))?;
-        assert_eq!(head.trim(), "ref: refs/heads/agent/omp");
+        assert_eq!(head.trim(), "ref: refs/heads/agent/claude");
         Ok(())
     })
     .await

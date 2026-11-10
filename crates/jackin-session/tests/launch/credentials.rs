@@ -26,7 +26,16 @@ async fn credentials_files_have_the_documented_content_and_modes() -> TestResult
         );
         assert_eq!(
             handle.file(&spec.user_config.path),
-            Some(plan.files().codex_config.text.clone().into_bytes())
+            Some(
+                plan.files()
+                    .static_files
+                    .iter()
+                    .find(|file| file.path == spec.user_config.path)
+                    .ok_or("no codex config")?
+                    .text
+                    .clone()
+                    .into_bytes()
+            )
         );
         assert_eq!(
             handle.file_mode(&plan.files().env.path),
@@ -186,6 +195,7 @@ async fn t01_refusal_does_not_read_an_invalid_placeholder() -> TestResult {
 async fn t01_refusal_never_reads_or_names_malformed_placeholder_values() -> TestResult {
     guard(async {
         for stdout in [
+            "openshell:resolve:\n",
             "sk-FAKE-VALUE-123\n",
             "FAKE-LEAD-openshell:resolve:env:K\n",
             "openshell:resolve:env:K\nsk-FAKE-VALUE-123\n",

@@ -126,7 +126,16 @@ async fn a_failure_in_credentials_or_upload_resumes_without_repeating_finished_s
             let plan = rig.plan(1)?;
             assert_eq!(
                 handle.file(&config),
-                Some(plan.files().codex_config.text.clone().into_bytes())
+                Some(
+                    plan.files()
+                        .static_files
+                        .iter()
+                        .find(|file| file.path == Agent::Codex.spec().user_config.path)
+                        .ok_or("no codex config")?
+                        .text
+                        .clone()
+                        .into_bytes()
+                )
             );
             assert!(!has_file(&handle, &Agent::Codex.spec().auth_file.path));
             assert!(has_file(&handle, &plan.files().env.path));

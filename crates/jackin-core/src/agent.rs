@@ -255,11 +255,18 @@ impl AgentTuple {
     }
 
     pub fn credential_env(&self) -> Option<&'static str> {
-        match self.agent {
-            Agent::Omp => self.omp_credential_env(),
-            Agent::ClaudeCode => self.claude_auth_env(),
-            Agent::Codex => self.codex_credential_env(),
-            _ => None,
+        match self.id {
+            "T03" => Some("GROK_SESSION_TOKEN"),
+            "T04" => Some("META_API_KEY"),
+            "T05" => Some("GOOGLE_API_KEY"),
+            "T07" => Some("MIMO_API_KEY"),
+            "T08" => Some("KIMI_API_KEY"),
+            _ => match self.agent {
+                Agent::Omp => self.omp_credential_env(),
+                Agent::ClaudeCode => self.claude_auth_env(),
+                Agent::Codex => self.codex_credential_env(),
+                _ => None,
+            },
         }
     }
 
@@ -689,7 +696,7 @@ static CLAUDE_CODE_SPEC: AgentSpec = agent_spec!(
     ],
     AuthClass::BlockedVendor,
     &["api.anthropic.com", "platform.claude.com"],
-    &["ANTHROPIC_API_KEY"],
+    &["CLAUDE_CODE_OAUTH_TOKEN"],
     &["haiku"],
     "haiku",
     &["CLAUDE_CONFIG_DIR"]
@@ -701,7 +708,7 @@ static GROK_BUILD_SPEC: AgentSpec = agent_spec!(
     "/sandbox/.grok",
     "/sandbox/.grok/auth.json",
     "/sandbox/.grok/config.toml",
-    &["grok"],
+    &["grok", "--trust"],
     "1.0.77",
     "https://x.ai/cli/grok-{version}-linux-{target}",
     &[
@@ -717,8 +724,8 @@ static GROK_BUILD_SPEC: AgentSpec = agent_spec!(
         }
     ],
     AuthClass::OAuth,
-    &["x.ai", "cli-chat-proxy.grok.com", "auth.x.ai"],
-    &["XAI_API_KEY"],
+    &["cli-chat-proxy.grok.com", "auth.x.ai"],
+    &["GROK_SESSION_TOKEN"],
     &["grok-4.7"],
     "grok-4.7",
     &["GROK_HOME"]

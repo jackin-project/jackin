@@ -26,6 +26,7 @@ mod phases;
 mod proofs;
 mod provider;
 mod recreate;
+mod static_files;
 mod supervisor;
 mod support;
 mod upload_timeout;

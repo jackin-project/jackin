@@ -228,7 +228,13 @@ async fn a_launch_without_an_omp_instance_plans_no_models_file() -> TestResult {
     guard(async {
         let setup = Spec::new(RoleFixture::new("sentinel")?).build().await?;
         let plan = setup.plan(setup.request(1)?)?;
-        assert!(plan.files().omp_models.is_none());
+        assert!(
+            !plan
+                .files()
+                .static_files
+                .iter()
+                .any(|file| { file.path.as_str().ends_with("/.omp/agent/models.yml") })
+        );
         Ok(())
     })
     .await

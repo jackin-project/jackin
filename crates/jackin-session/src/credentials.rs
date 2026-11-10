@@ -97,7 +97,7 @@ fn field<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a Value, Cred
 fn text<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a str, CredentialError> {
     field(parent, name, key)?
         .as_str()
-        .filter(|value| !value.is_empty())
+        .filter(|value| !value.trim().is_empty())
         .ok_or_else(|| invalid(key))
 }
 
@@ -135,7 +135,9 @@ pub fn read_omp_host_key(
 
 #[derive(Debug)]
 pub struct GrokLogin {
-    pub session_key: Secret,
+    pub access_token: Secret,
+    pub refresh_token: Secret,
+    pub client_id: String,
     pub issuer: String,
 }
 
@@ -173,19 +175,26 @@ pub async fn read_grok_login(
 ) -> Result<GrokLogin, CredentialError> {
     let document = read_host_auth(fs, path, AUTH_FILE).await?;
     let root = document.0.as_object().ok_or_else(|| invalid(AUTH_FILE))?;
-    let mut entries = root.iter();
-    let (issuer, entry) = entries.next().ok_or_else(|| invalid(AUTH_FILE))?;
-    if entries.next().is_some() || issuer.is_empty() {
+    let mut entries = root.values().filter(|entry| {
+        entry.get("oidc_issuer").and_then(Value::as_str) == Some("https://auth.x.ai")
+            && matches!(
+                entry.get("auth_mode").and_then(Value::as_str),
+                Some("session" | "oidc")
+            )
+    });
+    let entry = entries.next().ok_or_else(|| invalid(AUTH_FILE))?;
+    if entries.next().is_some() {
         return Err(invalid(AUTH_FILE));
     }
-    let key = entry
-        .get("key")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| invalid("key"))?;
+    let access_token = text(entry, "key", "key")?;
+    let refresh_token = text(entry, "refresh_token", "refresh_token")?;
+    let client_id = text(entry, "oidc_client_id", "oidc_client_id")?;
+    let issuer = text(entry, "oidc_issuer", "oidc_issuer")?;
     Ok(GrokLogin {
-        session_key: Secret::new(key.to_owned()),
-        issuer: issuer.clone(),
+        access_token: Secret::new(access_token.to_owned()),
+        refresh_token: Secret::new(refresh_token.to_owned()),
+        client_id: client_id.to_owned(),
+        issuer: issuer.to_owned(),
     })
 }
 
@@ -219,6 +228,51 @@ pub fn parse_muse_keychain_secret(stdout: &SecretBytes) -> Option<Secret> {
 #[derive(Debug)]
 pub struct ClaudeLogin {
     pub access_token: Secret,
+    pub refresh_token: Secret,
+    pub expires_at: i64,
+    pub scopes: Vec<String>,
+}
+
+fn parse_claude_grant(root: &Value) -> Result<ClaudeLogin, &'static str> {
+    let oauth = root
+        .get("claudeAiOauth")
+        .and_then(Value::as_object)
+        .ok_or("claudeAiOauth")?;
+    let access_token = oauth
+        .get("accessToken")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or("claudeAiOauth.accessToken")?;
+    let refresh_token = oauth
+        .get("refreshToken")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or("claudeAiOauth.refreshToken")?;
+    let expires_at = oauth
+        .get("expiresAt")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0)
+        .ok_or("claudeAiOauth.expiresAt")?;
+    let scopes = oauth
+        .get("scopes")
+        .and_then(Value::as_array)
+        .filter(|scopes| !scopes.is_empty())
+        .ok_or("claudeAiOauth.scopes")?
+        .iter()
+        .map(|scope| {
+            scope
+                .as_str()
+                .filter(|scope| !scope.trim().is_empty())
+                .map(str::to_owned)
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or("claudeAiOauth.scopes")?;
+    Ok(ClaudeLogin {
+        access_token: Secret::new(access_token.to_owned()),
+        refresh_token: Secret::new(refresh_token.to_owned()),
+        expires_at,
+        scopes,
+    })
 }
 
 pub async fn read_claude_login(
@@ -226,22 +280,12 @@ pub async fn read_claude_login(
     path: &HostPath,
 ) -> Result<ClaudeLogin, CredentialError> {
     let document = read_host_auth(fs, path, CLAUDE_CREDENTIALS_FILE).await?;
-    let oauth = field(&document.0, "claudeAiOauth", "claudeAiOauth")?;
-    let access_token = text(oauth, "accessToken", "claudeAiOauth.accessToken")?;
-    Ok(ClaudeLogin {
-        access_token: Secret::new(access_token.to_owned()),
-    })
+    parse_claude_grant(&document.0).map_err(invalid)
 }
 
-pub fn parse_claude_keychain_secret(stdout: &SecretBytes) -> Option<Secret> {
+pub fn parse_claude_keychain_secret(stdout: &SecretBytes) -> Option<ClaudeLogin> {
     let document = Document(serde_json::from_slice(stdout.expose()).ok()?);
-    let access_token = document
-        .0
-        .get("claudeAiOauth")?
-        .get("accessToken")?
-        .as_str()
-        .filter(|value| !value.trim().is_empty())?;
-    Some(Secret::new(access_token.to_owned()))
+    parse_claude_grant(&document.0).ok()
 }
 
 pub fn parse_antigravity_keychain_secret(stdout: &SecretBytes) -> Option<Secret> {
@@ -290,9 +334,9 @@ pub async fn read_claude_host_login(
     host: &HostPorts,
     path: &HostPath,
     cancel: &CancellationToken,
-) -> Result<Secret, CredentialError> {
+) -> Result<ClaudeLogin, CredentialError> {
     if let Ok(login) = read_claude_login(host.fs.as_ref(), path).await {
-        return Ok(login.access_token);
+        return Ok(login);
     }
     let stdout = keychain_secret(host, cancel, &CLAUDE_KEYCHAIN_ARGS).await?;
     parse_claude_keychain_secret(&stdout).ok_or(CredentialError::KeychainLoginMissing)

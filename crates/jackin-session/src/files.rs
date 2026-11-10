@@ -70,32 +70,6 @@ pub fn render_codex_config(
     Ok(toml::to_string(&config)?)
 }
 
-pub(crate) fn codex_home_config_file(
-    tuple: &'static jackin_core::AgentTuple,
-    model: Option<&str>,
-    workdir: &SandboxPath,
-) -> Result<crate::plan::PlannedFile, crate::plan::PlanError> {
-    if tuple.codex_provider_id().is_none() {
-        return Err(crate::plan::PlanError::TupleNotSupported {
-            agent: tuple.agent,
-            provider: tuple.provider,
-            reason: "no custom model provider".to_owned(),
-        });
-    }
-    let spec = jackin_core::Agent::Codex.spec();
-    let relative = spec
-        .user_config
-        .path
-        .as_str()
-        .strip_prefix("/sandbox")
-        .unwrap_or(spec.user_config.path.as_str());
-    Ok(crate::plan::PlannedFile {
-        path: SandboxPath::parse(&format!("/sandbox/.jackin/homes/codex{relative}"))?,
-        mode: spec.user_config.mode,
-        text: render_codex_config(tuple, None, model, workdir)?,
-    })
-}
-
 pub(crate) fn render_auth_json(
     access_token: &str,
     account_id: &ChatgptAccountId,
@@ -158,15 +132,6 @@ pub fn render_claude_config(tuple: &jackin_core::AgentTuple) -> String {
         })
         .to_string(),
         None => json!({}).to_string(),
-    }
-}
-
-pub fn grok_auth_file(issuer: &str) -> crate::plan::PlannedFile {
-    let spec = jackin_core::Agent::GrokBuild.spec();
-    crate::plan::PlannedFile {
-        path: spec.auth_file.path.clone(),
-        mode: spec.auth_file.mode,
-        text: json!({ issuer: { "key": "placeholder" } }).to_string(),
     }
 }
 
@@ -254,11 +219,26 @@ pub fn claude_config_file(tuple: &jackin_core::AgentTuple) -> crate::plan::Plann
     }
 }
 
-pub(crate) fn placeholder_file(spec: &jackin_core::AgentSpec) -> crate::plan::PlannedFile {
+pub(crate) fn placeholder_file(tuple: &jackin_core::AgentTuple) -> crate::plan::PlannedFile {
+    let spec = tuple.agent.spec();
+    let text = match tuple.id {
+        "T02" => json!({"claudeAiOauth": {
+            "accessToken": "openshell:resolve:env:CLAUDE_CODE_OAUTH_TOKEN",
+            "refreshToken": "",
+            "expiresAt": 4_102_444_800_000_u64,
+            "scopes": ["user:profile", "user:inference"],
+        }})
+        .to_string(),
+        "T03" => String::new(),
+        _ if tuple.agent == jackin_core::Agent::ClaudeCode && tuple.claude_base_url().is_some() => {
+            "{}".to_owned()
+        }
+        _ => render_placeholder_auth(spec),
+    };
     crate::plan::PlannedFile {
         path: spec.auth_file.path.clone(),
         mode: spec.auth_file.mode,
-        text: render_placeholder_auth(spec),
+        text,
     }
 }
 
@@ -346,14 +326,20 @@ pub fn render_muse_trust(workdir: &SandboxPath) -> crate::plan::PlannedFile {
 }
 
 pub fn render_grok_config(model: Option<&str>) -> crate::plan::PlannedFile {
+    const HELPER: &str = "jq -n -e --arg access_token \"${GROK_SESSION_TOKEN-}\" '$access_token | select(test(\"^openshell:resolve:[^\\\\r\\\\n]+$\")) | {access_token: ., issuer: \"https://auth.x.ai\"}'";
     let spec = jackin_core::Agent::GrokBuild.spec();
-    let text = match model {
-        Some(model) => format!("[cli]\nauto_update = false\n[models]\ndefault = \"{model}\"\n"),
-        None => "[cli]\nauto_update = false\n".to_owned(),
-    };
+    let models = model.map_or_else(String::new, |model| {
+        format!(
+            "\n[models]\ndefault = {}\n",
+            Value::String(model.to_owned())
+        )
+    });
+    let helper = Value::String(HELPER.to_owned());
     crate::plan::PlannedFile {
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
-        text,
+        text: format!(
+            "[cli]\nauto_update = false\n{models}\n[auth]\nauth_provider_command = {helper}\ndisable_api_key_auth = true\n"
+        ),
     }
 }

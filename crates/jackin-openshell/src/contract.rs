@@ -914,12 +914,18 @@ fn contract_provider_spec(ctx: &Ctx<'_>) -> Outcome<ProviderSpec> {
         name: contract_provider(ctx)?,
         profile: contract_profile()?,
         keys: CONTRACT_KEYS,
-        material: ProviderMaterial::ChatgptLogin {
+        material: ProviderMaterial::OAuth2RefreshToken {
             access_token: Secret::new("contract-access-token".to_owned()),
             refresh_token: Secret::new("contract-refresh-token".to_owned()),
             client_id: "contract-client".to_owned(),
-            chatgpt_account_id: ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")
-                .map_err(text)?,
+            scopes: Vec::new(),
+            expires_at: None,
+            additional_credentials: BTreeMap::from([(
+                CONTRACT_KEYS.account_id.to_owned(),
+                ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")
+                    .map_err(text)?
+                    .to_string(),
+            )]),
         },
     })
 }

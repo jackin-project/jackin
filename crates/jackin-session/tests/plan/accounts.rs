@@ -8,7 +8,7 @@ use jackin_core::{
 use jackin_session::PlanError;
 use jackin_testkit::RoleFixture;
 
-use super::support::{Spec, TestResult, built_image, guard, zai_account};
+use super::support::{Spec, TestResult, built_image, guard, login_account, zai_account};
 
 fn accounts(names: &[&str]) -> String {
     names
@@ -143,6 +143,53 @@ async fn the_plan_selects_the_account_by_the_d26_order_and_names_the_missing_bin
             unknown,
             Err(PlanError::Selection(SelectionError::UnknownFlagAccount(_)))
         ));
+        Ok(())
+    })
+    .await
+}
+
+const SECONDARY_PROVIDER_ROLE: &str = "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[docker]\nenabled = false\n";
+
+#[tokio::test]
+async fn a_valid_lead_and_a_wrong_provider_secondary_return_the_explicit_mismatch() -> TestResult {
+    guard(async {
+        let role = RoleFixture::new("sentinel")?
+            .manifest_text(SECONDARY_PROVIDER_ROLE.to_owned());
+        let mut spec = Spec::new(role);
+        spec.accounts = format!(
+            "{}\n[accounts.zai-lead]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"/tmp/zai-lead-placeholder\" }}\n\n[accounts.zai-default]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"/tmp/zai-default-placeholder\" }}\n",
+            login_account("work")
+        );
+        spec.defaults = "zai = \"zai-default\"\n".to_owned();
+        let setup = spec.build().await?;
+        let instances = jackin_core::AgentInstances::new(vec![
+            jackin_core::AgentInstance::new(
+                jackin_core::Agent::ClaudeCode,
+                Provider::Zai,
+                AccountName::parse("zai-lead")?,
+                "glm-5.3".to_owned(),
+            ),
+            jackin_core::AgentInstance::new(
+                jackin_core::Agent::Codex,
+                Provider::Zai,
+                AccountName::parse("work")?,
+                "glm-5.3".to_owned(),
+            ),
+        ])?;
+        let error = setup
+            .plan(setup.request(1)?.instances(instances))
+            .err()
+            .ok_or("expected secondary provider mismatch")?;
+        assert!(
+            matches!(
+                &error,
+                PlanError::Selection(SelectionError::FlagProviderMismatch {
+                    account,
+                    expected: Provider::Zai,
+                }) if account.as_str() == "work"
+            ),
+            "{error}"
+        );
         Ok(())
     })
     .await
