@@ -588,18 +588,26 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
     guard(gateway.ensure_profile(&ProviderProfile::parse(&codex.chatgpt_profile).unwrap()))
         .await
         .unwrap();
-    guard(gateway.put_provider(&ProviderSpec {
-        name: provider.clone(),
-        profile: ProfileId::parse("codex").unwrap(),
-        keys: codex.keys,
-        material: ProviderMaterial::ChatgptLogin {
-            access_token: Secret::new("access-token-value".to_owned()),
-            refresh_token: Secret::new("refresh-token-value".to_owned()),
-            client_id: "app_client".to_owned(),
-            chatgpt_account_id:
-                ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9").unwrap(),
-        },
-    }))
+    guard(
+        gateway.put_provider(&ProviderSpec {
+            name: provider.clone(),
+            profile: ProfileId::parse("codex").unwrap(),
+            keys: codex.keys,
+            material: ProviderMaterial::OAuth2RefreshToken {
+                access_token: Secret::new("access-token-value".to_owned()),
+                refresh_token: Secret::new("refresh-token-value".to_owned()),
+                client_id: "app_client".to_owned(),
+                scopes: Vec::new(),
+                expires_at: None,
+                additional_credentials: BTreeMap::from([(
+                    codex.keys.account_id.to_owned(),
+                    ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")
+                        .unwrap()
+                        .to_string(),
+                )]),
+            },
+        }),
+    )
     .await
     .unwrap();
     {

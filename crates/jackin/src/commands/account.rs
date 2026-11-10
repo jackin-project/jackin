@@ -26,62 +26,90 @@ pub(crate) async fn run(app: &mut App, command: AccountCommand) -> Result<(), Co
     }
 }
 
+async fn host_login_source(
+    app: &App,
+    provider: jackin_core::Provider,
+) -> Result<CredentialSource, CommandError> {
+    let home = app
+        .env
+        .get(
+            &jackin_core::EnvName::parse("HOME")
+                .map_err(|_| CommandError::Argument("HOME is not set".to_owned()))?,
+        )
+        .ok_or_else(|| CommandError::Argument("HOME is not set".to_owned()))?;
+    let relative = match provider {
+        jackin_core::Provider::Grok => ".grok/auth.json",
+        jackin_core::Provider::Muse => ".config/muse/auth.json",
+        jackin_core::Provider::Claude => ".claude/.credentials.json",
+        jackin_core::Provider::Antigravity => ".gemini/antigravity-cli/settings.json",
+        jackin_core::Provider::Minimax => ".minimax",
+        jackin_core::Provider::Mimo => ".local/share/mimocode",
+        jackin_core::Provider::Kimi => ".kimi-code",
+        _ => {
+            return Err(CommandError::Argument(
+                "--from-host-login needs a provider with a native subscription login".to_owned(),
+            ));
+        }
+    };
+    let path = jackin_core::HostPath::parse(std::path::Path::new(&format!("{home}/{relative}")))
+        .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
+    match provider {
+        jackin_core::Provider::Grok => {
+            jackin_session::read_grok_login(app.deps.host.fs.as_ref(), &path)
+                .await
+                .map_err(|_| {
+                    CommandError::Argument("no grok host login is available".to_owned())
+                })?;
+        }
+        jackin_core::Provider::Claude => {
+            jackin_session::read_claude_host_login(&app.deps.host, &path, &app.cancel)
+                .await
+                .map_err(|_| {
+                    CommandError::Argument("no claude host login is available".to_owned())
+                })?;
+        }
+        jackin_core::Provider::Antigravity => {
+            jackin_session::read_antigravity_host_login(&app.deps.host, &app.cancel)
+                .await
+                .map_err(|_| {
+                    CommandError::Argument("no antigravity host login is available".to_owned())
+                })?;
+        }
+        jackin_core::Provider::Minimax => {
+            jackin_session::read_minimax_host_login(app.deps.host.fs.as_ref(), &path)
+                .await
+                .map_err(|_| {
+                    CommandError::Argument("no minimax host login is available".to_owned())
+                })?;
+        }
+        jackin_core::Provider::Mimo => {
+            jackin_session::read_mimo_host_login(app.deps.host.fs.as_ref(), &path)
+                .await
+                .map_err(|_| {
+                    CommandError::Argument("no mimo host login is available".to_owned())
+                })?;
+        }
+        jackin_core::Provider::Kimi => {
+            jackin_session::read_kimi_host_login(app.deps.host.fs.as_ref(), &path)
+                .await
+                .map_err(|_| {
+                    CommandError::Argument("no kimi host login is available".to_owned())
+                })?;
+        }
+        _ => {
+            jackin_session::read_muse_host_metadata(app.deps.host.fs.as_ref(), &path)
+                .await
+                .map_err(|_| {
+                    CommandError::Argument("no muse host login is available".to_owned())
+                })?;
+        }
+    }
+    Ok(CredentialSource::HostLogin { path })
+}
+
 async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, CommandError> {
     if args.from_host_login {
-        let provider = parse_provider(&args.provider)?;
-        let home = app
-            .env
-            .get(
-                &jackin_core::EnvName::parse("HOME")
-                    .map_err(|_| CommandError::Argument("HOME is not set".to_owned()))?,
-            )
-            .ok_or_else(|| CommandError::Argument("HOME is not set".to_owned()))?;
-        let relative = match provider {
-            jackin_core::Provider::Grok => ".grok/auth.json",
-            jackin_core::Provider::Muse => ".config/muse/auth.json",
-            jackin_core::Provider::Claude => ".claude/.credentials.json",
-            jackin_core::Provider::Antigravity => ".gemini/antigravity-cli/settings.json",
-            _ => {
-                return Err(CommandError::Argument(
-                    "--from-host-login needs the grok, muse, claude, or antigravity provider"
-                        .to_owned(),
-                ));
-            }
-        };
-        let path =
-            jackin_core::HostPath::parse(std::path::Path::new(&format!("{home}/{relative}")))
-                .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
-        match provider {
-            jackin_core::Provider::Grok => {
-                jackin_session::read_grok_login(app.deps.host.fs.as_ref(), &path)
-                    .await
-                    .map_err(|_| {
-                        CommandError::Argument("no grok host login is available".to_owned())
-                    })?;
-            }
-            jackin_core::Provider::Claude => {
-                jackin_session::read_claude_host_login(&app.deps.host, &path, &app.cancel)
-                    .await
-                    .map_err(|_| {
-                        CommandError::Argument("no claude host login is available".to_owned())
-                    })?;
-            }
-            jackin_core::Provider::Antigravity => {
-                jackin_session::read_antigravity_host_login(&app.deps.host, &app.cancel)
-                    .await
-                    .map_err(|_| {
-                        CommandError::Argument("no antigravity host login is available".to_owned())
-                    })?;
-            }
-            _ => {
-                jackin_session::read_muse_host_metadata(app.deps.host.fs.as_ref(), &path)
-                    .await
-                    .map_err(|_| {
-                        CommandError::Argument("no muse host login is available".to_owned())
-                    })?;
-            }
-        }
-        return Ok(CredentialSource::HostLogin { path });
+        return host_login_source(app, parse_provider(&args.provider)?).await;
     }
     if matches!(
         args.credential.as_deref().map(CredentialArg::parse),
@@ -161,6 +189,7 @@ fn default_agent(provider: jackin_core::Provider) -> Agent {
         jackin_core::Provider::Muse => Agent::MuseCode,
         jackin_core::Provider::Claude => Agent::ClaudeCode,
         jackin_core::Provider::Antigravity => Agent::Antigravity,
+        jackin_core::Provider::Minimax => Agent::MinimaxCode,
         jackin_core::Provider::Kimi => Agent::KimiCode,
         jackin_core::Provider::Mimo => Agent::MimoCode,
         jackin_core::Provider::Codex => Agent::Codex,

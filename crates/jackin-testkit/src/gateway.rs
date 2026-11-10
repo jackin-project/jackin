@@ -15,9 +15,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    AccountName, Agent, ChatgptAccountId, EnvName, FileMode, GatewayName, HostPath, ImageId,
-    ImageTag, Labels, LaunchId, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel, ProfileId,
-    ProjectRoot, ProviderName, RoleName, SandboxName, SandboxPath, Sha256, WorkspaceName,
+    AccountName, Agent, EnvName, FileMode, GatewayName, HostPath, ImageId, ImageTag, Labels,
+    LaunchId, OpenShellWorkspace, Phase, PlannedLabels, PolicyLabel, ProfileId, ProjectRoot,
+    ProviderName, RoleName, SandboxName, SandboxPath, Sha256, WorkspaceName,
 };
 use jackin_openshell::{
     ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
@@ -83,11 +83,12 @@ pub enum Trigger {
 pub struct ProviderRecord {
     pub profile: ProfileId,
     pub access_key: String,
-    pub account_id_key: String,
     pub access_token: String,
     pub refresh_token: String,
     pub client_id: String,
-    pub chatgpt_account_id: ChatgptAccountId,
+    pub scopes: Vec<String>,
+    pub expires_at: Option<i64>,
+    pub additional_credentials: BTreeMap<String, String>,
 }
 
 impl std::fmt::Debug for ProviderRecord {
@@ -95,8 +96,13 @@ impl std::fmt::Debug for ProviderRecord {
         f.debug_struct("ProviderRecord")
             .field("profile", &self.profile)
             .field("access_key", &self.access_key)
-            .field("account_id_key", &self.account_id_key)
-            .field("chatgpt_account_id", &self.chatgpt_account_id)
+            .field("client_id", &self.client_id)
+            .field("scopes", &self.scopes)
+            .field("expires_at", &self.expires_at)
+            .field(
+                "additional_credential_keys",
+                &self.additional_credentials.keys().collect::<Vec<_>>(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -662,37 +668,32 @@ impl Gateway for FakeGateway {
             });
         }
         let record = match &spec.material {
-            ProviderMaterial::ChatgptLogin {
+            ProviderMaterial::OAuth2RefreshToken {
                 access_token,
                 refresh_token,
                 client_id,
-                chatgpt_account_id,
+                scopes,
+                expires_at,
+                additional_credentials,
             } => ProviderRecord {
                 profile: spec.profile.clone(),
                 access_key: spec.keys.access_token.to_owned(),
-                account_id_key: spec.keys.account_id.to_owned(),
                 access_token: access_token.expose().to_owned(),
                 refresh_token: refresh_token.expose().to_owned(),
                 client_id: client_id.clone(),
-                chatgpt_account_id: chatgpt_account_id.clone(),
+                scopes: scopes.clone(),
+                expires_at: *expires_at,
+                additional_credentials: additional_credentials.clone(),
             },
             ProviderMaterial::StaticKey { key } => ProviderRecord {
                 profile: spec.profile.clone(),
                 access_key: spec.keys.access_token.to_owned(),
-                account_id_key: String::new(),
                 access_token: key.expose().to_owned(),
                 refresh_token: String::new(),
                 client_id: String::new(),
-                chatgpt_account_id: match ChatgptAccountId::parse(
-                    "00000000-0000-4000-8000-000000000000",
-                ) {
-                    Ok(id) => id,
-                    Err(_) => {
-                        return Err(GatewayError::Protocol {
-                            message: "static id".to_owned(),
-                        });
-                    }
-                },
+                scopes: Vec::new(),
+                expires_at: None,
+                additional_credentials: BTreeMap::new(),
             },
         };
         registry.providers.insert(spec.name.clone(), record);

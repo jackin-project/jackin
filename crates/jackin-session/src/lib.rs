@@ -31,9 +31,9 @@ mod state;
 mod workspace;
 
 pub use crate::files::{
-    claude_config_file, grok_auth_file, omp_auth_file, omp_models_file, render_claude_config,
-    render_codex_config, render_grok_config, render_kimi_config, render_mimo_config,
-    render_muse_config, render_muse_trust, render_omp_config, render_omp_models,
+    claude_config_file, omp_auth_file, omp_models_file, render_claude_config, render_codex_config,
+    render_grok_config, render_kimi_auth, render_kimi_config, render_muse_config,
+    render_muse_trust, render_omp_config, render_omp_models,
 };
 pub use accounts::*;
 pub use attach::*;

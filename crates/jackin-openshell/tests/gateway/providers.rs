@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Agent, ChatgptAccountId, ProfileId, ProviderName, Secret};
+use jackin_core::{Agent, ProfileId, Provider as ProviderKind, ProviderName, Secret};
 use jackin_openshell::{
     Gateway, GatewayError, Missing, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
     ProviderState,
@@ -15,6 +15,7 @@ use super::server::{Fault, State};
 const ACCESS: &str = "Zq7#Xv9!Lm2@Hk4wP";
 const REFRESH: &str = "Rt5$Bn8%Qw3&Jd6yS";
 const ACCOUNT_ID: &str = "0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9";
+const EXPIRY: i64 = 1794237825974;
 const PROVIDER: &str = "jackin-work-codex";
 
 fn profile() -> ProviderProfile {
@@ -26,11 +27,33 @@ fn spec(access: &str, refresh: &str) -> ProviderSpec {
         name: ProviderName::parse(PROVIDER).unwrap(),
         profile: ProfileId::parse("codex").unwrap(),
         keys: Agent::Codex.spec().codex.openshell.keys,
-        material: ProviderMaterial::ChatgptLogin {
+        material: ProviderMaterial::OAuth2RefreshToken {
             access_token: Secret::new(access.to_owned()),
             refresh_token: Secret::new(refresh.to_owned()),
             client_id: "app_client".to_owned(),
-            chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID).unwrap(),
+            scopes: vec!["openid".to_owned(), "profile".to_owned()],
+            expires_at: Some(EXPIRY),
+            additional_credentials: std::collections::BTreeMap::from([(
+                Agent::Codex
+                    .spec()
+                    .codex
+                    .openshell
+                    .keys
+                    .account_id
+                    .to_owned(),
+                ACCOUNT_ID.to_owned(),
+            )]),
+        },
+    }
+}
+
+fn static_spec(key: &str) -> ProviderSpec {
+    ProviderSpec {
+        name: ProviderName::parse(PROVIDER).unwrap(),
+        profile: ProfileId::parse("codex").unwrap(),
+        keys: Agent::Codex.spec().codex.openshell.keys,
+        material: ProviderMaterial::StaticKey {
+            key: Secret::new(key.to_owned()),
         },
     }
 }
@@ -159,6 +182,7 @@ async fn put_provider_creates_updates_and_configures_refresh() {
         assert_eq!(state.providers.len(), 1);
         let provider = &state.providers[&provider_key];
         assert_eq!(provider.r#type, "codex");
+        assert_eq!(provider.credentials.len(), 2);
         assert_eq!(provider.credentials[keys.access_token], ACCESS);
         assert_eq!(provider.credentials[keys.account_id], ACCOUNT_ID);
         assert!(!provider.credentials.values().any(|value| value == REFRESH));
@@ -167,16 +191,29 @@ async fn put_provider_creates_updates_and_configures_refresh() {
             refresh.strategy,
             ProviderCredentialRefreshStrategy::Oauth2RefreshToken as i32
         );
+        assert_eq!(refresh.material.len(), 3);
         assert_eq!(refresh.material["refresh_token"], REFRESH);
         assert_eq!(refresh.material["client_id"], "app_client");
-        assert!(!refresh.material.contains_key("token_url"));
+        assert_eq!(refresh.material["scope"], "openid profile");
+        for forbidden in ["token_url", "token_uri", "client_secret"] {
+            assert!(!refresh.material.contains_key(forbidden));
+        }
+        assert!(!refresh.material.values().any(|value| value == ACCESS));
         assert_eq!(refresh.secret_keys, vec!["refresh_token".to_owned()]);
+        assert_eq!(refresh.expiration_time, Some((1794237825, 974000000)));
     }
 
     let fresh_access = "new-access-token-value";
-    guard(gateway.put_provider(&spec(fresh_access, "new-refresh-token")))
-        .await
-        .unwrap();
+    let mut updated = spec(fresh_access, "new-refresh-token");
+    let ProviderMaterial::OAuth2RefreshToken {
+        scopes, expires_at, ..
+    } = &mut updated.material
+    else {
+        unreachable!()
+    };
+    *scopes = vec!["email".to_owned(), "offline_access".to_owned()];
+    *expires_at = Some(EXPIRY + 1000);
+    guard(gateway.put_provider(&updated)).await.unwrap();
     {
         let state = env.server.state();
         assert_eq!(state.providers.len(), 1);
@@ -185,16 +222,25 @@ async fn put_provider_creates_updates_and_configures_refresh() {
             fresh_access
         );
         assert_eq!(state.refresh.len(), 1);
+        let refresh = &state.refresh[&refresh_key];
+        assert_eq!(refresh.material["refresh_token"], "new-refresh-token");
+        assert_eq!(refresh.material["scope"], "email offline_access");
+        assert_eq!(refresh.expiration_time, Some((1794237826, 974000000)));
+    }
+    guard(gateway.put_provider(&updated)).await.unwrap();
+    {
+        let state = env.server.state();
+        assert_eq!(state.providers.len(), 1);
+        assert_eq!(state.refresh.len(), 1);
         assert_eq!(
-            state.refresh[&refresh_key].material["refresh_token"],
-            "new-refresh-token"
+            state.refresh[&refresh_key].material["scope"],
+            "email offline_access"
+        );
+        assert_eq!(
+            state.refresh[&refresh_key].expiration_time,
+            Some((1794237826, 974000000))
         );
     }
-    guard(gateway.put_provider(&spec(fresh_access, "new-refresh-token")))
-        .await
-        .unwrap();
-    assert_eq!(env.server.state().providers.len(), 1);
-    assert_eq!(env.server.state().refresh.len(), 1);
 
     env.server.state().faults.insert(
         "configure_provider_refresh",
@@ -208,6 +254,7 @@ async fn put_provider_creates_updates_and_configures_refresh() {
         .unwrap_err();
     assert_no_secret(&error.to_string());
     assert_no_secret(&format!("{error:?}"));
+    assert!(env.server.state().refresh.is_empty());
     env.server.state().faults.clear();
     guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
         .await
@@ -221,6 +268,140 @@ async fn put_provider_creates_updates_and_configures_refresh() {
         state.refresh[&refresh_key].material["refresh_token"],
         REFRESH
     );
+}
+
+#[tokio::test]
+async fn put_provider_omits_empty_optional_oauth_state() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    let mut minimal = spec(ACCESS, REFRESH);
+    let ProviderMaterial::OAuth2RefreshToken {
+        scopes,
+        expires_at,
+        additional_credentials,
+        ..
+    } = &mut minimal.material
+    else {
+        unreachable!()
+    };
+    scopes.clear();
+    *expires_at = None;
+    additional_credentials.clear();
+    additional_credentials.insert(String::new(), "ignored".to_owned());
+    additional_credentials.insert("EMPTY".to_owned(), String::new());
+    guard(gateway.put_provider(&minimal)).await.unwrap();
+    let state = env.server.state();
+    let keys = Agent::Codex.spec().codex.openshell.keys;
+    let provider = &state.providers[&(WORKSPACE.to_owned(), PROVIDER.to_owned())];
+    assert_eq!(provider.credentials.len(), 1);
+    assert_eq!(provider.credentials[keys.access_token], ACCESS);
+    let refresh = &state.refresh[&(
+        WORKSPACE.to_owned(),
+        PROVIDER.to_owned(),
+        keys.access_token.to_owned(),
+    )];
+    assert_eq!(refresh.material.len(), 2);
+    assert!(!refresh.material.contains_key("scope"));
+    assert_eq!(refresh.expiration_time, None);
+}
+
+#[tokio::test]
+async fn put_provider_converts_between_oauth_and_static_without_stale_refresh() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    let keys = Agent::Codex.spec().codex.openshell.keys;
+    let provider_key = (WORKSPACE.to_owned(), PROVIDER.to_owned());
+    guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap();
+    assert_eq!(env.server.state().refresh.len(), 1);
+    guard(gateway.put_provider(&static_spec("static-access")))
+        .await
+        .unwrap();
+    {
+        let state = env.server.state();
+        assert!(state.refresh.is_empty());
+        assert_eq!(state.providers[&provider_key].credentials.len(), 1);
+        assert_eq!(
+            state.providers[&provider_key].credentials[keys.access_token],
+            "static-access"
+        );
+    }
+    guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap();
+    let state = env.server.state();
+    assert_eq!(state.refresh.len(), 1);
+    assert_eq!(state.providers[&provider_key].credentials.len(), 2);
+}
+
+#[tokio::test]
+async fn claude_and_grok_profiles_have_exact_oauth_refresh_contracts() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    for (agent, provider, id, env_name, token_url, hosts) in [
+        (
+            Agent::ClaudeCode,
+            ProviderKind::Claude,
+            "claude",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "https://platform.claude.com/v1/oauth/token",
+            vec!["api.anthropic.com", "platform.claude.com"],
+        ),
+        (
+            Agent::GrokBuild,
+            ProviderKind::Grok,
+            "grok",
+            "GROK_SESSION_TOKEN",
+            "https://auth.x.ai/oauth2/token",
+            vec!["cli-chat-proxy.grok.com", "auth.x.ai"],
+        ),
+    ] {
+        let tuple = jackin_core::lookup_tuple(agent, provider).unwrap();
+        let asset = jackin_core::tuple_profile_asset(tuple);
+        assert!(!asset.yaml.contains("stable_placeholder"));
+        assert!(!asset.yaml.contains("api.x.ai"));
+        assert!(!asset.yaml.contains("XAI_API_KEY"));
+        assert!(!asset.yaml.contains("ANTHROPIC_API_KEY"));
+        let profile = ProviderProfile::parse(asset).unwrap();
+        guard(gateway.ensure_profile(&profile)).await.unwrap();
+        let state = env.server.state();
+        let stored = &state.profiles[&(WORKSPACE.to_owned(), id.to_owned())];
+        assert_eq!(
+            stored
+                .endpoints
+                .iter()
+                .map(|endpoint| endpoint.host.as_str())
+                .collect::<Vec<_>>(),
+            hosts
+        );
+        assert_eq!(stored.credentials.len(), 1);
+        let credential = &stored.credentials[0];
+        assert_eq!(credential.name, "access_token");
+        assert_eq!(credential.env_vars, [env_name]);
+        assert_eq!(credential.auth_style, "bearer");
+        assert_eq!(credential.header_name, "authorization");
+        assert!(!credential.stable_placeholder);
+        assert!(credential.token_grant.is_none());
+        let refresh = credential.refresh.as_ref().unwrap();
+        assert_eq!(
+            refresh.strategy,
+            ProviderCredentialRefreshStrategy::Oauth2RefreshToken as i32
+        );
+        assert_eq!(refresh.token_url, token_url);
+        assert!(refresh.scopes.is_empty());
+        assert_eq!(refresh.refresh_before.as_ref().unwrap().seconds, 300);
+        assert_eq!(refresh.refresh_before.as_ref().unwrap().nanos, 0);
+        assert_eq!(refresh.material.len(), 2);
+        assert_eq!(refresh.material[0].name, "client_id");
+        assert!(refresh.material[0].required);
+        assert!(!refresh.material[0].secret);
+        assert_eq!(refresh.material[1].name, "refresh_token");
+        assert!(refresh.material[1].required);
+        assert!(refresh.material[1].secret);
+    }
 }
 
 #[tokio::test]
@@ -256,7 +437,9 @@ async fn provider_state_delete_and_missing_profile() {
         ProviderState::Absent
     );
     assert!(env.server.state().providers.is_empty());
+    assert!(env.server.state().refresh.is_empty());
     guard(gateway.delete_provider(&name)).await.unwrap();
+    assert!(env.server.state().refresh.is_empty());
 }
 
 fn codex_key(workspace: &str) -> (String, String) {

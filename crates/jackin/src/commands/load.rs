@@ -93,6 +93,17 @@ fn cancelled(candidate: &RestoreCandidate) -> CommandError {
     })
 }
 
+fn parse_for(entries: &[String]) -> Result<BTreeMap<String, String>, CommandError> {
+    let mut map = BTreeMap::new();
+    for entry in entries {
+        let (name, value) = entry.split_once('=').ok_or_else(|| {
+            CommandError::Argument(format!("expected <agent>=<value>, got {entry}"))
+        })?;
+        map.insert(name.to_owned(), value.to_owned());
+    }
+    Ok(map)
+}
+
 pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandError> {
     let mut values = BTreeMap::new();
     for text in &args.env {
@@ -126,16 +137,6 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         Some(text) => parse_provider(text)?,
         None => agent.provider(),
     };
-    let parse_for = |entries: &[String]| -> Result<BTreeMap<String, String>, CommandError> {
-        let mut map = BTreeMap::new();
-        for entry in entries {
-            let (name, value) = entry.split_once('=').ok_or_else(|| {
-                CommandError::Argument(format!("expected <agent>=<value>, got {entry}"))
-            })?;
-            map.insert(name.to_owned(), value.to_owned());
-        }
-        Ok(map)
-    };
     let providers_for = parse_for(&args.provider_for)?;
     let accounts_for = parse_for(&args.account_for)?;
     let models_for = parse_for(&args.model_for)?;
@@ -149,11 +150,12 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         let tuple = jackin_core::lookup_tuple(*instance_agent, instance_provider)
             .map_err(|error| CommandError::Argument(error.to_string()))?;
         if tuple.state != jackin_core::TupleState::Supported {
-            return Err(CommandError::Argument(format!(
-                "tuple {} with provider {} is not supported",
-                instance_agent.as_str(),
-                instance_provider.as_str()
-            )));
+            return Err(PlanError::TupleNotSupported {
+                agent: *instance_agent,
+                provider: instance_provider,
+                reason: tuple.reason.unwrap_or("not supported").to_owned(),
+            }
+            .into());
         }
         let explicit = match accounts_for.get(instance_agent.as_str()) {
             Some(text) => Some(

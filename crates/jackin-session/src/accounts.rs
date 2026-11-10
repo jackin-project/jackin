@@ -19,8 +19,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::connect::{ConnectError, GatewayConnector};
 use crate::credentials::{
-    CredentialError, parse_muse_keychain_secret, read_antigravity_host_login, read_chatgpt_login,
-    read_claude_host_login, read_grok_login, read_muse_host_metadata, resolve_static_key,
+    CredentialError, KimiLoginMetadata, KimiRegion, NativeCredentialError,
+    NativeRefreshUnsupported, NativeRefreshUnsupportedReason, parse_muse_keychain_secret,
+    read_antigravity_host_login, read_chatgpt_login, read_claude_host_login, read_grok_login,
+    read_kimi_host_login, read_mimo_host_login, read_minimax_host_login, read_muse_host_metadata,
+    resolve_static_key,
 };
 use crate::gateways::{Gateways, UnreachableGateway};
 use crate::lock::{self, LockError};
@@ -40,6 +43,8 @@ pub enum AccountSync {
 pub enum AccountError {
     #[error(transparent)]
     Credential(#[from] CredentialError),
+    #[error(transparent)]
+    NativeCredential(#[from] NativeCredentialError),
     #[error(transparent)]
     Gateway(#[from] GatewayError),
     #[error(transparent)]
@@ -61,6 +66,8 @@ pub enum AccountError {
     Removed { account: AccountName },
     #[error("account {account} changed after the launch was planned")]
     Changed { account: AccountName },
+    #[error("the native login metadata of account {account} changed during launch")]
+    LaunchMetadataChanged { account: AccountName },
     #[error("gateway {gateway} is not in the config any more")]
     GatewayRemoved { gateway: GatewayName },
     #[error("gateway {gateway} was added to the config after the gateways were connected")]
@@ -99,7 +106,7 @@ pub enum AccountEditError {
         gateway: GatewayName,
         original: Box<AccountEditError>,
         #[source]
-        rollback: AccountError,
+        rollback: Box<AccountError>,
     },
 }
 
@@ -109,8 +116,15 @@ pub(crate) fn account_agent(account: &Account) -> Agent {
         Provider::Codex => Agent::Codex,
         Provider::Grok => Agent::GrokBuild,
         Provider::Muse => Agent::MuseCode,
-        Provider::Kimi => Agent::KimiCode,
-        Provider::Mimo => Agent::MimoCode,
+        Provider::Kimi if matches!(account.credential(), CredentialSource::HostLogin { .. }) => {
+            Agent::KimiCode
+        }
+        Provider::Mimo if matches!(account.credential(), CredentialSource::HostLogin { .. }) => {
+            Agent::MimoCode
+        }
+        Provider::Minimax if matches!(account.credential(), CredentialSource::HostLogin { .. }) => {
+            Agent::MinimaxCode
+        }
         Provider::Claude if matches!(account.credential(), CredentialSource::HostLogin { .. }) => {
             Agent::ClaudeCode
         }
@@ -284,6 +298,11 @@ fn effects(
             .copied()
             .unwrap_or_else(|| account_agent(account))
     };
+    for name in &names {
+        if let Some(account) = after.account(name) {
+            account.check_credential_eligibility(acting(name, account))?;
+        }
+    }
     let mut forget = Vec::new();
     let mut publish = Vec::new();
     for name in names {
@@ -480,6 +499,7 @@ impl Undo<'_> {
                 self.gateway,
                 self.account,
                 self.agent,
+                None,
                 &CancellationToken::new(),
             )
             .await
@@ -510,7 +530,7 @@ async fn roll_back(original: AccountEditError, journal: Vec<Undo<'_>>) -> Accoun
             account: undo.account.name().clone(),
             gateway: undo.gateway.name().clone(),
             original: Box::new(original),
-            rollback,
+            rollback: Box::new(rollback),
         },
     }
 }
@@ -686,7 +706,7 @@ impl Session {
         cancel: &CancellationToken,
     ) -> Result<AccountSync, AccountError> {
         let _held = self.hold_current(account, cancel).await?;
-        self.sync_locked_c(account, agent, cancel).await
+        self.sync_locked_c(account, agent, None, cancel).await
     }
 
     async fn forget_locked(
@@ -706,15 +726,17 @@ impl Session {
         account: &Account,
         provider: &ProviderName,
         agent: Agent,
+        expected: Option<&KimiLoginMetadata>,
         cancel: &CancellationToken,
     ) -> Result<bool, AccountError> {
+        account.check_credential_eligibility(agent)?;
         let _held = self.hold_current(account, cancel).await?;
         if self.deps.gateway.provider_state(provider).await? == ProviderState::Present
             && !Self::holds_static_key(account, agent)
         {
             return Ok(false);
         }
-        if let Err(original) = self.sync_locked_c(account, agent, cancel).await {
+        if let Err(original) = self.sync_locked_c(account, agent, expected, cancel).await {
             return Err(match self.forget_locked(account, provider).await {
                 Ok(()) => original,
                 Err(rollback) => AccountError::RollbackFailed {
@@ -725,6 +747,32 @@ impl Session {
             });
         }
         Ok(true)
+    }
+
+    pub(crate) async fn launch_metadata(
+        &self,
+        account: &Account,
+        agent: Agent,
+        cancel: &CancellationToken,
+    ) -> Result<Option<KimiLoginMetadata>, AccountError> {
+        account.check_credential_eligibility(agent)?;
+        let _held = self.hold_current(account, cancel).await?;
+        if agent != Agent::KimiCode {
+            return Ok(None);
+        }
+        let CredentialSource::HostLogin { path } = account.credential() else {
+            return Err(AccountError::MissingCredential {
+                account: account.name().clone(),
+            });
+        };
+        let login = read_kimi_host_login(self.deps.host.fs.as_ref(), path).await?;
+        let current = read_kimi_host_login(self.deps.host.fs.as_ref(), path).await?;
+        if current.metadata != login.metadata {
+            return Err(AccountError::LaunchMetadataChanged {
+                account: account.name().clone(),
+            });
+        }
+        Ok(Some(current.metadata))
     }
 
     pub(crate) fn holds_static_key(account: &Account, agent: Agent) -> bool {
@@ -784,7 +832,7 @@ impl Session {
         account: &Account,
         agent: Agent,
     ) -> Result<AccountSync, AccountError> {
-        self.sync_locked_c(account, agent, &CancellationToken::new())
+        self.sync_locked_c(account, agent, None, &CancellationToken::new())
             .await
     }
 
@@ -792,6 +840,7 @@ impl Session {
         &self,
         account: &Account,
         agent: Agent,
+        expected: Option<&KimiLoginMetadata>,
         cancel: &CancellationToken,
     ) -> Result<AccountSync, AccountError> {
         sync_login(
@@ -799,6 +848,7 @@ impl Session {
             self.deps.gateway.as_ref(),
             account,
             agent,
+            expected,
             cancel,
         )
         .await
@@ -843,7 +893,20 @@ async fn sync_grok_login(
     path: &HostPath,
 ) -> Result<AccountSync, AccountError> {
     let login = read_grok_login(host.fs.as_ref(), path).await?;
-    publish_static_login(gateway, account, agent, login.session_key).await
+    publish_login(
+        gateway,
+        account,
+        agent,
+        ProviderMaterial::OAuth2RefreshToken {
+            access_token: login.access_token,
+            refresh_token: login.refresh_token,
+            client_id: login.client_id,
+            scopes: Vec::new(),
+            expires_at: None,
+            additional_credentials: BTreeMap::new(),
+        },
+    )
+    .await
 }
 
 async fn publish_static_login(
@@ -852,19 +915,39 @@ async fn publish_static_login(
     agent: Agent,
     key: jackin_core::Secret,
 ) -> Result<AccountSync, AccountError> {
+    publish_login(gateway, account, agent, ProviderMaterial::StaticKey { key }).await
+}
+
+async fn publish_login(
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    material: ProviderMaterial,
+) -> Result<AccountSync, AccountError> {
     let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
         AccountError::MissingCredential {
             account: account.name().clone(),
         }
     })?;
-    let asset = jackin_core::tuple_profile_asset(tuple);
-    let profile = ProviderProfile::parse(asset)?;
+    let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?;
     let access_key = tuple
         .credential_env()
         .or_else(|| agent.spec().credential_env_names.first().copied())
         .ok_or_else(|| AccountError::MissingCredential {
             account: account.name().clone(),
         })?;
+    publish_profile_login(gateway, account, agent, profile, access_key, "", material).await
+}
+
+async fn publish_profile_login(
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    profile: ProviderProfile,
+    access_key: &'static str,
+    token_url: &'static str,
+    material: ProviderMaterial,
+) -> Result<AccountSync, AccountError> {
     let synced = gateway.ensure_profile(&profile).await?;
     let name = ProviderName::for_account(account.name(), agent);
     gateway
@@ -876,15 +959,90 @@ async fn publish_static_login(
                 refresh_token: "",
                 account_id: "",
                 id_token: "",
-                token_url: "",
+                token_url,
             },
-            material: ProviderMaterial::StaticKey { key },
+            material,
         })
         .await?;
     Ok(AccountSync::ProviderReady {
         provider: name,
         profile: synced,
     })
+}
+
+static KIMI_GLOBAL_PROFILE: jackin_core::ProfileAsset = jackin_core::ProfileAsset {
+    id: "kimi-global",
+    yaml: include_str!("../../jackin-core/src/assets/t08-kimi-global.yaml"),
+};
+
+async fn sync_kimi_login(
+    host: &HostPorts,
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    path: &HostPath,
+    expected: Option<&KimiLoginMetadata>,
+) -> Result<AccountSync, AccountError> {
+    let login = read_kimi_host_login(host.fs.as_ref(), path).await?;
+    if expected.is_some_and(|expected| expected != &login.metadata) {
+        return Err(AccountError::LaunchMetadataChanged {
+            account: account.name().clone(),
+        });
+    }
+    let expires_at = login
+        .grant
+        .expires_at
+        .checked_mul(1_000)
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or(NativeCredentialError::Invalid {
+            provider: Provider::Kimi,
+            key: "expires_at",
+        })?;
+    let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
+        AccountError::MissingCredential {
+            account: account.name().clone(),
+        }
+    })?;
+    let profile = match login.metadata.region {
+        KimiRegion::MainlandCn => ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?,
+        KimiRegion::Global => ProviderProfile::parse(&KIMI_GLOBAL_PROFILE)?,
+    };
+    publish_profile_login(
+        gateway,
+        account,
+        agent,
+        profile,
+        "KIMI_API_KEY",
+        login.metadata.region.token_url(),
+        ProviderMaterial::OAuth2RefreshToken {
+            access_token: login.grant.access_token,
+            refresh_token: login.grant.refresh_token,
+            client_id: "17e5f671-d194-4dfb-9706-5516cb48c098".to_owned(),
+            scopes: Vec::new(),
+            expires_at: Some(expires_at),
+            additional_credentials: BTreeMap::new(),
+        },
+    )
+    .await
+}
+
+async fn sync_minimax_login(
+    host: &HostPorts,
+    path: &HostPath,
+) -> Result<AccountSync, AccountError> {
+    read_minimax_host_login(host.fs.as_ref(), path).await?;
+    Err(NativeCredentialError::from(NativeRefreshUnsupported {
+        reason: NativeRefreshUnsupportedReason::AudienceUnsupported,
+    })
+    .into())
+}
+
+async fn sync_mimo_login(host: &HostPorts, path: &HostPath) -> Result<AccountSync, AccountError> {
+    read_mimo_host_login(host.fs.as_ref(), path).await?;
+    Err(NativeCredentialError::from(NativeRefreshUnsupported {
+        reason: NativeRefreshUnsupportedReason::NoRefreshGrant,
+    })
+    .into())
 }
 
 async fn sync_muse_login(
@@ -955,7 +1113,7 @@ async fn sync_claude_login(
     path: &HostPath,
     cancel: &CancellationToken,
 ) -> Result<AccountSync, AccountError> {
-    let key = read_claude_host_login(host, path, cancel)
+    let login = read_claude_host_login(host, path, cancel)
         .await
         .map_err(|error| match error {
             CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
@@ -965,7 +1123,20 @@ async fn sync_claude_login(
                 account: account.name().clone(),
             },
         })?;
-    publish_static_login(gateway, account, agent, key).await
+    publish_login(
+        gateway,
+        account,
+        agent,
+        ProviderMaterial::OAuth2RefreshToken {
+            access_token: login.access_token,
+            refresh_token: login.refresh_token,
+            client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e".to_owned(),
+            scopes: login.scopes,
+            expires_at: Some(login.expires_at),
+            additional_credentials: BTreeMap::new(),
+        },
+    )
+    .await
 }
 
 async fn sync_antigravity_login(
@@ -993,8 +1164,10 @@ async fn sync_login(
     gateway: &dyn Gateway,
     account: &Account,
     agent: Agent,
+    expected: Option<&KimiLoginMetadata>,
     cancel: &CancellationToken,
 ) -> Result<AccountSync, AccountError> {
+    account.check_credential_eligibility(agent)?;
     if let CredentialSource::HostLogin { path } = account.credential() {
         if agent == Agent::GrokBuild && account.provider() == Provider::Grok {
             return sync_grok_login(host, gateway, account, agent, path).await;
@@ -1007,6 +1180,15 @@ async fn sync_login(
         }
         if agent == Agent::Antigravity && account.provider() == Provider::Antigravity {
             return sync_antigravity_login(host, gateway, account, agent, cancel).await;
+        }
+        if agent == Agent::MinimaxCode && account.provider() == Provider::Minimax {
+            return sync_minimax_login(host, path).await;
+        }
+        if agent == Agent::MimoCode && account.provider() == Provider::Mimo {
+            return sync_mimo_login(host, path).await;
+        }
+        if agent == Agent::KimiCode && account.provider() == Provider::Kimi {
+            return sync_kimi_login(host, gateway, account, agent, path, expected).await;
         }
         return Err(AccountError::MissingCredential {
             account: account.name().clone(),
@@ -1088,11 +1270,16 @@ async fn sync_login(
             name: name.clone(),
             profile: profile.id,
             keys: spec.codex.openshell.keys,
-            material: ProviderMaterial::ChatgptLogin {
+            material: ProviderMaterial::OAuth2RefreshToken {
                 access_token: login.access_token,
                 refresh_token: login.refresh_token,
                 client_id: login.client_id,
-                chatgpt_account_id: login.account_id,
+                scopes: Vec::new(),
+                expires_at: None,
+                additional_credentials: BTreeMap::from([(
+                    spec.codex.openshell.keys.account_id.to_owned(),
+                    login.account_id.to_string(),
+                )]),
             },
         })
         .await?;

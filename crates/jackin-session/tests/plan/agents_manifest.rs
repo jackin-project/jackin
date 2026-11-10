@@ -28,12 +28,32 @@ fn codex_and(
     ])?)
 }
 
+fn claude_and_omp() -> Result<AgentInstances, Box<dyn std::error::Error>> {
+    Ok(AgentInstances::new(vec![
+        AgentInstance::new(
+            Agent::ClaudeCode,
+            Provider::Zai,
+            AccountName::parse("work")?,
+            "glm-5.3".to_owned(),
+        ),
+        AgentInstance::new(
+            Agent::Omp,
+            Provider::Zai,
+            AccountName::parse("work")?,
+            "glm-5.3".to_owned(),
+        ),
+    ])?)
+}
+
 #[tokio::test]
 async fn agent_instruction_mapping_is_checked_after_tuple_support() -> TestResult {
     guard(async {
-        let setup = Spec::new(RoleFixture::new("sentinel")?).build().await?;
+        let role = RoleFixture::new("sentinel")?.manifest_text(
+            "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n".to_owned(),
+        );
+        let setup = Spec::new(role).build().await?;
         let err = setup
-            .plan(setup.request(1)?.instances(codex_and(Agent::Omp, Provider::Zai, "glm-5.3")?))
+            .plan(setup.request(1)?.instances(claude_and_omp()?))
             .err()
             .ok_or("expected error")?;
         assert!(

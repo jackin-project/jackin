@@ -8,4 +8,5 @@ mod failure;
 mod picker;
 mod ready;
 mod support;
+mod tuples;
 mod vocab;

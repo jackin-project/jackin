@@ -100,15 +100,15 @@ const PINNED_ROWS: &[Row] = &[
         hosts: &["api.anthropic.com", "platform.claude.com"],
         env: "CLAUDE_CODE_OAUTH_TOKEN",
         binary: "/usr/local/bin/claude",
-        refresh: false,
+        refresh: true,
     },
     Row {
         id: "T03",
         asset: "grok",
-        hosts: &["x.ai", "cli-chat-proxy.grok.com", "auth.x.ai"],
-        env: "XAI_API_KEY",
+        hosts: &["cli-chat-proxy.grok.com", "auth.x.ai"],
+        env: "GROK_SESSION_TOKEN",
         binary: "/usr/local/bin/grok",
-        refresh: false,
+        refresh: true,
     },
     Row {
         id: "T04",
@@ -145,10 +145,10 @@ const PINNED_ROWS: &[Row] = &[
     Row {
         id: "T08",
         asset: "kimi",
-        hosts: &["api.kimi.com"],
+        hosts: &["api.kimi.com", "auth.kimi.com"],
         env: "KIMI_API_KEY",
         binary: "/usr/local/bin/kimi",
-        refresh: false,
+        refresh: true,
     },
     Row {
         id: "T09",
@@ -320,6 +320,46 @@ fn t02_role_rules_matching_provider_hosts_are_rejected() -> TestResult {
             "version: 1\nfilesystem_policy:\n  include_workdir: true\n  read_only:\n    - /usr\n  read_write:\n    - /sandbox\nlandlock:\n  compatibility: hard_requirement\nprocess:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  custom:\n    name: custom\n    endpoints:\n      - host: {host}\n        port: 443\n    binaries:\n      - path: /usr/local/bin/claude\n"
         );
         let result = AuthoredPolicy::parse(&text)?.close_for_tuple(tuple);
+        assert!(result.is_err(), "{host}: {result:?}");
+    }
+    Ok(())
+}
+
+fn t08_global_policy(host: &str) -> String {
+    format!(
+        "version: 1\nfilesystem_policy:\n  include_workdir: true\n  read_only:\n    - /usr\n  read_write:\n    - /sandbox\nlandlock:\n  compatibility: hard_requirement\nprocess:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  custom:\n    name: custom\n    endpoints:\n      - host: {host}\n        port: 443\n    binaries:\n      - path: /usr/local/bin/kimi\n"
+    )
+}
+
+#[test]
+fn t08_global_role_rules_matching_single_instance_provider_hosts_are_rejected() -> TestResult {
+    let tuple = lookup_tuple(Agent::KimiCode, Provider::Kimi)?;
+    for host in ["api.kimi.ai", "auth.kimi.ai"] {
+        let result = AuthoredPolicy::parse(&t08_global_policy(host))?.close_for_tuple(tuple);
+        assert!(result.is_err(), "{host}: {result:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn t08_global_role_rules_matching_multi_instance_provider_hosts_are_rejected() -> TestResult {
+    let instances = jackin_core::AgentInstances::new(vec![
+        jackin_core::AgentInstance::new(
+            Agent::KimiCode,
+            Provider::Kimi,
+            jackin_core::AccountName::parse("native")?,
+            "kimi-for-coding".to_owned(),
+        ),
+        jackin_core::AgentInstance::new(
+            Agent::Codex,
+            Provider::Codex,
+            jackin_core::AccountName::parse("work")?,
+            "gpt-6.1-sol".to_owned(),
+        ),
+    ])?;
+    for host in ["api.kimi.ai", "auth.kimi.ai"] {
+        let result =
+            AuthoredPolicy::parse(&t08_global_policy(host))?.close_for_instances(&instances);
         assert!(result.is_err(), "{host}: {result:?}");
     }
     Ok(())

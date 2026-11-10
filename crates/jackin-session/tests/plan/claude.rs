@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    AccountName, Agent, AgentInstance, AgentInstances, Provider, lookup_tuple, tuple_profile_asset,
+    AccountName, Agent, AgentInstance, AgentInstances, AuthClass, FileMode, Provider, SandboxPath,
+    TupleState, lookup_tuple, tuple_profile_asset,
 };
 use jackin_openshell::ProviderProfile;
-use jackin_session::{HeadState, PlanError, plan_multi, render_claude_config};
+use jackin_session::{HeadState, PlanError, plan_multi, plan_static_files, render_claude_config};
 use serde_json::{Value, json};
 
 use super::support::TestResult;
@@ -173,5 +174,57 @@ fn t02_subscription_credential_names_one_oauth_env() -> TestResult {
         "{}",
         tuple.id
     );
+    Ok(())
+}
+
+#[test]
+fn t02_native_placeholder_is_exact_in_lead_and_secondary_homes() -> TestResult {
+    let tuple = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
+    assert_eq!(tuple.auth_class, AuthClass::BlockedVendor);
+    assert_eq!(tuple.state, TupleState::BlockedVendor);
+    let instance = AgentInstance::new(
+        tuple.agent,
+        tuple.provider,
+        AccountName::parse("claude")?,
+        tuple.default_model.to_owned(),
+    );
+    for (home, expected) in [
+        ("/sandbox", "/sandbox/.claude/.credentials.json"),
+        (
+            "/sandbox/.jackin/homes/claude",
+            "/sandbox/.jackin/homes/claude/.claude/.credentials.json",
+        ),
+    ] {
+        let files = plan_static_files(
+            &instance,
+            &SandboxPath::parse(home)?,
+            &SandboxPath::from_static("/sandbox/project"),
+            None,
+        )?;
+        assert_eq!(files.len(), 2);
+        let settings = files
+            .iter()
+            .find(|file| file.path.as_str().ends_with("settings.json"))
+            .ok_or("missing Claude settings")?;
+        assert_eq!(settings.mode, FileMode(0o600));
+        assert_eq!(settings.text, "{}");
+        let credentials = files
+            .iter()
+            .find(|file| file.path.as_str() == expected)
+            .ok_or("missing native Claude credentials")?;
+        assert_eq!(credentials.mode, FileMode(0o600));
+        let document: Value = serde_json::from_str(&credentials.text)?;
+        assert_eq!(
+            document,
+            json!({"claudeAiOauth": {
+                "accessToken": "openshell:resolve:env:CLAUDE_CODE_OAUTH_TOKEN",
+                "refreshToken": "",
+                "expiresAt": 4_102_444_800_000_u64,
+                "scopes": ["user:profile", "user:inference"]
+            }})
+        );
+        assert!(!credentials.text.contains("ANTHROPIC_API_KEY"));
+        assert!(!credentials.text.contains("ANTHROPIC_AUTH_TOKEN"));
+    }
     Ok(())
 }

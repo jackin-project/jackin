@@ -27,8 +27,12 @@ fn grok_build_with_kimi_is_a_typed_error() {
 #[test]
 fn blocked_and_unavailable_tuples_carry_reasons() -> TestResult {
     let blocked = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
+    assert_eq!(blocked.auth_class, AuthClass::BlockedVendor);
     assert_eq!(blocked.state, TupleState::BlockedVendor);
     assert_eq!(blocked.reason, Some("vendor clarification pending"));
+    let grok = lookup_tuple(Agent::GrokBuild, Provider::Grok)?;
+    assert_eq!(grok.state, TupleState::Unavailable);
+    assert_eq!(grok.reason, Some("not yet proven on a real gateway"));
     let supported = lookup_tuple(Agent::Omp, Provider::Zai)?;
     assert_eq!(supported.state, TupleState::Supported);
     assert_eq!(supported.reason, None);

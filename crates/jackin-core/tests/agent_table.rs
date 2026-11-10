@@ -480,6 +480,26 @@ fn codex_row_reserves_every_credential_env_name() -> TestResult {
 }
 
 #[test]
+fn grok_row_uses_the_session_alias_and_trusted_launch_without_flipping_availability() -> TestResult
+{
+    let spec = Agent::GrokBuild.spec();
+    assert_eq!(spec.launch_argv(), ["grok", "--trust"]);
+    assert_eq!(spec.default_model, "grok-4.7");
+    assert_eq!(spec.allowed_models, ["grok-4.7"]);
+    assert_eq!(spec.credential_env_names, ["GROK_SESSION_TOKEN"]);
+    assert_eq!(
+        spec.provider_hosts,
+        ["cli-chat-proxy.grok.com", "auth.x.ai"]
+    );
+    let tuple = jackin_core::lookup_tuple(Agent::GrokBuild, Provider::Grok)?;
+    assert_eq!(tuple.default_model, "grok-4.7");
+    assert_eq!(tuple.state, jackin_core::TupleState::Unavailable);
+    assert!(!spec.credential_env_names.contains(&"XAI_API_KEY"));
+    assert!(!spec.provider_hosts.contains(&"api.x.ai"));
+    Ok(())
+}
+
+#[test]
 fn codex_profiles_are_chatgpt_only_and_match_their_asset() -> TestResult {
     let spec = Agent::Codex.spec();
     let profile = spec

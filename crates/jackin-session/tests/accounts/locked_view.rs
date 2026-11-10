@@ -31,11 +31,16 @@ async fn put_provider(world: &World, account: &str) -> TestResult {
             name: ProviderName::for_account(&AccountName::parse(account)?, Agent::Codex),
             profile: profile.id,
             keys: spec.codex.openshell.keys,
-            material: ProviderMaterial::ChatgptLogin {
+            material: ProviderMaterial::OAuth2RefreshToken {
                 access_token: Secret::new("ACCESS-PEER".to_owned()),
                 refresh_token: Secret::new(REFRESH.to_owned()),
                 client_id: "app_EMoamEEZ73f0CkXaXp7hrann".to_owned(),
-                chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+                scopes: Vec::new(),
+                expires_at: None,
+                additional_credentials: std::collections::BTreeMap::from([(
+                    spec.codex.openshell.keys.account_id.to_owned(),
+                    ChatgptAccountId::parse(ACCOUNT_ID)?.to_string(),
+                )]),
             },
         })
         .await?;

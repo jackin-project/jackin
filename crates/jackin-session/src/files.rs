@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use crate::credentials::KimiRegion;
 use jackin_core::{
-    CODEX_PLACEHOLDER_ID_TOKEN, ChatgptAccountId, FileMode, ModelName, ProviderName, SandboxPath,
-    Timestamp,
+    CODEX_PLACEHOLDER_ID_TOKEN, ChatgptAccountId, FileMode, ModelName, SandboxPath, Timestamp,
 };
 use serde_json::json;
 use toml::{Table, Value};
@@ -70,32 +70,6 @@ pub fn render_codex_config(
     Ok(toml::to_string(&config)?)
 }
 
-pub(crate) fn codex_home_config_file(
-    tuple: &'static jackin_core::AgentTuple,
-    model: Option<&str>,
-    workdir: &SandboxPath,
-) -> Result<crate::plan::PlannedFile, crate::plan::PlanError> {
-    if tuple.codex_provider_id().is_none() {
-        return Err(crate::plan::PlanError::TupleNotSupported {
-            agent: tuple.agent,
-            provider: tuple.provider,
-            reason: "no custom model provider".to_owned(),
-        });
-    }
-    let spec = jackin_core::Agent::Codex.spec();
-    let relative = spec
-        .user_config
-        .path
-        .as_str()
-        .strip_prefix("/sandbox")
-        .unwrap_or(spec.user_config.path.as_str());
-    Ok(crate::plan::PlannedFile {
-        path: SandboxPath::parse(&format!("/sandbox/.jackin/homes/codex{relative}"))?,
-        mode: spec.user_config.mode,
-        text: render_codex_config(tuple, None, model, workdir)?,
-    })
-}
-
 pub(crate) fn render_auth_json(
     access_token: &str,
     account_id: &ChatgptAccountId,
@@ -158,15 +132,6 @@ pub fn render_claude_config(tuple: &jackin_core::AgentTuple) -> String {
         })
         .to_string(),
         None => json!({}).to_string(),
-    }
-}
-
-pub fn grok_auth_file(issuer: &str) -> crate::plan::PlannedFile {
-    let spec = jackin_core::Agent::GrokBuild.spec();
-    crate::plan::PlannedFile {
-        path: spec.auth_file.path.clone(),
-        mode: spec.auth_file.mode,
-        text: json!({ issuer: { "key": "placeholder" } }).to_string(),
     }
 }
 
@@ -254,55 +219,69 @@ pub fn claude_config_file(tuple: &jackin_core::AgentTuple) -> crate::plan::Plann
     }
 }
 
-pub(crate) fn placeholder_file(spec: &jackin_core::AgentSpec) -> crate::plan::PlannedFile {
+pub(crate) fn placeholder_file(tuple: &jackin_core::AgentTuple) -> crate::plan::PlannedFile {
+    let spec = tuple.agent.spec();
+    let text = match tuple.id {
+        "T02" => json!({"claudeAiOauth": {
+            "accessToken": "openshell:resolve:env:CLAUDE_CODE_OAUTH_TOKEN",
+            "refreshToken": "",
+            "expiresAt": 4_102_444_800_000_u64,
+            "scopes": ["user:profile", "user:inference"],
+        }})
+        .to_string(),
+        "T03" => String::new(),
+        _ if tuple.agent == jackin_core::Agent::ClaudeCode && tuple.claude_base_url().is_some() => {
+            "{}".to_owned()
+        }
+        _ => render_placeholder_auth(spec),
+    };
     crate::plan::PlannedFile {
         path: spec.auth_file.path.clone(),
         mode: spec.auth_file.mode,
-        text: render_placeholder_auth(spec),
+        text,
     }
 }
 
-pub fn render_kimi_config(provider: &ProviderName) -> crate::plan::PlannedFile {
+pub fn render_kimi_config(region: KimiRegion) -> crate::plan::PlannedFile {
     let spec = jackin_core::Agent::KimiCode.spec();
     let model = spec.default_model;
-    let host = spec.provider_hosts.first().copied().unwrap_or_default();
-    let env = spec
-        .credential_env_names
-        .first()
-        .copied()
+    let base_url = region.base_url();
+    let slot = region.credential_slot();
+    let oauth_host = region
+        .oauth_host()
+        .map(|host| format!("oauth_host = \"{host}\"\n"))
         .unwrap_or_default();
     crate::plan::PlannedFile {
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
         text: format!(
-            "default_model = \"{model}\"\n\n[providers.{provider}]\ntype = \"kimi\"\nbase_url = \"https://{host}/coding/v1\"\napi_key_env = \"{env}\"\n\n[models.\"{model}\"]\nprovider = \"{provider}\"\nmodel = \"{model}\"\nmax_context_size = 1048576\n"
+            "default_model = \"kimi-code/{model}\"\n\n[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"{base_url}\"\napi_key = \"\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/{slot}\"\n{oauth_host}\n[models.\"{model}\"]\nprovider = \"managed:kimi-code\"\nmodel = \"{model}\"\nmax_context_size = 262144\ncapabilities = [\"thinking\", \"always_thinking\", \"image_in\", \"video_in\", \"tool_use\"]\n"
         ),
     }
 }
 
-pub fn render_mimo_config() -> crate::plan::PlannedFile {
-    let spec = jackin_core::Agent::MimoCode.spec();
-    let model = format!("xiaomi/{}", spec.default_model);
-    let host = spec.provider_hosts.first().copied().unwrap_or_default();
-    let env = spec
-        .credential_env_names
-        .first()
-        .copied()
-        .unwrap_or_default();
+pub fn render_kimi_auth(
+    region: KimiRegion,
+    scope: &str,
+    access_token: &str,
+) -> crate::plan::PlannedFile {
+    let spec = jackin_core::Agent::KimiCode.spec();
+    let path = match region {
+        KimiRegion::MainlandCn => spec.auth_file.path.clone(),
+        KimiRegion::Global => SandboxPath::from_static(
+            "/sandbox/.kimi-code/credentials/kimi-code-env-0e4f99c69cc27850.json",
+        ),
+    };
     crate::plan::PlannedFile {
-        path: spec.user_config.path.clone(),
-        mode: spec.user_config.mode,
+        path,
+        mode: spec.auth_file.mode,
         text: json!({
-            "model": model,
-            "small_model": model.clone(),
-            "provider": {
-                "xiaomi": {
-                    "options": {
-                        "baseURL": format!("https://{host}/v1"),
-                        "apiKey": format!("{{env:{env}}}"),
-                    }
-                }
-            }
+            "access_token": access_token,
+            "refresh_token": "",
+            "expires_at": 0,
+            "expires_in": 0,
+            "scope": scope,
+            "token_type": "Bearer"
         })
         .to_string(),
     }
@@ -346,14 +325,20 @@ pub fn render_muse_trust(workdir: &SandboxPath) -> crate::plan::PlannedFile {
 }
 
 pub fn render_grok_config(model: Option<&str>) -> crate::plan::PlannedFile {
+    const HELPER: &str = "jq -n -e --arg access_token \"${GROK_SESSION_TOKEN-}\" '$access_token | select(test(\"^openshell:resolve:[^\\\\r\\\\n]+$\")) | {access_token: ., issuer: \"https://auth.x.ai\"}'";
     let spec = jackin_core::Agent::GrokBuild.spec();
-    let text = match model {
-        Some(model) => format!("[cli]\nauto_update = false\n[models]\ndefault = \"{model}\"\n"),
-        None => "[cli]\nauto_update = false\n".to_owned(),
-    };
+    let models = model.map_or_else(String::new, |model| {
+        format!(
+            "\n[models]\ndefault = {}\n",
+            Value::String(model.to_owned())
+        )
+    });
+    let helper = Value::String(HELPER.to_owned());
     crate::plan::PlannedFile {
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
-        text,
+        text: format!(
+            "[cli]\nauto_update = false\n{models}\n[auth]\nauth_provider_command = {helper}\ndisable_api_key_auth = true\n"
+        ),
     }
 }

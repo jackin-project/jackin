@@ -237,8 +237,12 @@ impl AuthoredPolicy {
         self,
         tuple: &jackin_core::AgentTuple,
     ) -> Result<ClosedPolicy, ClosedPolicyError> {
-        let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?;
-        let violations = self.0.closure_violations(&profile, &[]);
+        let mut violations = Vec::new();
+        for profile in closure_profiles(tuple)? {
+            violations.extend(self.0.closure_violations(&profile, &[]));
+        }
+        violations.sort();
+        violations.dedup();
         if violations.is_empty() {
             Ok(ClosedPolicy(self.0))
         } else {
@@ -262,8 +266,9 @@ impl AuthoredPolicy {
     ) -> Result<ClosedPolicy, ClosedPolicyError> {
         let mut violations = Vec::new();
         for tuple in tuples {
-            let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?;
-            violations.extend(self.0.closure_violations(&profile, &[]));
+            for profile in closure_profiles(tuple)? {
+                violations.extend(self.0.closure_violations(&profile, &[]));
+            }
         }
         violations.sort();
         violations.dedup();
@@ -308,6 +313,21 @@ impl ProviderProfile {
     ) -> Result<openshell_sdk::raw::proto::ProviderProfile, PolicyError> {
         yaml::profile_to_proto(self)
     }
+}
+
+static KIMI_GLOBAL_PROFILE: ProfileAsset = ProfileAsset {
+    id: "kimi-global",
+    yaml: include_str!("../../jackin-core/src/assets/t08-kimi-global.yaml"),
+};
+
+fn closure_profiles(tuple: &jackin_core::AgentTuple) -> Result<Vec<ProviderProfile>, PolicyError> {
+    let mut profiles = vec![ProviderProfile::parse(jackin_core::tuple_profile_asset(
+        tuple,
+    ))?];
+    if tuple.id == "T08" {
+        profiles.push(ProviderProfile::parse(&KIMI_GLOBAL_PROFILE)?);
+    }
+    Ok(profiles)
 }
 
 const DOCKER_ENGINE_RULE: &str = "docker_engine";

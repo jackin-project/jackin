@@ -29,7 +29,8 @@ use jackin_openshell::{GatewayError, PowerAction};
 use jackin_session::{
     AccountPlan, BuildRequest, Gateways, LineDelivery, MANIFEST_FILE, PurgeMode, RestartError,
     RoleError, Session, Source, WorkspaceHold, build_observed, error_chain, launch_events,
-    plan_account_edits_for_agents, read_chatgpt_login,
+    plan_account_edits_for_agents, read_chatgpt_login, read_kimi_host_login, read_mimo_host_login,
+    read_minimax_host_login,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -402,9 +403,26 @@ impl Inputs {
                 account: found.account_id,
             });
         }
-        Ok(Folder::Login {
-            file: self.login_file(provider, &folder, path).await?,
-        })
+        let native = match provider {
+            jackin_core::Provider::Kimi => read_kimi_host_login(self.host.fs.as_ref(), &folder)
+                .await
+                .map(|_| true),
+            jackin_core::Provider::Minimax => {
+                read_minimax_host_login(self.host.fs.as_ref(), &folder)
+                    .await
+                    .map(|_| true)
+            }
+            jackin_core::Provider::Mimo => read_mimo_host_login(self.host.fs.as_ref(), &folder)
+                .await
+                .map(|_| true),
+            _ => {
+                return Ok(Folder::Login {
+                    file: self.login_file(provider, &folder, path).await?,
+                });
+            }
+        };
+        native.map_err(|error| Refused::Text(text(&error)))?;
+        Ok(Folder::HostLogin { path: folder })
     }
 
     async fn apply_accounts(

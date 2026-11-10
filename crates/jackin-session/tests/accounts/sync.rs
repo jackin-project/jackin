@@ -56,11 +56,18 @@ async fn a_chatgpt_login_account_creates_the_profile_and_provider_once_with_the_
         let record = world.gateway.provider(&name).ok_or("no provider record")?;
         assert_eq!(record.profile.as_str(), "codex");
         assert_eq!(record.access_key, "CODEX_AUTH_ACCESS_TOKEN");
-        assert_eq!(record.account_id_key, "CODEX_AUTH_ACCOUNT_ID");
         assert_eq!(record.access_token, ACCESS);
         assert_eq!(record.refresh_token, REFRESH);
         assert_eq!(record.client_id, CLIENT);
-        assert_eq!(record.chatgpt_account_id.as_str(), ACCOUNT_ID);
+        assert!(record.scopes.is_empty());
+        assert_eq!(record.expires_at, None);
+        assert_eq!(
+            record.additional_credentials,
+            std::collections::BTreeMap::from([(
+                "CODEX_AUTH_ACCOUNT_ID".to_owned(),
+                ACCOUNT_ID.to_owned()
+            )])
+        );
 
         let second = world
             .session
@@ -425,49 +432,6 @@ async fn a_kimi_file_key_sync_for_claude_code_creates_the_t13_auth_token_provide
 }
 
 #[tokio::test]
-async fn a_kimi_file_key_sync_for_kimi_code_creates_the_t08_provider() -> TestResult {
-    guard(async {
-        let world = World::builder().build()?;
-        let path = HostPath::parse(&world.home().as_path().join("kimi.txt"))?;
-        world
-            .fs
-            .write_new(&path, b"KIMI-KEY-SECRET-1", jackin_core::FileMode(0o600))
-            .await?;
-        let account = Account::new(
-            AccountName::parse("work")?,
-            Provider::Kimi,
-            CredentialSource::File { path },
-        )?;
-        register(&world, &account).await?;
-        let result = world
-            .session
-            .sync_account(
-                &account,
-                jackin_core::Agent::KimiCode,
-                &CancellationToken::new(),
-            )
-            .await?;
-        let name = ProviderName::parse("jackin-work-kimi")?;
-        assert!(
-            matches!(result, AccountSync::ProviderReady { ref provider, .. } if *provider == name),
-            "{result:?}"
-        );
-        let record = world.gateway.provider(&name).ok_or("no provider")?;
-        assert_eq!(record.profile.as_str(), "kimi");
-        assert_eq!(record.access_key, "KIMI_API_KEY");
-        assert_eq!(record.access_token, "KIMI-KEY-SECRET-1");
-        assert!(!format!("{result:?}").contains("KIMI-KEY-SECRET-1"));
-        assert!(
-            !jackin_session::render_kimi_config(&name)
-                .text
-                .contains("KIMI-KEY-SECRET-1")
-        );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
 async fn the_same_kimi_account_synced_for_omp_creates_the_omp_provider() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
@@ -494,44 +458,6 @@ async fn the_same_kimi_account_synced_for_omp_creates_the_omp_provider() -> Test
         let record = world.gateway.provider(&name).ok_or("no provider")?;
         assert_eq!(record.profile.as_str(), "omp-kimi");
         assert_eq!(record.access_token, "KIMI-KEY-SECRET-1");
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_mimo_file_key_sync_for_mimo_code_creates_the_t07_provider() -> TestResult {
-    guard(async {
-        let world = World::builder().build()?;
-        let path = HostPath::parse(&world.home().as_path().join("mimo.txt"))?;
-        world
-            .fs
-            .write_new(&path, b"MIMO-KEY-SECRET-1", jackin_core::FileMode(0o600))
-            .await?;
-        let account = Account::new(
-            AccountName::parse("work")?,
-            Provider::Mimo,
-            CredentialSource::File { path },
-        )?;
-        register(&world, &account).await?;
-        let result = world
-            .session
-            .sync_account(
-                &account,
-                jackin_core::Agent::MimoCode,
-                &CancellationToken::new(),
-            )
-            .await?;
-        let name = ProviderName::parse("jackin-work-mimo")?;
-        assert!(
-            matches!(result, AccountSync::ProviderReady { ref provider, .. } if *provider == name),
-            "{result:?}"
-        );
-        let record = world.gateway.provider(&name).ok_or("no provider")?;
-        assert_eq!(record.profile.as_str(), "mimo");
-        assert_eq!(record.access_key, "MIMO_API_KEY");
-        assert_eq!(record.access_token, "MIMO-KEY-SECRET-1");
-        assert!(!format!("{result:?}").contains("MIMO-KEY-SECRET-1"));
         Ok(())
     })
     .await

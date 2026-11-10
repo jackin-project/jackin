@@ -60,6 +60,13 @@ pub(crate) async fn launch_rig() -> Result<Rig, Box<dyn Error>> {
     builder().await?.build().await
 }
 
+pub(crate) async fn multi_agent_rig() -> Result<Rig, Box<dyn Error>> {
+    let role = jackin_testkit::RoleFixture::new("sentinel")?.manifest_text(
+        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[docker]\nenabled = false\n\n[env.GREETING]\ndefault = \"hello\"\nprompt = \"Greeting\"\n".to_owned(),
+    );
+    builder().await?.role(role).build().await
+}
+
 pub(crate) fn ready(outcome: Outcome) -> Result<AttachTarget, Box<dyn Error>> {
     match outcome.result {
         Ok(LaunchOutcome::Ready(target)) => Ok(target),

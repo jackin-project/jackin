@@ -320,7 +320,7 @@ async fn a_role_removed_under_the_picker_is_refused() -> TestResult {
 }
 
 #[tokio::test]
-async fn another_agent_is_refused_before_any_stage() -> TestResult {
+async fn an_out_of_catalog_agent_is_refused_before_any_stage() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         let mut console = console(&rig).await?;
@@ -338,8 +338,8 @@ async fn another_agent_is_refused_before_any_stage() -> TestResult {
                 workspace: Some(workspace),
                 role: "sentinel".to_owned(),
                 instances: vec![InstanceChoice {
-                    agent: ConsoleAgent::ClaudeCode,
-                    provider: ConsoleAgent::ClaudeCode.provider(),
+                    agent: ConsoleAgent::Amp,
+                    provider: ConsoleAgent::Amp.provider(),
                     account: None,
                     model: String::new(),
                 }],
@@ -355,7 +355,7 @@ async fn another_agent_is_refused_before_any_stage() -> TestResult {
             matches!(
                 events.as_slice(),
                 [LaunchEvent::Refused(RefusalReason::AgentNotLaunchable {
-                    agent: ConsoleAgent::ClaudeCode,
+                    agent: ConsoleAgent::Amp,
                     launchable: ConsoleAgent::Codex,
                 })]
             ),

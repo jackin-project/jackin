@@ -13,7 +13,7 @@ fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
             "glm-5.3".to_owned(),
         ),
         AgentInstance::new(
-            Agent::Omp,
+            Agent::ClaudeCode,
             Provider::Zai,
             AccountName::parse("work")?,
             "glm-5.3".to_owned(),
@@ -43,7 +43,7 @@ fn layout_born_and_unborn() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(lead.branch, None);
     let other = &layout.worktrees[1];
     assert!(other.worktree);
-    assert_eq!(other.branch.as_deref(), Some("agent/omp"));
+    assert_eq!(other.branch.as_deref(), Some("agent/claude"));
     let unborn = plan_multi(&instances, Some("do it"), HeadState::Unborn)?;
     assert!(!unborn.worktrees[1].worktree);
     assert_eq!(unborn.worktrees[1].branch, None);

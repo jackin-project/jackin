@@ -118,6 +118,7 @@ fn label(error: &ConfigError) -> String {
         ConfigError::ProviderMismatch { .. } => "mismatch".to_owned(),
         ConfigError::Catalog(_) => "catalog".to_owned(),
         ConfigError::CredentialNotAllowed { .. } => "credential".to_owned(),
+        ConfigError::CredentialNotEligible { .. } => "credential-eligibility".to_owned(),
         ConfigError::AccountInUse { .. } => "account-in-use".to_owned(),
         ConfigError::RoleInUse { .. } => "role-in-use".to_owned(),
         ConfigError::NoGateway => "no-gateway".to_owned(),

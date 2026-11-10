@@ -29,6 +29,7 @@ pub(crate) struct RefreshRecord {
     pub(crate) strategy: i32,
     pub(crate) material: HashMap<String, String>,
     pub(crate) secret_keys: Vec<String>,
+    pub(crate) expiration_time: Option<(i64, i32)>,
 }
 
 #[derive(Clone, Debug)]

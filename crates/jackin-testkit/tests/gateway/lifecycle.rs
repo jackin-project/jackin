@@ -110,11 +110,22 @@ pub(crate) fn login(
         name: name.clone(),
         profile: profile.clone(),
         keys: Agent::Codex.spec().codex.openshell.keys,
-        material: ProviderMaterial::ChatgptLogin {
+        material: ProviderMaterial::OAuth2RefreshToken {
             access_token: Secret::new(ACCESS.to_owned()),
             refresh_token: Secret::new(REFRESH.to_owned()),
             client_id: "client".to_owned(),
-            chatgpt_account_id: ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")?,
+            scopes: Vec::new(),
+            expires_at: None,
+            additional_credentials: std::collections::BTreeMap::from([(
+                Agent::Codex
+                    .spec()
+                    .codex
+                    .openshell
+                    .keys
+                    .account_id
+                    .to_owned(),
+                ChatgptAccountId::parse("0a1b2c3d-4e5f-6071-8293-a4b5c6d7e8f9")?.to_string(),
+            )]),
         },
     })
 }

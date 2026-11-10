@@ -2,22 +2,38 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    AccountName, Agent, AgentInstance, AgentInstances, FileMode, Provider, ProviderName,
-    SandboxPath, Secret, sandbox_layout,
+    Account, AccountName, Agent, AgentInstance, AgentInstances, ConfigEdit, CredentialSource,
+    FileMode, HostPath, Provider, ProviderName, SandboxPath, Secret, sandbox_layout,
 };
 use jackin_openshell::{Gateway, ProviderMaterial, ProviderProfile, ProviderSpec};
 use jackin_testkit::Rig;
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{guard, launch_rig, ready, running};
+use crate::support::{guard, multi_agent_rig, ready, running};
 
-async fn seed_omp_provider(rig: &Rig) -> Result<(), Box<dyn std::error::Error>> {
+const OMP_ACCOUNT: &str = "zai-work";
+
+async fn seed_omp_provider(rig: &mut Rig) -> Result<(), Box<dyn std::error::Error>> {
+    let path = HostPath::parse(&rig.home.as_path().join("zai.key"))?;
+    rig.world
+        .fs
+        .write_new(&path, b"test-key", FileMode(0o600))
+        .await?;
+    rig.world
+        .config
+        .edit(vec![ConfigEdit::AddAccount(Account::new(
+            AccountName::parse(OMP_ACCOUNT)?,
+            Provider::Zai,
+            CredentialSource::File { path },
+        )?)])
+        .await?;
+    rig.config = rig.world.config.load().await?;
     let tuple = jackin_core::lookup_tuple(Agent::Omp, Provider::Zai)?;
     let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?;
     rig.gateway().ensure_profile(&profile).await?;
     rig.gateway()
         .put_provider(&ProviderSpec {
-            name: ProviderName::for_account(&AccountName::parse("work")?, Agent::Omp),
+            name: ProviderName::for_account(&AccountName::parse(OMP_ACCOUNT)?, Agent::Omp),
             profile: profile.id,
             keys: jackin_core::CredentialKeys {
                 access_token: "ZAI_API_KEY",
@@ -37,7 +53,7 @@ async fn seed_omp_provider(rig: &Rig) -> Result<(), Box<dyn std::error::Error>> 
 fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
     Ok(AgentInstances::new(vec![
         AgentInstance::new(
-            Agent::Codex,
+            Agent::ClaudeCode,
             Provider::Zai,
             AccountName::parse("work")?,
             "glm-5.3".to_owned(),
@@ -45,7 +61,24 @@ fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
         AgentInstance::new(
             Agent::Omp,
             Provider::Zai,
+            AccountName::parse(OMP_ACCOUNT)?,
+            "glm-5.3".to_owned(),
+        ),
+    ])?)
+}
+
+fn codex_instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
+    Ok(AgentInstances::new(vec![
+        AgentInstance::new(
+            Agent::Codex,
+            Provider::Zai,
             AccountName::parse("work")?,
+            "glm-5.3".to_owned(),
+        ),
+        AgentInstance::new(
+            Agent::ClaudeCode,
+            Provider::Zai,
+            AccountName::parse(OMP_ACCOUNT)?,
             "glm-5.3".to_owned(),
         ),
     ])?)
@@ -55,8 +88,8 @@ fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
 async fn two_instance_launch_leaves_non_lead_ready_and_supervises_only_lead()
 -> Result<(), Box<dyn std::error::Error>> {
     guard(async {
-        let rig = launch_rig().await?;
-        seed_omp_provider(&rig).await?;
+        let mut rig = multi_agent_rig().await?;
+        seed_omp_provider(&mut rig).await?;
         let request = rig.request(7)?.instances(instances()?);
         let outcome = rig.run(request, CancellationToken::new()).await?;
         let target = ready(outcome)?;
@@ -91,7 +124,7 @@ async fn two_instance_launch_leaves_non_lead_ready_and_supervises_only_lead()
             .filter(|run| {
                 run.args
                     .iter()
-                    .any(|arg| arg.contains("/sandbox/.jackin/run/codex/output"))
+                    .any(|arg| arg.contains("/sandbox/.jackin/run/claude/output"))
             })
             .count();
         assert_eq!(lead_starts, 0);
@@ -104,8 +137,8 @@ async fn two_instance_launch_leaves_non_lead_ready_and_supervises_only_lead()
 async fn restart_omp_stops_omp_only_and_starts_no_process() -> Result<(), Box<dyn std::error::Error>>
 {
     guard(async {
-        let rig = launch_rig().await?;
-        seed_omp_provider(&rig).await?;
+        let mut rig = multi_agent_rig().await?;
+        seed_omp_provider(&mut rig).await?;
         let request = rig.request(9)?.instances(instances()?);
         let outcome = rig.run(request, CancellationToken::new()).await?;
         let target = ready(outcome)?;
@@ -133,7 +166,7 @@ async fn restart_omp_stops_omp_only_and_starts_no_process() -> Result<(), Box<dy
             .restart_instance(&target.sandbox, Agent::Omp, &CancellationToken::new())
             .await?;
         assert_eq!(count(&handle, "omp"), 0);
-        assert_eq!(count(&handle, "codex"), 0);
+        assert_eq!(count(&handle, "claude"), 0);
         let stops = handle.runs(&pkill);
         assert_eq!(stops.len(), stops_before + 1);
         assert!(
@@ -156,9 +189,9 @@ async fn restart_omp_stops_omp_only_and_starts_no_process() -> Result<(), Box<dy
 async fn two_instance_launch_writes_codex_env_like_single_instance()
 -> Result<(), Box<dyn std::error::Error>> {
     guard(async {
-        let rig = launch_rig().await?;
-        seed_omp_provider(&rig).await?;
-        let request = rig.request(8)?.instances(instances()?);
+        let mut rig = multi_agent_rig().await?;
+        seed_omp_provider(&mut rig).await?;
+        let request = rig.request(8)?.instances(codex_instances()?);
         let outcome = rig.run(request, CancellationToken::new()).await?;
         let target = ready(outcome)?;
         let handle = rig
@@ -169,7 +202,7 @@ async fn two_instance_launch_writes_codex_env_like_single_instance()
         let env = handle.file(&path).ok_or("no codex env")?;
         assert!(!env.is_empty());
         assert_eq!(handle.file_mode(&path), Some(FileMode(0o600)));
-        let single = launch_rig().await?;
+        let single = multi_agent_rig().await?;
         ready(single.launch_observed(1).await?)?;
         let single_handle = single.handle(1).await?;
         let single_path = sandbox_layout::env_file(&crate::support::launch_id(1));
@@ -190,21 +223,17 @@ async fn two_instance_launch_writes_codex_env_like_single_instance()
 async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_sibling_providers()
 -> Result<(), Box<dyn std::error::Error>> {
     guard(async {
-        let mut rig = launch_rig().await?;
+        let mut rig = multi_agent_rig().await?;
         let work = AccountName::parse("work")?;
-        let path = jackin_core::HostPath::parse(&rig.world.home().as_path().join("zai.key"))?;
+        let path = HostPath::parse(&rig.world.home().as_path().join("zai.key"))?;
         rig.world
             .fs
             .write_new(&path, b"ZAI-FIXTURE-KEY", FileMode(0o600))
             .await?;
-        let account = jackin_core::Account::new(
-            work.clone(),
-            Provider::Zai,
-            jackin_core::CredentialSource::File { path },
-        )?;
+        let account = Account::new(work.clone(), Provider::Zai, CredentialSource::File { path })?;
         let edits = vec![
-            jackin_core::ConfigEdit::RemoveAccountClearingBindings(work),
-            jackin_core::ConfigEdit::AddAccount(account.clone()),
+            ConfigEdit::RemoveAccountClearingBindings(work),
+            ConfigEdit::AddAccount(account.clone()),
         ];
         for edit in &edits {
             rig.config.apply(edit.clone())?;
@@ -214,14 +243,14 @@ async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_si
             .session
             .sync_account(&account, Agent::Omp, &CancellationToken::new())
             .await?;
-        let other = jackin_core::Account::new(
+        let other = Account::new(
             AccountName::parse("other")?,
             Provider::Zai,
             account.credential().clone(),
         )?;
         rig.world
             .config
-            .edit(vec![jackin_core::ConfigEdit::AddAccount(other.clone())])
+            .edit(vec![ConfigEdit::AddAccount(other.clone())])
             .await?;
         rig.world
             .session
@@ -247,7 +276,7 @@ async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_si
                 "glm-5.3".to_owned(),
             ),
             AgentInstance::new(
-                Agent::Omp,
+                Agent::ClaudeCode,
                 Provider::Zai,
                 account.name().clone(),
                 "glm-5.3".to_owned(),

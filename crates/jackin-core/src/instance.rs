@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -63,6 +63,12 @@ pub enum AgentInstanceError {
     Empty,
     #[error("agent {} is repeated in one launch", .agent.as_str())]
     RepeatedAgent { agent: Agent },
+    #[error("credential environment variable {env} is shared by tuples {first} and {second}")]
+    CredentialEnvCollision {
+        env: &'static str,
+        first: &'static str,
+        second: &'static str,
+    },
 }
 
 impl PartialEq for AgentInstances {
@@ -84,6 +90,22 @@ impl AgentInstances {
         for item in &items {
             if !seen.insert(item.agent) {
                 return Err(AgentInstanceError::RepeatedAgent { agent: item.agent });
+            }
+        }
+        let mut credentials = BTreeMap::new();
+        for item in &items {
+            let Some((tuple, env)) = crate::lookup_tuple(item.agent, item.provider)
+                .ok()
+                .and_then(|tuple| tuple.credential_env().map(|env| (tuple, env)))
+            else {
+                continue;
+            };
+            if let Some(first) = credentials.insert(env, tuple.id) {
+                return Err(AgentInstanceError::CredentialEnvCollision {
+                    env,
+                    first,
+                    second: tuple.id,
+                });
             }
         }
         Ok(AgentInstances {

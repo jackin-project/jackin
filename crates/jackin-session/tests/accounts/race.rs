@@ -114,7 +114,10 @@ async fn two_adds_of_one_name_leave_the_config_and_the_provider_on_the_winning_l
             "the config names another login than the first add"
         );
         let record = world.gateway.provider(&provider()?).ok_or("no provider")?;
-        assert_eq!(record.chatgpt_account_id.as_str(), FIRST_ID);
+        assert_eq!(
+            record.additional_credentials["CODEX_AUTH_ACCOUNT_ID"],
+            FIRST_ID
+        );
         assert_eq!(record.refresh_token, FIRST_REFRESH);
         Ok(())
     })

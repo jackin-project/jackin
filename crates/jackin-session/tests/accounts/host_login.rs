@@ -5,10 +5,10 @@ use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jackin_core::{
     Account, AccountName, Agent, ConfigEdit, CredentialSource, HostPath, Program, Provider,
-    ProviderName,
+    ProviderName, SecretBytes,
 };
 use jackin_session::{
-    ANTIGRAVITY_KEYCHAIN_ARGS, AccountError, CLAUDE_KEYCHAIN_ARGS, grok_auth_file,
+    ANTIGRAVITY_KEYCHAIN_ARGS, AccountError, CLAUDE_KEYCHAIN_ARGS, parse_claude_keychain_secret,
     plan_account_edits_for_agent, read_claude_login, read_grok_login, read_muse_host_metadata,
 };
 use jackin_testkit::{ProcessReply, ScriptedProgram, World};
@@ -18,11 +18,17 @@ use super::support::{TestResult, guard, register};
 
 const GROK_A: &str = "FAKE-GROK-A-111";
 const GROK_B: &str = "FAKE-GROK-B-222";
+const GROK_REFRESH_A: &str = "FAKE-GROK-REFRESH-A-111";
+const GROK_REFRESH_B: &str = "FAKE-GROK-REFRESH-B-222";
+const GROK_CLIENT: &str = "grok-client";
+const GROK_SCOPE: &str = "https://auth.x.ai::issuer";
 const ISSUER: &str = "https://auth.x.ai";
 const MUSE_API: &str = "FAKE-MUSE-API-333";
 const MUSE_ACCESS: &str = "FAKE-MUSE-ACCESS-444";
 const CLAUDE_ACCESS: &str = "FAKE-CLAUDE-ACCESS-555";
 const CLAUDE_REFRESH: &str = "FAKE-CLAUDE-REFRESH-666";
+const CLAUDE_CLIENT: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const CLAUDE_EXPIRY: i64 = 1794237825974;
 const AGY_ACCESS: &str = "FAKE-AGY-ACCESS-777";
 const AGY_REFRESH: &str = "FAKE-AGY-REFRESH-888";
 const AGY_PREFIX: &str = "antigravity-store-id";
@@ -70,6 +76,23 @@ async fn write_file(path: &std::path::Path, text: &str) -> TestResult {
     Ok(())
 }
 
+fn grok_document() -> serde_json::Value {
+    serde_json::json!({GROK_SCOPE: {
+        "key": GROK_A,
+        "refresh_token": GROK_REFRESH_A,
+        "oidc_client_id": GROK_CLIENT,
+        "oidc_issuer": ISSUER,
+        "auth_mode": "oidc",
+    }})
+}
+
+fn grok_login_json(access: &str, refresh: &str) -> String {
+    let mut document = grok_document();
+    document[GROK_SCOPE]["key"] = serde_json::json!(access);
+    document[GROK_SCOPE]["refresh_token"] = serde_json::json!(refresh);
+    document.to_string()
+}
+
 #[tokio::test]
 async fn grok_reader_taxonomy_is_typed_and_secret_free() -> TestResult {
     guard(async {
@@ -81,11 +104,12 @@ async fn grok_reader_taxonomy_is_typed_and_secret_free() -> TestResult {
         missing.unwrap_err();
         write_file(&base, "{not json").await?;
         let malformed = read_grok_login(world.fs.as_ref(), &hp).await.unwrap_err();
-        write_file(
-            &base,
-            &serde_json::json!({ISSUER: {"other": GROK_A}}).to_string(),
-        )
-        .await?;
+        let mut no_key_document = grok_document();
+        no_key_document[GROK_SCOPE]
+            .as_object_mut()
+            .unwrap()
+            .remove("key");
+        write_file(&base, &no_key_document.to_string()).await?;
         let no_key = read_grok_login(world.fs.as_ref(), &hp).await.unwrap_err();
         let dirpath = dir.path().join("dir.json");
         tokio::fs::create_dir(&dirpath).await?;
@@ -97,6 +121,7 @@ async fn grok_reader_taxonomy_is_typed_and_secret_free() -> TestResult {
         for error in [&malformed, &no_key, &not_regular, &oversized] {
             let text = format!("{error} {error:?}");
             assert!(!text.contains(GROK_A), "{text}");
+            assert!(!text.contains(GROK_REFRESH_A), "{text}");
         }
         assert_ne!(format!("{malformed:?}"), format!("{no_key:?}"));
         Ok(())
@@ -105,16 +130,12 @@ async fn grok_reader_taxonomy_is_typed_and_secret_free() -> TestResult {
 }
 
 #[tokio::test]
-async fn grok_sync_creates_t03_provider_with_key_only_in_record() -> TestResult {
+async fn grok_sync_creates_t03_provider_with_oauth_refresh() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         let dir = tempfile::tempdir()?;
         let file = dir.path().join("auth.json");
-        write_file(
-            &file,
-            &serde_json::json!({ISSUER: {"key": GROK_A}}).to_string(),
-        )
-        .await?;
+        write_file(&file, &grok_login_json(GROK_A, GROK_REFRESH_A)).await?;
         let parsed = jackin_core::Config::parse(&format!(
             "[accounts.alpha]\nprovider = \"grok\"\ncredential = {{ source = \"host-login\", path = \"{}\" }}\n",
             file.display()
@@ -124,7 +145,16 @@ async fn grok_sync_creates_t03_provider_with_key_only_in_record() -> TestResult 
         register(&world, &account).await?;
         let login = read_grok_login(world.fs.as_ref(), &HostPath::parse(&file)?).await?;
         assert_eq!(login.issuer, ISSUER);
-        assert_eq!(login.session_key.expose(), GROK_A);
+        assert_eq!(login.access_token.expose(), GROK_A);
+        assert_eq!(login.refresh_token.expose(), GROK_REFRESH_A);
+        assert_eq!(login.client_id, GROK_CLIENT);
+        let login_debug = format!("{login:?}");
+        assert!(!login_debug.contains(GROK_A));
+        assert!(!login_debug.contains(GROK_REFRESH_A));
+        let mut session_document = grok_document();
+        session_document[GROK_SCOPE]["auth_mode"] = serde_json::json!("session");
+        write_file(&file, &session_document.to_string()).await?;
+        read_grok_login(world.fs.as_ref(), &HostPath::parse(&file)?).await?;
         let synced = world
             .session
             .sync_account(&account, Agent::GrokBuild, &CancellationToken::new())
@@ -135,18 +165,64 @@ async fn grok_sync_creates_t03_provider_with_key_only_in_record() -> TestResult 
         let record = world.gateway.provider(&name).ok_or("no provider")?;
         assert_eq!(record.profile.as_str(), "grok");
         assert_eq!(record.access_token, GROK_A);
-        assert_eq!(record.access_key, "XAI_API_KEY");
+        assert_eq!(record.refresh_token, GROK_REFRESH_A);
+        assert_eq!(record.client_id, GROK_CLIENT);
+        assert!(record.scopes.is_empty());
+        assert_eq!(record.expires_at, None);
+        assert!(record.additional_credentials.is_empty());
+        assert_eq!(record.access_key, "GROK_SESSION_TOKEN");
         assert!(
             profile_env_vars(Agent::GrokBuild, Provider::Grok)?.contains(&record.access_key),
             "{}",
             record.access_key
         );
-        assert!(!format!("{synced:?}").contains(GROK_A));
-        let planned = grok_auth_file(ISSUER);
-        assert_eq!(planned.mode.0, 0o600);
-        let parsed: serde_json::Value = serde_json::from_str(&planned.text)?;
-        assert_eq!(parsed, serde_json::json!({ISSUER: {"key": "placeholder"}}));
-        assert!(!planned.text.contains(GROK_A));
+        let debug = format!("{synced:?} {record:?}");
+        assert!(!debug.contains(GROK_A));
+        assert!(!debug.contains(GROK_REFRESH_A));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn grok_sync_rejects_incomplete_or_wrong_grants_before_publication() -> TestResult {
+    guard(async {
+        let mut cases = vec![("malformed", None)];
+        for field in ["key", "refresh_token", "oidc_client_id"] {
+            for replacement in [serde_json::Value::Null, serde_json::json!(" ")] {
+                let mut document = grok_document();
+                document[GROK_SCOPE][field] = replacement;
+                cases.push((field, Some(document)));
+            }
+        }
+        let mut wrong_issuer = grok_document();
+        wrong_issuer[GROK_SCOPE]["oidc_issuer"] = serde_json::json!("https://example.com");
+        cases.push(("wrong issuer", Some(wrong_issuer)));
+        let mut api_key = grok_document();
+        api_key[GROK_SCOPE]["auth_mode"] = serde_json::json!("api_key");
+        cases.push(("API-key mode", Some(api_key)));
+        for (case, document) in cases {
+            let world = World::builder().build()?;
+            let dir = tempfile::tempdir()?;
+            let file = dir.path().join("auth.json");
+            let text = document.map_or_else(|| "{not json".to_owned(), |value| value.to_string());
+            write_file(&file, &text).await?;
+            let path = HostPath::parse(&file)?;
+            let direct = read_grok_login(world.fs.as_ref(), &path).await.unwrap_err();
+            let account = host_login_account("alpha", Provider::Grok, &path)?;
+            register(&world, &account).await?;
+            let result = world
+                .session
+                .sync_account(&account, Agent::GrokBuild, &CancellationToken::new())
+                .await;
+            let error = result.err().ok_or(case)?;
+            for text in [format!("{direct} {direct:?}"), format!("{error} {error:?}")] {
+                assert!(!text.contains(GROK_A), "{case}: {text}");
+                assert!(!text.contains(GROK_REFRESH_A), "{case}: {text}");
+            }
+            assert!(world.gateway.profiles().is_empty(), "{case}");
+            assert!(world.gateway.providers().is_empty(), "{case}");
+        }
         Ok(())
     })
     .await
@@ -403,13 +479,12 @@ async fn grok_accounts_are_isolated_in_providers_and_launch_plan_names() -> Test
         let world = World::builder().build()?;
         let dir = tempfile::tempdir()?;
         let mut accounts = Vec::new();
-        for (name, token) in [("alpha", GROK_A), ("beta", GROK_B)] {
+        for (name, token, refresh) in [
+            ("alpha", GROK_A, GROK_REFRESH_A),
+            ("beta", GROK_B, GROK_REFRESH_B),
+        ] {
             let file = dir.path().join(format!("{name}.json"));
-            write_file(
-                &file,
-                &serde_json::json!({ISSUER: {"key": token}}).to_string(),
-            )
-            .await?;
+            write_file(&file, &grok_login_json(token, refresh)).await?;
             let account = host_login_account(name, Provider::Grok, &HostPath::parse(&file)?)?;
             register(&world, &account).await?;
             world
@@ -421,14 +496,12 @@ async fn grok_accounts_are_isolated_in_providers_and_launch_plan_names() -> Test
         let a = ProviderName::for_account(&AccountName::parse("alpha")?, Agent::GrokBuild);
         let b = ProviderName::for_account(&AccountName::parse("beta")?, Agent::GrokBuild);
         assert_ne!(a, b);
-        assert_eq!(
-            world.gateway.provider(&a).ok_or("no a")?.access_token,
-            GROK_A
-        );
-        assert_eq!(
-            world.gateway.provider(&b).ok_or("no b")?.access_token,
-            GROK_B
-        );
+        let a_record = world.gateway.provider(&a).ok_or("no a")?;
+        assert_eq!(a_record.access_token, GROK_A);
+        assert_eq!(a_record.refresh_token, GROK_REFRESH_A);
+        let b_record = world.gateway.provider(&b).ok_or("no b")?;
+        assert_eq!(b_record.access_token, GROK_B);
+        assert_eq!(b_record.refresh_token, GROK_REFRESH_B);
         let launch_providers = [ProviderName::for_account(
             &AccountName::parse("beta")?,
             Agent::GrokBuild,
@@ -441,9 +514,17 @@ async fn grok_accounts_are_isolated_in_providers_and_launch_plan_names() -> Test
     .await
 }
 
+fn claude_document() -> serde_json::Value {
+    serde_json::json!({"claudeAiOauth": {
+        "accessToken": CLAUDE_ACCESS,
+        "refreshToken": CLAUDE_REFRESH,
+        "expiresAt": CLAUDE_EXPIRY,
+        "scopes": ["user:profile", "user:inference"],
+    }})
+}
+
 fn claude_file_json() -> String {
-    serde_json::json!({"claudeAiOauth": {"accessToken": CLAUDE_ACCESS, "refreshToken": CLAUDE_REFRESH, "expiresAt": 1794237825974_i64}})
-        .to_string()
+    claude_document().to_string()
 }
 
 fn claude_keychain_stdout() -> Vec<u8> {
@@ -522,7 +603,7 @@ async fn claude_reader_taxonomy_is_typed_and_secret_free() -> TestResult {
 }
 
 #[tokio::test]
-async fn claude_file_sync_creates_t02_provider_with_key_only_in_record() -> TestResult {
+async fn claude_file_sync_creates_t02_provider_with_oauth_refresh() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         let dir = tempfile::tempdir()?;
@@ -535,6 +616,14 @@ async fn claude_file_sync_creates_t02_provider_with_key_only_in_record() -> Test
         assert!(parsed.render().contains("source = \"host-login\""));
         let account = host_login_account("claudeone", Provider::Claude, &HostPath::parse(&file)?)?;
         register(&world, &account).await?;
+        let login = read_claude_login(world.fs.as_ref(), &HostPath::parse(&file)?).await?;
+        assert_eq!(login.access_token.expose(), CLAUDE_ACCESS);
+        assert_eq!(login.refresh_token.expose(), CLAUDE_REFRESH);
+        assert_eq!(login.expires_at, CLAUDE_EXPIRY);
+        assert_eq!(login.scopes, ["user:profile", "user:inference"]);
+        let login_debug = format!("{login:?}");
+        assert!(!login_debug.contains(CLAUDE_ACCESS));
+        assert!(!login_debug.contains(CLAUDE_REFRESH));
         let synced = world
             .session
             .sync_account(&account, Agent::ClaudeCode, &CancellationToken::new())
@@ -545,13 +634,18 @@ async fn claude_file_sync_creates_t02_provider_with_key_only_in_record() -> Test
         let record = world.gateway.provider(&name).ok_or("no provider")?;
         assert_eq!(record.profile.as_str(), "claude");
         assert_eq!(record.access_token, CLAUDE_ACCESS);
+        assert_eq!(record.refresh_token, CLAUDE_REFRESH);
+        assert_eq!(record.client_id, CLAUDE_CLIENT);
+        assert_eq!(record.scopes, ["user:profile", "user:inference"]);
+        assert_eq!(record.expires_at, Some(CLAUDE_EXPIRY));
+        assert!(record.additional_credentials.is_empty());
         assert_eq!(record.access_key, "CLAUDE_CODE_OAUTH_TOKEN");
         assert!(
             profile_env_vars(Agent::ClaudeCode, Provider::Claude)?.contains(&record.access_key),
             "{}",
             record.access_key
         );
-        let debug = format!("{synced:?}");
+        let debug = format!("{synced:?} {record:?}");
         assert!(!debug.contains(CLAUDE_ACCESS), "{debug}");
         assert!(!debug.contains(CLAUDE_REFRESH), "{debug}");
         assert_eq!(security_seen(&world).len(), 0);
@@ -569,6 +663,12 @@ async fn claude_keychain_sync_creates_provider_when_no_file_login_exists() -> Te
         write_file(&file, "{not json").await?;
         let account = host_login_account("claudekey", Provider::Claude, &HostPath::parse(&file)?)?;
         register(&world, &account).await?;
+        let login = parse_claude_keychain_secret(&SecretBytes::new(claude_keychain_stdout()))
+            .ok_or("no Keychain login")?;
+        assert_eq!(login.access_token.expose(), CLAUDE_ACCESS);
+        assert_eq!(login.refresh_token.expose(), CLAUDE_REFRESH);
+        assert_eq!(login.expires_at, CLAUDE_EXPIRY);
+        assert_eq!(login.scopes, ["user:profile", "user:inference"]);
         world.runner.scripted().expect(
             ScriptedProgram::Security,
             &CLAUDE_KEYCHAIN_ARGS,
@@ -583,11 +683,92 @@ async fn claude_keychain_sync_creates_provider_when_no_file_login_exists() -> Te
         let record = world.gateway.provider(&name).ok_or("no provider")?;
         assert_eq!(record.profile.as_str(), "claude");
         assert_eq!(record.access_token, CLAUDE_ACCESS);
+        assert_eq!(record.refresh_token, CLAUDE_REFRESH);
+        assert_eq!(record.client_id, CLAUDE_CLIENT);
+        assert_eq!(record.scopes, ["user:profile", "user:inference"]);
+        assert_eq!(record.expires_at, Some(CLAUDE_EXPIRY));
+        assert!(record.additional_credentials.is_empty());
         assert_eq!(record.access_key, "CLAUDE_CODE_OAUTH_TOKEN");
         let seen = security_seen(&world);
         assert_eq!(seen.len(), 1);
         assert_eq!(seen[0].args, CLAUDE_KEYCHAIN_ARGS);
-        assert!(!format!("{synced:?}").contains(CLAUDE_ACCESS));
+        let debug = format!("{synced:?} {record:?}");
+        assert!(!debug.contains(CLAUDE_ACCESS));
+        assert!(!debug.contains(CLAUDE_REFRESH));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn claude_sync_rejects_incomplete_grants_before_publication() -> TestResult {
+    guard(async {
+        let mut cases = vec![("malformed", None)];
+        for field in ["accessToken", "refreshToken"] {
+            for replacement in [serde_json::Value::Null, serde_json::json!(" ")] {
+                let mut document = claude_document();
+                document["claudeAiOauth"][field] = replacement;
+                cases.push((field, Some(document)));
+            }
+        }
+        for expiry in [
+            serde_json::Value::Null,
+            serde_json::json!(0),
+            serde_json::json!(-1),
+            serde_json::json!("1794237825974"),
+            serde_json::json!(1.5),
+            serde_json::json!(u64::MAX),
+        ] {
+            let mut document = claude_document();
+            document["claudeAiOauth"]["expiresAt"] = expiry;
+            cases.push(("expiry", Some(document)));
+        }
+        for scopes in [
+            serde_json::Value::Null,
+            serde_json::json!([]),
+            serde_json::json!(["user:profile", " "]),
+            serde_json::json!("user:profile"),
+        ] {
+            let mut document = claude_document();
+            document["claudeAiOauth"]["scopes"] = scopes;
+            cases.push(("scopes", Some(document)));
+        }
+        cases.push((
+            "access only",
+            Some(serde_json::json!({"claudeAiOauth": {"accessToken": CLAUDE_ACCESS}})),
+        ));
+        cases.push((
+            "API key",
+            Some(serde_json::json!({"ANTHROPIC_API_KEY": CLAUDE_ACCESS})),
+        ));
+        for (case, document) in cases {
+            let world = World::builder().build()?;
+            let dir = tempfile::tempdir()?;
+            let file = dir.path().join(".credentials.json");
+            let text = document.map_or_else(|| "{not json".to_owned(), |value| value.to_string());
+            write_file(&file, &text).await?;
+            let path = HostPath::parse(&file)?;
+            let direct = read_claude_login(world.fs.as_ref(), &path)
+                .await
+                .unwrap_err();
+            assert!(
+                parse_claude_keychain_secret(&SecretBytes::new(text.into_bytes())).is_none(),
+                "{case}"
+            );
+            let account = host_login_account("claudeone", Provider::Claude, &path)?;
+            register(&world, &account).await?;
+            let result = world
+                .session
+                .sync_account(&account, Agent::ClaudeCode, &CancellationToken::new())
+                .await;
+            let error = result.err().ok_or(case)?;
+            for text in [format!("{direct} {direct:?}"), format!("{error} {error:?}")] {
+                assert!(!text.contains(CLAUDE_ACCESS), "{case}: {text}");
+                assert!(!text.contains(CLAUDE_REFRESH), "{case}: {text}");
+            }
+            assert!(world.gateway.profiles().is_empty(), "{case}");
+            assert!(world.gateway.providers().is_empty(), "{case}");
+        }
         Ok(())
     })
     .await
