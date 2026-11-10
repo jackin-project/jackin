@@ -1,14 +1,12 @@
-# T16 Claude Code with MiMo: blocked on this host
+# T16 Claude Code with MiMo: final live proof pending
 
-Final base SHA: `ebfb26c9c3961ceba28e0cab84396c5530648b20`.
+Verified implementation head: `e275950ca3f5d82d17dfa49789f9582d3487088b`.
 State: unavailable.
 Exact catalog reason: `final live proof pending with MiMo Token Plan key`.
 Required agent version: Claude Code 2.1.311.
 
-Credential search: `op whoami` fails with `account is not signed in`, so no 1Password MiMo Token Plan key is accessible. The host omp store has no MiMo Token Plan key. Existing gateway providers are not an approved credential-discovery source and were not used to establish support.
+Authorized 1Password access supplied the Singapore MiMo Token Plan key. It was exported to a private host file with mode 0600, and the Claude/MiMo account is registered on jackin-docker and jackin-local. Only the credential source is recorded; no value was exposed. Historical responses on an older head do not prove this final head.
 
-Historical MiMo responses used an older head and currently inaccessible credentials. Claude Code's base-URL-only renderer remains covered, but it does not prove this final head.
-
-Re-proof condition: put a Singapore MiMo Token Plan key in an approved credential source and register it through `jackin account add mimo --name claude-mimo --agent claude --credential omp-host` or another supported source. Run the complete final-head A4 live gate on Claude Code 2.1.311, including a live response, provider and endpoint attribution, base-URL-only settings, credential hygiene, process identity, export, and cleanup. Only then may T16 return to `Supported`.
+Re-proof condition: run the complete final-head D29 live gate on both gateways with `mimo-v2.6-pro`, the Anthropic-compatible Singapore endpoint, base-URL-only settings, exact live replies and one real tool call, plan-funded usage with no paid fallback, cached rebuild, supervised process identity, placeholders, provider-only egress, replay, shell persistence, export, and guarded purge. Only then may T16 return to `Supported`.
 
 Evidence: `rewrite/evidence/A14-final-head-availability.md`.

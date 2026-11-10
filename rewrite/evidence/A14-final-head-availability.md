@@ -1,33 +1,28 @@
 # A14 final-head availability
 
-Final base SHA: `ebfb26c9c3961ceba28e0cab84396c5530648b20`.
+Verified implementation head: `e275950ca3f5d82d17dfa49789f9582d3487088b`.
 
 ## Dispositions
 
 | Tuple | State | Exact reason |
 |---|---|---|
-| T01 | Unavailable | `host Codex login expired; interactive re-login required` |
-| T10 | Unavailable | `no Kimi Code membership key on this host` |
-| T11 | Unavailable | `no MiniMax coding plan key on this host` |
-| T12 | Unavailable | `no MiMo Token Plan key on this host` |
-| T16 | Unavailable | `no MiMo Token Plan key on this host` |
-| T20 | Unavailable | `no MiMo Token Plan key on this host` |
+| T01 | Unavailable | `final live proof pending after host re-login` |
+| T10 | Unavailable | `final live proof pending with Kimi plan key` |
+| T11 | Unavailable | `final live proof pending with MiniMax plan key` |
+| T12 | Unavailable | `final live proof pending with MiMo Token Plan key` |
+| T16 | Unavailable | `final live proof pending with MiMo Token Plan key` |
+| T20 | Unavailable | `final live proof pending with MiMo Token Plan key` |
+| T21 | Unavailable | `final live proof pending with Anthropic API key` |
 
-T09, T14, and T18 remain supported positive controls. T15 and T19 keep their existing dispositions. Auth classes, profiles, and models are unchanged. T09 keeps its live-proven `https://api.z.ai/api/anthropic` base URL and `anthropic-messages` API from commit `436781af9`.
+T09, T14, and T18 remain supported positive controls. T15 and T19 keep their existing exact-model proof-pending dispositions. T22 remains unavailable because no OpenAI API key exists in an approved source. Auth classes, profiles, and models are unchanged. T09 keeps its live-proven `https://api.z.ai/api/anthropic` base URL and `anthropic-messages` API from commit `436781af9`.
 
 ## Host proof
 
-On 2026-11-09 at about 13:12Z, the actual host command was:
+The earlier 2026-11-09 host check ran Codex CLI 0.167.0 and returned `token_expired` with repeated HTTP 401 refresh responses. The host `~/.codex/auth.json` stayed unchanged at mode 0600, size 4250 bytes, and mtime `2026-10-29 22:50:55` local time. This was the evidence for the initial availability correction, not a current claim that the login is still expired.
 
-```sh
-codex exec --skip-git-repo-check "Reply with exactly: HOST-PONG"
-```
+The operator subsequently completed interactive re-login. On 2026-11-10, `codex --version` reported `codex-cli 0.167.0` and `codex login status` reported `Logged in using ChatGPT`. No credential value was read or recorded. T01 remains unavailable until its complete final-head live proof.
 
-The host ran codex-cli 0.167.0. It returned `token_expired` and repeated HTTP 401 responses during token refresh. No `HOST-PONG` response arrived. Interactive re-login is required.
-
-Before and after the run, `~/.codex/auth.json` had mode 0600, size 4250 bytes, and mtime `2026-10-29 22:50:55` local time. A repeated run at 16:37Z returned the same error class and left those metadata unchanged.
-
-The credential search found no replacement keys. `op whoami` failed with `account is not signed in`. The host omp store has no Kimi Code membership key, MiniMax coding plan key, or MiMo Token Plan key. Existing gateway providers are not an approved discovery source and supplied no support evidence.
+Authorized 1Password access subsequently supplied the Kimi, MiniMax, MiMo, and Anthropic keys. They were exported to private host files with mode 0600 and registered through the supported account path on both jackin-docker and jackin-local. Only the sources and registration state are recorded. Existing provider inventory was not used as a credential-discovery source or as support evidence. No OpenAI API key was found.
 
 ## Old-head failures
 
@@ -87,3 +82,17 @@ Restoring the T09 API mapping made all 5 tests pass in nextest run `314af0d0-4ce
 Direct diff review found that `resolve_choices` replaced an explicitly named account with the default when the name was missing or belonged to another provider. The restoration removes that fallback. `Some(id)` again preserves exactly the parsed `AccountName`. Only `None` uses `config.select_account` and `default_account`. No new error or fallback was added.
 
 The existing controls passed after the restoration. The console account-selection run passed 30 tests. The core account-selection run passed 2 tests, including unknown-account and wrong-provider refusals. The planner selection control passed 1 test. No test was added or changed for this restoration.
+
+## Integrated baseline migration and final fast gate
+
+The integrated implementation is commits `344472d4a3b78cc24cff00e0a96aac0e52599268` and `e275950ca3f5d82d17dfa49789f9582d3487088b`. The follow-up corrected the remaining picker fixtures, moved degraded power errors into typed domain-owned variants, and recorded the two baseline `windows-sys` duplicate survivors.
+
+The final launch suite passed 57 tests, the console suite passed 219 tests, the core catalog control passed 9 tests, and the availability matrix passed 20 tests. The complete command was:
+
+```sh
+NEXTEST_TEST_THREADS=2 mise exec -- mbx +1.99.1 xtask ci --fast
+```
+
+It exited 0. Nextest ran all 2,234 tests with 2,234 passed and 0 skipped. Fmt, Clippy, deny, shear, comments, layers, pins, containers, errors, baseline, screen, demo-gate, and reuse also passed. The exact log is `.audit/a14-api-migration-ci-fast-final.log`.
+
+Independent integrated review and final-head live proofs remain separate gates. This fast gate does not promote any unavailable tuple.

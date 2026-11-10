@@ -1,16 +1,12 @@
-# T10 omp with Kimi: blocked on this host
+# T10 omp with Kimi: final live proof pending
 
-Final base SHA: `ebfb26c9c3961ceba28e0cab84396c5530648b20`.
+Verified implementation head: `e275950ca3f5d82d17dfa49789f9582d3487088b`.
 State: unavailable.
 Exact catalog reason: `final live proof pending with Kimi plan key`.
 Required agent version: omp 18.18.3.
 
-The host Kimi login is OAuth and has an empty `api_key` field.
+Authorized 1Password access supplied the Kimi membership key. It was exported to a private host file with mode 0600, and the omp/Kimi account is registered on jackin-docker and jackin-local. Only the credential source is recorded; no value was exposed. Earlier omp 18.18.1 evidence does not prove omp 18.18.3 on this head.
 
-Credential search: `op whoami` fails with `account is not signed in`, so no 1Password Kimi Code membership key is accessible. The host omp store holds only a Z.AI record and no Kimi Code membership key. Existing gateway providers are not an approved credential-discovery source and were not used to establish support.
-
-Earlier proof used omp 18.18.1 and a 1Password credential that is now inaccessible. That proof does not establish omp 18.18.3 on this head.
-
-Re-proof condition: put a Kimi Code membership key in the host omp store or another approved source, then register it with `jackin account add kimi --name omp-kimi --credential omp-host` or another supported source. Run the complete final-head A4 live gate on omp 18.18.3, including `kimi-for-coding`, the `https://api.kimi.com/coding/v1` endpoint in `models.yml`, live text and JSON responses, one real tool call, provider and credential attribution, process identity, export, and cleanup. Only then may T10 return to `Supported`.
+Re-proof condition: run the complete final-head A4/D29 live gate on both gateways with `kimi-for-coding`, the `https://api.kimi.com/coding/v1` endpoint in `models.yml`, exact live replies and one real tool call, plan-funded usage with no paid fallback, cached rebuild, supervised process identity, placeholders, provider-only egress, replay, shell persistence, export, and guarded purge. Only then may T10 return to `Supported`.
 
 Evidence: `rewrite/evidence/A14-final-head-availability.md` and the historical `rewrite/evidence/A4-omp-kimi.md`.

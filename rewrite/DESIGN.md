@@ -464,9 +464,9 @@ The catalog holds twenty-two tuples. CLI only:
 | T03 | Grok Build | xAI | O, host login |
 | T04 | Muse Code | Meta | O, subscription login |
 | T05 | Antigravity | Google | B, vendor clarification pending |
-| T06 | MiniMax Code | MiniMax | O, then S if a plan key exists |
-| T07 | MiMo Code | MiMo | S, Token Plan key |
-| T08 | Kimi Code | Kimi | S, membership key |
+| T06 | MiniMax Code | MiniMax | O, native subscription login only |
+| T07 | MiMo Code | MiMo | O, native subscription login only |
+| T08 | Kimi Code | Kimi | O, native subscription login only |
 | T09 | omp | Z.AI | S, coding plan key |
 | T10 | omp | Kimi | S, membership key |
 | T11 | omp | MiniMax | S, coding plan key `minimax-code` |
@@ -486,9 +486,9 @@ Class S is a static plan key at the gateway: a subscription, membership, coding 
 
 The `supported` evidence depends on the class. For class S, live gateway evidence that the plan key paid and that no paid fallback can occur. For class O, live gateway evidence that the subscription login paid, with the host login check of its tuple. For class A, live gateway evidence that the named API key was used at the named provider endpoint and that no other credential can occur. In code, classes S and A are distinct: `AuthClass::StaticKey` and `AuthClass::ApiKey`.
 
-Extension of 2026-11-08: for tuples T13 to T20 the keys are the plan keys of T08 to T12 used through a second agent. For T21 and T22 the keys are pay-as-you-go API keys. Claude Code reaches Kimi, Z.AI, MiniMax, and MiMo through the provider Anthropic-compatible endpoint with `ANTHROPIC_BASE_URL` and its auth token env. Codex reaches the same providers through the provider OpenAI-compatible endpoint with a custom model provider in `config.toml`. Allowed model names are proven from vendor docs and a live reply for each pair. Never guess a model name. The catalog rows of T13 to T22 start with the model of the same provider in T01, T02, or T06 to T12. That start is a placeholder, not a supported claim. A tuple flips to `supported` only after its own vendor-doc and live-reply proof replaces or confirms it.
+Extension of 2026-11-08, amended by the operator's latest native-subscription mapping: for tuples T13 to T20 the keys are the provider plan keys used through a second agent. T08's native Kimi subscription login is distinct and does not supply T13 or T17; those tuples still require a Kimi membership key. For T21 and T22 the keys are pay-as-you-go API keys. Claude Code reaches Kimi, Z.AI, MiniMax, and MiMo through the provider Anthropic-compatible endpoint with `ANTHROPIC_BASE_URL` and its auth token env. Codex reaches the same providers through the provider OpenAI-compatible endpoint with a custom model provider in `config.toml`. Allowed model names are proven from vendor docs and a live reply for each pair. Never guess a model name. The catalog rows of T13 to T22 start with the model of the same provider in T01, T02, or T06 to T12. That start is a placeholder, not a supported claim. A tuple flips to `supported` only after its own vendor-doc and live-reply proof replaces or confirms it.
 
-Auth invariant: Claude Code with Anthropic is subscription only. Codex with OpenAI is subscription only. No Anthropic API key enters a Claude Code tuple, and no OpenAI API key enters a Codex tuple. Anthropic and OpenAI API keys are used by omp only, in T21 and T22.
+Auth invariant: Claude Code with Anthropic is subscription only. Codex with OpenAI is subscription only. MiniMax Code with MiniMax, MiMo Code with MiMo, and Kimi Code with Kimi are native subscription logins only; their provider plan keys used by other agents are not fallbacks for T06 to T08. No Anthropic API key enters a Claude Code tuple, and no OpenAI API key enters a Codex tuple. Anthropic and OpenAI API keys are used by omp only, in T21 and T22.
 
 Per-tuple identity: from T13 on, the OpenShell provider profile, its credential env names, its hosts, and the rendered sandbox config are per tuple, not per agent. The profile ID is the tuple asset ID, for example `t14-claude-zai`. The provider name stays `jackin-<account>-<agent>`. Each tuple holds its own profile, its own credential env names, and its own rendered config: for Claude Code the `ANTHROPIC_BASE_URL` and auth token placeholder of its tuple, and for Codex the `model_providers` entry of its tuple. One launch holds at most one instance of each agent type (D07), so two tuples of one agent never share a sandbox. Two tuples of different agents may serve the same host, for example `api.z.ai` for omp and for Claude Code. The host closure rule of D10 then applies to the union of the tuple profiles of all instances in that launch. No credential env name of one tuple may equal a credential env name of another tuple in the same launch.
 
