@@ -96,6 +96,14 @@ impl PtyHost for ScenarioPty {
 }
 
 impl Link {
+    fn target(&self) -> jackin_xtask::E2eTarget {
+        self.shared
+            .state()
+            .target
+            .clone()
+            .unwrap_or_else(|| jackin_xtask::E2eTarget::t01().expect("T01 target"))
+    }
+
     fn model(&self) -> SandboxModel {
         self.shared
             .state()
@@ -111,7 +119,14 @@ impl Link {
         fault
             .filter(|fault| attaches >= fault.from)
             .and_then(|fault| fault.header)
-            .unwrap_or_else(|| "\x1b[2J\x1b[1;1H\x1b[32mOpenAI Codex (v0.167.0)\x1b[0m\r\n> Ask Codex to do anything\r\n".to_owned())
+            .unwrap_or_else(|| {
+                let target = self.target();
+                if target.tuple().id == "T01" {
+                    "\x1b[2J\x1b[1;1H\x1b[32mOpenAI Codex (v0.167.0)\x1b[0m\r\n> Ask Codex to do anything\r\n".to_owned()
+                } else {
+                    format!("\x1b[2J\x1b[1;1H\x1b[32m{}\x1b[0m\r\n", target.behavior().terminal.ready_text)
+                }
+            })
     }
 
     fn start(&mut self) {
@@ -162,11 +177,17 @@ impl Link {
 
     fn interrupt(&mut self) {
         self.interrupts += 1;
-        if self.interrupts < 2 {
+        let target = self.target();
+        if self.interrupts < u32::from(target.behavior().terminal.quit_interrupts) {
             return;
         }
-        self.out
-            .push_back(b"\r\njackin-start: codex exited with code 0 (attempt 1)\r\n".to_vec());
+        self.out.push_back(
+            format!(
+                "\r\njackin-start: {} 0 (attempt 1)\r\n",
+                target.behavior().terminal.exit_notice
+            )
+            .into_bytes(),
+        );
         if let Some(model) = self.shared.state().sandboxes.get_mut(&self.sandbox) {
             model.supervisor = self
                 .shared

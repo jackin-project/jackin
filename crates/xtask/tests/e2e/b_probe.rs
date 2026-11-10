@@ -130,7 +130,7 @@ async fn each_schema_violation_is_rejected_with_its_json_pointer() {
         ),
         (
             "token kind",
-            |v| v["steps"]["J08"]["facts"]["auth_file"]["access_token"] = json!("secret"),
+            |v| v["steps"]["J08"]["facts"]["auth_file"]["fields"][0]["kind"] = json!("secret"),
             "/steps/J08/facts",
         ),
         ("no steps", |v| v["steps"] = json!({}), "/steps"),
@@ -494,14 +494,7 @@ async fn schema_v3_rejects_old_and_incomplete_auth_and_identity_shapes() {
     let mut null_auth = base.clone();
     null_auth["steps"]["J08"]["facts"]["auth_file"] = Value::Null;
     cases.push(("null auth".to_owned(), null_auth, AUTH, None));
-    for member in [
-        "state",
-        "path",
-        "mode",
-        "access_token",
-        "refresh_token",
-        "id_token",
-    ] {
+    for member in ["state", "path", "mode", "fields"] {
         let mut changed = base.clone();
         changed["steps"]["J08"]["facts"]["auth_file"]
             .as_object_mut()

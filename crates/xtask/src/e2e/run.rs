@@ -179,9 +179,23 @@ impl Run<'_> {
         cwd: Option<&Path>,
         timeout: Duration,
     ) -> Res<HostOutput> {
+        let env = self.env.clone();
+        self.run_host_in_env(label, program, args, cwd, timeout, env)
+            .await
+    }
+
+    pub(crate) async fn run_host_in_env(
+        &mut self,
+        label: &str,
+        program: &str,
+        args: &[String],
+        cwd: Option<&Path>,
+        timeout: Duration,
+        env: BTreeMap<String, String>,
+    ) -> Res<HostOutput> {
         let mut command = HostCommand::new(program, timeout)
             .args(args.iter().cloned())
-            .env(self.env.clone());
+            .env(env);
         if let Some(dir) = cwd {
             command = command.cwd(dir);
         }

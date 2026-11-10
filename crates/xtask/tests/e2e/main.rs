@@ -18,5 +18,6 @@ mod f_pty;
 mod g_cleanup;
 mod h_args;
 mod i_target;
+mod j_supported;
 mod scenario;
 mod support;

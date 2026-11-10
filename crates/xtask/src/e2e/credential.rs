@@ -25,6 +25,12 @@ pub enum CredentialError {
     MissingEnvironment(String),
     #[error("the selected credential source is not an environment variable")]
     NotEnvironment,
+    #[error("the selected credential source is unavailable")]
+    Unavailable,
+    #[error("the credential file is unreadable, not regular, empty, or larger than 1 MiB")]
+    File,
+    #[error("the credential source produced an empty value")]
+    Empty,
 }
 
 pub enum ResolvedCredential {
@@ -58,8 +64,41 @@ impl std::fmt::Debug for CredentialSession {
     }
 }
 
+async fn host_secret(
+    b: &Boundaries,
+    program: &str,
+    args: &[&str],
+) -> Result<Secret, CredentialError> {
+    let mut env = BTreeMap::new();
+    for name in ["HOME", "PATH", "XDG_CONFIG_HOME"] {
+        if let Some(value) = b.env.get(name) {
+            env.insert(name.to_owned(), value.clone());
+        }
+    }
+    let output = b
+        .host
+        .run(
+            &HostCommand::new(program, b.budgets.command)
+                .args(args.iter().map(|arg| (*arg).to_owned()))
+                .env(env),
+            &b.cancel,
+        )
+        .await?;
+    if !output.ok() {
+        return Err(CredentialError::Unavailable);
+    }
+    let value = output.stdout_text().trim().to_owned();
+    if value.is_empty() {
+        return Err(CredentialError::Empty);
+    }
+    Ok(Secret::new(value))
+}
+
 impl CredentialSession {
-    pub fn open(target: E2eTarget, b: &Boundaries) -> Result<CredentialSession, CredentialError> {
+    pub async fn open(
+        target: E2eTarget,
+        b: &Boundaries,
+    ) -> Result<CredentialSession, CredentialError> {
         let lock = match target.credential() {
             E2eCredential::CodexLogin { .. } => Some(A1Lock::acquire(&b.lock_dir)?),
             _ => None,
@@ -77,10 +116,37 @@ impl CredentialSession {
                     value: Secret::new(value.clone()),
                 }
             }
-            E2eCredential::HostLogin { .. }
-            | E2eCredential::OmpHost
-            | E2eCredential::OnePassword { .. }
-            | E2eCredential::File { .. } => return Err(CredentialError::NotEnvironment),
+            E2eCredential::OmpHost => {
+                let value = host_secret(b, "omp", &["--profile", "zai", "token", "zai"]).await?;
+                ResolvedCredential::Environment {
+                    name: "ZAI_API_KEY".to_owned(),
+                    value,
+                }
+            }
+            E2eCredential::OnePassword { reference } => {
+                let value = host_secret(b, "op", &["read", reference.as_str()]).await?;
+                ResolvedCredential::Environment {
+                    name: "ZAI_API_KEY".to_owned(),
+                    value,
+                }
+            }
+            E2eCredential::File { path } => {
+                let metadata = std::fs::metadata(path).map_err(|_| CredentialError::File)?;
+                if !metadata.is_file() || metadata.len() > 1024 * 1024 {
+                    return Err(CredentialError::File);
+                }
+                let bytes = std::fs::read(path).map_err(|_| CredentialError::File)?;
+                let text = String::from_utf8(bytes).map_err(|_| CredentialError::File)?;
+                let value = text.trim();
+                if value.is_empty() {
+                    return Err(CredentialError::Empty);
+                }
+                ResolvedCredential::Environment {
+                    name: "ZAI_API_KEY".to_owned(),
+                    value: Secret::new(value.to_owned()),
+                }
+            }
+            E2eCredential::HostLogin { .. } => return Err(CredentialError::NotEnvironment),
         };
         Ok(CredentialSession {
             target,
@@ -205,8 +271,8 @@ mod tests {
     use crate::e2e::pty::PortablePty;
     use crate::e2e::report::Sink;
 
-    #[test]
-    fn environment_session_exposes_only_the_selected_secret_at_the_host_boundary() {
+    #[tokio::test]
+    async fn environment_session_exposes_only_the_selected_secret_at_the_host_boundary() {
         let selected = "selected-secret-value-0123456789";
         let sibling = "sibling-secret-value-0123456789";
         let mut parent = BTreeMap::from([
@@ -243,7 +309,9 @@ mod tests {
         target.set_credential_for_test(E2eCredential::Env {
             name: EnvName::parse("ZAI_API_KEY").expect("env name"),
         });
-        let session = CredentialSession::open(target, &boundaries).expect("environment session");
+        let session = CredentialSession::open(target, &boundaries)
+            .await
+            .expect("environment session");
         let selected_env = session
             .selected_host_environment(&parent)
             .expect("selected environment");
@@ -270,8 +338,8 @@ mod tests {
         assert_eq!(session.secrets(), vec![selected]);
     }
 
-    #[test]
-    fn environment_session_rejects_missing_values_without_echoing_siblings() {
+    #[tokio::test]
+    async fn environment_session_rejects_missing_values_without_echoing_siblings() {
         let root = tempfile::tempdir().expect("tempdir");
         let gateway = FakeGateway::new(
             GatewayName::parse("test").expect("gateway"),
@@ -303,7 +371,9 @@ mod tests {
         target.set_credential_for_test(E2eCredential::Env {
             name: EnvName::parse("ZAI_API_KEY").expect("env name"),
         });
-        let error = CredentialSession::open(target, &boundaries).expect_err("missing selected key");
+        let error = CredentialSession::open(target, &boundaries)
+            .await
+            .expect_err("missing selected key");
         let text = error.to_string();
         assert!(text.contains("ZAI_API_KEY"));
         assert!(!text.contains("sibling-secret-value"));

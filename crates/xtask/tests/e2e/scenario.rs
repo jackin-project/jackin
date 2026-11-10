@@ -242,6 +242,8 @@ pub(crate) struct State {
     pub health_calls: u32,
     pub supplied_logins: BTreeMap<String, Vec<u8>>,
     pub tag: String,
+    pub target: Option<jackin_xtask::E2eTarget>,
+    pub static_provider_keys: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -564,6 +566,9 @@ impl Scenario {
                 .env
                 .insert((*name).to_owned(), (*value).to_owned());
         }
+        let target =
+            jackin_xtask::E2eTarget::resolve(&self.args, Some(self.world.home.as_path())).ok();
+        self.state().target = target;
         let status = run_e2e(&self.args, boundaries).await;
         Ran {
             status,

@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::support::{TestResult, guard, launch_rig, ready};
 
-const MODELS: &str = "providers:\n  zai:\n    baseUrl: https://api.z.ai/api/coding/paas/v4\n    apiKey: ZAI_API_KEY\n";
+const MODELS: &str = "providers:\n  zai:\n    baseUrl: https://api.z.ai/api/anthropic\n    api: anthropic-messages\n    apiKey: ZAI_API_KEY\n";
 
 fn lead_path() -> Result<SandboxPath, Box<dyn std::error::Error>> {
     Ok(SandboxPath::parse("/sandbox/.omp/agent/models.yml")?)

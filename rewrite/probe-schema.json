@@ -149,7 +149,7 @@
               }
             }
           ],
-          "description": "agent. The process check is SKIP when jackin-start is not in the state running. The agent exec check is SKIP when the sandbox holds no credential. PASS when the main process is jackin-start, agent is its child, and agent exec answers the fixed prompt."
+          "description": "agent. The process check is SKIP when jackin-start is not in the state running. The agent exec check is SKIP when the sandbox holds no usable declared credential. PASS when the main process is jackin-start, exactly one selected agent is its direct child, agent exec answers the fixed prompt with the selected credential, actual response metadata names the selected provider and model, and a real adapter-appropriate tool invocation succeeds in /sandbox/project with the declared closed observation."
         },
         "J08": {
           "allOf": [
@@ -171,7 +171,7 @@
               }
             }
           ],
-          "description": "Credential. The credential check is SKIP when the sandbox holds no credential. The environment check is PASS only when a fresh, valid start record (facts.start_record.state read) covers the main process and agent and every credential variable is a placeholder or empty; it is FAIL for a variable of kind other in a known environment or a malformed record, and SKIP for an absent, unreadable or stale record or an environment that agent has not yet received. A readable /proc/PID/environ adds evidence and wins over the record for that environment; it never replaces the record. The record is written by jackin-start and the agent can rewrite it, so a PASS shows the launch path of jackin, not a hostile agent. The step is PASS when every check passes and the file scan finds no token-shaped string. facts.agent_environment records how each environment was known. A denied environment is not evidence that it is clean."
+          "description": "Credential. The credential check is SKIP when the sandbox holds no usable declared credential. The environment check is PASS only when a fresh, valid start record (facts.start_record.state read) covers the main process and agent and every credential variable matches its declared placeholder, empty, or brokered class; it is FAIL for a variable of kind other in a known environment, undeclared brokered delivery, a forbidden cross-lane variable, or a malformed record, and SKIP for an absent, unreadable or stale record or an environment that agent has not yet received. A readable /proc/PID/environ adds evidence and wins over the record for that environment; it never replaces the record. The record is written by jackin-start and the agent can rewrite it, so a PASS shows the launch path of jackin, not a hostile agent. The step is PASS when every check passes and the file scan finds no token-shaped string. facts.agent_environment records how each environment was known. A denied environment is not evidence that it is clean. facts.auth_file.fields carries named observed auth-field classifications, with null mode when the selected target requires an absent file."
         },
         "J09": {
           "allOf": [
@@ -193,7 +193,7 @@
               }
             }
           ],
-          "description": "Egress. PASS when agent exec reached its API, a host outside the policy and the metadata address each refuse the connection (curl exit 7 with no HTTP response; a DNS failure, a missing curl and any other exit are FAIL), and curl, which is not agent, gets no 2xx answer from a provider host when it sends the placeholder. The provider host check and the agent exec check are SKIP without a credential."
+          "description": "Egress. PASS when agent exec reached its API with actual selected provider and model metadata and a successful real tool invocation, a host outside the policy and the metadata address each refuse the connection (curl exit 7 with no HTTP response; a DNS failure, a missing curl and any other exit are FAIL), and curl, which is not agent, gets no 2xx answer from a provider host when it sends an independent nonsecret placeholder. The provider host response must be a policy refusal or the exact declared status and closed body classification. The provider host check and the agent exec check are SKIP without a credential."
         },
         "J10": {
           "allOf": [
@@ -855,6 +855,7 @@
                 "enum": [
                   "placeholder",
                   "empty",
+                  "brokered",
                   "other"
                 ]
               },
@@ -924,9 +925,7 @@
             "state",
             "path",
             "mode",
-            "access_token",
-            "refresh_token",
-            "id_token"
+            "fields"
           ],
           "properties": {
             "path": {
@@ -942,14 +941,27 @@
                 }
               ]
             },
-            "access_token": {
-              "$ref": "#/$defs/TokenKind"
-            },
-            "refresh_token": {
-              "$ref": "#/$defs/TokenKind"
-            },
-            "id_token": {
-              "$ref": "#/$defs/TokenKind"
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "kind"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "A JSON pointer to a declared auth field."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "pattern": "^(placeholder|empty|absent|other|literal:.+)$"
+                  }
+                }
+              }
             },
             "state": {
               "enum": [
@@ -1405,7 +1417,10 @@
         "credential",
         "exit_code",
         "answered",
-        "output_bytes"
+        "output_bytes",
+        "actual_provider",
+        "actual_model",
+        "tool"
       ],
       "properties": {
         "attempted": {
@@ -1428,11 +1443,66 @@
         },
         "answered": {
           "type": "boolean",
-          "description": "True when the output of agent exec --skip-git-repo-check 'Reply with the word ready' holds the word ready in any case."
+          "description": "True when the selected agent answered the adapter's fixed prompt."
         },
         "output_bytes": {
           "type": "integer",
           "minimum": 0
+        },
+        "actual_provider": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The provider named by the agent's actual response metadata."
+        },
+        "actual_model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The model named by the agent's actual response metadata."
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolExecution"
+        }
+      }
+    },
+    "ToolExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "attempted",
+        "succeeded",
+        "exit_code",
+        "workdir",
+        "observation"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempted": {
+          "type": "boolean"
+        },
+        "succeeded": {
+          "type": "boolean"
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "workdir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Closed, nonsecret project entries returned by the real tool execution."
         }
       }
     }

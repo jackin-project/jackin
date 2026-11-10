@@ -41,10 +41,12 @@ pub use a1::{
     A1_LOCK_FILE, A1Error, A1Lock, A1Login, a1_lock_dir, fixture_login, host_login_state,
 };
 pub use adapter::{
-    AgentBehaviorSpec, AnswerMatcher, AuthFileBehavior, CompleteBehaviorSpec, CredentialBehavior,
-    CredentialClassification, ProcessBehavior, PromptBehavior, ProviderBehavior,
-    ProviderBodyMatcher, ReflectionBehavior, TerminalBehavior, UsageBehavior, UsageWindow,
-    VersionBehavior, t01_behavior,
+    AgentBehaviorSpec, AnswerMatcher, AuthFieldBehavior, AuthFieldKind, AuthFileBehavior,
+    CompleteBehaviorSpec, ConfigFileBehavior, CredentialBehavior, CredentialClassification,
+    EnvironmentBehavior, EnvironmentKind, ProcessBehavior, PromptBehavior, ProviderBehavior,
+    ProviderBodyMatcher, ReflectionBehavior, TerminalBehavior, ToolBehavior, ToolObservation,
+    UsageBehavior, UsageWindow, VersionBehavior, t01_behavior, t09_behavior, t14_behavior,
+    t18_behavior,
 };
 pub use args::E2eArgs;
 pub use clock::{Budgets, Clock, SystemClock};
@@ -260,7 +262,7 @@ async fn execute(
         verdict,
         elapsed: b.clock.now().saturating_sub(clean_started),
     });
-    let fresh_ok = if interrupted {
+    let fresh_ok = if interrupted || run.credentials.a1().is_none() {
         true
     } else {
         match run.credentials.fresh_host_reply(b, "after").await {

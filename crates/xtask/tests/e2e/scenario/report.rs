@@ -12,9 +12,6 @@ use super::gateway::ScenarioGateway;
 use super::{J05Fault, SandboxModel};
 use crate::support::{capture, hex};
 
-const IMAGE_AGENT_BINARY: &str = "/usr/local/bin/codex";
-const IMAGE_AGENT_VERSION: &str = "codex-cli 0.167.0";
-
 pub(crate) fn head_of(dir: &Path) -> String {
     let output = capture(
         jackin_testkit::git_command()
@@ -28,20 +25,75 @@ fn proc(pid: u32, ppid: u32, comm: &str, ticks: u64, tty: Option<&str>) -> Value
     json!({"pid": pid, "ppid": ppid, "sid": pid, "comm": comm, "start_ticks": ticks, "tty": tty})
 }
 
-fn processes(model: &SandboxModel, own_tty: &str, descends: bool) -> Value {
+fn processes(model: &SandboxModel, own_tty: &str, descends: bool, comm: &str) -> Value {
     let pid = model.agent_pid.max(4242);
     json!({
         "boot_id": format!("boot-{}", model.boot),
         "run_state": "running",
         "main": proc(100, 1, "jackin-start", 1000, None),
-        "agent": [proc(pid, 100, "codex", u64::from(pid) * 10, Some("pts/0"))],
+        "agent": [proc(pid, 100, comm, u64::from(pid) * 10, Some("pts/0"))],
         "self": proc(9000, 8000, "jackin-sentinel-probe", 90000, Some(own_tty)),
         "self_descends_from_main": descends,
     })
 }
 
-fn exec_ok() -> Value {
-    json!({"attempted": true, "credential": "oauth_login", "exit_code": 0, "answered": true, "output_bytes": 5})
+fn exec_ok(target: &E2eTarget) -> Value {
+    let behavior = target.behavior();
+    let entries = match &behavior.prompt.tool.observation {
+        jackin_xtask::ToolObservation::DirectoryContains { entries } => entries.clone(),
+    };
+    json!({
+        "attempted": true,
+        "credential": behavior.credential.classification.as_str(),
+        "exit_code": 0,
+        "answered": true,
+        "output_bytes": 5,
+        "actual_provider": target.identity().provider,
+        "actual_model": target.identity().model,
+        "tool": {
+            "kind": behavior.prompt.tool.kind,
+            "attempted": true,
+            "succeeded": true,
+            "exit_code": 0,
+            "workdir": behavior.prompt.tool.workdir,
+            "observation": entries,
+        }
+    })
+}
+
+fn auth_fact(target: &E2eTarget) -> Value {
+    let auth = &target.behavior().credential.auth_file;
+    let fields: Vec<Value> = auth
+        .fields
+        .iter()
+        .map(|field| {
+            let kind = match &field.kind {
+                jackin_xtask::AuthFieldKind::Placeholder => "placeholder".to_owned(),
+                jackin_xtask::AuthFieldKind::Empty => "empty".to_owned(),
+                jackin_xtask::AuthFieldKind::Absent => "absent".to_owned(),
+                jackin_xtask::AuthFieldKind::Literal { value } => format!("literal:{value}"),
+            };
+            json!({"name": field.name, "kind": kind})
+        })
+        .collect();
+    json!({
+        "state": auth.required_state,
+        "path": auth.path,
+        "mode": auth.mode,
+        "fields": fields,
+    })
+}
+
+fn credential_environment(target: &E2eTarget) -> Vec<Value> {
+    target
+        .behavior()
+        .credential
+        .environment
+        .iter()
+        .map(|variable| {
+            json!({"name": variable.name, "kind": variable.kind.as_str(), "source": "launch_env"})
+        })
+        .collect()
 }
 
 fn egress(code: u32, exit: u32) -> Value {
@@ -75,11 +127,22 @@ fn facts(
     call: u32,
     docker: bool,
     engine: Option<&str>,
+    target: &E2eTarget,
 ) -> Value {
     let hooks = json!([
         {"name": "setup", "path": "/usr/local/share/jackin/hooks/setup", "uid": 0, "mode": "755", "writable": false},
         {"name": "preflight", "path": "/usr/local/share/jackin/hooks/preflight", "uid": 0, "mode": "755", "writable": false},
     ]);
+    let provider = &target.behavior().provider;
+    let provider_host = if let Some(status) = provider.accepted_status {
+        let body = provider
+            .accepted_body
+            .as_ref()
+            .map(|jackin_xtask::ProviderBodyMatcher::JsonErrorCode { code }| code.clone());
+        json!({"url": provider.probe_url, "curl_found": true, "curl_exit": 0, "http_code": status, "body": body})
+    } else {
+        json!({"url": provider.probe_url, "curl_found": true, "curl_exit": 7, "http_code": 0, "body": null})
+    };
     match step {
         "J00" => {
             let spec = gateway
@@ -94,8 +157,8 @@ fn facts(
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_owned();
-            if declared == IMAGE_AGENT_BINARY {
-                json!({"agent": {"path": declared, "present": true, "executable": true, "version": IMAGE_AGENT_VERSION}})
+            if declared == target.behavior().version.binary {
+                json!({"agent": {"path": declared, "present": true, "executable": true, "version": target.behavior().version.exact_output}})
             } else {
                 json!({"agent": {"path": declared, "present": false, "executable": false, "version": null}})
             }
@@ -139,27 +202,32 @@ fn facts(
             "preflight_failures": model.preflight_failures,
             "hooks": hooks,
         }),
-        "J07" => json!({"processes": processes(model, "pts/1", false), "agent_exec": exec_ok()}),
+        "J07" => json!({
+            "processes": processes(model, "pts/1", false, &target.behavior().process.comm),
+            "agent_exec": exec_ok(target),
+        }),
         "J08" => json!({
-            "environment": [{"name": "CODEX_AUTH_ACCESS_TOKEN", "kind": "placeholder", "source": "launch_env"}],
+            "environment": credential_environment(target),
             "agent_environment": {"main": "record", "agent": "record"},
             "start_record": {"state": "read", "attempt": 1},
-            "auth_file": {"state": "present", "path": "/sandbox/.codex/auth.json", "mode": "600", "access_token": "placeholder", "refresh_token": "empty", "id_token": "empty"},
+            "auth_file": auth_fact(target),
             "leaks": [],
         }),
         "J09" => json!({
             "outside_host": egress(0, 7),
             "metadata_host": egress(0, 7),
-            "provider_host": json!({"url": "https://chatgpt.com/backend-api/models", "curl_found": true, "curl_exit": 0, "http_code": 401, "body": "invalid_api_key"}),
-            "agent_exec": exec_ok(),
+            "provider_host": provider_host,
+            "agent_exec": exec_ok(target),
         }),
         "J10" => json!({"writes": [
             {"path": "/etc/e2e-probe", "expected": "denied", "dac_writable": true, "created": false},
             {"path": "/tmp/e2e-probe", "expected": "allowed", "dac_writable": true, "created": true},
         ]}),
-        "J11" => json!({"processes": processes(model, "pts/1", false)}),
+        "J11" => json!({
+            "processes": processes(model, "pts/1", false, &target.behavior().process.comm)
+        }),
         "J12" => {
-            json!({"processes": processes(model, if call == 2 { "pts/2" } else { "pts/1" }, false)})
+            json!({"processes": processes(model, if call == 2 { "pts/2" } else { "pts/1" }, false, &target.behavior().process.comm)})
         }
         "J13" => {
             let path = gateway
@@ -227,6 +295,12 @@ pub(crate) fn build_report(
     let docker = value_of("--docker").as_deref() == Some("on");
     let engine = value_of("--engine");
     let only = value_of("--only").unwrap_or_default();
+    let target = gateway
+        .shared
+        .state()
+        .target
+        .clone()
+        .unwrap_or_else(|| E2eTarget::t01().expect("T01 target"));
     let mut steps = serde_json::Map::new();
     for step in only.split(',').filter(|step| !step.is_empty()) {
         let call = {
@@ -243,12 +317,20 @@ pub(crate) fn build_report(
             step.to_owned(),
             step_json(
                 "PASS",
-                facts(gateway, step, model, call, docker, engine.as_deref()),
+                facts(
+                    gateway,
+                    step,
+                    model,
+                    call,
+                    docker,
+                    engine.as_deref(),
+                    &target,
+                ),
             ),
         );
     }
     let mut report = json!({
-        "schema": 3, "probe": "jackin-sentinel-probe", "target": E2eTarget::t01().expect("T01 target").identity(), "mode": "sandbox",
+        "schema": 3, "probe": "jackin-sentinel-probe", "target": target.identity(), "mode": "sandbox",
         "docker": if docker { "on" } else { "off" }, "engine": engine, "steps": Value::Object(steps),
     });
     let knobs = gateway.shared.knobs().clone();
