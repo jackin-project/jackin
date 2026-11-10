@@ -480,8 +480,7 @@ fn codex_row_reserves_every_credential_env_name() -> TestResult {
 }
 
 #[test]
-fn grok_row_uses_the_session_alias_and_trusted_launch_without_flipping_availability() -> TestResult
-{
+fn grok_row_uses_the_session_alias_and_trusted_launch_as_a_supported_tuple() -> TestResult {
     let spec = Agent::GrokBuild.spec();
     assert_eq!(spec.launch_argv(), ["grok", "--trust"]);
     assert_eq!(spec.default_model, "grok-4.7");
@@ -493,7 +492,8 @@ fn grok_row_uses_the_session_alias_and_trusted_launch_without_flipping_availabil
     );
     let tuple = jackin_core::lookup_tuple(Agent::GrokBuild, Provider::Grok)?;
     assert_eq!(tuple.default_model, "grok-4.7");
-    assert_eq!(tuple.state, jackin_core::TupleState::Unavailable);
+    assert_eq!(tuple.state, jackin_core::TupleState::Supported);
+    assert_eq!(tuple.reason, None);
     assert!(!spec.credential_env_names.contains(&"XAI_API_KEY"));
     assert!(!spec.provider_hosts.contains(&"api.x.ai"));
     Ok(())

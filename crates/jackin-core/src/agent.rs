@@ -980,8 +980,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::GrokBuild,
         Provider::Grok,
         AuthClass::OAuth,
-        TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        TupleState::Supported,
+        None,
         &["grok-4.7"],
         "grok-4.7"
     ),

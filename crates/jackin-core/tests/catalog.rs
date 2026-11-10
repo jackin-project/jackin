@@ -25,17 +25,36 @@ fn grok_build_with_kimi_is_a_typed_error() {
 }
 
 #[test]
-fn blocked_and_unavailable_tuples_carry_reasons() -> TestResult {
+fn blocked_vendor_and_supported_tuples_carry_exact_reasons() -> TestResult {
     let blocked = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
     assert_eq!(blocked.auth_class, AuthClass::BlockedVendor);
     assert_eq!(blocked.state, TupleState::BlockedVendor);
     assert_eq!(blocked.reason, Some("vendor clarification pending"));
-    let grok = lookup_tuple(Agent::GrokBuild, Provider::Grok)?;
-    assert_eq!(grok.state, TupleState::Unavailable);
-    assert_eq!(grok.reason, Some("not yet proven on a real gateway"));
-    let supported = lookup_tuple(Agent::Omp, Provider::Zai)?;
-    assert_eq!(supported.state, TupleState::Supported);
-    assert_eq!(supported.reason, None);
+    for (agent, provider) in [
+        (Agent::GrokBuild, Provider::Grok),
+        (Agent::Omp, Provider::Zai),
+    ] {
+        let supported = lookup_tuple(agent, provider)?;
+        assert_eq!(supported.state, TupleState::Supported);
+        assert_eq!(supported.reason, None);
+    }
+    Ok(())
+}
+
+#[test]
+fn t03_accepts_only_the_catalog_model_not_the_effective_reply_or_old_default() -> TestResult {
+    let tuple = lookup_tuple(Agent::GrokBuild, Provider::Grok)?;
+    assert_eq!(tuple.id, "T03");
+    assert_eq!(tuple.auth_class, AuthClass::OAuth);
+    assert_eq!(tuple.allowed_models, ["grok-4.7"]);
+    assert_eq!(tuple.default_model, "grok-4.7");
+    assert_eq!(tuple.check_model("grok-4.7")?.id, "T03");
+    for rejected in ["grok-4.7-build", "grok-4.6"] {
+        assert!(matches!(
+            tuple.check_model(rejected),
+            Err(CatalogError::UnknownModel { ref model, .. }) if model == rejected
+        ));
+    }
     Ok(())
 }
 
@@ -229,19 +248,42 @@ fn model_acceptance_is_exact_and_independent_of_launch_availability() -> TestRes
 }
 
 #[test]
-fn availability_states_and_reasons_are_exact() -> TestResult {
+fn availability_states_and_reasons_are_exact_for_all_22_tuples() -> TestResult {
+    let unproven = "not yet proven on a real gateway";
     let uppercase_pending = "uppercase MiniMax-M3 live proof pending";
     let mimo_key = "final live proof pending with MiMo Token Plan key";
-    for (id, state, reason) in [
+    let expected = [
         (
             "T01",
             TupleState::Unavailable,
             Some("final live proof pending after host re-login"),
         ),
         (
+            "T02",
+            TupleState::BlockedVendor,
+            Some("vendor clarification pending"),
+        ),
+        ("T03", TupleState::Supported, None),
+        ("T04", TupleState::Unavailable, Some(unproven)),
+        (
             "T05",
             TupleState::Unavailable,
             Some("subscription requires a desktop keyring in the sandbox"),
+        ),
+        (
+            "T06",
+            TupleState::Unavailable,
+            Some("no stable Linux artifact"),
+        ),
+        (
+            "T07",
+            TupleState::Unavailable,
+            Some("native login has no refresh grant"),
+        ),
+        (
+            "T08",
+            TupleState::Unavailable,
+            Some("native refresh and final live proof pending"),
         ),
         ("T09", TupleState::Supported, None),
         (
@@ -255,9 +297,11 @@ fn availability_states_and_reasons_are_exact() -> TestResult {
             Some("final live proof pending with MiniMax plan key"),
         ),
         ("T12", TupleState::Unavailable, Some(mimo_key)),
+        ("T13", TupleState::Unavailable, Some(unproven)),
         ("T14", TupleState::Supported, None),
         ("T15", TupleState::Unavailable, Some(uppercase_pending)),
         ("T16", TupleState::Unavailable, Some(mimo_key)),
+        ("T17", TupleState::Unavailable, Some(unproven)),
         ("T18", TupleState::Supported, None),
         ("T19", TupleState::Unavailable, Some(uppercase_pending)),
         ("T20", TupleState::Unavailable, Some(mimo_key)),
@@ -271,7 +315,9 @@ fn availability_states_and_reasons_are_exact() -> TestResult {
             TupleState::Unavailable,
             Some("no API key on this host"),
         ),
-    ] {
+    ];
+    assert_eq!(TUPLES.len(), expected.len());
+    for (id, state, reason) in expected {
         let tuple = TUPLES.iter().find(|tuple| tuple.id == id).ok_or(id)?;
         assert_eq!(tuple.state, state, "{id}");
         assert_eq!(tuple.reason, reason, "{id}");

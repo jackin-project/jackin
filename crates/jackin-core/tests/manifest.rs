@@ -404,18 +404,28 @@ fn manifest_agents_sections_validate_and_render() -> TestResult {
         "invalid:agents.nope"
     );
     assert_eq!(
-        outcome(&format!("{MIN}[agents.grok]\ninstructions = \"i.md\"\n")),
-        "unsupported-agent:grok"
+        outcome(&format!("{MIN}[agents.muse]\ninstructions = \"i.md\"\n")),
+        "unsupported-agent:muse"
     );
-    let grok = RoleManifest::parse(&format!("{MIN}[agents.grok]\ninstructions = \"i.md\"\n"))
+    let muse = RoleManifest::parse(&format!("{MIN}[agents.muse]\ninstructions = \"i.md\"\n"))
         .err()
-        .ok_or("grok")?;
+        .ok_or("muse")?;
     assert!(matches!(
-        grok,
+        muse,
         ManifestError::UnsupportedAgentSection {
-            agent: Agent::GrokBuild
+            agent: Agent::MuseCode
         }
     ));
+    RoleManifest::parse(&format!(
+        "{MIN}[agents.grok]\nmodel = \"grok-4.7\"\ninstructions = \"i.md\"\n"
+    ))?;
+    RoleManifest::parse(&format!("{MIN}[agents.grok]\ninstructions = \"i.md\"\n"))?;
+    assert_eq!(
+        outcome(&format!(
+            "{MIN}[agents.grok]\nmodel = \"grok-4.7-build\"\ninstructions = \"i.md\"\n"
+        )),
+        "invalid:agents.grok.model"
+    );
     RoleManifest::parse(&format!(
         "{MIN}[agents.omp]\nmodel = \"glm-5.3\"\ninstructions = \"i.md\"\n"
     ))?;

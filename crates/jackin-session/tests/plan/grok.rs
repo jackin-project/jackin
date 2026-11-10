@@ -44,7 +44,8 @@ fn grok_config_uses_external_session_auth_without_an_api_key_fallback() -> TestR
     assert!(!file.text.contains("XAI_API_KEY"));
     assert!(!file.text.contains("refresh_token"));
     assert_eq!(tuple.credential_env(), Some("GROK_SESSION_TOKEN"));
-    assert_eq!(tuple.state, TupleState::Unavailable);
+    assert_eq!(tuple.state, TupleState::Supported);
+    assert_eq!(tuple.reason, None);
     assert_eq!(tuple.agent.spec().launch_argv(), ["grok", "--trust"]);
     Ok(())
 }

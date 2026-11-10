@@ -10,7 +10,7 @@ use jackin_core::{
     CommitId, EnvName, FileMode, ImageId, LabelError, Labels, Phase, SandboxName, SandboxPath,
     SupervisorState, Timestamp, sandbox_layout,
 };
-use jackin_openshell::TermSize;
+use jackin_openshell::{MainProcess, TermSize};
 
 use super::exec::host_path;
 use super::state::Cell;
@@ -73,6 +73,10 @@ impl SandboxHandle {
 
     pub fn environment(&self) -> BTreeMap<EnvName, String> {
         self.cell.state().spec.environment()
+    }
+
+    pub fn main(&self) -> MainProcess {
+        self.cell.state().spec.main().clone()
     }
 
     pub fn file(&self, path: &SandboxPath) -> Option<Vec<u8>> {

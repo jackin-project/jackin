@@ -63,14 +63,14 @@ const T20: Case = Case {
 
 fn role() -> Result<RoleFixture, Box<dyn std::error::Error>> {
     Ok(RoleFixture::new("sentinel")?.manifest_text(
-        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n".to_owned(),
+        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.grok]\ninstructions = \"instructions/grok.md\"\n".to_owned(),
     ))
 }
 
 async fn setup() -> Result<super::support::Setup, Box<dyn std::error::Error>> {
     let mut spec = Spec::new(role()?);
     spec.accounts = format!(
-        "{}[accounts.zai]\nprovider = \"zai\"\ncredential = {{ source = \"env\", var = \"ZAI_API_KEY\" }}\n",
+        "{}[accounts.zai]\nprovider = \"zai\"\ncredential = {{ source = \"env\", var = \"ZAI_API_KEY\" }}\n\n[accounts.grok]\nprovider = \"grok\"\ncredential = {{ source = \"host-login\", path = \"/tmp/grok-home/auth.json\" }}\n",
         login_account("work")
     );
     spec.build().await
@@ -250,6 +250,112 @@ async fn t18_plan_launch_is_the_positive_control() -> TestResult {
                 .model(Some("glm-5.3".to_owned())),
         )?;
         assert_eq!(plan.instances().lead().model, "glm-5.3");
+        Ok(())
+    })
+    .await
+}
+
+fn t03_secondary_instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
+    Ok(AgentInstances::new(vec![
+        instance(Agent::Codex, Provider::Zai, "zai", "glm-5.3")?,
+        instance(Agent::GrokBuild, Provider::Grok, "grok", "grok-4.7")?,
+    ])?)
+}
+
+fn assert_grok_config(file: &jackin_session::PlannedFile) -> TestResult {
+    let config: toml::Value = toml::from_str(&file.text)?;
+    assert_eq!(config["models"]["default"].as_str(), Some("grok-4.7"));
+    assert_eq!(config["auth"]["disable_api_key_auth"].as_bool(), Some(true));
+    let helper = config["auth"]["auth_provider_command"]
+        .as_str()
+        .ok_or("missing Grok session helper")?;
+    assert!(helper.contains("GROK_SESSION_TOKEN"));
+    assert!(!file.text.contains("XAI_API_KEY"));
+    assert!(!file.text.contains("refresh_token"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn t03_plan_launch_accepts_default_and_explicit_models_with_trusted_session_auth()
+-> TestResult {
+    guard(async {
+        let setup = setup().await?;
+        for model in [None, Some("grok-4.7".to_owned())] {
+            let plan = setup.plan(
+                setup
+                    .request(44)?
+                    .tuple(Agent::GrokBuild, Provider::Grok)
+                    .account(Some(AccountName::parse("grok")?))
+                    .model(model),
+            )?;
+            let lead = plan.instances().lead();
+            assert_eq!(lead.agent, Agent::GrokBuild);
+            assert_eq!(lead.provider, Provider::Grok);
+            assert_eq!(lead.account.as_str(), "grok");
+            assert_eq!(lead.model, "grok-4.7");
+            assert_eq!(plan.files().layout.exec[0].argv, ["grok", "--trust"]);
+            assert_eq!(plan.files().static_files.len(), 1);
+            let config = &plan.files().static_files[0];
+            assert_eq!(config.path.as_str(), "/sandbox/.grok/config.toml");
+            assert_grok_config(config)?;
+            assert!(!config.path.as_str().ends_with("auth.json"));
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn t03_is_accepted_as_a_secondary_launch_and_multi_instance() -> TestResult {
+    guard(async {
+        let setup = setup().await?;
+        let instances = t03_secondary_instances()?;
+        let layout = plan_multi(&instances, None, HeadState::Born)?;
+        assert_eq!(layout.exec[1].argv, ["grok", "--trust"]);
+        assert_eq!(layout.exec[1].model, "grok-4.7");
+        let plan = setup.plan(setup.request(45)?.instances(instances))?;
+        let secondary = plan.instances().iter().nth(1).ok_or("missing T03")?;
+        assert_eq!(secondary.agent, Agent::GrokBuild);
+        assert_eq!(secondary.provider, Provider::Grok);
+        assert_eq!(secondary.account.as_str(), "grok");
+        assert_eq!(secondary.model, "grok-4.7");
+        let config = plan
+            .files()
+            .static_files
+            .iter()
+            .find(|file| file.path.as_str() == "/sandbox/.jackin/homes/grok/.grok/config.toml")
+            .ok_or("missing secondary Grok config")?;
+        assert_grok_config(config)?;
+        assert!(
+            plan.files()
+                .static_files
+                .iter()
+                .all(|file| { !file.path.as_str().ends_with("/.grok/auth.json") })
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn t03_plan_launch_rejects_the_effective_reply_model() -> TestResult {
+    guard(async {
+        let setup = setup().await?;
+        let error = setup
+            .plan(
+                setup
+                    .request(46)?
+                    .tuple(Agent::GrokBuild, Provider::Grok)
+                    .account(Some(AccountName::parse("grok")?))
+                    .model(Some("grok-4.7-build".to_owned())),
+            )
+            .err()
+            .ok_or("effective reply model was accepted")?;
+        assert!(matches!(
+            error,
+            PlanError::TupleNotSupported { ref reason, .. }
+                if reason == "unknown model grok-4.7-build"
+        ));
         Ok(())
     })
     .await
