@@ -77,7 +77,14 @@ async fn agent_instruction_mapping_is_checked_after_tuple_support() -> TestResul
             .plan(setup.request(3)?.instances(codex_and(Agent::ClaudeCode, Provider::Kimi, "kimi-for-coding")?))
             .err()
             .ok_or("expected error")?;
-        assert!(matches!(err, PlanError::TupleNotSupported { agent: Agent::ClaudeCode, provider: Provider::Kimi, .. }), "{err}");
+        assert!(
+            matches!(
+                err,
+                PlanError::TupleNotSupported { agent: Agent::ClaudeCode, provider: Provider::Kimi, ref reason }
+                    if reason == "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com"
+            ),
+            "{err}"
+        );
         Ok(())
     })
     .await

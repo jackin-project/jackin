@@ -256,7 +256,7 @@ async fn t14_plan_launch_propagates_the_lead_model_to_claude_settings() -> TestR
 }
 
 #[test]
-fn t15_accepts_uppercase_model_validation_but_refuses_launch_while_unproven() -> TestResult {
+fn t15_plans_with_exact_uppercase_model_and_rejects_lowercase() -> TestResult {
     let tuple = lookup_tuple(Agent::ClaudeCode, Provider::Minimax)?;
     assert_eq!(tuple.check_model("MiniMax-M3")?.id, "T15");
     let instances = AgentInstances::single(AgentInstance::new(

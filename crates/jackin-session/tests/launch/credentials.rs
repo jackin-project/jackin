@@ -3,12 +3,13 @@
 
 use jackin_core::{Agent, FileMode, HookKind, Provider, sandbox_layout};
 use jackin_openshell::GatewayOp;
-use jackin_session::PlanError;
+use jackin_session::LaunchError;
 use jackin_testkit::{Fault, Outcome, ProgramScript, Rig, RoleFixture, Trigger};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCESS, PLACEHOLDER, REFRESH, TestResult, builder, guard, launch_rig, ready, unreachable,
+    ACCESS, PLACEHOLDER, REFRESH, TestResult, builder, failure, guard, launch_rig, ready,
+    unreachable,
 };
 
 #[tokio::test]
@@ -141,58 +142,94 @@ async fn no_fixture_secret_reaches_a_sandbox_file_an_event_or_an_error() -> Test
     .await
 }
 
-async fn assert_t01_refusal_without_credential_effects(rig: Rig) -> TestResult {
-    let request = rig
-        .request(1)?
-        .tuple(Agent::Codex, Provider::Codex)
-        .model(Some("gpt-6.1-sol".to_owned()));
-    let error = rig
-        .run(request, CancellationToken::new())
-        .await
-        .err()
-        .ok_or("expected T01 refusal")?;
-    assert!(
-        matches!(
-            error.downcast_ref::<PlanError>(),
-            Some(PlanError::TupleNotSupported { agent: Agent::Codex, provider: Provider::Codex, reason })
-                if reason == "final live proof pending after host re-login"
-        ),
-        "{error}"
-    );
-    assert!(rig.gateway().providers().is_empty());
-    assert!(rig.gateway().sandboxes().is_empty());
-    assert!(rig.world.engine.builds().is_empty());
+async fn use_chatgpt_account(rig: &mut Rig) -> TestResult {
+    rig.config = jackin_core::Config::parse(&format!(
+        "{}\n[accounts.chatgpt]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }}\n",
+        rig.config.render(),
+        rig.home.as_path().display()
+    ))?;
+    rig.world
+        .config
+        .edit(vec![jackin_core::ConfigEdit::AddAccount(
+            jackin_core::Account::new(
+                jackin_core::AccountName::parse("chatgpt")?,
+                Provider::Codex,
+                jackin_core::CredentialSource::CodexLogin {
+                    home: rig.home.clone(),
+                    chatgpt_account_id: jackin_core::ChatgptAccountId::parse(
+                        "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f",
+                    )?,
+                },
+            )?,
+        )])
+        .await?;
     Ok(())
 }
 
-#[tokio::test]
-async fn t01_refusal_does_not_read_a_missing_placeholder() -> TestResult {
-    guard(async {
-        let rig = builder().await?.printenv_exit(1).build().await?;
-        assert_t01_refusal_without_credential_effects(rig).await
-    })
-    .await
+async fn run_t01(rig: &Rig) -> Result<Outcome, Box<dyn std::error::Error>> {
+    let request = rig
+        .request(1)?
+        .tuple(Agent::Codex, Provider::Codex)
+        .account(Some(jackin_core::AccountName::parse("chatgpt")?))
+        .model(Some("gpt-6.1-sol".to_owned()));
+    rig.run(request, CancellationToken::new()).await
 }
 
 #[tokio::test]
-async fn t01_refusal_does_not_read_an_invalid_placeholder() -> TestResult {
+async fn t01_launch_writes_placeholder_auth_without_host_tokens() -> TestResult {
     guard(async {
-        let rig = launch_rig().await?;
+        let mut rig = launch_rig().await?;
+        use_chatgpt_account(&mut rig).await?;
         rig.gateway().script_program(
             &sandbox_layout::PRINTENV,
             ProgramScript {
                 exit_code: 0,
-                stdout: b"sk-FAKE-VALUE-123\n".to_vec(),
+                stdout: format!("{PLACEHOLDER}\n").into_bytes(),
                 stderr: Vec::new(),
             },
         );
-        assert_t01_refusal_without_credential_effects(rig).await
+        ready(run_t01(&rig).await?)?;
+        let handle = rig.handle(1).await?;
+        let spec = Agent::Codex.spec();
+        assert_eq!(
+            handle.file_mode(&spec.auth_file.path),
+            Some(FileMode(0o600))
+        );
+        let auth = String::from_utf8(
+            handle
+                .file(&spec.auth_file.path)
+                .ok_or("missing Codex auth state")?,
+        )?;
+        let value: serde_json::Value = serde_json::from_str(&auth)?;
+        assert_eq!(value["tokens"]["access_token"], PLACEHOLDER);
+        assert_eq!(value["tokens"]["refresh_token"], "");
+        assert_eq!(value["OPENAI_API_KEY"], serde_json::Value::Null);
+        assert!(!auth.contains(ACCESS));
+        assert!(!auth.contains(REFRESH));
+        Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn t01_refusal_never_reads_or_names_malformed_placeholder_values() -> TestResult {
+async fn t01_missing_placeholder_fails_at_credentials_without_auth_state() -> TestResult {
+    guard(async {
+        let mut rig = builder().await?.printenv_exit(1).build().await?;
+        use_chatgpt_account(&mut rig).await?;
+        let failed = failure(run_t01(&rig).await?)?;
+        assert!(
+            matches!(&*failed.error, LaunchError::PlaceholderMissing { key, .. } if key == "CODEX_AUTH_ACCESS_TOKEN"),
+            "{failed:?}"
+        );
+        let handle = rig.handle(1).await?;
+        assert!(handle.file(&Agent::Codex.spec().auth_file.path).is_none());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn t01_malformed_placeholders_fail_without_echo_or_auth_state() -> TestResult {
     guard(async {
         for stdout in [
             "openshell:resolve:\n",
@@ -200,7 +237,8 @@ async fn t01_refusal_never_reads_or_names_malformed_placeholder_values() -> Test
             "FAKE-LEAD-openshell:resolve:env:K\n",
             "openshell:resolve:env:K\nsk-FAKE-VALUE-123\n",
         ] {
-            let rig = launch_rig().await?;
+            let mut rig = launch_rig().await?;
+            use_chatgpt_account(&mut rig).await?;
             rig.gateway().script_program(
                 &sandbox_layout::PRINTENV,
                 ProgramScript {
@@ -209,7 +247,15 @@ async fn t01_refusal_never_reads_or_names_malformed_placeholder_values() -> Test
                     stderr: Vec::new(),
                 },
             );
-            assert_t01_refusal_without_credential_effects(rig).await?;
+            let outcome = run_t01(&rig).await?;
+            assert_outcome_clean(&outcome, stdout.trim());
+            let failed = failure(outcome)?;
+            assert!(
+                matches!(&*failed.error, LaunchError::PlaceholderInvalid { key, .. } if key == "CODEX_AUTH_ACCESS_TOKEN"),
+                "{failed:?}"
+            );
+            let handle = rig.handle(1).await?;
+            assert!(handle.file(&Agent::Codex.spec().auth_file.path).is_none());
         }
         Ok(())
     })

@@ -567,6 +567,9 @@ impl Run {
             .prompting(Prompting::Interactive)
             .env(values.clone())
             .task(self.wanted.task.clone());
+            if let Some((core, provider, _, _)) = choices.first() {
+                request = request.tuple(*core, *provider);
+            }
             let first_has_account = choices
                 .first()
                 .is_some_and(|(_, _, account, _)| account.is_some());

@@ -24,15 +24,44 @@ type Case = (
 );
 
 fn cases() -> Vec<Case> {
-    vec![(
-        Provider::Zai,
-        "zai",
-        "Z.AI",
-        "https://api.z.ai/api/v1",
-        "ZAI_API_KEY",
-        "glm-5.3",
-        None,
-    )]
+    vec![
+        (
+            Provider::Kimi,
+            "kimi",
+            "Kimi",
+            "https://api.kimi.ai/coding/v1",
+            "KIMI_API_KEY",
+            "kimi-for-coding",
+            None,
+        ),
+        (
+            Provider::Zai,
+            "zai",
+            "Z.AI",
+            "https://api.z.ai/api/v1",
+            "ZAI_API_KEY",
+            "glm-5.3",
+            None,
+        ),
+        (
+            Provider::Minimax,
+            "minimax",
+            "MiniMax",
+            "https://api.minimax.io/v1",
+            "MINIMAX_CODE_API_KEY",
+            "MiniMax-M3",
+            None,
+        ),
+        (
+            Provider::Mimo,
+            "mimo",
+            "MiMo",
+            "https://token-plan-sgp.xiaomimimo.com/v1",
+            "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+            "mimo-v2.6-pro",
+            Some("disabled"),
+        ),
+    ]
 }
 
 fn mirror_instances(
@@ -156,45 +185,26 @@ fn codex_home_config_takes_the_explicit_model_and_refuses_an_unknown_one()
 }
 
 #[test]
-fn t17_refuses_launch_while_unproven() -> Result<(), Box<dyn std::error::Error>> {
-    let error = plan_multi(
-        &mirror_instances(Provider::Kimi, "kimi-for-coding")?,
-        Some("do it"),
-        HeadState::Born,
-    )
-    .err()
-    .ok_or("expected unavailable tuple refusal")?;
-    assert!(
-        matches!(
-            error,
-            PlanError::TupleNotSupported { ref reason, .. }
-                if reason == "not yet proven on a real gateway"
-        ),
-        "{error}"
-    );
+fn t17_plans_and_renders_the_exact_kimi_provider_and_model() -> TestResult {
+    let (layout, text) = home_config(Provider::Kimi, "kimi-for-coding")?;
+    let parsed: toml::Table = toml::from_str(&text)?;
+    assert_eq!(parsed["model"].as_str(), Some("kimi-for-coding"));
+    assert_eq!(parsed["model_provider"].as_str(), Some("kimi"));
+    assert_eq!(layout.exec[1].provider, "kimi");
+    assert_eq!(layout.exec[1].model, "kimi-for-coding");
     Ok(())
 }
 
 #[test]
-fn t19_accepts_uppercase_model_validation_but_refuses_launch_while_unproven()
--> Result<(), Box<dyn std::error::Error>> {
+fn t19_plans_and_renders_exact_uppercase_minimax_model() -> TestResult {
     let tuple = lookup_tuple(Agent::Codex, Provider::Minimax)?;
     assert_eq!(tuple.check_model("MiniMax-M3")?.id, "T19");
-    let error = plan_multi(
-        &mirror_instances(Provider::Minimax, "MiniMax-M3")?,
-        Some("do it"),
-        HeadState::Born,
-    )
-    .err()
-    .ok_or("expected unavailable tuple refusal")?;
-    assert!(
-        matches!(
-            error,
-            PlanError::TupleNotSupported { ref reason, .. }
-                if reason == "uppercase MiniMax-M3 live proof pending"
-        ),
-        "{error}"
-    );
+    let (layout, text) = home_config(Provider::Minimax, "MiniMax-M3")?;
+    let parsed: toml::Table = toml::from_str(&text)?;
+    assert_eq!(parsed["model"].as_str(), Some("MiniMax-M3"));
+    assert_eq!(parsed["model_provider"].as_str(), Some("minimax"));
+    assert_eq!(layout.exec[1].provider, "minimax");
+    assert_eq!(layout.exec[1].model, "MiniMax-M3");
     Ok(())
 }
 

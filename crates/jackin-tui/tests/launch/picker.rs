@@ -369,6 +369,54 @@ async fn an_out_of_catalog_agent_is_refused_before_any_stage() -> TestResult {
     .await
 }
 
+#[tokio::test]
+async fn blocked_vendor_agent_is_refused_before_any_stage() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut console = console(&rig).await?;
+        let app = console.console().app();
+        let world = &app.world;
+        let workspace = world
+            .workspaces
+            .iter()
+            .find(|found| found.name == "platform-backend")
+            .map(|found| found.id)
+            .ok_or("no platform-backend workspace")?;
+        let mut feed = world.backend.launch(
+            world,
+            &LaunchTarget {
+                workspace: Some(workspace),
+                role: "sentinel".to_owned(),
+                instances: vec![InstanceChoice {
+                    agent: ConsoleAgent::ClaudeCode,
+                    provider: ConsoleAgent::ClaudeCode.provider(),
+                    account: None,
+                    model: String::new(),
+                }],
+                task: None,
+            },
+        );
+        let mut events = Vec::new();
+        for _ in 0..400 {
+            events.extend(feed.poll(world));
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                LaunchEvent::Failed(failed)
+                    if failed.failure.summary == "tuple claude with provider claude is not supported: vendor clarification pending"
+            )),
+            "{events:?}"
+        );
+        assert!(rig.gateway().sandboxes().is_empty());
+        assert!(rig.gateway().providers().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
 async fn elsewhere(rig: &Rig) -> Result<(ConsoleRig, String, RepoFixture), Failure> {
     elsewhere_in(rig, RepoFixture::new().await?).await
 }

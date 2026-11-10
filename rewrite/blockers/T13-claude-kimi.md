@@ -1,7 +1,7 @@
-# T13 Claude Code with Kimi: final live proof pending
+# T13 Claude Code with Kimi: supervised interactive launch unavailable
 
 State: unavailable.
-Reason: not yet proven on a real gateway.
-Current evidence, 2026-11-10 (Asia/Saigon): authorized 1Password access supplied the Kimi membership key. It was exported to a private host file with mode 0600, and the Claude/Kimi account is registered on jackin-docker and jackin-local. Only the credential source is recorded; no value was exposed.
-The earlier plumbing proof reached api.kimi.ai with a dummy credential and received HTTP 401; it is not a live reply or support proof (rewrite/evidence/A14-kimi-lanes.md).
-The hermetic provider, policy, account, configuration, console, and usage surfaces remain implemented. To unblock: run the complete final-head D29 live gate with the exact `kimi-for-coding` model on both gateways, including plan-funded usage and no paid fallback.
+Exact catalog reason: `supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com`.
+Evidence: `rewrite/evidence/A14-claude-final-live.md`.
+
+On 2026-11-10, T13 passed print-mode replies and real tool use on jackin-docker and jackin-local with the exact `kimi-for-coding` model. The required supervised interactive check failed on both gateways. Interactive Claude attempted `api.anthropic.com`, the provider-only policy refused that connection, and Claude exited 1. No running Claude direct child remained under `jackin-start`. Successful print-mode evidence does not promote this supervised-runtime failure.

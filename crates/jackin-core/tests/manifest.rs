@@ -424,7 +424,7 @@ fn manifest_agents_sections_validate_and_render() -> TestResult {
     ))?;
     assert_eq!(
         outcome(&format!(
-            "{MIN}[agents.codex]\nmodel = \"kimi-for-coding\"\ninstructions = \"i.md\"\n"
+            "{MIN}[agents.codex]\nmodel = \"gpt-5.1-codex\"\ninstructions = \"i.md\"\n"
         )),
         "invalid:agents.codex.model"
     );
@@ -453,16 +453,11 @@ fn manifest_agents_sections_validate_and_render() -> TestResult {
 }
 
 #[test]
-fn manifest_rejects_the_unavailable_t01_model_with_a_typed_invalid_value() -> TestResult {
-    let error = RoleManifest::parse(&format!(
+fn manifest_accepts_and_renders_the_supported_t01_model() -> TestResult {
+    let manifest = RoleManifest::parse(&format!(
         "{MIN}[agents.codex]\nmodel = \"gpt-6.1-sol\"\ninstructions = \"instructions/codex.md\"\n"
-    ))
-    .err()
-    .ok_or("expected invalid model")?;
-    assert!(
-        matches!(error, ManifestError::InvalidValue { ref key, .. } if key == "agents.codex.model"),
-        "{error}"
-    );
+    ))?;
+    assert!(manifest.render().contains("model = \"gpt-6.1-sol\""));
     Ok(())
 }
 

@@ -12,16 +12,16 @@ async fn plan_errors_are_typed_for_unavailable_tuples_unknown_gateways_and_unreg
 -> TestResult {
     guard(async {
         let mut spec = Spec::new(RoleFixture::new("sentinel")?);
-        spec.accounts = "[accounts.work]\nprovider = \"codex\"\ncredential = { source = \"env\", var = \"OPENAI_API_KEY\" }\n".to_owned();
+        spec.accounts = "[accounts.work]\nprovider = \"kimi\"\ncredential = { source = \"env\", var = \"KIMI_API_KEY\" }\n".to_owned();
         let setup = spec.build().await?;
         let result = setup.plan(
             setup
                 .request(1)?
-                .tuple(Agent::Codex, Provider::Codex)
-                .model(Some("gpt-6.1-sol".to_owned())),
+                .tuple(Agent::ClaudeCode, Provider::Kimi)
+                .model(Some("kimi-for-coding".to_owned())),
         );
         assert!(
-            matches!(&result, Err(PlanError::TupleNotSupported { agent: Agent::Codex, provider: Provider::Codex, reason }) if reason == "final live proof pending after host re-login"),
+            matches!(&result, Err(PlanError::TupleNotSupported { agent: Agent::ClaudeCode, provider: Provider::Kimi, reason }) if reason == "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com"),
             "{:?}",
             result.err()
         );
