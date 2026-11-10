@@ -208,7 +208,7 @@ async fn build_selectors_choose_the_installed_agent_and_never_silently_fall_back
 
         for args in [
             vec!["build", "--agent", "omp", "--provider", "codex"],
-            vec!["build", "--agent", "omp", "--provider", "claude"],
+            vec!["build", "--agent", "omp", "--provider", "muse"],
             vec!["build", "--agent", "codex", "--provider", "claude"],
             vec!["build", "--provider", "claude"],
             vec!["build", "--agent", "omp", "--model", "gpt-6.1-sol"],
