@@ -186,7 +186,7 @@ const PINNED_ROWS: &[Row] = &[
         id: "T13",
         asset: "t13-claude-kimi",
         hosts: &["api.kimi.ai"],
-        env: "ANTHROPIC_API_KEY",
+        env: "ANTHROPIC_AUTH_TOKEN",
         binary: "/usr/local/bin/claude",
         refresh: false,
     },
