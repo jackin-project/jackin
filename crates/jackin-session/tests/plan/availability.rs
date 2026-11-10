@@ -196,7 +196,7 @@ fn account(case: &Case) -> Result<AccountName, Box<dyn std::error::Error>> {
 
 fn role() -> Result<RoleFixture, Box<dyn std::error::Error>> {
     Ok(RoleFixture::new("sentinel")?.manifest_text(
-        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.grok]\ninstructions = \"instructions/grok.md\"\n".to_owned(),
+        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.grok]\ninstructions = \"instructions/grok.md\"\n\n".to_owned(),
     ))
 }
 
@@ -208,6 +208,8 @@ async fn setup() -> Result<super::support::Setup, Box<dyn std::error::Error>> {
             "source = \"codex-login\", home = \"/tmp/codex-home\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\"".to_owned()
         } else if tuple.id == "T03" {
             "source = \"host-login\", path = \"/tmp/grok-home/auth.json\"".to_owned()
+        } else if matches!(tuple.id, "T06" | "T07" | "T08") {
+            format!("source = \"host-login\", path = \"/tmp/{name}-native\"")
         } else {
             "source = \"file\", path = \"/tmp/credential\"".to_owned()
         };
@@ -232,7 +234,23 @@ fn instance(case: &Case) -> Result<AgentInstance, Box<dyn std::error::Error>> {
 }
 
 fn control(case: &Case) -> Case {
-    if case.agent == Agent::Codex {
+    if case.provider == Provider::Zai {
+        if case.agent == Agent::Codex {
+            Case {
+                id: "T13",
+                agent: Agent::ClaudeCode,
+                provider: Provider::Kimi,
+                model: "kimi-for-coding",
+            }
+        } else {
+            Case {
+                id: "T01",
+                agent: Agent::Codex,
+                provider: Provider::Codex,
+                model: "gpt-6.1-sol",
+            }
+        }
+    } else if case.agent == Agent::Codex {
         Case {
             id: "T14",
             agent: Agent::ClaudeCode,
@@ -254,7 +272,7 @@ fn control_instance(case: &Case) -> Result<AgentInstance, Box<dyn std::error::Er
     Ok(AgentInstance::new(
         control.agent,
         control.provider,
-        AccountName::parse("zai-control")?,
+        account(&control)?,
         control.model.to_owned(),
     ))
 }
@@ -345,8 +363,13 @@ async fn every_supported_tuple_plans_as_a_secondary_in_canonical_lead_first_layo
         for case in SUPPORTED {
             let instances = secondary_instances(&case)?;
             let layout = plan_multi(&instances, None, HeadState::Born)?;
-            let plan = setup.plan(setup.request(3)?.instances(instances.clone()))?;
             let control = control(&case);
+            let plan = setup.plan(
+                setup
+                    .request(3)?
+                    .model(Some(control.model.to_owned()))
+                    .instances(instances.clone()),
+            )?;
             for found in [plan.instances(), &instances] {
                 let items: Vec<_> = found.iter().collect();
                 assert_eq!(items.len(), 2, "{}", case.id);
