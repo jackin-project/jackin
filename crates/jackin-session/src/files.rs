@@ -123,15 +123,26 @@ pub fn render_omp_config(
     ))
 }
 
-pub fn render_claude_config(tuple: &jackin_core::AgentTuple) -> String {
+pub fn render_claude_config(
+    tuple: &'static jackin_core::AgentTuple,
+    model: Option<&str>,
+) -> Result<String, jackin_core::CatalogError> {
+    let model = match model {
+        Some(model) => {
+            tuple.check_model(model)?;
+            model
+        }
+        None => tuple.default_model,
+    };
     match tuple.claude_base_url() {
-        Some(base_url) => json!({
+        Some(base_url) => Ok(json!({
+            "model": model,
             "env": {
                 "ANTHROPIC_BASE_URL": base_url,
             }
         })
-        .to_string(),
-        None => json!({}).to_string(),
+        .to_string()),
+        None => Ok(json!({ "model": model }).to_string()),
     }
 }
 
@@ -210,13 +221,16 @@ pub fn omp_models_file(
     })
 }
 
-pub fn claude_config_file(tuple: &jackin_core::AgentTuple) -> crate::plan::PlannedFile {
+pub fn claude_config_file(
+    tuple: &'static jackin_core::AgentTuple,
+    model: Option<&str>,
+) -> Result<crate::plan::PlannedFile, jackin_core::CatalogError> {
     let spec = jackin_core::Agent::ClaudeCode.spec();
-    crate::plan::PlannedFile {
+    Ok(crate::plan::PlannedFile {
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
-        text: render_claude_config(tuple),
-    }
+        text: render_claude_config(tuple, model)?,
+    })
 }
 
 pub(crate) fn placeholder_file(tuple: &jackin_core::AgentTuple) -> crate::plan::PlannedFile {

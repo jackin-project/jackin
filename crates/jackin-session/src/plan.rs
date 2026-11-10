@@ -581,7 +581,13 @@ fn agent_config_file(
         return Ok(crate::files::render_grok_config(model));
     }
     if agent == Agent::ClaudeCode {
-        return Ok(crate::files::claude_config_file(tuple));
+        return crate::files::claude_config_file(tuple, model).map_err(|_| {
+            PlanError::TupleNotSupported {
+                agent,
+                provider: instance.provider,
+                reason: format!("unknown model {}", model.unwrap_or(tuple.default_model)),
+            }
+        });
     }
     if agent == Agent::Omp {
         let spec = agent.spec();
@@ -1211,7 +1217,7 @@ mod tests {
             assert_eq!(file.mode, FileMode(0o600), "{}", tuple.id);
             assert_eq!(
                 file.text,
-                crate::files::render_claude_config(tuple),
+                crate::files::render_claude_config(tuple, Some(model)).expect("settings"),
                 "{}",
                 tuple.id
             );

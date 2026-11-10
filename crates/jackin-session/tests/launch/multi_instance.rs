@@ -9,7 +9,7 @@ use jackin_openshell::{Gateway, ProviderMaterial, ProviderProfile, ProviderSpec}
 use jackin_testkit::Rig;
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{guard, multi_agent_rig, ready, running};
+use crate::support::{TestResult, guard, multi_agent_rig, ready, running};
 
 const OMP_ACCOUNT: &str = "zai-work";
 
@@ -295,6 +295,62 @@ async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_si
         assert_eq!(rig.gateway().provider(&omp), original_omp);
         assert_eq!(rig.gateway().provider(&other_provider), original_other);
         assert!(rig.gateway().sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn t18_lead_and_t14_non_lead_write_the_claude_instance_model() -> TestResult {
+    guard(async {
+        let role = jackin_testkit::RoleFixture::new("sentinel")?.manifest_text(
+            "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n".to_owned(),
+        );
+        let rig = super::support::builder().await?.role(role).build().await?;
+        let instances = AgentInstances::new(vec![
+            AgentInstance::new(
+                Agent::Codex,
+                Provider::Zai,
+                AccountName::parse("work")?,
+                "glm-5.3".to_owned(),
+            ),
+            AgentInstance::new(
+                Agent::ClaudeCode,
+                Provider::Zai,
+                AccountName::parse("work")?,
+                "glm-5.3".to_owned(),
+            ),
+        ])?;
+        let outcome = rig
+            .run(
+                rig.request(44)?.instances(instances),
+                CancellationToken::new(),
+            )
+            .await?;
+        let target = ready(outcome)?;
+        let handle = rig
+            .gateway()
+            .sandbox(&target.sandbox)
+            .ok_or("sandbox handle")?;
+        let path = SandboxPath::from_static(
+            "/sandbox/.jackin/homes/claude/.claude/settings.json",
+        );
+        let bytes = handle.file(&path).ok_or("no non-lead Claude settings")?;
+        let rendered = String::from_utf8(bytes)?;
+        let value: serde_json::Value = serde_json::from_str(&rendered)?;
+        assert_eq!(
+            value,
+            serde_json::json!({"model":"glm-5.3","env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic"}})
+        );
+        assert_eq!(handle.file_mode(&path), Some(FileMode(0o600)));
+        for forbidden in [
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_API_KEY",
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "placeholder",
+        ] {
+            assert!(!rendered.contains(forbidden), "{forbidden}");
+        }
         Ok(())
     })
     .await

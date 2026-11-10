@@ -2,60 +2,152 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{
-    AccountName, Agent, AgentInstance, AgentInstances, AuthClass, FileMode, Provider, SandboxPath,
-    TupleState, lookup_tuple, tuple_profile_asset,
+    AccountName, Agent, AgentInstance, AgentInstances, AuthClass, CatalogError, FileMode, Provider,
+    SandboxPath, TupleState, lookup_tuple, tuple_profile_asset,
 };
 use jackin_openshell::ProviderProfile;
-use jackin_session::{HeadState, PlanError, plan_multi, plan_static_files, render_claude_config};
+use jackin_session::{
+    HeadState, PlanError, claude_config_file, plan_multi, plan_static_files, render_claude_config,
+};
+use jackin_testkit::RoleFixture;
 use serde_json::{Value, json};
 
-use super::support::TestResult;
+use super::support::{Spec, TestResult, guard};
 
 fn cases() -> Vec<(Provider, &'static str, &'static str)> {
     vec![
         (
             Provider::Kimi,
             "https://api.kimi.ai/coding/",
-            "ANTHROPIC_AUTH_TOKEN",
+            "kimi-for-coding",
         ),
-        (
-            Provider::Zai,
-            "https://api.z.ai/api/anthropic",
-            "ANTHROPIC_AUTH_TOKEN",
-        ),
+        (Provider::Zai, "https://api.z.ai/api/anthropic", "glm-5.3"),
         (
             Provider::Minimax,
             "https://api.minimax.io/anthropic",
-            "ANTHROPIC_AUTH_TOKEN",
+            "MiniMax-M3",
         ),
         (
             Provider::Mimo,
             "https://token-plan-sgp.xiaomimimo.com/anthropic",
-            "ANTHROPIC_AUTH_TOKEN",
+            "mimo-v2.6-pro",
         ),
     ]
 }
 
+fn role() -> Result<RoleFixture, Box<dyn std::error::Error>> {
+    Ok(RoleFixture::new("sentinel")?.manifest_text(
+        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n".to_owned(),
+    ))
+}
+
+fn assert_no_auth(value: &Value, rendered: &str, id: &str) {
+    for forbidden in [
+        "ANTHROPIC_AUTH_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "placeholder",
+    ] {
+        assert!(!rendered.contains(forbidden), "{id}: {forbidden}");
+        assert!(value.get(forbidden).is_none(), "{id}: {forbidden}");
+    }
+}
+
+fn assert_unknown_model(tuple: &'static jackin_core::AgentTuple, rejected: &str) {
+    let result = render_claude_config(tuple, Some(rejected));
+    assert!(
+        matches!(
+            &result,
+            Err(CatalogError::UnknownModel { agent, provider, model })
+                if *agent == tuple.agent && *provider == tuple.provider && model == rejected
+        ),
+        "{}: {result:?}",
+        tuple.id
+    );
+}
+
 #[test]
-fn claude_config_pins_only_the_base_url_and_no_auth_env() -> TestResult {
-    for (provider, base_url, auth_env) in cases() {
+fn claude_config_selects_the_exact_tuple_model_without_auth() -> TestResult {
+    for (provider, base_url, model) in cases() {
         let tuple = lookup_tuple(Agent::ClaudeCode, provider)?;
-        let rendered = render_claude_config(tuple);
+        let rendered = render_claude_config(tuple, Some(model))?;
         let value: Value = serde_json::from_str(&rendered)?;
         assert_eq!(
             value,
-            json!({"env": {"ANTHROPIC_BASE_URL": base_url}}),
+            json!({"model": model, "env": {"ANTHROPIC_BASE_URL": base_url}}),
             "{}",
             tuple.id
         );
-        let root = value.as_object().ok_or("root is not an object")?;
-        assert_eq!(root.len(), 1, "{}", tuple.id);
-        let env = value["env"].as_object().ok_or("env is not an object")?;
-        assert_eq!(env.len(), 1, "{}", tuple.id);
-        assert_eq!(value["env"]["ANTHROPIC_BASE_URL"], base_url, "{}", tuple.id);
-        assert!(env.get(auth_env).is_none(), "{}", tuple.id);
+        assert_no_auth(&value, &rendered, tuple.id);
+        if provider != Provider::Kimi {
+            assert!(!rendered.contains("kimi-for-coding"), "{}", tuple.id);
+        }
+        let defaulted = render_claude_config(tuple, None)?;
+        assert_eq!(
+            serde_json::from_str::<Value>(&defaulted)?,
+            value,
+            "{}",
+            tuple.id
+        );
+
+        let file = claude_config_file(tuple, Some(model))?;
+        assert_eq!(
+            file.path,
+            SandboxPath::from_static("/sandbox/.claude/settings.json"),
+            "{}",
+            tuple.id
+        );
+        assert_eq!(file.mode, FileMode(0o600), "{}", tuple.id);
+        assert_eq!(file.text, rendered, "{}", tuple.id);
     }
     Ok(())
+}
+
+#[tokio::test]
+async fn claude_config_rejects_unknown_and_cross_tuple_models() -> TestResult {
+    for provider in [
+        Provider::Claude,
+        Provider::Kimi,
+        Provider::Zai,
+        Provider::Minimax,
+        Provider::Mimo,
+    ] {
+        let tuple = lookup_tuple(Agent::ClaudeCode, provider)?;
+        assert_unknown_model(tuple, "no-such-model");
+    }
+    assert_unknown_model(
+        lookup_tuple(Agent::ClaudeCode, Provider::Zai)?,
+        "kimi-for-coding",
+    );
+    assert_unknown_model(
+        lookup_tuple(Agent::ClaudeCode, Provider::Minimax)?,
+        "minimax-m3",
+    );
+
+    guard(async {
+        let setup = Spec::new(role()?).build().await?;
+        let error = setup
+            .plan(
+                setup
+                    .request(1)?
+                    .tuple(Agent::ClaudeCode, Provider::Zai)
+                    .model(Some("no-such-model".to_owned())),
+            )
+            .err()
+            .ok_or("expected plan_launch unknown model refusal")?;
+        assert!(
+            matches!(
+                &error,
+                PlanError::TupleNotSupported { agent, provider, reason }
+                    if *agent == Agent::ClaudeCode
+                        && *provider == Provider::Zai
+                        && reason == "unknown model no-such-model"
+            ),
+            "{error}"
+        );
+        Ok(())
+    })
+    .await
 }
 
 #[test]
@@ -82,7 +174,7 @@ fn claude_base_url_host_matches_the_tuple_profile_endpoint_host() -> TestResult 
 
 #[test]
 fn claude_compatible_tuples_agree_on_auth_token_profile_and_settings() -> TestResult {
-    for (provider, base_url, _) in cases() {
+    for (provider, base_url, model) in cases() {
         let tuple = lookup_tuple(Agent::ClaudeCode, provider)?;
         assert_eq!(
             tuple.credential_env(),
@@ -118,17 +210,49 @@ fn claude_compatible_tuples_agree_on_auth_token_profile_and_settings() -> TestRe
             assert!(!profile.yaml.contains(forbidden), "{}", tuple.id);
         }
 
-        let rendered = render_claude_config(tuple);
+        let rendered = render_claude_config(tuple, Some(model))?;
         let value: Value = serde_json::from_str(&rendered)?;
         assert_eq!(
             value,
-            json!({"env": {"ANTHROPIC_BASE_URL": base_url}}),
+            json!({"model": model, "env": {"ANTHROPIC_BASE_URL": base_url}}),
             "{}",
             tuple.id
         );
-        assert!(!rendered.contains("ANTHROPIC_AUTH_TOKEN"), "{}", tuple.id);
+        assert_no_auth(&value, &rendered, tuple.id);
     }
     Ok(())
+}
+
+#[tokio::test]
+async fn t14_plan_launch_propagates_the_lead_model_to_claude_settings() -> TestResult {
+    guard(async {
+        let setup = Spec::new(role()?).build().await?;
+        let plan = setup.plan(
+            setup
+                .request(1)?
+                .tuple(Agent::ClaudeCode, Provider::Zai)
+                .model(Some("glm-5.3".to_owned())),
+        )?;
+        let file = plan
+            .files()
+            .static_files
+            .iter()
+            .find(|file| file.path == SandboxPath::from_static("/sandbox/.claude/settings.json"))
+            .ok_or("missing Claude settings")?;
+        assert_eq!(
+            file.path,
+            SandboxPath::from_static("/sandbox/.claude/settings.json")
+        );
+        assert_eq!(file.mode, FileMode(0o600));
+        let value: Value = serde_json::from_str(&file.text)?;
+        assert_eq!(
+            value,
+            json!({"model":"glm-5.3","env":{"ANTHROPIC_BASE_URL":"https://api.z.ai/api/anthropic"}})
+        );
+        assert_no_auth(&value, &file.text, "T14");
+        Ok(())
+    })
+    .await
 }
 
 #[test]
@@ -158,8 +282,20 @@ fn t15_accepts_uppercase_model_validation_but_refuses_launch_while_unproven() ->
 #[test]
 fn t02_subscription_settings_carry_no_base_url_and_no_auth_env() -> TestResult {
     let tuple = lookup_tuple(Agent::ClaudeCode, Provider::Claude)?;
-    let value: Value = serde_json::from_str(&render_claude_config(tuple))?;
-    assert_eq!(value, json!({}), "{}", tuple.id);
+    let rendered = render_claude_config(tuple, None)?;
+    let value: Value = serde_json::from_str(&rendered)?;
+    assert_eq!(value, json!({"model":"haiku"}), "{}", tuple.id);
+    assert!(value.get("env").is_none(), "{}", tuple.id);
+    assert_no_auth(&value, &rendered, tuple.id);
+    let file = claude_config_file(tuple, Some("haiku"))?;
+    assert_eq!(
+        file.path,
+        SandboxPath::from_static("/sandbox/.claude/settings.json"),
+        "{}",
+        tuple.id
+    );
+    assert_eq!(file.mode, FileMode(0o600), "{}", tuple.id);
+    assert_eq!(file.text, rendered, "{}", tuple.id);
     Ok(())
 }
 
@@ -207,7 +343,7 @@ fn t02_native_placeholder_is_exact_in_lead_and_secondary_homes() -> TestResult {
             .find(|file| file.path.as_str().ends_with("settings.json"))
             .ok_or("missing Claude settings")?;
         assert_eq!(settings.mode, FileMode(0o600));
-        assert_eq!(settings.text, "{}");
+        assert_eq!(settings.text, "{\"model\":\"haiku\"}");
         let credentials = files
             .iter()
             .find(|file| file.path.as_str() == expected)

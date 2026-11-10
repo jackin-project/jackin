@@ -75,7 +75,7 @@ fn lead_static_files_pin_t09_t14_and_t18_paths_modes_and_bytes() -> TestResult {
     assert_eq!(settings.mode, FileMode(0o600));
     assert_eq!(
         settings.text,
-        "{\"env\":{\"ANTHROPIC_BASE_URL\":\"https://api.z.ai/api/anthropic\"}}"
+        "{\"env\":{\"ANTHROPIC_BASE_URL\":\"https://api.z.ai/api/anthropic\"},\"model\":\"glm-5.3\"}"
     );
     let credentials = file(&t14, "/sandbox/.claude/.credentials.json")?;
     assert_eq!(credentials.mode, FileMode(0o600));
