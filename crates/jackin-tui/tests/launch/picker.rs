@@ -716,7 +716,12 @@ async fn tuple_offers_match_the_complete_supported_matrix_and_remaining_controls
             };
             assert_eq!(offer.state, expected_state, "{}", tuple.id);
             assert_eq!(offer.reason.as_deref(), expected_reason, "{}", tuple.id);
-            assert_eq!(offer.allowed_models, [tuple.default_model.to_owned()], "{}", tuple.id);
+            assert_eq!(
+                offer.allowed_models,
+                [tuple.default_model.to_owned()],
+                "{}",
+                tuple.id
+            );
             assert_eq!(offer.default_model, tuple.default_model, "{}", tuple.id);
         }
         Ok(())
