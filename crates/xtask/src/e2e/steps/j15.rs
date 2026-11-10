@@ -165,19 +165,7 @@ impl Run<'_> {
         let loaded = self
             .jackin_target(
                 "J15 load",
-                &[
-                    "load",
-                    "sentinel",
-                    &project,
-                    "--launch-id",
-                    launch.as_str(),
-                    "--provider",
-                    "zai",
-                    "--model",
-                    "glm-5.3",
-                    "--account",
-                    "zai",
-                ],
+                &["load", "sentinel", &project, "--launch-id", launch.as_str()],
                 &dock,
             )
             .await?;

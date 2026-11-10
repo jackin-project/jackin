@@ -229,17 +229,7 @@ impl Run<'_> {
         let loaded = self
             .jackin_target(
                 label,
-                &[
-                    "load",
-                    "sentinel",
-                    &project,
-                    "--launch-id",
-                    launch.as_str(),
-                    "--provider",
-                    "zai",
-                    "--model",
-                    "glm-5.3",
-                ],
+                &["load", "sentinel", &project, "--launch-id", launch.as_str()],
                 &main,
             )
             .await?;
@@ -327,7 +317,8 @@ impl Run<'_> {
         let main = self.projects.main.clone();
         let workspace = self.names.main.clone();
         let mut problems: Vec<String> = Vec::new();
-        problems.extend(self.load_for_account("J17 provider default", "zai").await?);
+        let a1 = self.names.a1.clone();
+        problems.extend(self.load_for_account("J17 provider default", &a1).await?);
         let bound = self
             .jackin(
                 "J17 bind role",

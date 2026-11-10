@@ -37,7 +37,8 @@ async fn j17_selection_faults() {
         "J17",
         "J17 provider default: the agents label",
         |scenario| {
-            scenario.knobs().account_override = Some(("zai".to_owned(), "zai-role".to_owned()));
+            scenario.knobs().account_override =
+                Some(("e2e-abcd-a1".to_owned(), "zai-role".to_owned()));
         },
     )
     .await;
@@ -75,7 +76,7 @@ async fn j17_selection_faults() {
         "J17 role binding: the agents label",
         |scenario| {
             scenario.knobs().account_override =
-                Some(("e2e-abcd-fxr".to_owned(), "e2e-abcd-a1".to_owned()));
+                Some(("zai-role".to_owned(), "e2e-abcd-a1".to_owned()));
         },
     )
     .await;
