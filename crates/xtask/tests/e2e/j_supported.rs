@@ -75,6 +75,127 @@ async fn zai_scenario(id: &str) -> Scenario {
     scenario
 }
 
+fn zai_a1_usage() -> Value {
+    json!({"state": "windows", "windows": [
+        {"kind": "five_hour", "label": "5h", "used_percent": 1.0, "resets_at": 1},
+        {"kind": "weekly", "label": "w", "used_percent": 2.0, "resets_at": 1},
+        {"kind": "monthly", "label": "m", "used_percent": 3.0, "resets_at": 1},
+    ]})
+}
+
+fn assert_t14_prompt(target: &E2eTarget) {
+    assert_eq!(
+        target.behavior().prompt.argv,
+        [
+            "/usr/local/bin/claude",
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--allowedTools",
+            "Bash",
+            "Reply with exactly ready using model glm-5.3",
+        ]
+    );
+    assert_eq!(
+        target
+            .behavior()
+            .prompt
+            .tool
+            .argv
+            .last()
+            .map(String::as_str),
+        Some(
+            "Use the Bash tool once with command ls -A in /sandbox/project using model glm-5.3, then reply with exactly ready"
+        )
+    );
+}
+
+fn assert_t18_prompt(target: &E2eTarget) {
+    assert_eq!(
+        target.behavior().prompt.argv,
+        [
+            "/usr/local/bin/codex",
+            "exec",
+            "--json",
+            "--skip-git-repo-check",
+            "--sandbox",
+            "danger-full-access",
+            "-c",
+            "check_for_update_on_startup=false",
+            "Reply with exactly ready",
+        ]
+    );
+    assert_eq!(
+        target
+            .behavior()
+            .prompt
+            .tool
+            .argv
+            .last()
+            .map(String::as_str),
+        Some(
+            "Use one shell tool to run ls -A in /sandbox/project with provider zai and model glm-5.3, then reply with exactly ready"
+        )
+    );
+}
+
+fn zai_usage_accounts(wrong: &str) -> Vec<Value> {
+    ["a1", "fxr", "fxw"]
+        .into_iter()
+        .map(|suffix| {
+            let outcome = if suffix == "a1" {
+                zai_a1_usage()
+            } else {
+                json!({"state": "unavailable", "reason": {"kind": "expired_login"}})
+            };
+            json!({
+                "account": format!("e2e-abcd-{suffix}"),
+                "provider": if suffix == wrong { "codex" } else { "zai" },
+                "freshness": {"state": "fresh"},
+                "outcome": outcome,
+            })
+        })
+        .collect()
+}
+
+async fn expect_process_fault(id: &str, step: &str, fault: &str) {
+    let scenario = zai_scenario(id).await;
+    let call = if step == "J12" { Some(2) } else { Some(1) };
+    if fault == "wrong comm" {
+        scenario.patch(step, call, "/facts/processes/agent/0/comm", json!("other"));
+    } else {
+        let comm = target(id, Some("env:ZAI_API_KEY"))
+            .behavior()
+            .process
+            .comm
+            .clone();
+        scenario.patch(
+            step,
+            call,
+            "/facts/processes/agent",
+            json!([
+                {"pid": 4242, "ppid": 100, "sid": 4242, "comm": comm, "start_ticks": 42420, "tty": "pts/0"},
+                {"pid": 4243, "ppid": 100, "sid": 4243, "comm": comm, "start_ticks": 42430, "tty": "pts/0"},
+            ]),
+        );
+    }
+    let ran = scenario.run_with_env(&[("ZAI_API_KEY", ZAI)]).await;
+    let expected = if step == "J11" {
+        vec![("J11", "FAIL"), ("J12", "PASS")]
+    } else {
+        vec![("J12", "FAIL")]
+    };
+    let case = format!("{id} {step} {fault}");
+    ran.expect(&case, &expected);
+    let reason = if fault == "wrong comm" {
+        "wrong agent comm"
+    } else {
+        "agent children"
+    };
+    ran.reason_has(&case, step, reason);
+}
+
 fn expect_full_success(id: &str, ran: &Ran) {
     assert_eq!(ran.status.code(), 0, "{id}: {} {}", ran.stdout, ran.stderr);
     let expected: BTreeSet<String> = (0..=17)
@@ -145,6 +266,7 @@ fn supported_target_resolution_matches_catalog_and_selection_defaults() {
         claude.behavior().credential.classification,
         CredentialClassification::StaticKey
     );
+    assert_t14_prompt(&claude);
 
     let provider_only = E2eTarget::resolve(
         &E2eArgs {
@@ -170,6 +292,7 @@ fn supported_target_resolution_matches_catalog_and_selection_defaults() {
         "absent"
     );
     assert_eq!(provider_only.behavior().credential.auth_file.mode, None);
+    assert_t18_prompt(&provider_only);
     assert_ne!(provider_only.behavior(), default.behavior());
 
     for id in ["T09", "T14", "T18"] {
@@ -402,6 +525,99 @@ async fn credential_sources_and_discovery_follow_the_tuple_contract() {
 }
 
 #[tokio::test]
+async fn onepassword_discovery_requires_whoami_and_one_zai_item() {
+    for id in ["T09", "T14", "T18"] {
+        let scenario = Scenario::new().await;
+        scenario.host_reply_rule("op whoami", None, 0, "tester@example.invalid\n", "");
+        scenario.host_reply_rule(
+            "op item list --format json",
+            None,
+            0,
+            "[{\"id\":\"item-1\",\"title\":\"Z.AI\",\"vault\":{\"id\":\"vault-1\",\"name\":\"Private\"}}]\n",
+            "",
+        );
+        scenario.host_reply_rule(
+            "op read op://vault-1/item-1/credential",
+            None,
+            0,
+            &format!("{ZAI}\n"),
+            "",
+        );
+        let (boundaries, _, _) = scenario.boundaries();
+        let discovered = E2eTarget::resolve(&selection(id, None), None).expect("default target");
+        let session = jackin_xtask::CredentialSession::open(discovered, &boundaries)
+            .await
+            .expect("1Password discovery");
+        assert_eq!(session.secrets(), [ZAI]);
+        let commands = scenario.state().commands.clone();
+        let whoami = commands
+            .iter()
+            .position(|command| command == "op whoami")
+            .expect("whoami");
+        let listed = commands
+            .iter()
+            .position(|command| command == "op item list --format json")
+            .expect("item list");
+        let read = commands
+            .iter()
+            .position(|command| command == "op read op://vault-1/item-1/credential")
+            .expect("item read");
+        assert!(whoami < listed && listed < read, "{commands:?}");
+        assert_eq!(scenario.state().health_calls, 0);
+        assert!(
+            !session
+                .target
+                .probe_spec_bytes()
+                .expect("spec")
+                .as_slice()
+                .windows(b"vault-1".len())
+                .any(|window| window == b"vault-1")
+        );
+    }
+
+    let scenario = Scenario::new().await;
+    scenario.host_reply_rule("op whoami", None, 1, "", "not signed in\n");
+    let (boundaries, _, _) = scenario.boundaries();
+    let discovered = E2eTarget::resolve(&selection("T14", None), None).expect("default target");
+    let error = jackin_xtask::CredentialSession::open(discovered, &boundaries)
+        .await
+        .expect_err("whoami failure");
+    assert!(matches!(error, jackin_xtask::CredentialError::Unavailable));
+    assert!(
+        !scenario
+            .state()
+            .commands
+            .iter()
+            .any(|command| command.contains("item list") || command.contains("item-1"))
+    );
+    assert_eq!(scenario.state().health_calls, 0);
+
+    let scenario = Scenario::new().await;
+    scenario.host_reply_rule("op whoami", None, 0, "tester@example.invalid\n", "");
+    scenario.host_reply_rule(
+        "op item list --format json",
+        None,
+        0,
+        "[{\"id\":\"item-1\",\"title\":\"Z.AI\",\"vault\":\"vault-1\"},{\"id\":\"item-2\",\"title\":\"z.ai\",\"vault\":\"vault-2\"}]\n",
+        "",
+    );
+    let (boundaries, _, _) = scenario.boundaries();
+    let discovered = E2eTarget::resolve(&selection("T18", None), None).expect("default target");
+    let error = jackin_xtask::CredentialSession::open(discovered, &boundaries)
+        .await
+        .expect_err("ambiguous discovery");
+    assert!(matches!(error, jackin_xtask::CredentialError::Unavailable));
+    assert!(
+        !scenario
+            .state()
+            .commands
+            .iter()
+            .any(|command| command.contains("credential"))
+    );
+    assert_eq!(scenario.state().health_calls, 0);
+}
+
+#[tokio::test]
 async fn static_key_sessions_isolate_a1_and_invalid_fixture_accounts() {
     for id in ["T09", "T14", "T18"] {
         let scenario = zai_scenario(id).await;
@@ -598,6 +814,17 @@ async fn journey_process_terminal_and_restart_identity_uses_the_selected_adapter
 }
 
 #[tokio::test]
+async fn j11_and_j12_reject_wrong_comm_and_duplicate_children_for_each_target() {
+    for id in ["T09", "T14", "T18"] {
+        for step in ["J11", "J12"] {
+            for fault in ["wrong comm", "duplicate child"] {
+                expect_process_fault(id, step, fault).await;
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn credentialed_exec_proves_identity_answer_and_real_tool_use() {
     for id in ["T09", "T14", "T18"] {
         for (name, pointer, value) in [
@@ -647,6 +874,12 @@ async fn credentialed_exec_proves_identity_answer_and_real_tool_use() {
 #[tokio::test]
 async fn j08_enforces_exact_target_credential_delivery_and_reflection() {
     for id in ["T09", "T14", "T18"] {
+        let other = zai_scenario(id).await;
+        other.patch("J08", None, "/facts/environment/0/kind", json!("other"));
+        let ran = other.run_with_env(&[("ZAI_API_KEY", ZAI)]).await;
+        ran.expect(&format!("{id} other credential"), &[("J08", "FAIL")]);
+        ran.reason_has(id, "J08", "kind other");
+
         let scenario = zai_scenario(id).await;
         if id == "T14" {
             scenario.patch(
@@ -722,13 +955,54 @@ async fn j17_enforces_zai_plan_usage_and_account_precedence() {
             ran.expect(&format!("{id} {name}"), &[("J17", "FAIL")]);
         }
 
+        for wrong in ["fxr", "fxw"] {
+            let scenario = zai_scenario(id).await;
+            let expired = json!({"state": "unavailable", "reason": {"kind": "expired_login"}});
+            let network = json!({"state": "unavailable", "reason": {"kind": "network"}});
+            scenario.knobs().usage = Some(vec![super::scenario::UsageScript {
+                a1: zai_a1_usage(),
+                fixtures: if wrong == "fxr" {
+                    network.clone()
+                } else {
+                    expired.clone()
+                },
+                fxw: Some(if wrong == "fxw" { network } else { expired }),
+                drop_account: None,
+            }]);
+            let ran = scenario.run_with_env(&[("ZAI_API_KEY", ZAI)]).await;
+            let case = format!("{id} {wrong} wrong reason");
+            ran.expect(&case, &[("J17", "FAIL")]);
+            ran.reason_has(
+                &case,
+                "J17",
+                &format!(
+                    "the fixture account e2e-abcd-{wrong} returned network, expected expired_login"
+                ),
+            );
+            assert_eq!(scenario.state().usage_calls, 1, "{case}");
+        }
+
+        for wrong in ["fxr", "fxw"] {
+            let scenario = zai_scenario(id).await;
+            let accounts = zai_usage_accounts(wrong);
+            let output = format!(
+                "{}\n",
+                json!({"schema": 1, "generated_at": 0, "accounts": accounts})
+            );
+            scenario.host_reply_rule("usage --json", None, 0, &output, "");
+            let ran = scenario.run_with_env(&[("ZAI_API_KEY", ZAI)]).await;
+            let case = format!("{id} {wrong} wrong provider");
+            ran.expect(&case, &[("J17", "FAIL")]);
+            ran.reason_has(
+                &case,
+                "J17",
+                &format!("usage record e2e-abcd-{wrong} names provider codex, expected zai"),
+            );
+        }
+
         let scenario = zai_scenario(id).await;
         scenario.knobs().usage = Some(vec![super::scenario::UsageScript {
-            a1: json!({"state": "windows", "windows": [
-                {"kind": "five_hour", "label": "5h", "used_percent": 1.0, "resets_at": 1},
-                {"kind": "weekly", "label": "w", "used_percent": 2.0, "resets_at": 1},
-                {"kind": "monthly", "label": "m", "used_percent": 3.0, "resets_at": 1},
-            ]}),
+            a1: zai_a1_usage(),
             fixtures: json!({"state": "unavailable", "reason": {"kind": "expired_login"}}),
             fxw: None,
             drop_account: None,

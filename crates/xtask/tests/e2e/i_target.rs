@@ -294,7 +294,7 @@ fn canonical_digest_matches_independent_fixture_and_excludes_runtime_values() {
     let target = E2eTarget::t01().expect("T01 target");
     assert_eq!(
         target.identity().spec_sha256,
-        "ccaea79cdf09b5949ea94266c33692bec52090e1782364c53e13a8f731d1806a"
+        "d567564363cd8a0cbb653e7138cf783502a2f39564754e8066587d9e803872bd"
     );
     let other_home = E2eTarget::resolve(
         &E2eArgs {
@@ -337,7 +337,11 @@ fn canonical_digest_matches_independent_fixture_and_excludes_runtime_values() {
             keys.sort();
             keys
         };
-        assert_eq!(keys(&value), ["behavior", "provider_hosts", "target"]);
+        assert_eq!(
+            keys(&value),
+            ["behavior", "credential_sha256", "provider_hosts", "target"]
+        );
+        assert_eq!(value["credential_sha256"], Value::Null);
         assert_eq!(
             keys(&value["behavior"]),
             [

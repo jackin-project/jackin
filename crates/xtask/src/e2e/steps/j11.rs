@@ -3,13 +3,34 @@
 
 use jackin_core::SandboxName;
 
-use crate::e2e::probe::FactsProcesses;
+use crate::e2e::probe::{FactsProcesses, Processes};
 use crate::e2e::run::{Fail, Res, Run, fail};
 use crate::e2e::verdict::Verdict;
 
 pub(crate) struct Attach {
     pub header: bool,
     pub exit: Result<i32, String>,
+}
+
+pub(crate) fn agent_identity(
+    processes: &Processes,
+    expected_comm: &str,
+    step: &str,
+) -> Result<(u32, u64), String> {
+    if processes.agent.len() != 1 {
+        return Err(format!(
+            "the {step} probe found {} agent children, expected exactly 1",
+            processes.agent.len()
+        ));
+    }
+    let agent = &processes.agent[0];
+    if agent.comm != expected_comm {
+        return Err(format!(
+            "the {step} probe found wrong agent comm {}, expected {expected_comm}",
+            agent.comm
+        ));
+    }
+    Ok((agent.pid, agent.start_ticks))
 }
 
 pub(crate) fn judge_detach(
@@ -61,12 +82,12 @@ impl Run<'_> {
             return Err(fail(problem));
         }
         let facts: FactsProcesses = report.facts(step)?;
-        let codex = facts
-            .processes
-            .agent
-            .first()
-            .ok_or_else(|| fail(format!("the {step} probe found no Codex process")))?;
-        Ok((codex.pid, codex.start_ticks))
+        agent_identity(
+            &facts.processes,
+            &self.credentials.target.behavior().process.comm,
+            step,
+        )
+        .map_err(fail)
     }
 
     async fn attach_once(&mut self, sandbox: &SandboxName, label: &str) -> Res<Attach> {
