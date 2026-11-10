@@ -42,8 +42,7 @@ fn rotate_ascii(c: char, steps: u8) -> char {
 fn derive_invalid(selected: &str, steps: u8) -> Result<String, SetupError> {
     let separator = selected
         .char_indices()
-        .filter(|(_, c)| !c.is_ascii_alphanumeric())
-        .last()
+        .rfind(|(_, c)| !c.is_ascii_alphanumeric())
         .map(|(index, c)| (index, c.len_utf8()));
     let (prefix, suffix) = match separator {
         Some((index, width)) => (&selected[..index + width], &selected[index + width..]),
