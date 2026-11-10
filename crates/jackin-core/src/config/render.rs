@@ -8,6 +8,7 @@ use super::{
     AllowedRoles, Config, CredentialSource, EnvTable, GatewayEntry, RoleEntry, RoleSource,
     Workspace,
 };
+use crate::agent::Agent;
 use crate::paths::HostPath;
 use crate::provider::Provider;
 use crate::tomlkit::{key, quote};
@@ -106,7 +107,7 @@ fn role_block(name: &str, entry: &RoleEntry) -> String {
     if !entry.bindings.is_empty() {
         block.push_str(&format!(
             "bindings = {}\n",
-            bindings(&entry.bindings, Provider::as_str)
+            bindings(&entry.bindings, Agent::as_str)
         ));
     }
     block

@@ -1,9 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{
-    Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, read_credential_file,
-};
+use jackin_core::{Account, Agent, ConfigEdit, CredentialSource, read_credential_file};
 use jackin_session::{
     AccountPlan, plan_account_edits, plan_account_edits_for_agent, read_chatgpt_login,
     read_omp_host_key,
@@ -96,16 +94,10 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
         let provider_id = tuple.omp_provider_id().ok_or_else(|| {
             CommandError::Argument("omp-host needs an omp tuple provider".to_owned())
         })?;
-        let home = app
-            .env
-            .get(
-                &jackin_core::EnvName::parse("HOME")
-                    .map_err(|_| CommandError::Argument("HOME is not set".to_owned()))?,
-            )
-            .ok_or_else(|| CommandError::Argument("HOME is not set".to_owned()))?;
-        let db = jackin_core::HostPath::parse(std::path::Path::new(&format!(
-            "{home}/.omp/agent/agent.db"
-        )))
+        let db = jackin_core::HostPath::resolve(
+            std::path::Path::new(".omp/agent/agent.db"),
+            &app.deps.host.home,
+        )
         .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
         let _key =
             read_omp_host_key(app.deps.host.fs.as_ref(), &db, provider_id).map_err(|_| {
@@ -248,13 +240,6 @@ async fn ls(app: &mut App, arg: &JsonArg) -> Result<(), CommandError> {
     Ok(())
 }
 
-fn unknown_account(name: &AccountName) -> CommandError {
-    CommandError::Config(ConfigError::MissingReference {
-        kind: "account",
-        name: name.to_string(),
-    })
-}
-
 async fn rm(app: &App, arg: AccountArg) -> Result<(), CommandError> {
     apply(app, vec![ConfigEdit::RemoveAccount(arg.account)]).await
 }
@@ -274,30 +259,11 @@ async fn bind(app: &App, args: &BindArgs) -> Result<(), CommandError> {
             workspace,
             account: args.account.clone(),
         },
-        BindScope::Role(role) => {
-            let config = app.store.load().await?;
-            let account = config
-                .account(&args.account)
-                .ok_or_else(|| unknown_account(&args.account))?;
-            let agent = account
-                .provider()
-                .tuples()
-                .first()
-                .map(|tuple| tuple.agent)
-                .filter(|agent| *agent == Agent::Codex)
-                .ok_or_else(|| {
-                    CommandError::Config(ConfigError::ProviderMismatch {
-                        account: args.account.clone(),
-                        expected: Agent::Codex.provider(),
-                        found: account.provider(),
-                    })
-                })?;
-            ConfigEdit::BindRoleAccount {
-                role,
-                agent,
-                account: args.account.clone(),
-            }
-        }
+        BindScope::Role { role, agent } => ConfigEdit::BindRoleAccount {
+            role,
+            agent,
+            account: args.account.clone(),
+        },
     };
     app.store.edit(vec![edit]).await?;
     Ok(())

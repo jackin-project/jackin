@@ -252,7 +252,7 @@ async fn committed_role_binding_applies_and_warns() -> TestResult {
             lab.config()
                 .await?
                 .role(&role)
-                .and_then(|role| role.bindings.get(&CoreProvider::Codex)),
+                .and_then(|role| role.bindings.get(&CoreAgent::Codex)),
             Some(&AccountName::parse("codex-work")?)
         );
         warned(&mut lab);

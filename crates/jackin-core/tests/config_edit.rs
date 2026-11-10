@@ -496,6 +496,7 @@ fn label(error: &ConfigError) -> String {
                 found.as_str()
             )
         }
+        ConfigError::Catalog(error) => format!("catalog:{error}"),
         ConfigError::CredentialNotAllowed { provider } => {
             format!("credential:{}", provider.as_str())
         }
@@ -740,7 +741,7 @@ fn blocked_rows() -> Fallible<Vec<RejectedRow>> {
                 agent: Agent::Codex,
                 account: acct("personal")?,
             },
-            "mismatch:personal:codex:claude".to_owned(),
+            "catalog:no catalog tuple for agent codex with provider claude".to_owned(),
         ),
         (
             "a ChatGPT login on a claude account",

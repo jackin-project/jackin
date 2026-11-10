@@ -476,3 +476,88 @@ async fn a_mimo_file_key_sync_for_mimo_code_creates_the_t07_provider() -> TestRe
     })
     .await
 }
+
+const OMP_WORLD_KEY: &str = "OMP-WORLD-FIXTURE-KEY";
+const OMP_AMBIENT_KEY: &str = "OMP-AMBIENT-FIXTURE-KEY";
+
+fn omp_host_account() -> Result<Account, Box<dyn std::error::Error>> {
+    Ok(Account::new(
+        AccountName::parse("work")?,
+        Provider::Zai,
+        CredentialSource::OmpHost,
+    )?)
+}
+
+#[tokio::test]
+async fn omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home() -> TestResult {
+    if World::isolated_omp_ambient(
+        "sync::omp_host_sync_uses_the_injected_world_home_instead_of_the_ambient_home",
+        "zai",
+        OMP_AMBIENT_KEY,
+    )? {
+        return Ok(());
+    }
+    guard(async {
+        let world = World::builder().build()?;
+        world.seed_omp_agent_db("zai", Some(OMP_WORLD_KEY))?;
+        let account = omp_host_account()?;
+        register(&world, &account).await?;
+        let result = world
+            .session
+            .sync_account(&account, jackin_core::Agent::Omp, &CancellationToken::new())
+            .await?;
+        let name = ProviderName::for_account(account.name(), jackin_core::Agent::Omp);
+        let record = world.gateway.provider(&name).ok_or("no OmpHost provider")?;
+        let selected_world_key = record.access_token == OMP_WORLD_KEY;
+        let rejected_ambient_key = record.access_token != OMP_AMBIENT_KEY;
+        assert!(selected_world_key);
+        assert!(rejected_ambient_key);
+        assert!(!format!("{result:?}").contains(OMP_WORLD_KEY));
+        assert!(!format!("{result:?}").contains(OMP_AMBIENT_KEY));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials()
+-> TestResult {
+    if World::isolated_omp_ambient(
+        "sync::omp_host_sync_reports_missing_provider_and_missing_key_as_missing_credentials",
+        "other",
+        OMP_AMBIENT_KEY,
+    )? {
+        return Ok(());
+    }
+    guard(async {
+        let world = World::builder().build()?;
+        world.seed_omp_agent_db("other", Some(OMP_WORLD_KEY))?;
+        let account = omp_host_account()?;
+        register(&world, &account).await?;
+        let missing_provider = world
+            .session
+            .sync_account(&account, jackin_core::Agent::Omp, &CancellationToken::new())
+            .await;
+        assert!(matches!(
+            &missing_provider,
+            Err(AccountError::MissingCredential { account }) if account.as_str() == "work"
+        ));
+        world.seed_omp_agent_db("zai", None)?;
+        let missing_key = world
+            .session
+            .sync_account(&account, jackin_core::Agent::Omp, &CancellationToken::new())
+            .await;
+        assert!(matches!(
+            &missing_key,
+            Err(AccountError::MissingCredential { account }) if account.as_str() == "work"
+        ));
+        for result in [&missing_provider, &missing_key] {
+            let shown = format!("{result:?}");
+            assert!(!shown.contains(OMP_WORLD_KEY));
+            assert!(!shown.contains(OMP_AMBIENT_KEY));
+        }
+        assert!(world.gateway.providers().is_empty());
+        Ok(())
+    })
+    .await
+}

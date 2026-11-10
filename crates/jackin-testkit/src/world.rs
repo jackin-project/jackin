@@ -89,10 +89,54 @@ impl World {
                 clock: Arc::<FakeClock>::clone(&self.clock),
                 fs: Arc::clone(&self.fs),
                 runner: Arc::<TestRunner>::clone(&self.runner),
+                home: self.home.clone(),
             },
             self.cache_dir.clone(),
             store,
         )
+    }
+
+    pub fn seed_omp_agent_db(&self, provider: &str, key: Option<&str>) -> Result<(), FixtureError> {
+        let directory = self.home.as_path().join(".omp/agent");
+        std::fs::create_dir_all(&directory)?;
+        let connection = rusqlite::Connection::open(directory.join("agent.db"))?;
+        let data = key.map_or_else(
+            || serde_json::json!({}),
+            |key| serde_json::json!({ "key": key }),
+        );
+        connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS auth_credentials (id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, credential_type TEXT NOT NULL, data TEXT NOT NULL, disabled_cause TEXT DEFAULT NULL, identity_key TEXT DEFAULT NULL, created_at INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);",
+        )?;
+        connection.execute(
+            "INSERT INTO auth_credentials (provider, credential_type, data) VALUES (?1, 'api_key', ?2)",
+            rusqlite::params![provider, data.to_string()],
+        )?;
+        Ok(())
+    }
+
+    pub fn isolated_omp_ambient(
+        test_name: &str,
+        provider: &str,
+        key: &str,
+    ) -> Result<bool, FixtureError> {
+        const MARKER: &str = "JACKIN_TEST_OMP_AMBIENT_CHILD";
+        if std::env::var_os(MARKER).is_some() {
+            return Ok(false);
+        }
+        let ambient = World::builder().build()?;
+        ambient.seed_omp_agent_db(provider, Some(key))?;
+        let status = std::process::Command::new("/usr/bin/env")
+            .arg(std::env::current_exe()?)
+            .arg("--exact")
+            .arg(test_name)
+            .arg("--nocapture")
+            .env("HOME", ambient.home().as_path())
+            .env(MARKER, "1")
+            .status()?;
+        if !status.success() {
+            return Err(format!("the isolated OmpHost test failed with {status}").into());
+        }
+        Ok(true)
     }
 
     pub async fn seed_config(&self, config: &Config) -> Result<(), ConfigError> {
@@ -160,14 +204,10 @@ impl World {
                 name: name.clone(),
                 source: role.source.clone(),
             });
-            for (provider, account) in &role.bindings {
-                let agent = jackin_core::TUPLES
-                    .iter()
-                    .find(|tuple| tuple.provider == *provider)
-                    .map_or(jackin_core::Agent::Codex, |tuple| tuple.agent);
+            for (agent, account) in &role.bindings {
                 edits.push(ConfigEdit::BindRoleAccount {
                     role: name.clone(),
-                    agent,
+                    agent: *agent,
                     account: account.clone(),
                 });
             }
@@ -236,6 +276,7 @@ impl WorldBuilder {
                 clock: Arc::clone(&clock_port),
                 fs: Arc::clone(&fs),
                 runner: Arc::clone(&runner_port),
+                home: home.clone(),
             },
             cache_dir: cache_dir.clone(),
             config: config.clone(),

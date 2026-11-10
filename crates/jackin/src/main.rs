@@ -57,7 +57,7 @@ async fn start() -> ExitCode {
         Err(error) => return fail(&error.to_string()),
     };
     let cancel = CancellationToken::new();
-    let host = HostPorts::system(Arc::new(StdFileSystem::default()));
+    let host = HostPorts::system(Arc::new(StdFileSystem::default()), places.home.clone());
     let build_dir = match HostPath::resolve(std::path::Path::new("build"), &places.cache_dir) {
         Ok(dir) => dir,
         Err(error) => return fail(&error.to_string()),

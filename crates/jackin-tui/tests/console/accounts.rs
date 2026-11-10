@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 
 use jackin_console::backend::Effect;
 use jackin_console::domain::account::{Account, CredentialSource, DetectedKind, UNSAVED_ID};
-use jackin_console::domain::agent::Provider;
+use jackin_console::domain::agent::{Agent as ConsoleAgent, Provider};
 use jackin_console::domain::tuple::InstanceChoice;
 use jackin_console::launch::{EnvAnswer, LaunchEvent, LaunchTarget};
 use jackin_core::{
@@ -300,12 +300,96 @@ async fn role_binding_from_the_roles_page() -> TestResult {
         let bound = |config: &jackin_core::Config| -> Result<Option<AccountName>, Box<dyn std::error::Error>> {
             Ok(config
                 .role(&RoleName::parse("sentinel")?)
-                .and_then(|role| role.bindings.get(&CoreProvider::Codex).cloned()))
+                .and_then(|role| role.bindings.get(&Agent::Codex).cloned()))
         };
         assert_eq!(bound(&lab.config().await?)?, Some(account("second")?));
         lab.console.keys("d")?;
         lab.console.settle().await?;
         assert_eq!(bound(&lab.config().await?)?, None);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn role_admin_offers_all_agents_and_binds_zai_for_omp_and_claude() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        lab.edit(vec![ConfigEdit::AddAccount(CoreAccount::new(
+            account("zai")?,
+            CoreProvider::Zai,
+            Credential::Env {
+                var: jackin_core::EnvName::parse("ZAI_TEST_KEY")?,
+            },
+        )?)])
+        .await?;
+        lab.reopen().await?;
+        let admin = lab.world().surfaces.roles.clone().ok_or("role admin")?;
+        assert_eq!(
+            admin.agents,
+            [
+                ConsoleAgent::Codex,
+                ConsoleAgent::ClaudeCode,
+                ConsoleAgent::GrokBuild,
+                ConsoleAgent::MuseCode,
+                ConsoleAgent::Antigravity,
+                ConsoleAgent::MinimaxCode,
+                ConsoleAgent::MimoCode,
+                ConsoleAgent::KimiCode,
+                ConsoleAgent::Omp,
+            ]
+        );
+        for (console_agent, core_agent) in [
+            (ConsoleAgent::Omp, Agent::Omp),
+            (ConsoleAgent::ClaudeCode, Agent::ClaudeCode),
+        ] {
+            lab.perform(Effect::BindRole {
+                role: "sentinel".to_owned(),
+                agent: console_agent,
+                base: None,
+                account: Some("zai".to_owned()),
+            })
+            .await?;
+            let config = lab.config().await?;
+            let bound = config
+                .role(&RoleName::parse("sentinel")?)
+                .and_then(|role| role.bindings.get(&core_agent));
+            assert_eq!(bound, Some(&account("zai")?));
+            lab.reopen().await?;
+            let projected = lab
+                .world()
+                .surfaces
+                .roles
+                .as_ref()
+                .and_then(|roles| roles.binding("sentinel", console_agent))
+                .cloned();
+            assert_eq!(projected.as_deref(), Some("zai"));
+        }
+        lab.perform(Effect::BindRole {
+            role: "sentinel".to_owned(),
+            agent: ConsoleAgent::Omp,
+            base: Some("zai".to_owned()),
+            account: None,
+        })
+        .await?;
+        let config = lab.config().await?;
+        let role = config.role(&RoleName::parse("sentinel")?).ok_or("role")?;
+        assert!(!role.bindings.contains_key(&Agent::Omp));
+        assert_eq!(
+            role.bindings.get(&Agent::ClaudeCode),
+            Some(&account("zai")?)
+        );
+        lab.perform(Effect::BindRole {
+            role: "sentinel".to_owned(),
+            agent: ConsoleAgent::ClaudeCode,
+            base: Some("zai".to_owned()),
+            account: None,
+        })
+        .await?;
+        let config = lab.config().await?;
+        let role = config.role(&RoleName::parse("sentinel")?).ok_or("role")?;
+        assert!(!role.bindings.contains_key(&Agent::Omp));
+        assert!(!role.bindings.contains_key(&Agent::ClaudeCode));
         Ok(())
     })
     .await
@@ -415,7 +499,7 @@ async fn the_preselected_account_equals_the_d26_table() -> TestResult {
         let role = |name: &str| -> Result<ConfigEdit, Box<dyn std::error::Error>> {
             Ok(ConfigEdit::BindRoleAccount {
                 role: RoleName::parse("sentinel")?,
-                agent: Agent::Omp,
+                agent: Agent::Codex,
                 account: account(name)?,
             })
         };

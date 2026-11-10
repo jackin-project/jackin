@@ -116,6 +116,7 @@ fn label(error: &ConfigError) -> String {
         ConfigError::DuplicateName { kind, name } => format!("duplicate:{kind}:{name}"),
         ConfigError::MissingReference { kind, name } => format!("reference:{kind}:{name}"),
         ConfigError::ProviderMismatch { .. } => "mismatch".to_owned(),
+        ConfigError::Catalog(_) => "catalog".to_owned(),
         ConfigError::CredentialNotAllowed { .. } => "credential".to_owned(),
         ConfigError::AccountInUse { .. } => "account-in-use".to_owned(),
         ConfigError::RoleInUse { .. } => "role-in-use".to_owned(),

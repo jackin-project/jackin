@@ -208,19 +208,33 @@ pub struct BindArgs {
     pub role: Option<RoleName>,
     #[arg(long, help = "Workspace that gets the account for its provider")]
     pub workspace: Option<WorkspaceName>,
+    #[arg(long, help = "Agent that gets the account for a role binding")]
+    pub agent: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BindScope {
-    Role(RoleName),
+    Role {
+        role: RoleName,
+        agent: jackin_core::Agent,
+    },
     Workspace(WorkspaceName),
 }
 
 impl BindArgs {
     pub fn scope(&self) -> Result<BindScope, CommandError> {
-        match (&self.role, &self.workspace) {
-            (Some(role), None) => Ok(BindScope::Role(role.clone())),
-            (None, Some(workspace)) => Ok(BindScope::Workspace(workspace.clone())),
+        match (&self.role, &self.workspace, &self.agent) {
+            (Some(role), None, Some(agent)) => Ok(BindScope::Role {
+                role: role.clone(),
+                agent: parse_agent(agent)?,
+            }),
+            (Some(_), None, None) => {
+                Err(CommandError::Argument("--role requires --agent".to_owned()))
+            }
+            (None, Some(_), Some(_)) => Err(CommandError::Argument(
+                "--agent is only allowed with --role".to_owned(),
+            )),
+            (None, Some(workspace), None) => Ok(BindScope::Workspace(workspace.clone())),
             _ => Err(CommandError::Argument(
                 "pass exactly one of --role and --workspace".to_owned(),
             )),

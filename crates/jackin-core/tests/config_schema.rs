@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use jackin_core::{
-    Account, AccountName, CodexAuthMode, Config, ConfigEdit, ConfigError, CredentialSource,
+    Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, CredentialSource,
     EnvName, GatewayEntry, GatewayName, HostPath, Platform, Provider, RoleName, RoleRev,
     RoleSource, RoleUrl, WorkspaceName,
 };
@@ -125,6 +125,7 @@ fn label(error: &ConfigError) -> String {
             expected.as_str(),
             found.as_str()
         ),
+        ConfigError::Catalog(error) => format!("catalog:{error}"),
         ConfigError::CredentialNotAllowed { provider } => {
             format!("credential:{}", provider.as_str())
         }
@@ -290,7 +291,7 @@ fn config_roles_and_workspaces_keep_their_sources_and_bindings() -> TestResult {
     assert_eq!(
         sentinel
             .bindings
-            .get(&Provider::Codex)
+            .get(&Agent::Codex)
             .map(ToString::to_string),
         Some("work".to_owned())
     );
@@ -464,8 +465,8 @@ fn unknown_cases() -> Vec<(&'static str, String, &'static str, &'static str)> {
         (
             "role binding with a provider key",
             format!("{CL}{ROLE}"),
-            "bindings.cursorx = \"cl\"",
-            "roles.r.bindings.cursorx",
+            "bindings.zai = \"cl\"",
+            "roles.r.bindings.zai",
         ),
         (
             "role binding with an unknown key",
@@ -841,7 +842,11 @@ fn config_parse_enforces_the_cross_reference_invariants() -> TestResult {
         ("workspace account", ws_line("bindings.codex = \"ghost\""), "reference:account:ghost"),
         ("workspace mismatch", ws_line("bindings.codex = \"cl\""), "mismatch:cl:codex:claude"),
         ("role account", role("bindings.codex = \"ghost\""), "reference:account:ghost"),
-        ("role mismatch", role("bindings.codex = \"cl\""), "mismatch:cl:codex:claude"),
+        (
+            "role mismatch",
+            role("bindings.codex = \"cl\""),
+            "catalog:no catalog tuple for agent codex with provider claude",
+        ),
         ("default role", ws_line("default_role = \"ghost\""), "reference:role:ghost"),
         (
             "allowed role that is not configured",

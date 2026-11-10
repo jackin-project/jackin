@@ -149,6 +149,7 @@ fn session_on(world: &World, gateway: &Arc<FakeGateway>) -> Session {
             clock: Arc::<jackin_testkit::FakeClock>::clone(&world.clock),
             fs: Arc::clone(&world.fs),
             runner: Arc::<jackin_testkit::TestRunner>::clone(&world.runner),
+            home: world.home().clone(),
         },
         cache_dir: world.cache_dir().clone(),
         config: world.config.clone(),

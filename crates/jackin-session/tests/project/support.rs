@@ -278,6 +278,7 @@ impl Rig {
                 clock,
                 fs: Arc::clone(&world.fs),
                 runner,
+                home: world.home().clone(),
             },
             cache_dir: world.cache_dir().clone(),
             config: world.config.clone(),
