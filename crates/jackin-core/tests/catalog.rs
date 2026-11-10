@@ -132,10 +132,8 @@ const ROWS: [Row; 22] = [
         agent: Agent::ClaudeCode,
         provider: Provider::Kimi,
         auth_class: AuthClass::StaticKey,
-        state: TupleState::Unavailable,
-        reason: Some(
-            "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com",
-        ),
+        state: TupleState::Supported,
+        reason: SUPPORTED,
         model: "kimi-for-coding",
     },
     Row {

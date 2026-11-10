@@ -2452,8 +2452,6 @@ mod tool_text {
 mod promotion_records {
     use super::*;
 
-    const REASON: &str = "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com";
-
     fn read(root: &Path, relative: &str) -> Result<String, Box<dyn Error>> {
         let path = root.join(relative);
         let text = fs::read_to_string(&path)?;
@@ -2480,6 +2478,7 @@ mod promotion_records {
             "A14-claude-final-live.md",
             "A14-codex-final-live.md",
             "A14-zai-recheck.md",
+            "A14-t13-model-live.md",
         ] {
             read(root, &format!("rewrite/evidence/{name}"))?;
         }
@@ -2488,6 +2487,7 @@ mod promotion_records {
             "T10-omp-kimi.md",
             "T11-omp-minimax.md",
             "T12-omp-mimo.md",
+            "T13-claude-kimi.md",
             "T15-claude-minimax.md",
             "T16-claude-mimo.md",
             "T17-codex-kimi.md",
@@ -2534,10 +2534,17 @@ mod promotion_records {
             row(&zai, id, "**PASS**")?;
         }
 
-        let blocker = read(root, "rewrite/blockers/T13-claude-kimi.md")?;
-        assert!(blocker.contains("State: unavailable."));
-        assert!(blocker.contains(REASON));
-        assert!(blocker.contains("rewrite/evidence/A14-claude-final-live.md"));
+        let supervised = read(root, "rewrite/evidence/A14-t13-model-live.md")?;
+        for required in [
+            "Model: kimi-for-coding",
+            "T13-PTY-OK",
+            "jackin-docker",
+            "jackin-local",
+            "running 1",
+        ] {
+            assert!(supervised.contains(required), "missing {required:?}");
+        }
+        assert!(!root.join("rewrite/blockers/T13-claude-kimi.md").exists());
         Ok(())
     }
 

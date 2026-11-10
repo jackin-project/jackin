@@ -1080,10 +1080,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::ClaudeCode,
         Provider::Kimi,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some(
-            "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com"
-        ),
+        TupleState::Supported,
+        None,
         &["kimi-for-coding"],
         "kimi-for-coding"
     ),

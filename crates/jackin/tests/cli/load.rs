@@ -324,7 +324,6 @@ unavailable_tuple_tests! {
     t06_load_refusal => ("minimax-code", "minimax", "no stable Linux artifact"),
     t07_load_refusal => ("mimo", "mimo", "native login has no refresh grant"),
     t08_load_refusal => ("kimi", "kimi", "native refresh and final live proof pending"),
-    t13_load_refusal => ("claude", "kimi", "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com"),
     t22_load_refusal => ("omp", "codex", "no API key on this host"),
 }
 
@@ -445,6 +444,7 @@ async fn every_supported_tuple_launches_with_explicit_and_default_models() -> Te
             (jackin_core::Agent::Omp, jackin_core::Provider::Kimi),
             (jackin_core::Agent::Omp, jackin_core::Provider::Minimax),
             (jackin_core::Agent::Omp, jackin_core::Provider::Mimo),
+            (jackin_core::Agent::ClaudeCode, jackin_core::Provider::Kimi),
             (jackin_core::Agent::ClaudeCode, jackin_core::Provider::Zai),
             (
                 jackin_core::Agent::ClaudeCode,

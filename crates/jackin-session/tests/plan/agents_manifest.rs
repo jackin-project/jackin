@@ -80,8 +80,10 @@ async fn agent_instruction_mapping_is_checked_after_tuple_support() -> TestResul
         assert!(
             matches!(
                 err,
-                PlanError::TupleNotSupported { agent: Agent::ClaudeCode, provider: Provider::Kimi, ref reason }
-                    if reason == "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com"
+                PlanError::Manifest(ManifestError::NoInstructionMapping {
+                    ref role,
+                    agent: Agent::ClaudeCode
+                }) if role.as_str() == "sentinel"
             ),
             "{err}"
         );

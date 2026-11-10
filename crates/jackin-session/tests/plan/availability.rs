@@ -17,7 +17,7 @@ struct Case {
     model: &'static str,
 }
 
-const SUPPORTED: [Case; 14] = [
+const SUPPORTED: [Case; 15] = [
     Case {
         id: "T01",
         agent: Agent::Codex,
@@ -53,6 +53,12 @@ const SUPPORTED: [Case; 14] = [
         agent: Agent::Omp,
         provider: Provider::Mimo,
         model: "mimo-v2.6-pro",
+    },
+    Case {
+        id: "T13",
+        agent: Agent::ClaudeCode,
+        provider: Provider::Kimi,
+        model: "kimi-for-coding",
     },
     Case {
         id: "T14",
@@ -111,7 +117,7 @@ struct Refusal {
 }
 
 const UNPROVEN: &str = "not yet proven on a real gateway";
-const REFUSALS: [Refusal; 8] = [
+const REFUSALS: [Refusal; 7] = [
     Refusal {
         case: Case {
             id: "T02",
@@ -171,16 +177,6 @@ const REFUSALS: [Refusal; 8] = [
         },
         state: TupleState::Unavailable,
         reason: "native refresh and final live proof pending",
-    },
-    Refusal {
-        case: Case {
-            id: "T13",
-            agent: Agent::ClaudeCode,
-            provider: Provider::Kimi,
-            model: "kimi-for-coding",
-        },
-        state: TupleState::Unavailable,
-        reason: "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com",
     },
     Refusal {
         case: Case {

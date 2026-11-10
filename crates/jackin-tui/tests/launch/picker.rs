@@ -706,12 +706,11 @@ async fn tuple_offers_match_the_complete_supported_matrix_and_remaining_controls
                 .ok_or_else(|| format!("missing {} offer", tuple.id))?;
             let expected_state = match tuple.id {
                 "T02" => ConsoleTupleState::BlockedVendor,
-                "T13" | "T22" => ConsoleTupleState::Unavailable,
+                "T22" => ConsoleTupleState::Unavailable,
                 _ => ConsoleTupleState::Supported,
             };
             let expected_reason = match tuple.id {
                 "T02" => Some("vendor clarification pending"),
-                "T13" => Some("supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com"),
                 "T22" => Some("no API key on this host"),
                 _ => None,
             };
@@ -734,7 +733,7 @@ async fn promoted_console_launch(
     let tuple = jackin_core::lookup_tuple(agent, provider)?;
     let expected_model = model.unwrap_or(tuple.default_model);
     let rig = availability_rig().await?;
-    if provider == Provider::Mimo {
+    if matches!(provider, Provider::Kimi | Provider::Mimo) {
         rig.world
             .config
             .edit(vec![ConfigEdit::AddAccount(Account::new(
@@ -871,14 +870,13 @@ async fn unavailable_launch(
 }
 
 #[tokio::test]
-async fn t13_launch_refusal_has_the_exact_supervised_reason_and_no_effects() -> TestResult {
-    unavailable_launch(
-        ConsoleAgent::ClaudeCode,
-        ConsoleProvider::Moonshot,
-        "claude",
+async fn t13_console_launch_is_ready_with_exact_kimi_labels() -> TestResult {
+    guard(promoted_console_launch(
+        jackin_core::Agent::ClaudeCode,
+        Provider::Kimi,
         "kimi",
-        "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com",
-    )
+        Some("kimi-for-coding"),
+    ))
     .await
 }
 
