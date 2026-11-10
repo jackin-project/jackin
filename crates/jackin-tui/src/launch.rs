@@ -387,12 +387,6 @@ fn resolve_choices(
 ) -> Result<Vec<Choice>, Stop> {
     let mut choices = Vec::new();
     for choice in &wanted.instances {
-        if choice.agent != Agent::Codex {
-            return Err(Stop::Refused(RefusalReason::AgentNotLaunchable {
-                agent: choice.agent,
-                launchable: Agent::Codex,
-            }));
-        }
         let Some(core) = crate::project::core_agent(choice.agent) else {
             return Err(Stop::Refused(RefusalReason::AgentNotLaunchable {
                 agent: choice.agent,
@@ -434,7 +428,10 @@ fn instances_of(choices: &[Choice]) -> Option<jackin_core::AgentInstances> {
     for (core, core_provider, account, model) in choices {
         let account = account.clone()?;
         let model = if model.is_empty() {
-            core.spec().default_model.to_owned()
+            jackin_core::lookup_tuple(*core, *core_provider)
+                .ok()?
+                .default_model
+                .to_owned()
         } else {
             model.clone()
         };
@@ -565,6 +562,9 @@ impl Run {
             .prompting(Prompting::Interactive)
             .env(values.clone())
             .task(self.wanted.task.clone());
+            if let Some((core, provider, _, _)) = choices.first() {
+                request = request.tuple(*core, *provider);
+            }
             let first_has_account = choices
                 .first()
                 .is_some_and(|(_, _, account, _)| account.is_some());

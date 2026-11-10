@@ -661,21 +661,20 @@ fn lead_chatgpt_account(
 
 fn resolve_instances(
     request: &LaunchRequest,
-    agent: Agent,
-    provider: Provider,
+    tuple: &jackin_core::AgentTuple,
     selection: &AccountSelection,
 ) -> jackin_core::AgentInstances {
     match request.instances.clone() {
         Some(instances) => instances,
         None => jackin_core::AgentInstances::single(jackin_core::AgentInstance {
-            agent,
-            provider,
+            agent: tuple.agent,
+            provider: tuple.provider,
             account: selection.account.clone(),
             model: request
                 .model
                 .clone()
-                .unwrap_or_else(|| agent.spec().default_model.to_owned()),
-            branch: format!("agent/{}", agent.as_str()),
+                .unwrap_or_else(|| tuple.default_model.to_owned()),
+            branch: format!("agent/{}", tuple.agent.as_str()),
         }),
     }
 }
@@ -717,7 +716,7 @@ pub fn plan_launch(
         agent,
         provider,
     })?;
-    let instances = resolve_instances(&request, agent, provider, &selection);
+    let instances = resolve_instances(&request, tuple, &selection);
     validate_instances(&instances)?;
     validate_instruction_mappings(role, &instances)?;
     let account =

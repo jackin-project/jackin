@@ -2448,3 +2448,97 @@ mod tool_text {
         }
     }
 }
+
+mod promotion_records {
+    use super::*;
+
+    const REASON: &str = "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com";
+
+    fn read(root: &Path, relative: &str) -> Result<String, Box<dyn Error>> {
+        let path = root.join(relative);
+        let text = fs::read_to_string(&path)?;
+        assert!(!text.trim().is_empty(), "{relative} is empty");
+        Ok(text)
+    }
+
+    fn row(text: &str, id: &str, verdict: &str) -> TestResult {
+        let row = text
+            .lines()
+            .find(|line| line.starts_with(&format!("| {id} |")))
+            .ok_or_else(|| format!("missing {id} verdict row"))?;
+        assert_eq!(row.matches(verdict).count(), 2, "{id}: {row}");
+        Ok(())
+    }
+
+    #[test]
+    fn a14_evidence_and_blocker_records_are_consistent() -> TestResult {
+        let repo = Repo::open(env!("CARGO_MANIFEST_DIR").into())?;
+        let root = repo.root();
+        for name in [
+            "A14-t01-final-live.md",
+            "A14-omp-final-live.md",
+            "A14-claude-final-live.md",
+            "A14-codex-final-live.md",
+            "A14-zai-recheck.md",
+        ] {
+            read(root, &format!("rewrite/evidence/{name}"))?;
+        }
+        for name in [
+            "T01-codex.md",
+            "T10-omp-kimi.md",
+            "T11-omp-minimax.md",
+            "T12-omp-mimo.md",
+            "T15-claude-minimax.md",
+            "T16-claude-mimo.md",
+            "T17-codex-kimi.md",
+            "T19-codex-minimax.md",
+            "T20-codex-mimo.md",
+            "T21-omp-anthropic.md",
+        ] {
+            assert!(
+                !root.join("rewrite/blockers").join(name).exists(),
+                "promoted blocker remains: {name}"
+            );
+        }
+        for name in [
+            "T02-claude.md",
+            "T03-grok.md",
+            "T04-muse.md",
+            "T05-antigravity.md",
+            "T06-minimax-code.md",
+            "T07-mimo-code.md",
+            "T08-kimi-code.md",
+            "T22-omp-openai.md",
+        ] {
+            read(root, &format!("rewrite/blockers/{name}"))?;
+        }
+
+        let t01 = read(root, "rewrite/evidence/A14-t01-final-live.md")?;
+        assert!(t01.contains("T01 passes on `jackin-docker` and `jackin-local`"));
+        let omp = read(root, "rewrite/evidence/A14-omp-final-live.md")?;
+        for id in ["T10", "T11", "T12", "T21"] {
+            row(&omp, id, "**PASS**")?;
+        }
+        let claude = read(root, "rewrite/evidence/A14-claude-final-live.md")?;
+        for id in ["T15", "T16"] {
+            row(&claude, id, "**PASS**")?;
+        }
+        row(&claude, "T13", "**FAIL**")?;
+        assert!(claude.contains("supervised Claude check on both gateways"));
+        assert!(claude.contains("api.anthropic.com"));
+        let codex = read(root, "rewrite/evidence/A14-codex-final-live.md")?;
+        for id in ["T17", "T19", "T20"] {
+            row(&codex, id, "**PASS**")?;
+        }
+        let zai = read(root, "rewrite/evidence/A14-zai-recheck.md")?;
+        for id in ["T09", "T14", "T18"] {
+            row(&zai, id, "**PASS**")?;
+        }
+
+        let blocker = read(root, "rewrite/blockers/T13-claude-kimi.md")?;
+        assert!(blocker.contains("State: unavailable."));
+        assert!(blocker.contains(REASON));
+        assert!(blocker.contains("rewrite/evidence/A14-claude-final-live.md"));
+        Ok(())
+    }
+}

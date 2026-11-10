@@ -953,8 +953,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Codex,
         Provider::Codex,
         AuthClass::OAuth,
-        TupleState::Unavailable,
-        Some("final live proof pending after host re-login"),
+        TupleState::Supported,
+        None,
         &["gpt-6.1-sol"],
         "gpt-6.1-sol"
     ),
@@ -1043,8 +1043,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Omp,
         Provider::Kimi,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("final live proof pending with Kimi plan key"),
+        TupleState::Supported,
+        None,
         &["kimi-for-coding"],
         "kimi-for-coding"
     ),
@@ -1053,8 +1053,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Omp,
         Provider::Minimax,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("final live proof pending with MiniMax plan key"),
+        TupleState::Supported,
+        None,
         &["minimax-m3"],
         "minimax-m3"
     ),
@@ -1063,8 +1063,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Omp,
         Provider::Mimo,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("final live proof pending with MiMo Token Plan key"),
+        TupleState::Supported,
+        None,
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
@@ -1074,7 +1074,9 @@ pub static TUPLES: [AgentTuple; 22] = [
         Provider::Kimi,
         AuthClass::StaticKey,
         TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        Some(
+            "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com"
+        ),
         &["kimi-for-coding"],
         "kimi-for-coding"
     ),
@@ -1093,8 +1095,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::ClaudeCode,
         Provider::Minimax,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("uppercase MiniMax-M3 live proof pending"),
+        TupleState::Supported,
+        None,
         &["MiniMax-M3"],
         "MiniMax-M3"
     ),
@@ -1103,8 +1105,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::ClaudeCode,
         Provider::Mimo,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("final live proof pending with MiMo Token Plan key"),
+        TupleState::Supported,
+        None,
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
@@ -1113,8 +1115,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Codex,
         Provider::Kimi,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        TupleState::Supported,
+        None,
         &["kimi-for-coding"],
         "kimi-for-coding"
     ),
@@ -1133,8 +1135,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Codex,
         Provider::Minimax,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("uppercase MiniMax-M3 live proof pending"),
+        TupleState::Supported,
+        None,
         &["MiniMax-M3"],
         "MiniMax-M3"
     ),
@@ -1143,8 +1145,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Codex,
         Provider::Mimo,
         AuthClass::StaticKey,
-        TupleState::Unavailable,
-        Some("final live proof pending with MiMo Token Plan key"),
+        TupleState::Supported,
+        None,
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
@@ -1153,8 +1155,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::Omp,
         Provider::Claude,
         AuthClass::ApiKey,
-        TupleState::Unavailable,
-        Some("final live proof pending with Anthropic API key"),
+        TupleState::Supported,
+        None,
         &["claude-haiku-5-5"],
         "claude-haiku-5-5"
     ),

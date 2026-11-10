@@ -318,10 +318,247 @@ macro_rules! unavailable_tuple_tests {
 }
 
 unavailable_tuple_tests! {
-    t01_load_refusal => ("codex", "codex"),
-    t10_load_refusal => ("omp", "kimi"),
-    t11_load_refusal => ("omp", "minimax"),
-    t12_load_refusal => ("omp", "mimo"),
-    t16_load_refusal => ("claude", "mimo"),
-    t20_load_refusal => ("codex", "mimo"),
+    t02_load_refusal => ("claude", "claude"),
+    t03_load_refusal => ("grok", "grok"),
+    t04_load_refusal => ("muse", "muse"),
+    t05_load_refusal => ("agy", "antigravity"),
+    t06_load_refusal => ("minimax-code", "minimax"),
+    t07_load_refusal => ("mimo", "mimo"),
+    t08_load_refusal => ("kimi", "kimi"),
+    t13_load_refusal => ("claude", "kimi"),
+    t22_load_refusal => ("omp", "codex"),
+}
+
+fn all_agent_role() -> Result<jackin_testkit::RoleFixture, Failure> {
+    Ok(jackin_testkit::RoleFixture::new("sentinel")?.manifest_text(
+        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n".to_owned(),
+    ))
+}
+
+fn tuple_account_config(rig: &Rig, provider: jackin_core::Provider) -> String {
+    let credential = if provider == jackin_core::Provider::Codex {
+        format!(
+            "source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\"",
+            rig.home.as_path().display()
+        )
+    } else {
+        format!(
+            "source = \"file\", path = \"{}/zai.txt\"",
+            rig.home.as_path().display()
+        )
+    };
+    format!(
+        "{}\n[accounts.tuple]\nprovider = \"{}\"\ncredential = {{ {credential} }}\n",
+        rig.config.render(),
+        provider.as_str()
+    )
+}
+
+async fn supported_tuple_launch(
+    agent: jackin_core::Agent,
+    provider: jackin_core::Provider,
+) -> TestResult {
+    let tuple = jackin_core::lookup_tuple(agent, provider)?;
+    let rig = Rig::builder().role(all_agent_role()?).build().await?;
+    let mut harness = Harness::new(&rig.world);
+    harness.cwd = rig.repo.root().clone();
+    harness.write_config(&tuple_account_config(&rig, provider))?;
+    let invalid = harness
+        .run(&[
+            "load",
+            "--agent",
+            agent.as_str(),
+            "--provider",
+            provider.as_str(),
+            "--account",
+            "tuple",
+            "--model",
+            "no-such-model",
+            "--launch-id",
+            &launch_id(8).to_string(),
+        ])
+        .await?;
+    failed(&invalid, ExitClass::Usage, &[])?;
+    assert_eq!(
+        invalid.stderr,
+        format!(
+            "error: model no-such-model is not allowed for agent {} with provider {}\n",
+            agent.as_str(),
+            provider.as_str()
+        ),
+        "{}",
+        tuple.id
+    );
+    assert!(rig.world.engine.builds().is_empty(), "{}", tuple.id);
+    assert!(rig.world.gateway.providers().is_empty(), "{}", tuple.id);
+    assert!(rig.world.gateway.sandboxes().is_empty(), "{}", tuple.id);
+
+    for (id, model) in [(1, Some(tuple.default_model)), (2, None)] {
+        let mut args = vec![
+            "load".to_owned(),
+            "--agent".to_owned(),
+            agent.as_str().to_owned(),
+            "--provider".to_owned(),
+            provider.as_str().to_owned(),
+            "--account".to_owned(),
+            "tuple".to_owned(),
+            "--launch-id".to_owned(),
+            launch_id(id).to_string(),
+        ];
+        if let Some(model) = model {
+            args.extend(["--model".to_owned(), model.to_owned()]);
+        }
+        let ran = harness
+            .run(&args.iter().map(String::as_str).collect::<Vec<_>>())
+            .await?;
+        ran.ok()?;
+        let handle = rig.handle(id).await?;
+        assert_eq!(
+            ran.stdout,
+            format!("{}\t{}\n", handle.name(), launch_id(id)),
+            "{}",
+            tuple.id
+        );
+        let labels = SandboxLabels::from_labels(&handle.labels())?;
+        assert_eq!(labels.planned.launch, launch_id(id), "{}", tuple.id);
+        assert_eq!(
+            labels.planned.agents,
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
+                agent,
+                provider,
+                AccountName::parse("tuple")?,
+                tuple.default_model.to_owned(),
+            )),
+            "{}",
+            tuple.id
+        );
+    }
+    assert_eq!(rig.world.gateway.sandboxes().len(), 2, "{}", tuple.id);
+    Ok(())
+}
+
+#[tokio::test]
+async fn every_supported_tuple_launches_with_explicit_and_default_models() -> TestResult {
+    guard(async {
+        for (agent, provider) in [
+            (jackin_core::Agent::Codex, jackin_core::Provider::Codex),
+            (jackin_core::Agent::Omp, jackin_core::Provider::Zai),
+            (jackin_core::Agent::Omp, jackin_core::Provider::Kimi),
+            (jackin_core::Agent::Omp, jackin_core::Provider::Minimax),
+            (jackin_core::Agent::Omp, jackin_core::Provider::Mimo),
+            (jackin_core::Agent::ClaudeCode, jackin_core::Provider::Zai),
+            (
+                jackin_core::Agent::ClaudeCode,
+                jackin_core::Provider::Minimax,
+            ),
+            (jackin_core::Agent::ClaudeCode, jackin_core::Provider::Mimo),
+            (jackin_core::Agent::Codex, jackin_core::Provider::Kimi),
+            (jackin_core::Agent::Codex, jackin_core::Provider::Zai),
+            (jackin_core::Agent::Codex, jackin_core::Provider::Minimax),
+            (jackin_core::Agent::Codex, jackin_core::Provider::Mimo),
+            (jackin_core::Agent::Omp, jackin_core::Provider::Claude),
+        ] {
+            supported_tuple_launch(agent, provider).await?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn promoted_tuples_for_all_three_agents_share_one_exact_multi_instance_sandbox() -> TestResult
+{
+    guard(async {
+        let rig = Rig::builder().role(all_agent_role()?).build().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        harness.write_config(&format!(
+            "{}\n[accounts.t01]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }}\n\n[accounts.t10]\nprovider = \"kimi\"\ncredential = {{ source = \"file\", path = \"{1}/zai.txt\" }}\n\n[accounts.t15]\nprovider = \"minimax\"\ncredential = {{ source = \"file\", path = \"{1}/zai.txt\" }}\n",
+            rig.config.render(),
+            rig.home.as_path().display()
+        ))?;
+        harness
+            .run(&[
+                "load",
+                "--agent",
+                "codex",
+                "--agent",
+                "omp",
+                "--agent",
+                "claude",
+                "--provider",
+                "codex",
+                "--provider-for",
+                "omp=kimi",
+                "--provider-for",
+                "claude=minimax",
+                "--account-for",
+                "codex=t01",
+                "--account-for",
+                "omp=t10",
+                "--account-for",
+                "claude=t15",
+                "--model",
+                "gpt-6.1-sol",
+                "--model-for",
+                "omp=kimi-for-coding",
+                "--model-for",
+                "claude=MiniMax-M3",
+                "--launch-id",
+                &launch_id(6).to_string(),
+            ])
+            .await?
+            .ok()?;
+        let handle = only_sandbox(&rig)?;
+        let instances = jackin_core::AgentInstances::new(vec![
+            jackin_core::AgentInstance::new(
+                jackin_core::Agent::Codex,
+                jackin_core::Provider::Codex,
+                AccountName::parse("t01")?,
+                "gpt-6.1-sol".to_owned(),
+            ),
+            jackin_core::AgentInstance::new(
+                jackin_core::Agent::Omp,
+                jackin_core::Provider::Kimi,
+                AccountName::parse("t10")?,
+                "kimi-for-coding".to_owned(),
+            ),
+            jackin_core::AgentInstance::new(
+                jackin_core::Agent::ClaudeCode,
+                jackin_core::Provider::Minimax,
+                AccountName::parse("t15")?,
+                "MiniMax-M3".to_owned(),
+            ),
+        ])?;
+        let manifest = handle
+            .file(&jackin_core::SandboxPath::from_static(
+                "/sandbox/.jackin/agents.json",
+            ))
+            .ok_or("agents.json")?;
+        let manifest = String::from_utf8(manifest)?;
+        assert_eq!(manifest, instances.agents_json());
+        assert!(manifest.starts_with("[{\"agent\":\"codex\""));
+        let labels = SandboxLabels::from_labels(&handle.labels())?;
+        assert_eq!(labels.planned.agents, instances);
+        for (account, agent) in [
+            ("t01", jackin_core::Agent::Codex),
+            ("t10", jackin_core::Agent::Omp),
+            ("t15", jackin_core::Agent::ClaudeCode),
+        ] {
+            assert!(rig.gateway().providers().contains(
+                &jackin_core::ProviderName::for_account(&AccountName::parse(account)?, agent)
+            ));
+        }
+        Ok(())
+    })
+    .await
+}
+
+fn only_sandbox(rig: &Rig) -> Result<jackin_testkit::SandboxHandle, Failure> {
+    let mut sandboxes = rig.gateway().sandboxes();
+    if sandboxes.len() == 1 {
+        Ok(sandboxes.remove(0))
+    } else {
+        Err(format!("expected one sandbox, got {}", sandboxes.len()).into())
+    }
 }

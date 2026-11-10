@@ -80,7 +80,7 @@ fn claude_base_url_host_matches_the_tuple_profile_endpoint_host() -> TestResult 
 }
 
 #[test]
-fn t15_accepts_uppercase_model_validation_but_refuses_launch_while_unproven() -> TestResult {
+fn t15_plans_with_exact_uppercase_model_and_rejects_lowercase() -> TestResult {
     let tuple = lookup_tuple(Agent::ClaudeCode, Provider::Minimax)?;
     assert_eq!(tuple.check_model("MiniMax-M3")?.id, "T15");
     let instances = AgentInstances::single(AgentInstance::new(
@@ -89,14 +89,23 @@ fn t15_accepts_uppercase_model_validation_but_refuses_launch_while_unproven() ->
         AccountName::parse("work")?,
         "MiniMax-M3".to_owned(),
     ));
-    let error = plan_multi(&instances, None, HeadState::Born)
+    let layout = plan_multi(&instances, None, HeadState::Born)?;
+    assert_eq!(layout.exec[0].model, "MiniMax-M3");
+    assert_eq!(layout.exec[0].provider, "minimax");
+    let lowercase = AgentInstances::single(AgentInstance::new(
+        Agent::ClaudeCode,
+        Provider::Minimax,
+        AccountName::parse("work")?,
+        "minimax-m3".to_owned(),
+    ));
+    let error = plan_multi(&lowercase, None, HeadState::Born)
         .err()
-        .ok_or("expected unavailable tuple refusal")?;
+        .ok_or("expected lowercase model refusal")?;
     assert!(
         matches!(
             error,
             PlanError::TupleNotSupported { ref reason, .. }
-                if reason == "uppercase MiniMax-M3 live proof pending"
+                if reason == "unknown model minimax-m3"
         ),
         "{error}"
     );

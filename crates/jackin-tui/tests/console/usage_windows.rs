@@ -90,16 +90,16 @@ async fn rejected_and_unsupported(lab: &Lab) -> TestResult {
             chatgpt_account_id: ChatgptAccountId::parse("other-account")?,
         },
     )?;
-    let amp = Account::new(
+    let mimo = Account::new(
         AccountName::parse("tool")?,
-        Provider::Amp,
+        Provider::Mimo,
         CredentialSource::Env {
-            var: EnvName::parse("AMP_KEY")?,
+            var: EnvName::parse("MIMO_KEY")?,
         },
     )?;
     lab.edit(vec![
         ConfigEdit::AddAccount(other),
-        ConfigEdit::AddAccount(amp),
+        ConfigEdit::AddAccount(mimo),
     ])
     .await
 }
@@ -221,6 +221,22 @@ async fn a_rejected_login_and_an_unsupported_provider_show_their_reasons_beside_
             tool.usage.windows[0].note.as_deref(),
             Some(words.reason(&unsupported).as_str())
         );
+        let mimo_offers: Vec<_> = lab
+            .world()
+            .surfaces
+            .tuples
+            .iter()
+            .filter(|offer| offer.provider == jackin_console::domain::agent::Provider::Mimo)
+            .collect();
+        assert_eq!(mimo_offers.len(), 2);
+        for offer in mimo_offers {
+            assert_eq!(
+                offer.state,
+                jackin_console::domain::tuple::TupleState::Supported
+            );
+            assert_eq!(offer.reason, None);
+            assert_eq!(offer.default_model, "mimo-v2.6-pro");
+        }
         Ok(())
     })
     .await
