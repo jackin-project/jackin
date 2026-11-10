@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_console::backend::Effect;
-use jackin_console::domain::instance::InstanceStatus;
+use jackin_console::domain::instance::{InstanceId, InstanceStatus};
 use jackin_core::{
     AttemptId, HookKind, Phase, RoleName, RoleSource, RoleUrl, SupervisorState, sandbox_layout,
 };
@@ -23,11 +23,11 @@ fn flat(screen: &str) -> String {
     screen.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-async fn stopped() -> Result<(Lab, String), Box<dyn std::error::Error>> {
+async fn stopped() -> Result<(Lab, InstanceId), Box<dyn std::error::Error>> {
     stopped_after(None).await
 }
 
-async fn stopped_after(exit: Option<i32>) -> Result<(Lab, String), Box<dyn std::error::Error>> {
+async fn stopped_after(exit: Option<i32>) -> Result<(Lab, InstanceId), Box<dyn std::error::Error>> {
     let rig = Rig::new().await?;
     rig.launch(1).await?;
     if let Some(code) = exit {
@@ -39,7 +39,7 @@ async fn stopped_after(exit: Option<i32>) -> Result<(Lab, String), Box<dyn std::
         .instances
         .first()
         .ok_or("no instance")?
-        .id
+        .id()
         .clone();
     lab.perform(Effect::Stop {
         instance: id.clone(),
@@ -54,7 +54,10 @@ async fn restore_starts_a_stopped_sandbox_as_jackin_start_does() -> TestResult {
         let (mut lab, id) = stopped().await?;
         assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Stopped);
         assert_eq!(
-            lab.world().instances[0].status,
+            lab.world().instances[0]
+                .as_available()
+                .ok_or("available instance")?
+                .status,
             InstanceStatus::RestoreAvailable
         );
         lab.perform(Effect::Restore { instance: id }).await?;
@@ -312,14 +315,18 @@ async fn restore_of_a_sandbox_whose_main_process_ended_says_so() -> TestResult {
 #[tokio::test]
 async fn restore_of_an_unknown_instance_fails_with_a_typed_reply() -> TestResult {
     guard(async {
-        let (mut lab, _) = stopped().await?;
-        lab.perform(Effect::Restore {
-            instance: "jk-0000".to_owned(),
-        })
-        .await?;
-        let screen = lab.console.screen();
-        assert!(flat(&screen).contains("jk-0000"), "{screen}");
-        assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Stopped);
+        let (mut lab, id) = stopped().await?;
+        let suffix = id.short_suffix();
+        let unknown = [
+            InstanceId::new("unknown-gateway", &id.sandbox_name),
+            InstanceId::new(&id.gateway, format!("jackin-unknown-{suffix}")),
+        ];
+        for instance in unknown {
+            lab.perform(Effect::Restore { instance }).await?;
+            let screen = lab.console.screen();
+            assert!(flat(&screen).contains("not in the roster"), "{screen}");
+            assert_eq!(lab.rig.handle(1).await?.phase(), Phase::Stopped);
+        }
         Ok(())
     })
     .await

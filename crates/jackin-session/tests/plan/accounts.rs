@@ -8,12 +8,12 @@ use jackin_core::{
 use jackin_session::PlanError;
 use jackin_testkit::RoleFixture;
 
-use super::support::{Spec, TestResult, built_image, guard, login_account};
+use super::support::{Spec, TestResult, built_image, guard, zai_account};
 
 fn accounts(names: &[&str]) -> String {
     names
         .iter()
-        .map(|name| login_account(name))
+        .map(|name| zai_account(name))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -31,34 +31,34 @@ struct Row {
 const ROWS: [Row; 5] = [
     Row {
         accounts: &["a-flag", "a-ws", "a-role", "a-def"],
-        defaults: "codex = \"a-def\"\n",
-        workspace: "codex = \"a-ws\"",
-        role: "codex = \"a-role\"",
+        defaults: "zai = \"a-def\"\n",
+        workspace: "zai = \"a-ws\"",
+        role: "zai = \"a-role\"",
         flag: Some("a-flag"),
         expected: "a-flag",
         via: SelectionRule::Flag,
     },
     Row {
         accounts: &["a-flag", "a-ws", "a-role", "a-def"],
-        defaults: "codex = \"a-def\"\n",
-        workspace: "codex = \"a-ws\"",
-        role: "codex = \"a-role\"",
+        defaults: "zai = \"a-def\"\n",
+        workspace: "zai = \"a-ws\"",
+        role: "zai = \"a-role\"",
         flag: None,
         expected: "a-ws",
         via: SelectionRule::WorkspaceBinding,
     },
     Row {
         accounts: &["a-role", "a-def"],
-        defaults: "codex = \"a-def\"\n",
+        defaults: "zai = \"a-def\"\n",
         workspace: "",
-        role: "codex = \"a-role\"",
+        role: "zai = \"a-role\"",
         flag: None,
         expected: "a-role",
         via: SelectionRule::RoleBinding,
     },
     Row {
         accounts: &["a-def", "a-other"],
-        defaults: "codex = \"a-def\"\n",
+        defaults: "zai = \"a-def\"\n",
         workspace: "",
         role: "",
         flag: None,
@@ -118,7 +118,7 @@ async fn the_plan_selects_the_account_by_the_d26_order_and_names_the_missing_bin
             matches!(
                 &result,
                 Err(PlanError::Selection(SelectionError::NoAccount {
-                    missing: MissingBinding::SeveralAccountsNoDefault { provider: Provider::Codex, accounts }
+                    missing: MissingBinding::SeveralAccountsNoDefault { provider: Provider::Zai, accounts }
                 })) if *accounts == expected
             ),
             "{:?}",
@@ -131,7 +131,7 @@ async fn the_plan_selects_the_account_by_the_d26_order_and_names_the_missing_bin
             matches!(
                 &result,
                 Err(PlanError::Selection(SelectionError::NoAccount {
-                    missing: MissingBinding::NoAccountForProvider { provider: Provider::Codex }
+                    missing: MissingBinding::NoAccountForProvider { provider: Provider::Zai }
                 }))
             ),
             "{:?}",

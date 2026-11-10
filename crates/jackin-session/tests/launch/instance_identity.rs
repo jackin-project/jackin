@@ -20,9 +20,9 @@ use super::support::{TestResult, failure, guard, launch_rig, ready};
 fn members(lead: Agent) -> Result<AgentInstances, Box<dyn std::error::Error>> {
     let codex = AgentInstance::new(
         Agent::Codex,
-        Provider::Codex,
+        Provider::Zai,
         AccountName::parse("work")?,
-        "gpt-6.1-sol".to_owned(),
+        "glm-5.3".to_owned(),
     );
     let omp = AgentInstance::new(
         Agent::Omp,

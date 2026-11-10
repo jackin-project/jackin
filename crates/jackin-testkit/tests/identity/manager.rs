@@ -454,7 +454,7 @@ fn jackin_role_editor_check_and_save() {
 }
 
 #[test]
-fn jackin_fixed_launch_picker_disables_every_agent_jackin_cannot_launch() {
+fn jackin_fixed_launch_picker_disables_explicitly_ignored_agents() {
     let app = crate::steps::fixed_app("jackin-fixed-launch-picker");
     app.wait_text("Current directory");
     app.key("enter");

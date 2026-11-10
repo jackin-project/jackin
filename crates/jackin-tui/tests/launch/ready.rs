@@ -2,15 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::app::Route;
+use jackin_console::domain::agent::{Agent as ConsoleAgent, Provider as ConsoleProvider};
 use jackin_console::domain::instance::RepoRef;
+use jackin_console::domain::tuple::InstanceChoice;
+use jackin_console::launch::LaunchTarget;
 use jackin_console::screens::Go;
 use jackin_core::{Agent, SupervisorState, sandbox_layout};
-use jackin_openshell::GatewayOp;
+use jackin_openshell::{Gateway, GatewayOp};
 use jackin_testkit::{Fault, RepoFixture, Rig, TestResult, Trigger, guard};
 
 use super::support::{
-    Stage, begin, console, labels, launch, only, seconds, stage, until, until_route, until_shows,
-    until_stage,
+    Stage, begin, console, direct_launch, labels, launch, only, seconds, stage, until, until_route,
+    until_shows, until_stage,
 };
 
 const STAGES: [&str; 7] = [
@@ -97,9 +100,11 @@ async fn launch_runs_the_seven_stages() -> TestResult {
         assert_eq!(found.planned.role.as_str(), "sentinel");
         assert_eq!(
             found.planned.agents.agents_label(),
-            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
                 Agent::Codex,
-                jackin_core::AccountName::parse("work")?
+                jackin_core::Provider::Zai,
+                jackin_core::AccountName::parse("work")?,
+                "glm-5.3".to_owned(),
             ))
             .agents_label()
         );
@@ -123,13 +128,21 @@ async fn ready_hands_over_the_backends_instance() -> TestResult {
         let name = handle.name().to_string();
         let suffix = &name[name.len() - 4..];
         let world = &console.console().app().world;
-        let [record] = world.instances.as_slice() else {
+        let [entry] = world.instances.as_slice() else {
             return Err(format!("{} instances", world.instances.len()).into());
         };
-        assert_eq!(record.id, format!("jk-{suffix}"));
-        assert_eq!(record.workdir, "/sandbox/project");
+        let record = entry.as_available().ok_or("available instance")?;
+        assert_eq!(
+            record.id,
+            jackin_console::domain::instance::InstanceId::new(
+                rig.gateway().name().to_string(),
+                handle.name().to_string(),
+            )
+        );
+        assert_eq!(record.id.short_label(), format!("jk-{suffix}"));
+        assert_eq!(record.workdir.as_deref(), Some("/sandbox/project"));
         assert_eq!(record.run_id, found.planned.launch.to_string());
-        assert_eq!(record.role, "sentinel");
+        assert_eq!(record.role.as_deref(), Some("sentinel"));
         assert_eq!(record.account.as_deref(), None);
         assert!(record.workspace.is_some());
         assert_eq!(record.github, None);
@@ -189,7 +202,7 @@ async fn a_second_launch_makes_a_second_sandbox() -> TestResult {
         launch(&mut first).await?;
         until_route(&mut first, Route::Capsule).await?;
         let mut second = console(&rig).await?;
-        begin(&mut second)?;
+        begin(&mut second).await?;
         super::support::answer(&mut second, None).await?;
         until_route(&mut second, Route::Capsule).await?;
         let all = rig.gateway().sandboxes();
@@ -200,6 +213,46 @@ async fn a_second_launch_makes_a_second_sandbox() -> TestResult {
             .collect::<Result<Vec<_>, _>>()?;
         assert_ne!(ids[0], ids[1]);
         assert_ne!(all[0].name(), all[1].name());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn existing_workspace_launch_has_no_save_warning() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut console = console(&rig).await?;
+        let before = console.config_text().await?;
+        let world = &console.console().app().world;
+        let workspace = world
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.name == "platform-backend")
+            .map(|workspace| workspace.id)
+            .ok_or("workspace")?;
+        let events = direct_launch(
+            world,
+            &LaunchTarget {
+                workspace: Some(workspace),
+                role: "sentinel".to_owned(),
+                instances: vec![InstanceChoice {
+                    agent: ConsoleAgent::Codex,
+                    provider: ConsoleProvider::Zai,
+                    account: Some("work".to_owned()),
+                    model: "glm-5.3".to_owned(),
+                }],
+                task: None,
+            },
+        )
+        .await?;
+        let warning = events.iter().find_map(|event| match event {
+            jackin_console::launch::LaunchEvent::Ready(ready) => Some(ready.warning),
+            _ => None,
+        });
+        assert_eq!(warning, Some(None), "{events:?}");
+        assert_eq!(console.config_text().await?, before);
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
         Ok(())
     })
     .await
@@ -231,9 +284,10 @@ async fn ready_instance_carries_the_github_origin() -> TestResult {
         launch(&mut console).await?;
         until_route(&mut console, Route::Capsule).await?;
         let world = &console.console().app().world;
-        let [record] = world.instances.as_slice() else {
+        let [entry] = world.instances.as_slice() else {
             return Err(format!("{} instances", world.instances.len()).into());
         };
+        let record = entry.as_available().ok_or("available instance")?;
         assert_eq!(
             record.github,
             Some(RepoRef {
@@ -271,7 +325,7 @@ async fn a_launched_instance_attaches_codex_and_opens_a_shell() -> TestResult {
             .instances
             .first()
             .ok_or("no instance")?
-            .id
+            .id()
             .clone();
         console.console().app().go(Go::NewSession {
             instance,

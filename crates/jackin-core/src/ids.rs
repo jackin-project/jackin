@@ -39,7 +39,7 @@ const DIGEST_LABEL_HEX_LEN: usize = 32;
 const SHA256_HEX_LEN: usize = 64;
 const SLUG_FALLBACK: &str = "ws";
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum IdError {
     #[error("{kind} is empty")]
     Empty { kind: &'static str },

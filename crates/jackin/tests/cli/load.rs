@@ -3,7 +3,7 @@
 
 use jackin::ExitClass;
 use jackin_core::{AccountName, AttemptId, SandboxLabels, SupervisorState};
-use jackin_testkit::{ACCOUNT_ID, Rig, TestResult, guard, launch_id};
+use jackin_testkit::{Rig, TestResult, guard, launch_id};
 
 use super::support::{Failure, Harness, ScriptedTerminal, Step, failed, host_path};
 
@@ -11,7 +11,7 @@ const DETACH: &[u8] = b"\x10\x11";
 
 fn second_account(rig: &Rig) -> String {
     format!(
-        "{}\n[defaults.accounts]\ncodex = \"work\"\n\n[accounts.second]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n",
+        "{}\n[defaults.accounts]\nzai = \"work\"\n\n[accounts.second]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n",
         rig.config.render(),
         rig.home.as_path().display()
     )
@@ -115,9 +115,11 @@ async fn load_without_a_terminal_prints_the_sandbox_and_launch_id_and_uses_the_c
         let labels = SandboxLabels::from_labels(&handle.labels())?;
         assert_eq!(
             labels.planned.agents.agents_label(),
-            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
                 jackin_core::Agent::Codex,
-                AccountName::parse("second")?
+                jackin_core::Provider::Zai,
+                AccountName::parse("second")?,
+                "glm-5.3".to_owned(),
             ))
             .agents_label()
         );
@@ -130,8 +132,9 @@ async fn load_without_a_terminal_prints_the_sandbox_and_launch_id_and_uses_the_c
 
 fn multi_account_config(rig: &Rig) -> String {
     format!(
-        "{}\n[defaults.accounts]\ncodex = \"work\"\n\n[accounts.second]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[accounts.zaiacct]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n",
+        "{}\n[defaults.accounts]\nzai = \"work\"\n\n[accounts.second]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n\n[accounts.zaiacct]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n\n[accounts.codexacct]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }}\n",
         rig.config.render(),
+        rig.home.as_path().display(),
         rig.home.as_path().display(),
         rig.home.as_path().display()
     )
@@ -198,7 +201,7 @@ async fn account_for_and_provider_scoped_global_account_resolve_per_instance() -
 
         let mut args3: Vec<String> = base.iter().map(|s| (*s).to_owned()).collect();
         args3.extend(
-            ["--account-for", "codex=zaiacct", "--launch-id"]
+            ["--account-for", "codex=codexacct", "--launch-id"]
                 .iter()
                 .map(|s| (*s).to_owned()),
         );
@@ -208,6 +211,29 @@ async fn account_for_and_provider_scoped_global_account_resolve_per_instance() -
             .await?;
         failed(&ran, ExitClass::Usage, &["does not belong"])?;
         assert_eq!(rig.world.gateway.sandboxes().len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_single_instance_global_account_with_the_wrong_provider_is_rejected_before_effects()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        std::fs::write(rig.home.as_path().join("zai.txt"), "test-key")?;
+        harness.write_config(&multi_account_config(&rig))?;
+        let ran = harness.run(&["load", "--account", "codexacct"]).await?;
+        failed(&ran, ExitClass::Usage, &[])?;
+        assert_eq!(
+            ran.stderr,
+            "error: account codexacct does not belong to the zai provider\n"
+        );
+        assert!(rig.world.engine.builds().is_empty());
+        assert!(rig.world.gateway.providers().is_empty());
+        assert!(rig.world.gateway.sandboxes().is_empty());
         Ok(())
     })
     .await
@@ -249,4 +275,53 @@ async fn an_unknown_role_is_named_as_a_plain_word() -> TestResult {
         Ok(())
     })
     .await
+}
+
+async fn unavailable_tuple_refusal(agent: &str, provider: &str) -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+        let ran = harness
+            .run(&[
+                "load",
+                "--agent",
+                agent,
+                "--provider",
+                provider,
+                "--launch-id",
+                &launch_id(9).to_string(),
+            ])
+            .await?;
+        failed(&ran, ExitClass::Usage, &[])?;
+        assert_eq!(
+            ran.stderr,
+            format!("error: tuple {agent} with provider {provider} is not supported\n")
+        );
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        assert!(rig.world.gateway.providers().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+macro_rules! unavailable_tuple_tests {
+    ($($name:ident => ($agent:literal, $provider:literal)),+ $(,)?) => {
+        $(
+            #[tokio::test]
+            async fn $name() -> TestResult {
+                unavailable_tuple_refusal($agent, $provider).await
+            }
+        )+
+    };
+}
+
+unavailable_tuple_tests! {
+    t01_load_refusal => ("codex", "codex"),
+    t10_load_refusal => ("omp", "kimi"),
+    t11_load_refusal => ("omp", "minimax"),
+    t12_load_refusal => ("omp", "mimo"),
+    t16_load_refusal => ("claude", "mimo"),
+    t20_load_refusal => ("codex", "mimo"),
 }

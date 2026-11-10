@@ -20,7 +20,7 @@ use tempfile::TempDir;
 use crate::engine::FakeEngine;
 use crate::fixtures::FixtureError;
 use crate::gateway::FakeGateway;
-use crate::host::{FakeClock, TestRunner, WorkingFs};
+use crate::host::{FakeClock, FsFault, TestRunner, WorkingFs};
 use crate::usage::LazyUsageServer;
 
 #[derive(Debug)]
@@ -29,6 +29,7 @@ pub struct World {
     pub engine: Arc<FakeEngine>,
     pub clock: Arc<FakeClock>,
     pub fs: Arc<dyn FileSystem>,
+    working_fs: Arc<WorkingFs>,
     pub runner: Arc<TestRunner>,
     pub session: Session,
     pub roles: Arc<RoleCatalog>,
@@ -72,6 +73,10 @@ impl World {
 
     pub fn home(&self) -> &HostPath {
         &self.home
+    }
+
+    pub fn fail_fs(&self, fault: FsFault) {
+        self.working_fs.fail_next(fault);
     }
 
     pub fn desk(&self) -> AccountDesk {
@@ -217,8 +222,8 @@ impl WorldBuilder {
         let clock = Arc::new(FakeClock::new());
         gateway.link_clock(Arc::clone(&clock));
         let runner = Arc::new(TestRunner::with_home(&home));
-        let fs: Arc<dyn FileSystem> =
-            Arc::new(WorkingFs::new(Arc::new(StdFileSystem::default()), &clock));
+        let working_fs = Arc::new(WorkingFs::new(Arc::new(StdFileSystem::default()), &clock));
+        let fs: Arc<dyn FileSystem> = Arc::<WorkingFs>::clone(&working_fs);
         let gateway_port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&gateway);
         let engine_port: Arc<dyn ImageEngine> = Arc::<FakeEngine>::clone(&engine);
         let clock_port: Arc<dyn Clock> = Arc::<FakeClock>::clone(&clock);
@@ -249,6 +254,7 @@ impl WorldBuilder {
             engine,
             clock,
             fs,
+            working_fs,
             runner,
             session,
             cache_dir,

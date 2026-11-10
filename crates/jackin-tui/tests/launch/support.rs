@@ -5,8 +5,15 @@ use std::error::Error;
 use std::time::Duration;
 
 use jackin_console::app::Route;
-use jackin_core::{ConfigEdit, RoleName, RoleSource, SandboxLabels, sandbox_layout};
-use jackin_testkit::{ConsoleRig, Rig, RoleFixture, SandboxHandle};
+use jackin_console::domain::agent::{Agent as ConsoleAgent, Provider as ConsoleProvider};
+use jackin_console::domain::tuple::InstanceChoice;
+use jackin_console::screens::Go;
+use jackin_core::{
+    Account, AccountName, ChatgptAccountId, ConfigEdit, CredentialSource, Provider, RoleName,
+    RoleSource, SandboxLabels, sandbox_layout,
+};
+use jackin_openshell::Gateway;
+use jackin_testkit::{ACCOUNT_ID, ConsoleRig, Rig, RoleFixture, SandboxHandle};
 
 pub(crate) type Failure = Box<dyn Error>;
 
@@ -23,8 +30,32 @@ pub(crate) enum Stage {
     Failed,
 }
 
+pub(crate) async fn picker_account(rig: &Rig) -> Result<(), Failure> {
+    let account = AccountName::parse("picker-codex")?;
+    if rig.world.config.load().await?.account(&account).is_none() {
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::AddAccount(Account::new(
+                account,
+                Provider::Codex,
+                CredentialSource::CodexLogin {
+                    home: rig.home.clone(),
+                    chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+                },
+            )?)])
+            .await?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn console(rig: &Rig) -> Result<ConsoleRig, Failure> {
     rig.world.seed_all(&rig.config).await?;
+    rig.world
+        .config
+        .edit(vec![ConfigEdit::SetDefaultAccount {
+            account: AccountName::parse("work")?,
+        }])
+        .await?;
     let mut console = ConsoleRig::builder(&rig.world)
         .size(160, 44)
         .build()
@@ -106,8 +137,27 @@ pub(crate) fn dialog(screen: &str) -> String {
         .join(" ")
 }
 
-pub(crate) fn begin(console: &mut ConsoleRig) -> Result<(), Failure> {
-    console.keys("down enter enter space enter")
+pub(crate) async fn begin(console: &mut ConsoleRig) -> Result<(), Failure> {
+    let app = console.console().app();
+    let workspace = app
+        .world
+        .workspaces
+        .iter()
+        .find(|found| found.name == "platform-backend")
+        .map(|found| found.id)
+        .ok_or("no platform-backend workspace")?;
+    app.go(Go::LaunchMany {
+        workspace: Some(workspace),
+        role: "sentinel".to_owned(),
+        instances: vec![InstanceChoice {
+            agent: ConsoleAgent::Codex,
+            provider: ConsoleProvider::Zai,
+            account: Some("work".to_owned()),
+            model: "glm-5.3".to_owned(),
+        }],
+        task: None,
+    });
+    Ok(())
 }
 
 pub(crate) async fn answer(console: &mut ConsoleRig, value: Option<&str>) -> Result<(), Failure> {
@@ -124,7 +174,7 @@ pub(crate) async fn answer(console: &mut ConsoleRig, value: Option<&str>) -> Res
 }
 
 pub(crate) async fn launch(console: &mut ConsoleRig) -> Result<(), Failure> {
-    begin(console)?;
+    begin(console).await?;
     answer(console, None).await
 }
 
@@ -171,9 +221,49 @@ pub(crate) fn only(rig: &Rig) -> Result<SandboxHandle, Failure> {
     }
 }
 
-pub(crate) fn record_id(handle: &SandboxHandle) -> String {
-    let name = handle.name().to_string();
-    format!("jk-{}", &name[name.len() - 4..])
+pub(crate) async fn direct_launch(
+    world: &jackin_console::world::World,
+    target: &jackin_console::launch::LaunchTarget,
+) -> Result<Vec<jackin_console::launch::LaunchEvent>, Failure> {
+    let mut feed = world.backend.launch(world, target);
+    let mut events = Vec::new();
+    let mut answered = false;
+    for _ in 0..STEPS {
+        events.extend(feed.poll(world));
+        if !answered
+            && events
+                .iter()
+                .any(|event| matches!(event, jackin_console::launch::LaunchEvent::NeedsInput(_)))
+        {
+            feed.answer_env(vec![jackin_console::launch::EnvAnswer {
+                name: "GREETING".to_owned(),
+                value: "hello".to_owned(),
+            }]);
+            answered = true;
+        }
+        if events.iter().any(|event| {
+            matches!(
+                event,
+                jackin_console::launch::LaunchEvent::Ready(_)
+                    | jackin_console::launch::LaunchEvent::Failed(_)
+                    | jackin_console::launch::LaunchEvent::Refused(_)
+            )
+        }) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    Ok(events)
+}
+
+pub(crate) fn record_id(
+    rig: &Rig,
+    handle: &SandboxHandle,
+) -> jackin_console::domain::instance::InstanceId {
+    jackin_console::domain::instance::InstanceId::new(
+        rig.gateway().name().to_string(),
+        handle.name().to_string(),
+    )
 }
 
 pub(crate) fn labels(handle: &SandboxHandle) -> Result<SandboxLabels, Failure> {

@@ -3,7 +3,7 @@
 
 use jackin_core::{
     AccountName, Agent, AgentInstance, AgentInstances, FileMode, Provider, ProviderName,
-    SandboxPath, Secret,
+    SandboxPath, Secret, sandbox_layout,
 };
 use jackin_openshell::{Gateway, ProviderMaterial, ProviderProfile, ProviderSpec};
 use jackin_testkit::Rig;
@@ -38,9 +38,9 @@ fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
     Ok(AgentInstances::new(vec![
         AgentInstance::new(
             Agent::Codex,
-            Provider::Codex,
+            Provider::Zai,
             AccountName::parse("work")?,
-            "gpt-6.1-sol".to_owned(),
+            "glm-5.3".to_owned(),
         ),
         AgentInstance::new(
             Agent::Omp,
@@ -153,7 +153,7 @@ async fn restart_omp_stops_omp_only_and_starts_no_process() -> Result<(), Box<dy
 }
 
 #[tokio::test]
-async fn two_instance_launch_writes_codex_placeholder_auth_like_single_instance()
+async fn two_instance_launch_writes_codex_env_like_single_instance()
 -> Result<(), Box<dyn std::error::Error>> {
     guard(async {
         let rig = launch_rig().await?;
@@ -165,25 +165,21 @@ async fn two_instance_launch_writes_codex_placeholder_auth_like_single_instance(
             .gateway()
             .sandbox(&target.sandbox)
             .ok_or("sandbox handle")?;
-        let spec = Agent::Codex.spec();
-        let auth = handle.file(&spec.auth_file.path).ok_or("no codex auth")?;
-        assert!(!auth.is_empty());
-        assert_eq!(
-            handle.file_mode(&spec.auth_file.path),
-            Some(FileMode(0o600))
-        );
+        let path = sandbox_layout::env_file(&crate::support::launch_id(8));
+        let env = handle.file(&path).ok_or("no codex env")?;
+        assert!(!env.is_empty());
+        assert_eq!(handle.file_mode(&path), Some(FileMode(0o600)));
         let single = launch_rig().await?;
         ready(single.launch_observed(1).await?)?;
         let single_handle = single.handle(1).await?;
+        let single_path = sandbox_layout::env_file(&crate::support::launch_id(1));
         assert_eq!(
-            auth,
-            single_handle
-                .file(&spec.auth_file.path)
-                .ok_or("no single auth")?
+            env,
+            single_handle.file(&single_path).ok_or("no single env")?
         );
         assert_eq!(
-            handle.file_mode(&spec.auth_file.path),
-            single_handle.file_mode(&spec.auth_file.path)
+            handle.file_mode(&path),
+            single_handle.file_mode(&single_path)
         );
         Ok(())
     })

@@ -24,10 +24,13 @@ pub struct SandboxListing {
     pub unreadable: Vec<UnreadableSandbox>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct UnreadableSandbox {
     pub name: SandboxName,
     pub workspace: Option<WorkspaceName>,
+    pub role: Option<jackin_core::RoleName>,
+    pub phase: Phase,
+    pub created_at: Option<jackin_core::Timestamp>,
     pub error: LabelError,
 }
 
@@ -196,6 +199,9 @@ impl Session {
                 Err(error) => listing.unreadable.push(UnreadableSandbox {
                     name: view.name,
                     workspace: view.labels.workspace(),
+                    role: view.labels.role(),
+                    phase: view.phase,
+                    created_at: view.created_at,
                     error,
                 }),
             }
@@ -314,5 +320,54 @@ impl Session {
                 .ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
         }
         summary(&view)
+    }
+
+    pub async fn power_unreadable(
+        &self,
+        sandbox: &SandboxName,
+        action: PowerAction,
+        cancel: &CancellationToken,
+    ) -> Result<(), LifecycleError> {
+        let found = self.find_managed(sandbox).await?;
+        let view = found.ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
+        if view.phase.main_process_ended() {
+            return Err(LifecycleError::MainProcessEnded {
+                sandbox: sandbox.clone(),
+                phase: view.phase,
+            });
+        }
+        let wanted = match action {
+            PowerAction::Start => Phase::Ready,
+            PowerAction::Stop => Phase::Stopped,
+        };
+        let mut view = self.deps.gateway.set_power(sandbox, action).await?;
+        let limit = self.deps.limits.ready;
+        let mut waited = Duration::ZERO;
+        while view.phase != wanted {
+            if view.phase.main_process_ended() {
+                return Err(LifecycleError::MainProcessEnded {
+                    sandbox: sandbox.clone(),
+                    phase: view.phase,
+                });
+            }
+            if waited >= limit {
+                return Err(LifecycleError::PowerTimeout {
+                    sandbox: sandbox.clone(),
+                    wanted,
+                    after: waited,
+                });
+            }
+            tokio::select! {
+                biased;
+                () = cancel.cancelled() => return Err(LifecycleError::Cancelled),
+                () = self.deps.host.clock.sleep(POLL) => {}
+            }
+            waited += POLL;
+            view = self
+                .find_managed(sandbox)
+                .await?
+                .ok_or_else(|| LifecycleError::NotFound(sandbox.clone()))?;
+        }
+        Ok(())
     }
 }

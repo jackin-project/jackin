@@ -47,7 +47,7 @@ pub struct LabelDifference {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LabelSelector(Vec<(LabelKey, LabelValue)>);
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub enum LabelError {
     #[error("missing label {key}")]
     Missing { key: &'static str },
@@ -284,6 +284,10 @@ impl Labels {
 
     pub fn workspace(&self) -> Option<WorkspaceName> {
         self.parsed(WORKSPACE, WorkspaceName::parse).ok()
+    }
+
+    pub fn role(&self) -> Option<RoleName> {
+        self.parsed(ROLE, RoleName::parse).ok()
     }
 
     pub fn is_managed(&self) -> bool {

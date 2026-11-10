@@ -11,7 +11,8 @@ use jackin_console::domain::agent::{Agent, AuthMode, Provider};
 use jackin_console::domain::docker::{DockerRiskText, DockerSetting, EngineEndpoint, EngineState};
 use jackin_console::domain::instance::RepoRef;
 use jackin_console::domain::instance::{
-    DaemonSnapshot, Instance, InstanceId, InstanceStatus, SessionRecord, SessionStatus, instance_id,
+    DaemonSnapshot, Instance, InstanceEntry, InstanceId, InstanceStatus, SandboxPhase,
+    SessionRecord, SessionStatus, UnavailableInstance,
 };
 use jackin_console::domain::onepassword::OpReference;
 use jackin_console::domain::openshell as normalize;
@@ -489,8 +490,8 @@ fn split_name(name: &str) -> (&str, &str) {
     name.split_at_checked(split).unwrap_or((name, name))
 }
 
-pub fn sandbox_id(name: &SandboxName) -> InstanceId {
-    instance_id(split_name(name.as_str()).1)
+pub fn sandbox_id(gateway: &GatewayName, name: &SandboxName) -> InstanceId {
+    InstanceId::new(gateway.to_string(), name.to_string())
 }
 
 fn repo_ref(origin: &GithubOrigin) -> RepoRef {
@@ -532,9 +533,9 @@ pub(crate) fn instance(
     origins: &Origins,
     ids: &IdTable,
     now_secs: i64,
-) -> Option<Instance> {
+) -> Option<InstanceEntry> {
     let ObservedSandbox {
-        gateway: _,
+        gateway,
         summary,
         supervisor,
         work,
@@ -553,13 +554,13 @@ pub(crate) fn instance(
         Some(WorkState::Exported | WorkState::Unknown(_)) | None => (0, 0, None),
     };
     let mut record = Instance {
-        id: sandbox_id(&summary.name),
+        id: sandbox_id(gateway, &summary.name),
         container: head.trim_end_matches('-').to_owned(),
         workspace: config
             .workspace(&labels.workspace)
             .and_then(|_| ids.lookup(&labels.workspace)),
-        workdir: String::new(),
-        role: labels.role.to_string(),
+        workdir: None,
+        role: Some(labels.role.to_string()),
         agent: agent(
             labels
                 .agents
@@ -631,7 +632,44 @@ pub(crate) fn instance(
             }),
     };
     normalize::instance(&mut record);
-    Some(record)
+    Some(InstanceEntry::available(record))
+}
+
+pub(crate) fn sandbox_phase(phase: Phase) -> SandboxPhase {
+    match phase {
+        Phase::Provisioning => SandboxPhase::Provisioning,
+        Phase::Starting => SandboxPhase::Starting,
+        Phase::Ready => SandboxPhase::Ready,
+        Phase::Stopping => SandboxPhase::Stopping,
+        Phase::Stopped => SandboxPhase::Stopped,
+        Phase::Completed { exit_code } => SandboxPhase::Completed { exit_code },
+        Phase::Error { exit_code } => SandboxPhase::Error { exit_code },
+        Phase::Deleting => SandboxPhase::Deleting,
+        Phase::Suspending => SandboxPhase::Suspending,
+        Phase::Suspended => SandboxPhase::Suspended,
+        Phase::Unknown => SandboxPhase::Unknown,
+    }
+}
+
+fn unreadable(
+    observed: &crate::fleet::ObservedUnreadable,
+    config: &Config,
+    ids: &IdTable,
+) -> InstanceEntry {
+    let sandbox = &observed.sandbox;
+    let workspace = sandbox
+        .workspace
+        .as_ref()
+        .and_then(|name| config.workspace(name).and_then(|_| ids.lookup(name)));
+    InstanceEntry::Unavailable(UnavailableInstance {
+        id: sandbox_id(&observed.gateway, &sandbox.name),
+        workspace,
+        workspace_name: sandbox.workspace.as_ref().map(ToString::to_string),
+        role: sandbox.role.as_ref().map(ToString::to_string),
+        phase: sandbox_phase(sandbox.phase),
+        created_secs: sandbox.created_at.map(|created| created.0),
+        reason: sandbox.error.to_string(),
+    })
 }
 
 pub fn manifest_doc(doc: &jackin_core::RoleManifest) -> RoleManifestDoc {
@@ -815,6 +853,12 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
         .sandboxes
         .iter()
         .filter_map(|observed| instance(observed, config, origins, ids, facts.now_secs))
+        .chain(
+            fleet
+                .unreadable
+                .iter()
+                .map(|observed| unreadable(observed, config, ids)),
+        )
         .collect();
     Snapshot {
         workspaces,

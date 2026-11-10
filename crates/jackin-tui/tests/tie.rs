@@ -158,7 +158,7 @@ fn workspace_fixed_values_match() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 fn global_fixed_values_match() -> Result<(), Box<dyn std::error::Error>> {
     let fixture = fixture();
-    assert!(fixture.fixed.global.non_launchable_modes_ignore);
+    assert!(fixture.fixed.global.all_agent_modes_present);
     assert!(fixture.fixed.global.all_trusted);
     for (name, _, fields, _) in every_shape()? {
         assert_eq!(fields.global, fixture.fixed.global, "{name}");
@@ -195,7 +195,7 @@ fn surface_values_match() -> Result<(), Box<dyn std::error::Error>> {
         vocabulary: Vocabulary::openshell(),
         fixed: Some(Fixed::openshell()),
         account_form: AccountForm::openshell(),
-        agent_blocked: Some(AgentBlocked::openshell()),
+        agent_blocked: None,
         wizard: Some(WizardDefaults::openshell()),
         launch_role: LaunchRoleRule::Configured,
     };
@@ -243,7 +243,7 @@ fn every_config_shape_matches() -> Result<(), Box<dyn std::error::Error>> {
                 .agent_modes
                 .iter()
                 .filter(|(agent, _)| **agent != Fixed::openshell().launchable)
-                .all(|(_, mode)| *mode == AuthMode::Ignore),
+                .all(|(_, mode)| *mode == AuthMode::Sync),
             "{name}"
         );
     }
@@ -350,13 +350,13 @@ fn mutations() -> Vec<Mutation> {
             |f| f.global.role_env_empty.to_string(),
         ),
         (
-            "non_launchable_modes_ignore",
+            "all_agent_modes_present",
             |s| {
                 s.global
                     .agent_modes
-                    .insert(jackin_console::domain::agent::Agent::Amp, AuthMode::Sync);
+                    .remove(&jackin_console::domain::agent::Agent::Amp);
             },
-            |f| f.global.non_launchable_modes_ignore.to_string(),
+            |f| f.global.all_agent_modes_present.to_string(),
         ),
         (
             "all_trusted",
@@ -396,7 +396,7 @@ fn mutations() -> Vec<Mutation> {
         ),
         (
             "agent_blocked",
-            |s| s.surfaces.agent_blocked = None,
+            |s| s.surfaces.agent_blocked = Some(AgentBlocked::openshell()),
             |f| format!("{:?}", f.surfaces.agent_blocked),
         ),
         (

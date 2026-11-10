@@ -63,7 +63,7 @@ async fn the_env_file_follows_the_scope_order() -> TestResult {
             ])
             .await?;
         let mut console = console(&rig).await?;
-        begin(&mut console)?;
+        begin(&mut console).await?;
         answer(&mut console, Some("typed")).await?;
         until_route(&mut console, Route::Capsule).await?;
         let file = env_file(&only(&rig)?)?;
@@ -93,7 +93,7 @@ async fn an_answer_that_is_a_reference_stops_the_launch_without_showing_it() -> 
             let rig = Rig::builder().role(role).build().await?;
             rig.world.seed_all(&rig.config).await?;
             let mut console = console(&rig).await?;
-            begin(&mut console)?;
+            begin(&mut console).await?;
             answer(&mut console, Some(value)).await?;
             until_shows(&mut console, "Run id").await?;
             let screen = console.screen();

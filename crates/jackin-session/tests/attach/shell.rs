@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use jackin_core::{EnvName, Labels, Phase, SandboxName, SandboxPath, sandbox_layout};
 use jackin_openshell::{GatewayError, PowerAction, TerminalEvent};
 use jackin_session::{AttachError, EnvFileProblem, LaunchStep, ShellRequest};
-use jackin_testkit::{Rig, TestResult, guard, launch_id};
+use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard, launch_id};
 use tokio_util::sync::CancellationToken;
 
 use super::support::size;
@@ -58,9 +58,18 @@ async fn a_shell_sees_the_role_env_untouched_and_starts_in_the_project_without_t
 async fn a_shell_is_refused_without_a_usable_env_file_a_launch_label_or_a_ready_sandbox()
 -> TestResult {
     guard(async {
-        let rig = Rig::builder().printenv_exit(1).build().await?;
+        let rig = Rig::new().await?;
+        rig.gateway().inject(Fault::FailAt {
+            trigger: Trigger::Write(sandbox_layout::env_file(&launch_id(1))),
+            error: GatewayError::Protocol {
+                message: "injected".to_owned(),
+            },
+        });
         let failed = rig.launch_with(1, CancellationToken::new()).await?;
-        assert!(matches!(failed, Err(failure) if failure.step == LaunchStep::Credentials));
+        assert!(
+            matches!(failed, Err(ref failure) if failure.step == LaunchStep::Credentials),
+            "{failed:?}"
+        );
         let name = rig.sandbox_name(1)?;
         let session = &rig.world.session;
         let missing = session.open_shell(request(&name)?).await;

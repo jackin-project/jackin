@@ -121,10 +121,10 @@ fn facts(
         }),
         "J07" => json!({"processes": processes(model, "pts/1", false), "codex_exec": exec_ok()}),
         "J08" => json!({
-            "environment": [{"name": "CODEX_AUTH_ACCESS_TOKEN", "kind": "placeholder", "source": "launch_env"}],
+            "environment": [{"name": "ZAI_API_KEY", "kind": "placeholder", "source": "launch_env"}],
             "agent_environment": {"main": "record", "codex": "record"},
             "start_record": {"state": "read", "attempt": 1},
-            "auth_file": {"path": "/sandbox/.codex/auth.json", "mode": "600", "access_token": "placeholder", "refresh_token": "empty", "id_token": "empty"},
+            "auth_file": null,
             "leaks": [],
         }),
         "J09" => json!({

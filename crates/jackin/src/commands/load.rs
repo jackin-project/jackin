@@ -164,6 +164,7 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         };
         let global = match (&explicit, &args.account) {
             (Some(_), _) => None,
+            (None, Some(name)) if agents.len() == 1 => Some(name.clone()),
             (None, Some(name)) => match config.account(name) {
                 Some(entry) if entry.provider() != instance_provider => None,
                 _ => Some(name.clone()),

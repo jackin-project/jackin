@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use jackin_console::backend::Effect;
 use jackin_console::domain::account::{Account, CredentialSource, DetectedKind, UNSAVED_ID};
 use jackin_console::domain::agent::Provider;
+use jackin_console::domain::tuple::InstanceChoice;
+use jackin_console::launch::{EnvAnswer, LaunchEvent, LaunchTarget};
 use jackin_core::{
     Account as CoreAccount, AccountName, Agent, ConfigEdit, CredentialSource as Credential,
     GatewayName, OpenShellWorkspace, Provider as CoreProvider, ProviderName, RoleName,
@@ -257,7 +259,7 @@ async fn a_stale_registry_keeps_the_other_handles_account() -> TestResult {
         let config = lab.config().await?;
         assert!(config.account(&account("second")?).is_some());
         assert_eq!(
-            config.default_account(CoreProvider::Codex),
+            config.default_account(CoreProvider::Zai),
             Some(&account("work")?)
         );
         Ok(())
@@ -276,7 +278,7 @@ async fn workspace_binding_from_the_editor() -> TestResult {
             .workspace(&WorkspaceName::parse("platform-backend")?)
             .ok_or("workspace")?;
         assert_eq!(
-            workspace.bindings.get(&CoreProvider::Codex),
+            workspace.bindings.get(&CoreProvider::Zai),
             Some(&account("work")?)
         );
         Ok(())
@@ -288,9 +290,11 @@ async fn workspace_binding_from_the_editor() -> TestResult {
 async fn role_binding_from_the_roles_page() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        second_login(&lab).await?;
+        lab.reopen().await?;
         lab.console.keys("R enter enter")?;
         let screen = lab.console.screen();
-        assert!(screen.contains("work"), "{screen}");
+        assert!(screen.contains("second"), "{screen}");
         lab.console.keys("enter")?;
         lab.console.settle().await?;
         let bound = |config: &jackin_core::Config| -> Result<Option<AccountName>, Box<dyn std::error::Error>> {
@@ -298,7 +302,7 @@ async fn role_binding_from_the_roles_page() -> TestResult {
                 .role(&RoleName::parse("sentinel")?)
                 .and_then(|role| role.bindings.get(&CoreProvider::Codex).cloned()))
         };
-        assert_eq!(bound(&lab.config().await?)?, Some(account("work")?));
+        assert_eq!(bound(&lab.config().await?)?, Some(account("second")?));
         lab.console.keys("d")?;
         lab.console.settle().await?;
         assert_eq!(bound(&lab.config().await?)?, None);
@@ -316,10 +320,9 @@ async fn preselected(
     for name in extra {
         adds.push(ConfigEdit::AddAccount(CoreAccount::new(
             account(name)?,
-            CoreProvider::Codex,
-            Credential::CodexLogin {
-                home: lab.rig.home.clone(),
-                chatgpt_account_id: jackin_core::ChatgptAccountId::parse(ACCOUNT_ID)?,
+            CoreProvider::Zai,
+            Credential::File {
+                path: jackin_core::HostPath::parse(&lab.rig.home.as_path().join("zai.txt"))?,
             },
         )?));
     }
@@ -328,11 +331,6 @@ async fn preselected(
     lab.reopen().await?;
     let config = lab.config().await?;
     let workspace = lab.workspace("platform-backend").ok_or("workspace")?;
-    let offer = lab.world().offer_for(
-        jackin_console::domain::agent::Agent::Codex,
-        Some(&workspace),
-        Some("sentinel"),
-    );
     let name = WorkspaceName::parse("platform-backend")?;
     let role = RoleName::parse("sentinel")?;
     let core = config
@@ -341,11 +339,68 @@ async fn preselected(
             workspace: &name,
             role: &role,
             agent: Agent::Codex,
-            provider: CoreProvider::Codex,
+            provider: CoreProvider::Zai,
         })
         .ok()
         .map(|selected| selected.account.to_string());
-    Ok((offer.preselected, core))
+    let app = lab.console.console().app();
+    let world = &app.world;
+    let mut feed = world.backend.launch(
+        world,
+        &LaunchTarget {
+            workspace: Some(workspace.id),
+            role: "sentinel".to_owned(),
+            instances: vec![InstanceChoice {
+                agent: jackin_console::domain::agent::Agent::Codex,
+                provider: Provider::Zai,
+                account: None,
+                model: "glm-5.3".to_owned(),
+            }],
+            task: None,
+        },
+    );
+    let mut events = Vec::new();
+    let mut answered = false;
+    for _ in 0..2000 {
+        events.extend(feed.poll(world));
+        if !answered
+            && events
+                .iter()
+                .any(|event| matches!(event, LaunchEvent::NeedsInput(_)))
+        {
+            feed.answer_env(vec![EnvAnswer {
+                name: "GREETING".to_owned(),
+                value: "hello".to_owned(),
+            }]);
+            answered = true;
+        }
+        if events.iter().any(|event| {
+            matches!(
+                event,
+                LaunchEvent::Ready(_) | LaunchEvent::Failed(_) | LaunchEvent::Refused(_)
+            )
+        }) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    let mut sandboxes = lab.rig.world.gateway.sandboxes();
+    let launched = if events
+        .iter()
+        .any(|event| matches!(event, LaunchEvent::Ready(_)))
+    {
+        if sandboxes.len() != 1 {
+            return Err(format!("expected one sandbox, saw {}", sandboxes.len()).into());
+        }
+        let labels = jackin_core::SandboxLabels::from_labels(&sandboxes.remove(0).labels())?;
+        Some(labels.planned.agents.agents_label())
+    } else {
+        if !sandboxes.is_empty() {
+            return Err("a refused account selection created a sandbox".into());
+        }
+        None
+    };
+    Ok((launched, core))
 }
 
 #[tokio::test]
@@ -360,7 +415,7 @@ async fn the_preselected_account_equals_the_d26_table() -> TestResult {
         let role = |name: &str| -> Result<ConfigEdit, Box<dyn std::error::Error>> {
             Ok(ConfigEdit::BindRoleAccount {
                 role: RoleName::parse("sentinel")?,
-                agent: Agent::Codex,
+                agent: Agent::Omp,
                 account: account(name)?,
             })
         };
@@ -387,10 +442,21 @@ async fn the_preselected_account_equals_the_d26_table() -> TestResult {
             ("two accounts and no default", vec!["a1"], vec![], None),
         ];
         for (case, extra, edits, expected) in cases {
-            let (shown, core) = preselected(&extra, edits).await?;
-            if expected.is_some() {
-                assert_eq!(shown.as_deref(), expected, "{case}: the picker");
-            }
+            let (launched, core) = preselected(&extra, edits).await?;
+            let expected_launch = expected
+                .map(|name| {
+                    Ok::<_, Box<dyn std::error::Error>>(
+                        jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
+                            Agent::Codex,
+                            CoreProvider::Zai,
+                            account(name)?,
+                            "glm-5.3".to_owned(),
+                        ))
+                        .agents_label(),
+                    )
+                })
+                .transpose()?;
+            assert_eq!(launched, expected_launch, "{case}: the launch");
             assert_eq!(core.as_deref(), expected, "{case}: Config::select_account");
         }
         Ok(())

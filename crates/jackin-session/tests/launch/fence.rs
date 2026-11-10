@@ -5,23 +5,20 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 use jackin_core::{
-    Account, AccountName, ChatgptAccountId, Config, ConfigEdit, CredentialSource, HostPath,
-    ProjectRoot, Provider, ProviderName, RoleName, SandboxPath,
+    Account, AccountName, Agent, Config, ConfigEdit, CredentialSource, HostPath, ProjectRoot,
+    Provider, ProviderName, RoleName, SandboxPath,
 };
 use jackin_image::ensure_image;
 use jackin_openshell::{
     EndpointProtocol, Gateway, HostPattern, NetworkRule, RuleEndpoint, RuleKey, TlsMode,
 };
 use jackin_session::{LaunchError, LaunchFailure, LaunchRequest, LoadedRole, plan_launch};
-use jackin_testkit::{
-    ACCOUNT_ID, Outcome, RepoFixture, Rig, RoleFixture, SandboxHandle, launch_id,
-};
+use jackin_testkit::{Outcome, RepoFixture, Rig, RoleFixture, SandboxHandle, launch_id};
 use tokio_util::sync::CancellationToken;
 
 use super::docker_support::{rule_keys, split_failure};
 use super::support::{TestResult, guard, launch_rig, ready};
 
-const OTHER_ACCOUNT_ID: &str = "11111111-2222-3333-4444-555555555555";
 const POLICY_KEY: &str = "jackin.dev/policy";
 
 type Snapshot = (
@@ -79,7 +76,9 @@ fn request_for(
         project,
         RoleName::parse(role)?,
         launch_id(1),
-    ))
+    )
+    .tuple(Agent::Codex, Provider::Zai)
+    .model(Some("glm-5.3".to_owned())))
 }
 
 fn label(handle: &SandboxHandle, key: &str) -> Option<String> {
@@ -97,17 +96,14 @@ struct Other {
 
 fn with_other_account(rig: &Rig, default: bool) -> Result<Other, Box<dyn Error>> {
     let home = tempfile::tempdir()?;
-    let text = std::fs::read_to_string(rig.home.as_path().join("auth.json"))?
-        .replace(ACCOUNT_ID, OTHER_ACCOUNT_ID);
-    std::fs::write(home.path().join("auth.json"), text)?;
+    let path = home.path().join("zai.txt");
+    std::fs::write(&path, "other-test-key")?;
+    let key = HostPath::parse(&std::fs::canonicalize(path)?)?;
     let other = AccountName::parse("other")?;
     let account = Account::new(
         other.clone(),
-        Provider::Codex,
-        CredentialSource::CodexLogin {
-            home: HostPath::parse(&std::fs::canonicalize(home.path())?)?,
-            chatgpt_account_id: ChatgptAccountId::parse(OTHER_ACCOUNT_ID)?,
-        },
+        Provider::Zai,
+        CredentialSource::File { path: key },
     )?;
     let mut config = rig.config.clone();
     config.apply(ConfigEdit::AddAccount(account))?;
@@ -137,16 +133,19 @@ async fn another_account(default: bool) -> TestResult {
     )
     .await?;
     assert!(shown.contains("jackin.dev/agents"), "{shown}");
-    let work_hash = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-        jackin_core::Agent::Codex,
-        AccountName::parse("work")?,
-    ))
-    .agents_label();
-    let other_hash = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-        jackin_core::Agent::Codex,
-        AccountName::parse("other")?,
-    ))
-    .agents_label();
+    let hash = |account: &str| -> Result<String, Box<dyn Error>> {
+        Ok(
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
+                Agent::Codex,
+                Provider::Zai,
+                AccountName::parse(account)?,
+                "glm-5.3".to_owned(),
+            ))
+            .agents_label(),
+        )
+    };
+    let work_hash = hash("work")?;
+    let other_hash = hash("other")?;
     assert!(
         shown.contains(&work_hash) && shown.contains(&other_hash),
         "{shown}"

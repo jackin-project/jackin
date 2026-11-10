@@ -13,7 +13,7 @@ use jackin_console::domain::role::{FindingArea, RoleFinding, RoleManifestDoc};
 use jackin_console::domain::vocabulary::{Rejection, SaveField};
 use jackin_console::domain::workspace::{MountSource, Workspace, WorkspaceId};
 use jackin_console::panes::{FailNext, LinkFault};
-use jackin_console::world::{GlobalConfig, Msg, SaveFailure, Snapshot};
+use jackin_console::world::{GlobalConfig, Msg, SaveFailure, SaveSuccess, SaveWarning, Snapshot};
 use jackin_core::{
     AccountName, Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath,
     ModelName, PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
@@ -151,16 +151,40 @@ impl Inputs {
         Settled::reverted(reply, self.saved_snapshot().await)
     }
 
-    async fn applied(&self, config: &Config, edits: Vec<ConfigEdit>) -> Result<Config, Refused> {
-        if edits.is_empty() {
-            return Ok(config.clone());
+    pub(crate) async fn save_result(
+        &self,
+        result: Result<Config, ConfigError>,
+    ) -> Result<(Config, Option<SaveWarning>), ConfigError> {
+        match result {
+            Ok(config) => Ok((config, None)),
+            Err(error) if error.committed() => {
+                Ok((self.config.load().await?, Some(SaveWarning::DirectorySync)))
+            }
+            Err(error) => Err(error),
         }
-        Ok(self.config.edit(edits).await?)
+    }
+
+    async fn applied(
+        &self,
+        config: &Config,
+        edits: Vec<ConfigEdit>,
+    ) -> Result<(Config, Option<SaveWarning>), Refused> {
+        if edits.is_empty() {
+            return Ok((config.clone(), None));
+        }
+        Ok(self.save_result(self.config.edit(edits).await).await?)
     }
 
     async fn snapshot_of(&self, config: &Config) -> Box<Snapshot> {
         let Observation { snapshot, .. } = self.current(config).await;
         Box::new(snapshot)
+    }
+
+    async fn save_success(&self, config: &Config, warning: Option<SaveWarning>) -> SaveSuccess {
+        SaveSuccess {
+            snapshot: self.snapshot_of(config).await,
+            warning,
+        }
     }
 
     pub(crate) fn expanded(&self, text: &str) -> Result<HostPath, PathError> {
@@ -235,7 +259,7 @@ impl Inputs {
         &self,
         base: Option<&Workspace>,
         workspace: &Workspace,
-    ) -> Result<(WorkspaceId, Box<Snapshot>), Refused> {
+    ) -> Result<(WorkspaceId, SaveSuccess), Refused> {
         let config = self.config.load().await?;
         let _hold = match base.filter(|b| b.name != workspace.name) {
             Some(old) => {
@@ -261,17 +285,17 @@ impl Inputs {
             folders: BTreeMap::new(),
         };
         let edits = persist::workspace(&config, base, workspace, &resolved)?;
-        let saved = self.applied(&config, edits).await?;
+        let (saved, warning) = self.applied(&config, edits).await?;
         let name = WorkspaceName::parse(&workspace.name).map_err(PersistError::from)?;
         if let Some(old) = base.filter(|b| b.name != workspace.name) {
             let old = WorkspaceName::parse(&old.name).map_err(PersistError::from)?;
             locked(&self.ids).rename(&old, &name);
         }
-        let snapshot = self.snapshot_of(&saved).await;
+        let saved = self.save_success(&saved, warning).await;
         let id = locked(&self.ids)
             .lookup(&name)
             .ok_or_else(|| Refused::Text(name.to_string()))?;
-        Ok((id, snapshot))
+        Ok((id, saved))
     }
 
     pub(crate) async fn delete_workspace(&self, id: WorkspaceId) -> Settled {
@@ -292,26 +316,29 @@ impl Inputs {
         }
     }
 
-    async fn try_delete_workspace(&self, id: WorkspaceId) -> Result<Box<Snapshot>, Refused> {
+    async fn try_delete_workspace(&self, id: WorkspaceId) -> Result<SaveSuccess, Refused> {
         let name = locked(&self.ids)
             .name(id)
             .cloned()
             .ok_or_else(|| Refused::Text(id.to_string()))?;
         let config = self.config.load().await?;
         let _hold = self.ensure_unused(&config, &name).await?;
-        let saved = self
-            .config
-            .edit(vec![ConfigEdit::RemoveWorkspace(name)])
+        let (saved, warning) = self
+            .save_result(
+                self.config
+                    .edit(vec![ConfigEdit::RemoveWorkspace(name)])
+                    .await,
+            )
             .await?;
-        Ok(self.snapshot_of(&saved).await)
+        Ok(self.save_success(&saved, warning).await)
     }
 
     pub(crate) async fn save_global(&self, base: &GlobalConfig, global: &GlobalConfig) -> Settled {
         let result = async {
             let config = self.config.load().await?;
             let edits = persist::global(base, global)?;
-            let saved = self.applied(&config, edits).await?;
-            Ok::<_, Refused>(self.snapshot_of(&saved).await)
+            let (saved, warning) = self.applied(&config, edits).await?;
+            Ok::<_, Refused>(self.save_success(&saved, warning).await)
         }
         .await;
         match result {
@@ -374,20 +401,24 @@ impl Inputs {
         &self,
         edits: Vec<ConfigEdit>,
         agents: BTreeMap<AccountName, CoreAgent>,
-    ) -> Result<Config, Refused> {
+    ) -> Result<(Config, Option<SaveWarning>), Refused> {
         if edits.is_empty() {
-            return Ok(self.config.load().await?);
+            return Ok((self.config.load().await?, None));
         }
         let plan = plan_account_edits_for_agents(&self.desk, edits, agents, &self.cancel)
             .await
             .map_err(|error| Refused::Text(text(&error)))?;
         match plan {
-            AccountPlan::Offline(plan) => Ok(plan.apply().await?),
+            AccountPlan::Offline(plan) => Ok(self.save_result(plan.apply().await).await?),
             AccountPlan::Gateway(plan) => {
                 let gateways = self.gateways(plan.config()).await?;
-                plan.apply(&gateways)
-                    .await
-                    .map_err(|error| Refused::Text(text(&error)))
+                match plan.apply(&gateways).await {
+                    Ok(config) => Ok((config, None)),
+                    Err(jackin_session::AccountEditError::Config(error)) if error.committed() => {
+                        Ok(self.save_result(Err(error)).await?)
+                    }
+                    Err(error) => Err(Refused::Text(text(&error))),
+                }
             }
         }
     }
@@ -430,10 +461,10 @@ impl Inputs {
             let resolved = self.resolve_accounts(base, registry).await?;
             let edits = persist::accounts(base, registry, &resolved)?;
             let added = persist::added(registry)?;
-            let saved = self
+            let (saved, warning) = self
                 .apply_accounts(edits, persist::agents(base, registry))
                 .await?;
-            Ok::<_, Refused>((self.snapshot_of(&saved).await, added))
+            Ok::<_, Refused>((self.save_success(&saved, warning).await, added))
         }
         .await;
         match result {
@@ -480,7 +511,7 @@ impl Inputs {
             .map(|observed| (observed.gateway, observed.summary.name))
             .ok_or_else(|| {
                 Refused::Rejected(Rejection::NotInRoster {
-                    instance: instance.clone(),
+                    instance: instance.short_label(),
                 })
             })
     }
@@ -529,6 +560,63 @@ impl Inputs {
         }
         .await;
         result.map_err(|error| text(&error))
+    }
+
+    async fn power_unreadable(
+        &self,
+        instance: &InstanceId,
+        action: PowerAction,
+    ) -> Result<Box<Snapshot>, String> {
+        let result = async {
+            let observed = self.locate_unreadable(instance).ok_or_else(|| {
+                Refused::Rejected(Rejection::NotInRoster {
+                    instance: instance.short_label(),
+                })
+            })?;
+            let gateway = observed.gateway;
+            let sandbox = observed.sandbox;
+            let allowed = match action {
+                PowerAction::Start => jackin_core::Phase::Stopped,
+                PowerAction::Stop => jackin_core::Phase::Ready,
+            };
+            if sandbox.phase != allowed {
+                let phase = crate::project::sandbox_phase(sandbox.phase);
+                let message = match action {
+                    PowerAction::Start => format!(
+                        "Cannot start sandbox {} while {} · only stopped sandboxes can start",
+                        sandbox.name,
+                        phase.label()
+                    ),
+                    PowerAction::Stop => format!(
+                        "Cannot stop sandbox {} while {} · only ready sandboxes can stop",
+                        sandbox.name,
+                        phase.label()
+                    ),
+                };
+                return Err(Refused::Text(message));
+            }
+            self.session(&gateway)?
+                .power_unreadable(&sandbox.name, action, &self.cancel)
+                .await
+                .map_err(|error| Refused::Text(text(&error)))?;
+            self.after_lifecycle().await
+        }
+        .await;
+        result.map_err(|error| text(&error))
+    }
+
+    pub(crate) async fn power_start(&self, instance: &InstanceId) -> Msg {
+        Msg::PowerStarted {
+            instance: instance.clone(),
+            result: self.power_unreadable(instance, PowerAction::Start).await,
+        }
+    }
+
+    pub(crate) async fn power_stop(&self, instance: &InstanceId) -> Msg {
+        Msg::PowerStopped {
+            instance: instance.clone(),
+            result: self.power_unreadable(instance, PowerAction::Stop).await,
+        }
     }
 
     pub(crate) async fn stop(&self, instance: &InstanceId) -> Msg {
@@ -672,8 +760,8 @@ impl Inputs {
                 },
                 None => ConfigEdit::UnbindRoleAccount { role: name, agent },
             };
-            let saved = self.config.edit(vec![edit]).await?;
-            Ok::<_, Refused>(self.snapshot_of(&saved).await)
+            let (saved, warning) = self.save_result(self.config.edit(vec![edit]).await).await?;
+            Ok::<_, Refused>(self.save_success(&saved, warning).await)
         }
         .await;
         let reply = |result| Msg::RoleBound {
@@ -690,8 +778,10 @@ impl Inputs {
     pub(crate) async fn remove_role(&self, role: &str) -> Settled {
         let result = async {
             let name = RoleName::parse(role).map_err(PersistError::from)?;
-            let saved = self.config.edit(vec![ConfigEdit::RemoveRole(name)]).await?;
-            Ok::<_, Refused>(self.snapshot_of(&saved).await)
+            let (saved, warning) = self
+                .save_result(self.config.edit(vec![ConfigEdit::RemoveRole(name)]).await)
+                .await?;
+            Ok::<_, Refused>(self.save_success(&saved, warning).await)
         }
         .await;
         let reply = |result| Msg::RoleRemoved {
@@ -716,7 +806,7 @@ impl Inputs {
         }
     }
 
-    async fn try_add_role(&self, location: &str) -> Result<(String, Box<Snapshot>), Refused> {
+    async fn try_add_role(&self, location: &str) -> Result<(String, SaveSuccess), Refused> {
         let (name, source) = if let Ok(url) = RoleUrl::parse(location) {
             let loaded = self
                 .roles
@@ -733,14 +823,17 @@ impl Inputs {
                 .map_err(|error| Refused::Text(text(&error)))?;
             (loaded.name().clone(), RoleSource::Path(root))
         };
-        let saved = self
-            .config
-            .edit(vec![ConfigEdit::AddRole {
-                name: name.clone(),
-                source,
-            }])
+        let (saved, warning) = self
+            .save_result(
+                self.config
+                    .edit(vec![ConfigEdit::AddRole {
+                        name: name.clone(),
+                        source,
+                    }])
+                    .await,
+            )
             .await?;
-        Ok((name.to_string(), self.snapshot_of(&saved).await))
+        Ok((name.to_string(), self.save_success(&saved, warning).await))
     }
 
     async fn role_root(&self, config: &Config, name: &RoleName) -> Result<HostPath, Refused> {

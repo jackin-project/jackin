@@ -30,7 +30,7 @@ fn statuses(console: &mut ConsoleRig) -> Vec<InstanceStatus> {
         .world
         .instances
         .iter()
-        .map(|instance| instance.status)
+        .filter_map(|entry| entry.as_available().map(|instance| instance.status))
         .collect();
     found.sort_by_key(|status| format!("{status:?}"));
     found

@@ -15,9 +15,9 @@ fn codex_and(
     Ok(AgentInstances::new(vec![
         AgentInstance::new(
             Agent::Codex,
-            Provider::Codex,
+            Provider::Zai,
             AccountName::parse("work")?,
-            "gpt-6.1-sol".to_owned(),
+            "glm-5.3".to_owned(),
         ),
         AgentInstance::new(
             agent,

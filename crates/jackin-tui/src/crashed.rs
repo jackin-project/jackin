@@ -116,6 +116,14 @@ pub(crate) fn reply(effect: &Effect) -> Msg {
             instance: instance.clone(),
             result: Err(error),
         },
+        Effect::PowerStart { instance } => Msg::PowerStarted {
+            instance: instance.clone(),
+            result: Err(error),
+        },
+        Effect::PowerStop { instance } => Msg::PowerStopped {
+            instance: instance.clone(),
+            result: Err(error),
+        },
         Effect::Prewarm { workspace } => Msg::Prewarmed {
             workspace: *workspace,
             result: Err(error),
@@ -156,6 +164,30 @@ mod tests {
             }
         );
         assert_eq!(reply(&Effect::Refresh { ticket: 9 }), refresh(9));
+    }
+
+    #[test]
+    fn crashed_power_replies_keep_their_operation_and_full_identity() {
+        let instance =
+            jackin_console::domain::instance::InstanceId::new("gateway-one", "jackin-project-abcd");
+        assert_eq!(
+            reply(&Effect::PowerStart {
+                instance: instance.clone(),
+            }),
+            Msg::PowerStarted {
+                instance: instance.clone(),
+                result: Err(Stopped.to_string()),
+            }
+        );
+        assert_eq!(
+            reply(&Effect::PowerStop {
+                instance: instance.clone(),
+            }),
+            Msg::PowerStopped {
+                instance,
+                result: Err(Stopped.to_string()),
+            }
+        );
     }
 
     #[test]

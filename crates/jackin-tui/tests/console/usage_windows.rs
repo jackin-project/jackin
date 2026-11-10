@@ -49,6 +49,23 @@ async fn refresh(lab: &mut Lab) -> TestResult {
     lab.step("r").await
 }
 
+async fn use_codex(lab: &mut Lab) -> Result<(), Box<dyn std::error::Error>> {
+    let login = Account::new(
+        AccountName::parse("work")?,
+        Provider::Codex,
+        CredentialSource::CodexLogin {
+            home: lab.rig.home.clone(),
+            chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+        },
+    )?;
+    lab.edit(vec![
+        ConfigEdit::RemoveAccount(AccountName::parse("work")?),
+        ConfigEdit::AddAccount(login),
+    ])
+    .await?;
+    lab.reopen().await
+}
+
 fn windows(lab: &mut Lab, id: &str) -> Vec<(&'static str, Option<u8>, WindowCategory)> {
     lab.world()
         .accounts
@@ -91,6 +108,7 @@ async fn rejected_and_unsupported(lab: &Lab) -> TestResult {
 async fn refresh_maps_windows_rounds_half_away_from_zero_and_takes_a_new_reading() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         serve(&lab, &body(Some(12.5), 0.4)).await?;
         refresh(&mut lab).await?;
         assert_eq!(
@@ -125,6 +143,7 @@ async fn refresh_maps_windows_rounds_half_away_from_zero_and_takes_a_new_reading
 async fn a_window_with_only_a_remaining_percent_takes_its_used_percent_from_it() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         for (left, used, status) in [
             (70.0, 30, QuotaStatus::Available),
             (0.5, 100, QuotaStatus::Exhausted),
@@ -154,6 +173,7 @@ async fn a_window_with_only_a_remaining_percent_takes_its_used_percent_from_it()
 async fn a_weekly_only_report_has_no_five_hour_row() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         serve(&lab, &body(None, 33.0)).await?;
         refresh(&mut lab).await?;
         assert_eq!(
@@ -170,6 +190,7 @@ async fn a_rejected_login_and_an_unsupported_provider_show_their_reasons_beside_
 -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         rejected_and_unsupported(&lab).await?;
         lab.reopen().await?;
         serve(&lab, &body(Some(20.0), 5.0)).await?;
@@ -209,6 +230,7 @@ async fn a_rejected_login_and_an_unsupported_provider_show_their_reasons_beside_
 async fn a_server_error_after_a_good_report_keeps_the_windows_as_stale() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         serve(&lab, &body(Some(40.0), 10.0)).await?;
         refresh(&mut lab).await?;
         lab.rig.world.usage.get().await?.replace(
@@ -231,6 +253,7 @@ async fn a_server_error_after_a_good_report_keeps_the_windows_as_stale() -> Test
 async fn validate_reports_quota_access_and_the_rejection_of_a_login() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         rejected_and_unsupported(&lab).await?;
         lab.reopen().await?;
         serve(&lab, &body(Some(20.0), 5.0)).await?;
@@ -270,6 +293,7 @@ const CLAUDE_BODY: &str = "{\"five_hour\":{\"utilization\":12,\"resets_at\":\"20
 async fn usage_reads_a_one_password_value_only_to_send_it_as_the_bearer_header() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         let account = Account::new(
             AccountName::parse("router")?,
             Provider::Claude,
@@ -331,6 +355,7 @@ const CLAUDE_LOGIN: &str = r#"{"claudeAiOauth":{"accessToken":"SECRET_TOKEN_CLAU
 async fn a_claude_folder_account_saved_from_the_console_reads_usage() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         let folder = lab.code.join("claude-home");
         tokio::fs::create_dir_all(&folder).await?;
         tokio::fs::write(folder.join(".credentials.json"), CLAUDE_LOGIN).await?;
@@ -381,6 +406,7 @@ async fn a_good_and_a_stale_refresh_name_their_outcome_in_the_vocabulary_words()
     guard(async {
         let words = Vocabulary::openshell();
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         serve(&lab, &body(Some(40.0), 10.0)).await?;
         lab.step("c down down").await?;
         let current = refresh_codex(&mut lab).await?;
@@ -411,6 +437,7 @@ async fn a_refresh_that_never_read_usage_is_named_failed_with_the_provider_reaso
     guard(async {
         let words = Vocabulary::openshell();
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         lab.rig.world.usage.get().await?.replace(
             Provider::Codex,
             Method::Get,
@@ -443,6 +470,7 @@ async fn a_rate_limit_reaches_the_issue_as_a_wait_and_the_note_in_the_vocabulary
 -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         lab.rig.world.usage.get().await?.replace(
             Provider::Codex,
             Method::Get,
@@ -469,6 +497,7 @@ async fn validate_words_its_rows_with_the_vocabulary() -> TestResult {
     guard(async {
         let words = Vocabulary::openshell();
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         rejected_and_unsupported(&lab).await?;
         lab.reopen().await?;
         serve(&lab, &body(Some(20.0), 5.0)).await?;
@@ -496,6 +525,7 @@ async fn validate_words_its_rows_with_the_vocabulary() -> TestResult {
 async fn a_roster_refresh_keeps_the_last_read_of_every_account() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         serve(&lab, &body(Some(12.5), 0.4)).await?;
         refresh(&mut lab).await?;
         let read = lab.world().accounts.get("work").cloned().ok_or("work")?;
@@ -520,6 +550,7 @@ async fn a_roster_refresh_keeps_the_last_validation_and_drops_a_reading_of_an_ed
 -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
         serve(&lab, &body(Some(20.0), 5.0)).await?;
         lab.step("c").await?;
         lab.step("down").await?;

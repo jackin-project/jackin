@@ -7,8 +7,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use jackin_core::{
-    Config, EnvName, FileSystem, GatewayName, HostPath, ImageId, LaunchId, PlainEnvValue,
-    ProjectRoot, RoleName, Sha256, StdFileSystem,
+    Agent, Config, EnvName, FileSystem, GatewayName, HostPath, ImageId, LaunchId, PlainEnvValue,
+    ProjectRoot, Provider, RoleName, Sha256, StdFileSystem,
 };
 use jackin_image::{BuiltImage, ImageSource};
 use jackin_session::{LaunchPlan, LaunchRequest, LoadedRole, PlanError, RoleCatalog, plan_launch};
@@ -47,6 +47,12 @@ pub(crate) fn login_account(name: &str) -> String {
     )
 }
 
+pub(crate) fn zai_account(name: &str) -> String {
+    format!(
+        "[accounts.{name}]\nprovider = \"zai\"\ncredential = {{ source = \"env\", var = \"ZAI_API_KEY\" }}\n"
+    )
+}
+
 pub(crate) struct Spec {
     pub(crate) role: RoleFixture,
     pub(crate) engine: Option<u16>,
@@ -77,7 +83,7 @@ impl Spec {
             role,
             engine: None,
             workspace_docker: false,
-            accounts: login_account("work"),
+            accounts: zai_account("work"),
             defaults: String::new(),
             workspace_bindings: String::new(),
             role_bindings: String::new(),
@@ -154,7 +160,9 @@ impl Setup {
             self.project.clone(),
             RoleName::parse("sentinel")?,
             launch_id(id),
-        ))
+        )
+        .tuple(Agent::Codex, Provider::Zai)
+        .model(Some("glm-5.3".to_owned())))
     }
 
     pub(crate) fn plan(&self, request: LaunchRequest) -> Result<LaunchPlan, PlanError> {

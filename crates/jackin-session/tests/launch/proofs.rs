@@ -74,7 +74,10 @@ async fn two_runs_with_one_launch_id_give_one_build_one_sandbox_one_upload_one_s
             rig.gateway().providers(),
             [ProviderName::parse("jackin-work-codex")?]
         );
-        assert_eq!(rig.gateway().profiles(), [ProfileId::parse("codex")?]);
+        assert_eq!(
+            rig.gateway().profiles(),
+            [ProfileId::parse("t18-codex-zai")?]
+        );
         Ok(())
     })
     .await
@@ -88,7 +91,7 @@ fn running_attempt() -> jackin_core::AttemptId {
 async fn a_failure_after_create_leaves_the_sandbox_and_a_retry_continues_it() -> TestResult {
     guard(async {
         let rig = launch_rig().await?;
-        let auth = jackin_core::Agent::Codex.spec().auth_file.path.clone();
+        let auth = sandbox_layout::env_file(&launch_id(1));
         rig.gateway().inject(Fault::FailAt {
             trigger: Trigger::Write(auth.clone()),
             error: unreachable(),

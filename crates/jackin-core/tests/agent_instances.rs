@@ -22,24 +22,19 @@ fn inst(
 
 #[test]
 fn one_and_three_valid_and_repeated_and_empty() -> Result<(), Box<dyn std::error::Error>> {
-    let one = AgentInstances::new(vec![inst(
-        Agent::Codex,
-        Provider::Codex,
-        "work",
-        "gpt-6.1-sol",
-    )?])?;
+    let one = AgentInstances::new(vec![inst(Agent::Codex, Provider::Zai, "work", "glm-5.3")?])?;
     assert_eq!(one.lead().agent, Agent::Codex);
     assert_eq!(one.len(), 1);
     let three = AgentInstances::new(vec![
-        inst(Agent::Codex, Provider::Codex, "work", "gpt-6.1-sol")?,
+        inst(Agent::Codex, Provider::Zai, "work", "glm-5.3")?,
         inst(Agent::Omp, Provider::Zai, "work", "glm-5.3")?,
         inst(Agent::KimiCode, Provider::Kimi, "work", "kimi-k2")?,
     ])?;
     assert_eq!(three.len(), 3);
     assert_eq!(three.lead().agent, Agent::Codex);
     let repeated = AgentInstances::new(vec![
-        inst(Agent::Codex, Provider::Codex, "work", "gpt-6.1-sol")?,
-        inst(Agent::Codex, Provider::Codex, "other", "gpt-6.1-sol")?,
+        inst(Agent::Codex, Provider::Zai, "work", "glm-5.3")?,
+        inst(Agent::Codex, Provider::Zai, "other", "glm-5.3")?,
     ]);
     assert!(matches!(
         repeated,
@@ -56,14 +51,14 @@ fn one_and_three_valid_and_repeated_and_empty() -> Result<(), Box<dyn std::error
 fn persisted_identity_preserves_the_lead_and_distinguishes_a_lead_swap()
 -> Result<(), Box<dyn std::error::Error>> {
     let omp = inst(Agent::Omp, Provider::Zai, "work", "glm-5.3")?;
-    let codex = inst(Agent::Codex, Provider::Codex, "work", "gpt-6.1-sol")?;
+    let codex = inst(Agent::Codex, Provider::Zai, "work", "glm-5.3")?;
     let first = AgentInstances::new(vec![omp.clone(), codex.clone()])?;
     let second = AgentInstances::new(vec![codex, omp])?;
     let persisted: AgentInstances = serde_json::from_str(&first.agents_json())?;
     assert_eq!(persisted.lead().agent, Agent::Omp);
     assert_ne!(first.agents_label(), second.agents_label());
     assert_ne!(first.agents_json(), second.agents_json());
-    let old = jackin_core::Sha256::of(b"codex:codex:work:gpt-6.1-sol,omp:zai:work:glm-5.3");
+    let old = jackin_core::Sha256::of(b"codex:codex:work:glm-5.3,omp:zai:work:glm-5.3");
     assert_ne!(second.agents_label(), &old.as_str()[..32]);
     Ok(())
 }
@@ -72,7 +67,7 @@ fn persisted_identity_preserves_the_lead_and_distinguishes_a_lead_swap()
 fn canonical_identity_sorts_only_the_secondary_instances() -> Result<(), Box<dyn std::error::Error>>
 {
     let omp = inst(Agent::Omp, Provider::Zai, "work", "glm-5.3")?;
-    let codex = inst(Agent::Codex, Provider::Codex, "work", "gpt-6.1-sol")?;
+    let codex = inst(Agent::Codex, Provider::Zai, "work", "glm-5.3")?;
     let grok = inst(Agent::GrokBuild, Provider::Grok, "work", "grok-code")?;
     let first = AgentInstances::new(vec![omp.clone(), grok.clone(), codex.clone()])?;
     let second = AgentInstances::new(vec![omp, codex, grok])?;
@@ -87,13 +82,8 @@ fn canonical_identity_sorts_only_the_secondary_instances() -> Result<(), Box<dyn
 
 #[test]
 fn golden_label_and_exact_json_keys() -> Result<(), Box<dyn std::error::Error>> {
-    let one = AgentInstances::new(vec![inst(
-        Agent::Codex,
-        Provider::Codex,
-        "work",
-        "gpt-6.1-sol",
-    )?])?;
-    assert_eq!(one.agents_label(), "ac08b3690e95435c804daa2a6dacb9dc");
+    let one = AgentInstances::new(vec![inst(Agent::Codex, Provider::Zai, "work", "glm-5.3")?])?;
+    assert_eq!(one.agents_label(), "428e0189bf6f23cb88404e18a8342fe9");
     let json = one.agents_json();
     let value: serde_json::Value = serde_json::from_str(&json)?;
     let keys: Vec<&str> = value[0]

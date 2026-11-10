@@ -10,7 +10,7 @@ use std::sync::{Arc, mpsc};
 use jackin_console::backend::{Backend, OnePassword, PlainKey};
 use jackin_console::domain::agent::Agent;
 use jackin_console::domain::docker::DockerCapability;
-use jackin_console::domain::instance::Instance;
+use jackin_console::domain::instance::InstanceEntry;
 use jackin_console::domain::launch::{LaunchContent, LaunchFailure, NextStep, RefusalReason};
 use jackin_console::launch::{
     EnvAnswer, EnvQuestion, FailedLaunch, LaunchEvent, LaunchFeed, LaunchTarget, ReadyInstance,
@@ -141,7 +141,10 @@ fn next_step(failure: &SessionFailure) -> NextStep {
     let credential = match &*failure.error {
         LaunchError::Credential(_) => true,
         LaunchError::ProviderUnavailable { source, .. } => {
-            matches!(**source, AccountError::Credential(_))
+            matches!(
+                **source,
+                AccountError::Credential(_) | AccountError::MissingCredential { .. }
+            )
         }
         _ => false,
     };
@@ -287,6 +290,7 @@ struct Prepared {
     config: Config,
     name: WorkspaceName,
     gateway: GatewayName,
+    warning: Option<jackin_console::world::SaveWarning>,
 }
 
 struct Run {
@@ -323,7 +327,15 @@ async fn resolve(
     inputs: &Inputs,
     config: Config,
     place: &Place,
-) -> Result<(Config, WorkspaceName, Workspace), Unlaunchable> {
+) -> Result<
+    (
+        Config,
+        WorkspaceName,
+        Workspace,
+        Option<jackin_console::world::SaveWarning>,
+    ),
+    Unlaunchable,
+> {
     match place {
         Place::Gone => Err(Unlaunchable::WorkspaceGone),
         Place::Workspace(name) => {
@@ -332,24 +344,28 @@ async fn resolve(
                 .workspace(&name)
                 .cloned()
                 .ok_or(Unlaunchable::WorkspaceGone)?;
-            Ok((config, name, workspace))
+            Ok((config, name, workspace, None))
         }
         Place::Directory(text) => {
             let given = HostPath::parse(std::path::Path::new(text))?;
             let path = HostPath::canonical_dir(inputs.host.fs.as_ref(), &given).await?;
             match lookup_workspace(&config, &path) {
-                WorkspaceLookup::Saved { name, workspace } => Ok((config, name, workspace)),
+                WorkspaceLookup::Saved { name, workspace } => Ok((config, name, workspace, None)),
                 WorkspaceLookup::Unsaved { path } => {
                     let name = adhoc_workspace_name(&config, &path)?;
                     let workspace = Workspace::new(path, false);
-                    let saved = inputs
-                        .config
-                        .edit(vec![ConfigEdit::AddWorkspace {
-                            name: name.clone(),
-                            workspace: workspace.clone(),
-                        }])
+                    let (saved, warning) = inputs
+                        .save_result(
+                            inputs
+                                .config
+                                .edit(vec![ConfigEdit::AddWorkspace {
+                                    name: name.clone(),
+                                    workspace: workspace.clone(),
+                                }])
+                                .await,
+                        )
                         .await?;
-                    Ok((saved, name, workspace))
+                    Ok((saved, name, workspace, warning))
                 }
             }
         }
@@ -484,9 +500,10 @@ impl Run {
             .load()
             .await
             .map_err(|error| Stop::at(Stage::Image, &error))?;
-        let (config, name, workspace) = resolve(&inputs, saved.clone(), &self.wanted.place)
-            .await
-            .map_err(|error| Stop::at(Stage::Image, &error))?;
+        let (config, name, workspace, warning) =
+            resolve(&inputs, saved.clone(), &self.wanted.place)
+                .await
+                .map_err(|error| Stop::at(Stage::Image, &error))?;
         let Some((gateway, access)) = inputs.sessions.default_target() else {
             let error = saved
                 .resolve_gateway(None)
@@ -565,6 +582,7 @@ impl Run {
                         config,
                         name,
                         gateway,
+                        warning,
                     });
                 }
                 Err(PlanError::EnvNeeded(found)) => values.extend(self.ask(&found).await?),
@@ -587,6 +605,7 @@ impl Run {
             config,
             name,
             gateway,
+            warning,
         } = prepared;
         let account = plan.account().account.clone();
         let (events, mut feed) = launch_events(LineDelivery::BestEffort);
@@ -616,6 +635,7 @@ impl Run {
                     Ok(instance) => self.send(LaunchEvent::Ready(Box::new(ReadyInstance {
                         instance,
                         run_id: self.launch.to_string(),
+                        warning,
                     }))),
                     Err(error) => {
                         let failure = plain_failure(Stage::Codex, &error);
@@ -672,7 +692,7 @@ impl Run {
         gateway: &GatewayName,
         sandbox: &SandboxName,
         origins: &Origins,
-    ) -> Result<Instance, jackin_session::LifecycleError> {
+    ) -> Result<InstanceEntry, jackin_session::LifecycleError> {
         let inspected = session.inspect(sandbox).await?;
         let work = session.work_state(config, sandbox).await;
         let observed = ObservedSandbox {
@@ -696,7 +716,7 @@ impl Run {
         name: &WorkspaceName,
         gateway: &GatewayName,
         sandbox: &SandboxName,
-    ) -> Result<Instance, jackin_session::LifecycleError> {
+    ) -> Result<InstanceEntry, jackin_session::LifecycleError> {
         let origins: Origins = session
             .project_origin(project, &self.cancel)
             .await
@@ -744,7 +764,7 @@ impl LaunchFeed for SessionLaunch {
         drop(self.answers.send(answers));
     }
 
-    fn cancel(&mut self, _world: &World) -> Option<Instance> {
+    fn cancel(&mut self, _world: &World) -> Option<InstanceEntry> {
         self.cancel.cancel();
         None
     }

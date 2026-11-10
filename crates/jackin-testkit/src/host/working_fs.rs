@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use jackin_core::{
@@ -11,10 +11,18 @@ use jackin_core::{
 
 use super::FakeClock;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FsFault {
+    WriteNew,
+    Rename,
+    SyncDir,
+}
+
 #[derive(Debug)]
 pub struct WorkingFs {
     inner: Arc<dyn FileSystem>,
     clock: Arc<FakeClock>,
+    fault: Mutex<Option<FsFault>>,
 }
 
 impl WorkingFs {
@@ -22,7 +30,25 @@ impl WorkingFs {
         WorkingFs {
             inner,
             clock: Arc::clone(clock),
+            fault: Mutex::new(None),
         }
+    }
+
+    pub fn fail_next(&self, fault: FsFault) {
+        *self.fault.lock().unwrap_or_else(PoisonError::into_inner) = Some(fault);
+    }
+
+    fn failed(&self, operation: FsFault, path: &HostPath) -> Option<FsError> {
+        let mut armed = self.fault.lock().unwrap_or_else(PoisonError::into_inner);
+        if *armed != Some(operation) {
+            return None;
+        }
+        *armed = None;
+        Some(FsError::Io {
+            path: path.clone(),
+            kind: std::io::ErrorKind::Other,
+            message: format!("injected {operation:?} failure"),
+        })
     }
 }
 
@@ -80,11 +106,17 @@ impl FileSystem for WorkingFs {
         mode: FileMode,
     ) -> Result<(), FsError> {
         let _working = self.clock.working();
+        if let Some(error) = self.failed(FsFault::WriteNew, path) {
+            return Err(error);
+        }
         self.inner.write_new(path, bytes, mode).await
     }
 
     async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError> {
         let _working = self.clock.working();
+        if let Some(error) = self.failed(FsFault::Rename, to) {
+            return Err(error);
+        }
         self.inner.rename(from, to).await
     }
 
@@ -105,6 +137,9 @@ impl FileSystem for WorkingFs {
 
     async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
         let _working = self.clock.working();
+        if let Some(error) = self.failed(FsFault::SyncDir, dir) {
+            return Err(error);
+        }
         self.inner.sync_dir(dir).await
     }
 

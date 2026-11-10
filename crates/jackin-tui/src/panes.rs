@@ -197,10 +197,10 @@ impl PaneHub {
             .is_ok()
     }
 
-    pub(crate) fn leave(&self, instance: &str) {
+    pub(crate) fn leave(&self, instance: &InstanceId) {
         let mut agents = locked(&self.shared.agents);
         agents.retain(|agent| {
-            let leaving = agent.instance == instance;
+            let leaving = &agent.instance == instance;
             if leaving {
                 agent.detach.cancel();
             }

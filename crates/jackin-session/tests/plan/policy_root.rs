@@ -58,7 +58,7 @@ async fn supported_tuples_launch_with_the_role_read_only_and_no_added_root() -> 
             (
                 RoleFixture::new("sentinel")?,
                 Agent::Codex,
-                Provider::Codex,
+                Provider::Zai,
                 false,
             ),
             (
@@ -97,7 +97,7 @@ async fn role_granted_root_read_only_reaches_supported_launches_once() -> TestRe
             (
                 RoleFixture::new("sentinel")?,
                 Agent::Codex,
-                Provider::Codex,
+                Provider::Zai,
                 false,
             ),
             (

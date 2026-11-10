@@ -4,20 +4,20 @@
 use std::time::Duration;
 
 use jackin_console::app::Route;
-use jackin_console::domain::agent::Agent as ConsoleAgent;
+use jackin_console::domain::agent::{Agent as ConsoleAgent, Provider as ConsoleProvider};
 use jackin_console::domain::launch::{LaunchContent, RefusalReason};
 use jackin_console::domain::role::{NO_DEFAULT_ROLE, NO_SAVED_WORKSPACE};
-use jackin_console::domain::tuple::InstanceChoice;
-use jackin_console::launch::{LaunchEvent, LaunchTarget};
+use jackin_console::domain::tuple::{InstanceChoice, TupleState as ConsoleTupleState};
+use jackin_console::launch::{EnvAnswer, LaunchEvent, LaunchTarget};
 use jackin_core::{
     Account, AccountName, AllowedRoles, ConfigEdit, CredentialSource, EnvName, OpReference,
     Program, Provider, RoleName, RoleSource, RoleUrl, WorkspaceName,
 };
-use jackin_testkit::{ConsoleRig, RepoFixture, Rig, RoleFixture, TestResult, guard};
+use jackin_testkit::{ConsoleRig, FsFault, RepoFixture, Rig, RoleFixture, TestResult, guard};
 
 use super::support::{
-    Stage, answer, begin, console, dialog, labels, only, stage, two_roles, until, until_route,
-    until_shows,
+    Stage, answer, begin, console, dialog, direct_launch, labels, only, picker_account, stage,
+    two_roles, until, until_route, until_shows,
 };
 
 type Failure = Box<dyn std::error::Error>;
@@ -40,11 +40,22 @@ fn words(screen: &str) -> String {
 async fn only_a_local_codex_login_is_offered() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
+        picker_account(&rig).await?;
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
             .edit(vec![
                 env_account("codex-env", Provider::Codex, "OPENAI_KEY")?,
+                ConfigEdit::AddAccount(Account::new(
+                    AccountName::parse("codex-local")?,
+                    Provider::Codex,
+                    CredentialSource::CodexLogin {
+                        home: rig.home.clone(),
+                        chatgpt_account_id: jackin_core::ChatgptAccountId::parse(
+                            jackin_testkit::ACCOUNT_ID,
+                        )?,
+                    },
+                )?),
                 ConfigEdit::AddAccount(Account::new(
                     AccountName::parse("codex-op")?,
                     Provider::Codex,
@@ -72,9 +83,11 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
         until_route(&mut console, Route::Capsule).await?;
         assert_eq!(
             labels(&only(&rig)?)?.planned.agents.agents_label(),
-            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
                 jackin_core::Agent::Codex,
-                AccountName::parse("work")?
+                Provider::Zai,
+                AccountName::parse("work")?,
+                "glm-5.3".to_owned(),
             ))
             .agents_label()
         );
@@ -133,9 +146,11 @@ async fn a_git_sourced_role_launches_from_the_picker() -> TestResult {
         assert_eq!(found.role.as_str(), "sentinel");
         assert_eq!(
             found.agents.agents_label(),
-            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
                 jackin_core::Agent::Codex,
-                AccountName::parse("work")?
+                Provider::Zai,
+                AccountName::parse("work")?,
+                "glm-5.3".to_owned(),
             ))
             .agents_label()
         );
@@ -149,8 +164,6 @@ async fn a_credential_changed_under_the_picker_is_refused_typed() -> TestResult 
     guard(async {
         let rig = Rig::new().await?;
         let mut console = console(&rig).await?;
-        console.keys("down enter")?;
-        until_shows(&mut console, "Launch · choose Agent").await?;
         rig.world
             .config
             .edit(vec![ConfigEdit::SetAccountCredential {
@@ -160,13 +173,48 @@ async fn a_credential_changed_under_the_picker_is_refused_typed() -> TestResult 
                 },
             }])
             .await?;
-        console.keys("space enter")?;
-        until_shows(&mut console, "Run id").await?;
-        let screen = console.screen();
-        let shown = dialog(&screen);
-        assert!(shown.contains("account work uses"), "{screen}");
-        assert!(shown.contains("not supported yet"), "{screen}");
-        assert_eq!(stage(&screen, "04 Credentials"), Some(Stage::Failed));
+        let app = console.console().app();
+        let world = &app.world;
+        let workspace = world
+            .workspaces
+            .iter()
+            .find(|found| found.name == "platform-backend")
+            .map(|found| found.id)
+            .ok_or("no platform-backend workspace")?;
+        let mut feed = world.backend.launch(
+            world,
+            &LaunchTarget {
+                workspace: Some(workspace),
+                role: "sentinel".to_owned(),
+                instances: vec![InstanceChoice {
+                    agent: ConsoleAgent::Codex,
+                    provider: ConsoleProvider::Zai,
+                    account: Some("work".to_owned()),
+                    model: "glm-5.3".to_owned(),
+                }],
+                task: None,
+            },
+        );
+        let mut events = Vec::new();
+        for _ in 0..1000 {
+            events.extend(feed.poll(world));
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        feed.answer_env(vec![EnvAnswer {
+            name: "GREETING".to_owned(),
+            value: "hello".to_owned(),
+        }]);
+        for _ in 0..1000 {
+            events.extend(feed.poll(world));
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                LaunchEvent::Failed(failed) if failed.failure.summary.contains("no credential is available for account work")
+            )),
+            "{events:?}"
+        );
         assert!(rig.gateway().sandboxes().is_empty());
         assert!(rig.gateway().providers().is_empty());
         Ok(())
@@ -209,7 +257,7 @@ async fn the_only_allowed_role_is_launched() -> TestResult {
             }])
             .await?;
         let mut console = console(&rig).await?;
-        begin(&mut console)?;
+        begin(&mut console).await?;
         until_route(&mut console, Route::Capsule).await?;
         assert_eq!(labels(&only(&rig)?)?.planned.role.as_str(), "other");
         Ok(())
@@ -366,9 +414,11 @@ async fn the_current_directory_launches_with_the_only_role() -> TestResult {
         assert_eq!(found.role.as_str(), "sentinel");
         assert_eq!(
             found.agents.agents_label(),
-            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
                 jackin_core::Agent::Codex,
-                AccountName::parse("work")?
+                Provider::Zai,
+                AccountName::parse("work")?,
+                "glm-5.3".to_owned(),
             ))
             .agents_label()
         );
@@ -393,6 +443,103 @@ async fn launching_an_unsaved_directory_saves_its_workspace_first() -> TestResul
             .workspace(&name)
             .ok_or("the workspace was not saved")?;
         assert_eq!(&workspace.path, repo.root());
+        Ok(())
+    })
+    .await
+}
+
+fn adhoc_target() -> LaunchTarget {
+    LaunchTarget {
+        workspace: None,
+        role: "sentinel".to_owned(),
+        instances: vec![InstanceChoice {
+            agent: ConsoleAgent::Codex,
+            provider: ConsoleProvider::Zai,
+            account: Some("work".to_owned()),
+            model: "glm-5.3".to_owned(),
+        }],
+        task: None,
+    }
+}
+
+fn ready_warning(
+    events: &[LaunchEvent],
+) -> Result<Option<jackin_console::world::SaveWarning>, Failure> {
+    events
+        .iter()
+        .find_map(|event| match event {
+            LaunchEvent::Ready(ready) => Some(ready.warning),
+            _ => None,
+        })
+        .ok_or_else(|| format!("launch was not ready: {events:?}").into())
+}
+
+#[tokio::test]
+async fn ordinary_ad_hoc_launch_has_no_save_warning() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let (mut console, base, repo) = elsewhere(&rig).await?;
+        let world = &console.console().app().world;
+        let events = direct_launch(world, &adhoc_target()).await?;
+        assert_eq!(ready_warning(&events)?, None);
+        let name = WorkspaceName::parse(&base)?;
+        let saved = rig.world.config.load().await?;
+        assert_eq!(
+            saved.workspace(&name).map(|workspace| &workspace.path),
+            Some(repo.root())
+        );
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn committed_unsynced_ad_hoc_launch_is_ready_with_a_warning() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let (mut console, base, repo) = elsewhere(&rig).await?;
+        rig.world.fail_fs(FsFault::SyncDir);
+        let world = &console.console().app().world;
+        let events = direct_launch(world, &adhoc_target()).await?;
+        assert_eq!(
+            ready_warning(&events)?,
+            Some(jackin_console::world::SaveWarning::DirectorySync)
+        );
+        let name = WorkspaceName::parse(&base)?;
+        let saved = rig.world.config.load().await?;
+        assert_eq!(
+            saved.workspace(&name).map(|workspace| &workspace.path),
+            Some(repo.root())
+        );
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn pre_commit_ad_hoc_failure_creates_no_workspace_or_sandbox() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let (mut console, base, _repo) = elsewhere(&rig).await?;
+        rig.world.fail_fs(FsFault::WriteNew);
+        let world = &console.console().app().world;
+        let events = direct_launch(world, &adhoc_target()).await?;
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, LaunchEvent::Failed(_))),
+            "{events:?}"
+        );
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, LaunchEvent::Ready(_)))
+        );
+        let name = WorkspaceName::parse(&base)?;
+        assert!(rig.world.config.load().await?.workspace(&name).is_none());
+        assert!(rig.gateway().sandboxes().is_empty());
         Ok(())
     })
     .await
@@ -482,6 +629,183 @@ async fn the_current_directory_with_several_roles_asks_for_a_workspace() -> Test
         console.settle().await?;
         assert!(rig.gateway().sandboxes().is_empty());
         assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+async fn availability_rig() -> Result<Rig, Failure> {
+    let role = RoleFixture::new("sentinel")?.manifest_text(
+        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n".to_owned(),
+    );
+    let rig = Rig::builder().role(role).build().await?;
+    picker_account(&rig).await?;
+    Ok(rig)
+}
+
+async fn unavailable_offer(
+    agent: ConsoleAgent,
+    provider: ConsoleProvider,
+    reason: &str,
+) -> TestResult {
+    guard(async {
+        let rig = availability_rig().await?;
+        let mut console = console(&rig).await?;
+        let offers = &console.console().app().world.surfaces.tuples;
+        let offer = offers
+            .iter()
+            .find(|offer| offer.agent == agent && offer.provider == provider)
+            .ok_or("missing tuple offer")?;
+        assert_eq!(offer.state, ConsoleTupleState::Unavailable);
+        assert_eq!(offer.reason.as_deref(), Some(reason));
+        Ok(())
+    })
+    .await
+}
+
+macro_rules! unavailable_offer_tests {
+    ($($name:ident => ($agent:ident, $provider:ident, $reason:literal)),+ $(,)?) => {
+        $(
+            #[tokio::test]
+            async fn $name() -> TestResult {
+                unavailable_offer(ConsoleAgent::$agent, ConsoleProvider::$provider, $reason).await
+            }
+        )+
+    };
+}
+
+unavailable_offer_tests! {
+    t01_offer_is_unavailable => (Codex, OpenAi, "host Codex login expired; interactive re-login required"),
+    t10_offer_is_unavailable => (Omp, Moonshot, "no Kimi Code membership key on this host"),
+    t11_offer_is_unavailable => (Omp, MiniMax, "no MiniMax coding plan key on this host"),
+    t12_offer_is_unavailable => (Omp, Mimo, "no MiMo Token Plan key on this host"),
+    t16_offer_is_unavailable => (ClaudeCode, Mimo, "no MiMo Token Plan key on this host"),
+    t20_offer_is_unavailable => (Codex, Mimo, "no MiMo Token Plan key on this host"),
+}
+
+async fn unavailable_launch(provider: ConsoleProvider, reason: &str) -> TestResult {
+    guard(async {
+        let rig = availability_rig().await?;
+        if provider == ConsoleProvider::Mimo {
+            rig.world
+                .config
+                .edit(vec![env_account("mimo", Provider::Mimo, "MIMO_KEY")?])
+                .await?;
+        }
+        let mut console = console(&rig).await?;
+        let app = console.console().app();
+        let world = &app.world;
+        let workspace = world
+            .workspaces
+            .iter()
+            .find(|found| found.name == "platform-backend")
+            .map(|found| found.id)
+            .ok_or("no platform-backend workspace")?;
+        let account = (provider == ConsoleProvider::Mimo).then(|| "mimo".to_owned());
+        let provider_name = match provider {
+            ConsoleProvider::OpenAi => "codex",
+            ConsoleProvider::Mimo => "mimo",
+            _ => return Err("unexpected console provider".into()),
+        };
+        let mut feed = world.backend.launch(
+            world,
+            &LaunchTarget {
+                workspace: Some(workspace),
+                role: "sentinel".to_owned(),
+                instances: vec![InstanceChoice {
+                    agent: ConsoleAgent::Codex,
+                    provider,
+                    account,
+                    model: String::new(),
+                }],
+                task: None,
+            },
+        );
+        let mut events = Vec::new();
+        for _ in 0..400 {
+            events.extend(feed.poll(world));
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let expected =
+            format!("tuple codex with provider {provider_name} is not supported: {reason}");
+        assert!(
+            events.iter().any(|event| matches!(
+                event,
+                LaunchEvent::Failed(failed) if failed.failure.summary == expected
+            )),
+            "{events:?}"
+        );
+        assert!(rig.gateway().sandboxes().is_empty());
+        assert!(rig.gateway().providers().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn t01_launch_refusal_has_the_exact_reason_and_no_effects() -> TestResult {
+    unavailable_launch(
+        ConsoleProvider::OpenAi,
+        "host Codex login expired; interactive re-login required",
+    )
+    .await
+}
+
+#[tokio::test]
+async fn t20_launch_refusal_has_the_exact_reason_and_no_effects() -> TestResult {
+    unavailable_launch(ConsoleProvider::Mimo, "no MiMo Token Plan key on this host").await
+}
+
+#[tokio::test]
+async fn t18_console_launch_is_the_positive_control() -> TestResult {
+    guard(async {
+        let rig = availability_rig().await?;
+        let mut console = console(&rig).await?;
+        let app = console.console().app();
+        let world = &app.world;
+        let workspace = world
+            .workspaces
+            .iter()
+            .find(|found| found.name == "platform-backend")
+            .map(|found| found.id)
+            .ok_or("no platform-backend workspace")?;
+        let mut feed = world.backend.launch(
+            world,
+            &LaunchTarget {
+                workspace: Some(workspace),
+                role: "sentinel".to_owned(),
+                instances: vec![InstanceChoice {
+                    agent: ConsoleAgent::Codex,
+                    provider: ConsoleProvider::Zai,
+                    account: Some("work".to_owned()),
+                    model: "glm-5.3".to_owned(),
+                }],
+                task: None,
+            },
+        );
+        let mut events = Vec::new();
+        for _ in 0..1000 {
+            events.extend(feed.poll(world));
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, LaunchEvent::Ready(_))),
+            "{events:?}"
+        );
+        let handle = only(&rig)?;
+        assert_eq!(
+            labels(&handle)?.planned.agents.agents_label(),
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
+                jackin_core::Agent::Codex,
+                Provider::Zai,
+                AccountName::parse("work")?,
+                "glm-5.3".to_owned(),
+            ))
+            .agents_label()
+        );
         Ok(())
     })
     .await

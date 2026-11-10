@@ -15,6 +15,7 @@ mod persisted;
 mod probes;
 mod projection;
 mod roles;
+mod save_warning;
 mod sources;
 mod support;
 mod truth;

@@ -1,78 +1,25 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::time::Duration;
-
-use jackin_core::{Agent, FileMode, HookKind, sandbox_layout};
+use jackin_core::{Agent, FileMode, HookKind, Provider, sandbox_layout};
 use jackin_openshell::GatewayOp;
-use jackin_session::{LaunchError, LaunchStep};
-use serde_json::Value;
+use jackin_session::PlanError;
+use jackin_testkit::{Fault, Outcome, ProgramScript, Rig, RoleFixture, Trigger};
+use tokio_util::sync::CancellationToken;
 
 use super::support::{
-    ACCESS, ACCOUNT_ID, PLACEHOLDER, REFRESH, TestResult, builder, failure, guard, has_file,
-    launch_id, launch_rig, ready, unreachable,
+    ACCESS, PLACEHOLDER, REFRESH, TestResult, builder, guard, launch_rig, ready, unreachable,
 };
-use jackin_testkit::{Fault, Outcome, ProgramScript, Rig, RoleFixture, Trigger};
-
-fn base64url(text: &str) -> Vec<u8> {
-    let value = |c: u8| match c {
-        b'A'..=b'Z' => c - b'A',
-        b'a'..=b'z' => c - b'a' + 26,
-        b'0'..=b'9' => c - b'0' + 52,
-        b'-' => 62,
-        _ => 63,
-    };
-    let mut out = Vec::new();
-    let mut bits = 0_u32;
-    let mut count = 0_u32;
-    for c in text.bytes() {
-        bits = (bits << 6) | u32::from(value(c));
-        count += 6;
-        if count >= 8 {
-            count -= 8;
-            out.push(u8::try_from((bits >> count) & 0xff).unwrap_or(0));
-        }
-    }
-    out
-}
 
 #[tokio::test]
 async fn credentials_files_have_the_documented_content_and_modes() -> TestResult {
     guard(async {
         let rig = launch_rig().await?;
-        rig.world
-            .clock
-            .advance(Duration::from_secs(59 * 86_400 + 3_661));
         ready(rig.launch_observed(1).await?)?;
         let handle = rig.handle(1).await?;
         let plan = rig.plan(1)?;
         let spec = Agent::Codex.spec();
-        assert_eq!(
-            handle.file_mode(&spec.auth_file.path),
-            Some(FileMode(0o600))
-        );
-        let auth: Value =
-            serde_json::from_slice(&handle.file(&spec.auth_file.path).ok_or("no auth.json")?)?;
-        let object = auth.as_object().ok_or("auth.json is not an object")?;
-        let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
-        keys.sort_unstable();
-        assert_eq!(
-            keys,
-            ["OPENAI_API_KEY", "auth_mode", "last_refresh", "tokens"]
-        );
-        assert_eq!(auth["auth_mode"], "chatgptAuthTokens");
-        assert!(auth["OPENAI_API_KEY"].is_null());
-        assert_eq!(auth["last_refresh"], "2026-03-01T01:01:01Z");
-        let tokens = &auth["tokens"];
-        assert_eq!(tokens["access_token"], PLACEHOLDER);
-        assert_eq!(tokens["refresh_token"], "");
-        assert_eq!(tokens["account_id"], ACCOUNT_ID);
-        assert_eq!(tokens.as_object().map(serde_json::Map::len), Some(4));
-        let id_token = tokens["id_token"].as_str().ok_or("no id_token")?;
-        let parts: Vec<&str> = id_token.split('.').collect();
-        assert_eq!(parts.len(), 3);
-        let header: Value = serde_json::from_slice(&base64url(parts[0]))?;
-        assert_eq!(header["alg"], "none");
+        assert!(handle.file(&spec.auth_file.path).is_none());
         assert_eq!(
             handle.file_mode(&spec.user_config.path),
             Some(FileMode(0o600))
@@ -89,8 +36,7 @@ async fn credentials_files_have_the_documented_content_and_modes() -> TestResult
             handle.file(&plan.files().env.path),
             Some(plan.files().env.text.clone().into_bytes())
         );
-        let reads = handle.runs(&sandbox_layout::PRINTENV);
-        assert_eq!(reads[0].args, ["CODEX_AUTH_ACCESS_TOKEN"]);
+        assert!(handle.runs(&sandbox_layout::PRINTENV).is_empty());
 
         let bare = builder()
             .await?
@@ -104,19 +50,13 @@ async fn credentials_files_have_the_documented_content_and_modes() -> TestResult
         assert_eq!(handle.file(&plan.files().env.path), Some(Vec::new()));
 
         let rig = builder().await?.printenv_exit(1).build().await?;
-        let failed = failure(rig.launch_observed(1).await?)?;
-        assert_eq!(failed.step, LaunchStep::Credentials);
+        ready(rig.launch_observed(1).await?)?;
         assert!(
-            matches!(&*failed.error, LaunchError::PlaceholderMissing { .. }),
-            "{:?}",
-            failed.error
+            rig.handle(1)
+                .await?
+                .runs(&sandbox_layout::PRINTENV)
+                .is_empty()
         );
-        let handle = rig.handle(1).await?;
-        assert!(!has_file(&handle, &Agent::Codex.spec().auth_file.path));
-        assert!(!has_file(
-            &handle,
-            &sandbox_layout::uploaded_marker(&launch_id(1))
-        ));
         Ok(())
     })
     .await
@@ -192,19 +132,64 @@ async fn no_fixture_secret_reaches_a_sandbox_file_an_event_or_an_error() -> Test
     .await
 }
 
+async fn assert_t01_refusal_without_credential_effects(rig: Rig) -> TestResult {
+    let request = rig
+        .request(1)?
+        .tuple(Agent::Codex, Provider::Codex)
+        .model(Some("gpt-6.1-sol".to_owned()));
+    let error = rig
+        .run(request, CancellationToken::new())
+        .await
+        .err()
+        .ok_or("expected T01 refusal")?;
+    assert!(
+        matches!(
+            error.downcast_ref::<PlanError>(),
+            Some(PlanError::TupleNotSupported { agent: Agent::Codex, provider: Provider::Codex, reason })
+                if reason == "host Codex login expired; interactive re-login required"
+        ),
+        "{error}"
+    );
+    assert!(rig.gateway().providers().is_empty());
+    assert!(rig.gateway().sandboxes().is_empty());
+    assert!(rig.world.engine.builds().is_empty());
+    Ok(())
+}
+
 #[tokio::test]
-async fn a_printenv_value_without_the_placeholder_prefix_is_refused_and_never_written_or_named()
--> TestResult {
+async fn t01_refusal_does_not_read_a_missing_placeholder() -> TestResult {
     guard(async {
-        let cases = [
-            ("sk-FAKE-VALUE-123\n", "sk-FAKE-VALUE-123"),
-            ("FAKE-LEAD-openshell:resolve:env:K\n", "FAKE-LEAD"),
-            (
-                "openshell:resolve:env:K\nsk-FAKE-VALUE-123\n",
-                "sk-FAKE-VALUE-123",
-            ),
-        ];
-        for (stdout, secret) in cases {
+        let rig = builder().await?.printenv_exit(1).build().await?;
+        assert_t01_refusal_without_credential_effects(rig).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn t01_refusal_does_not_read_an_invalid_placeholder() -> TestResult {
+    guard(async {
+        let rig = launch_rig().await?;
+        rig.gateway().script_program(
+            &sandbox_layout::PRINTENV,
+            ProgramScript {
+                exit_code: 0,
+                stdout: b"sk-FAKE-VALUE-123\n".to_vec(),
+                stderr: Vec::new(),
+            },
+        );
+        assert_t01_refusal_without_credential_effects(rig).await
+    })
+    .await
+}
+
+#[tokio::test]
+async fn t01_refusal_never_reads_or_names_malformed_placeholder_values() -> TestResult {
+    guard(async {
+        for stdout in [
+            "sk-FAKE-VALUE-123\n",
+            "FAKE-LEAD-openshell:resolve:env:K\n",
+            "openshell:resolve:env:K\nsk-FAKE-VALUE-123\n",
+        ] {
             let rig = launch_rig().await?;
             rig.gateway().script_program(
                 &sandbox_layout::PRINTENV,
@@ -214,25 +199,7 @@ async fn a_printenv_value_without_the_placeholder_prefix_is_refused_and_never_wr
                     stderr: Vec::new(),
                 },
             );
-            let outcome = rig.launch_observed(1).await?;
-            assert_outcome_clean(&outcome, secret);
-            let failed = failure(outcome)?;
-            assert_eq!(failed.step, LaunchStep::Credentials, "{stdout:?}");
-            assert!(
-                matches!(&*failed.error, LaunchError::PlaceholderInvalid { .. }),
-                "{stdout:?}: {:?}",
-                failed.error
-            );
-            assert_files_clean(&rig, secret);
-            let handle = rig.handle(1).await?;
-            assert!(
-                !has_file(&handle, &Agent::Codex.spec().auth_file.path),
-                "{stdout:?}"
-            );
-            assert!(
-                !has_file(&handle, &sandbox_layout::uploaded_marker(&launch_id(1))),
-                "{stdout:?}"
-            );
+            assert_t01_refusal_without_credential_effects(rig).await?;
         }
         Ok(())
     })

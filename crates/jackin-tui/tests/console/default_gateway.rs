@@ -4,10 +4,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_console::app::Route;
 use jackin_console::backend::Effect;
 use jackin_console::domain::account::{Account, CredentialSource, DetectedKind, UNSAVED_ID};
 use jackin_console::domain::agent::Provider;
+use jackin_console::domain::tuple::InstanceChoice;
+use jackin_console::launch::{EnvAnswer, LaunchEvent, LaunchTarget};
 use jackin_console::world::DaemonHealth;
 use jackin_core::{
     AccountName, Agent, ConfigEdit, GatewayName, HookKind, OpenShellWorkspace, ProviderName,
@@ -16,7 +17,7 @@ use jackin_core::{
 use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::CheckId;
 use jackin_testkit::{
-    ConsoleRig, FakeGateway, PLACEHOLDER, ProgramScript, ScriptedConnector, TestResult,
+    ConsoleRig, FakeGateway, ProgramScript, ScriptedConnector, TestResult, ZAI_PLACEHOLDER,
     connector_over, guard, session_over,
 };
 use jackin_tui::GatewayState;
@@ -75,7 +76,7 @@ async fn assemble(peer: Peer, pinned: bool) -> Out<Box<Pair>> {
     };
     second.script_program(
         &sandbox_layout::PRINTENV,
-        reply(format!("{PLACEHOLDER}\n").as_bytes()),
+        reply(format!("{ZAI_PLACEHOLDER}\n").as_bytes()),
     );
     for kind in [HookKind::Setup, HookKind::Preflight] {
         let hook = sandbox_layout::hook_path(kind);
@@ -262,33 +263,53 @@ async fn a_launch_runs_on_the_new_default_after_the_default_left_the_config() ->
             .edit(vec![ConfigEdit::RemoveGateway(pair.first.clone())])
             .await?;
         refresh(&mut pair.lab).await?;
-        pair.lab.step("down enter enter").await?;
-        let mut asked = false;
-        let mut agents_confirmed = 0;
+        let workspace = pair.lab.workspace("platform-backend").ok_or("workspace")?;
+        let app = pair.lab.console.console().app();
+        let world = &app.world;
+        let mut feed = world.backend.launch(
+            world,
+            &LaunchTarget {
+                workspace: Some(workspace.id),
+                role: "sentinel".to_owned(),
+                instances: vec![InstanceChoice {
+                    agent: jackin_console::domain::agent::Agent::Codex,
+                    provider: Provider::Zai,
+                    account: None,
+                    model: "glm-5.3".to_owned(),
+                }],
+                task: None,
+            },
+        );
+        let mut events = Vec::new();
+        let mut answered = false;
         for _ in 0..4000 {
-            pair.lab.console.tick(1);
-            pair.lab.console.settle().await?;
-            if pair.lab.console.console().app().route() == Route::Capsule
-                || pair.lab.console.screen().contains("Launch failed")
+            events.extend(feed.poll(world));
+            if !answered
+                && events
+                    .iter()
+                    .any(|event| matches!(event, LaunchEvent::NeedsInput(_)))
             {
+                feed.answer_env(vec![EnvAnswer {
+                    name: "GREETING".to_owned(),
+                    value: "hello".to_owned(),
+                }]);
+                answered = true;
+            }
+            if events.iter().any(|event| {
+                matches!(
+                    event,
+                    LaunchEvent::Ready(_) | LaunchEvent::Failed(_) | LaunchEvent::Refused(_)
+                )
+            }) {
                 break;
-            }
-            if agents_confirmed < 1 && pair.lab.console.screen().contains("choose Agent") {
-                pair.lab.console.keys("space enter")?;
-                agents_confirmed += 1;
-                continue;
-            }
-            if !asked && pair.lab.console.screen().contains("Values for this launch") {
-                pair.lab.console.keys("tab tab enter")?;
-                asked = true;
             }
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
-        let screen = pair.lab.console.screen();
-        assert_eq!(
-            pair.lab.console.console().app().route(),
-            Route::Capsule,
-            "{screen}"
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, LaunchEvent::Ready(_))),
+            "{events:?}"
         );
         assert_eq!(pair.second.sandboxes().len(), 1);
         assert!(pair.lab.rig.world.gateway.sandboxes().is_empty());

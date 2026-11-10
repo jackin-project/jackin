@@ -103,10 +103,10 @@ async fn fixed_agent_mode_all_rows() -> TestResult {
         }
         assert_eq!(
             seen.iter().filter(|s| **s == launchable).count(),
-            1,
+            6,
             "{seen:?}"
         );
-        assert_eq!(seen.iter().filter(|s| **s == other).count(), 5, "{seen:?}");
+        assert_eq!(seen.iter().filter(|s| **s == other).count(), 6, "{seen:?}");
         assert_eq!(console.config_text().await?, before);
         Ok(())
     })

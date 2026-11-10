@@ -33,20 +33,23 @@ async fn hold(rig: &Rig, account: &str) -> Result<FileLock, Box<dyn Error>> {
     Ok(rig.world.fs.lock(&lock).await?)
 }
 
-async fn peer_put(rig: &Rig, refresh: &str) -> TestResult {
-    let spec = Agent::Codex.spec();
-    let profile = ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile)?;
+async fn peer_put(rig: &Rig, key: &str) -> TestResult {
+    let tuple = jackin_core::lookup_tuple(Agent::Codex, Provider::Zai)?;
+    let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?;
     rig.gateway().ensure_profile(&profile).await?;
     rig.gateway()
         .put_provider(&ProviderSpec {
             name: ProviderName::parse("jackin-work-codex")?,
             profile: profile.id,
-            keys: spec.codex.openshell.keys,
-            material: ProviderMaterial::ChatgptLogin {
-                access_token: Secret::new("ACCESS-PEER".to_owned()),
-                refresh_token: Secret::new(refresh.to_owned()),
-                client_id: "app_EMoamEEZ73f0CkXaXp7hrann".to_owned(),
-                chatgpt_account_id: ChatgptAccountId::parse(ACCOUNT_ID)?,
+            keys: jackin_core::CredentialKeys {
+                access_token: "ZAI_API_KEY",
+                refresh_token: "",
+                account_id: "",
+                id_token: "",
+                token_url: "",
+            },
+            material: ProviderMaterial::StaticKey {
+                key: Secret::new(key.to_owned()),
             },
         })
         .await?;
@@ -76,7 +79,7 @@ async fn a_launch_waits_for_a_peer_that_syncs_the_account_and_keeps_the_rotated_
             .gateway()
             .provider(&ProviderName::parse("jackin-work-codex")?)
             .ok_or("no provider record")?;
-        assert_eq!(record.refresh_token, ROTATED);
+        assert_eq!(record.access_token, ROTATED);
         drop(hold(&rig, "work").await?);
         Ok(())
     })

@@ -10,7 +10,7 @@ use toml::{Table, Value};
 
 const AUTH_MODE: &str = "chatgptAuthTokens";
 
-pub(crate) fn render_codex_config(
+pub fn render_codex_config(
     tuple: &'static jackin_core::AgentTuple,
     chatgpt_model: Option<&ModelName>,
     model: Option<&str>,

@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
 
 use jackin_console::backend::{Backend, Completion, Effect, FileSource, Ticket};
-use jackin_console::domain::instance::{Instance, InstanceStatus};
+use jackin_console::domain::instance::{Instance, InstanceId, InstanceStatus};
 use jackin_console::domain::launch::LaunchContent;
 use jackin_console::domain::vocabulary::Vocabulary;
 use jackin_console::launch::{LaunchFeed, LaunchTarget};
@@ -168,6 +168,12 @@ impl JackinBackend {
             Effect::Restore { instance } => self
                 .bridge
                 .spawn(failure, async move { inputs.restore(&instance).await }),
+            Effect::PowerStart { instance } => self
+                .bridge
+                .spawn(failure, async move { inputs.power_start(&instance).await }),
+            Effect::PowerStop { instance } => self
+                .bridge
+                .spawn(failure, async move { inputs.power_stop(&instance).await }),
             Effect::Prewarm { workspace } => self
                 .bridge
                 .spawn(failure, async move { inputs.prewarm(workspace).await }),
@@ -357,7 +363,7 @@ impl Backend for JackinBackend {
         }
     }
 
-    fn capsule_left(&self, _world: &World, instance: &str) {
+    fn capsule_left(&self, _world: &World, instance: &InstanceId) {
         self.panes.leave(instance);
     }
 

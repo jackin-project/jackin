@@ -24,7 +24,7 @@ dockerfile = "Dockerfile"
 policy = "policy.yaml"
 
 [agents.codex]
-model = "gpt-6.1-sol"
+model = "glm-5.3"
 instructions = "instructions/codex.md"
 
 [docker]
@@ -86,7 +86,7 @@ fn manifest_parses_the_d11_example() -> TestResult {
             .get(&Agent::Codex)
             .and_then(|s| s.model.as_ref())
             .map(ToString::to_string),
-        Some("gpt-6.1-sol".to_owned())
+        Some("glm-5.3".to_owned())
     );
     assert_eq!(
         manifest
@@ -392,11 +392,11 @@ fn manifest_rejects_invalid_values_naming_the_key() -> TestResult {
 #[test]
 fn manifest_agents_sections_validate_and_render() -> TestResult {
     let text = format!(
-        "{MIN}[agents.omp]\ninstructions = \"instructions/omp.md\"\n[agents.codex]\nmodel = \"gpt-6.1-sol\"\ninstructions = \"instructions/codex.md\"\n"
+        "{MIN}[agents.omp]\ninstructions = \"instructions/omp.md\"\n[agents.codex]\nmodel = \"glm-5.3\"\ninstructions = \"instructions/codex.md\"\n"
     );
     let manifest = RoleManifest::parse(&text)?;
     let rendered = manifest.render();
-    let expected_agents = "[agents.codex]\nmodel = \"gpt-6.1-sol\"\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n";
+    let expected_agents = "[agents.codex]\nmodel = \"glm-5.3\"\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n";
     assert!(rendered.contains(expected_agents), "{rendered}");
     assert_eq!(RoleManifest::parse(&rendered)?, manifest);
     assert_eq!(
@@ -429,12 +429,12 @@ fn manifest_agents_sections_validate_and_render() -> TestResult {
         "invalid:agents.codex.model"
     );
     assert_eq!(
-        outcome(&format!("{MIN}[codex]\nmodel = \"gpt-6.1-sol\"\n")),
+        outcome(&format!("{MIN}[codex]\nmodel = \"glm-5.3\"\n")),
         "unknown:codex"
     );
     assert_eq!(outcome(MIN), "ok");
     assert_eq!(
-        outcome(&format!("{MIN}[agents.codex]\nmodel = \"gpt-6.1-sol\"\n")),
+        outcome(&format!("{MIN}[agents.codex]\nmodel = \"glm-5.3\"\n")),
         "missing:agents.codex.instructions"
     );
     assert_eq!(
@@ -448,6 +448,20 @@ fn manifest_agents_sections_validate_and_render() -> TestResult {
             "{MIN}[agents.codex]\ninstructions = \"i.md\"\nextra = 1\n"
         )),
         "unknown:agents.codex.extra"
+    );
+    Ok(())
+}
+
+#[test]
+fn manifest_rejects_the_unavailable_t01_model_with_a_typed_invalid_value() -> TestResult {
+    let error = RoleManifest::parse(&format!(
+        "{MIN}[agents.codex]\nmodel = \"gpt-6.1-sol\"\ninstructions = \"instructions/codex.md\"\n"
+    ))
+    .err()
+    .ok_or("expected invalid model")?;
+    assert!(
+        matches!(error, ManifestError::InvalidValue { ref key, .. } if key == "agents.codex.model"),
+        "{error}"
     );
     Ok(())
 }

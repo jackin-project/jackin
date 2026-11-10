@@ -129,7 +129,7 @@ pub(crate) fn judge_env_text(text: &str) -> Vec<String> {
     text.lines()
         .filter_map(|line| line.split_once('='))
         .filter(|(name, value)| {
-            name.starts_with("CODEX_AUTH_") && !value.is_empty() && !value.starts_with(PLACEHOLDER)
+            credential_name(name) && !value.is_empty() && !value.starts_with(PLACEHOLDER)
         })
         .map(|(name, _)| format!("environment variable {name} is not a placeholder"))
         .collect()
@@ -197,7 +197,7 @@ impl Run<'_> {
         problems.extend(judge_env_text(&text_of(&env.stdout)));
         let placeholder = text_of(&env.stdout)
             .lines()
-            .find_map(|line| line.strip_prefix("CODEX_AUTH_ACCESS_TOKEN="))
+            .find_map(|line| line.strip_prefix("ZAI_API_KEY="))
             .filter(|value| value.starts_with(PLACEHOLDER))
             .map(str::to_owned);
         problems.extend(self.reflection(&sandbox, placeholder).await);

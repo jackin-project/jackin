@@ -12,7 +12,7 @@ use jackin_openshell::{Gateway, SandboxFile};
 use jackin_session::{AttachTarget, LaunchFailure, LaunchLimits, LaunchOutcome};
 use jackin_testkit::{Outcome, RepoFixture, Rig, RigBuilder, SandboxHandle, guard_within};
 
-pub(crate) use jackin_testkit::{ACCESS, ACCOUNT_ID, PLACEHOLDER, REFRESH, TestResult, launch_id};
+pub(crate) use jackin_testkit::{ACCESS, PLACEHOLDER, REFRESH, TestResult, launch_id};
 
 const GUARD: Duration = Duration::from_secs(170);
 

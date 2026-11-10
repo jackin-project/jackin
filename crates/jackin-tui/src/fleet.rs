@@ -12,14 +12,13 @@ use jackin_core::{
     Config, GatewayName, Phase, SandboxName, SandboxSummary, SupervisorReading, SupervisorState,
     Timestamp,
 };
-use jackin_session::{Session, WorkState};
+use jackin_session::{Session, UnreadableSandbox, WorkState};
 use thiserror::Error;
 use tokio::sync::Semaphore;
 
 use jackin_console::domain::instance::InstanceId;
 
 use crate::console::ConsoleLimits;
-use crate::project::sandbox_id;
 use crate::sessions::{Reached, SessionSet};
 
 #[derive(Clone, Debug)]
@@ -38,6 +37,12 @@ pub struct ObservedSandbox {
 }
 
 #[derive(Clone, Debug)]
+pub struct ObservedUnreadable {
+    pub gateway: GatewayName,
+    pub sandbox: UnreadableSandbox,
+}
+
+#[derive(Clone, Debug)]
 pub struct GatewayReading {
     pub name: GatewayName,
     pub failure: Option<String>,
@@ -46,7 +51,7 @@ pub struct GatewayReading {
 #[derive(Clone, Debug, Default)]
 pub struct Fleet {
     pub sandboxes: Vec<ObservedSandbox>,
-    pub unreadable: usize,
+    pub unreadable: Vec<ObservedUnreadable>,
     pub gateways: Vec<GatewayReading>,
 }
 
@@ -63,13 +68,24 @@ impl Fleet {
         self.sandboxes.retain(|seen| {
             seen.gateway != observed.gateway || seen.summary.name != observed.summary.name
         });
+        self.unreadable.retain(|seen| {
+            seen.gateway != observed.gateway || seen.sandbox.name != observed.summary.name
+        });
         self.sandboxes.push(observed);
     }
 
     pub(crate) fn locate(&self, instance: &InstanceId) -> Option<&ObservedSandbox> {
-        self.sandboxes
-            .iter()
-            .find(|observed| &sandbox_id(&observed.summary.name) == instance)
+        self.sandboxes.iter().find(|observed| {
+            observed.gateway.as_str() == instance.gateway.as_str()
+                && observed.summary.name.as_str() == instance.sandbox_name.as_str()
+        })
+    }
+
+    pub(crate) fn locate_unreadable(&self, instance: &InstanceId) -> Option<&ObservedUnreadable> {
+        self.unreadable.iter().find(|observed| {
+            observed.gateway.as_str() == instance.gateway.as_str()
+                && observed.sandbox.name.as_str() == instance.sandbox_name.as_str()
+        })
     }
 }
 
@@ -175,7 +191,7 @@ pub async fn read_fleet(
     for (reading, sandboxes, unreadable) in readings {
         fleet.gateways.push(reading);
         fleet.sandboxes.extend(sandboxes);
-        fleet.unreadable += unreadable;
+        fleet.unreadable.extend(unreadable);
     }
     cache.keep_seen(&fleet);
     fleet
@@ -184,14 +200,18 @@ pub async fn read_fleet(
 fn unreadable(
     name: &GatewayName,
     failure: String,
-) -> (GatewayReading, Vec<ObservedSandbox>, usize) {
+) -> (
+    GatewayReading,
+    Vec<ObservedSandbox>,
+    Vec<ObservedUnreadable>,
+) {
     (
         GatewayReading {
             name: name.clone(),
             failure: Some(failure),
         },
         Vec::new(),
-        0,
+        Vec::new(),
     )
 }
 
@@ -201,14 +221,25 @@ async fn read_gateway(
     config: &Config,
     limits: ConsoleLimits,
     cache: &WorkCache,
-) -> (GatewayReading, Vec<ObservedSandbox>, usize) {
+) -> (
+    GatewayReading,
+    Vec<ObservedSandbox>,
+    Vec<ObservedUnreadable>,
+) {
     let deadline = limits.connect_deadline;
     let listing = match within(deadline, session.list()).await {
         Some(Ok(listing)) => listing,
         Some(Err(error)) => return unreadable(name, error.to_string()),
         None => return unreadable(name, TimedOut(Waited(deadline)).to_string()),
     };
-    let unreadable = listing.unreadable.len();
+    let unreadable = listing
+        .unreadable
+        .into_iter()
+        .map(|sandbox| ObservedUnreadable {
+            gateway: name.clone(),
+            sandbox,
+        })
+        .collect();
     let inspected = join_all(
         listing
             .sandboxes

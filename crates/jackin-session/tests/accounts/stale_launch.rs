@@ -46,13 +46,15 @@ fn refusal(rig: &Rig, outcome: Outcome) -> Result<AccountError, FixtureError> {
     }
 }
 
-fn assert_nothing_created(rig: &Rig) {
+fn assert_nothing_created(rig: &Rig) -> TestResult {
+    let launch_provider = ProviderName::for_account(&work()?, jackin_core::Agent::Codex);
     assert!(
-        rig.gateway().providers().is_empty(),
+        !rig.gateway().providers().contains(&launch_provider),
         "the launch left {:?} on the gateway",
         rig.gateway().providers()
     );
     assert!(rig.gateway().sandboxes().is_empty());
+    Ok(())
 }
 
 #[tokio::test]
@@ -68,7 +70,7 @@ async fn a_launch_planned_before_account_rm_fails_and_creates_no_provider() -> T
             matches!(&refused, AccountError::Removed { account } if account.as_str() == "work"),
             "{refused:?}"
         );
-        assert_nothing_created(&rig);
+        assert_nothing_created(&rig)?;
         Ok(())
     })
     .await
@@ -118,7 +120,7 @@ async fn a_launch_waiting_on_the_lock_of_a_running_account_rm_fails_and_creates_
             matches!(&refused, AccountError::Removed { .. }),
             "{refused:?}"
         );
-        assert_nothing_created(&rig);
+        assert_nothing_created(&rig)?;
         Ok(())
     })
     .await
@@ -130,13 +132,13 @@ async fn a_launch_planned_before_the_account_lost_its_provider_fails_and_creates
     guard(async {
         let rig = Rig::new().await?;
         let plan = rig.plan(1)?;
+        let replacement = HostPath::parse(&rig.home.as_path().join("other-zai.txt"))?;
+        tokio::fs::write(replacement.as_path(), "other-test-key").await?;
         edit(
             &rig,
             ConfigEdit::SetAccountCredential {
                 account: work()?,
-                credential: CredentialSource::HostLogin {
-                    path: HostPath::parse(std::path::Path::new("/home/nobody/.grok/auth.json"))?,
-                },
+                credential: CredentialSource::File { path: replacement },
             },
         )
         .await?;
@@ -147,7 +149,7 @@ async fn a_launch_planned_before_the_account_lost_its_provider_fails_and_creates
             matches!(&refused, AccountError::Changed { account } if account.as_str() == "work"),
             "{refused:?}"
         );
-        assert_nothing_created(&rig);
+        assert_nothing_created(&rig)?;
         Ok(())
     })
     .await
@@ -171,7 +173,7 @@ async fn a_launch_planned_before_gateway_rm_fails_and_creates_no_provider() -> T
             matches!(&refused, AccountError::GatewayRemoved { gateway } if gateway.as_str() == "fake-gateway"),
             "{refused:?}"
         );
-        assert_nothing_created(&rig);
+        assert_nothing_created(&rig)?;
         Ok(())
     })
     .await
@@ -224,7 +226,7 @@ async fn a_launch_waiting_on_the_lock_of_a_running_gateway_rm_fails_and_creates_
             matches!(&refused, AccountError::GatewayRemoved { .. }),
             "{refused:?}"
         );
-        assert_nothing_created(&rig);
+        assert_nothing_created(&rig)?;
         Ok(())
     })
     .await

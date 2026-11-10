@@ -22,6 +22,7 @@ fn status_of(console: &mut ConsoleRig, id: u8) -> Option<InstanceStatus> {
         .world
         .instances
         .iter()
+        .filter_map(|entry| entry.as_available())
         .find(|i| i.run_id == run)
         .map(|i| i.status)
 }
@@ -62,10 +63,15 @@ async fn roster_maps_phase_and_exit_code() -> TestResult {
             assert!(screen.contains(word), "{word} is not on:\n{screen}");
         }
         let first = console.console().app().world.instances[0].clone();
-        assert_eq!(first.role, "sentinel");
-        assert!(first.id.starts_with(ID_PREFIX), "{}", first.id);
+        let first = first.as_available().ok_or("available instance")?;
+        assert_eq!(first.role.as_deref(), Some("sentinel"));
+        assert!(
+            first.id.short_label().starts_with(ID_PREFIX),
+            "{}",
+            first.id
+        );
         assert_eq!(first.account.as_deref(), None);
-        assert_eq!(first.workdir, "/sandbox/project");
+        assert_eq!(first.workdir.as_deref(), Some("/sandbox/project"));
         Ok(())
     })
     .await
@@ -77,26 +83,117 @@ async fn roster_hides_unmanaged_and_notes_unreadable() -> TestResult {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
         let gateway = &rig.world.gateway;
+        let ghost = SandboxName::parse("jackin-ghost-0000")?;
+        let broken = SandboxName::parse("jackin-broken-0002")?;
+        let blank = SandboxName::parse("jackin-blank-0003")?;
+        gateway.insert_unmanaged(&ghost, Labels::from_pairs([])?, Phase::Ready)?;
         gateway.insert_unmanaged(
-            &SandboxName::parse("jackin-ghost-0000")?,
-            Labels::from_pairs([])?,
+            &broken,
+            Labels::from_pairs([
+                ("jackin.dev/managed".to_owned(), "true".to_owned()),
+                (
+                    "jackin.dev/workspace".to_owned(),
+                    "platform-backend".to_owned(),
+                ),
+                ("jackin.dev/role".to_owned(), "sentinel".to_owned()),
+            ])?,
             Phase::Ready,
         )?;
         gateway.insert_unmanaged(
-            &SandboxName::parse("jackin-broken-0002")?,
+            &blank,
             Labels::from_pairs([("jackin.dev/managed".to_owned(), "true".to_owned())])?,
-            Phase::Ready,
+            Phase::Stopped,
         )?;
+        let created = gateway
+            .sandbox(&broken)
+            .and_then(|handle| handle.created_at())
+            .map(|created| created.0)
+            .ok_or("broken creation time")?;
+        gateway
+            .sandbox(&blank)
+            .ok_or("blank sandbox")?
+            .forget_created_at();
         let mut console = ConsoleRig::seeded(&rig).await?;
-        let instances = &console.console().app().world.instances;
-        assert_eq!(instances.len(), 1);
-        assert_eq!(instances[0].status, InstanceStatus::Running);
+        let world = &console.console().app().world;
+        assert_eq!(world.instances.len(), 3);
+        assert!(!world.instances.iter().any(|entry| {
+            entry.id().gateway == gateway.name().to_string()
+                && entry.id().sandbox_name == ghost.to_string()
+        }));
+        let workspace = world
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.name == "platform-backend")
+            .map(|workspace| workspace.id)
+            .ok_or("workspace id")?;
+        let entry = world
+            .instances
+            .iter()
+            .find(|entry| entry.id().sandbox_name == broken.to_string())
+            .ok_or("broken row")?;
+        let jackin_console::domain::instance::InstanceEntry::Unavailable(unavailable) = entry
+        else {
+            return Err("broken row was fabricated as available".into());
+        };
+        assert_eq!(unavailable.id.gateway, gateway.name().to_string());
+        assert_eq!(unavailable.id.sandbox_name, broken.to_string());
+        assert_eq!(unavailable.workspace, Some(workspace));
+        assert_eq!(
+            unavailable.workspace_name.as_deref(),
+            Some("platform-backend")
+        );
+        assert_eq!(unavailable.role.as_deref(), Some("sentinel"));
+        assert_eq!(
+            unavailable.phase,
+            jackin_console::domain::instance::SandboxPhase::Ready
+        );
+        assert_eq!(unavailable.created_secs, Some(created));
+        assert!(unavailable.reason.contains("missing label"));
+        let blank_entry = world
+            .instances
+            .iter()
+            .find(|entry| entry.id().sandbox_name == blank.to_string())
+            .ok_or("blank row")?;
+        let jackin_console::domain::instance::InstanceEntry::Unavailable(blank) = blank_entry
+        else {
+            return Err("blank row was fabricated as available".into());
+        };
+        assert_eq!(blank.workspace, None);
+        assert_eq!(blank.workspace_name, None);
+        assert_eq!(blank.role, None);
+        assert_eq!(blank.created_secs, None);
+        assert_eq!(
+            blank.phase,
+            jackin_console::domain::instance::SandboxPhase::Stopped
+        );
         assert!(
             console
                 .status_line()
-                .contains("1 sandboxes have labels jackin cannot read"),
+                .contains("2 sandboxes have labels jackin cannot read"),
             "{}",
             console.status_line()
+        );
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::RemoveWorkspace(WorkspaceName::parse(
+                "platform-backend",
+            )?)])
+            .await?;
+        let mut console = ConsoleRig::new(&rig.world).await?;
+        let world = &console.console().app().world;
+        let entry = world
+            .instances
+            .iter()
+            .find(|entry| entry.id().sandbox_name == broken.to_string())
+            .ok_or("broken row after workspace removal")?;
+        let jackin_console::domain::instance::InstanceEntry::Unavailable(unavailable) = entry
+        else {
+            return Err("broken row became available".into());
+        };
+        assert_eq!(unavailable.workspace, None);
+        assert_eq!(
+            unavailable.workspace_name.as_deref(),
+            Some("platform-backend")
         );
         Ok(())
     })
@@ -119,7 +216,7 @@ async fn removed_workspace_label_lists_without_workspace() -> TestResult {
         let world = &console.console().app().world;
         assert!(world.workspaces.is_empty());
         assert_eq!(world.instances.len(), 1);
-        assert_eq!(world.instances[0].workspace, None);
+        assert_eq!(world.instances[0].workspace_id(), None);
         Ok(())
     })
     .await
@@ -305,7 +402,7 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
                     work: work.clone(),
                     task: None,
                 }],
-                unreadable: 0,
+                unreadable: Vec::new(),
                 gateways: Vec::new(),
             };
             let snapshot = project(
@@ -319,7 +416,11 @@ async fn work_that_cannot_be_exported_keeps_the_sandbox_marked_as_preserved() ->
                 },
                 &mut IdTable::new(),
             );
-            let statuses: Vec<_> = snapshot.instances.iter().map(|i| i.status).collect();
+            let statuses: Vec<_> = snapshot
+                .instances
+                .iter()
+                .filter_map(|entry| entry.as_available().map(|instance| instance.status))
+                .collect();
             assert_eq!(statuses, vec![expected], "{work:?}");
         }
         Ok(())

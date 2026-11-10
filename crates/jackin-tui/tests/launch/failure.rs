@@ -46,11 +46,15 @@ async fn provisioning_failure_keeps_the_sandbox() -> TestResult {
         console.settle().await?;
         assert_eq!(console.console().app().route(), Route::Manager);
         let world = &console.console().app().world;
-        let wanted = record_id(&handle);
+        let wanted = record_id(&rig, &handle);
         assert!(
-            world.instances.iter().any(|record| record.id == wanted),
+            world.instances.iter().any(|record| record.id() == &wanted),
             "{:?}",
-            world.instances.iter().map(|i| &i.id).collect::<Vec<_>>()
+            world
+                .instances
+                .iter()
+                .map(jackin_console::domain::instance::InstanceEntry::id)
+                .collect::<Vec<_>>()
         );
         Ok(())
     })
@@ -85,7 +89,7 @@ async fn a_launch_with_no_gateway_selected_fails_before_any_stage_and_says_to_ru
             .build()
             .await?;
         console.skip_intro();
-        begin(&mut console)?;
+        begin(&mut console).await?;
         until_shows(&mut console, "Run id").await?;
         let screen = console.screen();
         assert_eq!(stage(&screen, "01 Image"), Some(Stage::Failed), "{screen}");
@@ -153,7 +157,7 @@ async fn cancel_during_upload_keeps_the_sandbox() -> TestResult {
         launch(&mut console).await?;
         assert!(rig.gateway().until_held(&upload).await);
         until_stage(&mut console, "05 Upload", Stage::Running).await?;
-        let wanted = record_id(&only(&rig)?);
+        let wanted = record_id(&rig, &only(&rig)?);
         console.keys("x right enter")?;
         until_untouched(&mut console, "the manager", |c| {
             c.console().app().route() == Route::Manager
@@ -165,7 +169,7 @@ async fn cancel_during_upload_keeps_the_sandbox() -> TestResult {
                 .world
                 .instances
                 .iter()
-                .any(|record| record.id == wanted)
+                .any(|record| record.id() == &wanted)
         })
         .await?;
         rig.gateway().release(&upload);
@@ -208,7 +212,7 @@ async fn env_answers_reach_the_env_file() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         let mut console = console(&rig).await?;
-        begin(&mut console)?;
+        begin(&mut console).await?;
         answer(&mut console, Some("world")).await?;
         until_route(&mut console, Route::Capsule).await?;
         let file = env_file(&only(&rig)?)?;
@@ -224,7 +228,7 @@ async fn esc_in_the_env_form_creates_nothing() -> TestResult {
         let rig = Rig::new().await?;
         let mut console = console(&rig).await?;
         let builds = rig.world.engine.builds().len();
-        begin(&mut console)?;
+        begin(&mut console).await?;
         until_shows(&mut console, "Values for this launch").await?;
         console.keys("esc")?;
         until_route(&mut console, Route::Manager).await?;
@@ -241,7 +245,7 @@ async fn a_launch_that_leaves_nothing_returns_to_the_manager() -> TestResult {
     guard(async {
         let rig = Rig::builder().workspace_docker(true).build().await?;
         let mut console = console(&rig).await?;
-        begin(&mut console)?;
+        begin(&mut console).await?;
         until_shows(&mut console, "Run id").await?;
         assert!(rig.gateway().sandboxes().is_empty());
         console.keys("esc")?;

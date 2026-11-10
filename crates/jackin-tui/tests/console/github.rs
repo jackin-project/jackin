@@ -56,11 +56,19 @@ async fn origin_reaches_the_instance_and_o_shows_it() -> TestResult {
         assert_eq!(world.github[0].default_branch, "main");
         assert_eq!(world.github[0].branches, ["main"]);
         let repo = world.instances[0]
+            .as_available()
+            .ok_or("available instance")?
             .github
             .clone()
             .ok_or("no repo on the instance")?;
         assert_eq!(repo.url, "https://github.com/acme/widgets");
-        assert_eq!(world.instances[0].default_branch, "main");
+        assert_eq!(
+            world.instances[0]
+                .as_available()
+                .ok_or("available instance")?
+                .default_branch,
+            "main"
+        );
         lab.console.keys("down o")?;
         let status = lab.console.status_line();
         assert!(
@@ -107,7 +115,13 @@ async fn only_a_github_origin_counts() -> TestResult {
         lab.reopen().await?;
         let world = lab.world();
         assert!(world.github.is_empty(), "{:?}", world.github);
-        assert!(world.instances.iter().all(|i| i.github.is_none()));
+        assert!(
+            world
+                .instances
+                .iter()
+                .filter_map(|entry| entry.as_available())
+                .all(|i| i.github.is_none())
+        );
         lab.console.keys("down down down o")?;
         let status = lab.console.status_line();
         assert_eq!(status, "No GitHub source for platform-backend");

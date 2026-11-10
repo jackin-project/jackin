@@ -6,7 +6,7 @@ use std::num::NonZeroU16;
 use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_console::domain::instance::InstanceStatus;
+use jackin_console::domain::instance::{InstanceId, InstanceStatus};
 use jackin_console::domain::vocabulary::{PaneWords, fill_in};
 use jackin_console::panes::{PaneKind, PaneRefusal, PaneRequest};
 use jackin_console::screens::Go;
@@ -36,7 +36,7 @@ fn size(cols: u16, rows: u16) -> Result<TermSize, Box<dyn Error>> {
 
 struct Capsule {
     lab: Lab,
-    id: String,
+    id: InstanceId,
     handle: SandboxHandle,
     marks: usize,
     seen: usize,
@@ -70,7 +70,7 @@ impl Capsule {
             .instances
             .first()
             .ok_or("no instance")?
-            .id
+            .id()
             .clone();
         let mut capsule = Capsule {
             lab,
@@ -471,7 +471,7 @@ async fn a_refused_attach_is_failed_with_its_reason_and_enter_retries() -> TestR
         rig.launch(1).await?;
         rig.world.gateway.set_attachment_cap(0);
         let mut lab = Lab::with(rig).await?;
-        let id = lab.world().instances[0].id.clone();
+        let id = lab.world().instances[0].id().clone();
         lab.console.console().app().go(Go::Attach {
             instance: id,
             pane: None,
@@ -675,7 +675,7 @@ async fn a_clipboard_write_in_the_replay_is_not_copied_after_a_key() -> TestResu
         let handle = rig.handle(1).await?;
         handle.print_main(&osc52(b"Replayed"));
         let mut lab = Lab::with(rig).await?;
-        let id = lab.world().instances[0].id.clone();
+        let id = lab.world().instances[0].id().clone();
         let mut capsule = Capsule {
             lab,
             id,
@@ -818,7 +818,7 @@ async fn flooded() -> Result<Capsule, Box<dyn Error>> {
         code: std::path::PathBuf::new(),
     };
     lab.console.skip_intro();
-    let id = lab.world().instances[0].id.clone();
+    let id = lab.world().instances[0].id().clone();
     let mut capsule = Capsule {
         lab,
         id,
@@ -929,7 +929,10 @@ async fn a_running_sandbox_opens_one_codex_pane_and_a_second_codex_is_refused() 
     guard(Box::pin(async {
         let mut capsule = Capsule::open().await?;
         let world = &mut capsule.lab.console.console().app().world;
-        let instance = world.instances[0].clone();
+        let instance = world.instances[0]
+            .as_available()
+            .cloned()
+            .ok_or("available instance")?;
         assert_eq!(instance.status, InstanceStatus::Running);
         let backend = Arc::clone(&world.backend);
         let requests = backend.initial_panes(&instance);
@@ -961,7 +964,10 @@ async fn a_stopped_sandbox_has_no_initial_pane() -> TestResult {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
         let mut lab = Lab::with(rig).await?;
-        let mut instance = lab.world().instances[0].clone();
+        let mut instance = lab.world().instances[0]
+            .as_available()
+            .cloned()
+            .ok_or("available instance")?;
         instance.status = InstanceStatus::RestoreAvailable;
         let backend = Arc::clone(&lab.world().backend);
         assert_eq!(backend.initial_panes(&instance), Vec::<PaneRequest>::new());
@@ -1057,7 +1063,7 @@ async fn an_unreachable_gateway_fails_the_pane_with_the_doctor_step() -> TestRes
         let rig = Rig::new().await?;
         rig.launch(1).await?;
         let mut lab = Lab::with(rig).await?;
-        let id = lab.world().instances[0].id.clone();
+        let id = lab.world().instances[0].id().clone();
         lab.rig.world.gateway.inject(Fault::FailNext {
             op: GatewayOp::Find,
             error: GatewayError::Unreachable {

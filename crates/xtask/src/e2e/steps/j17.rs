@@ -165,7 +165,17 @@ impl Run<'_> {
         let loaded = self
             .jackin(
                 label,
-                &["load", "sentinel", &project, "--launch-id", launch.as_str()],
+                &[
+                    "load",
+                    "sentinel",
+                    &project,
+                    "--launch-id",
+                    launch.as_str(),
+                    "--provider",
+                    "zai",
+                    "--model",
+                    "glm-5.3",
+                ],
                 &main,
             )
             .await?;
@@ -237,36 +247,43 @@ impl Run<'_> {
 
     async fn j17_inner(&mut self) -> Res<Verdict> {
         let main = self.projects.main.clone();
-        let (a1, fxr, fxw, workspace) = (
-            self.names.a1.clone(),
-            self.names.fxr.clone(),
-            self.names.fxw.clone(),
-            self.names.main.clone(),
-        );
+        let workspace = self.names.main.clone();
         let mut problems: Vec<String> = Vec::new();
-        problems.extend(self.load_for_account("J17 provider default", &a1).await?);
+        problems.extend(self.load_for_account("J17 provider default", "zai").await?);
         let bound = self
             .jackin(
                 "J17 bind role",
-                &["account", "bind", &fxr, "--role", "sentinel"],
+                &["account", "bind", "zai-role", "--role", "sentinel"],
                 &main,
             )
             .await?;
         if !bound.ok() {
             return Err(fail("jackin account bind --role failed"));
         }
-        problems.extend(self.load_for_account("J17 role binding", &fxr).await?);
+        problems.extend(
+            self.load_for_account("J17 role binding", "zai-role")
+                .await?,
+        );
         let bound = self
             .jackin(
                 "J17 bind workspace",
-                &["account", "bind", &fxw, "--workspace", &workspace],
+                &[
+                    "account",
+                    "bind",
+                    "zai-workspace",
+                    "--workspace",
+                    &workspace,
+                ],
                 &main,
             )
             .await?;
         if !bound.ok() {
             return Err(fail("jackin account bind --workspace failed"));
         }
-        problems.extend(self.load_for_account("J17 workspace binding", &fxw).await?);
+        problems.extend(
+            self.load_for_account("J17 workspace binding", "zai-workspace")
+                .await?,
+        );
         problems.extend(self.usage_problems().await?);
         if problems.is_empty() {
             Ok(Verdict::pass(

@@ -10,7 +10,7 @@ use futures::future::join_all;
 use jackin_console::domain::doctor::{
     DoctorFailure, DoctorReport, DoctorSurface, STALE_AFTER_SECS,
 };
-use jackin_console::domain::instance::{Instance, InstanceId};
+use jackin_console::domain::instance::InstanceId;
 use jackin_console::domain::vocabulary::{Notice, Rejection, Vocabulary};
 use jackin_console::world::{Snapshot, WallSource};
 use jackin_core::{
@@ -238,9 +238,9 @@ impl Inputs {
                 reason: g.failure.clone().unwrap_or_default(),
             })
             .collect();
-        if fleet.unreadable > 0 {
+        if !fleet.unreadable.is_empty() {
             notices.push(Notice::UnreadableLabels {
-                count: fleet.unreadable,
+                count: fleet.unreadable.len(),
             });
         }
         Observation { snapshot, notices }
@@ -280,7 +280,7 @@ impl Inputs {
         config: &Config,
         observed: ObservedSandbox,
         origins: &Origins,
-    ) -> Option<Instance> {
+    ) -> Option<jackin_console::domain::instance::InstanceEntry> {
         let instance = project_instance(
             &observed,
             config,
@@ -294,6 +294,13 @@ impl Inputs {
 
     pub(crate) fn locate(&self, instance: &InstanceId) -> Option<ObservedSandbox> {
         locked(&self.fleet).locate(instance).cloned()
+    }
+
+    pub(crate) fn locate_unreadable(
+        &self,
+        instance: &InstanceId,
+    ) -> Option<crate::fleet::ObservedUnreadable> {
+        locked(&self.fleet).locate_unreadable(instance).cloned()
     }
 
     pub(crate) async fn run_doctor(&self, reconnect: bool) -> Result<DoctorReport, DoctorFailure> {

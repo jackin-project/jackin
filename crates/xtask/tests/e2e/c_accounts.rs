@@ -29,12 +29,20 @@ fn usage(scripts: Vec<UsageScript>) -> impl FnOnce(&Scenario) {
 #[tokio::test]
 async fn j17_selection_faults() {
     fault(
-        "the provider default gives fxr",
+        "the provider default gives the role account",
         "J17",
         "J17 provider default: the agents label",
         |scenario| {
-            scenario.knobs().account_override =
-                Some(("e2e-abcd-a1".to_owned(), "e2e-abcd-fxr".to_owned()));
+            scenario.knobs().account_override = Some(("zai".to_owned(), "zai-role".to_owned()));
+        },
+    )
+    .await;
+    fault(
+        "the role binding gives the provider default",
+        "J17",
+        "J17 role binding: the agents label",
+        |scenario| {
+            scenario.knobs().account_override = Some(("zai-role".to_owned(), "zai".to_owned()));
         },
     )
     .await;
@@ -44,7 +52,7 @@ async fn j17_selection_faults() {
         "the sandbox providers are",
         |scenario| {
             scenario.knobs().provider_account_override =
-                Some(("e2e-abcd-fxw".to_owned(), "e2e-abcd-fxr".to_owned()));
+                Some(("zai-workspace".to_owned(), "zai-role".to_owned()));
         },
     )
     .await;

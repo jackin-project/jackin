@@ -42,7 +42,7 @@ async fn the_failure_view_has_no_demo_words() -> TestResult {
     guard(async {
         let rig = Rig::builder().workspace_docker(true).build().await?;
         let mut view = console(&rig).await?;
-        begin(&mut view)?;
+        begin(&mut view).await?;
         until_shows(&mut view, "Run id").await?;
         clean(&view.screen(), &live(), "failure view");
         Ok(())
@@ -55,7 +55,7 @@ async fn the_env_prompt_has_no_demo_words() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         let mut view = console(&rig).await?;
-        begin(&mut view)?;
+        begin(&mut view).await?;
         until_shows(&mut view, "Values for this launch").await?;
         clean(&view.screen(), &live(), "env prompt");
         Ok(())

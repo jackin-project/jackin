@@ -21,9 +21,9 @@ async fn worktree_setup_creates_home_branch_and_checkout() -> Result<(), Box<dyn
         let instances = AgentInstances::new(vec![
             AgentInstance::new(
                 Agent::Codex,
-                Provider::Codex,
+                Provider::Zai,
                 AccountName::parse("work")?,
-                "gpt-6.1-sol".to_owned(),
+                "glm-5.3".to_owned(),
             ),
             AgentInstance::new(
                 Agent::Omp,
