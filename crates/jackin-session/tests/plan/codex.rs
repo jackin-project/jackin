@@ -9,7 +9,7 @@ use jackin_openshell::ProviderProfile;
 use jackin_session::{HeadState, MultiLayout, PlanError, plan_multi, render_codex_config};
 use jackin_testkit::RoleFixture;
 
-use super::support::{Spec, TestResult, guard};
+use super::support::{Spec, TestResult, guard, login_account};
 
 const HOME_CONFIG: &str = "/sandbox/.jackin/homes/codex/.codex/config.toml";
 
@@ -250,32 +250,51 @@ fn t20_pure_rendering_disables_web_search() -> TestResult {
 async fn plan_model_selection_allows_explicit_refuses_outside_and_defaults_without_one()
 -> TestResult {
     guard(async {
-        let setup = Spec::new(RoleFixture::new("sentinel")?).build().await?;
+        let mut spec = Spec::new(RoleFixture::new("sentinel")?);
+        spec.accounts = login_account("work");
+        let setup = spec.build().await?;
+
         let plan = setup.plan(
             setup
                 .request(1)?
-                .model(Some("glm-5.3".to_owned())),
+                .tuple(Agent::Codex, Provider::Codex)
+                .model(Some("gpt-6.1-sol".to_owned())),
         )?;
-        assert_eq!(plan.instances().lead().model, "glm-5.3");
+        let lead = plan.instances().lead();
+        assert_eq!(lead.agent, Agent::Codex);
+        assert_eq!(lead.provider, Provider::Codex);
+        assert_eq!(lead.model, "gpt-6.1-sol");
 
-        let alternate = setup.plan(
+        for model in ["no-such-model", "gpt-5.1-codex"] {
+            let err = setup
+                .plan(
+                    setup
+                        .request(2)?
+                        .tuple(Agent::Codex, Provider::Codex)
+                        .model(Some(model.to_owned())),
+                )
+                .err()
+                .ok_or("expected an error")?;
+            assert!(
+                matches!(
+                    &err,
+                    PlanError::TupleNotSupported {
+                        agent: Agent::Codex,
+                        provider: Provider::Codex,
+                        reason,
+                    } if reason.contains(&format!("unknown model {model}"))
+                ),
+                "{model}: {err}"
+            );
+        }
+
+        let plan = setup.plan(
             setup
-                .request(1)?
-                .model(Some("gpt-5.1-codex".to_owned())),
+                .request(3)?
+                .tuple(Agent::Codex, Provider::Codex)
+                .model(None),
         )?;
-        assert_eq!(alternate.instances().lead().model, "gpt-5.1-codex");
-
-        let err = setup
-            .plan(setup.request(1)?.model(Some("no-such-model".to_owned())))
-            .err()
-            .ok_or("expected an error")?;
-        assert!(
-            matches!(&err, PlanError::TupleNotSupported { reason, .. } if reason.contains("unknown model no-such-model")),
-            "{err}"
-        );
-
-        let plan = setup.plan(setup.request(2)?)?;
-        assert_eq!(plan.instances().lead().model, "glm-5.3");
+        assert_eq!(plan.instances().lead().model, "gpt-6.1-sol");
         Ok(())
     })
     .await

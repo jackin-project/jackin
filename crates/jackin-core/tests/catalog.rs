@@ -309,12 +309,7 @@ fn each_provider_lists_exactly_its_catalog_tuples() -> TestResult {
 #[test]
 fn changed_model_declarations_agree_between_specs_and_tuples() -> TestResult {
     for (agent, id, accepted, rejected) in [
-        (
-            Agent::Codex,
-            "T01",
-            &["gpt-6.1-sol", "gpt-5.1-codex"][..],
-            "not-a-model",
-        ),
+        (Agent::Codex, "T01", &["gpt-6.1-sol"][..], "not-a-model"),
         (
             Agent::Antigravity,
             "T05",

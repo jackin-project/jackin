@@ -305,33 +305,34 @@ async fn unavailable_tuples_and_invalid_models_are_refused_before_image_effects(
 async fn default_and_explicit_t01_selection_share_identity_across_build_and_load() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
+        let config = Config::parse(&format!(
+            "{}\n[accounts.chatgpt]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{}\" }}\n",
+            rig.config.render(),
+            rig.home.as_path().display(),
+            jackin_testkit::ACCOUNT_ID
+        ))?;
         let path = here(&rig);
-        let default = build(&rig, &rig.config, &request_for(None, &path)).await?;
+        let default = build(&rig, &config, &request_for(None, &path)).await?;
         let builds = rig.world.engine.builds().len();
         let explicit = BuildRequest {
             model: Some("gpt-6.1-sol"),
             ..request_for(None, &path)
         };
-        let selected = build(&rig, &rig.config, &explicit).await?;
+        let selected = build(&rig, &config, &explicit).await?;
         assert_eq!(
             (selected.tag, selected.id),
             (default.tag.clone(), default.id.clone())
         );
         assert_eq!(rig.world.engine.builds().len(), builds);
 
-        let other_model = BuildRequest {
-            model: Some("gpt-5.1-codex"),
-            ..request_for(None, &path)
-        };
-        let changed_model = build(&rig, &rig.config, &other_model).await?;
-        assert_eq!(
-            (changed_model.tag, changed_model.id),
-            (default.tag.clone(), default.id.clone())
-        );
-        assert_eq!(rig.world.engine.builds().len(), builds);
-
-        let request = rig.request(1)?.model(Some("gpt-5.1-codex".to_owned()));
-        let plan = plan_launch(&rig.config, &rig.loaded, request)?;
+        let request = rig
+            .request(1)?
+            .tuple(jackin_core::Agent::Codex, jackin_core::Provider::Codex)
+            .model(Some("gpt-6.1-sol".to_owned()));
+        let plan = plan_launch(&config, &rig.loaded, request)?;
+        let lead = plan.instances().lead();
+        assert_eq!(lead.provider, jackin_core::Provider::Codex);
+        assert_eq!(lead.model, "gpt-6.1-sol");
         let found = reuse(&rig, plan.image_request()).await?;
         assert_eq!(
             (found.tag, found.id, found.source),
@@ -354,7 +355,7 @@ async fn a_build_installs_the_selected_agent_and_refuses_mismatched_selectors() 
         for (agent, provider) in [
             (jackin_core::Agent::Omp, jackin_core::Provider::Codex),
             (jackin_core::Agent::Codex, jackin_core::Provider::Claude),
-            (jackin_core::Agent::Omp, jackin_core::Provider::Claude),
+            (jackin_core::Agent::Omp, jackin_core::Provider::Grok),
         ] {
             let mismatched = BuildRequest {
                 agent,

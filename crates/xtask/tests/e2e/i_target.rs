@@ -66,7 +66,7 @@ fn t01_resolution_defaults_partial_selection_and_complete_behavior() {
     for (agent, provider, model) in [
         (Some("codex"), None, None),
         (None, Some("codex"), None),
-        (None, None, Some("gpt-5.1-codex")),
+        (None, None, Some("gpt-6.1-sol")),
         (Some("codex"), Some("codex"), None),
     ] {
         let mut selected = args();
@@ -79,21 +79,7 @@ fn t01_resolution_defaults_partial_selection_and_complete_behavior() {
             model.unwrap_or("gpt-6.1-sol"),
             Path::new("/home/test/.codex"),
         );
-        assert_eq!(
-            target.selection_args(),
-            default
-                .selection_args()
-                .into_iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    if index == 5 && model.is_some() {
-                        "gpt-5.1-codex".to_owned()
-                    } else {
-                        value
-                    }
-                })
-                .collect::<Vec<_>>()
-        );
+        assert_eq!(target.selection_args(), default.selection_args());
     }
     let home_default = E2eTarget::resolve(
         &E2eArgs {
@@ -149,6 +135,14 @@ fn target_resolution_rejects_every_unavailable_or_incomplete_contract() {
             "invalid T01 model",
             E2eArgs {
                 model: Some("not-a-model".to_owned()),
+                ..args()
+            },
+            "not allowed",
+        ),
+        (
+            "removed T01 model",
+            E2eArgs {
+                model: Some("gpt-5.1-codex".to_owned()),
                 ..args()
             },
             "not allowed",
@@ -394,13 +388,10 @@ fn canonical_digest_matches_independent_fixture_and_excludes_runtime_values() {
 }
 
 #[test]
-fn every_behavior_and_identity_input_changes_the_digest() {
+fn every_behavior_and_profile_host_input_changes_the_digest() {
     let base = resolve_with(|_, _| {});
     type Mutate = fn(&mut AgentBehaviorSpec, &mut E2eArgs);
     let cases: Vec<(&str, Mutate)> = vec![
-        ("model", |_, args| {
-            args.model = Some("gpt-5.1-codex".to_owned());
-        }),
         ("binary", |behavior, _| {
             behavior.version.as_mut().expect("version").binary = "/usr/local/bin/other".to_owned();
         }),
