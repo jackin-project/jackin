@@ -160,16 +160,6 @@ fn credential_environment_collisions_are_rejected_with_tuple_identity()
             "T12",
             "T20",
         ),
-        (
-            Agent::ClaudeCode,
-            Provider::Kimi,
-            Agent::Omp,
-            Provider::Claude,
-            "kimi-for-coding",
-            "ANTHROPIC_API_KEY",
-            "T13",
-            "T21",
-        ),
     ];
     for (
         first_agent,
@@ -186,6 +176,8 @@ fn credential_environment_collisions_are_rejected_with_tuple_identity()
             "claude-haiku-5-5"
         } else if first_agent == Agent::Omp && first_provider == Provider::Minimax {
             "minimax-m3"
+        } else if first_agent == Agent::ClaudeCode && first_provider == Provider::Kimi {
+            "kimi-for-coding"
         } else {
             model
         };
@@ -207,6 +199,10 @@ fn credential_environment_collisions_are_rejected_with_tuple_identity()
             "{error}"
         );
     }
+    AgentInstances::new(vec![
+        inst(Agent::ClaudeCode, Provider::Zai, "work", "glm-5.3")?,
+        inst(Agent::Omp, Provider::Claude, "work", "claude-haiku-5-5")?,
+    ])?;
     Ok(())
 }
 
