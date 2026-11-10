@@ -186,8 +186,12 @@ fn codex_home_config_takes_the_explicit_model_and_refuses_an_unknown_one()
 
 #[test]
 fn t17_plans_and_renders_the_exact_kimi_provider_and_model() -> TestResult {
-    let (layout, text) = home_config(Provider::Kimi, "kimi-for-coding")?;
-    let parsed: toml::Table = toml::from_str(&text)?;
+    let (layout, files) = home_config(Provider::Kimi, "kimi-for-coding")?;
+    let file = files
+        .iter()
+        .find(|file| file.path.as_str() == HOME_CONFIG)
+        .ok_or("no codex home config")?;
+    let parsed: toml::Table = toml::from_str(&file.text)?;
     assert_eq!(parsed["model"].as_str(), Some("kimi-for-coding"));
     assert_eq!(parsed["model_provider"].as_str(), Some("kimi"));
     assert_eq!(layout.exec[1].provider, "kimi");
@@ -199,8 +203,12 @@ fn t17_plans_and_renders_the_exact_kimi_provider_and_model() -> TestResult {
 fn t19_plans_and_renders_exact_uppercase_minimax_model() -> TestResult {
     let tuple = lookup_tuple(Agent::Codex, Provider::Minimax)?;
     assert_eq!(tuple.check_model("MiniMax-M3")?.id, "T19");
-    let (layout, text) = home_config(Provider::Minimax, "MiniMax-M3")?;
-    let parsed: toml::Table = toml::from_str(&text)?;
+    let (layout, files) = home_config(Provider::Minimax, "MiniMax-M3")?;
+    let file = files
+        .iter()
+        .find(|file| file.path.as_str() == HOME_CONFIG)
+        .ok_or("no codex home config")?;
+    let parsed: toml::Table = toml::from_str(&file.text)?;
     assert_eq!(parsed["model"].as_str(), Some("MiniMax-M3"));
     assert_eq!(parsed["model_provider"].as_str(), Some("minimax"));
     assert_eq!(layout.exec[1].provider, "minimax");

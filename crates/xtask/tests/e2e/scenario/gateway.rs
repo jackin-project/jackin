@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Agent, ChatgptAccountId, GatewayName, HostPath, Labels, Phase, ProfileId, ProjectRoot,
-    ProviderName, SandboxName, SandboxPath, Secret, Sha256,
+    Agent, GatewayName, HostPath, Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxName,
+    SandboxPath, Secret, Sha256,
 };
 use jackin_openshell::{
     Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, PowerAction, ProfileSync,
@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::Shared;
 use super::report;
-use super::world::{ACCESS, ACCOUNT_ID, CLIENT_ID, REFRESH, World};
+use super::world::{ACCESS, CLIENT_ID, REFRESH, World};
 
 pub(crate) const PROBE: &str = "/usr/local/bin/jackin-sentinel-probe";
 
@@ -109,17 +109,18 @@ impl ScenarioGateway {
         let profile =
             ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile).expect("profile");
         self.fake.ensure_profile(&profile).await?;
-        let account_id = ChatgptAccountId::parse(ACCOUNT_ID).expect("account id");
         self.fake
             .put_provider(&ProviderSpec {
                 name: ProviderName::parse(&format!("jackin-{account}-codex")).expect("provider"),
                 profile: profile.id,
                 keys: spec.codex.openshell.keys,
-                material: ProviderMaterial::ChatgptLogin {
+                material: ProviderMaterial::OAuth2RefreshToken {
                     access_token: Secret::new(ACCESS.to_owned()),
                     refresh_token: Secret::new(REFRESH.to_owned()),
                     client_id: CLIENT_ID.to_owned(),
-                    chatgpt_account_id: account_id,
+                    scopes: Vec::new(),
+                    expires_at: None,
+                    additional_credentials: Default::default(),
                 },
             })
             .await
