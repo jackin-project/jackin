@@ -627,8 +627,7 @@ async fn static_key_sessions_isolate_a1_and_invalid_fixture_accounts() {
     fn prefix_of(value: &str) -> &str {
         match value
             .char_indices()
-            .filter(|(_, c)| !c.is_ascii_alphanumeric())
-            .last()
+            .rfind(|(_, c)| !c.is_ascii_alphanumeric())
         {
             Some((index, c)) => &value[..index + c.len_utf8()],
             None => "",

@@ -73,9 +73,10 @@ impl ScenarioGateway {
                     format!("openshell:resolve:env:{}", variable.name)
                 }
                 jackin_xtask::EnvironmentKind::Empty => String::new(),
-                jackin_xtask::EnvironmentKind::Brokered => brokered
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| format!("openshell:resolve:env:{}", variable.name)),
+                jackin_xtask::EnvironmentKind::Brokered => brokered.map_or_else(
+                    || format!("openshell:resolve:env:{}", variable.name),
+                    str::to_owned,
+                ),
             };
             text.push_str(&format!("{}={}\n", variable.name, value));
         }
