@@ -3,9 +3,9 @@
 
 use jackin_core::{
     Account, AccountName, CodexAuthMode, Config, CredentialSource, EnvName, HostPath, OpReference,
-    ProfileId, Provider, ProviderName,
+    ProfileId, Provider, ProviderName, lookup_tuple, tuple_profile_asset,
 };
-use jackin_openshell::{GatewayError, GatewayOp, Missing, ProfileSync};
+use jackin_openshell::{GatewayError, GatewayOp, Missing, ProfileSync, ProviderProfile};
 use jackin_session::{AccountError, AccountSync};
 use jackin_testkit::{Fault, World};
 use serde_json::json;
@@ -362,6 +362,66 @@ async fn an_omp_account_with_a_missing_key_fails_without_a_secret() -> TestResul
         assert!(world.gateway.providers().is_empty());
         Ok(())
     }).await
+}
+
+#[tokio::test]
+async fn a_kimi_file_key_sync_for_claude_code_creates_the_t13_auth_token_provider() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let path = HostPath::parse(&world.home().as_path().join("kimi-claude.txt"))?;
+        let secret = "KIMI-CLAUDE-SECRET-1";
+        world
+            .fs
+            .write_new(&path, secret.as_bytes(), jackin_core::FileMode(0o600))
+            .await?;
+        let account = Account::new(
+            AccountName::parse("work")?,
+            Provider::Kimi,
+            CredentialSource::File { path },
+        )?;
+        register(&world, &account).await?;
+        let result = world
+            .session
+            .sync_account(
+                &account,
+                jackin_core::Agent::ClaudeCode,
+                &CancellationToken::new(),
+            )
+            .await?;
+        let name = ProviderName::parse("jackin-work-claude")?;
+        assert!(
+            matches!(result, AccountSync::ProviderReady { ref provider, .. } if *provider == name),
+            "{result:?}"
+        );
+        let record = world.gateway.provider(&name).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "t13-claude-kimi");
+        assert_eq!(record.access_key, "ANTHROPIC_AUTH_TOKEN");
+        assert_ne!(record.access_key, "ANTHROPIC_API_KEY");
+        assert_eq!(record.access_token, secret);
+
+        let tuple = lookup_tuple(jackin_core::Agent::ClaudeCode, Provider::Kimi)?;
+        let profile = ProviderProfile::parse(tuple_profile_asset(tuple))?;
+        assert_eq!(profile.endpoints.len(), 1);
+        assert_eq!(profile.endpoints[0].host.as_str(), "api.kimi.ai");
+        assert_eq!(profile.yaml.matches("env_vars:").count(), 1);
+        assert!(profile.yaml.contains("env_vars: [ANTHROPIC_AUTH_TOKEN]"));
+        for forbidden in [
+            "ANTHROPIC_API_KEY",
+            "api.anthropic.com",
+            "platform.claude.com",
+        ] {
+            assert!(!profile.yaml.contains(forbidden));
+        }
+        for text in [
+            format!("{result:?}"),
+            format!("{record:?}"),
+            format!("{:?}", world.config),
+        ] {
+            assert!(!text.contains(secret));
+        }
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]

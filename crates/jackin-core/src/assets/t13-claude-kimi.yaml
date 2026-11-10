@@ -9,7 +9,7 @@ inference_capable: true
 credentials:
   - name: access_token
     description: Gateway-held credential for Claude Code with Kimi
-    env_vars: [ANTHROPIC_API_KEY]
+    env_vars: [ANTHROPIC_AUTH_TOKEN]
     required: true
     auth_style: bearer
     header_name: authorization

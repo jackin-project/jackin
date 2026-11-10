@@ -15,7 +15,7 @@ fn cases() -> Vec<(Provider, &'static str, &'static str)> {
         (
             Provider::Kimi,
             "https://api.kimi.ai/coding/",
-            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
         ),
         (
             Provider::Zai,
@@ -75,6 +75,57 @@ fn claude_base_url_host_matches_the_tuple_profile_endpoint_host() -> TestResult 
             "{}",
             tuple.id
         );
+    }
+    Ok(())
+}
+
+#[test]
+fn claude_compatible_tuples_agree_on_auth_token_profile_and_settings() -> TestResult {
+    for (provider, base_url, _) in cases() {
+        let tuple = lookup_tuple(Agent::ClaudeCode, provider)?;
+        assert_eq!(
+            tuple.credential_env(),
+            Some("ANTHROPIC_AUTH_TOKEN"),
+            "{}",
+            tuple.id
+        );
+        let profile = ProviderProfile::parse(tuple_profile_asset(tuple))?;
+        assert_eq!(profile.yaml.matches("env_vars:").count(), 1, "{}", tuple.id);
+        assert!(
+            profile.yaml.contains("env_vars: [ANTHROPIC_AUTH_TOKEN]"),
+            "{}",
+            tuple.id
+        );
+        assert_eq!(profile.endpoints.len(), 1, "{}", tuple.id);
+        let expected_host = base_url
+            .strip_prefix("https://")
+            .unwrap_or(base_url)
+            .split('/')
+            .next()
+            .unwrap_or_default();
+        assert_eq!(
+            profile.endpoints[0].host.as_str(),
+            expected_host,
+            "{}",
+            tuple.id
+        );
+        for forbidden in [
+            "ANTHROPIC_API_KEY",
+            "api.anthropic.com",
+            "platform.claude.com",
+        ] {
+            assert!(!profile.yaml.contains(forbidden), "{}", tuple.id);
+        }
+
+        let rendered = render_claude_config(tuple);
+        let value: Value = serde_json::from_str(&rendered)?;
+        assert_eq!(
+            value,
+            json!({"env": {"ANTHROPIC_BASE_URL": base_url}}),
+            "{}",
+            tuple.id
+        );
+        assert!(!rendered.contains("ANTHROPIC_AUTH_TOKEN"), "{}", tuple.id);
     }
     Ok(())
 }
