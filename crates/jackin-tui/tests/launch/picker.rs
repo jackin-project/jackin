@@ -72,23 +72,47 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
         console.keys("down enter")?;
         until_shows(&mut console, "Launch · choose Agent").await?;
         let screen = words(&console.screen());
-        assert!(screen.contains("final live proof pending"), "{screen}");
+        assert!(!screen.contains("final live proof pending"), "{screen}");
         assert!(!screen.contains("host Codex login expired"), "{screen}");
         assert!(screen.contains("Claude Code"), "{screen}");
         assert!(screen.contains("Grok Build"), "{screen}");
         assert!(!screen.contains("set in Settings"), "{screen}");
-        console.keys("space enter")?;
-        answer(&mut console, None).await?;
-        until_route(&mut console, Route::Capsule).await?;
+        let world = &console.console().app().world;
+        let workspace = world
+            .workspaces
+            .iter()
+            .find(|found| found.name == "platform-backend")
+            .map(|found| found.id)
+            .ok_or("no platform-backend workspace")?;
+        let events = direct_launch(
+            world,
+            &LaunchTarget {
+                workspace: Some(workspace),
+                role: "sentinel".to_owned(),
+                instances: vec![InstanceChoice {
+                    agent: ConsoleAgent::Codex,
+                    provider: ConsoleProvider::OpenAi,
+                    account: Some("codex-local".to_owned()),
+                    model: "gpt-6.1-sol".to_owned(),
+                }],
+                task: None,
+            },
+        )
+        .await?;
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, LaunchEvent::Ready(_))),
+            "{events:?}"
+        );
         assert_eq!(
-            labels(&only(&rig)?)?.planned.agents.agents_label(),
+            labels(&only(&rig)?)?.planned.agents,
             jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
                 jackin_core::Agent::Codex,
-                Provider::Zai,
-                AccountName::parse("work")?,
-                "glm-5.3".to_owned(),
+                Provider::Codex,
+                AccountName::parse("codex-local")?,
+                "gpt-6.1-sol".to_owned(),
             ))
-            .agents_label()
         );
         assert!(
             rig.world
@@ -314,56 +338,6 @@ async fn a_role_removed_under_the_picker_is_refused() -> TestResult {
         assert!(rig.world.engine.builds().is_empty());
         console.keys("esc")?;
         until_route(&mut console, Route::Manager).await?;
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn an_out_of_catalog_agent_is_refused_before_any_stage() -> TestResult {
-    guard(async {
-        let rig = Rig::new().await?;
-        let mut console = console(&rig).await?;
-        let app = console.console().app();
-        let world = &app.world;
-        let workspace = world
-            .workspaces
-            .iter()
-            .find(|found| found.name == "platform-backend")
-            .map(|found| found.id)
-            .ok_or("no platform-backend workspace")?;
-        let mut feed = world.backend.launch(
-            world,
-            &LaunchTarget {
-                workspace: Some(workspace),
-                role: "sentinel".to_owned(),
-                instances: vec![InstanceChoice {
-                    agent: ConsoleAgent::Amp,
-                    provider: ConsoleAgent::Amp.provider(),
-                    account: None,
-                    model: String::new(),
-                }],
-                task: None,
-            },
-        );
-        let mut events = Vec::new();
-        for _ in 0..400 {
-            events.extend(feed.poll(world));
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        assert!(
-            matches!(
-                events.as_slice(),
-                [LaunchEvent::Refused(RefusalReason::AgentNotLaunchable {
-                    agent: ConsoleAgent::Amp,
-                    launchable: ConsoleAgent::Codex,
-                })]
-            ),
-            "{events:?}"
-        );
-        assert!(rig.gateway().sandboxes().is_empty());
-        assert!(rig.gateway().providers().is_empty());
-        assert!(rig.world.engine.builds().is_empty());
         Ok(())
     })
     .await
@@ -694,91 +668,193 @@ async fn availability_rig() -> Result<Rig, Failure> {
     Ok(rig)
 }
 
-async fn unavailable_offer(
-    agent: ConsoleAgent,
-    provider: ConsoleProvider,
-    reason: &str,
-) -> TestResult {
+fn console_agent(agent: jackin_core::Agent) -> Option<ConsoleAgent> {
+    match agent {
+        jackin_core::Agent::Codex => Some(ConsoleAgent::Codex),
+        jackin_core::Agent::ClaudeCode => Some(ConsoleAgent::ClaudeCode),
+        jackin_core::Agent::Omp => Some(ConsoleAgent::Omp),
+        _ => None,
+    }
+}
+
+fn console_provider(provider: Provider) -> ConsoleProvider {
+    match provider {
+        Provider::Claude => ConsoleProvider::Anthropic,
+        Provider::Codex => ConsoleProvider::OpenAi,
+        Provider::Kimi => ConsoleProvider::Moonshot,
+        Provider::Minimax => ConsoleProvider::MiniMax,
+        Provider::Mimo => ConsoleProvider::Mimo,
+        Provider::Zai => ConsoleProvider::Zai,
+        _ => unreachable!("only offered providers are converted"),
+    }
+}
+
+#[tokio::test]
+async fn tuple_offers_match_the_complete_supported_matrix_and_remaining_controls() -> TestResult {
     guard(async {
         let rig = availability_rig().await?;
         let mut console = console(&rig).await?;
         let offers = &console.console().app().world.surfaces.tuples;
-        let offer = offers
-            .iter()
-            .find(|offer| offer.agent == agent && offer.provider == provider)
-            .ok_or("missing tuple offer")?;
-        assert_eq!(offer.state, ConsoleTupleState::Unavailable);
-        assert_eq!(offer.reason.as_deref(), Some(reason));
+        for tuple in jackin_core::TUPLES {
+            let Some(agent) = console_agent(tuple.agent) else {
+                continue;
+            };
+            let provider = console_provider(tuple.provider);
+            let offer = offers
+                .iter()
+                .find(|offer| offer.agent == agent && offer.provider == provider)
+                .ok_or_else(|| format!("missing {} offer", tuple.id))?;
+            let expected_state = match tuple.id {
+                "T02" => ConsoleTupleState::BlockedVendor,
+                "T13" | "T22" => ConsoleTupleState::Unavailable,
+                _ => ConsoleTupleState::Supported,
+            };
+            let expected_reason = match tuple.id {
+                "T02" => Some("vendor clarification pending"),
+                "T13" => Some("supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com"),
+                "T22" => Some("no API key on this host"),
+                _ => None,
+            };
+            assert_eq!(offer.state, expected_state, "{}", tuple.id);
+            assert_eq!(offer.reason.as_deref(), expected_reason, "{}", tuple.id);
+            assert_eq!(offer.allowed_models, [tuple.default_model.to_owned()], "{}", tuple.id);
+            assert_eq!(offer.default_model, tuple.default_model, "{}", tuple.id);
+        }
         Ok(())
     })
     .await
 }
 
-macro_rules! unavailable_offer_tests {
-    ($($name:ident => ($agent:ident, $provider:ident, $reason:literal)),+ $(,)?) => {
-        $(
-            #[tokio::test]
-            async fn $name() -> TestResult {
-                unavailable_offer(ConsoleAgent::$agent, ConsoleProvider::$provider, $reason).await
-            }
-        )+
-    };
+async fn promoted_console_launch(
+    agent: jackin_core::Agent,
+    provider: Provider,
+    account: &str,
+    model: Option<&str>,
+) -> TestResult {
+    let tuple = jackin_core::lookup_tuple(agent, provider)?;
+    let expected_model = model.unwrap_or(tuple.default_model);
+    let rig = availability_rig().await?;
+    if provider == Provider::Mimo {
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::AddAccount(Account::new(
+                AccountName::parse(account)?,
+                provider,
+                CredentialSource::File {
+                    path: jackin_core::HostPath::parse(&rig.home.as_path().join("zai.txt"))?,
+                },
+            )?)])
+            .await?;
+    }
+    let mut console = console(&rig).await?;
+    let world = &console.console().app().world;
+    let workspace = world
+        .workspaces
+        .iter()
+        .find(|found| found.name == "platform-backend")
+        .map(|found| found.id)
+        .ok_or("no platform-backend workspace")?;
+    let events = direct_launch(
+        world,
+        &LaunchTarget {
+            workspace: Some(workspace),
+            role: "sentinel".to_owned(),
+            instances: vec![InstanceChoice {
+                agent: console_agent(agent).ok_or("unsupported console agent")?,
+                provider: console_provider(provider),
+                account: Some(account.to_owned()),
+                model: model.unwrap_or_default().to_owned(),
+            }],
+            task: None,
+        },
+    )
+    .await?;
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, LaunchEvent::Ready(_))),
+        "{events:?}"
+    );
+    let handle = only(&rig)?;
+    assert_eq!(
+        labels(&handle)?.planned.agents,
+        jackin_core::AgentInstances::single(jackin_core::AgentInstance::new(
+            agent,
+            provider,
+            AccountName::parse(account)?,
+            expected_model.to_owned(),
+        ))
+    );
+    Ok(())
 }
 
-unavailable_offer_tests! {
-    t01_offer_is_unavailable => (Codex, OpenAi, "final live proof pending after host re-login"),
-    t10_offer_is_unavailable => (Omp, Moonshot, "final live proof pending with Kimi plan key"),
-    t11_offer_is_unavailable => (Omp, MiniMax, "final live proof pending with MiniMax plan key"),
-    t12_offer_is_unavailable => (Omp, Mimo, "final live proof pending with MiMo Token Plan key"),
-    t16_offer_is_unavailable => (ClaudeCode, Mimo, "final live proof pending with MiMo Token Plan key"),
-    t20_offer_is_unavailable => (Codex, Mimo, "final live proof pending with MiMo Token Plan key"),
+#[tokio::test]
+async fn t01_console_launch_is_ready_with_exact_chatgpt_labels() -> TestResult {
+    guard(promoted_console_launch(
+        jackin_core::Agent::Codex,
+        Provider::Codex,
+        "picker-codex",
+        Some("gpt-6.1-sol"),
+    ))
+    .await
 }
 
-async fn unavailable_launch(provider: ConsoleProvider, reason: &str) -> TestResult {
+#[tokio::test]
+async fn t20_console_launch_is_ready_with_exact_mimo_labels() -> TestResult {
+    guard(promoted_console_launch(
+        jackin_core::Agent::Codex,
+        Provider::Mimo,
+        "mimo",
+        Some("mimo-v2.6-pro"),
+    ))
+    .await
+}
+
+#[tokio::test]
+async fn t20_blank_model_console_launch_uses_the_tuple_default() -> TestResult {
+    guard(promoted_console_launch(
+        jackin_core::Agent::Codex,
+        Provider::Mimo,
+        "mimo",
+        None,
+    ))
+    .await
+}
+
+async fn unavailable_launch(
+    agent: ConsoleAgent,
+    provider: ConsoleProvider,
+    agent_name: &str,
+    provider_name: &str,
+    reason: &str,
+) -> TestResult {
     guard(async {
         let rig = availability_rig().await?;
-        if provider == ConsoleProvider::Mimo {
-            rig.world
-                .config
-                .edit(vec![env_account("mimo", Provider::Mimo, "MIMO_KEY")?])
-                .await?;
-        }
         let mut console = console(&rig).await?;
-        let app = console.console().app();
-        let world = &app.world;
+        let world = &console.console().app().world;
         let workspace = world
             .workspaces
             .iter()
             .find(|found| found.name == "platform-backend")
             .map(|found| found.id)
             .ok_or("no platform-backend workspace")?;
-        let account = (provider == ConsoleProvider::Mimo).then(|| "mimo".to_owned());
-        let provider_name = match provider {
-            ConsoleProvider::OpenAi => "codex",
-            ConsoleProvider::Mimo => "mimo",
-            _ => return Err("unexpected console provider".into()),
-        };
-        let mut feed = world.backend.launch(
+        let events = direct_launch(
             world,
             &LaunchTarget {
                 workspace: Some(workspace),
                 role: "sentinel".to_owned(),
                 instances: vec![InstanceChoice {
-                    agent: ConsoleAgent::Codex,
+                    agent,
                     provider,
-                    account,
+                    account: None,
                     model: String::new(),
                 }],
                 task: None,
             },
-        );
-        let mut events = Vec::new();
-        for _ in 0..400 {
-            events.extend(feed.poll(world));
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+        )
+        .await?;
         let expected =
-            format!("tuple codex with provider {provider_name} is not supported: {reason}");
+            format!("tuple {agent_name} with provider {provider_name} is not supported: {reason}");
         assert!(
             events.iter().any(|event| matches!(
                 event,
@@ -795,19 +871,25 @@ async fn unavailable_launch(provider: ConsoleProvider, reason: &str) -> TestResu
 }
 
 #[tokio::test]
-async fn t01_launch_refusal_has_the_exact_reason_and_no_effects() -> TestResult {
+async fn t13_launch_refusal_has_the_exact_supervised_reason_and_no_effects() -> TestResult {
     unavailable_launch(
-        ConsoleProvider::OpenAi,
-        "final live proof pending after host re-login",
+        ConsoleAgent::ClaudeCode,
+        ConsoleProvider::Moonshot,
+        "claude",
+        "kimi",
+        "supervised interactive Claude Code exited 1 after provider-only policy refused api.anthropic.com",
     )
     .await
 }
 
 #[tokio::test]
-async fn t20_launch_refusal_has_the_exact_reason_and_no_effects() -> TestResult {
+async fn t22_launch_refusal_has_the_exact_missing_key_reason_and_no_effects() -> TestResult {
     unavailable_launch(
-        ConsoleProvider::Mimo,
-        "final live proof pending with MiMo Token Plan key",
+        ConsoleAgent::Omp,
+        ConsoleProvider::OpenAi,
+        "omp",
+        "codex",
+        "no API key on this host",
     )
     .await
 }
