@@ -955,6 +955,40 @@ async fn j08_enforces_exact_target_credential_delivery_and_reflection() {
 }
 
 #[tokio::test]
+async fn j08_rejects_unrecognized_brokered_values() {
+    for id in ["T09", "T14", "T18"] {
+        let variable = if id == "T14" {
+            "ANTHROPIC_AUTH_TOKEN"
+        } else {
+            "ZAI_API_KEY"
+        };
+        let scenario = zai_scenario(id).await;
+        scenario.knobs().brokered_env_value = Some("arbitrary-other-value".to_owned());
+        let ran = scenario.run_with_env(&[("ZAI_API_KEY", ZAI)]).await;
+        let case = format!("{id} arbitrary brokered value");
+        ran.expect(&case, &[("J08", "FAIL")]);
+        ran.reason_has(&case, "J08", variable);
+    }
+
+    for (label, value) in [
+        ("wrong name", "openshell:resolve:env:WRONG_NAME"),
+        ("truncated", "openshell:resolve:env:"),
+        ("raw key", ZAI),
+    ] {
+        let scenario = zai_scenario("T09").await;
+        scenario.knobs().brokered_env_value = Some(value.to_owned());
+        let ran = scenario.run_with_env(&[("ZAI_API_KEY", ZAI)]).await;
+        let case = format!("T09 {label} brokered value");
+        ran.expect(&case, &[("J08", "FAIL")]);
+        ran.reason_has(&case, "J08", "ZAI_API_KEY");
+    }
+
+    let scenario = zai_scenario("T09").await;
+    let ran = scenario.run_with_env(&[("ZAI_API_KEY", ZAI)]).await;
+    expect_full_success("T09", &ran);
+}
+
+#[tokio::test]
 async fn j09_provider_closure_and_response_classification_are_exact() {
     for id in ["T09", "T14", "T18"] {
         for url in ["https://outside.invalid/v1", "https://user@api.z.ai/v1"] {

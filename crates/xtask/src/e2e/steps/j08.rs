@@ -48,6 +48,55 @@ fn credential_name(name: &str) -> bool {
             .any(|word| name.contains(word))
 }
 
+fn brokered_identity(rest: &str, name: &str) -> bool {
+    if rest == name {
+        return true;
+    }
+    let Some(head) = rest
+        .strip_suffix(name)
+        .and_then(|head| head.strip_suffix('_'))
+    else {
+        return false;
+    };
+    if let Some(digits) = head.strip_prefix('v') {
+        return !digits.is_empty()
+            && digits.as_bytes()[0] != b'0'
+            && digits.bytes().all(|byte| byte.is_ascii_digit());
+    }
+    if let Some(hex) = head.strip_prefix('s') {
+        return hex.len() == 64
+            && hex
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    }
+    false
+}
+
+fn brokered_value(value: &str, name: &str) -> bool {
+    if value.is_empty()
+        || value
+            .chars()
+            .any(|char| char.is_whitespace() || char.is_control())
+    {
+        return false;
+    }
+    if let Some(rest) = value.strip_prefix("openshell:resolve:env:") {
+        return brokered_identity(rest, name);
+    }
+    const MARKER: &str = "OPENSHELL-RESOLVE-ENV-";
+    if let Some(index) = value.find(MARKER) {
+        let prefix = &value[..index];
+        let valid_prefix = !prefix.is_empty()
+            && prefix.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'~')
+            });
+        if valid_prefix {
+            return brokered_identity(&value[index + MARKER.len()..], name);
+        }
+    }
+    false
+}
+
 fn value_kind(value: &str) -> &str {
     if value.is_empty() {
         "empty"
@@ -95,7 +144,7 @@ pub(crate) fn judge_create_env(
         let accepted = match expected.get(name) {
             Some(EnvironmentKind::Placeholder) => kind == "placeholder",
             Some(EnvironmentKind::Empty) => kind == "empty",
-            Some(EnvironmentKind::Brokered) => kind != "empty",
+            Some(EnvironmentKind::Brokered) => brokered_value(value, name),
             None => kind == "empty" || kind == "placeholder",
         };
         if !accepted {
@@ -269,7 +318,7 @@ pub(crate) fn judge_env_text(text: &str, behavior: &CredentialBehavior) -> Vec<S
         let valid = match expected.kind {
             EnvironmentKind::Placeholder => kind == "placeholder",
             EnvironmentKind::Empty => kind == "empty",
-            EnvironmentKind::Brokered => kind != "empty",
+            EnvironmentKind::Brokered => brokered_value(value, expected.name.as_str()),
         };
         if !valid {
             problems.push(format!(

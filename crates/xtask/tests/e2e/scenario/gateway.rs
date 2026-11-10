@@ -65,7 +65,7 @@ impl ScenarioGateway {
             .unwrap_or_else(|| jackin_xtask::E2eTarget::t01().expect("T01 target"))
     }
 
-    fn env_text(target: &jackin_xtask::E2eTarget) -> String {
+    fn env_text(target: &jackin_xtask::E2eTarget, brokered: Option<&str>) -> String {
         let mut text = "PATH=/usr/bin\n".to_owned();
         for variable in &target.behavior().credential.environment {
             let value = match variable.kind {
@@ -73,9 +73,9 @@ impl ScenarioGateway {
                     format!("openshell:resolve:env:{}", variable.name)
                 }
                 jackin_xtask::EnvironmentKind::Empty => String::new(),
-                jackin_xtask::EnvironmentKind::Brokered => {
-                    format!("gateway-brokered-{}", target.tuple().agent.as_str())
-                }
+                jackin_xtask::EnvironmentKind::Brokered => brokered
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("openshell:resolve:env:{}", variable.name)),
             };
             text.push_str(&format!("{}={}\n", variable.name, value));
         }
@@ -236,7 +236,8 @@ impl ScenarioGateway {
             return outcome(0, answer);
         }
         if script == "/usr/bin/env" {
-            return outcome(0, &Self::env_text(&target));
+            let brokered = self.shared.knobs().brokered_env_value.clone();
+            return outcome(0, &Self::env_text(&target, brokered.as_deref()));
         }
         if script.contains("echo uid=") {
             return outcome(0, "uid=1000\nuser=sandbox\ndocker=no\nsudo=no\n");
@@ -439,7 +440,13 @@ impl Gateway for ScenarioGateway {
         }
         match run.program.as_str() {
             PROBE => self.answer_probe(run),
-            "/usr/bin/env" => Ok(outcome(0, &Self::env_text(&self.target()))),
+            "/usr/bin/env" => {
+                let brokered = self.shared.knobs().brokered_env_value.clone();
+                Ok(outcome(
+                    0,
+                    &Self::env_text(&self.target(), brokered.as_deref()),
+                ))
+            }
             _ => Ok(self.answer_sh(run)),
         }
     }
@@ -502,7 +509,9 @@ impl Gateway for ScenarioGateway {
                             .into_bytes(),
                     )
                 } else {
-                    Some(Self::env_text(&target).into_bytes())
+                    Some(
+                        Self::env_text(&target, knobs.brokered_env_value.as_deref()).into_bytes(),
+                    )
                 }
             })
             .collect())

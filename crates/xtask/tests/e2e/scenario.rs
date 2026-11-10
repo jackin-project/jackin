@@ -151,6 +151,7 @@ pub(crate) struct Knobs {
     pub reflect_never_done: bool,
     pub codex_young_polls: u32,
     pub create_env_drop_launch: bool,
+    pub brokered_env_value: Option<String>,
     pub purge_vanishes: bool,
     pub git_fail: Option<(String, String)>,
     pub host_spawn_error: Option<(String, String)>,
