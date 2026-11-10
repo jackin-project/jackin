@@ -120,7 +120,7 @@ impl ScenarioGateway {
                     client_id: CLIENT_ID.to_owned(),
                     scopes: Vec::new(),
                     expires_at: None,
-                    additional_credentials: Default::default(),
+                    additional_credentials: std::collections::BTreeMap::new(),
                 },
             })
             .await
