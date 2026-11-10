@@ -15,7 +15,7 @@ use jackin_session::{
 use jackin_testkit::{Outcome, Rig, SandboxHandle};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{TestResult, failure, guard, launch_rig, ready};
+use super::support::{TestResult, failure, guard, launch_rig, multi_agent_rig, ready};
 
 fn members(lead: Agent) -> Result<AgentInstances, Box<dyn std::error::Error>> {
     let codex = AgentInstance::new(
@@ -24,21 +24,21 @@ fn members(lead: Agent) -> Result<AgentInstances, Box<dyn std::error::Error>> {
         AccountName::parse("work")?,
         "glm-5.3".to_owned(),
     );
-    let omp = AgentInstance::new(
-        Agent::Omp,
+    let claude = AgentInstance::new(
+        Agent::ClaudeCode,
         Provider::Zai,
         AccountName::parse("zai-work")?,
         "glm-5.3".to_owned(),
     );
-    Ok(AgentInstances::new(if lead == Agent::Omp {
-        vec![omp, codex]
+    Ok(AgentInstances::new(if lead == Agent::ClaudeCode {
+        vec![claude, codex]
     } else {
-        vec![codex, omp]
+        vec![codex, claude]
     })?)
 }
 
 async fn configured() -> Result<Rig, Box<dyn std::error::Error>> {
-    let rig = launch_rig().await?;
+    let rig = multi_agent_rig().await?;
     let key = HostPath::parse(&rig.home.as_path().join("zai.key"))?;
     rig.world
         .fs
@@ -94,11 +94,11 @@ async fn wait_main(handle: &SandboxHandle, expected: &[u8]) -> TestResult {
 async fn nonlexical_lead_attach_routes_main_and_secondary_terminal_contexts() -> TestResult {
     guard(async {
         let rig = configured().await?;
-        let request = rig.request(31)?.instances(members(Agent::Omp)?);
+        let request = rig.request(31)?.instances(members(Agent::ClaudeCode)?);
         let target = ready(run(&rig, request).await?)?;
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
         let mut owner = AttachRequest::owner(target.clone(), size()?);
-        owner.agent = Some(Agent::Omp);
+        owner.agent = Some(Agent::ClaudeCode);
         let mut lead = rig.world.session.attach(owner).await?;
         assert!(handle.shells().is_empty());
         lead.input(b"lead-identity-input".to_vec()).await?;
@@ -203,7 +203,7 @@ async fn retry_keeps_the_current_lead_but_refuses_a_lead_only_change_without_mut
 {
     guard(async {
         let rig = configured().await?;
-        let request = rig.request(32)?.instances(members(Agent::Omp)?);
+        let request = rig.request(32)?.instances(members(Agent::ClaudeCode)?);
         let target = ready(run(&rig, request.clone()).await?)?;
         let same = ready(run(&rig, request).await?)?;
         assert_eq!(same.sandbox, target.sandbox);
@@ -222,7 +222,7 @@ async fn retry_keeps_the_current_lead_but_refuses_a_lead_only_change_without_mut
         );
         agents_label_refusal(
             run(&rig, changed).await?,
-            &members(Agent::Omp)?.agents_label(),
+            &members(Agent::ClaudeCode)?.agents_label(),
             &members(Agent::Codex)?.agents_label(),
         )?;
         assert_eq!(
@@ -244,9 +244,9 @@ async fn retry_keeps_the_current_lead_but_refuses_a_lead_only_change_without_mut
 }
 
 async fn legacy(rig: &Rig, id: u8) -> Result<SandboxHandle, Box<dyn std::error::Error>> {
-    let target = ready(run(rig, rig.request(id)?.instances(members(Agent::Omp)?)).await?)?;
+    let target = ready(run(rig, rig.request(id)?.instances(members(Agent::ClaudeCode)?)).await?)?;
     let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
-    let mut old = members(Agent::Omp)?.as_slice().to_vec();
+    let mut old = members(Agent::ClaudeCode)?.as_slice().to_vec();
     old.sort_by_key(AgentInstance::item);
     let hash = Sha256::of(
         old.iter()
@@ -258,7 +258,7 @@ async fn legacy(rig: &Rig, id: u8) -> Result<SandboxHandle, Box<dyn std::error::
     handle.add_label(jackin_core::AGENTS_LABEL, &hash.as_str()[..32])?;
     std::fs::write(
         handle.root().join(".jackin/agents.json"),
-        AgentInstances::new(old)?.agents_json(),
+        serde_json::to_vec(&old)?,
     )?;
     Ok(handle)
 }
@@ -270,7 +270,7 @@ async fn old_sorted_identity_that_matches_new_lead_order_is_refused_on_retry() -
         let handle = legacy(&rig, 33).await?;
         assert_eq!(
             handle.file(&SandboxPath::from_static("/sandbox/.jackin/agents.json")),
-            Some(members(Agent::Codex)?.agents_json().into_bytes())
+            Some(serde_json::to_vec(members(Agent::ClaudeCode)?.as_slice())?)
         );
         let changed = rig.request(33)?.instances(members(Agent::Codex)?);
         align_non_agents_gateway_labels(&rig, &handle, changed.clone()).await?;
@@ -356,7 +356,7 @@ async fn explicit_attach_refuses_ambiguous_old_identity_before_opening_a_termina
             handle.supervisor(),
             rig.gateway().providers(),
         );
-        for agent in [Agent::Codex, Agent::Omp] {
+        for agent in [Agent::Codex, Agent::ClaudeCode] {
             let mut request = AttachRequest::viewer(handle.name(), size()?);
             request.agent = Some(agent);
             assert!(matches!(
@@ -421,10 +421,16 @@ async fn direct_instance_operations_refuse_missing_malformed_empty_and_duplicate
 -> TestResult {
     guard(async {
         let rig = configured().await?;
-        let target = ready(run(&rig, rig.request(37)?.instances(members(Agent::Omp)?)).await?)?;
+        let target = ready(
+            run(
+                &rig,
+                rig.request(37)?.instances(members(Agent::ClaudeCode)?),
+            )
+            .await?,
+        )?;
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
         let manifest = handle.root().join(".jackin/agents.json");
-        let item = members(Agent::Omp)?.as_slice()[0].clone();
+        let item = members(Agent::ClaudeCode)?.as_slice()[0].clone();
         let duplicate = serde_json::to_vec(&vec![item.clone(), item])?;
         for bytes in [
             None,
@@ -477,7 +483,13 @@ async fn direct_instance_operations_refuse_missing_malformed_empty_and_duplicate
 async fn integrate_merges_the_secondary_branch_into_the_persisted_nonlexical_lead() -> TestResult {
     guard(async {
         let rig = configured().await?;
-        let target = ready(run(&rig, rig.request(38)?.instances(members(Agent::Omp)?)).await?)?;
+        let target = ready(
+            run(
+                &rig,
+                rig.request(38)?.instances(members(Agent::ClaudeCode)?),
+            )
+            .await?,
+        )?;
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
         handle.git(&["config", "user.name", "jackin-test"]).await?;
         handle
@@ -517,7 +529,7 @@ async fn integrate_merges_the_secondary_branch_into_the_persisted_nonlexical_lea
         );
         assert!(
             handle
-                .git(&["branch", "--list", "agent/omp"])
+                .git(&["branch", "--list", "agent/claude"])
                 .await?
                 .trim()
                 .is_empty()
@@ -564,7 +576,13 @@ async fn integrate_merges_the_secondary_branch_into_the_persisted_nonlexical_lea
 async fn integrate_reports_a_missing_secondary_branch_as_a_git_failure() -> TestResult {
     guard(async {
         let rig = configured().await?;
-        let target = ready(run(&rig, rig.request(41)?.instances(members(Agent::Omp)?)).await?)?;
+        let target = ready(
+            run(
+                &rig,
+                rig.request(41)?.instances(members(Agent::ClaudeCode)?),
+            )
+            .await?,
+        )?;
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
         handle
             .git(&["update-ref", "-d", "refs/heads/agent/codex"])
@@ -605,10 +623,16 @@ async fn direct_instance_operations_refuse_delimiter_and_control_models_even_wit
 -> TestResult {
     guard(async {
         let rig = configured().await?;
-        let target = ready(run(&rig, rig.request(39)?.instances(members(Agent::Omp)?)).await?)?;
+        let target = ready(
+            run(
+                &rig,
+                rig.request(39)?.instances(members(Agent::ClaudeCode)?),
+            )
+            .await?,
+        )?;
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
         for model in ["gpt,codex:codex:work:bogus", "gpt\ncontrol"] {
-            let mut items = members(Agent::Omp)?.as_slice().to_vec();
+            let mut items = members(Agent::ClaudeCode)?.as_slice().to_vec();
             items[1].model = model.to_owned();
             let invalid = AgentInstances::new(items)?;
             handle.add_label(jackin_core::AGENTS_LABEL, &invalid.agents_label())?;
@@ -660,7 +684,7 @@ async fn public_instance_reader_canonicalizes_secondaries_but_preserves_the_lead
         let rig = launch_rig().await?;
         let target = ready(rig.launch_observed(40).await?)?;
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
-        let mut items = members(Agent::Omp)?.as_slice().to_vec();
+        let mut items = members(Agent::ClaudeCode)?.as_slice().to_vec();
         let grok = jackin_core::lookup_tuple(Agent::GrokBuild, Provider::Grok)?;
         items.push(AgentInstance::new(
             grok.agent,
@@ -671,7 +695,7 @@ async fn public_instance_reader_canonicalizes_secondaries_but_preserves_the_lead
         let identity = AgentInstances::new(items.clone())?;
         handle.add_label(jackin_core::AGENTS_LABEL, &identity.agents_label())?;
         let expected = vec![
-            Agent::Omp.as_str().to_owned(),
+            Agent::ClaudeCode.as_str().to_owned(),
             Agent::Codex.as_str().to_owned(),
             Agent::GrokBuild.as_str().to_owned(),
         ];

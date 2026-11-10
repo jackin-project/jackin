@@ -143,7 +143,9 @@ fn multi_account_config(rig: &Rig) -> String {
 #[tokio::test]
 async fn account_for_and_provider_scoped_global_account_resolve_per_instance() -> TestResult {
     guard(async {
-        let rig = Rig::new().await?;
+        let role =
+            jackin_testkit::RoleFixture::new("sentinel")?.manifest_text(ALL_AGENT_ROLE.to_owned());
+        let rig = Rig::builder().role(role).build().await?;
         let mut harness = Harness::new(&rig.world);
         harness.cwd = rig.repo.root().clone();
         std::fs::write(rig.home.as_path().join("zai.txt"), "test-key")?;
@@ -153,9 +155,9 @@ async fn account_for_and_provider_scoped_global_account_resolve_per_instance() -
             "--agent",
             "codex",
             "--agent",
-            "omp",
+            "claude",
             "--provider-for",
-            "omp=zai",
+            "claude=zai",
         ];
         let mut args: Vec<String> = base.iter().map(|s| (*s).to_owned()).collect();
         args.extend(
@@ -163,7 +165,7 @@ async fn account_for_and_provider_scoped_global_account_resolve_per_instance() -
                 "--account-for",
                 "codex=second",
                 "--account-for",
-                "omp=zaiacct",
+                "claude=zaiacct",
                 "--launch-id",
             ]
             .iter()
@@ -277,7 +279,130 @@ async fn an_unknown_role_is_named_as_a_plain_word() -> TestResult {
     .await
 }
 
-async fn unavailable_tuple_refusal(agent: &str, provider: &str) -> TestResult {
+const ALL_AGENT_ROLE: &str = "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[docker]\nenabled = false\n";
+
+#[tokio::test]
+async fn supported_t09_t14_and_t18_load_without_an_availability_boundary() -> TestResult {
+    guard(async {
+        for (id, agent, expected) in [
+            (41, "omp", jackin_core::Agent::Omp),
+            (42, "claude", jackin_core::Agent::ClaudeCode),
+            (43, "codex", jackin_core::Agent::Codex),
+        ] {
+            let role = jackin_testkit::RoleFixture::new("sentinel")?
+                .manifest_text(ALL_AGENT_ROLE.to_owned());
+            let rig = Rig::builder().role(role).build().await?;
+            let mut harness = Harness::new(&rig.world);
+            harness.cwd = rig.repo.root().clone();
+            std::fs::write(rig.home.as_path().join("zai.txt"), "test-key")?;
+            harness.write_config(&multi_account_config(&rig))?;
+            let id = launch_id(id).to_string();
+            harness
+                .run(&[
+                    "load",
+                    "--agent",
+                    agent,
+                    "--provider",
+                    "zai",
+                    "--account",
+                    "zaiacct",
+                    "--launch-id",
+                    &id,
+                ])
+                .await?
+                .ok()?;
+            let boxes = rig.world.gateway.sandboxes();
+            assert_eq!(boxes.len(), 1);
+            let instances: jackin_core::AgentInstances = serde_json::from_slice(
+                &boxes[0]
+                    .file(&jackin_core::SandboxPath::from_static(
+                        "/sandbox/.jackin/agents.json",
+                    ))
+                    .ok_or("agents.json")?,
+            )?;
+            assert_eq!(instances.lead().agent, expected);
+            assert_eq!(instances.lead().provider, jackin_core::Provider::Zai);
+            assert_eq!(instances.lead().account.as_str(), "zaiacct");
+            assert_eq!(instances.lead().model, "glm-5.3");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn unavailable_and_blocked_tuples_print_the_exact_catalog_reason() -> TestResult {
+    guard(async {
+        for (agent, provider, reason) in [
+            (
+                "kimi",
+                "kimi",
+                "native refresh and final live proof pending",
+            ),
+            ("claude", "claude", "vendor clarification pending"),
+        ] {
+            let rig = Rig::new().await?;
+            let mut harness = Harness::new(&rig.world);
+            harness.cwd = rig.repo.root().clone();
+            harness.write_config(&rig.config.render())?;
+            let ran = harness
+                .run(&["load", "--agent", agent, "--provider", provider])
+                .await?;
+            assert_eq!(ran.exit, ExitClass::Failure, "{}", ran.stderr);
+            assert_eq!(
+                ran.stderr,
+                format!(
+                    "error: tuple {agent} with provider {provider} is not supported: {reason}\n"
+                )
+            );
+            assert!(rig.world.gateway.sandboxes().is_empty());
+            assert!(rig.world.gateway.providers().is_empty());
+            assert!(rig.world.engine.builds().is_empty());
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn t09_and_t18_collision_creates_nothing() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        std::fs::write(rig.home.as_path().join("zai.txt"), "test-key")?;
+        harness.write_config(&multi_account_config(&rig))?;
+        let ran = harness
+            .run(&[
+                "load",
+                "--agent",
+                "omp",
+                "--agent",
+                "codex",
+                "--provider-for",
+                "omp=zai",
+                "--provider-for",
+                "codex=zai",
+                "--account-for",
+                "omp=zaiacct",
+                "--account-for",
+                "codex=zaiacct",
+            ])
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Usage, "{}", ran.stderr);
+        assert_eq!(
+            ran.stderr,
+            "error: credential environment variable ZAI_API_KEY is shared by tuples T09 and T18\n"
+        );
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        assert!(rig.world.gateway.providers().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+async fn unavailable_tuple_refusal(agent: &str, provider: &str, reason: &str) -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         let mut harness = configured(&rig)?;
@@ -293,10 +418,10 @@ async fn unavailable_tuple_refusal(agent: &str, provider: &str) -> TestResult {
                 &launch_id(9).to_string(),
             ])
             .await?;
-        failed(&ran, ExitClass::Usage, &[])?;
+        failed(&ran, ExitClass::Failure, &[])?;
         assert_eq!(
             ran.stderr,
-            format!("error: tuple {agent} with provider {provider} is not supported\n")
+            format!("error: tuple {agent} with provider {provider} is not supported: {reason}\n")
         );
         assert!(rig.world.gateway.sandboxes().is_empty());
         assert!(rig.world.gateway.providers().is_empty());
@@ -307,21 +432,21 @@ async fn unavailable_tuple_refusal(agent: &str, provider: &str) -> TestResult {
 }
 
 macro_rules! unavailable_tuple_tests {
-    ($($name:ident => ($agent:literal, $provider:literal)),+ $(,)?) => {
+    ($($name:ident => ($agent:literal, $provider:literal, $reason:literal)),+ $(,)?) => {
         $(
             #[tokio::test]
             async fn $name() -> TestResult {
-                unavailable_tuple_refusal($agent, $provider).await
+                unavailable_tuple_refusal($agent, $provider, $reason).await
             }
         )+
     };
 }
 
 unavailable_tuple_tests! {
-    t01_load_refusal => ("codex", "codex"),
-    t10_load_refusal => ("omp", "kimi"),
-    t11_load_refusal => ("omp", "minimax"),
-    t12_load_refusal => ("omp", "mimo"),
-    t16_load_refusal => ("claude", "mimo"),
-    t20_load_refusal => ("codex", "mimo"),
+    t01_load_refusal => ("codex", "codex", "final live proof pending after host re-login"),
+    t10_load_refusal => ("omp", "kimi", "final live proof pending with Kimi plan key"),
+    t11_load_refusal => ("omp", "minimax", "final live proof pending with MiniMax plan key"),
+    t12_load_refusal => ("omp", "mimo", "final live proof pending with MiMo Token Plan key"),
+    t16_load_refusal => ("claude", "mimo", "final live proof pending with MiMo Token Plan key"),
+    t20_load_refusal => ("codex", "mimo", "final live proof pending with MiMo Token Plan key"),
 }

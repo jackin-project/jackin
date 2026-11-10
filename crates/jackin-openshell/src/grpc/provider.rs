@@ -21,6 +21,11 @@ const PROFILE_SOURCE: &str = "jackin";
 const CLIENT_ID_MATERIAL: &str = "client_id";
 const REFRESH_TOKEN_MATERIAL: &str = "refresh_token";
 
+struct RefreshConfiguration {
+    material: HashMap<String, String>,
+    expires_at: Option<i64>,
+}
+
 fn normalized(mut profile: ProviderProfile) -> ProviderProfile {
     profile.resource_version = 0;
     profile.source.clear();
@@ -245,35 +250,50 @@ impl Inner {
     }
 
     pub(crate) async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
-        match &spec.material {
-            ProviderMaterial::StaticKey { key } => {
-                let redactor = Redactor::new([key]);
-                self.unary(
-                    GatewayOp::Profile,
-                    Some(Missing::Profile(spec.profile.clone())),
-                    self.grpc().get_provider_profile(GetProviderProfileRequest {
-                        workspace_scope: Some(self.scope()),
-                        id: spec.profile.to_string(),
+        let (credentials, refresh, redactor) = match &spec.material {
+            ProviderMaterial::StaticKey { key } => (
+                HashMap::from([(spec.keys.access_token.to_owned(), key.expose().to_owned())]),
+                None,
+                Redactor::new([key]),
+            ),
+            ProviderMaterial::OAuth2RefreshToken {
+                access_token,
+                refresh_token,
+                client_id,
+                scopes,
+                expires_at,
+                additional_credentials,
+            } => {
+                let mut credentials = HashMap::from([(
+                    spec.keys.access_token.to_owned(),
+                    access_token.expose().to_owned(),
+                )]);
+                credentials.extend(
+                    additional_credentials
+                        .iter()
+                        .filter(|(key, value)| !key.is_empty() && !value.is_empty())
+                        .map(|(key, value)| (key.clone(), value.clone())),
+                );
+                let mut material = HashMap::from([
+                    (CLIENT_ID_MATERIAL.to_owned(), client_id.clone()),
+                    (
+                        REFRESH_TOKEN_MATERIAL.to_owned(),
+                        refresh_token.expose().to_owned(),
+                    ),
+                ]);
+                if !scopes.is_empty() {
+                    material.insert("scope".to_owned(), scopes.join(" "));
+                }
+                (
+                    credentials,
+                    Some(RefreshConfiguration {
+                        material,
+                        expires_at: *expires_at,
                     }),
+                    Redactor::new([access_token, refresh_token]),
                 )
-                .await?;
-                let credentials =
-                    HashMap::from([(spec.keys.access_token.to_owned(), key.expose().to_owned())]);
-                let result = self.write_provider(spec, credentials, None).await;
-                return result.map_err(|error| redact(error, &redactor));
             }
-            ProviderMaterial::ChatgptLogin { .. } => {}
-        }
-        let ProviderMaterial::ChatgptLogin {
-            access_token,
-            refresh_token,
-            client_id,
-            chatgpt_account_id,
-        } = &spec.material
-        else {
-            unreachable!()
         };
-        let redactor = Redactor::new([access_token, refresh_token]);
         self.unary(
             GatewayOp::Profile,
             Some(Missing::Profile(spec.profile.clone())),
@@ -283,32 +303,16 @@ impl Inner {
             }),
         )
         .await?;
-        let credentials = HashMap::from([
-            (
-                spec.keys.access_token.to_owned(),
-                access_token.expose().to_owned(),
-            ),
-            (
-                spec.keys.account_id.to_owned(),
-                chatgpt_account_id.to_string(),
-            ),
-        ]);
-        let material = HashMap::from([
-            (CLIENT_ID_MATERIAL.to_owned(), client_id.clone()),
-            (
-                REFRESH_TOKEN_MATERIAL.to_owned(),
-                refresh_token.expose().to_owned(),
-            ),
-        ]);
-        let result = self.write_provider(spec, credentials, Some(material)).await;
-        result.map_err(|error| redact(error, &redactor))
+        self.write_provider(spec, credentials, refresh)
+            .await
+            .map_err(|error| redact(error, &redactor))
     }
 
     async fn write_provider(
         &self,
         spec: &ProviderSpec,
         credentials: HashMap<String, String>,
-        material: Option<HashMap<String, String>>,
+        refresh: Option<RefreshConfiguration>,
     ) -> Result<(), GatewayError> {
         let mut record =
             provider_record(&spec.name, spec.profile.as_str(), self.workspace.as_str());
@@ -326,22 +330,33 @@ impl Inner {
             },
             ProviderState::Present => self.update_provider(spec, record).await?,
         }
-        let Some(material) = material else {
+        let Some(refresh) = refresh else {
             return Ok(());
         };
+        let mut request = ConfigureProviderRefreshRequest {
+            workspace_scope: Some(self.scope()),
+            provider: spec.name.to_string(),
+            credential_key: spec.keys.access_token.to_owned(),
+            strategy: ProviderCredentialRefreshStrategy::Oauth2RefreshToken as i32,
+            material: refresh.material,
+            secret_material_keys: vec![REFRESH_TOKEN_MATERIAL.to_owned()],
+            ..ConfigureProviderRefreshRequest::default()
+        };
+        if let Some(expires_at) = refresh.expires_at {
+            let timestamp = request.expiration_time.get_or_insert_with(Default::default);
+            timestamp.seconds = expires_at.div_euclid(1_000);
+            timestamp.nanos =
+                i32::try_from(expires_at.rem_euclid(1_000) * 1_000_000).map_err(|_| {
+                    GatewayError::Protocol {
+                        message: "the OAuth expiration nanoseconds are not representable"
+                            .to_owned(),
+                    }
+                })?;
+        }
         self.unary(
             GatewayOp::Provider,
             Some(Missing::Provider(spec.name.clone())),
-            self.grpc()
-                .configure_provider_refresh(ConfigureProviderRefreshRequest {
-                    workspace_scope: Some(self.scope()),
-                    provider: spec.name.to_string(),
-                    credential_key: spec.keys.access_token.to_owned(),
-                    strategy: ProviderCredentialRefreshStrategy::Oauth2RefreshToken as i32,
-                    material,
-                    secret_material_keys: vec![REFRESH_TOKEN_MATERIAL.to_owned()],
-                    ..ConfigureProviderRefreshRequest::default()
-                }),
+            self.grpc().configure_provider_refresh(request),
         )
         .await?;
         Ok(())
@@ -370,6 +385,14 @@ impl Inner {
         spec: &ProviderSpec,
         mut record: Provider,
     ) -> Result<(), GatewayError> {
+        let current = self.get_provider(&spec.name).await?;
+        let removed = current
+            .credentials
+            .keys()
+            .filter(|key| !record.credentials.contains_key(*key))
+            .map(|key| (key.clone(), String::new()))
+            .collect::<Vec<_>>();
+        record.credentials.extend(removed);
         self.unary(
             GatewayOp::Provider,
             Some(Missing::Provider(spec.name.clone())),

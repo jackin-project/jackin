@@ -325,13 +325,16 @@ fn assert_stored(
 }
 
 #[tokio::test]
-async fn the_form_lists_every_provider_and_saves_each_one_that_has_a_login_file() -> TestResult {
+async fn the_form_lists_every_provider_and_saves_each_static_one_with_a_login_file() -> TestResult {
     guard(async {
         let mut lab = Lab::open().await?;
         let form = AccountForm::openshell();
         assert_eq!(form.providers.len(), ConsoleProvider::ALL.len());
         for (index, choice) in form.providers.iter().enumerate() {
             let core = jackin_tui::core_provider(choice.provider);
+            if matches!(core, Provider::Kimi | Provider::Minimax | Provider::Mimo) {
+                continue;
+            }
             let name = format!("acct{index}");
             plant_login(&lab, &lab.code.join(&name), core).await?;
             lab.reopen().await?;
@@ -756,6 +759,60 @@ async fn two_providers_on_one_folder_save_independently() -> TestResult {
             matches!(&codex, CredentialSource::CodexLogin { home, .. } if home.as_path().ends_with("shared")),
             "{codex:?}"
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn native_kimi_folder_saves_as_host_login_and_malformed_native_config_is_not_a_file()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let form = AccountForm::openshell();
+        let index = form
+            .providers
+            .iter()
+            .position(|choice| jackin_tui::core_provider(choice.provider) == Provider::Kimi)
+            .ok_or("no Kimi provider")?;
+        let folder = lab.code.join("kimi-native");
+        tokio::fs::create_dir_all(folder.join("credentials")).await?;
+        tokio::fs::write(
+            folder.join("config.toml"),
+            "[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"https://api.kimi.com/coding/v1\"\napi_key = \"\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/kimi-code\"\n",
+        )
+        .await?;
+        tokio::fs::write(
+            folder.join("credentials/kimi-code.json"),
+            serde_json::json!({
+                "access_token": "FAKE-KIMI-ACCESS",
+                "refresh_token": "FAKE-KIMI-REFRESH",
+                "expires_at": 1_800_000_000,
+                "expires_in": 3600,
+                "scope": "membership.read",
+                "token_type": "Bearer"
+            })
+            .to_string(),
+        )
+        .await?;
+        lab.reopen().await?;
+        lab.folder_form("native", index, "~/code/kimi-native").await?;
+        lab.save_form().await?;
+        let config = lab.config().await?;
+        let account = config
+            .accounts()
+            .find(|account| account.name().as_str() == "native")
+            .ok_or("native account was not saved")?;
+        assert!(matches!(account.credential(), CredentialSource::HostLogin { .. }));
+
+        tokio::fs::write(folder.join("config.toml"), "not toml").await?;
+        let before = lab.console.config_text().await?;
+        lab.reopen().await?;
+        lab.folder_form("broken", index, "~/code/kimi-native").await?;
+        lab.save_form().await?;
+        assert_eq!(lab.console.config_text().await?, before);
+        let config = lab.config().await?;
+        assert!(config.accounts().all(|account| account.name().as_str() != "broken"));
         Ok(())
     })
     .await

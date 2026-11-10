@@ -2,21 +2,39 @@
 # SPDX-License-Identifier: Apache-2.0
 
 id: kimi
-display_name: Kimi Code
-description: Kimi Code with gateway-managed credential
+display_name: Kimi Code Mainland China
+description: Kimi Code mainland China subscription with a gateway-managed refresh grant
 category: agent
 inference_capable: true
 credentials:
   - name: access_token
-    description: Gateway-held credential for Kimi Code
+    description: Gateway-held access token for Kimi Code
     env_vars: [KIMI_API_KEY]
     required: true
     auth_style: bearer
     header_name: authorization
+    refresh:
+      strategy: oauth2_refresh_token
+      token_url: https://auth.kimi.com/api/oauth/token
+      refresh_before_seconds: 300
+      material:
+        - name: client_id
+          description: Kimi Code public OAuth client ID
+          required: true
+          secret: false
+        - name: refresh_token
+          description: Kimi Code OAuth refresh token
+          required: true
+          secret: true
 discovery:
   credentials: [access_token]
 endpoints:
   - host: api.kimi.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: auth.kimi.com
     port: 443
     protocol: rest
     access: read-write

@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use jackin_core::{
-    Agent, DockerCapability, DockerLabel, FileLock, FileMode, HookKind, HostPath, LabelSelector,
-    PLACEHOLDER_SCHEME, Provider, SandboxLabels, SandboxName, SandboxPath, SecretBytes,
-    StartRequest, sandbox_layout,
+    AccountName, Agent, DockerCapability, DockerLabel, FileLock, FileMode, HookKind, HostPath,
+    LabelSelector, PLACEHOLDER_SCHEME, Provider, SandboxLabels, SandboxName, SandboxPath,
+    SecretBytes, StartRequest, sandbox_layout,
 };
 use jackin_image::{BuiltImage, ImageHold, ImageSource, ensure_held};
 use jackin_openshell::{
@@ -18,6 +18,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 use crate::accounts::AccountError;
+use crate::credentials::KimiLoginMetadata;
 use crate::files::render_auth_json;
 use crate::launch::certs::{self, Bound};
 use crate::launch::decide::{Act, Boot, Decision, Done, Finish, HookPlan, Observed, Wait, decide};
@@ -52,6 +53,41 @@ fn failed(step: LaunchStep, error: impl Into<LaunchError>) -> Stop {
     Stop::Failed(step, error.into())
 }
 
+fn placeholder(
+    sandbox: &SandboxName,
+    key: &str,
+    exit_code: i32,
+    stdout: &[u8],
+) -> Result<String, LaunchError> {
+    let missing = || LaunchError::PlaceholderMissing {
+        sandbox: sandbox.clone(),
+        key: key.to_owned(),
+    };
+    let invalid = || LaunchError::PlaceholderInvalid {
+        sandbox: sandbox.clone(),
+        key: key.to_owned(),
+    };
+    if exit_code != 0 || stdout.is_empty() {
+        return Err(missing());
+    }
+    let text = std::str::from_utf8(stdout).map_err(|_| invalid())?;
+    let text = text
+        .strip_suffix("\r\n")
+        .or_else(|| text.strip_suffix('\n'))
+        .unwrap_or(text);
+    if text.is_empty() {
+        return Err(missing());
+    }
+    if text
+        .strip_prefix(PLACEHOLDER_SCHEME)
+        .is_none_or(str::is_empty)
+        || text.contains(['\n', '\r'])
+    {
+        return Err(invalid());
+    }
+    Ok(text.to_owned())
+}
+
 struct Run<'a> {
     session: &'a Session,
     plan: &'a LaunchPlan,
@@ -61,6 +97,7 @@ struct Run<'a> {
     tracker: Tracker,
     known: Option<SandboxName>,
     image_hold: Option<ImageHold>,
+    kimi: BTreeMap<AccountName, KimiLoginMetadata>,
 }
 
 impl Session {
@@ -79,6 +116,7 @@ impl Session {
             tracker: Tracker::new(),
             known: None,
             image_hold: None,
+            kimi: BTreeMap::new(),
         }
         .execute()
         .await
@@ -332,6 +370,23 @@ impl Run<'_> {
                 .collect()
         };
         for (name, account, agent) in &names {
+            let metadata = self
+                .session
+                .launch_metadata(account, *agent, self.cancel)
+                .await
+                .map_err(|source| match source {
+                    AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
+                    other => failed(
+                        LaunchStep::Provider,
+                        LaunchError::ProviderUnavailable {
+                            account: account.name().clone(),
+                            source: Box::new(other),
+                        },
+                    ),
+                })?;
+            if let Some(metadata) = &metadata {
+                self.kimi.insert(account.name().clone(), metadata.clone());
+            }
             let state = self
                 .session
                 .deps
@@ -346,7 +401,7 @@ impl Run<'_> {
             }
             let synced = self
                 .session
-                .sync_provider(account, name, *agent, self.cancel)
+                .sync_provider(account, name, *agent, metadata.as_ref(), self.cancel)
                 .await
                 .map_err(|source| match source {
                     AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
@@ -527,6 +582,19 @@ impl Run<'_> {
         const STEP: LaunchStep = LaunchStep::Credentials;
         self.enter(STEP).await;
         let files = self.plan.files();
+        for tuple in self
+            .plan
+            .instances()
+            .iter()
+            .filter_map(|instance| {
+                jackin_core::lookup_tuple(instance.agent, instance.provider).ok()
+            })
+            .filter(|tuple| matches!(tuple.id, "T02" | "T03"))
+        {
+            if let Some(key) = tuple.credential_env() {
+                self.read_placeholder(sandbox, key).await?;
+            }
+        }
         let chatgpt_codex =
             self.plan.instances().iter().any(|instance| {
                 instance.agent == Agent::Codex && instance.provider == Provider::Codex
@@ -534,80 +602,80 @@ impl Run<'_> {
         if chatgpt_codex {
             self.write_codex_auth(sandbox).await?;
         }
-        if !files.auth.text.is_empty() {
-            self.write_planned(sandbox, &files.auth).await?;
-        }
-        for instance in self
-            .plan
-            .instances()
-            .iter()
-            .filter(|instance| instance.agent == Agent::Omp)
-        {
-            if self.plan.instances().len() > 1 {
-                let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(
-                    |error| {
-                        failed(
-                            STEP,
-                            GatewayError::Protocol {
-                                message: error.to_string(),
-                            },
-                        )
-                    },
-                )?;
-                let file = crate::files::omp_auth_file(tuple);
-                self.write_planned(sandbox, &file).await?;
-                self.write_home_auth(sandbox, instance.agent, &file).await?;
+        for file in &files.static_files {
+            if !file.text.is_empty() {
+                self.write_planned(sandbox, file).await?;
             }
         }
-        if let Some(file) = &files.omp_models {
-            self.write_planned(sandbox, file).await?;
-            if self.plan.instances().len() > 1 {
-                self.write_home_auth(sandbox, Agent::Omp, file).await?;
-            }
-        }
+        self.write_kimi_credentials(sandbox).await?;
         for file in &files.multi {
             self.write_planned(sandbox, file).await?;
-        }
-        self.write_planned(sandbox, &files.codex_config).await?;
-        for instance in self
-            .plan
-            .instances()
-            .iter()
-            .filter(|instance| instance.agent == Agent::ClaudeCode)
-        {
-            if self.plan.instances().len() > 1 {
-                let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider).map_err(
-                    |error| {
-                        failed(
-                            STEP,
-                            GatewayError::Protocol {
-                                message: error.to_string(),
-                            },
-                        )
-                    },
-                )?;
-                let file = crate::files::claude_config_file(tuple);
-                self.write_home_auth(sandbox, instance.agent, &file).await?;
-            }
-        }
-        if let Some(trust) = &files.muse_trust {
-            self.write_planned(sandbox, trust).await?;
-        }
-        for instance in self
-            .plan
-            .instances()
-            .iter()
-            .filter(|instance| instance.agent == Agent::MuseCode)
-        {
-            if self.plan.instances().len() > 1
-                && let Some(trust) = &files.muse_trust
-            {
-                self.write_home_auth(sandbox, instance.agent, trust).await?;
-            }
         }
         self.engine_certs(sandbox, bound).await?;
         self.write_planned(sandbox, &files.env).await?;
         self.done.steps.insert(STEP);
+        Ok(())
+    }
+
+    async fn write_kimi_credentials(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
+        const STEP: LaunchStep = LaunchStep::Credentials;
+        let mut prepared = Vec::new();
+        for (index, (instance, exec)) in self
+            .plan
+            .instances()
+            .iter()
+            .zip(&self.plan.files().layout.exec)
+            .enumerate()
+        {
+            if instance.agent != Agent::KimiCode {
+                continue;
+            }
+            let Some(metadata) = self.kimi.get(&instance.account) else {
+                return Err(failed(
+                    STEP,
+                    LaunchError::ProviderUnavailable {
+                        account: instance.account.clone(),
+                        source: Box::new(AccountError::MissingCredential {
+                            account: instance.account.clone(),
+                        }),
+                    },
+                ));
+            };
+            let key = "KIMI_API_KEY";
+            let outcome = self
+                .session
+                .deps
+                .gateway
+                .run_program(
+                    &ProgramRun {
+                        sandbox: sandbox.clone(),
+                        program: sandbox_layout::PRINTENV.clone(),
+                        args: vec![key.to_owned()],
+                        workdir: None,
+                        env: BTreeMap::new(),
+                        stdin: ProgramStdin::Closed,
+                        touch_on_success: None,
+                        timeout: EXEC_TIMEOUT,
+                    },
+                    self.cancel,
+                )
+                .await
+                .map_err(|error| failed(STEP, error))?;
+            let access = placeholder(sandbox, key, outcome.exit_code, &outcome.stdout)
+                .map_err(|error| failed(STEP, error))?;
+            let home = if index == 0 {
+                SandboxPath::from_static("/sandbox")
+            } else {
+                exec.home.clone()
+            };
+            let [config, auth] = crate::plan::plan_kimi_files(&home, metadata, &access)
+                .map_err(|error| failed(STEP, LaunchError::Path(error)))?;
+            prepared.push((config, auth));
+        }
+        for (config, auth) in prepared {
+            self.write_planned(sandbox, &config).await?;
+            self.write_planned(sandbox, &auth).await?;
+        }
         Ok(())
     }
 
@@ -637,10 +705,12 @@ impl Run<'_> {
         .await
     }
 
-    async fn write_codex_auth(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
+    async fn read_placeholder(
+        &self,
+        sandbox: &SandboxName,
+        key: &'static str,
+    ) -> Result<String, Stop> {
         const STEP: LaunchStep = LaunchStep::Credentials;
-        let spec = Agent::Codex.spec();
-        let key = spec.codex.openshell.keys.access_token;
         let outcome = self
             .session
             .deps
@@ -660,27 +730,15 @@ impl Run<'_> {
             )
             .await
             .map_err(|error| failed(STEP, error))?;
-        let placeholder = String::from_utf8_lossy(&outcome.stdout)
-            .trim_end_matches(['\n', '\r'])
-            .to_owned();
-        if outcome.exit_code != 0 || placeholder.is_empty() {
-            return Err(failed(
-                STEP,
-                LaunchError::PlaceholderMissing {
-                    sandbox: sandbox.clone(),
-                    key: key.to_owned(),
-                },
-            ));
-        }
-        if !placeholder.starts_with(PLACEHOLDER_SCHEME) || placeholder.contains(['\n', '\r']) {
-            return Err(failed(
-                STEP,
-                LaunchError::PlaceholderInvalid {
-                    sandbox: sandbox.clone(),
-                    key: key.to_owned(),
-                },
-            ));
-        }
+        placeholder(sandbox, key, outcome.exit_code, &outcome.stdout)
+            .map_err(|error| failed(STEP, error))
+    }
+
+    async fn write_codex_auth(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
+        const STEP: LaunchStep = LaunchStep::Credentials;
+        let spec = Agent::Codex.spec();
+        let key = spec.codex.openshell.keys.access_token;
+        let placeholder = self.read_placeholder(sandbox, key).await?;
         let codex_instance = self
             .plan
             .instances()

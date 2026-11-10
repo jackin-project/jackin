@@ -7,9 +7,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    ChatgptAccountId, CredentialKeys, EnvName, FileMode, GatewayName, HostPath, ImageTag,
-    LabelSelector, Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxLabels, SandboxName,
-    SandboxPath, Secret, SecretBytes, Sha256, TerminalText, Timestamp,
+    CredentialKeys, EnvName, FileMode, GatewayName, HostPath, ImageTag, LabelSelector, Labels,
+    Phase, ProfileId, ProjectRoot, ProviderName, SandboxLabels, SandboxName, SandboxPath, Secret,
+    SecretBytes, Sha256, TerminalText, Timestamp,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -119,11 +119,13 @@ pub enum ProviderMaterial {
     StaticKey {
         key: Secret,
     },
-    ChatgptLogin {
+    OAuth2RefreshToken {
         access_token: Secret,
         refresh_token: Secret,
         client_id: String,
-        chatgpt_account_id: ChatgptAccountId,
+        scopes: Vec<String>,
+        expires_at: Option<i64>,
+        additional_credentials: BTreeMap<String, String>,
     },
 }
 

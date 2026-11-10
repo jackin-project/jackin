@@ -12,6 +12,7 @@ mod env;
 mod error_text;
 mod errors;
 mod files;
+mod grok;
 mod hook_fs;
 mod identity;
 mod image_request;
@@ -32,6 +33,7 @@ mod roles_path;
 mod roles_race;
 mod roles_url;
 mod scoped_env;
+mod static_files;
 mod support;
 mod tuple;
 

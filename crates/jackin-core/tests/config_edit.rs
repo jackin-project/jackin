@@ -500,6 +500,9 @@ fn label(error: &ConfigError) -> String {
         ConfigError::CredentialNotAllowed { provider } => {
             format!("credential:{}", provider.as_str())
         }
+        ConfigError::CredentialNotEligible { account, agent } => {
+            format!("credential-eligibility:{account}:{}", agent.as_str())
+        }
         ConfigError::AccountInUse { account, by } => {
             format!("account-in-use:{account}:{}", by.len())
         }

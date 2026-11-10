@@ -161,7 +161,7 @@ fn omp_models_file_pins_the_omp_agent_path_mode_and_text() -> TestResult {
 }
 
 #[test]
-fn omp_config_and_auth_goldens_stay_unchanged_for_every_omp_tuple() -> TestResult {
+fn omp_config_and_auth_goldens_match_production_for_every_omp_tuple() -> TestResult {
     let goldens = [
         (
             Provider::Zai,
@@ -228,7 +228,13 @@ async fn a_launch_without_an_omp_instance_plans_no_models_file() -> TestResult {
     guard(async {
         let setup = Spec::new(RoleFixture::new("sentinel")?).build().await?;
         let plan = setup.plan(setup.request(1)?)?;
-        assert!(plan.files().omp_models.is_none());
+        assert!(
+            !plan
+                .files()
+                .static_files
+                .iter()
+                .any(|file| { file.path.as_str().ends_with("/.omp/agent/models.yml") })
+        );
         Ok(())
     })
     .await

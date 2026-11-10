@@ -14,7 +14,12 @@ fn parsed(text: &str) -> Result<toml::Table, toml::de::Error> {
 }
 
 fn check_config(plan: &LaunchPlan, model: &str) -> TestResult {
-    let file = &plan.files().codex_config;
+    let file = plan
+        .files()
+        .static_files
+        .iter()
+        .find(|file| file.path.as_str() == "/sandbox/.codex/config.toml")
+        .ok_or("no codex config")?;
     assert_eq!(
         file.path,
         SandboxPath::parse("/sandbox/.codex/config.toml")?
@@ -92,7 +97,13 @@ async fn planned_files_carry_the_trust_entry_the_model_and_the_env_with_exact_pa
         );
         let bare = Spec::new(RoleFixture::new("sentinel")?).build().await?;
         let plan = bare.plan(bare.request(1)?)?;
-        assert!(plan.files().muse_trust.is_none());
+        assert!(
+            !plan
+                .files()
+                .static_files
+                .iter()
+                .any(|file| { file.path.as_str().ends_with("/.config/muse/trust.json") })
+        );
         assert_eq!(EnvFile::parse(&plan.files().env.text)?.values().len(), 0);
         assert_eq!(plan.files().env.text, "");
         Ok(())

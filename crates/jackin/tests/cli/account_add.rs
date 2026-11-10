@@ -399,3 +399,84 @@ async fn a_credential_file_link_is_followed_and_an_oversized_file_or_a_link_to_a
     })
     .await
 }
+
+#[tokio::test]
+async fn native_kimi_discovery_never_falls_back_to_a_static_credential() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let mut harness = Harness::new(&world);
+        harness.write_config(GATEWAY_CONFIG)?;
+        let home = world.home().as_path().join(".kimi-code");
+        std::fs::create_dir_all(home.join("credentials"))?;
+        std::fs::write(
+            home.join("config.toml"),
+            "[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"https://api.kimi.com/coding/v1\"\napi_key = \"\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/kimi-code\"\n",
+        )?;
+        std::fs::write(
+            home.join("credentials/kimi-code.json"),
+            serde_json::json!({
+                "access_token": "FAKE-KIMI-ACCESS",
+                "refresh_token": "FAKE-KIMI-REFRESH",
+                "expires_at": 1_800_000_000,
+                "expires_in": 3600,
+                "scope": "membership.read",
+                "token_type": "Bearer"
+            })
+            .to_string(),
+        )?;
+        harness
+            .run(&[
+                "account",
+                "add",
+                "kimi",
+                "--name",
+                "native",
+                "--from-host-login",
+            ])
+            .await?
+            .ok()?;
+        let stored = harness.stored().await?;
+        let stored = stored.account(&account("native")?).ok_or("no account")?;
+        assert!(matches!(stored.credential(), CredentialSource::HostLogin { .. }));
+        let provider = ProviderName::for_account(&account("native")?, Agent::KimiCode);
+        let record = world.gateway.provider(&provider).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "kimi");
+        assert!(record.scopes.is_empty());
+
+        std::fs::write(home.join("config.toml"), "not toml")?;
+        let before = harness.config_bytes()?;
+        let refused = harness
+            .run(&[
+                "account",
+                "add",
+                "kimi",
+                "--name",
+                "broken",
+                "--from-host-login",
+            ])
+            .await?;
+        assert_eq!(refused.exit, ExitClass::Usage);
+        assert_eq!(harness.config_bytes()?, before);
+        assert!(harness.stored().await?.account(&account("broken")?).is_none());
+
+        harness
+            .env
+            .push(("KIMI_STATIC".to_owned(), "FAKE-STATIC".to_owned()));
+        let refused = harness
+            .run(&[
+                "account",
+                "add",
+                "kimi",
+                "--name",
+                "static",
+                "--credential",
+                "env:KIMI_STATIC",
+            ])
+            .await?;
+        assert_eq!(refused.exit, ExitClass::Failure);
+        assert!(harness.stored().await?.account(&account("static")?).is_none());
+        assert!(world.gateway.provider(&provider).is_some());
+        Ok(())
+    })
+    .await
+}

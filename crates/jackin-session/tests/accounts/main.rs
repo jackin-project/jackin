@@ -7,6 +7,8 @@ mod host_login;
 mod lock;
 mod locked_view;
 mod login;
+mod native_readers;
+mod native_subscription;
 mod peers;
 mod race;
 mod renewal;

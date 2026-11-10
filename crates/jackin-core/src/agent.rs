@@ -255,11 +255,18 @@ impl AgentTuple {
     }
 
     pub fn credential_env(&self) -> Option<&'static str> {
-        match self.agent {
-            Agent::Omp => self.omp_credential_env(),
-            Agent::ClaudeCode => self.claude_auth_env(),
-            Agent::Codex => self.codex_credential_env(),
-            _ => None,
+        match self.id {
+            "T03" => Some("GROK_SESSION_TOKEN"),
+            "T04" => Some("META_API_KEY"),
+            "T05" => Some("GOOGLE_API_KEY"),
+            "T07" => Some("MIMO_API_KEY"),
+            "T08" => Some("KIMI_API_KEY"),
+            _ => match self.agent {
+                Agent::Omp => self.omp_credential_env(),
+                Agent::ClaudeCode => self.claude_auth_env(),
+                Agent::Codex => self.codex_credential_env(),
+                _ => None,
+            },
         }
     }
 
@@ -689,7 +696,7 @@ static CLAUDE_CODE_SPEC: AgentSpec = agent_spec!(
     ],
     AuthClass::BlockedVendor,
     &["api.anthropic.com", "platform.claude.com"],
-    &["ANTHROPIC_API_KEY"],
+    &["CLAUDE_CODE_OAUTH_TOKEN"],
     &["haiku"],
     "haiku",
     &["CLAUDE_CONFIG_DIR"]
@@ -701,7 +708,7 @@ static GROK_BUILD_SPEC: AgentSpec = agent_spec!(
     "/sandbox/.grok",
     "/sandbox/.grok/auth.json",
     "/sandbox/.grok/config.toml",
-    &["grok"],
+    &["grok", "--trust"],
     "1.0.77",
     "https://x.ai/cli/grok-{version}-linux-{target}",
     &[
@@ -717,8 +724,8 @@ static GROK_BUILD_SPEC: AgentSpec = agent_spec!(
         }
     ],
     AuthClass::OAuth,
-    &["x.ai", "cli-chat-proxy.grok.com", "auth.x.ai"],
-    &["XAI_API_KEY"],
+    &["cli-chat-proxy.grok.com", "auth.x.ai"],
+    &["GROK_SESSION_TOKEN"],
     &["grok-4.7"],
     "grok-4.7",
     &["GROK_HOME"]
@@ -842,7 +849,7 @@ static MIMO_CODE_SPEC: AgentSpec = AgentSpec {
             },
         ],
     },
-    auth_class: AuthClass::StaticKey,
+    auth_class: AuthClass::OAuth,
     provider_hosts: &["token-plan-sgp.xiaomimimo.com"],
     credential_env_names: &["MIMO_API_KEY"],
     allowed_models: &["mimo-v2.6-pro"],
@@ -886,7 +893,7 @@ static KIMI_CODE_SPEC: AgentSpec = AgentSpec {
             },
         ],
     },
-    auth_class: AuthClass::StaticKey,
+    auth_class: AuthClass::OAuth,
     provider_hosts: &["api.kimi.com"],
     credential_env_names: &["KIMI_API_KEY"],
     allowed_models: &["kimi-for-coding"],
@@ -1012,9 +1019,9 @@ pub static TUPLES: [AgentTuple; 22] = [
         "T07",
         Agent::MimoCode,
         Provider::Mimo,
-        AuthClass::StaticKey,
+        AuthClass::OAuth,
         TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        Some("native login has no refresh grant"),
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
@@ -1022,9 +1029,9 @@ pub static TUPLES: [AgentTuple; 22] = [
         "T08",
         Agent::KimiCode,
         Provider::Kimi,
-        AuthClass::StaticKey,
+        AuthClass::OAuth,
         TupleState::Unavailable,
-        Some("not yet proven on a real gateway"),
+        Some("native refresh and final live proof pending"),
         &["kimi-for-coding"],
         "kimi-for-coding"
     ),

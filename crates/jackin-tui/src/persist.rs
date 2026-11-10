@@ -59,6 +59,9 @@ pub enum Folder {
     Login {
         file: HostPath,
     },
+    HostLogin {
+        path: HostPath,
+    },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -401,6 +404,9 @@ fn credential(
                     chatgpt_account_id: account.clone(),
                 }),
                 Some(Folder::Login { file }) => Ok(CredentialSource::File { path: file.clone() }),
+                Some(Folder::HostLogin { path }) => {
+                    Ok(CredentialSource::HostLogin { path: path.clone() })
+                }
                 None => Err(Rejection::NotAFolder {
                     folder: path.clone(),
                 }

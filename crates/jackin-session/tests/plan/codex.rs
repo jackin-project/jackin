@@ -58,28 +58,32 @@ fn mirror_instances(
 fn home_config(
     codex_provider: Provider,
     model: &str,
-) -> Result<(MultiLayout, String), Box<dyn std::error::Error>> {
-    let layout = plan_multi(
-        &mirror_instances(codex_provider, model)?,
-        Some("do it"),
-        HeadState::Born,
-    )?;
-    let file = layout
-        .files
-        .iter()
-        .find(|file| file.path.as_str() == HOME_CONFIG)
-        .ok_or("no codex home config")?;
-    let text = file.text.clone();
-    Ok((layout, text))
+) -> Result<(MultiLayout, Vec<jackin_session::PlannedFile>), Box<dyn std::error::Error>> {
+    let instances = mirror_instances(codex_provider, model)?;
+    let layout = plan_multi(&instances, Some("do it"), HeadState::Born)?;
+    let mut files = Vec::new();
+    for (index, (instance, exec)) in instances.iter().zip(&layout.exec).enumerate() {
+        let home = if index == 0 {
+            SandboxPath::from_static("/sandbox")
+        } else {
+            exec.home.clone()
+        };
+        files.extend(jackin_session::plan_static_files(
+            instance,
+            &home,
+            &exec.workdir,
+            None,
+        )?);
+    }
+    Ok((layout, files))
 }
 
 #[test]
 fn codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none()
 -> Result<(), Box<dyn std::error::Error>> {
     for (provider, id, name, base_url, env_key, model, web_search) in cases() {
-        let (layout, text) = home_config(provider, model)?;
-        let file = layout
-            .files
+        let (layout, files) = home_config(provider, model)?;
+        let file = files
             .iter()
             .find(|file| file.path.as_str() == HOME_CONFIG)
             .ok_or("no codex home config")?;
@@ -91,10 +95,9 @@ fn codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none()
         let expected: toml::Table = toml::from_str(&format!(
             "model = \"{model}\"\nmodel_provider = \"{id}\"\n{web_search}\n[model_providers.{id}]\nname = \"{name}\"\nbase_url = \"{base_url}\"\nenv_key = \"{env_key}\"\nwire_api = \"responses\"\n\n[projects.\"/sandbox/work/codex/project\"]\ntrust_level = \"trusted\"\n"
         ))?;
-        assert_eq!(toml::from_str::<toml::Table>(&text)?, expected, "{id}");
+        assert_eq!(toml::from_str::<toml::Table>(&file.text)?, expected, "{id}");
         assert_eq!(
-            layout
-                .files
+            files
                 .iter()
                 .filter(|file| file.path.as_str().starts_with("/sandbox/.jackin/homes/"))
                 .count(),
@@ -102,8 +105,7 @@ fn codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none()
             "{id}"
         );
         assert!(
-            !layout
-                .files
+            !files
                 .iter()
                 .any(|file| file.path.as_str().contains("homes/claude")),
             "{id}"
@@ -130,8 +132,12 @@ fn codex_non_lead_gets_its_exact_home_config_and_the_lead_claude_gets_none()
 fn codex_home_config_takes_the_explicit_model_and_refuses_an_unknown_one()
 -> Result<(), Box<dyn std::error::Error>> {
     for (provider, id, _, _, _, model, _) in cases() {
-        let (_, text) = home_config(provider, model)?;
-        let parsed: toml::Table = toml::from_str(&text)?;
+        let (_, files) = home_config(provider, model)?;
+        let file = files
+            .iter()
+            .find(|file| file.path.as_str() == HOME_CONFIG)
+            .ok_or("no codex home config")?;
+        let parsed: toml::Table = toml::from_str(&file.text)?;
         assert_eq!(parsed["model"].as_str(), Some(model), "{id}");
 
         let err = plan_multi(

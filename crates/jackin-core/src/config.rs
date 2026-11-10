@@ -409,6 +409,8 @@ pub enum ConfigError {
     Catalog(#[from] CatalogError),
     #[error("a ChatGPT login credential is not allowed for the {} provider", .provider.as_str())]
     CredentialNotAllowed { provider: Provider },
+    #[error("the credential of account {account} cannot serve agent {}", .agent.as_str())]
+    CredentialNotEligible { account: AccountName, agent: Agent },
     #[error("account {account} is still referenced by {}", join_display(.by))]
     AccountInUse {
         account: AccountName,
@@ -508,6 +510,26 @@ impl Account {
 
     pub fn credential(&self) -> &CredentialSource {
         &self.credential
+    }
+
+    pub fn check_credential_eligibility(&self, agent: Agent) -> Result<(), ConfigError> {
+        let native = matches!(self.credential, CredentialSource::HostLogin { .. });
+        let native_allowed = crate::lookup_tuple(agent, self.provider).is_ok_and(|tuple| {
+            matches!(
+                tuple.id,
+                "T02" | "T03" | "T04" | "T05" | "T06" | "T07" | "T08"
+            )
+        });
+        let native_required = crate::lookup_tuple(agent, self.provider)
+            .is_ok_and(|tuple| matches!(tuple.id, "T06" | "T07" | "T08"));
+        if (native && native_allowed) || (!native && !native_required) {
+            Ok(())
+        } else {
+            Err(ConfigError::CredentialNotEligible {
+                account: self.name.clone(),
+                agent,
+            })
+        }
     }
 
     pub fn chatgpt_login(&self) -> Option<ChatgptLogin<'_>> {
