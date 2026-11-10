@@ -297,6 +297,8 @@ fn claude_prompt(tuple: &AgentTuple) -> PromptBehavior {
         "--output-format".to_owned(),
         "stream-json".to_owned(),
         "--verbose".to_owned(),
+        "--model".to_owned(),
+        tuple.default_model.to_string(),
         "--allowedTools".to_owned(),
         "Bash".to_owned(),
     ];

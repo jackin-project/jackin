@@ -92,22 +92,27 @@ fn assert_t14_prompt(target: &E2eTarget) {
             "--output-format",
             "stream-json",
             "--verbose",
+            "--model",
+            "glm-5.3",
             "--allowedTools",
             "Bash",
             "Reply with exactly ready using model glm-5.3",
         ]
     );
     assert_eq!(
-        target
-            .behavior()
-            .prompt
-            .tool
-            .argv
-            .last()
-            .map(String::as_str),
-        Some(
-            "Use the Bash tool once with command ls -A in /sandbox/project using model glm-5.3, then reply with exactly ready"
-        )
+        target.behavior().prompt.tool.argv,
+        [
+            "/usr/local/bin/claude",
+            "-p",
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            "--model",
+            "glm-5.3",
+            "--allowedTools",
+            "Bash",
+            "Use the Bash tool once with command ls -A in /sandbox/project using model glm-5.3, then reply with exactly ready",
+        ]
     );
 }
 
