@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use jackin_core::{EnvName, LabelSelector, SandboxName, SandboxPath};
+use jackin_core::{AuthClass, EnvName, LabelSelector, SandboxName, SandboxPath};
 use jackin_openshell::{
     GatewayError, ProgramOutcome, ProgramRun, ProgramStdin, SandboxQuery, SandboxView,
 };
+use sha2::{Digest, Sha256};
 
 use super::a1::A1Error;
 use super::credential::CredentialSession;
@@ -17,7 +18,7 @@ use super::probe::{
     EngineExpectation, ProbeError, ProbeInvocation, ProbeMode, ProbeReport, ProbeRequest,
 };
 use super::pty::{PtyError, PtySession, PtySpec};
-use super::redact::Redactor;
+use super::redact::{Redactor, hex};
 use super::report::Printer;
 use super::scratch::{Scratch, ScratchError};
 use super::target::PROBE_SPEC_PATH;
@@ -330,7 +331,19 @@ impl Run<'_> {
     }
 
     pub(crate) async fn write_probe_spec(&self, sandbox: &SandboxName) -> Res<()> {
-        let spec = self.credentials.target.probe_spec_bytes()?;
+        let mut spec = self.credentials.target.probe_spec();
+        if self.credentials.target.tuple().auth_class == AuthClass::StaticKey {
+            let selected = self
+                .credentials
+                .secrets()
+                .into_iter()
+                .next()
+                .ok_or_else(|| fail("the static-key session has no credential"))?;
+            spec.credential_sha256 = Some(hex(&Sha256::digest(selected)));
+        }
+        let mut bytes = serde_json::to_vec_pretty(&spec)?;
+        bytes.push(b'\n');
+        let spec = bytes;
         self.b
             .gateway
             .write_file(

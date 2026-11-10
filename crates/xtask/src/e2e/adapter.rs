@@ -234,6 +234,10 @@ fn codex_prompt(binary: &str, provider: Provider, model: &str) -> PromptBehavior
         "exec".to_owned(),
         "--json".to_owned(),
         "--skip-git-repo-check".to_owned(),
+        "--sandbox".to_owned(),
+        "danger-full-access".to_owned(),
+        "-c".to_owned(),
+        "check_for_update_on_startup=false".to_owned(),
     ];
     let mut prompt = base.clone();
     prompt.push("Reply with exactly ready".to_owned());

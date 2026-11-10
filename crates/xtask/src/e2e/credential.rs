@@ -94,6 +94,38 @@ async fn host_secret(
     Ok(Secret::new(value))
 }
 
+async fn discover_onepassword(b: &Boundaries) -> Result<Secret, CredentialError> {
+    drop(host_secret(b, "op", &["whoami"]).await?);
+    let listing = host_secret(b, "op", &["item", "list", "--format", "json"]).await?;
+    let items: Vec<serde_json::Value> = serde_json::from_slice(listing.expose().as_bytes())
+        .map_err(|_| CredentialError::Unavailable)?;
+    let selected: Vec<&serde_json::Value> = items
+        .iter()
+        .filter(|item| {
+            item.get("title")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|title| title.eq_ignore_ascii_case("Z.AI"))
+        })
+        .collect();
+    let [item] = selected.as_slice() else {
+        return Err(CredentialError::Unavailable);
+    };
+    let text = |field: &str| {
+        item.get(field)
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or(CredentialError::Unavailable)
+    };
+    let vault = item
+        .get("vault")
+        .and_then(|vault| vault.as_str().or_else(|| vault.get("id")?.as_str()))
+        .filter(|value| !value.is_empty())
+        .ok_or(CredentialError::Unavailable)?;
+    let id = text("id")?;
+    let reference = format!("op://{vault}/{id}/credential");
+    host_secret(b, "op", &["read", reference.as_str()]).await
+}
+
 impl CredentialSession {
     pub async fn open(
         target: E2eTarget,
@@ -106,18 +138,23 @@ impl CredentialSession {
         let resolved = match target.credential() {
             E2eCredential::CodexLogin { home } => ResolvedCredential::Codex(A1Login::read(home)?),
             E2eCredential::Env { name } => {
-                let value = b
-                    .env
-                    .get(name.as_str())
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| CredentialError::MissingEnvironment(name.to_string()))?;
+                let value = match b.env.get(name.as_str()).filter(|value| !value.is_empty()) {
+                    Some(value) => Secret::new(value.clone()),
+                    None if target.discovers_credential() => discover_onepassword(b).await?,
+                    None => return Err(CredentialError::MissingEnvironment(name.to_string())),
+                };
                 ResolvedCredential::Environment {
                     name: name.to_string(),
-                    value: Secret::new(value.clone()),
+                    value,
                 }
             }
             E2eCredential::OmpHost => {
-                let value = host_secret(b, "omp", &["--profile", "zai", "token", "zai"]).await?;
+                let value = match host_secret(b, "omp", &["--profile", "zai", "token", "zai"]).await
+                {
+                    Ok(value) => value,
+                    Err(_) if target.discovers_credential() => discover_onepassword(b).await?,
+                    Err(error) => return Err(error),
+                };
                 ResolvedCredential::Environment {
                     name: "ZAI_API_KEY".to_owned(),
                     value,

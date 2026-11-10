@@ -164,6 +164,7 @@ pub struct ProbeSpec {
     pub target: TargetIdentity,
     pub behavior: CompleteBehaviorSpec,
     pub provider_hosts: Vec<String>,
+    pub credential_sha256: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -174,6 +175,7 @@ pub struct E2eTarget {
     behavior: CompleteBehaviorSpec,
     provider_hosts: Vec<String>,
     identity: TargetIdentity,
+    discovery: bool,
 }
 
 impl E2eTarget {
@@ -271,6 +273,7 @@ impl E2eTarget {
                 spec_sha256: String::new(),
             },
             model,
+            discovery: args.credential.is_none() && tuple.id != "T01",
         };
         target.identity.spec_sha256 = target.digest()?;
         Ok(target)
@@ -289,6 +292,11 @@ impl E2eTarget {
     #[must_use]
     pub fn credential(&self) -> &E2eCredential {
         &self.credential
+    }
+
+    #[must_use]
+    pub fn discovers_credential(&self) -> bool {
+        self.discovery
     }
 
     #[cfg(test)]
@@ -331,6 +339,7 @@ impl E2eTarget {
             target: self.identity.clone(),
             behavior: self.behavior.clone(),
             provider_hosts: self.provider_hosts.clone(),
+            credential_sha256: None,
         }
     }
 

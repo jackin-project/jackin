@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use super::j11::agent_identity;
 use crate::e2e::probe::FactsProcesses;
 use crate::e2e::run::{Fail, Res, Run, fail};
 use crate::e2e::verdict::Verdict;
@@ -19,6 +20,7 @@ pub(crate) fn judge_shell(
     before: (u32, u64),
     inside: &FactsProcesses,
     after: (u32, u64),
+    expected_comm: &str,
 ) -> Vec<String> {
     let mut problems = Vec::new();
     let processes = &inside.processes;
@@ -35,7 +37,13 @@ pub(crate) fn judge_shell(
         (Some(_), Some(_)) => {}
         _ => problems.push("the terminal of the shell or of Codex is unknown".to_owned()),
     }
-    let during = processes.agent.first().map(|c| (c.pid, c.start_ticks));
+    let during = match agent_identity(processes, expected_comm, "J12 shell") {
+        Ok(identity) => Some(identity),
+        Err(problem) => {
+            problems.push(problem);
+            None
+        }
+    };
     for (label, seen) in [
         ("during the shell", during),
         ("after the shell", Some(after)),
@@ -75,7 +83,12 @@ impl Run<'_> {
         let mut problems: Vec<String> = report.gate("J12").into_iter().collect();
         let inside: FactsProcesses = report.facts("J12")?;
         let after = self.agent_process(&sandbox, "J12 after", "J12").await?;
-        problems.extend(judge_shell(before, &inside, after));
+        problems.extend(judge_shell(
+            before,
+            &inside,
+            after,
+            &self.credentials.target.behavior().process.comm,
+        ));
         session.send(b"exit\n")?;
         drop(session.wait_exit(timeout).await);
         if problems.is_empty() {
