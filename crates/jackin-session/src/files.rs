@@ -269,7 +269,7 @@ pub fn render_kimi_config(region: KimiRegion) -> crate::plan::PlannedFile {
         path: spec.user_config.path.clone(),
         mode: spec.user_config.mode,
         text: format!(
-            "default_model = \"kimi-code/{model}\"\n\n[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"{base_url}\"\napi_key = \"\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/{slot}\"\n{oauth_host}\n[models.\"{model}\"]\nprovider = \"managed:kimi-code\"\nmodel = \"{model}\"\nmax_context_size = 262144\ncapabilities = [\"thinking\", \"always_thinking\", \"image_in\", \"video_in\", \"tool_use\"]\n"
+            "default_model = \"kimi-code/{model}\"\n\n[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"{base_url}\"\napi_key = \"\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/{slot}\"\n{oauth_host}\n[models.\"kimi-code/{model}\"]\nprovider = \"managed:kimi-code\"\nmodel = \"{model}\"\nmax_context_size = 262144\ncapabilities = [\"thinking\", \"always_thinking\", \"image_in\", \"video_in\", \"tool_use\"]\n"
         ),
     }
 }

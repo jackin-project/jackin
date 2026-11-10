@@ -54,7 +54,7 @@ fn kimi_config_is_exact_for_each_regional_profile() -> TestResult {
             oauth_host
         );
         assert_eq!(oauth.len(), if oauth_host.is_some() { 3 } else { 2 });
-        let model = &config["models"]["kimi-for-coding"];
+        let model = &config["models"]["kimi-code/kimi-for-coding"];
         assert_eq!(model["provider"].as_str(), Some("managed:kimi-code"));
         assert_eq!(model["model"].as_str(), Some("kimi-for-coding"));
         assert_eq!(model["max_context_size"].as_integer(), Some(262_144));
