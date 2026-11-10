@@ -250,7 +250,6 @@ impl E2eTarget {
         }
         let mut target = E2eTarget {
             tuple,
-            model,
             credential,
             behavior,
             provider_hosts,
@@ -258,12 +257,12 @@ impl E2eTarget {
                 tuple: tuple.id.to_owned(),
                 agent: agent.as_str().to_owned(),
                 provider: provider.as_str().to_owned(),
-                model: String::new(),
+                model: model.to_string(),
                 adapter: "t01-codex-v1".to_owned(),
                 spec_sha256: String::new(),
             },
+            model,
         };
-        target.identity.model = target.model.to_string();
         target.identity.spec_sha256 = target.digest()?;
         Ok(target)
     }

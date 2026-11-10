@@ -160,10 +160,11 @@ impl ScenarioGateway {
         let mut state = self.shared.state();
         if script.contains("etimes=") {
             state.age_polls += 1;
-            let qualified = selects_codex_under_jackin_start(&script);
+            if !selects_codex_under_jackin_start(&script) {
+                return outcome(0, "");
+            }
             if let Some(mode) = self.shared.knobs().age_reply {
                 let answer = match mode {
-                    _ if !qualified => "",
                     super::AgeReply::NoChild => "",
                     super::AgeReply::WrongComm if script.contains("$4 == comm") => "",
                     super::AgeReply::WrongParent if script.contains("$2 == main") => "",
@@ -173,13 +174,7 @@ impl ScenarioGateway {
                 return outcome(0, answer);
             }
             let young = state.age_polls <= self.shared.knobs().codex_young_polls;
-            let answer = if !qualified {
-                ""
-            } else if young {
-                "1\n"
-            } else {
-                "999\n"
-            };
+            let answer = if young { "1\n" } else { "999\n" };
             return outcome(0, answer);
         }
         if script == "/usr/bin/env" {

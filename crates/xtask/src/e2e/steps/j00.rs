@@ -180,7 +180,6 @@ impl Run<'_> {
             .next()
             .unwrap_or_default()
             .to_owned();
-        let pin = Agent::Codex.spec().install.version;
         let behavior = self.credentials.target.behavior().version.clone();
         problems.extend(judge_late(
             &behavior,
@@ -190,8 +189,9 @@ impl Run<'_> {
         ));
         if problems.is_empty() {
             Ok(Verdict::pass(format!(
-                "{}, codex-cli {pin} in the image, probe file matches",
-                held.reason()
+                "{}, {} in the image, probe file matches",
+                held.reason(),
+                behavior.exact_output
             )))
         } else {
             Ok(Verdict::fail(problems.join("; ")))

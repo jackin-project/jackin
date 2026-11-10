@@ -114,56 +114,57 @@ pub(crate) fn judge_a1(row: Option<&UsageRow>, behavior: &UsageBehavior) -> A1Us
     let Some(row) = row else {
         return A1Usage::Broken("there is no usage record for the A1 account".to_owned());
     };
-    if let UsageBehavior::Unsupported { reason: expected } = behavior {
-        if row.windows.is_some() {
-            return A1Usage::Broken(
-                "A1 returned windows with an unsupported usage contract".to_owned(),
-            );
-        }
-        return if row.reason.as_deref() == Some(expected.as_str()) {
-            A1Usage::Good
-        } else {
-            A1Usage::Broken(format!(
-                "A1 usage reason {:?} does not match the declared unsupported reason {expected}",
-                row.reason
-            ))
-        };
-    }
-    let UsageBehavior::Windows { required, optional } = behavior else {
-        unreachable!()
-    };
-    if let Some(windows) = &row.windows {
-        if let Some(problem) = windows.iter().find_map(judge_window) {
-            return A1Usage::Broken(problem);
-        }
-        let kinds: Vec<&str> = windows
-            .iter()
-            .filter_map(|window| window.get("kind").and_then(Value::as_str))
-            .collect();
-        for required in required {
-            let name = window_name(required);
-            if !kinds.contains(&name) {
-                return A1Usage::Broken(format!("A1 usage lacks required {name}"));
+    match behavior {
+        UsageBehavior::Unsupported { reason: expected } => {
+            if row.windows.is_some() {
+                return A1Usage::Broken(
+                    "A1 returned windows with an unsupported usage contract".to_owned(),
+                );
+            }
+            if row.reason.as_deref() == Some(expected.as_str()) {
+                A1Usage::Good
+            } else {
+                A1Usage::Broken(format!(
+                    "A1 usage reason {:?} does not match the declared unsupported reason {expected}",
+                    row.reason
+                ))
             }
         }
-        if let Some(unexpected) = kinds.iter().find(|kind| {
-            !required
-                .iter()
-                .chain(optional)
-                .any(|declared| window_name(declared) == **kind)
-        }) {
-            return A1Usage::Broken(format!("A1 usage has undeclared window {unexpected}"));
+        UsageBehavior::Windows { required, optional } => {
+            if let Some(windows) = &row.windows {
+                if let Some(problem) = windows.iter().find_map(judge_window) {
+                    return A1Usage::Broken(problem);
+                }
+                let kinds: Vec<&str> = windows
+                    .iter()
+                    .filter_map(|window| window.get("kind").and_then(Value::as_str))
+                    .collect();
+                for required in required {
+                    let name = window_name(required);
+                    if !kinds.contains(&name) {
+                        return A1Usage::Broken(format!("A1 usage lacks required {name}"));
+                    }
+                }
+                if let Some(unexpected) = kinds.iter().find(|kind| {
+                    !required
+                        .iter()
+                        .chain(optional)
+                        .any(|declared| window_name(declared) == **kind)
+                }) {
+                    return A1Usage::Broken(format!("A1 usage has undeclared window {unexpected}"));
+                }
+                return A1Usage::Good;
+            }
+            match row.reason.as_deref() {
+                Some(reason @ ("network" | "rate_limited" | "provider")) => {
+                    A1Usage::Transient(reason.to_owned())
+                }
+                Some(reason) if KINDS.contains(&reason) => A1Usage::Broken(format!(
+                    "A1 usage is unavailable: {reason}; the login is broken"
+                )),
+                other => A1Usage::Broken(format!("A1 usage has an untyped reason {other:?}")),
+            }
         }
-        return A1Usage::Good;
-    }
-    match row.reason.as_deref() {
-        Some(reason @ ("network" | "rate_limited" | "provider")) => {
-            A1Usage::Transient(reason.to_owned())
-        }
-        Some(reason) if KINDS.contains(&reason) => A1Usage::Broken(format!(
-            "A1 usage is unavailable: {reason}; the login is broken"
-        )),
-        other => A1Usage::Broken(format!("A1 usage has an untyped reason {other:?}")),
     }
 }
 
