@@ -215,6 +215,9 @@ impl Live {
                 clock: Arc::new(SystemClock),
                 fs: Arc::clone(&fs),
                 runner: Arc::clone(&port),
+                home: HostPath::parse(&PathBuf::from(
+                    std::env::var_os("HOME").ok_or("HOME is not set")?,
+                ))?,
             },
             cache_dir: HostPath::parse(&work.join("cache"))?,
             config: ConfigStore::new(

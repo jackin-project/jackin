@@ -45,6 +45,7 @@ fn session_on(world: &World, gateway: &Arc<FakeGateway>) -> Session {
             clock: Arc::<jackin_testkit::FakeClock>::clone(&world.clock),
             fs: Arc::clone(&world.fs),
             runner: Arc::<jackin_testkit::TestRunner>::clone(&world.runner),
+            home: world.home().clone(),
         },
         cache_dir: world.cache_dir().clone(),
         config: world.config.clone(),
@@ -607,6 +608,94 @@ async fn a_restore_that_cannot_read_the_old_login_names_the_account_and_the_gate
                 && shown.contains("refused")
                 && shown.contains("rolling back account work on gateway second failed"),
             "{shown}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+async fn zai_account(world: &World, name: &str) -> Result<Account, Box<dyn std::error::Error>> {
+    let path = jackin_core::HostPath::parse(&world.home().as_path().join(format!("{name}.key")))?;
+    world
+        .fs
+        .write_new(&path, b"ZAI-FIXTURE-KEY", jackin_core::FileMode(0o600))
+        .await?;
+    Ok(Account::new(
+        AccountName::parse(name)?,
+        jackin_core::Provider::Zai,
+        jackin_core::CredentialSource::File { path },
+    )?)
+}
+
+#[tokio::test]
+async fn removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_that_account()
+-> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let second = peer("second")?;
+        let work = zai_account(&world, "work").await?;
+        let other = zai_account(&world, "other").await?;
+        let mut config = Config::parse(super::support::GATEWAY)?;
+        config.apply(ConfigEdit::AddGateway {
+            name: second.name().clone(),
+            entry: jackin_core::GatewayEntry {
+                openshell_workspace: OpenShellWorkspace::parse("default")?,
+                builder: jackin_core::BuilderName::parse("jackin-builder")?,
+                platform: jackin_core::Platform::LinuxArm64,
+                docker_engine: None,
+            },
+        })?;
+        config.apply(ConfigEdit::AddAccount(work.clone()))?;
+        config.apply(ConfigEdit::AddAccount(other.clone()))?;
+        world.seed_all(&config).await?;
+        let cancel = CancellationToken::new();
+        let peer_session = session_on(&world, &second);
+        for account in [&work, &other] {
+            for agent in [jackin_core::Agent::Omp, jackin_core::Agent::Codex] {
+                world.session.sync_account(account, agent, &cancel).await?;
+                peer_session.sync_account(account, agent, &cancel).await?;
+            }
+        }
+        let names = |account: &Account| {
+            [jackin_core::Agent::Omp, jackin_core::Agent::Codex]
+                .map(|agent| ProviderName::for_account(account.name(), agent))
+        };
+        let work_providers = names(&work);
+        let other_providers = names(&other);
+        let other_home = other_providers
+            .each_ref()
+            .map(|name| world.gateway.provider(name));
+        let other_peer = other_providers.each_ref().map(|name| second.provider(name));
+        let mut connector = ScriptedConnector::new();
+        let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&second);
+        connector = connector.gateway(port, Vec::new());
+        let gateways =
+            Gateways::with_peers(world.session.clone(), &config, &connector, &cancel).await?;
+        let plan = plan_account_edits(
+            &world.desk(),
+            vec![ConfigEdit::RemoveAccountClearingBindings(
+                work.name().clone(),
+            )],
+            &cancel,
+        )
+        .await?;
+        let after = plan.apply(&gateways).await?;
+
+        assert!(after.account(work.name()).is_none());
+        assert_eq!(after.account(other.name()), Some(&other));
+        for name in &work_providers {
+            assert!(world.gateway.provider(name).is_none());
+            assert!(second.provider(name).is_none());
+        }
+        assert_eq!(
+            other_providers
+                .each_ref()
+                .map(|name| world.gateway.provider(name)),
+            other_home
+        );
+        assert_eq!(
+            other_providers.each_ref().map(|name| second.provider(name)),
+            other_peer
         );
         Ok(())
     })

@@ -699,7 +699,7 @@ pub fn manifest_doc(doc: &jackin_core::RoleManifest) -> RoleManifestDoc {
 
 fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmin {
     RoleAdmin {
-        agents: vec![Agent::Codex],
+        agents: CoreAgent::ALL.into_iter().map(agent).collect(),
         order: AccountOrder::Jackin,
         roles: config
             .roles()
@@ -717,12 +717,7 @@ fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmi
                 bindings: entry
                     .bindings
                     .iter()
-                    .filter_map(|(provider, account)| {
-                        jackin_core::TUPLES
-                            .iter()
-                            .find(|tuple| tuple.provider == *provider)
-                            .map(|tuple| (agent(tuple.agent), account.to_string()))
-                    })
+                    .map(|(bound_agent, account)| (agent(*bound_agent), account.to_string()))
                     .collect(),
                 files: Vec::new(),
             })

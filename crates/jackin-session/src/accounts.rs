@@ -429,12 +429,12 @@ impl RemovalPlan {
                 let held = holds(gateway.as_ref(), account)
                     .await
                     .map_err(|error| on_gateway(&self.name, error))?;
-                if held {
+                for (agent, _) in held {
                     journal.push(Undo {
                         host,
                         gateway: gateway.as_ref(),
                         account,
-                        agent: account_agent(account),
+                        agent,
                         action: Action::Restore,
                     });
                 }
@@ -470,7 +470,11 @@ struct Undo<'a> {
 impl Undo<'_> {
     async fn run(&self) -> Result<(), AccountError> {
         match self.action {
-            Action::Remove => forget_login(self.gateway, self.account).await,
+            Action::Remove => {
+                let provider = ProviderName::for_account(self.account.name(), self.agent);
+                self.gateway.delete_provider(&provider).await?;
+                Ok(())
+            }
             Action::Restore => sync_login(
                 self.host,
                 self.gateway,
@@ -583,8 +587,8 @@ async fn forget<'a>(
             let held = holds(session.deps.gateway.as_ref(), account)
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error))?;
-            if held {
-                journal.push(session.undo(Action::Restore, account, account_agent(account)));
+            for (agent, _) in held {
+                journal.push(session.undo(Action::Restore, account, agent));
             }
             forget_login(session.deps.gateway.as_ref(), account)
                 .await
@@ -801,26 +805,34 @@ impl Session {
     }
 }
 
+fn account_providers(account: &Account) -> impl Iterator<Item = (Agent, ProviderName)> + '_ {
+    let name = account.name().clone();
+    jackin_core::TUPLES
+        .iter()
+        .filter(move |tuple| {
+            tuple.provider == account.provider() && account.has_provider_for(tuple.agent)
+        })
+        .map(move |tuple| (tuple.agent, ProviderName::for_account(&name, tuple.agent)))
+}
+
 async fn forget_login(gateway: &dyn Gateway, account: &Account) -> Result<(), AccountError> {
-    if !account.has_provider() {
-        return Ok(());
-    }
-    for agent in Agent::ALL {
-        gateway
-            .delete_provider(&ProviderName::for_account(account.name(), agent))
-            .await?;
+    for (_, provider) in account_providers(account) {
+        gateway.delete_provider(&provider).await?;
     }
     Ok(())
 }
 
-async fn holds(gateway: &dyn Gateway, account: &Account) -> Result<bool, AccountError> {
-    for agent in Agent::ALL {
-        let provider = ProviderName::for_account(account.name(), agent);
+async fn holds(
+    gateway: &dyn Gateway,
+    account: &Account,
+) -> Result<Vec<(Agent, ProviderName)>, AccountError> {
+    let mut held = Vec::new();
+    for (agent, provider) in account_providers(account) {
         if gateway.provider_state(&provider).await? == ProviderState::Present {
-            return Ok(true);
+            held.push((agent, provider));
         }
     }
-    Ok(false)
+    Ok(held)
 }
 
 async fn sync_grok_login(

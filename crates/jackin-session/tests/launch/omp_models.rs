@@ -145,3 +145,49 @@ async fn a_codex_only_launch_writes_no_models_file() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home() -> TestResult {
+    const WORLD_KEY: &str = "OMP-LAUNCH-WORLD-FIXTURE-KEY";
+    const AMBIENT_KEY: &str = "OMP-LAUNCH-AMBIENT-FIXTURE-KEY";
+    if jackin_testkit::World::isolated_omp_ambient(
+        "omp_models::omp_host_launch_uses_the_injected_world_home_instead_of_the_ambient_home",
+        "zai",
+        AMBIENT_KEY,
+    )? {
+        return Ok(());
+    }
+    guard(async {
+        let rig = launch_rig().await?;
+        rig.world.seed_omp_agent_db("zai", Some(WORLD_KEY))?;
+        let account = Account::new(
+            AccountName::parse("zai-work")?,
+            Provider::Zai,
+            CredentialSource::OmpHost,
+        )?;
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::AddAccount(account.clone())])
+            .await?;
+        let config = rig.world.config.load().await?;
+        let request = rig
+            .request(24)?
+            .tuple(Agent::Omp, Provider::Zai)
+            .account(Some(AccountName::parse("zai-work")?));
+        let plan = plan_launch(&config, &rig.loaded, request)?;
+        let outcome = rig
+            .run_planned(&rig.world.session, plan, CancellationToken::new())
+            .await;
+        ready(outcome)?;
+        let name = ProviderName::for_account(account.name(), Agent::Omp);
+        let record = rig.gateway().provider(&name).ok_or("no OmpHost provider")?;
+        let selected_world_key = record.access_token == WORLD_KEY;
+        let rejected_ambient_key = record.access_token != AMBIENT_KEY;
+        assert!(selected_world_key);
+        assert!(rejected_ambient_key);
+        assert!(!format!("{record:?}").contains(WORLD_KEY));
+        assert!(!format!("{record:?}").contains(AMBIENT_KEY));
+        Ok(())
+    })
+    .await
+}

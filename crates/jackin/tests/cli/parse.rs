@@ -189,7 +189,23 @@ const CASES: &[(&[&str], &[&str])] = &[
     (&["build", "a", "b"], &["build", "a"]),
     (
         &["account", "bind", "a"],
+        &["account", "bind", "a", "--role", "r", "--agent", "codex"],
+    ),
+    (
         &["account", "bind", "a", "--role", "r"],
+        &["account", "bind", "a", "--role", "r", "--agent", "codex"],
+    ),
+    (
+        &[
+            "account",
+            "bind",
+            "a",
+            "--workspace",
+            "w",
+            "--agent",
+            "codex",
+        ],
+        &["account", "bind", "a", "--workspace", "w"],
     ),
     (
         &["account", "bind", "a", "--role", "r", "--workspace", "w"],

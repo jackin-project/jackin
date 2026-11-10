@@ -40,6 +40,7 @@ pub struct Locations {
     pub cache_dir: HostPath,
     pub openshell_config: HostPath,
     pub engine_socket: HostPath,
+    pub home: HostPath,
 }
 
 fn variable(env: &EnvSnapshot, name: &str) -> Option<String> {
@@ -86,6 +87,7 @@ pub fn locations(env: &EnvSnapshot) -> Result<Locations, CommandError> {
         cache_dir,
         openshell_config,
         engine_socket: engine_socket(env)?,
+        home,
     })
 }
 

@@ -72,7 +72,9 @@ async fn default_and_bind_change_exactly_the_named_entry() -> TestResult {
         assert_eq!(rendered(&harness).await?, after_default);
 
         harness
-            .run(&["account", "bind", "two", "--role", "sentinel"])
+            .run(&[
+                "account", "bind", "two", "--role", "sentinel", "--agent", "codex",
+            ])
             .await?
             .ok()?;
         let config = harness.stored().await?;
@@ -80,10 +82,7 @@ async fn default_and_bind_change_exactly_the_named_entry() -> TestResult {
             .role(&RoleName::parse("sentinel")?)
             .ok_or("no role")?;
         assert_eq!(
-            bound
-                .bindings
-                .get(&Provider::Codex)
-                .map(AccountName::as_str),
+            bound.bindings.get(&Agent::Codex).map(AccountName::as_str),
             Some("two")
         );
         let alpha = WorkspaceName::parse("alpha")?;
@@ -142,6 +141,41 @@ async fn default_and_bind_change_exactly_the_named_entry() -> TestResult {
 }
 
 #[tokio::test]
+async fn role_bind_covers_omp_claude_and_codex_with_zai() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        harness.write_config(&format!(
+            "{CONFIG}[accounts.zai]\nprovider = \"zai\"\ncredential = {{ source = \"env\", var = \"ZAI_TEST_KEY\" }}\n"
+        ))?;
+        for agent in ["omp", "claude", "codex"] {
+            harness
+                .run(&[
+                    "account", "bind", "zai", "--role", "sentinel", "--agent", agent,
+                ])
+                .await?
+                .ok()?;
+        }
+        let config = harness.stored().await?;
+        let role = config.role(&RoleName::parse("sentinel")?).ok_or("role")?;
+        for agent in [Agent::Omp, Agent::ClaudeCode, Agent::Codex] {
+            assert_eq!(role.bindings.get(&agent), Some(&AccountName::parse("zai")?));
+        }
+        let roles = harness.run(&["role", "ls", "--json"]).await?;
+        assert_eq!(
+            roles.stdout,
+            concat!(
+                "{\"schema\":1,\"roles\":[{\"name\":\"sentinel\",",
+                "\"source\":{\"kind\":\"path\",\"path\":\"/roles/sentinel\"},",
+                "\"bindings\":{\"claude\":\"zai\",\"codex\":\"zai\",\"omp\":\"zai\"}}]}\n"
+            )
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn account_ls_json_has_a_pinned_shape_and_no_credential_material() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
@@ -175,16 +209,53 @@ async fn binding_an_unknown_or_mismatched_account_fails_without_a_write() -> Tes
         let harness = seeded(&world)?;
         let before = harness.config_bytes()?;
         let cases: [(&[&str], &str); 4] = [
-            (&["account", "bind", "ghost", "--role", "sentinel"], "ghost"),
+            (
+                &[
+                    "account", "bind", "ghost", "--role", "sentinel", "--agent", "codex",
+                ],
+                "ghost",
+            ),
             (
                 &["account", "bind", "ghost", "--workspace", "alpha"],
                 "ghost",
             ),
-            (&["account", "bind", "three", "--role", "sentinel"], "three"),
+            (
+                &[
+                    "account", "bind", "three", "--role", "sentinel", "--agent", "codex",
+                ],
+                "no catalog tuple",
+            ),
             (&["account", "default", "ghost"], "ghost"),
         ];
         for (args, named) in cases {
             failed(&harness.run(args).await?, ExitClass::Failure, &[named])?;
+            assert_eq!(harness.config_bytes()?, before, "{args:?}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn role_binding_argument_failures_do_not_write() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = seeded(&world)?;
+        let before = harness.config_bytes()?;
+        for args in [
+            &["account", "bind", "two", "--role", "sentinel"][..],
+            &[
+                "account",
+                "bind",
+                "two",
+                "--workspace",
+                "alpha",
+                "--agent",
+                "codex",
+            ][..],
+        ] {
+            let ran = harness.run(args).await?;
+            failed(&ran, ExitClass::Usage, &["--agent"])?;
             assert_eq!(harness.config_bytes()?, before, "{args:?}");
         }
         Ok(())
@@ -312,6 +383,7 @@ fn session_on(rig: &Rig, gateway: &Arc<FakeGateway>) -> Session {
             clock: Arc::<jackin_testkit::FakeClock>::clone(&rig.world.clock),
             fs: Arc::clone(&rig.world.fs),
             runner: Arc::<jackin_testkit::TestRunner>::clone(&rig.world.runner),
+            home: rig.world.home().clone(),
         },
         cache_dir: rig.world.cache_dir().clone(),
         config: rig.world.config.clone(),
@@ -602,6 +674,61 @@ async fn ctrl_c_while_an_account_edit_waits_for_the_host_lock_exits_130() -> Tes
                 .account(&AccountName::parse("work")?)
                 .is_some()
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn omp_host_account_add_validates_and_publishes_from_the_injected_home() -> TestResult {
+    const WORLD_KEY: &str = "OMP-CLI-WORLD-FIXTURE-KEY";
+    const AMBIENT_KEY: &str = "OMP-CLI-AMBIENT-FIXTURE-KEY";
+    if World::isolated_omp_ambient(
+        "account_manage::omp_host_account_add_validates_and_publishes_from_the_injected_home",
+        "zai",
+        AMBIENT_KEY,
+    )? {
+        return Ok(());
+    }
+    guard(async {
+        let world = World::builder().build()?;
+        world.seed_omp_agent_db("zai", Some(WORLD_KEY))?;
+        let harness = Harness::new(&world);
+        harness.write_config(GATEWAY_CONFIG)?;
+        let ran = harness
+            .run(&[
+                "account",
+                "add",
+                "zai",
+                "--name",
+                "work",
+                "--credential",
+                "omp-host",
+                "--agent",
+                "omp",
+            ])
+            .await?;
+        assert!(!ran.stdout.contains(WORLD_KEY));
+        assert!(!ran.stdout.contains(AMBIENT_KEY));
+        assert!(!ran.stderr.contains(WORLD_KEY));
+        assert!(!ran.stderr.contains(AMBIENT_KEY));
+        ran.ok()?;
+        let stored = harness.stored().await?;
+        let account = stored
+            .account(&AccountName::parse("work")?)
+            .ok_or("no OmpHost account")?;
+        assert!(matches!(
+            account.credential(),
+            jackin_core::CredentialSource::OmpHost
+        ));
+        let name = ProviderName::for_account(account.name(), Agent::Omp);
+        let record = world.gateway.provider(&name).ok_or("no OmpHost provider")?;
+        let selected_world_key = record.access_token == WORLD_KEY;
+        let rejected_ambient_key = record.access_token != AMBIENT_KEY;
+        assert!(selected_world_key);
+        assert!(rejected_ambient_key);
+        assert!(!format!("{record:?}").contains(WORLD_KEY));
+        assert!(!format!("{record:?}").contains(AMBIENT_KEY));
         Ok(())
     })
     .await

@@ -13,7 +13,7 @@ use std::fmt;
 
 use thiserror::Error;
 
-use crate::agent::{Agent, CodexAuthMode};
+use crate::agent::{Agent, CatalogError, CodexAuthMode};
 use crate::boundary::FsError;
 use crate::display::plain;
 use crate::docker::EngineConfig;
@@ -91,7 +91,7 @@ pub enum CredentialSource {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RoleEntry {
     pub source: RoleSource,
-    pub bindings: BTreeMap<Provider, AccountName>,
+    pub bindings: BTreeMap<Agent, AccountName>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -405,6 +405,8 @@ pub enum ConfigError {
         expected: Provider,
         found: Provider,
     },
+    #[error(transparent)]
+    Catalog(#[from] CatalogError),
     #[error("a ChatGPT login credential is not allowed for the {} provider", .provider.as_str())]
     CredentialNotAllowed { provider: Provider },
     #[error("account {account} is still referenced by {}", join_display(.by))]
@@ -708,6 +710,19 @@ impl Config {
         }
     }
 
+    pub(crate) fn check_role_binding(
+        &self,
+        agent: Agent,
+        account: &AccountName,
+    ) -> Result<(), ConfigError> {
+        let found = self
+            .accounts
+            .get(account)
+            .ok_or_else(|| missing(KIND_ACCOUNT, account))?;
+        crate::agent::lookup_tuple(agent, found.provider)?;
+        Ok(())
+    }
+
     pub(crate) fn check_references(&self) -> Result<(), ConfigError> {
         if let Some(name) = &self.default_gateway
             && !self.gateways.contains_key(name)
@@ -721,8 +736,8 @@ impl Config {
             self.check_workspace(name, workspace)?;
         }
         for role in self.roles.values() {
-            for (provider, account) in &role.bindings {
-                self.check_binding(*provider, account)?;
+            for (agent, account) in &role.bindings {
+                self.check_role_binding(*agent, account)?;
             }
         }
         self.check_paths_unique()

@@ -94,7 +94,11 @@ impl Config {
             .and_then(|workspace| workspace.bindings.get(&provider));
         let role = self
             .role(query.role)
-            .and_then(|role| role.bindings.get(&provider));
+            .and_then(|role| role.bindings.get(&query.agent))
+            .filter(|name| {
+                self.account(name)
+                    .is_some_and(|account| account.provider() == provider)
+            });
         let ranked = [
             (workspace, SelectionRule::WorkspaceBinding),
             (role, SelectionRule::RoleBinding),

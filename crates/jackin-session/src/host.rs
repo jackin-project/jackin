@@ -11,9 +11,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Clock, EnvValue, FileSystem, GroupFault, LineSink, OutputLine, OutputStream, ProcessError,
-    ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program, SecretBytes,
-    SecretOutput, Timestamp,
+    Clock, EnvValue, FileSystem, GroupFault, HostPath, LineSink, OutputLine, OutputStream,
+    ProcessError, ProcessOutput, ProcessRunner, ProcessSpec, ProcessStatus, ProcessStdin, Program,
+    SecretBytes, SecretOutput, Timestamp,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
@@ -54,11 +54,12 @@ impl Clock for SystemClock {
 }
 
 impl HostPorts {
-    pub fn system(fs: Arc<dyn FileSystem>) -> HostPorts {
+    pub fn system(fs: Arc<dyn FileSystem>, home: HostPath) -> HostPorts {
         HostPorts {
             clock: Arc::new(SystemClock),
             fs,
             runner: Arc::new(TokioProcessRunner),
+            home,
         }
     }
 }

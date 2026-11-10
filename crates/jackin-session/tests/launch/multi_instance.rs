@@ -185,3 +185,88 @@ async fn two_instance_launch_writes_codex_env_like_single_instance()
     })
     .await
 }
+
+#[tokio::test]
+async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_sibling_providers()
+-> Result<(), Box<dyn std::error::Error>> {
+    guard(async {
+        let mut rig = launch_rig().await?;
+        let work = AccountName::parse("work")?;
+        let path = jackin_core::HostPath::parse(&rig.world.home().as_path().join("zai.key"))?;
+        rig.world
+            .fs
+            .write_new(&path, b"ZAI-FIXTURE-KEY", FileMode(0o600))
+            .await?;
+        let account = jackin_core::Account::new(
+            work.clone(),
+            Provider::Zai,
+            jackin_core::CredentialSource::File { path },
+        )?;
+        let edits = vec![
+            jackin_core::ConfigEdit::RemoveAccountClearingBindings(work),
+            jackin_core::ConfigEdit::AddAccount(account.clone()),
+        ];
+        for edit in &edits {
+            rig.config.apply(edit.clone())?;
+        }
+        rig.world.config.edit(edits).await?;
+        rig.world
+            .session
+            .sync_account(&account, Agent::Omp, &CancellationToken::new())
+            .await?;
+        let other = jackin_core::Account::new(
+            AccountName::parse("other")?,
+            Provider::Zai,
+            account.credential().clone(),
+        )?;
+        rig.world
+            .config
+            .edit(vec![jackin_core::ConfigEdit::AddAccount(other.clone())])
+            .await?;
+        rig.world
+            .session
+            .sync_account(&other, Agent::Omp, &CancellationToken::new())
+            .await?;
+        let omp = ProviderName::for_account(account.name(), Agent::Omp);
+        let codex = ProviderName::for_account(account.name(), Agent::Codex);
+        let other_provider = ProviderName::for_account(other.name(), Agent::Omp);
+        let original_omp = rig.gateway().provider(&omp);
+        let original_other = rig.gateway().provider(&other_provider);
+        rig.gateway()
+            .inject(jackin_testkit::Fault::PutProviderFailsAfterWrite {
+                error: jackin_openshell::GatewayError::Unreachable {
+                    endpoint: "gateway".to_owned(),
+                    message: "connection reset".to_owned(),
+                },
+            });
+        let members = AgentInstances::new(vec![
+            AgentInstance::new(
+                Agent::Codex,
+                Provider::Zai,
+                account.name().clone(),
+                "glm-5.3".to_owned(),
+            ),
+            AgentInstance::new(
+                Agent::Omp,
+                Provider::Zai,
+                account.name().clone(),
+                "glm-5.3".to_owned(),
+            ),
+        ])?;
+        let outcome = rig
+            .run(
+                rig.request(42)?.instances(members),
+                CancellationToken::new(),
+            )
+            .await?;
+
+        let failed = outcome.result.err().ok_or("the launch went through")?;
+        assert_eq!(failed.step, jackin_session::LaunchStep::Provider);
+        assert!(rig.gateway().provider(&codex).is_none());
+        assert_eq!(rig.gateway().provider(&omp), original_omp);
+        assert_eq!(rig.gateway().provider(&other_provider), original_other);
+        assert!(rig.gateway().sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}

@@ -92,7 +92,12 @@ impl Tap {
         Session::new(SessionDeps {
             gateway,
             engine,
-            host: HostPorts { clock, fs, runner },
+            host: HostPorts {
+                clock,
+                fs,
+                runner,
+                home: world.home().clone(),
+            },
             cache_dir: world.cache_dir().clone(),
             config: world.config.clone(),
             limits,

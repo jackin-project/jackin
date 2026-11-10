@@ -165,7 +165,7 @@ async fn launches(
     if role {
         edits.push(ConfigEdit::BindRoleAccount {
             role: RoleName::parse("sentinel")?,
-            agent: Agent::Omp,
+            agent: Agent::Codex,
             account: name("by-role")?,
         });
     }

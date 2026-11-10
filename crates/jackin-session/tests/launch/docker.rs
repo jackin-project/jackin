@@ -474,7 +474,12 @@ async fn every_certificate_read_asks_the_filesystem_for_no_more_than_the_size_ca
         let session = Session::new(SessionDeps {
             gateway,
             engine,
-            host: HostPorts { clock, fs, runner },
+            host: HostPorts {
+                clock,
+                fs,
+                runner,
+                home: world.home().clone(),
+            },
             cache_dir: world.cache_dir().clone(),
             config: world.config.clone(),
             limits: default_limits(),
@@ -527,7 +532,12 @@ async fn rotated_after(
     let session = Session::new(SessionDeps {
         gateway,
         engine,
-        host: HostPorts { clock, fs, runner },
+        host: HostPorts {
+            clock,
+            fs,
+            runner,
+            home: world.home().clone(),
+        },
         cache_dir: world.cache_dir().clone(),
         config: world.config.clone(),
         limits: default_limits(),

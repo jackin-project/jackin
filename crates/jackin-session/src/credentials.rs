@@ -378,8 +378,7 @@ pub async fn resolve_static_key(
             }
         }
         CredentialSource::OmpHost => {
-            let home = std::env::var("HOME").map_err(|_| missing())?;
-            let db = HostPath::parse(Path::new(&format!("{home}/.omp/agent/agent.db")))
+            let db = HostPath::resolve(Path::new(".omp/agent/agent.db"), &host.home)
                 .map_err(|_| missing())?;
             read_omp_host_key(host.fs.as_ref(), &db, provider_id).map_err(|_| missing())
         }
