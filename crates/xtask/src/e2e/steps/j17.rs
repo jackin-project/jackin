@@ -22,6 +22,7 @@ const KINDS: [&str; 6] = [
 #[derive(Debug)]
 pub(crate) struct UsageRow {
     pub account: String,
+    pub provider: String,
     pub windows: Option<Vec<Value>>,
     pub reason: Option<String>,
 }
@@ -46,6 +47,10 @@ pub(crate) fn parse_usage(bytes: &[u8]) -> Result<Vec<UsageRow>, String> {
                 .get("account")
                 .and_then(Value::as_str)
                 .ok_or("a usage record has no account")?;
+            let provider = row
+                .get("provider")
+                .and_then(Value::as_str)
+                .ok_or("a usage record has no provider")?;
             let outcome = row.get("outcome").ok_or("a usage record has no outcome")?;
             let windows = outcome.get("windows").and_then(Value::as_array).cloned();
             let reason = outcome
@@ -54,6 +59,7 @@ pub(crate) fn parse_usage(bytes: &[u8]) -> Result<Vec<UsageRow>, String> {
                 .map(str::to_owned);
             Ok(UsageRow {
                 account: account.to_owned(),
+                provider: provider.to_owned(),
                 windows,
                 reason,
             })
@@ -282,6 +288,18 @@ impl Run<'_> {
         let mut problems = Vec::new();
         for attempt in 1..=USAGE_ATTEMPTS {
             let rows = self.usage_once().await?;
+            let expected_provider = self.credentials.target.tuple().provider.as_str();
+            for account in [&a1, &fixtures[0], &fixtures[1]] {
+                if let Some(row) = rows.iter().find(|row| row.account == *account)
+                    && row.provider != expected_provider
+                {
+                    problems.push(format!(
+                        "usage record {account} names provider {}, expected {expected_provider}",
+                        row.provider
+                    ));
+                    return Ok(problems);
+                }
+            }
             let find = |name: &str| rows.iter().find(|row| row.account == name);
             if attempt == 1 {
                 for fixture in &fixtures {

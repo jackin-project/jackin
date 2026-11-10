@@ -280,6 +280,22 @@ impl ProbeReport {
                     "{step} agent_exec has credential classification none"
                 ));
             }
+            if exec.get("answered").and_then(Value::as_bool) != Some(true) {
+                problems.push(format!("{step} agent_exec was not answered"));
+            }
+            if exec.get("actual_provider").and_then(Value::as_str)
+                != Some(self.target.provider.as_str())
+                || exec.get("actual_model").and_then(Value::as_str)
+                    != Some(self.target.model.as_str())
+            {
+                problems.push(format!("{step} agent_exec provider or model differs"));
+            }
+            if exec.pointer("/tool/attempted").and_then(Value::as_bool) != Some(true)
+                || exec.pointer("/tool/succeeded").and_then(Value::as_bool) != Some(true)
+                || exec.pointer("/tool/exit_code").and_then(Value::as_i64) != Some(0)
+            {
+                problems.push(format!("{step} agent tool execution did not succeed"));
+            }
         }
         (!problems.is_empty()).then(|| problems.join("; "))
     }
@@ -389,10 +405,71 @@ pub(crate) struct Processes {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub(crate) struct ToolExecution {
+    pub(crate) kind: String,
+    pub(crate) attempted: bool,
+    pub(crate) succeeded: bool,
+    pub(crate) exit_code: Option<i64>,
+    pub(crate) workdir: String,
+    pub(crate) observation: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct AgentExec {
     pub(crate) attempted: bool,
     pub(crate) credential: String,
     pub(crate) answered: bool,
+    pub(crate) actual_provider: String,
+    pub(crate) actual_model: String,
+    pub(crate) tool: ToolExecution,
+}
+
+impl AgentExec {
+    pub(crate) fn problems(
+        &self,
+        identity: &TargetIdentity,
+        behavior: &super::adapter::CompleteBehaviorSpec,
+    ) -> Vec<String> {
+        let mut problems = Vec::new();
+        if !self.attempted || self.credential != behavior.credential.classification.as_str() {
+            problems.push("agent exec was not attempted with the selected credential".to_owned());
+        }
+        if !self.answered {
+            problems.push("agent exec did not answer the fixed prompt".to_owned());
+        }
+        if self.actual_provider != identity.provider || self.actual_model != identity.model {
+            problems.push(format!(
+                "agent exec used provider {} and model {}, expected {} and {}",
+                self.actual_provider, self.actual_model, identity.provider, identity.model
+            ));
+        }
+        let expected = &behavior.prompt.tool;
+        if !self.tool.attempted || !self.tool.succeeded || self.tool.exit_code != Some(0) {
+            problems.push("agent tool execution was not successful".to_owned());
+        }
+        if self.tool.kind != expected.kind {
+            problems.push(format!(
+                "agent tool kind {} does not match {}",
+                self.tool.kind, expected.kind
+            ));
+        }
+        if self.tool.workdir != expected.workdir {
+            problems.push(format!(
+                "agent tool workdir {} does not match {}",
+                self.tool.workdir, expected.workdir
+            ));
+        }
+        match &expected.observation {
+            super::adapter::ToolObservation::DirectoryContains { entries } => {
+                for entry in entries {
+                    if !self.tool.observation.contains(entry) {
+                        problems.push(format!("agent tool observation lacks {entry}"));
+                    }
+                }
+            }
+        }
+        problems
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -413,13 +490,17 @@ pub(crate) struct StartRecord {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub(crate) struct AuthField {
+    pub(crate) name: String,
+    pub(crate) kind: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct AuthFile {
     pub(crate) state: String,
     pub(crate) path: String,
     pub(crate) mode: Option<String>,
-    pub(crate) access_token: String,
-    pub(crate) refresh_token: String,
-    pub(crate) id_token: String,
+    pub(crate) fields: Vec<AuthField>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -432,6 +513,7 @@ pub(crate) struct FactsJ08 {
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Egress {
+    pub(crate) url: Option<String>,
     pub(crate) body: Option<String>,
     pub(crate) curl_found: bool,
     pub(crate) curl_exit: Option<i64>,

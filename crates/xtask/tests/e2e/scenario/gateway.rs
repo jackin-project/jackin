@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use jackin_core::{
-    Agent, GatewayName, HostPath, Labels, Phase, ProfileId, ProjectRoot, ProviderName, SandboxName,
-    SandboxPath, Secret, Sha256,
+    Agent, ChatgptAccountId, GatewayName, HostPath, Labels, Phase, ProfileId, ProjectRoot,
+    ProviderName, SandboxName, SandboxPath, Secret, Sha256,
 };
 use jackin_openshell::{
     Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, PowerAction, ProfileSync,
@@ -15,11 +15,12 @@ use jackin_openshell::{
     TerminalSession,
 };
 use jackin_testkit::FakeGateway;
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::Shared;
 use super::report;
-use super::world::{ACCESS, World};
+use super::world::{ACCESS, ACCOUNT_ID, CLIENT_ID, REFRESH, World};
 
 pub(crate) const PROBE: &str = "/usr/local/bin/jackin-sentinel-probe";
 
@@ -38,9 +39,9 @@ fn outcome(code: i32, stdout: &str) -> ProgramOutcome {
     }
 }
 
-fn selects_codex_under_jackin_start(script: &str) -> bool {
+fn selects_agent_under_jackin_start(script: &str, comm: &str) -> bool {
     script.contains("awk '$2 == \"jackin-start\" {print $1; exit}'")
-        && script.contains(" -v comm=\"codex\" ")
+        && script.contains(&format!(" -v comm=\"{comm}\" "))
 }
 
 impl ScenarioGateway {
@@ -56,6 +57,31 @@ impl ScenarioGateway {
         }
     }
 
+    fn target(&self) -> jackin_xtask::E2eTarget {
+        self.shared
+            .state()
+            .target
+            .clone()
+            .unwrap_or_else(|| jackin_xtask::E2eTarget::t01().expect("T01 target"))
+    }
+
+    fn env_text(target: &jackin_xtask::E2eTarget) -> String {
+        let mut text = "PATH=/usr/bin\n".to_owned();
+        for variable in &target.behavior().credential.environment {
+            let value = match variable.kind {
+                jackin_xtask::EnvironmentKind::Placeholder => {
+                    format!("openshell:resolve:env:{}", variable.name)
+                }
+                jackin_xtask::EnvironmentKind::Empty => String::new(),
+                jackin_xtask::EnvironmentKind::Brokered => {
+                    format!("gateway-brokered-{}", target.tuple().agent.as_str())
+                }
+            };
+            text.push_str(&format!("{}={}\n", variable.name, value));
+        }
+        text
+    }
+
     pub(crate) async fn seed_foreign(&self) {
         let name = SandboxName::parse("jackin-mine-0000").expect("name");
         let labels = Labels::from_pairs([
@@ -64,7 +90,7 @@ impl ScenarioGateway {
             ("jackin.dev/role".to_owned(), "other".to_owned()),
             (
                 "jackin.dev/agents".to_owned(),
-                Sha256::of(b"codex:zai:mine:glm-5.3").as_str()[..32].to_owned(),
+                Sha256::of(b"codex:codex:mine:gpt-6.1-sol").as_str()[..32].to_owned(),
             ),
             ("jackin.dev/image".to_owned(), "0".repeat(32)),
             ("jackin.dev/launch".to_owned(), "foreignlaunch".to_owned()),
@@ -79,24 +105,54 @@ impl ScenarioGateway {
     }
 
     pub(crate) async fn put_codex_provider(&self, account: &str) -> Result<(), GatewayError> {
-        let tuple =
-            jackin_core::lookup_tuple(Agent::Codex, jackin_core::Provider::Zai).expect("T18 tuple");
+        let spec = Agent::Codex.spec();
         let profile =
-            ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple)).expect("T18 profile");
+            ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile).expect("profile");
         self.fake.ensure_profile(&profile).await?;
+        let account_id = ChatgptAccountId::parse(ACCOUNT_ID).expect("account id");
         self.fake
             .put_provider(&ProviderSpec {
                 name: ProviderName::parse(&format!("jackin-{account}-codex")).expect("provider"),
                 profile: profile.id,
+                keys: spec.codex.openshell.keys,
+                material: ProviderMaterial::ChatgptLogin {
+                    access_token: Secret::new(ACCESS.to_owned()),
+                    refresh_token: Secret::new(REFRESH.to_owned()),
+                    client_id: CLIENT_ID.to_owned(),
+                    chatgpt_account_id: account_id,
+                },
+            })
+            .await
+    }
+
+    pub(crate) async fn put_static_provider(
+        &self,
+        account: &str,
+        key: String,
+    ) -> Result<(), GatewayError> {
+        let target = self.target();
+        let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(target.tuple()))
+            .expect("profile");
+        self.fake.ensure_profile(&profile).await?;
+        let account_name = jackin_core::AccountName::parse(account).expect("account");
+        self.shared
+            .state()
+            .static_provider_keys
+            .insert(account.to_owned(), key.clone());
+        let env = target.tuple().credential_env().expect("credential env");
+        self.fake
+            .put_provider(&ProviderSpec {
+                name: target.provider_name(&account_name),
+                profile: profile.id,
                 keys: jackin_core::CredentialKeys {
-                    access_token: "ZAI_API_KEY",
+                    access_token: env,
                     refresh_token: "",
                     account_id: "",
                     id_token: "",
                     token_url: "",
                 },
                 material: ProviderMaterial::StaticKey {
-                    key: Secret::new(ACCESS.to_owned()),
+                    key: Secret::new(key),
                 },
             })
             .await
@@ -157,10 +213,11 @@ impl ScenarioGateway {
         let sandbox = run.sandbox.as_str().to_owned();
         let model = self.model_of(&run.sandbox).unwrap_or_default();
         let digest = self.world.probe_digest();
+        let target = self.target();
         let mut state = self.shared.state();
         if script.contains("etimes=") {
             state.age_polls += 1;
-            if !selects_codex_under_jackin_start(&script) {
+            if !selects_agent_under_jackin_start(&script, &target.behavior().process.comm) {
                 return outcome(0, "");
             }
             if let Some(mode) = self.shared.knobs().age_reply {
@@ -178,24 +235,22 @@ impl ScenarioGateway {
             return outcome(0, answer);
         }
         if script == "/usr/bin/env" {
-            return outcome(
-                0,
-                "PATH=/usr/bin\nZAI_API_KEY=openshell:resolve:env:ZAI_API_KEY\n",
-            );
+            return outcome(0, &Self::env_text(&target));
         }
         if script.contains("echo uid=") {
             return outcome(0, "uid=1000\nuser=sandbox\ndocker=no\nsudo=no\n");
         }
         if script.contains("ps -eo pid,ppid,comm,args") {
-            let codex = if model.crashed {
+            let comm = &target.behavior().process.comm;
+            let agent = if model.crashed {
                 String::new()
             } else {
-                format!(" {} 100 codex codex\n", model.agent_pid.max(4242))
+                format!(" {} 100 {comm} {comm}\n", model.agent_pid.max(4242))
             };
             return outcome(
                 0,
                 &format!(
-                    "  PID  PPID COMMAND ARGS\n  100     1 jackin-start jackin-start\n{codex}"
+                    "  PID  PPID COMMAND ARGS\n  100     1 jackin-start jackin-start\n{agent}"
                 ),
             );
         }
@@ -296,10 +351,8 @@ impl Gateway for ScenarioGateway {
                 Some((from, to)) if from == model.account => to,
                 _ => model.account.clone(),
             };
-            let providers: Vec<ProviderName> =
-                ProviderName::parse(&format!("jackin-{account}-codex"))
-                    .into_iter()
-                    .collect();
+            let account = jackin_core::AccountName::parse(&account).expect("account");
+            let providers = vec![self.target().provider_name(&account)];
             detail.providers = providers;
         }
         Ok(detail)
@@ -385,10 +438,7 @@ impl Gateway for ScenarioGateway {
         }
         match run.program.as_str() {
             PROBE => self.answer_probe(run),
-            "/usr/bin/env" => Ok(outcome(
-                0,
-                "PATH=/usr/bin\nZAI_API_KEY=openshell:resolve:env:ZAI_API_KEY\n",
-            )),
+            "/usr/bin/env" => Ok(outcome(0, &Self::env_text(&self.target()))),
             _ => Ok(self.answer_sh(run)),
         }
     }
@@ -399,6 +449,7 @@ impl Gateway for ScenarioGateway {
         paths: &[SandboxPath],
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
         let knobs = self.shared.knobs().clone();
+        let target = self.target();
         let _ = sandbox;
         Ok(paths
             .iter()
@@ -412,18 +463,35 @@ impl Gateway for ScenarioGateway {
                             .map_or_else(|| "JACKIN_LAUNCH_ID=x\n".to_owned(), |leak| format!("LEAK={leak}\n"))
                             .into_bytes(),
                     )
-                } else if text.ends_with("auth.json") {
-                    let token = knobs
-                        .leak_in_auth_file
-                        .clone()
-                        .unwrap_or_else(|| "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN".to_owned());
-                    Some(
-                        serde_json::json!({"auth_mode":"chatgptAuthTokens","tokens":{"access_token":token,"refresh_token":"","id_token":knobs.auth_id_token.clone().unwrap_or_else(|| jackin_core::CODEX_PLACEHOLDER_ID_TOKEN.to_owned())}})
-                            .to_string()
-                            .into_bytes(),
-                    )
+                } else if text == target.behavior().credential.auth_file.path {
+                    let body = match target.tuple().id {
+                        "T01" => {
+                            let token = knobs
+                                .leak_in_auth_file
+                                .clone()
+                                .unwrap_or_else(|| "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN".to_owned());
+                            serde_json::json!({"auth_mode":"chatgptAuthTokens","tokens":{"access_token":token,"refresh_token":"","id_token":knobs.auth_id_token.clone().unwrap_or_else(|| jackin_core::CODEX_PLACEHOLDER_ID_TOKEN.to_owned())}})
+                        }
+                        "T09" => serde_json::json!({"zai": {"type": "api_key", "key": "placeholder"}}),
+                        "T14" => serde_json::json!({"ANTHROPIC_API_KEY": "placeholder"}),
+                        _ => Value::Null,
+                    };
+                    Some(body.to_string().into_bytes())
+                } else if let Some(config) = target
+                    .behavior()
+                    .credential
+                    .config_files
+                    .iter()
+                    .find(|config| config.path == text)
+                {
+                    Some(config.required_text.join("\n").into_bytes())
                 } else if text.ends_with("e2e-reflect.chain") {
-                    Some(if knobs.reflect_not_descendant { " sh bash" } else { " sh codex jackin-start" }.as_bytes().to_vec())
+                    let comm = &target.behavior().reflection.descendant_comm;
+                    Some(if knobs.reflect_not_descendant {
+                        " sh bash".to_owned()
+                    } else {
+                        format!(" sh {comm} jackin-start")
+                    }.as_bytes().to_vec())
                 } else if text.ends_with("e2e-reflect.out") {
                     Some(
                         knobs
@@ -433,7 +501,7 @@ impl Gateway for ScenarioGateway {
                             .into_bytes(),
                     )
                 } else {
-                    Some(b"CODEX_AUTH_ACCESS_TOKEN=placeholder\n".to_vec())
+                    Some(Self::env_text(&target).into_bytes())
                 }
             })
             .collect())

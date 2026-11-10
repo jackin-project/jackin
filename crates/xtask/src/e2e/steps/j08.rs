@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use jackin_core::{CODEX_PLACEHOLDER_ID_TOKEN, EnvName, FileMode, SandboxPath, SecretBytes};
 use serde_json::Value;
 
-use crate::e2e::adapter::CredentialBehavior;
+use crate::e2e::adapter::{AuthFieldKind, ConfigFileBehavior, CredentialBehavior, EnvironmentKind};
 use crate::e2e::probe::FactsJ08;
 use crate::e2e::run::{Fail, Res, Run, fail, tail_of, text_of};
 use crate::e2e::verdict::Verdict;
@@ -19,10 +19,16 @@ const REFLECT_CHAIN: &str = "/sandbox/.e2e-reflect.chain";
 const REFLECT_DONE: &str = "E2E-REFLECT-DONE ";
 const ENTER_ATTEMPTS: u32 = 3;
 
-fn reflect_script(placeholder: &str) -> String {
+fn quoted(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
+fn reflect_script(url: &str, placeholder: &str) -> String {
+    let url = quoted(url);
+    let placeholder = quoted(placeholder);
     format!(
         "#!/bin/sh\n\
-         P='{placeholder}'\n\
+         P={placeholder}\n\
          chain=''\n\
          pid=$$\n\
          while [ \"$pid\" -gt 1 ]; do\n\
@@ -30,8 +36,7 @@ fn reflect_script(placeholder: &str) -> String {
          pid=$(sed 's/.*) //' /proc/$pid/stat | cut -d' ' -f2)\n\
          done\n\
          echo \"$chain\" > {REFLECT_CHAIN}\n\
-         curl -sS -i -m 25 \"https://chatgpt.com/backend-api/e2e-reflect/$P?token=$P\" \
-         -H \"X-E2E-Reflect: $P\" -H \"Authorization: Bearer $P\" -o {REFLECT_OUT} 2>/dev/null\n\
+         curl -sS -i -m 25 {url} -H \"X-E2E-Reflect: $P\" -H \"Authorization: Bearer $P\" -o {REFLECT_OUT} 2>/dev/null\n\
          echo \"{REFLECT_DONE}$?\"\n"
     )
 }
@@ -43,9 +48,20 @@ fn credential_name(name: &str) -> bool {
             .any(|word| name.contains(word))
 }
 
+fn value_kind(value: &str) -> &str {
+    if value.is_empty() {
+        "empty"
+    } else if value.starts_with(PLACEHOLDER) {
+        "placeholder"
+    } else {
+        "other"
+    }
+}
+
 pub(crate) fn judge_create_env(
     environment: &BTreeMap<EnvName, String>,
     launch: &str,
+    behavior: &CredentialBehavior,
 ) -> Vec<String> {
     let mut problems = Vec::new();
     match environment
@@ -57,10 +73,34 @@ pub(crate) fn judge_create_env(
             .push("JACKIN_LAUNCH_ID of the create request differs from the launch".to_owned()),
         None => problems.push("the create request carries no JACKIN_LAUNCH_ID".to_owned()),
     }
+    let expected: BTreeMap<&str, &EnvironmentKind> = behavior
+        .environment
+        .iter()
+        .map(|variable| (variable.name.as_str(), &variable.kind))
+        .collect();
     for (name, value) in environment {
-        if credential_name(name.as_str()) && !value.is_empty() && !value.starts_with(PLACEHOLDER) {
+        let name = name.as_str();
+        if behavior
+            .absent_environment
+            .iter()
+            .any(|found| found == name)
+        {
+            problems.push(format!("create-request variable {name} must be absent"));
+            continue;
+        }
+        if !credential_name(name) {
+            continue;
+        }
+        let kind = value_kind(value);
+        let accepted = match expected.get(name) {
+            Some(EnvironmentKind::Placeholder) => kind == "placeholder",
+            Some(EnvironmentKind::Empty) => kind == "empty",
+            Some(EnvironmentKind::Brokered) => kind != "empty",
+            None => kind == "empty" || kind == "placeholder",
+        };
+        if !accepted {
             problems.push(format!(
-                "create-request variable {name} holds a real value (kind other)"
+                "create-request variable {name} holds a real value (kind {kind})"
             ));
         }
     }
@@ -77,6 +117,38 @@ pub(crate) fn judge_kinds(
         if var.kind == "other" {
             problems.push(format!(
                 "credential variable {} holds a real value (kind other)",
+                var.name
+            ));
+        }
+        if behavior
+            .absent_environment
+            .iter()
+            .any(|name| name == &var.name)
+        {
+            problems.push(format!("credential variable {} must be absent", var.name));
+        }
+    }
+    for expected in &behavior.environment {
+        if !facts
+            .environment
+            .iter()
+            .any(|found| found.name == expected.name && found.kind == expected.kind.as_str())
+        {
+            problems.push(format!(
+                "credential variable {} lacks {} delivery",
+                expected.name,
+                expected.kind.as_str()
+            ));
+        }
+    }
+    for var in &facts.environment {
+        if var.kind == "brokered"
+            && !behavior.environment.iter().any(|expected| {
+                expected.name == var.name && expected.kind == EnvironmentKind::Brokered
+            })
+        {
+            problems.push(format!(
+                "credential variable {} has undeclared brokered delivery",
                 var.name
             ));
         }
@@ -104,20 +176,37 @@ pub(crate) fn judge_kinds(
             auth.path, wanted.path
         ));
     }
-    if auth.mode.as_deref() != Some(wanted.mode.as_str()) {
+    if auth.mode != wanted.mode {
         problems.push(format!(
             "auth.json mode is {:?}, expected {}",
-            auth.mode, wanted.mode
+            auth.mode,
+            wanted.mode.as_deref().unwrap_or("null")
         ));
     }
-    for (name, kind) in [
-        ("access_token", &auth.access_token),
-        ("refresh_token", &auth.refresh_token),
-        ("id_token", &auth.id_token),
-    ] {
-        if kind == "other" {
-            problems.push(format!("auth.json {name} is a real token"));
-        }
+    let found: BTreeMap<&str, &str> = auth
+        .fields
+        .iter()
+        .map(|field| (field.name.as_str(), field.kind.as_str()))
+        .collect();
+    let expected: BTreeMap<String, String> = wanted
+        .fields
+        .iter()
+        .map(|field| {
+            let kind = match &field.kind {
+                AuthFieldKind::Placeholder => "placeholder".to_owned(),
+                AuthFieldKind::Empty => "empty".to_owned(),
+                AuthFieldKind::Absent => "absent".to_owned(),
+                AuthFieldKind::Literal { value } => format!("literal:{value}"),
+            };
+            (field.name.clone(), kind)
+        })
+        .collect();
+    let found_owned: BTreeMap<String, String> = found
+        .into_iter()
+        .map(|(name, kind)| (name.to_owned(), kind.to_owned()))
+        .collect();
+    if found_owned != expected {
+        problems.push("auth fields differ from the adapter declaration".to_owned());
     }
     if !facts.leaks.is_empty() {
         problems.push(format!(
@@ -128,33 +217,113 @@ pub(crate) fn judge_kinds(
     (problems, skip)
 }
 
-pub(crate) fn judge_auth_text(bytes: &[u8]) -> Vec<String> {
+pub(crate) fn judge_auth_text(bytes: &[u8], behavior: &CredentialBehavior) -> Vec<String> {
+    let wanted = &behavior.auth_file;
+    if wanted.required_state == "absent" {
+        return vec!["the selected target requires an absent auth file".to_owned()];
+    }
     let Ok(value) = serde_json::from_slice::<Value>(bytes) else {
-        return vec!["auth.json in the sandbox is not JSON".to_owned()];
+        return vec!["auth file in the sandbox is not JSON".to_owned()];
     };
     let mut problems = Vec::new();
-    for name in ["access_token", "refresh_token", "id_token"] {
-        let token = value
-            .pointer(&format!("/tokens/{name}"))
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let placeholder = token.starts_with(PLACEHOLDER)
-            || (name == "id_token" && token == CODEX_PLACEHOLDER_ID_TOKEN);
-        if !token.is_empty() && !placeholder {
+    for field in &wanted.fields {
+        let found = value.pointer(&field.name);
+        let valid = match (&field.kind, found) {
+            (AuthFieldKind::Absent, None | Some(Value::Null)) => true,
+            (AuthFieldKind::Empty, Some(Value::String(text))) => text.is_empty(),
+            (AuthFieldKind::Literal { value: expected }, Some(Value::String(text))) => {
+                text == expected
+            }
+            (AuthFieldKind::Placeholder, Some(Value::String(text))) => {
+                text.starts_with(PLACEHOLDER)
+                    || text == "placeholder"
+                    || text == CODEX_PLACEHOLDER_ID_TOKEN
+            }
+            _ => false,
+        };
+        if !valid {
+            let name = field.name.rsplit('/').next().unwrap_or(&field.name);
             problems.push(format!("auth.json {name} is not a placeholder"));
         }
     }
     problems
 }
 
-pub(crate) fn judge_env_text(text: &str) -> Vec<String> {
-    text.lines()
+pub(crate) fn judge_env_text(text: &str, behavior: &CredentialBehavior) -> Vec<String> {
+    let values: BTreeMap<&str, &str> = text
+        .lines()
         .filter_map(|line| line.split_once('='))
-        .filter(|(name, value)| {
-            credential_name(name) && !value.is_empty() && !value.starts_with(PLACEHOLDER)
-        })
-        .map(|(name, _)| format!("environment variable {name} is not a placeholder"))
-        .collect()
+        .collect();
+    let mut problems = Vec::new();
+    for name in &behavior.absent_environment {
+        if values.contains_key(name.as_str()) {
+            problems.push(format!("environment variable {name} must be absent"));
+        }
+    }
+    for expected in &behavior.environment {
+        let Some(value) = values.get(expected.name.as_str()) else {
+            problems.push(format!("environment variable {} is missing", expected.name));
+            continue;
+        };
+        let kind = value_kind(value);
+        let valid = match expected.kind {
+            EnvironmentKind::Placeholder => kind == "placeholder",
+            EnvironmentKind::Empty => kind == "empty",
+            EnvironmentKind::Brokered => kind != "empty",
+        };
+        if !valid {
+            problems.push(format!(
+                "environment variable {} has kind {kind}",
+                expected.name
+            ));
+        }
+    }
+    for (name, value) in values {
+        if credential_name(name)
+            && !behavior
+                .environment
+                .iter()
+                .any(|expected| expected.name == name)
+            && !behavior
+                .absent_environment
+                .iter()
+                .any(|found| found == name)
+            && !value.is_empty()
+            && !value.starts_with(PLACEHOLDER)
+        {
+            problems.push(format!("environment variable {name} is not a placeholder"));
+        }
+    }
+    problems
+}
+
+fn judge_config_text(bytes: &[u8], config: &ConfigFileBehavior) -> Vec<String> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut problems = Vec::new();
+    for required in &config.required_text {
+        if !text.contains(required) {
+            problems.push(format!("{} lacks required configuration", config.path));
+        }
+    }
+    for forbidden in &config.forbidden_text {
+        if text.contains(forbidden) {
+            problems.push(format!("{} contains forbidden configuration", config.path));
+        }
+    }
+    problems
+}
+
+fn judge_missing_file(path: &str, behavior: &CredentialBehavior) -> Vec<String> {
+    let mut problems = Vec::new();
+    if behavior.auth_file.required_state == "present" && path == behavior.auth_file.path {
+        problems.push("required auth file is missing".to_owned());
+    }
+    for config in &behavior.config_files {
+        if config.required_state == "present" && path == config.path {
+            problems.push(format!("required configuration {} is missing", config.path));
+        }
+    }
+    problems
 }
 
 impl Run<'_> {
@@ -165,22 +334,46 @@ impl Run<'_> {
     async fn read_sandbox_files(&mut self) -> Res<Vec<String>> {
         let sandbox = self.sandbox_s()?;
         let launch = self.w.l1.clone().ok_or_else(|| fail("no launch id"))?;
-        let paths = [
-            format!("/sandbox/.jackin/env-{launch}"),
-            "/sandbox/.codex/auth.json".to_owned(),
-            "/sandbox/.jackin/run/env-kinds".to_owned(),
-        ];
+        let behavior = self.credentials.target.behavior().credential.clone();
+        let mut paths = vec![format!("/sandbox/.jackin/env-{launch}")];
+        if behavior.auth_file.required_state != "absent" {
+            paths.push(behavior.auth_file.path.clone());
+        }
+        paths.extend(
+            behavior
+                .config_files
+                .iter()
+                .map(|config| config.path.clone()),
+        );
+        paths.push("/sandbox/.jackin/run/env-kinds".to_owned());
         let parsed: Vec<SandboxPath> = paths
             .iter()
             .map(|path| SandboxPath::parse(path))
             .collect::<Result<_, _>>()?;
         let contents = self.b.gateway.read_files(&sandbox, &parsed).await?;
         let mut problems = Vec::new();
-        for (label, content) in ["env file", "auth.json", "env-kinds"].iter().zip(contents) {
-            let Some(bytes) = content else { continue };
+        for (path, content) in paths.iter().zip(contents) {
+            let Some(bytes) = content else {
+                problems.extend(judge_missing_file(path, &behavior));
+                continue;
+            };
+            let label = if path.starts_with("/sandbox/.jackin/env-") {
+                "env file"
+            } else if *path == behavior.auth_file.path {
+                "auth.json"
+            } else {
+                path.as_str()
+            };
             self.capture(&format!("J08 {label}"), &bytes);
-            if *label == "auth.json" {
-                problems.extend(judge_auth_text(&bytes));
+            if *path == behavior.auth_file.path {
+                problems.extend(judge_auth_text(&bytes, &behavior));
+            }
+            if let Some(config) = behavior
+                .config_files
+                .iter()
+                .find(|config| *path == config.path)
+            {
+                problems.extend(judge_config_text(&bytes, config));
             }
         }
         Ok(problems)
@@ -217,20 +410,15 @@ impl Run<'_> {
             )),
         }
         let env = self.exec(&sandbox, "J08 env", "/usr/bin/env").await?;
-        problems.extend(judge_env_text(&text_of(&env.stdout)));
-        let placeholder = text_of(&env.stdout)
-            .lines()
-            .find_map(|line| line.strip_prefix("ZAI_API_KEY="))
-            .filter(|value| value.starts_with(PLACEHOLDER))
-            .map(str::to_owned);
-        problems.extend(self.reflection(&sandbox, placeholder).await);
+        problems.extend(judge_env_text(&text_of(&env.stdout), &behavior));
+        problems.extend(self.reflection(&sandbox).await);
         if !problems.is_empty() {
             Ok(Verdict::fail(problems.join("; ")))
         } else if let Some(reason) = skip {
             Ok(Verdict::skip(reason))
         } else {
             Ok(Verdict::pass(
-                "placeholders only, no key in files or env, no reflection",
+                "declared credential delivery and configuration, no raw key, no reflection credential",
             ))
         }
     }
@@ -246,7 +434,11 @@ impl Run<'_> {
                     .flat_map(|value| value.bytes().chain(std::iter::once(b'\n')))
                     .collect();
                 self.scan("J08 create environment", &joined);
-                judge_create_env(&environment, launch.as_str())
+                judge_create_env(
+                    &environment,
+                    launch.as_str(),
+                    &self.credentials.target.behavior().credential,
+                )
             }
             Err(error) => vec![format!(
                 "the create-request environment is unreadable: {error}"
@@ -254,26 +446,20 @@ impl Run<'_> {
         }
     }
 
-    async fn reflection(
-        &mut self,
-        sandbox: &jackin_core::SandboxName,
-        placeholder: Option<String>,
-    ) -> Vec<String> {
-        let cannot = |why: String| vec![format!("the reflection check cannot run: {why}")];
-        let Some(placeholder) = placeholder else {
-            return cannot("the sandbox environment holds no placeholder to send".to_owned());
-        };
-        match self.reflect_through_codex(sandbox, &placeholder).await {
+    async fn reflection(&mut self, sandbox: &jackin_core::SandboxName) -> Vec<String> {
+        let placeholder = format!("e2e-reflect-nonsecret-{}", self.b.tag);
+        match self.reflect_through_agent(sandbox, &placeholder).await {
             Ok(problems) => problems,
-            Err(failure) => cannot(failure.0),
+            Err(failure) => vec![format!("the reflection check cannot run: {}", failure.0)],
         }
     }
 
-    async fn reflect_through_codex(
+    async fn reflect_through_agent(
         &mut self,
         sandbox: &jackin_core::SandboxName,
         placeholder: &str,
     ) -> Res<Vec<String>> {
+        let behavior = self.credentials.target.behavior().reflection.clone();
         let script = SandboxPath::parse(REFLECT_SCRIPT)?;
         self.exec(
             sandbox,
@@ -288,13 +474,15 @@ impl Run<'_> {
                 &jackin_openshell::SandboxFile {
                     path: script,
                     mode: FileMode(0o755),
-                    content: SecretBytes::new(reflect_script(placeholder).into_bytes()),
+                    content: SecretBytes::new(
+                        reflect_script(&behavior.url, placeholder).into_bytes(),
+                    ),
                 },
             )
             .await?;
         let main = self.projects.main.clone();
         let mut session = self.open_pty(&["attach", sandbox.as_str()], &main)?;
-        let typed = self.type_into_codex(&mut session).await;
+        let typed = self.type_into_agent(&mut session).await;
         let detached = self.detach(&mut session).await;
         self.finish_pty("J08 reflection", &session);
         let code = typed?;
@@ -311,9 +499,13 @@ impl Run<'_> {
         let body = files[1].clone().unwrap_or_default();
         self.capture("J08 reflection response", &body);
         let mut problems = Vec::new();
-        if !chain.split_whitespace().any(|name| name == "codex") {
+        if !chain
+            .split_whitespace()
+            .any(|name| name == behavior.descendant_comm)
+        {
             problems.push(format!(
-                "the reflection command is not a descendant of Codex (ancestors:{chain})"
+                "the reflection command is not a descendant of {} (ancestors:{chain})",
+                behavior.descendant_comm
             ));
         }
         if code != 0 || !body.starts_with(b"HTTP/") {
@@ -324,7 +516,7 @@ impl Run<'_> {
         Ok(problems)
     }
 
-    async fn type_into_codex(&self, session: &mut crate::e2e::pty::PtySession) -> Res<i32> {
+    async fn type_into_agent(&self, session: &mut crate::e2e::pty::PtySession) -> Res<i32> {
         self.expect_codex(session).await?;
         let gap = self.b.budgets.key_gap;
         tokio::time::sleep(gap).await;

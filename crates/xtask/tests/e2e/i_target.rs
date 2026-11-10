@@ -55,7 +55,7 @@ fn assert_t01(target: &E2eTarget, model: &str, home: &Path) {
     assert_eq!(behavior.terminal.quit_interrupts, 2);
     assert_eq!(behavior.credential.auth_file.required_state, "present");
     assert_eq!(behavior.reflection.descendant_comm, "codex");
-    assert_eq!(behavior.provider.accepted_status, 401);
+    assert_eq!(behavior.provider.accepted_status, Some(401));
     assert!(matches!(behavior.usage, UsageBehavior::Windows { .. }));
 }
 
@@ -139,11 +139,11 @@ fn target_resolution_rejects_every_unavailable_or_incomplete_contract() {
         (
             "supported without adapter",
             E2eArgs {
-                agent: Some("codex".to_owned()),
-                provider: Some("zai".to_owned()),
+                agent: Some("omp".to_owned()),
+                provider: Some("kimi".to_owned()),
                 ..args()
             },
-            "tuple T18 has no complete E2E adapter",
+            "tuple T10 has no complete E2E adapter",
         ),
         (
             "invalid T01 model",
@@ -253,8 +253,8 @@ async fn selection_errors_precede_every_secret_gateway_scratch_and_image_effect(
         ),
         (
             "adapter",
-            Some("codex"),
-            Some("zai"),
+            Some("omp"),
+            Some("kimi"),
             None,
             "no complete E2E adapter",
         ),
@@ -294,7 +294,7 @@ fn canonical_digest_matches_independent_fixture_and_excludes_runtime_values() {
     let target = E2eTarget::t01().expect("T01 target");
     assert_eq!(
         target.identity().spec_sha256,
-        "8bb9d5f794def53a5f3bca6bb0490616d909301f946ce2b870e6d7d848be305f"
+        "ccaea79cdf09b5949ea94266c33692bec52090e1782364c53e13a8f731d1806a"
     );
     let other_home = E2eTarget::resolve(
         &E2eArgs {
@@ -442,7 +442,10 @@ fn every_behavior_and_identity_input_changes_the_digest() {
                 .as_mut()
                 .expect("credential")
                 .environment
-                .push("OTHER_API_KEY".to_owned());
+                .push(jackin_xtask::EnvironmentBehavior {
+                    name: "OTHER_API_KEY".to_owned(),
+                    kind: jackin_xtask::EnvironmentKind::Placeholder,
+                });
         }),
         ("auth file", |behavior, _| {
             behavior
@@ -450,20 +453,20 @@ fn every_behavior_and_identity_input_changes_the_digest() {
                 .as_mut()
                 .expect("credential")
                 .auth_file
-                .mode = "400".to_owned();
+                .mode = Some("400".to_owned());
         }),
         ("provider status", |behavior, _| {
             behavior
                 .provider
                 .as_mut()
                 .expect("provider")
-                .accepted_status = 403;
+                .accepted_status = Some(403);
         }),
         ("provider body", |behavior, _| {
             behavior.provider.as_mut().expect("provider").accepted_body =
-                jackin_xtask::ProviderBodyMatcher::JsonErrorCode {
+                Some(jackin_xtask::ProviderBodyMatcher::JsonErrorCode {
                     code: "other".to_owned(),
-                };
+                });
         }),
         ("provider URL", |behavior, _| {
             behavior.provider.as_mut().expect("provider").probe_url =
@@ -1036,11 +1039,11 @@ async fn invalid_targets_never_poll_production_and_valid_t01_polls_once() {
         (
             "supported pair without adapter",
             E2eArgs {
-                agent: Some("codex".to_owned()),
-                provider: Some("zai".to_owned()),
+                agent: Some("omp".to_owned()),
+                provider: Some("kimi".to_owned()),
                 ..args()
             },
-            "tuple T18 has no complete E2E adapter",
+            "tuple T10 has no complete E2E adapter",
         ),
         (
             "invalid model",
@@ -1280,11 +1283,11 @@ fn the_binary_rejects_an_invalid_target_before_it_starts_cargo_or_reaches_a_gate
         (
             "supported pair without adapter",
             E2eArgs {
-                agent: Some("codex".to_owned()),
-                provider: Some("zai".to_owned()),
+                agent: Some("omp".to_owned()),
+                provider: Some("kimi".to_owned()),
                 ..args()
             },
-            "tuple T18 has no complete E2E adapter",
+            "tuple T10 has no complete E2E adapter",
         ),
         (
             "invalid model",

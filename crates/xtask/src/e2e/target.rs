@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use jackin_core::{
-    AccountName, Agent, AgentInstance, AgentInstances, AgentTuple, CatalogError, EnvName,
-    ModelName, OpReference, Provider, ProviderName, TupleState, lookup_tuple, plain,
+    AccountName, Agent, AgentInstance, AgentInstances, AgentTuple, AuthClass, CatalogError,
+    EnvName, ModelName, OpReference, Provider, ProviderName, TupleState, lookup_tuple, plain,
     tuple_profile_asset,
 };
 use jackin_openshell::{PolicyError, ProviderProfile};
@@ -13,7 +13,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use super::adapter::{AgentBehaviorSpec, CompleteBehaviorSpec, specify};
+use super::adapter::{
+    AgentBehaviorSpec, CompleteBehaviorSpec, CredentialClassification, adapter_id, specify,
+};
 use super::args::E2eArgs;
 use super::redact::hex;
 
@@ -120,6 +122,8 @@ pub enum TargetError {
     },
     #[error("credential source {} is not valid for tuple {}", plain(.kind), plain(.id))]
     CredentialSource { id: String, kind: String },
+    #[error("credential classification does not match tuple {}", plain(.0))]
+    CredentialClass(String),
     #[error("--credential expects env:NAME, an op:// reference, file:PATH, or omp-host")]
     CredentialDescriptor,
     #[error("T01 needs --codex-home or HOME for its ChatGPT login")]
@@ -178,13 +182,11 @@ impl E2eTarget {
     }
 
     pub fn resolve(args: &E2eArgs, home: Option<&Path>) -> Result<E2eTarget, TargetError> {
-        let agent = args
-            .agent
-            .as_deref()
-            .map(parse_agent)
-            .transpose()?
-            .unwrap_or(Agent::Codex);
-        let behavior = specify(agent);
+        let agent = args.agent.as_deref().map(parse_agent).transpose()?;
+        let provider = args.provider.as_deref().map(parse_provider).transpose()?;
+        let agent = agent.unwrap_or(Agent::Codex);
+        let provider = provider.unwrap_or_else(|| agent.provider());
+        let behavior = specify(lookup_tuple(agent, provider)?);
         Self::resolve_with_behavior(args, home, behavior)
     }
 
@@ -213,18 +215,24 @@ impl E2eTarget {
                 reason: tuple.reason.unwrap_or("not supported").to_owned(),
             });
         }
-        if tuple.id != "T01" {
-            return Err(TargetError::AdapterUnavailable {
-                id: tuple.id.to_owned(),
-            });
-        }
         let model = ModelName::parse(args.model.as_deref().unwrap_or(tuple.default_model))?;
         tuple.check_model(model.as_str())?;
+        let adapter = adapter_id(tuple).ok_or_else(|| TargetError::AdapterUnavailable {
+            id: tuple.id.to_owned(),
+        })?;
         let behavior = behavior.ok_or_else(|| TargetError::AdapterUnavailable {
             id: tuple.id.to_owned(),
         })?;
         let behavior = complete(tuple, behavior)?;
-        let credential = credential_for(args, home, tuple)?;
+        let expected_class = match tuple.auth_class {
+            AuthClass::OAuth => CredentialClassification::OauthLogin,
+            AuthClass::StaticKey => CredentialClassification::StaticKey,
+            AuthClass::ApiKey => CredentialClassification::ApiKey,
+            AuthClass::BlockedVendor => CredentialClassification::None,
+        };
+        if behavior.credential.classification != expected_class {
+            return Err(TargetError::CredentialClass(tuple.id.to_owned()));
+        }
         let profile = ProviderProfile::parse(tuple_profile_asset(tuple))?;
         let provider_hosts = parsed_profile_hosts.unwrap_or_else(|| {
             profile
@@ -248,6 +256,7 @@ impl E2eTarget {
                 });
             }
         }
+        let credential = credential_for(args, home, tuple)?;
         let mut target = E2eTarget {
             tuple,
             credential,
@@ -258,7 +267,7 @@ impl E2eTarget {
                 agent: agent.as_str().to_owned(),
                 provider: provider.as_str().to_owned(),
                 model: model.to_string(),
-                adapter: "t01-codex-v1".to_owned(),
+                adapter: adapter.to_owned(),
                 spec_sha256: String::new(),
             },
             model,
@@ -400,25 +409,43 @@ fn credential_for(
     home: Option<&Path>,
     tuple: &'static AgentTuple,
 ) -> Result<E2eCredential, TargetError> {
+    if tuple.id == "T01" {
+        if let Some(source) = &args.credential {
+            let parsed = E2eCredential::parse(source)?;
+            return Err(TargetError::CredentialSource {
+                id: tuple.id.to_owned(),
+                kind: parsed.label().to_owned(),
+            });
+        }
+        let home = args
+            .codex_home
+            .clone()
+            .or_else(|| home.map(|path| path.join(".codex")))
+            .ok_or(TargetError::CodexHome)?;
+        return Ok(E2eCredential::CodexLogin { home });
+    }
     if let Some(source) = &args.credential {
         let parsed = E2eCredential::parse(source)?;
-        return Err(TargetError::CredentialSource {
-            id: tuple.id.to_owned(),
-            kind: parsed.label().to_owned(),
-        });
+        let valid = matches!(
+            parsed,
+            E2eCredential::Env { .. }
+                | E2eCredential::OnePassword { .. }
+                | E2eCredential::File { .. }
+        ) || tuple.id == "T09" && matches!(parsed, E2eCredential::OmpHost);
+        if !valid {
+            return Err(TargetError::CredentialSource {
+                id: tuple.id.to_owned(),
+                kind: parsed.label().to_owned(),
+            });
+        }
+        return Ok(parsed);
     }
-    if tuple.id != "T01" {
-        return Err(TargetError::CredentialSource {
-            id: tuple.id.to_owned(),
-            kind: "discovery".to_owned(),
-        });
+    if tuple.id == "T09" {
+        return Ok(E2eCredential::OmpHost);
     }
-    let home = args
-        .codex_home
-        .clone()
-        .or_else(|| home.map(|path| path.join(".codex")))
-        .ok_or(TargetError::CodexHome)?;
-    Ok(E2eCredential::CodexLogin { home })
+    Ok(E2eCredential::Env {
+        name: EnvName::parse("ZAI_API_KEY")?,
+    })
 }
 
 fn parse_agent(text: &str) -> Result<Agent, TargetError> {

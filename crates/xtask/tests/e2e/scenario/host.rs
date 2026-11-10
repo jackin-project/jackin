@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use jackin_core::{
-    AccountName, Agent, CaFingerprint, Compatibility, DockerLabel, ImageId, InspectView, LaunchId,
-    Phase, PlannedLabels, PolicyLabel, PolicyStatus, ProviderName, RoleName, SandboxName,
-    SandboxSummary, SupervisorReading, SupervisorState, WorkspaceName,
+    AccountName, CaFingerprint, Compatibility, DockerLabel, ImageId, InspectView, LaunchId, Phase,
+    PlannedLabels, PolicyLabel, PolicyStatus, RoleName, SandboxName, SandboxSummary,
+    SupervisorReading, SupervisorState, WorkspaceName,
 };
 use jackin_openshell::Gateway;
 use jackin_testkit::FakeGateway;
@@ -76,6 +76,14 @@ impl ScenarioHost {
         }
     }
 
+    fn target(&self) -> jackin_xtask::E2eTarget {
+        self.shared
+            .state()
+            .target
+            .clone()
+            .unwrap_or_else(|| jackin_xtask::E2eTarget::t01().expect("T01 target"))
+    }
+
     fn account_for(&self, workspace: &str) -> String {
         let knobs = self.shared.knobs().clone();
         let state = self.shared.state();
@@ -112,16 +120,17 @@ impl ScenarioHost {
     fn labels_for(&self, workspace: &str, account: &str, launch: &str) -> Vec<(String, String)> {
         let first = self.shared.state().sandboxes.is_empty();
         let knobs = self.shared.knobs().clone();
+        let account_name = AccountName::parse(account).expect("account");
+        let agents = self
+            .target()
+            .instances(&account_name)
+            .expect("instances")
+            .agents_label();
         let mut pairs = vec![
             ("jackin.dev/managed".to_owned(), "true".to_owned()),
             ("jackin.dev/workspace".to_owned(), workspace.to_owned()),
             ("jackin.dev/role".to_owned(), "sentinel".to_owned()),
-            (
-                "jackin.dev/agents".to_owned(),
-                jackin_core::Sha256::of(format!("codex:zai:{account}:glm-5.3").as_bytes()).as_str()
-                    [..32]
-                    .to_owned(),
-            ),
+            ("jackin.dev/agents".to_owned(), agents),
             (
                 "jackin.dev/policy".to_owned(),
                 PolicyLabel::of(POLICY).to_string(),
@@ -200,7 +209,7 @@ impl ScenarioHost {
         done(0, &format!("{}\n", lines.join("\n")), "")
     }
 
-    fn target_selected(words: &[&str], wrong: bool) -> bool {
+    fn target_selected(&self, words: &[&str], wrong: bool) -> bool {
         let value = |flag: &str| {
             words
                 .iter()
@@ -209,20 +218,25 @@ impl ScenarioHost {
                 .copied()
         };
         let (agent, provider, model) = if wrong {
-            ("omp", "zai", "glm-5.3")
+            ("omp".to_owned(), "zai".to_owned(), "glm-5.3".to_owned())
         } else {
-            ("codex", "codex", "gpt-6.1-sol")
+            let target = self.target();
+            (
+                target.tuple().agent.as_str().to_owned(),
+                target.tuple().provider.as_str().to_owned(),
+                target.model().as_str().to_owned(),
+            )
         };
-        value("--agent") == Some(agent)
-            && value("--provider") == Some(provider)
-            && value("--model") == Some(model)
+        value("--agent") == Some(agent.as_str())
+            && value("--provider") == Some(provider.as_str())
+            && value("--model") == Some(model.as_str())
             && !words.contains(&"--account")
             && !words.contains(&"--account-for")
     }
 
     fn build(&self, words: &[&str]) -> Result<HostOutput, HostError> {
         let knobs = self.shared.knobs().clone();
-        if !Self::target_selected(words, knobs.target_args_fault.as_deref() == Some("build")) {
+        if !self.target_selected(words, knobs.target_args_fault.as_deref() == Some("build")) {
             return done(
                 2,
                 "",
@@ -260,7 +274,7 @@ impl ScenarioHost {
         )
     }
 
-    fn role_check(path: &str) -> Result<HostOutput, HostError> {
+    fn role_check(&self, path: &str) -> Result<HostOutput, HostError> {
         let manifest =
             std::fs::read_to_string(Path::new(path).join("jackin.role.toml")).unwrap_or_default();
         let policy =
@@ -268,12 +282,15 @@ impl ScenarioHost {
         if manifest.contains("mystery_field") {
             return done(1, "", "jackin.role.toml: unknown field `mystery_field`\n");
         }
-        if policy.contains("chatgpt.com") {
-            return done(
-                1,
-                "",
-                "policy.yaml: rule e2e-stolen reaches the provider host chatgpt.com\n",
-            );
+        for host in &self.target().behavior().provider.policy_hosts {
+            let name = host.trim_start_matches("*.");
+            if policy.contains(name) {
+                return done(
+                    1,
+                    "",
+                    &format!("policy.yaml: rule e2e-stolen reaches the provider host {name}\n"),
+                );
+            }
         }
         done(0, "", "")
     }
@@ -289,13 +306,11 @@ impl ScenarioHost {
                 program: "jackin".to_owned(),
                 message: format!("no sandbox {name}"),
             })?;
+        let account = AccountName::parse(&model.account).expect("account");
         let planned = PlannedLabels {
             workspace: WorkspaceName::parse(&model.workspace).expect("workspace"),
             role: RoleName::parse("sentinel").expect("role"),
-            agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-                Agent::Codex,
-                AccountName::parse(&model.account).expect("account"),
-            )),
+            agents: self.target().instances(&account).expect("instances"),
             policy: PolicyLabel::of(POLICY),
             launch: LaunchId::parse(&model.launch).expect("launch"),
         };
@@ -335,7 +350,7 @@ impl ScenarioHost {
     }
 
     async fn load(&self, words: &[&str]) -> Result<HostOutput, HostError> {
-        if !Self::target_selected(
+        if !self.target_selected(
             words,
             self.shared.knobs().target_args_fault.as_deref() == Some("load"),
         ) {
@@ -507,10 +522,24 @@ impl ScenarioHost {
             state.usage_calls
         };
         let scripts = self.shared.knobs().usage.clone();
-        let default = json!({"state": "windows", "windows": [
-            {"kind": "weekly", "label": "Weekly", "used_percent": 12.5, "remaining": {"kind": "percent", "value": 87.5}, "resets_at": 1_800_000_000},
-            {"kind": "credits", "label": "credits", "used_percent": null, "remaining": {"kind": "amount", "value": "35348.77", "unit": "credits"}, "resets_at": null},
-        ]});
+        let target = self.target();
+        let default = match &target.behavior().usage {
+            jackin_xtask::UsageBehavior::Windows { required, .. }
+                if required.contains(&jackin_xtask::UsageWindow::FiveHour) =>
+            {
+                json!({"state": "windows", "windows": [
+                    {"kind": "five_hour", "label": "Five-hour", "used_percent": 1.0, "remaining": {"kind": "percent", "value": 99.0}, "resets_at": 1_800_000_000},
+                    {"kind": "weekly", "label": "Weekly", "used_percent": 32.0, "remaining": {"kind": "percent", "value": 68.0}, "resets_at": 1_800_000_000},
+                ]})
+            }
+            jackin_xtask::UsageBehavior::Windows { .. } => json!({"state": "windows", "windows": [
+                {"kind": "weekly", "label": "Weekly", "used_percent": 12.5, "remaining": {"kind": "percent", "value": 87.5}, "resets_at": 1_800_000_000},
+                {"kind": "credits", "label": "credits", "used_percent": null, "remaining": {"kind": "amount", "value": "35348.77", "unit": "credits"}, "resets_at": null},
+            ]}),
+            jackin_xtask::UsageBehavior::Unsupported { reason } => {
+                json!({"state": "unavailable", "reason": {"kind": reason}})
+            }
+        };
         let expired = json!({"state": "unavailable", "reason": {"kind": "expired_login"}});
         let mut dropped = None;
         let (a1, fixtures, fxw) = scripts.map_or(
@@ -535,7 +564,7 @@ impl ScenarioHost {
         let accounts: Vec<Value> = [(format!("e2e-{tag}-a1"), a1), (format!("e2e-{tag}-fxr"), fixtures), (format!("e2e-{tag}-fxw"), fxw)]
             .into_iter()
             .filter(|(account, _)| dropped.as_ref() != Some(account))
-            .map(|(account, outcome)| json!({"account": account, "provider": "codex", "freshness": {"state": "fresh"}, "outcome": outcome}))
+            .map(|(account, outcome)| json!({"account": account, "provider": target.tuple().provider.as_str(), "freshness": {"state": "fresh"}, "outcome": outcome}))
             .collect();
         done(
             0,
@@ -567,7 +596,7 @@ impl ScenarioHost {
                 }
                 done(0, "", "")
             }
-            ["account", "add", "codex" | "zai", "--name", name, rest @ ..] => {
+            ["account", "add", "codex", "--name", name, rest @ ..] => {
                 if let ["--chatgpt-from", home] = rest
                     && let Ok(bytes) = std::fs::read(Path::new(home).join("auth.json"))
                 {
@@ -588,6 +617,24 @@ impl ScenarioHost {
                 drop(self.gateway.put_codex_provider(name).await);
                 done(0, "", "")
             }
+            [
+                "account",
+                "add",
+                provider,
+                "--name",
+                name,
+                "--credential",
+                source,
+            ] if *provider == self.target().tuple().provider.as_str() => {
+                let variable = source.strip_prefix("env:").unwrap_or_default();
+                let key = command.env.get(variable).cloned().unwrap_or_default();
+                if key.is_empty() {
+                    return done(1, "", "scenario: static key is missing\n");
+                }
+                self.shared.state().accounts.push((*name).to_owned());
+                drop(self.gateway.put_static_provider(name, key).await);
+                done(0, "", "")
+            }
             ["account", "bind", name, "--role", _] => {
                 self.shared.state().role_binding = Some((*name).to_owned());
                 done(0, "", "")
@@ -600,14 +647,9 @@ impl ScenarioHost {
                 done(0, "", "")
             }
             ["account", "rm", name] => {
-                drop(
-                    self.gateway
-                        .delete_provider(
-                            &ProviderName::parse(&format!("jackin-{name}-codex"))
-                                .expect("provider"),
-                        )
-                        .await,
-                );
+                let account = AccountName::parse(name).expect("account");
+                let provider = self.target().provider_name(&account);
+                drop(self.gateway.delete_provider(&provider).await);
                 done(0, "", "")
             }
             ["workspace", "add", name, path, rest @ ..] => {
@@ -619,7 +661,7 @@ impl ScenarioHost {
             }
             ["doctor"] => self.doctor(),
             ["build", ..] => self.build(&words),
-            ["role", "check", path] => Self::role_check(path),
+            ["role", "check", path] => self.role_check(path),
             ["load", "sentinel", ..] => self.load(&words).await,
             ["inspect", name, "--json"] => self.inspect(name),
             ["export", name] => self.export(name, command),

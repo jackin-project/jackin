@@ -25,29 +25,33 @@ pub(crate) fn judge_egress(
     behavior: &ProviderBehavior,
 ) -> Vec<String> {
     let mut problems = Vec::new();
-    if !facts.agent_exec.attempted || facts.agent_exec.credential == "none" {
-        problems.push("agent exec was not attempted with the selected credential".to_owned());
-    }
-    if !facts.agent_exec.answered {
-        problems.push("codex exec did not reach its API".to_owned());
-    }
     for (name, egress) in [
         ("outside host", &facts.outside_host),
         ("metadata host", &facts.metadata_host),
     ] {
         problems.extend(egress.outcome().fault(name));
     }
+    if let Some(egress) = &facts.provider_host
+        && egress.url.as_deref() != Some(behavior.probe_url.as_str())
+    {
+        problems.push(format!(
+            "the provider probe URL {:?} differs from {}",
+            egress.url, behavior.probe_url
+        ));
+    }
     match &facts.provider_host {
         Some(egress) if egress.outcome() == Outcome::Refused => {}
         Some(egress) => {
             let body_matches = match &behavior.accepted_body {
-                ProviderBodyMatcher::JsonErrorCode { code } => {
+                Some(ProviderBodyMatcher::JsonErrorCode { code }) => {
                     egress.body.as_deref() == Some(code.as_str())
                 }
+                None => false,
             };
-            if egress.http_code != u32::from(behavior.accepted_status) || !body_matches {
+            let expected_status = behavior.accepted_status.map(u32::from);
+            if Some(egress.http_code) != expected_status || !body_matches {
                 problems.push(format!(
-                    "the provider host response was HTTP {} with body classification {:?}, expected HTTP {} and {:?}",
+                    "the provider host response was HTTP {} with body classification {:?}, expected HTTP {:?} and {:?}",
                     egress.http_code,
                     egress.body,
                     behavior.accepted_status,
@@ -111,10 +115,14 @@ impl Run<'_> {
             .jackin("J09 wildcard", &["role", "check", &wildcard], &cwd)
             .await?;
         let mut problems: Vec<String> = report.gate("J09").into_iter().collect();
+        problems.extend(facts.agent_exec.problems(
+            self.credentials.target.identity(),
+            self.credentials.target.behavior(),
+        ));
         problems.extend(judge_egress(&facts, &control, &first, &second, &behavior));
         if problems.is_empty() {
             Ok(Verdict::pass(
-                "codex reached its API, outside and metadata denied, provider rules rejected",
+                "agent reached its API and used a tool, outside and metadata denied, provider rules rejected",
             ))
         } else {
             Ok(Verdict::fail(problems.join("; ")))

@@ -33,9 +33,13 @@ pub(crate) fn parse_ps(text: &str) -> Vec<PsRow> {
 
 pub(crate) fn agent_of(rows: &[PsRow], comm: &str) -> Option<(u32, u32)> {
     let main = rows.iter().find(|row| row.comm == "jackin-start")?;
-    let agent = rows
+    let mut agents = rows
         .iter()
-        .find(|row| row.comm == comm && row.ppid == main.pid)?;
+        .filter(|row| row.comm == comm && row.ppid == main.pid);
+    let agent = agents.next()?;
+    if agents.next().is_some() {
+        return None;
+    }
     Some((main.pid, agent.pid))
 }
 
@@ -82,14 +86,12 @@ pub(crate) fn judge_agent(
                 ));
             }
         }
-        (None, ..) => problems.push("ps shows no codex child of jackin-start".to_owned()),
-        _ => problems.push("the probe found no main process or no codex process".to_owned()),
-    }
-    if !facts.agent_exec.attempted || facts.agent_exec.credential == "none" {
-        problems.push("agent exec was not attempted with the selected credential".to_owned());
-    }
-    if !facts.agent_exec.answered {
-        problems.push("codex exec did not answer the fixed prompt".to_owned());
+        (None, ..) => problems.push(format!(
+            "ps does not show exactly one {comm} child of jackin-start"
+        )),
+        _ => problems.push(format!(
+            "the probe found no main process or no {comm} process"
+        )),
     }
     if !quit.supervisor.starts_with("exited 1 ") {
         problems.push(format!(
@@ -108,7 +110,9 @@ pub(crate) fn judge_agent(
     }
     let old = agent_of(before, comm).map(|(_, codex)| codex);
     if restart.agent_pid.is_none() || restart.agent_pid == old {
-        problems.push("attach --restart did not start a new codex process".to_owned());
+        problems.push(format!(
+            "attach --restart did not start a new {comm} process"
+        ));
     }
     problems
 }
@@ -187,11 +191,15 @@ impl Run<'_> {
         };
         self.w.agent_pid = restart.agent_pid;
         let mut problems: Vec<String> = report.gate("J07").into_iter().collect();
+        problems.extend(facts.agent_exec.problems(
+            self.credentials.target.identity(),
+            self.credentials.target.behavior(),
+        ));
         problems.extend(judge_agent(&facts, &before, &quit, &restart, &comm));
         if problems.is_empty() {
-            Ok(Verdict::pass(
-                "codex is the child of jackin-start, exec answered, restart gave a new pid",
-            ))
+            Ok(Verdict::pass(format!(
+                "{comm} is the child of jackin-start, exec and tool succeeded, restart gave a new pid"
+            )))
         } else {
             Ok(Verdict::fail(problems.join("; ")))
         }

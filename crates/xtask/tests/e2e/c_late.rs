@@ -128,7 +128,7 @@ async fn j07_agent_process_faults() {
         ),
         (
             "ps shows only a child with another comm",
-            "ps shows no codex child of jackin-start",
+            "ps does not show exactly one codex child of jackin-start",
             Box::new(|s| s.exec_rule(PS, 0, &ps_with(&[(200, "node")]))),
         ),
         (
@@ -241,7 +241,7 @@ async fn j08_credential_faults() {
             ),
             (
                 "the F3 command is not a Codex descendant",
-                "is not a descendant of Codex",
+                "is not a descendant of codex",
                 Box::new(|s| s.knobs().reflect_not_descendant = true),
             ),
             (
@@ -489,7 +489,7 @@ async fn j09_egress_faults() {
             ),
             (
                 "credentialed exec attempted but unanswered",
-                "codex exec did not reach its API",
+                "agent exec did not answer the fixed prompt",
                 patched("J09", None, "/facts/agent_exec/answered", json!(false)),
             ),
             (

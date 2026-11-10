@@ -42,14 +42,17 @@ pub(crate) async fn prepare<'a>(
     b: &'a Boundaries,
     printer: &Printer,
 ) -> Result<Run<'a>, SetupError> {
-    let credentials =
-        CredentialSession::open(target, b).map_err(|error| setup(error.to_string()))?;
+    let credentials = CredentialSession::open(target, b)
+        .await
+        .map_err(|error| setup(error.to_string()))?;
     let redactor = credentials.redactor();
     printer.set_redactor(redactor.clone());
-    credentials
-        .fresh_host_reply(b, "before")
-        .await
-        .map_err(|error| setup(credentials.scrubbed_failure(&error)))?;
+    if credentials.a1().is_some() {
+        credentials
+            .fresh_host_reply(b, "before")
+            .await
+            .map_err(|error| setup(credentials.scrubbed_failure(&error)))?;
+    }
     let health = b.gateway.health().await.map_err(|error| {
         setup(format!(
             "the gateway {} is unreachable: {error}",
@@ -131,10 +134,7 @@ async fn build_run<'a>(
         registry,
         scratch,
     } = parts;
-    let client_id = credentials
-        .a1()
-        .map(|login| login.client_id().to_owned())
-        .ok_or_else(|| setup("T01 requires its ChatGPT credential session"))?;
+    let client_id = credentials.a1().map(|login| login.client_id().to_owned());
     scratch
         .link_registry(&registry)
         .map_err(|error| setup(error.to_string()))?;
@@ -156,9 +156,11 @@ async fn build_run<'a>(
         life: fixture(names.life.clone()).await?,
         dock: fixture(names.dock.clone()).await?,
     };
-    for account in [&names.fxr, &names.fxw] {
-        fixture_login(&scratch.codex_homes().join(account), &client_id)
-            .map_err(|error| setup(error.to_string()))?;
+    if let Some(client_id) = client_id {
+        for account in [&names.fxr, &names.fxw] {
+            fixture_login(&scratch.codex_homes().join(account), &client_id)
+                .map_err(|error| setup(error.to_string()))?;
+        }
     }
     let mut run = Run {
         args,
@@ -230,56 +232,93 @@ impl Run<'_> {
             &main,
         )
         .await?;
-        let codex_home = self.b.codex_home.display().to_string();
-        let accounts: Vec<(String, String)> = vec![
-            (self.names.a1.clone(), codex_home),
-            (
-                self.names.fxr.clone(),
-                self.scratch
-                    .codex_homes()
-                    .join(&self.names.fxr)
-                    .display()
-                    .to_string(),
-            ),
-            (
-                self.names.fxw.clone(),
-                self.scratch
-                    .codex_homes()
-                    .join(&self.names.fxw)
-                    .display()
-                    .to_string(),
-            ),
-        ];
-        for (account, home) in accounts {
-            let account_name =
-                AccountName::parse(&account).map_err(|error| setup(error.to_string()))?;
-            let provider = self.credentials.target.provider_name(&account_name);
-            let state = self
-                .b
-                .gateway
-                .provider_state(&provider)
-                .await
-                .map_err(|error| setup(error.to_string()))?;
-            if state != ProviderState::Absent {
-                return Err(setup(format!(
-                    "provider {provider} already exists; the runner never overwrites one"
-                )));
+        if self.credentials.a1().is_some() {
+            let codex_home = self.b.codex_home.display().to_string();
+            let accounts: Vec<(String, String)> = vec![
+                (self.names.a1.clone(), codex_home),
+                (
+                    self.names.fxr.clone(),
+                    self.scratch
+                        .codex_homes()
+                        .join(&self.names.fxr)
+                        .display()
+                        .to_string(),
+                ),
+                (
+                    self.names.fxw.clone(),
+                    self.scratch
+                        .codex_homes()
+                        .join(&self.names.fxw)
+                        .display()
+                        .to_string(),
+                ),
+            ];
+            for (account, home) in accounts {
+                self.ensure_account_absent(&account).await?;
+                self.w.accounts_made.push(account.clone());
+                self.setup_command(
+                    "account add",
+                    &strings(&[
+                        "account",
+                        "add",
+                        "codex",
+                        "--name",
+                        &account,
+                        "--chatgpt-from",
+                        &home,
+                    ]),
+                    &main,
+                )
+                .await?;
             }
-            self.w.accounts_made.push(account.clone());
-            self.setup_command(
-                "account add",
-                &strings(&[
-                    "account",
-                    "add",
-                    "codex",
-                    "--name",
-                    &account,
-                    "--chatgpt-from",
-                    &home,
-                ]),
-                &main,
-            )
-            .await?;
+        } else {
+            let selected = self
+                .credentials
+                .secrets()
+                .into_iter()
+                .next()
+                .ok_or_else(|| setup("the static-key session has no credential"))?
+                .to_owned();
+            let accounts = [
+                (
+                    self.names.a1.clone(),
+                    "JACKIN_E2E_A1_KEY".to_owned(),
+                    selected,
+                ),
+                (
+                    self.names.fxr.clone(),
+                    "JACKIN_E2E_FXR_KEY".to_owned(),
+                    format!("zai-invalid-fxr-{}", self.b.tag),
+                ),
+                (
+                    self.names.fxw.clone(),
+                    "JACKIN_E2E_FXW_KEY".to_owned(),
+                    format!("zai-invalid-fxw-{}", self.b.tag),
+                ),
+            ];
+            for (account, variable, value) in accounts {
+                self.ensure_account_absent(&account).await?;
+                self.w.accounts_made.push(account.clone());
+                let provider = self.credentials.target.tuple().provider.as_str();
+                let credential = format!("env:{variable}");
+                let mut env = self.env.clone();
+                env.insert(variable, value);
+                self.setup_command_in_env(
+                    "account add",
+                    &strings(&[
+                        "account",
+                        "add",
+                        provider,
+                        "--name",
+                        &account,
+                        "--credential",
+                        &credential,
+                    ]),
+                    &main,
+                    env,
+                )
+                .await?;
+            }
         }
         let a1 = self.names.a1.clone();
         self.setup_command(
@@ -342,6 +381,23 @@ impl Run<'_> {
         Ok(())
     }
 
+    async fn ensure_account_absent(&self, account: &str) -> Result<(), SetupError> {
+        let account_name = AccountName::parse(account).map_err(|error| setup(error.to_string()))?;
+        let provider = self.credentials.target.provider_name(&account_name);
+        let state = self
+            .b
+            .gateway
+            .provider_state(&provider)
+            .await
+            .map_err(|error| setup(error.to_string()))?;
+        if state != ProviderState::Absent {
+            return Err(setup(format!(
+                "provider {provider} already exists; the runner never overwrites one"
+            )));
+        }
+        Ok(())
+    }
+
     async fn setup_command(
         &mut self,
         label: &str,
@@ -353,6 +409,34 @@ impl Run<'_> {
             .jackin(&format!("setup {label}"), &refs, cwd)
             .await
             .map_err(|failure| setup(format!("jackin {label} could not run: {}", failure.0)))?;
+        Self::judge_setup(self, label, &output)
+    }
+
+    async fn setup_command_in_env(
+        &mut self,
+        label: &str,
+        args: &[String],
+        cwd: &Path,
+        env: std::collections::BTreeMap<String, String>,
+    ) -> Result<(), SetupError> {
+        let mut full = vec!["--gateway".to_owned(), self.args.gateway.clone()];
+        full.extend(args.iter().cloned());
+        let program = self.jackin.clone();
+        let output = self
+            .run_host_in_env(
+                &format!("setup {label}"),
+                &program,
+                &full,
+                Some(cwd),
+                self.b.budgets.command,
+                env,
+            )
+            .await
+            .map_err(|failure| setup(format!("jackin {label} could not run: {}", failure.0)))?;
+        Self::judge_setup(self, label, &output)
+    }
+
+    fn judge_setup(&self, label: &str, output: &super::host::HostOutput) -> Result<(), SetupError> {
         if output.ok() {
             Ok(())
         } else {
