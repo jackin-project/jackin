@@ -204,3 +204,28 @@ Nextest run `bdac0e4e-19d5-4c89-8a64-98d7aad59c8b` passed all 2,234 tests with z
 All 14 gate steps passed: `fmt`, `clippy`, `nextest`, `deny`, `shear`, `comments`, `layers`, `pins`, `containers`, `errors`, `baseline`, `screen`, `demo-gate`, and `reuse`. Deny reported advisories, bans, licenses, and sources OK. Shear found no issues. REUSE reported 1,323 files with copyright and license information and zero errors.
 
 No mutation remains applied. No live proof ran for this unit.
+
+
+## Independent review follow-up
+
+The independent reviewer returned CHANGES_REQUIRED in `/tmp/a14-promotion-review.md`. `tuple_offers` discarded `tuple.reason` whenever the tuple was `Supported`, so an invalid supported row could not fail the existing console assertion.
+
+The follow-up changes only `crates/jackin-tui/src/project.rs` and `crates/jackin-tui/tests/launch/picker.rs`. Offer projection now propagates `tuple.reason` independently of state. Valid supported rows still produce `None`, and invalid supported rows expose their reason.
+
+Before the projection fix, nextest run `cfc0bae9-68f4-47ab-9891-460b5588df26` reproduced the review finding. The T01 catalog assertion failed on `Some("incorrect mutation reason")`, while the console offer assertion incorrectly passed.
+
+After the projection fix, nextest run `61a678c8-7c78-4cf9-a491-157df9a7868f` failed both required assertions with the same wrong reason. Restoring the valid catalog produced green run `3368a028-f394-42ba-bfd3-43c1594263c3` with four passes. That run included the new permanent T20 blank-model console launch and the T18 positive control. The offer assertion covers T09, T14, and T18.
+
+The blank-model launch returns `LaunchEvent::Ready` and writes exact Codex, Mimo, `mimo`, and `mimo-v2.6-pro` identity into the planned labels. The account and provider are explicit. No baseline visual changed.
+
+Focused suites passed 55 launch tests in run `341cde6c-733a-43a1-910c-55d1dd8f4f3b` and 220 console projection tests in run `0dae17bb-18d0-4f68-b737-3483514e5b06`, with zero skipped tests in both suites.
+
+A 30-minute task timeout interrupted the first follow-up gate. The final complete rerun used no task timeout and this command:
+
+```sh
+rtk env NEXTEST_TEST_THREADS=2 mise exec -- mbx +1.99.1 xtask ci --fast
+```
+
+Final nextest run `b8e70136-bebe-4c1c-8896-215235f70b58` passed all 2,235 tests with zero skipped tests in 1,565.012 seconds. The full command exited 0 after 1,599.190 seconds. All 14 gate steps passed: `fmt`, `clippy`, `nextest`, `deny`, `shear`, `comments`, `layers`, `pins`, `containers`, `errors`, `baseline`, `screen`, `demo-gate`, and `reuse`. REUSE reported 1,330 files with copyright and license information and zero errors.
+
+No live proof ran for this follow-up.
