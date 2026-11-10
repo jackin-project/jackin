@@ -327,45 +327,6 @@ impl Run<'_> {
             &main,
         )
         .await?;
-        for zai in ["zai", "zai-role", "zai-workspace"] {
-            let provider = ProviderName::parse(&Names::provider(zai))
-                .map_err(|error| setup(error.to_string()))?;
-            let state = self
-                .b
-                .gateway
-                .provider_state(&provider)
-                .await
-                .map_err(|error| setup(error.to_string()))?;
-            if state != ProviderState::Absent {
-                return Err(setup(format!(
-                    "provider {provider} already exists; the runner never overwrites one"
-                )));
-            }
-            let key = self.scratch.root().join(format!("{zai}.key"));
-            std::fs::write(&key, format!("e2e-{zai}-test-key"))
-                .map_err(|error| setup(error.to_string()))?;
-            self.w.accounts_made.push(zai.to_owned());
-            self.setup_command(
-                "account add zai",
-                &strings(&[
-                    "account",
-                    "add",
-                    "zai",
-                    "--name",
-                    zai,
-                    "--credential",
-                    &format!("file:{}", key.display()),
-                ]),
-                &main,
-            )
-            .await?;
-        }
-        self.setup_command(
-            "account default zai",
-            &strings(&["account", "default", "zai"]),
-            &main,
-        )
-        .await?;
         let workspaces = [
             (self.names.main.clone(), self.projects.main.clone(), false),
             (self.names.life.clone(), self.projects.life.clone(), false),

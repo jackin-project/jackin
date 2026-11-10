@@ -444,7 +444,7 @@ fn apply_agent_env_defaults(
     }
 }
 
-fn lead_tuple(
+pub fn validate_tuple_selection(
     agent: Agent,
     provider: Provider,
     model: Option<&str>,
@@ -501,7 +501,7 @@ fn select_lead_account(
         agent,
         provider,
     });
-    let tuple = lead_tuple(agent, provider, model);
+    let tuple = validate_tuple_selection(agent, provider, model);
     let account = match &selection {
         Ok(selection) => Some(config.account(&selection.account).ok_or_else(|| {
             ConfigError::MissingReference {
