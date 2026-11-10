@@ -2522,9 +2522,6 @@ mod promotion_records {
         for id in ["T15", "T16"] {
             row(&claude, id, "**PASS**")?;
         }
-        row(&claude, "T13", "**FAIL**")?;
-        assert!(claude.contains("supervised Claude check on both gateways"));
-        assert!(claude.contains("api.anthropic.com"));
         let codex = read(root, "rewrite/evidence/A14-codex-final-live.md")?;
         for id in ["T17", "T19", "T20"] {
             row(&codex, id, "**PASS**")?;
@@ -2535,15 +2532,22 @@ mod promotion_records {
         }
 
         let supervised = read(root, "rewrite/evidence/A14-t13-model-live.md")?;
-        for required in [
-            "Model: kimi-for-coding",
-            "T13-PTY-OK",
-            "jackin-docker",
-            "jackin-local",
-            "running 1",
-        ] {
-            assert!(supervised.contains(required), "missing {required:?}");
+        for gateway in ["jackin-docker", "jackin-local"] {
+            let row = supervised
+                .lines()
+                .find(|line| line.starts_with(&format!("| `{gateway}` |")))
+                .ok_or_else(|| format!("missing {gateway} verdict row"))?;
+            for required in [
+                "**PASS**",
+                "Model: kimi-for-coding",
+                "T13-PTY-OK",
+                "running 1",
+            ] {
+                assert!(row.contains(required), "{gateway}: missing {required:?}");
+            }
         }
+        assert!(supervised.contains("Auth token: ANTHROPIC_AUTH_TOKEN"));
+        assert!(supervised.contains("https://api.kimi.ai/coding/"));
         assert!(!root.join("rewrite/blockers/T13-claude-kimi.md").exists());
         Ok(())
     }

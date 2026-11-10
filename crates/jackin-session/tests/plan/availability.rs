@@ -430,17 +430,18 @@ async fn every_remaining_tuple_refuses_secondary_launch_and_multi_with_the_same_
 }
 
 #[test]
-fn t13_print_mode_success_does_not_promote_the_supervised_interactive_failure() -> TestResult {
-    let refusal = &REFUSALS[7];
-    assert_eq!(refusal.case.id, "T13");
-    let error = plan_multi(
-        &AgentInstances::single(instance(&refusal.case)?),
-        None,
-        HeadState::Born,
-    )
-    .err()
-    .ok_or("expected T13 refusal")?;
-    assert_refusal(error, refusal);
+fn t13_plans_multi_with_the_exact_kimi_identity_and_model() -> TestResult {
+    let case = SUPPORTED
+        .iter()
+        .find(|case| case.id == "T13")
+        .ok_or("missing T13 supported case")?;
+    let instances = AgentInstances::single(instance(case)?);
+    let layout = plan_multi(&instances, None, HeadState::Born)?;
+    assert_eq!(layout.exec[0].provider, "kimi");
+    assert_eq!(layout.exec[0].account, "t13");
+    assert_eq!(layout.exec[0].model, "kimi-for-coding");
+    assert_eq!(instances.lead().agent, Agent::ClaudeCode);
+    assert_eq!(instances.lead().provider, Provider::Kimi);
     Ok(())
 }
 
