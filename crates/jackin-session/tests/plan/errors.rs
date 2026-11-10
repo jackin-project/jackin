@@ -21,7 +21,7 @@ async fn plan_errors_are_typed_for_unavailable_tuples_unknown_gateways_and_unreg
                 .model(Some("gpt-6.1-sol".to_owned())),
         );
         assert!(
-            matches!(&result, Err(PlanError::TupleNotSupported { agent: Agent::Codex, provider: Provider::Codex, reason }) if reason == "host Codex login expired; interactive re-login required"),
+            matches!(&result, Err(PlanError::TupleNotSupported { agent: Agent::Codex, provider: Provider::Codex, reason }) if reason == "final live proof pending after host re-login"),
             "{:?}",
             result.err()
         );

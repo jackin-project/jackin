@@ -138,6 +138,10 @@ pub(crate) fn dialog(screen: &str) -> String {
 }
 
 pub(crate) async fn begin(console: &mut ConsoleRig) -> Result<(), Failure> {
+    begin_role(console, "sentinel")
+}
+
+pub(crate) fn begin_role(console: &mut ConsoleRig, role: &str) -> Result<(), Failure> {
     let app = console.console().app();
     let workspace = app
         .world
@@ -148,7 +152,7 @@ pub(crate) async fn begin(console: &mut ConsoleRig) -> Result<(), Failure> {
         .ok_or("no platform-backend workspace")?;
     app.go(Go::LaunchMany {
         workspace: Some(workspace),
-        role: "sentinel".to_owned(),
+        role: role.to_owned(),
         instances: vec![InstanceChoice {
             agent: ConsoleAgent::Codex,
             provider: ConsoleProvider::Zai,

@@ -2,7 +2,7 @@
 
 Final base SHA: `ebfb26c9c3961ceba28e0cab84396c5530648b20`.
 State: unavailable.
-Exact catalog reason: `no MiMo Token Plan key on this host`.
+Exact catalog reason: `final live proof pending with MiMo Token Plan key`.
 Required agent version: Claude Code 2.1.311.
 
 Credential search: `op whoami` fails with `account is not signed in`, so no 1Password MiMo Token Plan key is accessible. The host omp store has no MiMo Token Plan key. Existing gateway providers are not an approved credential-discovery source and were not used to establish support.

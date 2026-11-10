@@ -16,8 +16,8 @@ use jackin_core::{
 use jackin_testkit::{ConsoleRig, FsFault, RepoFixture, Rig, RoleFixture, TestResult, guard};
 
 use super::support::{
-    Stage, answer, begin, console, dialog, direct_launch, labels, only, picker_account, stage,
-    two_roles, until, until_route, until_shows,
+    Stage, answer, console, dialog, direct_launch, labels, only, picker_account, stage, two_roles,
+    until, until_route, until_shows,
 };
 
 type Failure = Box<dyn std::error::Error>;
@@ -72,11 +72,10 @@ async fn only_a_local_codex_login_is_offered() -> TestResult {
         console.keys("down enter")?;
         until_shows(&mut console, "Launch · choose Agent").await?;
         let screen = words(&console.screen());
-        assert_eq!(
-            screen.matches("usage only · launches Codex only").count(),
-            2,
-            "{screen}"
-        );
+        assert!(screen.contains("final live proof pending"), "{screen}");
+        assert!(!screen.contains("host Codex login expired"), "{screen}");
+        assert!(screen.contains("Claude Code"), "{screen}");
+        assert!(screen.contains("Grok Build"), "{screen}");
         assert!(!screen.contains("set in Settings"), "{screen}");
         console.keys("space enter")?;
         answer(&mut console, None).await?;
@@ -229,7 +228,8 @@ async fn without_a_default_role_every_row_is_disabled() -> TestResult {
         let mut console = console(&rig).await?;
         console.keys("down enter")?;
         let screen = words(&console.screen());
-        assert!(screen.contains(NO_DEFAULT_ROLE), "{screen}");
+        let shown = NO_DEFAULT_ROLE.split(" · ").next().ok_or("role reason")?;
+        assert!(screen.contains(shown), "{screen}");
         assert!(screen.contains("unavailable"), "{screen}");
         console.keys("enter")?;
         console.settle().await?;
@@ -257,7 +257,7 @@ async fn the_only_allowed_role_is_launched() -> TestResult {
             }])
             .await?;
         let mut console = console(&rig).await?;
-        begin(&mut console).await?;
+        super::support::begin_role(&mut console, "other")?;
         until_route(&mut console, Route::Capsule).await?;
         assert_eq!(labels(&only(&rig)?)?.planned.role.as_str(), "other");
         Ok(())
@@ -622,8 +622,11 @@ async fn the_current_directory_with_several_roles_asks_for_a_workspace() -> Test
         console.skip_intro();
         console.keys("enter")?;
         let screen = words(&console.screen());
-        let shown: String = NO_SAVED_WORKSPACE.chars().take(40).collect();
-        assert!(screen.contains(&shown), "{screen}");
+        let shown = NO_SAVED_WORKSPACE
+            .split(" · ")
+            .next()
+            .ok_or("workspace reason")?;
+        assert!(screen.contains(shown), "{screen}");
         assert!(screen.contains("unavailable"), "{screen}");
         console.keys("enter")?;
         console.settle().await?;
@@ -675,12 +678,12 @@ macro_rules! unavailable_offer_tests {
 }
 
 unavailable_offer_tests! {
-    t01_offer_is_unavailable => (Codex, OpenAi, "host Codex login expired; interactive re-login required"),
-    t10_offer_is_unavailable => (Omp, Moonshot, "no Kimi Code membership key on this host"),
-    t11_offer_is_unavailable => (Omp, MiniMax, "no MiniMax coding plan key on this host"),
-    t12_offer_is_unavailable => (Omp, Mimo, "no MiMo Token Plan key on this host"),
-    t16_offer_is_unavailable => (ClaudeCode, Mimo, "no MiMo Token Plan key on this host"),
-    t20_offer_is_unavailable => (Codex, Mimo, "no MiMo Token Plan key on this host"),
+    t01_offer_is_unavailable => (Codex, OpenAi, "final live proof pending after host re-login"),
+    t10_offer_is_unavailable => (Omp, Moonshot, "final live proof pending with Kimi plan key"),
+    t11_offer_is_unavailable => (Omp, MiniMax, "final live proof pending with MiniMax plan key"),
+    t12_offer_is_unavailable => (Omp, Mimo, "final live proof pending with MiMo Token Plan key"),
+    t16_offer_is_unavailable => (ClaudeCode, Mimo, "final live proof pending with MiMo Token Plan key"),
+    t20_offer_is_unavailable => (Codex, Mimo, "final live proof pending with MiMo Token Plan key"),
 }
 
 async fn unavailable_launch(provider: ConsoleProvider, reason: &str) -> TestResult {
@@ -747,14 +750,18 @@ async fn unavailable_launch(provider: ConsoleProvider, reason: &str) -> TestResu
 async fn t01_launch_refusal_has_the_exact_reason_and_no_effects() -> TestResult {
     unavailable_launch(
         ConsoleProvider::OpenAi,
-        "host Codex login expired; interactive re-login required",
+        "final live proof pending after host re-login",
     )
     .await
 }
 
 #[tokio::test]
 async fn t20_launch_refusal_has_the_exact_reason_and_no_effects() -> TestResult {
-    unavailable_launch(ConsoleProvider::Mimo, "no MiMo Token Plan key on this host").await
+    unavailable_launch(
+        ConsoleProvider::Mimo,
+        "final live proof pending with MiMo Token Plan key",
+    )
+    .await
 }
 
 #[tokio::test]

@@ -53,6 +53,16 @@ enum Refused {
     StartTimedOut(jackin_core::SandboxName),
     #[error("Codex is already running in {0}")]
     AgentRunning(jackin_core::SandboxName),
+    #[error("Cannot start sandbox {sandbox} while {} · only stopped sandboxes can start", plain(.phase))]
+    PowerStartPhase {
+        sandbox: jackin_core::SandboxName,
+        phase: String,
+    },
+    #[error("Cannot stop sandbox {sandbox} while {} · only ready sandboxes can stop", plain(.phase))]
+    PowerStopPhase {
+        sandbox: jackin_core::SandboxName,
+        phase: String,
+    },
     #[error("the configuration path has no directory")]
     NoConfigDir,
     #[error("cancelled while waiting for the role manifest")]
@@ -581,19 +591,17 @@ impl Inputs {
             };
             if sandbox.phase != allowed {
                 let phase = crate::project::sandbox_phase(sandbox.phase);
-                let message = match action {
-                    PowerAction::Start => format!(
-                        "Cannot start sandbox {} while {} · only stopped sandboxes can start",
-                        sandbox.name,
-                        phase.label()
-                    ),
-                    PowerAction::Stop => format!(
-                        "Cannot stop sandbox {} while {} · only ready sandboxes can stop",
-                        sandbox.name,
-                        phase.label()
-                    ),
-                };
-                return Err(Refused::Text(message));
+                let sandbox = sandbox.name.clone();
+                return Err(match action {
+                    PowerAction::Start => Refused::PowerStartPhase {
+                        sandbox,
+                        phase: phase.label(),
+                    },
+                    PowerAction::Stop => Refused::PowerStopPhase {
+                        sandbox,
+                        phase: phase.label(),
+                    },
+                });
             }
             self.session(&gateway)?
                 .power_unreadable(&sandbox.name, action, &self.cancel)

@@ -23,42 +23,42 @@ const T01: Case = Case {
     agent: Agent::Codex,
     provider: Provider::Codex,
     model: "gpt-6.1-sol",
-    reason: "host Codex login expired; interactive re-login required",
+    reason: "final live proof pending after host re-login",
 };
 const T10: Case = Case {
     id: "T10",
     agent: Agent::Omp,
     provider: Provider::Kimi,
     model: "kimi-for-coding",
-    reason: "no Kimi Code membership key on this host",
+    reason: "final live proof pending with Kimi plan key",
 };
 const T11: Case = Case {
     id: "T11",
     agent: Agent::Omp,
     provider: Provider::Minimax,
     model: "minimax-m3",
-    reason: "no MiniMax coding plan key on this host",
+    reason: "final live proof pending with MiniMax plan key",
 };
 const T12: Case = Case {
     id: "T12",
     agent: Agent::Omp,
     provider: Provider::Mimo,
     model: "mimo-v2.6-pro",
-    reason: "no MiMo Token Plan key on this host",
+    reason: "final live proof pending with MiMo Token Plan key",
 };
 const T16: Case = Case {
     id: "T16",
     agent: Agent::ClaudeCode,
     provider: Provider::Mimo,
     model: "mimo-v2.6-pro",
-    reason: "no MiMo Token Plan key on this host",
+    reason: "final live proof pending with MiMo Token Plan key",
 };
 const T20: Case = Case {
     id: "T20",
     agent: Agent::Codex,
     provider: Provider::Mimo,
     model: "mimo-v2.6-pro",
-    reason: "no MiMo Token Plan key on this host",
+    reason: "final live proof pending with MiMo Token Plan key",
 };
 
 fn role() -> Result<RoleFixture, Box<dyn std::error::Error>> {

@@ -2,7 +2,7 @@
 
 Final base SHA: `ebfb26c9c3961ceba28e0cab84396c5530648b20`.
 State: unavailable.
-Exact catalog reason: `no Kimi Code membership key on this host`.
+Exact catalog reason: `final live proof pending with Kimi plan key`.
 Required agent version: omp 18.18.3.
 
 The host Kimi login is OAuth and has an empty `api_key` field.

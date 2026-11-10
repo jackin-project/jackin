@@ -954,7 +954,7 @@ pub static TUPLES: [AgentTuple; 22] = [
         Provider::Codex,
         AuthClass::OAuth,
         TupleState::Unavailable,
-        Some("host Codex login expired; interactive re-login required"),
+        Some("final live proof pending after host re-login"),
         &["gpt-6.1-sol"],
         "gpt-6.1-sol"
     ),
@@ -1044,7 +1044,7 @@ pub static TUPLES: [AgentTuple; 22] = [
         Provider::Kimi,
         AuthClass::StaticKey,
         TupleState::Unavailable,
-        Some("no Kimi Code membership key on this host"),
+        Some("final live proof pending with Kimi plan key"),
         &["kimi-for-coding"],
         "kimi-for-coding"
     ),
@@ -1054,7 +1054,7 @@ pub static TUPLES: [AgentTuple; 22] = [
         Provider::Minimax,
         AuthClass::StaticKey,
         TupleState::Unavailable,
-        Some("no MiniMax coding plan key on this host"),
+        Some("final live proof pending with MiniMax plan key"),
         &["minimax-m3"],
         "minimax-m3"
     ),
@@ -1064,7 +1064,7 @@ pub static TUPLES: [AgentTuple; 22] = [
         Provider::Mimo,
         AuthClass::StaticKey,
         TupleState::Unavailable,
-        Some("no MiMo Token Plan key on this host"),
+        Some("final live proof pending with MiMo Token Plan key"),
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
@@ -1104,7 +1104,7 @@ pub static TUPLES: [AgentTuple; 22] = [
         Provider::Mimo,
         AuthClass::StaticKey,
         TupleState::Unavailable,
-        Some("no MiMo Token Plan key on this host"),
+        Some("final live proof pending with MiMo Token Plan key"),
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
@@ -1144,7 +1144,7 @@ pub static TUPLES: [AgentTuple; 22] = [
         Provider::Mimo,
         AuthClass::StaticKey,
         TupleState::Unavailable,
-        Some("no MiMo Token Plan key on this host"),
+        Some("final live proof pending with MiMo Token Plan key"),
         &["mimo-v2.6-pro"],
         "mimo-v2.6-pro"
     ),
@@ -1154,7 +1154,7 @@ pub static TUPLES: [AgentTuple; 22] = [
         Provider::Claude,
         AuthClass::ApiKey,
         TupleState::Unavailable,
-        Some("no API key on this host"),
+        Some("final live proof pending with Anthropic API key"),
         &["claude-haiku-5-5"],
         "claude-haiku-5-5"
     ),

@@ -2,7 +2,7 @@
 
 Final base SHA: `ebfb26c9c3961ceba28e0cab84396c5530648b20`.
 State: unavailable.
-Exact catalog reason: `no MiniMax coding plan key on this host`.
+Exact catalog reason: `final live proof pending with MiniMax plan key`.
 Required agent version: omp 18.18.3.
 
 The host MiniMax login is OAuth for the native client and holds no coding plan key.

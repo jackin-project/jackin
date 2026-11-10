@@ -83,6 +83,8 @@ skip = [
     { crate = "noyalib@0.0.53", reason = "openshell-policy-schema at the pinned OpenShell tag pins noyalib 0.0.53, while jackin-openshell uses the latest noyalib; keep the older survivor visible for future drift." },
     { crate = "unicode-width@0.1.14", reason = "Transitive duplicate from the OpenShell SDK and russh dependency trees; keep the older survivor visible for future drift." },
     { crate = "untrusted@0.7.1", reason = "Transitive duplicate from the OpenShell SDK and russh dependency trees; keep the older survivor visible for future drift." },
+    { crate = "windows-sys@0.52.0", reason = "Transitive duplicate from the terminal and process dependency trees; the newest tree uses windows-sys 0.61.2, so keep the older survivor visible for future drift." },
+    { crate = "windows-sys@0.59.0", reason = "Transitive duplicate from the terminal and process dependency trees; the newest tree uses windows-sys 0.61.2, so keep the older survivor visible for future drift." },
 ]
 
 [bans.workspace-dependencies]

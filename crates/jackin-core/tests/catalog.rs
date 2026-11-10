@@ -11,7 +11,7 @@ fn codex_tuple_is_unavailable_until_the_host_login_is_renewed() -> TestResult {
     assert_eq!(tuple.state, TupleState::Unavailable);
     assert_eq!(
         tuple.reason,
-        Some("host Codex login expired; interactive re-login required")
+        Some("final live proof pending after host re-login")
     );
     assert_eq!(tuple.agent, Agent::Codex);
     assert_eq!(tuple.provider, Provider::Codex);
@@ -75,7 +75,7 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             AuthClass::StaticKey,
             "mimo-v2.6-pro",
             TupleState::Unavailable,
-            Some("no MiMo Token Plan key on this host"),
+            Some("final live proof pending with MiMo Token Plan key"),
         ),
         (
             "T17",
@@ -111,7 +111,7 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             AuthClass::StaticKey,
             "mimo-v2.6-pro",
             TupleState::Unavailable,
-            Some("no MiMo Token Plan key on this host"),
+            Some("final live proof pending with MiMo Token Plan key"),
         ),
         (
             "T21",
@@ -120,7 +120,7 @@ fn t13_through_t22_resolve_with_exact_states_and_reasons() -> TestResult {
             AuthClass::ApiKey,
             "claude-haiku-5-5",
             TupleState::Unavailable,
-            Some(no_key),
+            Some("final live proof pending with Anthropic API key"),
         ),
         (
             "T22",
@@ -227,12 +227,12 @@ fn model_acceptance_is_exact_and_independent_of_launch_availability() -> TestRes
 #[test]
 fn availability_states_and_reasons_are_exact() -> TestResult {
     let uppercase_pending = "uppercase MiniMax-M3 live proof pending";
-    let mimo_key = "no MiMo Token Plan key on this host";
+    let mimo_key = "final live proof pending with MiMo Token Plan key";
     for (id, state, reason) in [
         (
             "T01",
             TupleState::Unavailable,
-            Some("host Codex login expired; interactive re-login required"),
+            Some("final live proof pending after host re-login"),
         ),
         (
             "T05",
@@ -243,12 +243,12 @@ fn availability_states_and_reasons_are_exact() -> TestResult {
         (
             "T10",
             TupleState::Unavailable,
-            Some("no Kimi Code membership key on this host"),
+            Some("final live proof pending with Kimi plan key"),
         ),
         (
             "T11",
             TupleState::Unavailable,
-            Some("no MiniMax coding plan key on this host"),
+            Some("final live proof pending with MiniMax plan key"),
         ),
         ("T12", TupleState::Unavailable, Some(mimo_key)),
         ("T14", TupleState::Supported, None),
@@ -260,7 +260,7 @@ fn availability_states_and_reasons_are_exact() -> TestResult {
         (
             "T21",
             TupleState::Unavailable,
-            Some("no API key on this host"),
+            Some("final live proof pending with Anthropic API key"),
         ),
         (
             "T22",

@@ -146,7 +146,7 @@ async fn assert_t01_refusal_without_credential_effects(rig: Rig) -> TestResult {
         matches!(
             error.downcast_ref::<PlanError>(),
             Some(PlanError::TupleNotSupported { agent: Agent::Codex, provider: Provider::Codex, reason })
-                if reason == "host Codex login expired; interactive re-login required"
+                if reason == "final live proof pending after host re-login"
         ),
         "{error}"
     );
