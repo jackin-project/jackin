@@ -13,7 +13,7 @@ use std::fmt;
 
 use thiserror::Error;
 
-use crate::agent::{Agent, CatalogError, CodexAuthMode};
+use crate::agent::{Agent, AgentTuple, AuthClass, CatalogError, CodexAuthMode, TupleState};
 use crate::boundary::FsError;
 use crate::display::plain;
 use crate::docker::EngineConfig;
@@ -549,36 +549,53 @@ impl Account {
         }
     }
 
+    fn auth_class(&self) -> Option<AuthClass> {
+        match &self.credential {
+            CredentialSource::CodexLogin { .. } if self.provider == Provider::Codex => {
+                Some(AuthClass::OAuth)
+            }
+            CredentialSource::HostLogin { .. }
+                if matches!(
+                    self.provider,
+                    Provider::Grok
+                        | Provider::Muse
+                        | Provider::Claude
+                        | Provider::Antigravity
+                        | Provider::Minimax
+                        | Provider::Mimo
+                        | Provider::Kimi
+                ) =>
+            {
+                Some(AuthClass::OAuth)
+            }
+            CredentialSource::Env { .. }
+            | CredentialSource::OnePassword { .. }
+            | CredentialSource::File { .. }
+            | CredentialSource::OmpHost => match self.provider {
+                Provider::Claude | Provider::Codex => Some(AuthClass::ApiKey),
+                Provider::Zai | Provider::Kimi | Provider::Minimax | Provider::Mimo => {
+                    Some(AuthClass::StaticKey)
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn publishable_tuple(&self, agent: Agent) -> Option<&'static AgentTuple> {
+        let tuple = crate::lookup_tuple(agent, self.provider).ok()?;
+        (tuple.state == TupleState::Supported && tuple.auth_class == self.auth_class()?)
+            .then_some(tuple)
+    }
+
     pub fn has_provider(&self) -> bool {
-        matches!(self.credential, CredentialSource::HostLogin { .. })
-            && matches!(
-                self.provider,
-                Provider::Grok | Provider::Muse | Provider::Claude | Provider::Antigravity
-            )
-            || self.chatgpt_login().is_some()
-            || (matches!(
-                self.provider,
-                Provider::Zai | Provider::Kimi | Provider::Minimax | Provider::Mimo
-            ) && !matches!(self.credential, CredentialSource::CodexLogin { .. }))
-            || self.omp_api_key()
+        Agent::ALL
+            .iter()
+            .any(|agent| self.publishable_tuple(*agent).is_some())
     }
 
     pub fn has_provider_for(&self, agent: Agent) -> bool {
-        if self.omp_api_key() {
-            return agent == Agent::Omp;
-        }
-        self.has_provider()
-    }
-
-    fn omp_api_key(&self) -> bool {
-        matches!(self.provider, Provider::Claude | Provider::Codex)
-            && matches!(
-                self.credential,
-                CredentialSource::Env { .. }
-                    | CredentialSource::OnePassword { .. }
-                    | CredentialSource::File { .. }
-                    | CredentialSource::OmpHost
-            )
+        self.publishable_tuple(agent).is_some()
     }
 
     pub fn codex_auth_mode(&self) -> Option<CodexAuthMode> {

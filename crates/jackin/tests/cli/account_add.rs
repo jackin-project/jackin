@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin::ExitClass;
-use jackin_core::{AccountName, Agent, CredentialSource, ProfileId, ProviderName};
+use jackin_core::{
+    AccountName, Agent, CredentialSource, ProfileId, Provider, ProviderName, TupleState,
+};
 use jackin_testkit::{ACCESS, ACCOUNT_ID, Rig, TestResult, World, guard};
 
 use super::support::{FixedConnector, GATEWAY_CONFIG, Harness, failed};
@@ -320,8 +322,45 @@ async fn a_credential_source_must_exist_where_the_account_is_added_and_a_refusal
                 .is_some()
         );
         let omp = ProviderName::for_account(&account("by-file")?, Agent::Omp);
-        let record = world.gateway.provider(&omp).ok_or("no omp provider")?;
+        let tuple = jackin_core::lookup_tuple(Agent::Omp, Provider::Codex)?;
+        if tuple.state == TupleState::Supported {
+            let record = world.gateway.provider(&omp).ok_or("no omp provider")?;
+            assert_eq!(record.access_token, "fake-key");
+        } else {
+            assert!(world.gateway.provider(&omp).is_none());
+            assert!(world.gateway.providers().is_empty());
+        }
+
+        harness
+            .run(&[
+                "account",
+                "add",
+                "claude",
+                "--name",
+                "by-file-claude",
+                "--agent",
+                "omp",
+                "--credential",
+                "file:present.key",
+            ])
+            .await?
+            .ok()?;
+        assert!(
+            harness
+                .stored()
+                .await?
+                .account(&account("by-file-claude")?)
+                .is_some()
+        );
+        let claude_omp = ProviderName::for_account(&account("by-file-claude")?, Agent::Omp);
+        let t21 = jackin_core::lookup_tuple(Agent::Omp, Provider::Claude)?;
+        assert_eq!(t21.state, TupleState::Supported, "T21");
+        let record = world
+            .gateway
+            .provider(&claude_omp)
+            .ok_or("no omp provider for the claude key")?;
         assert_eq!(record.access_token, "fake-key");
+        assert_eq!(record.profile.as_str(), "t21-omp-anthropic");
         Ok(())
     })
     .await
@@ -439,9 +478,15 @@ async fn native_kimi_discovery_never_falls_back_to_a_static_credential() -> Test
         let stored = stored.account(&account("native")?).ok_or("no account")?;
         assert!(matches!(stored.credential(), CredentialSource::HostLogin { .. }));
         let provider = ProviderName::for_account(&account("native")?, Agent::KimiCode);
-        let record = world.gateway.provider(&provider).ok_or("no provider")?;
-        assert_eq!(record.profile.as_str(), "kimi");
-        assert!(record.scopes.is_empty());
+        let tuple = jackin_core::lookup_tuple(Agent::KimiCode, Provider::Kimi)?;
+        let supported = tuple.state == TupleState::Supported;
+        if supported {
+            let record = world.gateway.provider(&provider).ok_or("no provider")?;
+            assert_eq!(record.profile.as_str(), "kimi");
+            assert!(record.scopes.is_empty());
+        } else {
+            assert!(world.gateway.provider(&provider).is_none());
+        }
 
         std::fs::write(home.join("config.toml"), "not toml")?;
         let before = harness.config_bytes()?;
@@ -475,7 +520,11 @@ async fn native_kimi_discovery_never_falls_back_to_a_static_credential() -> Test
             .await?;
         assert_eq!(refused.exit, ExitClass::Failure);
         assert!(harness.stored().await?.account(&account("static")?).is_none());
-        assert!(world.gateway.provider(&provider).is_some());
+        if supported {
+            assert!(world.gateway.provider(&provider).is_some());
+        } else {
+            assert!(world.gateway.provider(&provider).is_none());
+        }
         Ok(())
     })
     .await

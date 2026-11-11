@@ -4,8 +4,8 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use jackin_core::{
-    Account, AccountName, Agent, ConfigEdit, CredentialSource, HostPath, Program, Provider,
-    ProviderName, SecretBytes,
+    Account, AccountName, Agent, AuthClass, ConfigEdit, CredentialSource, HostPath, Program,
+    Provider, ProviderName, SecretBytes, TupleState,
 };
 use jackin_session::{
     ANTIGRAVITY_KEYCHAIN_ARGS, AccountError, CLAUDE_KEYCHAIN_ARGS, parse_claude_keychain_secret,
@@ -454,12 +454,15 @@ async fn muse_metadata_preconditions_never_run_keychain() -> TestResult {
 }
 
 #[tokio::test]
-async fn muse_host_login_account_plans_gateway_sync() -> TestResult {
+async fn muse_host_login_account_publishes_only_a_supported_tuple() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         let dir = tempfile::tempdir()?;
         let file = dir.path().join("auth.json");
         let account = host_login_account("museone", Provider::Muse, &HostPath::parse(&file)?)?;
+        let tuple = jackin_core::lookup_tuple(Agent::MuseCode, Provider::Muse)?;
+        let supported =
+            tuple.state == TupleState::Supported && tuple.auth_class == AuthClass::OAuth;
         let plan = plan_account_edits_for_agent(
             &world.desk(),
             vec![ConfigEdit::AddAccount(account)],
@@ -467,7 +470,16 @@ async fn muse_host_login_account_plans_gateway_sync() -> TestResult {
             &CancellationToken::new(),
         )
         .await?;
-        assert!(plan.needs_gateway());
+        assert_eq!(plan.needs_gateway(), supported, "{}", tuple.id);
+        plan.apply(&jackin_session::Gateways::single(world.session.clone()))
+            .await?;
+        let provider = ProviderName::for_account(&AccountName::parse("museone")?, Agent::MuseCode);
+        if supported {
+            let record = world.gateway.provider(&provider).ok_or("no provider")?;
+            assert_eq!(record.profile.as_str(), "muse");
+        } else {
+            assert!(world.gateway.providers().is_empty());
+        }
         Ok(())
     })
     .await
@@ -1001,16 +1013,19 @@ async fn antigravity_keychain_error_taxonomy_is_typed_and_secret_free() -> TestR
 }
 
 #[tokio::test]
-async fn claude_and_antigravity_host_login_accounts_plan_gateway_sync() -> TestResult {
+async fn claude_and_antigravity_host_login_accounts_publish_only_supported_tuples() -> TestResult {
     guard(async {
-        for (provider, agent) in [
-            (Provider::Claude, Agent::ClaudeCode),
-            (Provider::Antigravity, Agent::Antigravity),
+        for (provider, agent, tuple_id) in [
+            (Provider::Claude, Agent::ClaudeCode, "T02"),
+            (Provider::Antigravity, Agent::Antigravity, "T05"),
         ] {
             let world = World::builder().build()?;
             let dir = tempfile::tempdir()?;
             let file = dir.path().join("login.json");
             let account = host_login_account("laneone", provider, &HostPath::parse(&file)?)?;
+            let tuple = jackin_core::lookup_tuple(agent, provider)?;
+            let supported =
+                tuple.state == TupleState::Supported && tuple.auth_class == AuthClass::OAuth;
             let plan = plan_account_edits_for_agent(
                 &world.desk(),
                 vec![ConfigEdit::AddAccount(account)],
@@ -1018,7 +1033,19 @@ async fn claude_and_antigravity_host_login_accounts_plan_gateway_sync() -> TestR
                 &CancellationToken::new(),
             )
             .await?;
-            assert!(plan.needs_gateway());
+            assert_eq!(plan.needs_gateway(), supported, "{tuple_id}");
+            plan.apply(&jackin_session::Gateways::single(world.session.clone()))
+                .await?;
+            let provider = ProviderName::for_account(&AccountName::parse("laneone")?, agent);
+            if supported {
+                let record = world.gateway.provider(&provider).ok_or("no provider")?;
+                assert_eq!(
+                    record.profile.as_str(),
+                    jackin_core::tuple_profile_asset(tuple).id
+                );
+            } else {
+                assert!(world.gateway.providers().is_empty(), "{tuple_id}");
+            }
         }
         Ok(())
     })
