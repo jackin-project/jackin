@@ -808,6 +808,15 @@ impl ProviderName {
     pub fn for_account(account: &AccountName, agent: Agent) -> ProviderName {
         ProviderName(format!("jackin-{account}-{}", agent.as_str()))
     }
+
+    pub fn account_agent(&self) -> Option<(AccountName, Agent)> {
+        let rest = self.0.strip_prefix("jackin-")?;
+        Agent::ALL.into_iter().find_map(|agent| {
+            rest.strip_suffix(&format!("-{}", agent.as_str()))
+                .and_then(|account| AccountName::parse(account).ok())
+                .map(|account| (account, agent))
+        })
+    }
 }
 
 impl Sha256 {

@@ -460,11 +460,31 @@ impl Run<'_> {
             .load()
             .await
             .map_err(|error| failed(LaunchStep::Sandbox, error))?;
-        if config.workspace(workspace).is_none() {
-            return Err(failed(
-                LaunchStep::Sandbox,
-                LaunchError::WorkspaceRemoved(workspace.clone()),
-            ));
+        match config.workspace(workspace) {
+            None => {
+                return Err(failed(
+                    LaunchStep::Sandbox,
+                    LaunchError::WorkspaceRemoved(workspace.clone()),
+                ));
+            }
+            Some(entry) if entry.path != *self.plan.project().path() => {
+                return Err(failed(
+                    LaunchStep::Sandbox,
+                    LaunchError::WorkspaceReplaced(workspace.clone()),
+                ));
+            }
+            Some(_) => {
+                self.plan
+                    .project()
+                    .verify(deps.host.fs.as_ref())
+                    .await
+                    .map_err(|_| {
+                        failed(
+                            LaunchStep::Sandbox,
+                            LaunchError::WorkspaceReplaced(workspace.clone()),
+                        )
+                    })?;
+            }
         }
         Ok(held)
     }
@@ -865,12 +885,12 @@ impl Run<'_> {
             .upload(deps, self.plan.project(), sandbox, launch, self.cancel)
             .await
             .map_err(|error| failed(STEP, error))?;
-        self.write(STEP, sandbox, &marker, MARKER_MODE, Vec::new())
-            .await?;
         self.session
             .setup_worktrees(sandbox, self.plan.instances(), self.cancel)
             .await
             .map_err(|error| failed(STEP, error))?;
+        self.write(STEP, sandbox, &marker, MARKER_MODE, Vec::new())
+            .await?;
         Ok(Uploaded::Done)
     }
 

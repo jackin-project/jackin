@@ -281,10 +281,9 @@ pub(crate) async fn stage(
     dir: &HostPath,
     cancel: &CancellationToken,
 ) -> Result<Staged, LaunchError> {
-    let fs = deps.host.fs.as_ref();
-    project.verify(fs).await?;
     let host = HostProject::open(deps, project, cancel).await?;
     let git = host.git();
+    let fs = deps.host.fs.as_ref();
     refuse::check(&git, fs).await?;
     let facts = facts::read(&host, fs).await?;
     refuse::borrowed_objects(fs, &facts.git_dir).await?;

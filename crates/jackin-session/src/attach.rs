@@ -442,7 +442,15 @@ impl Session {
             let is_lead = names.first().is_some_and(|lead| lead == agent.as_str());
             if !is_lead {
                 let spec = agent.spec();
-                let mut env = BTreeMap::new();
+                self.kill_instance(sandbox, agent, &CancellationToken::new())
+                    .await?;
+                let gateway = self.deps.gateway.as_ref();
+                let mut env = async {
+                    let launch = launch_of(&view.labels)?;
+                    Ok::<_, EnvFailure>(env_file(gateway, sandbox, &launch).await?)
+                }
+                .await
+                .map_err(|failure| AttachError::env(sandbox, failure))?;
                 env.insert(
                     EnvName::parse("HOME").map_err(|_| AttachError::NotFound(sandbox.clone()))?,
                     format!("/sandbox/.jackin/homes/{}", agent.as_str()),
@@ -453,7 +461,10 @@ impl Session {
                     .open_terminal(&TerminalRequest {
                         sandbox: sandbox.clone(),
                         kind: TerminalKind::Exec {
-                            argv: spec.launch_argv(),
+                            argv: crate::multi_session::instance_argv(
+                                agent,
+                                &spec.launch_argv(),
+                            ),
                             workdir: jackin_core::SandboxPath::parse(&format!(
                                 "/sandbox/work/{}/project",
                                 agent.as_str()
