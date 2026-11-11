@@ -34,6 +34,13 @@ fn category(kind: WindowKind) -> WindowCategory {
 
 fn window(found: &LimitWindow) -> QuotaWindow {
     let used_pct = found.used.map(jackin_usage::Percent::rounded);
+    let spend = if matches!(found.remaining, Some(Remaining::Amount { .. })) {
+        Some(found.remaining_text())
+    } else if found.spent.is_some() {
+        Some(found.spent_text())
+    } else {
+        None
+    };
     QuotaWindow {
         id: found.kind.id(),
         label: found.label.clone(),
@@ -43,10 +50,9 @@ fn window(found: &LimitWindow) -> QuotaWindow {
         limit: None,
         used_pct,
         reset_secs: found.resets_at.map(|at| at.0),
-        spend_label: matches!(found.remaining, Some(Remaining::Amount { .. }))
-            .then(|| found.remaining_text()),
+        spend_label: spend.clone(),
         status: used_pct.map_or(QuotaStatus::Available, QuotaStatus::from_pct),
-        note: None,
+        note: spend,
     }
 }
 

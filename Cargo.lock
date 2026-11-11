@@ -2790,6 +2790,8 @@ dependencies = [
 name = "jackin-usage"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
+ "chrono",
  "futures",
  "jackin-core",
  "jackin-testkit",
@@ -2804,6 +2806,7 @@ dependencies = [
  "jackin-usage-provider-opencode",
  "jackin-usage-provider-openrouter",
  "jackin-usage-provider-zai",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -2811,6 +2814,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
+ "toml 1.2.0+spec-1.1.0",
 ]
 
 [[package]]

@@ -12,7 +12,7 @@ use crate::support::{
 };
 
 const TOKEN: &str = "SECRET_TOKEN_CLAUDE";
-const PATH: &str = "/api/oauth/usage";
+const PATH: &str = "/api/oauth/usage?cedar_ember=1";
 const CREDS_PATH: &str = "/home/work/.claude/.credentials.json";
 const REASON: &str = "Anthropic API keys have no subscription quota";
 const LIVE: &str = include_str!("../fixtures/claude/oauth_usage_live_mirror.json");
@@ -25,6 +25,7 @@ const EXTRA: &str = include_str!("../fixtures/claude/oauth_usage_extra.json");
 const ROUTINES: &str = include_str!("../fixtures/claude/oauth_usage_routines.json");
 const CREDENTIALS: &str = include_str!("../fixtures/claude/credentials.json");
 const NO_OAUTH: &str = include_str!("../fixtures/claude/credentials_no_oauth.json");
+const GRANTS: &str = include_str!("../fixtures/claude/oauth_usage_grants.json");
 
 const FIVE: Want = want(
     WindowKind::FiveHour,
@@ -300,7 +301,7 @@ async fn a_credentials_file_without_the_oauth_entry_is_a_provider_error_port_fid
 }
 
 #[tokio::test]
-async fn a_403_is_an_expired_login() -> TestResult {
+async fn a_403_is_a_provider_error() -> TestResult {
     guard(async {
         let (harness, account) = started(LIVE).await?;
         harness
@@ -309,8 +310,31 @@ async fn a_403_is_an_expired_login() -> TestResult {
         let usage = harness.one(&account, Refresh::Cached).await?;
         assert_eq!(
             unavailable(&usage.outcome),
-            &UnavailableReason::ExpiredLogin
+            &UnavailableReason::Provider("the login is not allowed to read this".to_owned())
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_grants_of_the_cedar_ember_block_are_windows_port_fidelity() -> TestResult {
+    guard(async {
+        let session = want(
+            WindowKind::Other,
+            "session resets",
+            None,
+            Left::Amount("3", "resets"),
+            Some(1_767_312_000),
+        );
+        let weekly = want(
+            WindowKind::Other,
+            "fable resets",
+            None,
+            Left::Amount("2", "resets"),
+            Some(1_767_830_400),
+        );
+        assert_windows(&windows_for(GRANTS).await?, &[session, weekly]);
         Ok(())
     })
     .await
@@ -322,10 +346,17 @@ fn used_first(usage: &jackin_usage::AccountUsage) -> f64 {
         .map_or(-1.0, jackin_usage::Percent::get)
 }
 
+async fn started_with_login() -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {
+    let (harness, _) = started(LIVE).await?;
+    harness.put(CREDS_PATH, CREDENTIALS).await?;
+    let login = account("claude", Provider::Claude, file_source(CREDS_PATH));
+    Ok((harness, login))
+}
+
 #[tokio::test]
 async fn the_cache_serves_for_five_minutes() -> TestResult {
     guard(async {
-        let (harness, account) = started(LIVE).await?;
+        let (harness, account) = started_with_login().await?;
         harness.one(&account, Refresh::Cached).await?;
         serve(&harness, TOKEN, LIMITS);
         harness.advance(299);
@@ -339,7 +370,7 @@ async fn the_cache_serves_for_five_minutes() -> TestResult {
 #[tokio::test]
 async fn the_cache_fetches_again_after_five_minutes() -> TestResult {
     guard(async {
-        let (harness, account) = started(LIVE).await?;
+        let (harness, account) = started_with_login().await?;
         harness.one(&account, Refresh::Cached).await?;
         serve(&harness, TOKEN, LIMITS);
         harness.advance(301);

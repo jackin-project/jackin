@@ -4,6 +4,7 @@
 use std::sync::OnceLock;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderName, HeaderValue, RETRY_AFTER};
 use reqwest::redirect::Policy;
 use reqwest::{Client, Method, RequestBuilder, StatusCode, Url};
@@ -21,6 +22,12 @@ static PLAIN: OnceLock<Option<Client>> = OnceLock::new();
 pub struct Http {
     timeout: Duration,
     base: Option<Url>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Auth<'a> {
+    Bearer(&'a str),
+    Raw(&'a str),
 }
 
 fn build(roots: bool) -> Option<Client> {
@@ -62,28 +69,27 @@ impl Http {
     pub async fn get(
         &self,
         url: &str,
-        token: &str,
+        auth: Auth<'_>,
         headers: &[(&str, &str)],
     ) -> Result<Value, ProviderError> {
-        self.send(Method::GET, url, token, headers, None).await
+        self.send(Method::GET, url, auth, headers, None).await
     }
 
     pub async fn post(
         &self,
         url: &str,
-        token: &str,
+        auth: Auth<'_>,
         headers: &[(&str, &str)],
         body: &Value,
     ) -> Result<Value, ProviderError> {
-        self.send(Method::POST, url, token, headers, Some(body))
-            .await
+        self.send(Method::POST, url, auth, headers, Some(body)).await
     }
 
     async fn send(
         &self,
         method: Method,
         url: &str,
-        token: &str,
+        auth: Auth<'_>,
         headers: &[(&str, &str)],
         body: Option<&Value>,
     ) -> Result<Value, ProviderError> {
@@ -93,7 +99,7 @@ impl Http {
             .timeout(self.timeout)
             .header(ACCEPT, "application/json")
             .header(reqwest::header::USER_AGENT, AGENT);
-        request = with_authorization(request, token)?;
+        request = with_authorization(request, auth)?;
         for (name, value) in headers {
             request = with_header(request, name, value)?;
         }
@@ -164,9 +170,13 @@ fn install_crypto_provider() {
 
 fn with_authorization(
     request: RequestBuilder,
-    token: &str,
+    auth: Auth<'_>,
 ) -> Result<RequestBuilder, ProviderError> {
-    let mut value = HeaderValue::from_str(&format!("Bearer {token}"))
+    let text = match auth {
+        Auth::Bearer(token) => format!("Bearer {token}"),
+        Auth::Raw(token) => token.to_owned(),
+    };
+    let mut value = HeaderValue::from_str(&text)
         .map_err(|_| ProviderError::Decode("the credential cannot be sent in a header"))?;
     value.set_sensitive(true);
     Ok(request.header(AUTHORIZATION, value))
@@ -185,11 +195,26 @@ fn with_header(
 }
 
 fn retry_after_seconds(response: &reqwest::Response) -> Option<u64> {
-    response
+    let text = response
         .headers()
-        .get(RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|text| text.trim().parse().ok())
+        .get(RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim();
+    retry_after_text(text, Utc::now())
+}
+
+pub fn retry_after_text(text: &str, now: DateTime<Utc>) -> Option<u64> {
+    let text = text.trim();
+    if let Ok(seconds) = text.parse::<u64>() {
+        return Some(seconds);
+    }
+    let at = DateTime::parse_from_rfc2822(text).ok()?;
+    let delta = at.signed_duration_since(now);
+    if delta < chrono::Duration::zero() {
+        return None;
+    }
+    u64::try_from(delta.num_seconds()).ok()
 }
 
 fn transport(error: reqwest::Error) -> ProviderError {

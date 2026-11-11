@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_usage_provider_core::{
-    Bucket, BucketKind, Credential, Http, Money, ProviderError, Remaining, json_number, json_text,
-    parse_iso_epoch,
+    Auth, Bucket, BucketKind, Credential, Http, Money, ProviderError, Remaining, json_number,
+    json_text, parse_iso_epoch,
 };
 use serde_json::Value;
 
@@ -22,16 +22,21 @@ pub async fn fetch(
         Credential::Login(login) => login_key(login, now)?,
     };
     let body = http
-        .get(BILLING_URL, &token, &[("X-XAI-Token-Auth", "xai-grok-cli")])
+        .get(
+            BILLING_URL,
+            Auth::Bearer(&token),
+            &[("X-XAI-Token-Auth", "xai-grok-cli")],
+        )
         .await?;
     let config = body.get("config").unwrap_or(&Value::Null);
-    let on_demand = body.get("on_demand_enabled").and_then(Value::as_bool) != Some(false);
+    let on_demand = body.get("on_demand_enabled").and_then(Value::as_bool) == Some(true);
     let mut out = Vec::new();
     out.extend(period_window(config)?);
     out.extend(prepaid(config)?);
     if on_demand {
         out.extend(on_demand_window(config)?);
     }
+    out.extend(product_share(config)?);
     Ok(out)
 }
 
@@ -57,13 +62,13 @@ fn login_key(login: &str, now: i64) -> Result<String, ProviderError> {
         .get("key")
         .and_then(json_text)
         .ok_or(ProviderError::Decode("the Grok login entry has no key"))?;
-    let expired = entry
+    match entry
         .get("expires_at")
         .and_then(json_text)
         .and_then(parse_iso_epoch)
-        .is_some_and(|at| at <= now);
-    if expired {
-        return Err(ProviderError::Unauthorized);
+    {
+        Some(at) if at > now => {}
+        _ => return Err(ProviderError::Unauthorized),
     }
     Ok(key.to_owned())
 }
@@ -76,8 +81,10 @@ fn cents(value: Option<&Value>) -> Result<Option<Money>, ProviderError> {
         None | Some(Value::Null) => 0,
         Some(number) => number.as_i64().ok_or(ProviderError::OUT_OF_RANGE)?,
     };
-    let magnitude = minor.checked_abs().ok_or(ProviderError::OUT_OF_RANGE)?;
-    Ok(Some(Money::cents(magnitude, UNIT)))
+    if minor < 0 {
+        return Err(ProviderError::OUT_OF_RANGE);
+    }
+    Ok(Some(Money::cents(minor, UNIT)))
 }
 
 fn period(config: &Value) -> (Option<i64>, Option<i64>) {
@@ -140,5 +147,22 @@ fn on_demand_window(config: &Value) -> Result<Option<Bucket>, ProviderError> {
         Bucket::named(BucketKind::Spend, "On-demand")
             .used(Some(used))
             .left(Some(Remaining::Amount(left.clamped_at_zero()))),
+    ))
+}
+
+fn product_share(config: &Value) -> Result<Option<Bucket>, ProviderError> {
+    let row = config
+        .get("productUsage")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find(|row| row.get("product").and_then(json_text) == Some("GrokBuild"));
+    let Some(used) = row
+        .and_then(|row| row.get("usagePercent").and_then(json_number))
+    else {
+        return Ok(None);
+    };
+    Ok(Some(
+        Bucket::named(BucketKind::Other, "Grok Build share").used(Some(used)),
     ))
 }

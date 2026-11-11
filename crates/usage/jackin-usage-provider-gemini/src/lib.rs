@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_usage_provider_core::{
-    Bucket, BucketKind, Credential, Http, ProviderError, Remaining, json_number, json_text,
+    Auth, Bucket, BucketKind, Credential, Http, ProviderError, Remaining, json_number, json_text,
     parse_iso_epoch,
 };
 use serde_json::{Value, json};
@@ -28,7 +28,7 @@ pub async fn fetch(
     let load = http
         .post(
             LOAD_URL,
-            &token,
+            Auth::Bearer(&token),
             &[],
             &json!({"metadata": {
                 "ideType": "IDE_UNSPECIFIED",
@@ -44,7 +44,12 @@ pub async fn fetch(
             "the account has no Code Assist project",
         ))?;
     let quota = http
-        .post(QUOTA_URL, &token, &[], &json!({"project": project}))
+        .post(
+            QUOTA_URL,
+            Auth::Bearer(&token),
+            &[],
+            &json!({"project": project}),
+        )
         .await?;
     Ok(quota
         .get("buckets")

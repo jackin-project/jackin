@@ -519,6 +519,7 @@ impl ConsoleRigBuilder<'_> {
             runner: Arc::<crate::host::TestRunner>::clone(&world.runner),
             env: EnvSnapshot::from_pairs(self.env.clone()),
             endpoints: server.endpoints(),
+            home: world.home().clone(),
             state_dir: HostPath::resolve(Path::new(USAGE_DIR), world.cache_dir())?,
         }));
         let connect = self.connector.unwrap_or_else(|| {

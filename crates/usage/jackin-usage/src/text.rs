@@ -62,6 +62,14 @@ impl LimitWindow {
         }
     }
 
+    pub fn spent_text(&self) -> String {
+        match &self.spent {
+            Some(Remaining::Percent(spent)) => format!("{spent} spent"),
+            Some(Remaining::Amount { value, unit }) => format!("{value} {unit} spent"),
+            None => NONE.to_owned(),
+        }
+    }
+
     pub fn reset_text(&self, now: Timestamp) -> String {
         self.resets_at.map_or_else(
             || NONE.to_owned(),

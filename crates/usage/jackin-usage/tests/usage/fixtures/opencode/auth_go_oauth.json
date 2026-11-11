@@ -1,1 +1,1 @@
-{"opencode-go":{"type":"oauth","key":"SECRET_TOKEN_OPENCODE","access":"SECRET_TEXT_OPENCODE"}}
+{"opencode":{"type":"oauth","key":"SECRET_TOKEN_OPENCODE"}}

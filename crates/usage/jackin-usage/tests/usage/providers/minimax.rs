@@ -7,12 +7,14 @@ use jackin_usage::{Refresh, UnavailableReason, UsageAccount, UsageOutcome, Windo
 
 use super::Case;
 use crate::support::{
-    Left, TestResult, UsageHarness, Want, account, assert_windows, env_source, guard, unavailable,
-    want,
+    Left, TestResult, UsageHarness, Want, account, assert_windows, env_source, file_source, guard,
+    unavailable, want,
 };
 
 const TOKEN: &str = "SECRET_TOKEN_MINIMAX";
 const PATH: &str = "/v1/token_plan/remains";
+const LOGIN_PATH: &str =
+    "/v1/api/openplatform/coding_plan/remains?business=Agent&device_platform=mcode";
 const REMAINS: &str = include_str!("../fixtures/minimax/token_plan_remains.json");
 const NO_END: &str = include_str!("../fixtures/minimax/token_plan_no_end.json");
 const NO_END_SECONDS: &str = include_str!("../fixtures/minimax/token_plan_no_end_seconds.json");
@@ -21,6 +23,8 @@ const STATES: &str = include_str!("../fixtures/minimax/token_plan_states.json");
 const ERROR: &str = include_str!("../fixtures/minimax/token_plan_error.json");
 const OVER: &str = include_str!("../fixtures/minimax/token_plan_over.json");
 const OTHER_WEEKLY: &str = include_str!("../fixtures/minimax/token_plan_other_weekly.json");
+const LOGIN: &str = include_str!("../fixtures/minimax/auth.json");
+const LOGIN_EXPIRED: &str = include_str!("../fixtures/minimax/auth_expired.json");
 
 const FIVE: Want = want(
     WindowKind::FiveHour,
@@ -114,7 +118,7 @@ async fn without_an_end_time_the_remaining_time_gives_the_reset_port_fidelity() 
 }
 
 #[tokio::test]
-async fn a_remaining_time_inside_the_five_hour_window_is_read_as_seconds() -> TestResult {
+async fn a_remaining_time_below_the_window_is_read_as_milliseconds() -> TestResult {
     guard(async {
         assert_windows(
             &outcome(NO_END_SECONDS).await?,
@@ -123,7 +127,7 @@ async fn a_remaining_time_inside_the_five_hour_window_is_read_as_seconds() -> Te
                 "5-hour",
                 Some(42.0),
                 Left::Percent(58.0),
-                Some(1_767_225_600 + 9_000),
+                Some(1_767_225_609),
             )],
         );
         Ok(())
@@ -245,6 +249,41 @@ async fn a_remaining_time_that_overflows_is_a_provider_error_port_fidelity() -> 
     guard(async {
         let body = "{\"base_resp\":{\"status_code\":0},\"model_remains\":[{\"model_name\":\"general\",\"remains_time\":9223372036854775807,\"current_interval_remaining_percent\":58}]}";
         assert_provider_without(&outcome(body).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_login_file_asks_the_coding_plan_endpoint_port_fidelity() -> TestResult {
+    guard(async {
+        let (harness, _) = started(REMAINS).await?;
+        harness.server.replace(
+            Provider::Minimax,
+            Method::Get,
+            LOGIN_PATH,
+            Route::json(200, REMAINS).requires_header("authorization", &format!("Bearer {TOKEN}")),
+        );
+        harness.put("/keys/minimax", LOGIN).await?;
+        let login = account("minimax", Provider::Minimax, file_source("/keys/minimax"));
+        let usage = harness.one(&login, Refresh::Cached).await?;
+        assert_windows(&usage.outcome, &[FIVE, WEEK, IMAGE]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_login_file_that_expired_before_now_is_an_expired_login_port_fidelity() -> TestResult {
+    guard(async {
+        let (harness, _) = started(REMAINS).await?;
+        harness.put("/keys/minimax", LOGIN_EXPIRED).await?;
+        let login = account("minimax", Provider::Minimax, file_source("/keys/minimax"));
+        let usage = harness.one(&login, Refresh::Cached).await?;
+        assert_eq!(
+            unavailable(&usage.outcome),
+            &UnavailableReason::ExpiredLogin
+        );
         Ok(())
     })
     .await

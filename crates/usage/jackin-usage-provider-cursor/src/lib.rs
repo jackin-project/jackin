@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_usage_provider_core::{
-    Bucket, Credential, Http, ProviderError, epoch_seconds, json_number, json_text,
+    Auth, Bucket, Credential, Http, ProviderError, epoch_seconds, json_number, json_text,
 };
 use serde_json::{Value, json};
 
@@ -17,7 +17,7 @@ pub async fn fetch(http: &Http, credential: Credential<'_>) -> Result<Vec<Bucket
     let body = http
         .post(
             PERIOD_URL,
-            &token,
+            Auth::Bearer(&token),
             &[("connect-protocol-version", "1")],
             &json!({}),
         )

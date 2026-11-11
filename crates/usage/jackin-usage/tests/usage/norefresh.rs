@@ -6,8 +6,8 @@ use jackin_testkit::{Method, Route};
 use jackin_usage::{Refresh, UnavailableReason};
 
 use crate::support::{
-    CODEX_PATH, TestResult, UsageHarness, assert_only_state_written, codex_body, codex_login,
-    guard, unavailable, windows_of,
+    TestResult, UsageHarness, assert_only_state_written, codex_body, codex_login, guard,
+    serve_codex, unavailable, windows_of,
 };
 
 const AUTH_PATH: &str = "/home/work/.codex/auth.json";
@@ -16,10 +16,9 @@ const AUTH: &str = include_str!("fixtures/codex/auth_chatgpt.json");
 async fn setup(accepted_token: &str) -> Result<UsageHarness, Box<dyn std::error::Error>> {
     let harness = UsageHarness::new().await?;
     harness.put(AUTH_PATH, AUTH).await?;
-    harness.server.serve(
-        Provider::Codex,
-        Method::Get,
-        CODEX_PATH,
+    serve_codex(
+        &harness,
+        accepted_token,
         Route::json(200, &codex_body(42))
             .requires_header("authorization", &format!("Bearer {accepted_token}")),
     );

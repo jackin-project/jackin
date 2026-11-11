@@ -3,12 +3,13 @@
 
 mod windows;
 
-use jackin_usage_provider_core::{Bucket, Http, ProviderError, json_text};
+use jackin_usage_provider_core::{Auth, Bucket, Http, ProviderError, json_text};
 use serde_json::Value;
 
 pub const API_KEY_REASON: &str = "OpenAI API keys have no subscription quota";
 
 const USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
+const RESET_CREDITS_URL: &str = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits";
 
 pub async fn fetch(
     http: &Http,
@@ -20,11 +21,24 @@ pub async fn fetch(
     let body = http
         .get(
             USAGE_URL,
-            &token,
+            Auth::Bearer(&token),
             &[("chatgpt-account-id", chatgpt_account_id)],
         )
         .await?;
-    windows::buckets(&body, now)
+    let mut buckets = windows::buckets(&body, now)?;
+    let inventory = http
+        .get(
+            RESET_CREDITS_URL,
+            Auth::Bearer(&token),
+            &[
+                ("chatgpt-account-id", chatgpt_account_id),
+                ("OpenAI-Beta", "codex-1"),
+                ("originator", "Codex Desktop"),
+            ],
+        )
+        .await?;
+    buckets.extend(windows::reset_credits(&inventory)?);
+    Ok(buckets)
 }
 
 fn access_token(login: &str) -> Result<String, ProviderError> {

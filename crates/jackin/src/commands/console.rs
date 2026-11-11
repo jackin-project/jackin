@@ -36,6 +36,7 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
         runner: Arc::clone(&app.deps.host.runner),
         env: app.env.clone(),
         endpoints: app.deps.usage_endpoints.clone(),
+        home: home(&app.env)?,
         state_dir: HostPath::resolve(Path::new(STATE_DIR), &app.cache_dir)?,
     });
     let deps = ConsoleDeps {

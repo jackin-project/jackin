@@ -57,6 +57,11 @@ impl UsageHarness {
         self.env.push((name.to_owned(), value.to_owned()));
     }
 
+    pub(crate) fn set_env(&mut self, name: &str, value: &str) {
+        self.env.retain(|(key, _)| key != name);
+        self.env.push((name.to_owned(), value.to_owned()));
+    }
+
     pub(crate) fn host(&self) -> HostUsage {
         self.host_with(self.server.endpoints())
     }
@@ -71,11 +76,25 @@ impl UsageHarness {
 
     fn build(&self, endpoints: ProviderEndpoints, state_dir: HostPath) -> HostUsage {
         let fs: Arc<dyn FileSystem> = Arc::<MemFs>::clone(&self.fs);
-        self.build_over(fs, endpoints, state_dir)
+        self.build_over(fs, endpoints, state_dir, host_path("/home/work"))
     }
 
     pub(crate) fn host_over(&self, fs: Arc<dyn FileSystem>, state_dir: HostPath) -> HostUsage {
-        self.build_over(fs, self.server.endpoints(), state_dir)
+        self.build_over(
+            fs,
+            self.server.endpoints(),
+            state_dir,
+            host_path("/home/work"),
+        )
+    }
+
+    pub(crate) fn host_on(
+        &self,
+        fs: Arc<dyn FileSystem>,
+        state_dir: HostPath,
+        home: HostPath,
+    ) -> HostUsage {
+        self.build_over(fs, self.server.endpoints(), state_dir, home)
     }
 
     fn build_over(
@@ -83,6 +102,7 @@ impl UsageHarness {
         fs: Arc<dyn FileSystem>,
         endpoints: ProviderEndpoints,
         state_dir: HostPath,
+        home: HostPath,
     ) -> HostUsage {
         let clock: Arc<dyn Clock> = Arc::<FakeClock>::clone(&self.clock);
         let runner: Arc<dyn ProcessRunner> = Arc::<ScriptedProcessRunner>::clone(&self.runner);
@@ -92,6 +112,7 @@ impl UsageHarness {
             runner,
             env: EnvSnapshot::from_pairs(self.env.clone()),
             endpoints,
+            home,
             state_dir,
         })
     }
@@ -213,6 +234,8 @@ pub(crate) fn codex_login(name: &str, home: &str, account_id: &str) -> UsageAcco
 
 pub(crate) const CODEX_HOME: &str = "/home/work/.codex";
 pub(crate) const CODEX_PATH: &str = "/backend-api/wham/usage";
+pub(crate) const RESET_CREDITS_PATH: &str = "/backend-api/wham/rate-limit-reset-credits";
+pub(crate) const RESET_CREDITS: &str = "{\"available_count\":0}";
 pub(crate) const CODEX_TOKEN: &str = "SECRET_TOKEN_CODEX";
 pub(crate) fn codex_body(used: u32) -> String {
     format!(
@@ -228,6 +251,22 @@ pub(crate) fn codex_route(body: &str) -> Route {
         .requires_header("chatgpt-account-id", "acct-1")
 }
 
+pub(crate) fn codex_reset_credits_route(token: &str) -> Route {
+    Route::json(200, RESET_CREDITS).requires_header("authorization", &format!("Bearer {token}"))
+}
+
+pub(crate) fn serve_codex(harness: &UsageHarness, token: &str, usage: Route) {
+    harness
+        .server
+        .serve(Provider::Codex, Method::Get, CODEX_PATH, usage);
+    harness.server.serve(
+        Provider::Codex,
+        Method::Get,
+        RESET_CREDITS_PATH,
+        codex_reset_credits_route(token),
+    );
+}
+
 impl UsageHarness {
     pub(crate) async fn with_codex(
         body: &str,
@@ -236,9 +275,7 @@ impl UsageHarness {
         harness
             .put(&format!("{CODEX_HOME}/auth.json"), AUTH_CHATGPT)
             .await?;
-        harness
-            .server
-            .serve(Provider::Codex, Method::Get, CODEX_PATH, codex_route(body));
+        serve_codex(&harness, CODEX_TOKEN, codex_route(body));
         Ok((harness, codex_login("work", CODEX_HOME, "acct-1")))
     }
 }
@@ -254,7 +291,8 @@ pub(crate) struct Want {
     pub(crate) kind: WindowKind,
     pub(crate) label: &'static str,
     pub(crate) used: Option<f64>,
-    pub(crate) left: Left,
+    pub(crate) left: Option<Left>,
+    pub(crate) spent: Option<Left>,
     pub(crate) resets: Option<i64>,
 }
 
@@ -269,8 +307,20 @@ pub(crate) const fn want(
         kind,
         label,
         used,
-        left,
+        left: Some(left),
+        spent: None,
         resets,
+    }
+}
+
+pub(crate) const fn spent(kind: WindowKind, label: &'static str, spent: Left) -> Want {
+    Want {
+        kind,
+        label,
+        used: None,
+        left: None,
+        spent: Some(spent),
+        resets: None,
     }
 }
 
@@ -292,19 +342,33 @@ pub(crate) fn assert_window(actual: &LimitWindow, expected: &Want) {
         (found, wanted) => panic!("used of {}: {found:?} against {wanted:?}", expected.label),
     }
     match (&actual.remaining, expected.left) {
-        (Some(Remaining::Percent(found)), Left::Percent(wanted)) => assert!(
+        (Some(Remaining::Percent(found)), Some(Left::Percent(wanted))) => assert!(
             near(found.get(), wanted),
             "remaining of {}: {} against {wanted}",
             expected.label,
             found.get()
         ),
-        (Some(Remaining::Amount { value, unit }), Left::Amount(wanted, wanted_unit)) => {
+        (Some(Remaining::Amount { value, unit }), Some(Left::Amount(wanted, wanted_unit))) => {
             assert_eq!((value.as_str(), unit.as_str()), (wanted, wanted_unit));
         }
+        (None, None) => {}
         (found, wanted) => panic!(
             "remaining of {}: {found:?} against {wanted:?}",
             expected.label
         ),
+    }
+    match (&actual.spent, expected.spent) {
+        (None, None) => {}
+        (Some(Remaining::Percent(found)), Some(Left::Percent(wanted))) => assert!(
+            near(found.get(), wanted),
+            "spent of {}: {} against {wanted}",
+            expected.label,
+            found.get()
+        ),
+        (Some(Remaining::Amount { value, unit }), Some(Left::Amount(wanted, wanted_unit))) => {
+            assert_eq!((value.as_str(), unit.as_str()), (wanted, wanted_unit));
+        }
+        (found, wanted) => panic!("spent of {}: {found:?} against {wanted:?}", expected.label),
     }
     assert_eq!(
         actual.resets_at.map(|at| at.0),

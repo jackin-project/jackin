@@ -148,7 +148,11 @@ fn store(path: &HostPath, error: &FsError) -> UsageError {
     }
 }
 
-pub(crate) fn fingerprint(account: &UsageAccount) -> String {
+pub(crate) fn fingerprint(
+    account: &UsageAccount,
+    identity: Option<&str>,
+    revision: Option<&str>,
+) -> String {
     let source = match &account.credential {
         CredentialSource::Env { var } => format!("env:{}", var.as_str()),
         CredentialSource::OnePassword { reference, account } => format!(
@@ -168,7 +172,16 @@ pub(crate) fn fingerprint(account: &UsageAccount) -> String {
             chatgpt_account_id.as_str()
         ),
     };
-    let digest = Sha256::digest(format!("{}\0{source}", account.provider.as_str()).as_bytes());
+    let mut text = format!("{}\0{source}", account.provider.as_str());
+    if let Some(identity) = identity {
+        text.push_str("\0identity:");
+        text.push_str(identity);
+    }
+    if let Some(revision) = revision {
+        text.push_str("\0revision:");
+        text.push_str(revision);
+    }
+    let digest = Sha256::digest(text.as_bytes());
     digest
         .iter()
         .flat_map(|byte| [HEX[usize::from(byte >> 4)], HEX[usize::from(byte & 15)]])

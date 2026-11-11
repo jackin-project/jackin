@@ -11,8 +11,8 @@ use jackin_usage::{
 };
 
 use crate::support::{
-    CODEX_PATH, T0, TestResult, UsageHarness, codex_body, codex_login, codex_route, guard,
-    host_path, unavailable, windows_of,
+    CODEX_PATH, T0, TestResult, UsageHarness, account, codex_body, codex_login, codex_route,
+    env_source, file_source, guard, host_path, serve_codex, unavailable, windows_of,
 };
 
 async fn start(used: u32) -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {
@@ -198,10 +198,10 @@ async fn a_refused_connection_after_a_good_report_returns_the_old_windows_as_sta
 async fn a_malformed_body_after_a_good_report_replaces_the_old_windows() -> TestResult {
     guard(async {
         let (harness, account, usage) = stale_after(Route::json(200, "not json")).await?;
-        assert!(matches!(
+        assert_eq!(
             unavailable(&usage.outcome),
-            UnavailableReason::Provider(_)
-        ));
+            &UnavailableReason::Provider("the response is not valid JSON".to_owned())
+        );
         serve(&harness, codex_route(&codex_body(90)));
         harness.advance(5);
         let again = harness.one(&account, Refresh::Cached).await?;
@@ -215,10 +215,10 @@ async fn a_malformed_body_after_a_good_report_replaces_the_old_windows() -> Test
 async fn a_404_after_a_good_report_replaces_the_old_windows() -> TestResult {
     guard(async {
         let (harness, account, usage) = stale_after(Route::status(404)).await?;
-        assert!(matches!(
+        assert_eq!(
             unavailable(&usage.outcome),
-            UnavailableReason::Provider(_)
-        ));
+            &UnavailableReason::Provider("the provider answered HTTP 404".to_owned())
+        );
         serve(&harness, codex_route(&codex_body(90)));
         harness.advance(5);
         let again = harness.one(&account, Refresh::Cached).await?;
@@ -342,7 +342,7 @@ async fn a_403_after_a_good_report_shows_no_old_windows() -> TestResult {
         let (_, _, usage) = stale_after(Route::status(403)).await?;
         assert_eq!(
             unavailable(&usage.outcome),
-            &UnavailableReason::ExpiredLogin
+            &UnavailableReason::Provider("the login is not allowed to read this".to_owned())
         );
         Ok(())
     })
@@ -535,10 +535,9 @@ async fn the_same_account_name_with_another_chatgpt_account_id_is_fetched_again(
     guard(async {
         let (harness, account) = start(10).await?;
         harness.one(&account, Refresh::Cached).await?;
-        harness.server.serve(
-            Provider::Codex,
-            Method::Get,
-            CODEX_PATH,
+        serve_codex(
+            &harness,
+            "SECRET_TOKEN_CODEX",
             Route::json(200, &codex_body(90))
                 .requires_header("authorization", "Bearer SECRET_TOKEN_CODEX")
                 .requires_header("chatgpt-account-id", "acct-2"),
@@ -557,19 +556,15 @@ async fn the_same_account_name_under_another_provider_is_fetched_again() -> Test
     guard(async {
         let (harness, router) = crate::providers::openrouter_started().await?;
         let first = harness.one(&router, Refresh::Cached).await?;
-        assert_eq!(windows_of(&first.outcome).len(), 2);
+        assert_eq!(windows_of(&first.outcome).len(), 5);
         harness.server.serve(
             Provider::Kimi,
             Method::Get,
             "/coding/v1/usages",
-            Route::json(200, "{\"usage\":{\"limit\":100,\"used\":30}}"),
+            Route::json(200, "{\"usages\":{\"limit_5h\":{\"used_ratio\":0.3}}}"),
         );
         harness.advance(10);
-        let kimi = crate::support::account(
-            "router",
-            Provider::Kimi,
-            crate::support::env_source("OPENROUTER_TEST_KEY"),
-        );
+        let kimi = account("router", Provider::Kimi, env_source("OPENROUTER_TEST_KEY"));
         let usage = harness.one(&kimi, Refresh::Cached).await?;
         assert_eq!(windows_of(&usage.outcome).len(), 1);
         Ok(())
@@ -585,10 +580,10 @@ async fn start_two()
     let (mut harness, codex) = start(10).await?;
     harness.env("OPENROUTER_TEST_KEY", ROUTER_KEY);
     crate::providers::openrouter_serve(&harness, ROUTER_KEY);
-    let router = crate::support::account(
+    let router = account(
         "router",
         Provider::Openrouter,
-        crate::support::env_source("OPENROUTER_TEST_KEY"),
+        env_source("OPENROUTER_TEST_KEY"),
     );
     Ok((harness, codex, router))
 }
@@ -747,18 +742,167 @@ async fn two_one_password_accounts_of_one_name_do_not_share_a_cached_entry() -> 
         let second = router_through(&harness, "acct-2", ROUTER_KEY);
         let fetched = harness.one(&first, Refresh::Cached).await?;
         assert!(matches!(fetched.outcome, UsageOutcome::Windows(_)));
-        for path in [OPENROUTER_KEY_PATH, "/api/v1/credits"] {
-            harness
-                .server
-                .replace(Provider::Openrouter, Method::Get, path, Route::status(401));
-        }
+        harness.server.replace(
+            Provider::Openrouter,
+            Method::Get,
+            OPENROUTER_KEY_PATH,
+            Route::status(500),
+        );
         harness.advance(1);
         let same = harness.one(&first, Refresh::Cached).await?;
         assert!(matches!(same.outcome, UsageOutcome::Windows(_)));
         let other = harness.one(&second, Refresh::Cached).await?;
+        assert!(
+            matches!(unavailable(&other.outcome), UnavailableReason::Provider(_)),
+            "the second account inherited the cached windows of the first"
+        );
+        Ok(())
+    })
+    .await
+}
+
+const ROTATION_PATH: &str = "/keys/router";
+const TOKEN_A: &str = "SECRET_TOKEN_ROTATION_A";
+const TOKEN_B: &str = "SECRET_TOKEN_ROTATION_B";
+const KEY_A: &str = "{\"data\":{\"limit\":50.0,\"limit_remaining\":37.66,\"usage\":12.34,\"usage_daily\":1.0,\"usage_weekly\":5.0,\"usage_monthly\":12.34}}";
+const KEY_B: &str = "{\"data\":{\"limit\":50.0,\"limit_remaining\":12.34,\"usage\":37.66,\"usage_daily\":1.0,\"usage_weekly\":5.0,\"usage_monthly\":12.34}}";
+
+fn serve_keys(harness: &UsageHarness) {
+    harness.server.replace(
+        Provider::Openrouter,
+        Method::Get,
+        OPENROUTER_KEY_PATH,
+        Route::json(200, KEY_A).requires_header("authorization", &format!("Bearer {TOKEN_A}")),
+    );
+    harness.server.serve(
+        Provider::Openrouter,
+        Method::Get,
+        OPENROUTER_KEY_PATH,
+        Route::json(200, KEY_B).requires_header("authorization", &format!("Bearer {TOKEN_B}")),
+    );
+}
+
+async fn rotation_harness() -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {
+    let harness = UsageHarness::new().await?;
+    harness.put(ROTATION_PATH, TOKEN_A).await?;
+    serve_keys(&harness);
+    let account = account("router", Provider::Openrouter, file_source(ROTATION_PATH));
+    Ok((harness, account))
+}
+
+async fn rotate(harness: &UsageHarness) -> TestResult {
+    harness.fs.remove_file(&host_path(ROTATION_PATH)).await?;
+    harness.put(ROTATION_PATH, TOKEN_B).await?;
+    Ok(())
+}
+
+fn first_used(usage: &AccountUsage) -> f64 {
+    windows_of(&usage.outcome)[0]
+        .used
+        .map_or(-1.0, Percent::get)
+}
+
+#[tokio::test]
+async fn a_token_rotated_at_the_same_path_is_not_served_from_the_cache() -> TestResult {
+    guard(async {
+        let (harness, account) = rotation_harness().await?;
+        let first = harness.one(&account, Refresh::Cached).await?;
+        assert!(
+            (first_used(&first) - 24.68).abs() < 1e-9,
+            "{}",
+            first_used(&first)
+        );
+        rotate(&harness).await?;
+        let again = harness.one(&account, Refresh::Cached).await?;
+        assert!(
+            (first_used(&again) - 75.32).abs() < 1e-9,
+            "the cached windows of the old token were served"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_token_rotated_at_the_same_path_does_not_inherit_the_retry_time() -> TestResult {
+    guard(async {
+        let (harness, account) = rotation_harness().await?;
+        harness.server.replace(
+            Provider::Openrouter,
+            Method::Get,
+            OPENROUTER_KEY_PATH,
+            Route::status(429).reply_header("Retry-After", "600"),
+        );
+        let first = harness.one(&account, Refresh::Cached).await?;
         assert_eq!(
-            unavailable(&other.outcome),
-            &UnavailableReason::ExpiredLogin
+            unavailable(&first.outcome),
+            &UnavailableReason::RateLimited {
+                retry_at: Some(Timestamp(T0 + 600))
+            }
+        );
+        rotate(&harness).await?;
+        serve_keys(&harness);
+        let again = harness.one(&account, Refresh::Cached).await?;
+        assert!(
+            matches!(again.outcome, UsageOutcome::Windows(_)),
+            "the retry time of the old token was served: {:?}",
+            again.outcome
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_token_rotated_at_the_same_path_does_not_inherit_the_stale_windows() -> TestResult {
+    guard(async {
+        let (harness, account) = rotation_harness().await?;
+        let first = harness.one(&account, Refresh::Cached).await?;
+        assert!(matches!(first.outcome, UsageOutcome::Windows(_)));
+        rotate(&harness).await?;
+        harness.server.replace(
+            Provider::Openrouter,
+            Method::Get,
+            OPENROUTER_KEY_PATH,
+            Route::status(500),
+        );
+        let again = harness.one(&account, Refresh::Cached).await?;
+        assert!(
+            matches!(unavailable(&again.outcome), UnavailableReason::Provider(_)),
+            "the stale windows of the old token were served: {:?}",
+            again.outcome
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_environment_credential_that_changed_is_fetched_again_inside_the_ttl() -> TestResult {
+    guard(async {
+        let mut harness = UsageHarness::new().await?;
+        harness.set_env("ROTATION_ENV", TOKEN_A);
+        harness.server.replace(
+            Provider::Openrouter,
+            Method::Get,
+            OPENROUTER_KEY_PATH,
+            Route::json(200, KEY_A).requires_header("authorization", &format!("Bearer {TOKEN_A}")),
+        );
+        let account = account("router", Provider::Openrouter, env_source("ROTATION_ENV"));
+        let first = harness.one(&account, Refresh::Cached).await?;
+        assert!((first_used(&first) - 24.68).abs() < 1e-9);
+        harness.set_env("ROTATION_ENV", TOKEN_B);
+        harness.server.replace(
+            Provider::Openrouter,
+            Method::Get,
+            OPENROUTER_KEY_PATH,
+            Route::json(200, KEY_B).requires_header("authorization", &format!("Bearer {TOKEN_B}")),
+        );
+        harness.advance(1);
+        let again = harness.one(&account, Refresh::Cached).await?;
+        assert!(
+            (first_used(&again) - 75.32).abs() < 1e-9,
+            "the cached windows of the old environment value were served"
         );
         Ok(())
     })

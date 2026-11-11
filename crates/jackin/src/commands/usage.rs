@@ -13,6 +13,7 @@ use jackin_usage::{
 use crate::app::App;
 use crate::cli::JsonArg;
 use crate::error::CommandError;
+use crate::system::home;
 
 pub(crate) const STATE_DIR: &str = "usage";
 
@@ -24,6 +25,7 @@ pub(crate) async fn run(app: &mut App, arg: &JsonArg) -> Result<(), CommandError
         runner: Arc::clone(&app.deps.host.runner),
         env: app.env.clone(),
         endpoints: app.deps.usage_endpoints.clone(),
+        home: home(&app.env)?,
         state_dir: HostPath::resolve(Path::new(STATE_DIR), &app.cache_dir)?,
     });
     let request = UsageRequest {
@@ -69,10 +71,11 @@ fn account_lines(usage: &AccountUsage, now: Timestamp) -> Vec<String> {
 
 fn window_text(window: &LimitWindow, now: Timestamp) -> String {
     format!(
-        "{}\t{}\t{}\t{}",
+        "{}\t{}\t{}\t{}\t{}",
         window.label,
         window.used_text(),
         window.remaining_text(),
+        window.spent_text(),
         window.reset_text(now)
     )
 }

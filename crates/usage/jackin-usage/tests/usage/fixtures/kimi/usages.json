@@ -1,1 +1,1 @@
-{"usage":{"limit":"100","used":"30","remaining":"70","resetTime":"2026-01-08T00:00:00Z"},"limits":[{"window":{"duration":300,"timeUnit":"TIME_UNIT_MINUTE"},"detail":{"limit":"200","remaining":"150","resetTime":"2026-01-01T05:00:00Z"}}]}
+{"usages":{"limit_5h":{"used_ratio":0.25,"reset_time":"2026-01-01T05:00:00Z"},"limit_7d":{"used_ratio":0.30,"reset_time":"2026-01-08T00:00:00Z"},"limit_month_total":{"used_ratio":0.50,"reset_time":"2026-01-31T00:00:00Z"},"limit_month_code":{"used_ratio":0.10,"reset_time":"2026-01-31T00:00:00Z"}}}

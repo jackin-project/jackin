@@ -14,9 +14,10 @@ use crate::support::{
 const TOKEN: &str = "SECRET_TOKEN_KIMI";
 const PATH: &str = "/coding/v1/usages";
 const USAGES: &str = include_str!("../fixtures/kimi/usages.json");
-const HOURS: &str = include_str!("../fixtures/kimi/usages_hours.json");
-const NO_WINDOW: &str = include_str!("../fixtures/kimi/usages_no_window.json");
+const PARTIAL: &str = include_str!("../fixtures/kimi/usages_partial.json");
+const NO_RATIO: &str = include_str!("../fixtures/kimi/usages_no_ratio.json");
 const OVER: &str = include_str!("../fixtures/kimi/usages_over.json");
+const EMPTY: &str = include_str!("../fixtures/kimi/usages_empty.json");
 const CODE: &str = include_str!("../fixtures/kimi/kimi_code.json");
 const EXPIRED: &str = include_str!("../fixtures/kimi/kimi_code_expired.json");
 const NO_TOKEN: &str = include_str!("../fixtures/kimi/kimi_code_no_token.json");
@@ -35,6 +36,20 @@ const WEEK: Want = want(
     Some(30.0),
     Left::Percent(70.0),
     Some(1_767_830_400),
+);
+const MONTH: Want = want(
+    WindowKind::Monthly,
+    "monthly",
+    Some(50.0),
+    Left::Percent(50.0),
+    Some(1_769_817_600),
+);
+const MONTH_CODE: Want = want(
+    WindowKind::Monthly,
+    "monthly code",
+    Some(10.0),
+    Left::Percent(90.0),
+    Some(1_769_817_600),
 );
 
 fn serve(harness: &UsageHarness, body: &str) {
@@ -64,7 +79,7 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
         harness,
         account,
         first: (Method::Get, PATH),
-        expected: &[FIVE, WEEK],
+        expected: &[FIVE, WEEK, MONTH, MONTH_CODE],
     })
 }
 
@@ -91,62 +106,30 @@ fn assert_provider(outcome: &UsageOutcome) {
 }
 
 #[tokio::test]
-async fn the_limits_come_first_and_the_summary_is_the_weekly_window() -> TestResult {
+async fn the_four_usages_give_the_five_hour_weekly_and_monthly_windows_port_fidelity() -> TestResult
+{
     guard(async {
-        assert_windows(&outcome(USAGES).await?, &[FIVE, WEEK]);
+        assert_windows(&outcome(USAGES).await?, &[FIVE, WEEK, MONTH, MONTH_CODE]);
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn a_window_in_hours_with_numeric_counts_is_the_five_hour_window() -> TestResult {
+async fn a_usage_that_is_not_there_leaves_no_window_port_fidelity() -> TestResult {
     guard(async {
-        assert_windows(&outcome(HOURS).await?, &[FIVE, WEEK]);
+        assert_windows(&outcome(PARTIAL).await?, &[FIVE, WEEK]);
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn a_limit_without_a_window_is_labelled_by_its_name() -> TestResult {
-    guard(async {
-        let burst = want(
-            WindowKind::Other,
-            "Burst",
-            Some(10.0),
-            Left::Percent(90.0),
-            Some(1_767_243_600),
-        );
-        assert_windows(&outcome(NO_WINDOW).await?, &[burst]);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_limit_name_carrying_terminal_controls_is_shown_without_them() -> TestResult {
-    guard(async {
-        let body = NO_WINDOW.replace("Burst", "\\u001b[2JBu\\u202ers\\u0007t");
-        let burst = want(
-            WindowKind::Other,
-            "Burst",
-            Some(10.0),
-            Left::Percent(90.0),
-            Some(1_767_243_600),
-        );
-        assert_windows(&outcome(&body).await?, &[burst]);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn usage_above_the_limit_is_clamped_to_a_full_window() -> TestResult {
+async fn a_usage_above_the_limit_is_clamped_to_a_full_window_port_fidelity() -> TestResult {
     guard(async {
         let full = want(
-            WindowKind::Weekly,
-            "weekly",
+            WindowKind::FiveHour,
+            "5-hour",
             Some(100.0),
             Left::Percent(0.0),
             None,
@@ -158,27 +141,18 @@ async fn usage_above_the_limit_is_clamped_to_a_full_window() -> TestResult {
 }
 
 #[tokio::test]
-async fn an_empty_object_is_a_provider_error() -> TestResult {
+async fn a_usage_without_a_ratio_is_a_provider_error_port_fidelity() -> TestResult {
     guard(async {
-        assert_provider(&outcome("{}").await?);
+        assert_provider(&outcome(NO_RATIO).await?);
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn an_empty_summary_and_no_limits_is_a_provider_error() -> TestResult {
+async fn a_usages_map_that_is_not_an_object_is_a_provider_error_port_fidelity() -> TestResult {
     guard(async {
-        assert_provider(&outcome("{\"usage\":{},\"limits\":[]}").await?);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_zero_limit_drops_the_row_and_leaves_a_provider_error() -> TestResult {
-    guard(async {
-        assert_provider(&outcome("{\"usage\":{\"limit\":0,\"used\":0}}").await?);
+        assert_provider(&outcome(EMPTY).await?);
         Ok(())
     })
     .await
@@ -205,7 +179,7 @@ async fn a_login_file_gives_its_access_token_port_fidelity() -> TestResult {
         harness.put(LOGIN_PATH, CODE).await?;
         let login = account("kimi", Provider::Kimi, file_source(LOGIN_PATH));
         let usage = harness.one(&login, Refresh::Cached).await?;
-        assert_eq!(windows_of(&usage.outcome).len(), 2);
+        assert_eq!(windows_of(&usage.outcome).len(), 4);
         Ok(())
     })
     .await
@@ -238,16 +212,6 @@ async fn a_login_that_expired_before_now_is_an_expired_login_without_a_request()
             unavailable(&usage.outcome),
             &UnavailableReason::ExpiredLogin
         );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_window_length_that_overflows_is_a_provider_error() -> TestResult {
-    guard(async {
-        let body = "{\"limits\":[{\"window\":{\"duration\":9223372036854775807,\"timeUnit\":\"TIME_UNIT_HOUR\"},\"detail\":{\"limit\":10,\"used\":1}}]}";
-        assert_provider(&outcome(body).await?);
         Ok(())
     })
     .await

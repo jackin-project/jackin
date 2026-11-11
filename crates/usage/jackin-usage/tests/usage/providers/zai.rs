@@ -44,7 +44,7 @@ async fn started(body: &str) -> Result<(UsageHarness, UsageAccount), Box<dyn std
         Provider::Zai,
         Method::Get,
         PATH,
-        Route::json(200, body).requires_header("authorization", &format!("Bearer {TOKEN}")),
+        Route::json(200, body).requires_header("authorization", TOKEN),
     );
     Ok((
         harness,
@@ -192,6 +192,76 @@ async fn a_window_length_that_overflows_is_a_provider_error_port_fidelity() -> T
     guard(async {
         let body = "{\"code\":200,\"success\":true,\"data\":{\"limits\":[{\"type\":\"TOKENS_LIMIT\",\"unit\":6,\"number\":9223372036854775807,\"percentage\":40,\"nextResetTime\":1767232800000},{\"type\":\"TOKENS_LIMIT\",\"unit\":3,\"number\":5,\"percentage\":40,\"nextResetTime\":1767232800000}]}}";
         assert_provider_without(&outcome(body).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_credential_is_sent_raw_and_without_a_bearer_prefix_port_fidelity() -> TestResult {
+    guard(async {
+        let (harness, account) = started(QUOTA).await?;
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert_windows(&usage.outcome, &[FIVE, WEEK]);
+        let mismatches = harness.server.mismatches();
+        assert!(mismatches.is_empty(), "{mismatches:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_time_limit_is_a_window_port_fidelity() -> TestResult {
+    guard(async {
+        let body = "{\"code\":200,\"success\":true,\"data\":{\"limits\":[{\"type\":\"TIME_LIMIT\",\"unit\":3,\"number\":5,\"percentage\":40,\"nextResetTime\":1767232800000}]}}";
+        assert_windows(
+            &outcome(body).await?,
+            &[want(
+                WindowKind::FiveHour,
+                "5-hour",
+                Some(40.0),
+                Left::Percent(60.0),
+                Some(1_767_232_800),
+            )],
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_limit_in_days_gives_a_monthly_window_port_fidelity() -> TestResult {
+    guard(async {
+        let body = "{\"code\":200,\"success\":true,\"data\":{\"limits\":[{\"type\":\"TOKENS_LIMIT\",\"unit\":4,\"number\":30,\"percentage\":40,\"nextResetTime\":1767232800000}]}}";
+        assert_windows(
+            &outcome(body).await?,
+            &[want(
+                WindowKind::Monthly,
+                "monthly",
+                Some(40.0),
+                Left::Percent(60.0),
+                Some(1_767_232_800),
+            )],
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_limit_in_months_gives_a_monthly_window_port_fidelity() -> TestResult {
+    guard(async {
+        let body = "{\"code\":200,\"success\":true,\"data\":{\"limits\":[{\"type\":\"TOKENS_LIMIT\",\"unit\":5,\"number\":1,\"percentage\":40,\"nextResetTime\":1767232800000}]}}";
+        assert_windows(
+            &outcome(body).await?,
+            &[want(
+                WindowKind::Monthly,
+                "monthly",
+                Some(40.0),
+                Left::Percent(60.0),
+                Some(1_767_232_800),
+            )],
+        );
         Ok(())
     })
     .await

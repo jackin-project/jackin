@@ -1,9 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use chrono::{DateTime, Duration, Utc};
 use jackin_core::{Provider, Timestamp};
 use jackin_testkit::{Method, Route};
 use jackin_usage::{AccountUsage, Freshness, Refresh, UnavailableReason};
+use jackin_usage_provider_core::retry_after_text;
 
 use crate::support::{
     CODEX_PATH, T0, TestResult, UsageHarness, codex_body, codex_route, guard, unavailable,
@@ -175,7 +177,7 @@ async fn a_retry_after_that_is_not_a_number_gives_no_retry_time() -> TestResult 
 }
 
 #[tokio::test]
-async fn a_retry_after_given_as_an_http_date_gives_no_retry_time() -> TestResult {
+async fn a_retry_after_given_as_a_past_http_date_gives_no_retry_time() -> TestResult {
     guard(async {
         let (_harness, _account, first) = limited("Thu, 01 Jan 2026 00:10:00 GMT").await?;
         assert_eq!(
@@ -185,4 +187,69 @@ async fn a_retry_after_given_as_an_http_date_gives_no_retry_time() -> TestResult
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn a_retry_after_given_as_a_future_http_date_gives_the_retry_time() -> TestResult {
+    guard(async {
+        let date = http_date(Utc::now() + Duration::seconds(600));
+        let (_harness, _account, first) = limited(&date).await?;
+        match unavailable(&first.outcome) {
+            UnavailableReason::RateLimited { retry_at: Some(at) } => {
+                assert!(
+                    (at.0 - (T0 + 600)).abs() <= 2,
+                    "the retry time {at:?} is not ten minutes away"
+                );
+            }
+            other => panic!("expected a rate limited reason, found {other:?}"),
+        }
+        Ok(())
+    })
+    .await
+}
+
+fn http_date(at: DateTime<Utc>) -> String {
+    at.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
+}
+
+fn instant(text: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc2822(text)
+        .expect("an HTTP date")
+        .with_timezone(&Utc)
+}
+
+#[test]
+fn an_http_date_inside_the_current_second_is_already_past() {
+    let now = instant("Thu, 01 Jan 2026 00:00:00 GMT") + Duration::milliseconds(500);
+    assert_eq!(retry_after_text("Thu, 01 Jan 2026 00:00:00 GMT", now), None);
+}
+
+#[test]
+fn an_http_date_at_the_current_instant_gives_no_wait() {
+    let now = instant("Thu, 01 Jan 2026 00:00:00 GMT");
+    assert_eq!(
+        retry_after_text("Thu, 01 Jan 2026 00:00:00 GMT", now),
+        Some(0)
+    );
+}
+
+#[test]
+fn an_http_date_with_an_offset_is_the_same_instant() {
+    let now = instant("Thu, 01 Jan 2026 00:00:00 +0000") + Duration::milliseconds(500);
+    assert_eq!(retry_after_text("Thu, 01 Jan 2026 00:00:00 GMT", now), None);
+    assert_eq!(
+        retry_after_text("Thu, 01 Jan 2026 00:00:00 +0000", now),
+        None
+    );
+    let exact = instant("Thu, 01 Jan 2026 00:00:00 +0000");
+    assert_eq!(
+        retry_after_text("Thu, 01 Jan 2026 00:10:00 +0000", exact),
+        Some(600)
+    );
+}
+
+#[test]
+fn a_numeric_retry_after_of_zero_gives_no_wait() {
+    let now = instant("Thu, 01 Jan 2026 00:00:00 GMT") + Duration::milliseconds(500);
+    assert_eq!(retry_after_text("0", now), Some(0));
 }

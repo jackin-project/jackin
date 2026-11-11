@@ -45,6 +45,7 @@ fn from_limit(limit: &Value) -> Option<Bucket> {
         "weekly_scoped" => {
             let name = limit
                 .pointer("/scope/model/display_name")
+                .or_else(|| limit.pointer("/scope/surface/display_name"))
                 .and_then(json_text)?;
             (Some(name), WEEK_SECONDS)
         }

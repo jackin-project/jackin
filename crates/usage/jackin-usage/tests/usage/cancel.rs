@@ -9,8 +9,8 @@ use jackin_usage::{Refresh, UnavailableReason, UsageError, UsageRequest};
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    CODEX_PATH, TestResult, UsageHarness, codex_body, codex_login, codex_route, guard, unavailable,
-    windows_of,
+    CODEX_PATH, TestResult, UsageHarness, codex_body, codex_login, codex_route, guard, serve_codex,
+    unavailable, windows_of,
 };
 
 #[tokio::test]
@@ -83,10 +83,9 @@ async fn a_provider_that_never_answers_is_a_network_error_after_the_timeout() ->
                 include_str!("fixtures/codex/auth_chatgpt.json"),
             )
             .await?;
-        harness.server.serve(
-            Provider::Codex,
-            Method::Get,
-            CODEX_PATH,
+        serve_codex(
+            &harness,
+            "SECRET_TOKEN_CODEX",
             Route::json(200, &codex_body(10))
                 .requires_header("chatgpt-account-id", "slow-id")
                 .delayed(Duration::from_secs(8)),

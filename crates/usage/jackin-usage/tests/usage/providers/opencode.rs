@@ -20,6 +20,8 @@ const BAD_PERCENT: &str = include_str!("../fixtures/opencode/usage_bad_percent.j
 const AUTH: &str = include_str!("../fixtures/opencode/auth.json");
 const AUTH_OAUTH: &str = include_str!("../fixtures/opencode/auth_go_oauth.json");
 const AUTH_NO_GO: &str = include_str!("../fixtures/opencode/auth_no_go.json");
+const AUTH_EXPIRED: &str = include_str!("../fixtures/opencode/auth_expired.json");
+const AUTH_ORG: &str = include_str!("../fixtures/opencode/auth_org.json");
 const AUTH_PATH: &str = "/home/work/.local/share/opencode/auth.json";
 
 const FIVE: Want = want(
@@ -159,7 +161,7 @@ async fn a_usage_array_is_a_provider_error() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_403_is_an_expired_login() -> TestResult {
+async fn a_403_is_a_provider_error() -> TestResult {
     guard(async {
         let (harness, account) = started(USAGE).await?;
         harness
@@ -168,7 +170,7 @@ async fn a_403_is_an_expired_login() -> TestResult {
         let usage = harness.one(&account, Refresh::Cached).await?;
         assert_eq!(
             unavailable(&usage.outcome),
-            &UnavailableReason::ExpiredLogin
+            &UnavailableReason::Provider("the login is not allowed to read this".to_owned())
         );
         Ok(())
     })
@@ -176,8 +178,7 @@ async fn a_403_is_an_expired_login() -> TestResult {
 }
 
 #[tokio::test]
-async fn an_auth_file_with_several_providers_gives_the_opencode_go_key_port_fidelity() -> TestResult
-{
+async fn an_auth_file_with_several_providers_gives_the_opencode_key_port_fidelity() -> TestResult {
     guard(async {
         let (harness, _) = started(USAGE).await?;
         harness.put(AUTH_PATH, AUTH).await?;
@@ -190,8 +191,30 @@ async fn an_auth_file_with_several_providers_gives_the_opencode_go_key_port_fide
 }
 
 #[tokio::test]
-async fn an_auth_file_without_the_opencode_go_entry_is_a_provider_error_port_fidelity() -> TestResult
-{
+async fn the_organization_of_the_auth_file_is_sent_as_a_header_port_fidelity() -> TestResult {
+    guard(async {
+        let (harness, _) = started(USAGE).await?;
+        harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(200, USAGE)
+                .requires_header("authorization", &format!("Bearer {TOKEN}"))
+                .requires_header("x-opencode-org-id", "org-1"),
+        );
+        harness.put(AUTH_PATH, AUTH_ORG).await?;
+        let login = account("opencode", Provider::Opencode, file_source(AUTH_PATH));
+        let usage = harness.one(&login, Refresh::Cached).await?;
+        assert_windows(&usage.outcome, &[FIVE, WEEK, MONTH]);
+        let mismatches = harness.server.mismatches();
+        assert!(mismatches.is_empty(), "{mismatches:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_auth_file_without_the_opencode_entry_is_a_provider_error_port_fidelity() -> TestResult {
     guard(async {
         let (harness, _) = started(USAGE).await?;
         harness.put(AUTH_PATH, AUTH_NO_GO).await?;
@@ -209,8 +232,8 @@ async fn an_auth_file_without_the_opencode_go_entry_is_a_provider_error_port_fid
 }
 
 #[tokio::test]
-async fn an_opencode_go_entry_that_is_not_an_api_key_is_a_provider_error_port_fidelity()
--> TestResult {
+async fn an_opencode_entry_without_an_access_token_is_a_provider_error_port_fidelity() -> TestResult
+{
     guard(async {
         let (harness, _) = started(USAGE).await?;
         harness.put(AUTH_PATH, AUTH_OAUTH).await?;
@@ -218,10 +241,27 @@ async fn an_opencode_go_entry_that_is_not_an_api_key_is_a_provider_error_port_fi
         let usage = harness.one(&login, Refresh::Cached).await?;
         match unavailable(&usage.outcome) {
             UnavailableReason::Provider(message) => {
-                assert!(!message.contains("SECRET_TEXT_OPENCODE"));
+                assert!(!message.contains("SECRET_TOKEN_OPENCODE"));
             }
             other => panic!("expected a provider reason, found {other:?}"),
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_opencode_entry_that_expired_before_now_is_an_expired_login_port_fidelity() -> TestResult
+{
+    guard(async {
+        let (harness, _) = started(USAGE).await?;
+        harness.put(AUTH_PATH, AUTH_EXPIRED).await?;
+        let login = account("opencode", Provider::Opencode, file_source(AUTH_PATH));
+        let usage = harness.one(&login, Refresh::Cached).await?;
+        assert_eq!(
+            unavailable(&usage.outcome),
+            &UnavailableReason::ExpiredLogin
+        );
         Ok(())
     })
     .await
