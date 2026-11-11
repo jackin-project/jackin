@@ -352,7 +352,7 @@ fn check_role_url(kind: &'static str, text: &str) -> Result<(), IdError> {
         } else if let Some(rest) = text.strip_prefix("ssh://") {
             !rest.contains(['?', '#']) && ssh_authority(rest.split('/').next().unwrap_or_default())
         } else {
-            !text.contains("://") && scp_form(text)
+            !text.contains("://") && !text.contains(['?', '#']) && scp_form(text)
         };
     if accepted {
         Ok(())

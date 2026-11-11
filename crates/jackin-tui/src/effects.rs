@@ -16,8 +16,8 @@ use jackin_console::panes::{FailNext, LinkFault};
 use jackin_console::world::{GlobalConfig, Msg, SaveFailure, SaveSuccess, SaveWarning, Snapshot};
 use jackin_core::{
     AccountName, Agent as CoreAgent, Config, ConfigEdit, ConfigError, EnvName, FileKind, HostPath,
-    ModelName, PathError, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl, WorkspaceName,
-    read_credential_file,
+    ModelName, PathError, PlainEnvValue, RepoPath, RoleManifest, RoleName, RoleSource, RoleUrl,
+    WorkspaceName, read_credential_file,
 };
 use jackin_core::{
     EnvSpec, FileLock, ManifestError, Poll, PollError, PollPlan, Sha256, SupervisorReading,
@@ -1135,10 +1135,18 @@ fn merge_manifest(
             .map_err(Unmerged::on(FindingArea::Manifest))?;
         match after {
             Some(entry) => {
+                let default = entry
+                    .default
+                    .as_deref()
+                    .map(PlainEnvValue::parse)
+                    .transpose()
+                    .map_err(PersistError::from)
+                    .map_err(Unmerged::on(FindingArea::Manifest))?
+                    .map(|value| value.as_str().to_owned());
                 manifest.env.insert(
                     key,
                     EnvSpec {
-                        default: entry.default.clone(),
+                        default,
                         prompt: entry.prompt.clone(),
                     },
                 );

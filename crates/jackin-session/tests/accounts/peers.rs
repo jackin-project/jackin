@@ -177,8 +177,7 @@ async fn removing_a_login_account_forgets_its_provider_on_every_gateway() -> Tes
 }
 
 #[tokio::test]
-async fn taking_the_login_off_an_account_forgets_its_provider_and_publishes_the_supported_tuple()
--> TestResult {
+async fn taking_the_login_off_an_account_leaves_no_provider_on_every_gateway() -> TestResult {
     guard(async {
         let fleet = fleet([true, true, true]).await?;
         let path = jackin_core::HostPath::parse(&fleet.world.home().as_path().join("work.key"))?;
@@ -199,30 +198,9 @@ async fn taking_the_login_off_an_account_forgets_its_provider_and_publishes_the_
             .await?;
         assert_eq!(fleet.holders()?, [false, false, false]);
         let omp = ProviderName::parse("jackin-work-omp")?;
-        let tuple =
-            jackin_core::lookup_tuple(jackin_core::Agent::Omp, jackin_core::Provider::Codex)?;
-        if tuple.state == jackin_core::TupleState::Supported {
-            let on_home = fleet
-                .world
-                .gateway
-                .provider(&omp)
-                .ok_or("no omp provider on the home gateway")?;
-            assert_eq!(on_home.access_token, "KEY-SECRET-1");
-            let on_second = fleet
-                .second
-                .provider(&omp)
-                .ok_or("no omp provider on the second gateway")?;
-            assert_eq!(on_second.access_token, "KEY-SECRET-1");
-            let on_third = fleet
-                .third
-                .provider(&omp)
-                .ok_or("no omp provider on the third gateway")?;
-            assert_eq!(on_third.access_token, "KEY-SECRET-1");
-        } else {
-            assert!(fleet.world.gateway.provider(&omp).is_none());
-            assert!(fleet.second.provider(&omp).is_none());
-            assert!(fleet.third.provider(&omp).is_none());
-        }
+        assert!(fleet.world.gateway.provider(&omp).is_none());
+        assert!(fleet.second.provider(&omp).is_none());
+        assert!(fleet.third.provider(&omp).is_none());
         Ok(())
     })
     .await

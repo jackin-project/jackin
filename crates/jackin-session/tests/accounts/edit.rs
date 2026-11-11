@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use jackin_core::{
     Account, AccountName, Agent, Config, ConfigEdit, ConfigError, CredentialSource, EnvName,
-    HostPath, OpReference, Provider, ProviderName, TupleState,
+    HostPath, OpReference, Provider, ProviderName,
 };
 use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::{AccountEditError, AccountPlan, Gateways, plan_account_edits};
@@ -271,8 +271,6 @@ async fn a_new_credential_re_syncs_forgets_or_creates_the_provider_as_its_kind_c
 
         put_key(&world, "work").await?;
         let omp = ProviderName::parse("jackin-work-omp")?;
-        let tuple = jackin_core::lookup_tuple(Agent::Omp, Provider::Codex)?;
-        let supported = tuple.state == TupleState::Supported;
         let config = run(
             &world,
             vec![ConfigEdit::SetAccountCredential {
@@ -281,16 +279,8 @@ async fn a_new_credential_re_syncs_forgets_or_creates_the_provider_as_its_kind_c
             }],
         )
         .await?;
-        if supported {
-            assert_eq!(world.gateway.providers(), std::slice::from_ref(&omp));
-            let record = world.gateway.provider(&omp).ok_or("no omp provider")?;
-            assert_eq!(record.profile.as_str(), "t22-omp-openai");
-            assert_eq!(record.access_key, "OPENAI_API_KEY");
-            assert_eq!(record.access_token, "KEY-SECRET-1");
-        } else {
-            assert!(world.gateway.providers().is_empty());
-            assert!(world.gateway.provider(&omp).is_none());
-        }
+        assert!(world.gateway.providers().is_empty());
+        assert!(world.gateway.provider(&omp).is_none());
         assert_eq!(
             config.account(&name("work")?).map(Account::credential),
             Some(&key(&world, "work")?)
@@ -465,8 +455,6 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_changes_or_los
                 ConfigEdit::AddAccount(account("plain", Provider::Grok, env("GROK_KEY")?)?),
             ])
             .await?;
-        let tuple = jackin_core::lookup_tuple(Agent::Omp, Provider::Codex)?;
-        let key_needs_gateway = tuple.state == TupleState::Supported;
         let table = [
             (
                 "add a login",
@@ -495,17 +483,17 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_changes_or_los
             ),
             (
                 "add a key",
-                key_needs_gateway,
+                false,
                 edit(Kind::AddKey, "third", &home, &world)?,
             ),
             (
                 "remove a key",
-                key_needs_gateway,
+                false,
                 edit(Kind::Remove, "keyed", &home, &world)?,
             ),
             (
                 "remove a vault key",
-                key_needs_gateway,
+                false,
                 edit(Kind::Remove, "vault", &home, &world)?,
             ),
             (
@@ -515,7 +503,7 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_changes_or_los
             ),
             (
                 "change a key",
-                key_needs_gateway,
+                false,
                 edit(Kind::ToKey, "keyed", &home, &world)?,
             ),
             (

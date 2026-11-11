@@ -199,12 +199,15 @@ fn require_secure(entry: &RegisteredGateway) -> Result<(), DiscoveryError> {
             scheme: scheme_of(&entry.endpoint),
         });
     }
-    let authority = entry.endpoint[HTTPS.len()..]
-        .split(['/', '?', '#'])
-        .next()
-        .unwrap_or_default();
+    let rest = &entry.endpoint[HTTPS.len()..];
+    let authority = rest.split('/').next().unwrap_or_default();
     if authority.contains('@') {
         return Err(DiscoveryError::EndpointCredentials {
+            name: entry.name.clone(),
+        });
+    }
+    if rest.contains(['?', '#']) {
+        return Err(DiscoveryError::EndpointQuery {
             name: entry.name.clone(),
         });
     }

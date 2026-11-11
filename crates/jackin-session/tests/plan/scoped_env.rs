@@ -3,7 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use jackin_core::{EnvFile, EnvName, EnvTable, PlainEnvValue, RoleManifest, ScopedEnvName};
+use jackin_core::{
+    EnvFile, EnvName, EnvTable, ManifestError, PlainEnvValue, RoleManifest, ScopedEnvName,
+};
 use jackin_session::{EnvLayers, EnvQuestion, PlanError, Prompting, resolve_env};
 use jackin_testkit::RoleFixture;
 
@@ -181,19 +183,12 @@ fn a_manifest_default_that_is_a_reference_or_a_placeholder_is_refused_without_ec
         let text = format!(
             "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[env.TOKENISH]\ndefault = \"{default}\"\n"
         );
-        let refused_manifest = RoleManifest::parse(&text);
-        let shown = format!(
-            "{}",
-            refused_manifest.as_ref().err().ok_or("no manifest error")?
-        );
+        let refused = RoleManifest::parse(&text);
         assert!(
-            matches!(
-                refused_manifest,
-                Err(jackin_core::ManifestError::InvalidValue { key, .. })
-                    if key == "env.TOKENISH.default"
-            ),
-            "{default}: {shown}"
+            matches!(&refused, Err(ManifestError::InvalidValue { key, .. }) if key == "env.TOKENISH.default"),
+            "{default}: {refused:?}"
         );
+        let shown = format!("{}", refused.err().ok_or("no error")?);
         assert!(
             !shown.contains("vault") && !shown.contains("CODEX_AUTH"),
             "{shown}"

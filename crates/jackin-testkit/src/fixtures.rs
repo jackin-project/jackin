@@ -14,6 +14,7 @@ use crate::git::git_command;
 pub type FixtureError = Box<dyn Error>;
 
 const DOCKERFILE: &str = "FROM construct\n";
+const INSTRUCTIONS: &[u8] = b"# instructions\n";
 const POLICY: &str = "version: 1
 filesystem_policy:
   include_workdir: true
@@ -326,6 +327,15 @@ impl RoleFixture {
         write_file(root, "jackin.role.toml", manifest.as_bytes()).await?;
         write_file(root, &self.dockerfile.0, self.dockerfile.1.as_bytes()).await?;
         write_file(root, &self.policy.0, self.policy.1.as_bytes()).await?;
+        if let Ok(parsed) = jackin_core::RoleManifest::parse(&manifest) {
+            for section in parsed.agents.values() {
+                let path = root.join(section.instructions.as_str());
+                if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+                    continue;
+                }
+                write_file(root, section.instructions.as_str(), INSTRUCTIONS).await?;
+            }
+        }
         for hook in [&self.setup, &self.preflight].into_iter().flatten() {
             write_file(root, &hook.path, &hook.bytes).await?;
         }

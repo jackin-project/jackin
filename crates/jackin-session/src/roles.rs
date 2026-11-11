@@ -398,6 +398,12 @@ impl RoleCatalog {
         let preflight = self
             .hook(root, &manifest, HookKind::Preflight, reads, &mut findings)
             .await;
+        for section in manifest.agents.values() {
+            drop(
+                self.read_checked(root, &section.instructions, reads, &mut findings)
+                    .await,
+            );
+        }
         if let Some(policy) = &policy {
             Self::check_closure(policy, &mut findings);
             Self::check_engine_host(policy, &mut findings);

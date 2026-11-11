@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::agent::{Agent, TUPLES, TupleState};
 use crate::boundary::{FileMode, FileSystem, FsError};
-use crate::config::PlainEnvValue;
+use crate::config::{EnvValueError, PlainEnvValue};
 use crate::display::plain;
 use crate::fs::write_atomic;
 use crate::ids::{EnvName, IdError, ModelName, RoleName};
@@ -128,6 +128,14 @@ fn env_text(text: &str) -> Result<String, &'static str> {
     } else {
         Ok(text.to_owned())
     }
+}
+
+fn env_default(text: &str) -> Result<String, EnvValueError> {
+    PlainEnvValue::parse(text).map(|value| value.as_str().to_owned())
+}
+
+fn env_value_message(error: EnvValueError) -> String {
+    error.to_string()
 }
 
 fn static_message(message: &'static str) -> String {
@@ -250,7 +258,7 @@ fn read_env(
         let Some(mut entry) = env.entry_table(key, value) else {
             continue;
         };
-        let default = entry.parsed("default", env_text, static_message);
+        let default = entry.parsed("default", env_default, env_value_message);
         let prompt = entry.parsed("prompt", env_text, static_message);
         entry.finish();
         if let Some(value) = &default

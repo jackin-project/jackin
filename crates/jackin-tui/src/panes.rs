@@ -14,7 +14,7 @@ use jackin_console::panes::{
     PaneRequest, PaneSize, Sent,
 };
 use jackin_console::world::Msg;
-use jackin_core::{SandboxName, SupervisorReading, SupervisorState, plain};
+use jackin_core::{Agent as CoreAgent, SandboxName, SupervisorReading, SupervisorState, plain};
 use jackin_openshell::{
     EndReason, GatewayError, InputLease, InputMode, SessionClosed, TermSize, TerminalEvent,
     TerminalSession,
@@ -29,6 +29,7 @@ use tokio_util::sync::{CancellationToken, DropGuard};
 
 use crate::bridge::Bridge;
 use crate::observe::Inputs;
+use crate::project::core_agent;
 
 const COMMANDS: usize = 64;
 
@@ -40,7 +41,7 @@ struct InboxState {
 
 fn cost(event: &LinkEvent) -> usize {
     match event {
-        LinkEvent::Output(bytes) => bytes.len(),
+        LinkEvent::Output(bytes) => bytes.len().max(1),
         LinkEvent::Notice(text) => text.len().max(1),
         _ => 1,
     }
@@ -96,12 +97,15 @@ impl Inbox {
                         state.events.push_front(LinkEvent::Output(bytes));
                         break;
                     }
+                    let mut rest = None;
                     if bytes.len() > left {
-                        let rest = bytes.split_off(left);
+                        rest = Some(bytes.split_off(left));
+                    }
+                    state.queued -= bytes.len().max(1);
+                    if let Some(rest) = rest {
                         state.events.push_front(LinkEvent::Output(rest));
                     }
                     left -= bytes.len();
-                    state.queued -= bytes.len();
                     taken.push(LinkEvent::Output(bytes));
                     if left == 0 {
                         break;
@@ -232,8 +236,8 @@ impl PaneHub {
         let (size_tx, size_rx) = watch::channel(size);
         let detach = CancellationToken::new();
         let gone = self.shared.inputs.cancel.child_token();
-        let agent = request.agent().is_some();
-        if agent {
+        let agent = request.agent().and_then(core_agent);
+        if agent.is_some() {
             locked(&self.shared.agents).push(Registered {
                 id,
                 instance: request.instance.clone(),
@@ -451,7 +455,7 @@ struct Run {
     gone: CancellationToken,
     session: Session,
     sandbox: SandboxName,
-    agent: bool,
+    agent: Option<CoreAgent>,
     attempt: Attempt,
     initial: PaneSize,
     poll: Duration,
@@ -467,7 +471,7 @@ impl Run {
 
     async fn start(&self) -> Result<Terminal, LinkFault> {
         let size = term_size(self.initial);
-        if !self.agent {
+        let Some(agent) = self.agent else {
             return self
                 .session
                 .open_shell(ShellRequest {
@@ -477,7 +481,7 @@ impl Run {
                 .await
                 .map(Terminal::Shell)
                 .map_err(|error| attach_fault(&error));
-        }
+        };
         if self.attempt == Attempt::Restart {
             let (events, feed) = launch_events(LineDelivery::BestEffort);
             drop(feed);
@@ -491,7 +495,7 @@ impl Run {
                 sandbox: self.sandbox.clone(),
                 size,
                 input: InputMode::Owner,
-                agent: None,
+                agent: Some(agent),
             })
             .await
             .map(Terminal::Main)
@@ -517,7 +521,7 @@ impl Run {
         };
         let mut detaching = false;
         let mut reads = match &terminal {
-            Terminal::Main(main) if self.agent => main.reads(),
+            Terminal::Main(main) if self.agent.is_some() => main.reads(),
             Terminal::Main(_) | Terminal::Shell(_) => SupervisorReads::idle(),
         };
         let mut watch =
@@ -551,8 +555,8 @@ impl Run {
                         }
                     }
                 }
-                _ = watch.tick(), if self.agent && !detaching => reads.begin(),
-                reading = reads.finished(), if self.agent && !detaching => {
+                _ = watch.tick(), if self.agent.is_some() && !detaching => reads.begin(),
+                reading = reads.finished(), if self.agent.is_some() && !detaching => {
                     if let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
                         reading
                     {

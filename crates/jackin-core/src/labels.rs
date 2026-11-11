@@ -78,11 +78,19 @@ impl LabelKey {
     pub fn from_static(text: &'static str) -> LabelKey {
         LabelKey(text.to_owned())
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl LabelValue {
     pub fn from_static(text: &'static str) -> LabelValue {
         LabelValue(text.to_owned())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 

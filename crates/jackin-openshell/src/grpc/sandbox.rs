@@ -21,12 +21,54 @@ use crate::policy::PolicyDocument;
 
 const PROVISIONING_FAILED: &str = "ProvisioningFailed";
 const READY_CONDITION: &str = "Ready";
-const MAX_PAGES: usize = 10_000;
+const PAGE_SIZE: i32 = 100;
+const MAX_PAGES: usize = 1_000;
+const MAX_RECORDS: usize = 10_000;
+const MAX_BYTES: usize = 16 * 1024 * 1024;
 
 fn protocol(message: impl ToString) -> GatewayError {
     GatewayError::Protocol {
         message: message.to_string(),
     }
+}
+
+struct Listing {
+    records: usize,
+    bytes: usize,
+}
+
+impl Listing {
+    fn new() -> Listing {
+        Listing {
+            records: 0,
+            bytes: 0,
+        }
+    }
+
+    fn add(&mut self, bytes: usize) -> Result<(), GatewayError> {
+        self.records += 1;
+        self.bytes += bytes;
+        if self.records > MAX_RECORDS {
+            return Err(protocol("the listing has too many records"));
+        }
+        if self.bytes > MAX_BYTES {
+            return Err(protocol("the listing is too large"));
+        }
+        Ok(())
+    }
+}
+
+fn view_bytes(view: &SandboxView) -> usize {
+    let labels: usize = view
+        .labels
+        .iter()
+        .map(|(key, value)| key.as_str().len() + value.as_str().len())
+        .sum();
+    let message = match &view.provisioning {
+        Provisioning::Normal => 0,
+        Provisioning::Failed { message } => message.as_str().len(),
+    };
+    view.name.as_str().len() + labels + message
 }
 
 fn phase_of(sandbox: &Sandbox) -> Result<Phase, GatewayError> {
@@ -221,6 +263,7 @@ impl Inner {
 
     async fn list_by_selector(&self, selector: &str) -> Result<Vec<SandboxView>, GatewayError> {
         let mut views = Vec::new();
+        let mut listing = Listing::new();
         let mut token = String::new();
         for _ in 0..MAX_PAGES {
             let page = self
@@ -229,14 +272,16 @@ impl Inner {
                     None,
                     self.grpc().list_sandboxes(ListSandboxesRequest {
                         workspace_scope: Some(self.scope()),
-                        page_size: 0,
+                        page_size: PAGE_SIZE,
                         page_token: token.clone(),
                         label_selector: selector.to_owned(),
                     }),
                 )
                 .await?;
             for sandbox in &page.sandboxes {
-                views.push(listed_view_of(sandbox)?);
+                let view = listed_view_of(sandbox)?;
+                listing.add(view_bytes(&view))?;
+                views.push(view);
             }
             if page.next_page_token.is_empty() {
                 return Ok(views);
@@ -325,6 +370,7 @@ impl Inner {
         name: &SandboxName,
     ) -> Result<Vec<ProviderName>, GatewayError> {
         let mut providers = Vec::new();
+        let mut listing = Listing::new();
         let mut token = String::new();
         for _ in 0..MAX_PAGES {
             let page = self
@@ -335,7 +381,7 @@ impl Inner {
                         .list_sandbox_providers(ListSandboxProvidersRequest {
                             workspace_scope: Some(self.scope()),
                             sandbox: name.to_string(),
-                            page_size: 0,
+                            page_size: PAGE_SIZE,
                             page_token: token.clone(),
                         }),
                 )
@@ -345,7 +391,9 @@ impl Inner {
                     .metadata
                     .as_ref()
                     .map_or("", |meta| meta.name.as_str());
-                providers.push(ProviderName::parse(name).map_err(protocol)?);
+                let name = ProviderName::parse(name).map_err(protocol)?;
+                listing.add(name.as_str().len())?;
+                providers.push(name);
             }
             if page.next_page_token.is_empty() {
                 return Ok(providers);
