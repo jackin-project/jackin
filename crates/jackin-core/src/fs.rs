@@ -65,6 +65,79 @@ fn kind_of(file_type: fs::FileType) -> FileKind {
     }
 }
 
+fn read_file(path: &Path) -> io::Result<Option<Vec<u8>>> {
+    missing_is_none(fs::read(path))
+}
+
+fn stat_kind(path: &Path) -> io::Result<Option<FileKind>> {
+    missing_is_none(fs::symlink_metadata(path)).map(|meta| meta.map(|m| kind_of(m.file_type())))
+}
+
+fn stat_following_kind(path: &Path) -> io::Result<Option<FileKind>> {
+    missing_is_none(fs::metadata(path)).map(|meta| meta.map(|m| kind_of(m.file_type())))
+}
+
+fn canonical_target(path: &Path) -> io::Result<Option<HostPath>> {
+    missing_is_none(fs::canonicalize(path))?
+        .map(|real| HostPath::parse(&real).map_err(io::Error::other))
+        .transpose()
+}
+
+fn file_size(path: &Path) -> io::Result<Option<u64>> {
+    missing_is_none(fs::metadata(path)).map(|meta| meta.map(|m| m.len()))
+}
+
+fn identity_of(path: &Path) -> io::Result<Option<FileIdentity>> {
+    missing_is_none(fs::metadata(path)).map(|meta| {
+        meta.map(|m| FileIdentity {
+            dev: m.dev(),
+            ino: m.ino(),
+        })
+    })
+}
+
+fn sorted_entries(dir: &Path) -> io::Result<Vec<DirEntry>> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        entries.push(DirEntry {
+            name: entry.file_name().to_string_lossy().into_owned(),
+            kind: kind_of(entry.file_type()?),
+        });
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(entries)
+}
+
+fn create_all(dir: &Path) -> io::Result<()> {
+    fs::create_dir_all(dir)
+}
+
+fn create_private_all(dir: &Path) -> io::Result<()> {
+    DirBuilder::new().recursive(true).mode(0o700).create(dir)
+}
+
+fn rename_path(from: &Path, to: &Path) -> io::Result<()> {
+    fs::rename(from, to)
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    missing_is_none(fs::remove_file(path)).map(|_removed| ())
+}
+
+fn remove_tree_if_present(path: &Path) -> io::Result<()> {
+    missing_is_none(fs::remove_dir_all(path)).map(|_removed| ())
+}
+
+fn file_mode(path: &Path) -> io::Result<Option<FileMode>> {
+    missing_is_none(fs::symlink_metadata(path))
+        .map(|meta| meta.map(|m| FileMode(m.permissions().mode() & 0o7777)))
+}
+
+fn place_symlink(target: &str, path: &Path) -> io::Result<()> {
+    symlink(target, path)
+}
+
 #[expect(
     clippy::disallowed_methods,
     reason = "runs on the blocking pool through StdFileSystem::write_new"
@@ -227,77 +300,39 @@ fn read_link_below(root: &Path, file: &RepoPath) -> io::Result<Result<String, Li
 #[async_trait]
 impl FileSystem for StdFileSystem {
     async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
-        blocking(path, |p| missing_is_none(fs::read(p))).await
+        blocking(path, read_file).await
     }
 
     async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
-        blocking(path, |p| {
-            missing_is_none(fs::symlink_metadata(p))
-                .map(|meta| meta.map(|m| kind_of(m.file_type())))
-        })
-        .await
+        blocking(path, stat_kind).await
     }
 
     async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
-        blocking(path, |p| {
-            missing_is_none(fs::metadata(p)).map(|meta| meta.map(|m| kind_of(m.file_type())))
-        })
-        .await
+        blocking(path, stat_following_kind).await
     }
 
     async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
-        blocking(path, |p| {
-            missing_is_none(fs::canonicalize(p))?
-                .map(|real| HostPath::parse(&real).map_err(io::Error::other))
-                .transpose()
-        })
-        .await
+        blocking(path, canonical_target).await
     }
 
     async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
-        blocking(path, |p| {
-            missing_is_none(fs::metadata(p)).map(|meta| meta.map(|m| m.len()))
-        })
-        .await
+        blocking(path, file_size).await
     }
 
     async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
-        blocking(path, |p| {
-            missing_is_none(fs::metadata(p)).map(|meta| {
-                meta.map(|m| FileIdentity {
-                    dev: m.dev(),
-                    ino: m.ino(),
-                })
-            })
-        })
-        .await
+        blocking(path, identity_of).await
     }
 
     async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
-        blocking(dir, |p| {
-            let mut entries = Vec::new();
-            for entry in fs::read_dir(p)? {
-                let entry = entry?;
-                entries.push(DirEntry {
-                    name: entry.file_name().to_string_lossy().into_owned(),
-                    kind: kind_of(entry.file_type()?),
-                });
-            }
-            entries.sort_by(|a, b| a.name.cmp(&b.name));
-            Ok(entries)
-        })
-        .await
+        blocking(dir, sorted_entries).await
     }
 
     async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
-        blocking(dir, |p| fs::create_dir_all(p)).await
+        blocking(dir, create_all).await
     }
 
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
-        blocking(dir, |p| {
-            DirBuilder::new().recursive(true).mode(0o700).create(p)
-        })
-        .await
+        blocking(dir, create_private_all).await
     }
 
     async fn write_new(
@@ -321,29 +356,19 @@ impl FileSystem for StdFileSystem {
 
     async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError> {
         let target = to.clone();
-        blocking(from, move |p| fs::rename(p, target.as_path())).await
+        blocking(from, move |p| rename_path(p, target.as_path())).await
     }
 
     async fn remove_file(&self, path: &HostPath) -> Result<(), FsError> {
-        blocking(path, |p| {
-            missing_is_none(fs::remove_file(p)).map(|_removed| ())
-        })
-        .await
+        blocking(path, remove_if_present).await
     }
 
     async fn remove_dir_all(&self, path: &HostPath) -> Result<(), FsError> {
-        blocking(path, |p| {
-            missing_is_none(fs::remove_dir_all(p)).map(|_removed| ())
-        })
-        .await
+        blocking(path, remove_tree_if_present).await
     }
 
     async fn mode(&self, path: &HostPath) -> Result<Option<FileMode>, FsError> {
-        blocking(path, |p| {
-            missing_is_none(fs::symlink_metadata(p))
-                .map(|meta| meta.map(|m| FileMode(m.permissions().mode() & 0o7777)))
-        })
-        .await
+        blocking(path, file_mode).await
     }
 
     async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
@@ -378,7 +403,7 @@ impl FileSystem for StdFileSystem {
 
     async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
         let target = target.to_owned();
-        blocking(path, move |p| symlink(&target, p))
+        blocking(path, move |p| place_symlink(&target, p))
             .await
             .map_err(|error| match error {
                 FsError::Io {
