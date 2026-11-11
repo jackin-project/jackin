@@ -156,6 +156,29 @@ async fn a_manifest_error_names_the_file_and_states_its_cause_once() -> TestResu
 }
 
 #[tokio::test]
+async fn an_env_default_that_names_a_secret_is_refused_by_the_role_gate() -> TestResult {
+    guard(async {
+        for default in [
+            "op://vault/item/field",
+            "OP://vault/item/field",
+            "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN",
+        ] {
+            let text = format!("schema = 1\n\n{NAMED}\n[env.TOKENISH]\ndefault = \"{default}\"\n");
+            let (stderr, head) = manifest_report(text).await?;
+            assert!(
+                stderr.starts_with(&format!("{head}: invalid value for env.TOKENISH.default: ")),
+                "{stderr}"
+            );
+            assert_eq!(stderr.lines().count(), 1, "{stderr}");
+            assert!(!stderr.contains("vault"), "{stderr}");
+            assert!(!stderr.contains("CODEX_AUTH"), "{stderr}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn two_findings_in_one_manifest_give_two_lines_with_one_cause_each() -> TestResult {
     guard(async {
         let text = "schema = 1\nmystery_field = 2\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\n";

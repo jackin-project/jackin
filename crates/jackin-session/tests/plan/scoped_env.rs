@@ -181,7 +181,31 @@ fn a_manifest_default_that_is_a_reference_or_a_placeholder_is_refused_without_ec
         let text = format!(
             "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[env.TOKENISH]\ndefault = \"{default}\"\n"
         );
-        let manifest = RoleManifest::parse(&text)?;
+        let refused_manifest = RoleManifest::parse(&text);
+        let shown = format!(
+            "{}",
+            refused_manifest.as_ref().err().ok_or("no manifest error")?
+        );
+        assert!(
+            matches!(
+                refused_manifest,
+                Err(jackin_core::ManifestError::InvalidValue { key, .. })
+                    if key == "env.TOKENISH.default"
+            ),
+            "{default}: {shown}"
+        );
+        assert!(
+            !shown.contains("vault") && !shown.contains("CODEX_AUTH"),
+            "{shown}"
+        );
+        let mut manifest = manifest()?;
+        manifest.env.insert(
+            EnvName::parse("TOKENISH")?,
+            jackin_core::EnvSpec {
+                default: Some(default.to_owned()),
+                prompt: None,
+            },
+        );
         for prompting in [Prompting::Never, Prompting::Interactive] {
             let refused = resolve_env(&layers, &manifest, &BTreeMap::new(), prompting);
             assert!(

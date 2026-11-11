@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::agent::{Agent, TUPLES, TupleState};
 use crate::boundary::{FileMode, FileSystem, FsError};
+use crate::config::PlainEnvValue;
 use crate::display::plain;
 use crate::fs::write_atomic;
 use crate::ids::{EnvName, IdError, ModelName, RoleName};
@@ -232,6 +233,7 @@ fn read_hooks(root: &mut Reader<'_, '_>) -> HooksSection {
 fn read_env(
     root: &mut Reader<'_, '_>,
     reserved: &mut Vec<ManifestError>,
+    errors: &mut Vec<ManifestError>,
 ) -> BTreeMap<EnvName, EnvSpec> {
     let mut out = BTreeMap::new();
     let Some(mut env) = root.table("env") else {
@@ -251,6 +253,15 @@ fn read_env(
         let default = entry.parsed("default", env_text, static_message);
         let prompt = entry.parsed("prompt", env_text, static_message);
         entry.finish();
+        if let Some(value) = &default
+            && let Err(error) = PlainEnvValue::parse(value)
+        {
+            errors.push(ManifestError::InvalidValue {
+                key: format!("env.{name}.default"),
+                message: error.to_string(),
+            });
+            continue;
+        }
         if name.is_reserved() {
             reserved.push(ManifestError::ReservedEnvName(name));
         } else {
@@ -289,7 +300,7 @@ fn analyze(text: &str) -> Result<RoleManifest, Findings> {
     validate_agents(&agents, &mut errors);
     let docker = read_docker(&mut root);
     let hooks = read_hooks(&mut root);
-    let env = read_env(&mut root, &mut reserved);
+    let env = read_env(&mut root, &mut reserved, &mut errors);
     root.finish();
     errors.extend(sink.into_iter().map(ManifestError::from));
     errors.extend(reserved);

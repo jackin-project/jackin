@@ -225,6 +225,27 @@ fn manifest_env_default_and_prompt_reject_newline_and_nul_exactly_when_the_env_f
 }
 
 #[test]
+fn manifest_refuses_an_env_default_that_names_a_secret_or_a_placeholder() -> TestResult {
+    for default in [
+        "op://vault/item/field",
+        "OP://vault/item/field",
+        "  op://vault/item/field",
+        "openshell:resolve:env:CODEX_AUTH_ACCESS_TOKEN",
+        "OpenShell:Resolve:env:CODEX_AUTH_ACCESS_TOKEN",
+    ] {
+        let text = format!("{MIN}[env.A]\ndefault = {}\n", toml_basic(default));
+        assert_eq!(outcome(&text), "invalid:env.A.default", "{default:?}");
+        let error = RoleManifest::parse(&text).err().ok_or("no error")?;
+        let shown = error.to_string();
+        assert!(!shown.contains("vault"), "{shown}");
+        assert!(!shown.contains("CODEX_AUTH"), "{shown}");
+        let text = format!("{MIN}[env.A]\nprompt = {}\n", toml_basic(default));
+        assert_eq!(outcome(&text), "ok", "{default:?}");
+    }
+    Ok(())
+}
+
+#[test]
 fn manifest_rejects_an_unknown_field_at_every_level_naming_its_path() -> TestResult {
     let cases = [
         ("root", "", "extra = 1", "extra", true),
