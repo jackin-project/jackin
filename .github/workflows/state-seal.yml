@@ -148,7 +148,7 @@ jobs:
         env:
           VELNOR_INTERNAL_OP: write-request-v1
           VELNOR_REQUEST_FILE: ${{ runner.temp }}/velnor/request/plan-v1-request.json
-          VELNOR_NAMED_CHECK_LANES_JSON: "{\"check-dependency-usage\":[{\"job_id\":\"check-dependency-usage\"}],\"check-repository-steps\":[{\"job_id\":\"check-repository-steps\"}],\"check-secrets-scan\":[{\"job_id\":\"check-secrets-scan\"}]}"
+          VELNOR_NAMED_CHECK_LANES_JSON: "{\"check-dependency-usage\":[{\"job_id\":\"check-dependency-usage\"}],\"check-repository-steps\":[{\"job_id\":\"check-repository-steps\"}],\"check-secrets-scan\":[{\"job_id\":\"check-secrets-scan\"}],\"check-sonar\":[{\"job_id\":\"check-sonar\"}]}"
         run: "\"$RUNNER_TEMP\"'/velnor/bin/velnor-actions-0.1.74'"
       - name: Check generated files
         env:
