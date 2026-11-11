@@ -5,7 +5,7 @@ use jackin_core::Phase;
 use openshell_sdk::SdkError;
 use tonic::{Code, Status};
 
-use super::Inner;
+use super::{Inner, endpoint_authority};
 use crate::error::{GatewayError, GatewayOp, Missing};
 
 const SUPERVISOR_RELAY_FAILURE: &str = "supervisor relay failed";
@@ -61,7 +61,7 @@ impl Inner {
                     GatewayError::SandboxUnreachable { sandbox, message }
                 }
                 _ => GatewayError::Unreachable {
-                    endpoint: self.endpoint.clone(),
+                    endpoint: endpoint_authority(&self.endpoint),
                     message,
                 },
             },
