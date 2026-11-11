@@ -866,23 +866,45 @@ mod native {
 
 pub use native::{read_kimi_host_login, read_mimo_host_login, read_minimax_host_login};
 
+const ACTIVE_SCOPE: &str = "https://auth.x.ai::";
+const INHERITED_SCOPE: &str = "/sign-in";
+
+fn only_scope(
+    root: &serde_json::Map<String, Value>,
+    key: impl Fn(&str) -> bool,
+) -> Result<Option<&Value>, CredentialError> {
+    let mut entries = root.iter().filter(|(scope, _)| key(scope));
+    let Some(selected) = entries.next() else {
+        return Ok(None);
+    };
+    if entries.next().is_some() {
+        return Err(invalid(AUTH_FILE));
+    }
+    Ok(Some(selected.1))
+}
+
+fn active_scope(root: &serde_json::Map<String, Value>) -> Result<Option<&Value>, CredentialError> {
+    match only_scope(root, |scope| scope.starts_with(ACTIVE_SCOPE))? {
+        Some(entry) => Ok(Some(entry)),
+        None => only_scope(root, |scope| scope.contains(INHERITED_SCOPE)),
+    }
+}
+
 pub async fn read_grok_login(
     fs: &dyn FileSystem,
     path: &HostPath,
 ) -> Result<GrokLogin, CredentialError> {
     let document = read_host_auth(fs, path, AUTH_FILE).await?;
     let root = document.0.as_object().ok_or_else(|| invalid(AUTH_FILE))?;
-    let mut entries = root.values().filter(|entry| {
-        entry.get("oidc_issuer").and_then(Value::as_str) == Some("https://auth.x.ai")
-            && matches!(
-                entry.get("auth_mode").and_then(Value::as_str),
-                Some("session" | "oidc")
-            )
-    });
-    let entry = entries.next().ok_or_else(|| invalid(AUTH_FILE))?;
-    if entries.next().is_some() {
-        return Err(invalid(AUTH_FILE));
-    }
+    let entry = active_scope(root)?
+        .filter(|entry| {
+            entry.get("oidc_issuer").and_then(Value::as_str) == Some("https://auth.x.ai")
+                && matches!(
+                    entry.get("auth_mode").and_then(Value::as_str),
+                    Some("session" | "oidc")
+                )
+        })
+        .ok_or_else(|| invalid(AUTH_FILE))?;
     let access_token = text(entry, "key", "key")?;
     let refresh_token = text(entry, "refresh_token", "refresh_token")?;
     let client_id = text(entry, "oidc_client_id", "oidc_client_id")?;
@@ -1096,7 +1118,6 @@ pub async fn resolve_static_key(
     host: &HostPorts,
     account: &Account,
     provider_id: &str,
-    cancel: &CancellationToken,
 ) -> Result<Secret, CredentialError> {
     let missing = || CredentialError::MissingStaticKey;
     match account.credential() {
@@ -1123,40 +1144,8 @@ pub async fn resolve_static_key(
                 .map_err(|_| missing())?;
             read_omp_host_key(host.fs.as_ref(), &db, provider_id).map_err(|_| missing())
         }
-        CredentialSource::OnePassword {
-            reference,
-            account: op_account,
-        } => {
-            let mut args = vec!["read".to_owned()];
-            if let Some(op_account) = op_account {
-                args.extend(["--account".to_owned(), op_account.as_str().to_owned()]);
-            }
-            args.push(reference.as_str().to_owned());
-            let spec = ProcessSpec {
-                program: Program::Op,
-                args,
-                cwd: None,
-                env: Vec::new(),
-                env_remove_prefixes: Vec::new(),
-                stdin: ProcessStdin::Null,
-                timeout: Duration::from_secs(30),
-            };
-            let output = host
-                .runner
-                .run_secret(&spec, cancel)
-                .await
-                .map_err(|_| missing())?;
-            if output.status != ProcessStatus::Exited(0) {
-                return Err(missing());
-            }
-            let text = std::str::from_utf8(output.stdout.expose()).map_err(|_| missing())?;
-            let value = text.trim().to_owned();
-            if value.is_empty() {
-                Err(missing())
-            } else {
-                Ok(Secret::new(value))
-            }
-        }
-        CredentialSource::CodexLogin { .. } | CredentialSource::HostLogin { .. } => Err(missing()),
+        CredentialSource::OnePassword { .. }
+        | CredentialSource::CodexLogin { .. }
+        | CredentialSource::HostLogin { .. } => Err(missing()),
     }
 }

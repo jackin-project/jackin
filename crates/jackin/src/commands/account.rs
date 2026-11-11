@@ -149,15 +149,16 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
         });
     }
     match args.credential.as_deref().map(CredentialArg::parse) {
-        Some(Ok(CredentialArg::Env(var))) => {
-            if app.env.get(&var).is_none() {
-                return Err(CommandError::Argument(
-                    "--credential env:NAME needs a variable that is set in this environment"
-                        .to_owned(),
-                ));
-            }
-            Ok(CredentialSource::Env { var })
-        }
+        Some(Ok(CredentialArg::Env(var))) => match app.env.get(&var) {
+            Some(value) if !value.trim().is_empty() => Ok(CredentialSource::Env { var }),
+            Some(_) => Err(CommandError::Argument(
+                "--credential env:NAME needs a variable with a non-empty value in this environment"
+                    .to_owned(),
+            )),
+            None => Err(CommandError::Argument(
+                "--credential env:NAME needs a variable that is set in this environment".to_owned(),
+            )),
+        },
         Some(Ok(CredentialArg::OnePassword(reference))) => Ok(CredentialSource::OnePassword {
             reference,
             account: None,

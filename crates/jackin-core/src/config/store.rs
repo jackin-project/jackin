@@ -43,14 +43,26 @@ impl ConfigStore {
     }
 
     pub async fn edit(&self, edits: Vec<ConfigEdit>) -> Result<Config, ConfigError> {
+        self.edit_checked(edits, |_| Ok(())).await
+    }
+
+    pub async fn edit_checked<E>(
+        &self,
+        edits: Vec<ConfigEdit>,
+        check: impl FnOnce(&Config) -> Result<(), E>,
+    ) -> Result<Config, E>
+    where
+        E: From<ConfigError>,
+    {
         if let Some(dir) = self.path.parent() {
-            self.fs.create_dir_all(&dir).await?;
+            self.fs.create_dir_all(&dir).await.map_err(ConfigError::from)?;
         }
         let lock = self.lock().await?;
         let mut config = self.read().await?;
         for edit in edits {
             config.apply(edit)?;
         }
+        check(&config)?;
         write_atomic_locked(
             self.fs.as_ref(),
             &self.path,
@@ -58,7 +70,8 @@ impl ConfigStore {
             CONFIG_MODE,
             &lock,
         )
-        .await?;
+        .await
+        .map_err(ConfigError::from)?;
         Ok(config)
     }
 

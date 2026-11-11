@@ -208,11 +208,21 @@ async fn taking_the_login_off_an_account_forgets_its_provider_and_publishes_the_
                 .provider(&omp)
                 .ok_or("no omp provider on the home gateway")?;
             assert_eq!(on_home.access_token, "KEY-SECRET-1");
+            let on_second = fleet
+                .second
+                .provider(&omp)
+                .ok_or("no omp provider on the second gateway")?;
+            assert_eq!(on_second.access_token, "KEY-SECRET-1");
+            let on_third = fleet
+                .third
+                .provider(&omp)
+                .ok_or("no omp provider on the third gateway")?;
+            assert_eq!(on_third.access_token, "KEY-SECRET-1");
         } else {
             assert!(fleet.world.gateway.provider(&omp).is_none());
+            assert!(fleet.second.provider(&omp).is_none());
+            assert!(fleet.third.provider(&omp).is_none());
         }
-        assert!(fleet.second.provider(&omp).is_none());
-        assert!(fleet.third.provider(&omp).is_none());
         Ok(())
     })
     .await

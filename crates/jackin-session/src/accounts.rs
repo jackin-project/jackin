@@ -72,6 +72,8 @@ pub enum AccountError {
     GatewayRemoved { gateway: GatewayName },
     #[error("gateway {gateway} was added to the config after the gateways were connected")]
     GatewayAdded { gateway: GatewayName },
+    #[error("gateway {gateway} changed in the config after the gateways were connected")]
+    GatewayChanged { gateway: GatewayName },
     #[error("account {account} uses {mode}, which is not supported yet")]
     Unsupported {
         account: AccountName,
@@ -563,6 +565,30 @@ fn check_gateways(config: &Config, gateways: &Gateways) -> Result<(), AccountErr
     }
 }
 
+fn check_gateway_entries(retained: &Config, live: &Config) -> Result<(), AccountError> {
+    for (name, entry) in retained.gateways() {
+        let Some(current) = live.gateway(name) else {
+            return Err(AccountError::GatewayRemoved {
+                gateway: name.clone(),
+            });
+        };
+        if current != entry {
+            return Err(AccountError::GatewayChanged {
+                gateway: name.clone(),
+            });
+        }
+    }
+    match live
+        .gateways()
+        .find(|(name, _)| retained.gateway(name).is_none())
+    {
+        Some((added, _)) => Err(AccountError::GatewayAdded {
+            gateway: added.clone(),
+        }),
+        None => Ok(()),
+    }
+}
+
 impl GatewayPlan {
     pub fn config(&self) -> &Config {
         &self.locked.config
@@ -587,7 +613,11 @@ impl GatewayPlan {
         let written = async {
             forget(&sessions, &effects.forget, &mut journal).await?;
             publish(&sessions, &effects.publish, &agents, &mut journal).await?;
-            store.edit(edits).await.map_err(AccountEditError::from)
+            store
+                .edit_checked(edits, |live| {
+                    check_gateway_entries(&locked.config, live).map_err(AccountEditError::from)
+                })
+                .await
         }
         .await;
         match written {
@@ -632,22 +662,34 @@ async fn publish<'a>(
             .get(entry.account.name())
             .copied()
             .unwrap_or_else(|| account_agent(&entry.account));
+        let provider = ProviderName::for_account(entry.account.name(), agent);
         let Some(previous) = &entry.previous else {
-            journal.push(home.undo(Action::Remove, &entry.account, agent));
+            let state = home
+                .deps
+                .gateway
+                .provider_state(&provider)
+                .await
+                .map_err(|error| on_gateway(home.gateway_name(), error.into()))?;
+            let held = state == ProviderState::Present;
+            journal.push(home.undo(
+                if held { Action::Restore } else { Action::Remove },
+                &entry.account,
+                agent,
+            ));
             home.sync_locked_agent(&entry.account, agent)
                 .await
                 .map_err(|error| on_gateway(home.gateway_name(), error))?;
             continue;
         };
-        let provider = ProviderName::for_account(entry.account.name(), agent);
         let previous_agent = agents
             .get(entry.account.name())
             .copied()
             .unwrap_or_else(|| account_agent(previous));
         let previous_provider = ProviderName::for_account(entry.account.name(), previous_agent);
         for (index, &session) in sessions.iter().enumerate() {
+            let mut held_previous = false;
             if previous_provider != provider {
-                let held_previous = session
+                held_previous = session
                     .deps
                     .gateway
                     .provider_state(&previous_provider)
@@ -671,7 +713,7 @@ async fn publish<'a>(
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
             let held = state == ProviderState::Present;
-            if !held && index > 0 {
+            if !held && index > 0 && !held_previous {
                 continue;
             }
             journal.push(if held {
@@ -1214,7 +1256,7 @@ async fn sync_login(
                 .and_then(jackin_core::AgentTuple::omp_provider_id)
                 .unwrap_or(agent.as_str())
         };
-        let key = resolve_static_key(host, account, provider_id, cancel)
+        let key = resolve_static_key(host, account, provider_id)
             .await
             .map_err(|_| missing())?;
         let asset = jackin_core::tuple_profile_asset(tuple);
