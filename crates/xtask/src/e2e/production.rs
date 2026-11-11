@@ -218,7 +218,7 @@ pub async fn production(args: &E2eArgs) -> Result<Boundaries, ProductionError> {
     let host: Arc<dyn HostProcess> = Arc::new(RealHost::default());
     let cancel = CancellationToken::new();
     let jackin = match &args.jackin {
-        Some(path) => std::fs::canonicalize(path).map_err(|_| {
+        Some(path) => tokio::fs::canonicalize(path).await.map_err(|_| {
             setup(format!(
                 "the jackin binary {} does not exist",
                 path.display()

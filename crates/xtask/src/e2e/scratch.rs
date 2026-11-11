@@ -159,21 +159,31 @@ impl Scratch {
         cancel: &CancellationToken,
     ) -> Result<PathBuf, ScratchError> {
         let dir = self.projects().join(name);
-        let write = |relative: &str, content: &str, mode: u32| -> Result<(), ScratchError> {
+        async fn write(
+            dir: &Path,
+            relative: &str,
+            content: &str,
+            mode: u32,
+        ) -> Result<(), ScratchError> {
             let path = dir.join(relative);
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent).map_err(|error| io_error(parent, &error))?;
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .map_err(|error| io_error(parent, &error))?;
             }
-            fs::write(&path, content).map_err(|error| io_error(&path, &error))?;
-            fs::set_permissions(&path, fs::Permissions::from_mode(mode))
+            tokio::fs::write(&path, content)
+                .await
+                .map_err(|error| io_error(&path, &error))?;
+            tokio::fs::set_permissions(&path, fs::Permissions::from_mode(mode))
+                .await
                 .map_err(|error| io_error(&path, &error))
-        };
-        write("README.md", &format!("# {name}\n"), 0o644)?;
-        write("notes and docs/guide.txt", "guide\n", 0o644)?;
-        write("bin/run.sh", "#!/bin/sh\necho run\n", 0o755)?;
-        write("src/main.txt", "main\n", 0o644)?;
-        write(".gitignore", "ignored.log\n", 0o644)?;
-        write("ignored.log", "ignored\n", 0o644)?;
+        }
+        write(&dir, "README.md", &format!("# {name}\n"), 0o644).await?;
+        write(&dir, "notes and docs/guide.txt", "guide\n", 0o644).await?;
+        write(&dir, "bin/run.sh", "#!/bin/sh\necho run\n", 0o755).await?;
+        write(&dir, "src/main.txt", "main\n", 0o644).await?;
+        write(&dir, ".gitignore", "ignored.log\n", 0o644).await?;
+        write(&dir, "ignored.log", "ignored\n", 0o644).await?;
         for args in [
             vec!["init", "-q", "-b", "main"],
             vec!["add", "-A"],
@@ -205,7 +215,7 @@ impl Scratch {
                 });
             }
         }
-        write("untracked.txt", "untracked\n", 0o644)?;
+        write(&dir, "untracked.txt", "untracked\n", 0o644).await?;
         Ok(dir)
     }
 

@@ -83,7 +83,7 @@ pub(crate) async fn tracked_digests(run: &mut Run<'_>, dir: &Path) -> Res<Vec<(S
         let path = String::from_utf8_lossy(raw).into_owned();
         let full = dir.join(&path);
         if full.is_file() {
-            digests.push((path, hex(&Sha256::digest(std::fs::read(&full)?))));
+            digests.push((path, hex(&Sha256::digest(tokio::fs::read(&full).await?))));
         }
     }
     digests.sort();

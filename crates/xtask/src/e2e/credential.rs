@@ -168,11 +168,15 @@ impl CredentialSession {
                 }
             }
             E2eCredential::File { path } => {
-                let metadata = std::fs::metadata(path).map_err(|_| CredentialError::File)?;
+                let metadata = tokio::fs::metadata(path)
+                    .await
+                    .map_err(|_| CredentialError::File)?;
                 if !metadata.is_file() || metadata.len() > 1024 * 1024 {
                     return Err(CredentialError::File);
                 }
-                let bytes = std::fs::read(path).map_err(|_| CredentialError::File)?;
+                let bytes = tokio::fs::read(path)
+                    .await
+                    .map_err(|_| CredentialError::File)?;
                 let text = String::from_utf8(bytes).map_err(|_| CredentialError::File)?;
                 let value = text.trim();
                 if value.is_empty() {

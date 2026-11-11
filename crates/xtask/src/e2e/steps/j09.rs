@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::fs;
+use std::path::PathBuf;
 
 use crate::e2e::adapter::{ProviderBehavior, ProviderBodyMatcher};
 use crate::e2e::host::HostOutput;
@@ -82,27 +82,32 @@ impl Run<'_> {
         self.j09_inner().await.unwrap_or_else(Fail::verdict)
     }
 
-    fn with_rule(&self, name: &str, host: &str) -> Res<String> {
+    async fn with_rule(&self, name: &str, host: &str) -> Res<String> {
         let rules = rule(host);
-        self.mutated_role(name, |dir| {
+        self.mutated_role(name, |dir: PathBuf| async move {
             let path = dir.join("policy.yaml");
-            let text = fs::read_to_string(&path)?;
+            let text = tokio::fs::read_to_string(&path).await?;
             if !text.contains(EMPTY_RULES) {
                 return Err(fail(
                     "policy.yaml has no `network_policies: {}` line to extend",
                 ));
             }
-            fs::write(&path, text.replacen(EMPTY_RULES, &rules, 1))?;
+            tokio::fs::write(&path, text.replacen(EMPTY_RULES, &rules, 1)).await?;
             Ok(())
         })
+        .await
     }
 
     async fn j09_inner(&mut self) -> Res<Verdict> {
         let report = self.shared("J09")?.clone();
         let facts: FactsJ09 = report.facts("J09")?;
         let behavior = self.credentials.target.behavior().provider.clone();
-        let plain = self.with_rule("policy-plain", &behavior.policy_hosts[0])?;
-        let wildcard = self.with_rule("policy-wild", &behavior.policy_hosts[1])?;
+        let plain = self
+            .with_rule("policy-plain", &behavior.policy_hosts[0])
+            .await?;
+        let wildcard = self
+            .with_rule("policy-wild", &behavior.policy_hosts[1])
+            .await?;
         let cwd = self.projects.main.clone();
         let role = self.role.display().to_string();
         let control = self

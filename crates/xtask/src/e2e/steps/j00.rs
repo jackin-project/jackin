@@ -127,7 +127,8 @@ impl Run<'_> {
             Agent::Codex.spec().install.version,
         ));
         let probe_file = self.role.join("probe/jackin-sentinel-probe");
-        let bytes = std::fs::read(&probe_file)
+        let bytes = tokio::fs::read(&probe_file)
+            .await
             .map_err(|error| fail(format!("cannot read {}: {error}", probe_file.display())))?;
         self.w.probe_digest = Some(hex(&Sha256::digest(&bytes)));
         if problems.is_empty() {

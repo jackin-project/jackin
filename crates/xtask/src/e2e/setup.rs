@@ -118,7 +118,7 @@ pub(crate) async fn prepare<'a>(
         .role
         .clone()
         .ok_or_else(|| setup("--role is required"))?;
-    let role = std::fs::canonicalize(&role_arg).map_err(|_| {
+    let role = tokio::fs::canonicalize(&role_arg).await.map_err(|_| {
         setup(format!(
             "the role directory {} does not exist",
             role_arg.display()
@@ -246,7 +246,7 @@ impl Run<'_> {
             add.extend(["--platform".to_owned(), platform.clone()]);
         }
         if let Some((port, certs)) = self.args.engine() {
-            let certs = std::fs::canonicalize(certs).map_err(|_| {
+            let certs = tokio::fs::canonicalize(certs).await.map_err(|_| {
                 setup(format!(
                     "the engine certificate directory {} does not exist",
                     certs.display()
