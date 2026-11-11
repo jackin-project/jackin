@@ -87,3 +87,37 @@ betterleaks git . --config .gitleaks.toml --redact --no-banner --log-opts=HEAD |
 kingfisher scan . --git-history full --branch HEAD --confidence low --no-validate --redact --no-update-check --baseline-file .kingfisher-baseline.yml || status=1
 exit "$status"
 """
+
+[tasks."check:sonar"]
+description = "Verify the Sonar scanner configuration applies the repository properties from the repository root"
+run = """
+status=0
+properties=sonar-project.properties
+scanner_config=.sonarcloud.properties
+for f in "$properties" "$scanner_config"
+do
+  if [ ! -f "$f" ] || [ -L "$f" ]
+  then
+    status=1
+  fi
+done
+if [ "$status" -eq 0 ]
+then
+  left=$(mktemp) || exit 1
+  right=$(mktemp) || exit 1
+  cleanup() {
+    result=$?
+    trap - 0 HUP INT TERM
+    rm -f "$left" "$right" || result=1
+    exit "$result"
+  }
+  trap cleanup 0
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  grep -v '^[[:space:]]*#' "$properties" | grep -v '^[[:space:]]*$' | sort > "$left" || status=1
+  grep -v '^[[:space:]]*#' "$scanner_config" | grep -v '^[[:space:]]*$' | sort > "$right" || status=1
+  cmp -s "$left" "$right" || status=1
+fi
+exit "$status"
+"""

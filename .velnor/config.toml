@@ -397,3 +397,16 @@ timeout_minutes = 10
 label = "ubuntu-26.04"
 platform = "linux_x64"
 executor = "hosted"
+
+[[checks]]
+id = "sonar"
+task = "check:sonar"
+directory = "."
+inputs = ["sonar-project.properties", ".sonarcloud.properties"]
+tools = []
+timeout_minutes = 10
+
+[checks.runner]
+label = "ubuntu-26.04"
+platform = "linux_x64"
+executor = "hosted"
