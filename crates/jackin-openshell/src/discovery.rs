@@ -21,11 +21,20 @@ const SCHEME_MAX: usize = 16;
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const TAIL_BYTES: usize = 4096;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct RegisteredGateway {
     pub name: GatewayName,
     pub endpoint: String,
     pub auth: GatewayAuth,
+}
+
+impl fmt::Debug for RegisteredGateway {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RegisteredGateway")
+            .field("name", &self.name)
+            .field("auth", &self.auth)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -46,7 +55,7 @@ impl fmt::Debug for ResolvedGateway {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ResolvedGateway")
             .field("name", &self.name)
-            .field("endpoint", &self.endpoint)
+            .field("endpoint", &crate::grpc::endpoint_authority(&self.endpoint))
             .finish_non_exhaustive()
     }
 }
@@ -199,15 +208,12 @@ fn require_secure(entry: &RegisteredGateway) -> Result<(), DiscoveryError> {
             scheme: scheme_of(&entry.endpoint),
         });
     }
-    let rest = &entry.endpoint[HTTPS.len()..];
-    let authority = rest.split('/').next().unwrap_or_default();
+    let authority = entry.endpoint[HTTPS.len()..]
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or_default();
     if authority.contains('@') {
         return Err(DiscoveryError::EndpointCredentials {
-            name: entry.name.clone(),
-        });
-    }
-    if rest.contains(['?', '#']) {
-        return Err(DiscoveryError::EndpointQuery {
             name: entry.name.clone(),
         });
     }
@@ -244,4 +250,26 @@ pub async fn resolve_gateway(
         certificate,
         key: SecretBytes::new(key),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GatewayAuth, RegisteredGateway};
+
+    use jackin_core::GatewayName;
+
+    #[test]
+    fn the_registered_gateway_debug_omits_the_endpoint() {
+        let gateway = RegisteredGateway {
+            name: GatewayName::parse("jackin-local").unwrap(),
+            endpoint: "https://alice:password@example.com/path-secret".to_owned(),
+            auth: GatewayAuth::Mtls,
+        };
+        let debug = format!("{gateway:?}");
+        assert!(debug.contains("jackin-local"), "{debug}");
+        assert!(!debug.contains("alice"), "{debug}");
+        assert!(!debug.contains("password"), "{debug}");
+        assert!(!debug.contains("example.com"), "{debug}");
+        assert!(!debug.contains("path-secret"), "{debug}");
+    }
 }

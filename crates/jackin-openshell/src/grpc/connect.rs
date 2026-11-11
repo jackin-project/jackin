@@ -9,7 +9,7 @@ use openshell_sdk::{ClientConfig, ClientIdentity, OpenShellClient, SdkError};
 use tokio::net::TcpStream;
 use tonic::codegen::http::Uri;
 
-use super::{GrpcGateway, GrpcGatewayConfig, Inner};
+use super::{GrpcGateway, GrpcGatewayConfig, Inner, endpoint_authority, parse_authority};
 use crate::error::{GatewayError, GatewayOp};
 use crate::gateway::GatewayHealth;
 
@@ -18,12 +18,16 @@ const HTTPS_PORT: u16 = 443;
 
 fn unreachable(endpoint: &str, message: impl ToString) -> GatewayError {
     GatewayError::Unreachable {
-        endpoint: endpoint.to_owned(),
+        endpoint: endpoint_authority(endpoint),
         message: message.to_string(),
     }
 }
 
 async fn probe(endpoint: &str) -> Result<(), GatewayError> {
+    parse_authority(endpoint).map_err(|reason| GatewayError::InvalidArgument {
+        field: "endpoint".to_owned(),
+        message: reason.to_owned(),
+    })?;
     let uri: Uri = endpoint
         .parse()
         .map_err(|error| unreachable(endpoint, format!("invalid endpoint: {error}")))?;
@@ -46,7 +50,8 @@ fn classify(endpoint: &str, error: SdkError) -> GatewayError {
         SdkError::Tls { message } => GatewayError::Tls { message },
         SdkError::Connect { .. } => GatewayError::Tls {
             message: format!(
-                "the TLS handshake with {endpoint} failed; check that its certificate is signed by the registered ca.crt"
+                "the TLS handshake with {} failed; check that its certificate is signed by the registered ca.crt",
+                endpoint_authority(endpoint)
             ),
         },
         SdkError::Io { source } => unreachable(endpoint, source),

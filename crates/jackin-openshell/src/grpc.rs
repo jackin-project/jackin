@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::net::Ipv6Addr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -33,7 +34,89 @@ mod sandbox;
 mod shell;
 mod status;
 
-#[derive(Clone, Debug)]
+const REDACTED_ENDPOINT: &str = "<redacted>";
+
+pub(crate) fn endpoint_authority(endpoint: &str) -> String {
+    parse_authority(endpoint).unwrap_or_else(|_| REDACTED_ENDPOINT.to_owned())
+}
+
+fn parse_authority(endpoint: &str) -> Result<String, &'static str> {
+    let Some((scheme, rest)) = endpoint.split_once("://") else {
+        return Err("the scheme is missing");
+    };
+    if !valid_scheme(scheme) {
+        return Err("the scheme is invalid");
+    }
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.is_empty() {
+        return Err("the authority is missing");
+    }
+    if authority.contains('@') {
+        return Err("the authority carries credentials");
+    }
+    let host = valid_host(authority)?;
+    Ok(format!("{scheme}://{host}"))
+}
+
+fn valid_scheme(scheme: &str) -> bool {
+    let mut chars = scheme.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_alphabetic()
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+fn valid_host(host: &str) -> Result<String, &'static str> {
+    if let Some(rest) = host.strip_prefix('[') {
+        let Some((address, tail)) = rest.split_once(']') else {
+            return Err("the host is invalid");
+        };
+        if !valid_ipv6(address) {
+            return Err("the host is invalid");
+        }
+        if tail.is_empty() {
+            return Ok(format!("[{address}]"));
+        }
+        let Some(port) = tail.strip_prefix(':') else {
+            return Err("the port is invalid");
+        };
+        valid_port(port)?;
+        return Ok(format!("[{address}]:{port}"));
+    }
+    if let Some((name, port)) = host.rsplit_once(':') {
+        valid_port(port)?;
+        if !valid_name(name) {
+            return Err("the host is invalid");
+        }
+        return Ok(format!("{name}:{port}"));
+    }
+    if !valid_name(host) {
+        return Err("the host is invalid");
+    }
+    Ok(host.to_owned())
+}
+
+fn valid_ipv6(address: &str) -> bool {
+    address.parse::<Ipv6Addr>().is_ok()
+}
+
+fn valid_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.' | '_' | '~'))
+}
+
+fn valid_port(port: &str) -> Result<(), &'static str> {
+    if port.is_empty() || !port.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err("the port is invalid");
+    }
+    port.parse::<u16>().map_err(|_| "the port is invalid")?;
+    Ok(())
+}
+
+#[derive(Clone)]
 pub struct GrpcGatewayConfig {
     pub gateway: ResolvedGateway,
     pub workspace: OpenShellWorkspace,
@@ -58,11 +141,21 @@ pub(crate) struct Inner {
     pub(crate) call_timeout: Duration,
 }
 
+impl fmt::Debug for GrpcGatewayConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GrpcGatewayConfig")
+            .field("name", &self.gateway.name())
+            .field("endpoint", &endpoint_authority(self.gateway.endpoint()))
+            .field("workspace", &self.workspace)
+            .finish_non_exhaustive()
+    }
+}
+
 impl fmt::Debug for GrpcGateway {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("GrpcGateway")
             .field("name", &self.inner.name)
-            .field("endpoint", &self.inner.endpoint)
+            .field("endpoint", &endpoint_authority(&self.inner.endpoint))
             .field("workspace", &self.inner.workspace)
             .finish_non_exhaustive()
     }
@@ -215,5 +308,137 @@ impl Gateway for GrpcGateway {
         request: &TerminalRequest,
     ) -> Result<TerminalSession, GatewayError> {
         self.inner.open_terminal(request).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{REDACTED_ENDPOINT, endpoint_authority, parse_authority};
+
+    #[test]
+    fn the_authority_keeps_the_scheme_the_host_and_the_explicit_port() {
+        assert_eq!(
+            endpoint_authority("https://127.0.0.1:8443/path-secret"),
+            "https://127.0.0.1:8443"
+        );
+        assert_eq!(
+            endpoint_authority("https://example.com/path-secret"),
+            "https://example.com"
+        );
+        assert_eq!(
+            endpoint_authority("https://[::1]:8443/path-secret"),
+            "https://[::1]:8443"
+        );
+        assert_eq!(
+            endpoint_authority("https://[::1]/path-secret"),
+            "https://[::1]"
+        );
+    }
+
+    #[test]
+    fn the_authority_drops_the_path_the_query_and_the_fragment() {
+        assert_eq!(
+            endpoint_authority("https://example.com/path-secret?token=query-secret#fragment"),
+            "https://example.com"
+        );
+    }
+
+    #[test]
+    fn a_relative_or_a_malformed_endpoint_never_keeps_a_secret() {
+        for endpoint in [
+            "path-secret",
+            "relative/path-secret?redirect=https://alice:password@example.com/path#fragment",
+            "https://",
+            "https://gw example.com:8443/path-secret",
+            "https://example.com:port/path-secret",
+            "https://[::1/path-secret",
+            "https://alice:password@example.com/path-secret",
+        ] {
+            let authority = endpoint_authority(endpoint);
+            assert_eq!(authority, REDACTED_ENDPOINT, "{endpoint}");
+            for secret in [
+                "path-secret",
+                "alice",
+                "password",
+                "redirect",
+                "gw example",
+                "query-secret",
+            ] {
+                assert!(!authority.contains(secret), "{endpoint}: {authority}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_bracketed_host_must_be_a_valid_ipv6_address() {
+        for endpoint in [
+            "https://[deadbeef]:8443/path-secret",
+            "https://[:::]:8443/path-secret",
+            "https://[127.0.0.1]:8443/path-secret",
+        ] {
+            let authority = endpoint_authority(endpoint);
+            assert_eq!(authority, REDACTED_ENDPOINT, "{endpoint}");
+        }
+        assert_eq!(
+            parse_authority("https://[deadbeef]:8443/path-secret"),
+            Err("the host is invalid")
+        );
+        assert_eq!(
+            parse_authority("https://[:::]:8443/path-secret"),
+            Err("the host is invalid")
+        );
+        assert_eq!(
+            parse_authority("https://[127.0.0.1]:8443/path-secret"),
+            Err("the host is invalid")
+        );
+        assert_eq!(
+            parse_authority("https://[::ffff:127.0.0.1]:8443/path-secret"),
+            Ok("https://[::ffff:127.0.0.1]:8443".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_percent_sign_is_never_valid_in_a_transport_host() {
+        assert_eq!(
+            parse_authority("https://secret%ZZ/path-secret"),
+            Err("the host is invalid")
+        );
+        assert_eq!(
+            endpoint_authority("https://secret%ZZ/path-secret"),
+            REDACTED_ENDPOINT
+        );
+    }
+
+    #[test]
+    fn every_rejection_names_its_reason() {
+        assert_eq!(
+            parse_authority("path-secret"),
+            Err("the scheme is missing")
+        );
+        assert_eq!(
+            parse_authority("relative/path-secret?redirect=https://alice:password@example.com/path"),
+            Err("the scheme is invalid")
+        );
+        assert_eq!(parse_authority("https://"), Err("the authority is missing"));
+        assert_eq!(
+            parse_authority("https://alice:password@example.com/path-secret"),
+            Err("the authority carries credentials")
+        );
+        assert_eq!(
+            parse_authority("https://gw example.com:8443/path-secret"),
+            Err("the host is invalid")
+        );
+        assert_eq!(
+            parse_authority("https://example.com:port/path-secret"),
+            Err("the port is invalid")
+        );
+        assert_eq!(
+            parse_authority("https://[::1/path-secret"),
+            Err("the host is invalid")
+        );
+        assert_eq!(
+            parse_authority("https://example.com:65536/path-secret"),
+            Err("the port is invalid")
+        );
     }
 }
