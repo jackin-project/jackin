@@ -795,3 +795,52 @@ repositories:
     line: 320
     first_seen_at: 2026-11-07T19:06:49.190180+00:00
     last_updated_at: 2026-11-07T19:06:49.190180+00:00
+# A15 final-review e2e evidence (deleted from the working tree, still in the history): the synthetic A15_LEAK fixture token (header {"alg":"RS256"}, payload {"sub":"user-a1-access-payload"}, signature segment the base64 of a readable placeholder string) recorded in the review logs and result tables; no credential.
+  - path: .audit/a15-final-review-logs/IT4.exclude.access.red.log
+    fingerprint: '15118527496119136873'
+    rule_id: betterleaks.jwt
+    line: 28
+    first_seen_at: 2026-11-11T10:56:52.171642+00:00
+    last_updated_at: 2026-11-11T10:56:52.171642+00:00
+  - path: .audit/a15-final-review-logs/IT4.exclude.id_token.red.log
+    fingerprint: '17940026030160397198'
+    rule_id: betterleaks.jwt
+    line: 28
+    first_seen_at: 2026-11-11T10:56:52.171642+00:00
+    last_updated_at: 2026-11-11T10:56:52.171642+00:00
+  - path: .audit/a15-final-review-prior-results.tsv
+    fingerprint: '1170207648997453710'
+    rule_id: betterleaks.jwt
+    line: 42
+    first_seen_at: 2026-11-11T10:56:52.171642+00:00
+    last_updated_at: 2026-11-11T10:56:52.171642+00:00
+  - path: .audit/a15-final-review-prior-results.tsv
+    fingerprint: '7350815458517201325'
+    rule_id: betterleaks.jwt
+    line: 42
+    first_seen_at: 2026-11-11T10:56:52.171642+00:00
+    last_updated_at: 2026-11-11T10:56:52.171642+00:00
+  - path: .audit/a15-final-review-prior-results.tsv
+    fingerprint: '11010475430678246245'
+    rule_id: betterleaks.jwt
+    line: 44
+    first_seen_at: 2026-11-11T10:56:52.171642+00:00
+    last_updated_at: 2026-11-11T10:56:52.171642+00:00
+  - path: .audit/a15-final-review-prior-results.tsv
+    fingerprint: '15357661489711251806'
+    rule_id: betterleaks.jwt
+    line: 44
+    first_seen_at: 2026-11-11T10:56:52.171642+00:00
+    last_updated_at: 2026-11-11T10:56:52.171642+00:00
+  - path: .audit/a15-final-review-results.tsv
+    fingerprint: '14800474091659888243'
+    rule_id: betterleaks.jwt
+    line: 43
+    first_seen_at: 2026-11-11T10:56:52.171642+00:00
+    last_updated_at: 2026-11-11T10:56:52.171642+00:00
+  - path: .audit/a15-final-review-results.tsv
+    fingerprint: '5923845560388586413'
+    rule_id: betterleaks.jwt
+    line: 45
+    first_seen_at: 2026-11-11T10:56:52.171642+00:00
+    last_updated_at: 2026-11-11T10:56:52.171642+00:00
