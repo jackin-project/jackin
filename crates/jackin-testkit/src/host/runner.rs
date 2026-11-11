@@ -28,6 +28,7 @@ pub enum ScriptedProgram {
     Ssh,
     Op,
     Security,
+    Gh,
 }
 
 impl ScriptedProgram {
@@ -38,6 +39,7 @@ impl ScriptedProgram {
             Program::Ssh => Some(ScriptedProgram::Ssh),
             Program::Op => Some(ScriptedProgram::Op),
             Program::Security => Some(ScriptedProgram::Security),
+            Program::Gh => Some(ScriptedProgram::Gh),
             Program::Git => None,
         }
     }

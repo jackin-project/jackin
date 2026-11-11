@@ -1,9 +1,15 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::sync::Arc;
+
 use jackin::ExitClass;
-use jackin_core::{AccountName, AttemptId, SandboxLabels, SupervisorState};
-use jackin_testkit::{Rig, TestResult, guard, launch_id};
+use jackin_core::{AccountName, AttemptId, ProcessRunner, SandboxLabels, SupervisorState};
+use jackin_openshell::GatewayOp;
+use jackin_testkit::{
+    CancelsOn, Fault, ProcessReply, Rig, ScriptedProgram, TestResult, Trigger, guard, launch_id,
+};
+use tokio_util::sync::CancellationToken;
 
 use super::support::{Failure, Harness, ScriptedTerminal, Step, failed, host_path};
 
@@ -566,4 +572,311 @@ fn only_sandbox(rig: &Rig) -> Result<jackin_testkit::SandboxHandle, Failure> {
     } else {
         Err(format!("expected one sandbox, got {}", sandboxes.len()).into())
     }
+}
+
+#[tokio::test]
+async fn a_mapping_for_an_agent_that_was_not_selected_is_refused() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+        for flag in ["provider-for", "account-for", "model-for"] {
+            let mapping = format!("--{flag}");
+            let ran = harness
+                .run(&["load", "--agent", "codex", &mapping, "omp=zai"])
+                .await?;
+            failed(&ran, ExitClass::Usage, &[flag, "omp", "codex"])?;
+            assert!(
+                rig.world.gateway.sandboxes().is_empty(),
+                "{flag} started a launch"
+            );
+            assert!(
+                rig.world.engine.builds().is_empty(),
+                "{flag} built an image"
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_global_provider_reaches_the_lead_of_a_multi_agent_launch() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        std::fs::write(rig.home.as_path().join("zai.txt"), "test-key")?;
+        harness.write_config(&multi_account_config(&rig))?;
+        let id = launch_id(7).to_string();
+        let args = [
+            "load",
+            "--agent",
+            "omp",
+            "--agent",
+            "codex",
+            "--provider",
+            "kimi",
+            "--account-for",
+            "omp=second",
+            "--account-for",
+            "codex=codexacct",
+            "--launch-id",
+            &id,
+        ];
+        harness.run(&args).await?.ok()?;
+        let handle = only_sandbox(&rig)?;
+        let manifest = handle
+            .file(&jackin_core::SandboxPath::from_static(
+                "/sandbox/.jackin/agents.json",
+            ))
+            .ok_or("agents.json")?;
+        let manifest = String::from_utf8(manifest)?;
+        assert!(
+            manifest.starts_with("[{\"agent\":\"omp\",\"provider\":\"kimi\""),
+            "{manifest}"
+        );
+        let instances: Vec<jackin_core::AgentInstance> = serde_json::from_str(&manifest)?;
+        assert_eq!(instances.len(), 2);
+        let lead = &instances[0];
+        assert_eq!(lead.agent, jackin_core::Agent::Omp);
+        assert_eq!(lead.provider, jackin_core::Provider::Kimi);
+        assert_eq!(lead.account.as_str(), "second");
+        let second = &instances[1];
+        assert_eq!(second.agent, jackin_core::Agent::Codex);
+        assert_eq!(second.provider, jackin_core::Provider::Codex);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_task_file_is_read_as_a_bounded_regular_file() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+
+        let directory = rig.home.as_path().join("task-directory");
+        std::fs::create_dir(&directory)?;
+        let shown = directory.display().to_string();
+        let ran = harness.run(&["load", "--task-file", &shown]).await?;
+        failed(&ran, ExitClass::Usage, &["not a regular file"])?;
+
+        let fifo = rig.home.as_path().join("task-fifo");
+        let status = tokio::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .await?;
+        assert!(status.success());
+        let shown = fifo.display().to_string();
+        let ran = harness.run(&["load", "--task-file", &shown]).await?;
+        failed(&ran, ExitClass::Usage, &["not a regular file"])?;
+
+        let huge = rig.home.as_path().join("task-huge.md");
+        std::fs::write(&huge, vec![b'x'; (1 << 20) + 1])?;
+        let shown = huge.display().to_string();
+        let ran = harness.run(&["load", "--task-file", &shown]).await?;
+        failed(&ran, ExitClass::Usage, &["larger than"])?;
+
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_task_file_reaches_the_sandbox_as_it_was_written() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+        let task = rig.home.as_path().join("task.md");
+        std::fs::write(&task, "do the thing\n")?;
+        let shown = task.display().to_string();
+        harness
+            .run(&[
+                "load",
+                "--task-file",
+                &shown,
+                "--launch-id",
+                &launch_id(8).to_string(),
+            ])
+            .await?
+            .ok()?;
+        let handle = only_sandbox(&rig)?;
+        let text = handle
+            .file(&jackin_core::SandboxPath::from_static(
+                "/sandbox/.jackin/task/task.md",
+            ))
+            .ok_or("task.md")?;
+        assert_eq!(String::from_utf8(text)?, "do the thing\n");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_task_file_path_with_a_parent_segment_is_refused() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+        let home = rig.home.as_path();
+        std::fs::create_dir_all(home.join("sub"))?;
+        std::fs::write(home.join("task.md"), "do the thing\n")?;
+        let shown = format!("{}/sub/../task.md", home.display());
+        let ran = harness.run(&["load", "--task-file", &shown]).await?;
+        failed(&ran, ExitClass::Usage, &["parent segment"])?;
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_github_issue_is_read_with_a_json_parser() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+        let json = "{\"title\":\"Fix \\u003cbug\\u003e\",\"body\":\"first\\r\\nsecond\"}";
+        rig.world.runner.scripted().expect(
+            ScriptedProgram::Gh,
+            &["issue", "view"],
+            ProcessReply::exited(0, json.as_bytes(), b""),
+        );
+        let url = "https://github.com/owner/repo/issues/7";
+        harness
+            .run(&[
+                "load",
+                "--issue",
+                url,
+                "--launch-id",
+                &launch_id(9).to_string(),
+            ])
+            .await?
+            .ok()?;
+        let seen = rig.world.runner.scripted().seen();
+        let call = seen
+            .iter()
+            .find(|call| call.program == jackin_core::Program::Gh)
+            .ok_or("gh was not run")?;
+        assert_eq!(
+            call.args,
+            vec![
+                "issue".to_owned(),
+                "view".to_owned(),
+                url.to_owned(),
+                "--json".to_owned(),
+                "title,body".to_owned()
+            ]
+        );
+        let handle = only_sandbox(&rig)?;
+        let text = handle
+            .file(&jackin_core::SandboxPath::from_static(
+                "/sandbox/.jackin/task/task.md",
+            ))
+            .ok_or("task.md")?;
+        assert_eq!(String::from_utf8(text)?, "Fix <bug>\n\nfirst\r\nsecond");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_github_issue_lookup_that_times_out_is_reported() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+        rig.world.runner.scripted().expect(
+            ScriptedProgram::Gh,
+            &["issue", "view"],
+            ProcessReply::timeout(),
+        );
+        let ran = harness
+            .run(&["load", "--issue", "https://github.com/owner/repo/issues/7"])
+            .await?;
+        failed(&ran, ExitClass::Usage, &["timed out"])?;
+        assert!(
+            rig.world
+                .runner
+                .scripted()
+                .seen()
+                .iter()
+                .any(|call| call.program == jackin_core::Program::Gh),
+            "the issue lookup did not run through the host process boundary"
+        );
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_github_issue_lookup_stops_when_the_launch_is_cancelled() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+        rig.world.runner.scripted().expect(
+            ScriptedProgram::Gh,
+            &["issue", "view"],
+            ProcessReply::until_cancelled(Vec::new()),
+        );
+        let token = CancellationToken::new();
+        let world_runner = Arc::clone(&rig.world.runner);
+        let cancelling: Arc<dyn ProcessRunner> =
+            Arc::new(CancelsOn::new(&world_runner, "view", &token));
+        let ran = harness
+            .runner(cancelling)
+            .command(&["load", "--issue", "https://github.com/owner/repo/issues/7"])
+            .cancel(token)
+            .run()
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(ran.stdout.is_empty());
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancelled_load_asks_for_the_original_command_with_the_launch_id() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = configured(&rig)?;
+        harness.cwd = rig.repo.root().clone();
+        let token = CancellationToken::new();
+        rig.gateway().inject(Fault::CancelAt {
+            trigger: Trigger::Op(GatewayOp::UploadTree),
+            token: token.clone(),
+        });
+        let id = launch_id(1).to_string();
+        let ran = harness
+            .command(&["load", "--launch-id", &id])
+            .cancel(token)
+            .run()
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        let message = ran
+            .stderr
+            .lines()
+            .find(|line| line.starts_with("cancelled"))
+            .ok_or("no cancelled line")?;
+        assert!(
+            message.contains("repeat the same jackin load command") && message.contains(&id),
+            "{message}"
+        );
+        assert!(
+            !message.contains("jackin load --launch-id"),
+            "the incomplete retry command is still advertised: {message}"
+        );
+        Ok(())
+    })
+    .await
 }

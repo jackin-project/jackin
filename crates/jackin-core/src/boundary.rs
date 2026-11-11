@@ -208,6 +208,7 @@ pub enum Program {
     Ssh,
     Op,
     Security,
+    Gh,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -250,13 +251,14 @@ impl Program {
             Self::Ssh => "ssh",
             Self::Op => "op",
             Self::Security => "security",
+            Self::Gh => "gh",
         }
     }
 
     pub fn leading_args(self) -> &'static [&'static str] {
         match self {
             Self::Docker(subcommand) => subcommand.argv(),
-            Self::Openshell | Self::Git | Self::Ssh | Self::Op | Self::Security => &[],
+            Self::Openshell | Self::Git | Self::Ssh | Self::Op | Self::Security | Self::Gh => &[],
         }
     }
 }

@@ -2,13 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::BTreeMap;
+use std::io::ErrorKind;
+use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 
-use jackin_core::{EnvName, LaunchId, PlainEnvValue, ProjectRoot, TerminalText};
+use jackin_core::{
+    Agent, EnvName, FileSystem, FsError, HostPath, LaunchId, PlainEnvValue, ProcessError,
+    ProcessSpec, ProcessStatus, ProcessStdin, Program, ProjectRoot, RegularFileProblem, RepoPath,
+    TerminalText,
+};
 use jackin_image::Rebuild;
 use jackin_session::{
     AttachRequest, EnvQuestion, LaunchOutcome, LaunchPlan, LaunchRequest, LineDelivery, PlanError,
     Prompting, RestoreCandidate, launch_events, lookup_workspace, plan_launch,
 };
+use serde::Deserialize;
 
 use super::progress::launch_event;
 use crate::app::App;
@@ -16,6 +24,9 @@ use crate::cli::{EnvAssignment, LoadArgs, parse_agent, parse_provider};
 use crate::error::CommandError;
 use crate::paths::existing_dir;
 use crate::term;
+
+const TASK_FILE_MAX_BYTES: usize = 1 << 20;
+const ISSUE_TIMEOUT: Duration = Duration::from_secs(30);
 
 async fn answer(app: &mut App, question: &EnvQuestion) -> Result<PlainEnvValue, CommandError> {
     let printable = |text: &str| TerminalText::sanitize(text.as_bytes());
@@ -85,23 +96,39 @@ fn cancelled(candidate: &RestoreCandidate) -> CommandError {
     let launch = &candidate.launch_id;
     CommandError::Cancelled(match &candidate.sandbox {
         Some(sandbox) => format!(
-            "cancelled; sandbox {sandbox} remains as a restore candidate (launch {launch}); rerun with: jackin load --launch-id {launch}"
+            "cancelled; sandbox {sandbox} remains as a restore candidate (launch {launch}); repeat the same jackin load command with --launch-id {launch}"
         ),
         None => format!(
-            "cancelled before a sandbox existed (launch {launch}); rerun with: jackin load --launch-id {launch}"
+            "cancelled before a sandbox existed (launch {launch}); repeat the same jackin load command with --launch-id {launch}"
         ),
     })
 }
 
-fn parse_for(entries: &[String]) -> Result<BTreeMap<String, String>, CommandError> {
+fn parse_for(
+    entries: &[String],
+    flag: &str,
+    agents: &[Agent],
+) -> Result<BTreeMap<String, String>, CommandError> {
     let mut map = BTreeMap::new();
     for entry in entries {
         let (name, value) = entry.split_once('=').ok_or_else(|| {
             CommandError::Argument(format!("expected <agent>=<value>, got {entry}"))
         })?;
+        check_agent(flag, name, agents)?;
         map.insert(name.to_owned(), value.to_owned());
     }
     Ok(map)
+}
+
+fn check_agent(flag: &str, name: &str, agents: &[Agent]) -> Result<(), CommandError> {
+    if agents.iter().filter(|agent| agent.as_str() == name).count() == 1 {
+        return Ok(());
+    }
+    let selected: Vec<&str> = agents.iter().map(|agent| agent.as_str()).collect();
+    Err(CommandError::Argument(format!(
+        "--{flag} names {name}, which does not name exactly one of the selected agents: {}",
+        selected.join(", ")
+    )))
 }
 
 pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandError> {
@@ -137,14 +164,14 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
         Some(text) => parse_provider(text)?,
         None => agent.provider(),
     };
-    let providers_for = parse_for(&args.provider_for)?;
-    let accounts_for = parse_for(&args.account_for)?;
-    let models_for = parse_for(&args.model_for)?;
+    let providers_for = parse_for(&args.provider_for, "provider-for", &agents)?;
+    let accounts_for = parse_for(&args.account_for, "account-for", &agents)?;
+    let models_for = parse_for(&args.model_for, "model-for", &agents)?;
     let mut instances = Vec::new();
-    for instance_agent in &agents {
+    for (index, instance_agent) in agents.iter().enumerate() {
         let instance_provider = match providers_for.get(instance_agent.as_str()) {
             Some(text) => parse_provider(text)?,
-            None if agents.len() == 1 => provider,
+            None if index == 0 => provider,
             None => instance_agent.provider(),
         };
         let tuple = jackin_core::lookup_tuple(*instance_agent, instance_provider)
@@ -207,6 +234,7 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
     }
     let instances = jackin_core::AgentInstances::new(instances)
         .map_err(|error| CommandError::Argument(error.to_string()))?;
+    let lead_provider = instances.lead().provider;
     let task = resolve_task(
         app,
         args.task.as_ref(),
@@ -215,7 +243,7 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
     )
     .await?;
     let request = LaunchRequest::new(gateway.clone(), project, role.name().clone(), launch)
-        .tuple(agent, provider)
+        .tuple(agent, lead_provider)
         .instances(instances)
         .task(task)
         .model(args.model)
@@ -249,16 +277,12 @@ pub(crate) async fn run(app: &mut App, args: LoadArgs) -> Result<(), CommandErro
 async fn resolve_task(
     app: &mut App,
     task: Option<&String>,
-    task_file: Option<&std::path::PathBuf>,
+    task_file: Option<&PathBuf>,
     issue: Option<&String>,
 ) -> Result<Option<String>, CommandError> {
     match (task, task_file, issue) {
         (Some(text), None, None) => Ok(Some(text.clone())),
-        (None, Some(path), None) => {
-            Ok(Some(tokio::fs::read_to_string(path).await.map_err(
-                |error| CommandError::Argument(format!("cannot read task file: {error}")),
-            )?))
-        }
+        (None, Some(path), None) => Ok(Some(task_text(app, path).await?)),
         (None, None, Some(url)) => Ok(Some(issue_task(app, url).await?)),
         (None, None, None) => Ok(None),
         _ => Err(CommandError::Argument(
@@ -267,38 +291,117 @@ async fn resolve_task(
     }
 }
 
-async fn issue_task(app: &mut App, url: &str) -> Result<String, CommandError> {
-    let output = tokio::process::Command::new("gh")
-        .args(["issue", "view", url, "--json", "title,body"])
-        .output()
-        .await
-        .map_err(|error| CommandError::Argument(format!("cannot run gh: {error}")))?;
-    if !output.status.success() {
-        return Err(CommandError::Argument("gh issue view failed".to_owned()));
+async fn task_text(app: &App, path: &Path) -> Result<String, CommandError> {
+    let cancel = app.cancel.clone();
+    let read = read_task_file(app.deps.host.fs.as_ref(), &app.cwd, path);
+    tokio::select! {
+        biased;
+        () = cancel.cancelled() => Err(CommandError::Cancelled(
+            "cancelled while reading the task file".to_owned(),
+        )),
+        result = read => result,
     }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let title = json_string(&text, "title").unwrap_or_default();
-    let body = json_string(&text, "body").unwrap_or_default();
-    let _ = app;
-    Ok(format!("{title}\n\n{body}"))
 }
 
-fn json_string(text: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{key}\":\"");
-    let start = text.find(&needle)? + needle.len();
-    let mut out = String::new();
-    let mut chars = text[start..].chars();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '"' => return Some(out),
-            '\\' => match chars.next() {
-                Some('n') => out.push('\n'),
-                Some('t') => out.push('\t'),
-                Some(other) => out.push(other),
-                None => {}
-            },
-            other => out.push(other),
-        }
+async fn read_task_file(
+    fs: &dyn FileSystem,
+    base: &HostPath,
+    path: &Path,
+) -> Result<String, CommandError> {
+    let shown = path.display().to_string();
+    if path
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+    {
+        return Err(CommandError::Argument(format!(
+            "the task file {shown} may not contain a parent segment"
+        )));
     }
-    Some(out)
+    let absolute = HostPath::resolve(path, base)?;
+    let Some(target) = fs.canonicalize(&absolute).await? else {
+        return Err(CommandError::Argument(format!(
+            "cannot read the task file {shown}: it does not exist"
+        )));
+    };
+    let Some(dir) = target.as_path().parent() else {
+        return Err(CommandError::Argument(format!(
+            "cannot read the task file {shown}: it has no parent directory"
+        )));
+    };
+    let Some(name) = target
+        .as_path()
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| RepoPath::parse(name).ok())
+    else {
+        return Err(CommandError::Argument(format!(
+            "cannot read the task file {shown}: the name is not usable"
+        )));
+    };
+    let dir = HostPath::parse(dir)?;
+    match fs.read_regular(&dir, &name, TASK_FILE_MAX_BYTES).await {
+        Ok(Ok(file)) if file.bytes.len() > TASK_FILE_MAX_BYTES => Err(CommandError::Argument(
+            format!("the task file {shown} is larger than {TASK_FILE_MAX_BYTES} bytes"),
+        )),
+        Ok(Ok(file)) => String::from_utf8(file.bytes).map_err(|_| {
+            CommandError::Argument(format!("the task file {shown} is not valid UTF-8"))
+        }),
+        Ok(Err(RegularFileProblem::Missing)) => Err(CommandError::Argument(format!(
+            "cannot read the task file {shown}: it does not exist"
+        ))),
+        Ok(Err(RegularFileProblem::Symlink | RegularFileProblem::NotARegularFile)) => Err(
+            CommandError::Argument(format!("the task file {shown} is not a regular file")),
+        ),
+        Err(FsError::Io {
+            kind: ErrorKind::NotFound,
+            ..
+        }) => Err(CommandError::Argument(format!(
+            "cannot read the task file {shown}: it does not exist"
+        ))),
+        Err(other) => Err(other.into()),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct IssueView {
+    title: String,
+    #[serde(default)]
+    body: String,
+}
+
+async fn issue_task(app: &App, url: &str) -> Result<String, CommandError> {
+    let spec = ProcessSpec {
+        program: Program::Gh,
+        args: vec![
+            "issue".to_owned(),
+            "view".to_owned(),
+            url.to_owned(),
+            "--json".to_owned(),
+            "title,body".to_owned(),
+        ],
+        cwd: None,
+        env: Vec::new(),
+        env_remove_prefixes: Vec::new(),
+        stdin: ProcessStdin::Null,
+        timeout: ISSUE_TIMEOUT,
+    };
+    let output = app
+        .deps
+        .host
+        .runner
+        .run(&spec, None, &app.cancel)
+        .await
+        .map_err(|error| match error {
+            ProcessError::Cancelled { .. } => {
+                CommandError::Cancelled("cancelled while reading the GitHub issue".to_owned())
+            }
+            other => CommandError::Argument(format!("cannot run gh: {other}")),
+        })?;
+    if output.status != ProcessStatus::Exited(0) {
+        return Err(CommandError::Argument("gh issue view failed".to_owned()));
+    }
+    let issue: IssueView = serde_json::from_slice(&output.stdout).map_err(|error| {
+        CommandError::Argument(format!("gh issue view returned no readable issue: {error}"))
+    })?;
+    Ok(format!("{}\n\n{}", issue.title, issue.body))
 }

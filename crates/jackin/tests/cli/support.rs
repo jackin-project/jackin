@@ -422,13 +422,17 @@ impl Harness {
                 owned.extend([
                     "--provider".to_owned(),
                     "zai".to_owned(),
-                    "--provider-for".to_owned(),
-                    "codex=zai".to_owned(),
                     "--model".to_owned(),
                     "glm-5.3".to_owned(),
-                    "--model-for".to_owned(),
-                    "codex=glm-5.3".to_owned(),
                 ]);
+                if selects_codex(args) {
+                    owned.extend([
+                        "--provider-for".to_owned(),
+                        "codex=zai".to_owned(),
+                        "--model-for".to_owned(),
+                        "codex=glm-5.3".to_owned(),
+                    ]);
+                }
             }
         }
         Invocation {
@@ -525,4 +529,13 @@ pub(crate) fn connecting(
 
 pub(crate) fn host_path(path: &Path) -> Result<HostPath, Failure> {
     Ok(HostPath::parse(path)?)
+}
+
+fn selects_codex(args: &[&str]) -> bool {
+    let agents: Vec<&str> = args
+        .windows(2)
+        .filter(|pair| pair[0] == "--agent")
+        .map(|pair| pair[1])
+        .collect();
+    agents.is_empty() || agents.contains(&"codex")
 }
