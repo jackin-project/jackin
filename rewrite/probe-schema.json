@@ -834,7 +834,8 @@
         "agent_environment",
         "start_record",
         "auth_file",
-        "leaks"
+        "leaks",
+        "leak_count"
       ],
       "properties": {
         "environment": {
@@ -978,7 +979,12 @@
           "items": {
             "type": "string"
           },
-          "description": "Paths of files outside the project that hold a token-shaped string. Only paths are reported."
+          "description": "Identifiers of the files outside the project that hold a token-shaped string. The identifier is \"leak-\" followed by the first twelve hexadecimal digits of the SHA-256 of the path, so no path is disclosed. At most fifty identifiers are listed; facts.leak_count is the exact total."
+        },
+        "leak_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The exact number of files outside the project that hold a token-shaped string. It never falls below the number of listed leaks and stays exact when the list is capped."
         }
       }
     },

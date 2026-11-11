@@ -257,13 +257,26 @@ pub(crate) fn judge_kinds(
     if found_owned != expected {
         problems.push("auth fields differ from the adapter declaration".to_owned());
     }
-    if !facts.leaks.is_empty() {
+    problems.extend(judge_leaks(facts));
+    (problems, skip)
+}
+
+fn judge_leaks(facts: &FactsJ08) -> Vec<String> {
+    let mut problems = Vec::new();
+    if facts.leak_count < facts.leaks.len() {
         problems.push(format!(
-            "the probe found token-shaped strings in {} files",
+            "the probe reports {} leaks but lists {} of them",
+            facts.leak_count,
             facts.leaks.len()
         ));
     }
-    (problems, skip)
+    if facts.leak_count > 0 {
+        problems.push(format!(
+            "the probe found token-shaped strings in {} files",
+            facts.leak_count
+        ));
+    }
+    problems
 }
 
 pub(crate) fn judge_auth_text(bytes: &[u8], behavior: &CredentialBehavior) -> Vec<String> {
@@ -613,5 +626,64 @@ impl Run<'_> {
             reason = format!("{}; {reason}", held.reason());
         }
         Verdict::fail(reason)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::e2e::probe::{AuthFile, StartRecord};
+
+    fn j08_facts(leaks: &[&str], leak_count: usize) -> FactsJ08 {
+        FactsJ08 {
+            environment: Vec::new(),
+            start_record: StartRecord {
+                state: "read".to_owned(),
+            },
+            auth_file: AuthFile {
+                state: "present".to_owned(),
+                path: "/sandbox/.codex/auth.json".to_owned(),
+                mode: Some("600".to_owned()),
+                fields: Vec::new(),
+            },
+            leaks: leaks.iter().map(|leak| (*leak).to_owned()).collect(),
+            leak_count,
+        }
+    }
+
+    #[test]
+    fn the_leak_count_covers_every_listed_leak() {
+        assert!(judge_leaks(&j08_facts(&[], 0)).is_empty());
+        let problems = judge_leaks(&j08_facts(&["leak-0123456789ab"], 1));
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(
+            problems[0].contains("the probe found token-shaped strings in 1 files"),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn the_leak_count_stays_exact_when_the_list_is_capped() {
+        let listed: Vec<&str> = vec!["leak-0123456789ab"; 50];
+        let problems = judge_leaks(&j08_facts(&listed, 51));
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(
+            problems[0].contains("the probe found token-shaped strings in 51 files"),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_leak_count_below_the_listed_leaks_is_a_problem() {
+        let problems = judge_leaks(&j08_facts(&["leak-0123456789ab", "leak-abcdef012345"], 1));
+        assert_eq!(problems.len(), 2, "{problems:?}");
+        assert!(
+            problems[0].contains("the probe reports 1 leaks but lists 2 of them"),
+            "{problems:?}"
+        );
+        assert!(
+            problems[1].contains("the probe found token-shaped strings in 1 files"),
+            "{problems:?}"
+        );
     }
 }

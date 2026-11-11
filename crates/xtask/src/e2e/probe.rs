@@ -509,6 +509,7 @@ pub(crate) struct FactsJ08 {
     pub(crate) start_record: StartRecord,
     pub(crate) auth_file: AuthFile,
     pub(crate) leaks: Vec<String>,
+    pub(crate) leak_count: usize,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -212,6 +212,7 @@ fn facts(
             "start_record": {"state": "read", "attempt": 1},
             "auth_file": auth_fact(target),
             "leaks": [],
+            "leak_count": 0,
         }),
         "J09" => json!({
             "outside_host": egress(0, 7),

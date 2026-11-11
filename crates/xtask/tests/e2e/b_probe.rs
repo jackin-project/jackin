@@ -133,6 +133,21 @@ async fn each_schema_violation_is_rejected_with_its_json_pointer() {
             |v| v["steps"]["J08"]["facts"]["auth_file"]["fields"][0]["kind"] = json!("secret"),
             "/steps/J08/facts",
         ),
+        (
+            "missing leak count",
+            |v| {
+                v["steps"]["J08"]["facts"]
+                    .as_object_mut()
+                    .expect("facts")
+                    .remove("leak_count");
+            },
+            "/steps/J08/facts",
+        ),
+        (
+            "negative leak count",
+            |v| v["steps"]["J08"]["facts"]["leak_count"] = json!(-1),
+            "/steps/J08/facts/leak_count",
+        ),
         ("no steps", |v| v["steps"] = json!({}), "/steps"),
         (
             "host-only step key",
@@ -176,6 +191,35 @@ async fn each_schema_violation_is_rejected_with_its_json_pointer() {
         !message.contains(ACCESS) && !message.contains(REFRESH),
         "the instance leaks: {message}"
     );
+}
+
+#[tokio::test]
+async fn the_j08_leak_count_is_the_exact_total_of_the_leaks() {
+    fault(
+        "a leak count above the listed leaks",
+        "J08",
+        "the probe found token-shaped strings in 2 files",
+        |scenario| {
+            scenario.patch("J08", None, "/facts/leaks", json!(["leak-0123456789ab"]));
+            scenario.patch("J08", None, "/facts/leak_count", json!(2));
+        },
+    )
+    .await;
+    fault(
+        "a leak count below the listed leaks",
+        "J08",
+        "the probe reports 1 leaks but lists 2 of them",
+        |scenario| {
+            scenario.patch(
+                "J08",
+                None,
+                "/facts/leaks",
+                json!(["leak-0123456789ab", "leak-abcdef012345"]),
+            );
+            scenario.patch("J08", None, "/facts/leak_count", json!(1));
+        },
+    )
+    .await;
 }
 
 #[tokio::test]
