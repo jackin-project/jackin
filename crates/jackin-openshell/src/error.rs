@@ -193,9 +193,7 @@ pub enum DiscoveryError {
         "gateway {name} has an endpoint with credentials; register it without a user or password"
     )]
     EndpointCredentials { name: GatewayName },
-    #[error(
-        "gateway {name} has an endpoint with a query or a fragment; register it without one"
-    )]
+    #[error("gateway {name} has an endpoint with a query or a fragment; register it without one")]
     EndpointQuery { name: GatewayName },
     #[error("gateway {name} uses the authentication {}; only mtls is accepted", plain(.auth))]
     UnsupportedAuth { name: GatewayName, auth: String },
