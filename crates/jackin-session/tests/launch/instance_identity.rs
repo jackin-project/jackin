@@ -12,10 +12,13 @@ use jackin_openshell::{GatewayError, TermSize};
 use jackin_session::{
     AttachError, AttachRequest, IntegrateError, LaunchError, LaunchRequest, plan_launch,
 };
-use jackin_testkit::{Outcome, Rig, SandboxHandle};
+use jackin_testkit::{Outcome, ProgramScript, Rig, SandboxHandle};
 use tokio_util::sync::CancellationToken;
 
-use super::support::{TestResult, failure, guard, launch_rig, multi_agent_rig, ready};
+use super::support::{
+    LiveInstance, TestResult, failure, guard, identity_queries, launch_rig, multi_agent_rig, ready,
+    stale_pid,
+};
 
 fn members(lead: Agent) -> Result<AgentInstances, Box<dyn std::error::Error>> {
     let codex = AgentInstance::new(
@@ -103,6 +106,14 @@ async fn nonlexical_lead_attach_routes_main_and_secondary_terminal_contexts() ->
         assert!(handle.shells().is_empty());
         lead.input(b"lead-identity-input".to_vec()).await?;
         wait_main(&handle, b"lead-identity-input").await?;
+        rig.gateway().script_program(
+            &SandboxPath::from_static("/usr/bin/pkill"),
+            ProgramScript {
+                exit_code: 1,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
         let mut other = AttachRequest::owner(target.clone(), size()?);
         other.agent = Some(Agent::Codex);
         let mut secondary = rig.world.session.attach(other).await?;
@@ -736,6 +747,230 @@ async fn public_instance_reader_canonicalizes_secondaries_but_preserves_the_lead
                 )
             );
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn secondary_attach_stops_the_detached_instance_and_carries_the_launch_env() -> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let request = rig.request(36)?.instances(members(Agent::ClaudeCode)?);
+        let target = ready(run(&rig, request).await?)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        let live = LiveInstance::spawn()?;
+        std::fs::write(
+            handle
+                .root()
+                .join(".jackin/run/codex/instance.pid"),
+            live.record().await?,
+        )?;
+        rig.gateway().script_program(
+            &SandboxPath::from_static("/usr/bin/kill"),
+            ProgramScript {
+                exit_code: 0,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
+        rig.gateway().script_program(
+            &SandboxPath::from_static("/usr/bin/ps"),
+            ProgramScript {
+                exit_code: 1,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
+        let mut request = AttachRequest::owner(target.clone(), size()?);
+        request.agent = Some(Agent::Codex);
+        rig.world.session.attach(request).await?;
+        let pid = live.pid().to_string();
+        let signalled = handle.runs(&SandboxPath::from_static("/usr/bin/kill"));
+        assert_eq!(signalled.len(), 1, "{signalled:?}");
+        assert_eq!(signalled[0].args, vec!["-TERM", &pid]);
+        let probed = handle.runs(&SandboxPath::from_static("/usr/bin/ps"));
+        assert_eq!(probed.len(), 1, "{probed:?}");
+        assert_eq!(probed[0].args, vec!["-p", &pid]);
+        assert_eq!(probed[0].exit_code, 1);
+        let queries = identity_queries(&handle);
+        assert_eq!(queries.len(), 1, "{queries:?}");
+        assert!(queries[0].iter().any(|arg| arg == &pid), "{queries:?}");
+        assert!(
+            !handle
+                .root()
+                .join(".jackin/run/codex/instance.pid")
+                .exists()
+        );
+        let shells = handle.shells();
+        assert_eq!(shells.len(), 1);
+        assert_eq!(
+            shells[0]
+                .env
+                .get(&EnvName::parse("GREETING")?)
+                .map(String::as_str),
+            Some("hello")
+        );
+        assert_eq!(
+            shells[0]
+                .env
+                .get(&EnvName::parse("HOME")?)
+                .map(String::as_str),
+            Some("/sandbox/.jackin/homes/codex")
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn secondary_attach_refuses_when_the_detached_instance_cannot_be_stopped() -> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let request = rig.request(37)?.instances(members(Agent::ClaudeCode)?);
+        let target = ready(run(&rig, request).await?)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        let live = LiveInstance::spawn()?;
+        std::fs::write(
+            handle.root().join(".jackin/run/codex/instance.pid"),
+            live.record().await?,
+        )?;
+        rig.gateway().script_program(
+            &SandboxPath::from_static("/usr/bin/kill"),
+            ProgramScript {
+                exit_code: 2,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
+        let mut request = AttachRequest::owner(target.clone(), size()?);
+        request.agent = Some(Agent::Codex);
+        let refused = rig.world.session.attach(request).await;
+        assert!(refused.is_err(), "{refused:?}");
+        assert!(handle.shells().is_empty());
+        assert!(handle.root().join(".jackin/run/codex/instance.pid").exists());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn secondary_attach_waits_for_the_detached_instance_to_exit_before_the_replacement()
+-> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let request = rig.request(38)?.instances(members(Agent::ClaudeCode)?);
+        let target = ready(run(&rig, request).await?)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        let live = LiveInstance::spawn()?;
+        std::fs::write(
+            handle.root().join(".jackin/run/codex/instance.pid"),
+            live.record().await?,
+        )?;
+        for (program, code) in [("/usr/bin/kill", 0), ("/usr/bin/ps", 0)] {
+            rig.gateway().script_program(
+                &SandboxPath::from_static(program),
+                ProgramScript {
+                    exit_code: code,
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                },
+            );
+        }
+        let mut request = AttachRequest::owner(target.clone(), size()?);
+        request.agent = Some(Agent::Codex);
+        let refused = rig.world.session.attach(request).await;
+        assert!(refused.is_err(), "{refused:?}");
+        assert!(handle.shells().is_empty());
+        let probed = handle.runs(&SandboxPath::from_static("/usr/bin/ps"));
+        assert!(probed.len() > 1, "{probed:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn secondary_attach_refuses_to_signal_a_stale_instance_identity() -> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let request = rig.request(39)?.instances(members(Agent::ClaudeCode)?);
+        let target = ready(run(&rig, request).await?)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        let pid = stale_pid()?;
+        std::fs::write(
+            handle.root().join(".jackin/run/codex/instance.pid"),
+            format!("{pid} retired"),
+        )?;
+        let mut request = AttachRequest::owner(target.clone(), size()?);
+        request.agent = Some(Agent::Codex);
+        rig.world.session.attach(request).await?;
+        let signalled = handle.runs(&SandboxPath::from_static("/usr/bin/kill"));
+        assert!(signalled.is_empty(), "{signalled:?}");
+        let queries = identity_queries(&handle);
+        assert_eq!(queries.len(), 1, "{queries:?}");
+        assert!(
+            queries[0].iter().any(|arg| arg == &pid.to_string()),
+            "{queries:?}"
+        );
+        assert!(!handle.root().join(".jackin/run/codex/instance.pid").exists());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn secondary_attach_refuses_to_signal_a_reused_instance_identity() -> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let request = rig.request(40)?.instances(members(Agent::ClaudeCode)?);
+        let target = ready(run(&rig, request).await?)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        let mut taken = LiveInstance::spawn()?;
+        let mut sibling = LiveInstance::spawn()?;
+        std::fs::write(
+            handle.root().join(".jackin/run/codex/instance.pid"),
+            format!("{} retired", taken.pid()),
+        )?;
+        let mut request = AttachRequest::owner(target.clone(), size()?);
+        request.agent = Some(Agent::Codex);
+        rig.world.session.attach(request).await?;
+        let signalled = handle.runs(&SandboxPath::from_static("/usr/bin/kill"));
+        assert!(signalled.is_empty(), "{signalled:?}");
+        assert!(taken.running(), "the process that took the pid was signalled");
+        assert!(sibling.running(), "a sibling process was signalled");
+        assert!(!handle.root().join(".jackin/run/codex/instance.pid").exists());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn secondary_attach_refuses_a_record_that_names_no_process() -> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let request = rig.request(41)?.instances(members(Agent::ClaudeCode)?);
+        let target = ready(run(&rig, request).await?)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        std::fs::write(
+            handle.root().join(".jackin/run/codex/instance.pid"),
+            b"0",
+        )?;
+        let mut request = AttachRequest::owner(target.clone(), size()?);
+        request.agent = Some(Agent::Codex);
+        let refused = rig.world.session.attach(request).await;
+        assert!(
+            matches!(
+                refused,
+                Err(AttachError::Gateway(GatewayError::Protocol { ref message }))
+                    if message.contains("not a process")
+            ),
+            "{refused:?}"
+        );
+        let signalled = handle.runs(&SandboxPath::from_static("/usr/bin/kill"));
+        assert!(signalled.is_empty(), "{signalled:?}");
+        assert!(identity_queries(&handle).is_empty());
+        assert!(handle.root().join(".jackin/run/codex/instance.pid").exists());
+        assert!(handle.shells().is_empty());
         Ok(())
     })
     .await

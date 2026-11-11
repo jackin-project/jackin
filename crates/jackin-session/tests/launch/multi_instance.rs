@@ -5,13 +5,95 @@ use jackin_core::{
     Account, AccountName, Agent, AgentInstance, AgentInstances, ConfigEdit, CredentialSource,
     FileMode, HostPath, Provider, ProviderName, SandboxPath, Secret, sandbox_layout,
 };
-use jackin_openshell::{Gateway, ProviderMaterial, ProviderProfile, ProviderSpec};
-use jackin_testkit::Rig;
+use jackin_openshell::{
+    EndpointProtocol, Gateway, GatewayError, HostPattern, NetworkRule, ProviderMaterial,
+    ProviderProfile, ProviderSpec, RuleEndpoint, RuleKey, TlsMode,
+};
+use jackin_session::LaunchStep;
+use jackin_testkit::{Fault, ProgramScript, Rig, Trigger};
 use tokio_util::sync::CancellationToken;
 
-use crate::support::{TestResult, guard, multi_agent_rig, ready, running};
+use crate::support::{TestResult, failure, guard, launch_id, multi_agent_rig, ready, running};
 
 const OMP_ACCOUNT: &str = "zai-work";
+const KIMI_ACCOUNT: &str = "kimi-work";
+
+async fn seed_kimi_provider(rig: &mut Rig) -> Result<(), Box<dyn std::error::Error>> {
+    let path = HostPath::parse(&rig.home.as_path().join("kimi.key"))?;
+    rig.world
+        .fs
+        .write_new(&path, b"test-key", FileMode(0o600))
+        .await?;
+    rig.world
+        .config
+        .edit(vec![ConfigEdit::AddAccount(Account::new(
+            AccountName::parse(KIMI_ACCOUNT)?,
+            Provider::Kimi,
+            CredentialSource::File { path },
+        )?)])
+        .await?;
+    rig.config = rig.world.config.load().await?;
+    let tuple = jackin_core::lookup_tuple(Agent::Omp, Provider::Kimi)?;
+    let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?;
+    rig.gateway().ensure_profile(&profile).await?;
+    rig.gateway()
+        .put_provider(&ProviderSpec {
+            name: ProviderName::for_account(&AccountName::parse(KIMI_ACCOUNT)?, Agent::Omp),
+            profile: profile.id,
+            keys: jackin_core::CredentialKeys {
+                access_token: "KIMI_API_KEY",
+                refresh_token: "",
+                account_id: "",
+                id_token: "",
+                token_url: "",
+            },
+            material: ProviderMaterial::StaticKey {
+                key: Secret::new("test-key".to_owned()),
+            },
+        })
+        .await?;
+    Ok(())
+}
+
+fn split_host_instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
+    Ok(AgentInstances::new(vec![
+        AgentInstance::new(
+            Agent::ClaudeCode,
+            Provider::Zai,
+            AccountName::parse("work")?,
+            "glm-5.3".to_owned(),
+        ),
+        AgentInstance::new(
+            Agent::Omp,
+            Provider::Kimi,
+            AccountName::parse(KIMI_ACCOUNT)?,
+            "kimi-for-coding".to_owned(),
+        ),
+    ])?)
+}
+
+fn marker_instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
+    Ok(AgentInstances::new(vec![
+        AgentInstance::new(
+            Agent::Codex,
+            Provider::Zai,
+            AccountName::parse("work")?,
+            "glm-5.3".to_owned(),
+        ),
+        AgentInstance::new(
+            Agent::Omp,
+            Provider::Kimi,
+            AccountName::parse(KIMI_ACCOUNT)?,
+            "kimi-for-coding".to_owned(),
+        ),
+        AgentInstance::new(
+            Agent::ClaudeCode,
+            Provider::Zai,
+            AccountName::parse(OMP_ACCOUNT)?,
+            "glm-5.3".to_owned(),
+        ),
+    ])?)
+}
 
 async fn seed_omp_provider(rig: &mut Rig) -> Result<(), Box<dyn std::error::Error>> {
     let path = HostPath::parse(&rig.home.as_path().join("zai.key"))?;
@@ -159,22 +241,51 @@ async fn restart_omp_stops_omp_only_and_starts_no_process() -> Result<(), Box<dy
                 .count()
         };
         assert_eq!(count(&handle, "omp"), 0);
-        let pkill = SandboxPath::from_static("/usr/bin/pkill");
-        let stops_before = handle.runs(&pkill).len();
+        let kill = SandboxPath::from_static("/usr/bin/kill");
+        rig.gateway().script_program(
+            &kill,
+            ProgramScript {
+                exit_code: 0,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
+        rig.gateway().script_program(
+            &SandboxPath::from_static("/usr/bin/ps"),
+            ProgramScript {
+                exit_code: 1,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
+        let live = crate::support::LiveInstance::spawn()?;
+        std::fs::write(
+            handle.root().join(".jackin/run/omp/instance.pid"),
+            live.record().await?,
+        )?;
+        let stops_before = handle.runs(&kill).len();
         let session = rig.session_with(crate::support::limits(30, 20));
         session
             .restart_instance(&target.sandbox, Agent::Omp, &CancellationToken::new())
             .await?;
         assert_eq!(count(&handle, "omp"), 0);
         assert_eq!(count(&handle, "claude"), 0);
-        let stops = handle.runs(&pkill);
+        let stops = handle.runs(&kill);
         assert_eq!(stops.len(), stops_before + 1);
         assert!(
             stops
-                .last()
-                .is_some_and(|run| run.args == vec!["-x".to_owned(), "omp".to_owned()]),
+                .iter()
+                .any(|run| run.args == vec!["-TERM", &live.pid().to_string()]),
             "{stops:?}"
         );
+        let probed = handle.runs(&SandboxPath::from_static("/usr/bin/ps"));
+        assert!(
+            probed
+                .iter()
+                .any(|run| run.args == vec!["-p", &live.pid().to_string()]),
+            "{probed:?}"
+        );
+        assert!(!handle.root().join(".jackin/run/omp/instance.pid").exists());
         assert!(!handle.runs(&sh).iter().any(|run| {
             run.args
                 .iter()
@@ -198,14 +309,14 @@ async fn two_instance_launch_writes_codex_env_like_single_instance()
             .gateway()
             .sandbox(&target.sandbox)
             .ok_or("sandbox handle")?;
-        let path = sandbox_layout::env_file(&crate::support::launch_id(8));
+        let path = sandbox_layout::env_file(&launch_id(8));
         let env = handle.file(&path).ok_or("no codex env")?;
         assert!(!env.is_empty());
         assert_eq!(handle.file_mode(&path), Some(FileMode(0o600)));
         let single = multi_agent_rig().await?;
         ready(single.launch_observed(1).await?)?;
         let single_handle = single.handle(1).await?;
-        let single_path = sandbox_layout::env_file(&crate::support::launch_id(1));
+        let single_path = sandbox_layout::env_file(&launch_id(1));
         assert_eq!(
             env,
             single_handle.file(&single_path).ok_or("no single env")?
@@ -262,8 +373,8 @@ async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_si
         let original_omp = rig.gateway().provider(&omp);
         let original_other = rig.gateway().provider(&other_provider);
         rig.gateway()
-            .inject(jackin_testkit::Fault::PutProviderFailsAfterWrite {
-                error: jackin_openshell::GatewayError::Unreachable {
+            .inject(Fault::PutProviderFailsAfterWrite {
+                error: GatewayError::Unreachable {
                     endpoint: "gateway".to_owned(),
                     message: "connection reset".to_owned(),
                 },
@@ -290,7 +401,7 @@ async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_si
             .await?;
 
         let failed = outcome.result.err().ok_or("the launch went through")?;
-        assert_eq!(failed.step, jackin_session::LaunchStep::Provider);
+        assert_eq!(failed.step, LaunchStep::Provider);
         assert!(rig.gateway().provider(&codex).is_none());
         assert_eq!(rig.gateway().provider(&omp), original_omp);
         assert_eq!(rig.gateway().provider(&other_provider), original_other);
@@ -351,6 +462,192 @@ async fn t18_lead_and_t14_non_lead_write_the_claude_instance_model() -> TestResu
         ] {
             assert!(!rendered.contains(forbidden), "{forbidden}");
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn inspect_reports_a_live_rule_on_the_provider_host_of_every_instance() -> Result<(), Box<dyn std::error::Error>> {
+    guard(async {
+        let mut rig = multi_agent_rig().await?;
+        seed_kimi_provider(&mut rig).await?;
+        let request = rig.request(11)?.instances(split_host_instances()?);
+        let target = ready(rig.run(request, CancellationToken::new()).await?)?;
+        rig.world.gateway.add_live_rule(
+            &target.sandbox,
+            NetworkRule {
+                key: RuleKey::provider_rule(&ProviderName::parse("other")?),
+                endpoints: vec![RuleEndpoint {
+                    host: HostPattern::parse("api.z.ai")?,
+                    port: 443,
+                    protocol: EndpointProtocol::Tcp,
+                    tls: TlsMode::Default,
+                }],
+                binaries: Vec::new(),
+            },
+        );
+        rig.world.gateway.add_live_rule(
+            &target.sandbox,
+            NetworkRule {
+                key: RuleKey::provider_rule(&ProviderName::parse("kimiother")?),
+                endpoints: vec![RuleEndpoint {
+                    host: HostPattern::parse("api.kimi.com")?,
+                    port: 443,
+                    protocol: EndpointProtocol::Tcp,
+                    tls: TlsMode::Default,
+                }],
+                binaries: Vec::new(),
+            },
+        );
+        let inspected = rig.world.session.inspect(&target.sandbox).await?;
+        let rules: Vec<(&str, &str)> = inspected
+            .closure_violations
+            .iter()
+            .map(|view| (view.rule.as_str(), view.host.as_str()))
+            .collect();
+        assert_eq!(
+            rules,
+            vec![("_provider_kimiother", "api.kimi.com"), ("_provider_other", "api.z.ai")]
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn inspect_covers_the_instances_after_their_local_accounts_are_removed() -> Result<(), Box<dyn std::error::Error>> {
+    guard(async {
+        let mut rig = multi_agent_rig().await?;
+        seed_kimi_provider(&mut rig).await?;
+        let request = rig.request(14)?.instances(split_host_instances()?);
+        let target = ready(rig.run(request, CancellationToken::new()).await?)?;
+        rig.world
+            .config
+            .edit(vec![
+                ConfigEdit::RemoveAccountClearingBindings(AccountName::parse("work")?),
+                ConfigEdit::RemoveAccountClearingBindings(AccountName::parse(KIMI_ACCOUNT)?),
+            ])
+            .await?;
+        rig.world.gateway.add_live_rule(
+            &target.sandbox,
+            NetworkRule {
+                key: RuleKey::provider_rule(&ProviderName::parse("other")?),
+                endpoints: vec![RuleEndpoint {
+                    host: HostPattern::parse("api.z.ai")?,
+                    port: 443,
+                    protocol: EndpointProtocol::Tcp,
+                    tls: TlsMode::Default,
+                }],
+                binaries: Vec::new(),
+            },
+        );
+        rig.world.gateway.add_live_rule(
+            &target.sandbox,
+            NetworkRule {
+                key: RuleKey::provider_rule(&ProviderName::parse("kimiother")?),
+                endpoints: vec![RuleEndpoint {
+                    host: HostPattern::parse("api.kimi.com")?,
+                    port: 443,
+                    protocol: EndpointProtocol::Tcp,
+                    tls: TlsMode::Default,
+                }],
+                binaries: Vec::new(),
+            },
+        );
+        let inspected = rig.world.session.inspect(&target.sandbox).await?;
+        let rules: Vec<(&str, &str)> = inspected
+            .closure_violations
+            .iter()
+            .map(|view| (view.rule.as_str(), view.host.as_str()))
+            .collect();
+        assert_eq!(
+            rules,
+            vec![("_provider_kimiother", "api.kimi.com"), ("_provider_other", "api.z.ai")]
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_upload_marker_waits_for_the_worktrees_of_every_instance() -> Result<(), Box<dyn std::error::Error>> {
+    guard(async {
+        let mut rig = multi_agent_rig().await?;
+        seed_omp_provider(&mut rig).await?;
+        seed_kimi_provider(&mut rig).await?;
+        let program = Trigger::Program(SandboxPath::from_static("/bin/sh"));
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: program.clone(),
+        });
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: program.clone(),
+        });
+        let launching = rig.run(
+            rig.request(12)?.instances(marker_instances()?),
+            CancellationToken::new(),
+        );
+        let releasing = async {
+            assert!(rig.gateway().until_held(&program).await);
+            rig.gateway().release(&program);
+            assert!(rig.gateway().until_held(&program).await);
+            rig.gateway().inject(Fault::FailAt {
+                trigger: program.clone(),
+                error: GatewayError::Protocol {
+                    message: "injected".to_owned(),
+                },
+            });
+            rig.gateway().release(&program);
+        };
+        let (outcome, ()) = tokio::join!(launching, releasing);
+        let failed = failure(outcome?)?;
+        assert_eq!(failed.step, LaunchStep::Upload);
+        let handle = rig
+            .gateway()
+            .sandbox(&failed.sandbox.ok_or("sandbox")?)
+            .ok_or("sandbox handle")?;
+        assert!(
+            handle
+                .file(&sandbox_layout::uploaded_marker(&launch_id(12)))
+                .is_none()
+        );
+        let first = handle.root().join("work/omp/project");
+        assert!(first.join(".git").is_file(), "{first:?}");
+        assert!(!handle.root().join("work/claude/project").exists());
+        std::fs::write(first.join("uncommitted.txt"), b"kept")?;
+        let outcome = rig
+            .run(
+                rig.request(12)?.instances(marker_instances()?),
+                CancellationToken::new(),
+            )
+            .await?;
+        let target = ready(outcome)?;
+        let handle = rig
+            .gateway()
+            .sandbox(&target.sandbox)
+            .ok_or("sandbox handle")?;
+        assert!(
+            handle
+                .file(&sandbox_layout::uploaded_marker(&launch_id(12)))
+                .is_some()
+        );
+        assert!(first.join(".git").is_file());
+        assert!(first.join("uncommitted.txt").is_file());
+        assert!(handle.root().join("work/claude/project/.git").is_file());
+        let registered = handle.git(&["worktree", "list", "--porcelain"]).await?;
+        assert!(registered.contains("work/omp/project"), "{registered}");
+        let branch = handle
+            .git(&["-C", "../work/omp/project", "symbolic-ref", "HEAD"])
+            .await?;
+        assert_eq!(branch.trim(), "refs/heads/agent/omp");
+        let usable = handle
+            .git(&["-C", "../work/omp/project", "rev-parse", "HEAD"])
+            .await?;
+        assert!(!usable.trim().is_empty());
+        let state = handle
+            .git(&["-C", "../work/omp/project", "status", "--porcelain"])
+            .await?;
+        assert!(state.contains("uncommitted.txt"), "{state}");
         Ok(())
     })
     .await

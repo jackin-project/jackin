@@ -145,3 +145,79 @@ pub(crate) fn unreachable() -> jackin_openshell::GatewayError {
         message: "injected".to_owned(),
     }
 }
+
+pub(crate) fn identity_queries(handle: &SandboxHandle) -> Vec<Vec<String>> {
+    handle
+        .runs(&SandboxPath::from_static("/bin/sh"))
+        .into_iter()
+        .filter(|run| run.args.iter().any(|arg| arg == "instance-incarnation"))
+        .map(|run| run.args)
+        .collect()
+}
+
+pub(crate) struct LiveInstance {
+    child: std::process::Child,
+}
+
+impl LiveInstance {
+    pub(crate) fn spawn() -> Result<LiveInstance, Box<dyn Error>> {
+        let child = std::process::Command::new("/bin/sleep")
+            .arg("600")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        Ok(LiveInstance { child })
+    }
+
+    pub(crate) fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    pub(crate) async fn incarnation(&self) -> Result<String, Box<dyn Error>> {
+        let pid = self.child.id().to_string();
+        for candidate in ["/usr/bin/ps", "/bin/ps"] {
+            if !std::path::Path::new(candidate).exists() {
+                continue;
+            }
+            let output = tokio::process::Command::new(candidate)
+                .args(["-o", "lstart=", "-p", &pid])
+                .output()
+                .await?;
+            if !output.status.success() {
+                continue;
+            }
+            return Ok(String::from_utf8_lossy(&output.stdout)
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .concat());
+        }
+        Err("the identity query did not answer".into())
+    }
+
+    pub(crate) async fn record(&self) -> Result<String, Box<dyn Error>> {
+        Ok(format!("{} {}", self.pid(), self.incarnation().await?))
+    }
+
+    pub(crate) fn running(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+}
+
+impl Drop for LiveInstance {
+    fn drop(&mut self) {
+        drop(self.child.kill());
+        drop(self.child.wait());
+    }
+}
+
+pub(crate) fn stale_pid() -> Result<u32, Box<dyn Error>> {
+    let mut child = std::process::Command::new("/bin/sleep")
+        .arg("0")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+    child.wait()?;
+    Ok(child.id())
+}

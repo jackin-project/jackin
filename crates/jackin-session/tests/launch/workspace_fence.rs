@@ -3,10 +3,10 @@
 
 use std::time::Duration;
 
-use jackin_core::{ConfigEdit, WorkspaceName};
+use jackin_core::{ConfigEdit, HostPath, WorkspaceName};
 use jackin_openshell::GatewayOp;
 use jackin_session::{Gateways, LaunchError};
-use jackin_testkit::{Fault, Trigger};
+use jackin_testkit::{Fault, RepoFixture, Trigger};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{TestResult, failure, guard, launch_rig, ready};
@@ -81,6 +81,72 @@ async fn a_launch_whose_workspace_was_removed_creates_no_sandbox() -> TestResult
         let failed = failure(outcome)?;
         assert!(
             matches!(&*failed.error, LaunchError::WorkspaceRemoved(name) if *name == workspace),
+            "{failed:?}"
+        );
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_launch_whose_workspace_was_replaced_creates_no_sandbox() -> TestResult {
+    guard(async {
+        let rig = launch_rig().await?;
+        let plan = rig.plan(1)?;
+        let workspace = plan.workspace().clone();
+        let mut replacement = rig
+            .config
+            .workspace(&workspace)
+            .cloned()
+            .ok_or("workspace entry")?;
+        replacement.path = HostPath::parse(&rig.home.as_path().join("replaced"))?;
+        rig.world
+            .config
+            .edit(vec![
+                ConfigEdit::RemoveWorkspace(workspace.clone()),
+                ConfigEdit::AddWorkspace {
+                    name: workspace.clone(),
+                    workspace: replacement,
+                },
+            ])
+            .await?;
+
+        let outcome = rig
+            .run_planned(&rig.world.session, plan, CancellationToken::new())
+            .await;
+
+        let failed = failure(outcome)?;
+        assert!(
+            matches!(&*failed.error, LaunchError::WorkspaceReplaced(name) if *name == workspace),
+            "{failed:?}"
+        );
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_launch_whose_repository_was_replaced_at_the_same_path_creates_no_sandbox() -> TestResult
+{
+    guard(async {
+        let rig = launch_rig().await?;
+        let plan = rig.plan(1)?;
+        let workspace = plan.workspace().clone();
+        let path = rig.project.path().as_path().to_path_buf();
+        let moved = rig.home.as_path().join("jackin-moved-away");
+        std::fs::rename(&path, &moved)?;
+        let replacement = RepoFixture::new().await?;
+        std::fs::rename(replacement.root().as_path(), &path)?;
+
+        let outcome = rig
+            .run_planned(&rig.world.session, plan, CancellationToken::new())
+            .await;
+
+        let failed = failure(outcome)?;
+        assert!(
+            matches!(&*failed.error, LaunchError::WorkspaceReplaced(name) if *name == workspace),
             "{failed:?}"
         );
         assert!(rig.world.gateway.sandboxes().is_empty());

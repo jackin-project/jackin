@@ -5,12 +5,12 @@ use std::time::Duration;
 
 use jackin_core::{
     ClosureViolationView, Config, InspectView, LabelError, LabelSelector, Labels, Phase,
-    PolicyStatus, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading, WorkspaceName,
-    plain_duration,
+    PolicyStatus, ProviderName, SandboxLabels, SandboxName, SandboxSummary, SupervisorReading,
+    WorkspaceName, plain_duration,
 };
 use jackin_openshell::{
-    ClosureViolation, GatewayError, PolicyError, PowerAction, ProviderProfile, RuleKey,
-    SandboxQuery, SandboxView,
+    ClosureViolation, GatewayError, PolicyError, PowerAction, ProfileEndpoint, ProviderProfile,
+    RuleKey, SandboxQuery, SandboxView,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -155,20 +155,22 @@ impl Session {
                 state: Box::new(was),
             });
         }
-        if mode == PurgeMode::Guarded {
-            match self.find_managed(sandbox).await? {
-                Some(now) if now.phase != Phase::Deleting => {
-                    if view.created_at.is_none() || now.created_at != view.created_at {
-                        return Err(PurgeError::Replaced {
-                            sandbox: sandbox.clone(),
-                        });
-                    }
-                }
-                Some(_) | None => {
-                    return Ok(PurgeOutcome::AlreadyGone {
+        match self.find_managed(sandbox).await? {
+            Some(now) if now.phase != Phase::Deleting => {
+                let replaced = match (view.created_at, now.created_at) {
+                    (Some(before), Some(current)) => current != before,
+                    _ => true,
+                };
+                if replaced {
+                    return Err(PurgeError::Replaced {
                         sandbox: sandbox.clone(),
                     });
                 }
+            }
+            Some(_) | None => {
+                return Ok(PurgeOutcome::AlreadyGone {
+                    sandbox: sandbox.clone(),
+                });
             }
         }
         self.deps.gateway.delete_sandbox(sandbox).await?;
@@ -218,26 +220,59 @@ impl Session {
             Err(error) => return Err(error.into()),
         };
         let labels = labelled(sandbox, &detail.view.labels)?;
-        let generated: Vec<RuleKey> = detail
-            .providers
-            .iter()
-            .map(RuleKey::provider_rule)
-            .collect();
         let mut violations = Vec::new();
         let mut profile_assets = Vec::new();
-        if let Some(lead) = labels.planned.agents.lead_opt() {
-            profile_assets.extend(lead.agent.spec().profiles());
-        } else {
-            for provider in &detail.providers {
-                let mut candidates: Vec<_> = jackin_core::Agent::ALL
-                    .into_iter()
-                    .filter(|agent| provider.as_str().ends_with(agent.as_str()))
-                    .collect();
-                candidates.sort_by_key(|agent| std::cmp::Reverse(agent.as_str().len()));
-                if let Some(agent) = candidates.first() {
-                    profile_assets.extend(agent.spec().profiles());
-                }
+        let rules = detail.policy.document.network_rules();
+        let mut generated: Vec<RuleKey> = Vec::new();
+        for provider in &detail.providers {
+            let key = RuleKey::provider_rule(provider);
+            if !generated.contains(&key) {
+                generated.push(key);
             }
+            if let Some((_, agent)) = provider.account_agent() {
+                profile_assets.extend(agent.spec().profiles());
+            }
+        }
+        if detail.view.phase == Phase::Ready {
+            let instances = self.sandbox_instances(sandbox).await?;
+            for instance in instances.canonical() {
+                let key = RuleKey::provider_rule(&ProviderName::for_account(
+                    &instance.account,
+                    instance.agent,
+                ));
+                if !generated.contains(&key) {
+                    generated.push(key);
+                }
+                profile_assets.extend(instance.agent.spec().profiles());
+                let tuple = jackin_core::lookup_tuple(instance.agent, instance.provider)
+                    .map_err(|_| PolicyError::InvalidHost("unknown tuple".to_owned()))?;
+                profile_assets.push(jackin_core::tuple_profile_asset(tuple));
+            }
+        }
+        for rule in &rules {
+            if !generated.contains(&rule.key) {
+                continue;
+            }
+            let retained = ProviderProfile {
+                id: jackin_core::ProfileId::parse("jackin-retained-closure")
+                    .map_err(|_| PolicyError::InvalidHost("retained closure".to_owned()))?,
+                yaml: "",
+                endpoints: rule
+                    .endpoints
+                    .iter()
+                    .map(|endpoint| ProfileEndpoint {
+                        host: endpoint.host.clone(),
+                        port: endpoint.port,
+                    })
+                    .collect(),
+                binaries: Vec::new(),
+            };
+            violations.extend(
+                detail
+                    .policy
+                    .document
+                    .closure_violations(&retained, &generated),
+            );
         }
         for asset in profile_assets {
             let profile = ProviderProfile::parse(asset)?;
@@ -248,6 +283,8 @@ impl Session {
                     .closure_violations(&profile, &generated),
             );
         }
+        violations.sort();
+        violations.dedup();
         let supervisor = if detail.view.phase == Phase::Ready {
             crate::state::run_state(self.deps.gateway.as_ref(), sandbox).await?
         } else {

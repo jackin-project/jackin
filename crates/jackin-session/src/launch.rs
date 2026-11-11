@@ -189,6 +189,8 @@ pub enum LaunchError {
     Config(#[from] ConfigError),
     #[error("workspace {0} was removed while this launch was planned")]
     WorkspaceRemoved(WorkspaceName),
+    #[error("workspace {0} was replaced while this launch was planned")]
+    WorkspaceReplaced(WorkspaceName),
     #[error(transparent)]
     Credential(#[from] CredentialError),
     #[error(transparent)]

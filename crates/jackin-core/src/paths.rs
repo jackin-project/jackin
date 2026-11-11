@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::boundary::{FileKind, FileSystem, FsError};
+use crate::boundary::{FileIdentity, FileKind, FileSystem, FsError};
 use crate::display::plain;
 pub(crate) const PROJECT_PATH: &str = "/sandbox/project";
 
@@ -23,7 +23,10 @@ pub struct SandboxPath(Cow<'static, str>);
 pub struct RepoPath(String);
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-pub struct ProjectRoot(HostPath);
+pub struct ProjectRoot {
+    path: HostPath,
+    identity: FileIdentity,
+}
 
 #[derive(Debug, Error)]
 pub enum PathError {
@@ -43,6 +46,8 @@ pub enum PathError {
         "the .git of {0} is a symlink or another kind of file; use a normal repository, a linked worktree, or a submodule checkout"
     )]
     UnsupportedGitEntry(HostPath),
+    #[error("the project root {0} was replaced by another directory; open the project again")]
+    RootReplaced(HostPath),
     #[error(transparent)]
     Fs(#[from] FsError),
 }
@@ -82,7 +87,7 @@ impl fmt::Display for RepoPath {
 
 impl fmt::Display for ProjectRoot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        self.path.fmt(f)
     }
 }
 
@@ -194,17 +199,34 @@ impl ProjectRoot {
         if fs.stat(path).await? != Some(FileKind::Dir) {
             return Err(PathError::NotADirectory(path.clone()));
         }
+        let identity = fs
+            .identity(path)
+            .await?
+            .ok_or_else(|| PathError::NotADirectory(path.clone()))?;
         let git = path.join_name(".git");
         match fs.stat(&git).await? {
             None => Err(PathError::NotAGitWorkTree(path.clone())),
-            Some(FileKind::Dir) => Ok(ProjectRoot(path.clone())),
-            Some(FileKind::File) => Ok(ProjectRoot(path.clone())),
+            Some(FileKind::Dir) => Ok(ProjectRoot {
+                path: path.clone(),
+                identity,
+            }),
+            Some(FileKind::File) => Ok(ProjectRoot {
+                path: path.clone(),
+                identity,
+            }),
             Some(_) => Err(PathError::UnsupportedGitEntry(path.clone())),
         }
     }
 
+    pub async fn verify(&self, fs: &dyn FileSystem) -> Result<(), PathError> {
+        match fs.identity(&self.path).await? {
+            Some(identity) if identity == self.identity => Ok(()),
+            _ => Err(PathError::RootReplaced(self.path.clone())),
+        }
+    }
+
     pub fn path(&self) -> &HostPath {
-        &self.0
+        &self.path
     }
 }
 

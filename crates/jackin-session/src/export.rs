@@ -507,6 +507,9 @@ impl Session {
         let uncommitted = match self.remote(sandbox, &cancel).uncommitted(&repository).await {
             Ok(0) => Uncommitted::Clean,
             Ok(count) => Uncommitted::Changes(count),
+            Err(RemoteError::Gateway(GatewayError::Cancelled { group, .. })) => {
+                return Err(ExportError::Cancelled { group });
+            }
             Err(_) => Uncommitted::Unchecked,
         };
         let wanted = changed(&repository, &refs);
