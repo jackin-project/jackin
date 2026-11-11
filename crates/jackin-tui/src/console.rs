@@ -70,7 +70,7 @@ pub enum ConsoleExit {
 }
 
 pub struct Console {
-    app: App,
+    app: Box<App>,
     inflight: InFlight,
     panes: PaneHub,
     _cancel: DropGuard,
@@ -177,11 +177,11 @@ impl Console {
     }
 
     fn deliver(&mut self) {
-        let pending = Application::external(&self.app)
+        let pending = Application::external(self.app.as_ref())
             .map(ExternalReceiver::drain)
             .unwrap_or_default();
         for message in pending {
-            Application::handle(&mut self.app, Input::External(message));
+            Application::handle(self.app.as_mut(), Input::External(message));
         }
     }
 }
@@ -237,6 +237,52 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     }));
     inputs.doctor_at_start().await;
     let first = inputs.observe().await?;
+    Ok(assemble_console(ConsoleParts {
+        inputs,
+        first,
+        op,
+        cancel,
+        env,
+        wall,
+        home,
+        cwd,
+        theme,
+        handle,
+        limits,
+        clipboard,
+    }))
+}
+
+struct ConsoleParts {
+    inputs: Arc<Inputs>,
+    first: crate::observe::Observation,
+    op: OpSnapshot,
+    cancel: CancellationToken,
+    env: EnvSnapshot,
+    wall: Arc<dyn WallSource>,
+    home: HostPath,
+    cwd: HostPath,
+    theme: Theme,
+    handle: tokio::runtime::Handle,
+    limits: ConsoleLimits,
+    clipboard: Arc<dyn NativeClipboard>,
+}
+
+fn assemble_console(parts: ConsoleParts) -> Console {
+    let ConsoleParts {
+        inputs,
+        first,
+        op,
+        cancel,
+        env,
+        wall,
+        home,
+        cwd,
+        theme,
+        handle,
+        limits,
+        clipboard,
+    } = parts;
     let (sender, receiver) = external_channel();
     let inflight = InFlight::new();
     let bridge = Bridge::new(sender, inflight.clone(), handle.clone());
@@ -265,7 +311,7 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         index_error,
         daemon_health,
     } = first.snapshot;
-    let mut parts = WorldParts::new(
+    let mut world_parts = WorldParts::new(
         SimClock::new(0, 0),
         home.as_path().display().to_string(),
         cwd.as_path().display().to_string(),
@@ -274,17 +320,17 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         surfaces,
     )
     .wall(wall);
-    parts.workspaces = workspaces;
-    parts.roles = roles;
-    parts.instances = instances;
-    parts.global = global;
-    parts.accounts = accounts;
-    parts.github = github;
-    parts.arbiter = Arbiter::new(0);
+    world_parts.workspaces = workspaces;
+    world_parts.roles = roles;
+    world_parts.instances = instances;
+    world_parts.global = global;
+    world_parts.accounts = accounts;
+    world_parts.github = github;
+    world_parts.arbiter = Arbiter::new(0);
     if let Some(error) = index_error {
-        parts.arbiter.discovery = Err(error);
+        world_parts.arbiter.discovery = Err(error);
     }
-    let mut world = World::new(parts);
+    let mut world = World::new(world_parts);
     world.daemon_health = daemon_health;
     let mut app = assemble(
         world,
@@ -306,10 +352,10 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
     {
         app.set_status(&text, Tone::Warning);
     }
-    Ok(Console {
-        app,
+    Console {
+        app: Box::new(app),
         inflight,
         panes,
         _cancel: cancel.drop_guard(),
-    })
+    }
 }
