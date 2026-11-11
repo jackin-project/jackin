@@ -34,6 +34,7 @@ pub struct Bucket {
     pub label: String,
     pub used_percent: Option<f64>,
     pub remaining: Option<Remaining>,
+    pub spent: Option<Remaining>,
     pub resets_at: Option<i64>,
 }
 
@@ -154,6 +155,7 @@ impl Bucket {
             label: label.into(),
             used_percent: None,
             remaining: None,
+            spent: None,
             resets_at: None,
         }
     }
@@ -188,6 +190,12 @@ impl Bucket {
     #[must_use]
     pub fn left(mut self, remaining: Option<Remaining>) -> Bucket {
         self.remaining = remaining;
+        self
+    }
+
+    #[must_use]
+    pub fn spent(mut self, spent: Option<Remaining>) -> Bucket {
+        self.spent = spent;
         self
     }
 

@@ -8,7 +8,8 @@ use jackin_testkit::{Method, Route};
 use jackin_usage::{Refresh, UnavailableReason, UsageOutcome};
 
 use crate::support::{
-    CODEX_PATH, TestResult, UsageHarness, assert_only_state_written, codex_body, codex_login, guard,
+    CODEX_PATH, RESET_CREDITS_PATH, TestResult, UsageHarness, assert_only_state_written,
+    codex_body, codex_login, codex_reset_credits_route, guard,
 };
 
 const AUTH: &str = include_str!("fixtures/codex/auth_chatgpt.json");
@@ -32,6 +33,12 @@ async fn three_accounts()
         Method::Get,
         CODEX_PATH,
         Route::status(500).requires_header("chatgpt-account-id", "bad-id"),
+    );
+    harness.server.serve(
+        Provider::Codex,
+        Method::Get,
+        RESET_CREDITS_PATH,
+        codex_reset_credits_route("SECRET_TOKEN_CODEX"),
     );
     let accounts = vec![
         codex_login("b-codex", "/home/b/.codex", "ok-id"),

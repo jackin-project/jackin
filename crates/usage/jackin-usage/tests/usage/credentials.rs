@@ -31,7 +31,7 @@ async fn an_env_variable_in_the_snapshot_is_the_bearer_token() -> TestResult {
         let usage = harness
             .one(&router(env_source(VAR)), Refresh::Cached)
             .await?;
-        assert_eq!(windows_of(&usage.outcome).len(), 2);
+        assert_eq!(windows_of(&usage.outcome).len(), 5);
         Ok(())
     })
     .await
@@ -101,7 +101,7 @@ async fn a_one_password_value_is_the_bearer_token_without_its_trailing_newline()
         let usage = harness
             .one(&router(op_source(REFERENCE)), Refresh::Cached)
             .await?;
-        assert_eq!(windows_of(&usage.outcome).len(), 2);
+        assert_eq!(windows_of(&usage.outcome).len(), 5);
         Ok(())
     })
     .await
@@ -128,7 +128,7 @@ async fn a_one_password_account_is_read_through_that_account_and_another_script_
                 Refresh::Cached,
             )
             .await?;
-        assert_eq!(windows_of(&usage.outcome).len(), 2);
+        assert_eq!(windows_of(&usage.outcome).len(), 5);
         Ok(())
     })
     .await
@@ -234,7 +234,7 @@ async fn a_bare_token_file_is_the_bearer_token() -> TestResult {
         let usage = harness
             .one(&router(file_source(KEY_FILE)), Refresh::Cached)
             .await?;
-        assert_eq!(windows_of(&usage.outcome).len(), 2);
+        assert_eq!(windows_of(&usage.outcome).len(), 5);
         Ok(())
     })
     .await

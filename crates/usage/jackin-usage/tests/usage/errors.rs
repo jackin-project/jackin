@@ -33,9 +33,12 @@ async fn http_401_is_an_expired_login() -> TestResult {
 }
 
 #[tokio::test]
-async fn http_403_is_an_expired_login() -> TestResult {
+async fn http_403_is_a_provider_error() -> TestResult {
     guard(async {
-        assert_eq!(answering(403).await?, UnavailableReason::ExpiredLogin);
+        assert_eq!(
+            answering(403).await?,
+            UnavailableReason::Provider("the login is not allowed to read this".to_owned())
+        );
         Ok(())
     })
     .await

@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use jackin::ExitClass;
 use jackin_core::Provider;
-use jackin_testkit::{Method, Route, TestResult, World, guard};
+use jackin_testkit::{Method, Route, TestResult, UsageServer, World, guard};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{CLOSED_ORIGIN, Failure, FixedConnector, Harness};
@@ -16,6 +16,16 @@ const ONE: &str = include_str!("fixtures/usage/usage_cli_one.json");
 const AUTH: &str = include_str!("fixtures/usage/auth_chatgpt.json");
 const KEY: &str = include_str!("fixtures/usage/openrouter_key.json");
 const WHAM: &str = "/backend-api/wham/usage";
+const RESET_CREDITS: &str = "/backend-api/wham/rate-limit-reset-credits";
+
+fn serve_reset_credits(server: &UsageServer) {
+    server.serve(
+        Provider::Codex,
+        Method::Get,
+        RESET_CREDITS,
+        Route::json(200, "{\"available_count\":0}"),
+    );
+}
 
 fn login_account(world: &World, name: &str, account_id: &str) -> Result<String, Failure> {
     let home = world.home().as_path().join(name);
@@ -64,8 +74,14 @@ async fn usage_prints_one_line_per_window_in_account_order_and_marks_stale_and_u
         harness.env.push(("SPARE_KEY".to_owned(), "SECRET_TOKEN_SPARE".to_owned()));
         let server = world.usage.get().await?;
         server.serve(Provider::Codex, Method::Get, WHAM, codex_route(WORK, "acct-work"));
+        serve_reset_credits(server);
         server.serve(Provider::Codex, Method::Get, WHAM, codex_route(CACHED, "acct-cached"));
-        server.serve(Provider::Claude, Method::Get, "/api/oauth/usage", Route::status(401));
+        server.serve(
+            Provider::Claude,
+            Method::Get,
+            "/api/oauth/usage?cedar_ember=1",
+            Route::status(401),
+        );
         harness.run(&["usage"]).await?.ok()?;
         world.clock.advance(Duration::from_secs(600));
         server.replace(Provider::Codex, Method::Get, WHAM, codex_route(WORK, "acct-work"));
@@ -78,12 +94,12 @@ async fn usage_prints_one_line_per_window_in_account_order_and_marks_stale_and_u
         let ran = harness.run(&["usage"]).await?;
         ran.ok()?;
         let expected = [
-            "cached\tcodex\t5-hour\t80% used\t20% left\tresets 2026-01-01T05:00:00Z (in 4h50m)\tstale, fetched 2026-01-01T00:00:00Z",
+            "cached\tcodex\t5-hour\t80% used\t20% left\t-\tresets 2026-01-01T05:00:00Z (in 4h50m)\tstale, fetched 2026-01-01T00:00:00Z",
             "local\tmuse\tunavailable\tnot supported for this provider",
             "spare\tclaude\tunavailable\tlogin expired or rejected",
-            "work\tcodex\t5-hour\t42% used\t58% left\tresets 2026-01-01T02:00:00Z (in 1h50m)",
-            "work\tcodex\tweekly\t12% used\t88% left\tresets 2028-02-29T23:59:59Z (in 789d23h)",
-            "work\tcodex\tcredits\t-\t12.40 credits left\t-",
+            "work\tcodex\t5-hour\t42% used\t58% left\t-\tresets 2026-01-01T02:00:00Z (in 1h50m)",
+            "work\tcodex\tweekly\t12% used\t88% left\t-\tresets 2028-02-29T23:59:59Z (in 789d23h)",
+            "work\tcodex\tcredits\t-\t12.40 credits left\t-\t-",
         ]
         .join("\n");
         assert_eq!(ran.stdout, format!("{expected}\n"));
@@ -108,6 +124,7 @@ async fn usage_needs_no_gateway_while_ls_fails_without_one() -> TestResult {
             WHAM,
             codex_route(ONE, "acct-work"),
         );
+        serve_reset_credits(server);
         harness.run(&["usage"]).await?.ok()?;
         let ls = harness.run(&["ls"]).await?;
         assert_eq!(ls.exit, ExitClass::Failure, "{}", ls.stderr);
@@ -140,17 +157,16 @@ async fn usage_shows_decimals_money_left_and_a_dash_for_no_reset() -> TestResult
             "/api/v1/key",
             Route::json(200, KEY).requires_header("authorization", bearer),
         );
-        server.serve(
-            Provider::Openrouter,
-            Method::Get,
-            "/api/v1/credits",
-            Route::status(403).requires_header("authorization", bearer),
-        );
         let ran = harness.run(&["usage"]).await?;
         ran.ok()?;
         assert_eq!(
             ran.stdout,
-            "gem\tgemini\tunavailable\tnot supported: Gemini API keys have no quota method\nrouter\topenrouter\tKey limit\t24.68% used\t37.66 USD left\t-\n"
+            "gem\tgemini\tunavailable\tnot supported: Gemini API keys have no quota method\n\
+             router\topenrouter\tKey limit\t24.68% used\t37.66 USD left\t-\t-\n\
+             router\topenrouter\tKey spend\t-\t-\t12.34 USD spent\t-\n\
+             router\topenrouter\tDaily spend\t-\t-\t1.00 USD spent\t-\n\
+             router\topenrouter\tWeekly spend\t-\t-\t5.00 USD spent\t-\n\
+             router\topenrouter\tMonthly spend\t-\t-\t12.34 USD spent\t-\n"
         );
         Ok(())
     })
@@ -165,6 +181,7 @@ async fn usage_json_prints_the_report_compactly_and_unchanged() -> TestResult {
         let harness = started(&config, &world).await?;
         let server = world.usage.get().await?;
         server.serve(Provider::Codex, Method::Get, WHAM, codex_route(ONE, "acct-work"));
+        serve_reset_credits(server);
         let ran = harness.run(&["usage", "--json"]).await?;
         ran.ok()?;
         let expected = "{\"schema\":1,\"generated_at\":1767225600,\"accounts\":[{\"account\":\"work\",\"provider\":\"codex\",\"freshness\":{\"state\":\"fresh\"},\"outcome\":{\"state\":\"windows\",\"windows\":[{\"kind\":\"five_hour\",\"label\":\"5-hour\",\"used_percent\":42.0,\"remaining\":{\"kind\":\"percent\",\"value\":58.0},\"resets_at\":1767232800}]}}]}\n";
@@ -223,6 +240,7 @@ async fn an_unusable_cache_location_fails_the_command_and_names_the_path() -> Te
             WHAM,
             codex_route(ONE, "acct-work"),
         );
+        serve_reset_credits(server);
         std::fs::create_dir_all(world.cache_dir().as_path())?;
         std::fs::write(
             world.cache_dir().as_path().join("usage"),
@@ -251,6 +269,7 @@ async fn usage_reads_the_cache_inside_the_ttl_and_fetches_again_after_it() -> Te
             WHAM,
             codex_route(ONE, "acct-work"),
         );
+        serve_reset_credits(server);
         let first = harness.run(&["usage"]).await?;
         first.ok()?;
         assert!(first.stdout.contains("42% used"), "{}", first.stdout);

@@ -16,7 +16,19 @@ fn window(used: Option<f64>, remaining: Option<Remaining>, resets: Option<i64>) 
         label: "weekly".to_owned(),
         used: used.map(percent),
         remaining,
+        spent: None,
         resets_at: resets.map(Timestamp),
+    }
+}
+
+fn spent_window(spent: Remaining) -> LimitWindow {
+    LimitWindow {
+        kind: WindowKind::Spend,
+        label: "Key spend".to_owned(),
+        used: None,
+        remaining: None,
+        spent: Some(spent),
+        resets_at: None,
     }
 }
 
@@ -102,6 +114,14 @@ fn a_window_reads_used_left_and_reset_and_a_dash_where_the_provider_said_nothing
         spend.reset_text(Timestamp(NOW)),
         "resets 2026-01-04T04:00:00Z (in 3d4h)"
     );
+
+    let spent = spent_window(Remaining::Amount {
+        value: "4.20".to_owned(),
+        unit: "USD".to_owned(),
+    });
+    assert_eq!(spent.spent_text(), "4.20 USD spent");
+    assert_eq!(spent.used_text(), "-");
+    assert_eq!(spent.remaining_text(), "-");
 
     let silent = window(None, None, None);
     assert_eq!(

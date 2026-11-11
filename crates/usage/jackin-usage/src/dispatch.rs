@@ -13,19 +13,16 @@ use jackin_usage_provider_minimax as minimax;
 use jackin_usage_provider_opencode as opencode;
 use jackin_usage_provider_openrouter as openrouter;
 use jackin_usage_provider_zai as zai;
-use tokio_util::sync::CancellationToken;
 
-use crate::credential::{Material, Shape, Unresolved, resolve};
-use crate::deps::UsageDeps;
+use crate::credential::{Material, Shape};
 use crate::model::UnavailableReason;
 use crate::request::UsageAccount;
 
 pub(crate) struct Call<'a> {
-    pub(crate) deps: &'a UsageDeps,
     pub(crate) account: &'a UsageAccount,
-    pub(crate) cancel: &'a CancellationToken,
     pub(crate) http: &'a Http,
     pub(crate) now: i64,
+    pub(crate) material: &'a Material,
 }
 
 pub(crate) struct Failure {
@@ -43,6 +40,21 @@ impl From<UnavailableReason> for Failure {
 }
 
 type Collected = Result<Vec<Bucket>, Failure>;
+
+pub(crate) fn unsupported_without_credentials(account: &UsageAccount) -> Option<UnavailableReason> {
+    match account.provider {
+        Provider::Amp
+        | Provider::Antigravity
+        | Provider::Hermes
+        | Provider::Mimo
+        | Provider::Muse => Some(unsupported(None)),
+        Provider::Codex => match &account.credential {
+            CredentialSource::CodexLogin { .. } => None,
+            _ => Some(unsupported(Some(codex::API_KEY_REASON))),
+        },
+        _ => None,
+    }
+}
 
 pub(crate) async fn collect(call: &Call<'_>) -> Collected {
     match call.account.provider {
@@ -71,15 +83,14 @@ async fn codex_usage(call: &Call<'_>) -> Collected {
     else {
         return Err(unsupported(Some(codex::API_KEY_REASON)).into());
     };
-    let login = call.material().await?;
-    if login.shape != Shape::Login {
+    if call.material.shape != Shape::Login {
         return Err(
             UnavailableReason::Provider("the Codex login is not a login file".to_owned()).into(),
         );
     }
     codex::fetch(
         call.http,
-        login.secret.expose(),
+        call.material.secret.expose(),
         chatgpt_account_id.as_str(),
         call.now,
     )
@@ -88,87 +99,73 @@ async fn codex_usage(call: &Call<'_>) -> Collected {
 }
 
 async fn claude_usage(call: &Call<'_>) -> Collected {
-    let material = call.material().await?;
-    claude::fetch(call.http, material.credential())
+    claude::fetch(call.http, call.material.credential(), call.now)
         .await
         .map_err(|error| failure(error, call.now))
 }
 
 async fn cursor_usage(call: &Call<'_>) -> Collected {
-    let material = call.material().await?;
-    cursor::fetch(call.http, material.credential())
+    cursor::fetch(call.http, call.material.credential())
         .await
         .map_err(|error| failure(error, call.now))
 }
 
 async fn gemini_usage(call: &Call<'_>) -> Collected {
-    let material = call.material().await?;
-    gemini::fetch(call.http, material.credential(), call.now)
+    gemini::fetch(call.http, call.material.credential(), call.now)
         .await
         .map_err(|error| failure(error, call.now))
 }
 
 async fn grok_usage(call: &Call<'_>) -> Collected {
-    let material = call.material().await?;
-    grok::fetch(call.http, material.credential(), call.now)
+    grok::fetch(call.http, call.material.credential(), call.now)
         .await
         .map_err(|error| failure(error, call.now))
 }
 
 async fn kimi_usage(call: &Call<'_>) -> Collected {
-    let material = call.material().await?;
-    kimi::fetch(call.http, material.credential(), call.now)
+    let base = call
+        .material
+        .base
+        .as_deref()
+        .unwrap_or(kimi::MAINLAND_CODING_BASE);
+    kimi::fetch(call.http, call.material.credential(), base, call.now)
         .await
         .map_err(|error| failure(error, call.now))
 }
 
 async fn zai_usage(call: &Call<'_>) -> Collected {
-    let key = call.token().await?;
+    let key = token(call)?;
     zai::fetch(call.http, key.secret.expose())
         .await
         .map_err(|error| failure(error, call.now))
 }
 
 async fn minimax_usage(call: &Call<'_>) -> Collected {
-    let key = call.token().await?;
-    minimax::fetch(call.http, key.secret.expose(), call.now)
+    minimax::fetch(call.http, call.material.credential(), call.now)
         .await
         .map_err(|error| failure(error, call.now))
 }
 
 async fn opencode_usage(call: &Call<'_>) -> Collected {
-    let material = call.material().await?;
-    opencode::fetch(call.http, material.credential())
+    opencode::fetch(call.http, call.material.credential(), call.now)
         .await
         .map_err(|error| failure(error, call.now))
 }
 
 async fn openrouter_usage(call: &Call<'_>) -> Collected {
-    let key = call.token().await?;
+    let key = token(call)?;
     openrouter::fetch(call.http, key.secret.expose())
         .await
         .map_err(|error| failure(error, call.now))
 }
 
-impl Call<'_> {
-    async fn token(&self) -> Result<Material, UnavailableReason> {
-        let material = self.material().await?;
-        if material.shape == Shape::Login {
-            return Err(UnavailableReason::Provider(
-                "this provider does not accept a login file".to_owned(),
-            ));
-        }
-        Ok(material)
+fn token<'a>(call: &Call<'a>) -> Result<&'a Material, UnavailableReason> {
+    if call.material.shape == Shape::Login {
+        return Err(UnavailableReason::Provider(
+            "this provider does not accept a login file".to_owned(),
+        ));
     }
-
-    async fn material(&self) -> Result<Material, UnavailableReason> {
-        resolve(self.deps, self.account, self.cancel)
-            .await
-            .map_err(|unresolved| match unresolved {
-                Unresolved::Missing => UnavailableReason::NoCredentials,
-                Unresolved::Unreadable(message) => UnavailableReason::Provider(message.to_owned()),
-            })
-    }
+    Ok(call.material)
 }
 
 fn unsupported(detail: Option<&str>) -> UnavailableReason {
@@ -191,8 +188,10 @@ fn failure(error: ProviderError, now: i64) -> Failure {
 }
 
 fn reason(error: ProviderError, now: i64) -> UnavailableReason {
+    let text = error.to_string();
     match error {
-        ProviderError::Unauthorized | ProviderError::Forbidden => UnavailableReason::ExpiredLogin,
+        ProviderError::Unauthorized => UnavailableReason::ExpiredLogin,
+        ProviderError::Forbidden => UnavailableReason::Provider(text),
         ProviderError::RateLimited {
             retry_after_seconds,
         } => UnavailableReason::RateLimited {
@@ -202,9 +201,7 @@ fn reason(error: ProviderError, now: i64) -> UnavailableReason {
                 .map(Timestamp),
         },
         ProviderError::Network(message) => UnavailableReason::Network(message.to_owned()),
-        ProviderError::Status(_) | ProviderError::Decode(_) => {
-            UnavailableReason::Provider(error.to_string())
-        }
+        ProviderError::Status(_) | ProviderError::Decode(_) => UnavailableReason::Provider(text),
         ProviderError::Unsupported(detail) => unsupported(Some(detail)),
     }
 }

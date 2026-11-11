@@ -28,6 +28,7 @@ fn window(
         label: label.to_owned(),
         used: used.map(percent),
         remaining: left,
+        spent: None,
         resets_at: at.map(Timestamp),
     }
 }

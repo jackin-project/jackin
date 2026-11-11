@@ -2,10 +2,41 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_usage_provider_core::{
-    Bucket, BucketKind, ProviderError, Remaining, json_integer, json_money, json_number, json_text,
-    title_words,
+    Bucket, BucketKind, Money, ProviderError, Remaining, json_integer, json_money, json_number,
+    json_text, parse_iso_epoch, title_words,
 };
 use serde_json::Value;
+
+pub(crate) fn reset_credits(body: &Value) -> Result<Option<Bucket>, ProviderError> {
+    let count = body
+        .get("available_count")
+        .and_then(json_integer)
+        .filter(|count| *count >= 0)
+        .ok_or(ProviderError::Decode(
+            "the reset inventory has no available count",
+        ))?;
+    if count == 0 {
+        return Ok(None);
+    }
+    let first_expiry = body
+        .get("credits")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|credit| {
+            credit
+                .get("expires_at")
+                .and_then(json_text)
+                .and_then(parse_iso_epoch)
+        })
+        .min();
+    let resets = Money::new(count, 0, "resets").ok_or(ProviderError::OUT_OF_RANGE)?;
+    Ok(Some(
+        Bucket::named(BucketKind::Other, "rate-limit resets")
+            .left(Some(Remaining::Amount(resets)))
+            .resets(first_expiry),
+    ))
+}
 
 pub(crate) fn buckets(body: &Value, now: i64) -> Result<Vec<Bucket>, ProviderError> {
     let mut out = Vec::new();

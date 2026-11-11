@@ -22,6 +22,7 @@ pub struct UsageDeps {
     pub runner: Arc<dyn ProcessRunner>,
     pub env: EnvSnapshot,
     pub endpoints: ProviderEndpoints,
+    pub home: HostPath,
     pub state_dir: HostPath,
 }
 

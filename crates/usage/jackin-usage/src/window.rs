@@ -43,8 +43,16 @@ fn window(bucket: Bucket) -> Result<Option<LimitWindow>, UnavailableReason> {
             None => None,
         },
     };
+    let spent = match bucket.spent {
+        Some(BucketRemaining::Percent(value)) => Some(Remaining::Percent(percent(value)?)),
+        Some(BucketRemaining::Amount(money)) => Some(Remaining::Amount {
+            value: money.text(),
+            unit: clean(money.unit()),
+        }),
+        None => None,
+    };
     let resets_at = bucket.resets_at.map(instant).transpose()?;
-    if used.is_none() && remaining.is_none() && resets_at.is_none() {
+    if used.is_none() && remaining.is_none() && spent.is_none() && resets_at.is_none() {
         return Ok(None);
     }
     Ok(Some(LimitWindow {
@@ -52,6 +60,7 @@ fn window(bucket: Bucket) -> Result<Option<LimitWindow>, UnavailableReason> {
         label: clean(&bucket.label),
         used,
         remaining,
+        spent,
         resets_at,
     }))
 }

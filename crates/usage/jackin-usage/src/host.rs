@@ -8,8 +8,9 @@ use jackin_usage_provider_core::Http;
 use tokio_util::sync::CancellationToken;
 
 use crate::cache::{Cache, Entry, Good, fingerprint};
+use crate::credential::{Material, Unresolved, resolve};
 use crate::deps::UsageDeps;
-use crate::dispatch::{Call, Failure, collect};
+use crate::dispatch::{Call, Failure, collect, unsupported_without_credentials};
 use crate::model::{
     AccountUsage, Freshness, LimitWindow, SCHEMA, UnavailableReason, UsageError, UsageOutcome,
     UsageReport,
@@ -91,15 +92,52 @@ impl HostUsage {
         now: i64,
         cancel: &CancellationToken,
     ) -> Settled {
-        let print = fingerprint(account);
+        if let Some(reason) = unsupported_without_credentials(account) {
+            return settled(
+                account,
+                Freshness::Fresh,
+                UsageOutcome::Unavailable(reason),
+                Update::Remove,
+            );
+        }
+        let material = match resolve(&self.deps, account, cancel).await {
+            Ok(material) => material,
+            Err(unresolved) => {
+                let reason = match unresolved {
+                    Unresolved::Missing => UnavailableReason::NoCredentials,
+                    Unresolved::Unreadable(message) => {
+                        UnavailableReason::Provider(message.to_owned())
+                    }
+                };
+                return failed(
+                    account,
+                    Failure {
+                        reason,
+                        transient: false,
+                    },
+                    entry,
+                    fingerprint(account, None, None),
+                    now,
+                    false,
+                );
+            }
+        };
+        let print = fingerprint(
+            account,
+            material.identity.as_deref(),
+            material.revision.as_deref(),
+        );
         let entry = entry.filter(|entry| entry.fingerprint == print);
-        if refresh == Refresh::Cached
+        let established = material.established();
+        if established
+            && refresh == Refresh::Cached
             && let Some(held) = entry.as_ref().and_then(|entry| held(entry, now))
         {
             return settled(account, held.0, held.1, Update::Keep);
         }
-        if let (Refresh::Cached, Some(good)) =
-            (refresh, entry.as_ref().and_then(|e| e.good.as_ref()))
+        if established
+            && let (Refresh::Cached, Some(good)) =
+                (refresh, entry.as_ref().and_then(|e| e.good.as_ref()))
             && now < good.fetched_at.saturating_add(ttl(account.provider))
         {
             return settled(
@@ -109,7 +147,7 @@ impl HostUsage {
                 Update::Keep,
             );
         }
-        match self.fetch(account, cancel, now).await {
+        match self.fetch(account, &material, now).await {
             Ok(found) => {
                 let next = Entry {
                     fingerprint: print,
@@ -126,14 +164,14 @@ impl HostUsage {
                     Update::Set(next),
                 )
             }
-            Err(failure) => failed(account, failure, entry, print, now),
+            Err(failure) => failed(account, failure, entry, print, now, established),
         }
     }
 
     async fn fetch(
         &self,
         account: &UsageAccount,
-        cancel: &CancellationToken,
+        material: &Material,
         now: i64,
     ) -> Result<Vec<LimitWindow>, Failure> {
         let http = match self.deps.endpoints.base(account.provider) {
@@ -144,11 +182,10 @@ impl HostUsage {
             None => &self.http,
         };
         let call = Call {
-            deps: &self.deps,
             account,
-            cancel,
             http,
             now,
+            material,
         };
         Ok(windows(collect(&call).await?)?)
     }
@@ -202,6 +239,7 @@ fn failed(
     entry: Option<Entry>,
     print: String,
     now: i64,
+    established: bool,
 ) -> Settled {
     let Failure { reason, transient } = failure;
     if !transient {
@@ -227,7 +265,7 @@ fn failed(
             retry_at: None,
         })
     };
-    if let Some(good) = next.good.clone() {
+    if established && let Some(good) = next.good.clone() {
         return settled(
             account,
             Freshness::Stale {

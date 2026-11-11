@@ -16,6 +16,7 @@ use jackin_testkit::{
 use super::support::{CANARY, Lab};
 
 const PATH: &str = "/backend-api/wham/usage";
+const RESET_CREDITS: &str = "/backend-api/wham/rate-limit-reset-credits";
 
 fn body(primary: Option<f64>, secondary: f64) -> String {
     let primary = primary.map_or_else(String::new, |used| {
@@ -63,7 +64,28 @@ async fn use_codex(lab: &mut Lab) -> Result<(), Box<dyn std::error::Error>> {
         ConfigEdit::AddAccount(login),
     ])
     .await?;
+    lab.rig.world.usage.get().await?.serve(
+        Provider::Codex,
+        Method::Get,
+        RESET_CREDITS,
+        Route::json(200, "{\"available_count\":0}"),
+    );
     lab.reopen().await
+}
+
+fn spend_labels(lab: &mut Lab, id: &str) -> Vec<Option<String>> {
+    lab.world()
+        .accounts
+        .get(id)
+        .map(|account| {
+            account
+                .usage
+                .windows
+                .iter()
+                .map(|window| window.spend_label.clone())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn windows(lab: &mut Lab, id: &str) -> Vec<(&'static str, Option<u8>, WindowCategory)> {
@@ -302,7 +324,7 @@ async fn validate_reports_quota_access_and_the_rejection_of_a_login() -> TestRes
     .await
 }
 
-const CLAUDE_PATH: &str = "/api/oauth/usage";
+const CLAUDE_PATH: &str = "/api/oauth/usage?cedar_ember=1";
 const CLAUDE_BODY: &str = "{\"five_hour\":{\"utilization\":12,\"resets_at\":\"2026-06-25T19:00:00Z\"},\"seven_day\":{\"utilization\":34,\"resets_at\":\"2026-06-26T14:00:00Z\"}}";
 
 #[tokio::test]
@@ -603,6 +625,64 @@ async fn a_roster_refresh_keeps_the_last_validation_and_drops_a_reading_of_an_ed
         let edited = lab.world().accounts.get("work").cloned().ok_or("work")?;
         assert_eq!(edited.validation, ValidationState::NeverValidated);
         assert!(edited.usage.windows.is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_spend_window_shows_its_amount_in_the_console() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        use_codex(&mut lab).await?;
+        let account = Account::new(
+            AccountName::parse("router")?,
+            Provider::Openrouter,
+            CredentialSource::OnePassword {
+                reference: OpReference::parse("op://vault-1/item-1/key")?,
+                account: None,
+            },
+        )?;
+        lab.edit(vec![ConfigEdit::AddAccount(account)]).await?;
+        lab.reopen().await?;
+        lab.rig.world.usage.get().await?.replace(
+            Provider::Openrouter,
+            Method::Get,
+            "/api/v1/key",
+            Route::json(
+                200,
+                "{\"data\":{\"limit\":50.0,\"limit_remaining\":37.66,\"usage\":12.34,\"usage_daily\":1.0,\"usage_weekly\":5.0,\"usage_monthly\":12.34}}",
+            )
+            .requires_header("authorization", &format!("Bearer {CANARY}")),
+        );
+        lab.rig.world.runner.scripted().expect(
+            ScriptedProgram::Op,
+            &["read", "op://vault-1/item-1/key"],
+            ProcessReply::exited(0, format!("{CANARY}\n").as_bytes(), b""),
+        );
+        refresh(&mut lab).await?;
+        assert_eq!(
+            spend_labels(&mut lab, "router"),
+            vec![
+                Some("37.66 USD left".to_owned()),
+                Some("12.34 USD spent".to_owned()),
+                Some("1.00 USD spent".to_owned()),
+                Some("5.00 USD spent".to_owned()),
+                Some("12.34 USD spent".to_owned()),
+            ]
+        );
+        let screen = {
+            lab.step("down down").await?;
+            lab.console.screen()
+        };
+        for shown in [
+            "12.34 USD spent",
+            "1.00 USD spent",
+            "5.00 USD spent",
+            "37.66 USD left",
+        ] {
+            assert!(screen.contains(shown), "{screen}");
+        }
         Ok(())
     })
     .await

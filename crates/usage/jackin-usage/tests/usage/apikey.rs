@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{CredentialSource, Provider};
-use jackin_testkit::{Method, Route};
+use jackin_testkit::Route;
 use jackin_usage::{Refresh, UnavailableReason, UsageAccount};
 
 use crate::support::{
-    CODEX_HOME, CODEX_PATH, TestResult, UsageHarness, account, codex_login, env_source,
-    file_source, guard, op_source, unavailable, windows_of,
+    CODEX_HOME, CODEX_TOKEN, TestResult, UsageHarness, account, codex_login, env_source,
+    file_source, guard, op_source, serve_codex, unavailable, windows_of,
 };
 
 const FULL: &str = include_str!("fixtures/codex/usage_full.json");
@@ -22,12 +22,7 @@ fn unsupported() -> UnavailableReason {
 
 async fn open_server() -> Result<UsageHarness, Box<dyn std::error::Error>> {
     let harness = UsageHarness::new().await?;
-    harness.server.serve(
-        Provider::Codex,
-        Method::Get,
-        CODEX_PATH,
-        Route::json(200, FULL),
-    );
+    serve_codex(&harness, CODEX_TOKEN, Route::json(200, FULL));
     Ok(harness)
 }
 

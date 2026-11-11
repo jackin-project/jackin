@@ -43,6 +43,8 @@ pub struct LimitWindow {
     #[serde(rename = "used_percent")]
     pub used: Option<Percent>,
     pub remaining: Option<Remaining>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spent: Option<Remaining>,
     pub resets_at: Option<Timestamp>,
 }
 

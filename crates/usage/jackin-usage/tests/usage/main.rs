@@ -17,6 +17,7 @@ mod errors;
 mod isolation;
 mod kinds;
 mod norefresh;
+mod omp;
 mod providers;
 mod rate;
 mod schema;

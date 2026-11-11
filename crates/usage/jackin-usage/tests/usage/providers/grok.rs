@@ -14,7 +14,9 @@ use crate::support::{
 const TOKEN: &str = "SECRET_TOKEN_GROK";
 const PATH: &str = "/v1/billing?format=credits";
 const CREDITS: &str = include_str!("../fixtures/grok/billing_credits.json");
+const ON_DEMAND_ON: &str = include_str!("../fixtures/grok/billing_credits_on_demand_on.json");
 const ON_DEMAND_OFF: &str = include_str!("../fixtures/grok/billing_credits_on_demand_off.json");
+const PRODUCT_SHARE: &str = include_str!("../fixtures/grok/billing_product_share.json");
 const NEGATIVE_CENT: &str = include_str!("../fixtures/grok/billing_negative_cent.json");
 const ZERO_CAP: &str = include_str!("../fixtures/grok/billing_zero_cap.json");
 const DEPRECATED: &str = include_str!("../fixtures/grok/billing_deprecated.json");
@@ -44,6 +46,13 @@ const ON_DEMAND: Want = want(
     "On-demand",
     Some(6.0),
     Left::Amount("47.00", "USD"),
+    None,
+);
+const BUILD_SHARE: Want = want(
+    WindowKind::Other,
+    "Grok Build share",
+    Some(61.2),
+    Left::Percent(38.8),
     None,
 );
 
@@ -76,7 +85,7 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
         harness,
         account,
         first: (Method::Get, PATH),
-        expected: &[WEEK, EXTRA, ON_DEMAND],
+        expected: &[WEEK, EXTRA],
     })
 }
 
@@ -113,32 +122,18 @@ async fn login_outcome(file: &str, key: &str) -> Result<UsageOutcome, Box<dyn st
 }
 
 #[tokio::test]
-async fn the_credits_config_gives_a_weekly_window_extra_credits_and_on_demand() -> TestResult {
+async fn the_credits_config_gives_a_weekly_window_and_the_extra_credits() -> TestResult {
     guard(async {
-        assert_windows(&outcome(CREDITS).await?, &[WEEK, EXTRA, ON_DEMAND]);
+        assert_windows(&outcome(CREDITS).await?, &[WEEK, EXTRA]);
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn the_deprecated_config_gives_a_monthly_window_and_on_demand() -> TestResult {
+async fn the_on_demand_window_comes_only_with_the_on_demand_flag() -> TestResult {
     guard(async {
-        let monthly = want(
-            WindowKind::Monthly,
-            "monthly",
-            Some(61.7),
-            Left::Amount("7.66", "USD"),
-            Some(1_746_057_600),
-        );
-        let on_demand = want(
-            WindowKind::Spend,
-            "On-demand",
-            Some(0.0),
-            Left::Amount("5.00", "USD"),
-            None,
-        );
-        assert_windows(&outcome(DEPRECATED).await?, &[monthly, on_demand]);
+        assert_windows(&outcome(ON_DEMAND_ON).await?, &[WEEK, EXTRA, ON_DEMAND]);
         Ok(())
     })
     .await
@@ -154,9 +149,43 @@ async fn on_demand_disabled_leaves_no_on_demand_window() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_negative_cent_value_is_taken_as_its_magnitude() -> TestResult {
+async fn a_missing_on_demand_flag_leaves_no_on_demand_window_port_fidelity() -> TestResult {
     guard(async {
-        assert_windows(&outcome(NEGATIVE_CENT).await?, &[WEEK, EXTRA, ON_DEMAND]);
+        assert_windows(&outcome(CREDITS).await?, &[WEEK, EXTRA]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_deprecated_config_gives_a_monthly_window_port_fidelity() -> TestResult {
+    guard(async {
+        let monthly = want(
+            WindowKind::Monthly,
+            "monthly",
+            Some(61.7),
+            Left::Amount("7.66", "USD"),
+            Some(1_746_057_600),
+        );
+        assert_windows(&outcome(DEPRECATED).await?, &[monthly]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_share_of_the_grok_build_product_is_a_window_port_fidelity() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(PRODUCT_SHARE).await?, &[WEEK, EXTRA, BUILD_SHARE]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_negative_cent_value_is_a_provider_error_port_fidelity() -> TestResult {
+    guard(async {
+        assert_provider_without(&outcome(NEGATIVE_CENT).await?);
         Ok(())
     })
     .await
@@ -201,10 +230,7 @@ async fn an_empty_object_is_a_provider_error() -> TestResult {
 #[tokio::test]
 async fn an_auth_file_gives_its_key_port_fidelity() -> TestResult {
     guard(async {
-        assert_windows(
-            &login_outcome(AUTH, TOKEN).await?,
-            &[WEEK, EXTRA, ON_DEMAND],
-        );
+        assert_windows(&login_outcome(AUTH, TOKEN).await?, &[WEEK, EXTRA]);
         Ok(())
     })
     .await
@@ -213,10 +239,7 @@ async fn an_auth_file_gives_its_key_port_fidelity() -> TestResult {
 #[tokio::test]
 async fn the_auth_x_ai_scope_wins_over_a_sign_in_scope_port_fidelity() -> TestResult {
     guard(async {
-        assert_windows(
-            &login_outcome(TWO_SCOPES, TOKEN).await?,
-            &[WEEK, EXTRA, ON_DEMAND],
-        );
+        assert_windows(&login_outcome(TWO_SCOPES, TOKEN).await?, &[WEEK, EXTRA]);
         Ok(())
     })
     .await
@@ -226,6 +249,17 @@ async fn the_auth_x_ai_scope_wins_over_a_sign_in_scope_port_fidelity() -> TestRe
 async fn an_entry_that_expires_now_is_an_expired_login_without_a_request() -> TestResult {
     guard(async {
         let outcome = login_outcome(EXPIRED, TOKEN).await?;
+        assert_eq!(unavailable(&outcome), &UnavailableReason::ExpiredLogin);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_entry_without_an_expiry_is_an_expired_login_port_fidelity() -> TestResult {
+    guard(async {
+        let file = "{\"https://auth.x.ai::issuer\":{\"key\":\"SECRET_TOKEN_GROK\"}}";
+        let outcome = login_outcome(file, TOKEN).await?;
         assert_eq!(unavailable(&outcome), &UnavailableReason::ExpiredLogin);
         Ok(())
     })
@@ -245,7 +279,7 @@ async fn a_cent_value_of_the_smallest_integer_is_a_provider_error() -> TestResul
 #[tokio::test]
 async fn a_cent_value_that_is_not_an_integer_is_a_provider_error() -> TestResult {
     guard(async {
-        let body = "{\"config\":{\"creditUsagePercent\":42.5,\"onDemandCap\":{\"val\":1e30}}}";
+        let body = "{\"on_demand_enabled\":true,\"config\":{\"creditUsagePercent\":42.5,\"onDemandCap\":{\"val\":1e30}}}";
         assert_provider_without(&outcome(body).await?);
         Ok(())
     })

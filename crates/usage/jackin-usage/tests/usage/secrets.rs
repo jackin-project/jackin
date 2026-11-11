@@ -15,8 +15,8 @@ use jackin_usage::{
 
 use crate::providers::openrouter_serve;
 use crate::support::{
-    CODEX_PATH, TestResult, UsageHarness, account, codex_body, codex_login, env_source,
-    file_source, guard, host_path, op_source, windows_of,
+    CODEX_PATH, RESET_CREDITS_PATH, TestResult, UsageHarness, account, codex_body, codex_login,
+    env_source, file_source, guard, host_path, op_source, windows_of,
 };
 
 const AUTH: &str = include_str!("fixtures/codex/auth_chatgpt.json");
@@ -55,6 +55,12 @@ async fn echoing() -> Result<(UsageHarness, UsageReport), Box<dyn std::error::Er
         Route::json(200, &ok)
             .requires_header("authorization", "Bearer SECRET_TOKEN_CODEX")
             .requires_header("chatgpt-account-id", "ok-id"),
+    );
+    harness.server.serve(
+        Provider::Codex,
+        Method::Get,
+        RESET_CREDITS_PATH,
+        crate::support::codex_reset_credits_route("SECRET_TOKEN_CODEX"),
     );
     harness.server.serve(
         Provider::Codex,
@@ -103,7 +109,7 @@ async fn the_report_its_json_and_its_debug_output_hold_no_secret() -> TestResult
             report.accounts[2].outcome,
             UsageOutcome::Unavailable(_)
         ));
-        assert_eq!(windows_of(&report.accounts[3].outcome).len(), 2);
+        assert_eq!(windows_of(&report.accounts[3].outcome).len(), 5);
         assert_eq!(
             report.accounts[4].outcome,
             UsageOutcome::Unavailable(UnavailableReason::NoCredentials)
@@ -135,6 +141,12 @@ async fn errors_and_the_dependency_bundle_hold_no_secret() -> TestResult {
             CODEX_PATH,
             Route::json(200, &codex_body(10)),
         );
+        harness.server.serve(
+            Provider::Codex,
+            Method::Get,
+            RESET_CREDITS_PATH,
+            crate::support::codex_reset_credits_route("SECRET_TOKEN_CODEX"),
+        );
         let failure = harness
             .report(
                 &[codex_login("echo-ok", "/home/ok/.codex", "ok-id")],
@@ -158,6 +170,7 @@ async fn errors_and_the_dependency_bundle_hold_no_secret() -> TestResult {
             runner,
             env: EnvSnapshot::from_pairs([("KEY".to_owned(), "SECRET_TOKEN_ENV".to_owned())]),
             endpoints: ProviderEndpoints::real(),
+            home: host_path("/home/work"),
             state_dir: host_path("/state/usage"),
         };
         assert_clean("UsageDeps Debug", &format!("{deps:?}"));

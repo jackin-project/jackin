@@ -7,14 +7,12 @@ use jackin_usage::{Refresh, UnavailableReason, WindowKind};
 
 use super::Case;
 use crate::support::{
-    Left, TestResult, UsageHarness, account, assert_windows, env_source, guard, unavailable, want,
+    Left, TestResult, UsageHarness, account, assert_windows, env_source, guard, spent, unavailable,
+    want,
 };
 
 const KEY: &str = include_str!("../fixtures/openrouter/key.json");
 const KEY_UNLIMITED: &str = include_str!("../fixtures/openrouter/key_unlimited.json");
-const CREDITS: &str = include_str!("../fixtures/openrouter/credits.json");
-const CREDITS_403: &str = include_str!("../fixtures/openrouter/credits_403.json");
-const CREDITS_OVER: &str = include_str!("../fixtures/openrouter/credits_over.json");
 pub(crate) const TOKEN: &str = "SECRET_TOKEN_OPENROUTER";
 const KEY_PATH: &str = "/api/v1/key";
 const CREDITS_PATH: &str = "/api/v1/credits";
@@ -27,23 +25,34 @@ const KEY_LIMIT: crate::support::Want = want(
     None,
 );
 
-const ACCOUNT_CREDITS: crate::support::Want = want(
-    WindowKind::Credits,
-    "Account credits",
-    Some(25.621_890_547_263_682),
-    Left::Amount("74.75", "USD"),
-    None,
+const KEY_SPEND: crate::support::Want =
+    spent(WindowKind::Spend, "Key spend", Left::Amount("12.34", "USD"));
+
+const DAILY_SPEND: crate::support::Want = spent(
+    WindowKind::Spend,
+    "Daily spend",
+    Left::Amount("1.00", "USD"),
 );
 
+const WEEKLY_SPEND: crate::support::Want = spent(
+    WindowKind::Spend,
+    "Weekly spend",
+    Left::Amount("5.00", "USD"),
+);
+
+const MONTHLY_SPEND: crate::support::Want = spent(
+    WindowKind::Spend,
+    "Monthly spend",
+    Left::Amount("12.34", "USD"),
+);
+
+const SPENDS: [crate::support::Want; 4] = [KEY_SPEND, DAILY_SPEND, WEEKLY_SPEND, MONTHLY_SPEND];
+
 pub(crate) fn serve_valid(harness: &UsageHarness, token: &str) {
-    serve_with(harness, token, KEY, Route::json(200, CREDITS));
+    serve_key(harness, token, KEY);
 }
 
-fn serve(harness: &UsageHarness, key: &str, credits: Route) {
-    serve_with(harness, TOKEN, key, credits);
-}
-
-fn serve_with(harness: &UsageHarness, token: &str, key: &str, credits: Route) {
+fn serve_key(harness: &UsageHarness, token: &str, key: &str) {
     let bearer = format!("Bearer {token}");
     harness.server.replace(
         Provider::Openrouter,
@@ -51,19 +60,13 @@ fn serve_with(harness: &UsageHarness, token: &str, key: &str, credits: Route) {
         KEY_PATH,
         Route::json(200, key).requires_header("authorization", &bearer),
     );
-    harness.server.replace(
-        Provider::Openrouter,
-        Method::Get,
-        CREDITS_PATH,
-        credits.requires_header("authorization", &bearer),
-    );
 }
 
 pub(crate) async fn started()
 -> Result<(UsageHarness, jackin_usage::UsageAccount), Box<dyn std::error::Error>> {
     let mut harness = UsageHarness::new().await?;
     harness.env("OPENROUTER_TEST_KEY", TOKEN);
-    serve(&harness, KEY, Route::json(200, CREDITS));
+    serve_key(&harness, TOKEN, KEY);
     let account = account(
         "router",
         Provider::Openrouter,
@@ -80,34 +83,98 @@ pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
         harness,
         account,
         first: (Method::Get, KEY_PATH),
-        expected: &[KEY_LIMIT, ACCOUNT_CREDITS],
+        expected: &[
+            KEY_LIMIT,
+            KEY_SPEND,
+            DAILY_SPEND,
+            WEEKLY_SPEND,
+            MONTHLY_SPEND,
+        ],
     })
 }
 
+async fn outcome(key: &str) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
+    let (harness, account) = started().await?;
+    serve_key(&harness, TOKEN, key);
+    Ok(harness.one(&account, Refresh::Cached).await?.outcome)
+}
+
 #[tokio::test]
-async fn a_key_limit_and_the_account_credits_give_two_windows_in_dollars() -> TestResult {
+async fn the_key_limit_and_the_spend_rows_give_five_windows_in_dollars() -> TestResult {
     guard(async {
-        let (harness, account) = started().await?;
-        let usage = harness.one(&account, Refresh::Cached).await?;
-        assert_windows(&usage.outcome, &[KEY_LIMIT, ACCOUNT_CREDITS]);
+        assert_windows(
+            &outcome(KEY).await?,
+            &[
+                KEY_LIMIT,
+                KEY_SPEND,
+                DAILY_SPEND,
+                WEEKLY_SPEND,
+                MONTHLY_SPEND,
+            ],
+        );
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn usage_above_the_credits_shows_a_full_bar_and_zero_left() -> TestResult {
+async fn the_credits_endpoint_is_not_requested_any_more() -> TestResult {
     guard(async {
         let (harness, account) = started().await?;
-        serve(&harness, KEY_UNLIMITED, Route::json(200, CREDITS_OVER));
         let usage = harness.one(&account, Refresh::Cached).await?;
         assert_windows(
             &usage.outcome,
+            &[
+                KEY_LIMIT,
+                KEY_SPEND,
+                DAILY_SPEND,
+                WEEKLY_SPEND,
+                MONTHLY_SPEND,
+            ],
+        );
+        let mismatches = harness.server.mismatches();
+        assert!(mismatches.is_empty(), "{mismatches:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_spend_rows_are_reported_whatever_the_key_limit_is() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(KEY_UNLIMITED).await?, &SPENDS);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_key_without_a_limit_has_no_limit_window() -> TestResult {
+    guard(async {
+        let found = outcome(KEY_UNLIMITED).await?;
+        let windows = crate::support::windows_of(&found);
+        assert_eq!(windows.len(), 4);
+        assert!(
+            windows.iter().all(|window| window.label != "Key limit"),
+            "the key limit window is gone"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_key_without_a_spend_has_no_spend_row() -> TestResult {
+    guard(async {
+        let key =
+            "{\"data\":{\"label\":\"sk-or-v1-abc\",\"limit\":50.0,\"limit_remaining\":37.66}}";
+        assert_windows(
+            &outcome(key).await?,
             &[want(
-                WindowKind::Credits,
-                "Account credits",
-                Some(100.0),
-                Left::Amount("0.00", "USD"),
+                WindowKind::Spend,
+                "Key limit",
+                Some(24.68),
+                Left::Amount("37.66", "USD"),
                 None,
             )],
         );
@@ -117,46 +184,7 @@ async fn usage_above_the_credits_shows_a_full_bar_and_zero_left() -> TestResult 
 }
 
 #[tokio::test]
-async fn an_unlimited_key_with_credits_shows_only_the_credits() -> TestResult {
-    guard(async {
-        let (harness, account) = started().await?;
-        serve(&harness, KEY_UNLIMITED, Route::json(200, CREDITS));
-        let usage = harness.one(&account, Refresh::Cached).await?;
-        assert_windows(&usage.outcome, &[ACCOUNT_CREDITS]);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn an_unlimited_key_whose_credits_are_forbidden_has_no_window() -> TestResult {
-    guard(async {
-        let (harness, account) = started().await?;
-        serve(&harness, KEY_UNLIMITED, Route::json(403, CREDITS_403));
-        let usage = harness.one(&account, Refresh::Cached).await?;
-        assert!(matches!(
-            unavailable(&usage.outcome),
-            UnavailableReason::Provider(_)
-        ));
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn forbidden_credits_leave_the_key_limit_window() -> TestResult {
-    guard(async {
-        let (harness, account) = started().await?;
-        serve(&harness, KEY, Route::json(403, CREDITS_403));
-        let usage = harness.one(&account, Refresh::Cached).await?;
-        assert_windows(&usage.outcome, &[KEY_LIMIT]);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_rejected_key_stops_before_the_credits_request() -> TestResult {
+async fn a_rejected_key_gives_an_expired_login() -> TestResult {
     guard(async {
         let (harness, account) = started().await?;
         harness.server.replace(
@@ -176,62 +204,10 @@ async fn a_rejected_key_stops_before_the_credits_request() -> TestResult {
 }
 
 #[tokio::test]
-async fn rejected_credits_are_an_expired_login() -> TestResult {
-    guard(async {
-        let (harness, account) = started().await?;
-        serve(&harness, KEY, Route::status(401));
-        let usage = harness.one(&account, Refresh::Cached).await?;
-        assert_eq!(
-            unavailable(&usage.outcome),
-            &UnavailableReason::ExpiredLogin
-        );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_credits_server_error_fails_the_account_with_no_partial_window() -> TestResult {
-    guard(async {
-        let (harness, account) = started().await?;
-        serve(&harness, KEY, Route::status(500));
-        let usage = harness.one(&account, Refresh::Cached).await?;
-        assert!(matches!(
-            unavailable(&usage.outcome),
-            UnavailableReason::Provider(_)
-        ));
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
 async fn a_key_response_without_a_data_object_is_a_provider_error() -> TestResult {
     guard(async {
-        let (harness, account) = started().await?;
-        serve(&harness, "{\"data\":[]}", Route::json(200, CREDITS));
-        let usage = harness.one(&account, Refresh::Cached).await?;
         assert!(matches!(
-            unavailable(&usage.outcome),
-            UnavailableReason::Provider(_)
-        ));
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn negative_total_credits_are_a_provider_error() -> TestResult {
-    guard(async {
-        let (harness, account) = started().await?;
-        serve(
-            &harness,
-            KEY,
-            Route::json(200, "{\"data\":{\"total_credits\":-1,\"total_usage\":0}}"),
-        );
-        let usage = harness.one(&account, Refresh::Cached).await?;
-        assert!(matches!(
-            unavailable(&usage.outcome),
+            unavailable(&outcome("{\"data\":[]}").await?),
             UnavailableReason::Provider(_)
         ));
         Ok(())
@@ -242,17 +218,55 @@ async fn negative_total_credits_are_a_provider_error() -> TestResult {
 #[tokio::test]
 async fn a_key_limit_beyond_the_integers_is_a_provider_error() -> TestResult {
     guard(async {
-        let (harness, account) = started().await?;
-        serve(
-            &harness,
-            "{\"data\":{\"limit\":1e300,\"limit_remaining\":1.0}}",
-            Route::json(200, CREDITS),
-        );
-        let usage = harness.one(&account, Refresh::Cached).await?;
+        let key = "{\"data\":{\"limit\":1e300,\"limit_remaining\":1.0}}";
         assert!(matches!(
-            unavailable(&usage.outcome),
+            unavailable(&outcome(key).await?),
             UnavailableReason::Provider(_)
         ));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_spend_beyond_the_integers_is_a_provider_error() -> TestResult {
+    guard(async {
+        let key = "{\"data\":{\"limit\":50.0,\"limit_remaining\":37.66,\"usage\":1e300}}";
+        assert!(matches!(
+            unavailable(&outcome(key).await?),
+            UnavailableReason::Provider(_)
+        ));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_credits_path_is_never_answered_by_the_provider() -> TestResult {
+    guard(async {
+        let (harness, account) = started().await?;
+        harness.server.replace(
+            Provider::Openrouter,
+            Method::Get,
+            CREDITS_PATH,
+            Route::json(
+                200,
+                "{\"data\":{\"total_credits\":100.5,\"total_usage\":25.75}}",
+            ),
+        );
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert_windows(
+            &usage.outcome,
+            &[
+                KEY_LIMIT,
+                KEY_SPEND,
+                DAILY_SPEND,
+                WEEKLY_SPEND,
+                MONTHLY_SPEND,
+            ],
+        );
+        let mismatches = harness.server.mismatches();
+        assert!(mismatches.is_empty(), "{mismatches:?}");
         Ok(())
     })
     .await
