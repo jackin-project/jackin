@@ -5,9 +5,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use flate2::{Decompress, FlushDecompress, Status};
+use gix_hash::{Kind, hasher};
 use jackin_core::{CommitId, FileSystem, HostPath};
-use sha1::{Digest, Sha1};
-use sha2::Sha256;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -107,31 +106,24 @@ fn refused(refusal: BundleRefusal) -> ExportError {
     ExportError::BundleRefused(refusal)
 }
 
-enum Hasher {
-    Sha1(Sha1),
-    Sha256(Sha256),
-}
+struct Hasher(gix_hash::Hasher);
 
 impl Hasher {
     fn new(format: ObjectFormat) -> Hasher {
-        match format {
-            ObjectFormat::Sha1 => Hasher::Sha1(Sha1::new()),
-            ObjectFormat::Sha256 => Hasher::Sha256(Sha256::new()),
-        }
+        Hasher(match format {
+            ObjectFormat::Sha1 => hasher(Kind::Sha1),
+            ObjectFormat::Sha256 => hasher(Kind::Sha256),
+        })
     }
 
     fn update(&mut self, bytes: &[u8]) {
-        match self {
-            Hasher::Sha1(hasher) => hasher.update(bytes),
-            Hasher::Sha256(hasher) => hasher.update(bytes),
-        }
+        self.0.update(bytes);
     }
 
     fn matches(self, trailer: &[u8]) -> bool {
-        match self {
-            Hasher::Sha1(hasher) => hasher.finalize().as_slice() == trailer,
-            Hasher::Sha256(hasher) => hasher.finalize().as_slice() == trailer,
-        }
+        self.0
+            .try_finalize()
+            .is_ok_and(|object_id| object_id.as_slice() == trailer)
     }
 }
 

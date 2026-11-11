@@ -10,6 +10,7 @@ IMG=docker.io/library/docker:dind-rootless
 HOST_PORT_HOST_ENGINE=18475
 HOST_PORT_MTLS=18476
 HOST_PORT_TOKEN=18477
+SCHEME=http
 
 mkdir -p "$WORK"
 chmod 700 "$WORK"
@@ -263,7 +264,7 @@ docker run --rm -v /Users:/mnt/Users:ro alpine sh -c 'test -d /mnt/Users/donbeav
 echo '--- docker binary, other port (the host engine bridge port)'
 DOCKER_HOST=tcp://host.openshell.internal:$HOST_PORT_HOST_ENGINE timeout 30 docker version --format '{{.Server.Version}}' 2>&1 | tail -2
 echo '--- another binary, engine port'
-timeout 30 wget -q -O- -T 10 http://host.openshell.internal:$HOST_PORT_MTLS/ 2>&1 | tail -2
+timeout 30 wget -q -O- -T 10 "$SCHEME://host.openshell.internal:$HOST_PORT_MTLS/" 2>&1 | tail -2
 echo '--- loopback literal, docker binary'
 DOCKER_HOST=tcp://127.0.0.1:$HOST_PORT_MTLS DOCKER_TLS_VERIFY=1 DOCKER_CERT_PATH=$certdir timeout 30 docker version --format '{{.Server.Version}}' 2>&1 | tail -2"
 

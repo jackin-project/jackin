@@ -6,9 +6,9 @@ use std::io::Write;
 
 use flate2::Compression;
 use flate2::write::ZlibEncoder;
+use gix_hash::Kind;
 use jackin_session::{DEFAULT_EXPORT_ENTRY_BYTES, ExportError};
 use jackin_testkit::{Rig, default_limits};
-use sha1::{Digest, Sha1};
 use tokio_util::sync::CancellationToken;
 
 #[expect(dead_code, reason = "the probe uses part of the shared tap")]
@@ -43,14 +43,14 @@ fn lying(honest: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
 const ROOT_BYTES: usize = 15 * 1024 * 1024;
 const RESULT_BYTES: u64 = 480 * 1024 * 1024;
 
-fn roots(honest: &[u8]) -> Vec<u8> {
+fn roots(honest: &[u8]) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut items = Vec::new();
     let mut deltas = Vec::new();
     let copy = [0xc0, 0xf0];
     let copies = usize::try_from(RESULT_BYTES).unwrap_or(0) / ROOT_BYTES;
     for fill in 0..8_u8 {
         let content = vec![fill; ROOT_BYTES];
-        let mut hasher = Sha1::new();
+        let mut hasher = gix_hash::hasher(Kind::Sha1);
         hasher.update(format!("blob {ROOT_BYTES}\0").as_bytes());
         hasher.update(&content);
         items.push(pack::blob(&content));
@@ -59,8 +59,9 @@ fn roots(honest: &[u8]) -> Vec<u8> {
             ops.extend_from_slice(&copy);
         }
         let stream = pack::delta_stream(ROOT_BYTES as u64, RESULT_BYTES, &ops);
+        let object_id = hasher.try_finalize()?;
         deltas.push(pack::ref_delta_on(
-            hasher.finalize().as_slice(),
+            object_id.as_slice(),
             stream.len() as u64,
             &stream,
         ));
@@ -68,7 +69,7 @@ fn roots(honest: &[u8]) -> Vec<u8> {
     items.extend(deltas);
     let header = &honest[..pack::header_len(honest)];
     let count = u32::try_from(items.len()).unwrap_or(0);
-    pack::assemble(header, &items, count, pack::Hash::Sha1)
+    Ok(pack::assemble(header, &items, count, pack::Hash::Sha1))
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -90,7 +91,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let bytes = match mode.as_str() {
         "honest" => honest,
         "lying" => lying(&honest)?,
-        "roots" => roots(&honest),
+        "roots" => roots(&honest)?,
         other => return Err(format!("unknown mode {other}").into()),
     };
     let tap = tap::Tap::new(&rig);

@@ -16,13 +16,13 @@ base64 = { workspace = true }
 caseless = { workspace = true }
 chrono = { workspace = true, features = ["clock"] }
 flate2 = { workspace = true }
+gix-hash = { workspace = true }
 jackin-core = { workspace = true }
 jackin-image = { workspace = true }
 jackin-openshell = { workspace = true }
 rusqlite = { workspace = true }
 rustix = { workspace = true }
 serde_json = { workspace = true }
-sha1 = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
@@ -38,6 +38,7 @@ jackin-testkit = { workspace = true }
 noyalib = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
+sha1 = { workspace = true }
 tempfile = { workspace = true }
 termwiz = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }
