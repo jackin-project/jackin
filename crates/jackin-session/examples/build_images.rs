@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
-use std::fs::{self, DirBuilder};
+use std::fs::DirBuilder;
 use std::io::{ErrorKind, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -40,8 +40,8 @@ fn state_work_dir() -> Result<PathBuf, Box<dyn Error>> {
     Ok(state.join("jackin").join("build-images"))
 }
 
-fn private_dir(dir: &Path) -> Result<(), Box<dyn Error>> {
-    match fs::symlink_metadata(dir) {
+async fn private_dir(dir: &Path) -> Result<(), Box<dyn Error>> {
+    match tokio::fs::symlink_metadata(dir).await {
         Ok(meta) if meta.is_dir() && meta.permissions().mode() & 0o777 == 0o700 => Ok(()),
         Ok(meta) => Err(format!(
             "{} must be a directory with mode 0700, found mode {:o}",
@@ -51,9 +51,11 @@ fn private_dir(dir: &Path) -> Result<(), Box<dyn Error>> {
         .into()),
         Err(error) if error.kind() == ErrorKind::NotFound => {
             if let Some(parent) = dir.parent() {
-                fs::create_dir_all(parent)?;
+                tokio::fs::create_dir_all(parent).await?;
             }
-            DirBuilder::new().mode(0o700).create(dir)?;
+            let target = dir.to_owned();
+            tokio::task::spawn_blocking(move || DirBuilder::new().mode(0o700).create(&target))
+                .await??;
             Ok(())
         }
         Err(error) => Err(error.into()),
@@ -112,13 +114,13 @@ async fn minimal_role(
     work_dir: &Path,
 ) -> Result<PathBuf, Box<dyn Error>> {
     let dir = work_dir.join("minimal-role");
-    match fs::remove_dir_all(&dir) {
+    match tokio::fs::remove_dir_all(&dir).await {
         Ok(()) => {}
         Err(error) if error.kind() == ErrorKind::NotFound => {}
         Err(error) => return Err(error.into()),
     }
-    fs::create_dir_all(&dir)?;
-    fs::write(dir.join("Dockerfile"), "FROM construct AS role\n")?;
+    tokio::fs::create_dir_all(&dir).await?;
+    tokio::fs::write(dir.join("Dockerfile"), "FROM construct AS role\n").await?;
     git(runner, &dir, &["init", "-q"]).await?;
     git(runner, &dir, &["add", "-A"]).await?;
     let commit = [
@@ -215,23 +217,23 @@ async fn request(
     })
 }
 
-fn show(event: &ImageEvent) -> Result<(), Box<dyn Error>> {
-    let mut out = std::io::stdout().lock();
-    match event {
-        ImageEvent::Line { stage, text } => writeln!(out, "  [{stage}] {}", text.as_str())?,
-        other => writeln!(out, "event {other:?}")?,
-    }
+async fn show(event: &ImageEvent) -> Result<(), Box<dyn Error>> {
+    let line = match event {
+        ImageEvent::Line { stage, text } => format!("  [{stage}] {}", text.as_str()),
+        other => format!("event {other:?}"),
+    };
+    tokio::task::spawn_blocking(move || writeln!(std::io::stdout().lock(), "{line}")).await??;
     Ok(())
 }
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn Error>> {
     let options = options()?;
-    private_dir(&options.work_dir)?;
-    let work = options.work_dir.canonicalize()?;
+    private_dir(&options.work_dir).await?;
+    let work = tokio::fs::canonicalize(&options.work_dir).await?;
     let runner = Arc::new(TokioProcessRunner);
     let role_dir = match &options.role_dir {
-        Some(dir) => dir.canonicalize()?,
+        Some(dir) => tokio::fs::canonicalize(dir).await?,
         None => minimal_role(runner.as_ref(), &work).await?,
     };
     let request = request(runner.as_ref(), &role_dir, &options).await?;
@@ -247,20 +249,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
         };
         let print = async {
             while let Some(event) = rx.recv().await {
-                show(&event)?;
+                show(&event).await?;
             }
             Ok::<(), Box<dyn Error>>(())
         };
         let (result, printed) = tokio::join!(run, print);
         printed?;
         let image = result?;
-        writeln!(
-            std::io::stdout().lock(),
+        let line = format!(
             "call {call}: tag={} id={} source={:?}",
-            image.tag,
-            image.id,
-            image.source
-        )?;
+            image.tag, image.id, image.source
+        );
+        tokio::task::spawn_blocking(move || writeln!(std::io::stdout().lock(), "{line}")).await??;
     }
     Ok(())
 }

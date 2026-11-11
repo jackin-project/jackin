@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     handle
         .git(&["bundle", "create", "--quiet", &target, "refs/heads/work"])
         .await?;
-    let honest = std::fs::read(&path)?;
+    let honest = tokio::fs::read(&path).await?;
     let bytes = match mode.as_str() {
         "honest" => honest,
         "lying" => lying(&honest)?,
@@ -104,6 +104,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Err(ExportError::BundleRefused(refusal)) => format!("{mode}: refused: {refusal}"),
         Err(other) => format!("{mode}: {other}"),
     };
-    writeln!(std::io::stdout(), "{line}")?;
+    tokio::task::spawn_blocking(move || writeln!(std::io::stdout(), "{line}")).await??;
     Ok(())
 }

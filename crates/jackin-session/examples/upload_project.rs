@@ -142,8 +142,9 @@ fn options() -> Result<Options, Box<dyn Error>> {
     Ok(options)
 }
 
-fn say(text: &str) -> Result<(), Box<dyn Error>> {
-    writeln!(std::io::stdout().lock(), "{text}")?;
+async fn say(text: &str) -> Result<(), Box<dyn Error>> {
+    let text = text.to_owned();
+    tokio::task::spawn_blocking(move || writeln!(std::io::stdout().lock(), "{text}")).await??;
     Ok(())
 }
 
@@ -206,8 +207,8 @@ impl Live {
             })
             .await?,
         );
-        std::fs::create_dir_all(&options.work_dir)?;
-        let work = options.work_dir.canonicalize()?;
+        tokio::fs::create_dir_all(&options.work_dir).await?;
+        let work = tokio::fs::canonicalize(&options.work_dir).await?;
         let session = Session::new(SessionDeps {
             gateway: Arc::<GrpcGateway>::clone(&gateway),
             engine: Arc::new(FakeEngine::new()),
@@ -238,7 +239,7 @@ impl Live {
         });
         let project = ProjectRoot::open(
             fs.as_ref(),
-            &HostPath::parse(&options.project.canonicalize()?)?,
+            &HostPath::parse(&tokio::fs::canonicalize(&options.project).await?)?,
         )
         .await?;
         Ok(Live {
@@ -330,7 +331,7 @@ impl Live {
         let (code, text) = self
             .exec(sandbox, SH, &["-c", script], Some("/sandbox/project"), &[])
             .await?;
-        say(&format!("--- {title} (exit {code})\n{}", text.trim_end()))
+        say(&format!("--- {title} (exit {code})\n{}", text.trim_end())).await
     }
 
     async fn seed_stale(&self, sandbox: &SandboxName) -> Result<(), Box<dyn Error>> {
@@ -352,7 +353,7 @@ impl Live {
         }
         say(
             "seeded /sandbox/project/stale/deep/file.txt, /sandbox/project/.stale-dotfile and a leftover /sandbox/project/.git/HEAD",
-        )
+        ).await
     }
 
     async fn host_facts(&self) -> Result<(), Box<dyn Error>> {
@@ -374,6 +375,7 @@ impl Live {
             format.trim(),
             version.trim()
         ))
+        .await
     }
 
     async fn sandbox_facts(&self, sandbox: &SandboxName) -> Result<(), Box<dyn Error>> {
@@ -406,7 +408,7 @@ impl Live {
     async fn upload(&self, launch: &LaunchId) -> Result<Option<SandboxName>, Box<dyn Error>> {
         self.host_facts().await?;
         let sandbox = self.sandbox(launch).await?;
-        say(&format!("sandbox {sandbox} is Ready"))?;
+        say(&format!("sandbox {sandbox} is Ready")).await?;
         if self.options.flags.contains(&Flag::Stale) {
             self.seed_stale(&sandbox).await?;
         }
@@ -420,11 +422,12 @@ impl Live {
         say(&format!(
             "upload_project took {:.1} s",
             started.elapsed().as_secs_f64()
-        ))?;
+        ))
+        .await?;
         match result {
-            Ok(()) => say("upload_project: Ok (the tree gate passed)")?,
+            Ok(()) => say("upload_project: Ok (the tree gate passed)").await?,
             Err(error) => {
-                say(&format!("upload_project: Err\n  {error}\n  {error:?}"))?;
+                say(&format!("upload_project: Err\n  {error}\n  {error:?}")).await?;
                 return Ok(Some(sandbox));
             }
         }
@@ -473,7 +476,8 @@ impl Live {
         say(&format!(
             "sandbox refs before the commit (round {round}):\n{}",
             refs.trim_end()
-        ))?;
+        ))
+        .await?;
         if refs
             .lines()
             .any(|line| line.starts_with("refs/heads/jackin/"))
@@ -497,12 +501,11 @@ impl Live {
         say(&format!(
             "git bundle create in the sandbox: exit {code} {}",
             text.trim()
-        ))?;
+        ))
+        .await?;
         let local = HostPath::parse(
-            &self
-                .options
-                .work_dir
-                .canonicalize()?
+            &tokio::fs::canonicalize(&self.options.work_dir)
+                .await?
                 .join(format!("export-{round}.bundle")),
         )?;
         self.gateway
@@ -516,7 +519,8 @@ impl Live {
         say(&format!(
             "download_file: Ok, digests equal, {}",
             local.as_path().display()
-        ))?;
+        ))
+        .await?;
         let target = format!("+refs/heads/*:refs/heads/jackin/{sandbox}/*");
         let bundle = local.as_path().display().to_string();
         host_git(runner, root, &["fetch", "-q", &bundle, &target]).await?;
@@ -533,7 +537,8 @@ impl Live {
         say(&format!(
             "host refs/heads/jackin/* after round {round}:\n{}",
             listed.trim_end()
-        ))?;
+        ))
+        .await?;
         let after = (
             host_git(
                 runner,
@@ -549,6 +554,7 @@ impl Live {
             "host worktree and HEAD unchanged: {}",
             before == after
         ))
+        .await
     }
 
     async fn drop_refs(&self) -> Result<(), Box<dyn Error>> {
@@ -563,12 +569,12 @@ impl Live {
         for name in listed.lines() {
             host_git(runner, root, &["update-ref", "-d", name]).await?;
         }
-        say("deleted the refs/heads/jackin/* refs of this run")
+        say("deleted the refs/heads/jackin/* refs of this run").await
     }
 
     async fn upload_command(&self) -> Result<(), Box<dyn Error>> {
         for round in 1..=self.options.rounds {
-            say(&format!("== round {round}"))?;
+            say(&format!("== round {round}")).await?;
             let launch = LaunchId::generate()?;
             let Some(sandbox) = self.upload(&launch).await? else {
                 continue;
@@ -588,7 +594,7 @@ impl Live {
             }
             if !self.options.flags.contains(&Flag::Keep) {
                 self.gateway.delete_sandbox(&sandbox).await?;
-                say(&format!("deleted {sandbox}"))?;
+                say(&format!("deleted {sandbox}")).await?;
             }
         }
         if self.options.flags.contains(&Flag::CleanupRefs) {
@@ -613,17 +619,18 @@ impl Live {
             let mut failed = 0;
             for check in &report.checks {
                 match &check.outcome {
-                    Ok(()) => say(&format!("CHECK {label} {} Ok", check.name))?,
+                    Ok(()) => say(&format!("CHECK {label} {} Ok", check.name)).await?,
                     Err(message) => {
                         failed += 1;
-                        say(&format!("CHECK {label} {} Err {message}", check.name))?;
+                        say(&format!("CHECK {label} {} Err {message}", check.name)).await?;
                     }
                 }
             }
             say(&format!(
                 "GROUP {label} total={} failed={failed}",
                 report.checks.len()
-            ))?;
+            ))
+            .await?;
         }
         Ok(())
     }

@@ -113,8 +113,9 @@ fn options() -> Result<Options, Box<dyn Error>> {
     Ok(options)
 }
 
-fn say(text: &str) -> Result<(), Box<dyn Error>> {
-    writeln!(std::io::stdout().lock(), "{text}")?;
+async fn say(text: &str) -> Result<(), Box<dyn Error>> {
+    let text = text.to_owned();
+    tokio::task::spawn_blocking(move || writeln!(std::io::stdout().lock(), "{text}")).await??;
     Ok(())
 }
 
@@ -206,8 +207,8 @@ impl Live {
             })
             .await?,
         );
-        std::fs::create_dir_all(&options.work_dir)?;
-        let work = options.work_dir.canonicalize()?;
+        tokio::fs::create_dir_all(&options.work_dir).await?;
+        let work = tokio::fs::canonicalize(&options.work_dir).await?;
         let session = Session::new(SessionDeps {
             gateway: Arc::<GrpcGateway>::clone(&gateway),
             engine: Arc::new(FakeEngine::new()),
@@ -238,7 +239,7 @@ impl Live {
                 export_total_bytes: DEFAULT_EXPORT_TOTAL_BYTES,
             },
         });
-        let root = HostPath::parse(&options.project.canonicalize()?)?;
+        let root = HostPath::parse(&tokio::fs::canonicalize(&options.project).await?)?;
         let project = ProjectRoot::open(fs.as_ref(), &root).await?;
         let config = Config::parse(&format!(
             "[workspaces.{WORKSPACE_LABEL}]\npath = \"{}\"\n",
@@ -314,6 +315,7 @@ impl Live {
             outcome.exit_code,
             String::from_utf8_lossy(&outcome.stdout).trim()
         ))
+        .await
     }
 
     async fn host_state(&self) -> Result<HostState, Box<dyn Error>> {
@@ -325,7 +327,7 @@ impl Live {
             &["rev-parse", "--path-format=absolute", "--git-path", "index"],
         )
         .await?;
-        let index = std::fs::read(index.trim()).map_or_else(
+        let index = tokio::fs::read(index.trim()).await.map_or_else(
             |_| "no index".to_owned(),
             |bytes| jackin_core::Sha256::of(&bytes).to_string(),
         );
@@ -377,7 +379,7 @@ impl Live {
     async fn scenario(&self) -> Result<(), Box<dyn Error>> {
         let launch = LaunchId::generate()?;
         let sandbox = self.sandbox(&launch).await?;
-        say(&format!("sandbox {sandbox} is Ready"))?;
+        say(&format!("sandbox {sandbox} is Ready")).await?;
         let cancel = CancellationToken::new();
         self.session
             .upload_project(&self.project, &sandbox, &launch, &cancel)
@@ -385,33 +387,36 @@ impl Live {
         let state = self.session.work_state(&self.config, &sandbox).await;
         say(&format!(
             "work_state after the upload (a fresh sandbox): {state:?}"
-        ))?;
+        ))
+        .await?;
         let work = format!(
             "echo {SYNTHETIC_MARK}-main >> driver-note.txt && git add driver-note.txt && git -c user.name=driver -c user.email=driver@example.invalid commit -q -m 'driver main' && git checkout -q -b driver/feature && echo {SYNTHETIC_MARK}-feature >> driver-feature.txt && git add driver-feature.txt && git -c user.name=driver -c user.email=driver@example.invalid commit -q -m 'driver feature' && git checkout -q -"
         );
         self.sandbox_git(&sandbox, &work).await?;
         let state = self.session.work_state(&self.config, &sandbox).await;
-        say(&format!("work_state after the sandbox commits: {state:?}"))?;
+        say(&format!("work_state after the sandbox commits: {state:?}")).await?;
         let before = self.host_state().await?;
         let report = self
             .session
             .export(&self.config, &sandbox, cancel.clone())
             .await;
-        say(&format!("export: {report:?}"))?;
+        say(&format!("export: {report:?}")).await?;
         let after = self.host_state().await?;
         say(&format!(
             "host index, HEAD, status and non-jackin refs unchanged: {}",
             before == after
-        ))?;
+        ))
+        .await?;
         for (name, same) in before.compare(&after) {
-            say(&format!("  {name} unchanged: {same}"))?;
+            say(&format!("  {name} unchanged: {same}")).await?;
         }
         say(&format!(
             "host refs/heads/jackin/*:\n{}",
             self.exported_refs().await?.trim_end()
-        ))?;
+        ))
+        .await?;
         let state = self.session.work_state(&self.config, &sandbox).await;
-        say(&format!("work_state after the export: {state:?}"))?;
+        say(&format!("work_state after the export: {state:?}")).await?;
         self.sandbox_git(
             &sandbox,
             &format!("echo {SYNTHETIC_MARK}-late >> driver-late.txt && git add driver-late.txt && git -c user.name=driver -c user.email=driver@example.invalid commit -q -m 'driver late'"),
@@ -421,7 +426,7 @@ impl Live {
             .session
             .purge(&self.config, &sandbox, PurgeMode::Guarded)
             .await;
-        say(&format!("purge (guarded): {refused:?}"))?;
+        say(&format!("purge (guarded): {refused:?}")).await?;
         let still = self
             .gateway
             .find_sandboxes(&SandboxQuery::Name(sandbox.clone()))
@@ -429,12 +434,13 @@ impl Live {
         say(&format!(
             "sandbox still present after the refused purge: {}",
             !still.is_empty()
-        ))?;
+        ))
+        .await?;
         let forced = self
             .session
             .purge(&self.config, &sandbox, PurgeMode::Forced)
             .await;
-        say(&format!("purge (forced): {forced:?}"))?;
+        say(&format!("purge (forced): {forced:?}")).await?;
         let gone = self
             .gateway
             .find_sandboxes(&SandboxQuery::Name(sandbox.clone()))
@@ -442,12 +448,13 @@ impl Live {
         say(&format!(
             "sandbox gone after the forced purge: {}",
             gone.is_empty()
-        ))?;
+        ))
+        .await?;
         let again = self
             .session
             .purge(&self.config, &sandbox, PurgeMode::Guarded)
             .await;
-        say(&format!("purge (repeated): {again:?}"))?;
+        say(&format!("purge (repeated): {again:?}")).await?;
         if self.options.cleanup_refs {
             for line in self.exported_refs().await?.lines() {
                 if let Some((name, _)) = line.split_once(' ') {
@@ -459,7 +466,7 @@ impl Live {
                     .await?;
                 }
             }
-            say("deleted the refs/heads/jackin/* refs of this run")?;
+            say("deleted the refs/heads/jackin/* refs of this run").await?;
         }
         Ok(())
     }
@@ -480,17 +487,18 @@ impl Live {
             let mut failed = 0;
             for check in &report.checks {
                 match &check.outcome {
-                    Ok(()) => say(&format!("CHECK {label} {} Ok", check.name))?,
+                    Ok(()) => say(&format!("CHECK {label} {} Ok", check.name)).await?,
                     Err(message) => {
                         failed += 1;
-                        say(&format!("CHECK {label} {} Err {message}", check.name))?;
+                        say(&format!("CHECK {label} {} Err {message}", check.name)).await?;
                     }
                 }
             }
             say(&format!(
                 "GROUP {label} total={} failed={failed}",
                 report.checks.len()
-            ))?;
+            ))
+            .await?;
         }
         Ok(())
     }
