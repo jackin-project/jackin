@@ -144,9 +144,10 @@ async fn an_upload_with_a_fifo_or_a_socket_in_a_listed_entry_fails_and_a_clean_n
         git(fifo_dir.path(), &["add", "a.txt"]).await?;
         git(fifo_dir.path(), &["commit", "-q", "-m", "a"]).await?;
         tokio::fs::remove_file(fifo_dir.path().join("a.txt")).await?;
-        let made = Command::new("/usr/bin/mkfifo")
+        let made = tokio::process::Command::new("/usr/bin/mkfifo")
             .arg(fifo_dir.path().join("a.txt"))
-            .status()?;
+            .status()
+            .await?;
         assert!(made.success());
         let fifo_target = ready(&fake, sh("sleep 3600")?).await?;
         let error = fake

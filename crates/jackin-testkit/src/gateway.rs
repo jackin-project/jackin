@@ -732,6 +732,13 @@ impl Gateway for FakeGateway {
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError> {
         tokio::task::yield_now().await;
         self.pause(GatewayOp::Create, None, None).await?;
+        let dir = tempfile::Builder::new()
+            .prefix("jackin-fake-sandbox-")
+            .tempdir()
+            .map_err(protocol)?;
+        tokio::fs::create_dir(dir.path().join("sandbox"))
+            .await
+            .map_err(protocol)?;
         let mut registry = self.registry();
         registry.strike(GatewayOp::Create)?;
         if registry.sandboxes.contains_key(spec.name()) {
@@ -762,11 +769,6 @@ impl Gateway for FakeGateway {
         } else {
             Some(format!("failed to resolve image '{}'", spec.image()))
         };
-        let dir = tempfile::Builder::new()
-            .prefix("jackin-fake-sandbox-")
-            .tempdir()
-            .map_err(protocol)?;
-        std::fs::create_dir(dir.path().join("sandbox")).map_err(protocol)?;
         let mut sandbox = Sandbox::new(
             spec.clone(),
             plan,

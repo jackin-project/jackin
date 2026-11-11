@@ -94,7 +94,10 @@ async fn a_fifo_in_place_of_a_loose_object_is_refused() -> TestResult {
         let fan = first_entry(&git_dir.join("objects"), true)?;
         let loose = first_entry(&fan, false)?;
         std::fs::remove_file(&loose)?;
-        let made = std::process::Command::new("mkfifo").arg(&loose).status()?;
+        let made = tokio::process::Command::new("mkfifo")
+            .arg(&loose)
+            .status()
+            .await?;
         assert!(made.success(), "mkfifo failed");
         linked(repo, &loose).await
     })

@@ -400,7 +400,7 @@ impl RigBuilder {
             .load_path(role.root(), &CancellationToken::new())
             .await?;
         let home_dir = tempfile::tempdir()?;
-        let home = HostPath::parse(&std::fs::canonicalize(home_dir.path())?)?;
+        let home = HostPath::parse(&tokio::fs::canonicalize(home_dir.path()).await?)?;
         if self.login {
             tokio::fs::write(home.as_path().join("auth.json"), login_text()).await?;
             tokio::fs::write(home.as_path().join("zai.txt"), ACCESS).await?;

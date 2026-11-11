@@ -213,9 +213,10 @@ async fn resolve_gateway_refuses_a_fifo_or_an_oversized_certificate_file() {
         .unwrap();
 
     std::fs::remove_file(mtls.join("tls.key")).unwrap();
-    let made = std::process::Command::new("mkfifo")
+    let made = tokio::process::Command::new("mkfifo")
         .arg(mtls.join("tls.key"))
         .status()
+        .await
         .unwrap();
     assert!(made.success());
     let error = tokio::time::timeout(
