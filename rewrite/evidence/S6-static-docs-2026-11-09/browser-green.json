@@ -1,0 +1,150 @@
+{
+  "SPDX-FileCopyrightText": "2026 Alexey Zhokhov",
+  "SPDX-License-Identifier": "Apache-2.0",
+  "primary_receipt_sha256": "74e1b9e595bbe6fc81c6d495fab853710c82ee6db4e84175773ad39502365815",
+  "scope": "retained source-bound receipt; not deployment or whole-goal acceptance",
+  "receipt": {
+    "actual_exit": 0,
+    "elapsed_seconds": 2.517,
+    "phase": "search-result",
+    "checks": [
+      "isolated browser executes JavaScript before loading the app",
+      "browser navigation had no transport error",
+      "documentation has its own title",
+      "visible Search button exists",
+      "real search found the construct-image page",
+      "browser fetched the actual static JSON index successfully",
+      "browser did not fetch an extensionless search endpoint",
+      "nonexistent query has no result options",
+      "search result navigated to actual hydrated document content",
+      "direct reload preserved the document title and content",
+      "home navigation rendered actual landing content",
+      "browser Back restored document title and content",
+      "browser Forward restored the landing page",
+      "browser reported no runtime or hydration errors"
+    ],
+    "requests": {
+      "/guides/security-model/": {
+        "requested": true,
+        "requestCount": 1,
+        "status": 200,
+        "mimeType": "text/html"
+      },
+      "/brand/jackin-wordmark.svg": {
+        "requested": true,
+        "requestCount": 2,
+        "status": 304,
+        "mimeType": "image/svg+xml"
+      },
+      "/brand/jackin-wordmark-onlight.svg": {
+        "requested": true,
+        "requestCount": 2,
+        "status": 304,
+        "mimeType": "image/svg+xml"
+      },
+      "/assets/app-CQINk8FV.css": {
+        "requested": true,
+        "requestCount": 2,
+        "status": 304,
+        "mimeType": "text/css"
+      },
+      "/assets/entry-client-CTldA67m.js": {
+        "requested": true,
+        "requestCount": 2,
+        "status": 304,
+        "mimeType": "application/javascript"
+      },
+      "/assets/rolldown-runtime-XKyaHtl9.js": {
+        "requested": true,
+        "requestCount": 2,
+        "status": 304,
+        "mimeType": "application/javascript"
+      },
+      "/assets/react-DvmTo5tZ.js": {
+        "requested": true,
+        "requestCount": 2,
+        "status": 304,
+        "mimeType": "application/javascript"
+      },
+      "/assets/orama-static-Gs3-MIpO.js": {
+        "requested": true,
+        "requestCount": 2,
+        "status": 304,
+        "mimeType": "application/javascript"
+      },
+      "/assets/remove-undefined-C_sjLeQT-CP3jfHCp.js": {
+        "requested": true,
+        "requestCount": 2,
+        "status": 304,
+        "mimeType": "application/javascript"
+      },
+      "/assets/security-model-DI0NQR5-.js": {
+        "requested": true,
+        "requestCount": 1,
+        "status": 200,
+        "mimeType": "application/javascript"
+      },
+      "/assets/parse-CsgDThRb-Q1De84Ft.js": {
+        "requested": true,
+        "requestCount": 1,
+        "status": 200,
+        "mimeType": "application/javascript"
+      },
+      "/api/search.json": {
+        "requested": true,
+        "requestCount": 1,
+        "status": 200,
+        "mimeType": "application/json"
+      },
+      "/assets/construct-image-DKobHzB2.js": {
+        "requested": true,
+        "requestCount": 2,
+        "status": 304,
+        "mimeType": "application/javascript"
+      },
+      "/developing/construct-image": {
+        "requested": true,
+        "requestCount": 1
+      },
+      "/developing/construct-image/": {
+        "requested": true,
+        "requestCount": 1,
+        "redirectStatus": 301,
+        "status": 200,
+        "mimeType": "text/html"
+      },
+      "/assets/fraunces-latin-500-normal-DnGCNyPD.woff2": {
+        "requested": true,
+        "requestCount": 1,
+        "status": 200,
+        "mimeType": "font/woff2"
+      },
+      "/assets/fraunces-latin-400-normal-6IfK1voy.woff2": {
+        "requested": true,
+        "requestCount": 1,
+        "status": 200,
+        "mimeType": "font/woff2"
+      },
+      "/brand/jackin-lockup.svg": {
+        "requested": true,
+        "requestCount": 1,
+        "status": 200,
+        "mimeType": "image/svg+xml"
+      },
+      "/brand/jackin-lockup-onlight.svg": {
+        "requested": true,
+        "requestCount": 1,
+        "status": 200,
+        "mimeType": "image/svg+xml"
+      }
+    },
+    "blocked_page_requests": [],
+    "exceptions": [],
+    "cleanup": {
+      "browser_exit": 0,
+      "browser_signal": null,
+      "server_exit": 0,
+      "server_signal": null
+    }
+  }
+}

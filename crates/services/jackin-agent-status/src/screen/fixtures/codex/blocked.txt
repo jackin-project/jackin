@@ -1,4 +1,0 @@
-
-  Codex wants to run: git push --force
-
-  press enter to confirm or esc to cancel

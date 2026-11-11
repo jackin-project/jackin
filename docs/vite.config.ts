@@ -1,83 +1,26 @@
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import mdx from 'fumadocs-mdx/vite'
-import { nitro } from 'nitro/vite'
-import { defineConfig } from 'vite'
-import { readdirSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
+import { defineConfig, type Plugin } from 'vite'
+import * as sourceConfig from './source.config'
 
-const CONTENT_ROOT = join(import.meta.dirname, 'content')
-
-function docsSlugs(dir = CONTENT_ROOT): string[] {
-  const entries = readdirSync(dir, { withFileTypes: true })
-  return entries.flatMap((entry) => {
-    const path = join(dir, entry.name)
-    if (entry.isDirectory()) return docsSlugs(path)
-    if (!entry.isFile() || !entry.name.endsWith('.mdx')) return []
-
-    const rel = relative(CONTENT_ROOT, path)
-      .split(sep)
-      .filter((part) => !part.startsWith('(') || !part.endsWith(')'))
-      .join('/')
-    const withoutExt = rel.replace(/\.mdx$/, '')
-    return withoutExt.endsWith('/index')
-      ? [withoutExt.slice(0, -'/index'.length)]
-      : [withoutExt]
-  })
+function metadataModuleType(): Plugin {
+  return {
+    name: 'fumadocs-meta-module-type',
+    enforce: 'pre' as const,
+    resolveId(source, importer) {
+      const [file, query = ''] = source.split('?', 2)
+      const parameters = new URLSearchParams(query)
+      if (!file.endsWith('/meta.json') || !parameters.has('collection') || !parameters.has('lang.js')) return null
+      parameters.delete('lang.js')
+      return this.resolve(`${file}?${parameters}`, importer, { skipSelf: true })
+    },
+  }
 }
 
-function pagePath(slug: string): string {
-  return `/${slug}`.replace(/\/+/g, '/')
-}
-
-function prerenderPages() {
-  const pages = docsSlugs().flatMap((slug) => {
-    const path = pagePath(slug)
-    return [
-      { path },
-      { path: `${path}.md` },
-      { path: `/og/${slug}.webp` },
-    ]
-  })
-
-  return [
-    { path: '/' },
-    { path: '/404' },
-    { path: '/api/search' },
-    { path: '/llms.txt' },
-    { path: '/llms-full.txt' },
-    { path: '/sitemap.xml' },
-    ...pages,
-  ]
-}
-
-export default defineConfig({
-  build: {
-    reportCompressedSize: false,
-  },
-  server: {
-    port: 3000,
-  },
-  plugins: [
-    mdx(),
-    tailwindcss(),
-    tanstackStart({
-      prerender: {
-        enabled: false,
-      },
-      sitemap: {
-        enabled: false,
-      },
-      pages: prerenderPages(),
-    }),
-    react(),
-    nitro(),
-  ],
-  resolve: {
-    tsconfigPaths: true,
-  },
-  ssr: {
-    external: ['@takumi-rs/image-response'],
-  },
-})
+export default defineConfig(() => ({
+  build: { reportCompressedSize: false },
+  plugins: [mdx(sourceConfig), metadataModuleType(), tailwindcss(), react()],
+  resolve: { tsconfigPaths: true },
+  ssr: { external: ['@takumi-rs/image-response'] },
+}))

@@ -40,7 +40,7 @@ export function PillCards() {
         </div>
 
         <div className="landing-choice-transition">
-          Refuse both. <span className="accent">You're the Operator</span> — define the container instead.
+          Refuse both. <span className="accent">You're the Operator</span> — define the sandbox instead.
         </div>
       </div>
     </section>

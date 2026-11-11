@@ -1,8 +1,11 @@
+import { Route as rootRoute } from './__root'
 import { NotFound } from '@/components/not-found'
-import { createFileRoute } from '@tanstack/react-router'
+import { createRoute } from '@tanstack/react-router'
 import { site } from '@/lib/shared'
 
-export const Route = createFileRoute('/404')({
+export const Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/404',
   head: () => ({
     meta: [
       { title: "Not found - jackin❯" },

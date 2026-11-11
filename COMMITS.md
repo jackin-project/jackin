@@ -67,20 +67,28 @@ git push
 
 Do not run the full verification suite before every commit by default. Run it when a pull request is ready to merge, or earlier only when the operator explicitly asks.
 
-Use the aggregate local CI gate:
+Use the aggregate local CI gate. It runs every step, including the docs build:
 
 ```sh
 mise exec -- mbx +1.99.1 xtask ci
 ```
 
-For a faster local pass that skips feature-powerset and Docker-backed smoke tests:
+The `docs` step runs `bun install --frozen-lockfile` and `bun run build` in `docs/`. To skip it, run `--fast` or `--no-docs` (both skip only that step):
 
 ```sh
 mise exec -- mbx +1.99.1 xtask ci --fast
 ```
 
-`mise exec -- mbx +1.99.1 xtask ci --e2e` includes the Docker-backed lane. It checks Docker availability, builds and exports the local capsule binary, then runs the Docker-backed nextest profile.
+To run named steps only, once each in plan order, use `--only` with a comma-delimited list from `fmt clippy nextest deny shear comments layers pins containers errors baseline screen demo-gate reuse docs`. `--only` cannot combine with `--fast` or `--no-docs`. A usage error exits with status 2, and a failed step exits with status 1:
 
-Set `JACKIN_TOOLCHAIN_GUARD` to an absolute executable path when local policy requires a guard for toolchain commands. The shared xtask command launcher prefixes Cargo and mbx commands with that executable and `-- mise exec --`, including commands launched by nested xtasks. The guard must admit the requested commands; workspace doctests use `mbx test --doc --workspace --locked`.
+```sh
+mise exec -- mbx +1.99.1 xtask ci --only comments,layers,pins,containers
+```
+
+`xtask e2e` runs the live journey against a gateway. It is not part of `xtask ci`.
+
+`xtask baseline-branch` checks with `gh` that the pinned `terminal-components-baseline` rev is on `feature/openshell-native` (`ahead` or `identical`). It needs the network, so it is not part of `xtask ci`. Run it at every pin bump.
+
+`xtask product-check` runs `cargo build --release -p jackin`, then fails if the feature graph, the `jackin-console` rlib symbols or the release binary hold the demo (the canaries of `demo-gate`). A release build takes several minutes, so it is not part of `xtask ci`. Run it at P9.3 J6, P9.4 and P13.1.
 
 If formatting fails, run `mise exec -- mbx +1.99.1 fmt`, then re-run `mise exec -- mbx +1.99.1 fmt --check`.

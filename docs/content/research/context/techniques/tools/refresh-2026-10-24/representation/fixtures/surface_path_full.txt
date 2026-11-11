@@ -1,1 +1,0 @@
-crates/apps/jackin-capsule/src/tui/render_conformance_fixtures.rs

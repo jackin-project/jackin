@@ -1,18 +1,11 @@
 {
-  "title": "Operator Guide",
+  "title": "Operator guide",
   "pages": [
+    "gateway",
+    "accounts",
     "workspaces",
-    "mounts",
-    "parallel-agents",
-    "parallel-agent-coordination",
-    "host-affordances",
-    "macos-usage-menu-bar",
-    "environment-variables",
-    "run-telemetry",
-    "authentication",
-    "tmux",
-    "docker-profiles",
-    "security-model",
-    "comparison"
+    "docker-capability",
+    "sandboxes",
+    "security-model"
   ]
 }

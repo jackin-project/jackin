@@ -1,0 +1,51 @@
+{
+  "SPDX-FileCopyrightText": "2026 Alexey Zhokhov",
+  "SPDX-License-Identifier": "Apache-2.0",
+  "primary_receipt_sha256": "04634a5bf42bc8a414a91d770752cc0f7072276d318a4d1fbb1089a9913c21dd",
+  "scope": "retained source-bound receipt; not deployment or whole-goal acceptance",
+  "receipt": {
+    "results": [
+      {
+        "step": "restored-build",
+        "actual_child_exit": 0,
+        "elapsed_seconds": 4.150000834022649
+      },
+      {
+        "step": "restored-types",
+        "actual_child_exit": 0,
+        "elapsed_seconds": 1.1176160000031814
+      },
+      {
+        "step": "restored-http",
+        "actual_child_exit": 0,
+        "elapsed_seconds": 1.2898572500562295
+      }
+    ],
+    "source_unchanged": true,
+    "all_files_sha256": {
+      "docs/bun.lock": "827ab4870c40efcd2c4e9053f6dcedf5f0be58ab0fdd657483eaddc009e90d30",
+      "docs/content/(public)/(role-authoring)/developing/construct-image.mdx": "e2eca1687129aafd50efde242a6da1777aef4e1cdabe5eb0574fdfab8c63b1cf",
+      "docs/content/(public)/commands/index.mdx": "bcc2133fef74e16c2bda577a23298607e2e3a45721d1b1b14c1225468798b3d6",
+      "docs/content/(public)/commands/reference.mdx": "d902f830a57f750821eea2b1f3698f3304f0f2510c09967a888b8339b3e8f554",
+      "docs/content/reference/brand-identity.mdx": "ab6cf15dbc643ac555a091cb51477d91efcf97d1b0dcaec40901237ef6857238",
+      "docs/package.json": "5183636ec7a04888f777cd354edee221dfbb9611177c9f435ba047af9c7cd754",
+      "docs/scripts/build-static.ts": "9fd3c7fc9c0f57229ed72769655cf4e689b417c798caf06faf741944eb5fdd0b",
+      "docs/scripts/check-static-output.py": "b11d0794dd493ee8c31adfc13cad0f7dd5f489a9d8c926cb6fec062800d6e56c",
+      "docs/serve.json": "5b2372fe3f32afacff98cec52d882d940c0d9472f4d65ba6af9b2753d40160d7",
+      "docs/src/build/inventory.server.ts": "817610722c9441d0be20e007e4185dcb79996396a66fb1c11469c8bb5c070659",
+      "docs/src/build/og.server.tsx": "877f791b806afd233925b605e8b055dec77933e7089ea2f2a01e539975590a43",
+      "docs/src/build/page-data.ts": "cfedd357fe3100f5c0144c85ab82a224d41adfb54d62fd279c0c8e9e933fe686",
+      "docs/src/entry-client.tsx": "588f3f89781bf8911760c4e5c66d030b1b2d33a50a7f46e1d13625d7551563b0",
+      "docs/src/entry-server.tsx": "e06edd929db47a69ecc88601bac95938622b92e002d89c3534bc8221429fa957",
+      "docs/src/pages.generated.d.ts": "4fec1a3385ab364a5066f75078489f164d7719c8be14f6400c6a8fbd9ff609ce",
+      "docs/src/router.tsx": "41b44badad45ee32f651defa4acf56b9f86a45109b62921fc6498d20682f9839",
+      "docs/src/routes/$.tsx": "df5dc3deb8d40ead102c3c102f87b52216c7de290c73100a44729d3c476fc0eb",
+      "docs/src/routes/404.tsx": "3a27f0305e7540ba585e1500133fed8dbb2ad4afed6fd27d701f2e3b15c6855f",
+      "docs/src/routes/index.tsx": "8b14e05e55c65bc074cf1cccc8ea1ea6c59ac40d0b725782cea4987e64bdfbfc",
+      "docs/vite.config.ts": "e3ba7fb8b42d0694d1ad5bffc81f08359bd95a6ede93d9451f303e30a862130a",
+      "docs/src/components/search.tsx": "4215f4eaa2cd4d160a682693d8384c95ffdddf80991ec389087ed8e5f6a6df56"
+    },
+    "all_three_passed": true,
+    "scope": "exactv6restoredmainbuild/types/publicHTTP; independentbrowsergreenpending"
+  }
+}

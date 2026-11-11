@@ -11,3 +11,51 @@ targetRules = ["generic-api-key"]
 regexTarget = "match"
 regexes = ['''^matrix_key":"m-[0-9a-f]{16}"$''', '''^key":"m-[0-9a-f]{16}"$''']
 paths = ['''^\.github/velnor/task-execution-manifest-v1\.json$''']
+
+[[allowlists]]
+description = "SSH host key fingerprints printed by attach evidence"
+condition = "AND"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = ['''host key pinned SHA256:[A-Za-z0-9+/]{43}''']
+paths = ['''^rewrite/evidence/.*\.md$''']
+
+[[allowlists]]
+description = "jackin placeholder ID token: alg none, fixed claims, literal placeholder signature"
+condition = "AND"
+targetRules = ["jwt"]
+regexTarget = "match"
+regexes = ['''\.placeholder["']?$''']
+paths = ['''^crates/jackin-core/src/agent\.rs$''']
+
+[[allowlists]]
+description = "e2e world fixture tokens: base64 of readable text as the signature, no key behind them"
+targetRules = ["jwt"]
+paths = ['''^crates/xtask/tests/e2e/scenario/world\.rs$''']
+
+[[allowlists]]
+description = "credential-shaped URLs in session and openshell tests: marker password on a reserved or one-letter test host"
+condition = "AND"
+regexTarget = "match"
+regexes = ['''://[A-Za-z0-9]+:(?:SECRET[A-Za-z0-9-]*|IGNORED-[A-Z]+|hunt[a-z0-9]{3})@(?:example\.invalid|proxy\.example|h\.example|h)(?:[:/\\"']|$)''']
+paths = ['''^crates/jackin-(session|openshell)/tests/''']
+
+[[allowlists]]
+description = "role workspace URL rejection test: synthetic credentials on the reserved invalid host"
+condition = "AND"
+regexTarget = "match"
+regexes = ['''^https://x-access-token:SECRET-TEST-HTTPS@example\.invalid/org/repo\.git"?$''', '''^ssh://user:SECRET-TEST-SSH@example\.invalid/org/repo\.git"?$''']
+paths = ['''^crates/jackin/tests/cli/role_workspace\.rs$''']
+
+[[allowlists]]
+description = "evidence docs: sandbox gateway-token-id annotation (a record id) and the x password field of an /etc/passwd listing"
+condition = "AND"
+regexTarget = "line"
+regexes = ['''internal\.openshell\.ai/gateway-token-id: [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*$''', '''^/etc/passwd:\d+:[a-z_][a-z0-9_-]*:x:\d+:\d+:''']
+paths = ['''^rewrite/evidence/.*\.md$''']
+
+[[allowlists]]
+description = "config schema test: fake role-URL password that must not reach an error message"
+condition = "AND"
+regexes = ['''^TEST-ONLY-[A-Za-z0-9-]+$''', '''^ghp_[A-Za-z0-9]{9}$''']
+paths = ['''^crates/jackin-core/tests/config_schema\.rs$''']

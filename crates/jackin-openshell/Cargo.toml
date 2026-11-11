@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-openshell"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+contract = []
+
+[dependencies]
+async-trait = { workspace = true }
+jackin-core = { workspace = true }
+noyalib = { workspace = true }
+openshell-core = { workspace = true }
+openshell-policy = { workspace = true }
+openshell-providers = { workspace = true }
+openshell-sdk = { workspace = true }
+russh = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+tonic = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }
+globset = { workspace = true }
+jackin-openshell = { workspace = true, features = ["contract"] }
+jackin-testkit = { workspace = true }
+rcgen = { workspace = true }
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "process", "rt", "rt-multi-thread", "sync", "test-util", "time"] }
+tonic-types = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,23 +1,5 @@
 {
   "title": "Commands",
   "defaultOpen": false,
-  "pages": [
-    "console",
-    "load",
-    "hardline",
-    "eject",
-    "exile",
-    "purge",
-    "prewarm",
-    "prune",
-    "account",
-    "workspace",
-    "config",
-    "role",
-    "daemon",
-    "doctor",
-    "diagnostics",
-    "status",
-    "usage"
-  ]
+  "pages": ["index", "reference", "console"]
 }

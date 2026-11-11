@@ -1,5 +1,0 @@
-{
-  "title": "Fleet automation",
-  "defaultOpen": false,
-  "pages": ["task-source-abstraction", "autonomous-task-queue", "idle-runtime-cleanup"]
-}

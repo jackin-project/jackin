@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+id: codex
+display_name: Codex
+description: Codex with gateway-managed credential
+category: agent
+inference_capable: true
+credentials:
+  - name: access_token
+    description: Gateway-held credential for Codex
+    env_vars: [CODEX_AUTH_ACCESS_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+    refresh:
+      strategy: oauth2_refresh_token
+      token_url: https://auth.openai.com/oauth/token
+      refresh_before_seconds: 300
+      max_lifetime_seconds: 3600
+      material:
+        - name: refresh_token
+          description: OAuth refresh token
+          required: true
+          secret: true
+discovery:
+  credentials: [access_token]
+endpoints:
+  - host: api.openai.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: auth.openai.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: chatgpt.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: ab.chatgpt.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/codex

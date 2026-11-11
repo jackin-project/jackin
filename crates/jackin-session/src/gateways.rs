@@ -1,0 +1,114 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::sync::Arc;
+
+use jackin_core::{Config, GatewayName};
+use thiserror::Error;
+use tokio_util::sync::CancellationToken;
+
+use crate::connect::{ConnectError, GatewayConnector};
+use crate::service::{Session, SessionDeps};
+
+#[derive(Clone, Debug, Error)]
+#[error("cannot reach gateway {gateway}")]
+pub struct UnreachableGateway {
+    gateway: GatewayName,
+    source: Arc<ConnectError>,
+}
+
+impl UnreachableGateway {
+    pub fn new(gateway: GatewayName, source: ConnectError) -> UnreachableGateway {
+        UnreachableGateway {
+            gateway,
+            source: Arc::new(source),
+        }
+    }
+
+    pub fn gateway(&self) -> &GatewayName {
+        &self.gateway
+    }
+}
+
+#[derive(Clone, Debug)]
+enum Peer {
+    Up(Box<Session>),
+    Down(UnreachableGateway),
+}
+
+#[derive(Clone, Debug)]
+pub struct Gateways {
+    home: Session,
+    peers: Vec<Peer>,
+}
+
+impl Gateways {
+    pub fn single(home: Session) -> Gateways {
+        Gateways {
+            home,
+            peers: Vec::new(),
+        }
+    }
+
+    pub async fn with_peers(
+        home: Session,
+        config: &Config,
+        connector: &dyn GatewayConnector,
+        cancel: &CancellationToken,
+    ) -> Result<Gateways, ConnectError> {
+        let mut peers = Vec::new();
+        for (name, entry) in config.gateways() {
+            if name == home.gateway_name() {
+                continue;
+            }
+            match connector.connect(name, entry, cancel).await {
+                Ok(gateway) => peers.push(Peer::Up(Box::new(Session::new(SessionDeps {
+                    gateway,
+                    ..home.deps.clone()
+                })))),
+                Err(error) if error.is_cancelled() => return Err(error),
+                Err(error) => peers.push(Peer::Down(UnreachableGateway::new(name.clone(), error))),
+            }
+        }
+        Ok(Gateways { home, peers })
+    }
+
+    pub fn assemble(home: Session, peers: Vec<Result<Session, UnreachableGateway>>) -> Gateways {
+        Gateways {
+            home,
+            peers: peers
+                .into_iter()
+                .map(|peer| match peer {
+                    Ok(session) => Peer::Up(Box::new(session)),
+                    Err(gateway) => Peer::Down(gateway),
+                })
+                .collect(),
+        }
+    }
+
+    pub fn home(&self) -> &Session {
+        &self.home
+    }
+
+    pub(crate) fn every(&self) -> Result<Vec<&Session>, Vec<UnreachableGateway>> {
+        let mut up = vec![&self.home];
+        let mut down = Vec::new();
+        for peer in &self.peers {
+            match peer {
+                Peer::Up(session) => up.push(session),
+                Peer::Down(gateway) => down.push(gateway.clone()),
+            }
+        }
+        if down.is_empty() { Ok(up) } else { Err(down) }
+    }
+
+    pub fn names(&self) -> Vec<&GatewayName> {
+        let peers = self.peers.iter().map(|peer| match peer {
+            Peer::Up(session) => session.gateway_name(),
+            Peer::Down(down) => down.gateway(),
+        });
+        std::iter::once(self.home.gateway_name())
+            .chain(peers)
+            .collect()
+    }
+}

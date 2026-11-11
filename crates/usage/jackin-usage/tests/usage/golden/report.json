@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "generated_at": 1767225600,
+  "accounts": [
+    {
+      "account": "all-kinds",
+      "provider": "codex",
+      "freshness": {"state": "fresh"},
+      "outcome": {
+        "state": "windows",
+        "windows": [
+          {"kind": "five_hour", "label": "5-hour", "used_percent": 42.0, "remaining": {"kind": "percent", "value": 58.0}, "resets_at": 1767232800},
+          {"kind": "weekly", "label": "weekly", "used_percent": 12.0, "remaining": {"kind": "percent", "value": 88.0}, "resets_at": 1767571200},
+          {"kind": "monthly", "label": "monthly", "used_percent": 10.0, "remaining": {"kind": "percent", "value": 90.0}, "resets_at": null},
+          {"kind": "credits", "label": "credits", "used_percent": null, "remaining": {"kind": "amount", "value": "12.40", "unit": "credits"}, "resets_at": null},
+          {"kind": "spend", "label": "Individual limit", "used_percent": 30.0, "remaining": {"kind": "amount", "value": "70.00", "unit": "USD"}, "resets_at": 1767312000},
+          {"kind": "other", "label": "2 hours window", "used_percent": null, "remaining": null, "resets_at": null}
+        ]
+      }
+    },
+    {
+      "account": "stale",
+      "provider": "claude",
+      "freshness": {"state": "stale", "since": 1767222000},
+      "outcome": {
+        "state": "windows",
+        "windows": [
+          {"kind": "five_hour", "label": "5-hour", "used_percent": 7.5, "remaining": {"kind": "percent", "value": 92.5}, "resets_at": 1767232800}
+        ]
+      }
+    },
+    {"account": "no-credentials", "provider": "grok", "freshness": {"state": "fresh"}, "outcome": {"state": "unavailable", "reason": {"kind": "no_credentials"}}},
+    {"account": "expired", "provider": "kimi", "freshness": {"state": "fresh"}, "outcome": {"state": "unavailable", "reason": {"kind": "expired_login"}}},
+    {"account": "plain-unsupported", "provider": "muse", "freshness": {"state": "fresh"}, "outcome": {"state": "unavailable", "reason": {"kind": "unsupported", "detail": null}}},
+    {"account": "detailed-unsupported", "provider": "gemini", "freshness": {"state": "fresh"}, "outcome": {"state": "unavailable", "reason": {"kind": "unsupported", "detail": "Gemini API keys have no quota method"}}},
+    {"account": "limited-open", "provider": "zai", "freshness": {"state": "fresh"}, "outcome": {"state": "unavailable", "reason": {"kind": "rate_limited", "retry_at": null}}},
+    {"account": "limited-until", "provider": "minimax", "freshness": {"state": "fresh"}, "outcome": {"state": "unavailable", "reason": {"kind": "rate_limited", "retry_at": 1767226200}}},
+    {"account": "offline", "provider": "cursor", "freshness": {"state": "fresh"}, "outcome": {"state": "unavailable", "reason": {"kind": "network", "message": "the connection failed"}}},
+    {"account": "broken", "provider": "openrouter", "freshness": {"state": "fresh"}, "outcome": {"state": "unavailable", "reason": {"kind": "provider", "message": "the provider answered HTTP 500"}}}
+  ]
+}

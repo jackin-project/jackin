@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+id: claude
+display_name: Claude Code
+description: Claude Code with gateway-managed credential
+category: agent
+inference_capable: true
+credentials:
+  - name: access_token
+    description: Gateway-held credential for Claude Code
+    env_vars: [CLAUDE_CODE_OAUTH_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+    refresh:
+      strategy: oauth2_refresh_token
+      token_url: https://platform.claude.com/v1/oauth/token
+      refresh_before_seconds: 300
+      material:
+        - name: client_id
+          description: Claude Code public OAuth client ID
+          required: true
+          secret: false
+        - name: refresh_token
+          description: Claude Code OAuth refresh token
+          required: true
+          secret: true
+discovery:
+  credentials: [access_token]
+endpoints:
+  - host: api.anthropic.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+  - host: platform.claude.com
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/claude

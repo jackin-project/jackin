@@ -1,0 +1,1 @@
+{"rate_limit":{"primary_window":{"used_percent":42,"limit_window_seconds":18000,"reset_after_seconds":7200,"reset_at":1767232800},"secondary_window":{"used_percent":12,"limit_window_seconds":604800,"reset_after_seconds":345600,"reset_at":1835481599}},"credits":{"has_credits":true,"unlimited":false,"balance":"12.4"}}

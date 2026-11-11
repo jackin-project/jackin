@@ -1,10 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Route as rootRoute } from './__root'
+import { createRoute } from '@tanstack/react-router'
 import { Landing } from '@/components/landing/Landing'
 import { site } from '@/lib/shared'
 
-const title = 'jackin❯ - isolated AI coding agent containers'
+const { title, ogAlt } = site
 const ogImage = `${site.origin}/og-image.png`
-const ogAlt = 'jackin❯ - isolated AI coding agent containers with scoped access and visible host boundaries'
 
 const softwareApplication = {
   '@context': 'https://schema.org',
@@ -30,7 +30,9 @@ const softwareApplication = {
   },
 }
 
-export const Route = createFileRoute('/')({
+export const Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/',
   head: () => ({
     meta: [
       { title },

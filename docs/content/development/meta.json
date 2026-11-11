@@ -1,7 +1,0 @@
-{
-  "root": true,
-  "title": "Development",
-  "description": "Contributor workflows and migration records.",
-  "icon": "Wrench",
-  "pages": ["rust-policy-rollout"]
-}

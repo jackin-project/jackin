@@ -1,8 +1,11 @@
 export const site = {
   name: 'jackin❯',
   origin: 'https://jackin.tailrocks.com',
+  title: 'jackin❯ - run Codex in NVIDIA OpenShell sandboxes',
   description:
-    'Run AI coding agents at full speed inside isolated containers: scoped access, per-agent state, and host boundaries that stay visible.',
+    'Run Codex at full speed in NVIDIA OpenShell sandboxes: a copy of your project, credentials that stay on the gateway, native OpenShell policy, and work exported as git branches.',
+  ogAlt:
+    'jackin❯ - Codex in NVIDIA OpenShell sandboxes with credentials kept on the gateway and native OpenShell policy',
   repo: 'https://github.com/jackin-project/jackin',
   editBase: 'https://github.com/jackin-project/jackin/edit/main/docs',
   blobBase: 'https://github.com/jackin-project/jackin/blob/main',

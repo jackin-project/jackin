@@ -170,18 +170,18 @@ function Card({ width, height }: { width: number; height: number }) {
         React.createElement(
           'div',
           { style: { display: 'flex', fontWeight: 600, fontSize: 36, color: TEXT, lineHeight: 1.2 } },
-          'Isolated AI coding agent containers.',
+          'Codex in NVIDIA OpenShell sandboxes.',
         ),
         React.createElement(
           'div',
           { style: { display: 'flex', marginTop: 14, fontWeight: 500, fontSize: 26, color: MUTED, lineHeight: 1.35 } },
-          'Scoped access. Per-agent state. Host boundaries visible.',
+          'Credentials stay on the gateway. Native OpenShell policy.',
         ),
         React.createElement(
           'div',
           { style: { display: 'flex', marginTop: 8, fontWeight: 500, fontSize: 26, color: MUTED, lineHeight: 1.35 } },
-          "You're the ",
-          React.createElement('span', { style: { display: 'flex', color: ACCENT } }, 'Operator'),
+          "You're the",
+          React.createElement('span', { style: { display: 'flex', color: ACCENT, marginLeft: '0.25em' } }, 'Operator'),
           '. Host stays outside.',
         ),
       ),

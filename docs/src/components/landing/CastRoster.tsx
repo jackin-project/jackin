@@ -6,9 +6,9 @@ interface Character {
 }
 
 const characters: Character[] = [
-  { avatar: 'AS', role: 'General-purpose',   name: 'Agent Smith',  tagline: 'The default starter. Clone, compile, commit.' },
-  { avatar: 'AJ', role: 'Backend engineer',  name: 'Agent Jones',  tagline: "Server-side in your company's stack." },
-  { avatar: 'AB', role: 'Frontend engineer', name: 'Agent Brown',  tagline: "UI with your team's conventions." },
+  { avatar: 'AS', role: 'Code review',   name: 'Agent Smith',   tagline: 'Reads the repo, fetches from GitHub, never pushes.' },
+  { avatar: 'TA', role: 'jackin❯ dev',   name: 'The Architect', tagline: 'Builds jackin❯ with a locked Rust toolchain.' },
+  { avatar: 'SE', role: 'Verification',  name: 'Sentinel',      tagline: 'Proves the path from your host to Codex, with no network rule of its own.' },
 ];
 
 export function CastRoster() {
@@ -17,7 +17,7 @@ export function CastRoster() {
       <div className="landing-shell">
         <div className="landing-sec-label">05 · Cast</div>
         <h2 className="landing-sec-title">A role for every <span className="accent">job</span>.</h2>
-        <p className="landing-sec-intro">Smith, Jones, Brown — archetypes to adopt. Every other role, yours to cast.</p>
+        <p className="landing-sec-intro">Smith, the Architect, the Sentinel — roles to adopt. Every other role, yours to cast.</p>
 
         <div className="landing-roster">
           {characters.map(c => (
@@ -34,7 +34,7 @@ export function CastRoster() {
           <div className="landing-invite-avatar">+</div>
           <div className="landing-invite-body">
             <h3>Cast your own role.</h3>
-            <p>Platform engineer, SRE, security reviewer, ML researcher — whatever your team needs. Write the Dockerfile, declare the manifest, push the repo.</p>
+            <p>Platform engineer, SRE, security reviewer, ML researcher — whatever your team needs. Write the Dockerfile, declare the manifest, write the policy, push the repo.</p>
           </div>
           <a className="landing-invite-cta" href="/developing/creating-roles/">Read the guide →</a>
         </div>

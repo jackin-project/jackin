@@ -1,6 +1,0 @@
-go: downloading github.com/jackc/pgx/v5 v5.11.0
-go: downloading github.com/jackc/puddle/v2 v2.2.2
-go: downloading github.com/jackc/pgpassfile v1.0.0
-go: downloading github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761
-go: downloading golang.org/x/sync v0.23.0
-ok  	github.com/JuliusBrussee/caveman/proxy/cmd/caveman-proxy	0.027s

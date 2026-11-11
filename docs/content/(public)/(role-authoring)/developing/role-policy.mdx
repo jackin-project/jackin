@@ -1,0 +1,77 @@
+---
+title: Role policy
+description: Reference for policy.yaml, the native OpenShell policy that a role sends to its sandbox.
+---
+
+The policy file of a role is a native OpenShell policy. Jackin has no policy language of its own. For the full format, see the OpenShell documentation. This page lists what jackin adds and what jackin refuses.
+
+## Example
+
+This policy gives a role read access to the system directories, write access to `/tmp` and `/sandbox`, and network access to `github.com` for git fetches only:
+
+```yaml
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+    - /bin
+    - /sbin
+    - /usr
+    - /lib
+    - /etc
+    - /proc
+    - /dev/urandom
+    - /var/log
+  read_write:
+    - /tmp
+    - /dev/null
+    - /sandbox
+landlock:
+  compatibility: hard_requirement
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+network_policies:
+  github:
+    name: github-git-fetch
+    endpoints:
+      - host: github.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow:
+              method: GET
+              path: "/**/info/refs*"
+          - allow:
+              method: POST
+              path: "/**/git-upload-pack"
+    binaries:
+      - path: /usr/bin/git
+```
+
+A role with `network_policies: {}` has no network access except the rules that OpenShell and jackin add, described below.
+
+## What jackin adds
+
+Jackin sends your file to OpenShell without change. Then:
+
+- OpenShell adds the network rule of the Codex OpenShell provider. It is named `_provider_<name>` and allows the Codex hosts for `/usr/local/bin/codex`.
+- Jackin adds one rule for the Docker engine when the [Docker capability](/guides/docker-capability/) is on.
+
+After jackin creates the sandbox, only the `network_policies` section can change.
+
+## What `jackin role check` refuses
+
+| Rule | Reason |
+|---|---|
+| `landlock.compatibility` must be `hard_requirement`. A missing section and `landlock: {}` also fail. | Without it OpenShell applies Landlock on a best-effort basis. |
+| `read_only` and `read_write` must not both be empty. | OpenShell then applies no Landlock, even with `hard_requirement`. |
+| A `read_write` path must not be `/`, `/proc`, `/sys`, or a path below them. | They alias the filesystem root. |
+| A network rule name must not be one that OpenShell reserves for provider rules. | Only the generated rule may match the Codex provider hosts. |
+| A host label may hold only letters, digits, `_`, `-`, and `*`, or be exactly `**`. | The sandbox and the gateway read other glob syntax in different ways. |
+| No rule other than the generated provider rule may match a host of the Codex provider, including through a wildcard, on any port, for any binary. | The gateway swaps in the real credential on those hosts. |
+| No rule may name `host.openshell.internal`, `host.docker.internal`, or `host.containers.internal`, in any case or through a wildcard. | They reach services on the gateway host. Only the jackin engine rule may reach the engine. |
+| A port must be valid, and a rule name must be unique. | The gateway would refuse the policy. |
+
+`jackin role check` also refuses any policy that the gateway itself would refuse.

@@ -1,0 +1,1 @@
+{"config":{"monthlyLimit":{"val":2000},"used":{"val":1234},"onDemandCap":{"val":500},"billingPeriodStart":"2025-04-01T00:00:00Z","billingPeriodEnd":"2025-05-01T00:00:00Z","history":[{"billingCycle":{"year":2025,"month":3},"includedUsed":{"val":1800},"onDemandUsed":{"val":0},"totalUsed":{"val":1800}}]}}

@@ -1,0 +1,14 @@
+{
+  "SPDX-FileCopyrightText": "2026 Alexey Zhokhov",
+  "SPDX-License-Identifier": "Apache-2.0",
+  "primary_receipt_sha256": "9cd6a0647bb2a5a46516c3478ae573ef0e7b443ba097505bb26504c24477d0a0",
+  "scope": "retained source-bound receipt; not deployment or whole-goal acceptance",
+  "receipt": {
+    "actual_child_exit": 0,
+    "elapsed_seconds": 1.2430992500158027,
+    "before_sha256": "b11d0794dd493ee8c31adfc13cad0f7dd5f489a9d8c926cb6fec062800d6e56c",
+    "after_sha256": "c1cb2eb4d96a6e069a9cf38e3f00e95359f4ee364dde7c83a9bdd7bf36a66615",
+    "parked_and_publication_equal": true,
+    "scope": "root positive publicHTTP validation on verification-only fix; independent common-wrong-body control pending"
+  }
+}

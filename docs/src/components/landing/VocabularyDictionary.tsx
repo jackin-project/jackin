@@ -38,10 +38,6 @@ export function VocabularyDictionary() {
     };
   }, []);
 
-  // Keep the active term visible in the horizontal strip on mobile. On
-  // desktop the list has no horizontal overflow so this is a no-op. Only
-  // scrolls the list container — does not touch the page scroll, so the
-  // parent sticky scroll-drive isn't disturbed.
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;

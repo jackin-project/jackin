@@ -1,0 +1,1 @@
+{"code":200,"msg":"success","success":true,"data":{"level":"pro","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"usage":1000000,"currentValue":420000,"remaining":580000,"percentage":42,"nextResetTime":1767232800000},{"type":"TOKENS_LIMIT","unit":6,"number":1,"usage":5000000,"currentValue":600000,"remaining":4400000,"percentage":12,"nextResetTime":1767571200000}]}}
