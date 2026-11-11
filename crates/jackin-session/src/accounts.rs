@@ -672,7 +672,11 @@ async fn publish<'a>(
                 .map_err(|error| on_gateway(home.gateway_name(), error.into()))?;
             let held = state == ProviderState::Present;
             journal.push(home.undo(
-                if held { Action::Restore } else { Action::Remove },
+                if held {
+                    Action::Restore
+                } else {
+                    Action::Remove
+                },
                 &entry.account,
                 agent,
             ));

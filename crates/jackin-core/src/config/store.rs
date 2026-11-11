@@ -55,7 +55,10 @@ impl ConfigStore {
         E: From<ConfigError>,
     {
         if let Some(dir) = self.path.parent() {
-            self.fs.create_dir_all(&dir).await.map_err(ConfigError::from)?;
+            self.fs
+                .create_dir_all(&dir)
+                .await
+                .map_err(ConfigError::from)?;
         }
         let lock = self.lock().await?;
         let mut config = self.read().await?;
