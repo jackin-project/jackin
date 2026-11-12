@@ -169,6 +169,7 @@ impl CommandError {
             | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
             | CommandError::Account(AccountError::Lock(LockError::Cancelled))
+            | CommandError::Console(ConsoleError::Cancelled)
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. })) => {
                 ExitClass::Cancelled
             }
