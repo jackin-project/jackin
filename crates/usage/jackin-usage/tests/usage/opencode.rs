@@ -3,8 +3,13 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
-use jackin_core::{CredentialSource, FileMode, FileSystem, HostPath, Provider};
+use async_trait::async_trait;
+use jackin_core::{
+    CredentialSource, DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError,
+    HostPath, LinkProblem, Provider, RegularFile, RegularFileProblem, RepoPath,
+};
 use jackin_testkit::{MemFs, Method, Route};
 use jackin_usage::{Refresh, UnavailableReason, WindowKind};
 use rusqlite::Connection;
@@ -78,6 +83,138 @@ fn store(directory: &Path, rows: &[(&str, &str, i64, &str)]) {
                 rusqlite::params![id, integration, value, active],
             )
             .expect("the row");
+    }
+}
+
+fn checkpointed(directory: &Path, rows: &[(&str, &str, i64, &str)]) {
+    let db = directory.join("opencode.db");
+    let connection = Connection::open(&db).expect("the store opens");
+    connection
+        .execute_batch("PRAGMA journal_mode=WAL;")
+        .expect("the journal mode");
+    connection.execute_batch(SCHEMA).expect("the schema");
+    for (id, integration, active, value) in rows {
+        connection
+            .execute(
+                "INSERT OR REPLACE INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES (?1, ?2, 'opencode', ?3, ?4, 1, 1)",
+                rusqlite::params![id, integration, value, active],
+            )
+            .expect("the row");
+    }
+    connection
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+        .expect("the checkpoint");
+}
+
+#[derive(Debug)]
+struct CheckpointFs {
+    inner: Arc<dyn FileSystem>,
+    store: HostPath,
+    before: Vec<u8>,
+    after: Vec<u8>,
+    phase: AtomicU32,
+}
+
+impl CheckpointFs {
+    fn image(&self) -> Vec<u8> {
+        if self.phase.load(Ordering::SeqCst) == 0 {
+            self.before.clone()
+        } else {
+            self.after.clone()
+        }
+    }
+
+    fn is_store(&self, path: &HostPath) -> bool {
+        path.as_path() == self.store.as_path()
+    }
+}
+
+#[async_trait]
+impl FileSystem for CheckpointFs {
+    async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
+        if self.is_store(path) {
+            let image = self.image();
+            self.phase.store(1, Ordering::SeqCst);
+            return Ok(Some(image));
+        }
+        self.inner.read(path).await
+    }
+    async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        if self.is_store(path) {
+            let image = self.image();
+            let start = (offset as usize).min(image.len());
+            let end = start.saturating_add(len).min(image.len());
+            return Ok(image[start..end].to_vec());
+        }
+        self.inner.read_at(path, offset, len).await
+    }
+    async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat(path).await
+    }
+    async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat_following(path).await
+    }
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(path).await
+    }
+    async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
+        self.inner.file_len(path).await
+    }
+    async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(path).await
+    }
+    async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
+        self.inner.list(dir).await
+    }
+    async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.create_dir_all(dir).await
+    }
+    async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.create_private_dir_all(dir).await
+    }
+    async fn write_new(
+        &self,
+        path: &HostPath,
+        bytes: &[u8],
+        mode: FileMode,
+    ) -> Result<(), FsError> {
+        self.inner.write_new(path, bytes, mode).await
+    }
+    async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError> {
+        self.inner.rename(from, to).await
+    }
+    async fn remove_file(&self, path: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_file(path).await
+    }
+    async fn remove_dir_all(&self, path: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_dir_all(path).await
+    }
+    async fn mode(&self, path: &HostPath) -> Result<Option<FileMode>, FsError> {
+        self.inner.mode(path).await
+    }
+    async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.sync_dir(dir).await
+    }
+    async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
+        self.inner.lock(path).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
+    async fn read_regular(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+        max_bytes: usize,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        self.inner.read_regular(root, file, max_bytes).await
     }
 }
 
@@ -261,6 +398,66 @@ async fn a_store_that_lives_only_in_the_filesystem_boundary_is_read() -> TestRes
         );
         let usage = harness.one(&account, Refresh::Cached).await?;
         assert_windows(&usage.outcome, &[FIVE, WEEK, MONTH]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_store_that_is_checkpointed_while_it_is_read_is_read_again() -> TestResult {
+    guard(async {
+        const BEFORE: &str = "SECRET_TOKEN_OPENCODE_BEFORE";
+        const AFTER: &str = "SECRET_TOKEN_OPENCODE_AFTER";
+        let directory = tempfile::tempdir()?;
+        let before_dir = directory.path().join("before");
+        let after_dir = directory.path().join("after");
+        std::fs::create_dir(&before_dir)?;
+        std::fs::create_dir(&after_dir)?;
+        store(
+            &before_dir,
+            &[("cred_1", "opencode", 1, &credential(BEFORE, EXPIRES, None))],
+        );
+        checkpointed(
+            &after_dir,
+            &[("cred_1", "opencode", 1, &credential(AFTER, EXPIRES, None))],
+        );
+        let before = std::fs::read(before_dir.join("opencode.db"))?;
+        let after = std::fs::read(after_dir.join("opencode.db"))?;
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {AFTER}")),
+        );
+        let store_path = host_path_of(&directory.path().join("opencode.db"));
+        let store_dir = host_path_of(directory.path());
+        harness.fs.create_dir_all(&store_dir).await?;
+        harness
+            .fs
+            .write_new(&store_path, &before, FileMode(0o600))
+            .await?;
+        let fs: Arc<dyn FileSystem> = Arc::new(CheckpointFs {
+            inner: Arc::<MemFs>::clone(&harness.fs),
+            store: store_path.clone(),
+            before,
+            after,
+            phase: AtomicU32::new(0),
+        });
+        let host = harness.host_over(fs, harness.state_dir.clone());
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File {
+                path: store_path.clone(),
+            },
+        );
+        let report = harness
+            .report_on(&host, std::slice::from_ref(&account), Refresh::Cached)
+            .await?;
+        assert_windows(&report.accounts[0].outcome, &[FIVE, WEEK, MONTH]);
+        let mismatches = harness.server.mismatches();
+        assert!(mismatches.is_empty(), "{mismatches:?}");
         Ok(())
     })
     .await

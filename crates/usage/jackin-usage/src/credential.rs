@@ -453,10 +453,7 @@ fn extract_opencode_credential(
             updated,
             created,
         };
-        if found
-            .as_ref()
-            .is_none_or(|best| candidate.newer_than(best))
-        {
+        if found.as_ref().is_none_or(|best| candidate.newer_than(best)) {
             found = Some(candidate);
         }
     }
@@ -811,7 +808,7 @@ fn non_empty(text: &str) -> Option<&str> {
 mod tests {
     use super::{
         Extracted, KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, OPENCODE_CREDENTIAL_QUERY, Path, Secret,
-        kimi_base_for_slot, omp_revision, opencode_consistent_snapshot,
+        kimi_base_for_slot, omp_revision,
     };
 
     const OPENCODE_SCHEMA: &str = "CREATE TABLE credential (
@@ -845,29 +842,6 @@ mod tests {
             ctime_nsec: 0,
             digest: digest.to_owned(),
         }
-    }
-
-    fn snapshot_bytes(call: usize) -> Vec<u8> {
-        if call == 1 {
-            b"old".to_vec()
-        } else {
-            b"new".to_vec()
-        }
-    }
-
-    #[tokio::test]
-    async fn a_store_that_changes_while_it_is_read_is_read_again() {
-        let mut calls = 0;
-        let mut read = || {
-            calls += 1;
-            let call = calls;
-            async move { Ok::<_, super::Unresolved>((snapshot_bytes(call), None)) }
-        };
-        let Ok((bytes, _)) = opencode_consistent_snapshot(&mut read).await else {
-            panic!("a stable snapshot");
-        };
-        assert_eq!(bytes, b"new");
-        assert_eq!(calls, 4);
     }
 
     #[test]
@@ -910,7 +884,9 @@ mod tests {
     #[test]
     fn the_credential_query_never_uses_a_temporary_b_tree() {
         let connection = rusqlite::Connection::open_in_memory().expect("a connection");
-        connection.execute_batch(OPENCODE_SCHEMA).expect("the schema");
+        connection
+            .execute_batch(OPENCODE_SCHEMA)
+            .expect("the schema");
         let plan = plan_of(&connection);
         assert!(!plan.contains("TEMP B-TREE"), "{plan}");
     }
@@ -933,7 +909,9 @@ mod tests {
         let path = directory.path().join("opencode.db");
         {
             let connection = rusqlite::Connection::open(&path).expect("the store");
-            connection.execute_batch(OPENCODE_SCHEMA).expect("the schema");
+            connection
+                .execute_batch(OPENCODE_SCHEMA)
+                .expect("the schema");
             let filler = "x".repeat(4096);
             for index in 0..2000 {
                 connection
@@ -967,7 +945,9 @@ mod tests {
             Ok(connection) => connection,
             Err(_) => panic!("a connection"),
         };
-        connection.execute_batch(OPENCODE_SCHEMA).expect("the schema");
+        connection
+            .execute_batch(OPENCODE_SCHEMA)
+            .expect("the schema");
         let plan = plan_of(&connection);
         assert!(!plan.contains("TEMP B-TREE"), "{plan}");
     }
