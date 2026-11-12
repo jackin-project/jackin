@@ -64,7 +64,8 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS credential (
     active INTEGER,
     time_created INTEGER NOT NULL,
     time_updated INTEGER NOT NULL
-);";
+);
+CREATE TABLE IF NOT EXISTS session_v2 (id TEXT PRIMARY KEY NOT NULL, title TEXT);";
 
 fn store(directory: &Path, rows: &[(&str, &str, i64, &str)]) {
     let db = directory.join("opencode.db");
@@ -333,6 +334,32 @@ async fn a_store_whose_write_ahead_log_cannot_be_read_is_unreadable() -> TestRes
             ),
             "{outcome:?}"
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_unrelated_change_in_the_store_keeps_the_cached_report() -> TestResult {
+    guard(async {
+        let store =
+            started(&[("cred_1", "opencode", 1, &credential(TOKEN, EXPIRES, None))]).await?;
+        let outcome = store.report().await?;
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        let connection = Connection::open(store.directory.path().join("opencode.db"))?;
+        connection.execute(
+            "INSERT OR REPLACE INTO session_v2 (id, title) VALUES ('session_1', 'later')",
+            [],
+        )?;
+        drop(connection);
+        store.harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(500, "{}"),
+        );
+        let again = store.report().await?;
+        assert_windows(&again, &[FIVE, WEEK, MONTH]);
         Ok(())
     })
     .await

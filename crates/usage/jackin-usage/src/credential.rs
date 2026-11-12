@@ -327,12 +327,11 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
         .ok_or(Unresolved::Missing)?;
     let wal = read_opencode_wal(deps, path).await?;
-    let store_digest = revision_of(&bytes);
     let found =
         tokio::task::spawn_blocking(move || extract_opencode_credential(&bytes, wal.as_deref()))
             .await
             .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))??;
-    let revision = opencode_revision(path.as_path(), identity, &found, &store_digest);
+    let revision = opencode_revision(path.as_path(), identity, &found);
     Ok(Some(
         Material::login(found.value).with_revision(Some(revision)),
     ))
@@ -466,19 +465,13 @@ fn extract_opencode_credential(
     Err(Unresolved::Missing)
 }
 
-fn opencode_revision(
-    db: &Path,
-    identity: FileIdentity,
-    found: &OpenCodeRecord,
-    store_digest: &str,
-) -> String {
+fn opencode_revision(db: &Path, identity: FileIdentity, found: &OpenCodeRecord) -> String {
     format!(
-        "{}:{}:{}:{}:{}:{}",
+        "{}:{}:{}:{}:{}",
         db.display(),
         identity.dev,
         identity.ino,
         found.id,
-        store_digest,
         found.digest
     )
 }
