@@ -95,7 +95,7 @@ async fn start() -> ExitCode {
     let class = tokio::select! {
         class = &mut run => class,
         () = signals.interrupted(&cancel) => {
-            let _stopped = run.await;
+            drop(run);
             ExitClass::Cancelled
         }
     };
