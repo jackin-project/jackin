@@ -1,8 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
-
 use jackin_core::{FileMode, FileSystem, HostPath, StdFileSystem};
 use jackin_session::{FolderFacts, OpFault, Source, SourceFault, SourceFound};
 use serde_json::json;
@@ -173,7 +171,7 @@ async fn a_folder_whose_path_cannot_be_canonicalized_is_unreadable_and_not_missi
         std::fs::write(&file, b"x")?;
         let below = HostPath::parse(&file.join("child"))?;
         let bench = Bench::new();
-        let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
+        let fs: std::sync::Arc<dyn FileSystem> = std::sync::Arc::new(StdFileSystem::default());
         let desk = jackin_session::SourceDesk::new(
             fs,
             jackin_core::EnvSnapshot::from_pairs(Vec::new()),
