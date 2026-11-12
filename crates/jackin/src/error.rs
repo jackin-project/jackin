@@ -174,6 +174,7 @@ impl CommandError {
             | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
             | CommandError::Account(AccountError::Lock(LockError::Cancelled))
+            | CommandError::Console(ConsoleError::Cancelled)
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. }))
             | CommandError::Gateway(GatewayError::Cancelled { .. })
             | CommandError::Integrate(IntegrateError::Gateway(GatewayError::Cancelled {
