@@ -175,6 +175,7 @@ impl CommandError {
             | CommandError::Export(ExportError::Cancelled { .. })
             | CommandError::Account(AccountError::Lock(LockError::Cancelled))
             | CommandError::Console(ConsoleError::Cancelled)
+            | CommandError::Attach(AttachError::Gateway(GatewayError::Cancelled { .. }))
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. }))
             | CommandError::Gateway(GatewayError::Cancelled { .. })
             | CommandError::Integrate(IntegrateError::Gateway(GatewayError::Cancelled {
@@ -212,5 +213,22 @@ impl CommandError {
             | CommandError::Environment(_)
             | CommandError::Unhealthy => ExitClass::Failure,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jackin_openshell::GatewayOp;
+    use jackin_session::AttachError;
+
+    use super::*;
+
+    #[test]
+    fn a_cancelled_attach_setup_classifies_as_cancelled() {
+        let error = CommandError::Attach(AttachError::Gateway(GatewayError::Cancelled {
+            op: GatewayOp::Provider,
+            group: None,
+        }));
+        assert_eq!(error.class(), ExitClass::Cancelled);
     }
 }

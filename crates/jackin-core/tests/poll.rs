@@ -108,7 +108,10 @@ async fn poll_until_times_out_after_exactly_the_timeout() -> TestResult {
         Err(PollError::Timeout { after }) => assert_eq!(after, Duration::from_secs(10)),
         other => panic!("{other:?}"),
     }
-    assert_eq!(clock.elapsed(), Duration::from_secs(10));
+    // The time the probes spend counts against the budget, so the sleeps cover
+    // the timeout minus the (near-zero) probe time and never overshoot it.
+    assert!(clock.elapsed() <= Duration::from_secs(10));
+    assert!(clock.elapsed() >= Duration::from_secs(10) - Duration::from_millis(1));
     Ok(())
 }
 
@@ -160,6 +163,70 @@ async fn poll_until_counts_the_time_a_pending_probe_spends() -> TestResult {
         other => panic!("{other:?}"),
     }
     assert!(calls.load(Ordering::SeqCst) <= 3, "the probe ran too often");
+    Ok(())
+}
+
+#[tokio::test]
+async fn poll_until_subtracts_probe_time_from_the_inter_probe_sleep() -> TestResult {
+    #[derive(Debug, Default)]
+    struct RecordingClock {
+        slept: Mutex<Vec<Duration>>,
+    }
+
+    #[async_trait]
+    impl Clock for RecordingClock {
+        fn now(&self) -> Timestamp {
+            let seconds = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_secs());
+            Timestamp(i64::try_from(seconds).unwrap_or(i64::MAX))
+        }
+
+        fn utc_offset_secs(&self) -> i32 {
+            0
+        }
+
+        async fn sleep(&self, duration: Duration) {
+            tokio::time::sleep(duration).await;
+            self.slept
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(duration);
+        }
+    }
+
+    let clock = RecordingClock::default();
+    let calls = AtomicUsize::new(0);
+    let result: Result<(), PollError<ProbeError>> = poll_until(
+        &clock,
+        PollPlan {
+            interval: Duration::from_millis(30),
+            timeout: Duration::from_millis(100),
+        },
+        &CancellationToken::new(),
+        || {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async move {
+                tokio::time::sleep(Duration::from_millis(25)).await;
+                Ok(Poll::Pending)
+            }
+        },
+    )
+    .await;
+    match result {
+        Err(PollError::Timeout { after }) => assert_eq!(after, Duration::from_millis(100)),
+        other => panic!("{other:?}"),
+    }
+    let slept: Duration = clock
+        .slept
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .sum();
+    assert!(
+        slept <= Duration::from_millis(55),
+        "the inter-probe sleeps exceeded the remaining budget: {slept:?}"
+    );
     Ok(())
 }
 

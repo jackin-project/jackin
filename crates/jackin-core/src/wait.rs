@@ -71,7 +71,7 @@ where
             return Err(PollError::Cancelled);
         }
         probed += started.elapsed();
-        let step = interval.min(plan.timeout.saturating_sub(waited));
+        let step = interval.min(plan.timeout.saturating_sub(waited + probed));
         if step.is_zero() {
             return Err(PollError::Timeout {
                 after: plan.timeout,

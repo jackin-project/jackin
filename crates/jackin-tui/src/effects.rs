@@ -402,10 +402,12 @@ impl Inputs {
     ) -> Result<Folder, Refused> {
         let kind = self.local_kind(path).await.map_err(PersistError::from)?;
         if let LocalKind::File(file) = &kind {
-            self.sources
-                .check(kind.source(false), &self.cancel)
-                .await
-                .map_err(|error| Refused::Text(text(&error)))?;
+            if !is_credential_store(crate::project::core_provider(console_provider), file) {
+                self.sources
+                    .check(kind.source(false), &self.cancel)
+                    .await
+                    .map_err(|error| Refused::Text(text(&error)))?;
+            }
             return Ok(Folder::Login { file: file.clone() });
         }
         let folder = self.folder(path).await?;
