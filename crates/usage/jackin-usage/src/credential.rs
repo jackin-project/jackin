@@ -29,6 +29,8 @@ const OPENCODE_INTEGRATION: &str = "opencode";
 const OPENCODE_OAUTH: &str = "oauth";
 const OPENCODE_SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
 const OPENCODE_SNAPSHOT_ATTEMPTS: usize = 3;
+const OPENCODE_CREDENTIAL_QUERY: &str = "SELECT id, value, time_updated, time_created FROM credential \
+     WHERE integration_id = ?1 AND (active = 1 OR active IS NULL)";
 const OPENCODE_WAL_HEADER: usize = 32;
 const OPENCODE_WAL_FRAME_HEADER: usize = 24;
 const OPENCODE_WAL_MAGIC: u32 = 0x377f_0682;
@@ -408,8 +410,7 @@ fn extract_opencode_credential(
     wal: Option<&[u8]>,
 ) -> Result<OpenCodeRecord, Unresolved> {
     let image = opencode_store_image(bytes, wal)?;
-    let mut connection = rusqlite::Connection::open_in_memory()
-        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    let mut connection = opencode_connection()?;
     connection
         .deserialize_read_exact(
             "main",
@@ -419,15 +420,12 @@ fn extract_opencode_credential(
         )
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
     let mut statement = connection
-        .prepare(
-            "SELECT id, value FROM credential \
-             WHERE integration_id = ?1 AND (active = 1 OR active IS NULL) \
-             ORDER BY time_updated DESC, time_created DESC",
-        )
+        .prepare(OPENCODE_CREDENTIAL_QUERY)
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
     let mut rows = statement
         .query([OPENCODE_INTEGRATION])
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+    let mut found: Option<OpenCodeCandidate> = None;
     while let Some(row) = rows
         .next()
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
@@ -438,18 +436,62 @@ fn extract_opencode_credential(
         let value: String = row
             .get(1)
             .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let updated: i64 = row
+            .get(2)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let created: i64 = row
+            .get(3)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
         let kind = serde_json::from_str::<Value>(&value)
             .map_err(|_| Unresolved::Unreadable("the OpenCode credential is not valid JSON"))?;
         if kind.get("type").and_then(Value::as_str) != Some(OPENCODE_OAUTH) {
             continue;
         }
-        return Ok(OpenCodeRecord {
+        let candidate = OpenCodeCandidate {
             id,
-            digest: revision_of(value.as_bytes()),
             value,
-        });
+            updated,
+            created,
+        };
+        if found
+            .as_ref()
+            .is_none_or(|best| candidate.newer_than(best))
+        {
+            found = Some(candidate);
+        }
     }
-    Err(Unresolved::Missing)
+    let Some(found) = found else {
+        return Err(Unresolved::Missing);
+    };
+    Ok(OpenCodeRecord {
+        id: found.id,
+        digest: revision_of(found.value.as_bytes()),
+        value: found.value,
+    })
+}
+
+fn opencode_connection() -> Result<rusqlite::Connection, Unresolved> {
+    let connection = rusqlite::Connection::open_in_memory()
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    connection
+        .execute_batch("PRAGMA temp_store = MEMORY;")
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    Ok(connection)
+}
+
+struct OpenCodeCandidate {
+    id: String,
+    value: String,
+    updated: i64,
+    created: i64,
+}
+
+impl OpenCodeCandidate {
+    fn newer_than(&self, other: &OpenCodeCandidate) -> bool {
+        (self.updated, self.created) > (other.updated, other.created)
+            || ((self.updated, self.created) == (other.updated, other.created)
+                && self.id < other.id)
+    }
 }
 
 fn opencode_store_image(bytes: &[u8], wal: Option<&[u8]>) -> Result<Vec<u8>, Unresolved> {
@@ -768,9 +810,32 @@ fn non_empty(text: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Extracted, KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, Path, Secret, kimi_base_for_slot,
-        omp_revision, opencode_consistent_snapshot,
+        Extracted, KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, OPENCODE_CREDENTIAL_QUERY, Path, Secret,
+        kimi_base_for_slot, omp_revision, opencode_consistent_snapshot,
     };
+
+    const OPENCODE_SCHEMA: &str = "CREATE TABLE credential (
+    id TEXT PRIMARY KEY NOT NULL,
+    integration_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    value TEXT NOT NULL,
+    active INTEGER,
+    time_created INTEGER NOT NULL,
+    time_updated INTEGER NOT NULL
+);";
+
+    fn plan_of(connection: &rusqlite::Connection) -> String {
+        let query = format!("EXPLAIN QUERY PLAN {OPENCODE_CREDENTIAL_QUERY}");
+        let mut statement = connection.prepare(&query).expect("the plan");
+        let mut rows = statement.query(["opencode"]).expect("the plan rows");
+        let mut plan = String::new();
+        while let Some(row) = rows.next().expect("a plan row") {
+            let detail: String = row.get(3).expect("the plan detail");
+            plan.push_str(&detail);
+            plan.push('\n');
+        }
+        plan
+    }
 
     fn row(ctime: i64, digest: &str) -> Extracted {
         Extracted {
@@ -840,5 +905,70 @@ mod tests {
         let before = omp_revision(db, 3, 9, &row(1, "d"));
         let after = omp_revision(db, 3, 9, &row(1, "e"));
         assert_ne!(before, after);
+    }
+
+    #[test]
+    fn the_credential_query_never_uses_a_temporary_b_tree() {
+        let connection = rusqlite::Connection::open_in_memory().expect("a connection");
+        connection.execute_batch(OPENCODE_SCHEMA).expect("the schema");
+        let plan = plan_of(&connection);
+        assert!(!plan.contains("TEMP B-TREE"), "{plan}");
+    }
+
+    #[test]
+    fn the_store_connection_keeps_its_temporary_storage_in_memory() {
+        let connection = match super::opencode_connection() {
+            Ok(connection) => connection,
+            Err(_) => panic!("a connection"),
+        };
+        let store: i64 = connection
+            .query_row("PRAGMA temp_store", [], |row| row.get(0))
+            .expect("the temporary storage");
+        assert_eq!(store, 2);
+    }
+
+    #[test]
+    fn a_large_store_is_read_without_a_temporary_sort() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let path = directory.path().join("opencode.db");
+        {
+            let connection = rusqlite::Connection::open(&path).expect("the store");
+            connection.execute_batch(OPENCODE_SCHEMA).expect("the schema");
+            let filler = "x".repeat(4096);
+            for index in 0..2000 {
+                connection
+                    .execute(
+                        "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES (?1, 'other', 'other', ?2, 1, ?3, ?3)",
+                        rusqlite::params![format!("filler_{index}"), filler, index],
+                    )
+                    .expect("the filler row");
+            }
+            connection
+                .execute(
+                    "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_older', 'opencode', 'opencode', ?1, 1, 7, 7)",
+                    rusqlite::params![r#"{"type":"oauth","access":"older"}"#],
+                )
+                .expect("the older row");
+            connection
+                .execute(
+                    "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_newer', 'opencode', 'opencode', ?1, 1, 5, 9)",
+                    rusqlite::params![r#"{"type":"oauth","access":"newer"}"#],
+                )
+                .expect("the newer row");
+        }
+        let bytes = std::fs::read(&path).expect("the store bytes");
+        let found = match super::extract_opencode_credential(&bytes, None) {
+            Ok(found) => found,
+            Err(_) => panic!("the credential"),
+        };
+        assert_eq!(found.id, "cred_newer");
+        assert!(found.value.contains("newer"));
+        let connection = match super::opencode_connection() {
+            Ok(connection) => connection,
+            Err(_) => panic!("a connection"),
+        };
+        connection.execute_batch(OPENCODE_SCHEMA).expect("the schema");
+        let plan = plan_of(&connection);
+        assert!(!plan.contains("TEMP B-TREE"), "{plan}");
     }
 }
