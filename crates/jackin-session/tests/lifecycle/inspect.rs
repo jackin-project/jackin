@@ -151,8 +151,7 @@ fn zai_host_rule(provider: &str) -> Result<NetworkRule, Box<dyn std::error::Erro
 }
 
 #[tokio::test]
-async fn inspect_flags_a_foreign_jackin_rule_on_the_provider_host_of_the_sandbox()
--> TestResult {
+async fn inspect_flags_a_foreign_jackin_rule_on_the_provider_host_of_the_sandbox() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;

@@ -176,23 +176,32 @@ impl LiveInstance {
 
     pub(crate) async fn incarnation(&self) -> Result<String, Box<dyn Error>> {
         let pid = self.child.id().to_string();
-        for candidate in ["/usr/bin/ps", "/bin/ps"] {
-            if !std::path::Path::new(candidate).exists() {
-                continue;
-            }
-            let output = tokio::process::Command::new(candidate)
+        if std::path::Path::new("/usr/bin/ps").exists() {
+            let output = tokio::process::Command::new("/usr/bin/ps")
                 .args(["-o", "lstart=", "-p", &pid])
                 .output()
                 .await?;
-            if !output.status.success() {
-                continue;
+            if output.status.success() {
+                return Ok(Self::condensed(&output.stdout));
             }
-            return Ok(String::from_utf8_lossy(&output.stdout)
-                .split_whitespace()
-                .collect::<Vec<_>>()
-                .concat());
+        }
+        if std::path::Path::new("/bin/ps").exists() {
+            let output = tokio::process::Command::new("/bin/ps")
+                .args(["-o", "lstart=", "-p", &pid])
+                .output()
+                .await?;
+            if output.status.success() {
+                return Ok(Self::condensed(&output.stdout));
+            }
         }
         Err("the identity query did not answer".into())
+    }
+
+    fn condensed(stdout: &[u8]) -> String {
+        String::from_utf8_lossy(stdout)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .concat()
     }
 
     pub(crate) async fn record(&self) -> Result<String, Box<dyn Error>> {

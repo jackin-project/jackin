@@ -411,12 +411,11 @@ mod tests {
 
     #[test]
     fn every_rejection_names_its_reason() {
+        assert_eq!(parse_authority("path-secret"), Err("the scheme is missing"));
         assert_eq!(
-            parse_authority("path-secret"),
-            Err("the scheme is missing")
-        );
-        assert_eq!(
-            parse_authority("relative/path-secret?redirect=https://alice:password@example.com/path"),
+            parse_authority(
+                "relative/path-secret?redirect=https://alice:password@example.com/path"
+            ),
             Err("the scheme is invalid")
         );
         assert_eq!(parse_authority("https://"), Err("the authority is missing"));

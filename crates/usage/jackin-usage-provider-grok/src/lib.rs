@@ -157,9 +157,7 @@ fn product_share(config: &Value) -> Result<Option<Bucket>, ProviderError> {
         .into_iter()
         .flatten()
         .find(|row| row.get("product").and_then(json_text) == Some("GrokBuild"));
-    let Some(used) = row
-        .and_then(|row| row.get("usagePercent").and_then(json_number))
-    else {
+    let Some(used) = row.and_then(|row| row.get("usagePercent").and_then(json_number)) else {
         return Ok(None);
     };
     Ok(Some(

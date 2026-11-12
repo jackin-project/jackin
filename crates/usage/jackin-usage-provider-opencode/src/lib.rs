@@ -46,9 +46,12 @@ pub async fn fetch(
 fn login_key(login: &str, now: i64) -> Result<(String, Option<String>), ProviderError> {
     let value: Value = serde_json::from_str(login)
         .map_err(|_| ProviderError::Decode("the OpenCode login file is not valid JSON"))?;
-    let entry = value.get(ENTRY).filter(|entry| entry.is_object()).ok_or(
-        ProviderError::Decode("the OpenCode login file has no opencode credential"),
-    )?;
+    let entry = value
+        .get(ENTRY)
+        .filter(|entry| entry.is_object())
+        .ok_or(ProviderError::Decode(
+            "the OpenCode login file has no opencode credential",
+        ))?;
     let key = entry
         .get("access")
         .and_then(json_text)

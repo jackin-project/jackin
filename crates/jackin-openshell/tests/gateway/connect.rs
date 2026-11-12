@@ -50,12 +50,7 @@ async fn mtls_connect_health_and_debug_hygiene() {
     )
     .await
     .unwrap();
-    let gateway_config = config(
-        &env,
-        resolved_gateway.clone(),
-        WORKSPACE,
-        runner.clone(),
-    );
+    let gateway_config = config(&env, resolved_gateway.clone(), WORKSPACE, runner.clone());
     let config_debug = format!("{gateway_config:?}");
     assert!(config_debug.contains(&authority), "{config_debug}");
     assert!(!config_debug.contains("path-secret"), "{config_debug}");
@@ -183,10 +178,7 @@ async fn a_malformed_endpoint_refuses_to_connect_and_never_carries_its_secret() 
     .await
     .unwrap();
     let error = guard(GrpcGateway::connect(config(
-        &env,
-        gateway,
-        WORKSPACE,
-        runner,
+        &env, gateway, WORKSPACE, runner,
     )))
     .await
     .unwrap_err();

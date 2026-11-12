@@ -372,13 +372,12 @@ async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_si
         let other_provider = ProviderName::for_account(other.name(), Agent::Omp);
         let original_omp = rig.gateway().provider(&omp);
         let original_other = rig.gateway().provider(&other_provider);
-        rig.gateway()
-            .inject(Fault::PutProviderFailsAfterWrite {
-                error: GatewayError::Unreachable {
-                    endpoint: "gateway".to_owned(),
-                    message: "connection reset".to_owned(),
-                },
-            });
+        rig.gateway().inject(Fault::PutProviderFailsAfterWrite {
+            error: GatewayError::Unreachable {
+                endpoint: "gateway".to_owned(),
+                message: "connection reset".to_owned(),
+            },
+        });
         let members = AgentInstances::new(vec![
             AgentInstance::new(
                 Agent::Codex,
@@ -468,7 +467,8 @@ async fn t18_lead_and_t14_non_lead_write_the_claude_instance_model() -> TestResu
 }
 
 #[tokio::test]
-async fn inspect_reports_a_live_rule_on_the_provider_host_of_every_instance() -> Result<(), Box<dyn std::error::Error>> {
+async fn inspect_reports_a_live_rule_on_the_provider_host_of_every_instance()
+-> Result<(), Box<dyn std::error::Error>> {
     guard(async {
         let mut rig = multi_agent_rig().await?;
         seed_kimi_provider(&mut rig).await?;
@@ -508,7 +508,10 @@ async fn inspect_reports_a_live_rule_on_the_provider_host_of_every_instance() ->
             .collect();
         assert_eq!(
             rules,
-            vec![("_provider_kimiother", "api.kimi.com"), ("_provider_other", "api.z.ai")]
+            vec![
+                ("_provider_kimiother", "api.kimi.com"),
+                ("_provider_other", "api.z.ai")
+            ]
         );
         Ok(())
     })
@@ -516,7 +519,8 @@ async fn inspect_reports_a_live_rule_on_the_provider_host_of_every_instance() ->
 }
 
 #[tokio::test]
-async fn inspect_covers_the_instances_after_their_local_accounts_are_removed() -> Result<(), Box<dyn std::error::Error>> {
+async fn inspect_covers_the_instances_after_their_local_accounts_are_removed()
+-> Result<(), Box<dyn std::error::Error>> {
     guard(async {
         let mut rig = multi_agent_rig().await?;
         seed_kimi_provider(&mut rig).await?;
@@ -563,7 +567,10 @@ async fn inspect_covers_the_instances_after_their_local_accounts_are_removed() -
             .collect();
         assert_eq!(
             rules,
-            vec![("_provider_kimiother", "api.kimi.com"), ("_provider_other", "api.z.ai")]
+            vec![
+                ("_provider_kimiother", "api.kimi.com"),
+                ("_provider_other", "api.z.ai")
+            ]
         );
         Ok(())
     })
@@ -571,7 +578,8 @@ async fn inspect_covers_the_instances_after_their_local_accounts_are_removed() -
 }
 
 #[tokio::test]
-async fn the_upload_marker_waits_for_the_worktrees_of_every_instance() -> Result<(), Box<dyn std::error::Error>> {
+async fn the_upload_marker_waits_for_the_worktrees_of_every_instance()
+-> Result<(), Box<dyn std::error::Error>> {
     guard(async {
         let mut rig = multi_agent_rig().await?;
         seed_omp_provider(&mut rig).await?;

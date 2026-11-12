@@ -316,8 +316,8 @@ async fn a_guarded_purge_refuses_a_sandbox_whose_creation_time_is_unknown() -> T
 }
 
 #[tokio::test]
-async fn a_forced_purge_never_deletes_a_replacement_when_the_creation_time_was_unknown() -> TestResult
-{
+async fn a_forced_purge_never_deletes_a_replacement_when_the_creation_time_was_unknown()
+-> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;

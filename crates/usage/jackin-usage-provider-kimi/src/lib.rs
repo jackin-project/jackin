@@ -30,10 +30,11 @@ pub async fn fetch(
         ("limit_month_total", BucketKind::Monthly, "monthly"),
         ("limit_month_code", BucketKind::Monthly, "monthly code"),
     ] {
-        out.extend(usages.and_then(|usages| usages.get(key)).map_or_else(
-            || Ok(None),
-            |entry| window(entry, kind, label),
-        )?);
+        out.extend(
+            usages
+                .and_then(|usages| usages.get(key))
+                .map_or_else(|| Ok(None), |entry| window(entry, kind, label))?,
+        );
     }
     Ok(out)
 }

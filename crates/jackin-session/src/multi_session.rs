@@ -8,7 +8,9 @@ use jackin_core::{
     Agent, AgentInstance, AgentInstances, SandboxLabels, SandboxName, SandboxPath, TerminalText,
     plain,
 };
-use jackin_openshell::{GatewayError, GatewayOp, Missing, ProgramOutcome, ProgramRun, ProgramStdin};
+use jackin_openshell::{
+    GatewayError, GatewayOp, Missing, ProgramOutcome, ProgramRun, ProgramStdin,
+};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
@@ -227,12 +229,10 @@ impl Session {
                     .to_owned(),
             });
         }
-        let layout =
-            crate::multi::plan_multi(instances, None, crate::multi::HeadState::Born).map_err(
-                |error| GatewayError::Protocol {
-                    message: error.to_string(),
-                },
-            )?;
+        let layout = crate::multi::plan_multi(instances, None, crate::multi::HeadState::Born)
+            .map_err(|error| GatewayError::Protocol {
+                message: error.to_string(),
+            })?;
         let mkdir = SandboxPath::from_static("/usr/bin/mkdir");
         for directory in layout.directories.iter().filter(|path| {
             path.as_str().starts_with("/sandbox/.jackin/task")
@@ -298,12 +298,12 @@ impl Session {
         branch: &str,
         cancel: &CancellationToken,
     ) -> Result<(), GatewayError> {
-        let (parent, leaf) = path
-            .as_str()
-            .rsplit_once('/')
-            .ok_or_else(|| GatewayError::Protocol {
-                message: format!("worktree path {} has no parent", path.as_str()),
-            })?;
+        let (parent, leaf) =
+            path.as_str()
+                .rsplit_once('/')
+                .ok_or_else(|| GatewayError::Protocol {
+                    message: format!("worktree path {} has no parent", path.as_str()),
+                })?;
         let outcome = self
             .deps
             .gateway
@@ -337,11 +337,7 @@ impl Session {
                 ),
             }),
             code => Err(GatewayError::Protocol {
-                message: format!(
-                    "worktree setup of {} exited {}",
-                    path.as_str(),
-                    code
-                ),
+                message: format!("worktree setup of {} exited {}", path.as_str(), code),
             }),
         }
     }
@@ -499,11 +495,7 @@ impl Session {
                 &ProgramRun {
                     sandbox: sandbox.clone(),
                     program: SandboxPath::from_static("/usr/bin/rm"),
-                    args: vec![
-                        "-f".to_owned(),
-                        "--".to_owned(),
-                        record.as_str().to_owned(),
-                    ],
+                    args: vec!["-f".to_owned(), "--".to_owned(), record.as_str().to_owned()],
                     workdir: None,
                     env: BTreeMap::new(),
                     stdin: ProgramStdin::Closed,

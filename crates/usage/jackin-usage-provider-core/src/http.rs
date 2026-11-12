@@ -82,7 +82,8 @@ impl Http {
         headers: &[(&str, &str)],
         body: &Value,
     ) -> Result<Value, ProviderError> {
-        self.send(Method::POST, url, auth, headers, Some(body)).await
+        self.send(Method::POST, url, auth, headers, Some(body))
+            .await
     }
 
     async fn send(
@@ -195,12 +196,7 @@ fn with_header(
 }
 
 fn retry_after_seconds(response: &reqwest::Response) -> Option<u64> {
-    let text = response
-        .headers()
-        .get(RETRY_AFTER)?
-        .to_str()
-        .ok()?
-        .trim();
+    let text = response.headers().get(RETRY_AFTER)?.to_str().ok()?.trim();
     retry_after_text(text, Utc::now())
 }
 

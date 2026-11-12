@@ -761,9 +761,7 @@ async fn secondary_attach_stops_the_detached_instance_and_carries_the_launch_env
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
         let live = LiveInstance::spawn()?;
         std::fs::write(
-            handle
-                .root()
-                .join(".jackin/run/codex/instance.pid"),
+            handle.root().join(".jackin/run/codex/instance.pid"),
             live.record().await?,
         )?;
         rig.gateway().script_program(
@@ -848,7 +846,12 @@ async fn secondary_attach_refuses_when_the_detached_instance_cannot_be_stopped()
         let refused = rig.world.session.attach(request).await;
         assert!(refused.is_err(), "{refused:?}");
         assert!(handle.shells().is_empty());
-        assert!(handle.root().join(".jackin/run/codex/instance.pid").exists());
+        assert!(
+            handle
+                .root()
+                .join(".jackin/run/codex/instance.pid")
+                .exists()
+        );
         Ok(())
     })
     .await
@@ -912,7 +915,12 @@ async fn secondary_attach_refuses_to_signal_a_stale_instance_identity() -> TestR
             queries[0].iter().any(|arg| arg == &pid.to_string()),
             "{queries:?}"
         );
-        assert!(!handle.root().join(".jackin/run/codex/instance.pid").exists());
+        assert!(
+            !handle
+                .root()
+                .join(".jackin/run/codex/instance.pid")
+                .exists()
+        );
         Ok(())
     })
     .await
@@ -936,9 +944,17 @@ async fn secondary_attach_refuses_to_signal_a_reused_instance_identity() -> Test
         rig.world.session.attach(request).await?;
         let signalled = handle.runs(&SandboxPath::from_static("/usr/bin/kill"));
         assert!(signalled.is_empty(), "{signalled:?}");
-        assert!(taken.running(), "the process that took the pid was signalled");
+        assert!(
+            taken.running(),
+            "the process that took the pid was signalled"
+        );
         assert!(sibling.running(), "a sibling process was signalled");
-        assert!(!handle.root().join(".jackin/run/codex/instance.pid").exists());
+        assert!(
+            !handle
+                .root()
+                .join(".jackin/run/codex/instance.pid")
+                .exists()
+        );
         Ok(())
     })
     .await
@@ -951,10 +967,7 @@ async fn secondary_attach_refuses_a_record_that_names_no_process() -> TestResult
         let request = rig.request(41)?.instances(members(Agent::ClaudeCode)?);
         let target = ready(run(&rig, request).await?)?;
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
-        std::fs::write(
-            handle.root().join(".jackin/run/codex/instance.pid"),
-            b"0",
-        )?;
+        std::fs::write(handle.root().join(".jackin/run/codex/instance.pid"), b"0")?;
         let mut request = AttachRequest::owner(target.clone(), size()?);
         request.agent = Some(Agent::Codex);
         let refused = rig.world.session.attach(request).await;
@@ -969,7 +982,12 @@ async fn secondary_attach_refuses_a_record_that_names_no_process() -> TestResult
         let signalled = handle.runs(&SandboxPath::from_static("/usr/bin/kill"));
         assert!(signalled.is_empty(), "{signalled:?}");
         assert!(identity_queries(&handle).is_empty());
-        assert!(handle.root().join(".jackin/run/codex/instance.pid").exists());
+        assert!(
+            handle
+                .root()
+                .join(".jackin/run/codex/instance.pid")
+                .exists()
+        );
         assert!(handle.shells().is_empty());
         Ok(())
     })

@@ -41,9 +41,7 @@ fn key_windows(body: &Value) -> Result<Vec<Bucket>, ProviderError> {
     out.extend(key_budget(data)?);
     for (field, label) in SPENDS {
         if let Some(spend) = money(data.get(field))? {
-            out.push(
-                Bucket::named(BucketKind::Spend, label).spent(Some(Remaining::Amount(spend))),
-            );
+            out.push(Bucket::named(BucketKind::Spend, label).spent(Some(Remaining::Amount(spend))));
         }
     }
     Ok(out)

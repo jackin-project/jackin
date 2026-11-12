@@ -92,7 +92,11 @@ fn grant_bucket(grant: &Value, now: i64) -> Result<Option<Bucket>, ProviderError
         return Ok(None);
     };
     let ends_at = match grant.get("ends_at").filter(|value| !value.is_null()) {
-        Some(value) => match value.as_str().map(str::trim).filter(|text| !text.is_empty()) {
+        Some(value) => match value
+            .as_str()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+        {
             Some(text) => match parse_iso_epoch(text) {
                 Some(at) if at > now => Some(at),
                 _ => return Ok(None),

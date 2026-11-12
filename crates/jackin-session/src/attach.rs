@@ -461,10 +461,7 @@ impl Session {
                     .open_terminal(&TerminalRequest {
                         sandbox: sandbox.clone(),
                         kind: TerminalKind::Exec {
-                            argv: crate::multi_session::instance_argv(
-                                agent,
-                                &spec.launch_argv(),
-                            ),
+                            argv: crate::multi_session::instance_argv(agent, &spec.launch_argv()),
                             workdir: jackin_core::SandboxPath::parse(&format!(
                                 "/sandbox/work/{}/project",
                                 agent.as_str()

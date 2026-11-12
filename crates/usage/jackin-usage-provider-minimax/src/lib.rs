@@ -10,8 +10,7 @@ use serde_json::Value;
 pub const PAY_AS_YOU_GO_REASON: &str = "MiniMax pay-as-you-go keys have no plan quota";
 
 const REMAINS_URL: &str = "https://www.minimax.io/v1/token_plan/remains";
-const CODING_PLAN_URL: &str =
-    "https://platform.minimax.io/v1/api/openplatform/coding_plan/remains?business=Agent&device_platform=mcode";
+const CODING_PLAN_URL: &str = "https://platform.minimax.io/v1/api/openplatform/coding_plan/remains?business=Agent&device_platform=mcode";
 const PAY_AS_YOU_GO_PREFIX: &str = "sk-api-";
 const GENERAL: &str = "general";
 const EXHAUSTED: i64 = 2;

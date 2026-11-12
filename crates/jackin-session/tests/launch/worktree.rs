@@ -96,7 +96,12 @@ async fn worktree_setup_replaces_a_stale_worktree_directory() -> Result<(), Box<
             .session
             .setup_worktrees(&target.sandbox, &instances, &CancellationToken::new())
             .await?;
-        assert!(handle.root().join("work/claude/project/README.md").is_file());
+        assert!(
+            handle
+                .root()
+                .join("work/claude/project/README.md")
+                .is_file()
+        );
         assert!(handle.root().join("work/claude/project/.git").is_file());
         assert!(!stale.join("stale.txt").exists());
         Ok(())
@@ -105,7 +110,8 @@ async fn worktree_setup_replaces_a_stale_worktree_directory() -> Result<(), Box<
 }
 
 #[tokio::test]
-async fn worktree_setup_refuses_a_repository_without_an_initial_commit() -> Result<(), Box<dyn Error>> {
+async fn worktree_setup_refuses_a_repository_without_an_initial_commit()
+-> Result<(), Box<dyn Error>> {
     guard(async {
         let rig = launch_rig().await?;
         let outcome = rig.launch_observed(9).await?;
@@ -114,7 +120,9 @@ async fn worktree_setup_refuses_a_repository_without_an_initial_commit() -> Resu
             .gateway()
             .sandbox(&target.sandbox)
             .ok_or("sandbox handle")?;
-        handle.git(&["checkout", "-q", "--orphan", "unborn"]).await?;
+        handle
+            .git(&["checkout", "-q", "--orphan", "unborn"])
+            .await?;
         let instances = AgentInstances::new(vec![
             AgentInstance::new(
                 Agent::Codex,
@@ -134,7 +142,10 @@ async fn worktree_setup_refuses_a_repository_without_an_initial_commit() -> Resu
             .session
             .setup_worktrees(&target.sandbox, &instances, &CancellationToken::new())
             .await;
-        assert!(matches!(refused, Err(GatewayError::Protocol { .. })), "{refused:?}");
+        assert!(
+            matches!(refused, Err(GatewayError::Protocol { .. })),
+            "{refused:?}"
+        );
         assert!(!handle.root().join("work/claude/project").exists());
         Ok(())
     })
@@ -142,7 +153,8 @@ async fn worktree_setup_refuses_a_repository_without_an_initial_commit() -> Resu
 }
 
 #[tokio::test]
-async fn worktree_setup_keeps_the_lead_project_when_the_parent_is_a_symlink() -> Result<(), Box<dyn Error>> {
+async fn worktree_setup_keeps_the_lead_project_when_the_parent_is_a_symlink()
+-> Result<(), Box<dyn Error>> {
     guard(async {
         let rig = launch_rig().await?;
         let outcome = rig.launch_observed(10).await?;
@@ -173,7 +185,10 @@ async fn worktree_setup_keeps_the_lead_project_when_the_parent_is_a_symlink() ->
             .session
             .setup_worktrees(&target.sandbox, &instances, &CancellationToken::new())
             .await;
-        assert!(matches!(refused, Err(GatewayError::Protocol { .. })), "{refused:?}");
+        assert!(
+            matches!(refused, Err(GatewayError::Protocol { .. })),
+            "{refused:?}"
+        );
         assert!(root.join("project/.git").exists());
         assert!(root.join("project/README.md").is_file());
         Ok(())
@@ -223,7 +238,8 @@ async fn worktree_setup_keeps_an_existing_valid_checkout() -> Result<(), Box<dyn
 }
 
 #[tokio::test]
-async fn worktree_setup_reconciles_a_stale_registration_and_resumes() -> Result<(), Box<dyn Error>> {
+async fn worktree_setup_reconciles_a_stale_registration_and_resumes() -> Result<(), Box<dyn Error>>
+{
     guard(async {
         let rig = launch_rig().await?;
         let outcome = rig.launch_observed(12).await?;
@@ -268,7 +284,8 @@ async fn worktree_setup_reconciles_a_stale_registration_and_resumes() -> Result<
 }
 
 #[tokio::test]
-async fn worktree_setup_confines_every_step_while_an_ancestor_flaps() -> Result<(), Box<dyn Error>> {
+async fn worktree_setup_confines_every_step_while_an_ancestor_flaps() -> Result<(), Box<dyn Error>>
+{
     guard(async {
         let rig = launch_rig().await?;
         let outcome = rig.launch_observed(13).await?;
