@@ -1,0 +1,18 @@
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only: [/bin, /sbin, /usr, /lib, /etc, /proc, /sys, /dev/urandom, /var/log, /usr/local]
+  read_write: [/tmp, /dev/null, /dev/shm, /run, /var/run, /var/lib/docker, /home, /sandbox]
+landlock:
+  compatibility: best_effort
+network_policies:
+  docker_registry:
+    name: docker_registry
+    endpoints:
+      - { host: registry-1.docker.io, port: 443, protocol: tcp }
+      - { host: auth.docker.io, port: 443, protocol: tcp }
+      - { host: production.cloudflare.docker.com, port: 443, protocol: tcp }
+    binaries:
+      - path: /usr/local/bin/dockerd
+      - path: /usr/local/bin/docker
+      - path: /usr/local/bin/containerd

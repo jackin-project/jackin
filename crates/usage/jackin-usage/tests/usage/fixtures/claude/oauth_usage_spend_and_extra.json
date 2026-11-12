@@ -1,0 +1,1 @@
+{"extra_usage":{"is_enabled":true,"monthly_limit":26000.0,"used_credits":7849.0,"utilization":30.0,"currency":"SGD","decimal_places":2},"spend":{"used":{"amount_minor":5331,"currency":"USD","exponent":2},"limit":{"amount_minor":30000,"currency":"USD","exponent":2},"percent":18,"severity":"normal","enabled":true}}

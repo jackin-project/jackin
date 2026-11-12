@@ -12,20 +12,7 @@ SPDX-FileCopyrightText = "2026 Alexey Zhokhov"
 SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
-path = [
-  "crates/adapters/jackin-image/src/release_evidence/fixtures/cosign-*",
-  "crates/adapters/jackin-image/src/release_evidence/fixtures/sigstore-python-*",
-  "crates/adapters/jackin-image/src/release_evidence/fixtures/sigstore-rust-*",
-  "crates/adapters/jackin-image/src/release_evidence/fixtures/velnor-0.1.13-*",
-  "crates/adapters/jackin-image/src/release_evidence/fixtures/velnor-LICENSE-APACHE",
-]
-precedence = "override"
-SPDX-FileCopyrightText = "NOASSERTION"
-SPDX-License-Identifier = "Apache-2.0"
-
-# Vendored branches 0.4.6 source keeps its upstream MIT license and attribution.
-[[annotations]]
-path = "vendor/branches-0.4.6/**"
-precedence = "override"
-SPDX-FileCopyrightText = "2023 Khashayar Fereidani"
-SPDX-License-Identifier = "MIT"
+path = "vendor/sqlx-sqlite/**"
+precedence = "closest"
+SPDX-FileCopyrightText = ["Copyright (C) SQLx Contributors", "Portions of this work Copyright (C) LaunchBadge, LLC"]
+SPDX-License-Identifier = "MIT OR Apache-2.0"

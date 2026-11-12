@@ -2,6 +2,9 @@
 # Each block gives the written reason. Entries are exact finding fingerprints (commit:file:rule:line); the rules are NOT weakened.
 # A possibly real credential is never listed here; those are tracked for rotation by the owner.
 
+# Reason: synthetic model-probe sentinel in research notes, not a credential
+06b087a580ff79b49fba6b80b02747565924b4eb:rewrite/research/t13-t22-models.md:generic-api-key:118
+
 # Reason: generated CI matrix key / task digest / cache key, not a credential
 # 138 finding(s); rules: generic-api-key; files: .github/workflows/ci.yml (138)
 0aa821a088e1bacf3d4d85a4c9faaa67faa85132:.github/workflows/ci.yml:generic-api-key:5334
@@ -425,3 +428,56 @@ e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/ma
 e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_01.rs:generic-credential-uri:104
 e234e5d1fbd6cadaf3cc83597c5fe82d2634ec1c:crates/services/jackin-isolation/src/materialize/tests/case_03.rs:generic-credential-uri:18
 d84c40a1677e4e190c11f9994492aab893f8ac4b:crates/adapters/jackin-docker/src/shell_runner/tests/case_01.rs:generic-credential-uri:245
+
+# Reason: test fixture or placeholder, no credential, reviewed 2026-11-03
+# History fingerprints for betterleaks git: the jackin placeholder ID token at its first path, and prose in a deleted reconciliation note
+ddd296b40920dc19887107cca29f9204b4f8ae5e:crates/jackin-session/src/files.rs:jwt:7
+6e96df7af2d32cf9ad22b7e19227a0d1f603a46d:rewrite/reconciliation/P9.3.md:generic-password:31
+
+# Reason: prose, no credential, reviewed 2026-11-04
+# Working-tree fingerprint for betterleaks dir: the match is the quoted plan title in item 1 of the P9.3 reconciliation note ("login (plan 7.3, ...)"), which only names Session::sync_account; the same line is already listed above for betterleaks git at its first commit
+rewrite/reconciliation/P9.3.md:generic-password:31
+
+# Reason: test fixture, no credential, reviewed 2026-11-04
+# The match is the malformed-JSON fixture handed to the test helper that writes a fake Codex login in the J3 source-check test; history fingerprint at its first commit and the working-tree fingerprint
+72437ac56b02c25975b34ae0cb0dd0a7f2755ee2:crates/jackin-session/tests/sources/check.rs:generic-password:79
+crates/jackin-session/tests/sources/check.rs:generic-password:79
+
+# Reason: fake userinfo URLs that the P13.3 C2 test feeds to role add to prove the source is never echoed, and the reconciliation record that quotes them; not credentials
+# 4 finding(s); rules: generic-credential-uri; files: crates/jackin/tests/cli/role_workspace.rs (2), rewrite/reconciliation/P13.3.md (2)
+c8c07a6005841df58db667cda7d8228f1c139715:crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:249
+c8c07a6005841df58db667cda7d8228f1c139715:crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:251
+e33179dba95f4086b3752612f69d360c0d2f8a21:rewrite/reconciliation/P13.3.md:generic-credential-uri:151
+e33179dba95f4086b3752612f69d360c0d2f8a21:rewrite/reconciliation/P13.3.md:generic-credential-uri:162
+
+# Reason: the same fake userinfo URLs of the P13.3 C2 test and its reconciliation record, as directory-scan fingerprints (file:rule:line); not credentials
+# 4 finding(s); rules: generic-credential-uri; files: crates/jackin/tests/cli/role_workspace.rs (2), rewrite/reconciliation/P13.3.md (2)
+crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:293
+crates/jackin/tests/cli/role_workspace.rs:generic-credential-uri:295
+rewrite/reconciliation/P13.3.md:generic-credential-uri:151
+rewrite/reconciliation/P13.3.md:generic-credential-uri:162
+
+# Reason: one historical research output marker in a fenced example command; synthetic response marker, not a credential.
+06b087a580ff79b49fba6b80b02747565924b4eb:rewrite/research/t13-t22-models.md:generic-api-key:118
+
+# Reason: A15 final-review e2e evidence records the synthetic A15_LEAK fixture token (header {"alg":"RS256"}, payload {"sub":"user-a1-access-payload"}, signature segment the base64 of a readable placeholder string) and SHA-256 spec digests; no credential is present.
+# 8 finding(s); rules: jwt (6), generic-api-key (2); files: .audit/a15-final-review-logs/IT4.exclude.access.red.log (1), .audit/a15-final-review-logs/IT4.exclude.id_token.red.log (1), .audit/a15-final-review-prior-results.tsv (4), .audit/a15-final-review-results.tsv (2)
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-logs/IT4.exclude.access.red.log:jwt:28
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-logs/IT4.exclude.id_token.red.log:jwt:28
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-prior-results.tsv:generic-api-key:59
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-prior-results.tsv:generic-api-key:60
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-prior-results.tsv:jwt:42
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-prior-results.tsv:jwt:44
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-results.tsv:jwt:43
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-results.tsv:jwt:45
+
+# Reason: launch-account test fixture: the synthetic account names the test registers to prove that an explicit account wins over the default one; no credential.
+# 2 finding(s); rules: generic-password; files: crates/jackin-tui/tests/launch/account.rs (2)
+344472d4a3b78cc24cff00e0a96aac0e52599268:crates/jackin-tui/tests/launch/account.rs:generic-password:233
+344472d4a3b78cc24cff00e0a96aac0e52599268:crates/jackin-tui/tests/launch/account.rs:generic-password:234
+
+# Working-tree fingerprints (file:rule:line) for the `betterleaks dir` scan of the indexed tree.
+# Reason: launch-account test fixture: the synthetic account names the test registers to prove that an explicit account wins over the default one; no credential.
+# 2 finding(s); rules: generic-password; files: crates/jackin-tui/tests/launch/account.rs (2)
+crates/jackin-tui/tests/launch/account.rs:generic-password:233
+crates/jackin-tui/tests/launch/account.rs:generic-password:234

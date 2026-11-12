@@ -1,26 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
+[test-groups.heavy-output]
+max-threads = 1
+
 [profile.default]
 slow-timeout = { period = "60s", terminate-after = 3, grace-period = "5s" }
 
-[profile.docker-e2e]
-slow-timeout = { period = "60s", terminate-after = 10, grace-period = "5s" }
-failure-output = "immediate-final"
-retries = { backoff = "fixed", count = 2, delay = "1s" }
-final-status-level = "flaky"
-
-[profile.docker-e2e.junit]
-path = "junit.xml"
+[[profile.default.overrides]]
+filter = "binary(process_runner) & (test(a_128_mib) | test(streamed_output_is_lossless) | test(unstreamed_output_beyond))"
+test-group = "heavy-output"
 
 [profile.ci]
-retries = { backoff = "fixed", count = 2, delay = "1s" }
 failure-output = "immediate-final"
 final-status-level = "flaky"
 
 [profile.ci.junit]
 path = "junit.xml"
-
-[test-groups]
-docker-e2e = { max-threads = 1 }
-load-agent = { max-threads = 2 }

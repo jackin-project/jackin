@@ -1,0 +1,1336 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use std::time::Duration;
+
+use jackin_core::{
+    Account, AccountName, Agent, CodexAuthMode, Config, ConfigEdit, ConfigError, ConfigStore,
+    CredentialSource, FileLock, GatewayEntry, GatewayName, HostPath, ProcessError, ProcessSpec,
+    ProcessStatus, ProcessStdin, Program, Provider, ProviderName,
+};
+use jackin_openshell::{
+    Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile,
+    ProviderSpec, ProviderState,
+};
+use thiserror::Error;
+use tokio_util::sync::CancellationToken;
+
+use crate::connect::{ConnectError, GatewayConnector};
+use crate::credentials::{
+    CredentialError, KimiLoginMetadata, KimiRegion, NativeCredentialError,
+    NativeRefreshUnsupported, NativeRefreshUnsupportedReason, parse_muse_keychain_secret,
+    read_antigravity_host_login, read_chatgpt_login, read_claude_host_login, read_grok_login,
+    read_kimi_host_login, read_mimo_host_login, read_minimax_host_login, read_muse_host_metadata,
+    resolve_static_key,
+};
+use crate::gateways::{Gateways, UnreachableGateway};
+use crate::lock::{self, LockError};
+use crate::report::error_chain;
+use crate::service::{HostPorts, Session};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AccountSync {
+    HostOnly,
+    ProviderReady {
+        provider: ProviderName,
+        profile: ProfileSync,
+    },
+}
+
+#[derive(Debug, Error)]
+pub enum AccountError {
+    #[error(transparent)]
+    Credential(#[from] CredentialError),
+    #[error(transparent)]
+    NativeCredential(#[from] NativeCredentialError),
+    #[error(transparent)]
+    Gateway(#[from] GatewayError),
+    #[error(transparent)]
+    Policy(#[from] PolicyError),
+    #[error(transparent)]
+    Lock(#[from] LockError),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error(
+        "the provider of account {account} stays on the gateway, because removing it failed: {rollback}"
+    )]
+    RollbackFailed {
+        account: AccountName,
+        #[source]
+        original: Box<AccountError>,
+        rollback: Box<AccountError>,
+    },
+    #[error("account {account} was removed after the launch was planned")]
+    Removed { account: AccountName },
+    #[error("account {account} changed after the launch was planned")]
+    Changed { account: AccountName },
+    #[error("the native login metadata of account {account} changed during launch")]
+    LaunchMetadataChanged { account: AccountName },
+    #[error("gateway {gateway} is not in the config any more")]
+    GatewayRemoved { gateway: GatewayName },
+    #[error("gateway {gateway} was added to the config after the gateways were connected")]
+    GatewayAdded { gateway: GatewayName },
+    #[error("gateway {gateway} changed in the config after the gateways were connected")]
+    GatewayChanged { gateway: GatewayName },
+    #[error("account {account} uses {mode}, which is not supported yet")]
+    Unsupported {
+        account: AccountName,
+        mode: CodexAuthMode,
+    },
+    #[error("the login of account {account} belongs to another ChatGPT account")]
+    AccountIdMismatch { account: AccountName },
+    #[error("no credential is available for account {account}")]
+    MissingCredential { account: AccountName },
+    #[error("the credential store for account {account} is not yet supported")]
+    HostLoginStoreUnsupported { account: AccountName },
+}
+
+#[derive(Debug, Error)]
+pub enum AccountEditError {
+    #[error(transparent)]
+    Config(#[from] ConfigError),
+    #[error(transparent)]
+    Account(#[from] AccountError),
+    #[error("gateway {gateway} failed")]
+    OnGateway {
+        gateway: GatewayName,
+        source: GatewayError,
+    },
+    #[error("{}", unreachable_text(.0))]
+    Unreachable(Vec<UnreachableGateway>),
+    #[error(transparent)]
+    Connect(ConnectError),
+    #[error("{}; rolling back account {account} on gateway {gateway} failed", error_chain(.original.as_ref()))]
+    RollbackFailed {
+        account: AccountName,
+        gateway: GatewayName,
+        original: Box<AccountEditError>,
+        #[source]
+        rollback: Box<AccountError>,
+    },
+}
+
+pub(crate) fn account_agent(account: &Account) -> Agent {
+    match account.provider() {
+        Provider::Codex if account.chatgpt_login().is_none() => Agent::Omp,
+        Provider::Codex => Agent::Codex,
+        Provider::Grok => Agent::GrokBuild,
+        Provider::Muse => Agent::MuseCode,
+        Provider::Kimi if matches!(account.credential(), CredentialSource::HostLogin { .. }) => {
+            Agent::KimiCode
+        }
+        Provider::Mimo if matches!(account.credential(), CredentialSource::HostLogin { .. }) => {
+            Agent::MimoCode
+        }
+        Provider::Minimax if matches!(account.credential(), CredentialSource::HostLogin { .. }) => {
+            Agent::MinimaxCode
+        }
+        Provider::Claude if matches!(account.credential(), CredentialSource::HostLogin { .. }) => {
+            Agent::ClaudeCode
+        }
+        Provider::Antigravity
+            if matches!(account.credential(), CredentialSource::HostLogin { .. }) =>
+        {
+            Agent::Antigravity
+        }
+        provider if jackin_core::lookup_tuple(Agent::Omp, provider).is_ok() => Agent::Omp,
+        _ => Agent::Codex,
+    }
+}
+
+fn login_accounts(config: &Config) -> BTreeSet<AccountName> {
+    config
+        .accounts()
+        .filter(|account| account.has_provider())
+        .map(|account| account.name().clone())
+        .collect()
+}
+
+pub(crate) fn unreachable_text(gateways: &[UnreachableGateway]) -> String {
+    gateways
+        .iter()
+        .map(|gateway| {
+            format!(
+                "{}; if it is gone for good, run `jackin gateway rm {} --offline`",
+                error_chain(gateway),
+                gateway.gateway()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+#[derive(Clone, Debug)]
+pub struct AccountDesk {
+    host: HostPorts,
+    cache_dir: HostPath,
+    store: ConfigStore,
+}
+
+#[derive(Debug)]
+struct Locked {
+    desk: AccountDesk,
+    config: Config,
+    _held: Vec<FileLock>,
+}
+
+fn account_lock(name: &AccountName) -> String {
+    format!("account-{name}.lock")
+}
+
+impl AccountDesk {
+    pub fn new(host: HostPorts, cache_dir: HostPath, store: ConfigStore) -> AccountDesk {
+        AccountDesk {
+            host,
+            cache_dir,
+            store,
+        }
+    }
+
+    async fn lock(
+        &self,
+        names_of: impl Fn(&Config) -> BTreeSet<AccountName>,
+        cancel: &CancellationToken,
+    ) -> Result<Locked, AccountError> {
+        loop {
+            let names = names_of(&self.store.load().await?);
+            let mut held = Vec::with_capacity(names.len());
+            for name in &names {
+                held.push(
+                    lock::hold(&self.host, &self.cache_dir, &account_lock(name), cancel).await?,
+                );
+            }
+            let config = self.store.load().await?;
+            if names_of(&config).is_subset(&names) {
+                return Ok(Locked {
+                    desk: self.clone(),
+                    config,
+                    _held: held,
+                });
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum AccountPlan {
+    Offline(OfflinePlan),
+    Gateway(GatewayPlan),
+}
+
+#[derive(Debug)]
+pub struct OfflinePlan {
+    locked: Locked,
+    edits: Vec<ConfigEdit>,
+}
+
+#[derive(Debug)]
+pub struct GatewayPlan {
+    locked: Locked,
+    edits: Vec<ConfigEdit>,
+    effects: Effects,
+    agents: BTreeMap<AccountName, Agent>,
+}
+
+#[derive(Debug)]
+pub enum GatewayRemoval {
+    Offline(OfflinePlan),
+    Online(RemovalPlan),
+}
+
+#[derive(Debug)]
+pub struct RemovalPlan {
+    locked: Locked,
+    name: GatewayName,
+    entry: GatewayEntry,
+    forget: Vec<Account>,
+}
+
+#[derive(Debug)]
+struct Publish {
+    account: Account,
+    previous: Option<Account>,
+}
+
+#[derive(Debug)]
+struct Effects {
+    forget: Vec<Account>,
+    publish: Vec<Publish>,
+}
+
+impl Effects {
+    fn is_empty(&self) -> bool {
+        self.forget.is_empty() && self.publish.is_empty()
+    }
+
+    fn needs_every_gateway(&self) -> bool {
+        !self.forget.is_empty()
+            || self
+                .publish
+                .iter()
+                .any(|publish| publish.previous.is_some())
+    }
+}
+
+fn touched(edit: &ConfigEdit) -> Option<&AccountName> {
+    match edit {
+        ConfigEdit::AddAccount(account) => Some(account.name()),
+        ConfigEdit::RemoveAccount(name)
+        | ConfigEdit::RemoveAccountClearingBindings(name)
+        | ConfigEdit::SetAccountCredential { account: name, .. } => Some(name),
+        _ => None,
+    }
+}
+
+fn effects(
+    config: &Config,
+    edits: &[ConfigEdit],
+    agents: &BTreeMap<AccountName, Agent>,
+) -> Result<Effects, ConfigError> {
+    let mut after = config.clone();
+    for edit in edits {
+        after.apply(edit.clone())?;
+    }
+    let names: BTreeSet<&AccountName> = edits.iter().filter_map(touched).collect();
+    let acting = |name: &AccountName, account: &Account| {
+        agents
+            .get(name)
+            .copied()
+            .unwrap_or_else(|| account_agent(account))
+    };
+    for name in &names {
+        if let Some(account) = after.account(name) {
+            account.check_credential_eligibility(acting(name, account))?;
+        }
+    }
+    let mut forget = Vec::new();
+    let mut publish = Vec::new();
+    for name in names {
+        let before = config
+            .account(name)
+            .filter(|account| account.has_provider_for(acting(name, account)));
+        let now = after
+            .account(name)
+            .filter(|account| account.has_provider_for(acting(name, account)));
+        match (before, now) {
+            (before, Some(account)) => publish.push(Publish {
+                account: account.clone(),
+                previous: before.cloned(),
+            }),
+            (Some(account), None) => forget.push(account.clone()),
+            (None, None) => {}
+        }
+    }
+    Ok(Effects { forget, publish })
+}
+
+pub async fn plan_account_edits(
+    desk: &AccountDesk,
+    edits: Vec<ConfigEdit>,
+    cancel: &CancellationToken,
+) -> Result<AccountPlan, AccountEditError> {
+    plan_account_edits_inner(desk, edits, BTreeMap::new(), cancel).await
+}
+
+pub async fn plan_account_edits_for_agent(
+    desk: &AccountDesk,
+    edits: Vec<ConfigEdit>,
+    agent: Agent,
+    cancel: &CancellationToken,
+) -> Result<AccountPlan, AccountEditError> {
+    let names: BTreeSet<AccountName> = edits.iter().filter_map(touched).cloned().collect();
+    let agents = names.into_iter().map(|name| (name, agent)).collect();
+    plan_account_edits_inner(desk, edits, agents, cancel).await
+}
+
+pub async fn plan_account_edits_for_agents(
+    desk: &AccountDesk,
+    edits: Vec<ConfigEdit>,
+    agents: BTreeMap<AccountName, Agent>,
+    cancel: &CancellationToken,
+) -> Result<AccountPlan, AccountEditError> {
+    plan_account_edits_inner(desk, edits, agents, cancel).await
+}
+
+async fn plan_account_edits_inner(
+    desk: &AccountDesk,
+    edits: Vec<ConfigEdit>,
+    agents: BTreeMap<AccountName, Agent>,
+    cancel: &CancellationToken,
+) -> Result<AccountPlan, AccountEditError> {
+    let names: BTreeSet<AccountName> = edits.iter().filter_map(touched).cloned().collect();
+    let locked = desk.lock(|_| names.clone(), cancel).await?;
+    let effects = effects(&locked.config, &edits, &agents)?;
+    Ok(if effects.is_empty() {
+        AccountPlan::Offline(OfflinePlan { locked, edits })
+    } else {
+        AccountPlan::Gateway(GatewayPlan {
+            locked,
+            edits,
+            effects,
+            agents,
+        })
+    })
+}
+
+pub async fn plan_gateway_removal(
+    desk: &AccountDesk,
+    name: &GatewayName,
+    cancel: &CancellationToken,
+) -> Result<GatewayRemoval, AccountEditError> {
+    let locked = desk.lock(login_accounts, cancel).await?;
+    let edit = ConfigEdit::RemoveGateway(name.clone());
+    locked.config.clone().apply(edit.clone())?;
+    let forget: Vec<Account> = locked
+        .config
+        .accounts()
+        .filter(|account| account.has_provider())
+        .cloned()
+        .collect();
+    let entry = locked.config.gateway(name).cloned();
+    Ok(match entry {
+        Some(entry) if !forget.is_empty() => GatewayRemoval::Online(RemovalPlan {
+            locked,
+            name: name.clone(),
+            entry,
+            forget,
+        }),
+        _ => GatewayRemoval::Offline(OfflinePlan {
+            locked,
+            edits: vec![edit],
+        }),
+    })
+}
+
+impl AccountPlan {
+    pub fn needs_gateway(&self) -> bool {
+        matches!(self, AccountPlan::Gateway(_))
+    }
+
+    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
+        match self {
+            AccountPlan::Offline(plan) => Ok(plan.apply().await?),
+            AccountPlan::Gateway(plan) => plan.apply(gateways).await,
+        }
+    }
+}
+
+impl OfflinePlan {
+    pub async fn apply(self) -> Result<Config, ConfigError> {
+        self.locked.desk.store.edit(self.edits).await
+    }
+}
+
+impl RemovalPlan {
+    pub fn gateway(&self) -> &GatewayName {
+        &self.name
+    }
+
+    pub async fn apply(
+        self,
+        connector: &dyn GatewayConnector,
+        cancel: &CancellationToken,
+    ) -> Result<Config, AccountEditError> {
+        let gateway = match connector.connect(&self.name, &self.entry, cancel).await {
+            Ok(gateway) => gateway,
+            Err(error) if error.is_cancelled() => return Err(AccountEditError::Connect(error)),
+            Err(error) => {
+                return Err(AccountEditError::Unreachable(vec![
+                    UnreachableGateway::new(self.name, error),
+                ]));
+            }
+        };
+        let host = &self.locked.desk.host;
+        let edit = ConfigEdit::RemoveGateway(self.name.clone());
+        let mut journal = Vec::new();
+        let written = async {
+            for account in &self.forget {
+                let held = holds(gateway.as_ref(), account)
+                    .await
+                    .map_err(|error| on_gateway(&self.name, error))?;
+                for (agent, _) in held {
+                    journal.push(Undo {
+                        host,
+                        gateway: gateway.as_ref(),
+                        account,
+                        agent,
+                        action: Action::Restore,
+                    });
+                }
+                forget_login(gateway.as_ref(), account)
+                    .await
+                    .map_err(|error| on_gateway(&self.name, error))?;
+            }
+            Ok(self.locked.desk.store.edit(vec![edit]).await?)
+        }
+        .await;
+        match written {
+            Ok(config) => Ok(config),
+            Err(original) => Err(roll_back(original, journal).await),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum Action {
+    Remove,
+    Restore,
+}
+
+#[derive(Debug)]
+struct Undo<'a> {
+    host: &'a HostPorts,
+    gateway: &'a dyn Gateway,
+    account: &'a Account,
+    agent: Agent,
+    action: Action,
+}
+
+impl Undo<'_> {
+    async fn run(&self) -> Result<(), AccountError> {
+        match self.action {
+            Action::Remove => {
+                let provider = ProviderName::for_account(self.account.name(), self.agent);
+                self.gateway.delete_provider(&provider).await?;
+                Ok(())
+            }
+            Action::Restore => sync_login(
+                self.host,
+                self.gateway,
+                self.account,
+                self.agent,
+                None,
+                &CancellationToken::new(),
+            )
+            .await
+            .map(drop),
+        }
+    }
+}
+
+fn committed(error: &AccountEditError) -> bool {
+    matches!(error, AccountEditError::Config(config) if config.committed())
+}
+
+async fn roll_back(original: AccountEditError, journal: Vec<Undo<'_>>) -> AccountEditError {
+    if committed(&original) {
+        return original;
+    }
+    let mut failure = None;
+    for undo in journal.iter().rev() {
+        if let Err(rollback) = undo.run().await
+            && failure.is_none()
+        {
+            failure = Some((undo, rollback));
+        }
+    }
+    match failure {
+        None => original,
+        Some((undo, rollback)) => AccountEditError::RollbackFailed {
+            account: undo.account.name().clone(),
+            gateway: undo.gateway.name().clone(),
+            original: Box::new(original),
+            rollback: Box::new(rollback),
+        },
+    }
+}
+
+fn on_gateway(gateway: &GatewayName, error: AccountError) -> AccountEditError {
+    match error {
+        AccountError::Gateway(source) => AccountEditError::OnGateway {
+            gateway: gateway.clone(),
+            source,
+        },
+        other => AccountEditError::Account(other),
+    }
+}
+
+fn check_gateways(config: &Config, gateways: &Gateways) -> Result<(), AccountError> {
+    let connected = gateways.names();
+    if let Some(gone) = connected.iter().find(|name| config.gateway(name).is_none()) {
+        return Err(AccountError::GatewayRemoved {
+            gateway: (*gone).clone(),
+        });
+    }
+    match config
+        .gateways()
+        .find(|(name, _)| !connected.contains(name))
+    {
+        Some((added, _)) => Err(AccountError::GatewayAdded {
+            gateway: added.clone(),
+        }),
+        None => Ok(()),
+    }
+}
+
+fn check_gateway_entries(retained: &Config, live: &Config) -> Result<(), AccountError> {
+    for (name, entry) in retained.gateways() {
+        let Some(current) = live.gateway(name) else {
+            return Err(AccountError::GatewayRemoved {
+                gateway: name.clone(),
+            });
+        };
+        if current != entry {
+            return Err(AccountError::GatewayChanged {
+                gateway: name.clone(),
+            });
+        }
+    }
+    match live
+        .gateways()
+        .find(|(name, _)| retained.gateway(name).is_none())
+    {
+        Some((added, _)) => Err(AccountError::GatewayAdded {
+            gateway: added.clone(),
+        }),
+        None => Ok(()),
+    }
+}
+
+impl GatewayPlan {
+    pub fn config(&self) -> &Config {
+        &self.locked.config
+    }
+
+    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
+        let GatewayPlan {
+            locked,
+            edits,
+            effects,
+            agents,
+        } = self;
+        check_gateways(&locked.config, gateways)?;
+        let store = &locked.desk.store;
+        let home = gateways.home();
+        let sessions = if effects.needs_every_gateway() {
+            gateways.every().map_err(AccountEditError::Unreachable)?
+        } else {
+            vec![home]
+        };
+        let mut journal = Vec::new();
+        let written = async {
+            forget(&sessions, &effects.forget, &mut journal).await?;
+            publish(&sessions, &effects.publish, &agents, &mut journal).await?;
+            store
+                .edit_checked(edits, |live| {
+                    check_gateway_entries(&locked.config, live).map_err(AccountEditError::from)
+                })
+                .await
+        }
+        .await;
+        match written {
+            Ok(config) => Ok(config),
+            Err(original) => Err(roll_back(original, journal).await),
+        }
+    }
+}
+
+async fn forget<'a>(
+    sessions: &[&'a Session],
+    accounts: &'a [Account],
+    journal: &mut Vec<Undo<'a>>,
+) -> Result<(), AccountEditError> {
+    for account in accounts {
+        for &session in sessions {
+            let held = holds(session.deps.gateway.as_ref(), account)
+                .await
+                .map_err(|error| on_gateway(session.gateway_name(), error))?;
+            for (agent, _) in held {
+                journal.push(session.undo(Action::Restore, account, agent));
+            }
+            forget_login(session.deps.gateway.as_ref(), account)
+                .await
+                .map_err(|error| on_gateway(session.gateway_name(), error))?;
+        }
+    }
+    Ok(())
+}
+
+async fn publish<'a>(
+    sessions: &[&'a Session],
+    publish: &'a [Publish],
+    agents: &BTreeMap<AccountName, Agent>,
+    journal: &mut Vec<Undo<'a>>,
+) -> Result<(), AccountEditError> {
+    let Some((home, _)) = sessions.split_first() else {
+        return Ok(());
+    };
+    for entry in publish {
+        let agent = agents
+            .get(entry.account.name())
+            .copied()
+            .unwrap_or_else(|| account_agent(&entry.account));
+        let provider = ProviderName::for_account(entry.account.name(), agent);
+        let Some(previous) = &entry.previous else {
+            let state = home
+                .deps
+                .gateway
+                .provider_state(&provider)
+                .await
+                .map_err(|error| on_gateway(home.gateway_name(), error.into()))?;
+            let held = state == ProviderState::Present;
+            journal.push(home.undo(
+                if held {
+                    Action::Restore
+                } else {
+                    Action::Remove
+                },
+                &entry.account,
+                agent,
+            ));
+            home.sync_locked_agent(&entry.account, agent)
+                .await
+                .map_err(|error| on_gateway(home.gateway_name(), error))?;
+            continue;
+        };
+        let previous_agent = agents
+            .get(entry.account.name())
+            .copied()
+            .unwrap_or_else(|| account_agent(previous));
+        let previous_provider = ProviderName::for_account(entry.account.name(), previous_agent);
+        for (index, &session) in sessions.iter().enumerate() {
+            let mut held_previous = false;
+            if previous_provider != provider {
+                held_previous = session
+                    .deps
+                    .gateway
+                    .provider_state(&previous_provider)
+                    .await
+                    .map_err(|error| on_gateway(session.gateway_name(), error.into()))?
+                    == ProviderState::Present;
+                if held_previous {
+                    journal.push(session.undo(Action::Restore, previous, previous_agent));
+                    session
+                        .deps
+                        .gateway
+                        .delete_provider(&previous_provider)
+                        .await
+                        .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
+                }
+            }
+            let state = session
+                .deps
+                .gateway
+                .provider_state(&provider)
+                .await
+                .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
+            let held = state == ProviderState::Present;
+            if !held && index > 0 && !held_previous {
+                continue;
+            }
+            journal.push(if held {
+                session.undo(Action::Restore, previous, previous_agent)
+            } else {
+                session.undo(Action::Remove, &entry.account, agent)
+            });
+            session
+                .sync_locked_agent(&entry.account, agent)
+                .await
+                .map_err(|error| on_gateway(session.gateway_name(), error))?;
+        }
+    }
+    Ok(())
+}
+
+impl Session {
+    fn undo<'a>(&'a self, action: Action, account: &'a Account, agent: Agent) -> Undo<'a> {
+        Undo {
+            host: &self.deps.host,
+            gateway: self.deps.gateway.as_ref(),
+            account,
+            agent,
+            action,
+        }
+    }
+
+    pub async fn sync_account(
+        &self,
+        account: &Account,
+        agent: Agent,
+        cancel: &CancellationToken,
+    ) -> Result<AccountSync, AccountError> {
+        let _held = self.hold_current(account, cancel).await?;
+        self.sync_locked_c(account, agent, None, cancel).await
+    }
+
+    async fn forget_locked(
+        &self,
+        account: &Account,
+        provider: &ProviderName,
+    ) -> Result<(), AccountError> {
+        if !account.has_provider() {
+            return Ok(());
+        }
+        self.deps.gateway.delete_provider(provider).await?;
+        Ok(())
+    }
+
+    pub(crate) async fn sync_provider(
+        &self,
+        account: &Account,
+        provider: &ProviderName,
+        agent: Agent,
+        expected: Option<&KimiLoginMetadata>,
+        cancel: &CancellationToken,
+    ) -> Result<bool, AccountError> {
+        account.check_credential_eligibility(agent)?;
+        let _held = self.hold_current(account, cancel).await?;
+        if self.deps.gateway.provider_state(provider).await? == ProviderState::Present
+            && !Self::holds_static_key(account, agent)
+        {
+            return Ok(false);
+        }
+        if let Err(original) = self.sync_locked_c(account, agent, expected, cancel).await {
+            return Err(match self.forget_locked(account, provider).await {
+                Ok(()) => original,
+                Err(rollback) => AccountError::RollbackFailed {
+                    account: account.name().clone(),
+                    original: Box::new(original),
+                    rollback: Box::new(rollback),
+                },
+            });
+        }
+        Ok(true)
+    }
+
+    pub(crate) async fn launch_metadata(
+        &self,
+        account: &Account,
+        agent: Agent,
+        cancel: &CancellationToken,
+    ) -> Result<Option<KimiLoginMetadata>, AccountError> {
+        account.check_credential_eligibility(agent)?;
+        let _held = self.hold_current(account, cancel).await?;
+        if agent != Agent::KimiCode {
+            return Ok(None);
+        }
+        let CredentialSource::HostLogin { path } = account.credential() else {
+            return Err(AccountError::MissingCredential {
+                account: account.name().clone(),
+            });
+        };
+        let login = read_kimi_host_login(self.deps.host.fs.as_ref(), path).await?;
+        let current = read_kimi_host_login(self.deps.host.fs.as_ref(), path).await?;
+        if current.metadata != login.metadata {
+            return Err(AccountError::LaunchMetadataChanged {
+                account: account.name().clone(),
+            });
+        }
+        Ok(Some(current.metadata))
+    }
+
+    pub(crate) fn holds_static_key(account: &Account, agent: Agent) -> bool {
+        matches!(
+            account.credential(),
+            CredentialSource::Env { .. }
+                | CredentialSource::OnePassword { .. }
+                | CredentialSource::File { .. }
+                | CredentialSource::OmpHost
+        ) && agent != Agent::Codex
+            && jackin_core::lookup_tuple(agent, account.provider()).is_ok_and(|tuple| {
+                matches!(
+                    tuple.auth_class,
+                    jackin_core::AuthClass::StaticKey | jackin_core::AuthClass::ApiKey
+                )
+            })
+    }
+    async fn hold_current(
+        &self,
+        account: &Account,
+        cancel: &CancellationToken,
+    ) -> Result<FileLock, AccountError> {
+        let held = self.hold_account(account.name(), cancel).await?;
+        let config = self.deps.config.load().await?;
+        if config.gateway(self.gateway_name()).is_none() {
+            return Err(AccountError::GatewayRemoved {
+                gateway: self.gateway_name().clone(),
+            });
+        }
+        match config.account(account.name()) {
+            None => Err(AccountError::Removed {
+                account: account.name().clone(),
+            }),
+            Some(current) if current != account => Err(AccountError::Changed {
+                account: account.name().clone(),
+            }),
+            Some(_) => Ok(held),
+        }
+    }
+
+    async fn hold_account(
+        &self,
+        name: &AccountName,
+        cancel: &CancellationToken,
+    ) -> Result<FileLock, AccountError> {
+        Ok(lock::hold(
+            &self.deps.host,
+            &self.deps.cache_dir,
+            &account_lock(name),
+            cancel,
+        )
+        .await?)
+    }
+
+    async fn sync_locked_agent(
+        &self,
+        account: &Account,
+        agent: Agent,
+    ) -> Result<AccountSync, AccountError> {
+        self.sync_locked_c(account, agent, None, &CancellationToken::new())
+            .await
+    }
+
+    async fn sync_locked_c(
+        &self,
+        account: &Account,
+        agent: Agent,
+        expected: Option<&KimiLoginMetadata>,
+        cancel: &CancellationToken,
+    ) -> Result<AccountSync, AccountError> {
+        sync_login(
+            &self.deps.host,
+            self.deps.gateway.as_ref(),
+            account,
+            agent,
+            expected,
+            cancel,
+        )
+        .await
+    }
+}
+
+fn account_providers(account: &Account) -> impl Iterator<Item = (Agent, ProviderName)> + '_ {
+    let name = account.name().clone();
+    jackin_core::TUPLES
+        .iter()
+        .filter(move |tuple| {
+            tuple.provider == account.provider() && account.has_provider_for(tuple.agent)
+        })
+        .map(move |tuple| (tuple.agent, ProviderName::for_account(&name, tuple.agent)))
+}
+
+async fn forget_login(gateway: &dyn Gateway, account: &Account) -> Result<(), AccountError> {
+    for (_, provider) in account_providers(account) {
+        gateway.delete_provider(&provider).await?;
+    }
+    Ok(())
+}
+
+async fn holds(
+    gateway: &dyn Gateway,
+    account: &Account,
+) -> Result<Vec<(Agent, ProviderName)>, AccountError> {
+    let mut held = Vec::new();
+    for (agent, provider) in account_providers(account) {
+        if gateway.provider_state(&provider).await? == ProviderState::Present {
+            held.push((agent, provider));
+        }
+    }
+    Ok(held)
+}
+
+async fn sync_grok_login(
+    host: &HostPorts,
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    path: &HostPath,
+) -> Result<AccountSync, AccountError> {
+    let login = read_grok_login(host.fs.as_ref(), path).await?;
+    publish_login(
+        gateway,
+        account,
+        agent,
+        ProviderMaterial::OAuth2RefreshToken {
+            access_token: login.access_token,
+            refresh_token: login.refresh_token,
+            client_id: login.client_id,
+            scopes: Vec::new(),
+            expires_at: None,
+            additional_credentials: BTreeMap::new(),
+        },
+    )
+    .await
+}
+
+async fn publish_static_login(
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    key: jackin_core::Secret,
+) -> Result<AccountSync, AccountError> {
+    publish_login(gateway, account, agent, ProviderMaterial::StaticKey { key }).await
+}
+
+async fn publish_login(
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    material: ProviderMaterial,
+) -> Result<AccountSync, AccountError> {
+    let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
+        AccountError::MissingCredential {
+            account: account.name().clone(),
+        }
+    })?;
+    let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?;
+    let access_key = tuple
+        .credential_env()
+        .or_else(|| agent.spec().credential_env_names.first().copied())
+        .ok_or_else(|| AccountError::MissingCredential {
+            account: account.name().clone(),
+        })?;
+    publish_profile_login(gateway, account, agent, profile, access_key, "", material).await
+}
+
+async fn publish_profile_login(
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    profile: ProviderProfile,
+    access_key: &'static str,
+    token_url: &'static str,
+    material: ProviderMaterial,
+) -> Result<AccountSync, AccountError> {
+    let synced = gateway.ensure_profile(&profile).await?;
+    let name = ProviderName::for_account(account.name(), agent);
+    gateway
+        .put_provider(&ProviderSpec {
+            name: name.clone(),
+            profile: profile.id,
+            keys: jackin_core::CredentialKeys {
+                access_token: access_key,
+                refresh_token: "",
+                account_id: "",
+                id_token: "",
+                token_url,
+            },
+            material,
+        })
+        .await?;
+    Ok(AccountSync::ProviderReady {
+        provider: name,
+        profile: synced,
+    })
+}
+
+static KIMI_GLOBAL_PROFILE: jackin_core::ProfileAsset = jackin_core::ProfileAsset {
+    id: "kimi-global",
+    yaml: include_str!("../../jackin-core/src/assets/t08-kimi-global.yaml"),
+};
+
+async fn sync_kimi_login(
+    host: &HostPorts,
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    path: &HostPath,
+    expected: Option<&KimiLoginMetadata>,
+) -> Result<AccountSync, AccountError> {
+    let login = read_kimi_host_login(host.fs.as_ref(), path).await?;
+    if expected.is_some_and(|expected| expected != &login.metadata) {
+        return Err(AccountError::LaunchMetadataChanged {
+            account: account.name().clone(),
+        });
+    }
+    let expires_at = login
+        .grant
+        .expires_at
+        .checked_mul(1_000)
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or(NativeCredentialError::Invalid {
+            provider: Provider::Kimi,
+            key: "expires_at",
+        })?;
+    let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
+        AccountError::MissingCredential {
+            account: account.name().clone(),
+        }
+    })?;
+    let profile = match login.metadata.region {
+        KimiRegion::MainlandCn => ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?,
+        KimiRegion::Global => ProviderProfile::parse(&KIMI_GLOBAL_PROFILE)?,
+    };
+    publish_profile_login(
+        gateway,
+        account,
+        agent,
+        profile,
+        "KIMI_API_KEY",
+        login.metadata.region.token_url(),
+        ProviderMaterial::OAuth2RefreshToken {
+            access_token: login.grant.access_token,
+            refresh_token: login.grant.refresh_token,
+            client_id: "17e5f671-d194-4dfb-9706-5516cb48c098".to_owned(),
+            scopes: Vec::new(),
+            expires_at: Some(expires_at),
+            additional_credentials: BTreeMap::new(),
+        },
+    )
+    .await
+}
+
+async fn sync_minimax_login(
+    host: &HostPorts,
+    path: &HostPath,
+) -> Result<AccountSync, AccountError> {
+    read_minimax_host_login(host.fs.as_ref(), path).await?;
+    Err(NativeCredentialError::from(NativeRefreshUnsupported {
+        reason: NativeRefreshUnsupportedReason::AudienceUnsupported,
+    })
+    .into())
+}
+
+async fn sync_mimo_login(host: &HostPorts, path: &HostPath) -> Result<AccountSync, AccountError> {
+    read_mimo_host_login(host.fs.as_ref(), path).await?;
+    Err(NativeCredentialError::from(NativeRefreshUnsupported {
+        reason: NativeRefreshUnsupportedReason::NoRefreshGrant,
+    })
+    .into())
+}
+
+async fn sync_muse_login(
+    host: &HostPorts,
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    path: &HostPath,
+    cancel: &CancellationToken,
+) -> Result<AccountSync, AccountError> {
+    let metadata = read_muse_host_metadata(host.fs.as_ref(), path).await?;
+    if !metadata.subs_active {
+        return Err(AccountError::MissingCredential {
+            account: account.name().clone(),
+        });
+    }
+    if metadata.storage != "keychain" {
+        return Err(AccountError::HostLoginStoreUnsupported {
+            account: account.name().clone(),
+        });
+    }
+    let spec = ProcessSpec {
+        program: Program::Security,
+        args: vec![
+            "find-generic-password".to_owned(),
+            "-s".to_owned(),
+            "ai.meta.dev.credentials".to_owned(),
+            "-a".to_owned(),
+            "meta".to_owned(),
+            "-w".to_owned(),
+        ],
+        cwd: None,
+        env: Vec::new(),
+        env_remove_prefixes: Vec::new(),
+        stdin: ProcessStdin::Null,
+        timeout: Duration::from_secs(30),
+    };
+    let output = host
+        .runner
+        .run_secret(&spec, cancel)
+        .await
+        .map_err(|error| match error {
+            ProcessError::Spawn { .. } => AccountError::HostLoginStoreUnsupported {
+                account: account.name().clone(),
+            },
+            _ => AccountError::MissingCredential {
+                account: account.name().clone(),
+            },
+        })?;
+    if output.status != ProcessStatus::Exited(0) {
+        return Err(AccountError::MissingCredential {
+            account: account.name().clone(),
+        });
+    }
+    let access_token = parse_muse_keychain_secret(&output.stdout).ok_or_else(|| {
+        AccountError::MissingCredential {
+            account: account.name().clone(),
+        }
+    })?;
+    publish_static_login(gateway, account, agent, access_token).await
+}
+
+async fn sync_claude_login(
+    host: &HostPorts,
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    path: &HostPath,
+    cancel: &CancellationToken,
+) -> Result<AccountSync, AccountError> {
+    let login = read_claude_host_login(host, path, cancel)
+        .await
+        .map_err(|error| match error {
+            CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
+                account: account.name().clone(),
+            },
+            _ => AccountError::MissingCredential {
+                account: account.name().clone(),
+            },
+        })?;
+    publish_login(
+        gateway,
+        account,
+        agent,
+        ProviderMaterial::OAuth2RefreshToken {
+            access_token: login.access_token,
+            refresh_token: login.refresh_token,
+            client_id: "9d1c250a-e61b-44d9-88ed-5944d1962f5e".to_owned(),
+            scopes: login.scopes,
+            expires_at: Some(login.expires_at),
+            additional_credentials: BTreeMap::new(),
+        },
+    )
+    .await
+}
+
+async fn sync_antigravity_login(
+    host: &HostPorts,
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    cancel: &CancellationToken,
+) -> Result<AccountSync, AccountError> {
+    let key = read_antigravity_host_login(host, cancel)
+        .await
+        .map_err(|error| match error {
+            CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
+                account: account.name().clone(),
+            },
+            _ => AccountError::MissingCredential {
+                account: account.name().clone(),
+            },
+        })?;
+    publish_static_login(gateway, account, agent, key).await
+}
+
+async fn sync_login(
+    host: &HostPorts,
+    gateway: &dyn Gateway,
+    account: &Account,
+    agent: Agent,
+    expected: Option<&KimiLoginMetadata>,
+    cancel: &CancellationToken,
+) -> Result<AccountSync, AccountError> {
+    account.check_credential_eligibility(agent)?;
+    if let CredentialSource::HostLogin { path } = account.credential() {
+        if agent == Agent::GrokBuild && account.provider() == Provider::Grok {
+            return sync_grok_login(host, gateway, account, agent, path).await;
+        }
+        if agent == Agent::MuseCode && account.provider() == Provider::Muse {
+            return sync_muse_login(host, gateway, account, agent, path, cancel).await;
+        }
+        if agent == Agent::ClaudeCode && account.provider() == Provider::Claude {
+            return sync_claude_login(host, gateway, account, agent, path, cancel).await;
+        }
+        if agent == Agent::Antigravity && account.provider() == Provider::Antigravity {
+            return sync_antigravity_login(host, gateway, account, agent, cancel).await;
+        }
+        if agent == Agent::MinimaxCode && account.provider() == Provider::Minimax {
+            return sync_minimax_login(host, path).await;
+        }
+        if agent == Agent::MimoCode && account.provider() == Provider::Mimo {
+            return sync_mimo_login(host, path).await;
+        }
+        if agent == Agent::KimiCode && account.provider() == Provider::Kimi {
+            return sync_kimi_login(host, gateway, account, agent, path, expected).await;
+        }
+        return Err(AccountError::MissingCredential {
+            account: account.name().clone(),
+        });
+    }
+    let static_tuple = jackin_core::lookup_tuple(agent, account.provider())
+        .ok()
+        .filter(|tuple| {
+            matches!(
+                tuple.auth_class,
+                jackin_core::AuthClass::StaticKey | jackin_core::AuthClass::ApiKey
+            )
+        });
+    if let Some(tuple) = static_tuple {
+        let missing = || AccountError::MissingCredential {
+            account: account.name().clone(),
+        };
+        let provider_id = if agent == Agent::Omp {
+            tuple.omp_provider_id().unwrap_or_default()
+        } else {
+            jackin_core::lookup_tuple(Agent::Omp, account.provider())
+                .ok()
+                .and_then(jackin_core::AgentTuple::omp_provider_id)
+                .unwrap_or(agent.as_str())
+        };
+        let key = resolve_static_key(host, account, provider_id)
+            .await
+            .map_err(|_| missing())?;
+        let asset = jackin_core::tuple_profile_asset(tuple);
+        let profile = ProviderProfile::parse(asset)?;
+        let synced = gateway.ensure_profile(&profile).await?;
+        let name = ProviderName::for_account(account.name(), agent);
+        let env = tuple
+            .credential_env()
+            .or_else(|| agent.spec().credential_env_names.first().copied());
+        gateway
+            .put_provider(&ProviderSpec {
+                name: name.clone(),
+                profile: profile.id,
+                keys: jackin_core::CredentialKeys {
+                    access_token: env.ok_or_else(missing)?,
+                    refresh_token: "",
+                    account_id: "",
+                    id_token: "",
+                    token_url: "",
+                },
+                material: ProviderMaterial::StaticKey { key },
+            })
+            .await?;
+        return Ok(AccountSync::ProviderReady {
+            provider: name,
+            profile: synced,
+        });
+    }
+    if agent != Agent::Codex {
+        return Ok(AccountSync::HostOnly);
+    }
+    if account.provider() != Provider::Codex {
+        return Ok(AccountSync::HostOnly);
+    }
+    let spec = Agent::Codex.spec();
+    let Some(stored) = account.chatgpt_login() else {
+        return Err(AccountError::Unsupported {
+            account: account.name().clone(),
+            mode: CodexAuthMode::ApiKey,
+        });
+    };
+    let login = read_chatgpt_login(host.fs.as_ref(), stored.home).await?;
+    if login.account_id != *stored.account_id {
+        return Err(AccountError::AccountIdMismatch {
+            account: account.name().clone(),
+        });
+    }
+    let profile = ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile)?;
+    let synced = gateway.ensure_profile(&profile).await?;
+    let name = ProviderName::for_account(account.name(), Agent::Codex);
+    gateway
+        .put_provider(&ProviderSpec {
+            name: name.clone(),
+            profile: profile.id,
+            keys: spec.codex.openshell.keys,
+            material: ProviderMaterial::OAuth2RefreshToken {
+                access_token: login.access_token,
+                refresh_token: login.refresh_token,
+                client_id: login.client_id,
+                scopes: Vec::new(),
+                expires_at: None,
+                additional_credentials: BTreeMap::from([(
+                    spec.codex.openshell.keys.account_id.to_owned(),
+                    login.account_id.to_string(),
+                )]),
+            },
+        })
+        .await?;
+    Ok(AccountSync::ProviderReady {
+        provider: name,
+        profile: synced,
+    })
+}

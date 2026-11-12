@@ -1,0 +1,1 @@
+{"code":200,"success":true,"data":{"level":"max","limits":[{"type":"CREDIT_LIMIT","unit":6,"number":1,"usage":10000,"currentValue":2500,"remaining":7500,"percentage":25,"nextResetTime":1781798400000,"usageDetails":[{"modelCode":"glm-5","usage":2000},{"modelCode":"glm-4.5","usage":500}]}]}}

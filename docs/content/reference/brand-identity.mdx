@@ -9,14 +9,16 @@ jackin❯ uses a terminal-native wordmark: the lowercase monospace word `jackin`
 
 ## One source of truth
 
-The mark is **generated**, never hand-drawn. Its geometry lives in exactly one place — <RepoFile path="docs/scripts/brand-geometry.ts" /> — and every surface is emitted from it by <RepoFile path="docs/scripts/gen-brand.ts" />:
+The mark is **generated**, never hand-drawn. The chevron geometry lives in <RepoFile path="docs/scripts/brand-geometry.ts" />. <RepoFile path="docs/scripts/gen-brand.ts" /> writes SVG marks and icon files, and `gen-og` writes social and README images:
 
 ```sh
-bun run gen-brand   # DOM lockup, favicon(.svg/.ico), app icons, manifest, wordmark/monogram SVG+PNG
-bun run gen-og      # social cards + README hero (chevron from the same geometry)
+bun run gen-brand
+bun run gen-og
 ```
 
-Never redraw the word or chevron by hand in a component, SVG, or script. To change the logo, edit `brand-geometry.ts` and regenerate — the change then propagates everywhere at once. Adding a color style or glyph variant is a new entry in `gen-brand.ts`'s `STYLES` / `VARIANTS`.
+`gen-brand` always rewrites SVG files and `site.webmanifest`. It creates PNG and ICO files when they are missing, and leaves existing raster files unchanged. Run `bun run gen-brand --raster` to rewrite existing PNG and ICO files.
+
+Never redraw the word or chevron by hand in a component, SVG, or script. To change the chevron, edit `brand-geometry.ts`, then run both commands above. To update existing PNG and ICO files, add `--raster` to the `gen-brand` command. The SVG wordmark outlines its letters. The PNG wordmark renders text with JetBrains Mono.
 
 ## Text Forms
 
@@ -33,7 +35,7 @@ Literal commands, binaries, crates, packages, environment variables, config keys
 
 ## Logo Lockup
 
-The wordmark is white `jackin` (JetBrains Mono Bold, outlined) + the green `❯` chevron, with a small grey `by tailrocks` byline centered beneath it. The byline is set in **Inter** (a sans subtext, not the mono mark face), `#9ca8a1`, and is part of the canonical wordmark — so it appears on every logo placement. The compact `j❯` monogram (square icons) omits the byline. Do not append `by tailrocks` to ordinary prose, command examples, package names, or code identifiers.
+The wordmark is white `jackin` (JetBrains Mono Bold) and the green `❯` chevron. The SVG lockup outlines the letters. The PNG wordmark renders the letters as text. The grey `by tailrocks` byline uses **Inter** and aligns its right edge with the word's right edge. The generated wordmark and lockup SVGs both include the byline. The compact `j❯` monogram (square icons) omits it. Do not append `by tailrocks` to ordinary prose, command examples, package names, or code identifiers.
 
 ## Color
 
@@ -48,16 +50,15 @@ The wordmark has a transparent background — no block. Square caps only: termin
 
 ## Type
 
-The mark uses **JetBrains Mono Bold**. In every generated asset the word is **outlined to vector paths** — never SVG `<text>` — so the logo is font-independent and renders identically as inline SVG, `<img>`, background, or raster. Supporting prose uses Inter or the system sans-serif stack.
+The SVG mark uses **JetBrains Mono Bold** outlines, never SVG `<text>`. The PNG wordmark renders `jackin` as text with JetBrains Mono. Supporting prose uses Inter or the system sans-serif stack.
 
 ## Terminal Prompt
 
-jackin❯-owned shells use `j❯` as the prompt sigil. Role-container shells get this through the shared Starship config baked into the construct image:
+jackin❯-owned shells use `j❯` as the prompt sigil:
 
 ```text
 j❯
 codex j❯
-claude j❯
 ```
 
 In a terminal the chevron is the `❯` glyph rather than the geometric caret — a TTY can't draw paths, so the glyph is the proven medium fallback (same class as the `jackin>` plaintext fallback).
@@ -71,9 +72,10 @@ Committed brand assets live under `docs/public/`, all produced by the generators
 | `favicon.svg` / `favicon.ico` | `j❯` monogram on a dark square |
 | `apple-touch-icon.png` | `j❯` monogram, 180 px |
 | `icon-192.png` / `icon-512.png` | PWA monogram icons |
-| `brand/jackin-wordmark.{svg,png}` | the canonical logo (outlined, with the grey `by tailrocks` byline), transparent background — used by BrandMark and the TOC |
+| `brand/jackin-wordmark.svg` | SVG wordmark with outlined letters, transparent background — used by BrandMark and the TOC |
+| `brand/jackin-wordmark.png` | PNG wordmark with rendered text and the grey `by tailrocks` byline, transparent background |
 | `brand/jackin-monogram.{svg,png}` | standalone `j❯` monogram (no byline), transparent background |
 | `og-image.png` / `og-image-github.png` | dark social cards with the full lockup |
 | `readme-hero.svg` / `readme-hero.png` | static README hero banner |
 
-Regenerate the logo and icons with `bun run gen-brand`; regenerate social and README images with `bun run gen-og`. Both read `brand-geometry.ts`, so the mark stays identical across every surface.
+Run `bun run gen-brand` to regenerate the SVG files and manifest. Run `bun run gen-brand --raster` to also rewrite existing PNG and ICO files. Run `bun run gen-og` to regenerate social and README images. These outputs use the chevron geometry from `brand-geometry.ts`; their word rendering can differ by format.

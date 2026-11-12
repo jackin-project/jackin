@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+id: t13-claude-kimi
+display_name: Claude Code with Kimi
+description: Claude Code with Kimi with gateway-managed credential
+category: agent
+inference_capable: true
+credentials:
+  - name: access_token
+    description: Gateway-held credential for Claude Code with Kimi
+    env_vars: [ANTHROPIC_AUTH_TOKEN]
+    required: true
+    auth_style: bearer
+    header_name: authorization
+discovery:
+  credentials: [access_token]
+endpoints:
+  - host: api.kimi.ai
+    port: 443
+    protocol: rest
+    access: read-write
+    enforcement: enforce
+binaries:
+  - /usr/local/bin/claude
