@@ -111,6 +111,15 @@ fn period(config: &Value) -> (Option<i64>, Option<i64>) {
     )
 }
 
+fn declared_kind(config: &Value) -> Option<BucketKind> {
+    let declared = config.pointer("/currentPeriod/type").and_then(json_text)?;
+    match declared {
+        "USAGE_PERIOD_TYPE_WEEKLY" => Some(BucketKind::Weekly),
+        "USAGE_PERIOD_TYPE_MONTHLY" => Some(BucketKind::Monthly),
+        _ => None,
+    }
+}
+
 fn period_window(config: &Value) -> Result<Option<Bucket>, ProviderError> {
     let (start, end) = period(config);
     let length = match start.zip(end) {
@@ -130,7 +139,7 @@ fn period_window(config: &Value) -> Result<Option<Bucket>, ProviderError> {
         (used, Some(Remaining::Amount(left.clamped_at_zero())))
     };
     Ok(Some(
-        Bucket::timed(None, length, None, "Credits")
+        Bucket::timed(None, length, declared_kind(config), "Credits")
             .used(Some(used))
             .left(left)
             .resets(end),
