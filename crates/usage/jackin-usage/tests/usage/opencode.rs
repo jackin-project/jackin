@@ -2,13 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
-use std::sync::Arc;
 
-use jackin_core::{CredentialSource, FileSystem, HostPath, Provider, StdFileSystem};
-use jackin_testkit::{Method, Route, WorkingFs};
-use jackin_usage::{Refresh, UnavailableReason, UsageRequest};
+use jackin_core::{CredentialSource, HostPath, Provider};
+use jackin_testkit::{Method, Route};
+use jackin_usage::UnavailableReason;
 use rusqlite::Connection;
-use tokio_util::sync::CancellationToken;
 
 use crate::support::{TestResult, UsageHarness, account, guard, unavailable, windows_of};
 
@@ -82,28 +80,10 @@ async fn started(
 }
 
 impl Store {
-    fn host(&self) -> jackin_usage::HostUsage {
-        let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
-            Arc::new(StdFileSystem::default()),
-            &self.harness.clock,
-        ));
-        self.harness.host_on(
-            fs,
-            host_path_of(&self.directory.path().join("state").join("usage")),
-            host_path_of(self.directory.path()),
-        )
-    }
-
     async fn report(&self) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
-        let request = UsageRequest {
-            accounts: vec![self.account.clone()],
-            refresh: Refresh::Cached,
-        };
-        let mut report = self
-            .host()
-            .report(&request, &CancellationToken::new())
-            .await?;
-        Ok(report.accounts.remove(0).outcome)
+        self.harness
+            .report_cached(&self.account, self.directory.path())
+            .await
     }
 }
 
