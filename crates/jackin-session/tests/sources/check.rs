@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{FileMode, FileSystem};
+use std::sync::Arc;
+
+use jackin_core::{FileMode, FileSystem, HostPath, StdFileSystem};
 use jackin_session::{FolderFacts, OpFault, Source, SourceFault, SourceFound};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -158,6 +160,28 @@ async fn probing_a_folder_names_what_it_holds() -> TestResult {
                 FolderFacts::Missing
             ]
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_folder_whose_path_cannot_be_canonicalized_is_unreadable_and_not_missing() -> TestResult {
+    guard(async {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("file.txt");
+        std::fs::write(&file, b"x")?;
+        let below = HostPath::parse(&file.join("child"))?;
+        let bench = Bench::new();
+        let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
+        let desk = jackin_session::SourceDesk::new(
+            fs,
+            jackin_core::EnvSnapshot::from_pairs(Vec::new()),
+            bench.cli(),
+        );
+        assert_eq!(desk.probe_folder(&below).await, FolderFacts::Unreadable);
+        let gone = HostPath::parse(&dir.path().join("gone"))?;
+        assert_eq!(desk.probe_folder(&gone).await, FolderFacts::Missing);
         Ok(())
     })
     .await

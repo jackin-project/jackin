@@ -195,8 +195,10 @@ impl SourceDesk {
     }
 
     pub async fn probe_folder(&self, path: &HostPath) -> FolderFacts {
-        let Ok(Some(folder)) = self.fs.canonicalize(path).await else {
-            return FolderFacts::Missing;
+        let folder = match self.fs.canonicalize(path).await {
+            Ok(Some(folder)) => folder,
+            Ok(None) => return FolderFacts::Missing,
+            Err(_) => return FolderFacts::Unreadable,
         };
         if !matches!(
             self.fs.stat_following(&folder).await,
