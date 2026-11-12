@@ -267,21 +267,6 @@ async fn a_store_that_lives_only_in_the_filesystem_boundary_is_read() -> TestRes
 }
 
 #[tokio::test]
-async fn a_credential_of_another_kind_is_not_used() -> TestResult {
-    guard(async {
-        let store =
-            started(&[("cred_1", "opencode", 1, r#"{"type":"key","key":"a-key"}"#)]).await?;
-        let outcome = store.report().await?;
-        assert!(
-            matches!(unavailable(&outcome), UnavailableReason::NoCredentials),
-            "{outcome:?}"
-        );
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
 async fn a_credential_file_that_is_not_the_store_is_read_as_a_credential() -> TestResult {
     guard(async {
         let directory = tempfile::tempdir()?;
@@ -340,6 +325,40 @@ async fn a_store_whose_write_ahead_log_cannot_be_read_is_unreadable() -> TestRes
 }
 
 #[tokio::test]
+async fn the_store_is_never_written_to_a_temporary_file() -> TestResult {
+    guard(async {
+        const SECRET: &str = "SECRET_TOKEN_OPENCODE_TEMPFREE";
+        let directory = tempfile::tempdir()?;
+        store(
+            directory.path(),
+            &[("cred_1", "opencode", 1, &credential(SECRET, EXPIRES, None))],
+        );
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {SECRET}")),
+        );
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File {
+                path: host_path_of(&directory.path().join("opencode.db")),
+            },
+        );
+        let outcome = harness.report_cached(&account, directory.path()).await?;
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        assert!(
+            !holds_secret(SECRET, directory.path()),
+            "the store was written to a temporary file"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn an_unrelated_change_in_the_store_keeps_the_cached_report() -> TestResult {
     guard(async {
         let store =
@@ -363,4 +382,87 @@ async fn an_unrelated_change_in_the_store_keeps_the_cached_report() -> TestResul
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn a_store_that_keeps_its_row_in_the_write_ahead_log_is_read() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let db = directory.path().join("opencode.db");
+        let connection = Connection::open(&db)?;
+        connection.execute_batch("PRAGMA journal_mode=WAL;")?;
+        connection.execute_batch(SCHEMA)?;
+        connection.execute(
+            "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_1', 'opencode', 'opencode', ?1, 1, 1, 1)",
+            rusqlite::params![credential(TOKEN, EXPIRES, None)],
+        )?;
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {TOKEN}")),
+        );
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File { path: host_path_of(&db) },
+        );
+        let outcome = harness.report_cached(&account, directory.path()).await?;
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        drop(connection);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_credential_of_another_kind_is_not_used() -> TestResult {
+    guard(async {
+        let store =
+            started(&[("cred_1", "opencode", 1, r#"{"type":"key","key":"a-key"}"#)]).await?;
+        let outcome = store.report().await?;
+        assert!(
+            matches!(unavailable(&outcome), UnavailableReason::NoCredentials),
+            "{outcome:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+fn holds_secret(secret: &str, skip: &Path) -> bool {
+    let needle = secret.as_bytes();
+    let mut stack = vec![(std::env::temp_dir(), 0usize)];
+    while let Some((directory, depth)) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path == skip {
+                continue;
+            }
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            let deeper = kind.is_dir() && depth < 2;
+            if deeper {
+                stack.push((path, depth + 1));
+                continue;
+            }
+            if kind.is_dir() {
+                continue;
+            }
+            if !kind.is_file() {
+                continue;
+            }
+            if let Ok(bytes) = std::fs::read(&path)
+                && bytes.windows(needle.len()).any(|window| window == needle)
+            {
+                return true;
+            }
+        }
+    }
+    false
 }

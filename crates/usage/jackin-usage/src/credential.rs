@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::future::Future;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use jackin_core::{
     Agent, CredentialFileProblem, CredentialSource, FileIdentity, HostPath, ProcessSpec,
@@ -30,6 +29,11 @@ const OPENCODE_INTEGRATION: &str = "opencode";
 const OPENCODE_OAUTH: &str = "oauth";
 const OPENCODE_SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
 const OPENCODE_SNAPSHOT_ATTEMPTS: usize = 3;
+const OPENCODE_WAL_HEADER: usize = 32;
+const OPENCODE_WAL_FRAME_HEADER: usize = 24;
+const OPENCODE_WAL_MAGIC: u32 = 0x377f_0682;
+const OPENCODE_WAL_MAGIC_SWAPPED: u32 = 0x377f_0683;
+const OPENCODE_WAL_FORMAT: u32 = 3_007_000;
 const HEX: [char; 16] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
 ];
@@ -344,7 +348,7 @@ async fn read_opencode_snapshot(
     deps: &UsageDeps,
     path: &HostPath,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved> {
-    opencode_consistent_snapshot(move || async move {
+    opencode_consistent_snapshot(|| async {
         let bytes = read_opencode_store(deps, path).await?;
         let wal = read_opencode_wal(deps, path).await?;
         Ok((bytes, wal))
@@ -399,69 +403,21 @@ struct OpenCodeRecord {
     digest: String,
 }
 
-struct Snapshot {
-    dir: PathBuf,
-}
-
-impl Snapshot {
-    fn new(name: &str, bytes: &[u8], wal: Option<&[u8]>) -> Result<Snapshot, Unresolved> {
-        let dir = std::env::temp_dir().join(format!("jackin-usage-{name}-{}", unique_name()));
-        let mut builder = std::fs::DirBuilder::new();
-        builder.mode(0o700);
-        builder
-            .create(&dir)
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
-        let snapshot = Snapshot { dir };
-        snapshot.write("store.db", bytes)?;
-        if let Some(wal) = wal {
-            snapshot.write("store.db-wal", wal)?;
-        }
-        Ok(snapshot)
-    }
-
-    fn write(&self, name: &str, bytes: &[u8]) -> Result<(), Unresolved> {
-        let path = self.dir.join(name);
-        std::fs::write(&path, bytes)
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
-        Ok(())
-    }
-
-    fn path(&self) -> PathBuf {
-        self.dir.join("store.db")
-    }
-}
-
-impl Drop for Snapshot {
-    fn drop(&mut self) {
-        let _removed = std::fs::remove_dir_all(&self.dir);
-    }
-}
-
-fn unique_name() -> String {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_nanos())
-        .unwrap_or_default();
-    format!(
-        "{}-{nanos}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
-}
-
 fn extract_opencode_credential(
     bytes: &[u8],
     wal: Option<&[u8]>,
 ) -> Result<OpenCodeRecord, Unresolved> {
-    let snapshot = Snapshot::new("opencode", bytes, wal)?;
-    let connection = rusqlite::Connection::open_with_flags(
-        snapshot.path(),
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
-    )
-    .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    let image = opencode_store_image(bytes, wal)?;
+    let mut connection = rusqlite::Connection::open_in_memory()
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    connection
+        .deserialize_read_exact(
+            "main",
+            std::io::Cursor::new(image.as_slice()),
+            image.len(),
+            true,
+        )
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
     let mut statement = connection
         .prepare(
             "SELECT id, value FROM credential \
@@ -487,10 +443,6 @@ fn extract_opencode_credential(
         if kind.get("type").and_then(Value::as_str) != Some(OPENCODE_OAUTH) {
             continue;
         }
-        drop(rows);
-        drop(statement);
-        drop(connection);
-        drop(snapshot);
         return Ok(OpenCodeRecord {
             id,
             digest: revision_of(value.as_bytes()),
@@ -498,6 +450,172 @@ fn extract_opencode_credential(
         });
     }
     Err(Unresolved::Missing)
+}
+
+fn opencode_store_image(bytes: &[u8], wal: Option<&[u8]>) -> Result<Vec<u8>, Unresolved> {
+    let mut image = bytes.to_vec();
+    if let Some(wal) = wal {
+        apply_opencode_wal(&mut image, wal)?;
+    }
+    if let Some(header) = image.get_mut(18..20) {
+        header.copy_from_slice(&[1, 1]);
+    }
+    Ok(image)
+}
+
+fn apply_opencode_wal(image: &mut Vec<u8>, wal: &[u8]) -> Result<(), Unresolved> {
+    let unreadable = || Unresolved::Unreadable("the OpenCode write-ahead log could not be read");
+    if wal.len() < OPENCODE_WAL_HEADER {
+        return Ok(());
+    }
+    let Some(magic) = wal.get(0..4).and_then(opencode_u32) else {
+        return Err(unreadable());
+    };
+    if magic != OPENCODE_WAL_MAGIC && magic != OPENCODE_WAL_MAGIC_SWAPPED {
+        return Err(unreadable());
+    }
+    let big_endian = magic & 1 == 1;
+    if wal.get(4..8).and_then(opencode_u32) != Some(OPENCODE_WAL_FORMAT) {
+        return Err(unreadable());
+    }
+    let page_size = match wal.get(8..12).and_then(opencode_u32) {
+        Some(1) => 65_536,
+        Some(size) => size as usize,
+        None => return Err(unreadable()),
+    };
+    if page_size < 512 || !page_size.is_power_of_two() {
+        return Err(unreadable());
+    }
+    if image.len() < page_size || !image.len().is_multiple_of(page_size) {
+        return Err(unreadable());
+    }
+    let store_page_size = match image.get(16..18).and_then(opencode_u16) {
+        Some(1) => 65_536,
+        Some(size) => size as usize,
+        None => return Err(unreadable()),
+    };
+    if store_page_size != page_size {
+        return Err(unreadable());
+    }
+    let Some(salt) = wal.get(16..24) else {
+        return Err(unreadable());
+    };
+    let Some(header) = wal.get(0..24) else {
+        return Err(unreadable());
+    };
+    let (mut check_one, mut check_two) = opencode_wal_checksum(header, 0, 0, big_endian);
+    if wal.get(24..28).and_then(opencode_u32) != Some(check_one)
+        || wal.get(28..32).and_then(opencode_u32) != Some(check_two)
+    {
+        return Err(unreadable());
+    }
+    let mut frames: Vec<(u32, usize)> = Vec::new();
+    let mut committed: Vec<(u32, usize)> = Vec::new();
+    let mut pages = 0usize;
+    let mut offset = OPENCODE_WAL_HEADER;
+    while offset + OPENCODE_WAL_FRAME_HEADER + page_size <= wal.len() {
+        let Some(header) = wal.get(offset..offset + OPENCODE_WAL_FRAME_HEADER) else {
+            break;
+        };
+        let Some(page) = header.get(0..4).and_then(opencode_u32) else {
+            break;
+        };
+        let Some(after) = header.get(4..8).and_then(opencode_u32) else {
+            break;
+        };
+        if page == 0 || header.get(8..16) != Some(salt) {
+            break;
+        }
+        let Some(head) = header.get(0..8) else {
+            break;
+        };
+        let (one, two) = opencode_wal_checksum(head, check_one, check_two, big_endian);
+        let Some(page_data) = wal.get(
+            offset + OPENCODE_WAL_FRAME_HEADER..offset + OPENCODE_WAL_FRAME_HEADER + page_size,
+        ) else {
+            break;
+        };
+        let (one, two) = opencode_wal_checksum(page_data, one, two, big_endian);
+        if header.get(16..20).and_then(opencode_u32) != Some(one)
+            || header.get(20..24).and_then(opencode_u32) != Some(two)
+        {
+            break;
+        }
+        check_one = one;
+        check_two = two;
+        frames.push((page, offset + OPENCODE_WAL_FRAME_HEADER));
+        if after != 0 {
+            committed.clone_from(&frames);
+            pages = after as usize;
+        }
+        offset += OPENCODE_WAL_FRAME_HEADER + page_size;
+    }
+    if committed.is_empty() {
+        return Ok(());
+    }
+    for (page, at) in committed {
+        let start = (page as usize - 1) * page_size;
+        if image.len() < start + page_size {
+            image.resize(start + page_size, 0);
+        }
+        let Some(target) = image.get_mut(start..start + page_size) else {
+            return Err(unreadable());
+        };
+        let Some(source) = wal.get(at..at + page_size) else {
+            return Err(unreadable());
+        };
+        target.copy_from_slice(source);
+    }
+    image.truncate(pages * page_size);
+    if let Some(size) = image.get_mut(28..32) {
+        size.copy_from_slice(&(pages as u32).to_be_bytes());
+    }
+    Ok(())
+}
+
+fn opencode_u32(bytes: &[u8]) -> Option<u32> {
+    match bytes {
+        [first, second, third, fourth] => {
+            Some(u32::from_be_bytes([*first, *second, *third, *fourth]))
+        }
+        _ => None,
+    }
+}
+
+fn opencode_u16(bytes: &[u8]) -> Option<u16> {
+    match bytes {
+        [first, second] => Some(u16::from_be_bytes([*first, *second])),
+        _ => None,
+    }
+}
+
+fn opencode_wal_checksum(data: &[u8], mut one: u32, mut two: u32, big_endian: bool) -> (u32, u32) {
+    let (chunks, _) = data.as_chunks::<8>();
+    for chunk in chunks {
+        let [
+            byte_one,
+            byte_two,
+            byte_three,
+            byte_four,
+            byte_five,
+            byte_six,
+            byte_seven,
+            byte_eight,
+        ] = chunk;
+        let first = if big_endian {
+            u32::from_be_bytes([*byte_one, *byte_two, *byte_three, *byte_four])
+        } else {
+            u32::from_le_bytes([*byte_one, *byte_two, *byte_three, *byte_four])
+        };
+        let second = if big_endian {
+            u32::from_be_bytes([*byte_five, *byte_six, *byte_seven, *byte_eight])
+        } else {
+            u32::from_le_bytes([*byte_five, *byte_six, *byte_seven, *byte_eight])
+        };
+        one = one.wrapping_add(first).wrapping_add(two);
+        two = two.wrapping_add(second).wrapping_add(one);
+    }
+    (one, two)
 }
 
 fn opencode_revision(db: &Path, identity: FileIdentity, found: &OpenCodeRecord) -> String {
@@ -661,14 +779,6 @@ mod tests {
             ctime,
             ctime_nsec: 0,
             digest: digest.to_owned(),
-        }
-    }
-
-    fn snapshot_bytes(call: usize) -> Vec<u8> {
-        if call == 1 {
-            b"old".to_vec()
-        } else {
-            b"new".to_vec()
         }
     }
 
