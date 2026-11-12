@@ -354,6 +354,38 @@ a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:
 # 1 finding(s); rules: generic-api-key; files: rewrite/decisions.tsv (1)
 a1c819a51a845efff4f8bf680b585c50a7f6a06a:rewrite/decisions.tsv:generic-api-key:430
 
+# Reason: the #1264 squash merge re-attributed the already reviewed A14 live evidence and account-sync test fixture findings to its own SHA. The sourcegraph-access-token rule matches the bare git commit SHA-1 hashes quoted in the evidence prose once the file mentions "sgp_", and the account-sync finding is the literal placeholder secret the Kimi file-key sync test writes to a temporary home directory; no credential.
+# 30 finding(s); rules: sourcegraph-access-token (29), generic-api-key (1); files: rewrite/evidence/A14-codex-final-live.md (18), rewrite/evidence/A14-omp-final-live.md (11), crates/jackin-session/tests/accounts/sync.rs (1)
+f683619b5f1607c56b23c400848e8f6a00e09037:crates/jackin-session/tests/accounts/sync.rs:generic-api-key:379
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:103
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:111
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:127
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:135
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:149
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:23
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:3
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:39
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:47
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:53
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:54
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:55
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:56
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:57
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:58
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:72
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:80
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:100
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:101
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:102
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:103
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:104
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:105
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:106
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:3
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:32
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:95
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:99
+
 # Working-tree fingerprints (file:rule:line) for the `gitleaks dir` scan of the indexed tree.
 # Reason: e2e target-identity test fixture: the sibling credential placeholders (sibling-*-secret-0123456789) that the digest test proves are excluded from the target identity; no credential.
 # 2 finding(s); rules: generic-api-key; files: crates/xtask/tests/e2e/i_target.rs (2)
