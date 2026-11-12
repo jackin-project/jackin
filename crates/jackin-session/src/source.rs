@@ -11,7 +11,7 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::credentials::{CredentialError, read_chatgpt_login};
-use crate::op::{OnePasswordCli, OpFault, OpFieldKind};
+use crate::op::{OnePasswordCli, OpFault, OpFieldInfo, OpFieldKind};
 
 pub const AUTH_FILE: &str = "auth.json";
 pub const CHATGPT_LOGIN: &str = "ChatGPT login in auth.json";
@@ -195,8 +195,10 @@ impl SourceDesk {
     }
 
     pub async fn probe_folder(&self, path: &HostPath) -> FolderFacts {
-        let Ok(Some(folder)) = self.fs.canonicalize(path).await else {
-            return FolderFacts::Missing;
+        let folder = match self.fs.canonicalize(path).await {
+            Ok(Some(folder)) => folder,
+            Ok(None) => return FolderFacts::Missing,
+            Err(_) => return FolderFacts::Unreadable,
         };
         if !matches!(
             self.fs.stat_following(&folder).await,
@@ -232,16 +234,7 @@ impl SourceDesk {
             .item(account, path.vault, path.item, cancel)
             .await
             .map_err(SourceFault::Op)?;
-        let field = detail
-            .fields
-            .iter()
-            .find(|field| field.id == path.field && field.section.as_deref() == path.section)
-            .ok_or_else(|| {
-                SourceFault::Op(OpFault::MissingField {
-                    field: path.field.to_owned(),
-                    item: path.item.to_owned(),
-                })
-            })?;
+        let field = resolve_field(&detail.fields, &path)?;
         if field.kind != OpFieldKind::Concealed {
             return Err(SourceFault::NotConcealed(field.label.clone()));
         }
@@ -249,5 +242,42 @@ impl SourceDesk {
             return Err(SourceFault::EmptyField(field.label.clone()));
         }
         Ok(SourceFound::OnePassword)
+    }
+}
+
+fn section_matches(field: &OpFieldInfo, section: Option<&str>) -> bool {
+    match (section, &field.section) {
+        (None, None) => true,
+        (None, Some(_)) => false,
+        (Some(_), None) => false,
+        (Some(wanted), Some(found)) => found.id == wanted || found.label == wanted,
+    }
+}
+
+fn resolve_field<'a>(
+    fields: &'a [OpFieldInfo],
+    path: &FieldPath<'_>,
+) -> Result<&'a OpFieldInfo, SourceFault> {
+    let mut found: Vec<&OpFieldInfo> = Vec::new();
+    for field in fields
+        .iter()
+        .filter(|field| section_matches(field, path.section))
+    {
+        if (field.id == path.field || field.label == path.field)
+            && !found.iter().any(|seen| seen.id == field.id)
+        {
+            found.push(field);
+        }
+    }
+    match found.len() {
+        0 => Err(SourceFault::Op(OpFault::MissingField {
+            field: path.field.to_owned(),
+            item: path.item.to_owned(),
+        })),
+        1 => Ok(found[0]),
+        _ => Err(SourceFault::Op(OpFault::AmbiguousField {
+            field: path.field.to_owned(),
+            item: path.item.to_owned(),
+        })),
     }
 }

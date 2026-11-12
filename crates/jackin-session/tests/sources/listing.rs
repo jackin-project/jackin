@@ -59,7 +59,10 @@ async fn the_four_listings_parse_and_the_value_never_survives_the_item_read() ->
         );
         assert_eq!(detail.fields[0].tail.as_str(), "d2e8");
         assert_eq!(detail.fields[2].label, "f3");
-        assert_eq!(detail.fields[3].section.as_deref(), Some("sec-1"));
+        assert_eq!(
+            detail.fields[3].section.as_ref().map(|section| section.id.as_str()),
+            Some("sec-1")
+        );
         assert!(detail.fields[3].empty);
         assert!(!detail.fields[0].empty);
         let shown = format!("{accounts:?}{vaults:?}{items:?}{detail:?}");

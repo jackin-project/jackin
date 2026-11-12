@@ -62,7 +62,7 @@ async fn a_change_the_git_index_hides_still_changes_the_image_key() -> TestResul
 }
 
 #[tokio::test]
-async fn an_unchanged_or_ignored_role_file_keeps_the_image_key() -> TestResult {
+async fn an_unchanged_role_file_keeps_the_image_key() -> TestResult {
     guard(async {
         let setup = setup().await?;
         let before = tag(&setup).await?;
@@ -71,7 +71,7 @@ async fn an_unchanged_or_ignored_role_file_keeps_the_image_key() -> TestResult {
             .role_fixture
             .file("build-cache/x.bin", b"cache\n")
             .await?;
-        assert_eq!(tag(&setup).await?, before, "a gitignored file");
+        assert_ne!(tag(&setup).await?, before, "a gitignored file");
         Ok(())
     })
     .await

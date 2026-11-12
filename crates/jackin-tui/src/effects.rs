@@ -946,7 +946,7 @@ impl Inputs {
                     match merge_manifest(&mut manifest, &base, doc) {
                         Ok(()) => self
                             .roles
-                            .findings_of(&root, manifest)
+                            .findings_of(&root, manifest, &self.cancel)
                             .await
                             .iter()
                             .map(|error| finding(error, doc))

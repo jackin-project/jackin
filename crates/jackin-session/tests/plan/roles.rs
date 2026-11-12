@@ -233,7 +233,7 @@ async fn tracked(ignore: &str) -> Result<RoleFixture, Box<dyn Error>> {
 }
 
 #[tokio::test]
-async fn a_dirty_role_tree_hashes_tracked_and_untracked_files_but_not_ignored_ones() -> TestResult {
+async fn a_dirty_role_tree_hashes_tracked_untracked_and_ignored_files() -> TestResult {
     guard(async {
         let role = tracked("build-cache/\n").await?;
         let commit = role.commit().await?;
@@ -244,7 +244,8 @@ async fn a_dirty_role_tree_hashes_tracked_and_untracked_files_but_not_ignored_on
         assert_eq!(clean.revision().commit, commit);
         let d0 = digest(&clean)?;
         role.file("build-cache/x.bin", b"cache\n").await?;
-        assert_eq!(digest(&reload().await?)?, d0);
+        let ignored = digest(&reload().await?)?;
+        assert_ne!(ignored, d0);
         role.file("README.md", b"changed\n").await?;
         let loaded = reload().await?;
         let (dirty_commit, d1) = (
@@ -252,13 +253,15 @@ async fn a_dirty_role_tree_hashes_tracked_and_untracked_files_but_not_ignored_on
             loaded.revision().digest.clone(),
         );
         assert_ne!(d1, d0);
+        assert_ne!(d1, ignored);
         assert_eq!(dirty_commit, commit);
         role.file("build-cache/x.bin", b"other cache\n").await?;
-        assert_eq!(digest(&reload().await?)?, d1);
+        let d2 = digest(&reload().await?)?;
+        assert_ne!(d2, d1);
 
         role.file("notes/draft.txt", b"one\n").await?;
         let added = digest(&reload().await?)?;
-        assert_ne!(added, d1);
+        assert_ne!(added, d2);
         role.file("notes/draft.txt", b"two\n").await?;
         let edited = digest(&reload().await?)?;
         assert_ne!(edited, added);
@@ -267,17 +270,19 @@ async fn a_dirty_role_tree_hashes_tracked_and_untracked_files_but_not_ignored_on
         let renamed = digest(&reload().await?)?;
         assert_ne!(renamed, edited);
         role.remove("notes/renamed.txt").await?;
-        assert_eq!(digest(&reload().await?)?, d1);
+        assert_eq!(digest(&reload().await?)?, d2);
 
         role.file("notes/\u{fc}n\u{ef} code.txt", b"unicode\n")
             .await?;
-        assert_ne!(digest(&reload().await?)?, d1);
+        assert_ne!(digest(&reload().await?)?, d2);
         role.remove("notes/\u{fc}n\u{ef} code.txt").await?;
 
         let twin = RoleFixture::new("sentinel")?.gitignore("build-cache/\n");
         twin.file("README.md", b"readme\n").await?;
+        twin.file("build-cache/x.bin", b"cache\n").await?;
         twin.commit().await?;
         twin.file("README.md", b"changed\n").await?;
+        twin.file("build-cache/x.bin", b"other cache\n").await?;
         assert_eq!(
             digest(
                 &scope
@@ -285,7 +290,7 @@ async fn a_dirty_role_tree_hashes_tracked_and_untracked_files_but_not_ignored_on
                     .load_path(twin.root(), &tokio_util::sync::CancellationToken::new())
                     .await?
             )?,
-            d1
+            d2
         );
 
         let mut deleted = Vec::new();
@@ -597,6 +602,29 @@ async fn role_findings_apply_the_context_limits_that_load_applies() -> TestResul
         );
         let refused = scope.catalog.load_path(role.root(), &cancel).await.err();
         assert_eq!(format!("{refused:?}"), format!("Some({:?})", findings[0]));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_role_check_of_a_staged_manifest_reports_what_the_load_would_refuse() -> TestResult {
+    guard(async {
+        let scope = scope()?;
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let role = RoleFixture::new("sentinel")?;
+        role.file("unreferenced.bin", &vec![0u8; 16 * 1024 * 1024 + 1]).await?;
+        role.commit().await?;
+        let manifest = scope
+            .catalog
+            .read_manifest(role.root())
+            .await
+            .map_err(|errors| format!("{errors:?}"))?;
+        let findings = scope.catalog.findings_of(role.root(), manifest, &cancel).await;
+        assert!(
+            matches!(findings.as_slice(), [RoleError::FileTooLarge { path, .. }] if path.as_str() == "unreferenced.bin"),
+            "{findings:?}"
+        );
         Ok(())
     })
     .await
