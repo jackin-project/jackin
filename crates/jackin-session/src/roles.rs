@@ -348,11 +348,22 @@ impl RoleCatalog {
         }
     }
 
-    pub async fn findings_of(&self, root: &HostPath, manifest: RoleManifest) -> Vec<RoleError> {
-        self.inspect_manifest(root, manifest, &mut Reads::new())
-            .await
-            .err()
-            .unwrap_or_default()
+    pub async fn findings_of(
+        &self,
+        root: &HostPath,
+        manifest: RoleManifest,
+        cancel: &CancellationToken,
+    ) -> Vec<RoleError> {
+        let mut reads = Reads::new();
+        match self.inspect_manifest(root, manifest, &mut reads).await {
+            Ok(_) => self
+                .snapshot(root, &reads, cancel)
+                .await
+                .err()
+                .into_iter()
+                .collect(),
+            Err(findings) => findings,
+        }
     }
 
     async fn inspect_manifest(
