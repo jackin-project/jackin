@@ -491,12 +491,15 @@ impl Run {
                 .map_err(|error| restart_fault(&error))?;
         }
         self.session
-            .attach(AttachRequest {
-                sandbox: self.sandbox.clone(),
-                size,
-                input: InputMode::Owner,
-                agent: Some(agent),
-            })
+            .attach(
+                AttachRequest {
+                    sandbox: self.sandbox.clone(),
+                    size,
+                    input: InputMode::Owner,
+                    agent: Some(agent),
+                },
+                &self.gone,
+            )
             .await
             .map(Terminal::Main)
             .map_err(|error| attach_fault(&error))

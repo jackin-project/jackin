@@ -16,6 +16,7 @@ use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_openshell::{InputMode, TermSize};
 use jackin_session::AttachRequest;
 use jackin_testkit::{ConsoleRig, Fault, Rig, SandboxHandle, TestResult, Trigger, guard};
+use tokio_util::sync::CancellationToken;
 
 use super::support::Lab;
 
@@ -1020,12 +1021,15 @@ async fn a_second_client_leaves_the_pane_read_only_until_the_owner_goes() -> Tes
         let held = rig
             .world
             .session
-            .attach(AttachRequest {
-                sandbox: name,
-                size: size(100, 30)?,
-                input: InputMode::Owner,
-                agent: None,
-            })
+            .attach(
+                AttachRequest {
+                    sandbox: name,
+                    size: size(100, 30)?,
+                    input: InputMode::Owner,
+                    agent: None,
+                },
+                &CancellationToken::new(),
+            )
             .await?;
         let mut capsule = Capsule::attach(rig, |_| {}).await?;
         let words = PaneWords::openshell();
