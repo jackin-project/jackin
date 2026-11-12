@@ -326,7 +326,7 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
         .await
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
         .ok_or(Unresolved::Missing)?;
-    let wal = read_opencode_wal(deps, path).await;
+    let wal = read_opencode_wal(deps, path).await?;
     let store_digest = revision_of(&bytes);
     let found =
         tokio::task::spawn_blocking(move || extract_opencode_credential(&bytes, wal.as_deref()))
@@ -345,9 +345,18 @@ async fn is_opencode_store(deps: &UsageDeps, path: &HostPath) -> bool {
     }
 }
 
-async fn read_opencode_wal(deps: &UsageDeps, path: &HostPath) -> Option<Vec<u8>> {
-    let wal = HostPath::parse(&PathBuf::from(format!("{}-wal", path.as_path().display()))).ok()?;
-    deps.fs.read(&wal).await.ok().flatten()
+async fn read_opencode_wal(
+    deps: &UsageDeps,
+    path: &HostPath,
+) -> Result<Option<Vec<u8>>, Unresolved> {
+    let wal = HostPath::parse(&PathBuf::from(format!("{}-wal", path.as_path().display())))
+        .map_err(|_| Unresolved::Unreadable("the OpenCode write-ahead log could not be read"))?;
+    match deps.fs.read(&wal).await {
+        Ok(bytes) => Ok(bytes),
+        Err(_) => Err(Unresolved::Unreadable(
+            "the OpenCode write-ahead log could not be read",
+        )),
+    }
 }
 
 struct OpenCodeRecord {

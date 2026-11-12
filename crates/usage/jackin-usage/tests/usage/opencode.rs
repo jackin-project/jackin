@@ -306,3 +306,34 @@ async fn a_credential_file_that_is_not_the_store_is_read_as_a_credential() -> Te
     })
     .await
 }
+
+#[tokio::test]
+async fn a_store_whose_write_ahead_log_cannot_be_read_is_unreadable() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        store(
+            directory.path(),
+            &[("cred_1", "opencode", 1, &credential(TOKEN, EXPIRES, None))],
+        );
+        std::fs::create_dir(directory.path().join("opencode.db-wal"))?;
+        let harness = UsageHarness::new().await?;
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File {
+                path: host_path_of(&directory.path().join("opencode.db")),
+            },
+        );
+        let outcome = harness.report_cached(&account, directory.path()).await?;
+        assert!(
+            matches!(
+                unavailable(&outcome),
+                UnavailableReason::Provider(message)
+                    if message == "the OpenCode write-ahead log could not be read"
+            ),
+            "{outcome:?}"
+        );
+        Ok(())
+    })
+    .await
+}
