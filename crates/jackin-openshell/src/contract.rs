@@ -459,7 +459,7 @@ async fn created_at_is_reported_and_stable(ctx: &Ctx<'_>) -> Outcome<()> {
     ctx.cleanup(spec.name()).await;
     let ready = ready?;
     expect(
-        made.created_at.is_some_and(|created| created.0 > 0),
+        made.created_at.is_some_and(|created| created.seconds > 0),
         "a created sandbox reports no creation time",
     )?;
     expect(
