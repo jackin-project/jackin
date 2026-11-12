@@ -141,6 +141,55 @@ async fn default_and_bind_change_exactly_the_named_entry() -> TestResult {
 }
 
 #[tokio::test]
+async fn the_default_of_a_provider_can_be_cleared_and_the_only_account_removed() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = seeded(&world)?;
+        let before = harness.config_bytes()?;
+        let refused = harness.run(&["account", "rm", "one"]).await?;
+        failed(&refused, ExitClass::Failure, &["one"])?;
+        assert_eq!(harness.config_bytes()?, before);
+
+        harness
+            .run(&["account", "default", "--clear", "codex"])
+            .await?
+            .ok()?;
+        let config = harness.stored().await?;
+        assert_eq!(config.default_account(Provider::Codex), None);
+
+        harness.run(&["account", "rm", "one"]).await?.ok()?;
+        let config = harness.stored().await?;
+        assert!(config.account(&AccountName::parse("one")?).is_none());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_clear_form_of_the_default_takes_a_known_provider_and_no_account() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = seeded(&world)?;
+        let before = harness.config_bytes()?;
+        for args in [
+            &["account", "default"][..],
+            &["account", "default", "one", "--clear", "codex"][..],
+        ] {
+            let ran = harness.run(args).await?;
+            failed(&ran, ExitClass::Usage, &[])?;
+            assert_eq!(harness.config_bytes()?, before, "{args:?}");
+        }
+        let unknown = harness
+            .run(&["account", "default", "--clear", "nowhere"])
+            .await?;
+        failed(&unknown, ExitClass::Usage, &["provider is unknown"])?;
+        assert_eq!(harness.config_bytes()?, before);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn role_bind_covers_omp_claude_and_codex_with_zai() -> TestResult {
     guard(async {
         let world = World::builder().build()?;

@@ -9,8 +9,8 @@ use jackin_session::{
 
 use crate::app::App;
 use crate::cli::{
-    AccountAddArgs, AccountArg, AccountCommand, BindArgs, BindScope, CredentialArg, JsonArg,
-    parse_provider,
+    AccountAddArgs, AccountArg, AccountCommand, AccountDefaultArgs, BindArgs, BindScope,
+    CredentialArg, JsonArg, parse_provider,
 };
 use crate::error::CommandError;
 use crate::paths::absolutize;
@@ -21,7 +21,7 @@ pub(crate) async fn run(app: &mut App, command: AccountCommand) -> Result<(), Co
         AccountCommand::Add(args) => add(app, args).await,
         AccountCommand::Ls(arg) => ls(app, &arg).await,
         AccountCommand::Rm(arg) => rm(app, arg).await,
-        AccountCommand::Default(arg) => default(app, arg).await,
+        AccountCommand::Default(args) => default(app, &args).await,
         AccountCommand::Bind(args) => bind(app, &args).await,
     }
 }
@@ -274,11 +274,19 @@ async fn rm(app: &App, arg: AccountArg) -> Result<(), CommandError> {
     apply(app, vec![ConfigEdit::RemoveAccount(arg.account)]).await
 }
 
-async fn default(app: &App, arg: AccountArg) -> Result<(), CommandError> {
+async fn default(app: &App, args: &AccountDefaultArgs) -> Result<(), CommandError> {
+    if let Some(provider) = &args.clear {
+        let provider = parse_provider(provider)?;
+        app.store
+            .edit(vec![ConfigEdit::ClearDefaultAccount { provider }])
+            .await?;
+        return Ok(());
+    }
+    let account = args.account.clone().ok_or_else(|| {
+        CommandError::Argument("pass an account name or --clear PROVIDER".to_owned())
+    })?;
     app.store
-        .edit(vec![ConfigEdit::SetDefaultAccount {
-            account: arg.account,
-        }])
+        .edit(vec![ConfigEdit::SetDefaultAccount { account }])
         .await?;
     Ok(())
 }

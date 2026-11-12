@@ -47,6 +47,14 @@ Each provider has at most one default account:
 jackin account default work
 ```
 
+Clear the default of a provider with `--clear`:
+
+```sh
+jackin account default --clear codex
+```
+
+The default account counts as a reference. `jackin account rm` refuses to remove an account while a default, a workspace binding, or a role binding still points at it. Clear the default first, then remove the account.
+
 ## Bind an account
 
 A workspace binding holds one account for each provider in that workspace. A role binding holds the default account of the role for the agent:
