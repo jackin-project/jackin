@@ -9,8 +9,11 @@ use std::time::Duration;
 use jackin_core::{
     AccountName, ChatgptAccountId, Clock, CredentialSource, EnvName, EnvSnapshot, FileKind,
     FileMode, FileSystem, HostPath, OpAccountId, OpReference, ProcessRunner, Provider,
+    StdFileSystem,
 };
-use jackin_testkit::{FakeClock, MemFs, Method, Route, ScriptedProcessRunner, UsageServer};
+use jackin_testkit::{
+    FakeClock, MemFs, Method, Route, ScriptedProcessRunner, UsageServer, WorkingFs,
+};
 use jackin_usage::{
     HostUsage, LimitWindow, ProviderEndpoints, Refresh, Remaining, UsageAccount, UsageDeps,
     UsageError, UsageOutcome, UsageReport, UsageRequest, WindowKind,
@@ -145,6 +148,30 @@ impl UsageHarness {
     ) -> Result<jackin_usage::AccountUsage, UsageError> {
         let mut report = self.report(std::slice::from_ref(account), refresh).await?;
         Ok(report.accounts.remove(0))
+    }
+
+    pub(crate) fn working_host(&self, directory: &Path) -> HostUsage {
+        let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
+            Arc::new(StdFileSystem::default()),
+            &self.clock,
+        ));
+        self.host_on(
+            fs,
+            HostPath::parse(&directory.join("state").join("usage")).expect("an absolute path"),
+            HostPath::parse(directory).expect("an absolute path"),
+        )
+    }
+
+    pub(crate) async fn report_cached(
+        &self,
+        account: &UsageAccount,
+        directory: &Path,
+    ) -> Result<UsageOutcome, Box<dyn Error>> {
+        let host = self.working_host(directory);
+        let mut report = self
+            .report_on(&host, std::slice::from_ref(account), Refresh::Cached)
+            .await?;
+        Ok(report.accounts.remove(0).outcome)
     }
 
     pub(crate) async fn put(&self, path: &str, text: &str) -> TestResult {

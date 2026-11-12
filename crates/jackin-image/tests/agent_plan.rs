@@ -96,8 +96,7 @@ fn codex_plan_unchanged() -> TestResult {
     Ok(())
 }
 
-fn derived_dockerfile(agent: Agent) -> Result<String, Box<dyn Error>> {
-    let plan = ImagePlan::new(&request(agent)?)?;
+fn dockerfile(plan: &ImagePlan) -> Result<String, Box<dyn Error>> {
     let id = jackin_core::ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
     let built = plan.final_builds(&id);
     let jackin_image::ContextSource::Materialized(files) = built.derived.context else {
@@ -108,6 +107,10 @@ fn derived_dockerfile(agent: Agent) -> Result<String, Box<dyn Error>> {
         .find(|file| file.name == "Dockerfile")
         .ok_or("derived Dockerfile")?;
     Ok(String::from_utf8(file.bytes.clone())?)
+}
+
+fn derived_dockerfile(agent: Agent) -> Result<String, Box<dyn Error>> {
+    dockerfile(&ImagePlan::new(&request(agent)?)?)
 }
 
 #[test]
@@ -382,17 +385,7 @@ fn stage_of(text: &str, name: &str) -> Result<String, Box<dyn Error>> {
 fn three_agent_dockerfile() -> Result<String, Box<dyn Error>> {
     let mut req = request(Agent::Codex)?;
     req.agents = vec![Agent::Codex, Agent::Omp, Agent::MimoCode];
-    let plan = ImagePlan::new(&req)?;
-    let id = jackin_core::ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
-    let built = plan.final_builds(&id);
-    let jackin_image::ContextSource::Materialized(files) = built.derived.context else {
-        return Err("derived context is not materialized".into());
-    };
-    let file = files
-        .iter()
-        .find(|file| file.name == "Dockerfile")
-        .ok_or("derived Dockerfile")?;
-    Ok(String::from_utf8(file.bytes.clone())?)
+    dockerfile(&ImagePlan::new(&req)?)
 }
 
 #[test]
