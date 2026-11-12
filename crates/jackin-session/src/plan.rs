@@ -513,6 +513,7 @@ fn select_lead_account(
     };
     if let Some(account) = account {
         account.check_credential_eligibility(agent)?;
+        account.check_launchable()?;
     }
     let tuple = tuple?;
     let selection = selection?;
@@ -711,6 +712,7 @@ fn collect_instance_accounts(
             provider: instance.provider,
         })?;
         entry.check_credential_eligibility(instance.agent)?;
+        entry.check_launchable()?;
         instance_accounts.push(entry.clone());
         if instance.agent == Agent::Codex
             && let Some(login) = entry.chatgpt_login()

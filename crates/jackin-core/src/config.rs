@@ -411,6 +411,8 @@ pub enum ConfigError {
     CredentialNotAllowed { provider: Provider },
     #[error("the credential of account {account} cannot serve agent {}", .agent.as_str())]
     CredentialNotEligible { account: AccountName, agent: Agent },
+    #[error("account {account} only reports usage and cannot launch an agent")]
+    UsageOnlyAccount { account: AccountName },
     #[error("account {account} is still referenced by {}", join_display(.by))]
     AccountInUse {
         account: AccountName,
@@ -530,6 +532,15 @@ impl Account {
                 agent,
             })
         }
+    }
+
+    pub fn check_launchable(&self) -> Result<(), ConfigError> {
+        if self.is_usage_only() {
+            return Err(ConfigError::UsageOnlyAccount {
+                account: self.name.clone(),
+            });
+        }
+        Ok(())
     }
 
     pub fn chatgpt_login(&self) -> Option<ChatgptLogin<'_>> {
