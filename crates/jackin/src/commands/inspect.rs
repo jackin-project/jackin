@@ -36,7 +36,7 @@ fn human(app: &mut App, view: &InspectView) -> Result<(), CommandError> {
         format!("phase\t{}", view.summary.phase),
         format!("workspace\t{}", labels.workspace),
         format!("role\t{}", labels.role),
-        format!("account\t{}", labels.agents.agents_label()),
+        format!("agents digest\t{}", labels.agents.agents_label()),
         format!("launch\t{}", labels.launch),
         format!("providers\t{}", providers.join(", ")),
         format!("supervisor\t{}", supervisor_text(&view.supervisor)),
