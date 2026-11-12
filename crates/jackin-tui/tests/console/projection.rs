@@ -78,6 +78,30 @@ async fn roster_maps_phase_and_exit_code() -> TestResult {
 }
 
 #[tokio::test]
+async fn the_console_projection_never_shows_the_agents_digest_as_an_account() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let labels = jackin_core::SandboxLabels::from_labels(&handle.labels())?;
+        let digest = labels.planned.agents.agents_label();
+        let mut console = ConsoleRig::seeded(&rig).await?;
+        let world = &console.console().app().world;
+        assert!(!world.instances.is_empty());
+        for entry in &world.instances {
+            let instance = entry.as_available().ok_or("available instance")?;
+            assert_eq!(instance.account, None);
+            assert!(instance.accounts.is_empty());
+            assert!(instance.agents.is_empty());
+        }
+        let screen = console.screen();
+        assert!(!screen.contains(digest.as_str()), "{screen}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn roster_hides_unmanaged_and_notes_unreadable() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
