@@ -83,6 +83,10 @@ pub(crate) fn op_error(fault: &OpFault) -> OpError {
             field: field.clone(),
             item: item.clone(),
         },
+        OpFault::AmbiguousField { field, item } => OpError::MissingField {
+            field: field.clone(),
+            item: item.clone(),
+        },
     }
 }
 
@@ -169,7 +173,7 @@ impl OnePassword for OpSnapshot {
     ) -> Result<OpReference, OpError> {
         let found = self
             .field(account, vault, item, |info| {
-                info.id == field_id && info.section.as_deref() == section
+                info.id == field_id && info.section.as_ref().map(|s| s.id.as_str()) == section
             })
             .ok_or_else(|| OpError::MissingField {
                 field: field_id.to_owned(),
@@ -187,7 +191,7 @@ impl OnePassword for OpSnapshot {
             vault_name: loaded.vaults.get(&vault_key).cloned().unwrap_or_default(),
             item_id: item.to_owned(),
             item_title: loaded.items.get(&item_key).cloned().unwrap_or_default(),
-            section: found.section,
+            section: found.section.map(|section| section.id),
             field_id: found.id,
             field_label: found.label,
         })
@@ -199,7 +203,11 @@ impl OnePassword for OpSnapshot {
                 &reference.account,
                 &reference.vault_id,
                 &reference.item_id,
-                |info| info.id == reference.field_id && info.section == reference.section,
+                |info| {
+                    info.id == reference.field_id
+                        && info.section.as_ref().map(|s| s.id.as_str())
+                            == reference.section.as_deref()
+                },
             )
             .ok_or_else(|| OpError::MissingField {
                 field: reference.field_label.clone(),
@@ -321,7 +329,7 @@ impl Inputs {
                     .map(|field| OpFieldRow {
                         id: field.id.clone(),
                         label: field.label.clone(),
-                        section: field.section.clone(),
+                        section: field.section.as_ref().map(|section| section.id.clone()),
                         kind: field_kind(field.kind),
                     })
                     .collect();

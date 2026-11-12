@@ -55,6 +55,8 @@ pub enum OpFault {
     MissingItem { item: String, vault: String },
     #[error("1Password field {} not found in item {}", plain(.field), plain(.item))]
     MissingField { field: String, item: String },
+    #[error("1Password field {} is ambiguous in item {}", plain(.field), plain(.item))]
+    AmbiguousField { field: String, item: String },
     #[error("the 1Password name {} starts with a dash", plain(.name))]
     FlagLikeName { name: String },
     #[error("the 1Password command line tool printed something unexpected")]
@@ -97,12 +99,18 @@ pub enum OpFieldKind {
     Url,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OpSectionInfo {
+    pub id: String,
+    pub label: String,
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct OpFieldInfo {
     pub id: String,
     pub label: String,
     pub kind: OpFieldKind,
-    pub section: Option<String>,
+    pub section: Option<OpSectionInfo>,
     pub tail: Zeroizing<String>,
     pub empty: bool,
 }
@@ -226,13 +234,23 @@ fn field(raw: &Value) -> Result<OpFieldInfo, OpFault> {
             .unwrap_or(id)
             .to_owned(),
         kind,
-        section: raw
-            .get("section")
-            .and_then(|section| section.get("id"))
-            .and_then(Value::as_str)
-            .map(str::to_owned),
+        section: section_of(raw),
         tail,
         empty: value.is_empty(),
+    })
+}
+
+fn section_of(raw: &Value) -> Option<OpSectionInfo> {
+    let section = raw.get("section")?;
+    let id = section.get("id").and_then(Value::as_str)?;
+    Some(OpSectionInfo {
+        id: id.to_owned(),
+        label: section
+            .get("label")
+            .and_then(Value::as_str)
+            .filter(|label| !label.is_empty())
+            .unwrap_or(id)
+            .to_owned(),
     })
 }
 

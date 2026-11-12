@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{FileMode, FileSystem};
+use std::sync::Arc;
+
+use jackin_core::{FileMode, FileSystem, HostPath, StdFileSystem};
 use jackin_session::{FolderFacts, OpFault, Source, SourceFault, SourceFound};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -164,6 +166,28 @@ async fn probing_a_folder_names_what_it_holds() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_folder_whose_path_cannot_be_canonicalized_is_unreadable_and_not_missing() -> TestResult {
+    guard(async {
+        let dir = tempfile::tempdir()?;
+        let file = dir.path().join("file.txt");
+        std::fs::write(&file, b"x")?;
+        let below = HostPath::parse(&file.join("child"))?;
+        let bench = Bench::new();
+        let fs: Arc<dyn FileSystem> = Arc::new(StdFileSystem::default());
+        let desk = jackin_session::SourceDesk::new(
+            fs,
+            jackin_core::EnvSnapshot::from_pairs(Vec::new()),
+            bench.cli(),
+        );
+        assert_eq!(desk.probe_folder(&below).await, FolderFacts::Unreadable);
+        let gone = HostPath::parse(&dir.path().join("gone"))?;
+        assert_eq!(desk.probe_folder(&gone).await, FolderFacts::Missing);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_reference_that_is_not_a_field_path_never_reaches_op() -> TestResult {
     guard(async {
         let bench = Bench::new();
@@ -274,6 +298,60 @@ async fn a_reference_is_checked_against_the_item_op_reads() -> TestResult {
         let calls = bench.op_calls();
         assert!(calls.iter().all(|c| c.args[..2] == ["item", "get"]));
         assert!(calls.iter().all(|c| c.args.contains(&"acct-1".to_owned())));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_reference_that_names_a_field_or_a_section_by_label_is_resolved() -> TestResult {
+    guard(async {
+        let fields = json!([
+            concealed("key", "api key", CANARY),
+            {
+                "id": "sec-field",
+                "label": "section field",
+                "type": "CONCEALED",
+                "value": CANARY,
+                "section": {"id": "s1", "label": "Credentials"},
+            },
+            {"id": "twin-a", "label": "same label", "type": "CONCEALED", "value": CANARY},
+            {"id": "twin-b", "label": "same label", "type": "CONCEALED", "value": CANARY},
+        ]);
+        let bench = Bench::new();
+        bench.op(&["item", "get"], exited(&item(&fields)));
+        let desk = bench.desk();
+        let cancel = token();
+        let check = |reference: &'static str| {
+            desk.check(
+                Source::OnePassword {
+                    account: "acct-1",
+                    reference,
+                },
+                &cancel,
+            )
+        };
+        assert_eq!(
+            check("op://vault-1/item-1/api key").await?,
+            SourceFound::OnePassword
+        );
+        assert_eq!(
+            check("op://vault-1/item-1/s1/sec-field").await?,
+            SourceFound::OnePassword
+        );
+        assert_eq!(
+            check("op://vault-1/item-1/Credentials/section field").await?,
+            SourceFound::OnePassword
+        );
+        assert!(matches!(
+            check("op://vault-1/item-1/same label").await,
+            Err(SourceFault::Op(OpFault::AmbiguousField { field, item }))
+                if field == "same label" && item == "item-1"
+        ));
+        assert!(matches!(
+            check("op://vault-1/item-1/Credentials/missing").await,
+            Err(SourceFault::Op(OpFault::MissingField { field, .. })) if field == "missing"
+        ));
         Ok(())
     })
     .await
