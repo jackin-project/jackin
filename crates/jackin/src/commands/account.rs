@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Account, Agent, ConfigEdit, CredentialSource, read_credential_file};
+use jackin_core::{
+    Account, Agent, ConfigEdit, CredentialFileProblem, CredentialSource, read_credential_file,
+};
 use jackin_session::{
     AccountPlan, plan_account_edits, plan_account_edits_for_agent, read_chatgpt_login,
     read_omp_host_key,
@@ -171,8 +173,13 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
                 )
             };
             let path = absolutize(&path, &app.cwd).map_err(|_| refused())?;
+            let provider = parse_provider(&args.provider)?;
+            let store = is_credential_store(provider, &path);
             match read_credential_file(app.deps.host.fs.as_ref(), &path).await {
                 Ok(Ok(_)) => Ok(CredentialSource::File { path }),
+                Ok(Err(CredentialFileProblem::TooLarge)) if store => {
+                    Ok(CredentialSource::File { path })
+                }
                 Ok(Err(_)) | Err(_) => Err(refused()),
             }
         }
@@ -182,6 +189,15 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             "pass --chatgpt-from or --credential".to_owned(),
         )),
     }
+}
+
+fn is_credential_store(provider: jackin_core::Provider, path: &jackin_core::HostPath) -> bool {
+    provider.credential_store().is_some_and(|store| {
+        path.as_path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == store)
+    })
 }
 
 fn default_agent(provider: jackin_core::Provider) -> Agent {
