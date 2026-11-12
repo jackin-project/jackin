@@ -17,7 +17,7 @@ use super::server::{
     validate_sandbox_name,
 };
 
-pub(crate) const CREATED_MILLIS: i64 = 1_700_000_000_000;
+pub(crate) const CREATED_MILLIS: i64 = 1_700_000_000_123;
 
 pub(crate) fn phase_of(sandbox: &Sandbox) -> i32 {
     sandbox.status.as_ref().map_or(0, |status| status.phase)

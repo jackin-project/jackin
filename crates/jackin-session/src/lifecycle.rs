@@ -117,12 +117,17 @@ fn violation_view(violation: &ClosureViolation) -> ClosureViolationView {
     }
 }
 
+fn created_at(view: &SandboxView) -> Option<jackin_core::Timestamp> {
+    view.created_at
+        .map(|created| jackin_core::Timestamp(created.seconds))
+}
+
 fn summary(view: &SandboxView) -> Result<SandboxSummary, LifecycleError> {
     labelled(&view.name, &view.labels).map(|labels| SandboxSummary {
         name: view.name.clone(),
         labels,
         phase: view.phase,
-        created_at: view.created_at,
+        created_at: created_at(view),
     })
 }
 
@@ -191,19 +196,20 @@ impl Session {
             unreadable: Vec::new(),
         };
         for view in views {
+            let created = created_at(&view);
             match SandboxLabels::from_labels(&view.labels) {
                 Ok(labels) => listing.sandboxes.push(SandboxSummary {
                     name: view.name,
                     labels,
                     phase: view.phase,
-                    created_at: view.created_at,
+                    created_at: created,
                 }),
                 Err(error) => listing.unreadable.push(UnreadableSandbox {
                     name: view.name,
                     workspace: view.labels.workspace(),
                     role: view.labels.role(),
                     phase: view.phase,
-                    created_at: view.created_at,
+                    created_at: created,
                     error,
                 }),
             }
@@ -296,7 +302,7 @@ impl Session {
                 name: detail.view.name.clone(),
                 labels,
                 phase: detail.view.phase,
-                created_at: detail.view.created_at,
+                created_at: created_at(&detail.view),
             },
             providers: detail.providers.clone(),
             policy: PolicyStatus {

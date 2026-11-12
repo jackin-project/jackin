@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use jackin_core::{
     CredentialKeys, EnvName, FileMode, GatewayName, HostPath, ImageTag, LabelSelector, Labels,
     Phase, ProfileId, ProjectRoot, ProviderName, SandboxLabels, SandboxName, SandboxPath, Secret,
-    SecretBytes, Sha256, TerminalText, Timestamp,
+    SecretBytes, Sha256, TerminalText,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -204,7 +204,13 @@ pub struct SandboxView {
     pub phase: Phase,
     pub labels: Labels,
     pub provisioning: Provisioning,
-    pub created_at: Option<Timestamp>,
+    pub created_at: Option<SandboxStamp>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SandboxStamp {
+    pub seconds: i64,
+    pub nanos: u32,
 }
 
 #[derive(Clone, Debug)]

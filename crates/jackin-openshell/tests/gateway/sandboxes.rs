@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use jackin_core::{
     AccountName, Agent, ChatgptAccountId, ImageId, LabelSelector, LaunchId, Phase, ProfileId,
-    ProviderName, SandboxLabels, Secret, Timestamp,
+    ProviderName, SandboxLabels, Secret,
 };
 use jackin_openshell::{
     Gateway, PolicyDocument, PowerAction, ProviderMaterial, ProviderProfile, ProviderSpec,
-    ProviderState, Provisioning, SandboxQuery,
+    ProviderState, Provisioning, SandboxQuery, SandboxStamp,
 };
 use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 
@@ -31,7 +31,13 @@ async fn create_then_find_by_launch_label_round_trips_the_server_state() {
     let spec = create_spec(SANDBOX, LAUNCH);
     let view = guard(gateway.create_sandbox(&spec)).await.unwrap();
     assert_eq!(view.phase, Phase::Provisioning);
-    assert_eq!(view.created_at, Some(Timestamp(CREATED_MILLIS / 1000)));
+    assert_eq!(
+        view.created_at,
+        Some(SandboxStamp {
+            seconds: CREATED_MILLIS / 1000,
+            nanos: u32::try_from((CREATED_MILLIS % 1000) * 1_000_000).unwrap(),
+        })
+    );
     {
         let state = env.server.state();
         assert_eq!(state.sandboxes.len(), 1);

@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use jackin_core::{EnvName, Labels, Phase, ProviderName, SandboxName, TerminalText, Timestamp};
+use jackin_core::{EnvName, Labels, Phase, ProviderName, SandboxName, TerminalText};
 use openshell_sdk::raw::proto::GetSandboxConfigRequest;
 use openshell_sdk::raw::proto::{
     CreateSandboxRequest, DeleteSandboxRequest, GetSandboxPolicyStatusRequest, GetSandboxRequest,
@@ -15,7 +15,7 @@ use super::Inner;
 use crate::error::{GatewayError, GatewayOp, Missing};
 use crate::gateway::{
     PolicyReport, PowerAction, Provisioning, SandboxCreate, SandboxDetail, SandboxQuery,
-    SandboxView,
+    SandboxStamp, SandboxView,
 };
 use crate::policy::PolicyDocument;
 
@@ -131,10 +131,10 @@ fn view_with(
         phase: phase_of(sandbox)?,
         labels,
         provisioning: provisioning_of(sandbox),
-        created_at: metadata
-            .created_time
-            .as_ref()
-            .map(|created| Timestamp(created.seconds)),
+        created_at: metadata.created_time.as_ref().map(|created| SandboxStamp {
+            seconds: created.seconds,
+            nanos: u32::try_from(created.nanos).unwrap_or(0),
+        }),
     })
 }
 

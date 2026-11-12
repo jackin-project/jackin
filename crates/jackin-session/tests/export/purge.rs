@@ -279,6 +279,44 @@ async fn a_guarded_purge_never_deletes_a_sandbox_that_replaced_the_one_it_inspec
 }
 
 #[tokio::test]
+async fn a_guarded_purge_never_deletes_a_replacement_created_within_the_same_second() -> TestResult
+{
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let name = rig.handle(1).await?.name();
+        let gateway = &rig.world.gateway;
+        let held = Trigger::Op(GatewayOp::Program);
+        gateway.inject(Fault::HoldAt {
+            trigger: held.clone(),
+        });
+
+        let purging = rig
+            .world
+            .session
+            .purge(&rig.config, &name, PurgeMode::Guarded);
+        let swapping = async {
+            assert!(gateway.until_held(&held).await);
+            gateway.delete_sandbox(&name).await?;
+            rig.world.clock.advance(Duration::from_millis(1));
+            rig.launch(1).await?;
+            gateway.release(&held);
+            Ok::<_, Box<dyn std::error::Error>>(())
+        };
+        let (purged, swapped) = tokio::join!(purging, swapping);
+
+        swapped?;
+        let Err(PurgeError::Replaced { sandbox }) = purged else {
+            return Err(format!("expected a refusal, saw {purged:?}").into());
+        };
+        assert_eq!(sandbox, name);
+        assert!(gateway.sandbox(&name).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_guarded_purge_refuses_a_sandbox_whose_creation_time_is_unknown() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
