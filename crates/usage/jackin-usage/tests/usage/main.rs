@@ -18,6 +18,7 @@ mod isolation;
 mod kinds;
 mod norefresh;
 mod omp;
+mod opencode;
 mod providers;
 mod rate;
 mod schema;

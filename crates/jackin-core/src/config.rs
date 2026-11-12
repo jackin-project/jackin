@@ -569,7 +569,6 @@ impl Account {
                 Some(AuthClass::OAuth)
             }
             CredentialSource::Env { .. }
-            | CredentialSource::OnePassword { .. }
             | CredentialSource::File { .. }
             | CredentialSource::OmpHost => match self.provider {
                 Provider::Claude | Provider::Codex => Some(AuthClass::ApiKey),
@@ -582,7 +581,14 @@ impl Account {
         }
     }
 
+    pub fn is_usage_only(&self) -> bool {
+        matches!(self.credential, CredentialSource::OnePassword { .. })
+    }
+
     fn publishable_tuple(&self, agent: Agent) -> Option<&'static AgentTuple> {
+        if self.is_usage_only() {
+            return None;
+        }
         let tuple = crate::lookup_tuple(agent, self.provider).ok()?;
         (tuple.state == TupleState::Supported && tuple.auth_class == self.auth_class()?)
             .then_some(tuple)

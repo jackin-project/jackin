@@ -5,8 +5,8 @@ use std::path::Path;
 
 use jackin_core::{
     Account, AccountName, AccountQuery, Agent, CatalogError, Config, ConfigEdit, ConfigError,
-    CredentialSource, EnvName, HostPath, Provider, RoleName, RoleSource, SelectionError,
-    SelectionRule, TUPLES, WorkspaceName,
+    CredentialSource, EnvName, HostPath, OpReference, Provider, RoleName, RoleSource,
+    SelectionError, SelectionRule, TUPLES, WorkspaceName,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -120,6 +120,27 @@ fn every_catalog_tuple_binds_by_agent_and_selects_the_matching_provider() -> Tes
             tuple.id
         );
     }
+    Ok(())
+}
+
+#[test]
+fn a_one_password_account_is_usage_only_and_publishes_no_provider() -> TestResult {
+    let vault = Account::new(
+        AccountName::parse("vault")?,
+        Provider::Zai,
+        CredentialSource::OnePassword {
+            reference: OpReference::parse("op://Dev/Zai/key")?,
+            account: None,
+        },
+    )?;
+    assert!(vault.is_usage_only());
+    assert!(!vault.has_provider());
+    for agent in Agent::ALL {
+        assert!(!vault.has_provider_for(agent), "{}", agent.as_str());
+    }
+    let keyed = env_account("keyed", Provider::Zai)?;
+    assert!(!keyed.is_usage_only());
+    assert!(keyed.has_provider());
     Ok(())
 }
 

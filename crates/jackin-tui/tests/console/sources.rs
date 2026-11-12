@@ -289,6 +289,10 @@ async fn a_failed_folder_check_is_worded_by_the_vocabulary_from_the_fault() -> T
 
 async fn plant_login(lab: &Lab, folder: &Path, core: Provider) -> TestResult {
     tokio::fs::create_dir_all(folder).await?;
+    if let Some(store) = core.credential_store() {
+        tokio::fs::write(folder.join(store), "store").await?;
+        return Ok(());
+    }
     let Some(file) = core.login_file() else {
         return Ok(());
     };
@@ -345,6 +349,12 @@ async fn the_form_lists_every_provider_and_saves_each_static_one_with_a_login_fi
             lab.save_form().await?;
             let config = lab.config().await?;
             let saved = config.accounts().find(|a| a.name().as_str() == name);
+            if let Some(store) = core.credential_store() {
+                let account = saved.ok_or_else(|| format!("{} was not saved", choice.label))?;
+                assert_eq!(account.provider(), core, "{}", choice.label);
+                assert_stored(&choice.label, core, store, &name, account.credential())?;
+                continue;
+            }
             let Some(file) = core.login_file() else {
                 assert!(saved.is_none(), "{} has no login file", choice.label);
                 let refused =

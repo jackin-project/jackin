@@ -147,6 +147,36 @@ async fn accounts_without_a_provider_credential_never_need_the_gateway() -> Test
 }
 
 #[tokio::test]
+async fn a_one_password_account_is_saved_without_any_provider_work() -> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let credential = CredentialSource::OnePassword {
+            reference: OpReference::parse("op://Dev/Zai/key")?,
+            account: None,
+        };
+        let edits = vec![ConfigEdit::AddAccount(account(
+            "vault",
+            Provider::Zai,
+            credential.clone(),
+        )?)];
+        let plan = plan_account_edits(&world.desk(), edits, &CancellationToken::new()).await?;
+        assert!(!plan.needs_gateway());
+        let AccountPlan::Offline(offline) = plan else {
+            return Err("a usage only account needs the gateway".into());
+        };
+        let config = offline.apply().await?;
+        assert_eq!(
+            config.account(&name("vault")?).map(Account::credential),
+            Some(&credential)
+        );
+        assert!(world.gateway.providers().is_empty());
+        assert!(world.gateway.profiles().is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn an_invalid_edit_is_refused_while_planning_and_nothing_is_written() -> TestResult {
     guard(async {
         let world = registered().await?;

@@ -7,7 +7,6 @@ use jackin_usage_provider_core::{
 use serde_json::Value;
 
 const USAGE_URL: &str = "https://opencode.ai/zen/go/v1/usage";
-const ENTRY: &str = "opencode";
 const WINDOWS: [(&str, i64); 3] = [
     ("rolling", 300 * 60),
     ("weekly", 10_080 * 60),
@@ -45,23 +44,17 @@ pub async fn fetch(
 
 fn login_key(login: &str, now: i64) -> Result<(String, Option<String>), ProviderError> {
     let value: Value = serde_json::from_str(login)
-        .map_err(|_| ProviderError::Decode("the OpenCode login file is not valid JSON"))?;
-    let entry = value
-        .get(ENTRY)
-        .filter(|entry| entry.is_object())
-        .ok_or(ProviderError::Decode(
-            "the OpenCode login file has no opencode credential",
-        ))?;
-    let key = entry
+        .map_err(|_| ProviderError::Decode("the OpenCode credential is not valid JSON"))?;
+    let key = value
         .get("access")
         .and_then(json_text)
         .map(str::to_owned)
         .ok_or(ProviderError::Decode(
-            "the OpenCode login file has no access token",
+            "the OpenCode credential has no access token",
         ))?;
-    let expires = entry
+    let expires = value
         .get("expires")
-        .and_then(Value::as_f64)
+        .and_then(json_number)
         .filter(|at| at.is_finite())
         .ok_or(ProviderError::Decode(
             "the OpenCode credential has no usable expiry",
@@ -69,7 +62,7 @@ fn login_key(login: &str, now: i64) -> Result<(String, Option<String>), Provider
     if expires <= 1000.0 * now as f64 {
         return Err(ProviderError::Unauthorized);
     }
-    let org = entry
+    let org = value
         .pointer("/metadata/orgID")
         .and_then(json_text)
         .map(str::to_owned);

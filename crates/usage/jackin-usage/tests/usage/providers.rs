@@ -54,7 +54,6 @@ async fn login_cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
         gemini::login_case().await?,
         grok::login_case().await?,
         kimi::login_case().await?,
-        opencode::login_case().await?,
     ])
 }
 

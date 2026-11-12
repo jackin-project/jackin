@@ -1140,7 +1140,7 @@ pub async fn resolve_static_key(
             }
         }
         CredentialSource::OmpHost => {
-            let db = HostPath::resolve(Path::new(".omp/agent/agent.db"), &host.home)
+            let db = HostPath::resolve(Path::new(jackin_core::OMP_HOST_STORE), &host.home)
                 .map_err(|_| missing())?;
             read_omp_host_key(host.fs.as_ref(), &db, provider_id).map_err(|_| missing())
         }
