@@ -351,15 +351,21 @@ impl Backend for JackinBackend {
         instance: &Instance,
         kind: &PaneKind,
     ) -> Result<(), PaneRefusal> {
-        let has_agent = world
-            .daemons
-            .get(&instance.id)
-            .is_some_and(|daemon| daemon.panes.iter().any(|pane| pane.agent.is_some()));
         match kind {
-            PaneKind::Agent { agent, .. } if has_agent => {
-                Err(PaneRefusal::MainProcessOpen { agent: *agent })
+            PaneKind::Agent { agent, .. } => {
+                let open = world.daemons.get(&instance.id).is_some_and(|daemon| {
+                    daemon
+                        .panes
+                        .iter()
+                        .any(|pane| pane.agent.as_ref() == Some(agent))
+                });
+                if open {
+                    Err(PaneRefusal::MainProcessOpen { agent: *agent })
+                } else {
+                    Ok(())
+                }
             }
-            PaneKind::Agent { .. } | PaneKind::Shell => Ok(()),
+            PaneKind::Shell => Ok(()),
         }
     }
 
