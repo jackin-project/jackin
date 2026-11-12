@@ -108,8 +108,6 @@ async fn poll_until_times_out_after_exactly_the_timeout() -> TestResult {
         Err(PollError::Timeout { after }) => assert_eq!(after, Duration::from_secs(10)),
         other => panic!("{other:?}"),
     }
-    // The time the probes spend counts against the budget, so the sleeps cover
-    // the timeout minus the (near-zero) probe time and never overshoot it.
     assert!(clock.elapsed() <= Duration::from_secs(10));
     assert!(clock.elapsed() >= Duration::from_secs(10) - Duration::from_millis(1));
     Ok(())
