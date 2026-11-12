@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::os::unix::fs::MetadataExt;
-use std::path::Path;
-use std::time::Duration;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use jackin_core::{
     Agent, CredentialFileProblem, CredentialSource, FileIdentity, HostPath, ProcessSpec,
@@ -311,34 +312,96 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Material, U
         .await
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
         .ok_or(Unresolved::Missing)?;
-    let found = extract_opencode_credential(path.as_path())?;
-    let revision = opencode_revision(path.as_path(), identity, &found);
+    let bytes = deps
+        .fs
+        .read(path)
+        .await
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
+        .ok_or(Unresolved::Missing)?;
+    let wal = read_opencode_wal(deps, path).await;
+    let store_digest = revision_of(&bytes);
+    let found =
+        tokio::task::spawn_blocking(move || extract_opencode_credential(&bytes, wal.as_deref()))
+            .await
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))??;
+    let revision = opencode_revision(path.as_path(), identity, &found, &store_digest);
     Ok(Material::login(found.value).with_revision(Some(revision)))
+}
+
+async fn read_opencode_wal(deps: &UsageDeps, path: &HostPath) -> Option<Vec<u8>> {
+    let wal = HostPath::parse(&PathBuf::from(format!("{}-wal", path.as_path().display()))).ok()?;
+    deps.fs.read(&wal).await.ok().flatten()
 }
 
 struct OpenCodeRecord {
     id: i64,
     value: String,
-    ctime: i64,
-    ctime_nsec: i64,
     digest: String,
 }
 
-fn extract_opencode_credential(db_path: &Path) -> Result<OpenCodeRecord, Unresolved> {
-    let metadata = match std::fs::metadata(db_path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Err(Unresolved::Missing);
+struct Snapshot {
+    dir: PathBuf,
+}
+
+impl Snapshot {
+    fn new(name: &str, bytes: &[u8], wal: Option<&[u8]>) -> Result<Snapshot, Unresolved> {
+        let dir = std::env::temp_dir().join(format!("jackin-usage-{name}-{}", unique_name()));
+        let mut builder = std::fs::DirBuilder::new();
+        builder.mode(0o700);
+        builder
+            .create(&dir)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let snapshot = Snapshot { dir };
+        snapshot.write("store.db", bytes)?;
+        if let Some(wal) = wal {
+            snapshot.write("store.db-wal", wal)?;
         }
-        Err(_) => {
-            return Err(Unresolved::Unreadable(
-                "the OpenCode store could not be read",
-            ));
-        }
-        Ok(metadata) => metadata,
-    };
-    let connection =
-        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+        Ok(snapshot)
+    }
+
+    fn write(&self, name: &str, bytes: &[u8]) -> Result<(), Unresolved> {
+        let path = self.dir.join(name);
+        std::fs::write(&path, bytes)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        Ok(())
+    }
+
+    fn path(&self) -> PathBuf {
+        self.dir.join("store.db")
+    }
+}
+
+impl Drop for Snapshot {
+    fn drop(&mut self) {
+        let _removed = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn unique_name() -> String {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or_default();
+    format!(
+        "{}-{nanos}-{}",
+        std::process::id(),
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+fn extract_opencode_credential(
+    bytes: &[u8],
+    wal: Option<&[u8]>,
+) -> Result<OpenCodeRecord, Unresolved> {
+    let snapshot = Snapshot::new("opencode", bytes, wal)?;
+    let connection = rusqlite::Connection::open_with_flags(
+        snapshot.path(),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+    )
+    .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
     let (id, value): (i64, String) = connection
         .query_row(
             "SELECT id, value FROM credential WHERE integration_id = 'opencode' AND type = 'oauth' AND active = 1 ORDER BY id DESC LIMIT 1",
@@ -349,24 +412,28 @@ fn extract_opencode_credential(db_path: &Path) -> Result<OpenCodeRecord, Unresol
             rusqlite::Error::QueryReturnedNoRows => Unresolved::Missing,
             _ => Unresolved::Unreadable("the OpenCode store could not be read"),
         })?;
+    drop(connection);
+    drop(snapshot);
     Ok(OpenCodeRecord {
         id,
         digest: revision_of(value.as_bytes()),
         value,
-        ctime: metadata.ctime(),
-        ctime_nsec: metadata.ctime_nsec(),
     })
 }
 
-fn opencode_revision(db: &Path, identity: FileIdentity, found: &OpenCodeRecord) -> String {
+fn opencode_revision(
+    db: &Path,
+    identity: FileIdentity,
+    found: &OpenCodeRecord,
+    store_digest: &str,
+) -> String {
     format!(
-        "{}:{}:{}:{}:{}:{}:{}",
+        "{}:{}:{}:{}:{}:{}",
         db.display(),
         identity.dev,
         identity.ino,
         found.id,
-        found.ctime,
-        found.ctime_nsec,
+        store_digest,
         found.digest
     )
 }

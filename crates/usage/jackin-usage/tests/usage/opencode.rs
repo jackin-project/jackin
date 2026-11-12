@@ -2,18 +2,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::path::Path;
+use std::sync::Arc;
 
-use jackin_core::{CredentialSource, HostPath, Provider};
-use jackin_testkit::{Method, Route};
-use jackin_usage::UnavailableReason;
+use jackin_core::{CredentialSource, FileMode, FileSystem, HostPath, Provider};
+use jackin_testkit::{MemFs, Method, Route};
+use jackin_usage::{Refresh, UnavailableReason, WindowKind};
 use rusqlite::Connection;
 
-use crate::support::{TestResult, UsageHarness, account, guard, unavailable, windows_of};
+use crate::support::{
+    Left, TestResult, UsageHarness, Want, account, assert_windows, guard, unavailable, want,
+};
 
 const PATH: &str = "/zen/go/v1/usage";
 const TOKEN: &str = "SECRET_TOKEN_OPENCODE";
 const USAGE: &str = include_str!("fixtures/opencode/usage.json");
 const EXPIRES: i64 = 1_767_232_800_000;
+
+const FIVE: Want = want(
+    WindowKind::FiveHour,
+    "5-hour",
+    Some(20.0),
+    Left::Percent(80.0),
+    Some(1_767_243_600),
+);
+const WEEK: Want = want(
+    WindowKind::Weekly,
+    "weekly",
+    Some(35.0),
+    Left::Percent(65.0),
+    Some(1_767_830_400),
+);
+const MONTH: Want = want(
+    WindowKind::Monthly,
+    "monthly",
+    Some(10.0),
+    Left::Percent(90.0),
+    Some(1_769_817_600),
+);
 
 fn host_path_of(path: &Path) -> HostPath {
     HostPath::parse(path).expect("an absolute path")
@@ -93,7 +118,7 @@ async fn the_active_console_credential_of_the_store_is_used() -> TestResult {
         let store =
             started(&[(1, "opencode", "oauth", 1, &credential(TOKEN, EXPIRES, None))]).await?;
         let outcome = store.report().await?;
-        assert_eq!(windows_of(&outcome).len(), 3);
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
         let mismatches = store.harness.server.mismatches();
         assert!(mismatches.is_empty(), "{mismatches:?}");
         Ok(())
@@ -121,7 +146,7 @@ async fn the_organization_of_the_active_credential_is_sent_as_a_header() -> Test
                 .requires_header("x-opencode-org-id", "org-1"),
         );
         let outcome = store.report().await?;
-        assert_eq!(windows_of(&outcome).len(), 3);
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
         let mismatches = store.harness.server.mismatches();
         assert!(mismatches.is_empty(), "{mismatches:?}");
         Ok(())
@@ -194,6 +219,39 @@ async fn an_expired_console_credential_is_an_expired_login() -> TestResult {
         .await?;
         let outcome = store.report().await?;
         assert_eq!(unavailable(&outcome), &UnavailableReason::ExpiredLogin);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_store_that_lives_only_in_the_filesystem_boundary_is_read() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        store(
+            directory.path(),
+            &[(1, "opencode", "oauth", 1, &credential(TOKEN, EXPIRES, None))],
+        );
+        let bytes = std::fs::read(directory.path().join("opencode.db"))?;
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {TOKEN}")),
+        );
+        let fs: Arc<dyn FileSystem> = Arc::<MemFs>::clone(&harness.fs);
+        let store_dir = host_path_of(Path::new("/data/opencode"));
+        fs.create_dir_all(&store_dir).await?;
+        let path = host_path_of(&store_dir.as_path().join("opencode.db"));
+        fs.write_new(&path, &bytes, FileMode(0o600)).await?;
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File { path },
+        );
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert_windows(&usage.outcome, &[FIVE, WEEK, MONTH]);
         Ok(())
     })
     .await
