@@ -46,18 +46,12 @@ fn login_key(login: &str, now: i64) -> Result<String, ProviderError> {
     let entries = value
         .as_object()
         .ok_or(ProviderError::Decode("the Grok login file has no entries"))?;
-    let entry = entries
-        .iter()
-        .find(|(scope, _)| scope.starts_with(PREFERRED_SCOPE))
-        .or_else(|| {
-            entries
-                .iter()
-                .find(|(scope, _)| scope.contains(FALLBACK_SCOPE))
-        })
-        .map(|(_, entry)| entry)
-        .ok_or(ProviderError::Decode(
-            "the Grok login file has no usable entry",
-        ))?;
+    let entry = match only_scope(entries, |scope| scope.starts_with(PREFERRED_SCOPE))? {
+        Some(entry) => entry,
+        None => only_scope(entries, |scope| scope.contains(FALLBACK_SCOPE))?.ok_or(
+            ProviderError::Decode("the Grok login file has no usable entry"),
+        )?,
+    };
     let key = entry
         .get("key")
         .and_then(json_text)
@@ -71,6 +65,22 @@ fn login_key(login: &str, now: i64) -> Result<String, ProviderError> {
         _ => return Err(ProviderError::Unauthorized),
     }
     Ok(key.to_owned())
+}
+
+fn only_scope(
+    entries: &serde_json::Map<String, Value>,
+    key: impl Fn(&str) -> bool,
+) -> Result<Option<&Value>, ProviderError> {
+    let mut found = entries.iter().filter(|(scope, _)| key(scope));
+    let Some(selected) = found.next() else {
+        return Ok(None);
+    };
+    if found.next().is_some() {
+        return Err(ProviderError::Decode(
+            "the Grok login file has more than one usable entry",
+        ));
+    }
+    Ok(Some(selected.1))
 }
 
 fn cents(value: Option<&Value>) -> Result<Option<Money>, ProviderError> {
