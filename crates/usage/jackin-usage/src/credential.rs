@@ -350,23 +350,26 @@ async fn read_opencode_snapshot(
     deps: &UsageDeps,
     path: &HostPath,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved> {
-    let bytes = opencode_consistent_snapshot(|| read_opencode_store(deps, path)).await?;
-    let wal = read_opencode_wal(deps, path).await?;
-    Ok((bytes, wal))
+    opencode_consistent_snapshot(|| async {
+        let bytes = read_opencode_store(deps, path).await?;
+        let wal = read_opencode_wal(deps, path).await?;
+        let again = read_opencode_store(deps, path).await?;
+        Ok((bytes, wal, again))
+    })
+    .await
 }
 
 async fn opencode_consistent_snapshot<Read, ReadFuture>(
     mut read: Read,
-) -> Result<Vec<u8>, Unresolved>
+) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved>
 where
     Read: FnMut() -> ReadFuture,
-    ReadFuture: Future<Output = Result<Vec<u8>, Unresolved>>,
+    ReadFuture: Future<Output = Result<(Vec<u8>, Option<Vec<u8>>, Vec<u8>), Unresolved>>,
 {
     for _ in 0..OPENCODE_SNAPSHOT_ATTEMPTS {
-        let first = read().await?;
-        let second = read().await?;
-        if first == second {
-            return Ok(first);
+        let (bytes, wal, again) = read().await?;
+        if bytes == again {
+            return Ok((bytes, wal));
         }
     }
     Err(Unresolved::Unreadable(

@@ -4,7 +4,7 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use async_trait::async_trait;
 use jackin_core::{
@@ -189,6 +189,125 @@ impl FileSystem for CheckpointFs {
     }
     async fn remove_dir_all(&self, path: &HostPath) -> Result<(), FsError> {
         self.inner.remove_dir_all(path).await
+    }
+    async fn mode(&self, path: &HostPath) -> Result<Option<FileMode>, FsError> {
+        self.inner.mode(path).await
+    }
+    async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.sync_dir(dir).await
+    }
+    async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
+        self.inner.lock(path).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
+    async fn read_regular(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+        max_bytes: usize,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        self.inner.read_regular(root, file, max_bytes).await
+    }
+}
+
+#[derive(Debug)]
+struct CheckpointLogFs {
+    inner: Arc<dyn FileSystem>,
+    store: HostPath,
+    before: Vec<u8>,
+    after: Vec<u8>,
+    log: Vec<u8>,
+    checkpointed: AtomicBool,
+}
+
+impl CheckpointLogFs {
+    fn image(&self) -> Vec<u8> {
+        if self.checkpointed.load(Ordering::SeqCst) {
+            self.after.clone()
+        } else {
+            self.before.clone()
+        }
+    }
+
+    fn is_store(&self, path: &HostPath) -> bool {
+        path.as_path() == self.store.as_path()
+    }
+
+    fn is_log(path: &HostPath) -> bool {
+        path.as_path().to_string_lossy().ends_with("-wal")
+    }
+}
+
+#[async_trait]
+impl FileSystem for CheckpointLogFs {
+    async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
+        if self.is_store(path) {
+            return Ok(Some(self.image()));
+        }
+        if Self::is_log(path) {
+            self.checkpointed.store(true, Ordering::SeqCst);
+            return Ok(Some(self.log.clone()));
+        }
+        self.inner.read(path).await
+    }
+    async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        if self.is_store(path) {
+            let image = self.image();
+            let start = (offset as usize).min(image.len());
+            let end = start.saturating_add(len).min(image.len());
+            return Ok(image[start..end].to_vec());
+        }
+        self.inner.read_at(path, offset, len).await
+    }
+    async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat(path).await
+    }
+    async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat_following(path).await
+    }
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(path).await
+    }
+    async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
+        self.inner.file_len(path).await
+    }
+    async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(path).await
+    }
+    async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
+        self.inner.list(dir).await
+    }
+    async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.create_dir_all(dir).await
+    }
+    async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.create_private_dir_all(dir).await
+    }
+    async fn write_new(
+        &self,
+        path: &HostPath,
+        bytes: &[u8],
+        mode: FileMode,
+    ) -> Result<(), FsError> {
+        self.inner.write_new(path, bytes, mode).await
+    }
+    async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError> {
+        self.inner.rename(from, to).await
+    }
+    async fn remove_file(&self, path: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_file(path).await
+    }
+    async fn remove_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_dir_all(dir).await
     }
     async fn mode(&self, path: &HostPath) -> Result<Option<FileMode>, FsError> {
         self.inner.mode(path).await
@@ -444,6 +563,70 @@ async fn a_store_that_is_checkpointed_while_it_is_read_is_read_again() -> TestRe
             before,
             after,
             phase: AtomicU32::new(0),
+        });
+        let host = harness.host_over(fs, harness.state_dir.clone());
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File {
+                path: store_path.clone(),
+            },
+        );
+        let report = harness
+            .report_on(&host, std::slice::from_ref(&account), Refresh::Cached)
+            .await?;
+        assert_windows(&report.accounts[0].outcome, &[FIVE, WEEK, MONTH]);
+        let mismatches = harness.server.mismatches();
+        assert!(mismatches.is_empty(), "{mismatches:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_store_that_is_checkpointed_before_its_log_is_read_is_read_again() -> TestResult {
+    guard(async {
+        const BEFORE: &str = "SECRET_TOKEN_OPENCODE_BEFORE";
+        const AFTER: &str = "SECRET_TOKEN_OPENCODE_AFTER";
+        let directory = tempfile::tempdir()?;
+        let db = directory.path().join("opencode.db");
+        let connection = Connection::open(&db)?;
+        connection.execute_batch("PRAGMA journal_mode=WAL;")?;
+        connection.execute_batch(SCHEMA)?;
+        connection.execute(
+            "INSERT OR REPLACE INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_1', 'opencode', 'opencode', ?1, 1, 1, 1)",
+            rusqlite::params![credential(BEFORE, EXPIRES, None)],
+        )?;
+        connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        let before = std::fs::read(&db)?;
+        connection.execute(
+            "INSERT OR REPLACE INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_1', 'opencode', 'opencode', ?1, 1, 2, 2)",
+            rusqlite::params![credential(AFTER, EXPIRES, None)],
+        )?;
+        connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        let after = std::fs::read(&db)?;
+        let log = std::fs::read(directory.path().join("opencode.db-wal"))?;
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {AFTER}")),
+        );
+        let store_path = host_path_of(&db);
+        let store_dir = host_path_of(directory.path());
+        harness.fs.create_dir_all(&store_dir).await?;
+        harness
+            .fs
+            .write_new(&store_path, &before, FileMode(0o600))
+            .await?;
+        let fs: Arc<dyn FileSystem> = Arc::new(CheckpointLogFs {
+            inner: Arc::<MemFs>::clone(&harness.fs),
+            store: store_path.clone(),
+            before,
+            after,
+            log,
+            checkpointed: AtomicBool::new(false),
         });
         let host = harness.host_over(fs, harness.state_dir.clone());
         let account = account(
