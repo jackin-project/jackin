@@ -25,6 +25,8 @@ const OMP_DB: &str = jackin_core::OMP_HOST_STORE;
 const KIMI_CONFIG: &str = "config.toml";
 const KIMI_GLOBAL_BASE: &str = "https://api.kimi.ai/coding/v1";
 const KIMI_MAINLAND_BASE: &str = "https://api.kimi.com/coding/v1";
+const OPENCODE_INTEGRATION: &str = "opencode";
+const OPENCODE_OAUTH: &str = "oauth";
 const HEX: [char; 16] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
 ];
@@ -334,7 +336,7 @@ async fn read_opencode_wal(deps: &UsageDeps, path: &HostPath) -> Option<Vec<u8>>
 }
 
 struct OpenCodeRecord {
-    id: i64,
+    id: String,
     value: String,
     digest: String,
 }
@@ -402,23 +404,42 @@ fn extract_opencode_credential(
         rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
     )
     .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
-    let (id, value): (i64, String) = connection
-        .query_row(
-            "SELECT id, value FROM credential WHERE integration_id = 'opencode' AND type = 'oauth' AND active = 1 ORDER BY id DESC LIMIT 1",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+    let mut statement = connection
+        .prepare(
+            "SELECT id, value FROM credential \
+             WHERE integration_id = ?1 AND (active = 1 OR active IS NULL) \
+             ORDER BY time_updated DESC, time_created DESC",
         )
-        .map_err(|error| match error {
-            rusqlite::Error::QueryReturnedNoRows => Unresolved::Missing,
-            _ => Unresolved::Unreadable("the OpenCode store could not be read"),
-        })?;
-    drop(connection);
-    drop(snapshot);
-    Ok(OpenCodeRecord {
-        id,
-        digest: revision_of(value.as_bytes()),
-        value,
-    })
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+    let mut rows = statement
+        .query([OPENCODE_INTEGRATION])
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+    while let Some(row) = rows
+        .next()
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
+    {
+        let id: String = row
+            .get(0)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let value: String = row
+            .get(1)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let kind = serde_json::from_str::<Value>(&value)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode credential is not valid JSON"))?;
+        if kind.get("type").and_then(Value::as_str) != Some(OPENCODE_OAUTH) {
+            continue;
+        }
+        drop(rows);
+        drop(statement);
+        drop(connection);
+        drop(snapshot);
+        return Ok(OpenCodeRecord {
+            id,
+            digest: revision_of(value.as_bytes()),
+            value,
+        });
+    }
+    Err(Unresolved::Missing)
 }
 
 fn opencode_revision(

@@ -54,20 +54,27 @@ fn credential(access: &str, expires: i64, org: Option<&str>) -> String {
     )
 }
 
-fn store(directory: &Path, rows: &[(i64, &str, &str, i64, &str)]) {
+const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS credential (
+    id TEXT PRIMARY KEY NOT NULL,
+    integration_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    value TEXT NOT NULL,
+    connector_id TEXT,
+    method_id TEXT,
+    active INTEGER,
+    time_created INTEGER NOT NULL,
+    time_updated INTEGER NOT NULL
+);";
+
+fn store(directory: &Path, rows: &[(&str, &str, i64, &str)]) {
     let db = directory.join("opencode.db");
     let connection = Connection::open(&db).expect("the store opens");
-    connection
-        .execute(
-            "CREATE TABLE IF NOT EXISTS credential (id INTEGER PRIMARY KEY, integration_id TEXT NOT NULL, type TEXT NOT NULL, name TEXT, active INTEGER NOT NULL, value TEXT NOT NULL, created_at TEXT, updated_at TEXT)",
-            [],
-        )
-        .expect("the table");
-    for (id, integration, kind, active, value) in rows {
+    connection.execute_batch(SCHEMA).expect("the schema");
+    for (id, integration, active, value) in rows {
         connection
             .execute(
-                "INSERT OR REPLACE INTO credential (id, integration_id, type, name, active, value) VALUES (?1, ?2, ?3, 'opencode', ?4, ?5)",
-                rusqlite::params![id, integration, kind, active, value],
+                "INSERT OR REPLACE INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES (?1, ?2, 'opencode', ?3, ?4, 1, 1)",
+                rusqlite::params![id, integration, value, active],
             )
             .expect("the row");
     }
@@ -79,9 +86,7 @@ struct Store {
     directory: tempfile::TempDir,
 }
 
-async fn started(
-    rows: &[(i64, &str, &str, i64, &str)],
-) -> Result<Store, Box<dyn std::error::Error>> {
+async fn started(rows: &[(&str, &str, i64, &str)]) -> Result<Store, Box<dyn std::error::Error>> {
     let directory = tempfile::tempdir()?;
     store(directory.path(), rows);
     let harness = UsageHarness::new().await?;
@@ -116,7 +121,7 @@ impl Store {
 async fn the_active_console_credential_of_the_store_is_used() -> TestResult {
     guard(async {
         let store =
-            started(&[(1, "opencode", "oauth", 1, &credential(TOKEN, EXPIRES, None))]).await?;
+            started(&[("cred_1", "opencode", 1, &credential(TOKEN, EXPIRES, None))]).await?;
         let outcome = store.report().await?;
         assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
         let mismatches = store.harness.server.mismatches();
@@ -130,9 +135,8 @@ async fn the_active_console_credential_of_the_store_is_used() -> TestResult {
 async fn the_organization_of_the_active_credential_is_sent_as_a_header() -> TestResult {
     guard(async {
         let store = started(&[(
-            1,
+            "cred_1",
             "opencode",
-            "oauth",
             1,
             &credential(TOKEN, EXPIRES, Some("org-1")),
         )])
@@ -158,7 +162,7 @@ async fn the_organization_of_the_active_credential_is_sent_as_a_header() -> Test
 async fn an_inactive_console_credential_is_not_used() -> TestResult {
     guard(async {
         let store =
-            started(&[(1, "opencode", "oauth", 0, &credential(TOKEN, EXPIRES, None))]).await?;
+            started(&[("cred_1", "opencode", 0, &credential(TOKEN, EXPIRES, None))]).await?;
         let outcome = store.report().await?;
         assert!(
             matches!(unavailable(&outcome), UnavailableReason::NoCredentials),
@@ -172,7 +176,13 @@ async fn an_inactive_console_credential_is_not_used() -> TestResult {
 #[tokio::test]
 async fn a_store_that_holds_no_console_credential_is_missing() -> TestResult {
     guard(async {
-        let store = started(&[(1, "opencode-go", "key", 1, "{}")]).await?;
+        let store = started(&[(
+            "cred_1",
+            "opencode-go",
+            1,
+            r#"{"type":"key","key":"a-key"}"#,
+        )])
+        .await?;
         let outcome = store.report().await?;
         assert!(
             matches!(unavailable(&outcome), UnavailableReason::NoCredentials),
@@ -187,9 +197,8 @@ async fn a_store_that_holds_no_console_credential_is_missing() -> TestResult {
 async fn a_store_whose_credential_holds_no_access_token_is_a_provider_error() -> TestResult {
     guard(async {
         let store = started(&[(
-            1,
+            "cred_1",
             "opencode",
-            "oauth",
             1,
             "{\"type\":\"oauth\",\"expires\":1767232800000,\"metadata\":{}}",
         )])
@@ -210,9 +219,8 @@ async fn a_store_whose_credential_holds_no_access_token_is_a_provider_error() ->
 async fn an_expired_console_credential_is_an_expired_login() -> TestResult {
     guard(async {
         let store = started(&[(
-            1,
+            "cred_1",
             "opencode",
-            "oauth",
             1,
             &credential(TOKEN, 1_767_225_599_000, None),
         )])
@@ -230,7 +238,7 @@ async fn a_store_that_lives_only_in_the_filesystem_boundary_is_read() -> TestRes
         let directory = tempfile::tempdir()?;
         store(
             directory.path(),
-            &[(1, "opencode", "oauth", 1, &credential(TOKEN, EXPIRES, None))],
+            &[("cred_1", "opencode", 1, &credential(TOKEN, EXPIRES, None))],
         );
         let bytes = std::fs::read(directory.path().join("opencode.db"))?;
         let harness = UsageHarness::new().await?;
@@ -252,6 +260,21 @@ async fn a_store_that_lives_only_in_the_filesystem_boundary_is_read() -> TestRes
         );
         let usage = harness.one(&account, Refresh::Cached).await?;
         assert_windows(&usage.outcome, &[FIVE, WEEK, MONTH]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_credential_of_another_kind_is_not_used() -> TestResult {
+    guard(async {
+        let store =
+            started(&[("cred_1", "opencode", 1, r#"{"type":"key","key":"a-key"}"#)]).await?;
+        let outcome = store.report().await?;
+        assert!(
+            matches!(unavailable(&outcome), UnavailableReason::NoCredentials),
+            "{outcome:?}"
+        );
         Ok(())
     })
     .await
