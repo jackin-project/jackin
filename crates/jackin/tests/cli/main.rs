@@ -3,6 +3,7 @@
 
 mod account_add;
 mod account_manage;
+mod agent;
 mod attach;
 mod build;
 mod cancel;
