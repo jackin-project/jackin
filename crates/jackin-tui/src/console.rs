@@ -128,6 +128,7 @@ where
     let handle = deps.handle.clone();
     let cancelled = deps.cancel.clone();
     let watched = cancelled.clone();
+    let building = cancelled.clone();
     let (sender, receiver) = oneshot::channel::<StopHandle>();
     let watcher = tokio::spawn(async move {
         if let Ok(stop) = receiver.await {
@@ -141,7 +142,13 @@ where
             panes,
             _cancel: cancel,
             ..
-        } = handle.block_on(build_console(deps))?;
+        } = handle.block_on(async {
+            tokio::select! {
+                biased;
+                () = building.cancelled() => Err(ConsoleError::Cancelled),
+                built = build_console(deps) => built,
+            }
+        })?;
         let _sent = sender.send(app.shell.stop_handle());
         let outcome = terminal(&mut app);
         drop(app);
@@ -231,10 +238,10 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         handle,
         limits,
         clipboard,
-        cancel: _,
+        cancel: external,
     } = deps;
     let config_path = config.path().as_path().display().to_string();
-    let cancel = CancellationToken::new();
+    let cancel = external.child_token();
     let op = OpSnapshot::default();
     let inputs = Arc::new(Inputs::new(InputsParts {
         config,

@@ -89,6 +89,40 @@ async fn a_cancelled_console_stops_the_terminal_loop() -> TestResult {
 }
 
 #[tokio::test]
+async fn a_console_cancelled_while_building_never_starts_the_terminal() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let token = CancellationToken::new();
+        token.cancel();
+        let deps = ConsoleRig::builder(&rig.world)
+            .cancel(token.clone())
+            .deps()
+            .await?;
+        let started = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&started);
+        let stopped = tokio::time::timeout(
+            DEADLINE,
+            run_console_with(deps, move |_app| {
+                flag.store(true, Ordering::SeqCst);
+                Ok(())
+            }),
+        )
+        .await
+        .map_err(|_| "the cancelled construction hung".to_owned())?;
+        assert!(
+            !started.load(Ordering::SeqCst),
+            "the terminal ran while the construction was cancelled"
+        );
+        match stopped {
+            Err(ConsoleError::Cancelled) => {}
+            other => return Err(format!("expected a cancelled console, got {other:?}").into()),
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn the_loop_gets_the_console_built_from_the_config() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
