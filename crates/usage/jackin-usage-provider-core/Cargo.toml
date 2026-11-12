@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-usage-provider-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Provider substrate for usage: the bucket model, the provider error, the HTTP client, and number and time helpers."
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+chrono = { workspace = true, features = ["clock"] }
+reqwest = { workspace = true }
+rustls = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[lints]
+workspace = true

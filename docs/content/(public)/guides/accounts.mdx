@@ -1,0 +1,91 @@
+---
+title: Accounts
+description: Add accounts, bind them to workspaces and roles, and check their usage limits.
+---
+
+An account is a named credential for one provider. Jackin keeps accounts in `~/.config/jackin/config.toml`. For the terms, see [Core concepts](/getting-started/concepts/).
+
+## Add a Codex account
+
+Codex runs in a sandbox only with a ChatGPT login. Import the login from a Codex home directory:
+
+```sh
+jackin account add codex --name work --chatgpt-from ~/.codex
+```
+
+Jackin reads `auth.json` from the directory. It puts the login into an OpenShell provider named `jackin-work-codex` on the selected gateway. The gateway holds the access token and the refresh token. The sandbox gets only a placeholder, and the gateway swaps in the real token on the allowed hosts.
+
+The gateway rotates the refresh token. The login in your Codex home can stop working afterwards. If that happens, run `codex login` on the host again.
+
+A device login needs a person, so jackin cannot create one for you.
+
+## Add an account for usage only
+
+Every other account stays on the host. Jackin uses it only to show usage limits. Give it a credential source with `--credential`:
+
+```sh
+jackin account add claude --name personal --credential env:CLAUDE_TOKEN
+jackin account add openrouter --name routing --credential 'op://Private/OpenRouter/credential'
+jackin account add cursor --name editor --credential file:/Users/me/cursor-token
+```
+
+A source is one of these:
+
+| Form | Meaning |
+|---|---|
+| `env:NAME` | The environment variable `NAME` on the host. You choose the name. |
+| `op://...` | A 1Password reference. Jackin resolves it on the host with `op read`. |
+| `file:PATH` | A file on the host. It holds a token, or a JSON login. |
+
+Jackin never sends a credential source to a sandbox or to an OpenShell provider. A Codex account that you add with `--credential` is also a usage account. A launch refuses it.
+
+## Choose the default account
+
+Each provider has at most one default account:
+
+```sh
+jackin account default work
+```
+
+## Bind an account
+
+A workspace binding holds one account for each provider in that workspace. A role binding holds the default account of the role for the agent:
+
+```sh
+jackin account bind work --workspace my-app
+jackin account bind work --role my-role
+```
+
+Pass exactly one of `--workspace` and `--role`.
+
+## Account selection
+
+For each launch, jackin picks the account of the agent in this order:
+
+1. The `--account` flag of `jackin load`.
+2. The workspace binding for the provider of the agent.
+3. The role binding for the agent.
+4. The default account of the provider.
+5. The only account of the provider, when exactly one exists.
+
+If no rule selects an account, the launch stops with an error that names the missing binding.
+
+## List and remove accounts
+
+```sh
+jackin account ls
+jackin account rm work
+```
+
+`jackin account rm` first removes the OpenShell provider of the account from every configured gateway. If it cannot reach one of them, it stops and names the gateway. To remove a gateway entry without contacting it, run `jackin gateway rm <name> --offline`. Its OpenShell providers then stay on that gateway until you reset it.
+
+## Check usage
+
+```sh
+jackin usage
+jackin usage --json
+```
+
+For each account, jackin shows every limit window that the provider reports. Typical windows are the 5-hour window and the weekly window. Some providers also report a monthly window, credits, or spend. For each window you see the percentage used, the remaining amount when the provider gives it, and the reset time.
+
+When a provider gives no data for an account, jackin shows the reason, for example `login expired or rejected`. The JSON output names it `expired_login`. Jackin never refreshes a token for usage.

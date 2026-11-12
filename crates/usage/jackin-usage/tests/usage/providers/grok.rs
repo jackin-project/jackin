@@ -1,0 +1,287 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use jackin_core::Provider;
+use jackin_testkit::{Method, Route};
+use jackin_usage::{Refresh, UnavailableReason, UsageAccount, UsageOutcome, WindowKind};
+
+use super::Case;
+use crate::support::{
+    Left, TestResult, UsageHarness, Want, account, assert_windows, env_source, file_source, guard,
+    unavailable, want,
+};
+
+const TOKEN: &str = "SECRET_TOKEN_GROK";
+const PATH: &str = "/v1/billing?format=credits";
+const CREDITS: &str = include_str!("../fixtures/grok/billing_credits.json");
+const ON_DEMAND_ON: &str = include_str!("../fixtures/grok/billing_credits_on_demand_on.json");
+const ON_DEMAND_OFF: &str = include_str!("../fixtures/grok/billing_credits_on_demand_off.json");
+const PRODUCT_SHARE: &str = include_str!("../fixtures/grok/billing_product_share.json");
+const NEGATIVE_CENT: &str = include_str!("../fixtures/grok/billing_negative_cent.json");
+const ZERO_CAP: &str = include_str!("../fixtures/grok/billing_zero_cap.json");
+const DEPRECATED: &str = include_str!("../fixtures/grok/billing_deprecated.json");
+const INVALID: &str = include_str!("../fixtures/grok/billing_invalid_percent.json");
+const NULL_CONFIG: &str = include_str!("../fixtures/grok/billing_null_config.json");
+const AUTH: &str = include_str!("../fixtures/grok/auth.json");
+const EXPIRED: &str = include_str!("../fixtures/grok/auth_expired.json");
+const TWO_SCOPES: &str = include_str!("../fixtures/grok/auth_two_scopes.json");
+const AUTH_PATH: &str = "/home/work/.grok/auth.json";
+
+const WEEK: Want = want(
+    WindowKind::Weekly,
+    "weekly",
+    Some(42.5),
+    Left::Percent(57.5),
+    Some(1_780_876_800),
+);
+const EXTRA: Want = want(
+    WindowKind::Credits,
+    "Extra usage credits",
+    None,
+    Left::Amount("12.50", "USD"),
+    None,
+);
+const ON_DEMAND: Want = want(
+    WindowKind::Spend,
+    "On-demand",
+    Some(6.0),
+    Left::Amount("47.00", "USD"),
+    None,
+);
+const BUILD_SHARE: Want = want(
+    WindowKind::Other,
+    "Grok Build share",
+    Some(61.2),
+    Left::Percent(38.8),
+    None,
+);
+
+fn serve(harness: &UsageHarness, token: &str, body: &str) {
+    harness.server.replace(
+        Provider::Grok,
+        Method::Get,
+        PATH,
+        Route::json(200, body)
+            .requires_header("authorization", &format!("Bearer {token}"))
+            .requires_header("x-xai-token-auth", "xai-grok-cli"),
+    );
+}
+
+async fn started(body: &str) -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {
+    let mut harness = UsageHarness::new().await?;
+    harness.env("GROK_TEST_KEY", TOKEN);
+    serve(&harness, TOKEN, body);
+    Ok((
+        harness,
+        account("grok", Provider::Grok, env_source("GROK_TEST_KEY")),
+    ))
+}
+
+pub(crate) async fn case() -> Result<Case, Box<dyn std::error::Error>> {
+    let (harness, account) = started(CREDITS).await?;
+    Ok(Case {
+        provider: Provider::Grok,
+        token: TOKEN,
+        harness,
+        account,
+        first: (Method::Get, PATH),
+        expected: &[WEEK, EXTRA],
+    })
+}
+
+pub(crate) async fn login_case() -> Result<Case, Box<dyn std::error::Error>> {
+    let case = case().await?;
+    case.harness.put(AUTH_PATH, AUTH).await?;
+    let login = account("grok", Provider::Grok, file_source(AUTH_PATH));
+    Ok(Case {
+        account: login,
+        ..case
+    })
+}
+
+async fn outcome(body: &str) -> Result<UsageOutcome, Box<dyn std::error::Error>> {
+    let (harness, account) = started(body).await?;
+    Ok(harness.one(&account, Refresh::Cached).await?.outcome)
+}
+
+fn assert_provider_without(outcome: &UsageOutcome) {
+    match unavailable(outcome) {
+        UnavailableReason::Provider(message) => {
+            assert!(!message.contains("SECRET_TEXT_GROK"), "{message}");
+        }
+        other => panic!("expected a provider reason, found {other:?}"),
+    }
+}
+
+async fn login_outcome(file: &str, key: &str) -> Result<UsageOutcome, Box<dyn std::error::Error>> {
+    let (harness, _) = started(CREDITS).await?;
+    serve(&harness, key, CREDITS);
+    harness.put(AUTH_PATH, file).await?;
+    let login = account("grok", Provider::Grok, file_source(AUTH_PATH));
+    Ok(harness.one(&login, Refresh::Cached).await?.outcome)
+}
+
+#[tokio::test]
+async fn the_credits_config_gives_a_weekly_window_and_the_extra_credits() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(CREDITS).await?, &[WEEK, EXTRA]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_on_demand_window_comes_only_with_the_on_demand_flag() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(ON_DEMAND_ON).await?, &[WEEK, EXTRA, ON_DEMAND]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn on_demand_disabled_leaves_no_on_demand_window() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(ON_DEMAND_OFF).await?, &[WEEK, EXTRA]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_missing_on_demand_flag_leaves_no_on_demand_window_port_fidelity() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(CREDITS).await?, &[WEEK, EXTRA]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_deprecated_config_gives_a_monthly_window_port_fidelity() -> TestResult {
+    guard(async {
+        let monthly = want(
+            WindowKind::Monthly,
+            "monthly",
+            Some(61.7),
+            Left::Amount("7.66", "USD"),
+            Some(1_746_057_600),
+        );
+        assert_windows(&outcome(DEPRECATED).await?, &[monthly]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_share_of_the_grok_build_product_is_a_window_port_fidelity() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(PRODUCT_SHARE).await?, &[WEEK, EXTRA, BUILD_SHARE]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_negative_cent_value_is_a_provider_error_port_fidelity() -> TestResult {
+    guard(async {
+        assert_provider_without(&outcome(NEGATIVE_CENT).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_zero_on_demand_cap_leaves_no_on_demand_window() -> TestResult {
+    guard(async {
+        assert_windows(&outcome(ZERO_CAP).await?, &[WEEK, EXTRA]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_invalid_credit_percent_leaves_no_window_and_a_provider_error() -> TestResult {
+    guard(async {
+        assert_provider_without(&outcome(INVALID).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_null_config_is_a_provider_error() -> TestResult {
+    guard(async {
+        assert_provider_without(&outcome(NULL_CONFIG).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_empty_object_is_a_provider_error() -> TestResult {
+    guard(async {
+        assert_provider_without(&outcome("{}").await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_auth_file_gives_its_key_port_fidelity() -> TestResult {
+    guard(async {
+        assert_windows(&login_outcome(AUTH, TOKEN).await?, &[WEEK, EXTRA]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_auth_x_ai_scope_wins_over_a_sign_in_scope_port_fidelity() -> TestResult {
+    guard(async {
+        assert_windows(&login_outcome(TWO_SCOPES, TOKEN).await?, &[WEEK, EXTRA]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_entry_that_expires_now_is_an_expired_login_without_a_request() -> TestResult {
+    guard(async {
+        let outcome = login_outcome(EXPIRED, TOKEN).await?;
+        assert_eq!(unavailable(&outcome), &UnavailableReason::ExpiredLogin);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_entry_without_an_expiry_is_an_expired_login_port_fidelity() -> TestResult {
+    guard(async {
+        let file = "{\"https://auth.x.ai::issuer\":{\"key\":\"SECRET_TOKEN_GROK\"}}";
+        let outcome = login_outcome(file, TOKEN).await?;
+        assert_eq!(unavailable(&outcome), &UnavailableReason::ExpiredLogin);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cent_value_of_the_smallest_integer_is_a_provider_error() -> TestResult {
+    guard(async {
+        let body = "{\"config\":{\"creditUsagePercent\":42.5,\"prepaidBalance\":{\"val\":-9223372036854775808}}}";
+        assert_provider_without(&outcome(body).await?);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cent_value_that_is_not_an_integer_is_a_provider_error() -> TestResult {
+    guard(async {
+        let body = "{\"on_demand_enabled\":true,\"config\":{\"creditUsagePercent\":42.5,\"onDemandCap\":{\"val\":1e30}}}";
+        assert_provider_without(&outcome(body).await?);
+        Ok(())
+    })
+    .await
+}

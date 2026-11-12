@@ -280,3 +280,86 @@ crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:8
 crates/services/jackin-usage-provider-cursor/src/tests/case_01.rs:jwt:14
 # Reason: prose in Markdown documentation matched by a keyword rule, no literal credential
 crates/services/jackin-usage-provider-kimi/README.md:generic-api-key:3
+
+# Reason: P2.4 triage of a tree scan. The gateway token ID is an identifier, not the token.
+rewrite/evidence/P0.5-docker-laneA.md:generic-api-key:114
+
+# Reason: P2.4 triage of a tree scan. Prose in a README, no value.
+crates/usage/jackin-usage-provider-kimi/README.md:generic-api-key:3
+
+# Reason: test fixture or placeholder, no credential, reviewed 2026-11-03
+# History fingerprints for gitleaks git: the jackin placeholder ID token, e2e world fixture tokens, and two fake test values later rewritten
+e6924803372013dd7a1245c9588b2ae94575c6ce:crates/jackin-core/src/agent.rs:jwt:165
+ddd296b40920dc19887107cca29f9204b4f8ae5e:crates/jackin-session/src/files.rs:jwt:7
+f7cfedabddc937daa7993cb93ed7c2fd9460e9cf:crates/xtask/tests/e2e/scenario/world.rs:jwt:9
+f7cfedabddc937daa7993cb93ed7c2fd9460e9cf:crates/xtask/tests/e2e/scenario/world.rs:jwt:11
+f7cfedabddc937daa7993cb93ed7c2fd9460e9cf:crates/xtask/tests/e2e/d_secrets.rs:generic-api-key:197
+57978a9933e18cf28214da75402fba80b6f948f3:crates/jackin-core/tests/config_schema.rs:generic-api-key:726
+
+# Reason: one historical research output marker in a fenced example command; synthetic response marker, not a credential.
+06b087a580ff79b49fba6b80b02747565924b4eb:rewrite/research/t13-t22-models.md:generic-api-key:118
+
+# Reason: A15 final-review e2e evidence records the synthetic A15_LEAK fixture token (header {"alg":"RS256"}, payload {"sub":"user-a1-access-payload"}, signature segment the base64 of a readable placeholder string) and SHA-256 spec digests; no credential is present.
+# 8 finding(s); rules: jwt (6), generic-api-key (2); files: .audit/a15-final-review-logs/IT4.exclude.access.red.log (1), .audit/a15-final-review-logs/IT4.exclude.id_token.red.log (1), .audit/a15-final-review-prior-results.tsv (4), .audit/a15-final-review-results.tsv (2)
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-logs/IT4.exclude.access.red.log:jwt:28
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-logs/IT4.exclude.id_token.red.log:jwt:28
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-prior-results.tsv:generic-api-key:59
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-prior-results.tsv:generic-api-key:60
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-prior-results.tsv:jwt:42
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-prior-results.tsv:jwt:44
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-results.tsv:jwt:43
+18578a2b8ed24412265368aaa43f7504edb1943e:.audit/a15-final-review-results.tsv:jwt:45
+
+# Reason: e2e target-identity test fixture: the sibling credential placeholders (sibling-*-secret-0123456789) that the digest test proves are excluded from the target identity; no credential.
+# 2 finding(s); rules: generic-api-key; files: crates/xtask/tests/e2e/i_target.rs (2)
+18578a2b8ed24412265368aaa43f7504edb1943e:crates/xtask/tests/e2e/i_target.rs:generic-api-key:652
+18578a2b8ed24412265368aaa43f7504edb1943e:crates/xtask/tests/e2e/i_target.rs:generic-api-key:653
+
+# Reason: git commit SHA-1 hashes and SHA-256 digest prefixes quoted in the A14 live evidence; the sourcegraph-access-token rule matches any bare 40-hex token once the file mentions "sgp_"; no credential.
+# 28 finding(s); rules: sourcegraph-access-token; files: rewrite/evidence/A14-codex-final-live.md (17), rewrite/evidence/A14-omp-final-live.md (11)
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:103
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:111
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:127
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:135
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:149
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:23
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:3
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:39
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:47
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:53
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:54
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:55
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:56
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:57
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:58
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:72
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-codex-final-live.md:sourcegraph-access-token:80
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:100
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:101
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:102
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:103
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:104
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:105
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:106
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:3
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:32
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:95
+a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:sourcegraph-access-token:99
+
+# Reason: account-sync test fixture: the literal placeholder secret the Kimi file-key sync test writes to a temporary home directory; no credential.
+# 1 finding(s); rules: generic-api-key; files: crates/jackin-session/tests/accounts/sync.rs (1)
+4a1538771fe0cbd05f6511a7b05bfc85764684af:crates/jackin-session/tests/accounts/sync.rs:generic-api-key:372
+
+# Reason: prose in the A14 decision log; the match is the evidence file name A14-t02-live-fixed.md that follows the word "auth" in the same cell; no credential.
+# 1 finding(s); rules: generic-api-key; files: rewrite/decisions.tsv (1)
+a1c819a51a845efff4f8bf680b585c50a7f6a06a:rewrite/decisions.tsv:generic-api-key:430
+
+# Working-tree fingerprints (file:rule:line) for the `gitleaks dir` scan of the indexed tree.
+# Reason: e2e target-identity test fixture: the sibling credential placeholders (sibling-*-secret-0123456789) that the digest test proves are excluded from the target identity; no credential.
+# 2 finding(s); rules: generic-api-key; files: crates/xtask/tests/e2e/i_target.rs (2)
+crates/xtask/tests/e2e/i_target.rs:generic-api-key:738
+crates/xtask/tests/e2e/i_target.rs:generic-api-key:739
+
+# Reason: prose in the A14 decision log; the match is the evidence file name A14-t02-live-fixed.md that follows the word "auth" in the same cell; no credential.
+# 1 finding(s); rules: generic-api-key; files: rewrite/decisions.tsv (1)
+rewrite/decisions.tsv:generic-api-key:430

@@ -17,7 +17,7 @@ export function HeroContent() {
             <span className="soft">They're already</span> inside.
           </h1>
           <p className="landing-hero-deck">
-            jackin❯ drops AI coding agents into isolated Docker containers: full autonomy inside, your host untouched outside. One CLI. Same-path mounts. Per-agent state.
+            jackin❯ runs Codex in NVIDIA OpenShell sandboxes: full autonomy inside, your host untouched outside. Your project goes in as a copy, credentials stay on your gateway, and the work comes back as git branches.
           </p>
           <div className="landing-hero-ctas">
             <a

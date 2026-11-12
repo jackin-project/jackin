@@ -1,0 +1,1516 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProbeReport",
+  "description": "The one JSON object that jackin-sentinel-probe prints to stdout. It reports the in-sandbox journey steps J00, J04 to J16. The steps J01, J02, J03 and J17 have no in-sandbox part and never appear. A step that needs a credential or a capability that the sandbox lacks reports SKIP, never PASS. The probe exits 0 whenever it printed a report, even when a step is FAIL. No field ever holds a secret value.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "probe",
+    "target",
+    "mode",
+    "docker",
+    "engine",
+    "steps"
+  ],
+  "properties": {
+    "schema": {
+      "const": 3,
+      "description": "The version of this contract. A breaking change raises it."
+    },
+    "probe": {
+      "const": "jackin-sentinel-probe"
+    },
+    "mode": {
+      "enum": [
+        "sandbox",
+        "host"
+      ],
+      "description": "host is the dry mode (--host): nothing runs, every selected step is SKIP and facts is null."
+    },
+    "docker": {
+      "enum": [
+        "on",
+        "off"
+      ],
+      "description": "The Docker capability that the caller told the probe to expect (--docker). off is the default. on makes J15 run and J16 SKIP, off the reverse."
+    },
+    "steps": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "description": "One member for each step that ran. --only selects steps; an unselected step is absent.",
+      "properties": {
+        "J00": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ00"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Image. PASS when /usr/local/bin/agent is an executable file and agent --version exits 0. The host compares the version with the pin."
+        },
+        "J04": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ04"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Sandbox identity. PASS when the user is sandbox with uid and gid 1000, sudo does not work, and a docker binary exists exactly when docker is on."
+        },
+        "J05": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ05"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Upload. PASS when the project directory is a git work tree and the file list is not empty. The host compares the list with git ls-files and requires that an ignored file is absent."
+        },
+        "J06": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ06"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Hooks. PASS when setup ran exactly once, preflight ran at least once, and no installed hook file is writable by the sandbox user. The host compares the counts with the number of starts and failed attempts."
+        },
+        "J07": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ07"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "agent. The process check is SKIP when jackin-start is not in the state running. The agent exec check is SKIP when the sandbox holds no usable declared credential. PASS when the main process is jackin-start, exactly one selected agent is its direct child, agent exec answers the fixed prompt with the selected credential, actual response metadata names the selected provider and model, and a real adapter-appropriate tool invocation succeeds in /sandbox/project with the declared closed observation."
+        },
+        "J08": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ08"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Credential. The credential check is SKIP when the sandbox holds no usable declared credential. The environment check is PASS only when a fresh, valid start record (facts.start_record.state read) covers the main process and agent and every credential variable matches its declared placeholder, empty, or brokered class; it is FAIL for a variable of kind other in a known environment, undeclared brokered delivery, a forbidden cross-lane variable, or a malformed record, and SKIP for an absent, unreadable or stale record or an environment that agent has not yet received. A readable /proc/PID/environ adds evidence and wins over the record for that environment; it never replaces the record. The record is written by jackin-start and the agent can rewrite it, so a PASS shows the launch path of jackin, not a hostile agent. The step is PASS when every check passes and the file scan finds no token-shaped string. facts.agent_environment records how each environment was known. A denied environment is not evidence that it is clean. facts.auth_file.fields carries named observed auth-field classifications, with null mode when the selected target requires an absent file."
+        },
+        "J09": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ09"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Egress. PASS when agent exec reached its API with actual selected provider and model metadata and a successful real tool invocation, a host outside the policy and the metadata address each refuse the connection (curl exit 7 with no HTTP response; a DNS failure, a missing curl and any other exit are FAIL), and curl, which is not agent, gets no 2xx answer from a provider host when it sends an independent nonsecret placeholder. The provider host response must be a policy refusal or the exact declared status and closed body classification. The provider host check and the agent exec check are SKIP without a credential."
+        },
+        "J10": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ10"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Filesystem. PASS when a file can be created under /sandbox and /tmp and cannot be created at any denied path, and at least one denied path was writable by file mode, so the policy and not the mode caused the denial."
+        },
+        "J11": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ11"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Detach and reattach. PASS when a agent process is a child of the main process. The host compares pid and start_ticks before and after the detach. SKIP when no agent runs."
+        },
+        "J12": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ12"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Shell. PASS when the probe is not a descendant of the main process and, when both are known, its tty differs from the tty of agent. The host compares the agent process before and after the shell opens."
+        },
+        "J13": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ13"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Export. PASS when the project is a git work tree and its HEAD is readable. The host compares branches and head with the exported refs and requires that the host working tree is unchanged."
+        },
+        "J14": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ14"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Lifecycle. PASS when the marker file exists after the probe ran. The first run creates it (created is true). A later run reads the same id (created is false). The host requires the same id after stop and start and a new boot_id."
+        },
+        "J15": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ15"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Docker capability on. SKIP when docker is off. PASS when the Docker variables and certificates exist and docker run --rm of the digest-pinned hello-world image prints the hello text. engine.id lets the host compare the engine with the chosen one."
+        },
+        "J16": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Step"
+            },
+            {
+              "properties": {
+                "facts": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/FactsJ16"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          ],
+          "description": "Docker capability off. SKIP when docker is on. PASS when there is no docker binary, no DOCKER_ variable, and a curl to the engine endpoint refuses the connection (curl exit 7 with no HTTP response). Curl exit 6 passes only when the control name in resolver_control resolves and is refused (curl exit 7) in the same run. A missing curl is FAIL. The connection check is SKIP when no --engine endpoint was given."
+        }
+      }
+    },
+    "target": {
+      "$ref": "#/$defs/TargetIdentity"
+    },
+    "engine": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The exact configured engine endpoint, or null when no engine was selected."
+    }
+  },
+  "$defs": {
+    "Result": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "SKIP"
+      ]
+    },
+    "Check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "result",
+        "detail"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "result": {
+          "$ref": "#/$defs/Result"
+        },
+        "detail": {
+          "type": "string"
+        }
+      }
+    },
+    "Step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "result",
+        "reason",
+        "checks",
+        "facts"
+      ],
+      "description": "result is FAIL when any check is FAIL, otherwise SKIP when any check is SKIP, otherwise PASS. reason is empty for PASS, otherwise it joins the name and detail of the checks that gave the result. facts is null in host mode.",
+      "properties": {
+        "result": {
+          "$ref": "#/$defs/Result"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Check"
+          }
+        },
+        "facts": true
+      },
+      "if": {
+        "properties": {
+          "result": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reason": {
+            "maxLength": 0
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "reason": {
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "Mode": {
+      "type": "string",
+      "pattern": "^[0-7]{3,4}$"
+    },
+    "TokenKind": {
+      "enum": [
+        "absent",
+        "empty",
+        "placeholder",
+        "other"
+      ],
+      "description": "placeholder starts with openshell:resolve: (the id_token placeholder ends with .placeholder). other is a value that may be a real secret; its text is never reported."
+    },
+    "ProcessInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pid",
+        "ppid",
+        "sid",
+        "comm",
+        "start_ticks",
+        "tty"
+      ],
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ppid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comm": {
+          "type": "string",
+          "description": "The executable name from /proc/PID/stat. /proc/PID/exe is not readable for a process outside the caller's own tree, so the probe reads only stat. The command line is used for process selection only and never appears in the report."
+        },
+        "start_ticks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tty": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The controlling terminal from the tty_nr field of /proc/PID/stat: /dev/pts/N, /dev/hvcN or tty:MAJOR:MINOR. null when the process has none."
+        }
+      }
+    },
+    "Processes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boot_id",
+        "run_state",
+        "main",
+        "agent",
+        "self",
+        "self_descends_from_main"
+      ],
+      "properties": {
+        "boot_id": {
+          "type": "string"
+        },
+        "run_state": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The first line of /sandbox/.jackin/run/state. The agent can write it, so the host treats it as advisory."
+        },
+        "main": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The process whose command line holds /usr/local/bin/jackin-start and whose parent does not."
+        },
+        "self": {
+          "$ref": "#/$defs/ProcessInfo"
+        },
+        "self_descends_from_main": {
+          "type": "boolean"
+        },
+        "agent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProcessInfo"
+          },
+          "description": "The children of main whose comm is agent."
+        }
+      }
+    },
+    "Egress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "curl_found",
+        "curl_exit",
+        "http_code",
+        "body"
+      ],
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "curl_found": {
+          "type": "boolean",
+          "description": "false when the sandbox has no curl. The probe then ran nothing."
+        },
+        "curl_exit": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "The exit code of curl. null exactly when curl_found is false. A policy denial is exit 7 with http_code 0. Exit 6 means the name did not resolve, which a resolver fault also causes."
+        },
+        "http_code": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 999,
+          "description": "0 when no HTTP response came."
+        },
+        "body": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Closed response-body classification, never the response body itself. null when there was no classifiable response."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "curl_found": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "curl_exit": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "curl_exit": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "FactsJ00": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "agent"
+      ],
+      "properties": {
+        "agent": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "present",
+            "executable",
+            "version"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "present": {
+              "type": "boolean"
+            },
+            "executable": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "FactsJ04": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "user",
+        "uid",
+        "gid",
+        "home",
+        "sudo",
+        "docker_binary"
+      ],
+      "properties": {
+        "user": {
+          "type": "string"
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "home": {
+          "type": "string"
+        },
+        "sudo": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "found",
+            "works"
+          ],
+          "properties": {
+            "found": {
+              "type": "boolean"
+            },
+            "works": {
+              "type": "boolean"
+            }
+          }
+        },
+        "docker_binary": {
+          "type": "boolean"
+        }
+      }
+    },
+    "FactsJ05": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "git_work_tree",
+        "files"
+      ],
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "git_work_tree": {
+          "type": "boolean"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "sha256"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "$ref": "#/$defs/Sha256"
+              }
+            }
+          },
+          "description": "Every regular file below project, outside .git, sorted by byte value of the path, path relative to project."
+        }
+      }
+    },
+    "FactsJ06": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_dir",
+        "setup_runs",
+        "preflight_runs",
+        "preflight_failures",
+        "hooks"
+      ],
+      "properties": {
+        "state_dir": {
+          "type": "string"
+        },
+        "setup_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preflight_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preflight_failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "hooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "path",
+              "uid",
+              "mode",
+              "writable"
+            ],
+            "properties": {
+              "name": {
+                "enum": [
+                  "setup",
+                  "preflight"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "uid": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "mode": {
+                "$ref": "#/$defs/Mode"
+              },
+              "writable": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "FactsJ07": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processes",
+        "agent_exec"
+      ],
+      "properties": {
+        "processes": {
+          "$ref": "#/$defs/Processes"
+        },
+        "agent_exec": {
+          "$ref": "#/$defs/AgentExec"
+        }
+      }
+    },
+    "EnvironRead": {
+      "enum": [
+        "read",
+        "record",
+        "denied",
+        "absent"
+      ],
+      "description": "read: /proc/PID/environ was read and classified. record: the open of /proc/PID/environ failed or there is no process, and the fresh start record written by jackin-start covers that environment. denied: /proc/PID/environ could not be opened and no fresh record covers the environment. absent: there is no such process and no fresh record covers the environment."
+    },
+    "FactsJ08": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "agent_environment",
+        "start_record",
+        "auth_file",
+        "leaks",
+        "leak_count"
+      ],
+      "properties": {
+        "environment": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "kind",
+              "source"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "placeholder",
+                  "empty",
+                  "brokered",
+                  "other"
+                ]
+              },
+              "source": {
+                "enum": [
+                  "probe",
+                  "launch_env",
+                  "main",
+                  "agent"
+                ],
+                "description": "probe is the environment of the probe process. launch_env is an export file /sandbox/.jackin/env-*, which jackin-start sources before it starts agent. main and agent are the environment of that process, read from /proc/PID/environ or from a fresh start record."
+              }
+            }
+          },
+          "description": "The variables whose name holds KEY, TOKEN, SECRET, PASSWORD, PASSWD, CREDENTIAL or AUTH as a whole word (case sensitive, SSH_AUTH_SOCK excluded), in each source the probe could read. A name outside [A-Za-z_][A-Za-z0-9_]* appears as INVALID_NAME with kind other."
+        },
+        "agent_environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "main",
+            "agent"
+          ],
+          "properties": {
+            "main": {
+              "$ref": "#/$defs/EnvironRead"
+            },
+            "agent": {
+              "$ref": "#/$defs/EnvironRead"
+            }
+          },
+          "description": "How the probe knows the variables of the main process and of agent: read from /proc/PID/environ, from the start record, or not at all. denied and absent mean the variables of that process are unknown, never clean; the environment check is then SKIP."
+        },
+        "start_record": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "attempt"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "absent",
+                "unreadable",
+                "stale",
+                "malformed",
+                "read"
+              ],
+              "description": "The file /sandbox/.jackin/run/env-kinds that jackin-start writes. absent: no such file. unreadable: the file exists and cannot be read. stale: a valid record whose attempt differs from the attempt in run/state, or run/state is absent or garbled. malformed: not a regular file, over 64 KiB, or off the grammar. read: a valid record whose attempt equals the attempt in run/state (waiting is attempt 0)."
+            },
+            "attempt": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "The attempt number in the record; null when the record was not parsed."
+            }
+          },
+          "description": "The start record. jackin-start writes names and kinds, never values. The agent runs as the same user and can rewrite the file, so a record proves the launch path of jackin, not a hostile agent. With no fresh record the environment check is SKIP, never PASS."
+        },
+        "auth_file": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "path",
+            "mode",
+            "fields"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "mode": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Mode"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "kind"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "A JSON pointer to a declared auth field."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "pattern": "^(placeholder|empty|absent|other|literal:.+)$"
+                  }
+                }
+              }
+            },
+            "state": {
+              "enum": [
+                "present",
+                "absent",
+                "unreadable",
+                "malformed"
+              ]
+            }
+          }
+        },
+        "leaks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Identifiers of the files outside the project that hold a token-shaped string. The identifier is \"leak-\" followed by the first twelve hexadecimal digits of the SHA-256 of the path, so no path is disclosed. At most fifty identifiers are listed; facts.leak_count is the exact total."
+        },
+        "leak_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The exact number of files outside the project that hold a token-shaped string. It never falls below the number of listed leaks and stays exact when the list is capped."
+        }
+      }
+    },
+    "FactsJ09": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "outside_host",
+        "metadata_host",
+        "provider_host",
+        "agent_exec"
+      ],
+      "properties": {
+        "outside_host": {
+          "$ref": "#/$defs/Egress"
+        },
+        "metadata_host": {
+          "$ref": "#/$defs/Egress"
+        },
+        "provider_host": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Egress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A curl to a agent provider host with the placeholder as the bearer value. null without a credential."
+        },
+        "agent_exec": {
+          "$ref": "#/$defs/AgentExec"
+        }
+      }
+    },
+    "FactsJ10": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "writes"
+      ],
+      "properties": {
+        "writes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "expected",
+              "dac_writable",
+              "created"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "expected": {
+                "enum": [
+                  "allowed",
+                  "denied"
+                ]
+              },
+              "dac_writable": {
+                "type": "boolean"
+              },
+              "created": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "FactsJ11": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processes"
+      ],
+      "properties": {
+        "processes": {
+          "$ref": "#/$defs/Processes"
+        }
+      }
+    },
+    "FactsJ12": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "processes"
+      ],
+      "properties": {
+        "processes": {
+          "$ref": "#/$defs/Processes"
+        }
+      }
+    },
+    "FactsJ13": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project",
+        "work_tree",
+        "branch",
+        "head",
+        "branches",
+        "clean",
+        "stash"
+      ],
+      "properties": {
+        "project": {
+          "type": "string"
+        },
+        "work_tree": {
+          "type": "boolean"
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40,64}$"
+        },
+        "branches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "tip"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "tip": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40,64}$"
+              }
+            }
+          }
+        },
+        "clean": {
+          "type": "boolean"
+        },
+        "stash": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "FactsJ14": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boot_id",
+        "marker",
+        "setup_runs",
+        "preflight_runs"
+      ],
+      "properties": {
+        "boot_id": {
+          "type": "string"
+        },
+        "marker": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "id",
+            "created"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "created": {
+              "type": "boolean"
+            }
+          }
+        },
+        "setup_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preflight_runs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "FactsJ15": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "docker_binary",
+        "environment",
+        "certificates",
+        "run",
+        "engine"
+      ],
+      "properties": {
+        "docker_binary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "found",
+            "path"
+          ],
+          "properties": {
+            "found": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "environment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "docker_host",
+            "tls_verify",
+            "cert_path"
+          ],
+          "properties": {
+            "docker_host": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tls_verify": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "cert_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "certificates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "mode"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "mode": {
+                "$ref": "#/$defs/Mode"
+              }
+            }
+          }
+        },
+        "run": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "exit_code",
+            "hello"
+          ],
+          "properties": {
+            "exit_code": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "hello": {
+              "type": "boolean"
+            }
+          }
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "server_version"
+          ],
+          "properties": {
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "server_version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "FactsJ16": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "docker_binary",
+        "docker_variables",
+        "endpoint",
+        "connection",
+        "resolver_control"
+      ],
+      "properties": {
+        "docker_binary": {
+          "type": "boolean"
+        },
+        "docker_variables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Names of the DOCKER_ variables that are set."
+        },
+        "endpoint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "attempted",
+            "curl_found",
+            "curl_exit",
+            "http_code"
+          ],
+          "properties": {
+            "attempted": {
+              "type": "boolean"
+            },
+            "curl_found": {
+              "type": "boolean",
+              "description": "false when the sandbox has no curl."
+            },
+            "curl_exit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "null when the probe did not run curl: no --engine endpoint, or no curl."
+            },
+            "http_code": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "resolver_control": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Egress"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A curl to https://example.com in the same run. It shows that name resolution works and that policy refuses the connection, so curl exit 6 for the engine name is a policy refusal and not a resolver fault. null when no --engine endpoint was given."
+        }
+      }
+    },
+    "TargetIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tuple",
+        "agent",
+        "provider",
+        "model",
+        "adapter",
+        "spec_sha256"
+      ],
+      "properties": {
+        "tuple": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter": {
+          "type": "string",
+          "minLength": 1
+        },
+        "spec_sha256": {
+          "$ref": "#/$defs/Sha256"
+        }
+      }
+    },
+    "AgentExec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempted",
+        "credential",
+        "exit_code",
+        "answered",
+        "output_bytes",
+        "actual_provider",
+        "actual_model",
+        "tool"
+      ],
+      "properties": {
+        "attempted": {
+          "type": "boolean"
+        },
+        "credential": {
+          "enum": [
+            "oauth_login",
+            "static_key",
+            "api_key",
+            "none"
+          ],
+          "description": "The selected credential class. none is never accepted for a credentialed full run."
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "answered": {
+          "type": "boolean",
+          "description": "True when the selected agent answered the adapter's fixed prompt."
+        },
+        "output_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual_provider": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The provider named by the agent's actual response metadata."
+        },
+        "actual_model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The model named by the agent's actual response metadata."
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolExecution"
+        }
+      }
+    },
+    "ToolExecution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "attempted",
+        "succeeded",
+        "exit_code",
+        "workdir",
+        "observation"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attempted": {
+          "type": "boolean"
+        },
+        "succeeded": {
+          "type": "boolean"
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "workdir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observation": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Closed, nonsecret project entries returned by the real tool execution."
+        }
+      }
+    }
+  }
+}

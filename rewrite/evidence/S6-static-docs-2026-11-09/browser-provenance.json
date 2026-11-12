@@ -1,0 +1,16 @@
+{
+  "SPDX-FileCopyrightText": "2026 Alexey Zhokhov",
+  "SPDX-License-Identifier": "Apache-2.0",
+  "primary_receipt_sha256": "90cb2497c722cfbaffbed521ec02b3170a9df931b51b052f55ff5cc06e55d955",
+  "scope": "retained source-bound receipt; not deployment or whole-goal acceptance",
+  "receipt": {
+    "version": "157.0.8103.38",
+    "source_url": "https://storage.googleapis.com/chrome-for-testing-public/157.0.8103.38/mac-arm64/chrome-headless-shell-mac-arm64.zip",
+    "archive_sha256": "e6a6b13551aa12f951d0891d79282606b13742837c8fa0505e1272bae116ce82",
+    "executable_sha256": "ed0e3d67ce3cc2528acb7290ebe86181c144890ff7f610e86268317c6139d518",
+    "download_elapsed_seconds": 8.055642207968049,
+    "codesign_verify_exit": 0,
+    "executable": "/Users/donbeave/Projects/jackin-project/.rewrite-tools/docs-browser-public-proof-20261109-v1/headless-shell-stable/chrome-headless-shell-mac-arm64/chrome-headless-shell",
+    "scope": "official current stable native browser utility; not application proof"
+  }
+}

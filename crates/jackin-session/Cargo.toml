@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "jackin-session"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+base64 = { workspace = true }
+caseless = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
+flate2 = { workspace = true }
+gix-hash = { workspace = true }
+jackin-core = { workspace = true }
+jackin-image = { workspace = true }
+jackin-openshell = { workspace = true }
+rusqlite = { workspace = true }
+rustix = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+tokio = { workspace = true, features = ["fs", "io-util", "macros", "process", "rt", "sync", "time"] }
+tokio-util = { workspace = true }
+unicode-normalization = { workspace = true }
+zeroize = { workspace = true }
+
+[dev-dependencies]
+alacritty_terminal = { workspace = true }
+jackin-openshell = { workspace = true, features = ["contract"] }
+jackin-testkit = { workspace = true }
+noyalib = { workspace = true }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+sha1 = { workspace = true }
+tempfile = { workspace = true }
+termwiz = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }
+
+[package.metadata.cargo-shear]
+ignored-paths = ["tests/common/tap.rs", "tests/support/trap.rs"]
+
+[lints]
+workspace = true

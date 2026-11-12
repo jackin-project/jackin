@@ -1,0 +1,210 @@
+---
+title: Run a local OpenShell gateway
+description: Start an OpenShell gateway with the vm compute driver on an Apple silicon Mac and register it for jackin.
+---
+
+Jackin does not install, start, or stop an OpenShell gateway. You run one. This page starts a local gateway named `jackin-local` with the `vm` compute driver. Each sandbox is a lightweight virtual machine.
+
+The steps were tested on macOS 27.2 on Apple silicon. They install OpenShell 0.1.7, the release that jackin pins.
+
+## Before you start
+
+You need:
+
+- An Apple silicon Mac. The `vm` driver uses Hypervisor.framework.
+- Homebrew, with the `openshell` formula at 0.1.7: `brew install openshell`.
+- e2fsprogs. The driver builds ext4 disks with `mke2fs`: `brew install e2fsprogs`.
+- The GitHub CLI `gh`, signed in. It downloads the driver.
+- `git` and `ssh` on the host. Jackin uses `git` to filter an upload and `ssh` for file transfers.
+- A Docker engine on the host, with its socket at `/var/run/docker.sock`. Jackin builds role images with it. The `vm` driver also looks for the image there. The engine does not run your sandboxes.
+
+The Homebrew package does not contain `openshell-driver-vm`. The script below downloads it from the `v0.1.7` release, checks its digest, and signs it with the Hypervisor entitlement.
+
+## Start the gateway
+
+Save this script as `start-gateway.sh` and run `sh start-gateway.sh`. It is safe to run again. It installs the driver only when the driver is missing, unsigned, or not version 0.1.7, keeps existing certificates and configuration, starts the gateway only when none runs, and registers it only when it is not registered.
+
+```sh
+#!/bin/sh
+set -eu
+
+NAME=jackin-local
+PORT=17670
+TAG=v0.1.7
+VERSION=${TAG#v}
+ASSET=openshell-driver-vm-aarch64-apple-darwin.tar.gz
+
+STATE="$HOME/.local/state/openshell/$NAME"
+LOG="$HOME/Library/Logs/openshell-gateway-$NAME.log"
+GW=/opt/homebrew/bin/openshell-gateway
+CLI=/opt/homebrew/bin/openshell
+GATEWAY_PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
+DRIVER="$STATE/libexec/openshell-driver-vm"
+
+mkdir -p "$STATE/libexec"
+
+if ! codesign -d --entitlements - "$DRIVER" 2>&1 | grep -q com.apple.security.hypervisor ||
+  [ "$("$DRIVER" --version)" != "openshell-driver-vm $VERSION" ]; then
+  work=$(mktemp -d)
+  gh release download "$TAG" -R NVIDIA/OpenShell -D "$work" \
+    -p "$ASSET" -p openshell-checksums-sha256.txt
+  (cd "$work" && grep " $ASSET\$" openshell-checksums-sha256.txt | shasum -a 256 -c -)
+  tar -xzf "$work/$ASSET" -C "$work"
+  cat >"$work/vm.entitlements.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.hypervisor</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+  install -m 755 "$work/openshell-driver-vm" "$DRIVER"
+  codesign --force -s - --entitlements "$work/vm.entitlements.plist" "$DRIVER"
+  rm -rf "$work"
+fi
+
+"$GW" generate-certs --output-dir "$STATE/tls"
+
+if [ ! -f "$STATE/gateway-vm.toml" ]; then
+  cat >"$STATE/gateway-vm.toml" <<EOF
+[openshell]
+version = 2
+
+[openshell.gateway]
+name = "$NAME"
+compute_driver = "vm"
+
+[openshell.drivers.vm]
+driver_dir = "$STATE/libexec"
+state_dir = "$STATE/vm-driver"
+EOF
+fi
+
+env PATH="$GATEWAY_PATH" "$GW" config preflight -- --config "$STATE/gateway-vm.toml"
+
+if ! pgrep -f "openshell-gateway --config $STATE/gateway-vm.toml" >/dev/null; then
+  (
+    cd "$STATE"
+    env -i HOME="$HOME" PATH="$GATEWAY_PATH" \
+      OPENSHELL_LOCAL_TLS_DIR="$STATE/tls" \
+      OPENSHELL_DB_URL="sqlite:$STATE/gateway.db" \
+      nohup "$GW" --config "$STATE/gateway-vm.toml" --port "$PORT" \
+      >>"$LOG" 2>&1 </dev/null &
+  )
+fi
+
+mtls="${XDG_CONFIG_HOME:-$HOME/.config}/openshell/gateways/$NAME/mtls"
+if ! "$CLI" gateway list </dev/null | grep -q " $NAME "; then
+  mkdir -p "$mtls"
+  cp "$STATE/tls/ca.crt" "$STATE/tls/client/tls.crt" "$STATE/tls/client/tls.key" "$mtls/"
+  "$CLI" gateway add "https://localhost:$PORT" --local --name "$NAME" </dev/null
+fi
+
+i=0
+until "$CLI" -g "$NAME" status </dev/null 2>/dev/null | grep -q "Status: Connected"; do
+  i=$((i + 1))
+  [ "$i" -le 30 ] || { echo "gateway $NAME did not become healthy; see $LOG" >&2; exit 1; }
+  sleep 1
+done
+"$CLI" -g "$NAME" status </dev/null
+```
+
+The gateway runs detached with `nohup`. It keeps running after you close the terminal. No service manager supervises it, so it does not start again after a reboot. Run the script again after a reboot.
+
+The script leaves these files:
+
+| Path | Content |
+|---|---|
+| `~/.local/state/openshell/jackin-local/gateway-vm.toml` | The gateway configuration. |
+| `~/.local/state/openshell/jackin-local/tls/` | The certificates and the sandbox token key. |
+| `~/.local/state/openshell/jackin-local/gateway.db` | The gateway database. |
+| `~/.local/state/openshell/jackin-local/libexec/openshell-driver-vm` | The signed driver. |
+| `~/.local/state/openshell/jackin-local/vm-driver/` | Disks and logs of the sandboxes. |
+| `~/Library/Logs/openshell-gateway-jackin-local.log` | The gateway log. |
+| `~/.config/openshell/gateways/jackin-local/` | The registration and the client certificates. |
+
+Registering a gateway with `openshell gateway add` also makes it the active gateway. Jackin never relies on the active gateway and never changes it. It names the gateway and the OpenShell workspace on every call.
+
+Jackin accepts only a gateway entry with an `https://` endpoint and mutual TLS. Any other entry is an error, so a token never travels in plain text.
+
+## Check the gateway
+
+```sh
+openshell -g jackin-local status
+```
+
+The output ends with `Status: Connected` and `Version: 0.1.7`.
+
+Create a short sandbox to prove the driver:
+
+```sh
+openshell -g jackin-local --workspace default sandbox create --name smoke --no-auto-providers --no-tty -- true
+openshell -g jackin-local --workspace default sandbox list
+openshell -g jackin-local --workspace default sandbox delete smoke
+```
+
+The list shows the phase `Completed` for `smoke`. The first sandbox is slower, because the driver pulls and prepares the default image `nvcr.io/nvidia/base/ubuntu:24.04`.
+
+## Register the gateway with jackin
+
+Jackin keeps its own gateway entries in `~/.config/jackin/config.toml`. Add one that names the gateway you registered with OpenShell:
+
+```sh
+jackin gateway add jackin-local --default
+```
+
+The entry holds the OpenShell workspace (`default`), the buildx builder (`default`), and the image platform. Set them with `--workspace`, `--builder`, and `--platform`. The platform defaults to the architecture of your host. `--default` makes this gateway the one that commands use when you pass no `--gateway`.
+
+Then run the checks:
+
+```sh
+jackin doctor
+```
+
+## Stop the gateway
+
+Delete or stop your sandboxes first. Then stop the process:
+
+```sh
+kill $(pgrep -f 'openshell-gateway --config .*/jackin-local/gateway-vm.toml')
+```
+
+## Upgrade the gateway
+
+Jackin pins one OpenShell release (`compatibility.lock.toml`), and `jackin doctor` fails when the gateway runs another one. To move the gateway to the pinned release:
+
+1. Export the work of every sandbox, then purge the sandboxes: `jackin export <sandbox>` and `jackin purge <sandbox>`.
+2. Stop the gateway as shown above, and wait until `pgrep -f 'openshell-gateway --config .*/jackin-local/gateway-vm.toml'` prints nothing.
+3. Copy the database, so that you can go back: `cp ~/.local/state/openshell/jackin-local/gateway.db ~/.local/state/openshell/jackin-local/gateway.db.bak`. The new gateway migrates the file when it starts.
+4. Upgrade the `openshell` formula: `brew upgrade openshell`.
+5. Run the script of this page again. Its `TAG` is the pinned release. It replaces the driver, because the installed driver does not report that version. It keeps the certificates and the configuration, and it starts the new gateway.
+6. Run `openshell -g jackin-local status` and `jackin doctor`.
+
+## Fix common errors
+
+| Message | Cause | Fix |
+|---|---|---|
+| `vm compute driver binary not found` | The driver is not under `libexec`. | Run the script. It installs the driver. |
+| `inspect /usr/local/bin/mke2fs: Permission denied` | The gateway inherited a `PATH` entry that holds an unreadable `mke2fs`. | Start the gateway through the script. It sets `PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin`. |
+| `Gateway 'jackin-local' already exists` | `gateway add` is not idempotent. | The script checks `gateway list` first. To redo the registration, run `openshell gateway remove jackin-local`. |
+| `Connection refused (os error 61)` | The gateway is not running. | Run the script. |
+
+## What jackin expects
+
+`jackin doctor` checks these things:
+
+- The `openshell`, `ssh`, and `git` binaries run.
+- The gateway entry is registered with OpenShell.
+- The gateway answers.
+- The gateway version equals the version that jackin pins.
+- The Docker engine socket exists.
+
+It does not start or repair the gateway.
+
+Sandboxes made from the default image run as user `ubuntu` and have no `git`, `curl`, `sudo`, or `docker`. Jackin roles use their own image, built on the jackin construct image. See [The construct image](/developing/construct-image/).
+
+## Next step
+
+[Quick start](/getting-started/quickstart/)

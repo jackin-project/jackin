@@ -1,0 +1,89 @@
+[agent]
+id = "codex"
+provider = "codex"
+launch_command = ["codex", "--sandbox", "danger-full-access", "-c", "check_for_update_on_startup=false"]
+workdir = "/sandbox/project"
+state_dir = "/sandbox/.codex"
+
+[binaries]
+dir = "/usr/local/bin"
+agent = "/usr/local/bin/codex"
+code_mode_host = "/usr/local/bin/codex-code-mode-host"
+start = "/usr/local/bin/jackin-start"
+system_config = "/etc/codex/config.toml"
+
+[install]
+version = "0.166.0"
+url_template = "https://github.com/openai/codex/releases/download/rust-v{version}/codex-package-{target}.tar.gz"
+archive_members = ["bin/codex", "bin/codex-code-mode-host"]
+version_output = "codex-cli {version}"
+system_config_content = "check_for_update_on_startup = false\n"
+
+[install.targets.arm64]
+platform = "linux/arm64"
+target = "aarch64-unknown-linux-musl"
+sha256 = "7821b77dda2e6283fb1f63f3165177a271da8833e857cf673c6ca1c9db3bfcc6"
+
+[install.targets.amd64]
+platform = "linux/amd64"
+target = "x86_64-unknown-linux-musl"
+sha256 = "1d44b28bc4ac9937d7d3532264baa68a507ce364956a0d4ebb856f331cdee254"
+
+[openshell_provider]
+profile_id = "codex"
+profile_file = "crates/jackin-core/src/assets/codex-provider.yaml"
+name_template = "jackin-{account}-codex"
+credential_keys = ["CODEX_AUTH_ACCESS_TOKEN"]
+refresh_token_key = "CODEX_AUTH_REFRESH_TOKEN"
+refresh_strategy = "oauth2-refresh-token"
+token_url = "https://auth.openai.com/oauth/token"
+client_id_source = "auth.json tokens.oauth_provenance.client_id"
+
+[[network_policy.rules]]
+name = "_provider_{provider}"
+binaries = ["/usr/local/bin/codex"]
+endpoints = [
+  { host = "api.openai.com", port = 443, protocol = "rest", access = "read-write", enforcement = "enforce" },
+  { host = "auth.openai.com", port = 443, protocol = "rest", access = "read-write", enforcement = "enforce" },
+  { host = "chatgpt.com", port = 443, protocol = "rest", access = "read-write", enforcement = "enforce" },
+  { host = "ab.chatgpt.com", port = 443, protocol = "rest", access = "read-write", enforcement = "enforce" },
+]
+
+[auth_json]
+path = "/sandbox/.codex/auth.json"
+mode = "0600"
+auth_mode = "chatgptAuthTokens"
+openai_api_key = "null"
+access_token = "placeholder: the value of the sandbox env CODEX_AUTH_ACCESS_TOKEN, which is an openshell:resolve:env placeholder"
+refresh_token = "empty string"
+account_id = "real: the account id of the host login, written at account import, never the CODEX_AUTH_ACCOUNT_ID placeholder"
+id_token = "non-secret placeholder JWT: header alg none, payload iss https://auth.openai.com aud codex sub openshell-app-server, signature part placeholder"
+last_refresh = "UTC timestamp at write time"
+
+[start]
+launch_id_env = "JACKIN_LAUNCH_ID"
+launch_id_rule = "non-empty, no leading dot, only A-Z a-z 0-9 . _ -"
+run_dir = "/sandbox/.jackin/run"
+state_file = "/sandbox/.jackin/run/state"
+start_file = "/sandbox/.jackin/run/start"
+state_writer = "jackin-start, temp file state.tmp and rename"
+start_writer = "jackin, temp file start.tmp and rename"
+states = ["waiting", "running {attempt}", "exited {attempt} {code}"]
+attempt_id = "positive decimal integer of 1 to 18 digits without a leading zero; jackin-start starts the agent only for an id greater than the last id it handled since it started"
+agent_workdir = "/sandbox/project"
+exit_code_invalid_input = 64
+exit_code_workdir_missing = 66
+
+[jackin_markers]
+uploaded = "/sandbox/.jackin/uploaded-{launch_id}"
+setup_done = "/sandbox/.jackin/setup-done-{launch_id}"
+writer = "jackin, through exec"
+
+[hooks]
+dir = "/usr/local/lib/jackin/hooks"
+setup = "/usr/local/lib/jackin/hooks/setup"
+preflight = "/usr/local/lib/jackin/hooks/preflight"
+build_context_dir = "hooks"
+build_context_files = ["hooks/setup", "hooks/preflight"]
+undeclared_hook = "zero-byte file in the build context; the build fails when a file is missing"
+runner = "jackin, through non-PTY exec as the user sandbox in /sandbox/project"
