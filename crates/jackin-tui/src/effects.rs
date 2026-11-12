@@ -152,6 +152,15 @@ impl LocalKind {
     }
 }
 
+pub(crate) fn is_credential_store(provider: jackin_core::Provider, path: &HostPath) -> bool {
+    provider.credential_store().is_some_and(|store| {
+        path.as_path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == store)
+    })
+}
+
 impl Inputs {
     async fn saved_snapshot(&self) -> Option<Snapshot> {
         let config = self.config.load().await.ok()?;
@@ -237,6 +246,13 @@ impl Inputs {
                 folder: text.to_owned(),
             })
         };
+        if let Some(store) = provider.credential_store() {
+            let file = HostPath::resolve(Path::new(store), folder)?;
+            return match self.host.fs.stat_following(&file).await {
+                Ok(Some(FileKind::File)) => Ok(file),
+                _ => Err(unusable()),
+            };
+        }
         let name = provider.login_file().ok_or_else(unusable)?;
         let file = HostPath::resolve(Path::new(name), folder)?;
         match read_credential_file(self.host.fs.as_ref(), &file).await? {

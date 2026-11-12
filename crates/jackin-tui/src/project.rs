@@ -16,6 +16,7 @@ use jackin_console::domain::instance::{
 };
 use jackin_console::domain::onepassword::OpReference;
 use jackin_console::domain::openshell as normalize;
+use jackin_console::domain::openshell::env_edit_block;
 use jackin_console::domain::role::{
     AccountOrder, RoleAdmin, RoleCheckState, RoleEnvEntry, RoleFinding, RoleManifestDoc, RoleRecord,
 };
@@ -28,7 +29,9 @@ use jackin_console::domain::workspace::{
 use jackin_console::world::{
     DaemonHealth, GithubRepo, GlobalConfig, Snapshot, TrustKind, TrustRow,
 };
-use jackin_core::{Agent as CoreAgent, NameSuffix, Provider as CoreProvider, plain};
+use jackin_core::{
+    Agent as CoreAgent, NameSuffix, Provider as CoreProvider, omp_host_store_display, plain,
+};
 use jackin_core::{
     AllowedRoles, Config, CredentialSource as CoreCredential, DockerRisk, EnvTable, GatewayName,
     Phase, RoleName, RoleSource as CoreRoleSource, SandboxName, SandboxSummary, SupervisorReading,
@@ -192,9 +195,9 @@ fn file_kind(provider: Provider) -> DetectedKind {
         Provider::Anthropic => DetectedKind::ClaudeOAuthProfile,
         Provider::OpenAi => DetectedKind::CodexAuthJson,
         Provider::XAi => DetectedKind::GrokAuthJson,
-        Provider::OpenCode => DetectedKind::OpenCodeGoAuthJson,
         Provider::Amp => DetectedKind::AmpSecrets,
-        Provider::Zai
+        Provider::OpenCode
+        | Provider::Zai
         | Provider::Moonshot
         | Provider::MiniMax
         | Provider::Cursor
@@ -228,8 +231,8 @@ pub(crate) fn source(credential: &CoreCredential, provider: Option<Provider>) ->
             path: path.as_path().display().to_string(),
             detected: DetectedKind::Unknown,
         },
-        CoreCredential::OmpHost => CredentialSource::HostEnv {
-            var: String::new(),
+        CoreCredential::OmpHost => CredentialSource::LocalFolder {
+            path: omp_host_store_display(),
             detected: DetectedKind::Unknown,
         },
     }
@@ -247,9 +250,13 @@ fn account(config: &Config, core: &jackin_core::Account) -> Option<Account> {
     );
     a.lifecycle = jackin_console::domain::account::Lifecycle::Available;
     a.default_for_provider = config.default_account(core.provider()) == Some(core.name());
-    a.launch_blocked = (core.provider() == CoreProvider::Codex && !local_login)
-        .then_some(LaunchBlock::UsageOnlySource);
+    a.launch_blocked = ((core.provider() == CoreProvider::Codex && !local_login)
+        || core.is_usage_only())
+    .then_some(LaunchBlock::UsageOnlySource);
     normalize::account(&mut a);
+    if matches!(core.credential(), CoreCredential::OmpHost) {
+        a.edit_blocked = Some(env_edit_block(&omp_host_store_display()));
+    }
     Some(a)
 }
 

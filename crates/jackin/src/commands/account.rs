@@ -123,7 +123,7 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             CommandError::Argument("omp-host needs an omp tuple provider".to_owned())
         })?;
         let db = jackin_core::HostPath::resolve(
-            std::path::Path::new(".omp/agent/agent.db"),
+            std::path::Path::new(jackin_core::OMP_HOST_STORE),
             &app.deps.host.home,
         )
         .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;

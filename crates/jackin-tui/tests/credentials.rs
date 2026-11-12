@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use jackin_console::domain::account::CredentialSource as ConsoleSource;
 use jackin_core::{
     Account, AccountName, ConfigEdit, CredentialSource, EnvName, HostPath, OpReference, Provider,
 };
@@ -23,6 +24,48 @@ fn leaks(surface: &str, text: &str) -> Vec<String> {
         .filter(|fake| text.contains(fake))
         .map(|fake| format!("{fake} appears in {surface}"))
         .collect()
+}
+
+#[tokio::test]
+async fn an_omp_host_account_names_no_variable_and_cannot_be_edited() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.world.seed_all(&rig.config).await?;
+        let account = Account::new(
+            AccountName::parse("host")?,
+            Provider::Zai,
+            CredentialSource::OmpHost,
+        )?;
+        rig.world
+            .config
+            .edit(vec![ConfigEdit::AddAccount(account)])
+            .await?;
+        let mut console = ConsoleRig::builder(&rig.world).build().await?;
+        console.skip_intro();
+        let registry = &console.console().app().world.accounts;
+        let account = registry
+            .accounts
+            .iter()
+            .find(|account| account.display_name == "host")
+            .ok_or("the omp host account is missing")?;
+        match &account.source {
+            ConsoleSource::HostEnv { var, .. } => {
+                return Err(format!("the omp host account reads ${var}").into());
+            }
+            ConsoleSource::LocalFolder { path, .. } => {
+                if path.trim().is_empty() {
+                    return Err("the omp host account names no store".into());
+                }
+            }
+            other => return Err(format!("{other:?}").into()),
+        }
+        assert!(
+            account.edit_blocked.is_some(),
+            "the omp host source is read only"
+        );
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]

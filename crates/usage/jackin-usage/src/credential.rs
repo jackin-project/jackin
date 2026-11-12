@@ -20,7 +20,7 @@ use crate::request::UsageAccount;
 const OP_TIMEOUT: Duration = Duration::from_secs(30);
 const OMP_RESOLVE_ATTEMPTS: usize = 4;
 const CODEX_LOGIN_FILE: &str = "auth.json";
-const OMP_DB: &str = ".omp/agent/agent.db";
+const OMP_DB: &str = jackin_core::OMP_HOST_STORE;
 const KIMI_CONFIG: &str = "config.toml";
 const KIMI_GLOBAL_BASE: &str = "https://api.kimi.ai/coding/v1";
 const KIMI_MAINLAND_BASE: &str = "https://api.kimi.com/coding/v1";
@@ -142,6 +142,9 @@ pub(crate) async fn resolve(
             Ok(Material::token(key.expose()).with_revision(Some(revision)))
         }
         CredentialSource::File { path } => {
+            if account.provider == jackin_core::Provider::Opencode {
+                return opencode_store(deps, path).await;
+            }
             let (text, revision) = read_credential(deps, path).await?;
             Ok(file_login(account, path, text).with_revision(Some(revision)))
         }
@@ -299,6 +302,73 @@ async fn minimax_host_login(
             "the MiniMax store holds more than one login",
         )),
     }
+}
+
+async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Material, Unresolved> {
+    let identity = deps
+        .fs
+        .identity(path)
+        .await
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
+        .ok_or(Unresolved::Missing)?;
+    let found = extract_opencode_credential(path.as_path())?;
+    let revision = opencode_revision(path.as_path(), identity, &found);
+    Ok(Material::login(found.value).with_revision(Some(revision)))
+}
+
+struct OpenCodeRecord {
+    id: i64,
+    value: String,
+    ctime: i64,
+    ctime_nsec: i64,
+    digest: String,
+}
+
+fn extract_opencode_credential(db_path: &Path) -> Result<OpenCodeRecord, Unresolved> {
+    let metadata = match std::fs::metadata(db_path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err(Unresolved::Missing);
+        }
+        Err(_) => {
+            return Err(Unresolved::Unreadable(
+                "the OpenCode store could not be read",
+            ));
+        }
+        Ok(metadata) => metadata,
+    };
+    let connection =
+        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    let (id, value): (i64, String) = connection
+        .query_row(
+            "SELECT id, value FROM credential WHERE integration_id = 'opencode' AND type = 'oauth' AND active = 1 ORDER BY id DESC LIMIT 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|error| match error {
+            rusqlite::Error::QueryReturnedNoRows => Unresolved::Missing,
+            _ => Unresolved::Unreadable("the OpenCode store could not be read"),
+        })?;
+    Ok(OpenCodeRecord {
+        id,
+        digest: revision_of(value.as_bytes()),
+        value,
+        ctime: metadata.ctime(),
+        ctime_nsec: metadata.ctime_nsec(),
+    })
+}
+
+fn opencode_revision(db: &Path, identity: FileIdentity, found: &OpenCodeRecord) -> String {
+    format!(
+        "{}:{}:{}:{}:{}:{}:{}",
+        db.display(),
+        identity.dev,
+        identity.ino,
+        found.id,
+        found.ctime,
+        found.ctime_nsec,
+        found.digest
+    )
 }
 
 async fn omp_key(deps: &UsageDeps, account: &UsageAccount) -> Result<(String, Secret), Unresolved> {
