@@ -489,9 +489,17 @@ pub struct LoadArgs {
 pub struct AttachArgs {
     #[arg(help = "Sandbox name")]
     pub sandbox: SandboxName,
-    #[arg(long, help = "Run preflight and start Codex again after it exited")]
+    #[arg(
+        long,
+        conflicts_with = "agent",
+        help = "Run preflight and start Codex again after it exited; it cannot be combined with --agent"
+    )]
     pub restart: bool,
-    #[arg(long, help = "Attach to this agent instance instead of the lead")]
+    #[arg(
+        long,
+        conflicts_with = "restart",
+        help = "Attach to this agent instance instead of the lead; it cannot be combined with --restart"
+    )]
     pub agent: Option<String>,
 }
 
