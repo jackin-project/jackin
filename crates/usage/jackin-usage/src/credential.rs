@@ -27,6 +27,7 @@ const KIMI_GLOBAL_BASE: &str = "https://api.kimi.ai/coding/v1";
 const KIMI_MAINLAND_BASE: &str = "https://api.kimi.com/coding/v1";
 const OPENCODE_INTEGRATION: &str = "opencode";
 const OPENCODE_OAUTH: &str = "oauth";
+const OPENCODE_SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
 const HEX: [char; 16] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
 ];
@@ -145,8 +146,10 @@ pub(crate) async fn resolve(
             Ok(Material::token(key.expose()).with_revision(Some(revision)))
         }
         CredentialSource::File { path } => {
-            if account.provider == jackin_core::Provider::Opencode {
-                return opencode_store(deps, path).await;
+            if account.provider == jackin_core::Provider::Opencode
+                && let Some(material) = opencode_store(deps, path).await?
+            {
+                return Ok(material);
             }
             let (text, revision) = read_credential(deps, path).await?;
             Ok(file_login(account, path, text).with_revision(Some(revision)))
@@ -307,7 +310,10 @@ async fn minimax_host_login(
     }
 }
 
-async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Material, Unresolved> {
+async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Material>, Unresolved> {
+    if !is_opencode_store(deps, path).await {
+        return Ok(None);
+    }
     let identity = deps
         .fs
         .identity(path)
@@ -327,7 +333,16 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Material, U
             .await
             .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))??;
     let revision = opencode_revision(path.as_path(), identity, &found, &store_digest);
-    Ok(Material::login(found.value).with_revision(Some(revision)))
+    Ok(Some(
+        Material::login(found.value).with_revision(Some(revision)),
+    ))
+}
+
+async fn is_opencode_store(deps: &UsageDeps, path: &HostPath) -> bool {
+    match deps.fs.read_at(path, 0, OPENCODE_SQLITE_MAGIC.len()).await {
+        Ok(head) => head == OPENCODE_SQLITE_MAGIC,
+        Err(_) => false,
+    }
 }
 
 async fn read_opencode_wal(deps: &UsageDeps, path: &HostPath) -> Option<Vec<u8>> {

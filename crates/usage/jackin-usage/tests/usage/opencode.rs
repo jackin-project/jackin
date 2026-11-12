@@ -279,3 +279,30 @@ async fn a_credential_of_another_kind_is_not_used() -> TestResult {
     })
     .await
 }
+
+#[tokio::test]
+async fn a_credential_file_that_is_not_the_store_is_read_as_a_credential() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let path = directory.path().join("opencode.json");
+        std::fs::write(&path, credential(TOKEN, EXPIRES, None))?;
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {TOKEN}")),
+        );
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File {
+                path: host_path_of(&path),
+            },
+        );
+        let outcome = harness.report_cached(&account, directory.path()).await?;
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        Ok(())
+    })
+    .await
+}
