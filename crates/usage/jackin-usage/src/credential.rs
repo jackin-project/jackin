@@ -889,9 +889,8 @@ mod tests {
 
     #[test]
     fn the_store_connection_keeps_its_temporary_storage_in_memory() {
-        let connection = match super::opencode_connection() {
-            Ok(connection) => connection,
-            Err(_) => panic!("a connection"),
+        let Ok(connection) = super::opencode_connection() else {
+            panic!("a connection");
         };
         let store: i64 = connection
             .query_row("PRAGMA temp_store", [], |row| row.get(0))
@@ -931,15 +930,13 @@ mod tests {
                 .expect("the newer row");
         }
         let bytes = std::fs::read(&path).expect("the store bytes");
-        let found = match super::extract_opencode_credential(bytes, None) {
-            Ok(found) => found,
-            Err(_) => panic!("the credential"),
+        let Ok(found) = super::extract_opencode_credential(bytes, None) else {
+            panic!("the credential");
         };
         assert_eq!(found.id, "cred_newer");
         assert!(found.value.contains("newer"));
-        let connection = match super::opencode_connection() {
-            Ok(connection) => connection,
-            Err(_) => panic!("a connection"),
+        let Ok(connection) = super::opencode_connection() else {
+            panic!("a connection");
         };
         connection
             .execute_batch(OPENCODE_SCHEMA)

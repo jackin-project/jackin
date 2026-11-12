@@ -534,7 +534,7 @@ async fn the_store_is_never_written_to_a_temporary_file() -> TestResult {
         let private = directory.path().join("private-temporary-root");
         std::fs::create_dir(&private)?;
         std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o500))?;
-        let output = std::process::Command::new(std::env::current_exe()?)
+        let output = tokio::process::Command::new(std::env::current_exe()?)
             .args([
                 "--exact",
                 "opencode::the_store_is_read_without_a_temporary_directory",
@@ -548,7 +548,8 @@ async fn the_store_is_never_written_to_a_temporary_file() -> TestResult {
             .env("JACKIN_OPENCODE_SECRET", SECRET)
             .env("TMPDIR", &private)
             .env("SQLITE_TMPDIR", &private)
-            .output()?;
+            .output()
+            .await?;
         assert!(
             output.status.success(),
             "the store could not be read without a temporary file: {}{}",
