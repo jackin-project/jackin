@@ -42,6 +42,10 @@ impl Clock for VirtualClock {
         0
     }
 
+    fn monotonic(&self) -> Duration {
+        self.elapsed()
+    }
+
     async fn sleep(&self, duration: Duration) {
         *self.elapsed.lock().unwrap_or_else(PoisonError::into_inner) += duration;
     }
@@ -108,8 +112,7 @@ async fn poll_until_times_out_after_exactly_the_timeout() -> TestResult {
         Err(PollError::Timeout { after }) => assert_eq!(after, Duration::from_secs(10)),
         other => panic!("{other:?}"),
     }
-    assert!(clock.elapsed() <= Duration::from_secs(10));
-    assert!(clock.elapsed() >= Duration::from_secs(10) - Duration::from_millis(1));
+    assert_eq!(clock.elapsed(), Duration::from_secs(10));
     Ok(())
 }
 
