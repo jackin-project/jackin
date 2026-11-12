@@ -245,6 +245,22 @@ pub(crate) fn codex_body(used: u32) -> String {
 
 pub(crate) const AUTH_CHATGPT: &str = include_str!("fixtures/codex/auth_chatgpt.json");
 
+pub(crate) fn codex_auth(account_id: &str) -> String {
+    format!(
+        "{{\"auth_mode\":\"chatgpt\",\"OPENAI_API_KEY\":null,\"tokens\":{{\"id_token\":\"x\",\"access_token\":\"{CODEX_TOKEN}\",\"refresh_token\":\"SECRET_TOKEN_CODEX_REFRESH\",\"account_id\":\"{account_id}\"}},\"last_refresh\":\"2026-01-01T00:00:00Z\"}}"
+    )
+}
+
+pub(crate) async fn put_codex_auth(
+    harness: &UsageHarness,
+    home: &str,
+    account_id: &str,
+) -> TestResult {
+    harness
+        .put(&format!("{home}/auth.json"), &codex_auth(account_id))
+        .await
+}
+
 pub(crate) fn codex_route(body: &str) -> Route {
     Route::json(200, body)
         .requires_header("authorization", &format!("Bearer {CODEX_TOKEN}"))
