@@ -181,7 +181,7 @@ Commands:
   add      Add an account
   ls       List the accounts
   rm       Remove an account
-  default  Make an account the default of its provider
+  default  Make an account the default of its provider, or clear the default of a provider
   bind     Bind an account to a role or a workspace
   help     Print this message or the help of the given subcommand(s)
 
@@ -241,14 +241,15 @@ Options:
 ### jackin account default
 
 ```text
-Make an account the default of its provider
+Make an account the default of its provider, or clear the default of a provider
 
-Usage: jackin account default [OPTIONS] <ACCOUNT>
+Usage: jackin account default [OPTIONS] [ACCOUNT]
 
 Arguments:
-  <ACCOUNT>  Account name
+  [ACCOUNT]  Account name to make the default account of its provider
 
 Options:
+      --clear <PROVIDER>   Remove the default account of this provider
       --gateway <GATEWAY>  Gateway name from the jackin config
   -h, --help               Print help
 ```
