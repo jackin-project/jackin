@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::os::unix::fs::MetadataExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use jackin_core::{
@@ -382,7 +382,7 @@ async fn omp_key(deps: &UsageDeps, account: &UsageAccount) -> Result<(String, Se
         .map_err(|_| Unresolved::Unreadable("the OMP database path is not usable"))?;
     for _ in 0..OMP_RESOLVE_ATTEMPTS {
         let identity = omp_identity(deps, &db).await?;
-        let found = extract_omp_api_key(db.as_path(), provider_id)?;
+        let found = extract_omp_api_key(db.as_path().to_owned(), provider_id.to_owned()).await?;
         let confirmed = match (identity, omp_identity(deps, &db).await?) {
             (Some(before), Some(after)) if before == after => before,
             _ => continue,
@@ -423,7 +423,16 @@ fn omp_revision(db: &Path, dev: u64, ino: u64, found: &Extracted) -> String {
     )
 }
 
-fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Result<Extracted, Unresolved> {
+async fn extract_omp_api_key(
+    db_path: PathBuf,
+    provider_id: String,
+) -> Result<Extracted, Unresolved> {
+    tokio::task::spawn_blocking(move || read_omp_api_key(&db_path, &provider_id))
+        .await
+        .map_err(|_| Unresolved::Unreadable("the OMP store could not be read"))?
+}
+
+fn read_omp_api_key(db_path: &Path, provider_id: &str) -> Result<Extracted, Unresolved> {
     let metadata = match std::fs::metadata(db_path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Err(Unresolved::Missing);
