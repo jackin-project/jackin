@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::future::Future;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,6 +29,7 @@ const KIMI_MAINLAND_BASE: &str = "https://api.kimi.com/coding/v1";
 const OPENCODE_INTEGRATION: &str = "opencode";
 const OPENCODE_OAUTH: &str = "oauth";
 const OPENCODE_SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
+const OPENCODE_SNAPSHOT_ATTEMPTS: usize = 3;
 const HEX: [char; 16] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
 ];
@@ -320,13 +322,7 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
         .await
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
         .ok_or(Unresolved::Missing)?;
-    let bytes = deps
-        .fs
-        .read(path)
-        .await
-        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
-        .ok_or(Unresolved::Missing)?;
-    let wal = read_opencode_wal(deps, path).await?;
+    let (bytes, wal) = read_opencode_snapshot(deps, path).await?;
     let found =
         tokio::task::spawn_blocking(move || extract_opencode_credential(&bytes, wal.as_deref()))
             .await
@@ -342,6 +338,45 @@ async fn is_opencode_store(deps: &UsageDeps, path: &HostPath) -> bool {
         Ok(head) => head == OPENCODE_SQLITE_MAGIC,
         Err(_) => false,
     }
+}
+
+async fn read_opencode_snapshot(
+    deps: &UsageDeps,
+    path: &HostPath,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved> {
+    opencode_consistent_snapshot(move || async move {
+        let bytes = read_opencode_store(deps, path).await?;
+        let wal = read_opencode_wal(deps, path).await?;
+        Ok((bytes, wal))
+    })
+    .await
+}
+
+async fn opencode_consistent_snapshot<Read, ReadFuture>(
+    mut read: Read,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved>
+where
+    Read: FnMut() -> ReadFuture,
+    ReadFuture: Future<Output = Result<(Vec<u8>, Option<Vec<u8>>), Unresolved>>,
+{
+    for _ in 0..OPENCODE_SNAPSHOT_ATTEMPTS {
+        let (first, wal) = read().await?;
+        let (second, _) = read().await?;
+        if first == second {
+            return Ok((first, wal));
+        }
+    }
+    Err(Unresolved::Unreadable(
+        "the OpenCode store could not be read",
+    ))
+}
+
+async fn read_opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Vec<u8>, Unresolved> {
+    deps.fs
+        .read(path)
+        .await
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
+        .ok_or(Unresolved::Missing)
 }
 
 async fn read_opencode_wal(
@@ -616,7 +651,7 @@ fn non_empty(text: &str) -> Option<&str> {
 mod tests {
     use super::{
         Extracted, KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, Path, Secret, kimi_base_for_slot,
-        omp_revision,
+        omp_revision, opencode_consistent_snapshot,
     };
 
     fn row(ctime: i64, digest: &str) -> Extracted {
@@ -627,6 +662,37 @@ mod tests {
             ctime_nsec: 0,
             digest: digest.to_owned(),
         }
+    }
+
+    fn snapshot_bytes(call: usize) -> Vec<u8> {
+        if call == 1 {
+            b"old".to_vec()
+        } else {
+            b"new".to_vec()
+        }
+    }
+
+    fn snapshot_bytes(call: usize) -> Vec<u8> {
+        if call == 1 {
+            b"old".to_vec()
+        } else {
+            b"new".to_vec()
+        }
+    }
+
+    #[tokio::test]
+    async fn a_store_that_changes_while_it_is_read_is_read_again() {
+        let mut calls = 0;
+        let mut read = || {
+            calls += 1;
+            let call = calls;
+            async move { Ok::<_, super::Unresolved>((snapshot_bytes(call), None)) }
+        };
+        let Ok((bytes, _)) = opencode_consistent_snapshot(&mut read).await else {
+            panic!("a stable snapshot");
+        };
+        assert_eq!(bytes, b"new");
+        assert_eq!(calls, 4);
     }
 
     #[test]
