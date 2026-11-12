@@ -77,28 +77,10 @@ async fn started(rows: &[(i64, &str)]) -> Result<Omp, Box<dyn std::error::Error>
 }
 
 impl Omp {
-    fn host(&self) -> jackin_usage::HostUsage {
-        let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
-            Arc::new(StdFileSystem::default()),
-            &self.harness.clock,
-        ));
-        self.harness.host_on(
-            fs,
-            host_path_of(&self.directory.path().join("state").join("usage")),
-            host_path_of(self.directory.path()),
-        )
-    }
-
     async fn report(&self) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
-        let request = UsageRequest {
-            accounts: vec![self.account.clone()],
-            refresh: Refresh::Cached,
-        };
-        let mut report = self
-            .host()
-            .report(&request, &CancellationToken::new())
-            .await?;
-        Ok(report.accounts.remove(0).outcome)
+        self.harness
+            .report_cached(&self.account, self.directory.path())
+            .await
     }
 
     fn host_over(&self, fs: Arc<dyn FileSystem>) -> jackin_usage::HostUsage {

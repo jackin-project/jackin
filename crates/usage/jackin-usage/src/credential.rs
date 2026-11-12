@@ -1,8 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::future::Future;
 use std::os::unix::fs::MetadataExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use jackin_core::{
@@ -20,10 +21,21 @@ use crate::request::UsageAccount;
 const OP_TIMEOUT: Duration = Duration::from_secs(30);
 const OMP_RESOLVE_ATTEMPTS: usize = 4;
 const CODEX_LOGIN_FILE: &str = "auth.json";
-const OMP_DB: &str = ".omp/agent/agent.db";
+const OMP_DB: &str = jackin_core::OMP_HOST_STORE;
 const KIMI_CONFIG: &str = "config.toml";
 const KIMI_GLOBAL_BASE: &str = "https://api.kimi.ai/coding/v1";
 const KIMI_MAINLAND_BASE: &str = "https://api.kimi.com/coding/v1";
+const OPENCODE_INTEGRATION: &str = "opencode";
+const OPENCODE_OAUTH: &str = "oauth";
+const OPENCODE_SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
+const OPENCODE_SNAPSHOT_ATTEMPTS: usize = 3;
+const OPENCODE_CREDENTIAL_QUERY: &str = "SELECT id, value, time_updated, time_created FROM credential \
+     WHERE integration_id = ?1 AND (active = 1 OR active IS NULL)";
+const OPENCODE_WAL_HEADER: usize = 32;
+const OPENCODE_WAL_FRAME_HEADER: usize = 24;
+const OPENCODE_WAL_MAGIC: u32 = 0x377f_0682;
+const OPENCODE_WAL_MAGIC_SWAPPED: u32 = 0x377f_0683;
+const OPENCODE_WAL_FORMAT: u32 = 3_007_000;
 const HEX: [char; 16] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
 ];
@@ -142,6 +154,11 @@ pub(crate) async fn resolve(
             Ok(Material::token(key.expose()).with_revision(Some(revision)))
         }
         CredentialSource::File { path } => {
+            if account.provider == jackin_core::Provider::Opencode
+                && let Some(material) = opencode_store(deps, path).await?
+            {
+                return Ok(material);
+            }
             let (text, revision) = read_credential(deps, path).await?;
             Ok(file_login(account, path, text).with_revision(Some(revision)))
         }
@@ -301,6 +318,355 @@ async fn minimax_host_login(
     }
 }
 
+async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Material>, Unresolved> {
+    if !is_opencode_store(deps, path).await {
+        return Ok(None);
+    }
+    let identity = deps
+        .fs
+        .identity(path)
+        .await
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
+        .ok_or(Unresolved::Missing)?;
+    let (bytes, wal) = read_opencode_snapshot(deps, path).await?;
+    let found =
+        tokio::task::spawn_blocking(move || extract_opencode_credential(bytes, wal.as_deref()))
+            .await
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))??;
+    let revision = opencode_revision(path.as_path(), identity, &found);
+    Ok(Some(
+        Material::login(found.value).with_revision(Some(revision)),
+    ))
+}
+
+async fn is_opencode_store(deps: &UsageDeps, path: &HostPath) -> bool {
+    match deps.fs.read_at(path, 0, OPENCODE_SQLITE_MAGIC.len()).await {
+        Ok(head) => head == OPENCODE_SQLITE_MAGIC,
+        Err(_) => false,
+    }
+}
+
+async fn read_opencode_snapshot(
+    deps: &UsageDeps,
+    path: &HostPath,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved> {
+    opencode_consistent_snapshot(|| async {
+        let bytes = read_opencode_store(deps, path).await?;
+        let wal = read_opencode_wal(deps, path).await?;
+        let again = read_opencode_store(deps, path).await?;
+        Ok((bytes, wal, again))
+    })
+    .await
+}
+
+async fn opencode_consistent_snapshot<Read, ReadFuture>(
+    mut read: Read,
+) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved>
+where
+    Read: FnMut() -> ReadFuture,
+    ReadFuture: Future<Output = Result<(Vec<u8>, Option<Vec<u8>>, Vec<u8>), Unresolved>>,
+{
+    for _ in 0..OPENCODE_SNAPSHOT_ATTEMPTS {
+        let (bytes, wal, again) = read().await?;
+        if bytes == again {
+            return Ok((bytes, wal));
+        }
+    }
+    Err(Unresolved::Unreadable(
+        "the OpenCode store could not be read",
+    ))
+}
+
+async fn read_opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Vec<u8>, Unresolved> {
+    deps.fs
+        .read(path)
+        .await
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
+        .ok_or(Unresolved::Missing)
+}
+
+async fn read_opencode_wal(
+    deps: &UsageDeps,
+    path: &HostPath,
+) -> Result<Option<Vec<u8>>, Unresolved> {
+    let wal = HostPath::parse(&PathBuf::from(format!("{}-wal", path.as_path().display())))
+        .map_err(|_| Unresolved::Unreadable("the OpenCode write-ahead log could not be read"))?;
+    match deps.fs.read(&wal).await {
+        Ok(bytes) => Ok(bytes),
+        Err(_) => Err(Unresolved::Unreadable(
+            "the OpenCode write-ahead log could not be read",
+        )),
+    }
+}
+
+struct OpenCodeRecord {
+    id: String,
+    value: String,
+    digest: String,
+}
+
+fn extract_opencode_credential(
+    bytes: Vec<u8>,
+    wal: Option<&[u8]>,
+) -> Result<OpenCodeRecord, Unresolved> {
+    let image = opencode_store_image(bytes, wal)?;
+    let mut connection = opencode_connection()?;
+    connection
+        .deserialize_read_exact(
+            "main",
+            std::io::Cursor::new(image.as_slice()),
+            image.len(),
+            true,
+        )
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    let mut statement = connection
+        .prepare(OPENCODE_CREDENTIAL_QUERY)
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+    let mut rows = statement
+        .query([OPENCODE_INTEGRATION])
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+    let mut found: Option<OpenCodeCandidate> = None;
+    while let Some(row) = rows
+        .next()
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
+    {
+        let id: String = row
+            .get(0)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let value: String = row
+            .get(1)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let updated: i64 = row
+            .get(2)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let created: i64 = row
+            .get(3)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let kind = serde_json::from_str::<Value>(&value)
+            .map_err(|_| Unresolved::Unreadable("the OpenCode credential is not valid JSON"))?;
+        if kind.get("type").and_then(Value::as_str) != Some(OPENCODE_OAUTH) {
+            continue;
+        }
+        let candidate = OpenCodeCandidate {
+            id,
+            value,
+            updated,
+            created,
+        };
+        if found.as_ref().is_none_or(|best| candidate.newer_than(best)) {
+            found = Some(candidate);
+        }
+    }
+    let Some(found) = found else {
+        return Err(Unresolved::Missing);
+    };
+    Ok(OpenCodeRecord {
+        id: found.id,
+        digest: revision_of(found.value.as_bytes()),
+        value: found.value,
+    })
+}
+
+fn opencode_connection() -> Result<rusqlite::Connection, Unresolved> {
+    let connection = rusqlite::Connection::open_in_memory()
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    connection
+        .execute_batch("PRAGMA temp_store = MEMORY;")
+        .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be opened"))?;
+    Ok(connection)
+}
+
+struct OpenCodeCandidate {
+    id: String,
+    value: String,
+    updated: i64,
+    created: i64,
+}
+
+impl OpenCodeCandidate {
+    fn newer_than(&self, other: &OpenCodeCandidate) -> bool {
+        (self.updated, self.created) > (other.updated, other.created)
+            || ((self.updated, self.created) == (other.updated, other.created)
+                && self.id < other.id)
+    }
+}
+
+fn opencode_store_image(mut image: Vec<u8>, wal: Option<&[u8]>) -> Result<Vec<u8>, Unresolved> {
+    if let Some(wal) = wal {
+        apply_opencode_wal(&mut image, wal)?;
+    }
+    if let Some(header) = image.get_mut(18..20) {
+        header.copy_from_slice(&[1, 1]);
+    }
+    Ok(image)
+}
+
+fn apply_opencode_wal(image: &mut Vec<u8>, wal: &[u8]) -> Result<(), Unresolved> {
+    let unreadable = || Unresolved::Unreadable("the OpenCode write-ahead log could not be read");
+    if wal.len() < OPENCODE_WAL_HEADER {
+        return Ok(());
+    }
+    let Some(magic) = wal.get(0..4).and_then(opencode_u32) else {
+        return Err(unreadable());
+    };
+    if magic != OPENCODE_WAL_MAGIC && magic != OPENCODE_WAL_MAGIC_SWAPPED {
+        return Err(unreadable());
+    }
+    let big_endian = magic & 1 == 1;
+    if wal.get(4..8).and_then(opencode_u32) != Some(OPENCODE_WAL_FORMAT) {
+        return Err(unreadable());
+    }
+    let page_size = match wal.get(8..12).and_then(opencode_u32) {
+        Some(1) => 65_536,
+        Some(size) => size as usize,
+        None => return Err(unreadable()),
+    };
+    if page_size < 512 || !page_size.is_power_of_two() {
+        return Err(unreadable());
+    }
+    if image.len() < page_size || !image.len().is_multiple_of(page_size) {
+        return Err(unreadable());
+    }
+    let store_page_size = match image.get(16..18).and_then(opencode_u16) {
+        Some(1) => 65_536,
+        Some(size) => size as usize,
+        None => return Err(unreadable()),
+    };
+    if store_page_size != page_size {
+        return Err(unreadable());
+    }
+    let Some(salt) = wal.get(16..24) else {
+        return Err(unreadable());
+    };
+    let Some(header) = wal.get(0..24) else {
+        return Err(unreadable());
+    };
+    let (mut check_one, mut check_two) = opencode_wal_checksum(header, 0, 0, big_endian);
+    if wal.get(24..28).and_then(opencode_u32) != Some(check_one)
+        || wal.get(28..32).and_then(opencode_u32) != Some(check_two)
+    {
+        return Err(unreadable());
+    }
+    let mut frames: Vec<(u32, usize)> = Vec::new();
+    let mut committed: Vec<(u32, usize)> = Vec::new();
+    let mut pages = 0usize;
+    let mut offset = OPENCODE_WAL_HEADER;
+    while offset + OPENCODE_WAL_FRAME_HEADER + page_size <= wal.len() {
+        let Some(header) = wal.get(offset..offset + OPENCODE_WAL_FRAME_HEADER) else {
+            break;
+        };
+        let Some(page) = header.get(0..4).and_then(opencode_u32) else {
+            break;
+        };
+        let Some(after) = header.get(4..8).and_then(opencode_u32) else {
+            break;
+        };
+        if page == 0 || header.get(8..16) != Some(salt) {
+            break;
+        }
+        let Some(head) = header.get(0..8) else {
+            break;
+        };
+        let (one, two) = opencode_wal_checksum(head, check_one, check_two, big_endian);
+        let Some(page_data) = wal.get(
+            offset + OPENCODE_WAL_FRAME_HEADER..offset + OPENCODE_WAL_FRAME_HEADER + page_size,
+        ) else {
+            break;
+        };
+        let (one, two) = opencode_wal_checksum(page_data, one, two, big_endian);
+        if header.get(16..20).and_then(opencode_u32) != Some(one)
+            || header.get(20..24).and_then(opencode_u32) != Some(two)
+        {
+            break;
+        }
+        check_one = one;
+        check_two = two;
+        frames.push((page, offset + OPENCODE_WAL_FRAME_HEADER));
+        if after != 0 {
+            committed.clone_from(&frames);
+            pages = after as usize;
+        }
+        offset += OPENCODE_WAL_FRAME_HEADER + page_size;
+    }
+    if committed.is_empty() {
+        return Ok(());
+    }
+    for (page, at) in committed {
+        let start = (page as usize - 1) * page_size;
+        if image.len() < start + page_size {
+            image.resize(start + page_size, 0);
+        }
+        let Some(target) = image.get_mut(start..start + page_size) else {
+            return Err(unreadable());
+        };
+        let Some(source) = wal.get(at..at + page_size) else {
+            return Err(unreadable());
+        };
+        target.copy_from_slice(source);
+    }
+    image.truncate(pages * page_size);
+    if let Some(size) = image.get_mut(28..32) {
+        size.copy_from_slice(&(pages as u32).to_be_bytes());
+    }
+    Ok(())
+}
+
+fn opencode_u32(bytes: &[u8]) -> Option<u32> {
+    match bytes {
+        [first, second, third, fourth] => {
+            Some(u32::from_be_bytes([*first, *second, *third, *fourth]))
+        }
+        _ => None,
+    }
+}
+
+fn opencode_u16(bytes: &[u8]) -> Option<u16> {
+    match bytes {
+        [first, second] => Some(u16::from_be_bytes([*first, *second])),
+        _ => None,
+    }
+}
+
+fn opencode_wal_checksum(data: &[u8], mut one: u32, mut two: u32, big_endian: bool) -> (u32, u32) {
+    let (chunks, _) = data.as_chunks::<8>();
+    for chunk in chunks {
+        let [
+            byte_one,
+            byte_two,
+            byte_three,
+            byte_four,
+            byte_five,
+            byte_six,
+            byte_seven,
+            byte_eight,
+        ] = chunk;
+        let first = if big_endian {
+            u32::from_be_bytes([*byte_one, *byte_two, *byte_three, *byte_four])
+        } else {
+            u32::from_le_bytes([*byte_one, *byte_two, *byte_three, *byte_four])
+        };
+        let second = if big_endian {
+            u32::from_be_bytes([*byte_five, *byte_six, *byte_seven, *byte_eight])
+        } else {
+            u32::from_le_bytes([*byte_five, *byte_six, *byte_seven, *byte_eight])
+        };
+        one = one.wrapping_add(first).wrapping_add(two);
+        two = two.wrapping_add(second).wrapping_add(one);
+    }
+    (one, two)
+}
+
+fn opencode_revision(db: &Path, identity: FileIdentity, found: &OpenCodeRecord) -> String {
+    format!(
+        "{}:{}:{}:{}:{}",
+        db.display(),
+        identity.dev,
+        identity.ino,
+        found.id,
+        found.digest
+    )
+}
+
 async fn omp_key(deps: &UsageDeps, account: &UsageAccount) -> Result<(String, Secret), Unresolved> {
     let provider_id = lookup_tuple(Agent::Omp, account.provider)
         .ok()
@@ -440,9 +806,32 @@ fn non_empty(text: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Extracted, KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, Path, Secret, kimi_base_for_slot,
-        omp_revision,
+        Extracted, KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, OPENCODE_CREDENTIAL_QUERY, Path, Secret,
+        kimi_base_for_slot, omp_revision,
     };
+
+    const OPENCODE_SCHEMA: &str = "CREATE TABLE credential (
+    id TEXT PRIMARY KEY NOT NULL,
+    integration_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    value TEXT NOT NULL,
+    active INTEGER,
+    time_created INTEGER NOT NULL,
+    time_updated INTEGER NOT NULL
+);";
+
+    fn plan_of(connection: &rusqlite::Connection) -> String {
+        let query = format!("EXPLAIN QUERY PLAN {OPENCODE_CREDENTIAL_QUERY}");
+        let mut statement = connection.prepare(&query).expect("the plan");
+        let mut rows = statement.query(["opencode"]).expect("the plan rows");
+        let mut plan = String::new();
+        while let Some(row) = rows.next().expect("a plan row") {
+            let detail: String = row.get(3).expect("the plan detail");
+            plan.push_str(&detail);
+            plan.push('\n');
+        }
+        plan
+    }
 
     fn row(ctime: i64, digest: &str) -> Extracted {
         Extracted {
@@ -489,5 +878,73 @@ mod tests {
         let before = omp_revision(db, 3, 9, &row(1, "d"));
         let after = omp_revision(db, 3, 9, &row(1, "e"));
         assert_ne!(before, after);
+    }
+
+    #[test]
+    fn the_credential_query_never_uses_a_temporary_b_tree() {
+        let connection = rusqlite::Connection::open_in_memory().expect("a connection");
+        connection
+            .execute_batch(OPENCODE_SCHEMA)
+            .expect("the schema");
+        let plan = plan_of(&connection);
+        assert!(!plan.contains("TEMP B-TREE"), "{plan}");
+    }
+
+    #[test]
+    fn the_store_connection_keeps_its_temporary_storage_in_memory() {
+        let Ok(connection) = super::opencode_connection() else {
+            panic!("a connection");
+        };
+        let store: i64 = connection
+            .query_row("PRAGMA temp_store", [], |row| row.get(0))
+            .expect("the temporary storage");
+        assert_eq!(store, 2);
+    }
+
+    #[test]
+    fn a_large_store_is_read_without_a_temporary_sort() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let path = directory.path().join("opencode.db");
+        {
+            let connection = rusqlite::Connection::open(&path).expect("the store");
+            connection
+                .execute_batch(OPENCODE_SCHEMA)
+                .expect("the schema");
+            let filler = "x".repeat(4096);
+            for index in 0..2000 {
+                connection
+                    .execute(
+                        "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES (?1, 'other', 'other', ?2, 1, ?3, ?3)",
+                        rusqlite::params![format!("filler_{index}"), filler, index],
+                    )
+                    .expect("the filler row");
+            }
+            connection
+                .execute(
+                    "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_older', 'opencode', 'opencode', ?1, 1, 7, 7)",
+                    rusqlite::params![r#"{"type":"oauth","access":"older"}"#],
+                )
+                .expect("the older row");
+            connection
+                .execute(
+                    "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_newer', 'opencode', 'opencode', ?1, 1, 5, 9)",
+                    rusqlite::params![r#"{"type":"oauth","access":"newer"}"#],
+                )
+                .expect("the newer row");
+        }
+        let bytes = std::fs::read(&path).expect("the store bytes");
+        let Ok(found) = super::extract_opencode_credential(bytes, None) else {
+            panic!("the credential");
+        };
+        assert_eq!(found.id, "cred_newer");
+        assert!(found.value.contains("newer"));
+        let Ok(connection) = super::opencode_connection() else {
+            panic!("a connection");
+        };
+        connection
+            .execute_batch(OPENCODE_SCHEMA)
+            .expect("the schema");
+        let plan = plan_of(&connection);
+        assert!(!plan.contains("TEMP B-TREE"), "{plan}");
     }
 }

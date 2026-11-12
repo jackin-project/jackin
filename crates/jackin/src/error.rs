@@ -9,8 +9,8 @@ use jackin_image::ImageError;
 use jackin_openshell::GatewayError;
 use jackin_session::{
     AccountEditError, AccountError, AttachError, BuildError, ConnectError, CredentialError,
-    ExportError, LaunchFailure, LifecycleError, LockError, PlanError, PurgeError, RestartError,
-    RoleError, WorkspaceGuardError,
+    ExportError, IntegrateError, LaunchFailure, LifecycleError, LockError, PlanError, PurgeError,
+    RestartError, RoleError, WorkspaceGuardError,
 };
 use jackin_tui::ConsoleError;
 use jackin_usage::UsageError;
@@ -69,6 +69,10 @@ pub enum CommandError {
     Attach(#[from] AttachError),
     #[error(transparent)]
     Restart(#[from] RestartError),
+    #[error(transparent)]
+    Gateway(#[from] GatewayError),
+    #[error(transparent)]
+    Integrate(#[from] IntegrateError),
     #[error(transparent)]
     Lifecycle(#[from] LifecycleError),
     #[error(transparent)]
@@ -156,7 +160,8 @@ impl CommandError {
         match self {
             CommandError::Argument(_)
             | CommandError::ApiKeyNeedsAgent { .. }
-            | CommandError::EnvValue { .. } => ExitClass::Usage,
+            | CommandError::EnvValue { .. }
+            | CommandError::Integrate(IntegrateError::UnknownAgent { .. }) => ExitClass::Usage,
             CommandError::Plan(PlanError::EnvNeeded(_))
             | CommandError::Restart(RestartError::AlreadyRunning { .. })
             | CommandError::Purge(
@@ -169,9 +174,13 @@ impl CommandError {
             | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
             | CommandError::Account(AccountError::Lock(LockError::Cancelled))
-            | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. })) => {
-                ExitClass::Cancelled
-            }
+            | CommandError::Console(ConsoleError::Cancelled)
+            | CommandError::Attach(AttachError::Gateway(GatewayError::Cancelled { .. }))
+            | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. }))
+            | CommandError::Gateway(GatewayError::Cancelled { .. })
+            | CommandError::Integrate(IntegrateError::Gateway(GatewayError::Cancelled {
+                ..
+            })) => ExitClass::Cancelled,
             CommandError::Config(_)
             | CommandError::Path(_)
             | CommandError::Fs(_)
@@ -182,6 +191,8 @@ impl CommandError {
             | CommandError::Launch(_)
             | CommandError::Attach(_)
             | CommandError::Restart(_)
+            | CommandError::Gateway(_)
+            | CommandError::Integrate(_)
             | CommandError::Lifecycle(_)
             | CommandError::Export(_)
             | CommandError::Purge(_)
@@ -202,5 +213,22 @@ impl CommandError {
             | CommandError::Environment(_)
             | CommandError::Unhealthy => ExitClass::Failure,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jackin_openshell::GatewayOp;
+    use jackin_session::AttachError;
+
+    use super::*;
+
+    #[test]
+    fn a_cancelled_attach_setup_classifies_as_cancelled() {
+        let error = CommandError::Attach(AttachError::Gateway(GatewayError::Cancelled {
+            op: GatewayOp::Provider,
+            group: None,
+        }));
+        assert_eq!(error.class(), ExitClass::Cancelled);
     }
 }

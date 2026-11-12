@@ -46,14 +46,20 @@ where
     Fut: Future<Output = Result<Poll<T>, E>> + Send,
 {
     let interval = plan.interval.max(MIN_INTERVAL);
-    let mut elapsed = Duration::ZERO;
+    let mut waited = Duration::ZERO;
+    let mut probed = Duration::ZERO;
     loop {
-        let remaining = plan.timeout.saturating_sub(elapsed);
+        if waited + probed >= plan.timeout {
+            return Err(PollError::Timeout {
+                after: plan.timeout,
+            });
+        }
+        let started = clock.monotonic();
         let outcome = tokio::select! {
             biased;
             () = cancel.cancelled() => return Err(PollError::Cancelled),
             outcome = probe() => outcome,
-            () = clock.sleep(remaining) => {
+            () = clock.sleep(plan.timeout.saturating_sub(waited + probed)) => {
                 return Err(PollError::Timeout { after: plan.timeout });
             }
         };
@@ -64,10 +70,13 @@ where
         if cancel.is_cancelled() {
             return Err(PollError::Cancelled);
         }
-        if remaining.is_zero() {
-            return Err(PollError::Timeout { after: elapsed });
+        probed += clock.monotonic().saturating_sub(started);
+        let step = interval.min(plan.timeout.saturating_sub(waited + probed));
+        if step.is_zero() {
+            return Err(PollError::Timeout {
+                after: plan.timeout,
+            });
         }
-        let step = interval.min(remaining);
         if cancel
             .run_until_cancelled(clock.sleep(step))
             .await
@@ -75,7 +84,7 @@ where
         {
             return Err(PollError::Cancelled);
         }
-        elapsed += step;
+        waited += step;
     }
 }
 

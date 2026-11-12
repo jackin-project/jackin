@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{Clock, Timestamp};
+use jackin_openshell::SandboxStamp;
 use tokio::sync::Notify;
 
 use crate::sync::locked;
@@ -87,6 +88,14 @@ impl FakeClock {
         locked(&self.state).elapsed += by;
     }
 
+    pub fn stamp(&self) -> SandboxStamp {
+        let elapsed = locked(&self.state).elapsed;
+        SandboxStamp {
+            seconds: START.saturating_add(i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)),
+            nanos: elapsed.subsec_nanos(),
+        }
+    }
+
     pub fn set_utc_offset(&self, seconds: i32) {
         locked(&self.state).offset = seconds;
     }
@@ -130,6 +139,10 @@ impl Clock for FakeClock {
 
     fn utc_offset_secs(&self) -> i32 {
         locked(&self.state).offset
+    }
+
+    fn monotonic(&self) -> Duration {
+        Duration::ZERO
     }
 
     async fn sleep(&self, duration: Duration) {

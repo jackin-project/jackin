@@ -658,10 +658,8 @@ async fn publish<'a>(
         return Ok(());
     };
     for entry in publish {
-        let agent = agents
-            .get(entry.account.name())
-            .copied()
-            .unwrap_or_else(|| account_agent(&entry.account));
+        let acting = agents.get(entry.account.name()).copied();
+        let agent = acting.unwrap_or_else(|| account_agent(&entry.account));
         let provider = ProviderName::for_account(entry.account.name(), agent);
         let Some(previous) = &entry.previous else {
             let state = home
@@ -685,11 +683,9 @@ async fn publish<'a>(
                 .map_err(|error| on_gateway(home.gateway_name(), error))?;
             continue;
         };
-        let previous_agent = agents
-            .get(entry.account.name())
-            .copied()
-            .unwrap_or_else(|| account_agent(previous));
+        let previous_agent = acting.unwrap_or_else(|| account_agent(previous));
         let previous_provider = ProviderName::for_account(entry.account.name(), previous_agent);
+        let extra = extra_agents(&entry.account, previous, agent, previous_agent);
         for (index, &session) in sessions.iter().enumerate() {
             let mut held_previous = false;
             if previous_provider != provider {
@@ -717,20 +713,82 @@ async fn publish<'a>(
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
             let held = state == ProviderState::Present;
-            if !held && index > 0 && !held_previous {
-                continue;
+            if held || index == 0 || held_previous {
+                journal.push(if held {
+                    session.undo(Action::Restore, previous, previous_agent)
+                } else {
+                    session.undo(Action::Remove, &entry.account, agent)
+                });
+                session
+                    .sync_locked_agent(&entry.account, agent)
+                    .await
+                    .map_err(|error| on_gateway(session.gateway_name(), error))?;
             }
-            journal.push(if held {
-                session.undo(Action::Restore, previous, previous_agent)
-            } else {
-                session.undo(Action::Remove, &entry.account, agent)
-            });
-            session
-                .sync_locked_agent(&entry.account, agent)
-                .await
-                .map_err(|error| on_gateway(session.gateway_name(), error))?;
+            for candidate in &extra {
+                refresh_held(session, &entry.account, previous, *candidate, journal).await?;
+            }
         }
     }
+    Ok(())
+}
+
+fn extra_agents(
+    account: &Account,
+    previous: &Account,
+    agent: Agent,
+    previous_agent: Agent,
+) -> Vec<Agent> {
+    let mut candidates: Vec<Agent> = account_providers(account)
+        .map(|(agent, _)| agent)
+        .chain(account_providers(previous).map(|(agent, _)| agent))
+        .collect();
+    candidates.sort();
+    candidates.dedup();
+    candidates.retain(|candidate| *candidate != agent && *candidate != previous_agent);
+    candidates
+}
+
+async fn refresh_held<'a>(
+    session: &'a Session,
+    account: &'a Account,
+    previous: &'a Account,
+    candidate: Agent,
+    journal: &mut Vec<Undo<'a>>,
+) -> Result<(), AccountEditError> {
+    let provider = ProviderName::for_account(account.name(), candidate);
+    let held = session
+        .deps
+        .gateway
+        .provider_state(&provider)
+        .await
+        .map_err(|error| on_gateway(session.gateway_name(), error.into()))?
+        == ProviderState::Present;
+    if !held {
+        return Ok(());
+    }
+    if account.has_provider_for(candidate) {
+        journal.push(session.undo(
+            if previous.has_provider_for(candidate) {
+                Action::Restore
+            } else {
+                Action::Remove
+            },
+            previous,
+            candidate,
+        ));
+        session
+            .sync_locked_agent(account, candidate)
+            .await
+            .map_err(|error| on_gateway(session.gateway_name(), error))?;
+        return Ok(());
+    }
+    journal.push(session.undo(Action::Restore, previous, candidate));
+    session
+        .deps
+        .gateway
+        .delete_provider(&provider)
+        .await
+        .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
     Ok(())
 }
 

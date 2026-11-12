@@ -30,6 +30,7 @@ pub(crate) struct ScriptedConsole {
     calls: AtomicUsize,
     runs: Mutex<Vec<Run>>,
     fail: Mutex<Option<String>>,
+    cancel: Mutex<bool>,
     names: Mutex<Vec<String>>,
 }
 
@@ -47,6 +48,10 @@ impl ScriptedConsole {
 
     pub(crate) fn fail_with(&self, message: &str) {
         *self.fail.lock().unwrap_or_else(PoisonError::into_inner) = Some(message.to_owned());
+    }
+
+    pub(crate) fn cancel(&self) {
+        *self.cancel.lock().unwrap_or_else(PoisonError::into_inner) = true;
     }
 
     pub(crate) fn watch(&self, gateways: &[&str]) {
@@ -89,15 +94,18 @@ impl ConsoleHost for ScriptedConsole {
                 connect_deadline,
                 supervisor_poll,
             });
-        match self
+        if let Some(message) = self
             .fail
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()
         {
-            Some(message) => Err(ConsoleError::Terminal(io::Error::other(message))),
-            None => Ok(ConsoleExit::Quit),
+            return Err(ConsoleError::Terminal(io::Error::other(message)));
         }
+        if *self.cancel.lock().unwrap_or_else(PoisonError::into_inner) {
+            return Err(ConsoleError::Cancelled);
+        }
+        Ok(ConsoleExit::Quit)
     }
 }
 
@@ -180,6 +188,22 @@ async fn a_terminal_failure_in_the_console_is_a_failure_on_stderr_with_empty_std
             "{}",
             ran.stderr
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancelled_console_exits_with_the_cancelled_class() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        harness.write_config(&two_workspaces(&world)?)?;
+        harness.console.cancel();
+        let ran = harness.command(&[]).terminal(terminal()?).run().await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(ran.stdout.is_empty(), "{}", ran.stdout);
+        assert!(ran.stderr.contains("cancelled"), "{}", ran.stderr);
         Ok(())
     })
     .await

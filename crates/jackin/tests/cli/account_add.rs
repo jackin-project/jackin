@@ -511,3 +511,29 @@ async fn native_kimi_discovery_never_falls_back_to_a_static_credential() -> Test
     })
     .await
 }
+
+#[tokio::test]
+async fn a_large_opencode_store_is_accepted_as_a_credential_source() -> TestResult {
+    guard(async {
+        let (rig, harness, _home) = rigged().await?;
+        let store = rig.home.as_path().join("opencode.db");
+        std::fs::write(&store, vec![0_u8; 1_100_000])?;
+        harness
+            .run(&[
+                "account",
+                "add",
+                "opencode",
+                "--name",
+                "store",
+                "--credential",
+                &format!("file:{}", store.display()),
+            ])
+            .await?
+            .ok()?;
+        let config = harness.stored().await?;
+        let stored = config.account(&account("store")?).ok_or("no account")?;
+        assert!(matches!(stored.credential(), CredentialSource::File { .. }));
+        Ok(())
+    })
+    .await
+}

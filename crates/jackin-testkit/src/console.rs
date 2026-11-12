@@ -29,6 +29,7 @@ use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::Position;
+use tokio_util::sync::CancellationToken;
 
 use crate::connector::ScriptedConnector;
 use crate::doctor_host::DoctorHost;
@@ -117,6 +118,7 @@ pub struct ConsoleRigBuilder<'a> {
     pane_inbox_bytes: usize,
     unchosen: bool,
     pinned: Option<GatewayName>,
+    cancel: CancellationToken,
 }
 
 pub struct ConsoleRig {
@@ -187,6 +189,7 @@ impl ConsoleRig {
             pane_inbox_bytes: 1024 * 1024,
             unchosen: false,
             pinned: None,
+            cancel: CancellationToken::new(),
         }
     }
 
@@ -433,6 +436,12 @@ impl ConsoleRigBuilder<'_> {
     }
 
     #[must_use]
+    pub fn cancel(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
+    }
+
+    #[must_use]
     pub fn deadline(mut self, deadline: Duration) -> Self {
         self.deadline = deadline;
         self
@@ -563,6 +572,7 @@ impl ConsoleRigBuilder<'_> {
                 supervisor_poll: Duration::from_millis(20),
             },
             clipboard: sink,
+            cancel: self.cancel,
         };
         Ok(Prepared {
             deps,

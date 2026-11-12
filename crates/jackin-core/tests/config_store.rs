@@ -119,6 +119,7 @@ fn label(error: &ConfigError) -> String {
         ConfigError::Catalog(_) => "catalog".to_owned(),
         ConfigError::CredentialNotAllowed { .. } => "credential".to_owned(),
         ConfigError::CredentialNotEligible { .. } => "credential-eligibility".to_owned(),
+        ConfigError::UsageOnlyAccount { account } => format!("usage-only:{account}"),
         ConfigError::AccountInUse { .. } => "account-in-use".to_owned(),
         ConfigError::RoleInUse { .. } => "role-in-use".to_owned(),
         ConfigError::NoGateway => "no-gateway".to_owned(),

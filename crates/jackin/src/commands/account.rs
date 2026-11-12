@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Account, Agent, ConfigEdit, CredentialSource, read_credential_file};
+use jackin_core::{
+    Account, Agent, ConfigEdit, CredentialFileProblem, CredentialSource, read_credential_file,
+};
 use jackin_session::{
     AccountPlan, plan_account_edits, plan_account_edits_for_agent, read_chatgpt_login,
     read_omp_host_key,
@@ -9,8 +11,8 @@ use jackin_session::{
 
 use crate::app::App;
 use crate::cli::{
-    AccountAddArgs, AccountArg, AccountCommand, BindArgs, BindScope, CredentialArg, JsonArg,
-    parse_provider,
+    AccountAddArgs, AccountArg, AccountCommand, AccountDefaultArgs, BindArgs, BindScope,
+    CredentialArg, JsonArg, parse_provider,
 };
 use crate::error::CommandError;
 use crate::paths::absolutize;
@@ -21,7 +23,7 @@ pub(crate) async fn run(app: &mut App, command: AccountCommand) -> Result<(), Co
         AccountCommand::Add(args) => add(app, args).await,
         AccountCommand::Ls(arg) => ls(app, &arg).await,
         AccountCommand::Rm(arg) => rm(app, arg).await,
-        AccountCommand::Default(arg) => default(app, arg).await,
+        AccountCommand::Default(args) => default(app, &args).await,
         AccountCommand::Bind(args) => bind(app, &args).await,
     }
 }
@@ -123,7 +125,7 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             CommandError::Argument("omp-host needs an omp tuple provider".to_owned())
         })?;
         let db = jackin_core::HostPath::resolve(
-            std::path::Path::new(".omp/agent/agent.db"),
+            std::path::Path::new(jackin_core::OMP_HOST_STORE),
             &app.deps.host.home,
         )
         .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
@@ -171,8 +173,13 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
                 )
             };
             let path = absolutize(&path, &app.cwd).map_err(|_| refused())?;
+            let provider = parse_provider(&args.provider)?;
+            let store = is_credential_store(provider, &path);
             match read_credential_file(app.deps.host.fs.as_ref(), &path).await {
                 Ok(Ok(_)) => Ok(CredentialSource::File { path }),
+                Ok(Err(CredentialFileProblem::TooLarge)) if store => {
+                    Ok(CredentialSource::File { path })
+                }
                 Ok(Err(_)) | Err(_) => Err(refused()),
             }
         }
@@ -182,6 +189,15 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
             "pass --chatgpt-from or --credential".to_owned(),
         )),
     }
+}
+
+fn is_credential_store(provider: jackin_core::Provider, path: &jackin_core::HostPath) -> bool {
+    provider.credential_store().is_some_and(|store| {
+        path.as_path()
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == store)
+    })
 }
 
 fn default_agent(provider: jackin_core::Provider) -> Agent {
@@ -274,11 +290,19 @@ async fn rm(app: &App, arg: AccountArg) -> Result<(), CommandError> {
     apply(app, vec![ConfigEdit::RemoveAccount(arg.account)]).await
 }
 
-async fn default(app: &App, arg: AccountArg) -> Result<(), CommandError> {
+async fn default(app: &App, args: &AccountDefaultArgs) -> Result<(), CommandError> {
+    if let Some(provider) = &args.clear {
+        let provider = parse_provider(provider)?;
+        app.store
+            .edit(vec![ConfigEdit::ClearDefaultAccount { provider }])
+            .await?;
+        return Ok(());
+    }
+    let account = args.account.clone().ok_or_else(|| {
+        CommandError::Argument("pass an account name or --clear PROVIDER".to_owned())
+    })?;
     app.store
-        .edit(vec![ConfigEdit::SetDefaultAccount {
-            account: arg.account,
-        }])
+        .edit(vec![ConfigEdit::SetDefaultAccount { account }])
         .await?;
     Ok(())
 }

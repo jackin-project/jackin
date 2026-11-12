@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 
 use jackin_core::{
@@ -96,8 +96,7 @@ fn codex_plan_unchanged() -> TestResult {
     Ok(())
 }
 
-fn derived_dockerfile(agent: Agent) -> Result<String, Box<dyn Error>> {
-    let plan = ImagePlan::new(&request(agent)?)?;
+fn dockerfile(plan: &ImagePlan) -> Result<String, Box<dyn Error>> {
     let id = jackin_core::ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
     let built = plan.final_builds(&id);
     let jackin_image::ContextSource::Materialized(files) = built.derived.context else {
@@ -108,6 +107,10 @@ fn derived_dockerfile(agent: Agent) -> Result<String, Box<dyn Error>> {
         .find(|file| file.name == "Dockerfile")
         .ok_or("derived Dockerfile")?;
     Ok(String::from_utf8(file.bytes.clone())?)
+}
+
+fn derived_dockerfile(agent: Agent) -> Result<String, Box<dyn Error>> {
+    dockerfile(&ImagePlan::new(&request(agent)?)?)
 }
 
 #[test]
@@ -274,6 +277,175 @@ fn two_agent_plan_installs_and_scans_both_binaries() -> TestResult {
         ))
         .to_vec()
     );
+    Ok(())
+}
+
+const BUILTIN_ARGS: [&str; 8] = [
+    "TARGETARCH",
+    "TARGETOS",
+    "TARGETPLATFORM",
+    "TARGETVARIANT",
+    "BUILDARCH",
+    "BUILDOS",
+    "BUILDPLATFORM",
+    "BUILDVARIANT",
+];
+
+fn arg_names(body: &str) -> BTreeSet<String> {
+    body.lines()
+        .filter_map(|line| line.strip_prefix("ARG "))
+        .map(|name| name.split('=').next().unwrap_or(name).trim().to_owned())
+        .collect()
+}
+
+fn global_args(text: &str) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for line in text.lines() {
+        if line.starts_with("FROM ") {
+            break;
+        }
+        if let Some(name) = line.strip_prefix("ARG ") {
+            names.insert(name.split('=').next().unwrap_or(name).trim().to_owned());
+        }
+    }
+    names
+}
+
+fn stage_bodies(text: &str) -> Vec<(String, String)> {
+    let mut stages: Vec<(String, String)> = Vec::new();
+    let mut name = String::new();
+    let mut body = String::new();
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("FROM ") {
+            if !name.is_empty() {
+                stages.push((name.clone(), body.clone()));
+            }
+            name = rest.rsplit(" AS ").next().unwrap_or_default().to_owned();
+            body = format!("{line}\n");
+        } else {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    if !name.is_empty() {
+        stages.push((name, body));
+    }
+    stages
+}
+
+fn referenced_args(body: &str) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    let mut rest = body;
+    while let Some(at) = rest.find("${") {
+        rest = &rest[at + 2..];
+        let end = rest.find('}').unwrap_or(rest.len());
+        let name = &rest[..end];
+        if !name.is_empty()
+            && name
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || character == '_')
+        {
+            names.insert(name.to_owned());
+        }
+        rest = &rest[end..];
+    }
+    names
+}
+
+fn assert_every_reference_is_declared(text: &str) -> TestResult {
+    let globals = global_args(text);
+    for (name, body) in stage_bodies(text) {
+        let declared: BTreeSet<String> = globals
+            .iter()
+            .chain(arg_names(&body).iter())
+            .cloned()
+            .collect();
+        for reference in referenced_args(&body) {
+            if BUILTIN_ARGS.contains(&reference.as_str()) {
+                continue;
+            }
+            if !declared.contains(&reference) {
+                return Err(
+                    format!("the {name} stage uses ${{{reference}}} without declaring it").into(),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn stage_of(text: &str, name: &str) -> Result<String, Box<dyn Error>> {
+    stage_bodies(text)
+        .into_iter()
+        .find(|(stage, _)| stage == name)
+        .map(|(_, body)| body)
+        .ok_or_else(|| format!("the {name} stage").into())
+}
+
+fn three_agent_dockerfile() -> Result<String, Box<dyn Error>> {
+    let mut req = request(Agent::Codex)?;
+    req.agents = vec![Agent::Codex, Agent::Omp, Agent::MimoCode];
+    dockerfile(&ImagePlan::new(&req)?)
+}
+
+#[test]
+fn three_agent_plan_declares_every_extra_agent_and_one_stage_per_agent() -> TestResult {
+    let text = three_agent_dockerfile()?;
+    for number in 2..=3 {
+        let stage = format!("FROM construct AS agent{number}\n");
+        assert_eq!(text.matches(&stage).count(), 1, "agent{number}: {text}");
+    }
+    let assembled = stage_of(&text, "assembled")?;
+    let scan = stage_of(&text, "scan")?;
+    for prefix in ["AGENT2", "AGENT3"] {
+        assert!(
+            assembled.contains(&format!("ARG {prefix}_SYSTEM_CONFIG\n")),
+            "{prefix}: {assembled}"
+        );
+        assert!(
+            scan.contains(&format!("ARG {prefix}_BINARY\n")),
+            "{prefix}: {scan}"
+        );
+        assert!(
+            scan.contains(&format!("ARG {prefix}_SYSTEM_CONFIG\n")),
+            "{prefix}: {scan}"
+        );
+        assert!(
+            scan.contains(&format!(
+                "--same-as ${{{prefix}_BINARY}}=/trusted${{{prefix}_BINARY}}"
+            )),
+            "{prefix}: {scan}"
+        );
+        assert!(
+            text.contains(&format!("${{{prefix}_BINARY}} \\\n")),
+            "{prefix}: {text}"
+        );
+    }
+    assert_every_reference_is_declared(&text)?;
+    Ok(())
+}
+
+#[test]
+fn two_agent_plan_declares_every_extra_agent_and_one_stage_per_agent() -> TestResult {
+    let mut req = request(Agent::Codex)?;
+    req.agents = vec![Agent::Codex, Agent::Omp];
+    let plan = ImagePlan::new(&req)?;
+    let id = jackin_core::ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
+    let built = plan.final_builds(&id);
+    let jackin_image::ContextSource::Materialized(files) = built.derived.context else {
+        return Err("derived context is not materialized".into());
+    };
+    let file = files
+        .iter()
+        .find(|file| file.name == "Dockerfile")
+        .ok_or("derived Dockerfile")?;
+    let text = String::from_utf8(file.bytes.clone())?;
+    assert_eq!(
+        text.matches("FROM construct AS agent2\n").count(),
+        1,
+        "{text}"
+    );
+    assert_every_reference_is_declared(&text)?;
     Ok(())
 }
 

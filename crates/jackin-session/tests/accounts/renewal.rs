@@ -316,3 +316,61 @@ async fn a_changed_key_file_without_a_sync_keeps_the_old_gateway_material() -> T
     })
     .await
 }
+
+const AGENTS: [Agent; 3] = [Agent::Omp, Agent::ClaudeCode, Agent::Codex];
+
+async fn seed_held(world: &World) -> Result<(), Box<dyn std::error::Error>> {
+    let key = put_key(world, "work-multi", OLD_KEY).await?;
+    let account = Account::new(name("work")?, Provider::Zai, key)?;
+    run(world, vec![ConfigEdit::AddAccount(account.clone())]).await?;
+    let cancel = CancellationToken::new();
+    for agent in AGENTS {
+        world.session.sync_account(&account, agent, &cancel).await?;
+    }
+    Ok(())
+}
+
+async fn renew_held(world: &World) -> Result<(), Box<dyn std::error::Error>> {
+    let renewed = put_key(world, "work-multi-new", NEW_KEY).await?;
+    run(
+        world,
+        vec![ConfigEdit::SetAccountCredential {
+            account: name("work")?,
+            credential: renewed,
+        }],
+    )
+    .await?;
+    Ok(())
+}
+
+fn held_tokens(world: &World) -> Result<Vec<Option<String>>, Box<dyn std::error::Error>> {
+    AGENTS
+        .into_iter()
+        .map(|agent| {
+            let provider = ProviderName::for_account(&name("work")?, agent);
+            Ok(world
+                .gateway
+                .provider(&provider)
+                .map(|record| record.access_token))
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_renewed_key_refreshes_every_held_agent_specific_provider() -> TestResult {
+    guard(async {
+        let world = registered().await?;
+        seed_held(&world).await?;
+        assert_eq!(
+            held_tokens(&world)?,
+            [OLD_KEY; 3].map(str::to_owned).map(Some).to_vec()
+        );
+        renew_held(&world).await?;
+        assert_eq!(
+            held_tokens(&world)?,
+            [NEW_KEY; 3].map(str::to_owned).map(Some).to_vec()
+        );
+        Ok(())
+    })
+    .await
+}

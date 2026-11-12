@@ -168,7 +168,7 @@ pub(crate) async fn attach(
     request: AttachRequest,
 ) -> Result<(), CommandError> {
     let sandbox = request.sandbox.clone();
-    let attached = session.attach(request).await?;
+    let attached = session.attach(request, &app.cancel).await?;
     if let SupervisorReading::Reported(SupervisorState::Exited { code, .. }) =
         attached.supervisor_at_attach()
     {

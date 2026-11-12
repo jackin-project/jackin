@@ -3,6 +3,7 @@
 
 mod account_add;
 mod account_manage;
+mod agent;
 mod attach;
 mod build;
 mod cancel;
@@ -33,4 +34,5 @@ mod shell;
 mod signals;
 mod support;
 mod usage;
+mod usage_only;
 mod workspace_in_use;

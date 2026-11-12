@@ -9,6 +9,7 @@ use jackin_core::{AttemptId, FileMode, SandboxName, SecretBytes, SupervisorState
 use jackin_openshell::{Gateway, SandboxFile, TermSize, TerminalEvent};
 use jackin_session::{AttachRequest, AttachTarget, AttachedTerminal};
 use jackin_testkit::{Rig, SandboxHandle};
+use tokio_util::sync::CancellationToken;
 
 pub(crate) fn size() -> Result<TermSize, Box<dyn Error>> {
     Ok(TermSize {
@@ -28,12 +29,20 @@ pub(crate) async fn target(rig: &Rig, id: u8) -> Result<AttachTarget, Box<dyn Er
 
 pub(crate) async fn owner(rig: &Rig, id: u8) -> Result<AttachedTerminal, Box<dyn Error>> {
     let request = AttachRequest::owner(target(rig, id).await?, size()?);
-    Ok(rig.world.session.attach(request).await?)
+    Ok(rig
+        .world
+        .session
+        .attach(request, &CancellationToken::new())
+        .await?)
 }
 
 pub(crate) async fn viewer(rig: &Rig, id: u8) -> Result<AttachedTerminal, Box<dyn Error>> {
     let request = AttachRequest::viewer(rig.sandbox_name(id)?, size()?);
-    Ok(rig.world.session.attach(request).await?)
+    Ok(rig
+        .world
+        .session
+        .attach(request, &CancellationToken::new())
+        .await?)
 }
 
 pub(crate) async fn events(

@@ -83,7 +83,10 @@ async fn attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_witho
 
         let absent = rig.sandbox_name(9)?;
         let missing = session
-            .attach(AttachRequest::viewer(absent.clone(), size()?))
+            .attach(
+                AttachRequest::viewer(absent.clone(), size()?),
+                &CancellationToken::new(),
+            )
             .await;
         assert!(matches!(missing, Err(AttachError::NotFound(found)) if found == absent));
 
@@ -92,7 +95,10 @@ async fn attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_witho
             .gateway
             .insert_unmanaged(&foreign, Labels::from_pairs([])?, Phase::Ready)?;
         let ghost = session
-            .attach(AttachRequest::viewer(foreign.clone(), size()?))
+            .attach(
+                AttachRequest::viewer(foreign.clone(), size()?),
+                &CancellationToken::new(),
+            )
             .await;
         assert!(matches!(ghost, Err(AttachError::NotFound(found)) if found == foreign));
 
@@ -100,7 +106,9 @@ async fn attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_witho
         session
             .power(&name, PowerAction::Stop, &CancellationToken::new())
             .await?;
-        let stopped = session.attach(request.clone()).await;
+        let stopped = session
+            .attach(request.clone(), &CancellationToken::new())
+            .await;
         assert!(matches!(
             stopped,
             Err(AttachError::Gateway(GatewayError::NotReady {
@@ -113,7 +121,9 @@ async fn attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_witho
             Phase::Error { exit_code: None },
         ] {
             rig.world.gateway.force_phase(&name, ended);
-            let refused = session.attach(request.clone()).await;
+            let refused = session
+                .attach(request.clone(), &CancellationToken::new())
+                .await;
             match refused {
                 Err(AttachError::MainProcessEnded { sandbox, phase }) => {
                     assert_eq!((sandbox, phase), (name.clone(), ended));

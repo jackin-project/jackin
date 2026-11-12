@@ -39,7 +39,10 @@ impl SandboxHandle {
     }
 
     pub fn created_at(&self) -> Option<Timestamp> {
-        self.cell.state().created_at
+        self.cell
+            .state()
+            .created_at
+            .map(|created| Timestamp(created.seconds))
     }
 
     pub fn forget_created_at(&self) {

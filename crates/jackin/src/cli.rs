@@ -93,8 +93,10 @@ pub enum AccountCommand {
     Ls(JsonArg),
     #[command(about = "Remove an account")]
     Rm(AccountArg),
-    #[command(about = "Make an account the default of its provider")]
-    Default(AccountArg),
+    #[command(
+        about = "Make an account the default of its provider, or clear the default of a provider"
+    )]
+    Default(AccountDefaultArgs),
     #[command(about = "Bind an account to a role or a workspace")]
     Bind(BindArgs),
 }
@@ -197,6 +199,22 @@ pub struct GatewayAddArgs {
 pub struct AccountArg {
     #[arg(help = "Account name")]
     pub account: AccountName,
+}
+
+#[derive(Debug, Args)]
+pub struct AccountDefaultArgs {
+    #[arg(
+        help = "Account name to make the default account of its provider",
+        required_unless_present = "clear",
+        conflicts_with = "clear"
+    )]
+    pub account: Option<AccountName>,
+    #[arg(
+        long,
+        value_name = "PROVIDER",
+        help = "Remove the default account of this provider"
+    )]
+    pub clear: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -489,9 +507,17 @@ pub struct LoadArgs {
 pub struct AttachArgs {
     #[arg(help = "Sandbox name")]
     pub sandbox: SandboxName,
-    #[arg(long, help = "Run preflight and start Codex again after it exited")]
+    #[arg(
+        long,
+        conflicts_with = "agent",
+        help = "Run preflight and start Codex again after it exited; it cannot be combined with --agent"
+    )]
     pub restart: bool,
-    #[arg(long, help = "Attach to this agent instance instead of the lead")]
+    #[arg(
+        long,
+        conflicts_with = "restart",
+        help = "Attach to this agent instance instead of the lead; it cannot be combined with --restart"
+    )]
     pub agent: Option<String>,
 }
 

@@ -78,7 +78,7 @@ async fn start() -> ExitCode {
         usage_endpoints: ProviderEndpoints::real(),
         console: Arc::new(TerminalConsole),
     };
-    let run = jackin::run(
+    let mut run = Box::pin(jackin::run(
         AppEnv {
             args: std::env::args_os().collect(),
             stdout: Box::new(std::io::stdout()),
@@ -91,10 +91,13 @@ async fn start() -> ExitCode {
             cancel: cancel.clone(),
         },
         deps,
-    );
+    ));
     let class = tokio::select! {
-        class = run => class,
-        () = signals.interrupted(&cancel) => ExitClass::Cancelled,
+        class = &mut run => class,
+        () = signals.interrupted(&cancel) => {
+            drop(run);
+            ExitClass::Cancelled
+        }
     };
     ExitCode::from(class.code())
 }

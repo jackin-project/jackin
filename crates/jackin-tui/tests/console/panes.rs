@@ -6,6 +6,7 @@ use std::num::NonZeroU16;
 use std::sync::Arc;
 use std::time::Duration;
 
+use jackin_console::domain::agent::Agent;
 use jackin_console::domain::instance::{InstanceId, InstanceStatus};
 use jackin_console::domain::vocabulary::{PaneWords, fill_in};
 use jackin_console::panes::{PaneKind, PaneRefusal, PaneRequest};
@@ -15,6 +16,7 @@ use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_openshell::{InputMode, TermSize};
 use jackin_session::AttachRequest;
 use jackin_testkit::{ConsoleRig, Fault, Rig, SandboxHandle, TestResult, Trigger, guard};
+use tokio_util::sync::CancellationToken;
 
 use super::support::Lab;
 
@@ -959,6 +961,40 @@ async fn a_running_sandbox_opens_one_codex_pane_and_a_second_codex_is_refused() 
 }
 
 #[tokio::test]
+async fn an_agent_pane_of_another_agent_does_not_refuse_the_requested_agent() -> TestResult {
+    guard(Box::pin(async {
+        let mut capsule = Capsule::open().await?;
+        let world = &mut capsule.lab.console.console().app().world;
+        let instance = world.instances[0]
+            .as_available()
+            .cloned()
+            .ok_or("available instance")?;
+        let backend = Arc::clone(&world.backend);
+        let daemon = world.daemons.get_mut(&instance.id).ok_or("no daemon")?;
+        let pane = daemon.panes.first_mut().ok_or("no pane")?;
+        assert_eq!(pane.agent, Some(instance.agent));
+        pane.agent = Some(Agent::ClaudeCode);
+        let codex = PaneKind::Agent {
+            agent: instance.agent,
+            account: None,
+        };
+        assert_eq!(backend.spawnable(world, &instance, &codex), Ok(()));
+        let claude = PaneKind::Agent {
+            agent: Agent::ClaudeCode,
+            account: None,
+        };
+        assert_eq!(
+            backend.spawnable(world, &instance, &claude),
+            Err(PaneRefusal::MainProcessOpen {
+                agent: Agent::ClaudeCode
+            })
+        );
+        Ok(())
+    }))
+    .await
+}
+
+#[tokio::test]
 async fn a_stopped_sandbox_has_no_initial_pane() -> TestResult {
     guard(Box::pin(async {
         let rig = Rig::new().await?;
@@ -985,12 +1021,15 @@ async fn a_second_client_leaves_the_pane_read_only_until_the_owner_goes() -> Tes
         let held = rig
             .world
             .session
-            .attach(AttachRequest {
-                sandbox: name,
-                size: size(100, 30)?,
-                input: InputMode::Owner,
-                agent: None,
-            })
+            .attach(
+                AttachRequest {
+                    sandbox: name,
+                    size: size(100, 30)?,
+                    input: InputMode::Owner,
+                    agent: None,
+                },
+                &CancellationToken::new(),
+            )
             .await?;
         let mut capsule = Capsule::attach(rig, |_| {}).await?;
         let words = PaneWords::openshell();

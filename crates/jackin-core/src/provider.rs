@@ -3,6 +3,13 @@
 
 use serde::{Deserialize, Serialize};
 
+pub const OMP_HOST_STORE: &str = ".omp/agent/agent.db";
+pub const OPENCODE_STORE: &str = "opencode.db";
+
+pub fn omp_host_store_display() -> String {
+    format!("~/{OMP_HOST_STORE}")
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
@@ -75,19 +82,25 @@ impl Provider {
         match self {
             Provider::Amp => Some("secrets.json"),
             Provider::Claude => Some(".credentials.json"),
-            Provider::Codex
-            | Provider::Cursor
-            | Provider::Grok
-            | Provider::Muse
-            | Provider::Opencode => Some("auth.json"),
+            Provider::Codex | Provider::Cursor | Provider::Grok | Provider::Muse => {
+                Some("auth.json")
+            }
             Provider::Gemini => Some("oauth_creds.json"),
             Provider::Kimi => Some("credentials/kimi-code.json"),
             Provider::Antigravity
             | Provider::Hermes
             | Provider::Minimax
             | Provider::Mimo
+            | Provider::Opencode
             | Provider::Openrouter
             | Provider::Zai => None,
+        }
+    }
+
+    pub fn credential_store(self) -> Option<&'static str> {
+        match self {
+            Provider::Opencode => Some(OPENCODE_STORE),
+            _ => None,
         }
     }
 }

@@ -8,6 +8,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use jackin_console::app::App;
 use jackin_core::{Config, GatewayEntry, GatewayName};
 use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::GatewayConnector;
@@ -18,6 +19,14 @@ use jackin_tui::{ConsoleError, ConsoleExit, SessionConnector, SessionSet, run_co
 use tokio_util::sync::CancellationToken;
 
 const DEADLINE: Duration = Duration::from_secs(3);
+
+fn wait_until_stopped(app: &App) {
+    let stop = app.shell.stop_handle();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline && !stop.is_stopped() {
+        std::thread::park_timeout(Duration::from_millis(1));
+    }
+}
 
 #[tokio::test]
 async fn the_loop_runs_on_a_blocking_thread_while_tokio_tasks_keep_running() -> TestResult {
@@ -42,6 +51,72 @@ async fn the_loop_runs_on_a_blocking_thread_while_tokio_tasks_keep_running() -> 
         })
         .await?;
         assert_eq!(exit, ConsoleExit::Quit);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancelled_console_stops_the_terminal_loop() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let token = CancellationToken::new();
+        let deps = ConsoleRig::builder(&rig.world)
+            .cancel(token.clone())
+            .deps()
+            .await?;
+        let canceller = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            token.cancel();
+        });
+        let stopped = tokio::time::timeout(
+            DEADLINE,
+            run_console_with(deps, |app| {
+                wait_until_stopped(app);
+                Ok(())
+            }),
+        )
+        .await
+        .map_err(|_| "the console did not stop on the cancellation".to_owned())?;
+        canceller.await?;
+        match stopped {
+            Err(ConsoleError::Cancelled) => {}
+            other => return Err(format!("expected a cancelled console, got {other:?}").into()),
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_console_cancelled_while_building_never_starts_the_terminal() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let token = CancellationToken::new();
+        token.cancel();
+        let deps = ConsoleRig::builder(&rig.world)
+            .cancel(token.clone())
+            .deps()
+            .await?;
+        let started = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&started);
+        let stopped = tokio::time::timeout(
+            DEADLINE,
+            run_console_with(deps, move |_app| {
+                flag.store(true, Ordering::SeqCst);
+                Ok(())
+            }),
+        )
+        .await
+        .map_err(|_| "the cancelled construction hung".to_owned())?;
+        assert!(
+            !started.load(Ordering::SeqCst),
+            "the terminal ran while the construction was cancelled"
+        );
+        match stopped {
+            Err(ConsoleError::Cancelled) => {}
+            other => return Err(format!("expected a cancelled console, got {other:?}").into()),
+        }
         Ok(())
     })
     .await

@@ -18,10 +18,7 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
     let agent = parse_agent(&args.agent)?;
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
-    let names = session
-        .sandbox_agent_names(&args.sandbox)
-        .await
-        .map_err(|error| CommandError::Argument(error.to_string()))?;
+    let names = session.sandbox_agent_names(&args.sandbox).await?;
     let is_lead = names.first().is_none_or(|lead| lead == agent.as_str());
     if is_lead {
         let size = app
@@ -44,8 +41,7 @@ async fn restart(app: &mut App, args: AgentRestartArgs) -> Result<(), CommandErr
     }
     session
         .restart_instance(&args.sandbox, agent, &app.cancel.clone())
-        .await
-        .map_err(|error| CommandError::Argument(error.to_string()))?;
+        .await?;
     app.io.line(&format!("{} ready", agent.as_str()))?;
     Ok(())
 }
@@ -55,8 +51,7 @@ pub(crate) async fn integrate(app: &mut App, args: SandboxArg) -> Result<(), Com
     let session = app.session(&config).await?;
     let merged = session
         .integrate(&args.sandbox, &app.cancel.clone())
-        .await
-        .map_err(|error| CommandError::Argument(error.to_string()))?;
+        .await?;
     for branch in merged {
         app.io.line(&format!("merged {branch}"))?;
     }

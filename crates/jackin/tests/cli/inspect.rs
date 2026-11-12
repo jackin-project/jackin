@@ -127,6 +127,32 @@ async fn inspect_of_a_missing_or_unmanaged_sandbox_fails_with_empty_stdout() -> 
 }
 
 #[tokio::test]
+async fn inspect_labels_the_agents_digest_and_never_calls_it_an_account() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let name = handle.name();
+        let labels = jackin_core::SandboxLabels::from_labels(&handle.labels())?;
+        let digest = labels.planned.agents.agents_label();
+        let harness = Harness::new(&rig.world);
+        harness.write_config(&rig.config.render())?;
+
+        let ran = harness.run(&["inspect", name.as_str()]).await?;
+        ran.ok()?;
+        let row = ran
+            .stdout
+            .lines()
+            .find(|line| line.starts_with("agents digest\t"))
+            .ok_or("the human output has no agents digest row")?;
+        assert_eq!(row, format!("agents digest\t{digest}"));
+        assert!(!ran.stdout.contains("account\t"), "{}", ran.stdout);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn inspect_escapes_an_unparsable_live_policy_host_in_the_human_output() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;

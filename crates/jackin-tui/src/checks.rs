@@ -19,6 +19,7 @@ use jackin_session::{
 };
 
 use crate::bridge::Settled;
+use crate::effects::LocalKind;
 use crate::observe::Inputs;
 use crate::onepassword::op_error;
 use crate::persist::sentence;
@@ -293,6 +294,11 @@ impl Inputs {
                     Ok(kind) => kind,
                     Err(error) => return Err(error_chain(&error)),
                 };
+                if let LocalKind::File(file) = &kind
+                    && crate::effects::is_credential_store(core_provider(provider), file)
+                {
+                    return Ok(Box::new(outcome(source, &Ok(SourceFound::File))));
+                }
                 let login = core_provider(provider) == jackin_core::Provider::Codex;
                 self.sources.check(kind.source(login), &self.cancel).await
             }

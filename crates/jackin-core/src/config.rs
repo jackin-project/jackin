@@ -411,6 +411,8 @@ pub enum ConfigError {
     CredentialNotAllowed { provider: Provider },
     #[error("the credential of account {account} cannot serve agent {}", .agent.as_str())]
     CredentialNotEligible { account: AccountName, agent: Agent },
+    #[error("account {account} only reports usage and cannot launch an agent")]
+    UsageOnlyAccount { account: AccountName },
     #[error("account {account} is still referenced by {}", join_display(.by))]
     AccountInUse {
         account: AccountName,
@@ -532,6 +534,15 @@ impl Account {
         }
     }
 
+    pub fn check_launchable(&self) -> Result<(), ConfigError> {
+        if self.is_usage_only() {
+            return Err(ConfigError::UsageOnlyAccount {
+                account: self.name.clone(),
+            });
+        }
+        Ok(())
+    }
+
     pub fn chatgpt_login(&self) -> Option<ChatgptLogin<'_>> {
         match &self.credential {
             CredentialSource::CodexLogin {
@@ -569,7 +580,6 @@ impl Account {
                 Some(AuthClass::OAuth)
             }
             CredentialSource::Env { .. }
-            | CredentialSource::OnePassword { .. }
             | CredentialSource::File { .. }
             | CredentialSource::OmpHost => match self.provider {
                 Provider::Claude | Provider::Codex => Some(AuthClass::ApiKey),
@@ -582,7 +592,14 @@ impl Account {
         }
     }
 
+    pub fn is_usage_only(&self) -> bool {
+        matches!(self.credential, CredentialSource::OnePassword { .. })
+    }
+
     fn publishable_tuple(&self, agent: Agent) -> Option<&'static AgentTuple> {
+        if self.is_usage_only() {
+            return None;
+        }
         let tuple = crate::lookup_tuple(agent, self.provider).ok()?;
         (tuple.state == TupleState::Supported && tuple.auth_class == self.auth_class()?)
             .then_some(tuple)

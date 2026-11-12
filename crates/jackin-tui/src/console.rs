@@ -21,8 +21,10 @@ use junie_tui::core::event::Input;
 use junie_tui::motion::Motion;
 use junie_tui::runtime::{Application, ExternalReceiver, external_channel};
 use junie_tui::shell::NativeClipboard;
+use junie_tui::shell::StopHandle;
 use junie_tui::theme::{ColorLevel, Theme, Tone};
 use thiserror::Error;
+use tokio::sync::oneshot;
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 use crate::backend::JackinBackend;
@@ -62,6 +64,7 @@ pub struct ConsoleDeps {
     pub handle: tokio::runtime::Handle,
     pub limits: ConsoleLimits,
     pub clipboard: Arc<dyn NativeClipboard>,
+    pub cancel: CancellationToken,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -90,6 +93,8 @@ pub enum ConsoleError {
     Config(#[from] ConfigError),
     #[error(transparent)]
     Pinned(#[from] CompatibilityError),
+    #[error("the console was cancelled")]
+    Cancelled,
     #[error("the console stopped before it could quit")]
     Panicked,
 }
@@ -121,22 +126,43 @@ where
     F: FnOnce(&mut App) -> std::io::Result<()> + Send + 'static,
 {
     let handle = deps.handle.clone();
+    let cancelled = deps.cancel.clone();
+    let watched = cancelled.clone();
+    let building = cancelled.clone();
+    let (sender, receiver) = oneshot::channel::<StopHandle>();
+    let watcher = tokio::spawn(async move {
+        if let Ok(stop) = receiver.await {
+            watched.cancelled().await;
+            stop.stop();
+        }
+    });
     let (panes, cancel, outcome) = tokio::task::spawn_blocking(move || {
         let Console {
             mut app,
             panes,
             _cancel: cancel,
             ..
-        } = handle.block_on(build_console(deps))?;
+        } = handle.block_on(async {
+            tokio::select! {
+                biased;
+                () = building.cancelled() => Err(ConsoleError::Cancelled),
+                built = build_console(deps) => built,
+            }
+        })?;
+        let _sent = sender.send(app.shell.stop_handle());
         let outcome = terminal(&mut app);
         drop(app);
         Ok::<_, ConsoleError>((panes, cancel, outcome))
     })
     .await
     .map_err(|_| ConsoleError::Panicked)??;
+    watcher.abort();
     panes.finished(CLOSE_DEADLINE).await;
     drop(cancel);
     outcome.map_err(ConsoleError::Terminal)?;
+    if cancelled.is_cancelled() {
+        return Err(ConsoleError::Cancelled);
+    }
     Ok(ConsoleExit::Quit)
 }
 
@@ -212,9 +238,10 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         handle,
         limits,
         clipboard,
+        cancel: external,
     } = deps;
     let config_path = config.path().as_path().display().to_string();
-    let cancel = CancellationToken::new();
+    let cancel = external.child_token();
     let op = OpSnapshot::default();
     let inputs = Arc::new(Inputs::new(InputsParts {
         config,

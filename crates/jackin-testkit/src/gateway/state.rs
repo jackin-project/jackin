@@ -7,12 +7,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use jackin_core::{
-    Clock, ImageId, ImageTag, Labels, Phase, ProfileId, ProviderName, SandboxName, SandboxPath,
-    TerminalText, Timestamp,
+    ImageId, ImageTag, Labels, Phase, ProfileId, ProviderName, SandboxName, SandboxPath,
+    TerminalText,
 };
 use jackin_openshell::{
     GatewayError, GatewayOp, NetworkRule, PolicyDocument, ProviderProfile, Provisioning,
-    SandboxCreate, SandboxView,
+    SandboxCreate, SandboxStamp, SandboxView,
 };
 use tempfile::TempDir;
 use tokio::sync::Notify;
@@ -174,8 +174,8 @@ impl Registry {
         }
     }
 
-    pub(super) fn now(&self) -> Timestamp {
-        self.clock.now()
+    pub(super) fn now(&self) -> SandboxStamp {
+        self.clock.stamp()
     }
 
     pub(super) fn arrive(&mut self, op: GatewayOp, special: Option<&Trigger>) -> Option<Arc<Gate>> {
@@ -268,7 +268,7 @@ pub(super) enum Settling {
 
 #[derive(Debug)]
 pub(super) struct Sandbox {
-    pub(super) created_at: Option<Timestamp>,
+    pub(super) created_at: Option<SandboxStamp>,
     pub(super) image_id: Option<ImageId>,
     pub(super) phase: Phase,
     pub(super) provisioning: Provisioning,
@@ -311,7 +311,7 @@ impl Sandbox {
         polls: u32,
         failure: Option<String>,
         model: SupervisorModel,
-        created_at: Timestamp,
+        created_at: SandboxStamp,
     ) -> Sandbox {
         let supervisor = (plan.end == PlanEnd::Supervised).then(|| Supervisor::new(model));
         Sandbox {

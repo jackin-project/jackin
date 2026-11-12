@@ -132,6 +132,7 @@ fn label(error: &ConfigError) -> String {
         ConfigError::CredentialNotEligible { account, agent } => {
             format!("credential-eligibility:{account}:{}", agent.as_str())
         }
+        ConfigError::UsageOnlyAccount { account } => format!("usage-only:{account}"),
         ConfigError::AccountInUse { account, .. } => format!("account-in-use:{account}"),
         ConfigError::RoleInUse { role, .. } => format!("role-in-use:{role}"),
         ConfigError::NoGateway => "no-gateway".to_owned(),

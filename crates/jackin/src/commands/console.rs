@@ -57,6 +57,7 @@ pub(crate) async fn run(app: &mut App) -> Result<(), CommandError> {
         handle: tokio::runtime::Handle::current(),
         limits,
         clipboard: Arc::new(HostClipboard::detect(&app.env)),
+        cancel: app.cancel.clone(),
     };
     let ConsoleExit::Quit = app.deps.console.run(deps).await?;
     Ok(())
