@@ -330,7 +330,7 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
         .ok_or(Unresolved::Missing)?;
     let (bytes, wal) = read_opencode_snapshot(deps, path).await?;
     let found =
-        tokio::task::spawn_blocking(move || extract_opencode_credential(&bytes, wal.as_deref()))
+        tokio::task::spawn_blocking(move || extract_opencode_credential(bytes, wal.as_deref()))
             .await
             .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))??;
     let revision = opencode_revision(path.as_path(), identity, &found);
@@ -350,26 +350,23 @@ async fn read_opencode_snapshot(
     deps: &UsageDeps,
     path: &HostPath,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved> {
-    opencode_consistent_snapshot(|| async {
-        let bytes = read_opencode_store(deps, path).await?;
-        let wal = read_opencode_wal(deps, path).await?;
-        Ok((bytes, wal))
-    })
-    .await
+    let bytes = opencode_consistent_snapshot(|| read_opencode_store(deps, path)).await?;
+    let wal = read_opencode_wal(deps, path).await?;
+    Ok((bytes, wal))
 }
 
 async fn opencode_consistent_snapshot<Read, ReadFuture>(
     mut read: Read,
-) -> Result<(Vec<u8>, Option<Vec<u8>>), Unresolved>
+) -> Result<Vec<u8>, Unresolved>
 where
     Read: FnMut() -> ReadFuture,
-    ReadFuture: Future<Output = Result<(Vec<u8>, Option<Vec<u8>>), Unresolved>>,
+    ReadFuture: Future<Output = Result<Vec<u8>, Unresolved>>,
 {
     for _ in 0..OPENCODE_SNAPSHOT_ATTEMPTS {
-        let (first, wal) = read().await?;
-        let (second, _) = read().await?;
+        let first = read().await?;
+        let second = read().await?;
         if first == second {
-            return Ok((first, wal));
+            return Ok(first);
         }
     }
     Err(Unresolved::Unreadable(
@@ -406,7 +403,7 @@ struct OpenCodeRecord {
 }
 
 fn extract_opencode_credential(
-    bytes: &[u8],
+    bytes: Vec<u8>,
     wal: Option<&[u8]>,
 ) -> Result<OpenCodeRecord, Unresolved> {
     let image = opencode_store_image(bytes, wal)?;
@@ -491,8 +488,7 @@ impl OpenCodeCandidate {
     }
 }
 
-fn opencode_store_image(bytes: &[u8], wal: Option<&[u8]>) -> Result<Vec<u8>, Unresolved> {
-    let mut image = bytes.to_vec();
+fn opencode_store_image(mut image: Vec<u8>, wal: Option<&[u8]>) -> Result<Vec<u8>, Unresolved> {
     if let Some(wal) = wal {
         apply_opencode_wal(&mut image, wal)?;
     }
@@ -935,7 +931,7 @@ mod tests {
                 .expect("the newer row");
         }
         let bytes = std::fs::read(&path).expect("the store bytes");
-        let found = match super::extract_opencode_credential(&bytes, None) {
+        let found = match super::extract_opencode_credential(bytes, None) {
             Ok(found) => found,
             Err(_) => panic!("the credential"),
         };
