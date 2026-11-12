@@ -534,13 +534,14 @@ async fn the_store_is_never_written_to_a_temporary_file() -> TestResult {
         let private = directory.path().join("private-temporary-root");
         std::fs::create_dir(&private)?;
         std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o500))?;
-        let output = tokio::process::Command::new(std::env::current_exe()?)
-            .args([
-                "--exact",
-                "opencode::the_store_is_read_without_a_temporary_directory",
-                "--ignored",
-                "--nocapture",
-            ])
+        let program = std::env::current_exe()?;
+        let output = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(
+                "exec \"$1\" --exact opencode::the_store_is_read_without_a_temporary_directory --ignored --nocapture",
+            )
+            .arg("sh")
+            .arg(program)
             .env(
                 "JACKIN_OPENCODE_STORE",
                 directory.path().join("opencode.db"),
