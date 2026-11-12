@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -54,7 +54,7 @@ where
                 after: plan.timeout,
             });
         }
-        let started = Instant::now();
+        let started = clock.monotonic();
         let outcome = tokio::select! {
             biased;
             () = cancel.cancelled() => return Err(PollError::Cancelled),
@@ -70,7 +70,7 @@ where
         if cancel.is_cancelled() {
             return Err(PollError::Cancelled);
         }
-        probed += started.elapsed();
+        probed += clock.monotonic().saturating_sub(started);
         let step = interval.min(plan.timeout.saturating_sub(waited + probed));
         if step.is_zero() {
             return Err(PollError::Timeout {

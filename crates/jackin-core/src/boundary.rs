@@ -4,7 +4,8 @@
 use std::any::Any;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug};
-use std::time::Duration;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,10 @@ impl Debug for EnvSnapshot {
 pub trait Clock: Send + Sync + Debug {
     fn now(&self) -> Timestamp;
     fn utc_offset_secs(&self) -> i32;
+    fn monotonic(&self) -> Duration {
+        static ANCHOR: OnceLock<Instant> = OnceLock::new();
+        ANCHOR.get_or_init(Instant::now).elapsed()
+    }
     async fn sleep(&self, duration: Duration);
 }
 

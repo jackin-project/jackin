@@ -141,6 +141,10 @@ impl Clock for FakeClock {
         locked(&self.state).offset
     }
 
+    fn monotonic(&self) -> Duration {
+        locked(&self.state).elapsed
+    }
+
     async fn sleep(&self, duration: Duration) {
         let (id, deadline) = {
             let mut state = locked(&self.state);
