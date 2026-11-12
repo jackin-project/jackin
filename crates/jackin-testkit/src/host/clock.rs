@@ -142,7 +142,7 @@ impl Clock for FakeClock {
     }
 
     fn monotonic(&self) -> Duration {
-        locked(&self.state).elapsed
+        Duration::ZERO
     }
 
     async fn sleep(&self, duration: Duration) {
