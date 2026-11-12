@@ -150,17 +150,14 @@ pub(crate) async fn resolve(
             let (text, revision) = read_credential(deps, path).await?;
             Ok(file_login(account, path, text).with_revision(Some(revision)))
         }
-        CredentialSource::CodexLogin { home, .. } => {
+        CredentialSource::CodexLogin {
+            home,
+            chatgpt_account_id,
+        } => {
             let path = HostPath::resolve(Path::new(CODEX_LOGIN_FILE), home)
                 .map_err(|_| Unresolved::Unreadable("the Codex login file name is not usable"))?;
             let (text, revision) = read_credential(deps, &path).await?;
-            let identity = serde_json::from_str::<Value>(&text).ok().and_then(|value| {
-                value
-                    .pointer("/tokens/account_id")
-                    .and_then(Value::as_str)
-                    .and_then(non_empty)
-                    .map(str::to_owned)
-            });
+            let identity = codex_account_id(&text, chatgpt_account_id.as_str())?;
             Ok(Material::login(text)
                 .with_identity(identity)
                 .with_revision(Some(revision)))
@@ -183,6 +180,28 @@ fn file_login(account: &UsageAccount, path: &HostPath, text: String) -> Material
     } else {
         Material::token(&text)
     }
+}
+
+fn codex_account_id(text: &str, configured: &str) -> Result<Option<String>, Unresolved> {
+    let Ok(document) = serde_json::from_str::<Value>(text) else {
+        return Ok(None);
+    };
+    let Some(tokens) = document.get("tokens") else {
+        return Ok(None);
+    };
+    let account_id = tokens
+        .get("account_id")
+        .and_then(Value::as_str)
+        .and_then(non_empty)
+        .ok_or(Unresolved::Unreadable(
+            "the Codex login holds no account id",
+        ))?;
+    if account_id != configured {
+        return Err(Unresolved::Unreadable(
+            "the Codex login account is not the configured account",
+        ));
+    }
+    Ok(Some(account_id.to_owned()))
 }
 
 fn kimi_base_for_slot(stem: &str) -> Option<String> {
