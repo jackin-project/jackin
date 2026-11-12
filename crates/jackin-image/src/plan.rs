@@ -187,78 +187,110 @@ fn hook_file(kind: HookKind, source: Option<&SourceFile>) -> MaterializedFile {
     )
 }
 
+const AGENT_STAGE_ANCHOR: &str = "FROM construct AS agent\n";
+const ARCHIVE_STAGE_ANCHOR: &str = "FROM scratch AS docker-cli-archive-arm64";
+const TRUSTED_COPY_ANCHOR: &str = "COPY --from=agent --chown=root:root /out/ /\n";
+const ASSEMBLED_ARGS_ANCHOR: &str = "ARG AGENT_EXTRA_BINARY\n\nUSER root\nCOPY --from=layout";
+const ASSEMBLED_CONFIG_ANCHOR: &str = "COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX ${AGENT_SYSTEM_CONFIG} ${AGENT_SYSTEM_CONFIG}\n";
+const SCAN_ARGS_ANCHOR: &str = "ARG AGENT_EXTRA_BINARY\n\nUSER root\nCOPY scan /jackin-scan";
+const SCAN_SAME_AS_ANCHOR: &str = "        --same-as ${AGENT_BINARY}=/trusted${AGENT_BINARY} \\\n";
+const SCAN_FILES_ANCHOR: &str = "        ${AGENT_BINARY} \\\n";
+const AGENT_RUN_ANCHOR: &str = "RUN --mount=type=bind,from=agent-archive";
+
+fn agent_run_template(text: &str) -> String {
+    let start = text.find(AGENT_RUN_ANCHOR).unwrap_or(0);
+    let end = text[start..]
+        .find("\n\nFROM ")
+        .map_or(text.len(), |at| start + at);
+    text[start..end].to_owned()
+}
+
+fn archive_stages(number: usize, prefix: &str) -> String {
+    format!(
+        "FROM scratch AS agent{number}-archive-arm64\nARG {prefix}_SHA256_ARM64\nARG {prefix}_URL_ARM64\nADD --checksum=sha256:${{{prefix}_SHA256_ARM64}} ${{{prefix}_URL_ARM64}} /agent-artifact\n\nFROM scratch AS agent{number}-archive-amd64\nARG {prefix}_SHA256_AMD64\nARG {prefix}_URL_AMD64\nADD --checksum=sha256:${{{prefix}_SHA256_AMD64}} ${{{prefix}_URL_AMD64}} /agent-artifact\n\nFROM agent{number}-archive-${{TARGETARCH}} AS agent{number}-archive\n\n"
+    )
+}
+
+fn agent_stage(number: usize, prefix: &str, template: &str) -> String {
+    let run = template
+        .replace("AGENT_", &format!("{prefix}_"))
+        .replace("agent-archive", &format!("agent{number}-archive"));
+    format!(
+        "FROM construct AS agent{number}\nARG {prefix}_VERSION\nARG {prefix}_BIN_DIR\nARG {prefix}_BINARY\nARG {prefix}_ARCHIVE_MEMBERS\nARG {prefix}_VERSION_OUTPUT\nARG {prefix}_SYSTEM_CONFIG\nARG {prefix}_SYSTEM_CONFIG_CONTENT\nARG {prefix}_EXTRA_BINARY\n\nUSER root\n{run}\n\n"
+    )
+}
+
 fn multi_dockerfile(agents: &[jackin_core::Agent]) -> Vec<u8> {
     let text = String::from_utf8_lossy(DERIVED_DOCKERFILE).into_owned();
+    let template = agent_run_template(&text);
     let mut out = text;
+    let mut archives = String::new();
+    let mut stages = String::new();
+    let mut extras: Vec<(usize, String)> = Vec::new();
     for index in 1..agents.len() {
-        let n = index + 1;
-        let prefix = format!("AGENT{n}");
-        let archive = format!(
-            "FROM scratch AS agent{n}-archive-arm64\nARG {prefix}_SHA256_ARM64\nARG {prefix}_URL_ARM64\nADD --checksum=sha256:${{{prefix}_SHA256_ARM64}} ${{{prefix}_URL_ARM64}} /agent-artifact\n\nFROM scratch AS agent{n}-archive-amd64\nARG {prefix}_SHA256_AMD64\nARG {prefix}_URL_AMD64\nADD --checksum=sha256:${{{prefix}_SHA256_AMD64}} ${{{prefix}_URL_AMD64}} /agent-artifact\n\nFROM agent{n}-archive-${{TARGETARCH}} AS agent{n}-archive\n\n"
-        );
-        out = out.replacen(
-            "FROM construct AS agent\n",
-            &format!("{archive}FROM construct AS agent\n"),
-            1,
-        );
-        let start = out
-            .find("RUN --mount=type=bind,from=agent-archive")
-            .unwrap_or(0);
-        let end = out[start..]
-            .find("\n\nFROM scratch AS docker-cli-archive-arm64")
-            .map_or(out.len(), |at| start + at);
-        let run = out[start..end]
-            .replace("AGENT_", &format!("{prefix}_"))
-            .replace("agent-archive", &format!("agent{n}-archive"));
-        let stage = format!(
-            "FROM construct AS agent{n}\nARG {prefix}_VERSION\nARG {prefix}_BIN_DIR\nARG {prefix}_BINARY\nARG {prefix}_ARCHIVE_MEMBERS\nARG {prefix}_VERSION_OUTPUT\nARG {prefix}_SYSTEM_CONFIG\nARG {prefix}_SYSTEM_CONFIG_CONTENT\nARG {prefix}_EXTRA_BINARY\n\nUSER root\n{run}\n\n"
-        );
-        out = out.replacen(
-            "FROM scratch AS docker-cli-archive-arm64",
-            &format!("{stage}FROM scratch AS docker-cli-archive-arm64"),
-            1,
-        );
-        out = out.replacen(
-            "COPY --from=agent --chown=root:root /out/ /\n",
-            &format!(
-                "COPY --from=agent --chown=root:root /out/ /\nCOPY --from=agent{n} --chown=root:root /out/ /\n"
-            ),
-            1,
-        );
-        out = out.replacen(
-            "ARG AGENT_EXTRA_BINARY\n\nUSER root\nCOPY --from=layout",
-            &format!(
-                "ARG AGENT_EXTRA_BINARY\nARG {prefix}_SYSTEM_CONFIG\n\nUSER root\nCOPY --from=layout"
-            ),
-            1,
-        );
-        out = out.replacen(
-            "COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX ${AGENT_SYSTEM_CONFIG} ${AGENT_SYSTEM_CONFIG}\n",
-            &format!(
-                "COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX ${{AGENT_SYSTEM_CONFIG}} ${{AGENT_SYSTEM_CONFIG}}\nCOPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX ${{{prefix}_SYSTEM_CONFIG}} ${{{prefix}_SYSTEM_CONFIG}}\n"
-            ),
-            1,
-        );
-        out = out.replacen(
-            "ARG AGENT_EXTRA_BINARY\n\nUSER root\nCOPY scan /jackin-scan",
-            &format!(
-                "ARG AGENT_EXTRA_BINARY\nARG {prefix}_BINARY\nARG {prefix}_SYSTEM_CONFIG\n\nUSER root\nCOPY scan /jackin-scan"
-            ),
-            1,
-        );
-        out = out.replacen(
-            "--same-as ${AGENT_BINARY}=/trusted${AGENT_BINARY}",
-            &format!(
-                "--same-as ${{AGENT_BINARY}}=/trusted${{AGENT_BINARY}} \\\n        --same-as ${{{prefix}_BINARY}}=/trusted${{{prefix}_BINARY}} \\\n        --same-as ${{{prefix}_SYSTEM_CONFIG}}=/trusted${{{prefix}_SYSTEM_CONFIG}} \\\n        --data ${{{prefix}_SYSTEM_CONFIG}}"
-            ),
-            1,
-        );
-        out = out.replacen(
-            "        ${AGENT_BINARY} \\",
-            &format!("        ${{AGENT_BINARY}} \\\n        ${{{prefix}_BINARY}} \\"),
-            1,
-        );
+        let number = index + 1;
+        let prefix = format!("AGENT{number}");
+        archives.push_str(&archive_stages(number, &prefix));
+        stages.push_str(&agent_stage(number, &prefix, &template));
+        extras.push((number, prefix));
     }
+    if extras.is_empty() {
+        return out.into_bytes();
+    }
+    out = out.replacen(
+        AGENT_STAGE_ANCHOR,
+        &format!("{archives}{AGENT_STAGE_ANCHOR}"),
+        1,
+    );
+    out = out.replacen(
+        ARCHIVE_STAGE_ANCHOR,
+        &format!("{stages}{ARCHIVE_STAGE_ANCHOR}"),
+        1,
+    );
+    let mut trusted = String::from(TRUSTED_COPY_ANCHOR);
+    for (number, _) in &extras {
+        trusted.push_str(&format!(
+            "COPY --from=agent{number} --chown=root:root /out/ /\n"
+        ));
+    }
+    out = out.replacen(TRUSTED_COPY_ANCHOR, &trusted, 1);
+    let mut assembled_args = String::from("ARG AGENT_EXTRA_BINARY\n");
+    for (_, prefix) in &extras {
+        assembled_args.push_str(&format!("ARG {prefix}_SYSTEM_CONFIG\n"));
+    }
+    assembled_args.push_str("\nUSER root\nCOPY --from=layout");
+    out = out.replacen(ASSEMBLED_ARGS_ANCHOR, &assembled_args, 1);
+    let mut assembled_configs = String::from(ASSEMBLED_CONFIG_ANCHOR);
+    for (_, prefix) in &extras {
+        assembled_configs.push_str(&format!(
+            "COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX ${{{prefix}_SYSTEM_CONFIG}} ${{{prefix}_SYSTEM_CONFIG}}\n"
+        ));
+    }
+    out = out.replacen(ASSEMBLED_CONFIG_ANCHOR, &assembled_configs, 1);
+    let mut scan_args = String::from("ARG AGENT_EXTRA_BINARY\n");
+    for (_, prefix) in &extras {
+        scan_args.push_str(&format!(
+            "ARG {prefix}_BINARY\nARG {prefix}_SYSTEM_CONFIG\n"
+        ));
+    }
+    scan_args.push_str("\nUSER root\nCOPY scan /jackin-scan");
+    out = out.replacen(SCAN_ARGS_ANCHOR, &scan_args, 1);
+    let mut scan_same_as = String::from(SCAN_SAME_AS_ANCHOR);
+    for (_, prefix) in &extras {
+        scan_same_as.push_str(&format!(
+            "        --same-as ${{{prefix}_BINARY}}=/trusted${{{prefix}_BINARY}} \\\n"
+        ));
+        scan_same_as.push_str(&format!(
+            "        --same-as ${{{prefix}_SYSTEM_CONFIG}}=/trusted${{{prefix}_SYSTEM_CONFIG}} \\\n"
+        ));
+        scan_same_as.push_str(&format!("        --data ${{{prefix}_SYSTEM_CONFIG}} \\\n"));
+    }
+    out = out.replacen(SCAN_SAME_AS_ANCHOR, &scan_same_as, 1);
+    let mut scan_files = String::from(SCAN_FILES_ANCHOR);
+    for (_, prefix) in &extras {
+        scan_files.push_str(&format!("        ${{{prefix}_BINARY}} \\\n"));
+    }
+    out = out.replacen(SCAN_FILES_ANCHOR, &scan_files, 1);
     out.into_bytes()
 }
 
