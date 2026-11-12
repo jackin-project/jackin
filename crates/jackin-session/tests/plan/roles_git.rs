@@ -63,6 +63,31 @@ async fn a_git_role_follows_a_non_default_branch_and_its_remote_updates() -> Tes
 }
 
 #[tokio::test]
+async fn a_git_role_pinned_by_a_fully_qualified_branch_ref_follows_the_origin_branch() -> TestResult
+{
+    guard(async {
+        let origin = Origin::new().await?;
+        let (cache, _keep) = cache()?;
+        let (commit, model) = origin
+            .load(&cache, Some("refs/heads/main"))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(
+            (commit, model.as_deref()),
+            (origin.commits[0].clone(), Some("glm-5.3"))
+        );
+        let moved = origin.advance("glm-5.3").await?;
+        let (commit, model) = origin
+            .load(&cache, Some("refs/heads/main"))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!((commit, model.as_deref()), (moved, Some("glm-5.3")));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_git_role_loads_a_tag_and_a_commit_and_refuses_an_unknown_revision() -> TestResult {
     guard(async {
         let origin = Origin::new().await?;

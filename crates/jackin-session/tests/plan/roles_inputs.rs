@@ -78,6 +78,65 @@ async fn refuses_without_blocking(
 }
 
 #[tokio::test]
+async fn a_git_ignored_role_input_is_hashed_and_staged() -> TestResult {
+    guard(async {
+        let role = RoleFixture::new("sentinel")?.gitignore("build-cache/\n");
+        role.file("README.md", b"readme\n").await?;
+        role.file("build-cache/x.bin", b"cache\n").await?;
+        role.commit().await?;
+        let (cache, _keep) = cache()?;
+        let (catalog, _runner) = catalog(&cache);
+        let loaded = catalog
+            .load_path(role.root(), &CancellationToken::new())
+            .await?;
+        let names: Vec<&str> = loaded
+            .files()
+            .iter()
+            .map(|entry| entry.path().as_str())
+            .collect();
+        assert!(names.contains(&"build-cache/x.bin"), "{names:?}");
+        let before = loaded.revision().digest.clone();
+        role.file("build-cache/x.bin", b"other cache\n").await?;
+        let loaded = catalog
+            .load_path(role.root(), &CancellationToken::new())
+            .await?;
+        assert_ne!(loaded.revision().digest, before);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_host_git_configuration_does_not_decide_the_role_inputs() -> TestResult {
+    guard(async {
+        let role = RoleFixture::new("sentinel")?;
+        role.commit().await?;
+        role.file("cache.bin", b"cache\n").await?;
+        let home = tempfile::tempdir()?;
+        let excludes = home.path().join("excludes");
+        std::fs::write(&excludes, b"*.bin\n")?;
+        std::fs::write(
+            home.path().join(".gitconfig"),
+            format!("[core]\n\texcludesFile = {}\n", excludes.display()),
+        )?;
+        let (cache, _keep) = cache()?;
+        let (catalog, runner) = catalog(&cache);
+        runner.set_ambient("HOME", &home.path().to_string_lossy());
+        let loaded = catalog
+            .load_path(role.root(), &CancellationToken::new())
+            .await?;
+        let names: Vec<&str> = loaded
+            .files()
+            .iter()
+            .map(|entry| entry.path().as_str())
+            .collect();
+        assert!(names.contains(&"cache.bin"), "{names:?}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_fifo_as_a_role_input_is_refused_at_once() -> TestResult {
     guard(async {
         let (cache, _keep) = cache()?;
