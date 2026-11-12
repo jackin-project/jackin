@@ -348,11 +348,22 @@ impl RoleCatalog {
         }
     }
 
-    pub async fn findings_of(&self, root: &HostPath, manifest: RoleManifest) -> Vec<RoleError> {
-        self.inspect_manifest(root, manifest, &mut Reads::new())
-            .await
-            .err()
-            .unwrap_or_default()
+    pub async fn findings_of(
+        &self,
+        root: &HostPath,
+        manifest: RoleManifest,
+        cancel: &CancellationToken,
+    ) -> Vec<RoleError> {
+        let mut reads = Reads::new();
+        match self.inspect_manifest(root, manifest, &mut reads).await {
+            Ok(_) => self
+                .snapshot(root, &reads, cancel)
+                .await
+                .err()
+                .into_iter()
+                .collect(),
+            Err(findings) => findings,
+        }
     }
 
     async fn inspect_manifest(
@@ -611,13 +622,7 @@ impl RoleCatalog {
         let head = self.git(root, cancel, &["rev-parse", "HEAD"]).await?;
         let commit = CommitId::parse(String::from_utf8_lossy(&head).trim())
             .map_err(|_| git_failure(ProcessStatus::Exited(0), &head))?;
-        let listing = self
-            .git(
-                root,
-                cancel,
-                &["ls-files", "-z", "-co", "--exclude-standard"],
-            )
-            .await?;
+        let listing = self.git(root, cancel, &["ls-files", "-z", "-co"]).await?;
         let mut names: Vec<&[u8]> = listing
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty())
@@ -745,11 +750,12 @@ impl RoleCatalog {
         let target = match rev {
             None => "origin/HEAD".to_owned(),
             Some(rev) => {
-                let branch = format!("origin/{}^{{commit}}", rev.as_str());
+                let name = branch_name(rev.as_str());
+                let branch = format!("origin/{name}^{{commit}}");
                 if self.resolves(dir, cancel, &branch).await? {
-                    format!("origin/{}", rev.as_str())
+                    format!("origin/{name}")
                 } else {
-                    format!("{}^{{commit}}", rev.as_str())
+                    format!("{name}^{{commit}}")
                 }
             }
         };
@@ -761,4 +767,10 @@ impl RoleCatalog {
 
 fn join_repo(root: &HostPath, path: &RepoPath) -> Result<HostPath, PathError> {
     HostPath::resolve(Path::new(path.as_str()), root)
+}
+
+fn branch_name(rev: &str) -> &str {
+    rev.strip_prefix("refs/heads/")
+        .filter(|name| !name.is_empty())
+        .unwrap_or(rev)
 }
