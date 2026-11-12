@@ -424,7 +424,11 @@ fn not_found(sandbox: &SandboxName) -> GatewayError {
 }
 
 impl Session {
-    pub async fn attach(&self, request: AttachRequest) -> Result<AttachedTerminal, AttachError> {
+    pub async fn attach(
+        &self,
+        request: AttachRequest,
+        cancel: &CancellationToken,
+    ) -> Result<AttachedTerminal, AttachError> {
         let sandbox = &request.sandbox;
         let view = self
             .find_managed(sandbox)
@@ -442,8 +446,7 @@ impl Session {
             let is_lead = names.first().is_some_and(|lead| lead == agent.as_str());
             if !is_lead {
                 let spec = agent.spec();
-                self.kill_instance(sandbox, agent, &CancellationToken::new())
-                    .await?;
+                self.kill_instance(sandbox, agent, cancel).await?;
                 let gateway = self.deps.gateway.as_ref();
                 let mut env = async {
                     let launch = launch_of(&view.labels)?;

@@ -102,7 +102,11 @@ async fn nonlexical_lead_attach_routes_main_and_secondary_terminal_contexts() ->
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
         let mut owner = AttachRequest::owner(target.clone(), size()?);
         owner.agent = Some(Agent::ClaudeCode);
-        let mut lead = rig.world.session.attach(owner).await?;
+        let mut lead = rig
+            .world
+            .session
+            .attach(owner, &CancellationToken::new())
+            .await?;
         assert!(handle.shells().is_empty());
         lead.input(b"lead-identity-input".to_vec()).await?;
         wait_main(&handle, b"lead-identity-input").await?;
@@ -116,7 +120,11 @@ async fn nonlexical_lead_attach_routes_main_and_secondary_terminal_contexts() ->
         );
         let mut other = AttachRequest::owner(target.clone(), size()?);
         other.agent = Some(Agent::Codex);
-        let mut secondary = rig.world.session.attach(other).await?;
+        let mut secondary = rig
+            .world
+            .session
+            .attach(other, &CancellationToken::new())
+            .await?;
         let shells = handle.shells();
         assert_eq!(shells.len(), 1);
         assert_eq!(shells[0].workdir.as_str(), "/sandbox/work/codex/project");
@@ -136,7 +144,10 @@ async fn nonlexical_lead_attach_routes_main_and_secondary_terminal_contexts() ->
         let mut absent = AttachRequest::owner(target, size()?);
         absent.agent = Some(Agent::GrokBuild);
         assert!(matches!(
-            rig.world.session.attach(absent).await,
+            rig.world
+                .session
+                .attach(absent, &CancellationToken::new())
+                .await,
             Err(AttachError::NotFound(_))
         ));
         assert_eq!(handle.shells().len(), 1);
@@ -337,7 +348,10 @@ async fn implicit_attach_refuses_ambiguous_old_identity_before_opening_a_termina
         );
         let request = AttachRequest::viewer(handle.name(), size()?);
         assert!(matches!(
-            rig.world.session.attach(request).await,
+            rig.world
+                .session
+                .attach(request, &CancellationToken::new())
+                .await,
             Err(AttachError::Gateway(GatewayError::Protocol { .. }))
         ));
         assert_eq!(
@@ -371,7 +385,10 @@ async fn explicit_attach_refuses_ambiguous_old_identity_before_opening_a_termina
             let mut request = AttachRequest::viewer(handle.name(), size()?);
             request.agent = Some(agent);
             assert!(matches!(
-                rig.world.session.attach(request).await,
+                rig.world
+                    .session
+                    .attach(request, &CancellationToken::new())
+                    .await,
                 Err(AttachError::Gateway(GatewayError::Protocol { .. }))
             ));
         }
@@ -462,7 +479,10 @@ async fn direct_instance_operations_refuse_missing_malformed_empty_and_duplicate
             assert!(matches!(
                 rig.world
                     .session
-                    .attach(AttachRequest::viewer(handle.name(), size()?))
+                    .attach(
+                        AttachRequest::viewer(handle.name(), size()?),
+                        &CancellationToken::new()
+                    )
                     .await,
                 Err(AttachError::Gateway(GatewayError::Protocol { .. }))
             ));
@@ -660,7 +680,10 @@ async fn direct_instance_operations_refuse_delimiter_and_control_models_even_wit
             assert!(matches!(
                 rig.world
                     .session
-                    .attach(AttachRequest::viewer(handle.name(), size()?))
+                    .attach(
+                        AttachRequest::viewer(handle.name(), size()?),
+                        &CancellationToken::new()
+                    )
                     .await,
                 Err(AttachError::Gateway(GatewayError::Protocol { .. }))
             ));
@@ -753,6 +776,57 @@ async fn public_instance_reader_canonicalizes_secondaries_but_preserves_the_lead
 }
 
 #[tokio::test]
+async fn a_cancelled_attach_stops_the_pre_attach_kill_at_once() -> TestResult {
+    guard(async {
+        let rig = configured().await?;
+        let request = rig.request(42)?.instances(members(Agent::ClaudeCode)?);
+        let target = ready(run(&rig, request).await?)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox")?;
+        let live = LiveInstance::spawn()?;
+        std::fs::write(
+            handle.root().join(".jackin/run/codex/instance.pid"),
+            live.record().await?,
+        )?;
+        rig.gateway().script_program(
+            &SandboxPath::from_static("/usr/bin/kill"),
+            ProgramScript {
+                exit_code: 0,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
+        rig.gateway().script_program(
+            &SandboxPath::from_static("/usr/bin/ps"),
+            ProgramScript {
+                exit_code: 1,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            },
+        );
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        let mut request = AttachRequest::owner(target.clone(), size()?);
+        request.agent = Some(Agent::Codex);
+        let refused = rig.world.session.attach(request, &cancel).await;
+        assert!(
+            matches!(
+                refused,
+                Err(AttachError::Gateway(GatewayError::Cancelled { .. }))
+            ),
+            "{refused:?}"
+        );
+        assert!(handle.shells().is_empty());
+        assert!(
+            handle
+                .runs(&SandboxPath::from_static("/usr/bin/kill"))
+                .is_empty()
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn secondary_attach_stops_the_detached_instance_and_carries_the_launch_env() -> TestResult {
     guard(async {
         let rig = configured().await?;
@@ -782,7 +856,10 @@ async fn secondary_attach_stops_the_detached_instance_and_carries_the_launch_env
         );
         let mut request = AttachRequest::owner(target.clone(), size()?);
         request.agent = Some(Agent::Codex);
-        rig.world.session.attach(request).await?;
+        rig.world
+            .session
+            .attach(request, &CancellationToken::new())
+            .await?;
         let pid = live.pid().to_string();
         let signalled = handle.runs(&SandboxPath::from_static("/usr/bin/kill"));
         assert_eq!(signalled.len(), 1, "{signalled:?}");
@@ -843,7 +920,11 @@ async fn secondary_attach_refuses_when_the_detached_instance_cannot_be_stopped()
         );
         let mut request = AttachRequest::owner(target.clone(), size()?);
         request.agent = Some(Agent::Codex);
-        let refused = rig.world.session.attach(request).await;
+        let refused = rig
+            .world
+            .session
+            .attach(request, &CancellationToken::new())
+            .await;
         assert!(refused.is_err(), "{refused:?}");
         assert!(handle.shells().is_empty());
         assert!(
@@ -882,7 +963,11 @@ async fn secondary_attach_waits_for_the_detached_instance_to_exit_before_the_rep
         }
         let mut request = AttachRequest::owner(target.clone(), size()?);
         request.agent = Some(Agent::Codex);
-        let refused = rig.world.session.attach(request).await;
+        let refused = rig
+            .world
+            .session
+            .attach(request, &CancellationToken::new())
+            .await;
         assert!(refused.is_err(), "{refused:?}");
         assert!(handle.shells().is_empty());
         let probed = handle.runs(&SandboxPath::from_static("/usr/bin/ps"));
@@ -906,7 +991,10 @@ async fn secondary_attach_refuses_to_signal_a_stale_instance_identity() -> TestR
         )?;
         let mut request = AttachRequest::owner(target.clone(), size()?);
         request.agent = Some(Agent::Codex);
-        rig.world.session.attach(request).await?;
+        rig.world
+            .session
+            .attach(request, &CancellationToken::new())
+            .await?;
         let signalled = handle.runs(&SandboxPath::from_static("/usr/bin/kill"));
         assert!(signalled.is_empty(), "{signalled:?}");
         let queries = identity_queries(&handle);
@@ -941,7 +1029,10 @@ async fn secondary_attach_refuses_to_signal_a_reused_instance_identity() -> Test
         )?;
         let mut request = AttachRequest::owner(target.clone(), size()?);
         request.agent = Some(Agent::Codex);
-        rig.world.session.attach(request).await?;
+        rig.world
+            .session
+            .attach(request, &CancellationToken::new())
+            .await?;
         let signalled = handle.runs(&SandboxPath::from_static("/usr/bin/kill"));
         assert!(signalled.is_empty(), "{signalled:?}");
         assert!(
@@ -970,7 +1061,11 @@ async fn secondary_attach_refuses_a_record_that_names_no_process() -> TestResult
         std::fs::write(handle.root().join(".jackin/run/codex/instance.pid"), b"0")?;
         let mut request = AttachRequest::owner(target.clone(), size()?);
         request.agent = Some(Agent::Codex);
-        let refused = rig.world.session.attach(request).await;
+        let refused = rig
+            .world
+            .session
+            .attach(request, &CancellationToken::new())
+            .await;
         assert!(
             matches!(
                 refused,
