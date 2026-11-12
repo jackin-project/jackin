@@ -125,6 +125,48 @@ async fn an_exited_codex_shows_its_code_filters_replies_and_restart_runs_preflig
 }
 
 #[tokio::test]
+async fn attach_with_restart_and_agent_is_refused_before_it_restarts_or_attaches() -> TestResult {
+    guard(async {
+        let (_rig, harness, handle) = running().await?;
+        let name = handle.name();
+        let supervisor = handle.supervisor();
+        let ran = harness
+            .run(&["attach", name.as_str(), "--restart", "--agent", "omp"])
+            .await?;
+        failed(
+            &ran,
+            ExitClass::Usage,
+            &["conflicting arguments", "--restart", "jackin attach"],
+        )?;
+        assert_eq!(handle.supervisor(), supervisor);
+        assert_eq!(handle.attachments(), 0);
+        assert_eq!(handle.phase(), Phase::Ready);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn attach_with_an_agent_alone_is_not_a_flag_conflict() -> TestResult {
+    guard(async {
+        let (_rig, harness, handle) = running().await?;
+        let name = handle.name();
+        let ran = harness
+            .run(&["attach", name.as_str(), "--agent", "omp"])
+            .await?;
+        assert_ne!(ran.exit, ExitClass::Usage, "{}", ran.stderr);
+        assert!(
+            !ran.stderr.contains("conflicting arguments"),
+            "{}",
+            ran.stderr
+        );
+        assert_eq!(handle.attachments(), 0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_restart_on_a_running_codex_is_refused_and_a_missing_terminal_touches_nothing()
 -> TestResult {
     guard(async {
