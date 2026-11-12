@@ -194,6 +194,75 @@ async fn an_omp_store_that_is_recreated_is_fetched_again() -> TestResult {
 }
 
 #[tokio::test]
+async fn an_omp_store_that_is_recreated_with_a_reused_inode_is_fetched_again() -> TestResult {
+    guard(async {
+        let omp = started(&[(1, &key_json(KEY))]).await?;
+        let db = omp
+            .directory
+            .path()
+            .join(".omp")
+            .join("agent")
+            .join("agent.db");
+        let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
+            Arc::new(ReusedInodeFs::new(
+                Arc::new(StdFileSystem::default()),
+                host_path_of(&db),
+            )),
+            &omp.harness.clock,
+        ));
+        let outcome = omp.report_over(Arc::clone(&fs)).await?;
+        assert_eq!(windows_of(&outcome).len(), 2);
+        std::fs::remove_file(&db).expect("the store is removed");
+        store(
+            omp.directory.path(),
+            &[(1, &key_json("SECRET_TOKEN_OMP_NEW"))],
+        );
+        harness_failing(&omp);
+        let outcome = omp.report_over(fs).await?;
+        assert!(
+            matches!(unavailable(&outcome), UnavailableReason::Provider(_)),
+            "the cached windows of the recreated store were served"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_identical_omp_store_that_is_recreated_with_a_reused_inode_is_fetched_again()
+-> TestResult {
+    guard(async {
+        let omp = started(&[(1, &key_json(KEY))]).await?;
+        let db = omp
+            .directory
+            .path()
+            .join(".omp")
+            .join("agent")
+            .join("agent.db");
+        let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
+            Arc::new(ReusedInodeFs::new(
+                Arc::new(StdFileSystem::default()),
+                host_path_of(&db),
+            )),
+            &omp.harness.clock,
+        ));
+        let outcome = omp.report_over(Arc::clone(&fs)).await?;
+        assert_eq!(windows_of(&outcome).len(), 2);
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        std::fs::remove_file(&db).expect("the store is removed");
+        store(omp.directory.path(), &[(1, &key_json(KEY))]);
+        harness_failing(&omp);
+        let outcome = omp.report_over(fs).await?;
+        assert!(
+            matches!(unavailable(&outcome), UnavailableReason::Provider(_)),
+            "the cached windows of the recreated store with unchanged rows were served"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn an_omp_store_without_a_credential_is_no_credentials() -> TestResult {
     guard(async {
         let omp = started(&[]).await?;
@@ -351,6 +420,104 @@ impl FileSystem for ReplacingFs {
     async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
         if path == &self.target && self.identities.fetch_add(1, Ordering::SeqCst) == 1 {
             replace_store(self.target.as_path(), KEY_REPLACED);
+        }
+        self.inner.identity(path).await
+    }
+    async fn list(&self, dir: &HostPath) -> Result<Vec<DirEntry>, FsError> {
+        self.inner.list(dir).await
+    }
+    async fn create_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.create_dir_all(dir).await
+    }
+    async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.create_private_dir_all(dir).await
+    }
+    async fn write_new(
+        &self,
+        path: &HostPath,
+        bytes: &[u8],
+        mode: FileMode,
+    ) -> Result<(), FsError> {
+        self.inner.write_new(path, bytes, mode).await
+    }
+    async fn rename(&self, from: &HostPath, to: &HostPath) -> Result<(), FsError> {
+        self.inner.rename(from, to).await
+    }
+    async fn remove_file(&self, path: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_file(path).await
+    }
+    async fn remove_dir_all(&self, path: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_dir_all(path).await
+    }
+    async fn mode(&self, path: &HostPath) -> Result<Option<FileMode>, FsError> {
+        self.inner.mode(path).await
+    }
+    async fn sync_dir(&self, dir: &HostPath) -> Result<(), FsError> {
+        self.inner.sync_dir(dir).await
+    }
+    async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
+        self.inner.lock(path).await
+    }
+    async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        self.inner.read_at(path, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
+    async fn read_regular(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+        max_bytes: usize,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        self.inner.read_regular(root, file, max_bytes).await
+    }
+}
+
+struct ReusedInodeFs {
+    inner: Arc<dyn FileSystem>,
+    target: HostPath,
+}
+
+impl std::fmt::Debug for ReusedInodeFs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReusedInodeFs")
+    }
+}
+
+impl ReusedInodeFs {
+    fn new(inner: Arc<dyn FileSystem>, target: HostPath) -> ReusedInodeFs {
+        ReusedInodeFs { inner, target }
+    }
+}
+
+#[async_trait]
+impl FileSystem for ReusedInodeFs {
+    async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
+        self.inner.read(path).await
+    }
+    async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat(path).await
+    }
+    async fn stat_following(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat_following(path).await
+    }
+    async fn canonicalize(&self, path: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(path).await
+    }
+    async fn file_len(&self, path: &HostPath) -> Result<Option<u64>, FsError> {
+        self.inner.file_len(path).await
+    }
+    async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        if path == &self.target {
+            return Ok(Some(FileIdentity { dev: 1, ino: 42 }));
         }
         self.inner.identity(path).await
     }

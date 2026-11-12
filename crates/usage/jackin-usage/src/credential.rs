@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 use std::time::Duration;
 
@@ -311,19 +312,14 @@ async fn omp_key(deps: &UsageDeps, account: &UsageAccount) -> Result<(String, Se
         .map_err(|_| Unresolved::Unreadable("the OMP database path is not usable"))?;
     for _ in 0..OMP_RESOLVE_ATTEMPTS {
         let identity = omp_identity(deps, &db).await?;
-        let (id, key) = extract_omp_api_key(db.as_path(), provider_id)?;
+        let found = extract_omp_api_key(db.as_path(), provider_id)?;
         let confirmed = match (identity, omp_identity(deps, &db).await?) {
             (Some(before), Some(after)) if before == after => before,
             _ => continue,
         };
         return Ok((
-            format!(
-                "{}:{}:{}:{id}",
-                db.as_path().display(),
-                confirmed.dev,
-                confirmed.ino
-            ),
-            key,
+            omp_revision(db.as_path(), confirmed.dev, confirmed.ino, &found),
+            found.key,
         ));
     }
     Err(Unresolved::Unreadable("the OMP store could not be read"))
@@ -336,16 +332,37 @@ async fn omp_identity(deps: &UsageDeps, db: &HostPath) -> Result<Option<FileIden
         .map_err(|_| Unresolved::Unreadable("the OMP store could not be read"))
 }
 
-fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Result<(i64, Secret), Unresolved> {
-    match std::fs::metadata(db_path) {
+struct Extracted {
+    id: i64,
+    key: Secret,
+    ctime: i64,
+    ctime_nsec: i64,
+    digest: String,
+}
+
+fn omp_revision(db: &Path, dev: u64, ino: u64, found: &Extracted) -> String {
+    format!(
+        "{}:{}:{}:{}:{}:{}:{}",
+        db.display(),
+        dev,
+        ino,
+        found.id,
+        found.ctime,
+        found.ctime_nsec,
+        found.digest
+    )
+}
+
+fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Result<Extracted, Unresolved> {
+    let metadata = match std::fs::metadata(db_path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Err(Unresolved::Missing);
         }
         Err(_) => {
             return Err(Unresolved::Unreadable("the OMP store could not be read"));
         }
-        Ok(_) => {}
-    }
+        Ok(metadata) => metadata,
+    };
     let connection =
         rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|_| Unresolved::Unreadable("the OMP store could not be opened"))?;
@@ -366,7 +383,13 @@ fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Result<(i64, Secret
         .and_then(Value::as_str)
         .filter(|key| !key.is_empty())
         .ok_or(Unresolved::Unreadable("the OMP credential holds no key"))?;
-    Ok((id, Secret::new(value.to_owned())))
+    Ok(Extracted {
+        id,
+        key: Secret::new(value.to_owned()),
+        ctime: metadata.ctime(),
+        ctime_nsec: metadata.ctime_nsec(),
+        digest: revision_of(data.as_bytes()),
+    })
 }
 
 async fn read_credential(
@@ -416,7 +439,20 @@ fn non_empty(text: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, kimi_base_for_slot};
+    use super::{
+        Extracted, KIMI_GLOBAL_BASE, KIMI_MAINLAND_BASE, Path, Secret, kimi_base_for_slot,
+        omp_revision,
+    };
+
+    fn row(ctime: i64, digest: &str) -> Extracted {
+        Extracted {
+            id: 7,
+            key: Secret::new("k".to_owned()),
+            ctime,
+            ctime_nsec: 0,
+            digest: digest.to_owned(),
+        }
+    }
 
     #[test]
     fn the_kimi_code_slot_asks_the_mainland_coding_base() {
@@ -437,5 +473,21 @@ mod tests {
     #[test]
     fn any_other_slot_asks_no_coding_base() {
         assert_eq!(kimi_base_for_slot("other"), None);
+    }
+
+    #[test]
+    fn a_reused_store_identity_with_a_new_change_time_revises_the_entry() {
+        let db = Path::new("/home/work/.omp/agent/agent.db");
+        let before = omp_revision(db, 3, 9, &row(1, "d"));
+        let after = omp_revision(db, 3, 9, &row(2, "d"));
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn a_reused_store_identity_with_new_row_content_revises_the_entry() {
+        let db = Path::new("/home/work/.omp/agent/agent.db");
+        let before = omp_revision(db, 3, 9, &row(1, "d"));
+        let after = omp_revision(db, 3, 9, &row(1, "e"));
+        assert_ne!(before, after);
     }
 }
