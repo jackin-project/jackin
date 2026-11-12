@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -530,29 +531,66 @@ async fn the_store_is_never_written_to_a_temporary_file() -> TestResult {
             directory.path(),
             &[("cred_1", "opencode", 1, &credential(SECRET, EXPIRES, None))],
         );
-        let harness = UsageHarness::new().await?;
-        harness.server.replace(
-            Provider::Opencode,
-            Method::Get,
-            PATH,
-            Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {SECRET}")),
-        );
-        let account = account(
-            "opencode",
-            Provider::Opencode,
-            CredentialSource::File {
-                path: host_path_of(&directory.path().join("opencode.db")),
-            },
-        );
-        let outcome = harness.report_cached(&account, directory.path()).await?;
-        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        let private = directory.path().join("private-temporary-root");
+        std::fs::create_dir(&private)?;
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o500))?;
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "opencode::the_store_is_read_without_a_temporary_directory",
+                "--ignored",
+                "--nocapture",
+            ])
+            .env(
+                "JACKIN_OPENCODE_STORE",
+                directory.path().join("opencode.db"),
+            )
+            .env("JACKIN_OPENCODE_SECRET", SECRET)
+            .env("TMPDIR", &private)
+            .env("SQLITE_TMPDIR", &private)
+            .output()?;
         assert!(
-            !holds_secret(SECRET, directory.path()),
+            output.status.success(),
+            "the store could not be read without a temporary file: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !holds_secret(SECRET, &private),
             "the store was written to a temporary file"
         );
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+#[ignore = "the temporary file test runs it with a private temporary directory"]
+async fn the_store_is_read_without_a_temporary_directory() -> TestResult {
+    let Ok(store) = std::env::var("JACKIN_OPENCODE_STORE") else {
+        return Ok(());
+    };
+    let secret = std::env::var("JACKIN_OPENCODE_SECRET")?;
+    let harness = UsageHarness::new().await?;
+    harness.server.replace(
+        Provider::Opencode,
+        Method::Get,
+        PATH,
+        Route::json(200, USAGE).requires_header("authorization", &format!("Bearer {secret}")),
+    );
+    let path = std::path::PathBuf::from(store);
+    let account = account(
+        "opencode",
+        Provider::Opencode,
+        CredentialSource::File {
+            path: host_path_of(&path),
+        },
+    );
+    let outcome = harness
+        .report_cached(&account, path.parent().expect("the store directory"))
+        .await?;
+    assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+    Ok(())
 }
 
 #[tokio::test]
@@ -628,18 +666,15 @@ async fn a_credential_of_another_kind_is_not_used() -> TestResult {
     .await
 }
 
-fn holds_secret(secret: &str, skip: &Path) -> bool {
+fn holds_secret(secret: &str, root: &Path) -> bool {
     let needle = secret.as_bytes();
-    let mut stack = vec![(std::env::temp_dir(), 0usize)];
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
     while let Some((directory, depth)) = stack.pop() {
         let Ok(entries) = std::fs::read_dir(&directory) else {
             continue;
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path == skip {
-                continue;
-            }
             let Ok(kind) = entry.file_type() else {
                 continue;
             };
