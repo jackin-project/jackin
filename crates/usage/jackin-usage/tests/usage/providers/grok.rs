@@ -26,6 +26,7 @@ const AUTH: &str = include_str!("../fixtures/grok/auth.json");
 const EXPIRED: &str = include_str!("../fixtures/grok/auth_expired.json");
 const TWO_SCOPES: &str = include_str!("../fixtures/grok/auth_two_scopes.json");
 const TWO_PREFERRED: &str = include_str!("../fixtures/grok/auth_two_preferred.json");
+const MONTHLY_DECLARED: &str = include_str!("../fixtures/grok/billing_monthly_declared.json");
 const AUTH_PATH: &str = "/home/work/.grok/auth.json";
 
 const WEEK: Want = want(
@@ -260,6 +261,22 @@ async fn a_login_with_two_preferred_scopes_is_a_provider_error() -> TestResult {
             }
             other => panic!("expected a provider reason, found {other:?}"),
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_declared_monthly_period_beats_the_window_length() -> TestResult {
+    guard(async {
+        let monthly = want(
+            WindowKind::Monthly,
+            "monthly",
+            Some(42.5),
+            Left::Percent(57.5),
+            Some(1_780_876_800),
+        );
+        assert_windows(&outcome(MONTHLY_DECLARED).await?, &[monthly, EXTRA]);
         Ok(())
     })
     .await
