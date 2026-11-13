@@ -12,6 +12,19 @@ fn is_proven_account_default_tuple(tuple: &'static AgentTuple) -> bool {
     crate::lookup_tuple(Agent::Codex, Provider::Codex).is_ok_and(|proven| ptr::eq(tuple, proven))
 }
 
+fn canonical_tuple(tuple: &'static AgentTuple) -> Result<&'static AgentTuple, ModelSelectionError> {
+    let canonical = crate::lookup_tuple(tuple.agent, tuple.provider)?;
+    if ptr::eq(tuple, canonical) {
+        Ok(canonical)
+    } else {
+        Err(CatalogError::UnknownTuple {
+            agent: tuple.agent,
+            provider: tuple.provider,
+        }
+        .into())
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ModelSelectionError {
     #[error("account default is not supported for agent {} with provider {}", plain(.agent), plain(.provider))]
@@ -50,6 +63,7 @@ impl ModelSelection {
         tuple: &'static AgentTuple,
         explicit: Option<ModelName>,
     ) -> Result<ModelSelection, ModelSelectionError> {
+        let tuple = canonical_tuple(tuple)?;
         match explicit {
             Some(model) => Self::named_for_tuple(tuple, model),
             None if is_proven_account_default_tuple(tuple) => {
@@ -71,6 +85,7 @@ impl ModelSelection {
         &self,
         tuple: &'static AgentTuple,
     ) -> Result<&ModelName, ModelSelectionError> {
+        let tuple = canonical_tuple(tuple)?;
         match &self.0 {
             SelectionKind::AccountDefault => Err(ModelSelectionError::AccountDefaultUnsupported {
                 agent: tuple.agent.as_str().to_owned(),
@@ -87,6 +102,7 @@ impl ModelSelection {
         &self,
         tuple: &'static AgentTuple,
     ) -> Result<(), ModelSelectionError> {
+        let tuple = canonical_tuple(tuple)?;
         match &self.0 {
             SelectionKind::AccountDefault if is_proven_account_default_tuple(tuple) => Ok(()),
             SelectionKind::AccountDefault => Err(ModelSelectionError::AccountDefaultUnsupported {
@@ -103,6 +119,7 @@ impl ModelSelection {
     pub fn account_default_for(
         tuple: &'static AgentTuple,
     ) -> Result<ModelSelection, ModelSelectionError> {
+        let tuple = canonical_tuple(tuple)?;
         if is_proven_account_default_tuple(tuple) {
             Ok(ModelSelection(SelectionKind::AccountDefault))
         } else {
@@ -117,6 +134,7 @@ impl ModelSelection {
         tuple: &'static AgentTuple,
         model: ModelName,
     ) -> Result<ModelSelection, ModelSelectionError> {
+        let tuple = canonical_tuple(tuple)?;
         tuple.check_model(model.as_str())?;
         Ok(ModelSelection(SelectionKind::Named(model)))
     }
@@ -191,8 +209,12 @@ mod tests {
         };
         assert!(matches!(
             ModelSelection::account_default_for(&FORGED),
-            Err(ModelSelectionError::AccountDefaultUnsupported { agent, provider })
-                if agent == "claude" && provider == "claude"
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::ClaudeCode,
+                    provider: Provider::Claude,
+                }
+            ))
         ));
     }
 
@@ -254,6 +276,161 @@ mod tests {
         let model = selection.named().expect("named selection");
         assert_eq!(model.as_str(), t02.default_model);
         assert_eq!(selection.named_projection(t02).expect("projection"), model);
+    }
+
+    fn forged() -> &'static AgentTuple {
+        static FORGED: AgentTuple = AgentTuple {
+            id: "T01",
+            agent: Agent::Codex,
+            provider: Provider::Codex,
+            auth_class: crate::AuthClass::OAuth,
+            state: crate::TupleState::Supported,
+            reason: None,
+            allowed_models: &["gpt-6.1-sol", "evil"],
+            default_model: "gpt-6.1-sol",
+        };
+        &FORGED
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_construct_named_selection() {
+        let model = ModelName::parse("evil").expect("model name");
+        assert!(matches!(
+            ModelSelection::named_for_tuple(forged(), model),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_construct_selection_with_explicit_model() {
+        let model = ModelName::parse("gpt-6.1-sol").expect("model name");
+        assert!(matches!(
+            ModelSelection::for_tuple(forged(), Some(model)),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_resolve_default_selection() {
+        assert!(matches!(
+            ModelSelection::for_tuple(forged(), None),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_decode_named_wire() {
+        let name = ModelName::parse("evil").expect("model name");
+        assert!(matches!(
+            ModelSelection::from_wire(forged(), SelectionWire::Named { name }),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_validate_named_selection() {
+        let t01 = tuple("T01");
+        let model = ModelName::parse(t01.default_model).expect("model name");
+        let selection = ModelSelection::named_for_tuple(t01, model).expect("named");
+        assert!(matches!(
+            selection.validate_for_tuple(forged()),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_project_named_selection() {
+        let t01 = tuple("T01");
+        let model = ModelName::parse(t01.default_model).expect("model name");
+        let selection = ModelSelection::named_for_tuple(t01, model).expect("named");
+        assert!(matches!(
+            selection.named_projection(forged()),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_acquire_account_default() {
+        assert!(matches!(
+            ModelSelection::account_default_for(forged()),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_decode_account_default_wire() {
+        assert!(matches!(
+            ModelSelection::from_wire(forged(), SelectionWire::AccountDefault {}),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_validate_account_default() {
+        let selection = ModelSelection::account_default_for(tuple("T01")).expect("account default");
+        assert!(matches!(
+            selection.validate_for_tuple(forged()),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
+    }
+
+    #[test]
+    fn unproven_tuple_cannot_project_account_default() {
+        let selection = ModelSelection::account_default_for(tuple("T01")).expect("account default");
+        assert!(matches!(
+            selection.named_projection(forged()),
+            Err(ModelSelectionError::UnknownModel(
+                CatalogError::UnknownTuple {
+                    agent: Agent::Codex,
+                    provider: Provider::Codex,
+                }
+            ))
+        ));
     }
 
     #[test]
