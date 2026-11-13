@@ -472,7 +472,11 @@ async fn native_kimi_discovery_never_falls_back_to_a_static_credential() -> Test
         let stored = stored.account(&account("native")?).ok_or("no account")?;
         assert!(matches!(stored.credential(), CredentialSource::HostLogin { .. }));
         let provider = ProviderName::for_account(&account("native")?, Agent::KimiCode);
-        assert!(world.gateway.provider(&provider).is_none());
+        let record = world.gateway.provider(&provider).ok_or("no provider")?;
+        assert_eq!(record.profile.as_str(), "kimi");
+        assert_eq!(record.access_token, "FAKE-KIMI-ACCESS");
+        assert_eq!(record.refresh_token, "FAKE-KIMI-REFRESH");
+        assert!(record.scopes.is_empty());
 
         std::fs::write(home.join("config.toml"), "not toml")?;
         let before = harness.config_bytes()?;
@@ -506,7 +510,9 @@ async fn native_kimi_discovery_never_falls_back_to_a_static_credential() -> Test
             .await?;
         assert_eq!(refused.exit, ExitClass::Failure);
         assert!(harness.stored().await?.account(&account("static")?).is_none());
-        assert!(world.gateway.provider(&provider).is_none());
+        let record = world.gateway.provider(&provider).ok_or("no provider")?;
+        assert_eq!(record.access_token, "FAKE-KIMI-ACCESS");
+        assert_eq!(record.refresh_token, "FAKE-KIMI-REFRESH");
         Ok(())
     })
     .await
