@@ -62,6 +62,7 @@ pub use pty::{PortablePty, PtyError, PtyHost, PtyLink, PtySession, PtySpec};
 pub use redact::Redactor;
 pub use report::{Capture, Sink};
 pub use scratch::{Scratch, ScratchError, base_env, child_env, scratch_dir_name, snapshot_tree};
+pub use steps::{SANDBOX_UID, judge_launcher_identity, stat_identity};
 pub use target::{
     BehaviorCategory, E2eCredential, E2eTarget, PROBE_SPEC_PATH, ProbeSpec, TargetError,
     TargetIdentity,
