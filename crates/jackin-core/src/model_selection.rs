@@ -147,8 +147,19 @@ impl ModelSelection {
         Ok(ModelSelection(SelectionKind::Named(model)))
     }
 
-    pub fn is_account_default(&self) -> bool {
-        matches!(self.0, SelectionKind::AccountDefault)
+    pub fn is_account_default(
+        &self,
+        tuple: &'static AgentTuple,
+    ) -> Result<bool, ModelSelectionError> {
+        let tuple = canonical_tuple(tuple)?;
+        match &self.0 {
+            SelectionKind::AccountDefault if is_proven_account_default_tuple(tuple) => Ok(true),
+            SelectionKind::AccountDefault => Err(ModelSelectionError::AccountDefaultUnsupported {
+                agent: tuple.agent.as_str().to_owned(),
+                provider: tuple.provider.as_str().to_owned(),
+            }),
+            SelectionKind::Named(_) => Ok(false),
+        }
     }
 
     pub fn named(&self, tuple: &'static AgentTuple) -> Result<&ModelName, ModelSelectionError> {
@@ -227,7 +238,7 @@ mod tests {
     fn t01_resolves_to_account_default() {
         let t01 = tuple("T01");
         let selection = ModelSelection::for_tuple(t01, None).expect("account default");
-        assert!(selection.is_account_default());
+        assert!(selection.is_account_default(t01).expect("account default"));
         assert!(matches!(
             selection.named(t01),
             Err(ModelSelectionError::AccountDefaultNotNamed { .. })
@@ -482,6 +493,27 @@ mod tests {
             selection.named(t02),
             Err(ModelSelectionError::AccountDefaultUnsupported { .. })
         ));
+    }
+
+    #[test]
+    fn account_default_predicate_rejects_non_t01_tuple() {
+        let t01 = tuple("T01");
+        let t02 = tuple("T02");
+        let selection = ModelSelection::account_default_for(t01).expect("account default");
+        assert!(selection.is_account_default(t01).expect("account default"));
+        assert!(matches!(
+            selection.is_account_default(t02),
+            Err(ModelSelectionError::AccountDefaultUnsupported { agent, provider })
+                if agent == t02.agent.as_str() && provider == t02.provider.as_str()
+        ));
+    }
+
+    #[test]
+    fn named_selection_is_not_an_account_default() {
+        let t02 = tuple("T02");
+        let model = ModelName::parse(t02.default_model).expect("model name");
+        let selection = ModelSelection::named_for_tuple(t02, model).expect("named");
+        assert!(!selection.is_account_default(t02).expect("named selection"));
     }
 
     #[test]
