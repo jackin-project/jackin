@@ -62,48 +62,46 @@ pub(crate) fn judge_agent(
 ) -> Vec<String> {
     let mut problems = Vec::new();
     if let Some(identity) = &facts.launcher_identity {
-        if !identity.exe_matches_interpreter {
+        if !identity.checks.exe_matches_interpreter {
             problems.push(
                 "the launcher interpreter identity is not bound to the running executable"
-                    .to_string(),
+                    .to_owned(),
             );
         }
-        if !identity.argv0_matches || !identity.argv1_matches {
+        if !identity.checks.argv.argv0_matches || !identity.checks.argv.argv1_matches {
             problems.push(
-                "the launcher argv slots do not match the recorded interpreter identity"
-                    .to_string(),
+                "the launcher argv slots do not match the recorded interpreter identity".to_owned(),
             );
         }
-        if identity.argv2_matches == Some(false) {
+        if identity.checks.argv.argv2_matches == Some(false) {
             problems.push(
                 "the launcher script argv slot does not match the recorded interpreter identity"
-                    .to_string(),
+                    .to_owned(),
             );
         }
         if identity.interpreter.is_empty() || identity.interpreter_resolved.is_empty() {
-            problems.push("the launcher interpreter identity is empty".to_string());
+            problems.push("the launcher interpreter identity is empty".to_owned());
         }
-        if let Some(argument) = &identity.interpreter_arg {
-            if argument.is_empty() || identity.argv2_matches != Some(true) {
-                problems.push(
-                    "the launcher interpreter argument is not bound to the script argv slot"
-                        .to_string(),
-                );
-            }
+        if let Some(argument) = &identity.interpreter_arg
+            && (argument.is_empty() || identity.checks.argv.argv2_matches != Some(true))
+        {
+            problems.push(
+                "the launcher interpreter argument is not bound to the script argv slot".to_owned(),
+            );
         }
         if identity.exe.as_deref().unwrap_or_default().is_empty() {
-            problems.push("the launcher identity record lacks the running executable".to_string());
+            problems.push("the launcher identity record lacks the running executable".to_owned());
         }
         if identity.uid.as_deref().unwrap_or_default().is_empty() {
-            problems.push("the launcher identity record lacks the running uid".to_string());
+            problems.push("the launcher identity record lacks the running uid".to_owned());
         }
-        if let (Some(recorded), Some(main)) = (&identity.comm, &facts.processes.main) {
-            if recorded.is_empty() || recorded != &main.comm {
-                problems.push(format!(
-                    "the launcher identity comm {recorded} does not match the recorded main process {}",
-                    main.comm
-                ));
-            }
+        if let (Some(recorded), Some(main)) = (&identity.comm, &facts.processes.main)
+            && (recorded.is_empty() || recorded != &main.comm)
+        {
+            problems.push(format!(
+                "the launcher identity comm {recorded} does not match the recorded main process {}",
+                main.comm
+            ));
         }
         if identity
             .stat_before
@@ -116,19 +114,17 @@ pub(crate) fn judge_agent(
                 .unwrap_or_default()
                 .is_empty()
         {
-            problems.push("the launcher identity record lacks stat evidence".to_string());
+            problems.push("the launcher identity record lacks stat evidence".to_owned());
         }
-        if let (Some(pre), Some(before)) = (&identity.stat_pre, &identity.stat_before) {
-            if pre.split_whitespace().nth(2) != before.split_whitespace().nth(2) {
-                problems.push(
-                    "the launcher identity record does not bind to the pre-launch identity"
-                        .to_string(),
-                );
-            }
+        if let (Some(pre), Some(before)) = (&identity.stat_pre, &identity.stat_before)
+            && pre.split_whitespace().nth(2) != before.split_whitespace().nth(2)
+        {
+            problems.push(
+                "the launcher identity record does not bind to the pre-launch identity".to_owned(),
+            );
         }
-        if !identity.stable {
-            problems
-                .push("the launcher process identity changed while it was recorded".to_string());
+        if !identity.checks.stable {
+            problems.push("the launcher process identity changed while it was recorded".to_owned());
         }
     }
     match (

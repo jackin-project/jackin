@@ -486,16 +486,28 @@ pub(crate) struct LauncherIdentity {
     pub(crate) interpreter_arg: Option<String>,
     pub(crate) interpreter_resolved: String,
     pub(crate) exe: Option<String>,
-    pub(crate) exe_matches_interpreter: bool,
     pub(crate) uid: Option<String>,
     pub(crate) comm: Option<String>,
-    pub(crate) argv0_matches: bool,
-    pub(crate) argv1_matches: bool,
-    pub(crate) argv2_matches: Option<bool>,
-    pub(crate) stable: bool,
     pub(crate) stat_pre: Option<String>,
     pub(crate) stat_before: Option<String>,
     pub(crate) stat_after: Option<String>,
+    #[serde(flatten)]
+    pub(crate) checks: LauncherIdentityChecks,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct LauncherIdentityChecks {
+    pub(crate) exe_matches_interpreter: bool,
+    pub(crate) stable: bool,
+    #[serde(flatten)]
+    pub(crate) argv: LauncherArgvMatches,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct LauncherArgvMatches {
+    pub(crate) argv0_matches: bool,
+    pub(crate) argv1_matches: bool,
+    pub(crate) argv2_matches: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
