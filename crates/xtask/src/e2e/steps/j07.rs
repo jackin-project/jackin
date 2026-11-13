@@ -64,16 +64,6 @@ pub fn stat_identity(raw: &str) -> Option<(u32, u64)> {
     Some((pid, start_ticks))
 }
 
-fn same_physical_path(left: &str, right: &str) -> bool {
-    if left == right {
-        return true;
-    }
-    matches!(
-        (std::fs::canonicalize(left), std::fs::canonicalize(right)),
-        (Ok(resolved_left), Ok(resolved_right)) if resolved_left == resolved_right
-    )
-}
-
 fn stat_identity_opt(raw: Option<&str>) -> Option<(u32, u64)> {
     raw.and_then(stat_identity)
 }
@@ -122,7 +112,7 @@ fn identity_problems(facts: &FactsJ07) -> Vec<String> {
     let exe = identity.exe.as_deref().unwrap_or_default();
     if exe.is_empty() {
         problems.push("the launcher identity record lacks the running executable".to_owned());
-    } else if !same_physical_path(exe, &identity.interpreter_resolved) {
+    } else if exe != identity.interpreter_resolved {
         problems.push(format!(
             "the launcher runs {exe} but the interpreter resolves to {}",
             identity.interpreter_resolved
@@ -171,8 +161,8 @@ fn identity_problems(facts: &FactsJ07) -> Vec<String> {
             problems.push(format!("the launcher {label} stat evidence does not parse"));
         }
     }
-    if let (Some((_, pre_ticks)), Some((_, before_ticks))) = (pre, before)
-        && pre_ticks != before_ticks
+    if let (Some(pre_identity), Some(before_identity)) = (pre, before)
+        && pre_identity != before_identity
     {
         problems.push(
             "the launcher identity record does not bind to the pre-launch identity".to_owned(),

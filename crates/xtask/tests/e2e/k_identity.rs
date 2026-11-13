@@ -210,6 +210,41 @@ fn a_missing_pre_launch_stat_is_rejected() {
 }
 
 #[test]
+fn a_pre_launch_snapshot_from_another_pid_is_rejected() {
+    let identity = changed(
+        valid_identity(),
+        "/stat_pre",
+        json!(stat_line(999, "jackin-start", 'S', MAIN_TICKS)),
+    );
+    rejects(
+        "stat_pre describes another pid in the same clock tick",
+        &facts(identity),
+        "does not bind to the pre-launch identity",
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn the_launcher_paths_are_compared_without_the_host_filesystem() {
+    let dir = tempfile::TempDir::new().expect("temp dir");
+    let real = dir.path().join("real-interpreter");
+    std::fs::write(&real, b"#!/bin/sh\n").expect("write the interpreter");
+    let alias = dir.path().join("alias-interpreter");
+    std::os::unix::fs::symlink(&real, &alias).expect("link the alias");
+    let identity = changed(valid_identity(), "/exe", json!(alias.display().to_string()));
+    let identity = changed(
+        identity,
+        "/interpreter_resolved",
+        json!(real.display().to_string()),
+    );
+    rejects(
+        "the host resolves the alias to the same file",
+        &facts(identity),
+        "but the interpreter resolves to",
+    );
+}
+
+#[test]
 fn stability_is_derived_from_the_stat_snapshots() {
     let replaced = changed(
         valid_identity(),
