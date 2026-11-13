@@ -499,6 +499,28 @@ mod tests {
     }
 
     #[test]
+    fn account_default_decode_rejects_non_t01_tuple() {
+        let t02 = crate::lookup_tuple(Agent::ClaudeCode, Provider::Claude).expect("canonical T02");
+        assert!(matches!(
+            ModelSelection::from_wire(t02, SelectionWire::AccountDefault {}),
+            Err(ModelSelectionError::AccountDefaultUnsupported { agent, provider })
+                if agent == t02.agent.as_str() && provider == t02.provider.as_str()
+        ));
+    }
+
+    #[test]
+    fn account_default_validation_rejects_non_t01_tuple() {
+        let t01 = crate::lookup_tuple(Agent::Codex, Provider::Codex).expect("canonical T01");
+        let t02 = crate::lookup_tuple(Agent::ClaudeCode, Provider::Claude).expect("canonical T02");
+        let selection = ModelSelection::account_default_for(t01).expect("account default");
+        assert!(matches!(
+            selection.validate_for_tuple(t02),
+            Err(ModelSelectionError::AccountDefaultUnsupported { agent, provider })
+                if agent == t02.agent.as_str() && provider == t02.provider.as_str()
+        ));
+    }
+
+    #[test]
     fn account_default_predicate_rejects_non_t01_tuple() {
         let t01 = tuple("T01");
         let t02 = tuple("T02");
