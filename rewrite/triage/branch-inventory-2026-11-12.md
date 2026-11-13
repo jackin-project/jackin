@@ -219,3 +219,16 @@ The list below is the **FULL** set of branches classified **DEBRIS** across all 
 ## Coverage note
 
 The per-repository inventories `jackin.md` (jackin-project/jackin) and `baseline.md` (tailrocks/terminal-components-baseline) were not available at publish time and were therefore not represented in the first published revision; both arrived afterwards and are now incorporated in the sections above, so all five repositories are covered.
+
+## Merged PRs and open VALUABLE PRs
+
+| repo | PR | branch | disposition | evidence |
+|---|---|---|---|---|
+| tailrocks/terminal-components-baseline | #8 | feat/shown-escaped | MERGED (squash `8063050cdb483e31284c107808b207c92e2d3203`), branch deleted | `shown::escaped()` from `ef0ebeac` applied byte-identical, 4 unit tests, 1 bot thread fixed via `escape_unicode()` (U+2800 leak) and resolved, final run 18/18 checks green, 0 unresolved threads |
+| jackin-project/jackin | #1279 | fix/typed-model-selection | OPEN, NOT merge-ready | GPT review on head `ad9c1c8d`: NOT APPROVED - named selections trust caller-controlled `allowed_models` (`crates/jackin-core/src/model_selection.rs:80,97,120` -> `agent.rs:273-281`) instead of catalog authentication; negative coverage missing; new public API lacks the design required by `rewrite/PLAN.md:99` and `rewrite/API.md` is unchanged. 8/8 review threads resolved, 19 checks green |
+
+## Notes on corrections and residual risk
+
+- `preserve/stash-p2-before-reconcile-20261109` was deleted as CONTAINED on the per-path proof, but its THIRD parent (`5b3348b2f`, the untracked-files commit) holds the typed model-selection code that is absent from main. That content survives in PR #1279's branch `fix/typed-model-selection`; re-apply the `GitBlobHasher`-style equivalent if main ever reintroduces staged-blob streaming.
+- DEBRIS deletions are NOT performed: all 18 DEBRIS branches remain on the remote and await operator ratification in one word.
+- 5 CONTAINED candidates were kept as UNPROVEN because their absent paths carry product code: `codex/openshell-integration-checkpoint-20261108-122311`, `codex/openshell-verified-checkpoint-20261108`, `preserve/session-boundaries-20261109`, `preserve/w1-fixes-20261109`, `preserve/p0.6-prototype-20261109`.
