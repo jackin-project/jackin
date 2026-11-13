@@ -220,6 +220,11 @@ The list below is the **FULL** set of branches classified **DEBRIS** across all 
 
 The per-repository inventories `jackin.md` (jackin-project/jackin) and `baseline.md` (tailrocks/terminal-components-baseline) were not available at publish time and were therefore not represented in the first published revision; both arrived afterwards and are now incorporated in the sections above, so all five repositories are covered.
 
+The earlier inventory file `rewrite/triage/branch-inventory-20261112.md` (branch
+`chore/triage-inventory-20261112`, commit `e13360eb`) is folded in as a historical snapshot - see
+"Earlier inventory snapshot - 2026-11-12 (branch `chore/triage-inventory-20261112` @ e13360eb) -
+superseded classes" at the end of this document. Its classes are superseded by the ones above.
+
 ## Merged PRs and open VALUABLE PRs
 
 | repo | PR | branch | disposition | evidence |
@@ -232,3 +237,118 @@ The per-repository inventories `jackin.md` (jackin-project/jackin) and `baseline
 - `preserve/stash-p2-before-reconcile-20261109` was deleted as CONTAINED on the per-path proof, but its THIRD parent (`5b3348b2f`, the untracked-files commit) holds the typed model-selection code that is absent from main. That content survives in PR #1279's branch `fix/typed-model-selection`; re-apply the `GitBlobHasher`-style equivalent if main ever reintroduces staged-blob streaming.
 - DEBRIS deletions are NOT performed: all 18 DEBRIS branches remain on the remote and await operator ratification in one word.
 - 5 CONTAINED candidates were kept as UNPROVEN because their absent paths carry product code: `codex/openshell-integration-checkpoint-20261108-122311`, `codex/openshell-verified-checkpoint-20261108`, `preserve/session-boundaries-20261109`, `preserve/w1-fixes-20261109`, `preserve/p0.6-prototype-20261109`.
+
+---
+
+## Earlier inventory snapshot - 2026-11-12 (branch `chore/triage-inventory-20261112` @ e13360eb) - superseded classes
+
+This section is a **historical snapshot, not current truth**. It folds in the earlier inventory file
+`rewrite/triage/branch-inventory-20261112.md` (branch `chore/triage-inventory-20261112`, commit
+`e13360eb87518f70c45097366e384851f113ad8d`), which predates the per-path blob-equality and
+merged-PR proofs recorded above. The **authoritative classification is the one in the
+per-repository tables and the counts table of this document**; the classes quoted in this section
+are the OLD ones, kept only so the earlier triage decision stays auditable and nothing is
+silently dropped.
+
+### Freshness proof recorded at capture time of the earlier snapshot
+
+(local main == origin/main, `rev-list --left-right --count main...origin/main` = 0 0)
+
+| repo | origin/main at e13360eb |
+|---|---|
+| jackin-project/jackin | `d19cce66f548f8c557b765d8e5fd430477a064c4` |
+| jackin-project/jackin-sentinel | `5fd9af372bffec8caa1d98b78a2f125eaaed00cf` |
+| jackin-project/jackin-agent-smith | `a9b8c8aea` |
+| jackin-project/jackin-the-architect | `d10672897a` |
+| tailrocks/terminal-components-baseline | `b3034308cbc7c0b99f7dcc598ffdf3949c736124` |
+
+### Deletion rule recorded by the earlier snapshot
+
+> Deletion rule applied: `git merge-base --is-ancestor origin/<branch> origin/main` (exit 0 = eligible).
+> All 28 non-main branches fail it (exit 1) because #1264 landed as a squash, so the one deletion above
+> was justified by content equality, not by ancestry. Every other branch is listed, never merged.
+
+### Rows of the earlier snapshot whose branches are absent from the current tables
+
+| repo | branch | old class | old evidence / action | current state |
+|---|---|---|---|---|
+| jackin-project/jackin | `fix/pr1264-review-followups` | valuable | `9fdcce513`, 25/0 vs main, 72 files - review findings of #1264 | PR #1275 open in the old snapshot; PR #1275 has since **MERGED as `7a53f6abe`** and the branch is no longer on the remote (deleted after the merge) - not pending |
+| jackin-project/jackin | `recovery/branches-nightly-compat-20261029` | debris (superseded) | `9827b3adc`, 7/1 - tree byte-identical to `97b1b58f7` | **deleted** under the recorded SHA proof (0 touched files differ from main; PR #1263 closed); the branch is no longer on the remote - not pending |
+| jackin-project/jackin-sentinel | `main` | valuable (trunk) | `5fd9af372b`, merged PR #158 | trunk - keep |
+| jackin-project/jackin-agent-smith | `main` | valuable (trunk) | `a9b8c8aea`, merged PR #217 `ff16c521c` | trunk - keep |
+| jackin-project/jackin-agent-smith | `feature/openshell-native` | valuable | `c5718850` -> `ff16c521c` | **merged** - branch deleted after the merge (PR #217) |
+| jackin-project/jackin-the-architect | `main` | valuable (trunk) | `d10672897a`, merged PR #481 `063aeb69` | trunk - keep |
+| jackin-project/jackin-the-architect | `feature/openshell-native` | valuable | `060944ef8` -> `063aeb69` | **merged** - branch deleted after the merge (PR #481) |
+| tailrocks/terminal-components-baseline | `main` | valuable (trunk) | `b3034308` | trunk - keep |
+| tailrocks/terminal-components-baseline | `feature/openshell-native` | valuable | `7a38f9c67`, 8/0, 155 files - the console rewrite | PR #5 open (not merged) in the old snapshot; PR #5 has since **MERGED as squash `bb752ca5`** and the branch was deleted from the remote - not pending |
+
+### Rows of the earlier snapshot whose class was changed by the later proofs
+
+Old class -> current class, with the reason. The current class is the one that counts.
+
+| repo | branch | old class (e13360eb) | current class | reason for the change |
+|---|---|---|---|---|
+| jackin-project/jackin | `codex/openshell-integration-checkpoint-20261108-122311` | valuable | CONTAINED candidate - **UNPROVEN, KEPT** | 12 of the 25 absent paths carry product code (crates/jackin-session, crates/jackin-testkit, crates/jackin-image, crates/jackin-openshell, crates/jackin-tui); the blobs never occur in main's object history, so containment is not provable |
+| jackin-project/jackin | `codex/openshell-verified-checkpoint-20261108` | valuable | CONTAINED candidate - **UNPROVEN, KEPT** | the same 12 product-code paths are absent from main |
+| jackin-project/jackin | `codex/r7-proposal-preservation-20261109` | valuable | CONTAINED (**deleted**) | 71 absent paths are scratch/archive only (rewrite/checkpoints/**, rewrite/blockers/*.md, usage fixtures); re-proved by ancestry + patch-id + per-path blob equality |
+| jackin-project/jackin | `preserve/hostpath-display-audit-20261108` | valuable | CONTAINED (**deleted**) | 10 absent paths are scratch/archive only; re-proved by ancestry + patch-id + per-path blob equality |
+| jackin-project/jackin | `preserve/local-unique-20261109` | valuable | CONTAINED (**deleted**) | 22 absent paths are rewrite/evidence archives and fixtures; re-proved per-path |
+| jackin-project/jackin | `preserve/session-boundaries-20261109` | valuable | CONTAINED candidate - **UNPROVEN, KEPT** | 6 of the 11 absent paths carry product code (crates/jackin-image/images/construct/write-file.c, crates/jackin-openshell/tests/gateway/*, crates/jackin-tui/tests/console/files.rs) |
+| jackin-project/jackin | `preserve/stash-p2-before-reconcile-20261109` | valuable | CONTAINED (**deleted**) | 9 absent paths are usage fixtures only; the residual typed-model-selection content of its third parent survives in PR #1279's branch `fix/typed-model-selection` (see 'Notes on corrections and residual risk') |
+| jackin-project/jackin | `preserve/uncommitted-sources-20261109` | valuable | CONTAINED (**deleted**) | 23 absent paths are rewrite/evidence copies and fixtures - evidence only, no product code |
+| jackin-project/jackin | `preserve/w1-fixes-20261109` | valuable | CONTAINED candidate - **UNPROVEN, KEPT** | 1 of the 6 absent paths carries product code (crates/jackin-tui/tests/console/files.rs, blob never in main's history) |
+| jackin-project/jackin | `preserve/p0.6-prototype-20261109` | debris | CONTAINED candidate - **UNPROVEN, KEPT** | all 20 absent paths are live prototype code (prototypes/p0.6/**); main has no prototypes/ tree at all, so the old 'debris' call was wrong |
+| jackin-project/jackin | `codex/pr1264-attach-readiness-20261108` | debris | CONTAINED (**deleted**) | 9 absent paths are scratch/archive only; re-proved by ancestry + patch-id + per-path blob equality |
+| jackin-project/jackin | `codex/unpublished-openshell-checkpoint-20261109` | debris | CONTAINED (**deleted**) | 22 absent paths are scratch/archive only; re-proved per-path |
+| jackin-project/jackin | `fix/roles-review-impl` | debris (superseded) | CONTAINED (**deleted**) | the branch commit 0a38b5697 landed as MERGED PR #1278 (`d19cce66f`) and the remaining fixes are in main via #1275 (`7a53f6abe`); 0 of its 78 paths are absent from main |
+| jackin-project/jackin | `fix/restore-docs-source-globs` | debris (superseded) | CONTAINED (**deleted**) | the head unit `docs/src/styles/app.css` blob is byte-identical in main (landed by MERGED PR #1167 `1c87889fd`); the 12 absent paths were removed from main by #1173/#1231/#1264 - obsolete, not live tooling |
+| jackin-project/jackin | `wt/login-import` | debris | CONTAINED (**deleted**) | 9 absent paths are usage fixtures only; re-proved per-path |
+| jackin-project/jackin | `recovery/pr1230-blob-auth-77b399f1-20261027` | debris (landed) | DEBRIS | the old 'landed' call was wrong: the host code (crates/tools/jackin-xtask/**) exists in NO tree of origin/main after the #1264 rewrite, so the fix is not landable; 117/149 changed paths are absent from main |
+| jackin-project/jackin | `recovery/openrouter-exact-money-20261027` | debris | DEBRIS | unchanged class; the later proof adds that 0 of the 38 changed paths exist in main and the branch tip still differs from the merged PR #1238 on 24/38 files |
+| jackin-project/jackin | `docs/pr1228-replacement-20261026` | debris | DEBRIS | unchanged class; the later proof adds that own PR #1233 was closed unmerged and 62/63 paths are absent from main today |
+| jackin-project/jackin | `recovery/stash-2f8cc42b-20261023` | debris | DEBRIS | unchanged class (stash snapshot) |
+| jackin-project/jackin | `recovery/stash-2fb075f8-20261023` | debris | DEBRIS | unchanged class (stash snapshot) |
+| jackin-project/jackin | `recovery/stash-88f5643c-20261023` | debris | DEBRIS | unchanged class (stash snapshot) |
+| jackin-project/jackin | `recovery/stash-adoption-6a0d2f03-20261025` | debris | DEBRIS | unchanged class (stash snapshot) |
+| jackin-project/jackin | `recovery/stash-be51ff69-20261023` | debris | DEBRIS | unchanged class (stash snapshot); the old 'operator check of RUSTSEC-2026-0382/0383' note is superseded by the later per-path proof |
+| jackin-project/jackin | `recovery/stash-d808d094-20261023` | debris | DEBRIS | unchanged class (stash snapshot) |
+| jackin-project/jackin | `recovery/strict-merge-gate-merge-readiness-20261022` | debris | DEBRIS | unchanged class; the later proof adds that it is a duplicate of `fix/restore-docs-source-globs` (6 of its 7 commits are on that branch) and has no PR |
+| jackin-project/jackin | `recovery/strip-tests-restore-20261030` | debris | DEBRIS | unchanged class (899 of 906 differing paths are absent from main) |
+| jackin-project/jackin | `rollout/velnor-3-provider` | debris | DEBRIS | unchanged class (orphan root, no merge base with main) |
+| jackin-project/jackin-sentinel | `fix/s158-postmerge-4` | valuable | VALUABLE | unchanged class; still unmerged - PR #159 is open |
+| jackin-project/jackin-sentinel | `preserve/probe-identity-20261109` | valuable | VALUABLE | unchanged class; the tip commit 01f8ca5 is not in main and greps 0 in main, so it is not contained |
+| jackin-project/jackin-agent-smith | `recovery/…/velnor/fleet-92c3478…` | debris | DEBRIS | unchanged class (generated velnor sync, PR #206 closed) |
+| jackin-project/jackin-agent-smith | `recovery/…/velnor/fleet-b9c3156c…` | debris | CONTAINED (**deleted**) | patch-id equality with the squash `08cb1c2f` of MERGED PR #207 proves the content is in main |
+| jackin-project/jackin-the-architect | `preserve/betterleaks-1.10.0-20261109` | debris (superseded) | CONTAINED (**deleted**) | 37/38 commits are ancestors of the MERGED PR #481 head by identical SHA and the one remaining commit `cb5801f` is content-equal in main (main strictly supersedes the branch) |
+| jackin-project/jackin-the-architect | `archive/cleanup-20261006/architect-mbx-b809284df675` | debris | CONTAINED (**deleted**) | patch-id equality with MERGED PR #480 (merge commit `2fefbdd`, ancestor of main) |
+| jackin-project/jackin-the-architect | `archive/cleanup-20261006/architect-mbx-e390e399f2` | debris | CONTAINED (**deleted**) | both tips patch-id-equal to MERGED PR #480; the exact line is in `2fefbdd:Dockerfile` |
+| jackin-project/jackin-the-architect | `archive/cleanup-20261006/architect-original-chain-e390e399f2a4` | debris | CONTAINED (**deleted**) | exact duplicate pointer (same SHA as `architect-mbx-e390e399f2`); same PR #480 proof |
+| jackin-project/jackin-the-architect | `archive/cleanup-20261006/architect-reflog-commit-e0b97da3819e` | debris | CONTAINED (**deleted**) | patch-id equality with MERGED PR #479 (merge commit `7b72b38`, ancestor of main) |
+| jackin-project/jackin-the-architect | `archive/cleanup-20261006/architect-role-e0b97da381` | debris | CONTAINED (**deleted**) | exact duplicate pointer (same SHA as `architect-reflog-commit-e0b97da3819e`); same PR #479 proof |
+| jackin-project/jackin-the-architect | `archive/cleanup-20261006/architect-task/original-b809284` | debris | CONTAINED (**deleted**) | exact duplicate pointer (same SHA as `architect-mbx-b809284df675`); same PR #480 proof |
+| jackin-project/jackin-the-architect | `archive/cleanup-20261006/architect-task/original-e0b97da` | debris | CONTAINED (**deleted**) | exact duplicate pointer; same PR #479 proof |
+| jackin-project/jackin-the-architect | `archive/cleanup-20261006/architect-task/original-e390e39` | debris | CONTAINED (**deleted**) | exact duplicate pointer (same SHA as `architect-mbx-e390e399f2`); same PR #480 proof |
+| tailrocks/terminal-components-baseline | `preserve/local-unique-20261109` | valuable | VALUABLE (partly CONTAINED) | unchanged class; 5 of its 8 commits are in PR #5's commit set, the 3 remaining commits are still not in main and must be cherry-picked |
+| tailrocks/terminal-components-baseline | `test/pre-refactor-protection` | debris (mostly merged) | DEBRIS | unchanged class; 3011 of the 3045 branch-changed files are byte-identical to main and the only file main lacks is the scratch `terminal-components-baseline-goal.txt` |
+| tailrocks/terminal-components-baseline | `wip/tuiscotti-capture-only` | debris | DEBRIS | unchanged class (generated capture output only) |
+| tailrocks/terminal-components-baseline | `wip/tuiscotti-fixcheck` | debris | DEBRIS | unchanged class (generated capture output only) |
+| tailrocks/terminal-components-baseline | `wip/tuiscotti-pin-fec38841` | debris | CONTAINED (superseded, **kept**) | the single commit only regresses the `tuiscotti` pin - main already pins the same dependency at a strictly newer rev (`92ef2d9e`); the branch carries no unique work and is left on the remote because baseline had 0 deletions |
+
+### Branches the earlier snapshot recorded as already deleted (merged branches)
+
+> baseline `design/interaction-polish` (PR #474 lineage), `codex/preserve-jackin-receipts` (PR #7),
+> `codex/tuiscotti-pb-baseline-rollout-20261107` (PR #6); architect `rollout/agent-policy` (PR #474);
+> agent-smith `recovery/…/fix/policy-ruleset-contexts` (ancestor of main).
+
+These branches were already gone from their remotes when the earlier snapshot was taken; they are
+recorded here for completeness and are not part of the DEBRIS list.
+
+### Disposition of the earlier branch
+
+The earlier branch `chore/triage-inventory-20261112` (commit `e13360eb`) is **CONTAINED by this
+document**: every row, evidence item, count and section it held is now present above - the rows
+that the later proofs reclassified are carried in the superseded-class tables of this section, and
+its freshness table, deletion rule, `recovery/branches-nightly-compat-20261029` deletion record and
+already-deleted list are reproduced here verbatim. The branch itself is **not** deleted by this
+change: it stays on the remote and keeps its DEBRIS entry in the DEBRIS list above, awaiting the
+operator's ratification together with the other DEBRIS branches.
