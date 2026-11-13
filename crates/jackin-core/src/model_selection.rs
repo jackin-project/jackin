@@ -27,6 +27,8 @@ fn canonical_tuple(tuple: &'static AgentTuple) -> Result<&'static AgentTuple, Mo
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ModelSelectionError {
+    #[error("account default has no named model for agent {} with provider {}", plain(.agent), plain(.provider))]
+    AccountDefaultNotNamed { agent: String, provider: String },
     #[error("account default is not supported for agent {} with provider {}", plain(.agent), plain(.provider))]
     AccountDefaultUnsupported { agent: String, provider: String },
     #[error(transparent)]
@@ -87,7 +89,7 @@ impl ModelSelection {
     ) -> Result<&ModelName, ModelSelectionError> {
         let tuple = canonical_tuple(tuple)?;
         match &self.0 {
-            SelectionKind::AccountDefault => Err(ModelSelectionError::AccountDefaultUnsupported {
+            SelectionKind::AccountDefault => Err(ModelSelectionError::AccountDefaultNotNamed {
                 agent: tuple.agent.as_str().to_owned(),
                 provider: tuple.provider.as_str().to_owned(),
             }),
@@ -143,11 +145,8 @@ impl ModelSelection {
         matches!(self.0, SelectionKind::AccountDefault)
     }
 
-    pub fn named(&self) -> Option<&ModelName> {
-        match &self.0 {
-            SelectionKind::AccountDefault => None,
-            SelectionKind::Named(model) => Some(model),
-        }
+    pub fn named(&self, tuple: &'static AgentTuple) -> Result<&ModelName, ModelSelectionError> {
+        self.named_projection(tuple)
     }
 
     pub fn item_key(&self) -> String {
@@ -223,7 +222,10 @@ mod tests {
         let t01 = tuple("T01");
         let selection = ModelSelection::for_tuple(t01, None).expect("account default");
         assert!(selection.is_account_default());
-        assert!(selection.named().is_none());
+        assert!(matches!(
+            selection.named(t01),
+            Err(ModelSelectionError::AccountDefaultNotNamed { .. })
+        ));
         assert_eq!(selection.item_key(), "{\"mode\":\"account_default\"}");
     }
 
@@ -273,7 +275,7 @@ mod tests {
     fn non_t01_resolves_to_named_default() {
         let t02 = tuple("T02");
         let selection = ModelSelection::for_tuple(t02, None).expect("named default");
-        let model = selection.named().expect("named selection");
+        let model = selection.named(t02).expect("named selection");
         assert_eq!(model.as_str(), t02.default_model);
         assert_eq!(selection.named_projection(t02).expect("projection"), model);
     }
@@ -431,6 +433,33 @@ mod tests {
                 }
             ))
         ));
+    }
+
+    #[test]
+    fn named_accessor_rejects_cross_tuple_pairing() {
+        let t01 = tuple("T01");
+        let t02 = tuple("T02");
+        let model = ModelName::parse(t02.default_model).expect("model name");
+        let selection = ModelSelection::named_for_tuple(t02, model).expect("named");
+        assert!(matches!(
+            selection.named(t01),
+            Err(ModelSelectionError::UnknownModel(_))
+        ));
+    }
+
+    #[test]
+    fn account_default_projection_is_not_reported_unsupported() {
+        let t01 = tuple("T01");
+        let selection = ModelSelection::account_default_for(t01).expect("account default");
+        let err = selection.named_projection(t01).expect_err("no named model");
+        assert!(!matches!(
+            err,
+            ModelSelectionError::AccountDefaultUnsupported { .. }
+        ));
+        assert_eq!(
+            err.to_string(),
+            "account default has no named model for agent codex with provider codex"
+        );
     }
 
     #[test]

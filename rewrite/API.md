@@ -637,7 +637,7 @@ impl ModelSelection {
     pub fn validate_for_tuple(&self, tuple: &'static AgentTuple) -> Result<(), ModelSelectionError>;
     pub fn named_projection(&self, tuple: &'static AgentTuple) -> Result<&ModelName, ModelSelectionError>;
     pub fn is_account_default(&self) -> bool;
-    pub fn named(&self) -> Option<&ModelName>;
+    pub fn named(&self, tuple: &'static AgentTuple) -> Result<&ModelName, ModelSelectionError>;
     pub fn item_key(&self) -> String;
     pub fn from_wire(tuple: &'static AgentTuple, wire: SelectionWire) -> Result<ModelSelection, ModelSelectionError>;
 }
@@ -651,21 +651,22 @@ pub enum SelectionWire {
 
 The tuple-to-model contract. Every named selection is proven against one `&'static AgentTuple`. `AgentTuple::check_model` proves only that the model appears in the supplied tuple's own `allowed_models` slice, and an external `static` can copy or forge every field of `AgentTuple`, so `check_model` alone is not a proof.
 
-The catalog-identity rule. A tuple argument is authenticated by `lookup_tuple(tuple.agent, tuple.provider)` and `std::ptr::eq`: the argument must be the very `TUPLES` instance for its agent and provider pair. A forged tuple, one that claims T01's id or T01's agent and provider with its own `allowed_models`, fails with `CatalogError::UnknownTuple` before any model or account-default rule runs. Authentication precedes every arm rule at every entry point: construction (`for_tuple`, `named_for_tuple`, `account_default_for`, `from_wire`), validation (`validate_for_tuple`), and projection (`named_projection`) all refuse an unproven tuple the same way, so a forged tuple cannot acquire a selection, cannot validate one built elsewhere, and cannot launder a projection through its own `allowed_models`.
+The catalog-identity rule. A tuple argument is authenticated by `lookup_tuple(tuple.agent, tuple.provider)` and `std::ptr::eq`: the argument must be the very `TUPLES` instance for its agent and provider pair. A forged tuple, one that claims T01's id or T01's agent and provider with its own `allowed_models`, fails with `CatalogError::UnknownTuple` before any model or account-default rule runs. Authentication precedes every arm rule at every entry point: construction (`for_tuple`, `named_for_tuple`, `account_default_for`, `from_wire`), validation (`validate_for_tuple`), and projection (`named_projection`, `named`) all refuse an unproven tuple the same way, so a forged tuple cannot acquire a selection, cannot validate one built elsewhere, and cannot launder a projection through its own `allowed_models`. `named` takes the tuple for the same reason and runs the same authenticated projection path as `named_projection`, so no accessor hands a model out without the catalog proof.
 
-The fail-closed account-default rule. `AccountDefault` is constructible only for the proven OAuth tuple T01 (Codex/Codex), identified like the catalog rule: `lookup_tuple(Agent::Codex, Provider::Codex)` compared by identity. Every other canonical tuple gets `AccountDefaultUnsupported`, every unproven tuple gets the catalog error, and `named_projection` never turns account default into a name. The selection either names its model or it is account default, and account default resolves only where the caller holds the proven tuple.
+The fail-closed account-default rule. `AccountDefault` is constructible only for the proven OAuth tuple T01 (Codex/Codex), identified like the catalog rule: `lookup_tuple(Agent::Codex, Provider::Codex)` compared by identity. Every other canonical tuple gets `AccountDefaultUnsupported`, every unproven tuple gets the catalog error, and `named_projection` never turns account default into a name: it reports `AccountDefaultNotNamed`, which states only that this selection has no named model, not that account default is unsupported. The selection either names its model or it is account default, and account default resolves only where the caller holds the proven tuple.
 
 Error taxonomy.
 
 ```rust
 pub enum ModelSelectionError {
+    AccountDefaultNotNamed { agent: String, provider: String },
     AccountDefaultUnsupported { agent: String, provider: String },
     UnknownModel(CatalogError),
     InvalidTupleDefault { tuple: &'static str, reason: String },
 }
 ```
 
-The variants fire in the order the rules run. `UnknownModel` transparently carries any `CatalogError` and so covers both catalog failures: `CatalogError::UnknownTuple` names the agent and provider of a tuple that is not the canonical catalog tuple (the catalog-identity rule), and `CatalogError::UnknownModel` names the model that the canonical tuple does not allow (the tuple-to-model contract). `AccountDefaultUnsupported` names the agent and provider of a canonical tuple that is not T01 (the fail-closed account-default rule). `InvalidTupleDefault` names the tuple id and the parse reason when a canonical tuple's `default_model` does not parse as a `ModelName`. The two messages that interpolate text follow the `plain` rules of the Errors section.
+The variants fire in the order the rules run. `UnknownModel` transparently carries any `CatalogError` and so covers both catalog failures: `CatalogError::UnknownTuple` names the agent and provider of a tuple that is not the canonical catalog tuple (the catalog-identity rule), and `CatalogError::UnknownModel` names the model that the canonical tuple does not allow (the tuple-to-model contract). `AccountDefaultUnsupported` names the agent and provider of a canonical tuple that is not T01 (the fail-closed account-default rule). `AccountDefaultNotNamed` names the agent and provider of the tuple the projection was asked for and fires only on the projection path (`named_projection`, `named`) when the selection is a valid account default that therefore has no named model; it is not a validation failure and never claims that account default is unsupported. `InvalidTupleDefault` names the tuple id and the parse reason when a canonical tuple's `default_model` does not parse as a `ModelName`. The three messages that interpolate text follow the `plain` rules of the Errors section.
 
 ### Labels, phase, supervisor state
 
