@@ -349,6 +349,7 @@ crates/jackin-core/src/
   platform.rs       Platform
   provider.rs       Provider
   agent.rs          Agent, AgentSpec, InstallSpec, OpenShellSpec, ProfileAsset, AuthFileSpec, ConfigFileSpec, CodexAuthMode
+  model_selection.rs   ModelSelection, ModelSelectionError, SelectionWire (PR #1279 additions)
   labels.rs         Labels, PlannedLabels, SandboxLabels, LabelSelector
   phase.rs          Phase
   supervisor.rs     SupervisorState, StartRequest
@@ -623,6 +624,48 @@ impl AgentSpec {
 ```
 
 `Agent::spec` is a plain function that matches exhaustively on the enum and returns a reference to a `static` row (`static CODEX_SPEC: AgentSpec`), so adding a variant fails to compile until a row exists (D04). The rows are `static`, not `const`, because `SandboxPath` holds a `Cow` and no `const fn` validates a path. `user_config` is the Codex user file `/sandbox/.codex/config.toml` (mode 0600): the Credentials step writes the trust entry for `workdir` and the manifest `[codex] model` into it (section 4; P7.4 F1). `reserved_env` holds `CODEX_HOME`. The embedded profile YAML is a plain `&'static str`; `jackin-openshell` parses it into the endpoints and binaries that the D10 closure check needs, so the host list is derived from the asset and never written twice. `api_key_profile` is `None` until a profile is proven, so `profile_for(ApiKey)` is `None` and a mode A account gets a typed `Unsupported` error from `plan_launch` and `sync_account` (decision 5). The Codex row values come from `rewrite/drafts/agentspec-codex.toml` (P3.1). A test asserts `install.version` equals the `codex_version` of `Compatibility::pinned()` and that every `InstallTarget` platform appears once.
+
+### Typed model selection (PR #1279 additions)
+
+`model_selection.rs` makes the tuple model policy explicit and typed, replacing free-form model strings. A `ModelSelection` is one of two kinds: the account default of the proven OAuth tuple, or a named model proven against the canonical catalog. The module is the only place that turns `(tuple, Option<ModelName>)` into a validated selection; callers hold `ModelSelection` values and project them to a `ModelName` only at the point of use.
+
+```rust
+impl ModelSelection {
+    pub fn for_tuple(tuple: &'static AgentTuple, explicit: Option<ModelName>) -> Result<ModelSelection, ModelSelectionError>;
+    pub fn named_for_tuple(tuple: &'static AgentTuple, model: ModelName) -> Result<ModelSelection, ModelSelectionError>;
+    pub fn account_default_for(tuple: &'static AgentTuple) -> Result<ModelSelection, ModelSelectionError>;
+    pub fn validate_for_tuple(&self, tuple: &'static AgentTuple) -> Result<(), ModelSelectionError>;
+    pub fn named_projection(&self, tuple: &'static AgentTuple) -> Result<&ModelName, ModelSelectionError>;
+    pub fn is_account_default(&self) -> bool;
+    pub fn named(&self) -> Option<&ModelName>;
+    pub fn item_key(&self) -> String;
+    pub fn from_wire(tuple: &'static AgentTuple, wire: SelectionWire) -> Result<ModelSelection, ModelSelectionError>;
+}
+pub enum SelectionWire {
+    AccountDefault {},
+    Named { name: ModelName },
+}
+```
+
+`ModelSelection` serializes to the same tagged shape that `SelectionWire` decodes: `{"mode":"account_default"}` or `{"mode":"named","name":"<model>"}`. `item_key` is the stable string form of that shape and keys persisted selections. `from_wire` is the only way in from the wire, and it takes the tuple, so a decoded selection is validated at decode time rather than at use time.
+
+The tuple-to-model contract. Every named selection is proven against one `&'static AgentTuple`. `AgentTuple::check_model` proves only that the model appears in the supplied tuple's own `allowed_models` slice, and an external `static` can copy or forge every field of `AgentTuple`, so `check_model` alone is not a proof.
+
+The catalog-identity rule. A tuple argument is authenticated by `lookup_tuple(tuple.agent, tuple.provider)` and `std::ptr::eq`: the argument must be the very `TUPLES` instance for its agent and provider pair. A forged tuple, one that claims T01's id or T01's agent and provider with its own `allowed_models`, fails with `CatalogError::UnknownTuple` before any model or account-default rule runs. Authentication precedes every arm rule at every entry point: construction (`for_tuple`, `named_for_tuple`, `account_default_for`, `from_wire`), validation (`validate_for_tuple`), and projection (`named_projection`) all refuse an unproven tuple the same way, so a forged tuple cannot acquire a selection, cannot validate one built elsewhere, and cannot launder a projection through its own `allowed_models`.
+
+The fail-closed account-default rule. `AccountDefault` is constructible only for the proven OAuth tuple T01 (Codex/Codex), identified like the catalog rule: `lookup_tuple(Agent::Codex, Provider::Codex)` compared by identity. Every other canonical tuple gets `AccountDefaultUnsupported`, every unproven tuple gets the catalog error, and `named_projection` never turns account default into a name. The selection either names its model or it is account default, and account default resolves only where the caller holds the proven tuple.
+
+Error taxonomy.
+
+```rust
+pub enum ModelSelectionError {
+    AccountDefaultUnsupported { agent: String, provider: String },
+    UnknownModel(CatalogError),
+    InvalidTupleDefault { tuple: &'static str, reason: String },
+}
+```
+
+The variants fire in the order the rules run. `UnknownModel` transparently carries any `CatalogError` and so covers both catalog failures: `CatalogError::UnknownTuple` names the agent and provider of a tuple that is not the canonical catalog tuple (the catalog-identity rule), and `CatalogError::UnknownModel` names the model that the canonical tuple does not allow (the tuple-to-model contract). `AccountDefaultUnsupported` names the agent and provider of a canonical tuple that is not T01 (the fail-closed account-default rule). `InvalidTupleDefault` names the tuple id and the parse reason when a canonical tuple's `default_model` does not parse as a `ModelName`. The two messages that interpolate text follow the `plain` rules of the Errors section.
 
 ### Labels, phase, supervisor state
 
