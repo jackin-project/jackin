@@ -1,0 +1,271 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::ptr;
+
+use serde::{Deserialize, Serialize, Serializer};
+
+use crate::display::plain;
+use crate::{Agent, AgentTuple, CatalogError, ModelName, Provider};
+
+fn is_proven_account_default_tuple(tuple: &'static AgentTuple) -> bool {
+    crate::lookup_tuple(Agent::Codex, Provider::Codex).is_ok_and(|proven| ptr::eq(tuple, proven))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum ModelSelectionError {
+    #[error("account default is not supported for agent {} with provider {}", plain(.agent), plain(.provider))]
+    AccountDefaultUnsupported { agent: String, provider: String },
+    #[error(transparent)]
+    UnknownModel(#[from] CatalogError),
+    #[error("invalid default model in tuple {tuple}: {}", plain(.reason))]
+    InvalidTupleDefault { tuple: &'static str, reason: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum SelectionKind {
+    AccountDefault,
+    Named(ModelName),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelSelection(SelectionKind);
+
+#[derive(Serialize)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+enum SelectionRef<'a> {
+    AccountDefault,
+    Named { name: &'a ModelName },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SelectionWire {
+    AccountDefault {},
+    Named { name: ModelName },
+}
+
+impl ModelSelection {
+    pub fn for_tuple(
+        tuple: &'static AgentTuple,
+        explicit: Option<ModelName>,
+    ) -> Result<ModelSelection, ModelSelectionError> {
+        match explicit {
+            Some(model) => Self::named_for_tuple(tuple, model),
+            None if is_proven_account_default_tuple(tuple) => {
+                Ok(ModelSelection(SelectionKind::AccountDefault))
+            }
+            None => {
+                let model = ModelName::parse(tuple.default_model).map_err(|source| {
+                    ModelSelectionError::InvalidTupleDefault {
+                        tuple: tuple.id,
+                        reason: source.to_string(),
+                    }
+                })?;
+                Self::named_for_tuple(tuple, model)
+            }
+        }
+    }
+
+    pub fn named_projection(
+        &self,
+        tuple: &'static AgentTuple,
+    ) -> Result<&ModelName, ModelSelectionError> {
+        match &self.0 {
+            SelectionKind::AccountDefault => Err(ModelSelectionError::AccountDefaultUnsupported {
+                agent: tuple.agent.as_str().to_owned(),
+                provider: tuple.provider.as_str().to_owned(),
+            }),
+            SelectionKind::Named(model) => {
+                tuple.check_model(model.as_str())?;
+                Ok(model)
+            }
+        }
+    }
+
+    pub fn validate_for_tuple(
+        &self,
+        tuple: &'static AgentTuple,
+    ) -> Result<(), ModelSelectionError> {
+        match &self.0 {
+            SelectionKind::AccountDefault if is_proven_account_default_tuple(tuple) => Ok(()),
+            SelectionKind::AccountDefault => Err(ModelSelectionError::AccountDefaultUnsupported {
+                agent: tuple.agent.as_str().to_owned(),
+                provider: tuple.provider.as_str().to_owned(),
+            }),
+            SelectionKind::Named(model) => {
+                tuple.check_model(model.as_str())?;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn account_default_for(
+        tuple: &'static AgentTuple,
+    ) -> Result<ModelSelection, ModelSelectionError> {
+        if is_proven_account_default_tuple(tuple) {
+            Ok(ModelSelection(SelectionKind::AccountDefault))
+        } else {
+            Err(ModelSelectionError::AccountDefaultUnsupported {
+                agent: tuple.agent.as_str().to_owned(),
+                provider: tuple.provider.as_str().to_owned(),
+            })
+        }
+    }
+
+    pub fn named_for_tuple(
+        tuple: &'static AgentTuple,
+        model: ModelName,
+    ) -> Result<ModelSelection, ModelSelectionError> {
+        tuple.check_model(model.as_str())?;
+        Ok(ModelSelection(SelectionKind::Named(model)))
+    }
+
+    pub fn is_account_default(&self) -> bool {
+        matches!(self.0, SelectionKind::AccountDefault)
+    }
+
+    pub fn named(&self) -> Option<&ModelName> {
+        match &self.0 {
+            SelectionKind::AccountDefault => None,
+            SelectionKind::Named(model) => Some(model),
+        }
+    }
+
+    pub fn item_key(&self) -> String {
+        match &self.0 {
+            SelectionKind::AccountDefault => "{\"mode\":\"account_default\"}".to_owned(),
+            SelectionKind::Named(model) => {
+                format!("{{\"mode\":\"named\",\"name\":\"{}\"}}", model.as_str())
+            }
+        }
+    }
+
+    pub fn from_wire(
+        tuple: &'static AgentTuple,
+        wire: SelectionWire,
+    ) -> Result<ModelSelection, ModelSelectionError> {
+        match wire {
+            SelectionWire::AccountDefault {} => Self::account_default_for(tuple),
+            SelectionWire::Named { name } => Self::named_for_tuple(tuple, name),
+        }
+    }
+}
+
+impl Serialize for ModelSelection {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match &self.0 {
+            SelectionKind::AccountDefault => SelectionRef::AccountDefault.serialize(serializer),
+            SelectionKind::Named(model) => {
+                SelectionRef::Named { name: model }.serialize(serializer)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tuple(id: &str) -> &'static AgentTuple {
+        crate::TUPLES
+            .iter()
+            .find(|tuple| tuple.id == id)
+            .unwrap_or_else(|| panic!("tuple {id} is not in the catalog"))
+    }
+
+    #[test]
+    fn forged_t01_id_does_not_grant_account_default() {
+        static FORGED: AgentTuple = AgentTuple {
+            id: "T01",
+            agent: Agent::ClaudeCode,
+            provider: Provider::Claude,
+            auth_class: crate::AuthClass::OAuth,
+            state: crate::TupleState::Supported,
+            reason: None,
+            allowed_models: &[],
+            default_model: "",
+        };
+        assert!(matches!(
+            ModelSelection::account_default_for(&FORGED),
+            Err(ModelSelectionError::AccountDefaultUnsupported { agent, provider })
+                if agent == "claude" && provider == "claude"
+        ));
+    }
+
+    #[test]
+    fn t01_resolves_to_account_default() {
+        let t01 = tuple("T01");
+        let selection = ModelSelection::for_tuple(t01, None).expect("account default");
+        assert!(selection.is_account_default());
+        assert!(selection.named().is_none());
+        assert_eq!(selection.item_key(), "{\"mode\":\"account_default\"}");
+    }
+
+    #[test]
+    fn t01_accepts_catalogued_named_models() {
+        let t01 = tuple("T01");
+        let model = ModelName::parse(t01.default_model).expect("default model");
+        let selection = ModelSelection::named_for_tuple(t01, model).expect("catalogued model");
+        assert_eq!(
+            selection
+                .named_projection(t01)
+                .expect("projection")
+                .as_str(),
+            t01.default_model
+        );
+        assert_eq!(
+            selection.item_key(),
+            "{\"mode\":\"named\",\"name\":\"gpt-6.1-sol\"}"
+        );
+    }
+
+    #[test]
+    fn named_models_must_be_catalogued() {
+        let t01 = tuple("T01");
+        let t02 = tuple("T02");
+        let model = ModelName::parse(t02.default_model).expect("model name");
+        assert!(matches!(
+            ModelSelection::named_for_tuple(t01, model),
+            Err(ModelSelectionError::UnknownModel(_))
+        ));
+    }
+
+    #[test]
+    fn non_t01_rejects_account_default() {
+        let other = crate::TUPLES
+            .iter()
+            .find(|tuple| tuple.id != "T01")
+            .expect("non-T01 tuple");
+        assert!(matches!(
+            ModelSelection::account_default_for(other),
+            Err(ModelSelectionError::AccountDefaultUnsupported { agent, provider })
+                if agent == other.agent.as_str() && provider == other.provider.as_str()
+        ));
+    }
+
+    #[test]
+    fn non_t01_resolves_to_named_default() {
+        let t02 = tuple("T02");
+        let selection = ModelSelection::for_tuple(t02, None).expect("named default");
+        let model = selection.named().expect("named selection");
+        assert_eq!(model.as_str(), t02.default_model);
+        assert_eq!(selection.named_projection(t02).expect("projection"), model);
+    }
+
+    #[test]
+    fn wire_round_trip_preserves_selection() {
+        let t02 = tuple("T02");
+        let model = ModelName::parse(t02.default_model).expect("default model");
+        let selection = ModelSelection::named_for_tuple(t02, model).expect("named");
+        let json = serde_json::to_string(&selection).expect("serialize");
+        let wire: SelectionWire = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(
+            ModelSelection::from_wire(t02, wire).expect("wire"),
+            selection
+        );
+    }
+}
