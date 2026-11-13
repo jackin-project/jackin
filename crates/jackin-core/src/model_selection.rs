@@ -89,7 +89,13 @@ impl ModelSelection {
     ) -> Result<&ModelName, ModelSelectionError> {
         let tuple = canonical_tuple(tuple)?;
         match &self.0 {
-            SelectionKind::AccountDefault => Err(ModelSelectionError::AccountDefaultNotNamed {
+            SelectionKind::AccountDefault if is_proven_account_default_tuple(tuple) => {
+                Err(ModelSelectionError::AccountDefaultNotNamed {
+                    agent: tuple.agent.as_str().to_owned(),
+                    provider: tuple.provider.as_str().to_owned(),
+                })
+            }
+            SelectionKind::AccountDefault => Err(ModelSelectionError::AccountDefaultUnsupported {
                 agent: tuple.agent.as_str().to_owned(),
                 provider: tuple.provider.as_str().to_owned(),
             }),
@@ -460,6 +466,22 @@ mod tests {
             err.to_string(),
             "account default has no named model for agent codex with provider codex"
         );
+    }
+
+    #[test]
+    fn account_default_projection_rejects_non_t01_tuple() {
+        let t01 = tuple("T01");
+        let t02 = tuple("T02");
+        let selection = ModelSelection::account_default_for(t01).expect("account default");
+        assert!(matches!(
+            selection.named_projection(t02),
+            Err(ModelSelectionError::AccountDefaultUnsupported { agent, provider })
+                if agent == t02.agent.as_str() && provider == t02.provider.as_str()
+        ));
+        assert!(matches!(
+            selection.named(t02),
+            Err(ModelSelectionError::AccountDefaultUnsupported { .. })
+        ));
     }
 
     #[test]
