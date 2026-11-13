@@ -158,7 +158,10 @@ impl ModelSelection {
                 agent: tuple.agent.as_str().to_owned(),
                 provider: tuple.provider.as_str().to_owned(),
             }),
-            SelectionKind::Named(_) => Ok(false),
+            SelectionKind::Named(model) => {
+                tuple.check_model(model.as_str())?;
+                Ok(false)
+            }
         }
     }
 
@@ -514,6 +517,19 @@ mod tests {
         let model = ModelName::parse(t02.default_model).expect("model name");
         let selection = ModelSelection::named_for_tuple(t02, model).expect("named");
         assert!(!selection.is_account_default(t02).expect("named selection"));
+    }
+
+    #[test]
+    fn named_predicate_rejects_a_tuple_that_does_not_allow_the_model() {
+        let t01 = tuple("T01");
+        let t02 = tuple("T02");
+        let model = ModelName::parse(t02.default_model).expect("model name");
+        let selection = ModelSelection::named_for_tuple(t02, model).expect("named");
+        assert!(matches!(
+            selection.is_account_default(t01),
+            Err(ModelSelectionError::UnknownModel(CatalogError::UnknownModel { model, .. }))
+                if model == "haiku"
+        ));
     }
 
     #[test]
