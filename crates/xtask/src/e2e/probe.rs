@@ -476,6 +476,26 @@ impl AgentExec {
 pub(crate) struct FactsJ07 {
     pub(crate) processes: Processes,
     pub(crate) agent_exec: AgentExec,
+    #[serde(default)]
+    pub(crate) launcher_identity: Option<LauncherIdentity>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct LauncherIdentity {
+    pub(crate) interpreter: String,
+    pub(crate) interpreter_arg: Option<String>,
+    pub(crate) interpreter_resolved: String,
+    pub(crate) exe: Option<String>,
+    pub(crate) exe_matches_interpreter: bool,
+    pub(crate) uid: Option<String>,
+    pub(crate) comm: Option<String>,
+    pub(crate) argv0_matches: bool,
+    pub(crate) argv1_matches: bool,
+    pub(crate) argv2_matches: Option<bool>,
+    pub(crate) stable: bool,
+    pub(crate) stat_pre: Option<String>,
+    pub(crate) stat_before: Option<String>,
+    pub(crate) stat_after: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
