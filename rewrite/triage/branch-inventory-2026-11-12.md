@@ -145,7 +145,7 @@ Source inventory: `baseline.md` (per-repository triage table, reproduced verbati
 Source: `contained-deletions.md` — the branches that were already proven **CONTAINED** by the deletion worker and deleted. Every row was classified CONTAINED in the per-repo tables above and re-proved independently before deletion (ancestry, merged-PR squash-commit presence in `main`, `git patch-id --stable` equality, exact-SHA duplicate pointers, and/or tree/blob content equality). **No VALUABLE and no DEBRIS branch was touched; nothing was merged.**
 
 | repo | branch | proof | absent-path classification | deleted |
-|---|---|---|---|
+|---|---|---|---|---|
 | jackin-project/jackin | `codex/pr1264-attach-readiness-20261108` | tip e1fb608b, merge-base 470fc5d6; tip not an ancestor of main; patch-id matched 0/979 (squash-landed, PR #1264 = f683619b5 in main, merged 2026-11-12, after the 2026-11-09 tip); 4699 changed paths vs main: 685 blob-equal, 362 differ (main's later revision), 9 absent; re-verified 2026-11-13 against `origin/main` 7a53f6abe: 4699 changed paths = 3643 deleted by the branch relative to the merge-base (all present in main) + 685 blob-equal + 362 differ (main's later revision) + 9 absent; main advanced via #1276/#1278/#1275 | absent paths: 9 absent = 5 usage test fixtures (crates/usage/jackin-usage/tests/usage/fixtures/{kimi,opencode}) + 4 rewrite/blockers/*.md -> scratch/archive only | YES |
 | jackin-project/jackin | `codex/r7-proposal-preservation-20261109` | tip e9e36409, merge-base 470fc5d6; patch-id matched 0/1006 (squash PR #1264 = f683619b5); 4859 changed paths: 795 blob-equal, 343 differ (main later), 71 absent; re-verified 2026-11-13 against `origin/main` 7a53f6abe: 4859 changed paths = 3650 deleted by the branch relative to the merge-base (all present in main) + 795 blob-equal + 343 differ (main's later revision) + 71 absent | absent paths: 71 absent = 5 usage test fixtures + 4 rewrite/blockers/*.md + 62 rewrite/checkpoints/** -> scratch/archive only | YES |
 | jackin-project/jackin | `codex/unpublished-openshell-checkpoint-20261109` | tip ac55cbf9, merge-base 470fc5d6; patch-id matched 0/1003 (squash PR #1264 = f683619b5); 4810 changed paths: 795 blob-equal, 343 differ (main later), 22 absent; re-verified 2026-11-13 against `origin/main` 7a53f6abe: 4810 changed paths = 3650 deleted by the branch relative to the merge-base (all present in main) + 795 blob-equal + 343 differ (main's later revision) + 22 absent | absent paths: 22 absent = 5 usage test fixtures + 4 rewrite/blockers/*.md + 13 rewrite/checkpoints/unpublished-2026-11-09/** -> scratch/archive only | YES |
@@ -183,7 +183,9 @@ Source: `contained-deletions.md` — the branches that were already proven **CON
 | tailrocks/terminal-components-baseline | 1 | 1 | 3 | 5 |
 | **totals** | **4** | **26** | **18** | **48** |
 
-**Totals across the five repositories: 48 non-main branches — VALUABLE 4, CONTAINED 26, DEBRIS 18.** (The CONTAINED column includes the 5 UNPROVEN candidates; counting them as VALUABLE instead gives the same 48 branches as 9 VALUABLE / 21 CONTAINED / 18 DEBRIS. The DEBRIS set and the deletion set are identical either way.) Per-class counts per repo: jackin 1 VALUABLE / 15 CONTAINED (10 deleted, 5 unproven and kept) / 13 DEBRIS; sentinel 2 VALUABLE; architect 9 CONTAINED; smith 1 CONTAINED / 2 DEBRIS; baseline 1 VALUABLE / 1 CONTAINED / 3 DEBRIS.
+**Totals across the five repositories: 48 inventoried branch rows — VALUABLE 4, CONTAINED 26, DEBRIS 18.** (The CONTAINED column includes the 5 UNPROVEN candidates; counting them as VALUABLE instead gives the same 48 rows as 9 VALUABLE / 21 CONTAINED / 18 DEBRIS. The DEBRIS set and the deletion set are identical either way.)
+
+**Live remote population: 28 non-main branches.** The 48 rows are the CAPTURED inventory, not the current remote population: 20 of them are branches that were already deleted under a recorded proof and confirmed absent from their remotes with `git ls-remote --heads`, so they no longer exist. Of the 28 branches that are still on their remotes: 9 carry unmerged product work (4 VALUABLE + the 5 UNPROVEN candidates, which must be treated as VALUABLE), 1 is CONTAINED but still live (`tailrocks/terminal-components-baseline` `wip/tuiscotti-pin-fec38841`, a superseded pin with no unique content), and 18 are DEBRIS awaiting the operator's ratification. Per-class counts per repo: jackin 1 VALUABLE / 15 CONTAINED (10 deleted, 5 unproven and kept) / 13 DEBRIS; sentinel 2 VALUABLE; architect 9 CONTAINED; smith 1 CONTAINED / 2 DEBRIS; baseline 1 VALUABLE / 1 CONTAINED / 3 DEBRIS.
 
 ---
 
@@ -214,7 +216,7 @@ the list below is the **FULL** set of branches classified **DEBRIS** across all 
 
 **Total DEBRIS branches awaiting operator confirmation: 18** (jackin 13 · smith 2 · baseline 3).
 
-> **DEBRIS branches are NOT deleted.** Nothing in this document has been merged or deleted. The DEBRIS list is a proposal awaiting the operator’s explicit one-word confirmation; deletion will only proceed if and when the operator approves it. The 10 deletions recorded above were CONTAINED branches only.
+> **DEBRIS branches are NOT deleted.** Nothing in this document has been merged or deleted. The DEBRIS list is a proposal awaiting the operator’s explicit one-word confirmation; deletion will only proceed if and when the operator approves it. The 20 CONTAINED branch deletions recorded above were CONTAINED branches only (10 in `jackin-project/jackin`, 9 in `jackin-project/jackin-the-architect`, 1 in `jackin-project/jackin-agent-smith`); the earlier separate deletion of `recovery/branches-nightly-compat-20261029` is documented in the historical snapshot section below.
 
 ## Coverage note
 
