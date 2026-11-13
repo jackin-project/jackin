@@ -71,6 +71,46 @@ async fn the_real_host_probe_report_validates_and_samples_are_schema_valid() {
     }
 }
 
+#[tokio::test]
+async fn launcher_identity_facts_validate_and_unknown_facts_are_rejected() {
+    let scenario = Scenario::new().await;
+    let steps = ["J07"];
+    let mut sample = scenario.probe_json(&steps, false);
+    sample["steps"]["J07"]["facts"]["launcher_identity"] = json!({
+        "interpreter": "/usr/bin/env",
+        "interpreter_arg": "bash",
+        "interpreter_resolved": "/usr/bin/bash",
+        "exe": "/usr/bin/bash",
+        "exe_matches_interpreter": true,
+        "uid": "1000",
+        "comm": "jackin-start",
+        "argv0_matches": true,
+        "argv1_matches": true,
+        "argv2_matches": true,
+        "stable": true,
+        "stat_pre": "123 (jackin-start) S 1 123 123 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 100",
+        "stat_before": "123 (jackin-start) S 1 123 123 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 100",
+        "stat_after": "123 (jackin-start) S 1 123 123 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 100"
+    });
+    parse(&sample, &steps).expect("the payload with launcher_identity validates");
+
+    let mut unknown_identity_key = sample.clone();
+    unknown_identity_key["steps"]["J07"]["facts"]["launcher_identity"]["invented"] = json!(true);
+    let rejected = parse(&unknown_identity_key, &steps);
+    assert!(
+        matches!(rejected, Err(ProbeError::Schema(_))),
+        "an unknown key inside launcher_identity: {rejected:?}"
+    );
+
+    let mut unknown_fact = sample.clone();
+    unknown_fact["steps"]["J07"]["facts"]["invented"] = json!(true);
+    let rejected = parse(&unknown_fact, &steps);
+    assert!(
+        matches!(rejected, Err(ProbeError::Schema(_))),
+        "an unknown fact beside launcher_identity: {rejected:?}"
+    );
+}
+
 fn schema_error(result: Result<ProbeReport, ProbeError>) -> String {
     match result {
         Err(ProbeError::Schema(message)) => message,
