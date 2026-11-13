@@ -50,11 +50,6 @@ fn native_subscription_tuples_stay_unavailable_with_oauth_reasons() -> TestResul
             Provider::Mimo,
             "native login has no refresh grant",
         ),
-        (
-            Agent::KimiCode,
-            Provider::Kimi,
-            "native refresh and final live proof pending",
-        ),
     ] {
         let tuple = lookup_tuple(agent, provider)?;
         assert_eq!(tuple.auth_class, AuthClass::OAuth);

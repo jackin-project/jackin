@@ -1030,8 +1030,8 @@ pub static TUPLES: [AgentTuple; 22] = [
         Agent::KimiCode,
         Provider::Kimi,
         AuthClass::OAuth,
-        TupleState::Unavailable,
-        Some("native refresh and final live proof pending"),
+        TupleState::Supported,
+        None,
         &["kimi-for-coding"],
         "kimi-for-coding"
     ),

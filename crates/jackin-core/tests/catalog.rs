@@ -87,8 +87,8 @@ const ROWS: [Row; 22] = [
         agent: Agent::KimiCode,
         provider: Provider::Kimi,
         auth_class: AuthClass::OAuth,
-        state: TupleState::Unavailable,
-        reason: Some("native refresh and final live proof pending"),
+        state: TupleState::Supported,
+        reason: SUPPORTED,
         model: "kimi-for-coding",
     },
     Row {

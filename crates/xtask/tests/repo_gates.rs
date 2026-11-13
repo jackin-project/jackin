@@ -2479,11 +2479,13 @@ mod promotion_records {
             "A14-codex-final-live.md",
             "A14-zai-recheck.md",
             "A14-t13-model-live.md",
+            "A14-t08-model-live.md",
         ] {
             read(root, &format!("rewrite/evidence/{name}"))?;
         }
         for name in [
             "T01-codex.md",
+            "T08-kimi-code.md",
             "T10-omp-kimi.md",
             "T11-omp-minimax.md",
             "T12-omp-mimo.md",
@@ -2506,7 +2508,6 @@ mod promotion_records {
             "T05-antigravity.md",
             "T06-minimax-code.md",
             "T07-mimo-code.md",
-            "T08-kimi-code.md",
             "T22-omp-openai.md",
         ] {
             read(root, &format!("rewrite/blockers/{name}"))?;

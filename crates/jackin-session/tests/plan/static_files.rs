@@ -228,10 +228,10 @@ async fn missing_models_use_tuple_defaults_and_explicit_models_remain_typed() ->
             assert!(matches!(error, PlanError::TupleNotSupported { ref reason, .. } if reason == "unknown model unknown"));
         }
         let error = setup
-            .plan(setup.request(10)?.tuple(Agent::KimiCode, Provider::Kimi))
+            .plan(setup.request(10)?.tuple(Agent::MimoCode, Provider::Mimo))
             .err()
             .ok_or("expected unavailable tuple refusal")?;
-        assert!(matches!(error, PlanError::TupleNotSupported { ref reason, .. } if reason == "native refresh and final live proof pending"));
+        assert!(matches!(error, PlanError::TupleNotSupported { ref reason, .. } if reason == "native login has no refresh grant"));
         Ok(())
     })
     .await

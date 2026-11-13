@@ -335,18 +335,44 @@ unavailable_tuple_tests! {
     t05_load_refusal => ("agy", "antigravity", "subscription requires a desktop keyring in the sandbox"),
     t06_load_refusal => ("minimax-code", "minimax", "no stable Linux artifact"),
     t07_load_refusal => ("mimo", "mimo", "native login has no refresh grant"),
-    t08_load_refusal => ("kimi", "kimi", "native refresh and final live proof pending"),
     t22_load_refusal => ("omp", "codex", "no API key on this host"),
 }
 
 fn all_agent_role() -> Result<jackin_testkit::RoleFixture, Failure> {
     Ok(jackin_testkit::RoleFixture::new("sentinel")?.manifest_text(
-        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n".to_owned(),
+        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.kimi]\ninstructions = \"instructions/kimi.md\"\n".to_owned(),
     ))
 }
 
-fn tuple_account_config(rig: &Rig, provider: jackin_core::Provider) -> String {
-    let credential = if provider == jackin_core::Provider::Codex {
+fn tuple_account_config(
+    rig: &Rig,
+    agent: jackin_core::Agent,
+    provider: jackin_core::Provider,
+) -> Result<String, Failure> {
+    let credential = if agent == jackin_core::Agent::KimiCode {
+        let kimi_home = rig.home.as_path().join("kimi-home");
+        std::fs::create_dir_all(kimi_home.join("credentials"))?;
+        std::fs::write(
+            kimi_home.join("config.toml"),
+            "[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"https://api.kimi.com/coding/v1\"\napi_key = \"\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/kimi-code\"\n",
+        )?;
+        std::fs::write(
+            kimi_home.join("credentials/kimi-code.json"),
+            serde_json::json!({
+                "access_token": "FAKE-KIMI-ACCESS",
+                "refresh_token": "FAKE-KIMI-REFRESH",
+                "expires_at": 1_800_000_000,
+                "expires_in": 3600,
+                "scope": "membership.read",
+                "token_type": "Bearer"
+            })
+            .to_string(),
+        )?;
+        format!(
+            "source = \"host-login\", path = \"{}\"",
+            kimi_home.display()
+        )
+    } else if provider == jackin_core::Provider::Codex {
         format!(
             "source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\"",
             rig.home.as_path().display()
@@ -357,11 +383,11 @@ fn tuple_account_config(rig: &Rig, provider: jackin_core::Provider) -> String {
             rig.home.as_path().display()
         )
     };
-    format!(
+    Ok(format!(
         "{}\n[accounts.tuple]\nprovider = \"{}\"\ncredential = {{ {credential} }}\n",
         rig.config.render(),
         provider.as_str()
-    )
+    ))
 }
 
 async fn supported_tuple_launch(
@@ -372,7 +398,7 @@ async fn supported_tuple_launch(
     let rig = Rig::builder().role(all_agent_role()?).build().await?;
     let mut harness = Harness::new(&rig.world);
     harness.cwd = rig.repo.root().clone();
-    harness.write_config(&tuple_account_config(&rig, provider))?;
+    harness.write_config(&tuple_account_config(&rig, agent, provider)?)?;
     let invalid = harness
         .run(&[
             "load",
@@ -452,6 +478,7 @@ async fn every_supported_tuple_launches_with_explicit_and_default_models() -> Te
     guard(async {
         for (agent, provider) in [
             (jackin_core::Agent::Codex, jackin_core::Provider::Codex),
+            (jackin_core::Agent::KimiCode, jackin_core::Provider::Kimi),
             (jackin_core::Agent::Omp, jackin_core::Provider::Zai),
             (jackin_core::Agent::Omp, jackin_core::Provider::Kimi),
             (jackin_core::Agent::Omp, jackin_core::Provider::Minimax),

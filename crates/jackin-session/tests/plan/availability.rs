@@ -17,7 +17,7 @@ struct Case {
     model: &'static str,
 }
 
-const SUPPORTED: [Case; 15] = [
+const SUPPORTED: [Case; 16] = [
     Case {
         id: "T01",
         agent: Agent::Codex,
@@ -29,6 +29,12 @@ const SUPPORTED: [Case; 15] = [
         agent: Agent::GrokBuild,
         provider: Provider::Grok,
         model: "grok-4.7",
+    },
+    Case {
+        id: "T08",
+        agent: Agent::KimiCode,
+        provider: Provider::Kimi,
+        model: "kimi-for-coding",
     },
     Case {
         id: "T09",
@@ -117,7 +123,7 @@ struct Refusal {
 }
 
 const UNPROVEN: &str = "not yet proven on a real gateway";
-const REFUSALS: [Refusal; 7] = [
+const REFUSALS: [Refusal; 6] = [
     Refusal {
         case: Case {
             id: "T02",
@@ -170,16 +176,6 @@ const REFUSALS: [Refusal; 7] = [
     },
     Refusal {
         case: Case {
-            id: "T08",
-            agent: Agent::KimiCode,
-            provider: Provider::Kimi,
-            model: "kimi-for-coding",
-        },
-        state: TupleState::Unavailable,
-        reason: "native refresh and final live proof pending",
-    },
-    Refusal {
-        case: Case {
             id: "T22",
             agent: Agent::Omp,
             provider: Provider::Codex,
@@ -196,7 +192,7 @@ fn account(case: &Case) -> Result<AccountName, Box<dyn std::error::Error>> {
 
 fn role() -> Result<RoleFixture, Box<dyn std::error::Error>> {
     Ok(RoleFixture::new("sentinel")?.manifest_text(
-        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.grok]\ninstructions = \"instructions/grok.md\"\n\n".to_owned(),
+        "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.grok]\ninstructions = \"instructions/grok.md\"\n\n\n[agents.kimi]\ninstructions = \"instructions/kimi.md\"\n".to_owned(),
     ))
 }
 

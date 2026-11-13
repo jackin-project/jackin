@@ -127,22 +127,13 @@ async fn supported_non_codex_tuples_launch_with_blank_model_defaults() -> TestRe
 #[tokio::test]
 async fn unavailable_and_blocked_tuples_retain_exact_reasons_without_effects() -> TestResult {
     guard(async {
-        for (agent, provider, expected_agent, expected_provider, reason) in [
-            (
-                ConsoleAgent::KimiCode,
-                ConsoleProvider::Moonshot,
-                Agent::KimiCode,
-                Provider::Kimi,
-                "native refresh and final live proof pending",
-            ),
-            (
-                ConsoleAgent::ClaudeCode,
-                ConsoleProvider::Anthropic,
-                Agent::ClaudeCode,
-                Provider::Claude,
-                "vendor clarification pending",
-            ),
-        ] {
+        for (agent, provider, expected_agent, expected_provider, reason) in [(
+            ConsoleAgent::ClaudeCode,
+            ConsoleProvider::Anthropic,
+            Agent::ClaudeCode,
+            Provider::Claude,
+            "vendor clarification pending",
+        )] {
             let rig = Rig::new().await?;
             let mut console = console(&rig).await?;
             let events = launch(&mut console, agent, provider).await?;
