@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Phase;
+use serde_json::Value;
 
 use crate::e2e::probe::FactsJ07;
 use crate::e2e::pty::{DETACH, PtySession};
@@ -53,6 +54,139 @@ pub(crate) struct Restart {
     pub agent_pid: Option<u32>,
 }
 
+pub const SANDBOX_UID: u32 = 1000;
+
+pub fn stat_identity(raw: &str) -> Option<(u32, u64)> {
+    let raw = raw.trim();
+    let pid = raw.split_once('(')?.0.trim().parse().ok()?;
+    let rest = raw.rsplit_once(')')?.1;
+    let start_ticks = rest.split_whitespace().nth(19)?.parse().ok()?;
+    Some((pid, start_ticks))
+}
+
+fn stat_identity_opt(raw: Option<&str>) -> Option<(u32, u64)> {
+    raw.and_then(stat_identity)
+}
+
+pub fn judge_launcher_identity(facts: &Value) -> Vec<String> {
+    match serde_json::from_value::<FactsJ07>(facts.clone()) {
+        Ok(parsed) => identity_problems(&parsed),
+        Err(error) => vec![format!(
+            "the J07 launcher identity facts do not parse: {error}"
+        )],
+    }
+}
+
+fn identity_problems(facts: &FactsJ07) -> Vec<String> {
+    let mut problems = Vec::new();
+    let Some(identity) = &facts.launcher_identity else {
+        problems.push("the probe report lacks the launcher identity facts".to_owned());
+        return problems;
+    };
+    if !identity.checks.exe_matches_interpreter {
+        problems.push(
+            "the launcher interpreter identity is not bound to the running executable".to_owned(),
+        );
+    }
+    if !identity.checks.argv.argv0_matches || !identity.checks.argv.argv1_matches {
+        problems.push(
+            "the launcher argv slots do not match the recorded interpreter identity".to_owned(),
+        );
+    }
+    if identity.checks.argv.argv2_matches == Some(false) {
+        problems.push(
+            "the launcher script argv slot does not match the recorded interpreter identity"
+                .to_owned(),
+        );
+    }
+    if identity.interpreter.is_empty() || identity.interpreter_resolved.is_empty() {
+        problems.push("the launcher interpreter identity is empty".to_owned());
+    }
+    if let Some(argument) = &identity.interpreter_arg
+        && (argument.is_empty() || identity.checks.argv.argv2_matches != Some(true))
+    {
+        problems.push(
+            "the launcher interpreter argument is not bound to the script argv slot".to_owned(),
+        );
+    }
+    let exe = identity.exe.as_deref().unwrap_or_default();
+    if exe.is_empty() {
+        problems.push("the launcher identity record lacks the running executable".to_owned());
+    } else if exe != identity.interpreter_resolved {
+        problems.push(format!(
+            "the launcher runs {exe} but the interpreter resolves to {}",
+            identity.interpreter_resolved
+        ));
+    }
+    match identity
+        .uid
+        .as_deref()
+        .and_then(|uid| uid.trim().parse::<u32>().ok())
+    {
+        Some(SANDBOX_UID) => {}
+        Some(uid) => problems.push(format!(
+            "the launcher runs as uid {uid}, not the sandbox uid {SANDBOX_UID}"
+        )),
+        None => problems.push("the launcher identity record lacks the running uid".to_owned()),
+    }
+    let comm = identity.comm.as_deref().unwrap_or_default();
+    if comm.is_empty() {
+        problems.push("the launcher identity record lacks the recorded command name".to_owned());
+    } else if let Some(main) = &facts.processes.main
+        && comm != main.comm
+    {
+        problems.push(format!(
+            "the launcher identity comm {comm} does not match the recorded main process {}",
+            main.comm
+        ));
+    }
+    let stat_present = |raw: Option<&str>| raw.is_some_and(|raw| !raw.trim().is_empty());
+    if !stat_present(identity.stat_pre.as_deref()) {
+        problems.push("the launcher identity record lacks the pre-launch stat evidence".to_owned());
+    }
+    if !stat_present(identity.stat_before.as_deref())
+        || !stat_present(identity.stat_after.as_deref())
+    {
+        problems.push("the launcher identity record lacks stat evidence".to_owned());
+    }
+    let pre = stat_identity_opt(identity.stat_pre.as_deref());
+    let before = stat_identity_opt(identity.stat_before.as_deref());
+    let after = stat_identity_opt(identity.stat_after.as_deref());
+    for (label, raw, parsed) in [
+        ("pre-launch", identity.stat_pre.as_deref(), pre),
+        ("pre-restart", identity.stat_before.as_deref(), before),
+        ("post-restart", identity.stat_after.as_deref(), after),
+    ] {
+        if stat_present(raw) && parsed.is_none() {
+            problems.push(format!("the launcher {label} stat evidence does not parse"));
+        }
+    }
+    if let (Some(pre_identity), Some(before_identity)) = (pre, before)
+        && pre_identity != before_identity
+    {
+        problems.push(
+            "the launcher identity record does not bind to the pre-launch identity".to_owned(),
+        );
+    }
+    if let (Some((pid, ticks)), Some(main)) = (before, &facts.processes.main)
+        && (pid != main.pid || ticks != main.start_ticks)
+    {
+        problems.push(format!(
+            "the launcher identity evidence describes pid {pid} at ticks {ticks} but the recorded main process is pid {} at ticks {}",
+            main.pid, main.start_ticks
+        ));
+    }
+    if let (Some(before_id), Some(after_id)) = (before, after)
+        && before_id != after_id
+    {
+        problems.push("the launcher stat snapshots describe different processes".to_owned());
+    }
+    if !identity.checks.stable {
+        problems.push("the launcher process identity changed while it was recorded".to_owned());
+    }
+    problems
+}
+
 pub(crate) fn judge_agent(
     facts: &FactsJ07,
     before: &[PsRow],
@@ -60,7 +194,7 @@ pub(crate) fn judge_agent(
     restart: &Restart,
     comm: &str,
 ) -> Vec<String> {
-    let mut problems = Vec::new();
+    let mut problems = identity_problems(facts);
     match (
         agent_of(before, comm),
         &facts.processes.main,

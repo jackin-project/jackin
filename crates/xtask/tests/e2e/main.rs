@@ -19,5 +19,6 @@ mod g_cleanup;
 mod h_args;
 mod i_target;
 mod j_supported;
+mod k_identity;
 mod scenario;
 mod support;
