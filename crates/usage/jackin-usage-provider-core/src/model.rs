@@ -167,7 +167,7 @@ impl Bucket {
         other_label: &str,
     ) -> Bucket {
         let by_length = window_seconds.and_then(kind_from_seconds);
-        let kind = by_length.or(slot).unwrap_or(BucketKind::Other);
+        let kind = slot.or(by_length).unwrap_or(BucketKind::Other);
         let label = if let Some(fixed) = kind_label(kind) {
             prefixed(prefix, fixed)
         } else {

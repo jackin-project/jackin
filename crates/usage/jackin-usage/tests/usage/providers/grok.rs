@@ -25,6 +25,8 @@ const NULL_CONFIG: &str = include_str!("../fixtures/grok/billing_null_config.jso
 const AUTH: &str = include_str!("../fixtures/grok/auth.json");
 const EXPIRED: &str = include_str!("../fixtures/grok/auth_expired.json");
 const TWO_SCOPES: &str = include_str!("../fixtures/grok/auth_two_scopes.json");
+const TWO_PREFERRED: &str = include_str!("../fixtures/grok/auth_two_preferred.json");
+const MONTHLY_DECLARED: &str = include_str!("../fixtures/grok/billing_monthly_declared.json");
 const AUTH_PATH: &str = "/home/work/.grok/auth.json";
 
 const WEEK: Want = want(
@@ -240,6 +242,41 @@ async fn an_auth_file_gives_its_key_port_fidelity() -> TestResult {
 async fn the_auth_x_ai_scope_wins_over_a_sign_in_scope_port_fidelity() -> TestResult {
     guard(async {
         assert_windows(&login_outcome(TWO_SCOPES, TOKEN).await?, &[WEEK, EXTRA]);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_login_with_two_preferred_scopes_is_a_provider_error() -> TestResult {
+    guard(async {
+        let outcome = login_outcome(TWO_PREFERRED, TOKEN).await?;
+        match unavailable(&outcome) {
+            UnavailableReason::Provider(message) => {
+                assert_eq!(
+                    message,
+                    "the Grok login file has more than one usable entry"
+                );
+                assert!(!message.contains(TOKEN), "{message}");
+            }
+            other => panic!("expected a provider reason, found {other:?}"),
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_declared_monthly_period_beats_the_window_length() -> TestResult {
+    guard(async {
+        let monthly = want(
+            WindowKind::Monthly,
+            "monthly",
+            Some(42.5),
+            Left::Percent(57.5),
+            Some(1_780_876_800),
+        );
+        assert_windows(&outcome(MONTHLY_DECLARED).await?, &[monthly, EXTRA]);
         Ok(())
     })
     .await
