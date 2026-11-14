@@ -15,7 +15,7 @@
 | §1 | Approval set — CONFIRMED DEBRIS | 15 |
 | §1a | Complete absent-path accounting for all 15 rows | 15 |
 | §1b | The measurement this document rests on — repos, `main` tips, commands | — |
-| §2 | Rows OUTSIDE the approval set — mixed classes (1 DEBRIS candidate · 3 VALUABLE — must not be deleted) | 4 |
+| §2 | Rows OUTSIDE the approval set — DEBRIS-class (superseded), each needs its own word | 4 |
 | §3 | CONTAINED candidates — containment UNPROVEN (kept, NOT deletable) | 4 |
 | §4 | The operator's one-word approval text | — |
 | §5 | Nothing merged, nothing deleted | — |
@@ -82,7 +82,7 @@ Expected after the deletions (live counts re-read 2026-11-14 20:12 UTC, §7): ja
 **Every path that a deletion would remove is accounted for below.** The numbers are re-derived from the
 live repositories — not inherited from the audits — against the `main` tips named in §1b.
 
-Three numbers per row:
+Four numbers per row:
 
 - **absent from `main`** — the path is in the branch tip's tree and not in `main`'s tree.
 - **content not in `main`'s history** — of the absent paths, the ones whose blob never occurs in
@@ -92,6 +92,11 @@ Three numbers per row:
 - **same path in `main`, different revision** — the paths `main` still holds in another revision. The
   branch's revision of them is either preserved in `main`'s object history or is branch-only; the third
   table below accounts for them.
+- **in no retained ref** — of those branch-only paths, the ones no surviving ref holds either. A
+  **retained ref** is every ref that survives the operation: `main` plus every branch of the repository
+  that is not one of the 15 rows of §1. The fourth table below accounts for the rest of what a deletion
+  removes: the objects that only the branch's **history** holds, including content that its earlier
+  commits carried and that is no longer in the tip tree.
 
 | # | repo | absent from `main` | content not in `main`'s history | what those paths are |
 |---|---|---|---|---|
@@ -163,6 +168,48 @@ therefore a superset of the audit's. The largest branch-only revisions in rows 1
 the test documentation `docs/testing/**` and `docs/ci.md` (71) — the same residue profile the audit
 recorded ("capture-harness lines", "pre-refactor variants").
 
+**What else the deletion removes: the objects only the branch's history holds.** A ref deletion makes
+the whole history of the branch unreachable, not just its tip tree. The table below counts the objects
+that no retained ref holds (`git rev-list --objects "$T" --not <every retained ref>`) — the commits that
+exist only on the branch and the trees and blobs they carry, including content that earlier commits held
+and the tip tree no longer has.
+
+| # | repo | tip-tree paths whose content is in no retained ref | objects only this branch holds (of which commits) |
+|---|---|---|---|
+| 1 | jackin-project/jackin | 1 | 5 (1) |
+| 2 | jackin-project/jackin | 58 | 75 (3) |
+| 3 | jackin-project/jackin | 22 | 335 (25) |
+| 4 | jackin-project/jackin | 0 | 30 (1) |
+| 5 | jackin-project/jackin | 13 | 91 (1) |
+| 6 | jackin-project/jackin | 0 | 30 (1) |
+| 7 | jackin-project/jackin | 4 | 163 (9) |
+| 8 | jackin-project/jackin | 13 | 98 (1) |
+| 9 | jackin-project/jackin | 0 | 119 (7) |
+| 10 | jackin-project/jackin | 18 of 20 | 1065 (223) |
+| 11 | jackin-project/jackin-agent-smith | 7 | 13 (1) |
+| 12 | jackin-project/jackin-agent-smith | 0 | 1 (1) |
+| 13 | tailrocks/terminal-components-baseline | 1 | 10643 (666) |
+| 14 | tailrocks/terminal-components-baseline | 9117 | 14047 (649) |
+| 15 | tailrocks/terminal-components-baseline | 1904 | 7408 (649) |
+
+The retained set used for the measurement (2026-11-14 22:09 UTC) was: for `jackin-project/jackin`,
+`main` plus the 60 branches that are not one of the 10 jackin rows of §1; for
+`jackin-project/jackin-agent-smith`, `main` (both other branches are rows of §1); for
+`tailrocks/terminal-components-baseline`, `main` and `preserve/local-unique-20261109` (the third
+non-`main` branch is row 13).
+
+**What this means for the operator.** Rows 13-15 carry hundreds of commits whose objects only the branch
+holds (666, 649 and 649 commits). Their *content* is accounted for above — generated capture output, legacy
+baselines and scratch fixtures — but their **history** is not recoverable after the deletion. If the
+operator wants the history as well as the content, the branch can be preserved instead of deleted:
+
+```bash
+git push https://github.com/<repo>.git <tip>:refs/heads/archive/<branch>
+```
+
+A retention ref under `refs/heads/archive/` keeps every object reachable, and the audit's own guidance
+for the rows of §2 is the same. Nothing in this document creates such a ref; the operator's word decides.
+
 **What the accounting says.** For rows 1, 2, 4, 6, 7, 9, 12 and 13 the content a deletion removes is
 documentation, configuration or scratch — no product code. For rows 3, 5, 8, 10 and 11 the content is
 **not** in `main`: it is a pre-rewrite revision of modules the OpenShell rewrite (#1264, `f683619b5`)
@@ -183,13 +230,19 @@ bytes.
 | `jackin-project/jackin-agent-smith` | `a9b8c8aea74dc2c777eb8df23ea22647c8ceaf40` |
 | `tailrocks/terminal-components-baseline` | `8063050cdb483e31284c107808b207c92e2d3203` |
 
-**The commands** (one row of §1; row 14 as the worked example):
+**The commands** (one row of §1; row 14 as the worked example). `M` is **pinned to the recorded SHA**,
+not to `origin/main`: once `main` advances, `M` keeps the measurement reproducible, and re-measuring
+against a later `main` is a deliberate act that changes the SHA in the table above.
 
 ```bash
 repo=https://github.com/tailrocks/terminal-components-baseline
 git clone --quiet "$repo" /tmp/tcb && cd /tmp/tcb && git fetch origin
 T=0b8b8bb077061eee6ca04466148f017e316edfd3                 # the §1 row's tip
-M=$(git rev-parse origin/main)                              # 8063050c… the tip named above
+M=8063050cdb483e31284c107808b207c92e2d3203                 # the main tip named above, pinned
+
+# the measurement is pinned to that commit, not to the moving branch name:
+git fetch origin "$M" --quiet                              # fetch that exact commit
+test "$(git rev-parse "$M^{commit}")" = "$M" || { echo "main tip $M is not in this clone"; exit 1; }
 
 # every path of the branch tip that does not exist in main's tree
 git ls-tree -r "$T" | awk '{print $4" "$3}' | sort > /tmp/tip.txt
@@ -207,6 +260,10 @@ while read -r p b; do grep -qx "$b" /tmp/main-blobs.txt || echo "$p"; done < /tm
 join -1 1 -2 1 /tmp/tip.txt /tmp/main-tree.txt | awk '$2 != $3' > /tmp/differing.txt
 wc -l < /tmp/differing.txt                        # 334
 while read -r p tb mb; do grep -qx "$tb" /tmp/main-blobs.txt || echo "$p"; done < /tmp/differing.txt | wc -l
+
+# the fourth bucket: the objects only this branch's history holds
+# (RETAINED = every ref that survives the operation: main + every branch that is not a §1 row)
+git rev-list --objects "$T" --not $RETAINED | wc -l        # 14047 objects for row 14
 ```
 
 **The audits.** The evidence that produced these verdicts is committed with this document under
@@ -219,20 +276,20 @@ named above, so the verdicts can be checked without the audits' working copies.
 
 ---
 
-## 2. Rows OUTSIDE the approval set (4 rows) — mixed classes: 1 DEBRIS candidate, 3 VALUABLE (must not be deleted)
+## 2. Rows OUTSIDE the approval set (4 rows) — DEBRIS-class (superseded), each needs its own word
 
 **These 4 rows are NOT part of the approval set.** The operator's word in §4 does **not** cover them; each one needs a separate, explicit word of its own. They are listed here so that the operator sees the whole picture, and so that a later deletion cannot be mistaken for a covered one.
 
-**This section is mixed — read the per-row class.** Only **row 1** is a DEBRIS-class deletion candidate, and only row 1 is the subject of a deletion word. Rows 2-4 are **VALUABLE** and **must not be deleted**: they are the sole carriers of a security fix and of two product implementations that exist nowhere else. The section heading deliberately does **not** call all four "DEBRIS-class"; the DEBRIS label and the deletion-word language belong to row 1 alone.
+**All four are DEBRIS-class by the merged inventory's final classes** (`rewrite/triage/branch-inventory-2026-11-12.md`): `recovery/pr1230-blob-auth-77b399f1-20261027`, `recovery/stash-adoption-6a0d2f03-20261025` and `recovery/strip-tests-restore-20261030` are recorded as **"DEBRIS (superseded) - port verdict DISCARD"**, and `preserve/p0.6-prototype-20261109` as **DEBRIS**. The classes below are the **completed** port verdicts, not the interim ones from the evidence audit: rows 2-4 were reclassified DEBRIS → VALUABLE (port candidates) on 2026-11-13 and then moved **back** to DEBRIS-class (superseded) the same day, when the completed port assessment returned DISCARD. **Row 4 carries a prerequisite: its P1 slice must be materialized before it can be deleted.**
 
-| # | repo | branch | tip | class now | what it needs | in the approval set? |
+| # | repo | branch | tip | class now (merged inventory) | what it needs | in the approval set? |
 |---|---|---|---|---|---|---|
 | 1 | jackin-project/jackin | `preserve/p0.6-prototype-20261109` | `63b2976a5` | **DEBRIS** (unproven review, 2026-11-13) | Its own deletion word. The branch holds a by-design non-mergeable prototype: 20/20 absent paths are `prototypes/p0.6/**`, while its evidence `rewrite/evidence/P0.6-panes.md` is byte-identical in main. The inventory lists it separately as an UNPROVEN CONTAINED candidate; the completed review reclassifies it as DEBRIS. | **NO** |
-| 2 | jackin-project/jackin | `recovery/pr1230-blob-auth-77b399f1-20261027` | `77b399f1` | **RECLASSIFIED → VALUABLE** (must not be deleted) | Its own word **to keep it**. It is the only carrier of the landed-nowhere `GitBlobHasher` security fix: 81 truly unique absent paths (77 product code, incl. `crates/tools/jackin-xtask/**`, `crates/core/jackin-process/**`). | **NO** |
-| 3 | jackin-project/jackin | `recovery/stash-adoption-6a0d2f03-20261025` | `ade401e7` | **RECLASSIFIED → VALUABLE** (must not be deleted) | Its own word **to keep it** (or to archive it under a tag/retention ref before any future delete). It holds 24 truly unique paths — the only surviving implementation of the `precommit_provision` / `precommit_snapshot` product design. | **NO** |
-| 4 | jackin-project/jackin | `recovery/strip-tests-restore-20261030` | `8508f6f8` | **RECLASSIFIED → VALUABLE** (must not be deleted) | Its own word **to keep it** (or to archive it under a tag/retention ref before any future delete). It holds 355 truly unique product/test files (e.g. `crates/adapters/jackin-docker/src/**`, `crates/apps/jackin-capsule/src/**`, `crates/adapters/jackin-omp-store/src/capture.rs`) with no other copy on any remote. | **NO** |
+| 2 | jackin-project/jackin | `recovery/pr1230-blob-auth-77b399f1-20261027` | `77b399f1` | **DEBRIS (superseded) — port verdict DISCARD** | Its own deletion word. The branch is the only carrier of the landed-nowhere `GitBlobHasher` security fix (81 truly-unique paths, 77 of them product code, incl. `crates/tools/jackin-xtask/**`, `crates/core/jackin-process/**`), but the completed port assessment returned **DISCARD**: `main` never streams staged blobs (it delegates the OID computation to Git at `crates/jackin-session/src/project/gate.rs:58`), so a semantic port is ~1200-1600 lines and a cherry-pick conflicts on 5/5 touched files. The port reference is kept, no port. | **NO** |
+| 3 | jackin-project/jackin | `recovery/stash-adoption-6a0d2f03-20261025` | `ade401e7` | **DEBRIS (superseded) — port verdict DISCARD** | Its own deletion word (or to archive it under a tag/retention ref before any future delete). It holds 24 truly-unique paths — the only surviving implementation of the `precommit_provision` / `precommit_snapshot` product design — but the rewrite program explicitly deleted that design (`rewrite/research/jackin-infra.md:231,261`: the hook-install scripts are "DELETE; replace with `mise exec --locked -- hk install`"), so the port assessment returned **DISCARD**: ~5809 LOC + ~1000 LOC of shell + two recreated host crates. The port reference is kept, no port. | **NO** |
+| 4 | jackin-project/jackin | `recovery/strip-tests-restore-20261030` | `8508f6f8` | **DEBRIS (superseded) — port verdict DISCARD as a port source; 1 PORT-LATER carve-out (P1)** | **Its own word, and only after the P1 slice is materialized.** The branch measures **3,844 path-absent / 3,868 content-unique** paths — the earlier audit's 2,464/355 was corrected on 2026-11-13 (the branch forked before the rewrite, merge-base `7c92234bd`), not 355. The **P1 carve-out** is the OMP credential-store capture hardening `crates/adapters/jackin-omp-store/src/capture.rs`: it exists nowhere in `main` and on no other ref, so **the branch must stay until that slice is ported**. The P2 carve-out (the agent-status / hook-installer slice) is **DISCARD** (`rewrite/DESIGN.md:272-281`, D16 deletes agent-status inference). | **NO** |
 
-Only row 1 is a DEBRIS-class deletion candidate and it is the only row here that any deletion word would apply to; rows 2-4 are VALUABLE and **must not** be deleted. All four are live on the remote (§7).
+All four are DEBRIS-class by the inventory's final classes, all four are live on the remote (§7), and **none of them is covered by the operator's word in §4**. Row 4 is not deletable until its P1 slice is ported.
 
 ---
 
@@ -283,7 +340,7 @@ A refusal, a different count, or any other wording is a refusal: **nothing is de
 
 - **No branch in the approval set has been merged.** Their tips are not ancestors of their repository's `main`, and no merge was performed for this document.
 - **No branch in the approval set has been deleted.** All 15 are still on their remotes (§7); the deletion happens **only after the operator's word** (§4).
-- **Nothing outside the approval set is deleted.** The 4 mixed-class rows of §2 (1 DEBRIS candidate + 3 VALUABLE, must not be deleted) and the 4 UNPROVEN CONTAINED candidates of §3 stay as they are; the VALUABLE rows of §8 are untouched.
+- **Nothing outside the approval set is deleted.** The 4 DEBRIS-class rows of §2 (each needs its own word; row 4 only after its P1 slice is ported) and the 4 UNPROVEN CONTAINED candidates of §3 stay as they are; the VALUABLE rows of §8 are untouched.
 - This document, its commit and its PR **delete nothing**: they only publish the list. The only command shape it contains is the per-branch `git push --force-with-lease=refs/heads/<branch>:<tip-SHA> https://github.com/<repo>.git --delete <branch>` of §1, to be run by the operator after ratification; each of those commands names its repository by URL (never by the alias `origin`) and refuses to run if the branch's tip has moved.
 
 ---

@@ -1,5 +1,15 @@
 # UNPROVEN CONTAINED candidates — per-branch proof (jackin-project/jackin)
 
+> **Committed as the capture-time record (2026-11-14).** The published, operator-facing document is
+> `rewrite/triage/debris-ratification-2026-11-14.md`; where the two differ, **the publication wins**.
+> The four `CONTAINED-safe-to-delete` verdicts below are **SUPERSEDED**: the merged inventory
+> (`rewrite/triage/branch-inventory-2026-11-12.md`) classes these branches as **"CONTAINED (candidate) -
+> UNPROVEN, KEPT"** and its class rule says such a branch "must be treated as VALUABLE (NOT deletable)
+> until every absent path is proven to be scratch/archive". The publication's §3 records the proof that
+> is still missing: the five usage fixtures these branches carry are **absent from `main`** and the
+> product-code paths have no inventory-grade (merged-PR / patch-id / ancestry) containment proof.
+> **Do not delete these branches.** The per-path proof below is kept as the record of the review.
+
 Repo: https://github.com/jackin-project/jackin (https clone into `/tmp/triage/repo`, read-only inspection).
 Main tip inspected: `origin/main` = 7a53f6abe "fix: land the accepted review findings from #1264 (#1275)" (2026-11-13).
 Key structural fact used by every proof: main received the OpenShell rewrite as ONE squash,

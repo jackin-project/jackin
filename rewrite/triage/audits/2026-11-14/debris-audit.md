@@ -22,6 +22,16 @@ For each row: `git clone --quiet https://...` (HTTPS; ssh denied), `git fetch or
 
 A path is counted **TRULY UNIQUE** only if its blob is absent from `origin/main`'s tree AND from `origin/main`'s object history AND from every other remote ref's history.
 
+> **Correction, 2026-11-14 (the definition above is superseded).** "Every other remote ref" includes the
+> refs that are **in the same deletion batch**, so this audit under-counts what a batch deletion removes.
+> Rows 5 and 8 are the visible case: each is reported here as "2 unique", while the publication's §1a
+> (`rewrite/triage/debris-ratification-2026-11-14.md`) measures **13** paths on each branch whose content
+> never occurs in `main`'s history — and the ten `crates/**` paths among them are shared **only** between
+> these two branches, so deleting both removes the last recorded copies of them. The per-row "unique"
+> counts in this file are therefore **superseded** by §1a, which measures against `main`'s history, and by
+> §1a's fourth table, which measures against the **retained** refs only (`main` plus every branch that is
+> not one of the 15 approved rows).
+
 ## Verdict summary
 
 | verdict | count |
