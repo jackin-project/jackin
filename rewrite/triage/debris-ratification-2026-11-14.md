@@ -263,33 +263,27 @@ while read -r p tb mb; do grep -qx "$tb" /tmp/main-blobs.txt || echo "$p"; done 
 
 # the fourth bucket: the objects only this branch's history holds.
 # RETAINED = every ref that survives the operation: main + every branch of the repository
-# that is not one of the 15 rows of §1. Build the argument list first - `git rev-list --not`
-# needs the revisions as arguments, and an unset variable would silently drop them.
-RETAINED="refs/remotes/origin/main"
-for ref in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin); do
-  case "$ref" in
-    chore/triage-inventory-20261112|docs/pr1228-replacement-20261026|\
-    recovery/openrouter-exact-money-20261027|recovery/stash-2f8cc42b-20261023|\
-    recovery/stash-2fb075f8-20261023|recovery/stash-88f5643c-20261023|\
-    recovery/stash-be51ff69-20261023|recovery/stash-d808d094-20261023|\
-    recovery/strict-merge-gate-merge-readiness-20261022|rollout/velnor-3-provider)
-      ;;
-    *) RETAINED="$RETAINED refs/remotes/origin/$ref" ;;
-  esac
-done
+# that is not one of the 15 rows of §1. The refs and their tips are captured in the
+# repository, so the subtraction does not move when a retained branch advances:
+#   rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt  (<repo> <ref> <sha>)
+RETAINED=$(awk '$1=="tailrocks/terminal-components-baseline" {print $3}' \
+  rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt | tr '\n' ' ')
+git fetch origin --quiet                 # make the pinned tips available in the clone
 git rev-list --objects "$T" --not $RETAINED | wc -l        # 14047 objects for row 14
 ```
 
-The list above is the jackin one; for the two other repositories the excluded rows are
-`test/pre-refactor-protection`, `wip/tuiscotti-capture-only` and `wip/tuiscotti-fixcheck` (baseline) and
-the two `recovery/20261006/...` branches (smith). The snippet as written reproduces the row-14 number
-**14047** and the row-10 number **1065** — both were measured with it.
+For the other two repositories, replace the repository name in the `awk` filter with
+`jackin-project/jackin` (rows 1-10, 60 retained refs) or `jackin-project/jackin-agent-smith` (rows 11-12,
+1 retained ref). The snippet as written reproduces the row-14 number **14047** and, with the jackin
+filter, the row-10 number **1065** — both were measured with it.
 
 **The audits.** The evidence that produced these verdicts is committed with this document under
 `rewrite/triage/audits/2026-11-14/`: `debris-audit.md` (the 18-row audit, its method and its per-row
 verdicts), `debris-ratification.md` (the list before this publication), `smith-debris-verify.md` (the
 jackin-agent-smith rows), `unproven-review.md` (the per-path proof for the 4 CONTAINED candidates of §3),
-`inventory-parity.md`, `architect-smith-audit.md` and `baseline-rows-audit.md`. They were written against
+`inventory-parity.md`, `architect-smith-audit.md` and `baseline-rows-audit.md`, plus
+`retained-refs-2026-11-14.txt` (the retained refs and their pinned tips that the fourth bucket of §1a
+was measured against). They were written against
 `main` `7a53f6abe` / `78d3b86e`; §1a re-derives the numbers the deletion verdicts rest on against the tips
 named above, so the verdicts can be checked without the audits' working copies.
 
@@ -314,7 +308,11 @@ All four are DEBRIS-class by the inventory's final classes, all four are live on
 
 ## 3. CONTAINED candidates — containment UNPROVEN (4) — kept, NOT deletable
 
-**These 4 are CONTAINED *candidates* whose containment is NOT proven — they are not DEBRIS, and they are not safe to delete either.** The merged inventory `rewrite/triage/branch-inventory-2026-11-12.md` classes all four as **"CONTAINED (candidate) - UNPROVEN, KEPT"**, and its class definition states that such branches "must be treated as VALUABLE (NOT deletable) until every absent path is proven to be scratch/archive". They are therefore **excluded from this ratification by class, not by doubt**: the operator's word in §4 does not cover them, they are not DEBRIS, and nothing in this document proposes deleting them. They are kept here as a record, with their recorded proofs **and the proof that is still missing**.
+**These 4 are CONTAINED *candidates* whose containment is NOT proven — they are not DEBRIS, and they are not safe to delete either.**
+
+**This publication supersedes the merged inventory's class label for these four rows.** The inventory `rewrite/triage/branch-inventory-2026-11-12.md` labels them **"CONTAINED - safe to delete"** — in its rows for `codex/openshell-integration-checkpoint-20261108-122311`, `codex/openshell-verified-checkpoint-20261108`, `preserve/session-boundaries-20261109` and `preserve/w1-fixes-20261109`, and again in its class-change table. **That label is not safe to act on**, and the inventory's own class *rule* — "**CONTAINED candidate - UNPROVEN** — the branch is *believed* to be contained, but the proof is incomplete: the paths it changes are ABSENT from `main` and carry product code, so containment is NOT proven. Such branches … must be treated as VALUABLE (NOT deletable) until every absent path is proven to be scratch/archive" — and the per-row evidence the inventory itself carries (the 2026-11-13 unproven review, quoted below) both point the other way: the five usage fixtures are absent from `main`, and the product-code paths have no inventory-grade proof.
+
+**The disposition of these four branches is therefore UNPROVEN, KEPT — do not delete them**, whatever the class column of the inventory says. An operator who reads the inventory alone gets the opposite disposition; this section is the correction, and it is the one that governs. They are **excluded from this ratification by class, not by doubt**: the operator's word in §4 does not cover them, they are not DEBRIS, and nothing in this document proposes deleting them. They are kept here as a record, with their recorded proofs **and the proof that is still missing**.
 
 **Missing proof — all 4 rows.** Two things are **not** proven for any of these four branches, so none of them may be called safe to delete:
 
@@ -465,7 +463,7 @@ Not part of any approval set; listed so that no one mistakes them for debris. Ro
 - The 15 rows of §1 were re-read live from the remotes on 2026-11-14 and re-verified at 13:17 and 20:12 UTC (§7); the tip SHAs match the audited ones, and each deletion command is leased against that exact SHA, so a moved branch is refused rather than deleted. The audits behind the verdicts are committed with this document (`rewrite/triage/audits/2026-11-14/`), and the absent-path accounting of §1a is re-derived here against the `main` tips of §1b — the audits themselves were written against `main` `7a53f6abe` / `78d3b86e`, so their per-row numbers are the capture-time numbers and §1a is the current one.
 - The 20 recorded CONTAINED deletions from the previous round could not be re-proved from the remotes (their refs are gone); their recorded proofs were read and accepted.
 - `git cherry` counts are patch-id based and report squash-landed commits as unmatched; no verdict depends on them.
-- The 4 CONTAINED candidates of §3 are listed as **UNPROVEN** CONTAINED candidates, not as DEBRIS and **not** as safe-to-delete: they are excluded from this ratification by class, not by doubt. Their containment proof is still incomplete (§3), so they are treated as VALUABLE and kept.
+- The 4 CONTAINED candidates of §3 are listed as **UNPROVEN** CONTAINED candidates, not as DEBRIS and **not** as safe-to-delete: they are excluded from this ratification by class, not by doubt. **This publication supersedes the merged inventory's "CONTAINED - safe to delete" label for exactly these four rows** (§3); the inventory's class rule ("CONTAINED candidate - UNPROVEN") and its own per-row evidence agree with §3, and the five usage fixtures the branches carry are absent from `main`. Their containment proof is still incomplete (§3), so they are treated as VALUABLE and kept.
 - The branches of §7 that are outside every class list (4 recorded individually, 50 in total at the 20:12 UTC re-check) were created after the inventory was captured; their tips moved between the compiles of this document and they are not audited here at all. They are outside every class list and outside the operator's word.
 - §6 records a deletion that happened before this document; it is a ratification of a fact, not a new deletion.
 - Nothing was deleted, pushed to a branch, merged or tagged in producing this document; only this file and the seven audit files under `rewrite/triage/audits/2026-11-14/` were added.
