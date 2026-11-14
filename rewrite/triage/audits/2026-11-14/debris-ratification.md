@@ -4,9 +4,11 @@
 > `rewrite/triage/debris-ratification-2026-11-14.md`; where the two differ, **the publication wins**.
 > Two parts of this file are superseded by it and are marked below: the runnable deletion block in §4
 > (it was unguarded and target-ambiguous - the publication's commands are leased against the recorded
-> tip and name their repository by URL) and the four `CONTAINED-safe-to-delete` verdicts in §2 (the
-> publication's §3 records them as **UNPROVEN, KEPT**, because the five usage fixtures they carry are
-> absent from `main` and their product-code paths have no inventory-grade containment proof).
+> tip and name their repository by URL) and the four `CONTAINED-safe-to-delete` verdicts in §2. The
+> merged inventory (`rewrite/triage/branch-inventory-2026-11-12.md`) labels those four branches
+> **"CONTAINED - safe to delete"**; **the disposition that governs is the publication's — UNPROVEN, KEPT**
+> (§3), which supersedes that label for exactly these four rows, because the five usage fixtures they
+> carry are absent from `main` and their product-code paths have no inventory-grade containment proof.
 > The audit files named below are committed next to this one, in `rewrite/triage/audits/2026-11-14/`.
 
 Source of truth: `jackin-project/jackin` @ `main` (PR #1280, merge `78d3b86e`)

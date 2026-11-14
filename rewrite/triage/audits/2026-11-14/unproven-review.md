@@ -2,13 +2,17 @@
 
 > **Committed as the capture-time record (2026-11-14).** The published, operator-facing document is
 > `rewrite/triage/debris-ratification-2026-11-14.md`; where the two differ, **the publication wins**.
-> The four `CONTAINED-safe-to-delete` verdicts below are **SUPERSEDED**: the merged inventory
-> (`rewrite/triage/branch-inventory-2026-11-12.md`) classes these branches as **"CONTAINED (candidate) -
-> UNPROVEN, KEPT"** and its class rule says such a branch "must be treated as VALUABLE (NOT deletable)
-> until every absent path is proven to be scratch/archive". The publication's §3 records the proof that
-> is still missing: the five usage fixtures these branches carry are **absent from `main`** and the
-> product-code paths have no inventory-grade (merged-PR / patch-id / ancestry) containment proof.
-> **Do not delete these branches.** The per-path proof below is kept as the record of the review.
+> The four `CONTAINED-safe-to-delete` verdicts below are **SUPERSEDED**. The merged inventory
+> (`rewrite/triage/branch-inventory-2026-11-12.md`) labels these branches **"CONTAINED - safe to delete"**
+> (its rows for the two `codex/openshell-*` checkpoints, `preserve/session-boundaries-20261109` and
+> `preserve/w1-fixes-20261109`), so **that label is what a reader of the inventory finds** — it must not
+> be acted on. **The disposition that governs is the publication's: UNPROVEN, KEPT** (§3 of
+> `rewrite/triage/debris-ratification-2026-11-14.md`), which **supersedes the inventory's label for these
+> four rows**. The inventory's own class rule ("CONTAINED candidate - UNPROVEN … must be treated as
+> VALUABLE (NOT deletable) until every absent path is proven to be scratch/archive") and the per-row
+> evidence it carries point the same way: the five usage fixtures these branches carry are **absent from
+> `main`** and the product-code paths have no inventory-grade (merged-PR / patch-id / ancestry) containment
+> proof. **Do not delete these branches.** The per-path proof below is kept as the record of the review.
 
 Repo: https://github.com/jackin-project/jackin (https clone into `/tmp/triage/repo`, read-only inspection).
 Main tip inspected: `origin/main` = 7a53f6abe "fix: land the accepted review findings from #1264 (#1275)" (2026-11-13).

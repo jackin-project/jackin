@@ -235,6 +235,8 @@ not to `origin/main`: once `main` advances, `M` keeps the measurement reproducib
 against a later `main` is a deliberate act that changes the SHA in the table above.
 
 ```bash
+# the retained-ref list lives in this repository - take its path before the clone moves us
+RETAINED_FILE="$PWD/rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt"
 repo=https://github.com/tailrocks/terminal-components-baseline
 git clone --quiet "$repo" /tmp/tcb && cd /tmp/tcb && git fetch origin
 T=0b8b8bb077061eee6ca04466148f017e316edfd3                 # the §1 row's tip
@@ -266,8 +268,7 @@ while read -r p tb mb; do grep -qx "$tb" /tmp/main-blobs.txt || echo "$p"; done 
 # that is not one of the 15 rows of §1. The refs and their tips are captured in the
 # repository, so the subtraction does not move when a retained branch advances:
 #   rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt  (<repo> <ref> <sha>)
-RETAINED=$(awk '$1=="tailrocks/terminal-components-baseline" {print $3}' \
-  rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt | tr '\n' ' ')
+RETAINED=$(awk '$1=="tailrocks/terminal-components-baseline" {print $3}' "$RETAINED_FILE" | tr '\n' ' ')
 git fetch origin --quiet                 # make the pinned tips available in the clone
 git rev-list --objects "$T" --not $RETAINED | wc -l        # 14047 objects for row 14
 ```
