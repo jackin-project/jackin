@@ -25,6 +25,10 @@ fn proc(pid: u32, ppid: u32, comm: &str, ticks: u64, tty: Option<&str>) -> Value
     json!({"pid": pid, "ppid": ppid, "sid": pid, "comm": comm, "start_ticks": ticks, "tty": tty})
 }
 
+pub(crate) fn stat_line(pid: u32, comm: &str, ticks: u64) -> String {
+    format!("{pid} ({comm}) S 1 {pid} {pid} 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 {ticks}")
+}
+
 fn processes(model: &SandboxModel, own_tty: &str, descends: bool, comm: &str) -> Value {
     let pid = model.agent_pid.max(4242);
     json!({
@@ -120,6 +124,7 @@ fn project_files(dir: &Path) -> Vec<Value> {
     files
 }
 
+#[expect(clippy::too_many_lines, reason = "one match arm per probe step")]
 fn facts(
     gateway: &ScenarioGateway,
     step: &str,
@@ -202,10 +207,29 @@ fn facts(
             "preflight_failures": model.preflight_failures,
             "hooks": hooks,
         }),
-        "J07" => json!({
-            "processes": processes(model, "pts/1", false, &target.behavior().process.comm),
-            "agent_exec": exec_ok(target),
-        }),
+        "J07" => {
+            let stat = stat_line(100, "jackin-start", 1000);
+            json!({
+                "processes": processes(model, "pts/1", false, &target.behavior().process.comm),
+                "agent_exec": exec_ok(target),
+                "launcher_identity": {
+                    "interpreter": "/usr/bin/env",
+                    "interpreter_arg": "bash",
+                    "interpreter_resolved": "/usr/bin/bash",
+                    "exe": "/usr/bin/bash",
+                    "exe_matches_interpreter": true,
+                    "uid": "1000",
+                    "comm": "jackin-start",
+                    "argv0_matches": true,
+                    "argv1_matches": true,
+                    "argv2_matches": true,
+                    "stable": true,
+                    "stat_pre": stat,
+                    "stat_before": stat,
+                    "stat_after": stat,
+                },
+            })
+        }
         "J08" => json!({
             "environment": credential_environment(target),
             "agent_environment": {"main": "record", "agent": "record"},

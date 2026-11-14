@@ -814,6 +814,80 @@
         },
         "agent_exec": {
           "$ref": "#/$defs/AgentExec"
+        },
+        "launcher_identity": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/LauncherIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "LauncherIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interpreter",
+        "interpreter_arg",
+        "interpreter_resolved",
+        "exe",
+        "exe_matches_interpreter",
+        "uid",
+        "comm",
+        "argv0_matches",
+        "argv1_matches",
+        "argv2_matches",
+        "stable",
+        "stat_pre",
+        "stat_before",
+        "stat_after"
+      ],
+      "properties": {
+        "interpreter": {
+          "type": "string"
+        },
+        "interpreter_arg": {
+          "type": ["string", "null"]
+        },
+        "interpreter_resolved": {
+          "type": "string"
+        },
+        "exe": {
+          "type": ["string", "null"]
+        },
+        "exe_matches_interpreter": {
+          "type": "boolean"
+        },
+        "uid": {
+          "type": ["string", "null"]
+        },
+        "comm": {
+          "type": ["string", "null"]
+        },
+        "argv0_matches": {
+          "type": "boolean"
+        },
+        "argv1_matches": {
+          "type": "boolean"
+        },
+        "argv2_matches": {
+          "type": ["boolean", "null"]
+        },
+        "stable": {
+          "type": "boolean"
+        },
+        "stat_pre": {
+          "type": ["string", "null"]
+        },
+        "stat_before": {
+          "type": ["string", "null"]
+        },
+        "stat_after": {
+          "type": ["string", "null"]
         }
       }
     },
