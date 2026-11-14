@@ -79,6 +79,8 @@ fn an_account_reaches_the_gateway_only_through_a_supported_tuple() -> TestResult
     Ok(())
 }
 
+const EXPECTED_EXCLUDED_TUPLES: &[&str] = &["T02", "T04", "T05", "T06", "T07", "T08", "T22"];
+
 #[test]
 fn the_unavailable_and_blocked_tuples_publish_no_provider() -> TestResult {
     let mut excluded = Vec::new();
@@ -95,12 +97,7 @@ fn the_unavailable_and_blocked_tuples_publish_no_provider() -> TestResult {
             tuple.id
         );
     }
-    let expected = TUPLES
-        .iter()
-        .filter(|tuple| tuple.state != TupleState::Supported)
-        .map(|tuple| tuple.id)
-        .collect::<Vec<_>>();
-    assert_eq!(excluded, expected, "the catalog changed");
+    assert_eq!(excluded, EXPECTED_EXCLUDED_TUPLES, "the catalog changed");
     Ok(())
 }
 
