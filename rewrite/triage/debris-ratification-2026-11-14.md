@@ -261,10 +261,29 @@ join -1 1 -2 1 /tmp/tip.txt /tmp/main-tree.txt | awk '$2 != $3' > /tmp/differing
 wc -l < /tmp/differing.txt                        # 334
 while read -r p tb mb; do grep -qx "$tb" /tmp/main-blobs.txt || echo "$p"; done < /tmp/differing.txt | wc -l
 
-# the fourth bucket: the objects only this branch's history holds
-# (RETAINED = every ref that survives the operation: main + every branch that is not a §1 row)
+# the fourth bucket: the objects only this branch's history holds.
+# RETAINED = every ref that survives the operation: main + every branch of the repository
+# that is not one of the 15 rows of §1. Build the argument list first - `git rev-list --not`
+# needs the revisions as arguments, and an unset variable would silently drop them.
+RETAINED="refs/remotes/origin/main"
+for ref in $(git for-each-ref --format='%(refname:strip=3)' refs/remotes/origin); do
+  case "$ref" in
+    chore/triage-inventory-20261112|docs/pr1228-replacement-20261026|\
+    recovery/openrouter-exact-money-20261027|recovery/stash-2f8cc42b-20261023|\
+    recovery/stash-2fb075f8-20261023|recovery/stash-88f5643c-20261023|\
+    recovery/stash-be51ff69-20261023|recovery/stash-d808d094-20261023|\
+    recovery/strict-merge-gate-merge-readiness-20261022|rollout/velnor-3-provider)
+      ;;
+    *) RETAINED="$RETAINED refs/remotes/origin/$ref" ;;
+  esac
+done
 git rev-list --objects "$T" --not $RETAINED | wc -l        # 14047 objects for row 14
 ```
+
+The list above is the jackin one; for the two other repositories the excluded rows are
+`test/pre-refactor-protection`, `wip/tuiscotti-capture-only` and `wip/tuiscotti-fixcheck` (baseline) and
+the two `recovery/20261006/...` branches (smith). The snippet as written reproduces the row-14 number
+**14047** and the row-10 number **1065** — both were measured with it.
 
 **The audits.** The evidence that produced these verdicts is committed with this document under
 `rewrite/triage/audits/2026-11-14/`: `debris-audit.md` (the 18-row audit, its method and its per-row

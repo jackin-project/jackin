@@ -96,8 +96,16 @@ Separate, earlier recorded deletion (historical snapshot section of the inventor
 
 **Send exactly:** `RATIFY DEBRIS: 15 branches`
 
-(Optionally add the retroactive line for the unrecorded deletion: `RATIFY DEBRIS: 15 branches` +
-`RATIFY UNRECORDED DELETION: 1 branch (baseline wip/tuiscotti-pin-fec38841)`.)
+(Optionally add the retroactive line for the unrecorded deletion. **Use the publication's exact text**
+(`rewrite/triage/debris-ratification-2026-11-14.md`, §4) - the repository name must be spelled out, because
+the publication treats any other wording as a refusal:
+
+```text
+RATIFY DEBRIS: 15 branches
+RATIFY UNRECORDED DELETION: 1 branch (tailrocks/terminal-components-baseline wip/tuiscotti-pin-fec38841)
+```
+
+The shorter form that stood here named the repository as `baseline` and would have been rejected.)
 
 Pre-flight (read-only, confirms the 15 tips before deleting):
 ```bash
