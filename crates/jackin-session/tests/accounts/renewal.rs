@@ -104,6 +104,55 @@ async fn a_renewed_file_credential_publishes_the_new_key_and_keeps_the_old_file(
 }
 
 #[tokio::test]
+async fn a_renewed_key_refreshes_every_held_agent_specific_provider() -> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let first = put_key(&world, "work-multi", OLD_KEY).await?;
+        let account = Account::new(name("work")?, Provider::Zai, first)?;
+        run(&world, vec![ConfigEdit::AddAccount(account.clone())]).await?;
+        let cancel = CancellationToken::new();
+        for agent in [Agent::Omp, Agent::ClaudeCode, Agent::Codex] {
+            world.session.sync_account(&account, agent, &cancel).await?;
+        }
+        for agent in [Agent::Omp, Agent::ClaudeCode, Agent::Codex] {
+            let provider = ProviderName::for_account(&name("work")?, agent);
+            assert_eq!(
+                world
+                    .gateway
+                    .provider(&provider)
+                    .map(|record| record.access_token),
+                Some(OLD_KEY.to_owned()),
+                "{}",
+                agent.as_str()
+            );
+        }
+        let renewed = put_key(&world, "work-multi-new", NEW_KEY).await?;
+        run(
+            &world,
+            vec![ConfigEdit::SetAccountCredential {
+                account: name("work")?,
+                credential: renewed,
+            }],
+        )
+        .await?;
+        for agent in [Agent::Omp, Agent::ClaudeCode, Agent::Codex] {
+            let provider = ProviderName::for_account(&name("work")?, agent);
+            assert_eq!(
+                world
+                    .gateway
+                    .provider(&provider)
+                    .map(|record| record.access_token),
+                Some(NEW_KEY.to_owned()),
+                "{}",
+                agent.as_str()
+            );
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_renewal_to_a_file_with_the_same_key_keeps_one_equal_record() -> TestResult {
     guard(async {
         let world = registered().await?;

@@ -9,16 +9,14 @@ use jackin_usage::{Refresh, UnavailableReason, UsageOutcome};
 
 use crate::support::{
     CODEX_PATH, RESET_CREDITS_PATH, TestResult, UsageHarness, assert_only_state_written,
-    codex_body, codex_login, codex_reset_credits_route, guard,
+    codex_auth, codex_body, codex_login, codex_reset_credits_route, guard, put_codex_auth,
 };
-
-const AUTH: &str = include_str!("fixtures/codex/auth_chatgpt.json");
 
 async fn three_accounts()
 -> Result<(UsageHarness, Vec<jackin_usage::UsageAccount>), Box<dyn std::error::Error>> {
     let harness = UsageHarness::new().await?;
-    harness.put("/home/b/.codex/auth.json", AUTH).await?;
-    harness.put("/home/a/.codex/auth.json", AUTH).await?;
+    put_codex_auth(&harness, "/home/b/.codex", "ok-id").await?;
+    put_codex_auth(&harness, "/home/a/.codex", "bad-id").await?;
     harness.server.serve(
         Provider::Codex,
         Method::Get,
@@ -71,8 +69,8 @@ async fn one_broken_account_does_not_hide_the_others_and_the_order_is_the_reques
         assert_only_state_written(
             &harness,
             &[
-                ("/home/a/.codex/auth.json", AUTH),
-                ("/home/b/.codex/auth.json", AUTH),
+                ("/home/a/.codex/auth.json", codex_auth("bad-id").as_str()),
+                ("/home/b/.codex/auth.json", codex_auth("ok-id").as_str()),
             ],
         )
         .await

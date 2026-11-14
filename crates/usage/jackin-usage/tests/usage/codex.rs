@@ -5,8 +5,9 @@ use jackin_core::Provider;
 use jackin_usage::{Freshness, Refresh, UnavailableReason, WindowKind};
 
 use crate::support::{
-    CODEX_HOME, Left, TestResult, UsageHarness, assert_window, codex_login, guard, unavailable,
-    want, windows_of,
+    AUTH_CHATGPT, CODEX_HOME, CODEX_TOKEN, Left, TestResult, UsageHarness, assert_window,
+    codex_auth, codex_body, codex_login, codex_route, guard, serve_codex, unavailable, want,
+    windows_of,
 };
 
 const FULL: &str = include_str!("fixtures/codex/usage_full.json");
@@ -42,18 +43,54 @@ async fn a_chatgpt_login_gives_the_five_hour_and_the_weekly_window() -> TestResu
 }
 
 #[tokio::test]
-async fn the_account_id_of_the_config_is_sent_and_not_the_one_in_the_file() -> TestResult {
+async fn the_login_of_another_account_is_refused_before_the_request() -> TestResult {
     guard(async {
-        let (harness, _) = UsageHarness::with_codex(FULL).await?;
-        let other = codex_login("work", CODEX_HOME, "acct-3");
+        let harness = UsageHarness::new().await?;
+        harness
+            .put(&format!("{CODEX_HOME}/auth.json"), AUTH_CHATGPT)
+            .await?;
+        serve_codex(&harness, CODEX_TOKEN, codex_route(&codex_body(42)));
+        let other = codex_login("work", CODEX_HOME, "acct-2");
         let usage = harness.one(&other, Refresh::Cached).await?;
         assert_eq!(
             unavailable(&usage.outcome),
-            &UnavailableReason::ExpiredLogin
+            &UnavailableReason::Provider(
+                "the Codex login account is not the configured account".to_owned()
+            )
+        );
+        assert!(
+            harness.server.mismatches().is_empty(),
+            "the request of the other account was sent"
         );
         Ok(())
     })
     .await
+}
+
+#[tokio::test]
+async fn the_login_of_the_configured_account_is_sent_with_its_own_account_id() -> TestResult {
+    guard(async {
+        let harness = UsageHarness::new().await?;
+        harness
+            .put(&format!("{CODEX_HOME}/auth.json"), AUTH_CHATGPT)
+            .await?;
+        serve_codex(&harness, CODEX_TOKEN, codex_route(&codex_body(42)));
+        let same = codex_login("work", CODEX_HOME, "acct-1");
+        let usage = harness.one(&same, Refresh::Cached).await?;
+        assert_eq!(windows_of(&usage.outcome).len(), 1);
+        assert!(
+            harness.server.mismatches().is_empty(),
+            "{:?}",
+            harness.server.mismatches()
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[test]
+fn the_shared_login_fixture_belongs_to_the_shared_account() {
+    assert_eq!(codex_auth("acct-1"), AUTH_CHATGPT.trim_end());
 }
 
 #[tokio::test]
