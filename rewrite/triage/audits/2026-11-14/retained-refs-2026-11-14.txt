@@ -4,6 +4,10 @@
 # branch that is not one of the 15 rows of §1. The SHA of each ref is pinned here so the
 # object subtraction of §1a stays reproducible after the refs move.
 # Format: <repo> <ref> <sha>
+# This publication's own branch (jackin-project/jackin docs/debris-ratification-2026-11-14) is
+# captured here because it was part of the measured retained set; the pre-flight in the publication
+# skips it, because it necessarily advances with every commit to the document and disappears when
+# the PR merges, so it can never still point at the SHA captured here.
 jackin-project/jackin backup/w3-local-usage f0aa365be70a94fdefc3fb6b3f4a5c2afa2db0aa
 jackin-project/jackin chore/dirty-slice-1 72401bf5e78c630f6fc2765e6391bb9ff7188635
 jackin-project/jackin chore/dirty-slice-accounting-2026-11-14 fe4fcb3a11d1d0441582e0455581622a81060834
