@@ -1,8 +1,17 @@
 # DEBRIS Ratification List — operator one-word approval
 
+> **Committed as the capture-time record (2026-11-14).** The published, operator-facing document is
+> `rewrite/triage/debris-ratification-2026-11-14.md`; where the two differ, **the publication wins**.
+> Two parts of this file are superseded by it and are marked below: the runnable deletion block in §4
+> (it was unguarded and target-ambiguous - the publication's commands are leased against the recorded
+> tip and name their repository by URL) and the four `CONTAINED-safe-to-delete` verdicts in §2 (the
+> publication's §3 records them as **UNPROVEN, KEPT**, because the five usage fixtures they carry are
+> absent from `main` and their product-code paths have no inventory-grade containment proof).
+> The audit files named below are committed next to this one, in `rewrite/triage/audits/2026-11-14/`.
+
 Source of truth: `jackin-project/jackin` @ `main` (PR #1280, merge `78d3b86e`)
 `rewrite/triage/branch-inventory-2026-11-12.md` (18-row DEBRIS table) + completed audits
-`/tmp/triage/debris-audit.md` (15 CONFIRMED / 3 RECLASSIFIED), `inventory-parity.md`,
+`debris-audit.md` (15 CONFIRMED / 3 RECLASSIFIED), `inventory-parity.md`,
 `unproven-review.md`, `architect-smith-audit.md`, `baseline-rows-audit.md`.
 READ-ONLY: nothing deleted, pushed, committed or merged. Tips below re-read live from the remotes
 (`gh api repos/<repo>/git/ref/heads/<branch>`) on 2026-11-13; all 15 are still on their remotes.
@@ -44,15 +53,24 @@ baseline `preserve/local-unique-20261109`), and the 5 CONTAINED candidates in §
 
 ## 2) The 5 CONTAINED candidates kept as non-deletable (jackin-project/jackin)
 
-Current verdict from the unproven review (`/tmp/triage/unproven-review.md`): 4 are CONTAINED-safe-to-delete,
+Current verdict from the unproven review (`unproven-review.md`): 4 are CONTAINED-safe-to-delete,
 1 is DEBRIS. All 5 are still live on the remote and are **outside** the 15-branch approval set.
+
+> **The four `CONTAINED-safe-to-delete` verdicts below are SUPERSEDED - do not act on them.** The merged
+> inventory (`rewrite/triage/branch-inventory-2026-11-12.md`) classes all four as **"CONTAINED (candidate)
+> - UNPROVEN, KEPT"**, and its class rule says such a branch "must be treated as VALUABLE (NOT deletable)
+> until every absent path is proven to be scratch/archive". The publication's §3
+> (`rewrite/triage/debris-ratification-2026-11-14.md`) records the missing proof: the five usage fixtures
+> these branches carry are **absent from `main`** and their product-code paths have no inventory-grade
+> (merged-PR / patch-id / ancestry) containment proof. The rows are kept here only as the capture-time
+> record of the unproven review.
 
 | branch | verdict (unproven review) | basis | action now |
 |---|---|---|---|
-| `codex/openshell-integration-checkpoint-20261108-122311` | **CONTAINED-safe-to-delete** | 12 absent product-code paths, disposition (a)5 + (b)7 + (c)0 — each superseded by the later main rewrite | kept (not in this approval set) |
-| `codex/openshell-verified-checkpoint-20261108` | **CONTAINED-safe-to-delete** | byte-identical blobs to the branch above, same 12 paths, same (a)5/(b)7/(c)0 proof | kept (not in this approval set) |
-| `preserve/session-boundaries-20261109` | **CONTAINED-safe-to-delete** | 6 absent product-code paths, (a)3 + (b)3 + (c)0 | kept (not in this approval set) |
-| `preserve/w1-fixes-20261109` | **CONTAINED-safe-to-delete** | 1 absent product-code path (`crates/jackin-tui/tests/console/files.rs`), (a)1 + (b)0 + (c)0 | kept (not in this approval set) |
+| `codex/openshell-integration-checkpoint-20261108-122311` | **SUPERSEDED - UNPROVEN, KEPT** (the publication's §3) | 12 absent product-code paths, disposition (a)5 + (b)7 + (c)0 — each superseded by the later main rewrite | kept (not in this approval set); **not** safe to delete |
+| `codex/openshell-verified-checkpoint-20261108` | **SUPERSEDED - UNPROVEN, KEPT** (the publication's §3) | byte-identical blobs to the branch above, same 12 paths, same (a)5/(b)7/(c)0 proof | kept (not in this approval set); **not** safe to delete |
+| `preserve/session-boundaries-20261109` | **SUPERSEDED - UNPROVEN, KEPT** (the publication's §3) | 6 absent product-code paths, (a)3 + (b)3 + (c)0 | kept (not in this approval set); **not** safe to delete |
+| `preserve/w1-fixes-20261109` | **SUPERSEDED - UNPROVEN, KEPT** (the publication's §3) | 1 absent product-code path (`crates/jackin-tui/tests/console/files.rs`), (a)1 + (b)0 + (c)0 | kept (not in this approval set); **not** safe to delete |
 | `preserve/p0.6-prototype-20261109` | **DEBRIS** | 20/20 absent paths are `prototypes/p0.6/**`; the prototype is by design non-mergeable and its evidence `rewrite/evidence/P0.6-panes.md` is byte-identical in main | kept as DEBRIS — a separate approval is needed to delete it (not in the 15) |
 
 ## 3) Deletions already performed under a recorded proof
@@ -88,31 +106,20 @@ for r in jackin-project/jackin jackin-project/jackin-agent-smith tailrocks/termi
 done
 ```
 
-Deletion commands for the approved 15 (GitHub API delete-ref; the `%2F` form is equivalent to the plain-slash form — both were verified to resolve the refs read-only):
+Deletion commands for the approved 15: **superseded - use the publication's table**
+(`rewrite/triage/debris-ratification-2026-11-14.md`, §1, one row per branch).
+
+The block that stood here was a runnable `gh api -X DELETE` list. It was **unguarded** - it deleted
+whatever tip the ref had at that moment, not the audited tip - and it named the repository implicitly, so
+in a fork-based clone it could have hit the wrong repository. The publication's §1 replaces it with, per
+branch, the exact command:
+
 ```bash
-# jackin-project/jackin (10)
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/chore/triage-inventory-20261112
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/docs/pr1228-replacement-20261026
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/recovery/openrouter-exact-money-20261027
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/recovery/stash-2f8cc42b-20261023
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/recovery/stash-2fb075f8-20261023
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/recovery/stash-88f5643c-20261023
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/recovery/stash-be51ff69-20261023
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/recovery/stash-d808d094-20261023
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/recovery/strict-merge-gate-merge-readiness-20261022
-gh api -X DELETE repos/jackin-project/jackin/git/refs/heads/rollout/velnor-3-provider
-
-# jackin-project/jackin-agent-smith (2)
-gh api -X DELETE "repos/jackin-project/jackin-agent-smith/git/refs/heads/recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a"
-gh api -X DELETE "repos/jackin-project/jackin-agent-smith/git/refs/heads/recovery/20261006/jackin-agent-smith/2e7119b9c668/jackin-agent-smith"
-
-# tailrocks/terminal-components-baseline (3)
-gh api -X DELETE repos/tailrocks/terminal-components-baseline/git/refs/heads/test/pre-refactor-protection
-gh api -X DELETE repos/tailrocks/terminal-components-baseline/git/refs/heads/wip/tuiscotti-capture-only
-gh api -X DELETE repos/tailrocks/terminal-components-baseline/git/refs/heads/wip/tuiscotti-fixcheck
+git push --force-with-lease=refs/heads/<branch>:<recorded-tip-SHA> https://github.com/<repo>.git --delete <branch>
 ```
-Equivalent `git push origin --delete <branch>` form (one command per branch), e.g.
-`git push origin --delete chore/triage-inventory-20261112` inside the matching clone.
+
+which refuses to run when the branch has moved since the audit and always targets the repository named in
+the row. **Nothing in this file is a runnable deletion.**
 
 Post-check (read-only): the 15 refs must be gone; the 3 excluded + 5 CONTAINED candidates +
 VALUABLE branches must still be present.
@@ -121,7 +128,8 @@ gh api repos/jackin-project/jackin/branches --paginate --jq '.[].name'
 gh api repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[].name'
 gh api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[].name'
 ```
-Expected after deletion: jackin 22 → 12 non-main, smith 2 → 0, baseline 4 → 1.
+Expected after deletion: jackin 22 → 12 non-main, smith 2 → 0, baseline 4 → 1 (capture-time counts of
+2026-11-13; the publication's §1 carries the counts re-read on 2026-11-14 at 20:12 UTC).
 
 ## 5) Limitations / notes
 - Nothing was deleted, pushed, committed, merged or tagged; this file is the only artifact written.

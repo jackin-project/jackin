@@ -43,7 +43,7 @@ These 15 are the **only** branches the operator's word covers. Each row carries 
 | 8 | jackin-project/jackin | `recovery/stash-d808d094-20261023` | `00f98f32514aca8005c56dd2e44e3fc03c326b46` | Stash snapshot, 54 changed paths; **13** paths are absent from `main`'s tree *and* their content never occurs in `main`'s history (§1a) — the same 10 pre-rewrite `crates/**` files as row 5 (identical blobs) plus 1 docs page and 2 `scripts/*` shell wrappers. The content is not in `main`; it is shared with row 5. Single parent. | `git push --force-with-lease=refs/heads/recovery/stash-d808d094-20261023:00f98f32514aca8005c56dd2e44e3fc03c326b46 https://github.com/jackin-project/jackin.git --delete recovery/stash-d808d094-20261023` |
 | 9 | jackin-project/jackin | `recovery/strict-merge-gate-merge-readiness-20261022` | `2f96c6dadd4e1974f89f5a5f7407c0f6ff221fae` | Stale pre-rewrite CI gate config, 25 paths, **0 truly unique**; `check:merge-readiness` does not exist in main; duplicate of the `fix/restore-docs-source-globs` lineage. | `git push --force-with-lease=refs/heads/recovery/strict-merge-gate-merge-readiness-20261022:2f96c6dadd4e1974f89f5a5f7407c0f6ff221fae https://github.com/jackin-project/jackin.git --delete recovery/strict-merge-gate-merge-readiness-20261022` |
 | 10 | jackin-project/jackin | `rollout/velnor-3-provider` | `092fe1db796367479029d4e94379530f7f5965c0` | Orphan line (no merge base with main, root `c24fffeb0` != main root); the tip tree is 21 paths, 20 of them absent from `main`'s tree with content that never occurs in `main`'s history. 9 of the 20 are **byte-identical** (same blob SHA) to files in `ChainArgos/jackin-agent-brown` (`.dockerignore`, `.hadolint.yaml`, `.pre-commit-config.yaml`, `Dockerfile`, `hooks/preflight.sh`, `hooks/source.sh`, `jackin.role.toml`, `scripts/marketplace-audit.sh`, `zshrc.d/docker-helpers.zsh`); the other 11 are velnor-generated CI files (`.github-gen/velnor-workflow.toml`, `.github/actionlint.yaml`, `.github/ci/project.toml`, `.github/ci/.github-actions-generator-state` and 7 rendered `.github/workflows/*.yml`). No product code (§1a). | `git push --force-with-lease=refs/heads/rollout/velnor-3-provider:092fe1db796367479029d4e94379530f7f5965c0 https://github.com/jackin-project/jackin.git --delete rollout/velnor-3-provider` |
-| 11 | jackin-project/jackin-agent-smith | `recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a` | `b9db5b149cc46baba9c49549432307c29e3972b0` | Pure velnor generator churn. **12** paths are absent from `main`'s tree, of which **8** have content that never occurs in `main`'s history: the generator source `.github-gen/velnor-workflow.toml`, the generator state `.github/ci/.github-actions-generator-state` and **6** rendered workflows (`.github/workflows/{ci-main,ci-policy,ci-pr,ci-unit-docker,maintenance,nightly}.yml`); the other 4 (`.err`, `.github/actionlint.yaml`, `.github/ci/project.toml`, `scripts/marketplace-audit.sh`) have their content in `main`'s history (§1a). Own PR #206 closed unmerged; superseded by merged PR #207 (`08cb1c2f`). | `git push --force-with-lease=refs/heads/recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a:b9db5b149cc46baba9c49549432307c29e3972b0 https://github.com/jackin-project/jackin-agent-smith.git --delete recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a` |
+| 11 | jackin-project/jackin-agent-smith | `recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a` | `b9db5b149cc46baba9c49549432307c29e3972b0` | Pure velnor generator churn. **12** paths are absent from `main`'s tree, of which **7** have content that never occurs in `main`'s history: the generator source `.github-gen/velnor-workflow.toml`, the generator state `.github/ci/.github-actions-generator-state` and **5** rendered workflows (`.github/workflows/{ci-main,ci-policy,ci-pr,ci-unit-docker,maintenance}.yml`); the other 5 (`.err`, `.github/actionlint.yaml`, `.github/ci/project.toml`, `scripts/marketplace-audit.sh` and `.github/workflows/nightly.yml`) have their content in `main`'s history — `nightly.yml` is inherited unchanged from the merge base `8c1dbe3d`, an ancestor of `main` (blob `7db67da1` is in `main`'s object history), so it is not a branch-only blob (§1a). Own PR #206 closed unmerged; superseded by merged PR #207 (`08cb1c2f`). | `git push --force-with-lease=refs/heads/recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a:b9db5b149cc46baba9c49549432307c29e3972b0 https://github.com/jackin-project/jackin-agent-smith.git --delete recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a` |
 | 12 | jackin-project/jackin-agent-smith | `recovery/20261006/jackin-agent-smith/2e7119b9c668/jackin-agent-smith` | `c58cfdcaaca85f606c2abc4ddb8f5afaae47f737` | "WIP preservation snapshot" commit with an **empty patch** (tip tree == parent tree); parent `2e7119b9` is an ancestor of main; 3-dot diff vs main = 0 files. 3 paths are absent from `main`'s tree and all 3 have their content in `main`'s history (§1a). | `git push --force-with-lease=refs/heads/recovery/20261006/jackin-agent-smith/2e7119b9c668/jackin-agent-smith:c58cfdcaaca85f606c2abc4ddb8f5afaae47f737 https://github.com/jackin-project/jackin-agent-smith.git --delete recovery/20261006/jackin-agent-smith/2e7119b9c668/jackin-agent-smith` |
 | 13 | tailrocks/terminal-components-baseline | `test/pre-refactor-protection` | `fc624b7456132fb74675ab452e6b64ecb3f69a70` | 666 commits ahead but 3011/3045 changed paths are blob-identical to main; exactly **1** path absent from main = `terminal-components-baseline-goal.txt` (scratch goal prompt) and its content never occurs in `main`'s history (§1a). | `git push --force-with-lease=refs/heads/test/pre-refactor-protection:fc624b7456132fb74675ab452e6b64ecb3f69a70 https://github.com/tailrocks/terminal-components-baseline.git --delete test/pre-refactor-protection` |
 | 14 | tailrocks/terminal-components-baseline | `wip/tuiscotti-capture-only` | `0b8b8bb077061eee6ca04466148f017e316edfd3` | **9517** paths absent from `main`'s tree. **9117** of them have content that never occurs in `main`'s history: 7236 `run-evidence/**` generated capture files, 1880 legacy `tests/functional/baselines/**/*.tui.json` baselines and the machine-local `.cargo/config.toml`. The other **400** have their content in `main`'s history: 260 `run-evidence/**` files, 98 `.tui.json` baselines that PR #6 (`1d7f63db`) deleted from `main`, 34 `src/bin/jackin/**` files that `43456dee` moved to `apps/jackin/src/bin/jackin/**` and 8 `scripts/coverage-fixtures/**` files. 9117 + 400 = 9517 — every absent path is accounted for (§1a). **0** branch-only commits touch `src`/`apps`. | `git push --force-with-lease=refs/heads/wip/tuiscotti-capture-only:0b8b8bb077061eee6ca04466148f017e316edfd3 https://github.com/tailrocks/terminal-components-baseline.git --delete wip/tuiscotti-capture-only` |
@@ -82,13 +82,16 @@ Expected after the deletions (live counts re-read 2026-11-14 20:12 UTC, §7): ja
 **Every path that a deletion would remove is accounted for below.** The numbers are re-derived from the
 live repositories — not inherited from the audits — against the `main` tips named in §1b.
 
-Two numbers per row:
+Three numbers per row:
 
 - **absent from `main`** — the path is in the branch tip's tree and not in `main`'s tree.
 - **content not in `main`'s history** — of the absent paths, the ones whose blob never occurs in
-  `main`'s object history (`git rev-list --objects main`). These are the only paths whose *content* a
-  deletion can remove; every other absent path's content is already in `main` — in a file `main`
-  deleted, under another name, or in an earlier revision — so deleting the branch loses nothing.
+  `main`'s object history (`git rev-list --objects main`). These are the paths whose *content* a
+  deletion removes; every other absent path's content is already in `main` — in a file `main` deleted,
+  under another name, or in an earlier revision.
+- **same path in `main`, different revision** — the paths `main` still holds in another revision. The
+  branch's revision of them is either preserved in `main`'s object history or is branch-only; the third
+  table below accounts for them.
 
 | # | repo | absent from `main` | content not in `main`'s history | what those paths are |
 |---|---|---|---|---|
@@ -102,7 +105,7 @@ Two numbers per row:
 | 8 | jackin-project/jackin | 4750 | 13 | the same 10 pre-rewrite `crates/**` files as row 5 (identical blobs) plus `docs/content/(public)/getting-started/verifying-releases.mdx`, `scripts/pre-commit-snapshot`, `scripts/test-pre-commit-snapshot`. The content is not in `main`; it is shared with row 5. |
 | 9 | jackin-project/jackin | 4725 | 0 | every absent path's content is in `main`'s history; `check:merge-readiness` does not exist in `main`. |
 | 10 | jackin-project/jackin | 21 | 20 | 9 byte-identical to files in `ChainArgos/jackin-agent-brown` and 11 velnor-generated CI files (§1 row 10). The 21st absent path, `config/fleet/velnor-host.env`, has its content in `main`'s history. |
-| 11 | jackin-project/jackin-agent-smith | 12 | 8 | the generator source `.github-gen/velnor-workflow.toml`, the generator state `.github/ci/.github-actions-generator-state` and 6 rendered workflows (§1 row 11). |
+| 11 | jackin-project/jackin-agent-smith | 12 | 7 | the generator source `.github-gen/velnor-workflow.toml`, the generator state `.github/ci/.github-actions-generator-state` and 5 rendered workflows (§1 row 11). The other 5 absent paths — `.err`, `.github/actionlint.yaml`, `.github/ci/project.toml`, `scripts/marketplace-audit.sh` and `.github/workflows/nightly.yml` — have their content in `main`'s history; `nightly.yml` is inherited unchanged from the merge base `8c1dbe3d`, an ancestor of `main` (blob `7db67da1`). |
 | 12 | jackin-project/jackin-agent-smith | 3 | 0 | `.err` (empty file), `.github/actionlint.yaml`, `scripts/marketplace-audit.sh` — all three have their content in `main`'s history; the tip commit's patch is empty. |
 | 13 | tailrocks/terminal-components-baseline | 1 | 1 | `terminal-components-baseline-goal.txt` — the scratch goal prompt. |
 | 14 | tailrocks/terminal-components-baseline | 9517 | 9117 | see the breakdown below. |
@@ -123,6 +126,42 @@ buckets, and the buckets sum to the totals, so no path is left unclassified.
 | **total absent from `main`'s tree** | **9517** | **2046** | |
 | of which content not in `main`'s history | 9117 | 1904 | the paths whose bytes a deletion removes |
 | of which content in `main`'s history | 400 | 142 | the paths whose bytes `main` already holds |
+
+**Paths that exist in `main` under the same name, with a different revision.** A path that `main`
+still holds can also carry branch content: the branch's revision of it is not in `main`'s tree. The third
+bucket closes that gap — for every path that exists in `main`'s tree with a **different blob**, the
+branch's revision is either preserved in `main`'s object history (an earlier revision of the same file, so
+nothing is lost) or it is branch-only.
+
+| # | repo | same path in `main`, different revision | of which the branch's revision is preserved in `main`'s history | branch-only revisions (paths · lines) |
+|---|---|---|---|---|
+| 1 | jackin-project/jackin | 87 | 87 | 0 · 0 |
+| 2 | jackin-project/jackin | 100 | 100 | 0 · 0 |
+| 3 | jackin-project/jackin | 100 | 100 | 0 · 0 |
+| 4 | jackin-project/jackin | 97 | 94 | 3 · 1583 |
+| 5 | jackin-project/jackin | 97 | 96 | 1 · 195 |
+| 6 | jackin-project/jackin | 97 | 96 | 1 · 4598 |
+| 7 | jackin-project/jackin | 97 | 95 | 2 · 4730 |
+| 8 | jackin-project/jackin | 94 | 88 | 6 · 5710 |
+| 9 | jackin-project/jackin | 92 | 90 | 2 · 315 |
+| 10 | jackin-project/jackin | 6 | 1 | 5 · 208 |
+| 11 | jackin-project/jackin-agent-smith | 10 | 10 | 0 · 0 |
+| 12 | jackin-project/jackin-agent-smith | 15 | 15 | 0 · 0 |
+| 13 | tailrocks/terminal-components-baseline | 140 | 137 | 3 · 95 |
+| 14 | tailrocks/terminal-components-baseline | 334 | 89 | 245 · 3939 |
+| 15 | tailrocks/terminal-components-baseline | 334 | 89 | 245 · 3972 |
+
+"Lines" are the lines the branch's revision adds over `main`'s revision of the same path
+(`git diff --numstat <main-blob> <branch-blob>`). The audit's own capture-time figures for the three
+baseline rows are smaller because they were measured on the paths the branch **edited** relative to its
+merge base, not on the whole tip tree: `rewrite/triage/audits/2026-11-14/baseline-rows-audit.md:7-9`
+records 33 blob-different paths with 876 branch-only lines for row 13, and 259 blob-different paths
+(57 source files, 609 branch-only lines) for rows 14-15. The rows above are the whole-tree numbers and
+therefore a superset of the audit's. The largest branch-only revisions in rows 14-15 are
+`.github/workflows/ci.yml` (734 lines, the pre-rewrite CI workflow), the capture-harness cases
+`tests/functional/cases/x02_exit.rs` (158) and `x03_color.rs` (59), `tests/functional/support.rs` (63),
+the test documentation `docs/testing/**` and `docs/ci.md` (71) — the same residue profile the audit
+recorded ("capture-harness lines", "pre-refactor variants").
 
 **What the accounting says.** For rows 1, 2, 4, 6, 7, 9, 12 and 13 the content a deletion removes is
 documentation, configuration or scratch — no product code. For rows 3, 5, 8, 10 and 11 the content is
@@ -163,6 +202,11 @@ git rev-list --objects "$M" | awk '{print $1}' | sort -u > /tmp/main-blobs.txt
 
 # of the absent paths, the ones whose content never occurs in main's history
 while read -r p b; do grep -qx "$b" /tmp/main-blobs.txt || echo "$p"; done < /tmp/absent.txt | wc -l
+
+# the third bucket: paths that main still holds, with a different revision
+join -1 1 -2 1 /tmp/tip.txt /tmp/main-tree.txt | awk '$2 != $3' > /tmp/differing.txt
+wc -l < /tmp/differing.txt                        # 334
+while read -r p tb mb; do grep -qx "$tb" /tmp/main-blobs.txt || echo "$p"; done < /tmp/differing.txt | wc -l
 ```
 
 **The audits.** The evidence that produced these verdicts is committed with this document under
