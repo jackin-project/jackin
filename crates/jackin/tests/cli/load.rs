@@ -289,6 +289,44 @@ async fn an_unknown_role_is_named_as_a_plain_word() -> TestResult {
     .await
 }
 
+#[tokio::test]
+async fn t09_and_t18_collision_creates_nothing() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        std::fs::write(rig.home.as_path().join("zai.txt"), "test-key")?;
+        harness.write_config(&multi_account_config(&rig))?;
+        let ran = harness
+            .run(&[
+                "load",
+                "--agent",
+                "omp",
+                "--agent",
+                "codex",
+                "--provider-for",
+                "omp=zai",
+                "--provider-for",
+                "codex=zai",
+                "--account-for",
+                "omp=zaiacct",
+                "--account-for",
+                "codex=zaiacct",
+            ])
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Usage, "{}", ran.stderr);
+        assert_eq!(
+            ran.stderr,
+            "error: credential environment variable ZAI_API_KEY is shared by tuples T09 and T18\n"
+        );
+        assert!(rig.world.gateway.sandboxes().is_empty());
+        assert!(rig.world.gateway.providers().is_empty());
+        assert!(rig.world.engine.builds().is_empty());
+        Ok(())
+    })
+    .await
+}
+
 async fn unavailable_tuple_refusal(agent: &str, provider: &str, reason: &str) -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
