@@ -8,7 +8,7 @@ T08 is **PASS** for the requested one-shot live proof recorded here. Native Kimi
 
 The proof used the native global subscription only. Placeholders, process supervision, cached rebuilds, regional egress, terminal behavior, export, host invariance, and guarded purge passed on both gateways. No paid fallback ran.
 
-The catalog remains `Unavailable` because the temporary proof enablement was restored as ordered. Production promotion still needs the permanent catalog change, a repair for the unrelated clean-head compile error, and the normal review and gate sequence.
+The catalog remains `Unavailable` because the temporary proof enablement was restored as ordered. Production promotion still needs the permanent catalog change, a repair for the unrelated clean-head compile error, the normal review and gate sequence, and the three supplementary live-proof legs that this one-shot proof does not cover: supervised interactive inference to the exact marker, secondary-home Kimi execution, and vendor-side usage attribution with no overage (`rewrite/evidence/A14-t08-supplementary.md:16-28`; `rewrite/decisions.tsv:510-511,514`).
 
 ## Promotion status: PENDING, not promoted
 
@@ -22,7 +22,7 @@ The promotion is held pending the supplementary legs, which this proof does not 
 
 `rewrite/decisions.tsv:510-511` records that hold and the quota failure that stopped the supplementary attempt, and `rewrite/decisions.tsv:514` records the restoration of the blocker while the tuple stays unavailable. `rewrite/evidence/A14-t08-supplementary.md:16-28` records the same legs as still unproven and states that T08 stays `Unavailable` until the Kimi weekly window resets.
 
-So: the promotion is **not** in effect. The only promotion-coupled product change in the source branch was a temporary proof-time flip that was restored, and the permanent catalog promotion lands only on a full pass of the supplementary legs.
+So: the promotion is **not** in effect, and T08 remains `TupleState::Unavailable` on `main` with `rewrite/blockers/T08-kimi-code.md` present. The promotion-coupled product change existed in two distinct places and neither instance was landed: in the closed PR #1283 branch `chore/dirty-slice-1` (head `72401bf5e78c630f6fc2765e6391bb9ff7188635`) as the committed T08 promotion, and in the separate proof worktree `wt/a14-t08-model-live` at `/tmp/jackin-a14-t08-model-live` as a temporary proof-time flip that was restored after the proof. The permanent catalog promotion was **not** landed, and it lands only on a full pass of the supplementary legs.
 
 ## Proof vehicle and isolation
 
