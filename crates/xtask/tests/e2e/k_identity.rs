@@ -6,6 +6,10 @@ use serde_json::{Value, json};
 
 const MAIN_PID: u32 = 100;
 const MAIN_TICKS: u64 = 1000;
+const SENTINEL_SNAPSHOT_TICKS: u64 = 100;
+const SENTINEL_RAW_STAT_SHAPE: &str = "raw /proc/PID/stat line: pid (comm) state ppid pgrp session tty_nr tpgid flags minflt cminflt majflt cmajflt utime stime cutime cstime priority nice num_threads itrealvalue start_ticks, with the pid before the parenthesised comm and the start ticks as field 22 after it";
+const SENTINEL_LAUNCHER_SNAPSHOT: &str =
+    "100 (jackin-start) S 1 100 100 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 100 0 0";
 
 fn stat_line(pid: u32, comm: &str, state: char, ticks: u64) -> String {
     format!("{pid} ({comm}) {state} 1 {pid} {pid} 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 {ticks}")
@@ -31,12 +35,16 @@ fn valid_identity() -> Value {
 }
 
 fn facts(launcher_identity: Value) -> Value {
+    facts_with_main_ticks(MAIN_TICKS, launcher_identity)
+}
+
+fn facts_with_main_ticks(main_ticks: u64, launcher_identity: Value) -> Value {
     json!({
         "processes": {
             "boot_id": "boot-1",
             "run_state": "running",
             "main": {"comm": "jackin-start", "pid": MAIN_PID, "ppid": 1, "sid": MAIN_PID,
-                     "start_ticks": MAIN_TICKS, "tty": null},
+                     "start_ticks": main_ticks, "tty": null},
             "agent": [{"comm": "codex", "pid": 4242, "ppid": MAIN_PID, "sid": MAIN_PID,
                        "start_ticks": 42420, "tty": "pts/0"}],
             "self": {"comm": "jackin-sentinel-probe", "pid": 9000, "ppid": 8000, "sid": 9000,
@@ -79,6 +87,67 @@ fn rejects(case: &str, facts: &Value, needle: &str) {
 fn a_valid_launcher_identity_payload_still_passes_the_judge() {
     let problems = judge_launcher_identity(&facts(valid_identity()));
     assert_eq!(problems, Vec::<String>::new(), "valid identity facts");
+}
+
+#[test]
+fn the_sentinel_launcher_snapshot_payload_passes_the_judge() {
+    let sentinel_launcher_identity = json!({
+        "interpreter": "/bin/sh",
+        "interpreter_arg": "-e",
+        "interpreter_resolved": "/usr/bin/sh",
+        "exe": "/usr/bin/sh",
+        "exe_matches_interpreter": true,
+        "uid": "1000",
+        "comm": "jackin-start",
+        "argv0_matches": true,
+        "argv1_matches": true,
+        "argv2_matches": true,
+        "stable": true,
+        "stat_pre": SENTINEL_LAUNCHER_SNAPSHOT,
+        "stat_before": SENTINEL_LAUNCHER_SNAPSHOT,
+        "stat_after": SENTINEL_LAUNCHER_SNAPSHOT,
+    });
+    let mut wire_fields: Vec<&str> = sentinel_launcher_identity
+        .as_object()
+        .expect("sentinel launcher identity object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    wire_fields.sort_unstable();
+    assert_eq!(
+        wire_fields,
+        vec![
+            "argv0_matches",
+            "argv1_matches",
+            "argv2_matches",
+            "comm",
+            "exe",
+            "exe_matches_interpreter",
+            "interpreter",
+            "interpreter_arg",
+            "interpreter_resolved",
+            "stable",
+            "stat_after",
+            "stat_before",
+            "stat_pre",
+            "uid",
+        ],
+        "the sentinel launcher identity wire fields must stay the 14 flat names"
+    );
+    assert_eq!(
+        stat_identity(SENTINEL_LAUNCHER_SNAPSHOT),
+        Some((MAIN_PID, SENTINEL_SNAPSHOT_TICKS)),
+        "the sentinel launcher snapshot fixture must be a {SENTINEL_RAW_STAT_SHAPE}"
+    );
+    let problems = judge_launcher_identity(&facts_with_main_ticks(
+        SENTINEL_SNAPSHOT_TICKS,
+        sentinel_launcher_identity,
+    ));
+    assert_eq!(
+        problems,
+        Vec::<String>::new(),
+        "the J07 judge must accept the launcher stat payload the sentinel probe emits as a {SENTINEL_RAW_STAT_SHAPE}"
+    );
 }
 
 #[test]
