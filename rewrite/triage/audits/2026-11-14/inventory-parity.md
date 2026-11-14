@@ -3,6 +3,14 @@
 Scope: parity check of the published branch inventory against the live remotes of the five
 tracked repositories. Read-only: nothing was pushed, committed, merged, or deleted.
 
+> **Correction, 2026-11-14.** The "class correct" verdicts this report records for the five rows it
+> classes `CONTAINED candidate - UNPROVEN, KEPT` are **superseded** by the publication
+> `rewrite/triage/debris-ratification-2026-11-14.md` (§3). The merged inventory (PR #1280, merge commit
+> `78d3b86e`; updated by PR #1281, merge commit `926bbd49d`) labels those rows **"CONTAINED - safe to
+> delete"**, and that label must not be acted on: the five usage fixtures those branches carry are absent
+> from `main` and their product-code paths have no inventory-grade containment proof. The disposition that
+> governs is **UNPROVEN, KEPT** - kept, not deletable.
+
 ## 0. Locating the inventory — the path in the task is on `main`, not on the stated branch
 
 The task names branch `chore/triage-branch-inventory-2026-11-12`. **That branch does not exist**

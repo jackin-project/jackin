@@ -245,29 +245,48 @@ bytes.
 | `jackin-project/jackin-agent-smith` | `a9b8c8aea74dc2c777eb8df23ea22647c8ceaf40` |
 | `tailrocks/terminal-components-baseline` | `8063050cdb483e31284c107808b207c92e2d3203` |
 
-**The commands** (one row of §1; row 14 as the worked example). `M` is **pinned to the recorded SHA**,
-not to `origin/main`: once `main` advances, `M` keeps the measurement reproducible, and re-measuring
-against a later `main` is a deliberate act that changes the SHA in the table above.
+**The commands** (parameterized by row). `M` is **pinned to the recorded SHA**, not to `origin/main`:
+once `main` advances, `M` keeps the measurement reproducible, and re-measuring against a later `main` is
+a deliberate act that changes the SHA in the table above.
+
+**The repository, the retained set, the branch tip and the main tip travel together.** The clone, the
+two commits and the retained-ref filter all belong to the same row, so none of them may be changed
+alone — changing only the `awk` filter would fetch one repository's objects from another. Set the four
+values together:
+
+| row | `repo` | `REPO_NAME` | `T` — the row's tip | `M` — that repository's main tip |
+|---|---|---|---|---|
+| 1-9 | `https://github.com/jackin-project/jackin` | `jackin-project/jackin` | the `tip` column of the row in §1 | `926bbd49d171c2f389a766776ff3c418f8987fbd` |
+| 10 | `https://github.com/jackin-project/jackin` | `jackin-project/jackin` | `092fe1db796367479029d4e94379530f7f5965c0` | `926bbd49d171c2f389a766776ff3c418f8987fbd` |
+| 11 | `https://github.com/jackin-project/jackin-agent-smith` | `jackin-project/jackin-agent-smith` | `b9db5b149cc46baba9c49549432307c29e3972b0` | `a9b8c8aea74dc2c777eb8df23ea22647c8ceaf40` |
+| 12 | as row 11 | as row 11 | `c58cfdcaaca85f606c2abc4ddb8f5afaae47f737` | as row 11 |
+| 13 | `https://github.com/tailrocks/terminal-components-baseline` | `tailrocks/terminal-components-baseline` | `fc624b7456132fb74675ab452e6b64ecb3f69a70` | `8063050cdb483e31284c107808b207c92e2d3203` |
+| 14 | as row 13 | as row 13 | `0b8b8bb077061eee6ca04466148f017e316edfd3` | as row 13 |
+| 15 | as row 13 | as row 13 | `8d352ebfb932b06bf18c537e924389b0aae07e42` | as row 13 |
 
 ```bash
 set -euo pipefail                        # fail fast: a missing object must not print a zero
 
 # the retained-ref list lives in this repository - take its path before the clone moves us
 RETAINED_FILE="$PWD/rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt"
-repo=https://github.com/tailrocks/terminal-components-baseline
+
+# --- the row to measure: repository, retained set, tip and main tip travel together ---
+repo=https://github.com/jackin-project/jackin              # the repository of the row
+REPO_NAME=jackin-project/jackin                            # its name in the captured list
+T=092fe1db796367479029d4e94379530f7f5965c0                 # the row's tip (row 10)
+M=926bbd49d171c2f389a766776ff3c418f8987fbd                 # that repository's main tip, pinned
+
 work=$(mktemp -d)                        # a fresh clone every time: a stale clone directory would
 git clone --quiet "$repo" "$work"        # leave every later command running in the wrong checkout
 cd "$work" && git fetch origin --quiet
-T=0b8b8bb077061eee6ca04466148f017e316edfd3                 # the §1 row's tip
-M=8063050cdb483e31284c107808b207c92e2d3203                 # the main tip named above, pinned
 
 # the measurement is pinned to those commits, not to the moving branch names:
 git fetch origin "$M" "$T" --quiet                         # fetch those exact commits
 test "$(git rev-parse "$M^{commit}")" = "$M" || { echo "main tip $M is not in this clone"; exit 1; }
 
-# the retained refs, pinned to their captured tips: fetch and validate every one of them, so the
-# subtraction is over the recorded set and not over whatever the refs are today
-RETAINED=$(awk '$1=="tailrocks/terminal-components-baseline" {print $3}' "$RETAINED_FILE" | tr '\n' ' ')
+# the retained refs of THAT repository, pinned to their captured tips: fetch and validate every one
+# of them, so the subtraction is over the recorded set and not over whatever the refs are today
+RETAINED=$(awk -v r="$REPO_NAME" '$1==r {print $3}' "$RETAINED_FILE" | tr '\n' ' ')
 for sha in $RETAINED "$T" "$M"; do
   git fetch origin "$sha" --quiet                         # GitHub serves a commit without a ref
   git cat-file -e "$sha^{commit}" || { echo "missing $sha"; exit 1; }
@@ -276,8 +295,8 @@ done
 # every path of the branch tip that does not exist in main's tree
 git ls-tree -r "$T" | awk '{print $4" "$3}' | sort > /tmp/tip.txt
 git ls-tree -r "$M" | awk '{print $4" "$3}' | sort > /tmp/main-tree.txt
-join -1 1 -2 1 -v1 /tmp/tip.txt /tmp/main-tree.txt > /tmp/absent.txt
-wc -l < /tmp/absent.txt                                    # 9517
+join -1 1 -2 1 -v1 /tmp/tip.txt /tmp/main-tree.txt > /tmp/absent.txt   # -v1: the paths of the tip that main does NOT have
+wc -l < /tmp/absent.txt                                    # absent paths of the row
 
 # the blob set of main's whole object history
 git rev-list --objects "$M" | awk '{print $1}' | sort -u > /tmp/main-blobs.txt
@@ -287,23 +306,22 @@ while read -r p b; do grep -qx "$b" /tmp/main-blobs.txt || echo "$p"; done < /tm
 
 # the third bucket: paths that main still holds, with a different revision
 join -1 1 -2 1 /tmp/tip.txt /tmp/main-tree.txt | awk '$2 != $3' > /tmp/differing.txt
-wc -l < /tmp/differing.txt                        # 334
+wc -l < /tmp/differing.txt                                # blob-different paths of the row
 while read -r p tb mb; do grep -qx "$tb" /tmp/main-blobs.txt || echo "$p"; done < /tmp/differing.txt | wc -l
 
-# the fourth bucket: the objects only this branch's history holds.
-# RETAINED = every ref that survives the operation: main + every branch of the repository
-# that is not one of the 15 rows of §1. The refs and their tips are captured in the
-# repository, so the subtraction does not move when a retained branch advances:
-#   rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt  (<repo> <ref> <sha>)
-RETAINED=$(awk '$1=="tailrocks/terminal-components-baseline" {print $3}' "$RETAINED_FILE" | tr '\n' ' ')
-git fetch origin --quiet                 # make the pinned tips available in the clone
-git rev-list --objects "$T" --not $RETAINED | wc -l        # 14047 objects for row 14
+# the fourth bucket: the objects only this branch's history holds
+git rev-list --objects "$T" --not $RETAINED | wc -l        # objects only this branch holds
 ```
 
-For the other two repositories, replace the repository name in the `awk` filter with
-`jackin-project/jackin` (rows 1-10, 60 retained refs) or `jackin-project/jackin-agent-smith` (rows 11-12,
-1 retained ref). The snippet as written reproduces the row-14 number **14047** and, with the jackin
-filter, the row-10 number **1065** — both were measured with it.
+**The numbers this produces**, per instantiation (measured with this procedure):
+
+| row | absent paths | of which not in `main`'s history | blob-different paths | of which the branch's revision is branch-only | objects only this branch holds |
+|---|---|---|---|---|---|
+| 10 | 21 | 20 | 6 | 5 | **1065** |
+| 14 | 9517 | 9117 | 334 | 245 | 14047 |
+| 15 | 2046 | 1904 | 334 | 245 | 7408 |
+
+The procedure prints exactly these numbers, in this order.
 
 **The audits.** The evidence that produced these verdicts is committed with this document under
 `rewrite/triage/audits/2026-11-14/`: `debris-audit.md` (the 18-row audit, its method and its per-row

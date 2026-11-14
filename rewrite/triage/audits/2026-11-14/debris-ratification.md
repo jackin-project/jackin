@@ -59,13 +59,17 @@ Current verdict from the unproven review (`unproven-review.md`): 4 are CONTAINED
 1 is DEBRIS. All 5 are still live on the remote and are **outside** the 15-branch approval set.
 
 > **The four `CONTAINED-safe-to-delete` verdicts below are SUPERSEDED - do not act on them.** The merged
-> inventory (`rewrite/triage/branch-inventory-2026-11-12.md`) classes all four as **"CONTAINED (candidate)
-> - UNPROVEN, KEPT"**, and its class rule says such a branch "must be treated as VALUABLE (NOT deletable)
-> until every absent path is proven to be scratch/archive". The publication's §3
-> (`rewrite/triage/debris-ratification-2026-11-14.md`) records the missing proof: the five usage fixtures
-> these branches carry are **absent from `main`** and their product-code paths have no inventory-grade
-> (merged-PR / patch-id / ancestry) containment proof. The rows are kept here only as the capture-time
-> record of the unproven review.
+> inventory (`rewrite/triage/branch-inventory-2026-11-12.md`, landed by **PR #1280**, merge commit
+> `78d3b86e`, and updated by **PR #1281**, merge commit `926bbd49d`) labels these four rows
+> **"CONTAINED - safe to delete"** - that is what a reader of the inventory finds, and it must not be
+> acted on. **The disposition that governs is the publication's: UNPROVEN, KEPT** (§3 of
+> `rewrite/triage/debris-ratification-2026-11-14.md`), which **supersedes the inventory's label for
+> exactly these four rows**. The inventory's own class rule ("CONTAINED candidate - UNPROVEN ... must be
+> treated as VALUABLE (NOT deletable) until every absent path is proven to be scratch/archive") and the
+> per-row evidence it carries point the same way: the five usage fixtures these branches carry are
+> **absent from `main`** and the product-code paths have no inventory-grade (merged-PR / patch-id /
+> ancestry) containment proof. The rows are kept here only as the capture-time record of the unproven
+> review.
 
 | branch | verdict (unproven review) | basis | action now |
 |---|---|---|---|
