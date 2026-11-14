@@ -321,6 +321,7 @@ async fn t09_and_t18_collision_creates_nothing() -> TestResult {
         );
         assert!(rig.world.gateway.sandboxes().is_empty());
         assert!(rig.world.gateway.providers().is_empty());
+        assert!(rig.world.gateway.profiles().is_empty());
         assert!(rig.world.engine.builds().is_empty());
         Ok(())
     })
