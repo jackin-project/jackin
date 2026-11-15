@@ -209,6 +209,7 @@ MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
 ROWS=()
 [ -f /tmp/manifest.txt ] || { echo "the manifest /tmp/manifest.txt is missing - run the pre-flight first"; exit 1; }
 while IFS= read -r row; do ROWS+=("$row"); done < /tmp/manifest.txt
+readonly -a ROWS
 [ "${#ROWS[@]}" -eq 15 ] || { echo "the manifest of /tmp/manifest.txt is not the 15 reviewed rows - run the pre-flight first"; exit 1; }
 digest=$(printf '%s\n' "${ROWS[@]}" | sort -k2 | sha256sum | cut -d' ' -f1)
 [ "$digest" = "$MANIFEST" ] \
