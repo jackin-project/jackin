@@ -9,8 +9,8 @@ use jackin_usage::{Refresh, UnavailableReason, UsageError, UsageRequest};
 use tokio_util::sync::CancellationToken;
 
 use crate::support::{
-    CODEX_PATH, TestResult, UsageHarness, codex_body, codex_login, codex_route, guard, serve_codex,
-    unavailable, windows_of,
+    CODEX_PATH, TestResult, UsageHarness, codex_body, codex_login, codex_route, guard,
+    put_codex_auth, serve_codex, unavailable, windows_of,
 };
 
 #[tokio::test]
@@ -76,21 +76,23 @@ async fn a_cancelled_forced_report_leaves_the_cache_bytes_unchanged() -> TestRes
 #[tokio::test]
 async fn a_provider_that_never_answers_is_a_network_error_after_the_timeout() -> TestResult {
     guard(async {
-        let (harness, slow) = UsageHarness::with_codex(&codex_body(10)).await?;
-        harness
-            .put(
-                "/home/fast/.codex/auth.json",
-                include_str!("fixtures/codex/auth_chatgpt.json"),
-            )
-            .await?;
+        let harness = UsageHarness::new().await?;
+        put_codex_auth(&harness, "/home/work/.codex", "slow-id").await?;
+        put_codex_auth(&harness, "/home/fast/.codex", "acct-1").await?;
         serve_codex(
             &harness,
             "SECRET_TOKEN_CODEX",
+            Route::json(200, &codex_body(10)).requires_header("chatgpt-account-id", "acct-1"),
+        );
+        harness.server.serve(
+            Provider::Codex,
+            Method::Get,
+            CODEX_PATH,
             Route::json(200, &codex_body(10))
                 .requires_header("chatgpt-account-id", "slow-id")
                 .delayed(Duration::from_secs(8)),
         );
-        let slow = codex_login(slow.name.as_str(), "/home/work/.codex", "slow-id");
+        let slow = codex_login("slow", "/home/work/.codex", "slow-id");
         let fast = codex_login("fast", "/home/fast/.codex", "acct-1");
         let host = harness.host_with(
             harness

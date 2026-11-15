@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
@@ -12,7 +13,7 @@ use jackin_core::{
     HostPath, LinkProblem, Provider, RegularFile, RegularFileProblem, RepoPath, StdFileSystem,
 };
 use jackin_testkit::{Method, Route, WorkingFs};
-use jackin_usage::{Refresh, UnavailableReason, UsageRequest};
+use jackin_usage::{Refresh, UnavailableReason, UsageError, UsageRequest};
 use rusqlite::Connection;
 use tokio_util::sync::CancellationToken;
 
@@ -50,6 +51,16 @@ fn store(home: &Path, rows: &[(i64, &str)]) {
 
 fn key_json(key: &str) -> String {
     format!("{{\"key\":\"{key}\"}}")
+}
+
+fn unblock_fifo(fifo: PathBuf) {
+    for attempt in 0..30 {
+        let delay = if attempt == 0 { 2 } else { 1 };
+        std::thread::park_timeout(Duration::from_secs(delay));
+        if std::fs::write(&fifo, b"").is_ok() {
+            break;
+        }
+    }
 }
 
 struct Omp {
@@ -114,6 +125,77 @@ async fn an_omp_account_reads_the_key_of_its_store() -> TestResult {
         let omp = started(&[(1, &key_json(KEY))]).await?;
         let outcome = omp.report().await?;
         assert_eq!(windows_of(&outcome).len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_slow_omp_store_is_cancelled_without_blocking_the_console() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let store = directory.path().join(".omp").join("agent");
+        std::fs::create_dir_all(&store)?;
+        let fifo = store.join("agent.db");
+        let made = tokio::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .await?;
+        assert!(made.success(), "mkfifo failed");
+        let _releaser = std::thread::spawn({
+            let fifo = fifo.clone();
+            move || unblock_fifo(fifo)
+        });
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Zai,
+            Method::Get,
+            PATH,
+            Route::json(200, QUOTA).requires_header("authorization", KEY),
+        );
+        let host = {
+            let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
+                Arc::new(StdFileSystem::default()),
+                &harness.clock,
+            ));
+            harness.host_on(
+                fs,
+                host_path_of(&directory.path().join("state").join("usage")),
+                host_path_of(directory.path()),
+            )
+        };
+        let cancel = CancellationToken::new();
+        let stopping = {
+            let cancel = cancel.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                cancel.cancel();
+            })
+        };
+        let request = UsageRequest {
+            accounts: vec![account("omp", Provider::Zai, CredentialSource::OmpHost)],
+            refresh: Refresh::Cached,
+        };
+        let reporting = tokio::spawn(async move { host.report(&request, &cancel).await });
+        let finished = tokio::time::timeout(Duration::from_millis(1500), reporting).await;
+        if finished.is_err() {
+            return Err("the OMP store blocked the console".into());
+        }
+        let released = tokio::task::spawn_blocking({
+            let fifo = fifo.clone();
+            move || std::fs::write(fifo, b"")
+        })
+        .await;
+        released??;
+        stopping.abort();
+        match finished?? {
+            Err(UsageError::Cancelled) => {}
+            Err(other) => panic!("expected cancellation, found {other:?}"),
+            Ok(report) => panic!(
+                "expected cancellation, found {} windows",
+                report.accounts.len()
+            ),
+        }
         Ok(())
     })
     .await
@@ -230,7 +312,7 @@ async fn an_identical_omp_store_that_is_recreated_with_a_reused_inode_is_fetched
         ));
         let outcome = omp.report_over(Arc::clone(&fs)).await?;
         assert_eq!(windows_of(&outcome).len(), 2);
-        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+        tokio::time::sleep(Duration::from_millis(1100)).await;
         std::fs::remove_file(&db).expect("the store is removed");
         store(omp.directory.path(), &[(1, &key_json(KEY))]);
         harness_failing(&omp);

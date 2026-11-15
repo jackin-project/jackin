@@ -104,11 +104,19 @@ fn windows(lab: &mut Lab, id: &str) -> Vec<(&'static str, Option<u8>, WindowCate
 }
 
 async fn rejected_and_unsupported(lab: &Lab) -> TestResult {
+    let home = lab.rig.home.as_path().join("other");
+    tokio::fs::create_dir_all(&home).await?;
+    let login = tokio::fs::read_to_string(lab.rig.home.as_path().join("auth.json")).await?;
+    tokio::fs::write(
+        home.join("auth.json"),
+        login.replace(ACCOUNT_ID, "other-account"),
+    )
+    .await?;
     let other = Account::new(
         AccountName::parse("spare")?,
         Provider::Codex,
         CredentialSource::CodexLogin {
-            home: lab.rig.home.clone(),
+            home: jackin_core::HostPath::parse(&home)?,
             chatgpt_account_id: ChatgptAccountId::parse("other-account")?,
         },
     )?;
