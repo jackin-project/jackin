@@ -116,18 +116,23 @@ Separate, earlier recorded deletion (historical snapshot section of the inventor
 
 ## 4) One-word approval text and the exact deletion commands
 
-**Send exactly:** `RATIFY DEBRIS: 15 branches`
+**Send exactly:** `RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`
+
+The digest is part of the word: it binds the word to the 15 (repository, branch, tip) triples of §1
+(the publication's §1), and the publication's step 1 recomputes it from the live tips and refuses to
+proceed when it differs. A word without the digest, or with a different one, is a refusal.
 
 (Optionally add the retroactive line for the unrecorded deletion. **Use the publication's exact text**
 (`rewrite/triage/debris-ratification-2026-11-14.md`, §4) - the repository name must be spelled out, because
 the publication treats any other wording as a refusal:
 
 ```text
-RATIFY DEBRIS: 15 branches
+RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
 RATIFY UNRECORDED DELETION: 1 branch (tailrocks/terminal-components-baseline wip/tuiscotti-pin-fec38841)
 ```
 
-The shorter form that stood here named the repository as `baseline` and would have been rejected.)
+The shorter form that stood here named the repository as `baseline` and carried no manifest digest;
+both would have been rejected.)
 
 Pre-flight: **superseded - use the publication's complete pre-flight**
 (`rewrite/triage/debris-ratification-2026-11-14.md`, §1, "Pre-flight, deletion run and post-check").
@@ -139,7 +144,7 @@ deleted the last durable ref of a branch whose unique history or test revisions 
 The publication's procedure replaces it in full: the manifest check over the 15 reviewed
 (repository, branch, tip) triples and their digest (with every deletion command regenerated from
 its own triple), the retained-ref check over every captured ref, the archive prerequisite that
-preserves each deleted tip and each captured retained ref under `refs/heads/archive/**`, the
+preserves each deleted tip and each captured retained ref under `refs/heads/archive/**/*`, the
 verification that re-reads every archive ref from the API, the ruleset that locks the archive
 namespace, and the deletion run that re-reads each archive ref immediately before its push. **Run
 the publication's pre-flight; nothing that stood here may be run in its place.**

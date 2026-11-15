@@ -8,7 +8,7 @@
 **Target guard:** every deletion command in §1 names its repository by its **HTTPS URL** (`https://github.com/<repo>.git`), never by the remote alias `origin`, so a clone whose `origin` points at a fork can never delete a ref in the wrong repository (§1, §1b).
 **Absent-path accounting:** §1a accounts for **every** path that each of the 15 deletions would remove, re-derived against the live `main` tips; §1b gives the commands that reproduce the numbers and names the `main` tips they were measured against.
 **Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs (§1, §4).
-**Archive prerequisite:** no deletion may run before every branch this document deletes — and every captured retained ref — is preserved under `refs/heads/archive/` **and verified**, and the `refs/heads/archive/**` namespace stays locked by a repository ruleset for the run, with each deletion push re-reading its own archive ref immediately before it runs. Fetching a recorded SHA is not preservation: once the last ref to an object is gone, the object is gone from the remote. Nothing in the deletions touches an archive ref and the lock keeps any other writer from touching one either, so the archive closes the window that the retained-ref check alone cannot close (§1, §1a, §9).
+**Archive prerequisite:** no deletion may run before every branch this document deletes — and every captured retained ref — is preserved under `refs/heads/archive/` **and verified**, and the `refs/heads/archive/**/*` namespace stays locked by a repository ruleset for the run, with each deletion push re-reading its own archive ref immediately before it runs. Fetching a recorded SHA is not preservation: once the last ref to an object is gone, the object is gone from the remote. Nothing in the deletions touches an archive ref and the lock keeps any other writer from touching one either, so the archive closes the window that the retained-ref check alone cannot close (§1, §1a, §9).
 
 ## Contents
 
@@ -58,10 +58,10 @@ These 15 are the **only** branches the operator's word covers. Each row carries 
 The pre-flight is **five steps in order**, and all five must pass before the first deletion push;
 step 6, the deletion run, executes only after the operator's word (§4); the post-check then reads
 the end state. **Steps 1, 2 and 4 and the post-check are read-only. Steps 3, 5 and 6 write to the
-remotes:** step 3 issues PATCH and POST requests that create or update `refs/heads/archive/**`
+remotes:** step 3 issues PATCH and POST requests that create or update `refs/heads/archive/**/*`
 branches in all three repositories — 78 archive heads, the 15 targets plus the 63 captured retained
 refs, each repository's `main` among them — step 5 installs a repository ruleset that locks
-`refs/heads/archive/**` against deletion and force-update, and step 6 pushes the 15 deletions.
+`refs/heads/archive/**/*` against deletion and force-update, and step 6 pushes the 15 deletions.
 Steps 3 and 5 need write authorization on all three repositories and step 5 needs admin rights over
 repository rules, so an operator whose intent is inspection only must stop before step 3: from that
 point on the procedure materially mutates the remotes, and step 6 deletes branches.
@@ -155,9 +155,14 @@ while read -r repo branch tip; do
 done < /tmp/manifest.txt
 
 # 5. ARCHIVE NAMESPACE LOCK (mandatory, before the first deletion push): make
-#    refs/heads/archive/** undeletable and un-force-updatable in each repository, so no authorized
+#    refs/heads/archive/**/* undeletable and un-force-updatable in each repository, so no authorized
 #    writer can remove or rewrite an archive ref between its verification and the deletion it
-#    protects. Managing repository rules needs admin rights. The list endpoint returns summaries,
+#    protects. The pattern is refs/heads/archive/**/* because GitHub matches a ruleset ref_name with
+#    File::FNM_PATHNAME, where `*` never crosses a `/` and `qa/**/*` is the docs' own example of a
+#    pattern that spans any number of path segments: `refs/heads/archive/*` and
+#    `refs/heads/archive/**` match NONE of the archive refs of step 3, because every branch name of
+#    §1 carries a `/` and every archive ref is nested (archive/<branch> and archive/retained/<ref>).
+#    Managing repository rules needs admin rights. The list endpoint returns summaries,
 #    so an existing lock is fetched in full and must be the active, branch-targeted, unbypassed,
 #    two-rule lock with no exclusions that this procedure creates - anything else is a stop;
 #    repairing an archive ref later means removing the lock first.
@@ -165,7 +170,7 @@ for r in jackin-project/jackin jackin-project/jackin-agent-smith tailrocks/termi
   lock_id=$(gh api "repos/$r/rulesets" --jq '.[] | select(.name == "debris-archive-lock") | .id')
   if [ -n "$lock_id" ]; then
     existing=$(gh api "repos/$r/rulesets/$lock_id" --jq '[.enforcement, (.conditions.ref_name.include | sort | join(",")), (.conditions.ref_name.exclude | sort | join(",")), ([.rules[].type] | sort | join(",")), (.bypass_actors | length), .target] | @tsv')
-    printf '%s\n' "$existing" | awk -F'\t' '$1 == "active" && $2 == "refs/heads/archive/*,refs/heads/archive/**" && $3 == "" && $4 == "deletion,non_fast_forward" && $5 == "0" && $6 == "branch" {ok++} END{exit !(ok == NR && NR > 0)}' \
+    printf '%s\n' "$existing" | awk -F'\t' '$1 == "active" && $2 == "refs/heads/archive/**/*" && $3 == "" && $4 == "deletion,non_fast_forward" && $5 == "0" && $6 == "branch" {ok++} END{exit !(ok == NR && NR > 0)}' \
       || { echo "the archive lock of $r is not the active, branch-targeted, unbypassed two-rule lock this procedure requires"; exit 1; }
     continue
   fi
@@ -175,7 +180,7 @@ for r in jackin-project/jackin jackin-project/jackin-agent-smith tailrocks/termi
   "target": "branch",
   "enforcement": "active",
   "conditions": {
-    "ref_name": {"include": ["refs/heads/archive/*", "refs/heads/archive/**"], "exclude": []}
+    "ref_name": {"include": ["refs/heads/archive/**/*"], "exclude": []}
   },
   "rules": [{"type": "deletion"}, {"type": "non_fast_forward"}]
 }
@@ -184,31 +189,98 @@ done
 ```
 
 **The operator's word comes here (§4).** Steps 1-5 must all have passed. The deletion run below
-executes only after the word is sent; each iteration re-reads the row's own archive ref and runs
-exactly that row's §1 command, so a deletion happens only while the archive copy it orphans is
-present and intact — and with the step-5 lock in place no writer can change that copy between the
-re-read and the push.
+executes only after the word is sent; it re-validates the manifest against the ratified digest
+before the first push, reads only the frozen copy of that manifest, and re-reads the row's own
+archive ref immediately before it runs exactly that row's §1 command — so a deletion happens only
+while the archive copy it orphans is present and intact, and only for a manifest that is still the
+reviewed one. With the step-5 lock in place no writer can change that copy between the re-read and
+the push.
 
 ```bash
 set -euo pipefail
 
-[ "$(wc -l < /tmp/manifest.txt)" -eq 15 ] || { echo "the manifest of /tmp/manifest.txt is not the 15 reviewed rows - run the pre-flight first"; exit 1; }
+MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
+RATIFIED=/tmp/manifest.ratified.txt
 
-# 6. DELETION RUN: one row at a time, archive first, push second.
+# the manifest is re-validated against the digest the operator's word carries before the first
+# push: the word binds the 15 (repository, branch, tip) triples, so a manifest that changed after
+# the pre-flight is a refusal, not a deletion
+[ -f /tmp/manifest.txt ] || { echo "the manifest /tmp/manifest.txt is missing - run the pre-flight first"; exit 1; }
+[ "$(wc -l < /tmp/manifest.txt)" -eq 15 ] || { echo "the manifest of /tmp/manifest.txt is not the 15 reviewed rows - run the pre-flight first"; exit 1; }
+[ "$(sort -k2 /tmp/manifest.txt | sha256sum | cut -d' ' -f1)" = "$MANIFEST" ] \
+  || { echo "the manifest digest is not the reviewed one - re-run the pre-flight"; exit 1; }
+
+# the deletion run reads only the frozen copy of the validated manifest, and that copy's digest is
+# checked again before every push and after the last one, so a manifest that changes mid-run
+# cannot change what runs
+rm -f "$RATIFIED"
+cp /tmp/manifest.txt "$RATIFIED"
+chmod 0444 "$RATIFIED"
+[ "$(sha256sum "$RATIFIED" | cut -d' ' -f1)" = "$MANIFEST" ] || { echo "the frozen manifest is not the reviewed one"; exit 1; }
+
+# 6. DELETION RUN: one row at a time, archive first, push second. The push is built from the
+#    row's own (repository, branch, tip) triple, so it is the §1 command of that row.
 while read -r repo branch tip; do
+  [ "$(sha256sum "$RATIFIED" | cut -d' ' -f1)" = "$MANIFEST" ] \
+    || { echo "the ratified manifest changed during the run"; exit 1; }
   got=$(gh api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha') \
     || { echo "archive ref $repo archive/$branch is gone before deleting $branch"; exit 1; }
   [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip before deleting $branch"; exit 1; }
   git push --force-with-lease="refs/heads/$branch:$tip" "https://github.com/$repo.git" --delete "$branch"
-done < /tmp/manifest.txt
+done < "$RATIFIED"
+[ "$(sha256sum "$RATIFIED" | cut -d' ' -f1)" = "$MANIFEST" ] || { echo "the ratified manifest changed during the run"; exit 1; }
 
-# post-check: the 15 refs must be gone; every archive head of the 15 must still hold its recorded
-# tip; every excluded / contained / VALUABLE branch must still be there
+# post-check: the 15 targets must be gone, every archive head of the 15 must still hold its
+# recorded tip, and every protected branch must still be there
 while read -r repo branch tip; do
   got=$(gh api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha') \
     || { echo "archive ref $repo archive/$branch is gone after the deletions"; exit 1; }
   [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip after the deletions"; exit 1; }
-done < /tmp/manifest.txt
+done < "$RATIFIED"
+
+# the branch list of every repository the run can touch, read once
+for r in jackin-project/jackin jackin-project/jackin-agent-smith jackin-project/jackin-sentinel tailrocks/terminal-components-baseline; do
+  gh api "repos/$r/branches" --paginate --jq '.[].name' > "/tmp/post-$(echo "$r" | tr '/' '-').txt" \
+    || { echo "the branch list of $r could not be read"; exit 1; }
+done
+
+# the 15 targets must be absent from their repositories
+while read -r repo branch tip; do
+  list="/tmp/post-$(echo "$repo" | tr '/' '-').txt"
+  [ -f "$list" ] || { echo "the branch list of $repo was not read"; exit 1; }
+  if grep -qxF "$branch" "$list"; then
+    echo "$repo still has the deleted branch $branch"; exit 1
+  fi
+done < "$RATIFIED"
+
+# the protected branches - the rows of §2, §3 and §8 and each repository's main - must remain
+while read -r repo branch; do
+  list="/tmp/post-$(echo "$repo" | tr '/' '-').txt"
+  [ -f "$list" ] || { echo "the branch list of $repo was not read"; exit 1; }
+  if ! grep -qxF "$branch" "$list"; then
+    echo "the protected branch $repo $branch is gone after the deletions"; exit 1
+  fi
+done <<'PROTECTED'
+jackin-project/jackin main
+jackin-project/jackin preserve/p0.6-prototype-20261109
+jackin-project/jackin recovery/pr1230-blob-auth-77b399f1-20261027
+jackin-project/jackin recovery/stash-adoption-6a0d2f03-20261025
+jackin-project/jackin recovery/strip-tests-restore-20261030
+jackin-project/jackin codex/openshell-integration-checkpoint-20261108-122311
+jackin-project/jackin codex/openshell-verified-checkpoint-20261108
+jackin-project/jackin preserve/session-boundaries-20261109
+jackin-project/jackin preserve/w1-fixes-20261109
+jackin-project/jackin fix/typed-model-selection
+jackin-project/jackin docs/triage-inventory-reclass-2026-11-13
+jackin-project/jackin-agent-smith main
+jackin-project/jackin-sentinel main
+jackin-project/jackin-sentinel fix/s158-postmerge-4
+jackin-project/jackin-sentinel preserve/probe-identity-20261109
+tailrocks/terminal-components-baseline main
+tailrocks/terminal-components-baseline preserve/local-unique-20261109
+PROTECTED
+
+# the end state, for the record
 gh api repos/jackin-project/jackin/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
 gh api repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
 gh api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
@@ -749,6 +821,6 @@ Not part of any approval set; listed so that no one mistakes them for debris. Ro
 - The 4 CONTAINED candidates of §3 are listed as **UNPROVEN** CONTAINED candidates, not as DEBRIS and **not** as safe-to-delete: they are excluded from this ratification by class, not by doubt. **This publication supersedes the merged inventory's "CONTAINED - safe to delete" label for exactly these four rows** (§3); the inventory's class rule ("CONTAINED candidate - UNPROVEN") and its own per-row evidence agree with §3, and the five usage fixtures the branches carry are absent from `main`. Their containment proof is still incomplete (§3), so they are treated as VALUABLE and kept.
 - The branches of §7 that are outside every class list (4 recorded individually, 50 in total at the 20:12 UTC re-check) were created after the inventory was captured; their tips moved between the compiles of this document and they are not audited here at all. They are outside every class list and outside the operator's word.
 - §6 records a deletion that happened before this document; it is a ratification of a fact, not a new deletion.
-- The retained-ref check in §1 is a **pre-flight, not a transaction**: a retained ref can move or be deleted between that check and the push, and a deletion lease covers only its own target. **The archive prerequisite of §1 is what closes that window**: before the first deletion push, the tip of each of the 15 rows and the captured tip of every retained ref is preserved under `refs/heads/archive/` and verified (steps 3 and 4 of the pre-flight), the `refs/heads/archive/**` namespace is then locked against deletion and force-update by the step-5 ruleset, each deletion push of step 6 re-reads its own archive ref immediately before it runs, and no deletion in §1 touches an archive ref. A collaborator who can move a retained branch can therefore no longer remove the last copy of content that §1a counted as preserved (row 10 relies on retained refs for 2 of its 20 paths). What the archive does not cover is the history a retained ref gained *after* the capture — the archive holds the captured tip, and the tip's own history with it. Running the deletions as one atomic server-side operation remains an option, not a requirement.
-- **The decision trail does not yet carry this publication's disposition.** `rewrite/decisions.tsv:520` still records the four branches of §3 as "CONTAINED-safe-to-delete", and `:525` still names "4 CONTAINED-safe-to-delete candidates" in the 15-branch ratification row. This publication supersedes both labels (§3): the four are **UNPROVEN, KEPT** — kept, not deletable. Only the orchestrator edits `rewrite/decisions.tsv` (AGENTS.md), so the superseding trail row is requested from the orchestrator and is **not** part of this PR; it must land **before this PR merges**, so the durable trail carries the override at the moment the override becomes public. Until it is added, the trail and this publication disagree, and this publication is the one that governs. The ascending order of the trail's `ts` column also needs the orchestrator's repair: rows 314, 319, 383, 413 and 419 carry a timestamp earlier than the row above them.
+- The retained-ref check in §1 is a **pre-flight, not a transaction**: a retained ref can move or be deleted between that check and the push, and a deletion lease covers only its own target. **The archive prerequisite of §1 is what closes that window**: before the first deletion push, the tip of each of the 15 rows and the captured tip of every retained ref is preserved under `refs/heads/archive/` and verified (steps 3 and 4 of the pre-flight), the `refs/heads/archive/**/*` namespace is then locked against deletion and force-update by the step-5 ruleset, each deletion push of step 6 re-reads its own archive ref immediately before it runs, and no deletion in §1 touches an archive ref. A collaborator who can move a retained branch can therefore no longer remove the last copy of content that §1a counted as preserved (row 10 relies on retained refs for 2 of its 20 paths). What the archive does not cover is the history a retained ref gained *after* the capture — the archive holds the captured tip, and the tip's own history with it. Running the deletions as one atomic server-side operation remains an option, not a requirement.
+- **The decision trail carries this publication's disposition in this PR.** `rewrite/decisions.tsv:520` recorded the four branches of §3 as "CONTAINED-safe-to-delete", and `:525` named "4 CONTAINED-safe-to-delete candidates" in the 15-branch ratification row. This publication supersedes both labels (§3): the four are **UNPROVEN, KEPT** — kept, not deletable. The superseding trail rows are part of this PR: `rewrite/decisions.tsv:531` records the four §3 branches as UNPROVEN, KEPT and excluded from the 15-branch set by class, and `:532` corrects the phrase of the ratification row. The same commit repairs the ascending order of the trail's `ts` column, so the five inherited inversions (rows 314, 319, 383, 413 and 419) are gone and the trail and this publication agree before this PR merges. The rows the other documents cite (`:510`, `:511`, `:514`, `:520`, `:521`, `:525`) are byte-identical to the rows they cited before.
 - Nothing was deleted, pushed to a branch, merged or tagged in producing this document; only this file and the seven audit files under `rewrite/triage/audits/2026-11-14/` were added.
