@@ -3,7 +3,6 @@
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -138,7 +137,10 @@ async fn a_slow_omp_store_is_cancelled_without_blocking_the_console() -> TestRes
         let store = directory.path().join(".omp").join("agent");
         std::fs::create_dir_all(&store)?;
         let fifo = store.join("agent.db");
-        let made = Command::new("mkfifo").arg(&fifo).status()?;
+        let made = tokio::process::Command::new("mkfifo")
+            .arg(&fifo)
+            .status()
+            .await?;
         assert!(made.success(), "mkfifo failed");
         let _releaser = std::thread::spawn({
             let fifo = fifo.clone();

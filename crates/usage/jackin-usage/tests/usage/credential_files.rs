@@ -3,7 +3,6 @@
 
 use std::os::unix::fs::symlink;
 use std::path::Path;
-use std::process::Command;
 use std::sync::Arc;
 
 use jackin_core::{CredentialSource, FileSystem, HostPath, Provider, StdFileSystem};
@@ -129,7 +128,13 @@ async fn a_symbolic_link_to_a_pipe_is_refused_without_blocking() -> TestResult {
     guard(async {
         let directory = tempfile::tempdir()?;
         let pipe = directory.path().join("pipe");
-        assert!(Command::new("mkfifo").arg(&pipe).status()?.success());
+        assert!(
+            tokio::process::Command::new("mkfifo")
+                .arg(&pipe)
+                .status()
+                .await?
+                .success()
+        );
         let link = directory.path().join("key");
         symlink(&pipe, &link)?;
         let usage = read_through(&directory, file_account(&link)?).await?;
