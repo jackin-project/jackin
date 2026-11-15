@@ -13,6 +13,13 @@ tracked repositories. Read-only: nothing was pushed, committed, merged, or delet
 > branches carry are absent from `main`'s tree, four of their contents are absent from `main`'s history as
 > well, and their product-code paths have no inventory-grade containment proof. The disposition that
 > governs for these four is **UNPROVEN, KEPT** — kept, not deletable.
+> **Tree absence is not content loss, and no row claims a unique copy.** Measured against the captured
+> retained set (`rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt`), each of the four
+> history-absent fixture blobs is held by **35** retained refs at the same path, and the fifth blob
+> `568abbfdc` (`crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_no_go.json`) by **39** —
+> among them `fix/cli-review-fixes` (`b95cd928`) and `fix/core-plan-review` (`b172385c`). The fifth
+> blob is also in `main`'s object history. The four rows are therefore kept for the missing
+> containment proof of their product-code paths, not because they hold the only copy of a fixture.
 > The **fifth** candidate, `preserve/p0.6-prototype-20261109`, is **not** part of that override: the
 > merged inventory classes it **DEBRIS** (not "safe to delete"), and the publication's §2 records it as
 > DEBRIS-class **outside** the approval set, where it needs **its own** operator word. It is neither kept

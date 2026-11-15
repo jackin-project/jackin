@@ -8,7 +8,11 @@
 > merged inventory (`rewrite/triage/branch-inventory-2026-11-12.md`) labels those four branches
 > **"CONTAINED - safe to delete"**; **the disposition that governs is the publication's — UNPROVEN, KEPT**
 > (§3), which supersedes that label for exactly these four rows, because the five usage fixtures they
-> carry are absent from `main` and their product-code paths have no inventory-grade containment proof.
+> carry are absent from `main`'s **tree** and their product-code paths have no inventory-grade
+> containment proof. (Absence from `main`'s tree is not loss of the content: the fixture blobs are
+> preserved in `main`'s object history and in the captured retained refs — the publication's §3 gives
+> the per-blob counts. The four rows are kept for the missing containment proof, not for a unique
+> copy of a fixture, and no row of this file claims such a copy.)
 > The audit files named below are committed next to this one, in `rewrite/triage/audits/2026-11-14/`.
 >
 > The per-row counts in §1 of this file are the **capture-time** ones (2026-11-13/14) and the
@@ -83,9 +87,11 @@ Current verdict from the unproven review (`unproven-review.md`): 4 are CONTAINED
 > exactly these four rows**. The inventory's own class rule ("CONTAINED candidate - UNPROVEN ... must be
 > treated as VALUABLE (NOT deletable) until every absent path is proven to be scratch/archive") and the
 > per-row evidence it carries point the same way: the five usage fixtures these branches carry are
-> **absent from `main`** and the product-code paths have no inventory-grade (merged-PR / patch-id /
-> ancestry) containment proof. The rows are kept here only as the capture-time record of the unproven
-> review.
+> **absent from `main`'s tree** and the product-code paths have no inventory-grade (merged-PR /
+> patch-id / ancestry) containment proof. (Tree absence is not content loss: the fixture blobs are
+> preserved in `main`'s object history and in the captured retained refs — the publication's §3 gives
+> the per-blob counts. No row here claims a unique copy, and none is needed for the UNPROVEN, KEPT
+> disposition.) The rows are kept here only as the capture-time record of the unproven review.
 
 | branch | verdict (unproven review) | basis | action now |
 |---|---|---|---|
@@ -129,7 +135,7 @@ RATIFY UNRECORDED DELETION: 1 branch (tailrocks/terminal-components-baseline wip
 
 The shorter form that stood here named the repository as `baseline` and would have been rejected.)
 
-Pre-flight (read-only, confirms the 15 tips before deleting):
+Pre-flight (read-only, confirms the 15 tips before deleting) — note that this block is **not** the publication's pre-flight: the publication's §1 has one **writing** step (the archive creation, step 3) that is fenced off from its inspection steps and carries its own authorization prerequisites:
 ```bash
 for r in jackin-project/jackin jackin-project/jackin-agent-smith tailrocks/terminal-components-baseline; do
   gh api "repos/$r/branches" --paginate --jq '.[].name'
@@ -159,7 +165,11 @@ gh api repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[].nam
 gh api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[].name'
 ```
 Expected after deletion: jackin 22 → 12 non-main, smith 2 → 0, baseline 4 → 1 (capture-time counts of
-2026-11-13; the publication's §1 carries the counts re-read on 2026-11-14 at 20:12 UTC).
+2026-11-13). **These counts omit the archive heads** that the publication's pre-flight creates
+(70 / 3 / 5), so they are not the post-run counts. The publication's §1 carries the corrected
+arithmetic — from the 20:12 UTC re-read: 70 + 70 − 10 = **130**, 3 + 3 − 2 = **4**, 5 + 5 − 3 = **7**;
+from the 01:37 UTC re-read the baseline is 37 + 5 − 3 = **39**, jackin 69 + 70 − 10 = **129** and
+smith 3 + 3 − 2 = **4**.
 
 ## 5) Limitations / notes
 - Nothing was deleted, pushed, committed, merged or tagged; this file is the only artifact written.
