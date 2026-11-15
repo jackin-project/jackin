@@ -350,9 +350,10 @@ a9f2585a716a55c83215f87ad0038335f16a87da:rewrite/evidence/A14-omp-final-live.md:
 # 1 finding(s); rules: generic-api-key; files: crates/jackin-session/tests/accounts/sync.rs (1)
 4a1538771fe0cbd05f6511a7b05bfc85764684af:crates/jackin-session/tests/accounts/sync.rs:generic-api-key:372
 
-# Reason: prose in the A14 decision log; the match is the evidence file name A14-t02-live-fixed.md that follows the word "auth" in the same cell; no credential.
-# 1 finding(s); rules: generic-api-key; files: rewrite/decisions.tsv (1)
+# Reason: prose in the A14 decision log; the match is the evidence file name A14-t02-live-fixed.md that follows the word "auth" in the same cell; no credential. The two entries are that one finding in two commits: the row sat at line 430 in both, and the 2026-11-15 trail sort moved it to line 413 in the working tree, which is keyed separately below.
+# 2 finding(s); rules: generic-api-key; files: rewrite/decisions.tsv (2)
 a1c819a51a845efff4f8bf680b585c50a7f6a06a:rewrite/decisions.tsv:generic-api-key:430
+f683619b5f1607c56b23c400848e8f6a00e09037:rewrite/decisions.tsv:generic-api-key:430
 
 # Reason: git commit SHA-1 hashes and SHA-256 digest prefixes quoted in the A14 live evidence; the sourcegraph-access-token rule matches any bare 40-hex token once the file mentions "sgp_"; no credential. Same findings as the pre-merge branch commit a9f2585a, re-keyed to the squash-merge commit f683619b5 (the branch commit is not in the main history). Two matches share the line-149 fingerprint.
 # 29 finding(s); rules: sourcegraph-access-token; files: rewrite/evidence/A14-codex-final-live.md (18), rewrite/evidence/A14-omp-final-live.md (11)
@@ -397,4 +398,4 @@ crates/xtask/tests/e2e/i_target.rs:generic-api-key:739
 
 # Reason: prose in the A14 decision log; the match is the evidence file name A14-t02-live-fixed.md that follows the word "auth" in the same cell; no credential.
 # 1 finding(s); rules: generic-api-key; files: rewrite/decisions.tsv (1)
-rewrite/decisions.tsv:generic-api-key:430
+rewrite/decisions.tsv:generic-api-key:413
