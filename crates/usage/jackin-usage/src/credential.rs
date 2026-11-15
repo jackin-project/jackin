@@ -36,6 +36,8 @@ const OPENCODE_WAL_FRAME_HEADER: usize = 24;
 const OPENCODE_WAL_MAGIC: u32 = 0x377f_0682;
 const OPENCODE_WAL_MAGIC_SWAPPED: u32 = 0x377f_0683;
 const OPENCODE_WAL_FORMAT: u32 = 3_007_000;
+const KIMI_GLOBAL_OAUTH: &str = "https://auth.kimi.ai";
+const KIMI_MAINLAND_OAUTH: &str = "https://auth.kimi.com";
 const HEX: [char; 16] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
 ];
@@ -288,6 +290,27 @@ async fn kimi_host_login(
         .get("oauth")
         .and_then(toml::Value::as_table)
         .ok_or(Unresolved::Unreadable("the Kimi config has no oauth store"))?;
+    let oauth_host = oauth
+        .get("oauth_host")
+        .map(|value| {
+            value
+                .as_str()
+                .map(|value| value.trim().trim_end_matches('/'))
+                .filter(|value| !value.is_empty())
+                .ok_or(Unresolved::Unreadable(
+                    "the Kimi config oauth host is not usable",
+                ))
+        })
+        .transpose()?;
+    match (base, oauth_host) {
+        (KIMI_MAINLAND_BASE, None | Some(KIMI_MAINLAND_OAUTH)) => {}
+        (KIMI_GLOBAL_BASE, Some(KIMI_GLOBAL_OAUTH)) => {}
+        _ => {
+            return Err(Unresolved::Unreadable(
+                "the Kimi config hosts are not a supported Kimi host pair",
+            ));
+        }
+    }
     if oauth.get("storage").and_then(toml::Value::as_str) != Some("file") {
         return Err(Unresolved::Unreadable(
             "the Kimi oauth store is not a file store",
