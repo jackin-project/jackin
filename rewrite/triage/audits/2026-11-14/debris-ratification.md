@@ -1,11 +1,18 @@
-# DEBRIS Ratification List — operator one-word approval
+# DEBRIS Ratification List — capture-time record (the approval workflow of §4 is superseded; use the publication)
 
 > **Committed as the capture-time record (2026-11-14).** The published, operator-facing document is
 > `rewrite/triage/debris-ratification-2026-11-14.md`; where the two differ, **the publication wins**.
-> Two parts of this file are superseded by it and are marked below: the runnable deletion block in §4
-> (it was unguarded and target-ambiguous - the publication's commands are leased against the recorded
-> tip and name their repository by URL) and the four `CONTAINED-safe-to-delete` verdicts in §2. The
-> merged inventory (`rewrite/triage/branch-inventory-2026-11-12.md`) labels those four branches
+> **Three parts of this file are superseded by it and are marked below: the whole of §4 — the approval
+> word, the pre-flight, the deletion commands and the post-check — and the four
+> `CONTAINED-safe-to-delete` verdicts in §2.** The §4 workflow that stood here printed branch names
+> and nothing else: it never confirmed that the 15 refs still carried their recorded tips, never
+> checked the captured retained refs, and never created or verified a preservation holder, so an
+> operator who followed it and then ran the publication's deletion commands could have removed the
+> last durable ref of rows 13-15 and of row 13's three branch-only test revisions. The publication's
+> §1 pre-flight is the only workflow that may be followed: manifest check, retained-ref check,
+> protection gate, preservation with a holder-by-holder verification, and a re-verification
+> immediately before every push. The merged inventory
+> (`rewrite/triage/branch-inventory-2026-11-12.md`) labels those four branches
 > **"CONTAINED - safe to delete"**; **the disposition that governs is the publication's — UNPROVEN, KEPT**
 > (§3), which supersedes that label for exactly these four rows, because the five usage fixtures they
 > carry are absent from `main` and their product-code paths have no inventory-grade containment proof.
@@ -27,6 +34,11 @@ READ-ONLY: nothing deleted, pushed, committed or merged. Tips below re-read live
 
 ## 1) APPROVE FOR DELETION — 15 branches (10 jackin · 2 smith · 3 baseline)
 
+> **This table is the capture-time verdict list of the audit, not an approval and not a workflow.**
+> The approval word, the pre-flight, the preservation steps and the deletion commands are the
+> publication's (§4 below is superseded in full), and the publication's §1 carries the current counts
+> and the leased commands.
+
 | # | repo | branch | tip SHA | one-line evidence |
 |---|---|---|---|---|
 | 1 | jackin-project/jackin | `chore/triage-inventory-20261112` | `e13360eb8` | 1 commit adds only the generated triage artifact `rewrite/triage/branch-inventory-20261112.md` (9148 B), superseded by the merged inventory in main (`git cherry` 1+/0-). |
@@ -46,6 +58,7 @@ READ-ONLY: nothing deleted, pushed, committed or merged. Tips below re-read live
 | 15 | tailrocks/terminal-components-baseline | `wip/tuiscotti-fixcheck` | `8d352ebf` | 1914 absent paths = 1880 legacy `.tui.json` + 23 `run-evidence/fix-validation/**` + machine-local `.cargo/config.toml`; **0** branch-only commits touch `src`/`apps`. |
 
 ### EXPLICITLY EXCLUDED — 3 reclassified rows (VALUABLE, MUST NOT be deleted)
+
 > **SUPERSEDED by the publication's §2 - do not act on the interim classes below.** The three rows in
 > this block were classified VALUABLE by the 2026-11-13 evidence audit. The completed portability
 > assessment of the same day returned **DISCARD** for all three, and the publication
@@ -110,58 +123,69 @@ Separate, earlier recorded deletion (historical snapshot section of the inventor
 (tree byte-identical to `97b1b58f7`), PR #1263 closed. Not part of the 20.
 
 ### The one deletion that was NOT recorded — needs ratification
+
 | repo | branch | status | proof to record |
 |---|---|---|---|
 | tailrocks/terminal-components-baseline | `wip/tuiscotti-pin-fec38841` | **already deleted from the remote** (live check: `gh api repos/tailrocks/terminal-components-baseline/git/ref/heads/wip/tuiscotti-pin-fec38841` → HTTP 404 "Not Found") but **no deletion proof was recorded** in the inventory, which still says "kept — left on the remote because baseline had 0 deletions" | Class was CONTAINED (superseded), so no work was lost: the single commit only bumps the `tuiscotti` dev-dependency `d8d54155` → `fec38841`, and `main` already pins the same dependency at the strictly newer rev `92ef2d9e` (`main:Cargo.toml`); the commit's doc intent is already in `main:docs/functional-testing.md:96`. Operator ratification = accept this deletion retroactively and record the proof. **No command needed — the branch is already gone.** |
 
 ## 4) One-word approval text and the exact deletion commands
 
-**Send exactly:** `RATIFY DEBRIS: 15 branches`
+**SUPERSEDED IN FULL — this file carries no approval text, no pre-flight, no post-check and no
+runnable deletion.** The approval workflow lives in the publication
+`rewrite/triage/debris-ratification-2026-11-14.md` (§1 pre-flight, §4 approval text), and the
+publication's workflow is the **only** one that may be followed. Everything that stood in this
+section is withdrawn:
 
-(Optionally add the retroactive line for the unrecorded deletion. **Use the publication's exact text**
-(`rewrite/triage/debris-ratification-2026-11-14.md`, §4) - the repository name must be spelled out, because
-the publication treats any other wording as a refusal:
+- the capture-time word `RATIFY DEBRIS: 15 branches` — the publication's word is
+  `RATIFY DEBRIS: 15 branches manifest sha256:<digest>`, and any other wording is a refusal;
+- the name-listing pre-flight — it printed branch **names** and nothing else: it never confirmed
+  that the 15 refs still carried their recorded tips, never checked the captured retained refs, and
+  never created or verified a preservation holder;
+- the runnable `gh api -X DELETE` list — it deleted whatever tip the ref had at that moment and
+  named the repository implicitly;
+- the post-check name listing and its capture-time counts.
 
-```text
-RATIFY DEBRIS: 15 branches
-RATIFY UNRECORDED DELETION: 1 branch (tailrocks/terminal-components-baseline wip/tuiscotti-pin-fec38841)
-```
+**Why the withdrawal matters.** Rows 13-15 of the publication carry 666, 649 and 649 commits that
+no retained ref holds, and row 13 carries three branch-only test revisions
+(`tests/functional/cases/j04_usage.rs`, `s05_filebrowser.rs`, `t01_test.rs` — 95 added lines) that
+exist nowhere else. The publication makes their preservation a **prerequisite of the deletion** and
+binds the executed commands to the reviewed manifest. An operator who followed the withdrawn
+pre-flight of this file and then used the publication's deletion commands would have removed the
+last durable ref of that content without ever creating or verifying a holder for it.
 
-The shorter form that stood here named the repository as `baseline` and would have been rejected.)
+**The one workflow — the publication's, all five steps, in this order, before the first deletion
+push:**
 
-Pre-flight (read-only, confirms the 15 tips before deleting):
-```bash
-for r in jackin-project/jackin jackin-project/jackin-agent-smith tailrocks/terminal-components-baseline; do
-  gh api "repos/$r/branches" --paginate --jq '.[].name'
-done
-```
+1. **Manifest check** — the 15 manifest records of the publication's §1 table
+   (`<repository> <branch> <tip> <exact deletion command>`) are read from the **published
+   revision** of the publication; every command cell is checked against the command generated from
+   its own triple; every live tip is compared with the recorded tip; and the SHA-256 manifest
+   digest the operator's word carries is recomputed and must match. A word without that digest, or
+   with a different one, is a refusal.
+2. **Retained-ref check** — every captured ref of
+   `rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt` must still hold its captured
+   commit (the ref advanced) or that commit must still resolve in the repository.
+3. **Protection gate** — the archive namespace of each of the three repositories must be covered by
+   an active ruleset that forbids deleting and rewriting the refs in it. Ordinary archive heads are
+   mutable branches: without that ruleset another writer can delete or rewrite an archive head
+   between the verification and the push, and the deletion lease of the original branch does not
+   see it. **Without the ruleset, no deletion may run.**
+4. **Preservation and verification** — the archive holder of each of the 15 rows and of each
+   captured retained ref is created, and then **every holder is verified by name**: it must exist,
+   it must hold the recorded tip, the number of holders verified must equal the number expected,
+   and the archive namespace must hold exactly those holders and no others.
+5. **Pre-push re-verification** — the protection gate and the holder of the row are re-checked
+   immediately before every individual push, and the commands that run are **generated from the
+   validated triples**, never copied out of a table.
 
-Deletion commands for the approved 15: **superseded - use the publication's table**
-(`rewrite/triage/debris-ratification-2026-11-14.md`, §1, one row per branch).
+Only after step 5 may the operator run the deletions.
 
-The block that stood here was a runnable `gh api -X DELETE` list. It was **unguarded** - it deleted
-whatever tip the ref had at that moment, not the audited tip - and it named the repository implicitly, so
-in a fork-based clone it could have hit the wrong repository. The publication's §1 replaces it with, per
-branch, the exact command:
-
-```bash
-git push --force-with-lease=refs/heads/<branch>:<recorded-tip-SHA> https://github.com/<repo>.git --delete <branch>
-```
-
-which refuses to run when the branch has moved since the audit and always targets the repository named in
-the row. **Nothing in this file is a runnable deletion.**
-
-Post-check (read-only): the 15 refs must be gone; the 3 excluded + 5 CONTAINED candidates +
-VALUABLE branches must still be present.
-```bash
-gh api repos/jackin-project/jackin/branches --paginate --jq '.[].name'
-gh api repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[].name'
-gh api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[].name'
-```
-Expected after deletion: jackin 22 → 12 non-main, smith 2 → 0, baseline 4 → 1 (capture-time counts of
-2026-11-13; the publication's §1 carries the counts re-read on 2026-11-14 at 20:12 UTC).
+**Nothing in this file is a runnable deletion, and nothing in this file may be sent to the
+operator as an approval word.** The publication's §1 carries the per-branch commands and its
+pre-flight; the publication's §4 carries the exact word.
 
 ## 5) Limitations / notes
+
 - Nothing was deleted, pushed, committed, merged or tagged; this file is the only artifact written.
 - The 20 recorded CONTAINED deletions could not be re-proved from the remotes (refs are gone); their
   recorded proofs were read and accepted. The 15 approved branches' tips were re-read live.
