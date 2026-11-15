@@ -30,7 +30,10 @@ fn serve_reset_credits(server: &UsageServer) {
 fn login_account(world: &World, name: &str, account_id: &str) -> Result<String, Failure> {
     let home = world.home().as_path().join(name);
     std::fs::create_dir_all(&home)?;
-    std::fs::write(home.join("auth.json"), AUTH)?;
+    std::fs::write(
+        home.join("auth.json"),
+        AUTH.replace("{{ACCOUNT_ID}}", account_id),
+    )?;
     Ok(format!(
         "[accounts.{name}]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{account_id}\" }}\n",
         home.display()

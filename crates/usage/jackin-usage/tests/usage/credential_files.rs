@@ -3,7 +3,6 @@
 
 use std::os::unix::fs::symlink;
 use std::path::Path;
-use std::process::Command;
 use std::sync::Arc;
 
 use jackin_core::{CredentialSource, FileSystem, HostPath, Provider, StdFileSystem};
@@ -129,7 +128,13 @@ async fn a_symbolic_link_to_a_pipe_is_refused_without_blocking() -> TestResult {
     guard(async {
         let directory = tempfile::tempdir()?;
         let pipe = directory.path().join("pipe");
-        assert!(Command::new("mkfifo").arg(&pipe).status()?.success());
+        assert!(
+            tokio::process::Command::new("mkfifo")
+                .arg(&pipe)
+                .status()
+                .await?
+                .success()
+        );
         let link = directory.path().join("key");
         symlink(&pipe, &link)?;
         let usage = read_through(&directory, file_account(&link)?).await?;
@@ -237,17 +242,135 @@ async fn kimi_report(
 }
 
 fn write_kimi_store(directory: &tempfile::TempDir, token: &str) -> TestResult {
+    write_kimi_store_with_config(directory, token, "https://api.kimi.com/coding/v1", None)
+}
+
+fn write_kimi_store_with_config(
+    directory: &tempfile::TempDir,
+    token: &str,
+    base_url: &str,
+    oauth_host: Option<&str>,
+) -> TestResult {
     let home = directory.path().join("kimi-home");
     std::fs::create_dir_all(home.join("credentials"))?;
-    std::fs::write(
-        home.join("config.toml"),
-        "[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"https://api.kimi.com/coding/v1\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/slot\"\n",
-    )?;
+    let mut config = format!(
+        "[providers.\"managed:kimi-code\"]\ntype = \"kimi\"\nbase_url = \"{base_url}\"\n\n[providers.\"managed:kimi-code\".oauth]\nstorage = \"file\"\nkey = \"oauth/slot\"\n"
+    );
+    if let Some(oauth_host) = oauth_host {
+        config.push_str(&format!("oauth_host = \"{oauth_host}\"\n"));
+    }
+    std::fs::write(home.join("config.toml"), config)?;
     std::fs::write(
         home.join("credentials").join("slot.json"),
         format!("{{\"access_token\":\"{token}\",\"expires_at\":1767232800}}"),
     )?;
     Ok(())
+}
+
+fn refusal_of(outcome: &jackin_usage::UsageOutcome) -> &str {
+    match unavailable(outcome) {
+        UnavailableReason::Provider(message) => message,
+        other => panic!("expected a provider refusal, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_host_login_with_a_foreign_base_url_is_refused_before_the_request() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        write_kimi_store_with_config(
+            &directory,
+            "SECRET_TOKEN_KIMI",
+            "https://api.kimi.example/coding/v1",
+            None,
+        )?;
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Kimi,
+            Method::Get,
+            KIMI_PATH,
+            Route::json(200, KIMI_USAGES)
+                .requires_header("authorization", "Bearer SECRET_TOKEN_KIMI"),
+        );
+        let outcome = kimi_report(&harness, &directory).await?;
+        let message = refusal_of(&outcome);
+        assert_eq!(
+            message,
+            "the Kimi config hosts are not a supported Kimi host pair"
+        );
+        assert!(!message.contains("api.kimi.example"), "{message}");
+        assert!(!message.contains("SECRET_TOKEN_KIMI"), "{message}");
+        assert!(
+            harness.server.mismatches().is_empty(),
+            "the request of the foreign host was sent"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_host_login_with_a_foreign_oauth_host_is_refused_before_the_request() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        write_kimi_store_with_config(
+            &directory,
+            "SECRET_TOKEN_KIMI",
+            "https://api.kimi.ai/coding/v1",
+            Some("https://auth.kimi.com"),
+        )?;
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Kimi,
+            Method::Get,
+            KIMI_PATH,
+            Route::json(200, KIMI_USAGES)
+                .requires_header("authorization", "Bearer SECRET_TOKEN_KIMI"),
+        );
+        let outcome = kimi_report(&harness, &directory).await?;
+        let message = refusal_of(&outcome);
+        assert_eq!(
+            message,
+            "the Kimi config hosts are not a supported Kimi host pair"
+        );
+        assert!(!message.contains("auth.kimi.com"), "{message}");
+        assert!(
+            harness.server.mismatches().is_empty(),
+            "the request of the foreign host was sent"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_host_login_with_the_global_host_pair_is_used() -> TestResult {
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        write_kimi_store_with_config(
+            &directory,
+            "SECRET_TOKEN_KIMI",
+            "https://api.kimi.ai/coding/v1",
+            Some("https://auth.kimi.ai"),
+        )?;
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Kimi,
+            Method::Get,
+            KIMI_PATH,
+            Route::json(200, KIMI_USAGES)
+                .requires_header("authorization", "Bearer SECRET_TOKEN_KIMI"),
+        );
+        let outcome = kimi_report(&harness, &directory).await?;
+        assert_eq!(windows_of(&outcome).len(), 1);
+        assert!(
+            harness.server.mismatches().is_empty(),
+            "{:?}",
+            harness.server.mismatches()
+        );
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]
