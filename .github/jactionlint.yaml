@@ -3,3 +3,7 @@
 profile: correctness
 generated-files: report
 config-variables: []
+self-hosted-runner:
+  labels:
+    - velnor
+    - ubuntu-26.04-scale-set

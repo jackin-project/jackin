@@ -40,7 +40,7 @@ exclude = ["docs/**", "vendor/sqlx-sqlite/**"]
 [actions.overrides]
 
 [execution]
-default_profile = "hosted"
+default_profile = "local"
 hosted_profile = "hosted"
 scale_set_profile = "local"
 
