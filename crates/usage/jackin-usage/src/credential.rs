@@ -36,6 +36,8 @@ const OPENCODE_WAL_FRAME_HEADER: usize = 24;
 const OPENCODE_WAL_MAGIC: u32 = 0x377f_0682;
 const OPENCODE_WAL_MAGIC_SWAPPED: u32 = 0x377f_0683;
 const OPENCODE_WAL_FORMAT: u32 = 3_007_000;
+const KIMI_GLOBAL_OAUTH: &str = "https://auth.kimi.ai";
+const KIMI_MAINLAND_OAUTH: &str = "https://auth.kimi.com";
 const HEX: [char; 16] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
 ];
@@ -162,17 +164,14 @@ pub(crate) async fn resolve(
             let (text, revision) = read_credential(deps, path).await?;
             Ok(file_login(account, path, text).with_revision(Some(revision)))
         }
-        CredentialSource::CodexLogin { home, .. } => {
+        CredentialSource::CodexLogin {
+            home,
+            chatgpt_account_id,
+        } => {
             let path = HostPath::resolve(Path::new(CODEX_LOGIN_FILE), home)
                 .map_err(|_| Unresolved::Unreadable("the Codex login file name is not usable"))?;
             let (text, revision) = read_credential(deps, &path).await?;
-            let identity = serde_json::from_str::<Value>(&text).ok().and_then(|value| {
-                value
-                    .pointer("/tokens/account_id")
-                    .and_then(Value::as_str)
-                    .and_then(non_empty)
-                    .map(str::to_owned)
-            });
+            let identity = codex_account_id(&text, chatgpt_account_id.as_str())?;
             Ok(Material::login(text)
                 .with_identity(identity)
                 .with_revision(Some(revision)))
@@ -195,6 +194,28 @@ fn file_login(account: &UsageAccount, path: &HostPath, text: String) -> Material
     } else {
         Material::token(&text)
     }
+}
+
+fn codex_account_id(text: &str, configured: &str) -> Result<Option<String>, Unresolved> {
+    let Ok(document) = serde_json::from_str::<Value>(text) else {
+        return Ok(None);
+    };
+    let Some(tokens) = document.get("tokens").and_then(Value::as_object) else {
+        return Ok(None);
+    };
+    let account_id = tokens
+        .get("account_id")
+        .and_then(Value::as_str)
+        .and_then(non_empty)
+        .ok_or(Unresolved::Unreadable(
+            "the Codex login holds no account id",
+        ))?;
+    if account_id != configured {
+        return Err(Unresolved::Unreadable(
+            "the Codex login account is not the configured account",
+        ));
+    }
+    Ok(Some(account_id.to_owned()))
 }
 
 fn kimi_base_for_slot(stem: &str) -> Option<String> {
@@ -269,6 +290,27 @@ async fn kimi_host_login(
         .get("oauth")
         .and_then(toml::Value::as_table)
         .ok_or(Unresolved::Unreadable("the Kimi config has no oauth store"))?;
+    let oauth_host = oauth
+        .get("oauth_host")
+        .map(|value| {
+            value
+                .as_str()
+                .map(|value| value.trim().trim_end_matches('/'))
+                .filter(|value| !value.is_empty())
+                .ok_or(Unresolved::Unreadable(
+                    "the Kimi config oauth host is not usable",
+                ))
+        })
+        .transpose()?;
+    match (base, oauth_host) {
+        (KIMI_MAINLAND_BASE, None | Some(KIMI_MAINLAND_OAUTH)) => {}
+        (KIMI_GLOBAL_BASE, Some(KIMI_GLOBAL_OAUTH)) => {}
+        _ => {
+            return Err(Unresolved::Unreadable(
+                "the Kimi config hosts are not a supported Kimi host pair",
+            ));
+        }
+    }
     if oauth.get("storage").and_then(toml::Value::as_str) != Some("file") {
         return Err(Unresolved::Unreadable(
             "the Kimi oauth store is not a file store",
@@ -678,7 +720,7 @@ async fn omp_key(deps: &UsageDeps, account: &UsageAccount) -> Result<(String, Se
         .map_err(|_| Unresolved::Unreadable("the OMP database path is not usable"))?;
     for _ in 0..OMP_RESOLVE_ATTEMPTS {
         let identity = omp_identity(deps, &db).await?;
-        let found = extract_omp_api_key(db.as_path(), provider_id)?;
+        let found = extract_omp_api_key(db.as_path().to_owned(), provider_id.to_owned()).await?;
         let confirmed = match (identity, omp_identity(deps, &db).await?) {
             (Some(before), Some(after)) if before == after => before,
             _ => continue,
@@ -719,7 +761,20 @@ fn omp_revision(db: &Path, dev: u64, ino: u64, found: &Extracted) -> String {
     )
 }
 
-fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Result<Extracted, Unresolved> {
+async fn extract_omp_api_key(
+    db_path: PathBuf,
+    provider_id: String,
+) -> Result<Extracted, Unresolved> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _sent = sender.send(read_omp_api_key(&db_path, &provider_id));
+    });
+    receiver
+        .await
+        .map_err(|_| Unresolved::Unreadable("the OMP store could not be read"))?
+}
+
+fn read_omp_api_key(db_path: &Path, provider_id: &str) -> Result<Extracted, Unresolved> {
     let metadata = match std::fs::metadata(db_path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Err(Unresolved::Missing);

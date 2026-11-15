@@ -12,7 +12,8 @@ use jackin_usage::{
 
 use crate::support::{
     CODEX_PATH, T0, TestResult, UsageHarness, account, codex_body, codex_login, codex_route,
-    env_source, file_source, guard, host_path, serve_codex, unavailable, windows_of,
+    env_source, file_source, guard, host_path, put_codex_auth, serve_codex, unavailable,
+    windows_of,
 };
 
 async fn start(used: u32) -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {
@@ -535,6 +536,11 @@ async fn the_same_account_name_with_another_chatgpt_account_id_is_fetched_again(
     guard(async {
         let (harness, account) = start(10).await?;
         harness.one(&account, Refresh::Cached).await?;
+        harness
+            .fs
+            .remove_file(&host_path("/home/work/.codex/auth.json"))
+            .await?;
+        put_codex_auth(&harness, "/home/work/.codex", "acct-2").await?;
         serve_codex(
             &harness,
             "SECRET_TOKEN_CODEX",

@@ -15,11 +15,10 @@ use jackin_usage::{
 
 use crate::providers::openrouter_serve;
 use crate::support::{
-    CODEX_PATH, RESET_CREDITS_PATH, TestResult, UsageHarness, account, codex_body, codex_login,
-    env_source, file_source, guard, host_path, op_source, windows_of,
+    CODEX_PATH, RESET_CREDITS_PATH, TestResult, UsageHarness, account, codex_auth, codex_body,
+    codex_login, env_source, file_source, guard, host_path, op_source, put_codex_auth, windows_of,
 };
 
-const AUTH: &str = include_str!("fixtures/codex/auth_chatgpt.json");
 const SECRETS: [&str; 6] = [
     "SECRET_TOKEN_CODEX",
     "SECRET_TEXT_BODY",
@@ -41,11 +40,9 @@ fn assert_clean(surface: &str, text: &str) {
 async fn echoing() -> Result<(UsageHarness, UsageReport), Box<dyn std::error::Error>> {
     let mut harness = UsageHarness::new().await?;
     harness.env("OPENROUTER_TEST_KEY", "SECRET_TOKEN_ENV");
-    for home in ["ok", "err", "junk"] {
-        harness
-            .put(&format!("/home/{home}/.codex/auth.json"), AUTH)
-            .await?;
-    }
+    put_codex_auth(&harness, "/home/ok/.codex", "ok-id").await?;
+    put_codex_auth(&harness, "/home/err/.codex", "err-id").await?;
+    put_codex_auth(&harness, "/home/junk/.codex", "junk-id").await?;
     let echo = "\"note\":\"SECRET_TOKEN_CODEX SECRET_TEXT_BODY\"";
     let ok = codex_body(10).replacen('{', &format!("{{{echo},"), 1);
     harness.server.serve(
@@ -125,7 +122,7 @@ async fn the_report_its_json_and_its_debug_output_hold_no_secret() -> TestResult
 async fn errors_and_the_dependency_bundle_hold_no_secret() -> TestResult {
     guard(async {
         let harness = UsageHarness::new().await?;
-        harness.put("/home/ok/.codex/auth.json", AUTH).await?;
+        put_codex_auth(&harness, "/home/ok/.codex", "ok-id").await?;
         harness.fs.fail_at(
             FsOp::WriteNew,
             1,
@@ -184,13 +181,24 @@ async fn errors_and_the_dependency_bundle_hold_no_secret() -> TestResult {
 async fn the_cache_file_holds_no_secret_and_the_credential_files_are_unchanged() -> TestResult {
     guard(async {
         let (harness, _report) = echoing().await?;
+        let logins = [
+            ("/home/ok/.codex/auth.json", codex_auth("ok-id")),
+            ("/home/err/.codex/auth.json", codex_auth("err-id")),
+            ("/home/junk/.codex/auth.json", codex_auth("junk-id")),
+        ];
         for (path, bytes) in harness.all_files().await? {
             let text = String::from_utf8(bytes)?;
             match path.as_str() {
                 "/state/usage/usage.json" => assert_clean(&path, &text),
                 "/state/usage/usage.json.lock" => assert_eq!(text, "", "{path} holds text"),
                 "/keys/router" => assert_eq!(text, "SECRET_TOKEN_FILE\n", "{path} changed"),
-                _ => assert_eq!(text, AUTH, "{path} changed"),
+                _ => {
+                    let wanted = logins.iter().find(|(name, _)| *name == path).map_or_else(
+                        || panic!("{path} is not a known file"),
+                        |(_, text)| text.as_str(),
+                    );
+                    assert_eq!(text, wanted, "{path} changed");
+                }
             }
         }
         Ok(())
