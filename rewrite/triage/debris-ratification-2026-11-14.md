@@ -300,10 +300,11 @@ export GIT_DIR="$SANITIZED_DIR/push.git"
 # The refusal check. The context of the pushes must carry no URL rewrite. The check reads the
 # configuration of that context, so a rewrite that survived the sanitizing - one in the system
 # configuration, or one in a file the global configuration includes - stops the run here, before
-# any push, instead of redirecting one. The control below runs the same check against a hostile
-# configuration.
+# any push, instead of redirecting one. The output of the read is discarded: a url.<base> value
+# can embed credentials, so the run prints only the refusal, never the rewrite itself. The
+# control below runs the same check against a hostile configuration.
 refuse_url_rewrites() {
-  if git config --get-regexp '^url\..*\.(insteadOf|pushInsteadOf)$'; then
+  if git config --get-regexp '^url\..*\.(insteadOf|pushInsteadOf)$' >/dev/null; then
     return 1
   fi
   return 0
