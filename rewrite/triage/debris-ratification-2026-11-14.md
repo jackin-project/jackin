@@ -7,7 +7,7 @@
 **Tip guard:** every deletion command in §1 is leased against the exact tip SHA recorded in that row, so a branch that moved since this table was compiled is **not** deleted (§1).
 **Target guard:** every deletion command in §1 names its repository by its **HTTPS URL** (`https://github.com/<repo>.git`), never by the remote alias `origin`, so a clone whose `origin` points at a fork can never delete a ref in the wrong repository (§1, §1b).
 **Absent-path accounting:** §1a accounts for **every** path that each of the 15 deletions would remove, re-derived against the live `main` tips; §1b gives the commands that reproduce the numbers and names the `main` tips they were measured against.
-**Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs (§1, §4).
+**Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs. The deletion run re-checks the same digest against an in-memory snapshot of the manifest and builds every push from that snapshot (§1, §4).
 **Archive prerequisite:** no deletion may run before every branch this document deletes — and every captured retained ref — is preserved under `refs/heads/archive/` **and verified**, and the `refs/heads/archive/**/*` namespace stays locked by a repository ruleset for the run, with each deletion push re-reading its own archive ref immediately before it runs. Fetching a recorded SHA is not preservation: once the last ref to an object is gone, the object is gone from the remote. Nothing in the deletions touches an archive ref and the lock keeps any other writer from touching one either, so the archive closes the window that the retained-ref check alone cannot close (§1, §1a, §9).
 
 ## Contents
@@ -189,54 +189,49 @@ done
 ```
 
 **The operator's word comes here (§4).** Steps 1-5 must all have passed. The deletion run below
-executes only after the word is sent; it re-validates the manifest against the ratified digest
-before the first push, reads only the frozen copy of that manifest, and re-reads the row's own
-archive ref immediately before it runs exactly that row's §1 command — so a deletion happens only
-while the archive copy it orphans is present and intact, and only for a manifest that is still the
-reviewed one. With the step-5 lock in place no writer can change that copy between the re-read and
-the push.
+executes only after the word is sent; it reads the manifest once into an in-memory snapshot, checks
+that snapshot's digest against the ratified one, and builds every push from that snapshot — so
+nothing on disk is read again and a manifest that changed after the pre-flight cannot change what
+runs. Each iteration re-reads the row's own archive ref immediately before it runs exactly that
+row's §1 command, so a deletion happens only while the archive copy it orphans is present and
+intact. With the step-5 lock in place no writer can change that copy between the re-read and the
+push.
 
 ```bash
 set -euo pipefail
 
 MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
-RATIFIED=/tmp/manifest.ratified.txt
 
-# the manifest is re-validated against the digest the operator's word carries before the first
-# push: the word binds the 15 (repository, branch, tip) triples, so a manifest that changed after
-# the pre-flight is a refusal, not a deletion
+# the manifest is read ONCE into an in-memory snapshot, and the snapshot's digest is checked
+# against the digest the operator's word carries: the word binds the 15 (repository, branch, tip)
+# triples, so a manifest that changed after the pre-flight is a refusal, not a deletion. Every
+# loop below runs on that snapshot - no file is read again, so nothing on disk can change what runs.
+ROWS=()
 [ -f /tmp/manifest.txt ] || { echo "the manifest /tmp/manifest.txt is missing - run the pre-flight first"; exit 1; }
-[ "$(wc -l < /tmp/manifest.txt)" -eq 15 ] || { echo "the manifest of /tmp/manifest.txt is not the 15 reviewed rows - run the pre-flight first"; exit 1; }
-[ "$(sort -k2 /tmp/manifest.txt | sha256sum | cut -d' ' -f1)" = "$MANIFEST" ] \
-  || { echo "the manifest digest is not the reviewed one - re-run the pre-flight"; exit 1; }
-
-# the deletion run reads only the frozen copy of the validated manifest, and that copy's digest is
-# checked again before every push and after the last one, so a manifest that changes mid-run
-# cannot change what runs
-rm -f "$RATIFIED"
-cp /tmp/manifest.txt "$RATIFIED"
-chmod 0444 "$RATIFIED"
-[ "$(sha256sum "$RATIFIED" | cut -d' ' -f1)" = "$MANIFEST" ] || { echo "the frozen manifest is not the reviewed one"; exit 1; }
+while IFS= read -r row; do ROWS+=("$row"); done < /tmp/manifest.txt
+[ "${#ROWS[@]}" -eq 15 ] || { echo "the manifest of /tmp/manifest.txt is not the 15 reviewed rows - run the pre-flight first"; exit 1; }
+digest=$(printf '%s\n' "${ROWS[@]}" | sort -k2 | sha256sum | cut -d' ' -f1)
+[ "$digest" = "$MANIFEST" ] \
+  || { echo "the manifest digest is $digest, not the reviewed $MANIFEST - re-run the pre-flight"; exit 1; }
 
 # 6. DELETION RUN: one row at a time, archive first, push second. The push is built from the
-#    row's own (repository, branch, tip) triple, so it is the §1 command of that row.
-while read -r repo branch tip; do
-  [ "$(sha256sum "$RATIFIED" | cut -d' ' -f1)" = "$MANIFEST" ] \
-    || { echo "the ratified manifest changed during the run"; exit 1; }
+#    row's own (repository, branch, tip) triple of the snapshot, so it is the §1 command of that row.
+for row in "${ROWS[@]}"; do
+  read -r repo branch tip <<< "$row"
   got=$(gh api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha') \
     || { echo "archive ref $repo archive/$branch is gone before deleting $branch"; exit 1; }
   [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip before deleting $branch"; exit 1; }
   git push --force-with-lease="refs/heads/$branch:$tip" "https://github.com/$repo.git" --delete "$branch"
-done < "$RATIFIED"
-[ "$(sha256sum "$RATIFIED" | cut -d' ' -f1)" = "$MANIFEST" ] || { echo "the ratified manifest changed during the run"; exit 1; }
+done
 
 # post-check: the 15 targets must be gone, every archive head of the 15 must still hold its
 # recorded tip, and every protected branch must still be there
-while read -r repo branch tip; do
+for row in "${ROWS[@]}"; do
+  read -r repo branch tip <<< "$row"
   got=$(gh api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha') \
     || { echo "archive ref $repo archive/$branch is gone after the deletions"; exit 1; }
   [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip after the deletions"; exit 1; }
-done < "$RATIFIED"
+done
 
 # the branch list of every repository the run can touch, read once
 for r in jackin-project/jackin jackin-project/jackin-agent-smith jackin-project/jackin-sentinel tailrocks/terminal-components-baseline; do
@@ -244,22 +239,33 @@ for r in jackin-project/jackin jackin-project/jackin-agent-smith jackin-project/
     || { echo "the branch list of $r could not be read"; exit 1; }
 done
 
-# the 15 targets must be absent from their repositories
-while read -r repo branch tip; do
+# the 15 targets must be absent from their repositories. A grep error is not an absence: only
+# status 1 (no match) is the wanted state, status 0 (the branch is still there) and every error
+# status are a refusal.
+for row in "${ROWS[@]}"; do
+  read -r repo branch tip <<< "$row"
   list="/tmp/post-$(echo "$repo" | tr '/' '-').txt"
   [ -f "$list" ] || { echo "the branch list of $repo was not read"; exit 1; }
-  if grep -qxF "$branch" "$list"; then
-    echo "$repo still has the deleted branch $branch"; exit 1
-  fi
-done < "$RATIFIED"
+  status=0
+  grep -qxF "$branch" "$list" || status=$?
+  case "$status" in
+    0) echo "$repo still has the deleted branch $branch"; exit 1 ;;
+    1) ;;
+    *) echo "the branch list of $repo could not be read (grep exit $status)"; exit 1 ;;
+  esac
+done
 
 # the protected branches - the rows of §2, §3 and §8 and each repository's main - must remain
 while read -r repo branch; do
   list="/tmp/post-$(echo "$repo" | tr '/' '-').txt"
   [ -f "$list" ] || { echo "the branch list of $repo was not read"; exit 1; }
-  if ! grep -qxF "$branch" "$list"; then
-    echo "the protected branch $repo $branch is gone after the deletions"; exit 1
-  fi
+  status=0
+  grep -qxF "$branch" "$list" || status=$?
+  case "$status" in
+    0) ;;
+    1) echo "the protected branch $repo $branch is gone after the deletions"; exit 1 ;;
+    *) echo "the branch list of $repo could not be read (grep exit $status)"; exit 1 ;;
+  esac
 done <<'PROTECTED'
 jackin-project/jackin main
 jackin-project/jackin preserve/p0.6-prototype-20261109
@@ -693,7 +699,10 @@ the word to the manifest that was reviewed: a word without the digest, or with a
 refusal, and step 1 of the pre-flight in §1 recomputes the digest from the live tips and stops when it
 differs. Step 1 also regenerates each §1 deletion command from its own (repository, branch, tip)
 triple and stops when the table's command is not that exact push, so the word covers the commands
-that run: a `--delete` operand edited after the ratification cannot change what executes.
+that run: a `--delete` operand edited after the ratification cannot change what executes. Step 6
+re-checks the same digest against an in-memory snapshot of the manifest before the first deletion
+push and builds every push from that snapshot, so a manifest that changed after the pre-flight is a
+refusal there as well.
 
 Optionally, to also ratify retroactively the one deletion that was performed without a recorded proof (§6):
 
