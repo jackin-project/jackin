@@ -6,7 +6,8 @@
 **Live check:** every branch name **and tip SHA** below was re-read from the live remotes with `gh api repos/<repo>/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'` on 2026-11-14, and re-verified at 2026-11-14 13:17 and 20:12 UTC (§7). Branches that are already gone are marked **ALREADY GONE**.
 **Tip guard:** every deletion command in §1 is leased against the exact tip SHA recorded in that row, so a branch that moved since this table was compiled is **not** deleted (§1).
 **Target guard:** every deletion command in §1 names its repository by its **HTTPS URL** (`https://github.com/<repo>.git`), never by the remote alias `origin`, so a clone whose `origin` points at a fork can never delete a ref in the wrong repository (§1, §1b).
-**Rewrite guard:** Git rewrites even an explicit repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf` entry, so a push that names `https://github.com/<repo>.git` can still land in another repository - in a fork or a mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is deleted there. Every push of the deletion run therefore runs in a **sanitized Git context** - a private global configuration that keeps every entry of the operator's configuration, the credential helper in particular, except the `url.*` rewrites, and a scratch repository whose own configuration is empty - and the run refuses to start when that context still carries a rewrite (§1).
+**Rewrite guard:** Git rewrites even an explicit repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf` entry, so a push that names `https://github.com/<repo>.git` can still land in another repository - in a fork or a mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is deleted there. Every push of the deletion run therefore runs in a **sanitized Git context** - a private global configuration that holds the credential helper of the operator and nothing else, built from an allowlist one key at a time so that no credential-bearing value is ever written to a temporary file, and a scratch repository whose own configuration is empty - and the run refuses to start when that context still carries a rewrite (§1).
+**Credential guard:** the private global configuration of the sanitized Git context is built from an allowlist - the credential helper of the operator, and nothing else - and every value is read one key at a time, so the configuration of the operator is never written to a file and no credential-bearing value (`http.*.extraHeader`, an inline credential helper) can reach a temporary file or the output of the run. Every temporary path of the run is removed when it ends - on the normal end, on a refusal and on a signal - and two probes, the credential probe and the cleanup probe, prove both properties before the first push (§1).
 **Digest guard:** the manifest digest is computed by a helper that takes the SHA-256 from `sha256sum` where the host has it and from `shasum -a 256` where it does not, so the check runs on a stock macOS as well as on a Linux host; both print the same lowercase hex digest (§1).
 **Absent-path accounting:** §1a accounts for **every** path that each of the 15 deletions would remove, re-derived against the live `main` tips; §1b gives the commands that reproduce the numbers and names the `main` tips they were measured against.
 **Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs. The deletion run re-checks the same digest against an in-memory snapshot of the manifest and builds every push from that snapshot (§1, §4).
@@ -224,11 +225,25 @@ repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<
 entry, so a rewrite on the operator's machine can send a push that names
 `https://github.com/<repo>.git` to another repository - to a fork or a mirror that holds the
 audited SHA, where the lease of the row still succeeds and the ref is deleted there. The run
-therefore replaces the global configuration with a private copy that holds every entry except the
-`url.*` rewrites, and points the Git directory at a scratch repository whose own configuration is
+therefore replaces the global configuration with a private copy that holds the credential helper
+and nothing else, and points the Git directory at a scratch repository whose own configuration is
 empty. The run then refuses to start when that context still carries a rewrite, and a control that
 runs the same refusal check and the same push against two local repositories proves that the
 guard sees the redirect it has to defeat.
+
+**The private copy holds no credential.** The copy is not a copy of the operator's configuration:
+it is built from an allowlist, one key at a time, and a value is copied only when it cannot carry a
+credential - a credential helper that is a plain program name, or the empty value that resets the
+helper list. Every other key - the `url.*` rewrites, the `http.*` headers, the `include.*` files -
+is never read, and a helper that carries arguments or a shell command is never copied, because the
+text of such a helper can carry the credential itself. The configuration of the operator is never
+written to a file, so no temporary file of this run holds a value the allowlist rejects, and every
+temporary path of this run is removed when the run ends - on the normal end, on a refusal and on a
+signal. Two probes prove both properties before the first push: the **credential probe** builds a
+global configuration that carries a credential in the two forms that carry one - an extra header
+and an inline credential helper - runs the same sanitizing against it and refuses the run when the
+credential reaches a file or the output; the **cleanup probe** runs the cleanup of the run in a
+subshell that ends in each of the three ways and checks that no temporary path is left behind.
 
 ```bash
 set -euo pipefail
@@ -269,30 +284,179 @@ digest=$(printf '%s\n' "${ROWS[@]}" | sort -k2 | sha256_of)
 # can send a push that names https://github.com/<repo>.git to another repository - to a fork or a
 # mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is
 # deleted there. The context of every push below is:
-#   GIT_CONFIG_GLOBAL - a private copy of this machine's global configuration that keeps every
-#                        entry, the credential helper in particular, and drops the url.* rewrites;
+#   GIT_CONFIG_GLOBAL - a private configuration that holds the credential helper of the operator
+#                        and nothing else, so that no credential and no URL rewrite can reach a
+#                        push;
 #   GIT_DIR           - a scratch repository whose own configuration is empty, so the local
 #                        configuration of the clone this run happens in cannot rewrite a URL.
 # The system configuration stays in place - it carries the credential helper on macOS - and the
 # check below refuses the run when it carries a rewrite of its own.
 SANITIZED_DIR=$(mktemp -d)
 SANITIZED_GLOBAL="$SANITIZED_DIR/gitconfig"
-: > "$SANITIZED_GLOBAL"
-git config --global --includes --null --list > "$SANITIZED_DIR/global.list" 2>/dev/null || true
-while IFS= read -r -d '' entry; do
-  key=${entry%%$'\n'*}
-  if [ "$key" = "$entry" ]; then
-    git config --file "$SANITIZED_GLOBAL" --add "$key" true
-    continue
-  fi
-  value=${entry#*$'\n'}
-  case "$key" in
-    url.*|include.*|includeif.*) continue ;;
-  esac
-  git config --file "$SANITIZED_GLOBAL" --add "$key" "$value"
-done < "$SANITIZED_DIR/global.list"
-export GIT_CONFIG_GLOBAL="$SANITIZED_GLOBAL"
+
+# The cleanup. Every temporary path of this run - the sanitized configuration, the scratch
+# repository and the control repositories - is removed when the run ends, whatever ended it: the
+# normal end, a refusal and a signal. The cleanup keeps the status of the run, so a refusal still
+# exits with the status it refused with.
+cleanup() {
+  result=$?
+  trap - 0 HUP INT TERM
+  rm -rf "$1"
+  if [ -n "${2:-}" ]; then rm -rf "$2"; fi
+  exit "$result"
+}
+trap 'cleanup "$SANITIZED_DIR" "${CONTROL_DIR:-}"' 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# The sanitizing. The configuration of the operator is read one allowlisted key at a time, and a
+# value is copied into the sanitized configuration only when it cannot carry a credential:
+#   credential.helper - a credential helper is a program, so a plain program name is copied, and
+#                       the empty value is copied because it resets the helper list; a helper that
+#                       carries arguments or a shell command is not copied, because the text of
+#                       such a helper can carry the credential itself.
+# Every other key - the url.* rewrites, the http.* headers, the include.* files - is never read
+# and never copied, and the configuration of the operator is never written to a file: every value
+# is read from it directly, so no temporary file of this run ever holds a value the allowlist
+# rejects. The helper list keeps the order of the operator's own list, so the helper that answers
+# first is the one that answers without the sanitizing. The values are read with the tracing off,
+# so a run under "set -x" does not print them.
+sanitize_global_config() {
+  directory=$1
+  destination="$directory/gitconfig"
+  : > "$destination"
+  (
+    set +x
+    skipped=0
+    while IFS= read -r -d '' helper; do
+      case "$helper" in
+        '') git config --file "$destination" --add credential.helper "$helper" ;;
+        [!A-Za-z0-9]*|*[!A-Za-z0-9._+-]*) skipped=$((skipped + 1)); continue ;;
+        *) git config --file "$destination" --add credential.helper "$helper" ;;
+      esac
+    done < <(git config --global --includes --null --get-all credential.helper 2>/dev/null || true)
+    if [ "$skipped" -gt 0 ]; then
+      echo "a credential helper of the global configuration was not copied into the sanitized context - its value can carry a credential, so the pushes must authenticate another way" >&2
+    fi
+  )
+}
+
+# THE CREDENTIAL PROBE. The sanitizing must not carry a credential into a temporary file or into
+# the output of the run. The probe builds a global configuration that carries a credential in the
+# two forms that carry one - an extra header and an inline credential helper - runs the same
+# sanitizing the deletion run runs against it, and refuses the run when the credential reaches a
+# file of the temporary directory or the output of the sanitizing. The probe is hermetic: the
+# credential is fabricated, the configuration it runs against is its own - the probe reads the
+# global configuration of a home directory of its own, so the configuration of the operator is
+# never read - and the tracing is off, so that neither the value nor the probe itself prints it.
+credential_probe() {
+  (
+    set +x
+    probe_dir=$(mktemp -d)
+    sentinel='PROBE-CREDENTIAL-9f3a2b7c'
+    mkdir -p "$probe_dir/home/.config" "$probe_dir/out"
+    cat > "$probe_dir/home/.gitconfig" <<EOF
+[http]
+	extraHeader = Authorization: Basic $sentinel
+[credential]
+	helper = "!f() { echo username=probe; echo password=$sentinel; }; f"
+	helper = osxkeychain
+[url "https://mirror.invalid/"]
+	insteadOf = https://github.com/
+EOF
+    cp "$probe_dir/home/.gitconfig" "$probe_dir/home/.gitconfig.copy"
+    output=$( ( unset GIT_CONFIG_GLOBAL; export HOME="$probe_dir/home" XDG_CONFIG_HOME="$probe_dir/home/.config"; sanitize_global_config "$probe_dir/out" ) 2>&1 ) || {
+      rm -rf "$probe_dir"
+      echo "the credential probe could not run the sanitizing - the guard cannot be trusted" >&2
+      exit 1
+    }
+    if grep -R -q -F "$sentinel" "$probe_dir/out"; then
+      rm -rf "$probe_dir"
+      echo "the credential probe found the credential in the sanitized context - the guard cannot be trusted" >&2
+      exit 1
+    fi
+    case "$output" in
+      *"$sentinel"*)
+        rm -rf "$probe_dir"
+        echo "the credential probe found the credential in the output of the sanitizing - the guard cannot be trusted" >&2
+        exit 1
+        ;;
+    esac
+    files=$(find "$probe_dir/out" -type f | wc -l | tr -d ' ')
+    if [ "$files" -ne 1 ]; then
+      rm -rf "$probe_dir"
+      echo "the credential probe found $files files in the sanitized context - the configuration of the operator was materialized" >&2
+      exit 1
+    fi
+    if ! grep -q -E '^[[:space:]]*helper = osxkeychain$' "$probe_dir/out/gitconfig"; then
+      rm -rf "$probe_dir"
+      echo "the credential probe found no credential helper in the sanitized context - the sanitizing dropped what the pushes need" >&2
+      exit 1
+    fi
+    if grep -q -E -e 'insteadOf' -e 'pushInsteadOf' -e '!' "$probe_dir/out/gitconfig"; then
+      rm -rf "$probe_dir"
+      echo "the credential probe found a rewrite or an inline helper in the sanitized context - the guard cannot be trusted" >&2
+      exit 1
+    fi
+    if ! cmp -s "$probe_dir/home/.gitconfig" "$probe_dir/home/.gitconfig.copy"; then
+      rm -rf "$probe_dir"
+      echo "the credential probe found the configuration of the operator changed - the sanitizing wrote to it" >&2
+      exit 1
+    fi
+    rm -rf "$probe_dir"
+    exit 0
+  )
+}
+
+# THE CLEANUP PROBE. The temporary paths of the run must be gone when the run ends, whatever ended
+# it: the normal end, a refusal and a signal. The probe runs the cleanup of the run in a subshell
+# that ends in each of the three ways and checks that no temporary path is left behind and that
+# the status of the run is the status the run ended with.
+cleanup_probe() {
+  (
+    set +x
+    probe_dir=$(mktemp -d)
+    for ending in normal failure signal; do
+      sanitized="$probe_dir/sanitized-$ending"
+      control="$probe_dir/control-$ending"
+      mkdir -p "$sanitized" "$control"
+      status=0
+      case "$ending" in
+        normal)
+          ( set -- "$sanitized" "$control"; trap 'cleanup "$1" "$2"' 0; exit 0 ) || status=$?
+          ;;
+        failure)
+          ( set -- "$sanitized" "$control"; trap 'cleanup "$1" "$2"' 0; exit 1 ) || status=$?
+          ;;
+        signal)
+          ( set -- "$sanitized" "$control"; trap 'cleanup "$1" "$2"' 0; trap 'exit 143' TERM; kill -TERM "$BASHPID" ) || status=$?
+          ;;
+      esac
+      if [ -d "$sanitized" ] || [ -d "$control" ]; then
+        rm -rf "$probe_dir"
+        echo "the cleanup probe found a temporary path after the run ended with $ending - the cleanup is not trusted" >&2
+        exit 1
+      fi
+      case "$ending:$status" in
+        normal:0 | failure:1 | signal:143) ;;
+        *)
+          rm -rf "$probe_dir"
+          echo "the cleanup probe saw the status $status after the run ended with $ending - the cleanup is not trusted" >&2
+          exit 1
+          ;;
+      esac
+    done
+    rm -rf "$probe_dir"
+    exit 0
+  )
+}
+
 unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+sanitize_global_config "$SANITIZED_DIR"
+export GIT_CONFIG_GLOBAL="$SANITIZED_GLOBAL"
+credential_probe || { echo "the credential probe refused the sanitizing - the deletion run refuses to push" >&2; exit 1; }
+cleanup_probe || { echo "the cleanup probe refused the cleanup - the deletion run refuses to push" >&2; exit 1; }
 
 git init --quiet --bare "$SANITIZED_DIR/push.git"
 export GIT_DIR="$SANITIZED_DIR/push.git"
