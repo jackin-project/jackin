@@ -6,6 +6,8 @@
 **Live check:** every branch name **and tip SHA** below was re-read from the live remotes with `gh api repos/<repo>/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'` on 2026-11-14, and re-verified at 2026-11-14 13:17 and 20:12 UTC (§7). Branches that are already gone are marked **ALREADY GONE**.
 **Tip guard:** every deletion command in §1 is leased against the exact tip SHA recorded in that row, so a branch that moved since this table was compiled is **not** deleted (§1).
 **Target guard:** every deletion command in §1 names its repository by its **HTTPS URL** (`https://github.com/<repo>.git`), never by the remote alias `origin`, so a clone whose `origin` points at a fork can never delete a ref in the wrong repository (§1, §1b).
+**Rewrite guard:** Git rewrites even an explicit repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf` entry, so a push that names `https://github.com/<repo>.git` can still land in another repository - in a fork or a mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is deleted there. Every push of the deletion run therefore runs in a **sanitized Git context** - a private global configuration that keeps every entry of the operator's configuration, the credential helper in particular, except the `url.*` rewrites, and a scratch repository whose own configuration is empty - and the run refuses to start when that context still carries a rewrite (§1).
+**Digest guard:** the manifest digest is computed by a helper that takes the SHA-256 from `sha256sum` where the host has it and from `shasum -a 256` where it does not, so the check runs on a stock macOS as well as on a Linux host; both print the same lowercase hex digest (§1).
 **Absent-path accounting:** §1a accounts for **every** path that each of the 15 deletions would remove, re-derived against the live `main` tips; §1b gives the commands that reproduce the numbers and names the `main` tips they were measured against.
 **Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs. The deletion run re-checks the same digest against an in-memory snapshot of the manifest and builds every push from that snapshot (§1, §4).
 **Archive prerequisite:** no deletion may run before every branch this document deletes — and every captured retained ref — is preserved under `refs/heads/archive/` **and verified**, and the `refs/heads/archive/**/*` namespace stays locked by a repository ruleset for the run, with each deletion push re-reading its own archive ref immediately before it runs. Fetching a recorded SHA is not preservation: once the last ref to an object is gone, the object is gone from the remote. Nothing in the deletions touches an archive ref and the lock keeps any other writer from touching one either, so the archive closes the window that the retained-ref check alone cannot close (§1, §1a, §9).
@@ -30,6 +32,8 @@
 ## 1. Approval set — CONFIRMED DEBRIS (15 branches)
 
 These 15 are the **only** branches the operator's word covers. Each row carries its own one-line evidence and the exact deletion command. The command **names the repository by its HTTPS URL**, not by a remote alias, so it deletes the ref in the repository named in the row whatever the local `origin` points at; it can be run from any clone of that repository (or any clone at all) and it deletes exactly one branch. Every path that the deletion would remove is accounted for in §1a.
+
+**A push of these commands must run in the sanitized Git context of the deletion run below.** Git rewrites even an explicit repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf` entry, so a push outside that context can land in another repository - in a fork or a mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is deleted there. The deletion run sets that context up, checks it and refuses to push when it still carries a rewrite; a command an operator runs by hand must be preceded by the same check (§1).
 
 **Every deletion command is tip-guarded.** Each command carries `--force-with-lease=refs/heads/<branch>:<recorded-tip-SHA>`, so the remote ref must still point at exactly the SHA recorded in the `tip` column when the delete runs. If the branch has gained a commit since this table was compiled, the push is **rejected** (`stale info`) and nothing is deleted; if the ref is already gone, the push **errors** (`remote ref does not exist`). The recorded tip is the audited one (§7) — run the pre-flight below and stop if a live tip differs from the recorded one.
 
@@ -72,6 +76,22 @@ between this check and the pushes (§9).
 ```bash
 set -euo pipefail
 
+# The digest helper. A stock macOS has no sha256sum and a Linux host without GNU coreutils has
+# no shasum, so the helper takes the SHA-256 from whichever of the two this host has. Both print
+# the same lowercase hex digest; the check below proves the one this host uses.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  else
+    echo "no SHA-256 command on this host: neither sha256sum nor shasum is installed" >&2
+    return 1
+  fi
+}
+[ "$(printf '' | sha256_of)" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ] \
+  || { echo "the SHA-256 helper does not return the digest of the empty input"; exit 1; }
+
 # 1. MANIFEST CHECK: the 15 (repository, branch, tip) triples of §1 must be the reviewed ones,
 #    and each §1 deletion command must be the push that triple generates. The digest is the one
 #    the operator's word in §4 carries; a word without it, or with a different one, is a refusal
@@ -90,12 +110,14 @@ while read -r repo branch tip cmd; do
   [ "$cmd" = "$want" ] || { echo "the §1 command of $repo $branch is not the deletion of that reviewed triple: $cmd"; exit 1; }
   echo "$repo $branch $live"
 done < /tmp/manifest-rows.txt > /tmp/live-manifest.txt
-digest=$(sort -k2 /tmp/live-manifest.txt | sha256sum | cut -d' ' -f1)
+digest=$(sort -k2 /tmp/live-manifest.txt | sha256_of)
 [ "$digest" = "$MANIFEST" ] || { echo "the 15-ref manifest is not the reviewed one (digest $digest)"; exit 1; }
 
-# target check: the §1 commands name their repository by URL, so no remote alias is used.
-# If you prefer the alias `origin`, it must be the row's repository - check it first:
-git remote get-url --push origin        # must print the repository named in the row
+# target check: the §1 commands name their repository by URL, so no remote alias is used. Git
+# rewrites even that URL when the configuration carries a url.<base>.insteadOf or a
+# url.<base>.pushInsteadOf entry, so the deletion run below pushes them in a sanitized Git context
+# and refuses to start when that context still carries a rewrite; a command an operator runs by
+# hand must run in that context too.
 
 # 2. RETAINED-REF CHECK: every captured ref must still hold the commit this document measured
 #    (rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt).
@@ -197,8 +219,35 @@ row's §1 command, so a deletion happens only while the archive copy it orphans 
 intact. With the step-5 lock in place no writer can change that copy between the re-read and the
 push.
 
+Every push of this run goes out through a **sanitized Git context**. Git rewrites even an explicit
+repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf`
+entry, so a rewrite on the operator's machine can send a push that names
+`https://github.com/<repo>.git` to another repository - to a fork or a mirror that holds the
+audited SHA, where the lease of the row still succeeds and the ref is deleted there. The run
+therefore replaces the global configuration with a private copy that holds every entry except the
+`url.*` rewrites, and points the Git directory at a scratch repository whose own configuration is
+empty. The run then refuses to start when that context still carries a rewrite, and a control that
+runs the same refusal check and the same push against two local repositories proves that the
+guard sees the redirect it has to defeat.
+
 ```bash
 set -euo pipefail
+
+# The digest helper. A stock macOS has no sha256sum and a Linux host without GNU coreutils has
+# no shasum, so the helper takes the SHA-256 from whichever of the two this host has. Both print
+# the same lowercase hex digest; the check below proves the one this host uses.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  else
+    echo "no SHA-256 command on this host: neither sha256sum nor shasum is installed" >&2
+    return 1
+  fi
+}
+[ "$(printf '' | sha256_of)" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ] \
+  || { echo "the SHA-256 helper does not return the digest of the empty input"; exit 1; }
 
 MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
 
@@ -211,9 +260,102 @@ ROWS=()
 while IFS= read -r row; do ROWS+=("$row"); done < /tmp/manifest.txt
 readonly -a ROWS
 [ "${#ROWS[@]}" -eq 15 ] || { echo "the manifest of /tmp/manifest.txt is not the 15 reviewed rows - run the pre-flight first"; exit 1; }
-digest=$(printf '%s\n' "${ROWS[@]}" | sort -k2 | sha256sum | cut -d' ' -f1)
+digest=$(printf '%s\n' "${ROWS[@]}" | sort -k2 | sha256_of)
 [ "$digest" = "$MANIFEST" ] \
   || { echo "the manifest digest is $digest, not the reviewed $MANIFEST - re-run the pre-flight"; exit 1; }
+
+# THE SANITIZED GIT CONTEXT. Git rewrites even an explicit repository URL when the configuration
+# carries a url.<base>.insteadOf or url.<base>.pushInsteadOf entry, so a rewrite on this machine
+# can send a push that names https://github.com/<repo>.git to another repository - to a fork or a
+# mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is
+# deleted there. The context of every push below is:
+#   GIT_CONFIG_GLOBAL - a private copy of this machine's global configuration that keeps every
+#                        entry, the credential helper in particular, and drops the url.* rewrites;
+#   GIT_DIR           - a scratch repository whose own configuration is empty, so the local
+#                        configuration of the clone this run happens in cannot rewrite a URL.
+# The system configuration stays in place - it carries the credential helper on macOS - and the
+# check below refuses the run when it carries a rewrite of its own.
+SANITIZED_DIR=$(mktemp -d)
+SANITIZED_GLOBAL="$SANITIZED_DIR/gitconfig"
+: > "$SANITIZED_GLOBAL"
+git config --global --includes --null --list > "$SANITIZED_DIR/global.list" 2>/dev/null || true
+while IFS= read -r -d '' entry; do
+  key=${entry%%$'\n'*}
+  if [ "$key" = "$entry" ]; then
+    git config --file "$SANITIZED_GLOBAL" --add "$key" true
+    continue
+  fi
+  value=${entry#*$'\n'}
+  case "$key" in
+    url.*|include.*|includeif.*) continue ;;
+  esac
+  git config --file "$SANITIZED_GLOBAL" --add "$key" "$value"
+done < "$SANITIZED_DIR/global.list"
+export GIT_CONFIG_GLOBAL="$SANITIZED_GLOBAL"
+unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+
+git init --quiet --bare "$SANITIZED_DIR/push.git"
+export GIT_DIR="$SANITIZED_DIR/push.git"
+
+# The refusal check. The context of the pushes must carry no URL rewrite. The check reads the
+# configuration of that context, so a rewrite that survived the sanitizing - one in the system
+# configuration, or one in a file the global configuration includes - stops the run here, before
+# any push, instead of redirecting one. The control below runs the same check against a hostile
+# configuration.
+refuse_url_rewrites() {
+  if git config --get-regexp '^url\..*\.(insteadOf|pushInsteadOf)$'; then
+    return 1
+  fi
+  return 0
+}
+refuse_url_rewrites || { echo "the push context still carries a URL rewrite - the deletion run refuses to push" >&2; exit 1; }
+
+# The control repositories. Two local bare repositories stand in for the audited repository and
+# for the mirror that holds the same commit; the push of the control names the first one. They
+# are built in a context that carries no rewrite at all - no system configuration, no global
+# configuration and their own fresh configuration - so their setup pushes stay local.
+CONTROL_DIR=$(mktemp -d)
+CONTROL_SHA=$(
+  unset GIT_DIR
+  export GIT_CONFIG_NOSYSTEM=1
+  export GIT_CONFIG_GLOBAL=/dev/null
+  git init --quiet --bare "$CONTROL_DIR/victim.git"
+  git init --quiet --bare "$CONTROL_DIR/mirror.git"
+  git init --quiet "$CONTROL_DIR/seed"
+  git -C "$CONTROL_DIR/seed" -c user.name=control -c user.email=control@example.invalid -c commit.gpgsign=false commit --quiet --allow-empty -m control
+  git -C "$CONTROL_DIR/seed" push --quiet "$CONTROL_DIR/victim.git" HEAD:refs/heads/control
+  git -C "$CONTROL_DIR/seed" push --quiet "$CONTROL_DIR/mirror.git" HEAD:refs/heads/control
+  git -C "$CONTROL_DIR/seed" rev-parse HEAD
+)
+printf '[url "%s"]\n\tinsteadOf = %s\n\tpushInsteadOf = %s\n' "$CONTROL_DIR/mirror.git" "$CONTROL_DIR/victim.git" "$CONTROL_DIR/victim.git" > "$CONTROL_DIR/hostile.gitconfig"
+
+# THE CONTROL: the guard is checked against the failure it has to defeat. In a context that
+# carries the hostile rewrite the check must refuse and a push that names the victim repository
+# must be redirected to the mirror; in this context the check must accept and the same push must
+# name the repository the command names. Both pushes are dry runs against local repositories.
+if (GIT_CONFIG_GLOBAL="$CONTROL_DIR/hostile.gitconfig"; refuse_url_rewrites) >/dev/null; then
+  echo "the URL-rewrite control did not refuse the hostile configuration - the guard cannot be trusted" >&2
+  exit 1
+fi
+refuse_url_rewrites || { echo "the sanitized context was refused - the guard cannot be trusted" >&2; exit 1; }
+GIT_CONFIG_GLOBAL="$CONTROL_DIR/hostile.gitconfig" git push --dry-run --force-with-lease="refs/heads/control:$CONTROL_SHA" "$CONTROL_DIR/victim.git" --delete control 2>&1 | grep -qx "To $CONTROL_DIR/mirror.git" \
+  || { echo "the URL-rewrite control did not reproduce the redirect - the guard cannot be trusted"; exit 1; }
+git push --dry-run --force-with-lease="refs/heads/control:$CONTROL_SHA" "$CONTROL_DIR/victim.git" --delete control 2>&1 | grep -qx "To $CONTROL_DIR/victim.git" \
+  || { echo "the sanitized context did not push to the repository the command names"; exit 1; }
+
+# Every target URL must come back unchanged from the context the pushes run in: the fetch side
+# (ls-remote --get-url applies url.<base>.insteadOf) and the push side (remote get-url --push
+# applies url.<base>.pushInsteadOf).
+git remote add target "https://github.com/jackin-project/jackin.git"
+for row in "${ROWS[@]}"; do
+  read -r repo branch tip <<< "$row"
+  url="https://github.com/$repo.git"
+  git remote set-url target "$url"
+  fetch_url=$(git ls-remote --get-url "$url")
+  push_url=$(git remote get-url --push target)
+  [ "$fetch_url" = "$url" ] || { echo "the target URL $url is rewritten to $fetch_url"; exit 1; }
+  [ "$push_url" = "$url" ] || { echo "the push URL $url is rewritten to $push_url"; exit 1; }
+done
 
 # 6. DELETION RUN: one row at a time, archive first, push second. The push is built from the
 #    row's own (repository, branch, tip) triple of the snapshot, so it is the §1 command of that row.
@@ -723,7 +865,7 @@ prerequisite of §1 has run and been verified.**
 - **No branch in the approval set has been merged.** Their tips are not ancestors of their repository's `main`, and no merge was performed for this document.
 - **No branch in the approval set has been deleted.** All 15 are still on their remotes (§7); the deletion happens **only after the operator's word** (§4).
 - **Nothing outside the approval set is deleted.** The 4 DEBRIS-class rows of §2 (each needs its own word; row 4 only after its P1 slice is ported) and the 4 UNPROVEN CONTAINED candidates of §3 stay as they are; the VALUABLE rows of §8 are untouched.
-- This document, its commit and its PR **delete nothing**: they only publish the list. The only command shape it contains is the per-branch `git push --force-with-lease=refs/heads/<branch>:<tip-SHA> https://github.com/<repo>.git --delete <branch>` of §1, to be run by the operator after ratification; each of those commands names its repository by URL (never by the alias `origin`) and refuses to run if the branch's tip has moved.
+- This document, its commit and its PR **delete nothing**: they only publish the list. The only command shape it contains is the per-branch `git push --force-with-lease=refs/heads/<branch>:<tip-SHA> https://github.com/<repo>.git --delete <branch>` of §1, to be run by the operator after ratification, in the sanitized Git context of §1; each of those commands names its repository by URL (never by the alias `origin`) and refuses to run if the branch's tip has moved.
 
 ---
 
