@@ -6,13 +6,14 @@
 **Live check:** every branch name **and tip SHA** below was re-read from the live remotes with `gh api --hostname github.com repos/<repo>/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'` on 2026-11-14, and re-verified at 2026-11-14 13:17 and 20:12 UTC (§7). Branches that are already gone are marked **ALREADY GONE**.
 **Tip guard:** every deletion command in §1 is leased against the exact tip SHA recorded in that row, so a branch that moved since this table was compiled is **not** deleted (§1).
 **Target guard:** every deletion command in §1 names its repository by its **HTTPS URL** (`https://github.com/<repo>.git`), never by the remote alias `origin`, so a clone whose `origin` points at a fork can never delete a ref in the wrong repository (§1, §1b).
-**Rewrite guard:** Git rewrites even an explicit repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf` entry, so a push that names `https://github.com/<repo>.git` can still land in another repository - in a fork or a mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is deleted there. Every push of the deletion run therefore runs in a **sanitized Git context** - a private global configuration that holds the credential helper of the operator and nothing else, built from an allowlist one key at a time so that no credential-bearing value is ever written to a temporary file, and a scratch repository whose own configuration is empty - and the run refuses to start when that context still carries a rewrite (§1).
-**Credential guard:** the private global configuration of the sanitized Git context is built from an allowlist - the credential helper of the operator, and nothing else - and every value is read one key at a time, so the configuration of the operator is never written to a file and no credential-bearing value (`http.*.extraHeader`, an inline credential helper) can reach a temporary file or the output of the run. Every temporary path of the run - the sanitized configuration, the scratch repository, the control repositories and the branch lists the post-check writes - lives in a private directory of the run and is removed when it ends - on the normal end, on a refusal and on a signal - and two probes, the credential probe and the cleanup probe, prove both properties before the first push (§1).
+**Rewrite guard:** Git rewrites even an explicit repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf` entry, so a push that names `https://github.com/<repo>.git` can still land in another repository - in a fork or a mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is deleted there. Every push of the deletion run therefore runs in a **sanitized Git context** - a private global configuration that holds only the credential helpers whose backing store is known not to hold a plaintext credential, built from an allowlist one key at a time so that no credential-bearing value is ever written to a temporary file, and a scratch repository whose own configuration is empty - and the run refuses to start when that context still carries a rewrite or a credential helper that can write a credential to a file (§1).
+**Credential guard:** the private global configuration of the sanitized Git context is built from an allowlist - only the credential helpers whose backing store is known not to hold a plaintext credential (`osxkeychain`, `manager`, `manager-core`, `wincred`, `libsecret`, `gnome-keychain`, `gpgme`, `cache`) and the empty value that resets the helper list - and every value is read one key at a time, so the configuration of the operator is never written to a file and no credential-bearing value (`http.*.extraHeader`, an inline credential helper) can reach a temporary file or the output of the run. A file-backed helper (`store` writes its input to a plaintext file), an unknown program (a plain program name is not a proof of storage behavior - it resolves to whatever program answers it on this host) and a helper that carries arguments or a shell command are **refused, not copied**, and one refused helper refuses the run before the first push; the helper list of the push context itself - the system configuration included - is checked again in the same way. Every temporary path of the run - the sanitized configuration, the scratch repository, the control repositories and the branch lists the post-check writes - lives in a private directory of the run and is removed when it ends - on the normal end, on a refusal and on a signal - and two probes, the credential probe and the cleanup probe, prove both properties before the first push (§1).
 **Host guard:** every GitHub API call of the procedure names `github.com` explicitly, because `gh` honors the `GH_HOST` of the environment: a run whose environment carries a `GH_HOST` would otherwise read and write another host - a GitHub Enterprise instance - where the 15 refs of the ratification are not, and the guards of the run would pass against a repository the operator never ratified (§1).
 **Path guard:** no path of the procedure is a fixed path under `/tmp`. The manifest of the pre-flight, the sanitized configuration, the scratch repository, the control repositories and the branch lists of the post-check live in private directories (`mktemp -d`) that the run removes when it ends, because a predictable path can be written, replaced with a link or read by every other process on the host. The deletion run takes its manifest from the §1 table of this publication - the same rows the pre-flight checks - and never from a file that another process can touch (§1).
 **Digest guard:** the manifest digest is computed by a helper that takes the SHA-256 from `sha256sum` where the host has it and from `shasum -a 256` where it does not, so the check runs on a stock macOS as well as on a Linux host; both print the same lowercase hex digest (§1).
 **Absent-path accounting:** §1a accounts for **every** path that each of the 15 deletions would remove, re-derived against the live `main` tips; §1b gives the commands that reproduce the numbers and names the `main` tips they were measured against.
 **Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs. The deletion run re-checks the same digest against an in-memory snapshot of the manifest - read once from the §1 table of this publication, never from a file - and builds every push from that snapshot (§1, §4).
+**Revision guard:** the operator's word in §4 carries, next to the manifest digest, the SHA-256 digest of **this publication at the revision the operator reviewed**, and the deletion run executes only that revision: it recomputes the digest of the publication it reads and refuses the run when the file is not the one the word names. A publication edited after the ratification - in the table, in the commands or in the procedure itself - therefore **invalidates the word**, and every further run is a refusal; the deletion block is executed from the verified file, not copied (§4), so what runs is the revision the word names (§1, §4).
 **Archive prerequisite:** no deletion may run before every branch this document deletes — and every captured retained ref — is preserved under `refs/heads/archive/` **and verified**, and the `refs/heads/archive/**/*` namespace stays locked by a repository ruleset for the run, with each deletion push re-reading its own archive ref immediately before it runs. Fetching a recorded SHA is not preservation: once the last ref to an object is gone, the object is gone from the remote. Nothing in the deletions touches an archive ref and the lock keeps any other writer from touching one either, so the archive closes the window that the retained-ref check alone cannot close (§1, §1a, §9).
 
 ## Contents
@@ -122,8 +123,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # 1. MANIFEST CHECK: the 15 (repository, branch, tip) triples of §1 must be the reviewed ones,
-#    and each §1 deletion command must be the push that triple generates. The digest is the one
-#    the operator's word in §4 carries; a word without it, or with a different one, is a refusal
+#    and each §1 deletion command must be the push that triple generates. The manifest digest is
+#    the one the operator's word in §4 carries; a word without it, or with a different one, is a refusal
 #    (§4). A branch that moved is refused here and again by the --force-with-lease guard of its
 #    deletion command, and a command whose --delete operand is not the row's own branch is refused
 #    here, so a publication edited after the ratification cannot change what runs.
@@ -243,11 +244,13 @@ done
 ```
 
 **The operator's word comes here (§4).** Steps 1-5 must all have passed. The deletion run below
-executes only after the word is sent; it reads the manifest once into an in-memory snapshot - the
-§1 table of this publication, and not a file of the pre-flight, whose private directory is gone
-by then - checks that snapshot's digest against the ratified one, and builds every push from that
-snapshot — so nothing on disk is read again and a manifest that changed after the pre-flight
-cannot change what runs. Each iteration re-reads the row's own archive ref immediately before it
+executes only after the word is sent; it takes the word in `RATIFY_WORD` - **from the line the
+operator sent, and not from this file**, because a word that lived in the publication could be
+edited with it - reads the manifest once into an in-memory snapshot - the §1 table of this
+publication, and not a file of the pre-flight, whose private directory is gone by then - checks
+that snapshot's digest and the digest of this publication against the two the word carries, and
+builds every push from that snapshot — so nothing that is not the ratified revision runs, and a
+manifest or a publication that changed after the pre-flight cannot change what runs. Each iteration re-reads the row's own archive ref immediately before it
 runs exactly that row's §1 command, so a deletion happens only while the archive copy it orphans
 is present and intact. With the step-5 lock in place no writer can change that copy between the
 re-read and the push.
@@ -264,24 +267,36 @@ runs the same refusal check and the same push against two local repositories pro
 guard sees the redirect it has to defeat.
 
 **The private copy holds no credential.** The copy is not a copy of the operator's configuration:
-it is built from an allowlist, one key at a time, and a value is copied only when it cannot carry a
-credential - a credential helper that is a plain program name, or the empty value that resets the
-helper list. Every other key - the `url.*` rewrites, the `http.*` headers, the `include.*` files -
-is never read, and a helper that carries arguments or a shell command is never copied, because the
-text of such a helper can carry the credential itself. The configuration of the operator is never
-written to a file, so no temporary file of this run holds a value the allowlist rejects, and every
-temporary path of this run - the sanitized configuration, the scratch repository, the control
-repositories and the branch lists the post-check writes - lives in a private directory of the run
-and is removed when the run ends - on the normal end, on a refusal and on a signal. Two probes
-prove both properties before the first push: the **credential probe** builds a global
-configuration that carries a credential in the two forms that carry one - an extra header and an
-inline credential helper - runs the same sanitizing against it and refuses the run when the
-credential reaches a file or the output; the **cleanup probe** runs the cleanup of the run
-against fixtures of its own - never against a path of the run - in a process that ends in each
-of the three ways - a subshell for the normal end and for the refusal, a child process for the
-signal - and checks that no fixture is left behind.
+it is built from an allowlist, one key at a time, and a helper is copied only when its backing
+store is known not to hold a plaintext credential - `osxkeychain`, `manager`, `manager-core`,
+`wincred`, `libsecret`, `gnome-keychain`, `gpgme` and `cache` - or when it is the empty value that
+resets the helper list. Every other helper is **refused, not copied**, and a refused helper
+refuses the run: `store` writes its input to a plaintext file, an unknown program's storage
+behavior is unknown and it can persist its input - a plain program name is not a proof, it
+resolves to whatever program answers it on this host - and a helper that carries arguments or a
+shell command can carry the credential in its own text. The name is matched without case, because
+a lookup of `git-credential-Store` finds `git-credential-store` on a case-insensitive filesystem.
+Every other key - the `url.*` rewrites, the `http.*` headers, the `include.*` files - is never
+read. The configuration of the operator is never written to a file, so no temporary file of this
+run holds a value the allowlist rejects, and every temporary path of this run - the sanitized
+configuration, the scratch repository, the control repositories and the branch lists the
+post-check writes - lives in a private directory of the run and is removed when the run ends - on
+the normal end, on a refusal and on a signal. The helper list of the push context itself - the
+system configuration included, which stays in place because it carries the credential helper on
+macOS - is checked again before the first push, so no helper that can write a credential to a
+file is ever invoked by the pushes. Two probes prove the properties before the first push: the
+**credential probe** builds a global configuration that carries a credential in the two forms
+that carry one - an extra header and an inline credential helper - together with a file-backed
+helper, its case variant and an unknown program, and runs the same sanitizing against it: the run
+must be refused and the credential must reach neither a file nor the output; and a second
+configuration that carries only known-safe helpers must still be copied, so the pushes keep their
+authentication. The **cleanup probe** runs the cleanup of the run against fixtures of its own -
+never against a path of the run - in a process that ends in each of the three ways - a subshell
+for the normal end and for the refusal, a child process for the signal - and checks that no
+fixture is left behind.
 
 ```bash
+# --- deletion run: begin ---
 set -euo pipefail
 
 # Every GitHub API call of this run is pinned to github.com. An unqualified call honors the
@@ -312,9 +327,11 @@ sha256_of() {
 MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
 
 # the manifest is read ONCE into an in-memory snapshot, and the snapshot's digest is checked
-# against the digest the operator's word carries: the word binds the 15 (repository, branch, tip)
-# triples, so a manifest that changed after the pre-flight is a refusal, not a deletion. Every
-# loop below runs on that snapshot - no file is read again, so nothing on disk can change what runs.
+# against the manifest digest the operator's word carries: the word binds the 15 (repository,
+# branch, tip) triples, so a manifest that changed after the pre-flight is a refusal, not a
+# deletion. The word carries a second digest - the digest of this publication - which is checked
+# below, so the revision that runs is the revision that was ratified. Every loop below runs on
+# that snapshot - no file is read again, so nothing on disk can change what runs.
 # The triples come from the §1 table of this publication and not from a file of the pre-flight:
 # the pre-flight keeps its manifest in a private directory that it removes when it ends, and a
 # manifest carried from one block to the other in a fixed path under /tmp would be readable and
@@ -333,14 +350,34 @@ digest=$(printf '%s\n' "${ROWS[@]}" | sort -k2 | sha256_of)
 [ "$digest" = "$MANIFEST" ] \
   || { echo "the manifest digest is $digest, not the reviewed $MANIFEST - re-run the pre-flight"; exit 1; }
 
+# THE WORD AND THE RATIFIED REVISION. The word of section 4 carries two digests - the manifest and
+# this publication - and the run takes the word in RATIFY_WORD, from the line the operator sent
+# and not from this file: a word that lived in the publication could be edited with it. The run
+# executes only the revision the word names. The manifest digest of the word is checked against
+# the reviewed constant and the snapshot of the table, and the publication digest of the word is
+# checked against the file this run reads its rows from - so a publication edited after the
+# ratification is a refusal and not a deletion, wherever the edit is: the table, the deletion
+# commands, this block and every guard in it are covered by that digest, and a run that would
+# execute an edit cannot start.
+: "${RATIFY_WORD:?the deletion run executes only the revision the word of section 4 names - set RATIFY_WORD to the line the operator sent in section 4}"
+word_re='^RATIFY DEBRIS: 15 branches manifest sha256:([0-9a-f]{64}) publication sha256:([0-9a-f]{64})$'
+[[ "$RATIFY_WORD" =~ $word_re ]] || { echo "the word is not the word of section 4 - the deletion run refuses to push"; exit 1; }
+word_manifest=${BASH_REMATCH[1]}
+word_publication=${BASH_REMATCH[2]}
+[ "$word_manifest" = "$MANIFEST" ] \
+  || { echo "the manifest digest of the word is not the reviewed one - the deletion run refuses to push"; exit 1; }
+rated=$(sha256_of < "$PUBLICATION")
+[ "$rated" = "$word_publication" ] \
+  || { echo "the publication carries the digest $rated, not the revision the word names - a change after the ratification invalidates the word"; exit 1; }
+
 # THE SANITIZED GIT CONTEXT. Git rewrites even an explicit repository URL when the configuration
 # carries a url.<base>.insteadOf or url.<base>.pushInsteadOf entry, so a rewrite on this machine
 # can send a push that names https://github.com/<repo>.git to another repository - to a fork or a
 # mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is
 # deleted there. The context of every push below is:
-#   GIT_CONFIG_GLOBAL - a private configuration that holds the credential helper of the operator
-#                        and nothing else, so that no credential and no URL rewrite can reach a
-#                        push;
+#   GIT_CONFIG_GLOBAL - a private configuration that holds only the credential helpers whose
+#                        backing store is known not to hold a plaintext credential, so that no
+#                        credential and no URL rewrite can reach a push;
 #   GIT_DIR           - a scratch repository whose own configuration is empty, so the local
 #                        configuration of the clone this run happens in cannot rewrite a URL.
 # The system configuration stays in place - it carries the credential helper on macOS - and the
@@ -382,48 +419,76 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# THE KNOWN-SAFE CREDENTIAL HELPERS. A credential helper is copied into the sanitized
+# configuration only when its backing store is known not to hold a plaintext credential: the
+# keychains and the credential managers - osxkeychain, manager, manager-core, wincred, libsecret,
+# gnome-keychain, gpgme - and the memory of the cache daemon, cache. The name is matched without
+# case, because a lookup of git-credential-Store finds git-credential-store on a case-insensitive
+# filesystem. Every other helper is refused: store writes its input to a plaintext file, an
+# unknown program's storage behavior is unknown and it can persist its input - a plain program
+# name is not a proof, it resolves to whatever program answers it on this host - and a helper that
+# carries arguments or a shell command can carry the credential in its own text.
+known_safe_helper() {
+  case "$(printf '%s' "$1" | tr 'A-Z' 'a-z')" in
+    osxkeychain | manager | manager-core | wincred | libsecret | gnome-keychain | gpgme | cache) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # The sanitizing. The configuration of the operator is read one allowlisted key at a time, and a
-# value is copied into the sanitized configuration only when it cannot carry a credential:
-#   credential.helper - a credential helper is a program, so a plain program name is copied, and
-#                       the empty value is copied because it resets the helper list; a helper that
-#                       carries arguments or a shell command is not copied, because the text of
-#                       such a helper can carry the credential itself.
+# value is copied into the sanitized configuration only when it cannot write a credential to a
+# file:
+#   credential.helper - only a known-safe helper (THE KNOWN-SAFE CREDENTIAL HELPERS above) and
+#                       the empty value that resets the helper list are copied; every other
+#                       helper is refused and never copied, and one refused helper refuses the
+#                       run: store writes its input to a plaintext file, an unknown program can
+#                       persist its input, and a helper with arguments or a shell command can
+#                       carry the credential in its text.
 # Every other key - the url.* rewrites, the http.* headers, the include.* files - is never read
 # and never copied, and the configuration of the operator is never written to a file: every value
 # is read from it directly, so no temporary file of this run ever holds a value the allowlist
 # rejects. The helper list keeps the order of the operator's own list, so the helper that answers
 # first is the one that answers without the sanitizing. The values are read with the tracing off,
-# so a run under "set -x" does not print them.
+# so a run under "set -x" does not print them, and the refusal names no value: the text of a
+# helper can carry the credential itself.
 sanitize_global_config() {
   directory=$1
   destination="$directory/gitconfig"
   : > "$destination"
   (
     set +x
-    skipped=0
+    refused=0
     while IFS= read -r -d '' helper; do
       case "$helper" in
-        '') git config --file "$destination" --add credential.helper "$helper" ;;
-        [!A-Za-z0-9]*|*[!A-Za-z0-9._+-]*) skipped=$((skipped + 1)); continue ;;
-        *) git config --file "$destination" --add credential.helper "$helper" ;;
+        '') git config --file "$destination" --add credential.helper "$helper"; continue ;;
       esac
+      if known_safe_helper "$helper"; then
+        git config --file "$destination" --add credential.helper "$helper"
+      else
+        refused=1
+      fi
     done < <(git config --global --includes --null --get-all credential.helper 2>/dev/null || true)
-    if [ "$skipped" -gt 0 ]; then
-      echo "a credential helper of the global configuration was not copied into the sanitized context - its value can carry a credential, so the pushes must authenticate another way" >&2
+    if [ "$refused" -eq 1 ]; then
+      echo "a credential helper of the global configuration is not in the known-safe list - store writes its input to a plaintext file and an unknown program can do the same, so the pushes could leave the GitHub credential on disk; the helper is refused, not copied, and the deletion run refuses to push" >&2
+      exit 1
     fi
   )
 }
 
-# THE CREDENTIAL PROBE. The sanitizing must not carry a credential into a temporary file or into
-# the output of the run. The probe builds a global configuration that carries a credential in the
-# two forms that carry one - an extra header and an inline credential helper - runs the same
-# sanitizing the deletion run runs against it, and refuses the run when the credential reaches a
-# file of the temporary directory or the output of the sanitizing. The probe is hermetic: the
-# credential is fabricated, the configuration it runs against is its own - the probe reads the
-# global configuration of a home directory of its own, so the configuration of the operator is
-# never read - and the tracing is off, so that neither the value nor the probe itself prints it.
-# The probe removes its own temporary directory when it ends - on the normal end, on a refusal and
-# on a signal - so a signal in the middle of the probe leaves nothing behind.
+# THE CREDENTIAL PROBE. The sanitizing must refuse every helper that can write a credential to a
+# file and must copy only a known-safe helper, and it must never carry a credential into a
+# temporary file or into the output of the run. The probe runs both properties against fixtures
+# of its own: a global configuration that carries a credential in the two forms that carry one -
+# an extra header and an inline credential helper - together with the file-backed helper store,
+# its case variant Store and the unknown program persist-helper, where the sanitizing must refuse
+# the run and copy none of them; and a configuration that carries only known-safe helpers and a
+# reset, where the sanitizing must succeed and copy them, so the pushes keep their
+# authentication. The probe is hermetic: the credential is fabricated, the configuration it runs
+# against is its own - the probe reads the global configuration of a home directory of its own,
+# so the configuration of the operator is never read - and the tracing is off, so that neither
+# the value nor the probe itself prints it. The probe removes its own temporary directory when it
+# ends - on the normal end, on a refusal and on a signal - so a signal in the middle of the probe
+# leaves nothing behind.
 credential_probe() {
   (
     set +x
@@ -439,17 +504,18 @@ credential_probe() {
 	extraHeader = Authorization: Basic $sentinel
 [credential]
 	helper = "!f() { echo username=probe; echo password=$sentinel; }; f"
+	helper = store
+	helper = Store
+	helper = persist-helper
 	helper = osxkeychain
 [url "https://mirror.invalid/"]
 	insteadOf = https://github.com/
 EOF
     cp "$probe_dir/home/.gitconfig" "$probe_dir/home/.gitconfig.copy"
-    output=$( ( unset GIT_CONFIG_GLOBAL; export HOME="$probe_dir/home" XDG_CONFIG_HOME="$probe_dir/home/.config"; sanitize_global_config "$probe_dir/out" ) 2>&1 ) || {
-      echo "the credential probe could not run the sanitizing - the guard cannot be trusted" >&2
-      exit 1
-    }
-    if grep -R -q -F "$sentinel" "$probe_dir/out"; then
-      echo "the credential probe found the credential in the sanitized context - the guard cannot be trusted" >&2
+    status=0
+    output=$( ( unset GIT_CONFIG_GLOBAL; export HOME="$probe_dir/home" XDG_CONFIG_HOME="$probe_dir/home/.config"; sanitize_global_config "$probe_dir/out" ) 2>&1 ) || status=$?
+    if [ "$status" -eq 0 ]; then
+      echo "the credential probe found the sanitizing accepted a configuration that carries a file-backed and an inline helper - the guard cannot be trusted" >&2
       exit 1
     fi
     case "$output" in
@@ -458,21 +524,35 @@ EOF
         exit 1
         ;;
     esac
+    if grep -R -q -F "$sentinel" "$probe_dir/out"; then
+      echo "the credential probe found the credential in the sanitized context - the guard cannot be trusted" >&2
+      exit 1
+    fi
     files=$(find "$probe_dir/out" -type f | wc -l | tr -d ' ')
     if [ "$files" -ne 1 ]; then
       echo "the credential probe found $files files in the sanitized context - the configuration of the operator was materialized" >&2
       exit 1
     fi
-    if ! grep -q -E '^[[:space:]]*helper = osxkeychain$' "$probe_dir/out/gitconfig"; then
-      echo "the credential probe found no credential helper in the sanitized context - the sanitizing dropped what the pushes need" >&2
-      exit 1
-    fi
-    if grep -q -E -e 'insteadOf' -e 'pushInsteadOf' -e '!' "$probe_dir/out/gitconfig"; then
-      echo "the credential probe found a rewrite or an inline helper in the sanitized context - the guard cannot be trusted" >&2
+    if git config --file "$probe_dir/out/gitconfig" --get-all --null credential.helper 2>/dev/null | tr '\0' '\n' | grep -q -E -e '^store$' -e '^Store$' -e '^persist-helper$' -e '^!' -e 'insteadOf' -e 'pushInsteadOf'; then
+      echo "the credential probe found a refused helper or a rewrite in the sanitized context - the guard cannot be trusted" >&2
       exit 1
     fi
     if ! cmp -s "$probe_dir/home/.gitconfig" "$probe_dir/home/.gitconfig.copy"; then
       echo "the credential probe found the configuration of the operator changed - the sanitizing wrote to it" >&2
+      exit 1
+    fi
+    mkdir -p "$probe_dir/safe/home/.config" "$probe_dir/safe/out"
+    cat > "$probe_dir/safe/home/.gitconfig" <<EOF
+[credential]
+	helper =
+	helper = osxkeychain
+EOF
+    ( unset GIT_CONFIG_GLOBAL; export HOME="$probe_dir/safe/home" XDG_CONFIG_HOME="$probe_dir/safe/home/.config"; sanitize_global_config "$probe_dir/safe/out" ) || {
+      echo "the credential probe found the sanitizing refused a configuration that carries only known-safe helpers - the pushes would lose their authentication" >&2
+      exit 1
+    }
+    if ! git config --file "$probe_dir/safe/out/gitconfig" --get-all --null credential.helper 2>/dev/null | tr '\0' '\n' | grep -qx 'osxkeychain'; then
+      echo "the credential probe found no credential helper in the sanitized context - the sanitizing dropped what the pushes need" >&2
       exit 1
     fi
     exit 0
@@ -546,7 +626,7 @@ SIGNAL
 }
 
 unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
-sanitize_global_config "$SANITIZED_DIR"
+sanitize_global_config "$SANITIZED_DIR" || { echo "the sanitizing refused a credential helper of the global configuration - the deletion run refuses to push" >&2; exit 1; }
 export GIT_CONFIG_GLOBAL="$SANITIZED_GLOBAL"
 credential_probe || { echo "the credential probe refused the sanitizing - the deletion run refuses to push" >&2; exit 1; }
 cleanup_probe || { echo "the cleanup probe refused the cleanup - the deletion run refuses to push" >&2; exit 1; }
@@ -567,6 +647,23 @@ refuse_url_rewrites() {
   return 0
 }
 refuse_url_rewrites || { echo "the push context still carries a URL rewrite - the deletion run refuses to push" >&2; exit 1; }
+
+# THE HELPER GUARD. The system configuration stays in place - it carries the credential helper on
+# macOS - so a helper there is invoked by the pushes as well, and a helper that writes its input to
+# a file would leave the GitHub credential on disk after they authenticate. The guard reads the
+# helper list of the context the pushes run in - system configuration, sanitized global
+# configuration and the empty scratch repository - and refuses the run when it carries a helper
+# that is not known safe. The name is matched without case, as in the sanitizing.
+refuse_unsafe_helpers() {
+  while IFS= read -r -d '' helper; do
+    case "$helper" in
+      '') continue ;;
+    esac
+    known_safe_helper "$helper" || return 1
+  done < <(git config --get-all --null credential.helper 2>/dev/null || true)
+  return 0
+}
+refuse_unsafe_helpers || { echo "the push context carries a credential helper that can write a credential to a file - the deletion run refuses to push" >&2; exit 1; }
 
 # The control repositories. Two local bare repositories stand in for the audited repository and
 # for the mirror that holds the same commit; the push of the control names the first one. They
@@ -597,6 +694,17 @@ if (GIT_CONFIG_GLOBAL="$CONTROL_DIR/hostile.gitconfig"; refuse_url_rewrites) >/d
   exit 1
 fi
 refuse_url_rewrites || { echo "the sanitized context was refused - the guard cannot be trusted" >&2; exit 1; }
+
+# THE HELPER CONTROL: the guard is checked against the failure it has to defeat. A context whose
+# system configuration carries a file-backed helper must be refused - the pushes would invoke it
+# and it would write the credential to a file - and the sanitized context of the run must be
+# accepted. The hostile system configuration is a fixture of the control.
+printf '[credential]\n\thelper = store\n' > "$CONTROL_DIR/hostile-system.gitconfig"
+if (GIT_CONFIG_SYSTEM="$CONTROL_DIR/hostile-system.gitconfig"; refuse_unsafe_helpers) >/dev/null; then
+  echo "the helper control did not refuse the file-backed helper - the guard cannot be trusted" >&2
+  exit 1
+fi
+refuse_unsafe_helpers || { echo "the sanitized context was refused by the helper guard - the guard cannot be trusted" >&2; exit 1; }
 GIT_CONFIG_GLOBAL="$CONTROL_DIR/hostile.gitconfig" git push --dry-run --force-with-lease="refs/heads/control:$CONTROL_SHA" "$CONTROL_DIR/victim.git" --delete control 2>&1 | grep -qx "To $CONTROL_DIR/mirror.git" \
   || { echo "the URL-rewrite control did not reproduce the redirect - the guard cannot be trusted"; exit 1; }
 git push --dry-run --force-with-lease="refs/heads/control:$CONTROL_SHA" "$CONTROL_DIR/victim.git" --delete control 2>&1 | grep -qx "To $CONTROL_DIR/victim.git" \
@@ -692,6 +800,7 @@ PROTECTED
 gh_api repos/jackin-project/jackin/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
 gh_api repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
 gh_api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
+# --- deletion run: end ---
 ```
 
 Expected after the deletions (live counts re-read 2026-11-14 20:12 UTC, §7), **counting the archive heads that step 3 creates**: jackin **70 → 130** branches (69 non-main → 129 non-main: the 10 targets are removed and 70 `archive/**` heads are added), smith **3 → 4** (2 removed, 3 added), baseline **5 → 7** (3 removed, 5 added). The jackin number grew from 24 to 70 between the two re-checks because other work in the same repository pushed branches in the meantime (§7, "Branches outside every class list"); those branches are **not** in the approval set and the operator's word does not cover them. This document's own branch `docs/debris-ratification-2026-11-14` is counted in the 70 and disappears only if the PR is merged and its branch deleted.
@@ -1111,30 +1220,58 @@ Open item flagged by the same review (not a debris question): the 5 usage fixtur
 
 ## 4. The operator's one-word approval
 
-Send exactly:
+The word carries **two digests**: the manifest of §1, and this publication itself. The manifest
+digest binds the word to the 15 (repository, branch, tip) triples; the publication digest binds it
+to the exact bytes of the file the operator reviewed. A publication edited after the ratification —
+in the table, in the commands, in the procedure — changes that digest and **invalidates the word**:
+the deletion run recomputes the digest of the publication it reads and refuses the run unless it is
+the digest the word names, so a revision that was not ratified cannot execute.
 
-```text
-RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
+Compute the publication digest of the reviewed revision (either command prints the same lowercase
+hex; the digest is the first column):
+
+```bash
+shasum -a 256 rewrite/triage/debris-ratification-2026-11-14.md   # stock macOS
+sha256sum rewrite/triage/debris-ratification-2026-11-14.md       # where sha256sum exists
 ```
 
-The digest is the SHA-256 of the 15 (repository, branch, tip) triples of §1, sorted by branch. It binds
-the word to the manifest that was reviewed: a word without the digest, or with a different one, is a
-refusal, and step 1 of the pre-flight in §1 recomputes the digest from the live tips and stops when it
-differs. Step 1 also regenerates each §1 deletion command from its own (repository, branch, tip)
-triple and stops when the table's command is not that exact push, so the word covers the commands
-that run: a `--delete` operand edited after the ratification cannot change what executes. Step 6
-re-checks the same digest against an in-memory snapshot of the manifest before the first deletion
-push and builds every push from that snapshot, so a manifest that changed after the pre-flight is a
+Send exactly, with `<publication digest>` replaced by that value:
+
+```text
+RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a publication sha256:<publication digest>
+```
+
+The manifest digest is the SHA-256 of the 15 (repository, branch, tip) triples of §1, sorted by
+branch. It binds the word to the manifest that was reviewed: a word without the digests, or with
+different ones, is a refusal, and step 1 of the pre-flight in §1 recomputes the manifest digest from
+the live tips and stops when it differs. Step 1 also regenerates each §1 deletion command from its own
+(repository, branch, tip) triple and stops when the table's command is not that exact push, so the word
+covers the commands that run: a `--delete` operand edited after the ratification cannot change what
+executes. Step 6 takes the word in `RATIFY_WORD` — **from the line the operator sent, not from this
+file** — re-checks the manifest digest against an in-memory snapshot of the manifest before the
+first deletion push, re-checks the publication digest against the file it reads, and builds every
+push from that snapshot, so a manifest or a publication that changed after the pre-flight is a
 refusal there as well.
+
+Run the deletion block of §1 **from this publication, not copied**, so what executes is the
+revision the word names; the block is fenced between its begin and end markers and refuses to start
+unless the file carries the digest the word names:
+
+```bash
+RATIFY_WORD='RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a publication sha256:<publication digest>' \
+  bash -c "$(awk '/^# --- deletion run: begin ---$/,/^# --- deletion run: end ---$/' rewrite/triage/debris-ratification-2026-11-14.md)"
+```
 
 Optionally, to also ratify retroactively the one deletion that was performed without a recorded proof (§6):
 
 ```text
-RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
+RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a publication sha256:<publication digest>
 RATIFY UNRECORDED DELETION: 1 branch (tailrocks/terminal-components-baseline wip/tuiscotti-pin-fec38841)
 ```
 
-A refusal, a different count, a missing or different digest, or any other wording is a refusal:
+The run reads only the `RATIFY DEBRIS` line; the second line is an approval of record for §6 and is
+not an input to the run. A refusal, a different count, a missing or different digest, or any other
+wording is a refusal:
 **nothing is deleted unless the word above is sent — and nothing is deleted before the archive
 prerequisite of §1 has run and been verified.**
 
@@ -1256,5 +1393,5 @@ Not part of any approval set; listed so that no one mistakes them for debris. Ro
 - The paths of the procedure are private, not fixed: the pre-flight keeps its manifest in a private directory (`mktemp -d`) that it removes when it ends, the deletion run keeps the sanitized configuration, the scratch repository, the control repositories and the branch lists of the post-check in a private directory of its own, and the deletion run takes its manifest from the §1 table of this publication instead of a file. A predictable path under `/tmp` can be written, replaced with a link or read by every other process on the host, and a run that reads a manifest from such a path reads what another process put there. The digest of §4 is what binds the manifest to the operator's word, so a manifest that another process replaced is a refusal, never a deletion.
 - Every GitHub API call of the procedure names `github.com`, because `gh` honors the `GH_HOST` of the environment: without the pin, a run whose environment carries a `GH_HOST` would read and write another host - a GitHub Enterprise instance - where the 15 refs of the ratification are not, and the guards of the run would pass against a repository the operator never ratified. The pin does not change what the run reads on `github.com`; it only refuses to read or write anywhere else.
 - The retained-ref check in §1 is a **pre-flight, not a transaction**: a retained ref can move or be deleted between that check and the push, and a deletion lease covers only its own target. **The archive prerequisite of §1 is what closes that window**: before the first deletion push, the tip of each of the 15 rows and the captured tip of every retained ref is preserved under `refs/heads/archive/` and verified (steps 3 and 4 of the pre-flight), the `refs/heads/archive/**/*` namespace is then locked against deletion and force-update by the step-5 ruleset, each deletion push of step 6 re-reads its own archive ref immediately before it runs, and no deletion in §1 touches an archive ref. A collaborator who can move a retained branch can therefore no longer remove the last copy of content that §1a counted as preserved (row 10 relies on retained refs for 2 of its 20 paths). What the archive does not cover is the history a retained ref gained *after* the capture — the archive holds the captured tip, and the tip's own history with it. Running the deletions as one atomic server-side operation remains an option, not a requirement.
-- **The decision trail carries this publication's disposition in this PR.** `rewrite/decisions.tsv:520` recorded the four branches of §3 as "CONTAINED-safe-to-delete", and `:525` named "4 CONTAINED-safe-to-delete candidates" in the 15-branch ratification row. This publication supersedes both labels (§3): the four are **UNPROVEN, KEPT** — kept, not deletable. The superseding trail rows are part of this PR: `rewrite/decisions.tsv:531` records the four §3 branches as UNPROVEN, KEPT and excluded from the 15-branch set by class, `:532` corrects the phrase of the ratification row, and `:535` records the private paths and the pinned host of the procedure and the correction of the row at `:534`, whose description of the sanitized configuration now matches the `credential.helper` allowlist the run implements. The same commit repairs the ascending order of the trail's `ts` column, so the five inherited inversions (rows 314, 319, 383, 413 and 419) are gone and the trail and this publication agree before this PR merges. The rows the other documents cite (`:510`, `:511`, `:514`, `:520`, `:521`, `:525`) are byte-identical to the rows they cited before.
+- **The decision trail carries this publication's disposition in this PR.** `rewrite/decisions.tsv:520` recorded the four branches of §3 as "CONTAINED-safe-to-delete", and `:525` named "4 CONTAINED-safe-to-delete candidates" in the 15-branch ratification row. This publication supersedes both labels (§3): the four are **UNPROVEN, KEPT** — kept, not deletable. The superseding trail rows are part of this PR: `rewrite/decisions.tsv:531` records the four §3 branches as UNPROVEN, KEPT and excluded from the 15-branch set by class, `:532` corrects the phrase of the ratification row, and `:535` records the private paths and the pinned host of the procedure and the correction of the row at `:534`, whose description of the sanitized configuration now matches the known-safe `credential.helper` allowlist the run implements, and `:536` records that allowlist - a file-backed, unknown or credential-carrying helper is refused, not copied - and the binding of the operator's word to the revision of this publication. The same commit repairs the ascending order of the trail's `ts` column, so the five inherited inversions (rows 314, 319, 383, 413 and 419) are gone and the trail and this publication agree before this PR merges. The rows the other documents cite (`:510`, `:511`, `:514`, `:520`, `:521`, `:525`) are byte-identical to the rows they cited before.
 - Nothing was deleted, pushed to a branch, merged or tagged in producing this document; only this file and the seven audit files under `rewrite/triage/audits/2026-11-14/` were added.

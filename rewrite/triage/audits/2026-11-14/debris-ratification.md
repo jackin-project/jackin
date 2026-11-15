@@ -116,18 +116,22 @@ Separate, earlier recorded deletion (historical snapshot section of the inventor
 
 ## 4) One-word approval text and the exact deletion commands
 
-**Send exactly:** `RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`
+**Send exactly** (with `<publication digest>` filled in as the publication's §4 directs):
+`RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a publication sha256:<publication digest>`
 
-The digest is part of the word: it binds the word to the 15 (repository, branch, tip) triples of §1
-(the publication's §1), and the publication's step 1 recomputes it from the live tips and refuses to
-proceed when it differs. A word without the digest, or with a different one, is a refusal.
+The digests are part of the word: the manifest digest binds the word to the 15 (repository, branch,
+tip) triples of §1 (the publication's §1), and the publication digest binds it to the bytes of the
+publication the operator reviewed. The publication's step 1 recomputes the manifest digest from the
+live tips and refuses to proceed when it differs, and the deletion run refuses when the publication
+is not the revision the word names. A word without the digests, or with different ones, is a
+refusal.
 
 (Optionally add the retroactive line for the unrecorded deletion. **Use the publication's exact text**
 (`rewrite/triage/debris-ratification-2026-11-14.md`, §4) - the repository name must be spelled out, because
 the publication treats any other wording as a refusal:
 
 ```text
-RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
+RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a publication sha256:<publication digest>
 RATIFY UNRECORDED DELETION: 1 branch (tailrocks/terminal-components-baseline wip/tuiscotti-pin-fec38841)
 ```
 
