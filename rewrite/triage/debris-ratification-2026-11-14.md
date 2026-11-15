@@ -7,7 +7,7 @@
 **Tip guard:** every deletion command in §1 is leased against the exact tip SHA recorded in that row, so a branch that moved since this table was compiled is **not** deleted (§1).
 **Target guard:** every deletion command in §1 names its repository by its **HTTPS URL** (`https://github.com/<repo>.git`), never by the remote alias `origin`, so a clone whose `origin` points at a fork can never delete a ref in the wrong repository (§1, §1b).
 **Rewrite guard:** Git rewrites even an explicit repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf` entry, so a push that names `https://github.com/<repo>.git` can still land in another repository - in a fork or a mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is deleted there. Every push of the deletion run therefore runs in a **sanitized Git context** - a private global configuration that holds the credential helper of the operator and nothing else, built from an allowlist one key at a time so that no credential-bearing value is ever written to a temporary file, and a scratch repository whose own configuration is empty - and the run refuses to start when that context still carries a rewrite (§1).
-**Credential guard:** the private global configuration of the sanitized Git context is built from an allowlist - the credential helper of the operator, and nothing else - and every value is read one key at a time, so the configuration of the operator is never written to a file and no credential-bearing value (`http.*.extraHeader`, an inline credential helper) can reach a temporary file or the output of the run. Every temporary path of the run is removed when it ends - on the normal end, on a refusal and on a signal - and two probes, the credential probe and the cleanup probe, prove both properties before the first push (§1).
+**Credential guard:** the private global configuration of the sanitized Git context is built from an allowlist - the credential helper of the operator, and nothing else - and every value is read one key at a time, so the configuration of the operator is never written to a file and no credential-bearing value (`http.*.extraHeader`, an inline credential helper) can reach a temporary file or the output of the run. Every temporary path of the run - the sanitized configuration, the scratch repository, the control repositories and the branch lists the post-check writes - is removed when it ends - on the normal end, on a refusal and on a signal - and two probes, the credential probe and the cleanup probe, prove both properties before the first push (§1).
 **Digest guard:** the manifest digest is computed by a helper that takes the SHA-256 from `sha256sum` where the host has it and from `shasum -a 256` where it does not, so the check runs on a stock macOS as well as on a Linux host; both print the same lowercase hex digest (§1).
 **Absent-path accounting:** §1a accounts for **every** path that each of the 15 deletions would remove, re-derived against the live `main` tips; §1b gives the commands that reproduce the numbers and names the `main` tips they were measured against.
 **Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs. The deletion run re-checks the same digest against an in-memory snapshot of the manifest and builds every push from that snapshot (§1, §4).
@@ -238,12 +238,15 @@ helper list. Every other key - the `url.*` rewrites, the `http.*` headers, the `
 is never read, and a helper that carries arguments or a shell command is never copied, because the
 text of such a helper can carry the credential itself. The configuration of the operator is never
 written to a file, so no temporary file of this run holds a value the allowlist rejects, and every
-temporary path of this run is removed when the run ends - on the normal end, on a refusal and on a
-signal. Two probes prove both properties before the first push: the **credential probe** builds a
-global configuration that carries a credential in the two forms that carry one - an extra header
-and an inline credential helper - runs the same sanitizing against it and refuses the run when the
-credential reaches a file or the output; the **cleanup probe** runs the cleanup of the run in a
-subshell that ends in each of the three ways and checks that no temporary path is left behind.
+temporary path of this run - the sanitized configuration, the scratch repository, the control
+repositories and the branch lists the post-check writes - is removed when the run ends - on the
+normal end, on a refusal and on a signal. Two probes prove both properties before the first push:
+the **credential probe** builds a global configuration that carries a credential in the two forms
+that carry one - an extra header and an inline credential helper - runs the same sanitizing
+against it and refuses the run when the credential reaches a file or the output; the **cleanup
+probe** runs the cleanup of the run in a process that ends in each of the three ways - a subshell
+for the normal end and for the refusal, a child process for the signal - and checks that no
+temporary path is left behind.
 
 ```bash
 set -euo pipefail
@@ -294,18 +297,28 @@ digest=$(printf '%s\n' "${ROWS[@]}" | sort -k2 | sha256_of)
 SANITIZED_DIR=$(mktemp -d)
 SANITIZED_GLOBAL="$SANITIZED_DIR/gitconfig"
 
+# The branch lists of the post-check. The post-check reads the branch list of every repository the
+# run can touch into a file of its own, and the cleanup removes those files with the rest of the
+# temporary paths of the run, so no file of the post-check survives the run.
+POST_REPOS=(jackin-project/jackin jackin-project/jackin-agent-smith jackin-project/jackin-sentinel tailrocks/terminal-components-baseline)
+post_path() { printf '/tmp/post-%s.txt' "$(echo "$1" | tr '/' '-')"; }
+POST_FILES=""
+for repo in "${POST_REPOS[@]}"; do POST_FILES="$POST_FILES $(post_path "$repo")"; done
+
 # The cleanup. Every temporary path of this run - the sanitized configuration, the scratch
-# repository and the control repositories - is removed when the run ends, whatever ended it: the
-# normal end, a refusal and a signal. The cleanup keeps the status of the run, so a refusal still
-# exits with the status it refused with.
+# repository, the control repositories and the branch lists of the post-check - is removed when the
+# run ends, whatever ended it: the normal end, a refusal and a signal. The cleanup removes every
+# path it is given and keeps the status of the run, so a refusal still exits with the status it
+# refused with.
 cleanup() {
   result=$?
   trap - 0 HUP INT TERM
-  rm -rf "$1"
-  if [ -n "${2:-}" ]; then rm -rf "$2"; fi
+  for path in "$@"; do
+    if [ -n "$path" ]; then rm -rf "$path"; fi
+  done
   exit "$result"
 }
-trap 'cleanup "$SANITIZED_DIR" "${CONTROL_DIR:-}"' 0
+trap 'cleanup "$SANITIZED_DIR" "${CONTROL_DIR:-}" ${POST_FILES:-}' 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -350,10 +363,16 @@ sanitize_global_config() {
 # credential is fabricated, the configuration it runs against is its own - the probe reads the
 # global configuration of a home directory of its own, so the configuration of the operator is
 # never read - and the tracing is off, so that neither the value nor the probe itself prints it.
+# The probe removes its own temporary directory when it ends - on the normal end, on a refusal and
+# on a signal - so a signal in the middle of the probe leaves nothing behind.
 credential_probe() {
   (
     set +x
     probe_dir=$(mktemp -d)
+    trap 'rm -rf "$probe_dir"' 0
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     sentinel='PROBE-CREDENTIAL-9f3a2b7c'
     mkdir -p "$probe_dir/home/.config" "$probe_dir/out"
     cat > "$probe_dir/home/.gitconfig" <<EOF
@@ -367,87 +386,98 @@ credential_probe() {
 EOF
     cp "$probe_dir/home/.gitconfig" "$probe_dir/home/.gitconfig.copy"
     output=$( ( unset GIT_CONFIG_GLOBAL; export HOME="$probe_dir/home" XDG_CONFIG_HOME="$probe_dir/home/.config"; sanitize_global_config "$probe_dir/out" ) 2>&1 ) || {
-      rm -rf "$probe_dir"
       echo "the credential probe could not run the sanitizing - the guard cannot be trusted" >&2
       exit 1
     }
     if grep -R -q -F "$sentinel" "$probe_dir/out"; then
-      rm -rf "$probe_dir"
       echo "the credential probe found the credential in the sanitized context - the guard cannot be trusted" >&2
       exit 1
     fi
     case "$output" in
       *"$sentinel"*)
-        rm -rf "$probe_dir"
         echo "the credential probe found the credential in the output of the sanitizing - the guard cannot be trusted" >&2
         exit 1
         ;;
     esac
     files=$(find "$probe_dir/out" -type f | wc -l | tr -d ' ')
     if [ "$files" -ne 1 ]; then
-      rm -rf "$probe_dir"
       echo "the credential probe found $files files in the sanitized context - the configuration of the operator was materialized" >&2
       exit 1
     fi
     if ! grep -q -E '^[[:space:]]*helper = osxkeychain$' "$probe_dir/out/gitconfig"; then
-      rm -rf "$probe_dir"
       echo "the credential probe found no credential helper in the sanitized context - the sanitizing dropped what the pushes need" >&2
       exit 1
     fi
     if grep -q -E -e 'insteadOf' -e 'pushInsteadOf' -e '!' "$probe_dir/out/gitconfig"; then
-      rm -rf "$probe_dir"
       echo "the credential probe found a rewrite or an inline helper in the sanitized context - the guard cannot be trusted" >&2
       exit 1
     fi
     if ! cmp -s "$probe_dir/home/.gitconfig" "$probe_dir/home/.gitconfig.copy"; then
-      rm -rf "$probe_dir"
       echo "the credential probe found the configuration of the operator changed - the sanitizing wrote to it" >&2
       exit 1
     fi
-    rm -rf "$probe_dir"
     exit 0
   )
 }
 
 # THE CLEANUP PROBE. The temporary paths of the run must be gone when the run ends, whatever ended
-# it: the normal end, a refusal and a signal. The probe runs the cleanup of the run in a subshell
-# that ends in each of the three ways and checks that no temporary path is left behind and that
-# the status of the run is the status the run ended with.
+# it: the normal end, a refusal and a signal. The probe runs the cleanup of the run in a process
+# that ends in each of the three ways - a subshell for the normal end and for the refusal, a child
+# process for the signal - and checks that no temporary path is left behind and that the status of
+# the run is the status the run ended with. The signal leg runs in a child process of its own: a
+# subshell of bash keeps the PID of the shell that started it in "$$", and the PID of the subshell
+# itself is only in "BASHPID", which a stock macOS bash 3.2 does not have, so a subshell cannot
+# signal itself on every host. A child process has its own PID in "$$" on every bash, so the child
+# signals itself and the cleanup of the run removes the paths behind it. The paths of the probe
+# travel in an array and not in the positional parameters: a bash 3.2 that runs the block from a
+# command line gives a trap that is set inside a function the positional parameters of that
+# function, and an array is not affected by that.
 cleanup_probe() {
   (
     set +x
     probe_dir=$(mktemp -d)
+    trap 'rm -rf "$probe_dir"' 0
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
     for ending in normal failure signal; do
       sanitized="$probe_dir/sanitized-$ending"
       control="$probe_dir/control-$ending"
+      post="$probe_dir/post-$ending.txt"
       mkdir -p "$sanitized" "$control"
+      : > "$post"
       status=0
       case "$ending" in
         normal)
-          ( set -- "$sanitized" "$control"; trap 'cleanup "$1" "$2"' 0; exit 0 ) || status=$?
+          ( cleanup_paths=("$sanitized" "$control" $POST_FILES "$post"); trap 'cleanup "${cleanup_paths[@]}"' 0; exit 0 ) || status=$?
           ;;
         failure)
-          ( set -- "$sanitized" "$control"; trap 'cleanup "$1" "$2"' 0; exit 1 ) || status=$?
+          ( cleanup_paths=("$sanitized" "$control" $POST_FILES "$post"); trap 'cleanup "${cleanup_paths[@]}"' 0; exit 1 ) || status=$?
           ;;
         signal)
-          ( set -- "$sanitized" "$control"; trap 'cleanup "$1" "$2"' 0; trap 'exit 143' TERM; kill -TERM "$BASHPID" ) || status=$?
+          script="$probe_dir/signal-$ending.sh"
+          cat > "$script" <<'SIGNAL'
+set -euo pipefail
+cleanup_paths=("$@")
+trap 'cleanup "${cleanup_paths[@]}"' 0
+trap 'exit 143' TERM
+kill -TERM $$
+SIGNAL
+          ( export -f cleanup; "${BASH:-bash}" "$script" "$sanitized" "$control" $POST_FILES "$post" ) || status=$?
           ;;
       esac
-      if [ -d "$sanitized" ] || [ -d "$control" ]; then
-        rm -rf "$probe_dir"
+      if [ -d "$sanitized" ] || [ -d "$control" ] || [ -e "$post" ]; then
         echo "the cleanup probe found a temporary path after the run ended with $ending - the cleanup is not trusted" >&2
         exit 1
       fi
       case "$ending:$status" in
         normal:0 | failure:1 | signal:143) ;;
         *)
-          rm -rf "$probe_dir"
           echo "the cleanup probe saw the status $status after the run ended with $ending - the cleanup is not trusted" >&2
           exit 1
           ;;
       esac
     done
-    rm -rf "$probe_dir"
     exit 0
   )
 }
@@ -542,8 +572,8 @@ for row in "${ROWS[@]}"; do
 done
 
 # the branch list of every repository the run can touch, read once
-for r in jackin-project/jackin jackin-project/jackin-agent-smith jackin-project/jackin-sentinel tailrocks/terminal-components-baseline; do
-  gh api "repos/$r/branches" --paginate --jq '.[].name' > "/tmp/post-$(echo "$r" | tr '/' '-').txt" \
+for r in "${POST_REPOS[@]}"; do
+  gh api "repos/$r/branches" --paginate --jq '.[].name' > "$(post_path "$r")" \
     || { echo "the branch list of $r could not be read"; exit 1; }
 done
 
@@ -552,7 +582,7 @@ done
 # status are a refusal.
 for row in "${ROWS[@]}"; do
   read -r repo branch tip <<< "$row"
-  list="/tmp/post-$(echo "$repo" | tr '/' '-').txt"
+  list="$(post_path "$repo")"
   [ -f "$list" ] || { echo "the branch list of $repo was not read"; exit 1; }
   status=0
   grep -qxF "$branch" "$list" || status=$?
@@ -565,7 +595,7 @@ done
 
 # the protected branches - the rows of §2, §3 and §8 and each repository's main - must remain
 while read -r repo branch; do
-  list="/tmp/post-$(echo "$repo" | tr '/' '-').txt"
+  list="$(post_path "$repo")"
   [ -f "$list" ] || { echo "the branch list of $repo was not read"; exit 1; }
   status=0
   grep -qxF "$branch" "$list" || status=$?
