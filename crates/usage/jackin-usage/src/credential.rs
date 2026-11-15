@@ -765,7 +765,11 @@ async fn extract_omp_api_key(
     db_path: PathBuf,
     provider_id: String,
 ) -> Result<Extracted, Unresolved> {
-    tokio::task::spawn_blocking(move || read_omp_api_key(&db_path, &provider_id))
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    std::thread::spawn(move || {
+        let _sent = sender.send(read_omp_api_key(&db_path, &provider_id));
+    });
+    receiver
         .await
         .map_err(|_| Unresolved::Unreadable("the OMP store could not be read"))?
 }
