@@ -3,14 +3,16 @@
 **Purpose:** one reviewable document for the operator's one-word approval of the DEBRIS branch deletions.
 **Status:** READ-ONLY publication. **No branch in this document has been merged or deleted by it.** The deletion of every branch in the approval set happens only after the operator's explicit word (§4).
 **Compiled:** 2026-11-14, from the merged inventory `rewrite/triage/branch-inventory-2026-11-12.md` (jackin `main`, PR #1280) plus the completed audits. **The audits are committed with this document** under `rewrite/triage/audits/2026-11-14/`: `debris-audit.md` (18-row audit: 15 CONFIRMED, 3 reclassified), `debris-ratification.md`, `smith-debris-verify.md`, `unproven-review.md`, `inventory-parity.md`, `architect-smith-audit.md` and `baseline-rows-audit.md`. They are in the repository, not only under `/tmp`, so the evidence that justifies every deletion verdict can be reviewed from any checkout and survives a cleared `/tmp`.
-**Live check:** every branch name **and tip SHA** below was re-read from the live remotes with `gh api repos/<repo>/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'` on 2026-11-14, and re-verified at 2026-11-14 13:17 and 20:12 UTC (§7). Branches that are already gone are marked **ALREADY GONE**.
+**Live check:** every branch name **and tip SHA** below was re-read from the live remotes with `gh api --hostname github.com repos/<repo>/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'` on 2026-11-14, and re-verified at 2026-11-14 13:17 and 20:12 UTC (§7). Branches that are already gone are marked **ALREADY GONE**.
 **Tip guard:** every deletion command in §1 is leased against the exact tip SHA recorded in that row, so a branch that moved since this table was compiled is **not** deleted (§1).
 **Target guard:** every deletion command in §1 names its repository by its **HTTPS URL** (`https://github.com/<repo>.git`), never by the remote alias `origin`, so a clone whose `origin` points at a fork can never delete a ref in the wrong repository (§1, §1b).
 **Rewrite guard:** Git rewrites even an explicit repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf` entry, so a push that names `https://github.com/<repo>.git` can still land in another repository - in a fork or a mirror that holds the audited SHA, where the lease of the row still succeeds and the ref is deleted there. Every push of the deletion run therefore runs in a **sanitized Git context** - a private global configuration that holds the credential helper of the operator and nothing else, built from an allowlist one key at a time so that no credential-bearing value is ever written to a temporary file, and a scratch repository whose own configuration is empty - and the run refuses to start when that context still carries a rewrite (§1).
-**Credential guard:** the private global configuration of the sanitized Git context is built from an allowlist - the credential helper of the operator, and nothing else - and every value is read one key at a time, so the configuration of the operator is never written to a file and no credential-bearing value (`http.*.extraHeader`, an inline credential helper) can reach a temporary file or the output of the run. Every temporary path of the run - the sanitized configuration, the scratch repository, the control repositories and the branch lists the post-check writes - is removed when it ends - on the normal end, on a refusal and on a signal - and two probes, the credential probe and the cleanup probe, prove both properties before the first push (§1).
+**Credential guard:** the private global configuration of the sanitized Git context is built from an allowlist - the credential helper of the operator, and nothing else - and every value is read one key at a time, so the configuration of the operator is never written to a file and no credential-bearing value (`http.*.extraHeader`, an inline credential helper) can reach a temporary file or the output of the run. Every temporary path of the run - the sanitized configuration, the scratch repository, the control repositories and the branch lists the post-check writes - lives in a private directory of the run and is removed when it ends - on the normal end, on a refusal and on a signal - and two probes, the credential probe and the cleanup probe, prove both properties before the first push (§1).
+**Host guard:** every GitHub API call of the procedure names `github.com` explicitly, because `gh` honors the `GH_HOST` of the environment: a run whose environment carries a `GH_HOST` would otherwise read and write another host - a GitHub Enterprise instance - where the 15 refs of the ratification are not, and the guards of the run would pass against a repository the operator never ratified (§1).
+**Path guard:** no path of the procedure is a fixed path under `/tmp`. The manifest of the pre-flight, the sanitized configuration, the scratch repository, the control repositories and the branch lists of the post-check live in private directories (`mktemp -d`) that the run removes when it ends, because a predictable path can be written, replaced with a link or read by every other process on the host. The deletion run takes its manifest from the §1 table of this publication - the same rows the pre-flight checks - and never from a file that another process can touch (§1).
 **Digest guard:** the manifest digest is computed by a helper that takes the SHA-256 from `sha256sum` where the host has it and from `shasum -a 256` where it does not, so the check runs on a stock macOS as well as on a Linux host; both print the same lowercase hex digest (§1).
 **Absent-path accounting:** §1a accounts for **every** path that each of the 15 deletions would remove, re-derived against the live `main` tips; §1b gives the commands that reproduce the numbers and names the `main` tips they were measured against.
-**Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs. The deletion run re-checks the same digest against an in-memory snapshot of the manifest and builds every push from that snapshot (§1, §4).
+**Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs. The deletion run re-checks the same digest against an in-memory snapshot of the manifest - read once from the §1 table of this publication, never from a file - and builds every push from that snapshot (§1, §4).
 **Archive prerequisite:** no deletion may run before every branch this document deletes — and every captured retained ref — is preserved under `refs/heads/archive/` **and verified**, and the `refs/heads/archive/**/*` namespace stays locked by a repository ruleset for the run, with each deletion push re-reading its own archive ref immediately before it runs. Fetching a recorded SHA is not preservation: once the last ref to an object is gone, the object is gone from the remote. Nothing in the deletions touches an archive ref and the lock keeps any other writer from touching one either, so the archive closes the window that the retained-ref check alone cannot close (§1, §1a, §9).
 
 ## Contents
@@ -77,6 +79,15 @@ between this check and the pushes (§9).
 ```bash
 set -euo pipefail
 
+# Every GitHub API call of this procedure is pinned to github.com. An unqualified call honors the
+# GH_HOST of the environment, so a run whose environment carries a GH_HOST reads and writes
+# another host - a GitHub Enterprise instance - where the 15 refs of the ratification are not,
+# and the guards of the run would pass against a repository the operator never ratified. The
+# wrapper names the host on every call, and the exported GH_HOST pins any other gh invocation
+# of the block to the same host.
+gh_api() { gh api --hostname github.com "$@"; }
+export GH_HOST=github.com
+
 # The digest helper. A stock macOS has no sha256sum and a Linux host without GNU coreutils has
 # no shasum, so the helper takes the SHA-256 from whichever of the two this host has. Both print
 # the same lowercase hex digest; the check below proves the one this host uses.
@@ -93,6 +104,23 @@ sha256_of() {
 [ "$(printf '' | sha256_of)" = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ] \
   || { echo "the SHA-256 helper does not return the digest of the empty input"; exit 1; }
 
+# The temporary paths of the pre-flight live in a private directory of their own. A fixed path
+# under /tmp is predictable: every other process on the host can write it, replace it with a
+# link or read it between the write and the read, so the manifest of the run never lands in
+# such a path. The directory is private (mktemp -d) and the cleanup removes it and everything in
+# it when the pre-flight ends - on the normal end, on a refusal and on a signal.
+PREFLIGHT_DIR=$(mktemp -d)
+cleanup_preflight() {
+  result=$?
+  trap - 0 HUP INT TERM
+  rm -rf "$PREFLIGHT_DIR"
+  exit "$result"
+}
+trap cleanup_preflight 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # 1. MANIFEST CHECK: the 15 (repository, branch, tip) triples of §1 must be the reviewed ones,
 #    and each §1 deletion command must be the push that triple generates. The digest is the one
 #    the operator's word in §4 carries; a word without it, or with a different one, is a refusal
@@ -100,18 +128,21 @@ sha256_of() {
 #    deletion command, and a command whose --delete operand is not the row's own branch is refused
 #    here, so a publication edited after the ratification cannot change what runs.
 MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
+MANIFEST_ROWS="$PREFLIGHT_DIR/manifest-rows.txt"
+MANIFEST_FILE="$PREFLIGHT_DIR/manifest.txt"
+LIVE_MANIFEST="$PREFLIGHT_DIR/live-manifest.txt"
 sed -n '/^## 1\. Approval set/,/^\*\*Counts:\*\*/p' rewrite/triage/debris-ratification-2026-11-14.md \
   | awk -F'|' '/^\| [0-9]+ \|/ && $5 ~ /`[0-9a-f]{40}`/ {gsub(/[ `]/,"",$3); gsub(/[ `]/,"",$4); gsub(/[ `]/,"",$5); gsub(/`/,"",$7); gsub(/^ +| +$/,"",$7); print $3" "$4" "$5" "$7}' \
-  | sort -k2 > /tmp/manifest-rows.txt
-cut -d' ' -f1-3 /tmp/manifest-rows.txt > /tmp/manifest.txt
+  | sort -k2 > "$MANIFEST_ROWS"
+cut -d' ' -f1-3 "$MANIFEST_ROWS" > "$MANIFEST_FILE"
 while read -r repo branch tip cmd; do
-  live=$(gh api "repos/$repo/commits/$branch" --jq '.sha') || { echo "cannot read $repo $branch"; exit 1; }
+  live=$(gh_api "repos/$repo/commits/$branch" --jq '.sha') || { echo "cannot read $repo $branch"; exit 1; }
   [ "$live" = "$tip" ] || { echo "live tip of $repo $branch is $live, not the reviewed $tip"; exit 1; }
   want="git push --force-with-lease=refs/heads/$branch:$tip https://github.com/$repo.git --delete $branch"
   [ "$cmd" = "$want" ] || { echo "the §1 command of $repo $branch is not the deletion of that reviewed triple: $cmd"; exit 1; }
   echo "$repo $branch $live"
-done < /tmp/manifest-rows.txt > /tmp/live-manifest.txt
-digest=$(sort -k2 /tmp/live-manifest.txt | sha256_of)
+done < "$MANIFEST_ROWS" > "$LIVE_MANIFEST"
+digest=$(sort -k2 "$LIVE_MANIFEST" | sha256_of)
 [ "$digest" = "$MANIFEST" ] || { echo "the 15-ref manifest is not the reviewed one (digest $digest)"; exit 1; }
 
 # target check: the §1 commands name their repository by URL, so no remote alias is used. Git
@@ -132,15 +163,15 @@ digest=$(sort -k2 /tmp/live-manifest.txt | sha256_of)
 #    publication is merged.
 while read -r repo ref sha; do
   case "$repo" in \#*) continue ;; esac
-  live=$(gh api "repos/$repo/commits/$ref" --jq '.sha' 2>/dev/null) || live=GONE
+  live=$(gh_api "repos/$repo/commits/$ref" --jq '.sha' 2>/dev/null) || live=GONE
   if [ "$live" != GONE ]; then
-    status=$(gh api "repos/$repo/compare/$sha...$live" --jq '.status' 2>/dev/null || echo unknown)
+    status=$(gh_api "repos/$repo/compare/$sha...$live" --jq '.status' 2>/dev/null || echo unknown)
     case "$status" in
       identical|ahead) continue ;;
       *) echo "retained ref $repo $ref no longer holds the captured $sha (live=$live)"; exit 1 ;;
     esac
   fi
-  gh api "repos/$repo/commits/$sha" --jq '.sha' >/dev/null 2>&1 \
+  gh_api "repos/$repo/commits/$sha" --jq '.sha' >/dev/null 2>&1 \
     || { echo "retained ref $repo $ref is gone and the captured $sha no longer resolves"; exit 1; }
 done < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt
 
@@ -153,16 +184,16 @@ done < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt
 #    object is gone from the remote. Each archive ref holds the recorded tip, so every object the
 #    deletion would orphan - the tip tree and the whole history behind it - stays reachable.
 archive_ref() {                       # $1 repository, $2 name under archive/, $3 sha
-  if gh api "repos/$1/git/ref/heads/archive/$2" --jq '.object.sha' 2>/dev/null | grep -qx "$3"; then
+  if gh_api "repos/$1/git/ref/heads/archive/$2" --jq '.object.sha' 2>/dev/null | grep -qx "$3"; then
     return 0                          # already archived at the recorded tip
   fi
-  gh api -X PATCH "repos/$1/git/refs/heads/archive/$2" -f sha="$3" --silent >/dev/null 2>&1 \
-    || gh api -X POST "repos/$1/git/refs" -f ref="refs/heads/archive/$2" -f sha="$3" --silent >/dev/null \
+  gh_api -X PATCH "repos/$1/git/refs/heads/archive/$2" -f sha="$3" --silent >/dev/null 2>&1 \
+    || gh_api -X POST "repos/$1/git/refs" -f ref="refs/heads/archive/$2" -f sha="$3" --silent >/dev/null \
     || { echo "archive ref for $1 $2 could not be created"; exit 1; }
-  gh api "repos/$1/git/ref/heads/archive/$2" --jq '.object.sha' | grep -qx "$3" \
+  gh_api "repos/$1/git/ref/heads/archive/$2" --jq '.object.sha' | grep -qx "$3" \
     || { echo "archive ref $1 archive/$2 does not hold $3"; exit 1; }
 }
-while read -r repo branch tip; do archive_ref "$repo" "$branch" "$tip"; done < /tmp/manifest.txt
+while read -r repo branch tip; do archive_ref "$repo" "$branch" "$tip"; done < "$MANIFEST_FILE"
 while read -r repo ref sha; do
   case "$repo" in \#*) continue ;; esac
   archive_ref "$repo" "retained/$ref" "$sha"
@@ -173,9 +204,9 @@ done < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt
 #    reachable. With the archive tips added to the retained set, the fourth bucket of §1a (§1b
 #    prints it) is 0 for every row.
 while read -r repo branch tip; do
-  got=$(gh api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha')
+  got=$(gh_api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha')
   [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip"; exit 1; }
-done < /tmp/manifest.txt
+done < "$MANIFEST_FILE"
 
 # 5. ARCHIVE NAMESPACE LOCK (mandatory, before the first deletion push): make
 #    refs/heads/archive/**/* undeletable and un-force-updatable in each repository, so no authorized
@@ -190,14 +221,14 @@ done < /tmp/manifest.txt
 #    two-rule lock with no exclusions that this procedure creates - anything else is a stop;
 #    repairing an archive ref later means removing the lock first.
 for r in jackin-project/jackin jackin-project/jackin-agent-smith tailrocks/terminal-components-baseline; do
-  lock_id=$(gh api "repos/$r/rulesets" --jq '.[] | select(.name == "debris-archive-lock") | .id')
+  lock_id=$(gh_api "repos/$r/rulesets" --jq '.[] | select(.name == "debris-archive-lock") | .id')
   if [ -n "$lock_id" ]; then
-    existing=$(gh api "repos/$r/rulesets/$lock_id" --jq '[.enforcement, (.conditions.ref_name.include | sort | join(",")), (.conditions.ref_name.exclude | sort | join(",")), ([.rules[].type] | sort | join(",")), (.bypass_actors | length), .target] | @tsv')
+    existing=$(gh_api "repos/$r/rulesets/$lock_id" --jq '[.enforcement, (.conditions.ref_name.include | sort | join(",")), (.conditions.ref_name.exclude | sort | join(",")), ([.rules[].type] | sort | join(",")), (.bypass_actors | length), .target] | @tsv')
     printf '%s\n' "$existing" | awk -F'\t' '$1 == "active" && $2 == "refs/heads/archive/**/*" && $3 == "" && $4 == "deletion,non_fast_forward" && $5 == "0" && $6 == "branch" {ok++} END{exit !(ok == NR && NR > 0)}' \
       || { echo "the archive lock of $r is not the active, branch-targeted, unbypassed two-rule lock this procedure requires"; exit 1; }
     continue
   fi
-  gh api -X POST "repos/$r/rulesets" --input - <<'JSON' || { echo "the archive lock of $r could not be created"; exit 1; }
+  gh_api -X POST "repos/$r/rulesets" --input - <<'JSON' || { echo "the archive lock of $r could not be created"; exit 1; }
 {
   "name": "debris-archive-lock",
   "target": "branch",
@@ -212,13 +243,14 @@ done
 ```
 
 **The operator's word comes here (§4).** Steps 1-5 must all have passed. The deletion run below
-executes only after the word is sent; it reads the manifest once into an in-memory snapshot, checks
-that snapshot's digest against the ratified one, and builds every push from that snapshot — so
-nothing on disk is read again and a manifest that changed after the pre-flight cannot change what
-runs. Each iteration re-reads the row's own archive ref immediately before it runs exactly that
-row's §1 command, so a deletion happens only while the archive copy it orphans is present and
-intact. With the step-5 lock in place no writer can change that copy between the re-read and the
-push.
+executes only after the word is sent; it reads the manifest once into an in-memory snapshot - the
+§1 table of this publication, and not a file of the pre-flight, whose private directory is gone
+by then - checks that snapshot's digest against the ratified one, and builds every push from that
+snapshot — so nothing on disk is read again and a manifest that changed after the pre-flight
+cannot change what runs. Each iteration re-reads the row's own archive ref immediately before it
+runs exactly that row's §1 command, so a deletion happens only while the archive copy it orphans
+is present and intact. With the step-5 lock in place no writer can change that copy between the
+re-read and the push.
 
 Every push of this run goes out through a **sanitized Git context**. Git rewrites even an explicit
 repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf`
@@ -239,17 +271,27 @@ is never read, and a helper that carries arguments or a shell command is never c
 text of such a helper can carry the credential itself. The configuration of the operator is never
 written to a file, so no temporary file of this run holds a value the allowlist rejects, and every
 temporary path of this run - the sanitized configuration, the scratch repository, the control
-repositories and the branch lists the post-check writes - is removed when the run ends - on the
-normal end, on a refusal and on a signal. Two probes prove both properties before the first push:
-the **credential probe** builds a global configuration that carries a credential in the two forms
-that carry one - an extra header and an inline credential helper - runs the same sanitizing
-against it and refuses the run when the credential reaches a file or the output; the **cleanup
-probe** runs the cleanup of the run in a process that ends in each of the three ways - a subshell
-for the normal end and for the refusal, a child process for the signal - and checks that no
-temporary path is left behind.
+repositories and the branch lists the post-check writes - lives in a private directory of the run
+and is removed when the run ends - on the normal end, on a refusal and on a signal. Two probes
+prove both properties before the first push: the **credential probe** builds a global
+configuration that carries a credential in the two forms that carry one - an extra header and an
+inline credential helper - runs the same sanitizing against it and refuses the run when the
+credential reaches a file or the output; the **cleanup probe** runs the cleanup of the run
+against fixtures of its own - never against a path of the run - in a process that ends in each
+of the three ways - a subshell for the normal end and for the refusal, a child process for the
+signal - and checks that no fixture is left behind.
 
 ```bash
 set -euo pipefail
+
+# Every GitHub API call of this run is pinned to github.com. An unqualified call honors the
+# GH_HOST of the environment, so a run whose environment carries a GH_HOST reads and writes
+# another host - a GitHub Enterprise instance - where the 15 refs of the ratification are not,
+# and the guards of the run would pass against a repository the operator never ratified. The
+# wrapper names the host on every call, and the exported GH_HOST pins any other gh invocation
+# of the block to the same host.
+gh_api() { gh api --hostname github.com "$@"; }
+export GH_HOST=github.com
 
 # The digest helper. A stock macOS has no sha256sum and a Linux host without GNU coreutils has
 # no shasum, so the helper takes the SHA-256 from whichever of the two this host has. Both print
@@ -273,11 +315,20 @@ MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
 # against the digest the operator's word carries: the word binds the 15 (repository, branch, tip)
 # triples, so a manifest that changed after the pre-flight is a refusal, not a deletion. Every
 # loop below runs on that snapshot - no file is read again, so nothing on disk can change what runs.
+# The triples come from the §1 table of this publication and not from a file of the pre-flight:
+# the pre-flight keeps its manifest in a private directory that it removes when it ends, and a
+# manifest carried from one block to the other in a fixed path under /tmp would be readable and
+# writable by every other process on the host.
+PUBLICATION=rewrite/triage/debris-ratification-2026-11-14.md
+[ -f "$PUBLICATION" ] || { echo "the publication $PUBLICATION is missing - run the procedure from the repository root"; exit 1; }
 ROWS=()
-[ -f /tmp/manifest.txt ] || { echo "the manifest /tmp/manifest.txt is missing - run the pre-flight first"; exit 1; }
-while IFS= read -r row; do ROWS+=("$row"); done < /tmp/manifest.txt
+while IFS= read -r row; do ROWS+=("$row"); done < <(
+  sed -n '/^## 1\. Approval set/,/^\*\*Counts:\*\*/p' "$PUBLICATION" \
+    | awk -F'|' '/^\| [0-9]+ \|/ && $5 ~ /`[0-9a-f]{40}`/ {gsub(/[ `]/,"",$3); gsub(/[ `]/,"",$4); gsub(/[ `]/,"",$5); gsub(/`/,"",$7); gsub(/^ +| +$/,"",$7); print $3" "$4" "$5" "$7}' \
+    | sort -k2 | cut -d' ' -f1-3
+)
 readonly -a ROWS
-[ "${#ROWS[@]}" -eq 15 ] || { echo "the manifest of /tmp/manifest.txt is not the 15 reviewed rows - run the pre-flight first"; exit 1; }
+[ "${#ROWS[@]}" -eq 15 ] || { echo "the manifest of $PUBLICATION is not the 15 reviewed rows - run the pre-flight first"; exit 1; }
 digest=$(printf '%s\n' "${ROWS[@]}" | sort -k2 | sha256_of)
 [ "$digest" = "$MANIFEST" ] \
   || { echo "the manifest digest is $digest, not the reviewed $MANIFEST - re-run the pre-flight"; exit 1; }
@@ -294,16 +345,24 @@ digest=$(printf '%s\n' "${ROWS[@]}" | sort -k2 | sha256_of)
 #                        configuration of the clone this run happens in cannot rewrite a URL.
 # The system configuration stays in place - it carries the credential helper on macOS - and the
 # check below refuses the run when it carries a rewrite of its own.
-SANITIZED_DIR=$(mktemp -d)
+# THE PRIVATE DIRECTORY OF THE RUN. Every temporary path of this run - the sanitized
+# configuration, the scratch repository, the control repositories and the branch lists of the
+# post-check - lives in a private directory of its own. A fixed path under /tmp is predictable:
+# every other process on the host can write it, replace it with a link or read it between the
+# write and the read, so no path of the run is a fixed path under /tmp.
+RUN_DIR=$(mktemp -d)
+SANITIZED_DIR="$RUN_DIR/sanitized"
+POST_DIR="$RUN_DIR/post"
+CONTROL_DIR="$RUN_DIR/control"
+mkdir -p "$SANITIZED_DIR" "$POST_DIR"
 SANITIZED_GLOBAL="$SANITIZED_DIR/gitconfig"
 
 # The branch lists of the post-check. The post-check reads the branch list of every repository the
-# run can touch into a file of its own, and the cleanup removes those files with the rest of the
-# temporary paths of the run, so no file of the post-check survives the run.
+# run can touch into a file of the private directory of the run, and the cleanup removes those
+# files with the rest of the temporary paths of the run, so no file of the post-check survives the
+# run.
 POST_REPOS=(jackin-project/jackin jackin-project/jackin-agent-smith jackin-project/jackin-sentinel tailrocks/terminal-components-baseline)
-post_path() { printf '/tmp/post-%s.txt' "$(echo "$1" | tr '/' '-')"; }
-POST_FILES=""
-for repo in "${POST_REPOS[@]}"; do POST_FILES="$POST_FILES $(post_path "$repo")"; done
+post_path() { printf '%s/post-%s.txt' "$POST_DIR" "$(echo "$1" | tr '/' '-')"; }
 
 # The cleanup. Every temporary path of this run - the sanitized configuration, the scratch
 # repository, the control repositories and the branch lists of the post-check - is removed when the
@@ -318,7 +377,7 @@ cleanup() {
   done
   exit "$result"
 }
-trap 'cleanup "$SANITIZED_DIR" "${CONTROL_DIR:-}" ${POST_FILES:-}' 0
+trap 'cleanup "$RUN_DIR"' 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -424,14 +483,18 @@ EOF
 # it: the normal end, a refusal and a signal. The probe runs the cleanup of the run in a process
 # that ends in each of the three ways - a subshell for the normal end and for the refusal, a child
 # process for the signal - and checks that no temporary path is left behind and that the status of
-# the run is the status the run ended with. The signal leg runs in a child process of its own: a
-# subshell of bash keeps the PID of the shell that started it in "$$", and the PID of the subshell
-# itself is only in "BASHPID", which a stock macOS bash 3.2 does not have, so a subshell cannot
-# signal itself on every host. A child process has its own PID in "$$" on every bash, so the child
-# signals itself and the cleanup of the run removes the paths behind it. The paths of the probe
-# travel in an array and not in the positional parameters: a bash 3.2 that runs the block from a
-# command line gives a trap that is set inside a function the positional parameters of that
-# function, and an array is not affected by that.
+# the run is the status the run ended with. The probe works on fixtures of its own - a sanitized
+# directory, a control directory and a branch list, all of them inside the directory of the probe
+# - and never names a path of the run: a probe that deletes the paths of the run would delete
+# them before the run wrote them, and a path of the run that another run owns would be deleted
+# with them. The signal leg runs in a child process of its own: a subshell of bash keeps the PID
+# of the shell that started it in "$$", and the PID of the subshell itself is only in "BASHPID",
+# which a stock macOS bash 3.2 does not have, so a subshell cannot signal itself on every host. A
+# child process has its own PID in "$$" on every bash, so the child signals itself and the cleanup
+# of the run removes the paths behind it. The paths of the probe travel in an array and not in the
+# positional parameters: a bash 3.2 that runs the block from a command line gives a trap that is
+# set inside a function the positional parameters of that function, and an array is not affected by
+# that.
 cleanup_probe() {
   (
     set +x
@@ -449,10 +512,10 @@ cleanup_probe() {
       status=0
       case "$ending" in
         normal)
-          ( cleanup_paths=("$sanitized" "$control" $POST_FILES "$post"); trap 'cleanup "${cleanup_paths[@]}"' 0; exit 0 ) || status=$?
+          ( cleanup_paths=("$sanitized" "$control" "$post"); trap 'cleanup "${cleanup_paths[@]}"' 0; exit 0 ) || status=$?
           ;;
         failure)
-          ( cleanup_paths=("$sanitized" "$control" $POST_FILES "$post"); trap 'cleanup "${cleanup_paths[@]}"' 0; exit 1 ) || status=$?
+          ( cleanup_paths=("$sanitized" "$control" "$post"); trap 'cleanup "${cleanup_paths[@]}"' 0; exit 1 ) || status=$?
           ;;
         signal)
           script="$probe_dir/signal-$ending.sh"
@@ -463,7 +526,7 @@ trap 'cleanup "${cleanup_paths[@]}"' 0
 trap 'exit 143' TERM
 kill -TERM $$
 SIGNAL
-          ( export -f cleanup; "${BASH:-bash}" "$script" "$sanitized" "$control" $POST_FILES "$post" ) || status=$?
+          ( export -f cleanup; "${BASH:-bash}" "$script" "$sanitized" "$control" "$post" ) || status=$?
           ;;
       esac
       if [ -d "$sanitized" ] || [ -d "$control" ] || [ -e "$post" ]; then
@@ -509,7 +572,8 @@ refuse_url_rewrites || { echo "the push context still carries a URL rewrite - th
 # for the mirror that holds the same commit; the push of the control names the first one. They
 # are built in a context that carries no rewrite at all - no system configuration, no global
 # configuration and their own fresh configuration - so their setup pushes stay local.
-CONTROL_DIR=$(mktemp -d)
+CONTROL_DIR="$RUN_DIR/control"
+mkdir -p "$CONTROL_DIR"
 CONTROL_SHA=$(
   unset GIT_DIR
   export GIT_CONFIG_NOSYSTEM=1
@@ -556,7 +620,7 @@ done
 #    row's own (repository, branch, tip) triple of the snapshot, so it is the §1 command of that row.
 for row in "${ROWS[@]}"; do
   read -r repo branch tip <<< "$row"
-  got=$(gh api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha') \
+  got=$(gh_api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha') \
     || { echo "archive ref $repo archive/$branch is gone before deleting $branch"; exit 1; }
   [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip before deleting $branch"; exit 1; }
   git push --force-with-lease="refs/heads/$branch:$tip" "https://github.com/$repo.git" --delete "$branch"
@@ -566,14 +630,14 @@ done
 # recorded tip, and every protected branch must still be there
 for row in "${ROWS[@]}"; do
   read -r repo branch tip <<< "$row"
-  got=$(gh api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha') \
+  got=$(gh_api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha') \
     || { echo "archive ref $repo archive/$branch is gone after the deletions"; exit 1; }
   [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip after the deletions"; exit 1; }
 done
 
 # the branch list of every repository the run can touch, read once
 for r in "${POST_REPOS[@]}"; do
-  gh api "repos/$r/branches" --paginate --jq '.[].name' > "$(post_path "$r")" \
+  gh_api "repos/$r/branches" --paginate --jq '.[].name' > "$(post_path "$r")" \
     || { echo "the branch list of $r could not be read"; exit 1; }
 done
 
@@ -625,14 +689,14 @@ tailrocks/terminal-components-baseline preserve/local-unique-20261109
 PROTECTED
 
 # the end state, for the record
-gh api repos/jackin-project/jackin/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
-gh api repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
-gh api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
+gh_api repos/jackin-project/jackin/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
+gh_api repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
+gh_api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
 ```
 
 Expected after the deletions (live counts re-read 2026-11-14 20:12 UTC, §7), **counting the archive heads that step 3 creates**: jackin **70 → 130** branches (69 non-main → 129 non-main: the 10 targets are removed and 70 `archive/**` heads are added), smith **3 → 4** (2 removed, 3 added), baseline **5 → 7** (3 removed, 5 added). The jackin number grew from 24 to 70 between the two re-checks because other work in the same repository pushed branches in the meantime (§7, "Branches outside every class list"); those branches are **not** in the approval set and the operator's word does not cover them. This document's own branch `docs/debris-ratification-2026-11-14` is counted in the 70 and disappears only if the PR is merged and its branch deleted.
 
-**Those counts are a dated snapshot, not a promise.** The deletions remove exactly the 15 refs of §1 and nothing else; the population around them moves, minute to minute. Re-read it before the run — at 2026-11-15 01:37 UTC the re-read gave jackin **69** (`gh api repos/jackin-project/jackin/branches --paginate --jq '.[] | .name' | wc -l`), smith **3** (`gh api repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[] | .name' | wc -l`) and baseline **37** (`gh api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[] | .name' | wc -l`) — the baseline repository alone had grown from 5 branches to 37 in the hours since §7 was written, so its post-deletion count is **39**, not 2: 34 of the 37 survive the three deletions and step 3 adds the 5 baseline archive heads. On that same re-read the arithmetic gives jackin **129** branches (69 − 10 + 70) and smith **4** (3 − 2 + 3). Only the 15 named refs are removed; every other branch stays, and every archive head is an addition, not a removal.
+**Those counts are a dated snapshot, not a promise.** The deletions remove exactly the 15 refs of §1 and nothing else; the population around them moves, minute to minute. Re-read it before the run — at 2026-11-15 01:37 UTC the re-read gave jackin **69** (`gh api --hostname github.com repos/jackin-project/jackin/branches --paginate --jq '.[] | .name' | wc -l`), smith **3** (`gh api --hostname github.com repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[] | .name' | wc -l`) and baseline **37** (`gh api --hostname github.com repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[] | .name' | wc -l`) — the baseline repository alone had grown from 5 branches to 37 in the hours since §7 was written, so its post-deletion count is **39**, not 2: 34 of the 37 survive the three deletions and step 3 adds the 5 baseline archive heads. On that same re-read the arithmetic gives jackin **129** branches (69 − 10 + 70) and smith **4** (3 − 2 + 3). Only the 15 named refs are removed; every other branch stays, and every archive head is an addition, not a removal.
 
 **The archive refs of the pre-flight survive the deletions.** They are what the deletion leaves behind: the 15 tips, and the captured tip of every retained ref, under `refs/heads/archive/`. Nothing in §1 deletes them, so every object a deletion would orphan — including the 649- and 666-commit histories of rows 13-15 and the three branch-only test revisions of row 13 — stays reachable.
 
@@ -819,7 +883,7 @@ and the whole history behind it — and no deletion in §1 touches it.
 
 ```bash
 # the pre-flight creates and verifies the archive refs (step 3 and step 4 of §1)
-gh api repos/<repo>/git/ref/heads/archive/<branch> --jq '.object.sha'   # must print the recorded tip
+gh api --hostname github.com repos/<repo>/git/ref/heads/archive/<branch> --jq '.object.sha'   # must print the recorded tip
 ```
 
 The audit's own guidance for the rows of §2 is the same. The operator's word authorizes the deletions; the
@@ -883,6 +947,23 @@ work=$(mktemp -d)                        # a fresh clone every time: a stale clo
 git clone --quiet "$repo" "$work"        # leave every later command running in the wrong checkout
 cd "$work" && git fetch origin --quiet
 
+# the scratch files of the measurement live in a private directory of their own. A fixed path
+# under /tmp is predictable: every other process on the host can write it, replace it with a
+# link or read it between the write and the read, and a file another process wrote under such a
+# path would change the numbers this document rests on. The directory is private (mktemp -d) and
+# the cleanup removes it when the measurement ends.
+scratch=$(mktemp -d)
+cleanup_scratch() {
+  result=$?
+  trap - 0 HUP INT TERM
+  rm -rf "$scratch"
+  exit "$result"
+}
+trap cleanup_scratch 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # the measurement is pinned to those commits, not to the moving branch names:
 git fetch origin "$M" "$T" --quiet                         # fetch those exact commits
 test "$(git rev-parse "$M^{commit}")" = "$M" || { echo "main tip $M is not in this clone"; exit 1; }
@@ -896,29 +977,29 @@ for sha in $RETAINED "$T" "$M"; do
 done
 
 # every path of the branch tip that does not exist in main's tree
-git ls-tree -r "$T" | awk '{print $4" "$3}' | sort > /tmp/tip.txt
-git ls-tree -r "$M" | awk '{print $4" "$3}' | sort > /tmp/main-tree.txt
-join -1 1 -2 1 -v1 /tmp/tip.txt /tmp/main-tree.txt > /tmp/absent.txt   # -v1: the paths of the tip that main does NOT have
-wc -l < /tmp/absent.txt                                    # absent paths of the row
+git ls-tree -r "$T" | awk '{print $4" "$3}' | sort > "$scratch/tip.txt"
+git ls-tree -r "$M" | awk '{print $4" "$3}' | sort > "$scratch/main-tree.txt"
+join -1 1 -2 1 -v1 "$scratch/tip.txt" "$scratch/main-tree.txt" > "$scratch/absent.txt"   # -v1: the paths of the tip that main does NOT have
+wc -l < "$scratch/absent.txt"                                 # absent paths of the row
 
 # the blob set of main's whole object history
-git rev-list --objects "$M" | awk '{print $1}' | sort -u > /tmp/main-blobs.txt
+git rev-list --objects "$M" | awk '{print $1}' | sort -u > "$scratch/main-blobs.txt"
 
 # of the absent paths, the ones whose content never occurs in main's history
-while read -r p b; do grep -qx "$b" /tmp/main-blobs.txt || echo "$p"; done < /tmp/absent.txt | wc -l
+while read -r p b; do grep -qx "$b" "$scratch/main-blobs.txt" || echo "$p"; done < "$scratch/absent.txt" | wc -l
 
 # the third bucket: paths that main still holds, with a different revision
-join -1 1 -2 1 /tmp/tip.txt /tmp/main-tree.txt | awk '$2 != $3' > /tmp/differing.txt
-wc -l < /tmp/differing.txt                                # blob-different paths of the row
-while read -r p tb mb; do grep -qx "$tb" /tmp/main-blobs.txt || echo "$p"; done < /tmp/differing.txt | wc -l
+join -1 1 -2 1 "$scratch/tip.txt" "$scratch/main-tree.txt" | awk '$2 != $3' > "$scratch/differing.txt"
+wc -l < "$scratch/differing.txt"                             # blob-different paths of the row
+while read -r p tb mb; do grep -qx "$tb" "$scratch/main-blobs.txt" || echo "$p"; done < "$scratch/differing.txt" | wc -l
 
 # the COMPLETE fourth bucket: every tip-tree path whose content is in no retained ref.
 # A retained ref is every ref that survives the deletion: main plus every captured retained ref.
 # The count is the absent paths whose blob no retained ref holds, PLUS the paths main holds at
 # another revision whose branch revision no retained ref holds.
-git rev-list --objects $RETAINED | awk '{print $1}' | sort -u > /tmp/retained-blobs.txt
-{ while read -r p b;   do grep -qx "$b"   /tmp/retained-blobs.txt || echo "$p"; done < /tmp/absent.txt
-  while read -r p tb mb; do grep -qx "$tb" /tmp/retained-blobs.txt || echo "$p"; done < /tmp/differing.txt
+git rev-list --objects $RETAINED | awk '{print $1}' | sort -u > "$scratch/retained-blobs.txt"
+{ while read -r p b;   do grep -qx "$b"   "$scratch/retained-blobs.txt" || echo "$p"; done < "$scratch/absent.txt"
+  while read -r p tb mb; do grep -qx "$tb" "$scratch/retained-blobs.txt" || echo "$p"; done < "$scratch/differing.txt"
 } | sort -u | wc -l
 # -> the first column of §1a's fourth table (row 10 -> 23, row 13 -> 4, row 14 -> 9362, row 15 -> 2149).
 # With the archive refs of §1 in the retained set - the row's own tip is archived - it prints 0:
@@ -983,15 +1064,19 @@ All four are DEBRIS-class by the inventory's final classes, all four are live on
    **Correction: five absent paths, four history-absent contents.** The claim that these fixtures' content is not in `main` holds for **four** of the five. `opencode/auth_no_go.json` (blob `568abbfdc0199baa3a4f917a5fc41a1f46ebadb8`) **is** in `main`'s object history: `main` carried that path from the OpenShell rewrite (`f683619b5`, PR #1264) until PR #1275 removed it from the tree (`7a53f6abe`), and `git rev-list --objects 926bbd49` reproduces the blob. The other four blobs (`d3f870f3`, `8c6ac31e`, `8c429341`, `5da3b6b2`) occur nowhere in `main`'s history:
 
    ```bash
+   scratch=$(mktemp -d)                 # the scratch file of the check lives in a private directory:
+                                       # a fixed path under /tmp is predictable, and a file another
+                                       # process wrote under such a path would answer the check
+   trap 'rm -rf "$scratch"' 0
    M=926bbd49d171c2f389a766776ff3c418f8987fbd
-   git rev-list --objects $M | awk '{print $1}' | sort -u > /tmp/main-blobs.txt
+   git rev-list --objects $M | awk '{print $1}' | sort -u > "$scratch/main-blobs.txt"
    for p in crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_hours.json \
             crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_no_window.json \
             crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth.json \
             crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_go_oauth.json \
             crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_no_go.json; do
      b=$(git rev-parse --verify --quiet "6965f5d1c2227ca6187704a2374f09bba14632d4:$p")
-     grep -qx "$b" /tmp/main-blobs.txt && echo "$b IN-MAIN-HISTORY $p" || echo "$b history-absent $p"
+     grep -qx "$b" "$scratch/main-blobs.txt" && echo "$b IN-MAIN-HISTORY $p" || echo "$b history-absent $p"
    done
    ```
 
@@ -1076,7 +1161,7 @@ prerequisite of §1 has run and been verified.**
 
 ## 7. Live verification against the remotes (2026-11-14, re-verified 20:12 UTC)
 
-Verified with `gh api repos/<repo>/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'`, first on 2026-11-14, re-verified at 13:17 UTC and re-verified again at 20:12 UTC the same day. "Live" = the branch is still on the remote with the tip recorded in the audits; **ALREADY GONE** = the ref no longer exists. All 15 rows of §1 are live with the recorded tips at 20:12 UTC; none of them is merged, none is deleted.
+Verified with `gh api --hostname github.com repos/<repo>/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'`, first on 2026-11-14, re-verified at 13:17 UTC and re-verified again at 20:12 UTC the same day. "Live" = the branch is still on the remote with the tip recorded in the audits; **ALREADY GONE** = the ref no longer exists. All 15 rows of §1 are live with the recorded tips at 20:12 UTC; none of them is merged, none is deleted.
 
 ### Approval set (§1) — all 15 live, none merged, none deleted
 
@@ -1151,7 +1236,7 @@ Not part of any approval set; listed so that no one mistakes them for debris. Ro
 
 | repo | branch | why it is kept |
 |---|---|---|
-| jackin-project/jackin | `fix/typed-model-selection` | The audited branch was **ALREADY GONE** at the 13:17 UTC re-check (`gh api repos/jackin-project/jackin/branches/fix/typed-model-selection` → 404): its content landed via **MERGED PR #1279** ("feat(core): add typed model selection for agent tuples", merge commit `25f8c42c660f2951d4acc8f19ff489e7e6f61c67`, merged 2026-11-14 04:12 UTC), which **is an ancestor of `main`**, and `crates/jackin-core/src/model_selection.rs` **is present in `main`** (blob `2613cbe7`). The earlier verdict carried into this document ("the typed-model-selection code is absent from `main`; open PR #1279") was pre-merge and is **stale**: there was nothing left to delete and nothing left to keep, and no row of the approval set changes. The stale *branch copy* of the inventory wrongly calls it DEBRIS — do not use that copy. **At the 20:12 UTC re-check a branch of the same name exists again** (tip `0aaf7a411ce0f35ebd9ca7e7722caed7101c65c6`, a different tip from the audited `5302848e`): it is a **new, unclassified branch**, outside the approval set, outside §2 and §3, and the operator's word does not cover it. **The inventory's contained-ref cleanup action for this ref is deferred** (`rewrite/triage/branch-inventory-2026-11-12.md`, 'Current contained-ref cleanup action'): the ref is protected here, so it stays on the remote until the operator's own word lifts this entry. |
+| jackin-project/jackin | `fix/typed-model-selection` | The audited branch was **ALREADY GONE** at the 13:17 UTC re-check (`gh api --hostname github.com repos/jackin-project/jackin/branches/fix/typed-model-selection` → 404): its content landed via **MERGED PR #1279** ("feat(core): add typed model selection for agent tuples", merge commit `25f8c42c660f2951d4acc8f19ff489e7e6f61c67`, merged 2026-11-14 04:12 UTC), which **is an ancestor of `main`**, and `crates/jackin-core/src/model_selection.rs` **is present in `main`** (blob `2613cbe7`). The earlier verdict carried into this document ("the typed-model-selection code is absent from `main`; open PR #1279") was pre-merge and is **stale**: there was nothing left to delete and nothing left to keep, and no row of the approval set changes. The stale *branch copy* of the inventory wrongly calls it DEBRIS — do not use that copy. **At the 20:12 UTC re-check a branch of the same name exists again** (tip `0aaf7a411ce0f35ebd9ca7e7722caed7101c65c6`, a different tip from the audited `5302848e`): it is a **new, unclassified branch**, outside the approval set, outside §2 and §3, and the operator's word does not cover it. **The inventory's contained-ref cleanup action for this ref is deferred** (`rewrite/triage/branch-inventory-2026-11-12.md`, 'Current contained-ref cleanup action'): the ref is protected here, so it stays on the remote until the operator's own word lifts this entry. |
 | jackin-project/jackin | `docs/triage-inventory-reclass-2026-11-13` | Live branch (tip `cf9acb7485e1800680fd00b62767af35e9713fe6` at the 20:12 UTC re-check) created after the inventory was captured; not in any class list. **The inventory's contained-ref cleanup action for this ref is deferred** (`rewrite/triage/branch-inventory-2026-11-12.md`, 'Current contained-ref cleanup action'): the ref is protected here, so it stays on the remote until the operator's own word lifts this entry. |
 | jackin-project/jackin-sentinel | `fix/s158-postmerge-4` | VALUABLE — open PR #159. |
 | jackin-project/jackin-sentinel | `preserve/probe-identity-20261109` | VALUABLE — tip commit not in `main`. |
@@ -1168,6 +1253,8 @@ Not part of any approval set; listed so that no one mistakes them for debris. Ro
 - The 4 CONTAINED candidates of §3 are listed as **UNPROVEN** CONTAINED candidates, not as DEBRIS and **not** as safe-to-delete: they are excluded from this ratification by class, not by doubt. **This publication supersedes the merged inventory's "CONTAINED - safe to delete" label for exactly these four rows** (§3); the inventory's class rule ("CONTAINED candidate - UNPROVEN") and its own per-row evidence agree with §3, and the five usage fixtures the branches carry are absent from `main`. Their containment proof is still incomplete (§3), so they are treated as VALUABLE and kept.
 - The branches of §7 that are outside every class list (4 recorded individually, 50 in total at the 20:12 UTC re-check) were created after the inventory was captured; their tips moved between the compiles of this document and they are not audited here at all. They are outside every class list and outside the operator's word.
 - §6 records a deletion that happened before this document; it is a ratification of a fact, not a new deletion.
+- The paths of the procedure are private, not fixed: the pre-flight keeps its manifest in a private directory (`mktemp -d`) that it removes when it ends, the deletion run keeps the sanitized configuration, the scratch repository, the control repositories and the branch lists of the post-check in a private directory of its own, and the deletion run takes its manifest from the §1 table of this publication instead of a file. A predictable path under `/tmp` can be written, replaced with a link or read by every other process on the host, and a run that reads a manifest from such a path reads what another process put there. The digest of §4 is what binds the manifest to the operator's word, so a manifest that another process replaced is a refusal, never a deletion.
+- Every GitHub API call of the procedure names `github.com`, because `gh` honors the `GH_HOST` of the environment: without the pin, a run whose environment carries a `GH_HOST` would read and write another host - a GitHub Enterprise instance - where the 15 refs of the ratification are not, and the guards of the run would pass against a repository the operator never ratified. The pin does not change what the run reads on `github.com`; it only refuses to read or write anywhere else.
 - The retained-ref check in §1 is a **pre-flight, not a transaction**: a retained ref can move or be deleted between that check and the push, and a deletion lease covers only its own target. **The archive prerequisite of §1 is what closes that window**: before the first deletion push, the tip of each of the 15 rows and the captured tip of every retained ref is preserved under `refs/heads/archive/` and verified (steps 3 and 4 of the pre-flight), the `refs/heads/archive/**/*` namespace is then locked against deletion and force-update by the step-5 ruleset, each deletion push of step 6 re-reads its own archive ref immediately before it runs, and no deletion in §1 touches an archive ref. A collaborator who can move a retained branch can therefore no longer remove the last copy of content that §1a counted as preserved (row 10 relies on retained refs for 2 of its 20 paths). What the archive does not cover is the history a retained ref gained *after* the capture — the archive holds the captured tip, and the tip's own history with it. Running the deletions as one atomic server-side operation remains an option, not a requirement.
-- **The decision trail carries this publication's disposition in this PR.** `rewrite/decisions.tsv:520` recorded the four branches of §3 as "CONTAINED-safe-to-delete", and `:525` named "4 CONTAINED-safe-to-delete candidates" in the 15-branch ratification row. This publication supersedes both labels (§3): the four are **UNPROVEN, KEPT** — kept, not deletable. The superseding trail rows are part of this PR: `rewrite/decisions.tsv:531` records the four §3 branches as UNPROVEN, KEPT and excluded from the 15-branch set by class, and `:532` corrects the phrase of the ratification row. The same commit repairs the ascending order of the trail's `ts` column, so the five inherited inversions (rows 314, 319, 383, 413 and 419) are gone and the trail and this publication agree before this PR merges. The rows the other documents cite (`:510`, `:511`, `:514`, `:520`, `:521`, `:525`) are byte-identical to the rows they cited before.
+- **The decision trail carries this publication's disposition in this PR.** `rewrite/decisions.tsv:520` recorded the four branches of §3 as "CONTAINED-safe-to-delete", and `:525` named "4 CONTAINED-safe-to-delete candidates" in the 15-branch ratification row. This publication supersedes both labels (§3): the four are **UNPROVEN, KEPT** — kept, not deletable. The superseding trail rows are part of this PR: `rewrite/decisions.tsv:531` records the four §3 branches as UNPROVEN, KEPT and excluded from the 15-branch set by class, `:532` corrects the phrase of the ratification row, and `:535` records the private paths and the pinned host of the procedure and the correction of the row at `:534`, whose description of the sanitized configuration now matches the `credential.helper` allowlist the run implements. The same commit repairs the ascending order of the trail's `ts` column, so the five inherited inversions (rows 314, 319, 383, 413 and 419) are gone and the trail and this publication agree before this PR merges. The rows the other documents cite (`:510`, `:511`, `:514`, `:520`, `:521`, `:525`) are byte-identical to the rows they cited before.
 - Nothing was deleted, pushed to a branch, merged or tagged in producing this document; only this file and the seven audit files under `rewrite/triage/audits/2026-11-14/` were added.
