@@ -5,9 +5,17 @@
 # object subtraction of §1a stays reproducible after the refs move.
 # Format: <repo> <ref> <sha>
 # This publication's own branch (jackin-project/jackin docs/debris-ratification-2026-11-14) is
-# captured here because it was part of the measured retained set; the pre-flight in the publication
-# skips it, because it necessarily advances with every commit to the document and disappears when
-# the PR merges, so it can never still point at the SHA captured here.
+# captured here because it was part of the measured retained set. The pre-flight in the publication
+# does NOT require a captured ref to still point at its captured SHA:
+#  - a ref that still exists must have a live tip that CONTAINS the captured commit (the ref advanced,
+#    main advancing after this publication is merged, for one - that still passes);
+#  - a ref that is gone must have its captured commit still resolvable in the repository (a
+#    squash-merged PR keeps its head under refs/pull/N/head, so the objects survive the branch deletion);
+#  - anything else fails: the surviving copy the accounting relies on is gone.
+# This publication's own branch therefore needs no exemption any more: before the merge its live tip
+# is ahead of the SHA captured here, and after the merge main contains it.
+# The pre-flight also archives every ref of this file under refs/heads/archive/retained/<ref> before
+# any deletion, and verifies that each archive ref holds the SHA recorded here.
 jackin-project/jackin backup/w3-local-usage f0aa365be70a94fdefc3fb6b3f4a5c2afa2db0aa
 jackin-project/jackin chore/dirty-slice-1 72401bf5e78c630f6fc2765e6391bb9ff7188635
 jackin-project/jackin chore/dirty-slice-accounting-2026-11-14 fe4fcb3a11d1d0441582e0455581622a81060834

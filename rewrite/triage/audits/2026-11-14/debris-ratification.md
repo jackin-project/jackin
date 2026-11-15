@@ -10,6 +10,13 @@
 > (§3), which supersedes that label for exactly these four rows, because the five usage fixtures they
 > carry are absent from `main` and their product-code paths have no inventory-grade containment proof.
 > The audit files named below are committed next to this one, in `rewrite/triage/audits/2026-11-14/`.
+>
+> The per-row counts in §1 of this file are the **capture-time** ones (2026-11-13/14) and the
+> publication's §1 and §1a carry the **current** ones: the absent-path and same-path-different-revision
+> counts were re-derived there, and the "0 truly unique" claims of rows 4, 6 and 9 are superseded by the
+> complete count of tip-tree paths whose content is in no retained ref (3, 1 and 2 — those rows do carry
+> branch-only revisions of paths `main` holds at another revision). Read the publication's numbers, not
+> this file's.
 
 Source of truth: `jackin-project/jackin` @ `main` (PR #1280, merge `78d3b86e`)
 `rewrite/triage/branch-inventory-2026-11-12.md` (18-row DEBRIS table) + completed audits
@@ -39,14 +46,23 @@ READ-ONLY: nothing deleted, pushed, committed or merged. Tips below re-read live
 | 15 | tailrocks/terminal-components-baseline | `wip/tuiscotti-fixcheck` | `8d352ebf` | 1914 absent paths = 1880 legacy `.tui.json` + 23 `run-evidence/fix-validation/**` + machine-local `.cargo/config.toml`; **0** branch-only commits touch `src`/`apps`. |
 
 ### EXPLICITLY EXCLUDED — 3 reclassified rows (VALUABLE, MUST NOT be deleted)
+> **SUPERSEDED by the publication's §2 - do not act on the interim classes below.** The three rows in
+> this block were classified VALUABLE by the 2026-11-13 evidence audit. The completed portability
+> assessment of the same day returned **DISCARD** for all three, and the publication
+> `rewrite/triage/debris-ratification-2026-11-14.md` (§2) records the completed verdicts: all three are
+> **DEBRIS-class (superseded)**, they are **outside** the 15-branch approval set, and each one needs
+> **its own** operator word. The third row carries a prerequisite: its **P1** slice must be materialized
+> on a durable ref (or ported) before it may be deleted. The rows are kept here only as the capture-time
+> record of the interim classes; the dispositions that govern are the publication's.
+
 These are still DEBRIS in the merged inventory table but the completed audit reclassified them; they
 are **NOT** part of the 15-branch approval set and **NOT** covered by the commands below.
 
-| repo | branch | tip SHA | why excluded |
-|---|---|---|---|
-| jackin-project/jackin | `recovery/pr1230-blob-auth-77b399f1-20261027` | `77b399f1` | Only carrier of the landed-nowhere `GitBlobHasher` security fix; 81 truly unique absent paths (77 product code incl. `crates/tools/jackin-xtask/**`, `crates/core/jackin-process/**`). |
-| jackin-project/jackin | `recovery/stash-adoption-6a0d2f03-20261025` | `ade401e7` | 24 truly unique paths — the only surviving implementation of the `precommit_provision` / `precommit_snapshot` product design (its removal commits are not ancestors of main). |
-| jackin-project/jackin | `recovery/strip-tests-restore-20261030` | `8508f6f8` | 355 truly unique product/test files (e.g. `crates/adapters/jackin-docker/src/**`, `crates/apps/jackin-capsule/src/**`, `jackin-omp-store/src/capture.rs`) with no other copy on any remote. |
+| repo | branch | tip SHA | why excluded | disposition now (publication §2) |
+|---|---|---|---|---|
+| jackin-project/jackin | `recovery/pr1230-blob-auth-77b399f1-20261027` | `77b399f1` | Only carrier of the landed-nowhere `GitBlobHasher` security fix; 81 truly unique absent paths (77 product code incl. `crates/tools/jackin-xtask/**`, `crates/core/jackin-process/**`). | **DEBRIS (superseded) - port verdict DISCARD.** Its own deletion word; the port reference is kept, no port. |
+| jackin-project/jackin | `recovery/stash-adoption-6a0d2f03-20261025` | `ade401e7` | 24 truly unique paths — the only surviving implementation of the `precommit_provision` / `precommit_snapshot` product design (its removal commits are not ancestors of main). | **DEBRIS (superseded) - port verdict DISCARD.** Its own deletion word, or an archive under a retention ref before any future delete. |
+| jackin-project/jackin | `recovery/strip-tests-restore-20261030` | `8508f6f8` | 355 truly unique product/test files (e.g. `crates/adapters/jackin-docker/src/**`, `crates/apps/jackin-capsule/src/**`, `jackin-omp-store/src/capture.rs`) with no other copy on any remote. | **DEBRIS (superseded) - port verdict DISCARD as a port source; 1 PORT-LATER carve-out (P1).** Its own word, and **only after the P1 slice is materialized**; the branch measures 3,844 path-absent / 3,868 content-unique paths (the earlier 2,464/355 figure was corrected on 2026-11-13). |
 
 Also excluded by class (never in the DEBRIS set): `fix/typed-model-selection` (VALUABLE, open PR #1279;
 the stale *branch-copy* inventory wrongly calls it DEBRIS — do not use that copy), the 4 VALUABLE rows

@@ -3,13 +3,20 @@
 Scope: parity check of the published branch inventory against the live remotes of the five
 tracked repositories. Read-only: nothing was pushed, committed, merged, or deleted.
 
-> **Correction, 2026-11-14.** The "class correct" verdicts this report records for the five rows it
+> **Correction, 2026-11-14.** The "class correct" verdicts this report records for the four rows it
 > classes `CONTAINED candidate - UNPROVEN, KEPT` are **superseded** by the publication
 > `rewrite/triage/debris-ratification-2026-11-14.md` (§3). The merged inventory (PR #1280, merge commit
-> `78d3b86e`; updated by PR #1281, merge commit `926bbd49d`) labels those rows **"CONTAINED - safe to
-> delete"**, and that label must not be acted on: the five usage fixtures those branches carry are absent
-> from `main` and their product-code paths have no inventory-grade containment proof. The disposition that
-> governs is **UNPROVEN, KEPT** - kept, not deletable.
+> `78d3b86e`; updated by PR #1281, merge commit `926bbd49d`) labels those **four** rows
+> **"CONTAINED - safe to delete"** — `codex/openshell-integration-checkpoint-20261108-122311`,
+> `codex/openshell-verified-checkpoint-20261108`, `preserve/session-boundaries-20261109` and
+> `preserve/w1-fixes-20261109` — and that label must not be acted on: the five usage fixture paths those
+> branches carry are absent from `main`'s tree, four of their contents are absent from `main`'s history as
+> well, and their product-code paths have no inventory-grade containment proof. The disposition that
+> governs for these four is **UNPROVEN, KEPT** — kept, not deletable.
+> The **fifth** candidate, `preserve/p0.6-prototype-20261109`, is **not** part of that override: the
+> merged inventory classes it **DEBRIS** (not "safe to delete"), and the publication's §2 records it as
+> DEBRIS-class **outside** the approval set, where it needs **its own** operator word. It is neither kept
+> under §3 nor covered by the operator's §4 word.
 
 ## 0. Locating the inventory — the path in the task is on `main`, not on the stated branch
 

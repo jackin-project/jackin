@@ -7,6 +7,8 @@
 **Tip guard:** every deletion command in §1 is leased against the exact tip SHA recorded in that row, so a branch that moved since this table was compiled is **not** deleted (§1).
 **Target guard:** every deletion command in §1 names its repository by its **HTTPS URL** (`https://github.com/<repo>.git`), never by the remote alias `origin`, so a clone whose `origin` points at a fork can never delete a ref in the wrong repository (§1, §1b).
 **Absent-path accounting:** §1a accounts for **every** path that each of the 15 deletions would remove, re-derived against the live `main` tips; §1b gives the commands that reproduce the numbers and names the `main` tips they were measured against.
+**Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, so a word can never be applied to a different 15-ref manifest (§1, §4).
+**Archive prerequisite:** no deletion may run before every branch this document deletes — and every captured retained ref — is preserved under `refs/heads/archive/` **and verified**. Fetching a recorded SHA is not preservation: once the last ref to an object is gone, the object is gone from the remote. The archive refs are not touched by the deletions, so they close the window that the retained-ref check alone cannot close (§1, §1a, §9).
 
 ## Contents
 
@@ -36,51 +38,106 @@ These 15 are the **only** branches the operator's word covers. Each row carries 
 | 1 | jackin-project/jackin | `chore/triage-inventory-20261112` | `e13360eb87518f70c45097366e384851f113ad8d` | 1 commit adds only the generated triage artifact `rewrite/triage/branch-inventory-20261112.md` (9148 B) — the **unhyphenated** file the audited commit adds; its merged replacement is the different, hyphenated `rewrite/triage/branch-inventory-2026-11-12.md` (PR #1280, `78d3b86e`), which carries every row, count and section of it (`git cherry` 1+/0-). 6 paths are absent from `main`'s tree: that artifact, whose content never occurs in `main`'s history, and 5 usage fixtures whose content **is** in `main`'s history (§1a). | `git push --force-with-lease=refs/heads/chore/triage-inventory-20261112:e13360eb87518f70c45097366e384851f113ad8d https://github.com/jackin-project/jackin.git --delete chore/triage-inventory-20261112` |
 | 2 | jackin-project/jackin | `docs/pr1228-replacement-20261026` | `912fe737e08fb540be67573ce8b086b30c77ec0c` | 62 of the 63 `docs/openshell-v2/**` paths are absent from `main`'s tree; 58 of them are the branch's own pre-reflow draft (their content never occurs in `main`'s history) and 4 have their content in `main`'s history. The pack itself was merged as PR #1234 (`3ffd6171a`) — that commit is this branch's merge base, so the 58 files are the draft of the pack that landed; docs-only, no product code (§1a). | `git push --force-with-lease=refs/heads/docs/pr1228-replacement-20261026:912fe737e08fb540be67573ce8b086b30c77ec0c https://github.com/jackin-project/jackin.git --delete docs/pr1228-replacement-20261026` |
 | 3 | jackin-project/jackin | `recovery/openrouter-exact-money-20261027` | `6ebbe14490b2eddac73263b2df248252e1b10546` | Product fix landed byte-identically in merged PR #1238 (`f16eee70e`, `money_numeric.rs` = `06aa1044`, blob present in `main`'s history); branch residue is comments/extra tests in trees removed by #1264. The residue is enumerated in §1a: 22 paths whose content never occurs in `main`'s history, all of them pre-rewrite files of the crates the OpenShell rewrite replaced (`crates/core/jackin-protocol`, `crates/services/jackin-usage*`, `crates/ui/jackin-console`) plus `ratchet.toml`. | `git push --force-with-lease=refs/heads/recovery/openrouter-exact-money-20261027:6ebbe14490b2eddac73263b2df248252e1b10546 https://github.com/jackin-project/jackin.git --delete recovery/openrouter-exact-money-20261027` |
-| 4 | jackin-project/jackin | `recovery/stash-2f8cc42b-20261023` | `e5e6d1fd27efc3eee52b7e18574e4870c5a4a191` | Stash snapshot, 17 paths, **0 truly unique** blobs (all present in main's history or another ref); single parent, no side-parent risk. | `git push --force-with-lease=refs/heads/recovery/stash-2f8cc42b-20261023:e5e6d1fd27efc3eee52b7e18574e4870c5a4a191 https://github.com/jackin-project/jackin.git --delete recovery/stash-2f8cc42b-20261023` |
-| 5 | jackin-project/jackin | `recovery/stash-2fb075f8-20261023` | `4d9540abf301f80b58f81f47d7691132ce48f36c` | Stash snapshot, 48 changed paths. **13** of them are absent from `main`'s tree *and* their content never occurs in `main`'s history (§1a): 8 pre-rewrite `crates/adapters/jackin-image/src/release_evidence/**` files, 2 `crates/tools/jackin-xtask/src/ci/**` files, 1 docs page, 1 integration doc and 1 shell script. The 10 `crates/**` paths are edits to modules the OpenShell rewrite (#1264) deleted, and their content is **not** in `main` — it is shared with row 8 (identical blobs), so deleting rows 5 and 8 together removes it. Single parent. | `git push --force-with-lease=refs/heads/recovery/stash-2fb075f8-20261023:4d9540abf301f80b58f81f47d7691132ce48f36c https://github.com/jackin-project/jackin.git --delete recovery/stash-2fb075f8-20261023` |
-| 6 | jackin-project/jackin | `recovery/stash-88f5643c-20261023` | `ddf8861f45646f34b1ca087bd8ed6b9429f270c1` | Stash snapshot, 17 paths, **0 truly unique**; single parent. | `git push --force-with-lease=refs/heads/recovery/stash-88f5643c-20261023:ddf8861f45646f34b1ca087bd8ed6b9429f270c1 https://github.com/jackin-project/jackin.git --delete recovery/stash-88f5643c-20261023` |
-| 7 | jackin-project/jackin | `recovery/stash-be51ff69-20261023` | `9cdf189b812caf2395048bf0d8dbccdadf1e83a0` | Stash snapshot, 60 changed paths; **4** paths are absent from `main`'s tree *and* their content never occurs in `main`'s history (§1a) = `native/README.md`, `ratchet.toml`, 2 shell scripts — no product code; single parent (RUSTSEC claim already dropped as unsupported). | `git push --force-with-lease=refs/heads/recovery/stash-be51ff69-20261023:9cdf189b812caf2395048bf0d8dbccdadf1e83a0 https://github.com/jackin-project/jackin.git --delete recovery/stash-be51ff69-20261023` |
-| 8 | jackin-project/jackin | `recovery/stash-d808d094-20261023` | `00f98f32514aca8005c56dd2e44e3fc03c326b46` | Stash snapshot, 54 changed paths; **13** paths are absent from `main`'s tree *and* their content never occurs in `main`'s history (§1a) — the same 10 pre-rewrite `crates/**` files as row 5 (identical blobs) plus 1 docs page and 2 `scripts/*` shell wrappers. The content is not in `main`; it is shared with row 5. Single parent. | `git push --force-with-lease=refs/heads/recovery/stash-d808d094-20261023:00f98f32514aca8005c56dd2e44e3fc03c326b46 https://github.com/jackin-project/jackin.git --delete recovery/stash-d808d094-20261023` |
-| 9 | jackin-project/jackin | `recovery/strict-merge-gate-merge-readiness-20261022` | `2f96c6dadd4e1974f89f5a5f7407c0f6ff221fae` | Stale pre-rewrite CI gate config, 25 paths, **0 truly unique**; `check:merge-readiness` does not exist in main; duplicate of the `fix/restore-docs-source-globs` lineage. | `git push --force-with-lease=refs/heads/recovery/strict-merge-gate-merge-readiness-20261022:2f96c6dadd4e1974f89f5a5f7407c0f6ff221fae https://github.com/jackin-project/jackin.git --delete recovery/strict-merge-gate-merge-readiness-20261022` |
-| 10 | jackin-project/jackin | `rollout/velnor-3-provider` | `092fe1db796367479029d4e94379530f7f5965c0` | Orphan line (no merge base with main, root `c24fffeb0` != main root); the tip tree is **28 paths**: 21 absent from `main`'s tree, of which **20** have content that never occurs in `main`'s history; the other 7 exist in `main` at a different revision (6) or the same revision (1). 9 of the 20 are **byte-identical** (same blob SHA) to files in `ChainArgos/jackin-agent-brown` (`.dockerignore`, `.hadolint.yaml`, `.pre-commit-config.yaml`, `Dockerfile`, `hooks/preflight.sh`, `hooks/source.sh`, `jackin.role.toml`, `scripts/marketplace-audit.sh`, `zshrc.d/docker-helpers.zsh`); the other 11 are velnor-generated CI files (`.github-gen/velnor-workflow.toml`, `.github/actionlint.yaml`, `.github/ci/project.toml`, `.github/ci/.github-actions-generator-state` and 7 rendered `.github/workflows/*.yml`). No product code (§1a). | `git push --force-with-lease=refs/heads/rollout/velnor-3-provider:092fe1db796367479029d4e94379530f7f5965c0 https://github.com/jackin-project/jackin.git --delete rollout/velnor-3-provider` |
+| 4 | jackin-project/jackin | `recovery/stash-2f8cc42b-20261023` | `e5e6d1fd27efc3eee52b7e18574e4870c5a4a191` | Stash snapshot, 17 paths; every absent path's content is in `main`'s history, but **3** paths that `main` holds at another revision carry a branch-only revision (1,583 added lines, §1a) — the complete count of tip-tree paths whose content is in no retained ref is **3**; single parent, no side-parent risk. | `git push --force-with-lease=refs/heads/recovery/stash-2f8cc42b-20261023:e5e6d1fd27efc3eee52b7e18574e4870c5a4a191 https://github.com/jackin-project/jackin.git --delete recovery/stash-2f8cc42b-20261023` |
+| 5 | jackin-project/jackin | `recovery/stash-2fb075f8-20261023` | `4d9540abf301f80b58f81f47d7691132ce48f36c` | Stash snapshot, 48 changed paths. **13** of them are absent from `main`'s tree *and* their content never occurs in `main`'s history (§1a): 8 pre-rewrite `crates/adapters/jackin-image/src/release_evidence/**` files, 2 `crates/tools/jackin-xtask/src/ci/**` files, 1 docs page, 1 integration doc and 1 shell script. The 10 `crates/**` paths are edits to modules the OpenShell rewrite (#1264) deleted, and their content is **not** in `main` — it is shared with row 8 (identical blobs), so deleting rows 5 and 8 together removes it. **1** further path that `main` holds at another revision carries a branch-only revision (195 added lines, §1a) — the complete count of tip-tree paths whose content is in no retained ref is **14**. Single parent. | `git push --force-with-lease=refs/heads/recovery/stash-2fb075f8-20261023:4d9540abf301f80b58f81f47d7691132ce48f36c https://github.com/jackin-project/jackin.git --delete recovery/stash-2fb075f8-20261023` |
+| 6 | jackin-project/jackin | `recovery/stash-88f5643c-20261023` | `ddf8861f45646f34b1ca087bd8ed6b9429f270c1` | Stash snapshot, 17 paths; every absent path's content is in `main`'s history, but **1** path that `main` holds at another revision carries a branch-only revision (4,598 added lines, §1a) — the complete count of tip-tree paths whose content is in no retained ref is **1**; single parent. | `git push --force-with-lease=refs/heads/recovery/stash-88f5643c-20261023:ddf8861f45646f34b1ca087bd8ed6b9429f270c1 https://github.com/jackin-project/jackin.git --delete recovery/stash-88f5643c-20261023` |
+| 7 | jackin-project/jackin | `recovery/stash-be51ff69-20261023` | `9cdf189b812caf2395048bf0d8dbccdadf1e83a0` | Stash snapshot, 60 changed paths; **4** paths are absent from `main`'s tree *and* their content never occurs in `main`'s history (§1a) = `native/README.md`, `ratchet.toml`, 2 shell scripts — no product code; **2** further paths that `main` holds at another revision carry branch-only revisions (4,730 added lines, §1a) — the complete count of tip-tree paths whose content is in no retained ref is **6**; single parent (RUSTSEC claim already dropped as unsupported). | `git push --force-with-lease=refs/heads/recovery/stash-be51ff69-20261023:9cdf189b812caf2395048bf0d8dbccdadf1e83a0 https://github.com/jackin-project/jackin.git --delete recovery/stash-be51ff69-20261023` |
+| 8 | jackin-project/jackin | `recovery/stash-d808d094-20261023` | `00f98f32514aca8005c56dd2e44e3fc03c326b46` | Stash snapshot, 54 changed paths; **13** paths are absent from `main`'s tree *and* their content never occurs in `main`'s history (§1a) — the same 10 pre-rewrite `crates/**` files as row 5 (identical blobs) plus 1 docs page and 2 `scripts/*` shell wrappers. The content is not in `main`; it is shared with row 5. **6** further paths that `main` holds at another revision carry branch-only revisions (5,710 added lines, §1a) — the complete count of tip-tree paths whose content is in no retained ref is **19**. Single parent. | `git push --force-with-lease=refs/heads/recovery/stash-d808d094-20261023:00f98f32514aca8005c56dd2e44e3fc03c326b46 https://github.com/jackin-project/jackin.git --delete recovery/stash-d808d094-20261023` |
+| 9 | jackin-project/jackin | `recovery/strict-merge-gate-merge-readiness-20261022` | `2f96c6dadd4e1974f89f5a5f7407c0f6ff221fae` | Stale pre-rewrite CI gate config, 25 paths; every absent path's content is in `main`'s history, but **2** paths that `main` holds at another revision carry branch-only revisions (315 added lines, §1a) — the complete count of tip-tree paths whose content is in no retained ref is **2**; `check:merge-readiness` does not exist in main; duplicate of the `fix/restore-docs-source-globs` lineage. | `git push --force-with-lease=refs/heads/recovery/strict-merge-gate-merge-readiness-20261022:2f96c6dadd4e1974f89f5a5f7407c0f6ff221fae https://github.com/jackin-project/jackin.git --delete recovery/strict-merge-gate-merge-readiness-20261022` |
+| 10 | jackin-project/jackin | `rollout/velnor-3-provider` | `092fe1db796367479029d4e94379530f7f5965c0` | Orphan line (no merge base with main, root `c24fffeb0` != main root); the tip tree is **28 paths**: 21 absent from `main`'s tree, of which **20** have content that never occurs in `main`'s history; the other 7 exist in `main` at a different revision (6) or the same revision (1). Of the 20, **18** are in no retained ref — the other 2 are held by the retained ref `wt/a15-declared-auth-producer` (`dd2008cbf`) — and 5 of the 6 different-revision paths carry a branch-only revision, so the complete count of tip-tree paths whose content is in no retained ref is **23**. 9 of the 20 are **byte-identical** (same blob SHA) to files in `ChainArgos/jackin-agent-brown` (`.dockerignore`, `.hadolint.yaml`, `.pre-commit-config.yaml`, `Dockerfile`, `hooks/preflight.sh`, `hooks/source.sh`, `jackin.role.toml`, `scripts/marketplace-audit.sh`, `zshrc.d/docker-helpers.zsh`); the other 11 are velnor-generated CI files (`.github-gen/velnor-workflow.toml`, `.github/actionlint.yaml`, `.github/ci/project.toml`, `.github/ci/.github-actions-generator-state` and 7 rendered `.github/workflows/*.yml`). No product code (§1a). | `git push --force-with-lease=refs/heads/rollout/velnor-3-provider:092fe1db796367479029d4e94379530f7f5965c0 https://github.com/jackin-project/jackin.git --delete rollout/velnor-3-provider` |
 | 11 | jackin-project/jackin-agent-smith | `recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a` | `b9db5b149cc46baba9c49549432307c29e3972b0` | Pure velnor generator churn. **12** paths are absent from `main`'s tree, of which **7** have content that never occurs in `main`'s history: the generator source `.github-gen/velnor-workflow.toml`, the generator state `.github/ci/.github-actions-generator-state` and **5** rendered workflows (`.github/workflows/{ci-main,ci-policy,ci-pr,ci-unit-docker,maintenance}.yml`); the other 5 (`.err`, `.github/actionlint.yaml`, `.github/ci/project.toml`, `scripts/marketplace-audit.sh` and `.github/workflows/nightly.yml`) have their content in `main`'s history — `nightly.yml` is inherited unchanged from the merge base `8c1dbe3d`, an ancestor of `main` (blob `7db67da1` is in `main`'s object history), so it is not a branch-only blob (§1a). Own PR #206 closed unmerged; superseded by merged PR #207 (`08cb1c2f`). | `git push --force-with-lease=refs/heads/recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a:b9db5b149cc46baba9c49549432307c29e3972b0 https://github.com/jackin-project/jackin-agent-smith.git --delete recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a` |
 | 12 | jackin-project/jackin-agent-smith | `recovery/20261006/jackin-agent-smith/2e7119b9c668/jackin-agent-smith` | `c58cfdcaaca85f606c2abc4ddb8f5afaae47f737` | "WIP preservation snapshot" commit with an **empty patch** (tip tree == parent tree); parent `2e7119b9` is an ancestor of main; 3-dot diff vs main = 0 files. 3 paths are absent from `main`'s tree and all 3 have their content in `main`'s history (§1a). | `git push --force-with-lease=refs/heads/recovery/20261006/jackin-agent-smith/2e7119b9c668/jackin-agent-smith:c58cfdcaaca85f606c2abc4ddb8f5afaae47f737 https://github.com/jackin-project/jackin-agent-smith.git --delete recovery/20261006/jackin-agent-smith/2e7119b9c668/jackin-agent-smith` |
-| 13 | tailrocks/terminal-components-baseline | `test/pre-refactor-protection` | `fc624b7456132fb74675ab452e6b64ecb3f69a70` | 666 commits ahead but 3011/3045 changed paths are blob-identical to main; exactly **1** path absent from main = `terminal-components-baseline-goal.txt` (scratch goal prompt) and its content never occurs in `main`'s history (§1a). | `git push --force-with-lease=refs/heads/test/pre-refactor-protection:fc624b7456132fb74675ab452e6b64ecb3f69a70 https://github.com/tailrocks/terminal-components-baseline.git --delete test/pre-refactor-protection` |
-| 14 | tailrocks/terminal-components-baseline | `wip/tuiscotti-capture-only` | `0b8b8bb077061eee6ca04466148f017e316edfd3` | **9517** paths absent from `main`'s tree. **9117** of them have content that never occurs in `main`'s history: 7236 `run-evidence/**` generated capture files, 1880 legacy `tests/functional/baselines/**/*.tui.json` baselines and the machine-local `.cargo/config.toml`. The other **400** have their content in `main`'s history: 260 `run-evidence/**` files, 98 `.tui.json` baselines that PR #6 (`1d7f63db`) deleted from `main`, 34 `src/bin/jackin/**` files that `43456dee` moved to `apps/jackin/src/bin/jackin/**` and 8 `scripts/coverage-fixtures/**` files. 9117 + 400 = 9517 — every absent path is accounted for (§1a). **0** branch-only commits touch `src`/`apps`. | `git push --force-with-lease=refs/heads/wip/tuiscotti-capture-only:0b8b8bb077061eee6ca04466148f017e316edfd3 https://github.com/tailrocks/terminal-components-baseline.git --delete wip/tuiscotti-capture-only` |
-| 15 | tailrocks/terminal-components-baseline | `wip/tuiscotti-fixcheck` | `8d352ebfb932b06bf18c537e924389b0aae07e42` | **2046** paths absent from `main`'s tree. **1904** of them have content that never occurs in `main`'s history: 1880 legacy `tests/functional/baselines/**/*.tui.json` baselines, 23 `run-evidence/fix-validation/**` files and the machine-local `.cargo/config.toml`. The other **142** have their content in `main`'s history: 2 `run-evidence/fix-validation/**` files, 98 `.tui.json` baselines that PR #6 (`1d7f63db`) deleted from `main`, 34 `src/bin/jackin/**` files that `43456dee` moved to `apps/jackin/src/bin/jackin/**` and 8 `scripts/coverage-fixtures/**` files. 1904 + 142 = 2046 — every absent path is accounted for (§1a). **0** branch-only commits touch `src`/`apps`. | `git push --force-with-lease=refs/heads/wip/tuiscotti-fixcheck:8d352ebfb932b06bf18c537e924389b0aae07e42 https://github.com/tailrocks/terminal-components-baseline.git --delete wip/tuiscotti-fixcheck` |
+| 13 | tailrocks/terminal-components-baseline | `test/pre-refactor-protection` | `fc624b7456132fb74675ab452e6b64ecb3f69a70` | 666 commits ahead but 3011/3045 changed paths are blob-identical to main; exactly **1** path absent from main = `terminal-components-baseline-goal.txt` (scratch goal prompt) and its content never occurs in `main`'s history (§1a). **3** further paths that `main` holds at another revision carry a branch-only revision that no retained ref holds — `tests/functional/cases/j04_usage.rs`, `tests/functional/cases/s05_filebrowser.rs` and `tests/functional/cases/t01_test.rs`, 95 added lines of frame/readiness synchronization (§1a adjudicates each one) — so the complete count of tip-tree paths whose content is in no retained ref is **4**. The archive prerequisite of §1 preserves those three revisions before the deletion runs. | `git push --force-with-lease=refs/heads/test/pre-refactor-protection:fc624b7456132fb74675ab452e6b64ecb3f69a70 https://github.com/tailrocks/terminal-components-baseline.git --delete test/pre-refactor-protection` |
+| 14 | tailrocks/terminal-components-baseline | `wip/tuiscotti-capture-only` | `0b8b8bb077061eee6ca04466148f017e316edfd3` | **9517** paths absent from `main`'s tree. **9117** of them have content that never occurs in `main`'s history: 7236 `run-evidence/**` generated capture files, 1880 legacy `tests/functional/baselines/**/*.tui.json` baselines and the machine-local `.cargo/config.toml`. The other **400** have their content in `main`'s history: 260 `run-evidence/**` files, 98 `.tui.json` baselines that PR #6 (`1d7f63db`) deleted from `main`, 34 `src/bin/jackin/**` files that `43456dee` moved to `apps/jackin/src/bin/jackin/**` and 8 `scripts/coverage-fixtures/**` files. 9117 + 400 = 9517 — every absent path is accounted for (§1a). **245** further paths that `main` holds at another revision carry branch-only revisions (3,939 added lines, §1a) — the complete count of tip-tree paths whose content is in no retained ref is **9,362**. **0** branch-only commits touch `src`/`apps`. | `git push --force-with-lease=refs/heads/wip/tuiscotti-capture-only:0b8b8bb077061eee6ca04466148f017e316edfd3 https://github.com/tailrocks/terminal-components-baseline.git --delete wip/tuiscotti-capture-only` |
+| 15 | tailrocks/terminal-components-baseline | `wip/tuiscotti-fixcheck` | `8d352ebfb932b06bf18c537e924389b0aae07e42` | **2046** paths absent from `main`'s tree. **1904** of them have content that never occurs in `main`'s history: 1880 legacy `tests/functional/baselines/**/*.tui.json` baselines, 23 `run-evidence/fix-validation/**` files and the machine-local `.cargo/config.toml`. The other **142** have their content in `main`'s history: 2 `run-evidence/fix-validation/**` files, 98 `.tui.json` baselines that PR #6 (`1d7f63db`) deleted from `main`, 34 `src/bin/jackin/**` files that `43456dee` moved to `apps/jackin/src/bin/jackin/**` and 8 `scripts/coverage-fixtures/**` files. 1904 + 142 = 2046 — every absent path is accounted for (§1a). **245** further paths that `main` holds at another revision carry branch-only revisions (3,972 added lines, §1a) — the complete count of tip-tree paths whose content is in no retained ref is **2,149**. **0** branch-only commits touch `src`/`apps`. | `git push --force-with-lease=refs/heads/wip/tuiscotti-fixcheck:8d352ebfb932b06bf18c537e924389b0aae07e42 https://github.com/tailrocks/terminal-components-baseline.git --delete wip/tuiscotti-fixcheck` |
 
 **Counts:** 15 branches = 10 `jackin-project/jackin` + 2 `jackin-project/jackin-agent-smith` + 3 `tailrocks/terminal-components-baseline`.
 
 ### Pre-flight and post-check (read-only)
 
-```bash
-# pre-flight: confirm the 15 tips (name AND tip SHA) before deleting
-for r in jackin-project/jackin jackin-project/jackin-agent-smith tailrocks/terminal-components-baseline; do
-  gh api "repos/$r/branches" --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
-done
+The pre-flight is **four checks in order**, and all four must pass before the first deletion push.
+It is not a transaction: the archive refs of step 3 are what make the deletions safe against the
+window between this check and the pushes (§9).
 
-# every tip above must equal the SHA in the §1 `tip` column of the row it belongs to.
-# If any differs, STOP: that branch moved since the audit, its content was not audited,
-# and its deletion command is refused by the --force-with-lease guard anyway.
+```bash
+set -euo pipefail
+
+# 1. MANIFEST CHECK: the 15 (repository, branch, tip) triples of §1 must be the reviewed ones.
+#    The digest is the one the operator's word in §4 carries; a word without it, or with a
+#    different one, is a refusal (§4). A branch that moved is refused here and again by the
+#    --force-with-lease guard of its deletion command.
+MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
+sed -n '/^## 1\. Approval set/,/^\*\*Counts:\*\*/p' rewrite/triage/debris-ratification-2026-11-14.md \
+  | awk -F'|' '/^\| [0-9]+ \|/ && $5 ~ /`[0-9a-f]{40}`/ {gsub(/[ `]/,"",$3); gsub(/[ `]/,"",$4); gsub(/[ `]/,"",$5); print $3" "$4" "$5}' \
+  | sort -k2 > /tmp/manifest.txt
+while read -r repo branch tip; do
+  live=$(gh api "repos/$repo/commits/$branch" --jq '.sha') || { echo "cannot read $repo $branch"; exit 1; }
+  [ "$live" = "$tip" ] || { echo "live tip of $repo $branch is $live, not the reviewed $tip"; exit 1; }
+  echo "$repo $branch $live"
+done < /tmp/manifest.txt > /tmp/live-manifest.txt
+digest=$(sort -k2 /tmp/live-manifest.txt | sha256sum | cut -d' ' -f1)
+[ "$digest" = "$MANIFEST" ] || { echo "the 15-ref manifest is not the reviewed one (digest $digest)"; exit 1; }
 
 # target check: the §1 commands name their repository by URL, so no remote alias is used.
 # If you prefer the alias `origin`, it must be the row's repository - check it first:
 git remote get-url --push origin        # must print the repository named in the row
 
-# retained-ref check: every surviving ref must still hold the tip this document measured
-# (rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt). The deletion commands lease
-# the TARGET tip only; if a retained ref moved or was deleted, the surviving copy that the
-# accounting relies on is gone, so STOP and re-run §1a before deleting anything.
+# 2. RETAINED-REF CHECK: every captured ref must still hold the commit this document measured
+#    (rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt).
+#    - the ref still exists: its live tip must CONTAIN the captured commit (the ref advanced).
+#      compare(base=captured, head=live) is "ahead" or "identical". A ref that was rewritten
+#      without carrying the captured commit is a STOP: the copy the accounting relies on is gone.
+#    - the ref is gone: the captured commit must still resolve in the repository. A squash-merged
+#      PR keeps its head under refs/pull/N/head, so the objects survive the branch deletion; a
+#      commit that no longer resolves is gone, and that is a STOP.
+#    A ref that ADVANCED is not a failure: this check survives main moving on after this
+#    publication is merged.
 while read -r repo ref sha; do
   case "$repo" in \#*) continue ;; esac
-  [ "$repo/$ref" = "jackin-project/jackin/docs/debris-ratification-2026-11-14" ] && continue
-  live=$(gh api "repos/$repo/commits/$ref" --jq '.sha' 2>/dev/null || echo GONE)
-  [ "$live" = "$sha" ] || { echo "retained ref $repo $ref moved or is gone (live=$live captured=$sha)"; exit 1; }
+  live=$(gh api "repos/$repo/commits/$ref" --jq '.sha' 2>/dev/null) || live=GONE
+  if [ "$live" != GONE ]; then
+    status=$(gh api "repos/$repo/compare/$sha...$live" --jq '.status' 2>/dev/null || echo unknown)
+    case "$status" in
+      identical|ahead) continue ;;
+      *) echo "retained ref $repo $ref no longer holds the captured $sha (live=$live)"; exit 1 ;;
+    esac
+  fi
+  gh api "repos/$repo/commits/$sha" --jq '.sha' >/dev/null 2>&1 \
+    || { echo "retained ref $repo $ref is gone and the captured $sha no longer resolves"; exit 1; }
 done < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt
 
-# this publication's own branch is skipped above: it is captured in the file for the measurement,
-# but it necessarily advances with every commit to this document and disappears when the PR merges,
-# so it can never still point at the captured SHA. It holds no content the other refs do not.
+# this publication's own branch needs no exemption any more: before the merge its live tip is
+# ahead of the captured SHA, and after the merge main contains it - in both cases the captured
+# commit is still reachable, which is exactly what step 2 tests.
+
+# 3. ARCHIVE PREREQUISITE (mandatory, before ANY deletion): preserve every ref this document
+#    relies on. A SHA that is fetched is not preserved: once the last ref to an object is gone, the
+#    object is gone from the remote. Each archive ref holds the recorded tip, so every object the
+#    deletion would orphan - the tip tree and the whole history behind it - stays reachable.
+archive_ref() {                       # $1 repository, $2 name under archive/, $3 sha
+  if gh api "repos/$1/git/ref/heads/archive/$2" --jq '.object.sha' 2>/dev/null | grep -qx "$3"; then
+    return 0                          # already archived at the recorded tip
+  fi
+  gh api -X PATCH "repos/$1/git/refs/heads/archive/$2" -f sha="$3" --silent >/dev/null 2>&1 \
+    || gh api -X POST "repos/$1/git/refs" -f ref="refs/heads/archive/$2" -f sha="$3" --silent >/dev/null \
+    || { echo "archive ref for $1 $2 could not be created"; exit 1; }
+  gh api "repos/$1/git/ref/heads/archive/$2" --jq '.object.sha' | grep -qx "$3" \
+    || { echo "archive ref $1 archive/$2 does not hold $3"; exit 1; }
+}
+while read -r repo branch tip; do archive_ref "$repo" "$branch" "$tip"; done < /tmp/manifest.txt
+while read -r repo ref sha; do
+  case "$repo" in \#*) continue ;; esac
+  archive_ref "$repo" "retained/$ref" "$sha"
+done < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt
+
+# 4. VERIFICATION: re-read every archive ref from the API. Each must hold the recorded tip, and
+#    each is a ref that the deletions do not touch, so every object the deletion would orphan stays
+#    reachable. With the archive tips added to the retained set, the fourth bucket of §1a (§1b
+#    prints it) is 0 for every row.
+while read -r repo branch tip; do
+  got=$(gh api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha')
+  [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip"; exit 1; }
+done < /tmp/manifest.txt
 
 # post-check: the 15 refs must be gone; every excluded / contained / VALUABLE branch must still be there
 gh api repos/jackin-project/jackin/branches --paginate --jq '.[] | "\(.name) \(.commit.sha)"'
@@ -89,6 +146,10 @@ gh api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[
 ```
 
 Expected after the deletions (live counts re-read 2026-11-14 20:12 UTC, §7): jackin **70 → 60** branches (69 non-main → 59 non-main), smith **3 → 1**, baseline **5 → 2**. The jackin number grew from 24 to 70 between the two re-checks because other work in the same repository pushed branches in the meantime (§7, "Branches outside every class list"); those branches are **not** in the approval set and the operator's word does not cover them. This document's own branch `docs/debris-ratification-2026-11-14` is counted in the 70 and disappears only if the PR is merged and its branch deleted.
+
+**Those counts are a dated snapshot, not a promise.** The deletions remove exactly the 15 refs of §1 and nothing else; the population around them moves, minute to minute. Re-read it before the run — at 2026-11-15 01:37 UTC the re-read gave jackin **69** (`gh api repos/jackin-project/jackin/branches --paginate --jq '.[] | .name' | wc -l`), smith **3** (`gh api repos/jackin-project/jackin-agent-smith/branches --paginate --jq '.[] | .name' | wc -l`) and baseline **37** (`gh api repos/tailrocks/terminal-components-baseline/branches --paginate --jq '.[] | .name' | wc -l`) — the baseline repository alone had grown from 5 branches to 37 in the hours since §7 was written, so its post-deletion count is 32, not 2. Only the 15 named refs are removed; every other branch stays.
+
+**The archive refs of the pre-flight survive the deletions.** They are what the deletion leaves behind: the 15 tips, and the captured tip of every retained ref, under `refs/heads/archive/`. Nothing in §1 deletes them, so every object a deletion would orphan — including the 649- and 666-commit histories of rows 13-15 and the three branch-only test revisions of row 13 — stays reachable.
 
 ---
 
@@ -107,11 +168,18 @@ Four numbers per row:
 - **same path in `main`, different revision** — the paths `main` still holds in another revision. The
   branch's revision of them is either preserved in `main`'s object history or is branch-only; the third
   table below accounts for them.
-- **in no retained ref** — of those branch-only paths, the ones no surviving ref holds either. A
-  **retained ref** is every ref that survives the operation: `main` plus every branch of the repository
-  that is not one of the 15 rows of §1. The fourth table below accounts for the rest of what a deletion
-  removes: the objects that only the branch's **history** holds, including content that its earlier
-  commits carried and that is no longer in the tip tree.
+- **in no retained ref** — the **complete** count of tip-tree paths whose *content* no surviving ref
+  holds: the absent paths whose blob is in no retained ref **plus** the paths `main` holds at another
+  revision whose branch revision is in no retained ref (the branch-only revisions of the third table
+  below). A **retained ref** is every ref that survives the operation: `main` plus every branch of the
+  repository that is not one of the 15 rows of §1 (the exact set is captured in
+  `rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt`). The fourth table below accounts for
+  the rest of what a deletion removes: the objects that only the branch's **history** holds, including
+  content that its earlier commits carried and that is no longer in the tip tree.
+
+  **This column counts every tip-tree path, not only the absent ones.** The count a deletion removes
+  from the content is the union of the two sets above; a path `main` holds at another revision loses
+  the branch's revision of it just as surely as an absent path loses its file.
 
 | # | repo | absent from `main` | content not in `main`'s history | what those paths are |
 |---|---|---|---|---|
@@ -183,55 +251,105 @@ therefore a superset of the audit's. The largest branch-only revisions in rows 1
 the test documentation `docs/testing/**` and `docs/ci.md` (71) — the same residue profile the audit
 recorded ("capture-harness lines", "pre-refactor variants").
 
+**Row 13's three branch-only revisions, adjudicated one by one.** Row 13 (`test/pre-refactor-protection`)
+is approved as DEBRIS, and its tip tree carries **three** revisions that no retained ref holds: `main`
+holds those three paths at another revision, and the branch's revision of them exists nowhere else in
+the retained set (`git rev-list --objects 8063050c 6923fa36` holds none of the three blobs). They are
+the reason the fourth table's row 13 reads **4** and not 1. Each one is adjudicated here:
+
+| path | branch blob | `main`'s blob | lines | what the branch's revision changes | disposition |
+|---|---|---|---|---|---|
+| `tests/functional/cases/j04_usage.rs` | `1a87681a7990905cdcfad06a55fcf7d0e5f76762` | `c8fee8f982699c90dec8c91ecce3c635f654ae78` | +54/-29 | replaces the bounded 40-step "up" loop that waited for the Work row with a 15 s deadline loop that navigates to the Work row itself (new helpers `is_work_row` and `work_place`) | **PRESERVED** — held by the archive prerequisite of §1 (`refs/heads/archive/test/pre-refactor-protection`); port it into the baseline repository's `main` if the operator wants the fix as code |
+| `tests/functional/cases/s05_filebrowser.rs` | `0e2abeaf568edc513c8f035360a96acbfb189b62` | `c6c73e0973fdba0051c148b0434cb7e0a1f245ca` | +23/-8 | adds `url_accepted`, which accepts the URL only after the previous resolve error and the dialog title have left the screen, and replaces three `wait_text` calls with `wait_screen` | **PRESERVED** — same |
+| `tests/functional/cases/t01_test.rs` | `2184f776f76fd21e271b4314c35b3fba937aa98b` | `5d4bb68311d7e8da11801bd113098670d23ac780` | +18/-2 | adds `list_without_result`, which cancels only when the form title and the test result have left the row, and replaces two `wait_absent(FORM)` calls with `wait_screen` | **PRESERVED** — same |
+
+All three are test-harness **synchronization** fixes: they wait for a frame in which the stale content of
+the previous frame is gone, instead of waiting for a text that may still be painted next to it. They are
+not product code, and they are not scratch either — they are the only revision of those three test cases
+that exists anywhere. The adjudication is therefore conservative: **row 13 may not be deleted before those
+three revisions are preserved.** The archive prerequisite of §1 preserves them under
+`refs/heads/archive/test/pre-refactor-protection`, and that archive must exist and be verified (steps 3
+and 4 of §1) before the deletion command of row 13 runs. The blobs and the line counts are reproduced by
+
+```bash
+git diff --numstat c8fee8f982699c90dec8c91ecce3c635f654ae78 1a87681a7990905cdcfad06a55fcf7d0e5f76762   # +54 -29
+git diff --numstat c6c73e0973fdba0051c148b0434cb7e0a1f245ca 0e2abeaf568edc513c8f035360a96acbfb189b62   # +23 -8
+git diff --numstat 5d4bb68311d7e8da11801bd113098670d23ac780 2184f776f76fd21e271b4314c35b3fba937aa98b   # +18 -2
+```
+
+(54 + 23 + 18 = the 95 added lines the row carries.)
+
 **What else the deletion removes: the objects only the branch's history holds.** A ref deletion makes
 the whole history of the branch unreachable, not just its tip tree. The table below counts the objects
 that no retained ref holds (`git rev-list --objects "$T" --not <every retained ref>`) — the commits that
 exist only on the branch and the trees and blobs they carry, including content that earlier commits held
 and the tip tree no longer has.
 
-| # | repo | tip-tree paths whose content is in no retained ref | objects only this branch holds (of which commits) |
+The first column counts **every** tip-tree path whose content no retained ref holds: the absent paths
+of the first table of §1a **and** the branch-only revisions of the third table above. It is the
+complete answer to "how much content does this deletion remove", and it is the number the archive
+prerequisite of §1 has to cover.
+
+| # | repo | tip-tree paths whose content is in no retained ref (complete) | objects only this branch holds (of which commits) |
 |---|---|---|---|
 | 1 | jackin-project/jackin | 1 | 5 (1) |
 | 2 | jackin-project/jackin | 58 | 75 (3) |
 | 3 | jackin-project/jackin | 22 | 335 (25) |
-| 4 | jackin-project/jackin | 0 | 30 (1) |
-| 5 | jackin-project/jackin | 13 | 91 (1) |
-| 6 | jackin-project/jackin | 0 | 30 (1) |
-| 7 | jackin-project/jackin | 4 | 163 (9) |
-| 8 | jackin-project/jackin | 13 | 98 (1) |
-| 9 | jackin-project/jackin | 0 | 119 (7) |
-| 10 | jackin-project/jackin | 18 of 20 | 1065 (223) |
+| 4 | jackin-project/jackin | 3 | 30 (1) |
+| 5 | jackin-project/jackin | 14 | 91 (1) |
+| 6 | jackin-project/jackin | 1 | 30 (1) |
+| 7 | jackin-project/jackin | 6 | 163 (9) |
+| 8 | jackin-project/jackin | 19 | 98 (1) |
+| 9 | jackin-project/jackin | 2 | 119 (7) |
+| 10 | jackin-project/jackin | 23 | 1065 (223) |
 | 11 | jackin-project/jackin-agent-smith | 7 | 13 (1) |
 | 12 | jackin-project/jackin-agent-smith | 0 | 1 (1) |
-| 13 | tailrocks/terminal-components-baseline | 1 | 10643 (666) |
-| 14 | tailrocks/terminal-components-baseline | 9117 | 14047 (649) |
-| 15 | tailrocks/terminal-components-baseline | 1904 | 7408 (649) |
+| 13 | tailrocks/terminal-components-baseline | 4 | 10643 (666) |
+| 14 | tailrocks/terminal-components-baseline | 9362 | 14047 (649) |
+| 15 | tailrocks/terminal-components-baseline | 2149 | 7408 (649) |
+
+**Correction to the first compile of this column.** It carried the *subset* "content not in `main`'s
+history" (1 / 58 / 22 / 0 / 13 / 0 / 4 / 13 / 0 / 18 of 20 / 7 / 0 / 1 / 9117 / 1904) and so omitted
+the branch-only revisions of the third table — 3 / 245 / 245 for rows 13-15 and 3 / 1 / 1 / 2 / 6 / 2 /
+5 for rows 4-10. The column now counts the complete set (1 / 58 / 22 / 3 / 14 / 1 / 6 / 19 / 2 / 23 /
+7 / 0 / 4 / 9362 / 2149). Row 10's "18 of 20" was the absent-path subset; 2 of its 20 absent paths
+are held by the retained ref `wt/a15-declared-auth-producer` (`dd2008cbf`), and 5 of its 6
+different-revision paths carry a branch-only revision, so its complete count is 23.
 
 The retained set used for the measurement (2026-11-14 22:09 UTC) was: for `jackin-project/jackin`,
-`main` plus the 60 branches that are not one of the 10 jackin rows of §1; for
+`main` plus the **59** branches that are not one of the 10 jackin rows of §1 (60 captured refs in all,
+`rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt`); for
 `jackin-project/jackin-agent-smith`, `main` (both other branches are rows of §1); for
-`tailrocks/terminal-components-baseline`, `main` and `preserve/local-unique-20261109` (the third
-non-`main` branch is row 13).
+`tailrocks/terminal-components-baseline`, `main` and `preserve/local-unique-20261109` (the three other
+non-`main` branches of that repository are rows 13, 14 and 15).
 
 **What this means for the operator.** Rows 13-15 carry hundreds of commits whose objects only the branch
 holds (666, 649 and 649 commits). Their *content* is accounted for above — generated capture output, legacy
-baselines and scratch fixtures — but their **history** is not recoverable after the deletion. If the
-operator wants the history as well as the content, the branch can be preserved instead of deleted:
+baselines and scratch fixtures — but their **history** is not recoverable after the deletion **unless it is
+preserved first**. The pre-flight of §1 does exactly that, and it is a prerequisite, not a suggestion:
+before the first deletion push it creates `refs/heads/archive/<branch>` for each of the 15 rows and
+`refs/heads/archive/retained/<ref>` for every captured retained ref, and step 4 verifies that each archive
+ref holds the recorded tip. A ref under `refs/heads/archive/` keeps every object reachable — the tip tree
+and the whole history behind it — and no deletion in §1 touches it.
 
 ```bash
-git push https://github.com/<repo>.git <tip>:refs/heads/archive/<branch>
+# the pre-flight creates and verifies the archive refs (step 3 and step 4 of §1)
+gh api repos/<repo>/git/ref/heads/archive/<branch> --jq '.object.sha'   # must print the recorded tip
 ```
 
-A retention ref under `refs/heads/archive/` keeps every object reachable, and the audit's own guidance
-for the rows of §2 is the same. Nothing in this document creates such a ref; the operator's word decides.
+The audit's own guidance for the rows of §2 is the same. The operator's word authorizes the deletions; the
+archive prerequisite is what makes them safe, and it must have run before the first push.
 
 **What the accounting says.** For rows 1, 2, 4, 6, 7, 9, 12 and 13 the content a deletion removes is
 documentation, configuration or scratch — no product code. For rows 3, 5, 8, 10 and 11 the content is
 **not** in `main`: it is a pre-rewrite revision of modules the OpenShell rewrite (#1264, `f683619b5`)
 deleted, the branch's own draft of a pack that landed (PR #1234), velnor generator output, or the demo
 binary's old layout. The merged inventory records no port candidate for any of it. **If the operator wants
-any of it, it must be extracted before the deletion** — the commands in §1 destroy the only copy of those
-bytes.
+any of it, it must be extracted before the deletion** — but with the archive prerequisite of §1 in place
+the deletion no longer destroys the only copy of those bytes: the archive ref holds them, and the content
+stays retrievable from `refs/heads/archive/`. Row 13's three branch-only test revisions (§1a) are the one
+case where the content is *not* scratch: they are preserved by the same archive ref, and an operator who
+wants them as code should port them into `tailrocks/terminal-components-baseline` before the deletion.
 
 ---
 
@@ -309,17 +427,30 @@ join -1 1 -2 1 /tmp/tip.txt /tmp/main-tree.txt | awk '$2 != $3' > /tmp/differing
 wc -l < /tmp/differing.txt                                # blob-different paths of the row
 while read -r p tb mb; do grep -qx "$tb" /tmp/main-blobs.txt || echo "$p"; done < /tmp/differing.txt | wc -l
 
+# the COMPLETE fourth bucket: every tip-tree path whose content is in no retained ref.
+# A retained ref is every ref that survives the deletion: main plus every captured retained ref.
+# The count is the absent paths whose blob no retained ref holds, PLUS the paths main holds at
+# another revision whose branch revision no retained ref holds.
+git rev-list --objects $RETAINED | awk '{print $1}' | sort -u > /tmp/retained-blobs.txt
+{ while read -r p b;   do grep -qx "$b"   /tmp/retained-blobs.txt || echo "$p"; done < /tmp/absent.txt
+  while read -r p tb mb; do grep -qx "$tb" /tmp/retained-blobs.txt || echo "$p"; done < /tmp/differing.txt
+} | sort -u | wc -l
+# -> the first column of §1a's fourth table (row 10 -> 23, row 13 -> 4, row 14 -> 9362, row 15 -> 2149).
+# With the archive refs of §1 in the retained set - the row's own tip is archived - it prints 0:
+# nothing the deletion removes is left without a surviving holder.
+
 # the fourth bucket: the objects only this branch's history holds
 git rev-list --objects "$T" --not $RETAINED | wc -l        # objects only this branch holds
 ```
 
 **The numbers this produces**, per instantiation (measured with this procedure):
 
-| row | absent paths | of which not in `main`'s history | blob-different paths | of which the branch's revision is branch-only | objects only this branch holds |
-|---|---|---|---|---|---|
-| 10 | 21 | 20 | 6 | 5 | **1065** |
-| 14 | 9517 | 9117 | 334 | 245 | 14047 |
-| 15 | 2046 | 1904 | 334 | 245 | 7408 |
+| row | absent paths | of which not in `main`'s history | blob-different paths | of which the branch's revision is branch-only | tip-tree paths in no retained ref (complete) | objects only this branch holds |
+|---|---|---|---|---|---|---|
+| 10 | 21 | 20 | 6 | 5 | 23 | **1065** |
+| 13 | 1 | 1 | 140 | 3 | 4 | **10643** |
+| 14 | 9517 | 9117 | 334 | 245 | 9362 | 14047 |
+| 15 | 2046 | 1904 | 334 | 245 | 2149 | 7408 |
 
 The procedure prints exactly these numbers, in this order.
 
@@ -362,7 +493,35 @@ All four are DEBRIS-class by the inventory's final classes, all four are live on
 
 **Missing proof — all 4 rows.** Two things are **not** proven for any of these four branches, so none of them may be called safe to delete:
 
-1. **The 5 usage fixtures are absent from `main` and are carried only by these branches.** Verified live on 2026-11-14 against `origin/main`: the same 5 paths are present on all 4 branches and in no `main` tree — `crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_hours.json`, `crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_no_window.json`, `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth.json`, `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_go_oauth.json`, `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_no_go.json`. The inventory counts them among the absent paths of `preserve/w1-fixes-20261109` (its 6 absent paths = 1 console test + these 5). Their content is **not** present in `main`, which is exactly what the inventory's CONTAINED definition requires — so containment is not proven for any of the 4.
+1. **The 5 usage fixtures are absent from `main` and are carried only by these branches.** Verified live on 2026-11-14 against `origin/main`: the same 5 paths are present on all 4 branches and in no `main` tree — `crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_hours.json`, `crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_no_window.json`, `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth.json`, `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_go_oauth.json`, `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_no_go.json`. The inventory counts them among the absent paths of `preserve/w1-fixes-20261109` (its 6 absent paths = 1 console test + these 5).
+
+   **Correction: five absent paths, four history-absent contents.** The claim that these fixtures' content is not in `main` holds for **four** of the five. `opencode/auth_no_go.json` (blob `568abbfdc0199baa3a4f917a5fc41a1f46ebadb8`) **is** in `main`'s object history: `main` carried that path from the OpenShell rewrite (`f683619b5`, PR #1264) until PR #1275 removed it from the tree (`7a53f6abe`), and `git rev-list --objects 926bbd49` reproduces the blob. The other four blobs (`d3f870f3`, `8c6ac31e`, `8c429341`, `5da3b6b2`) occur nowhere in `main`'s history:
+
+   ```bash
+   M=926bbd49d171c2f389a766776ff3c418f8987fbd
+   git rev-list --objects $M | awk '{print $1}' | sort -u > /tmp/main-blobs.txt
+   for p in crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_hours.json \
+            crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_no_window.json \
+            crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth.json \
+            crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_go_oauth.json \
+            crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_no_go.json; do
+     b=$(git rev-parse --verify --quiet "6965f5d1c2227ca6187704a2374f09bba14632d4:$p")
+     grep -qx "$b" /tmp/main-blobs.txt && echo "$b IN-MAIN-HISTORY $p" || echo "$b history-absent $p"
+   done
+   ```
+
+   ```text
+   d3f870f3847fe0630dae00fc933cdeee77b3bcbc history-absent crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_hours.json
+   8c6ac31ed2a722dbc238131c124e3330d171ac42 history-absent crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_no_window.json
+   8c4293417afb5e97b761530c7d6575e427af4460 history-absent crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth.json
+   5da3b6b2bfaeda2c100c4a5418dc96c3ecf02147 history-absent crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_go_oauth.json
+   568abbfdc0199baa3a4f917a5fc41a1f46ebadb8 IN-MAIN-HISTORY crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_no_go.json
+   ```
+
+   The correction does not weaken the disposition: the four history-absent fixture contents are still carried
+   only by these four branches, and the fifth is absent from `main`'s **tree** as well, so no `main` tree
+   holds any of the five. Containment is still not proven for any of the 4, and the disposition stays
+   **UNPROVEN, KEPT**.
 2. **The product-code paths have no inventory-grade containment proof.** The inventory records them as UNPROVEN ("24 of the 25 absent blobs never occur in main's object history"); the (a)/(b)/(c) split below is inherited from the completed audits and is not a recorded merged-PR / patch-id / ancestry proof.
 
 **Until both are closed — the fixture port decision is made and recorded, and the product-code paths are proven — these 4 branches are kept and are treated as VALUABLE. Do not delete them.**
@@ -376,7 +535,7 @@ All four are DEBRIS-class by the inventory's final classes, all four are live on
 
 All 4 are still live on the remote (§7) and are **kept as UNPROVEN CONTAINED candidates** — neither deleted nor proposed for deletion by this document.
 
-Open item flagged by the same review (not a debris question): the 5 usage fixtures above are branch-added and absent from `main`, and they encode a newer Kimi `limits[].window.timeUnit` / OpenCode `opencode-go` API shape than `main` ships. If that newer shape is wanted, it is a **port** decision for the operator — not a debris deletion. Until that decision is made and the fixtures are ported (or archived under a retention ref), these 4 branches hold the only recorded copies of them and must stay.
+Open item flagged by the same review (not a debris question): the 5 usage fixtures above are branch-added and absent from `main`, and they encode a newer Kimi `limits[].window.timeUnit` / OpenCode `opencode-go` API shape than `main` ships. If that newer shape is wanted, it is a **port** decision for the operator — not a debris deletion. Until that decision is made and the fixtures are ported (or archived under a retention ref), these 4 branches hold the only recorded copies of the **four** history-absent fixture contents and the only recorded tree copies of the fifth, and must stay.
 
 ---
 
@@ -385,17 +544,24 @@ Open item flagged by the same review (not a debris question): the 5 usage fixtur
 Send exactly:
 
 ```text
-RATIFY DEBRIS: 15 branches
+RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
 ```
+
+The digest is the SHA-256 of the 15 (repository, branch, tip) triples of §1, sorted by branch. It binds
+the word to the manifest that was reviewed: a word without the digest, or with a different one, is a
+refusal, and step 1 of the pre-flight in §1 recomputes the digest from the live tips and stops when it
+differs.
 
 Optionally, to also ratify retroactively the one deletion that was performed without a recorded proof (§6):
 
 ```text
-RATIFY DEBRIS: 15 branches
+RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
 RATIFY UNRECORDED DELETION: 1 branch (tailrocks/terminal-components-baseline wip/tuiscotti-pin-fec38841)
 ```
 
-A refusal, a different count, or any other wording is a refusal: **nothing is deleted unless the word above is sent.**
+A refusal, a different count, a missing or different digest, or any other wording is a refusal:
+**nothing is deleted unless the word above is sent — and nothing is deleted before the archive
+prerequisite of §1 has run and been verified.**
 
 ---
 
@@ -512,5 +678,6 @@ Not part of any approval set; listed so that no one mistakes them for debris. Ro
 - The 4 CONTAINED candidates of §3 are listed as **UNPROVEN** CONTAINED candidates, not as DEBRIS and **not** as safe-to-delete: they are excluded from this ratification by class, not by doubt. **This publication supersedes the merged inventory's "CONTAINED - safe to delete" label for exactly these four rows** (§3); the inventory's class rule ("CONTAINED candidate - UNPROVEN") and its own per-row evidence agree with §3, and the five usage fixtures the branches carry are absent from `main`. Their containment proof is still incomplete (§3), so they are treated as VALUABLE and kept.
 - The branches of §7 that are outside every class list (4 recorded individually, 50 in total at the 20:12 UTC re-check) were created after the inventory was captured; their tips moved between the compiles of this document and they are not audited here at all. They are outside every class list and outside the operator's word.
 - §6 records a deletion that happened before this document; it is a ratification of a fact, not a new deletion.
-- The retained-ref check in §1 is a **pre-flight, not a transaction**: a retained ref can move or be deleted between that check and the push, and a deletion lease covers only its own target. A collaborator who can move a retained branch can therefore remove the last ref for content that §1a counted as preserved (row 10 relies on retained refs for 2 of its 20 paths). The remedy is the one §1a names: create a durable archive ref or a bundle for the retained tips **before** any deletion, or run the deletions as one atomic server-side operation. The document does not create such refs; the operator's word decides.
+- The retained-ref check in §1 is a **pre-flight, not a transaction**: a retained ref can move or be deleted between that check and the push, and a deletion lease covers only its own target. **The archive prerequisite of §1 is what closes that window**: before the first deletion push, the tip of each of the 15 rows and the captured tip of every retained ref is preserved under `refs/heads/archive/` and verified (steps 3 and 4 of the pre-flight), and no deletion in §1 touches an archive ref. A collaborator who can move a retained branch can therefore no longer remove the last copy of content that §1a counted as preserved (row 10 relies on retained refs for 2 of its 20 paths). What the archive does not cover is the history a retained ref gained *after* the capture — the archive holds the captured tip, and the tip's own history with it. Running the deletions as one atomic server-side operation remains an option, not a requirement.
+- **The decision trail does not yet carry this publication's disposition.** `rewrite/decisions.tsv:520` still records the four branches of §3 as "CONTAINED-safe-to-delete", and `:525` still names "4 CONTAINED-safe-to-delete candidates" in the 15-branch ratification row. This publication supersedes both labels (§3): the four are **UNPROVEN, KEPT** — kept, not deletable. Only the orchestrator edits `rewrite/decisions.tsv` (AGENTS.md), so the superseding trail row is requested from the orchestrator and is **not** part of this PR. Until it is added, the trail and this publication disagree, and this publication is the one that governs. The ascending order of the trail's `ts` column also needs the orchestrator's repair: rows 314, 319, 383, 413 and 419 carry a timestamp earlier than the row above them.
 - Nothing was deleted, pushed to a branch, merged or tagged in producing this document; only this file and the seven audit files under `rewrite/triage/audits/2026-11-14/` were added.
