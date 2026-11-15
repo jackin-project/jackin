@@ -17,9 +17,20 @@ they are the reason this slice exists:
   file version that is not in `main`. The table below therefore reports, per branch, the files that
   the branch's own commits touch whose content is **not** present in `main` at or after the #1264
   squash.
-* **182 dirty files is correct**, and it is exactly the number of dirty entries in the swarm's
-  retained worktree copies under `.pi/durable-swarm/worktrees/` (182 entries across 21 worktrees).
-  The 184 other worktrees of the repo are clean or detached.
+* **182 dirty files is the scoped subtotal, not the repository-wide preservation total.** It is
+  exactly the number of dirty entries in the swarm's retained worktree copies under
+  `.pi/durable-swarm/worktrees/` (182 entries across the 21 dirty worktrees of the 21 inspected
+  copies), and it says nothing about the registrations outside that directory. The outside
+  population is not clean and is not exhaustively accounted for here. The populations are recorded
+  separately below (see *Counts* and the *Unclassified* caveats): a current registration sweep finds
+  210 registrations = 59 inside + 151 outside; inside, 59 are readable (21 dirty with 182 entries,
+  38 clean, 0 unreadable); outside, 47 are readable (21 dirty with 282 entries, 26 clean) and 104
+  are unreadable (dangling). The historical 202/184 figures reconcile arithmetically:
+  `git worktree list` showed 202 entries at slice time and "184" counted the registrations outside
+  the swarm directory (including the main checkout), so 202 - 184 = 18 inside registrations, while
+  21 directory copies were inspected - three of the 21 copies were not registered worktrees when
+  the list was taken (the coordinator copy had lost its `.git` link file; the swarm registers copies
+  as it goes). The earlier claim that the other worktrees are "clean or detached" is withdrawn.
 
 ## Method (reproducible)
 
@@ -38,6 +49,15 @@ grep -qxF <blob> <landed-blob-set>                # -> CONTAINED
 # 4. per worktree: the dirty entries
 git -C <worktree> status --porcelain
 git -C <worktree> hash-object <path>              # the working-tree blob
+
+# 5. per contained file: compare the working blob with the pinned main tree at its path
+git rev-parse --verify --quiet 926bbd49d171:<path> # the pinned main tree's blob at the path
+# equal -> EXACT current-tree match; unequal -> HISTORICAL/SUPERSEDED, needs disposition
+
+# 6. the registration sweep: every worktree the source repo has registered
+git -C <source> worktree list --porcelain
+# readable = the path exists and `git -C <path> rev-parse --git-dir` succeeds
+# dirty = `git -C <path> status --porcelain` is non-empty; clean = readable and not dirty
 ```
 
 The `landed-blob-set` deliberately excludes the pre-#1264 history: those blobs are in `main`'s
@@ -49,13 +69,16 @@ The `landed-blob-set` deliberately excludes the pre-#1264 history: those blobs a
 |---|---|
 | local branches inventoried | 168 |
 | branches without an upstream | 150 |
-| swarm worktree copies inspected | 21 |
-| dirty file entries in the swarm worktrees | 182 |
+| swarm worktree copies inspected (scoped) | 21 |
+| dirty file entries in the swarm worktrees (scoped subtotal, not repo-wide) | 182 |
+| registrations, current sweep (2026-11-15) | 210 = 59 inside + 151 outside |
+| inside registrations: readable / dirty / clean / unreadable | 59 / 21 (182 entries) / 38 / 0 |
+| outside registrations: readable / dirty / clean / unreadable | 47 / 21 (282 entries) / 26 / 104 |
 | **VALUABLE** branches | **49** |
 | **CONTAINED** branches | **111** |
 | **DEBRIS** branches | **8** |
 | dirty files with content not in main | 118 |
-| dirty files already landed in main | 64 |
+| dirty files already landed in main | 64 = 46 exact against the pinned main tree at the path + 18 historical/superseded versions needing disposition |
 
 Of the 49 VALUABLE branches, 14 are based on the current main line (a pull request from them is a
 reviewable diff) and 35 sit on the pre-#1264 line (a pull request from them would propose reverting
@@ -69,9 +92,9 @@ the #1264 squash. `base` = merge-base with `origin/main`.
 | # | branch | tip | base | upstream | commits not in main | files touched | unlanded files | class | evidence |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 | `backup/w3-local-usage` | `f0aa365be70a` | `f683619b5f16` | (none) | 21 | 88 | 27 | **VALUABLE** | 27 file(s) not in main [crates/jackin-core/src/config.rs, crates/jackin-core/src/wait.rs, crates/jackin-core/tests/poll.rs...] |
-| 2 | `chore/dirty-slice-1` | `72401bf5e78c` | `78d3b86ed520` | origin/chore/dirty-slice-1 | 2 | 12 | 11 | **VALUABLE** | 11 file(s) not in main [crates/jackin-core/src/agent.rs, crates/jackin-core/tests/catalog.rs, crates/jackin-core/tests/native_credentials.rs...] |
-| 3 | `chore/restore-1283-remainder` | `e519e06e4885` | `fc00663fbbf7` | origin/chore/restore-1283-remainder | 3 | 3 | 0 | **CONTAINED** | 3 files touched; every touched file landed in main at or after the #1264 squash; the landing PR is #1281 (docs(triage): record the completed port verdicts and the con) |
-| 4 | `chore/triage-inventory-20261112` | `e13360eb8751` | `d19cce66f548` | origin/chore/triage-inventory-20261112 | 1 | 1 | 1 | **DEBRIS** | named in the ratified 15-branch DEBRIS set (rewrite/decisions.tsv, 2026-11-14T16:14:00Z row); carries no unique product code |
+| 2 | `chore/dirty-slice-1` | `72401bf5e78c` | `78d3b86ed520` | origin/chore/dirty-slice-1 | 2 | 12 | 11 | **VALUABLE** | 11 file(s) not in main [crates/jackin-core/src/agent.rs, crates/jackin-core/tests/catalog.rs, crates/jackin-core/tests/native_credentials.rs...]; the committed per-file disposition rewrite/triage/pr-1283-disposition-2026-11-14.md governs the unit and is carried forward in Table 2: 10 of the 11 are REJECTED-with-reason (the T08 promotion, held) and must not be repushed even though their blobs differ from main; rewrite/evidence/A14-t08-model-live.md is RESTORED-CORRECTED through #1286 (squash 3c3f77db534fb3d77b958e5b411de840f00c1166), not new unpreserved value; the PR additionally deleted rewrite/blockers/T08-kimi-code.md, REJECTED-with-reason (the blocker stays on main) |
+| 3 | `chore/restore-1283-remainder` | `e519e06e4885` | `fc00663fbbf7` | origin/chore/restore-1283-remainder (configured upstream; remote branch absent - GitHub deleted it on the #1286 merge, `git ls-remote origin refs/heads/chore/restore-1283-remainder` is empty) | 3 | 3 | 0 | **CONTAINED** | 3 files touched; every touched file landed in main at or after the #1264 squash; the landing PR is #1286 (docs(triage): restore the T08 live proof evidence and record the #1283 per-file disposition), squash merge `3c3f77db534fb3d77b958e5b411de840f00c1166` (merged 2026-11-14T14:17:24Z); merged head `e519e06e4885` (refs/pull/1286/head) and the squash commit have byte-identical trees (`2981cd7d4f59`, `git diff --stat refs/pull/1286/head 3c3f77db534f` empty); #1281 (merge `926bbd49d171`) is the later inventory update, not the landing PR |
+| 4 | `chore/triage-inventory-20261112` | `e13360eb8751` | `d19cce66f548` | origin/chore/triage-inventory-20261112 | 1 | 1 | 1 | **DEBRIS** | named in the 15-branch DEBRIS set (classification confirmed; deletion approval pending - the set awaits the operator's ratification per the rewrite/decisions.tsv 2026-11-14T16:14:00Z row); carries no unique product code; must not be deleted before the operator ratifies |
 | 5 | `codex/usage-research-20261105` | `52fabbcca9e9` | `470fc5d6f5ea` | codex/usage-research-20261105@{upstream} | 0 | 0 | 0 | **CONTAINED** | all 0 unlanded commit(s) patch-id-match landed content; content landed in origin/main (patch-id / blob match) (no single merged PR carries it; the content landed in main across the post-#1264 history) |
 | 6 | `codex/usage-research-20261105-latest` | `4e58311c18d0` | `470fc5d6f5ea` | codex/usage-research-20261105-latest@{upstream} | 0 | 0 | 0 | **CONTAINED** | all 0 unlanded commit(s) patch-id-match landed content; content landed in origin/main (patch-id / blob match) (no single merged PR carries it; the content landed in main across the post-#1264 history) |
 | 7 | `docs/debris-ratification-2026-11-14` | `b550ce9ddccb` | `fc00663fbbf7` | origin/docs/debris-ratification-2026-11-14 | 2 | 1 | 1 | **VALUABLE** | 1 file(s) not in main [rewrite/triage/debris-ratification-2026-11-14.md] |
@@ -240,7 +263,12 @@ the #1264 squash. `base` = merge-base with `origin/main`.
 ## Table 2 - per-file disposition of the VALUABLE branch units
 
 Every file below is present on its branch and absent from `main` at or after the #1264 squash.
-These are the files that would be lost if the branch were deleted.
+These are the files that would be lost if the branch were deleted. Where a committed per-file
+disposition governs a unit, the class column carries that disposition instead of the blob label:
+`REJECTED-with-reason` content is rejected by `rewrite/triage/pr-1283-disposition-2026-11-14.md`
+and must not be repushed even though its blobs differ from `main`; `RESTORED-CORRECTED` content was
+restored in corrected form where it landed and is not new unpreserved value. Deletions are carried
+as rows too (marked `(deleted ...)` in the file column), because the blob-only listing omits them.
 
 | branch | base | file | class |
 |---|---|---|---|
@@ -271,17 +299,18 @@ These are the files that would be lost if the branch were deleted.
 | `backup/w3-local-usage` | post-#1264 | `crates/usage/jackin-usage/tests/usage/opencode.rs` | VALUABLE |
 | `backup/w3-local-usage` | post-#1264 | `crates/usage/jackin-usage/tests/usage/secrets.rs` | VALUABLE |
 | `backup/w3-local-usage` | post-#1264 | `crates/usage/jackin-usage/tests/usage/support.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-core/src/agent.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-core/tests/catalog.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-core/tests/native_credentials.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-session/tests/plan/availability.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-session/tests/plan/static_files.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-session/tests/plan/tuple.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-tui/tests/launch/tuples.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/jackin/tests/cli/account_add.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/jackin/tests/cli/load.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `crates/xtask/tests/repo_gates.rs` | VALUABLE |
-| `chore/dirty-slice-1` | post-#1264 | `rewrite/evidence/A14-t08-model-live.md` | VALUABLE |
+| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-core/src/agent.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-core/tests/catalog.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-core/tests/native_credentials.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-session/tests/plan/availability.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-session/tests/plan/static_files.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-session/tests/plan/tuple.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `crates/jackin-tui/tests/launch/tuples.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `crates/jackin/tests/cli/account_add.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `crates/jackin/tests/cli/load.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `crates/xtask/tests/repo_gates.rs` | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; T08 promotion held) |
+| `chore/dirty-slice-1` | post-#1264 | `rewrite/evidence/A14-t08-model-live.md` | RESTORED-CORRECTED (#1286, squash 3c3f77db534fb3d77b958e5b411de840f00c1166; the branch's earlier wording is superseded, not new unpreserved value) |
+| `chore/dirty-slice-1` | post-#1264 | `rewrite/blockers/T08-kimi-code.md` (deleted by PR #1283) | REJECTED-with-reason (pr-1283-disposition-2026-11-14.md; the blocker stays on main) |
 | `docs/debris-ratification-2026-11-14` | post-#1264 | `rewrite/triage/debris-ratification-2026-11-14.md` | VALUABLE |
 | `docs/triage-inventory-postmerge-2026-11-15` | post-#1264 | `rewrite/decisions.tsv` | VALUABLE |
 | `docs/triage-inventory-postmerge-2026-11-15` | post-#1264 | `rewrite/triage/branch-inventory-2026-11-12.md` | VALUABLE |
@@ -1332,204 +1361,248 @@ These are the files that would be lost if the branch were deleted.
 | `wt/live-sub` | pre-#1264 | `rewrite/blockers/T05-antigravity.md` | VALUABLE |
 | `wt/models-research` | pre-#1264 | `rewrite/research/t13-t22-models.md` | VALUABLE |
 
-1087 files across 49 VALUABLE branches.
+1087 files across 49 VALUABLE branches, plus one carried-forward deletion row
+(`rewrite/blockers/T08-kimi-code.md`, REJECTED-with-reason).
 
 ## Table 3 - per-file disposition of the dirty worktree files (182 entries)
 
 `NEW_CONTENT` = the working-tree blob of this file is not in `main` at or after the #1264 squash, so
-the edit exists nowhere else. `CONTAINED` = the blob is already in `main`; the edit is a no-op against
-today's tree and is safe to drop.
+the edit exists nowhere else. `CONTAINED_IN_MAIN` = the blob is in `main`'s landed object set - that
+is historical presence, not a current-tree no-op, and it does **not** mean the edit is safe to drop.
+Every contained blob was therefore compared directly with the pinned main tree at its own path
+(`git -C <worktree> hash-object <path>` against `git rev-parse --verify --quiet 926bbd49d171:<path>`),
+and the `current-tree match` column separates the 46 `EXACT` rows (the working blob equals
+`main:<path>`, a true no-op against today's tree) from the 18 `HISTORICAL/SUPERSEDED` rows (the
+working blob is a historical or superseded version at the path and differs from `main:<path>`; these
+need an explicit disposition before the worktree copy is dropped). `NEW_CONTENT` rows are `n/a` in
+that column.
 
-| worktree | branch | status | path | verdict |
-|---|---|---|---|---|
-| `fanout-call_01a1ca3c3c87734fa42bfaef-0` | `swarm/fanout-call_01a1ca3c3c87734fa42bfaef-0` | `M` | `crates/jackin-tui/src/console.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_01a1ca3c3c87734fa42bfaef-1` | `swarm/fanout-call_01a1ca3c3c87734fa42bfaef-1` | `M` | `.betterleaksignore` | NEW_CONTENT |
-| `fanout-call_01a1ca3c3c87734fa42bfaef-1` | `swarm/fanout-call_01a1ca3c3c87734fa42bfaef-1` | `M` | `.gitleaksignore` | NEW_CONTENT |
-| `fanout-call_01a1ca3c3c87734fa42bfaef-1` | `swarm/fanout-call_01a1ca3c3c87734fa42bfaef-1` | `M` | `.kingfisher-baseline.yml` | CONTAINED_IN_MAIN |
-| `fanout-call_1c9ab3259fa54c9398809a67-3` | `swarm/fanout-call_1c9ab3259fa54c9398809a67-3` | `M` | `Cargo.toml` | NEW_CONTENT |
-| `fanout-call_1c9ab3259fa54c9398809a67-3` | `swarm/fanout-call_1c9ab3259fa54c9398809a67-3` | `M` | `crates/usage/jackin-usage-provider-core/Cargo.toml` | NEW_CONTENT |
-| `fanout-call_1c9ab3259fa54c9398809a67-3` | `swarm/fanout-call_1c9ab3259fa54c9398809a67-3` | `M` | `crates/usage/jackin-usage-provider-core/src/http.rs` | NEW_CONTENT |
-| `fanout-call_3d4ffa93267d4f40a885ab3d-1` | `swarm/fanout-call_3d4ffa93267d4f40a885ab3d-1` | `M` | `crates/jackin-openshell/src/error.rs` | NEW_CONTENT |
-| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/credential.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/production.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/scratch.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/setup.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/steps/j00.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/steps/j02.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/steps/j05.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/steps/j09.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `??` | `rewrite/blockers/T08-kimi-code.md` | NEW_CONTENT |
-| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-openshell/tests/gateway/discovery.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-session/tests/project/refuse_objects.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-testkit/src/gateway.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-testkit/src/rig.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-testkit/tests/gateway/transfer.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-2` | `swarm/fanout-call_61766d565b904e3dba2db8d5-2` | `M` | `crates/jackin-session/examples/build_images.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-2` | `swarm/fanout-call_61766d565b904e3dba2db8d5-2` | `M` | `crates/jackin-session/examples/export_live.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_61766d565b904e3dba2db8d5-2` | `swarm/fanout-call_61766d565b904e3dba2db8d5-2` | `M` | `crates/jackin-session/examples/export_memory.rs` | NEW_CONTENT |
-| `fanout-call_61766d565b904e3dba2db8d5-2` | `swarm/fanout-call_61766d565b904e3dba2db8d5-2` | `M` | `crates/jackin-session/examples/upload_project.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_667899f3ad454fd1946b4556-0` | `swarm/fanout-call_667899f3ad454fd1946b4556-0` | `M` | `crates/jackin-core/src/config/store.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_667899f3ad454fd1946b4556-0` | `swarm/fanout-call_667899f3ad454fd1946b4556-0` | `M` | `crates/jackin-session/src/accounts.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_667899f3ad454fd1946b4556-1` | `swarm/fanout-call_667899f3ad454fd1946b4556-1` | `M` | `crates/jackin-core/src/config/store.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_667899f3ad454fd1946b4556-1` | `swarm/fanout-call_667899f3ad454fd1946b4556-1` | `M` | `crates/jackin-session/src/accounts.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin-core/src/config/store.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin-session/src/accounts.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin-session/src/credentials.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin-session/tests/accounts/peers.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin/src/commands/account.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `Cargo.lock` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/jackin-testkit/src/console.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/jackin/src/commands/console.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/jackin/src/commands/usage.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-claude/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-claude/src/windows.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-codex/src/lib.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-codex/src/windows.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-core/Cargo.toml` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-core/src/http.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-core/src/model.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-cursor/src/lib.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-gemini/Cargo.toml` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-gemini/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-grok/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-kimi/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-minimax/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-opencode/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-openrouter/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-zai/src/lib.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/Cargo.toml` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/cache.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/credential.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/deps.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/dispatch.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/host.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/model.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/text.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/window.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/tests/usage/schema.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/tests/usage/secrets.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/tests/usage/support.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/tests/usage/text.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/boundary.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/config.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/ids.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/labels.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/manifest.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/paths.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-openshell/src/discovery.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-openshell/src/error.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-openshell/src/grpc/sandbox.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/src/project.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/src/roles.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/tests/accounts/edit.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/tests/accounts/host_login.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/tests/accounts/peers.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/tests/plan/scoped_env.rs` | NEW_CONTENT |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-testkit/src/fixtures.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-tui/src/effects.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-tui/src/panes.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin/tests/cli/account_add.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-core/src/ids.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/attach.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/export.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/launch.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/launch/run.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/lifecycle.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/multi_session.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/export/purge.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/launch/instance_identity.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/launch/multi_instance.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/launch/workspace_fence.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/launch/worktree.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/lifecycle/inspect.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/jackin-tui/tests/console/usage_windows.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/jackin/tests/cli/usage.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-claude/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-claude/src/windows.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-codex/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-codex/src/windows.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-grok/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-kimi/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-minimax/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-opencode/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-openrouter/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-zai/src/lib.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/src/cache.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/src/credential.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/src/dispatch.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/src/host.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/cache.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/credential_files.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/credentials.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/errors.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_credits.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_deprecated.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_negative_cent.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_zero_cap.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/claude.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/codex.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/grok.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/kimi.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/minimax.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/opencode.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/openrouter.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/zai.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/secrets.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/support.rs` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/claude/credentials_expired.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/claude/oauth_usage_grants.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/claude/oauth_usage_grants_inactive.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/claude/oauth_usage_surface_scope.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/codex/auth_chatgpt_rotated.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/codex/reset_credits.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/codex/reset_credits_empty.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/auth_no_expiry.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_no_on_demand_flag.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_product_share.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_envelope.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_envelope_partial.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/minimax/auth_records.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/minimax/auth_records_expired.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_console_oauth.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_console_oauth_expired.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/zai/quota_no_envelope.json` | NEW_CONTENT |
-| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/zai/quota_time_limit.json` | NEW_CONTENT |
-| `fanout-call_c150420bac2f4875b01d23cd-1` | `swarm/fanout-call_c150420bac2f4875b01d23cd-1` | `M` | `crates/jackin-core/src/fs.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_e6e20aee930345eb8831374f-1` | `swarm/fanout-call_e6e20aee930345eb8831374f-1` | `M` | `crates/jackin-openshell/src/grpc.rs` | NEW_CONTENT |
-| `fanout-call_e6e20aee930345eb8831374f-1` | `swarm/fanout-call_e6e20aee930345eb8831374f-1` | `M` | `crates/jackin-openshell/src/grpc/connect.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_e6e20aee930345eb8831374f-1` | `swarm/fanout-call_e6e20aee930345eb8831374f-1` | `M` | `crates/jackin-openshell/src/grpc/status.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_e6e20aee930345eb8831374f-1` | `swarm/fanout-call_e6e20aee930345eb8831374f-1` | `M` | `crates/jackin-openshell/tests/gateway/connect.rs` | NEW_CONTENT |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-core/src/config.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-core/src/manifest.rs` | NEW_CONTENT |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-core/tests/manifest.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-session/tests/accounts/edit.rs` | NEW_CONTENT |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-session/tests/accounts/host_login.rs` | NEW_CONTENT |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-session/tests/accounts/peers.rs` | NEW_CONTENT |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-session/tests/plan/scoped_env.rs` | NEW_CONTENT |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin/tests/cli/account_add.rs` | NEW_CONTENT |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin/tests/cli/role_check.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `??` | `crates/jackin-core/tests/provider_eligibility.rs` | NEW_CONTENT |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `crates/xtask/src/e2e/probe.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `crates/xtask/src/e2e/steps/j08.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `crates/xtask/tests/e2e/b_probe.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `crates/xtask/tests/e2e/scenario/report.rs` | CONTAINED_IN_MAIN |
-| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `rewrite/probe-schema.json` | CONTAINED_IN_MAIN |
-| `tool-call_01a1ce4ead2774dfa85e5567` | `fix/pr1264-followups-w3` | `M` | `crates/usage/jackin-usage/src/credential.rs` | NEW_CONTENT |
-| `tool-call_01a1ce4ead2774dfa85e5567` | `fix/pr1264-followups-w3` | `M` | `crates/usage/jackin-usage/tests/usage/opencode.rs` | NEW_CONTENT |
-| `tool-call_408ca8fd3b9e44639da156ae` | `swarm/tool-call_408ca8fd3b9e44639da156ae` | `??` | `sonar-project.properties` | CONTAINED_IN_MAIN |
-| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `Cargo.lock` | NEW_CONTENT |
-| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `Cargo.toml` | CONTAINED_IN_MAIN |
-| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `crates/jackin-session/Cargo.toml` | CONTAINED_IN_MAIN |
-| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `crates/jackin-session/examples/export_memory.rs` | NEW_CONTENT |
-| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `crates/jackin-session/src/export/bundle.rs` | CONTAINED_IN_MAIN |
-| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `rewrite/drafts/docker-laneA-run.sh` | CONTAINED_IN_MAIN |
-| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `??` | `.sonarcloud.properties` | NEW_CONTENT |
+| worktree | branch | status | path | verdict | current-tree match (pinned main `926bbd49d171`) |
+|---|---|---|---|---|---|
+| `fanout-call_01a1ca3c3c87734fa42bfaef-0` | `swarm/fanout-call_01a1ca3c3c87734fa42bfaef-0` | `M` | `crates/jackin-tui/src/console.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_01a1ca3c3c87734fa42bfaef-1` | `swarm/fanout-call_01a1ca3c3c87734fa42bfaef-1` | `M` | `.betterleaksignore` | NEW_CONTENT | n/a |
+| `fanout-call_01a1ca3c3c87734fa42bfaef-1` | `swarm/fanout-call_01a1ca3c3c87734fa42bfaef-1` | `M` | `.gitleaksignore` | NEW_CONTENT | n/a |
+| `fanout-call_01a1ca3c3c87734fa42bfaef-1` | `swarm/fanout-call_01a1ca3c3c87734fa42bfaef-1` | `M` | `.kingfisher-baseline.yml` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_1c9ab3259fa54c9398809a67-3` | `swarm/fanout-call_1c9ab3259fa54c9398809a67-3` | `M` | `Cargo.toml` | NEW_CONTENT | n/a |
+| `fanout-call_1c9ab3259fa54c9398809a67-3` | `swarm/fanout-call_1c9ab3259fa54c9398809a67-3` | `M` | `crates/usage/jackin-usage-provider-core/Cargo.toml` | NEW_CONTENT | n/a |
+| `fanout-call_1c9ab3259fa54c9398809a67-3` | `swarm/fanout-call_1c9ab3259fa54c9398809a67-3` | `M` | `crates/usage/jackin-usage-provider-core/src/http.rs` | NEW_CONTENT | n/a |
+| `fanout-call_3d4ffa93267d4f40a885ab3d-1` | `swarm/fanout-call_3d4ffa93267d4f40a885ab3d-1` | `M` | `crates/jackin-openshell/src/error.rs` | NEW_CONTENT | n/a |
+| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/credential.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/production.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/scratch.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/setup.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/steps/j00.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/steps/j02.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/steps/j05.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `M` | `crates/xtask/src/e2e/steps/j09.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-0` | `swarm/fanout-call_61766d565b904e3dba2db8d5-0` | `??` | `rewrite/blockers/T08-kimi-code.md` | NEW_CONTENT | n/a |
+| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-openshell/tests/gateway/discovery.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-session/tests/project/refuse_objects.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-testkit/src/gateway.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-testkit/src/rig.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-1` | `swarm/fanout-call_61766d565b904e3dba2db8d5-1` | `M` | `crates/jackin-testkit/tests/gateway/transfer.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-2` | `swarm/fanout-call_61766d565b904e3dba2db8d5-2` | `M` | `crates/jackin-session/examples/build_images.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-2` | `swarm/fanout-call_61766d565b904e3dba2db8d5-2` | `M` | `crates/jackin-session/examples/export_live.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_61766d565b904e3dba2db8d5-2` | `swarm/fanout-call_61766d565b904e3dba2db8d5-2` | `M` | `crates/jackin-session/examples/export_memory.rs` | NEW_CONTENT | n/a |
+| `fanout-call_61766d565b904e3dba2db8d5-2` | `swarm/fanout-call_61766d565b904e3dba2db8d5-2` | `M` | `crates/jackin-session/examples/upload_project.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_667899f3ad454fd1946b4556-0` | `swarm/fanout-call_667899f3ad454fd1946b4556-0` | `M` | `crates/jackin-core/src/config/store.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_667899f3ad454fd1946b4556-0` | `swarm/fanout-call_667899f3ad454fd1946b4556-0` | `M` | `crates/jackin-session/src/accounts.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_667899f3ad454fd1946b4556-1` | `swarm/fanout-call_667899f3ad454fd1946b4556-1` | `M` | `crates/jackin-core/src/config/store.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_667899f3ad454fd1946b4556-1` | `swarm/fanout-call_667899f3ad454fd1946b4556-1` | `M` | `crates/jackin-session/src/accounts.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin-core/src/config/store.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin-session/src/accounts.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin-session/src/credentials.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin-session/tests/accounts/peers.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-0` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-0` | `M` | `crates/jackin/src/commands/account.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `Cargo.lock` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/jackin-testkit/src/console.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/jackin/src/commands/console.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/jackin/src/commands/usage.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-claude/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-claude/src/windows.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-codex/src/lib.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-codex/src/windows.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-core/Cargo.toml` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-core/src/http.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-core/src/model.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-cursor/src/lib.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-gemini/Cargo.toml` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-gemini/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-grok/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-kimi/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-minimax/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-opencode/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-openrouter/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage-provider-zai/src/lib.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/Cargo.toml` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/cache.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/credential.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/deps.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/dispatch.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/host.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/model.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/text.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/src/window.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/tests/usage/schema.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/tests/usage/secrets.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/tests/usage/support.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-1` | `M` | `crates/usage/jackin-usage/tests/usage/text.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/boundary.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/config.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/ids.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/labels.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/manifest.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-core/src/paths.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-openshell/src/discovery.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-openshell/src/error.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-openshell/src/grpc/sandbox.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/src/project.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/src/roles.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/tests/accounts/edit.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/tests/accounts/host_login.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/tests/accounts/peers.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-session/tests/plan/scoped_env.rs` | NEW_CONTENT | n/a |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-testkit/src/fixtures.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-tui/src/effects.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin-tui/src/panes.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `swarm/fanout-call_7b848c095cd548d2a97dfc27-2` | `M` | `crates/jackin/tests/cli/account_add.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-core/src/ids.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/attach.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/export.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/launch.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/launch/run.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/lifecycle.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/src/multi_session.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/export/purge.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/launch/instance_identity.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/launch/multi_instance.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/launch/workspace_fence.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/launch/worktree.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-2` | `swarm/fanout-call_84bf371fb4fb46308f47c848-2` | `M` | `crates/jackin-session/tests/lifecycle/inspect.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/jackin-tui/tests/console/usage_windows.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/jackin/tests/cli/usage.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-claude/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-claude/src/windows.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-codex/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-codex/src/windows.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-grok/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-kimi/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-minimax/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-opencode/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-openrouter/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage-provider-zai/src/lib.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/src/cache.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/src/credential.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/src/dispatch.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/src/host.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/cache.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/credential_files.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/credentials.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/errors.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_credits.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_deprecated.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_negative_cent.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_zero_cap.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/claude.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/codex.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/grok.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/kimi.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/minimax.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/opencode.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/openrouter.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/providers/zai.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/secrets.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `M` | `crates/usage/jackin-usage/tests/usage/support.rs` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/claude/credentials_expired.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/claude/oauth_usage_grants.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/claude/oauth_usage_grants_inactive.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/claude/oauth_usage_surface_scope.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/codex/auth_chatgpt_rotated.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/codex/reset_credits.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/codex/reset_credits_empty.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/auth_no_expiry.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_no_on_demand_flag.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/grok/billing_product_share.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_envelope.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/kimi/usages_envelope_partial.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/minimax/auth_records.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/minimax/auth_records_expired.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_console_oauth.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/opencode/auth_console_oauth_expired.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/zai/quota_no_envelope.json` | NEW_CONTENT | n/a |
+| `fanout-call_84bf371fb4fb46308f47c848-3` | `swarm/fanout-call_84bf371fb4fb46308f47c848-3` | `??` | `crates/usage/jackin-usage/tests/usage/fixtures/zai/quota_time_limit.json` | NEW_CONTENT | n/a |
+| `fanout-call_c150420bac2f4875b01d23cd-1` | `swarm/fanout-call_c150420bac2f4875b01d23cd-1` | `M` | `crates/jackin-core/src/fs.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_e6e20aee930345eb8831374f-1` | `swarm/fanout-call_e6e20aee930345eb8831374f-1` | `M` | `crates/jackin-openshell/src/grpc.rs` | NEW_CONTENT | n/a |
+| `fanout-call_e6e20aee930345eb8831374f-1` | `swarm/fanout-call_e6e20aee930345eb8831374f-1` | `M` | `crates/jackin-openshell/src/grpc/connect.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_e6e20aee930345eb8831374f-1` | `swarm/fanout-call_e6e20aee930345eb8831374f-1` | `M` | `crates/jackin-openshell/src/grpc/status.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_e6e20aee930345eb8831374f-1` | `swarm/fanout-call_e6e20aee930345eb8831374f-1` | `M` | `crates/jackin-openshell/tests/gateway/connect.rs` | NEW_CONTENT | n/a |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-core/src/config.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-core/src/manifest.rs` | NEW_CONTENT | n/a |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-core/tests/manifest.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-session/tests/accounts/edit.rs` | NEW_CONTENT | n/a |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-session/tests/accounts/host_login.rs` | NEW_CONTENT | n/a |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-session/tests/accounts/peers.rs` | NEW_CONTENT | n/a |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin-session/tests/plan/scoped_env.rs` | NEW_CONTENT | n/a |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin/tests/cli/account_add.rs` | NEW_CONTENT | n/a |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `M` | `crates/jackin/tests/cli/role_check.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `??` | `crates/jackin-core/tests/provider_eligibility.rs` | NEW_CONTENT | n/a |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `crates/xtask/src/e2e/probe.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `crates/xtask/src/e2e/steps/j08.rs` | CONTAINED_IN_MAIN | EXACT |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `crates/xtask/tests/e2e/b_probe.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `crates/xtask/tests/e2e/scenario/report.rs` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `swarm/fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `M` | `rewrite/probe-schema.json` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `tool-call_01a1ce4ead2774dfa85e5567` | `fix/pr1264-followups-w3` | `M` | `crates/usage/jackin-usage/src/credential.rs` | NEW_CONTENT | n/a |
+| `tool-call_01a1ce4ead2774dfa85e5567` | `fix/pr1264-followups-w3` | `M` | `crates/usage/jackin-usage/tests/usage/opencode.rs` | NEW_CONTENT | n/a |
+| `tool-call_408ca8fd3b9e44639da156ae` | `swarm/tool-call_408ca8fd3b9e44639da156ae` | `??` | `sonar-project.properties` | CONTAINED_IN_MAIN | EXACT |
+| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `Cargo.lock` | NEW_CONTENT | n/a |
+| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `Cargo.toml` | CONTAINED_IN_MAIN | HISTORICAL/SUPERSEDED (disposition pending) |
+| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `crates/jackin-session/Cargo.toml` | CONTAINED_IN_MAIN | EXACT |
+| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `crates/jackin-session/examples/export_memory.rs` | NEW_CONTENT | n/a |
+| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `crates/jackin-session/src/export/bundle.rs` | CONTAINED_IN_MAIN | EXACT |
+| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `M` | `rewrite/drafts/docker-laneA-run.sh` | CONTAINED_IN_MAIN | EXACT |
+| `tool-call_9b95e9cc2960449db0fe2d27` | `swarm/tool-call_9b95e9cc2960449db0fe2d27` | `??` | `.sonarcloud.properties` | NEW_CONTENT | n/a |
+
+### Current-tree reconciliation of the 64 contained rows
+
+All 64 `CONTAINED_IN_MAIN` working blobs reproduce against the landed object set of the Method
+section, but historical presence is not a current-tree no-op. Every working blob was compared
+directly with the pinned main tree at its own path (`git -C <worktree> hash-object <path>`
+against `git rev-parse --verify --quiet 926bbd49d171:<path>`): 46 of the 64 are exact matches
+for what `main` serves at the path today; the 18 below are historical or superseded versions
+that differ from `main:<path>` and need an explicit disposition before the worktree copy is
+dropped. The blanket no-op/safe-to-drop claim is withdrawn.
+
+| worktree | path | working blob | `926bbd49d171:<path>` |
+|---|---|---|---|
+| `fanout-call_01a1ca3c3c87734fa42bfaef-0` | `crates/jackin-tui/src/console.rs` | `bf7d345b3739` | `b62697323c72` |
+| `fanout-call_667899f3ad454fd1946b4556-0` | `crates/jackin-session/src/accounts.rs` | `f8069d789827` | `fc1e4041046d` |
+| `fanout-call_667899f3ad454fd1946b4556-1` | `crates/jackin-session/src/accounts.rs` | `f8069d789827` | `fc1e4041046d` |
+| `fanout-call_7b848c095cd548d2a97dfc27-0` | `crates/jackin-session/src/credentials.rs` | `61078a8fab95` | `a16c0088f6cd` |
+| `fanout-call_7b848c095cd548d2a97dfc27-0` | `crates/jackin/src/commands/account.rs` | `a2fb486b8251` | `a6749054e655` |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `crates/jackin-testkit/src/console.rs` | `021ee9b4a6db` | `c21d6ac5b9d8` |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `crates/jackin/src/commands/console.rs` | `61fd696dbee2` | `52ffff77e3fa` |
+| `fanout-call_7b848c095cd548d2a97dfc27-1` | `crates/usage/jackin-usage-provider-core/src/model.rs` | `a15cfe79fae1` | `19c4270d6da9` |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `crates/jackin-openshell/src/grpc/sandbox.rs` | `19553fa16e84` | `778909dc7cc3` |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `crates/jackin-session/src/roles.rs` | `8d90cdc9f991` | `52d18415acdc` |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `crates/jackin-tui/src/effects.rs` | `0acf8f3016ca` | `bb312fb1211b` |
+| `fanout-call_7b848c095cd548d2a97dfc27-2` | `crates/jackin-tui/src/panes.rs` | `0831fe61c817` | `de3f9a61302d` |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-4` | `crates/jackin-core/src/config.rs` | `091c0786fe12` | `854fb1c5cbd7` |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `crates/xtask/src/e2e/probe.rs` | `9b1e8eedff65` | `b4218fe0a064` |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `crates/xtask/tests/e2e/b_probe.rs` | `560f9fc126d6` | `db9b055e31d0` |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `crates/xtask/tests/e2e/scenario/report.rs` | `837b9d04510d` | `f3dc870a4919` |
+| `fanout-call_g9nTkf5prOz7xc6dndCCqSAj-5` | `rewrite/probe-schema.json` | `b01132836d48` | `581a3b5794af` |
+| `tool-call_9b95e9cc2960449db0fe2d27` | `Cargo.toml` | `bf3d957701be` | `3040772cb2eb` |
 
 ## DEBRIS with proof
 
+Deletion prohibition: none of the branches in this set may be deleted before the operator ratifies
+the set. The 2026-11-14T16:14:00Z decision (rewrite/decisions.tsv) says the 15-branch set awaits the
+operator's one-word ratification; until that word is recorded, the classification is confirmed but
+deletion approval is pending.
+
 | branch | tip | proof |
 |---|---|---|
-| `chore/triage-inventory-20261112` | `e13360eb8751` | named in the ratified 15-branch DEBRIS set (rewrite/decisions.tsv, 2026-11-14T16:14:00Z row); carries no unique product code |
+| `chore/triage-inventory-20261112` | `e13360eb8751` | named in the 15-branch DEBRIS set (classification confirmed; deletion approval pending - the set awaits the operator's ratification per the rewrite/decisions.tsv 2026-11-14T16:14:00Z row); carries no unique product code |
 | `swarm/pr1287-debris-ratification` | `b550ce9ddccb` | byte-identical tip b550ce9ddccb to docs/debris-ratification-2026-11-14; the unit is carried there |
 | `wt/a14-native-implementation` | `17aacafcfa08` | byte-identical tip 17aacafcfa08 to wt/a14-grok-session; the unit is carried there |
 | `wt/a14-oauth-files` | `17aacafcfa08` | byte-identical tip 17aacafcfa08 to wt/a14-grok-session; the unit is carried there |
@@ -1549,21 +1622,34 @@ machine-checkable proof. Three caveats about the environment, not about the bran
   `.audit/*.log` files. The 9 modified tracked files are exactly the `chore/dirty-slice-1` unit, which
   is already recorded in Table 2; the 153 `.audit/*.log` files are build and test logs with no
   product content.
-* The 182 dirty files are a point-in-time measurement; the swarm is live and one conflicted worktree
+* The 182 dirty files are a point-in-time measurement of the scoped population (the 21 inspected
+  copies under `.pi/durable-swarm/worktrees/`) and are the scoped subtotal, not the repository-wide
+  preservation total; the swarm is live and one conflicted worktree
   (`fanout-call_01a1dacfcfea75d095635e4c-3`, branch `w3/pr1281-merge`) was resolved by another
   process during the slice and went from 3 dirty entries to 0.
-* The 184 worktrees outside `.pi/durable-swarm/worktrees/` were counted (`git worktree list` = 202
-  entries) but their dirty state was not swept individually; the dirty ones in that set are the
-  coordinator worktree and the `swarm/` copies listed above.
+* The outside population was not swept at slice time ("`git worktree list` = 202 entries, 184 of them
+  outside `.pi/durable-swarm/worktrees/`") and the claim that it was clean is withdrawn. A current
+  registration sweep (2026-11-15) records the populations separately: 210 registrations = 59 inside
+  + 151 outside. Inside: 59 readable (21 dirty with 182 entries, 38 clean), 0 unreadable. Outside:
+  47 readable (21 dirty with 282 entries, 26 clean) + 104 unreadable (dangling registrations). The
+  historical 202/184 figures and the "21 worktrees inspected" counted different populations:
+  202 - 184 = 18 inside registrations, while 21 directory copies were inspected, so three of the 21
+  copies were not registered worktrees when the list was taken. 182 remains the scoped subtotal of
+  the 21 inspected copies; the repository-wide dirty population is at least 42 worktrees / 464
+  entries and is not exhaustively accounted for here.
 
 ## Rule applied to every branch
 
 * **VALUABLE** - the branch holds at least one file version that is in no merged pull request. It is
-  pushed to `origin` so the content survives.
+  pushed to `origin` so the content survives - except content that a committed per-file disposition
+  rejects (`REJECTED-with-reason`, e.g. the T08 promotion of `rewrite/triage/pr-1283-disposition-2026-11-14.md`):
+  the rejection is the disposition and is preserved as a record, and rejected promotion content is
+  not repushed even though its blobs differ from `main`. `RESTORED-CORRECTED` content is preserved
+  where it landed, in its corrected form.
 * **CONTAINED** - every file the branch's own commits touch is already in `main` at or after the
   #1264 squash, or every one of its commits is patch-id-equal to landed content. The merged pull
   request that carries the content is cited in Table 1.
 * **DEBRIS** - the branch is a byte-identical duplicate of another branch's tip, or it is named in the
-  repository's own ratified 15-branch DEBRIS set. The carrying branch or the ratification record is
-  cited in Table 1 and in the DEBRIS section.
-
+  repository's own 15-branch DEBRIS set (classification confirmed; deletion approval pending - the
+  set awaits the operator's ratification per the rewrite/decisions.tsv 2026-11-14T16:14:00Z row).
+  The carrying branch or the classification record is cited in Table 1 and in the DEBRIS section.
