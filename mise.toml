@@ -12,15 +12,16 @@ cargo-deny = "0.20.2"
 "github:Boshen/cargo-shear" = "1.14.0"
 gh = "2.103.3"
 "aqua:gitleaks/gitleaks" = "8.30.1"
-hk = { version = "2.11.1", workflow = "release.yml" }
+hk = { version = "2.12.0", workflow = "release.yml" }
 "github:mongodb/kingfisher" = { version = "2.16.0", matching_regex = "^kingfisher-(darwin|linux)-(arm64|x64)\\.tgz$|^kingfisher-windows-x64\\.zip$" }
-mr-boxington = { version = "1.29.2", workflow = "release.yml@refs/heads/main" }
+mr-boxington = { version = "1.30.0", workflow = "release.yml@refs/heads/main" }
 rust = { version = "1.99.1", profile = "minimal", components = [
   "clippy",
   "rustfmt",
 ], targets = [
   "aarch64-unknown-linux-gnu",
   "x86_64-unknown-linux-gnu",
+  "x86_64-unknown-linux-musl",
 ], mr_boxington = true }
 shellcheck = "0.11.0"
 jactionlint = { version = "2.4.0", workflow = "release.yaml" }

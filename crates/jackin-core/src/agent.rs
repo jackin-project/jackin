@@ -1154,7 +1154,7 @@ pub static TUPLES: [AgentTuple; 22] = [
         Provider::Claude,
         AuthClass::ApiKey,
         TupleState::Unavailable,
-        Some("no API key on this host"),
+        Some("final live proof pending with Anthropic API key"),
         &["claude-haiku-5-5"],
         "claude-haiku-5-5"
     ),
