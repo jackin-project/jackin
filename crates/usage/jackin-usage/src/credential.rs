@@ -200,7 +200,7 @@ fn codex_account_id(text: &str, configured: &str) -> Result<Option<String>, Unre
     let Ok(document) = serde_json::from_str::<Value>(text) else {
         return Ok(None);
     };
-    let Some(tokens) = document.get("tokens") else {
+    let Some(tokens) = document.get("tokens").and_then(Value::as_object) else {
         return Ok(None);
     };
     let account_id = tokens
