@@ -38,9 +38,12 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check-dependency-usage:
-    name: Check / dependency-usage
-    runs-on: ubuntu-26.04
+    name: Check / dependency-usage / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: &m1
       VELNOR_ASSET_SHA256: db7480b83238f85a2e4472d26ba57ca4ee4d6822353cbdaad690b1a2b963b26f
       VELNOR_ASSET_URL: https://github.com/tailrocks/velnor-new/releases/download/v0.1.74/velnor-actions-0.1.74-x86_64-unknown-linux-gnu
@@ -50,6 +53,7 @@ jobs:
       contents: read
     needs:
       - plan
+    if: github.event_name == 'push' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - &s1
         name: Checkout
@@ -95,14 +99,18 @@ jobs:
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
   check-repository-steps:
-    name: Check / repository-steps
-    runs-on: ubuntu-26.04
+    name: Check / repository-steps / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m1
     permissions:
       contents: read
     needs:
       - plan
+    if: github.event_name == 'push' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - *s1
       - *s2
@@ -126,14 +134,18 @@ jobs:
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
   check-secrets-scan:
-    name: Check / secrets-scan
-    runs-on: ubuntu-26.04
+    name: Check / secrets-scan / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m1
     permissions:
       contents: read
     needs:
       - plan
+    if: github.event_name == 'push' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - *s1
       - *s2
@@ -157,14 +169,18 @@ jobs:
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
   check-sonar:
-    name: Check / sonar
-    runs-on: ubuntu-26.04
+    name: Check / sonar / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m1
     permissions:
       contents: read
     needs:
       - plan
+    if: github.event_name == 'push' || github.event_name == 'merge_group' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
       - *s1
       - *s2
@@ -456,9 +472,12 @@ jobs:
         if: ${{ always() && needs.required.result != 'success' }}
         run: env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN -u GH_TOKEN -u GH_HOST -u GH_CONFIG_DIR false
   rust-jackin:
-    name: Rust / jackin
-    runs-on: ubuntu-26.04
+    name: Rust / jackin / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: &m10
       MBX_BUILD_SCRIPT_EXECUTION: "1"
       MBX_CACHE_EXPORT_GROUP: velnor
@@ -482,28 +501,21 @@ jobs:
         name: Resolve project tool versions
         env: *m7
         shell: /bin/bash --noprofile --norc -p -e -o pipefail {0}
-        run: "function_env_unset=(); function_env_scan_complete=0; while IFS= read -r -d '' env_entry; do case \"$env_entry\" in BASH_FUNC_*=*) function_env_unset+=(-u \"${env_entry%%=*}\");; VELNOR_VERIFIER_ENV_SCAN_COMPLETE) function_env_scan_complete=$((function_env_scan_complete + 1));; esac; done < <({ /usr/bin/env -0 && printf '%s\\000' 'VELNOR_VERIFIER_ENV_SCAN_COMPLETE'; }); [ \"$function_env_scan_complete\" -eq 1 ] || exit 1; exec /usr/bin/env \"${function_env_unset[@]}\" -u BASH_ENV -u ENV -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN -u GH_TOKEN -u GH_HOST -u GH_CONFIG_DIR PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/bash --noprofile --norc -p -e -o pipefail -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu\n: \"${GITHUB_ENV:?missing GITHUB_ENV}\"\n: \"${RUNNER_TEMP:?missing RUNNER_TEMP}\"\nvelnor_dir=\"$RUNNER_TEMP/velnor-project-tool\"\nvelnor_db=\"$velnor_dir/declared\"\nvelnor_tab=$(printf '\\''\\t'\\'')\nvelnor_safe() { printf '\\''%s'\\'' \"$1\" | cut -c1-64 | tr -c '\\''A-Za-z0-9._/@+-'\\'' '\\''?'\\''; }\nvelnor_fail() { printf '\\''velnor: %s\\n'\\'' \"$1\" >&2; exit 1; }\nvelnor_capture_physical_path() {\n  [ \"$#\" -eq 2 ] || return 1\n  (cd -P \"$1\" && pwd -P) > \"$2\" || return 1\n  resolved_path=\n  newline='\\''\n'\\''\n  while IFS= read -r path_line; do\n    resolved_path=$resolved_path$path_line\"$newline\"\n  done < \"$2\"\n  case \"$resolved_path\" in\n    *\"$newline\") resolved_path=${resolved_path%\"$newline\"} ;;\n    *) return 1 ;;\n  esac\n  printf '\\''%s\\n'\\'' \"$resolved_path\" > \"$2\" || return 1\n}; velnor_bind_selected_mise() { [ \"$#\" -eq 1 ] || return 5; mise_data_dir=${MISE_DATA_DIR-}; if [ -z \"$mise_data_dir\" ]; then if [ -n \"${XDG_DATA_HOME-}\" ]; then mise_data_dir=\"$XDG_DATA_HOME/mise\"; elif [ -n \"${HOME-}\" ]; then mise_data_dir=\"$HOME/.local/share/mise\"; else return 1; fi; fi; case \"$mise_data_dir\" in /*) ;; *) mise_data_dir=./$mise_data_dir;; esac; case \"$mise_data_dir\" in /) ;; */) mise_data_dir=${mise_data_dir%/};; esac; [ -d \"$mise_data_dir\" ] || return 2; velnor_capture_physical_path \"$mise_data_dir\" \"$1\" || return 3; resolved_mise_data_dir=$resolved_path; [ -d \"$resolved_mise_data_dir/bin\" ] || return 4; velnor_capture_physical_path \"$resolved_mise_data_dir/bin\" \"$1\" || return 4; resolved_mise_bin_dir=$resolved_path; mise_bin=\"$resolved_mise_bin_dir/mise\"; [ -f \"$mise_bin\" ] && [ -x \"$mise_bin\" ] && [ ! -L \"$mise_bin\" ] || return 4; MISE_DATA_DIR=\"$resolved_mise_data_dir\"; export MISE_DATA_DIR; return 0; }\nvelnor_mise() { \"$mise_bin\" --no-config --no-env --no-hooks \"$@\"; }\nrm -rf \"$velnor_dir\"\nmkdir -p \"$velnor_dir\"\n: > \"$velnor_db\"\nvelnor_bind_selected_mise \"$velnor_dir/mise-data-dir\" || { velnor_mise_status=$?; velnor_fail \"Setup Mise data directory or binary is invalid (status $velnor_mise_status)\"; }\nvelnor_regular() {\n  if [ -L \"$1\" ] || [ ! -f \"$1\" ]; then velnor_fail \"$1 must be a regular file\"; fi\n}\nvelnor_toml() {\n  cp -- \"$1\" \"$velnor_dir/src.toml\"\n  velnor_mise config get -f \"$velnor_dir/src.toml\" > /dev/null 2>&1 || velnor_fail \"$1 is not valid TOML\"\n}\nvelnor_tools() {\n  velnor_toml \"$1\"\n  if velnor_mise config get -f \"$velnor_dir/src.toml\" tools > \"$velnor_dir/tools\" 2>/dev/null; then\n    awk -v file=\"$1\" '\\''\nfunction unq(s) {\n  if (s ~ /^\"[^\"\\\\]*\"$/ || s ~ /^\\047[^\\047]*\\047$/) { return substr(s, 2, length(s) - 2) }\n  return s\n}\nBEGIN { OFS = \"\\t\"; cur = \"\"; multi = \"\" }\n{\n  line = $0\n  if (multi != \"\") { if (index(line, multi) > 0) { multi = \"\" } next }\n  if (line ~ /^[ \\t]*(#|$)/) { next }\n  if (line ~ /^[ \\t]*\\[/) {\n    hdr = line\n    sub(/^[ \\t]*\\[+[ \\t]*/, \"\", hdr)\n    sub(/[ \\t]*\\]+[ \\t]*$/, \"\", hdr)\n    cur = unq(hdr)\n    if (cur == \"\") { cur = \"?\" }\n    next\n  }\n  eq = index(line, \" = \")\n  if (eq == 0) { next }\n  k = unq(substr(line, 1, eq - 1))\n  v = substr(line, eq + 3)\n  if (v ~ /^\"\"\"/ || v ~ /^\\047\\047\\047/) {\n    d = substr(v, 1, 3)\n    if (index(substr(v, 4), d) == 0) { multi = d }\n    v = d\n  } else {\n    v = unq(v)\n  }\n  if (cur == \"\") { print file, k, v } else if (k == \"version\") { print file, cur, v }\n}'\\'' \"$velnor_dir/tools\" >> \"$velnor_db\"\n  fi\n}\nvelnor_tool_versions() {\n  awk -v file=\"$1\" '\\''\nBEGIN { OFS = \"\\t\" }\n{\n  sub(/[ \\t]*#.*$/, \"\")\n  if ($0 ~ /^[ \\t]*$/) { next }\n  line = $0\n  sub(/^[ \\t]+/, \"\", line)\n  k = line\n  sub(/[ \\t].*$/, \"\", k)\n  v = line\n  if (v == k) { v = \"\" } else { sub(/^[^ \\t]+[ \\t]+/, \"\", v); sub(/[ \\t]+$/, \"\", v) }\n  print file, k, v\n}'\\'' \"$1\" >> \"$velnor_db\"\n}\nvelnor_toolchain() {\n  if grep -q '\\''^[[:space:]]*\\['\\'' \"$1\"; then\n    velnor_toml \"$1\"\n    if velnor_mise config get -f \"$velnor_dir/src.toml\" toolchain.channel > \"$velnor_dir/channel\" 2>/dev/null; then\n      awk -v file=\"$1\" '\\''BEGIN { OFS = \"\\t\" } NR == 1 { v = $0; next } { v = v \" \" $0 } END { print file, \"rust\", v }'\\'' \"$velnor_dir/channel\" >> \"$velnor_db\"\n    fi\n  else\n    printf '\\''%s\\t%s\\t%s\\n'\\'' \"$1\" rust \"$(tr -d '\\'' \\t\\r\\n'\\'' < \"$1\")\" >> \"$velnor_db\"\n  fi\n}\nvelnor_exact() {\n  case \"$2\" in\n    '\\'''\\''|*[!0-9.]*|.*|*.|*..*|*.*.*.*|0[0-9]*|*.0[0-9]*) velnor_fail \"$1 must declare one exact X.Y.Z version, not '\\''$(velnor_safe \"$2\")'\\''\" ;;\n    *.*.*) ;;\n    *) velnor_fail \"$1 must declare one exact X.Y.Z version, not '\\''$(velnor_safe \"$2\")'\\''\" ;;\n  esac\n}\nvelnor_tool() {\n  name=$1\n  shift\n  resolved=\n  origin=\n  while IFS=\"$velnor_tab\" read -r file key value; do\n    matched=0\n    for want in \"$@\"; do\n      if [ \"$key\" = \"$want\" ]; then matched=1; fi\n    done\n    if [ \"$matched\" = 0 ]; then continue; fi\n    velnor_exact \"$file $key\" \"$value\"\n    if [ -n \"$resolved\" ] && [ \"$resolved\" != \"$value\" ]; then\n      velnor_fail \"$name: $file $key declares $value, $origin declares $resolved\"\n    fi\n    if [ -z \"$resolved\" ]; then origin=\"$file $key\"; fi\n    resolved=$value\n  done < \"$velnor_db\"\n  [ -n \"$resolved\" ] || velnor_fail \"$name: the project config no longer declares this tool; regenerate the workflow\"\n  printf '\\''%s=%s\\n'\\'' \"$name\" \"$resolved\" >> \"$GITHUB_ENV\"\n  if [ \"$name\" = VELNOR_TOOL_RUST ] && [ \"${velnor_export_rustup-0}\" = 1 ]; then\n    printf '\\''RUSTUP_TOOLCHAIN=%s\\n'\\'' \"$resolved\" >> \"$GITHUB_ENV\"\n  fi\n  printf '\\''velnor: %s=%s\\n'\\'' \"$name\" \"$resolved\"\n}\n# shellcheck disable=SC2016 # awk program text: awk, not the shell, expands it\nvelnor_lock_awk='\\''BEGIN { q = \"\\\"\"; e1 = \"[[tools.\" key \"]]\"; e2 = \"[[tools.\" q key q \"]]\"; e3 = \"[tools.\" key \"]\"; e4 = \"[tools.\" q key q \"]\"; s1 = \"[tools.\" key \".\"; s2 = \"[tools.\" q key q \".\"; p1 = s1 q \"platforms.\" platform q \"]\"; p2 = s2 q \"platforms.\" platform q \"]\"; p3 = s1 \"platforms.\" platform \"]\"; p4 = s2 \"platforms.\" platform \"]\"; want = \"version = \" q version q; inline = q \"platforms.\" platform q \" = {\"; state = 0 }\n{ line = $0; sub(/^[ \\t]+/, \"\", line); sub(/[ \\t\\r]+$/, \"\", line) }\nline == \"\" || substr(line, 1, 1) == \"#\" { next }\nsubstr(line, 1, 1) == \"[\" {\n  matched = state == 2 || state == 3 || state == 4; other = state == 1 || state == 5\n  if (line == e1 || line == e2 || line == e3 || line == e4) state = 1\n  else if (line == p1 || line == p2 || line == p3 || line == p4) state = matched ? 3 : (other ? 5 : 0)\n  else if (index(line, s1) == 1 || index(line, s2) == 1) state = matched ? 4 : (other ? 5 : 0)\n  else state = 0\n  next\n}\nstate == 1 && line == want { state = 2; next }\nstate == 3 && (index(line, \"checksum = \") == 1 || index(line, \"url = \") == 1) { print lock \" \" key \" \" line; next }\nstate == 2 && index(line, inline) == 1 {\n  if (match(line, /checksum = \"[^\"]*\"/)) print lock \" \" key \" \" substr(line, RSTART, RLENGTH)\n  if (match(line, /[{ ,]url = \"[^\"]*\"/)) print lock \" \" key \" \" substr(line, RSTART + 1, RLENGTH - 1)\n}'\\''\nvelnor_lock() {\n  name=$1\n  shift\n  case \"${RUNNER_OS-}:${RUNNER_ARCH-}\" in\n    Linux:X64) platform=linux-x64 ;;\n    Linux:ARM64) platform=linux-arm64 ;;\n    macOS:X64) platform=macos-x64 ;;\n    macOS:ARM64) platform=macos-arm64 ;;\n    Windows:X64) platform=windows-x64 ;;\n    Windows:ARM64) platform=windows-arm64 ;;\n    *) velnor_fail \"$name: unsupported runner platform '\\''${RUNNER_OS-}:${RUNNER_ARCH-}'\\''\" ;;\n  esac\n  : > \"$velnor_dir/lock\"\n  for lock in $velnor_locks; do\n    if [ ! -e \"$lock\" ] && [ ! -L \"$lock\" ]; then continue; fi\n    velnor_regular \"$lock\"\n    for key in \"$@\"; do\n      awk -v lock=\"$lock\" -v key=\"$key\" -v version=\"$resolved\" -v platform=\"$platform\" \"$velnor_lock_awk\" \"$lock\" >> \"$velnor_dir/lock\" || velnor_fail \"$lock could not be read\"\n    done\n  done\n  lock_digest=unlocked\n  if [ -s \"$velnor_dir/lock\" ]; then\n    if command -v sha256sum >/dev/null 2>&1; then\n      lock_digest=$(sha256sum < \"$velnor_dir/lock\") || velnor_fail \"$name: lock digest failed\"\n    else\n      lock_digest=$(shasum -a 256 < \"$velnor_dir/lock\") || velnor_fail \"$name: lock digest failed\"\n    fi\n    lock_digest=${lock_digest%% *}\n    case \"$lock_digest\" in\n      *[!0-9a-f]*) velnor_fail \"$name: lock digest is not hexadecimal\" ;;\n    esac\n    [ \"${#lock_digest}\" -eq 64 ] || velnor_fail \"$name: lock digest is not SHA-256\"\n  fi\n  printf '\\''%s=%s\\n'\\'' \"$name\" \"$lock_digest\" >> \"$GITHUB_ENV\"\n  printf '\\''velnor: %s=%s\\n'\\'' \"$name\" \"$lock_digest\"\n}\nvelnor_locks='\\''mise.lock .mise.lock'\\''\nfor velnor_file in mise.toml .mise.toml mise.*.toml .mise.*.toml .config/mise.toml .config/mise.*.toml .config/mise/config.toml .config/mise/config.*.toml .config/mise/conf.d/*.toml mise/config.toml mise/config.*.toml .mise/config.toml .mise/config.*.toml; do\n  if [ ! -e \"$velnor_file\" ] && [ ! -L \"$velnor_file\" ]; then continue; fi\n  velnor_regular \"$velnor_file\"\n  velnor_tools \"$velnor_file\"\ndone\nif [ -e .tool-versions ] || [ -L .tool-versions ]; then\n  velnor_regular .tool-versions\n  velnor_tool_versions .tool-versions\nfi\nif [ -e rust-toolchain.toml ] || [ -L rust-toolchain.toml ]; then\n  velnor_regular rust-toolchain.toml\n  velnor_toolchain rust-toolchain.toml\nfi\nif [ -e rust-toolchain ] || [ -L rust-toolchain ]; then\n  velnor_regular rust-toolchain\n  velnor_toolchain rust-toolchain\nfi\nvelnor_tool VELNOR_TOOL_JACTIONLINT '\\''jactionlint'\\'' '\\''github:jdx/jactionlint'\\'' '\\''packslip:github.com/jdx/jactionlint'\\''\nvelnor_lock VELNOR_TOOL_JACTIONLINT_LOCK '\\''jactionlint'\\'' '\\''github:jdx/jactionlint'\\'' '\\''packslip:github.com/jdx/jactionlint'\\''\nvelnor_tool VELNOR_TOOL_MR_BOXINGTON '\\''mr-boxington'\\'' '\\''mbx'\\'' '\\''github:jdx/mr-boxington'\\'' '\\''packslip:github.com/jdx/mr-boxington'\\''\nvelnor_lock VELNOR_TOOL_MR_BOXINGTON_LOCK '\\''mr-boxington'\\'' '\\''mbx'\\'' '\\''github:jdx/mr-boxington'\\'' '\\''packslip:github.com/jdx/mr-boxington'\\''\nvelnor_tool VELNOR_TOOL_NEXTEST '\\''aqua:nextest-rs/nextest/cargo-nextest'\\'' '\\''cargo-nextest'\\'' '\\''cargo:cargo-nextest'\\'' '\\''github:nextest-rs/nextest'\\'' '\\''ubi:nextest-rs/nextest'\\''\nvelnor_lock VELNOR_TOOL_NEXTEST_LOCK '\\''aqua:nextest-rs/nextest/cargo-nextest'\\'' '\\''cargo-nextest'\\'' '\\''cargo:cargo-nextest'\\'' '\\''github:nextest-rs/nextest'\\'' '\\''ubi:nextest-rs/nextest'\\''\nvelnor_tool VELNOR_TOOL_RUST '\\''rust'\\'' '\\''core:rust'\\''\nvelnor_lock VELNOR_TOOL_RUST_LOCK '\\''rust'\\'' '\\''core:rust'\\''\nvelnor_tool VELNOR_TOOL_SHELLCHECK '\\''shellcheck'\\'' '\\''aqua:koalaman/shellcheck'\\''\nvelnor_lock VELNOR_TOOL_SHELLCHECK_LOCK '\\''shellcheck'\\'' '\\''aqua:koalaman/shellcheck'\\''\nrm -rf \"$velnor_dir\"\n'" # zizmor: ignore[github-env]
-      - &s12
-        name: V2 identity
-        id: v2
-        uses: ./.github/actions/velnor-tools-prelude-u26 # zizmor: ignore[self-repository]
-        with:
-          d: 821e9e2c7588959d6ea432dae027feb9883eed826f579e43bec5face9f6fc15d-${{ env.VELNOR_TOOL_JACTIONLINT }}-${{ env.VELNOR_TOOL_JACTIONLINT_LOCK }}-${{ env.VELNOR_TOOL_MR_BOXINGTON }}-${{ env.VELNOR_TOOL_MR_BOXINGTON_LOCK }}-${{ env.VELNOR_TOOL_NEXTEST }}-${{ env.VELNOR_TOOL_NEXTEST_LOCK }}-${{ env.VELNOR_TOOL_RUST }}-${{ env.VELNOR_TOOL_RUST_LOCK }}-${{ env.VELNOR_TOOL_SHELLCHECK }}-${{ env.VELNOR_TOOL_SHELLCHECK_LOCK }}
-      - *s6
+        run: "function_env_unset=(); function_env_scan_complete=0; while IFS= read -r -d '' env_entry; do case \"$env_entry\" in BASH_FUNC_*=*) function_env_unset+=(-u \"${env_entry%%=*}\");; VELNOR_VERIFIER_ENV_SCAN_COMPLETE) function_env_scan_complete=$((function_env_scan_complete + 1));; esac; done < <({ /usr/bin/env -0 && printf '%s\\000' 'VELNOR_VERIFIER_ENV_SCAN_COMPLETE'; }); [ \"$function_env_scan_complete\" -eq 1 ] || exit 1; exec /usr/bin/env \"${function_env_unset[@]}\" -u BASH_ENV -u ENV -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN -u GITHUB_TOKEN -u MISE_GITHUB_TOKEN -u GH_TOKEN -u GH_HOST -u GH_CONFIG_DIR PATH=/usr/bin:/bin:/usr/sbin:/sbin /bin/bash --noprofile --norc -p -e -o pipefail -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu\n: \"${GITHUB_ENV:?missing GITHUB_ENV}\"\n: \"${RUNNER_TEMP:?missing RUNNER_TEMP}\"\nvelnor_dir=\"$RUNNER_TEMP/velnor-project-tool\"\nvelnor_db=\"$velnor_dir/declared\"\nvelnor_tab=$(printf '\\''\\t'\\'')\nvelnor_safe() { printf '\\''%s'\\'' \"$1\" | cut -c1-64 | tr -c '\\''A-Za-z0-9._/@+-'\\'' '\\''?'\\''; }\nvelnor_fail() { printf '\\''velnor: %s\\n'\\'' \"$1\" >&2; exit 1; }\nvelnor_capture_physical_path() {\n  [ \"$#\" -eq 2 ] || return 1\n  (cd -P \"$1\" && pwd -P) > \"$2\" || return 1\n  resolved_path=\n  newline='\\''\n'\\''\n  while IFS= read -r path_line; do\n    resolved_path=$resolved_path$path_line\"$newline\"\n  done < \"$2\"\n  case \"$resolved_path\" in\n    *\"$newline\") resolved_path=${resolved_path%\"$newline\"} ;;\n    *) return 1 ;;\n  esac\n  printf '\\''%s\\n'\\'' \"$resolved_path\" > \"$2\" || return 1\n}; velnor_bind_selected_mise() { [ \"$#\" -eq 1 ] || return 5; mise_data_dir=${MISE_DATA_DIR-}; if [ -z \"$mise_data_dir\" ]; then if [ -n \"${XDG_DATA_HOME-}\" ]; then mise_data_dir=\"$XDG_DATA_HOME/mise\"; elif [ -n \"${HOME-}\" ]; then mise_data_dir=\"$HOME/.local/share/mise\"; else return 1; fi; fi; case \"$mise_data_dir\" in /*) ;; *) mise_data_dir=./$mise_data_dir;; esac; case \"$mise_data_dir\" in /) ;; */) mise_data_dir=${mise_data_dir%/};; esac; [ -d \"$mise_data_dir\" ] || return 2; velnor_capture_physical_path \"$mise_data_dir\" \"$1\" || return 3; resolved_mise_data_dir=$resolved_path; [ -d \"$resolved_mise_data_dir/bin\" ] || return 4; velnor_capture_physical_path \"$resolved_mise_data_dir/bin\" \"$1\" || return 4; resolved_mise_bin_dir=$resolved_path; mise_bin=\"$resolved_mise_bin_dir/mise\"; [ -f \"$mise_bin\" ] && [ -x \"$mise_bin\" ] && [ ! -L \"$mise_bin\" ] || return 4; MISE_DATA_DIR=\"$resolved_mise_data_dir\"; export MISE_DATA_DIR; return 0; }\nvelnor_mise() { \"$mise_bin\" --no-config --no-env --no-hooks \"$@\"; }\nrm -rf \"$velnor_dir\"\nmkdir -p \"$velnor_dir\"\n: > \"$velnor_db\"\nvelnor_bind_selected_mise \"$velnor_dir/mise-data-dir\" || { velnor_mise_status=$?; velnor_fail \"Setup Mise data directory or binary is invalid (status $velnor_mise_status)\"; }\nvelnor_regular() {\n  if [ -L \"$1\" ] || [ ! -f \"$1\" ]; then velnor_fail \"$1 must be a regular file\"; fi\n}\nvelnor_toml() {\n  cp -- \"$1\" \"$velnor_dir/src.toml\"\n  velnor_mise config get -f \"$velnor_dir/src.toml\" > /dev/null 2>&1 || velnor_fail \"$1 is not valid TOML\"\n}\nvelnor_tools() {\n  velnor_toml \"$1\"\n  if velnor_mise config get -f \"$velnor_dir/src.toml\" tools > \"$velnor_dir/tools\" 2>/dev/null; then\n    awk -v file=\"$1\" '\\''\nfunction unq(s) {\n  if (s ~ /^\"[^\"\\\\]*\"$/ || s ~ /^\\047[^\\047]*\\047$/) { return substr(s, 2, length(s) - 2) }\n  return s\n}\nBEGIN { OFS = \"\\t\"; cur = \"\"; multi = \"\" }\n{\n  line = $0\n  if (multi != \"\") { if (index(line, multi) > 0) { multi = \"\" } next }\n  if (line ~ /^[ \\t]*(#|$)/) { next }\n  if (line ~ /^[ \\t]*\\[/) {\n    hdr = line\n    sub(/^[ \\t]*\\[+[ \\t]*/, \"\", hdr)\n    sub(/[ \\t]*\\]+[ \\t]*$/, \"\", hdr)\n    cur = unq(hdr)\n    if (cur == \"\") { cur = \"?\" }\n    next\n  }\n  eq = index(line, \" = \")\n  if (eq == 0) { next }\n  k = unq(substr(line, 1, eq - 1))\n  v = substr(line, eq + 3)\n  if (v ~ /^\"\"\"/ || v ~ /^\\047\\047\\047/) {\n    d = substr(v, 1, 3)\n    if (index(substr(v, 4), d) == 0) { multi = d }\n    v = d\n  } else {\n    v = unq(v)\n  }\n  if (cur == \"\") { print file, k, v } else if (k == \"version\") { print file, cur, v }\n}'\\'' \"$velnor_dir/tools\" >> \"$velnor_db\"\n  fi\n}\nvelnor_tool_versions() {\n  awk -v file=\"$1\" '\\''\nBEGIN { OFS = \"\\t\" }\n{\n  sub(/[ \\t]*#.*$/, \"\")\n  if ($0 ~ /^[ \\t]*$/) { next }\n  line = $0\n  sub(/^[ \\t]+/, \"\", line)\n  k = line\n  sub(/[ \\t].*$/, \"\", k)\n  v = line\n  if (v == k) { v = \"\" } else { sub(/^[^ \\t]+[ \\t]+/, \"\", v); sub(/[ \\t]+$/, \"\", v) }\n  print file, k, v\n}'\\'' \"$1\" >> \"$velnor_db\"\n}\nvelnor_toolchain() {\n  if grep -q '\\''^[[:space:]]*\\['\\'' \"$1\"; then\n    velnor_toml \"$1\"\n    if velnor_mise config get -f \"$velnor_dir/src.toml\" toolchain.channel > \"$velnor_dir/channel\" 2>/dev/null; then\n      awk -v file=\"$1\" '\\''BEGIN { OFS = \"\\t\" } NR == 1 { v = $0; next } { v = v \" \" $0 } END { print file, \"rust\", v }'\\'' \"$velnor_dir/channel\" >> \"$velnor_db\"\n    fi\n  else\n    printf '\\''%s\\t%s\\t%s\\n'\\'' \"$1\" rust \"$(tr -d '\\'' \\t\\r\\n'\\'' < \"$1\")\" >> \"$velnor_db\"\n  fi\n}\nvelnor_exact() {\n  case \"$2\" in\n    '\\'''\\''|*[!0-9.]*|.*|*.|*..*|*.*.*.*|0[0-9]*|*.0[0-9]*) velnor_fail \"$1 must declare one exact X.Y.Z version, not '\\''$(velnor_safe \"$2\")'\\''\" ;;\n    *.*.*) ;;\n    *) velnor_fail \"$1 must declare one exact X.Y.Z version, not '\\''$(velnor_safe \"$2\")'\\''\" ;;\n  esac\n}\nvelnor_tool() {\n  name=$1\n  shift\n  resolved=\n  origin=\n  while IFS=\"$velnor_tab\" read -r file key value; do\n    matched=0\n    for want in \"$@\"; do\n      if [ \"$key\" = \"$want\" ]; then matched=1; fi\n    done\n    if [ \"$matched\" = 0 ]; then continue; fi\n    velnor_exact \"$file $key\" \"$value\"\n    if [ -n \"$resolved\" ] && [ \"$resolved\" != \"$value\" ]; then\n      velnor_fail \"$name: $file $key declares $value, $origin declares $resolved\"\n    fi\n    if [ -z \"$resolved\" ]; then origin=\"$file $key\"; fi\n    resolved=$value\n  done < \"$velnor_db\"\n  [ -n \"$resolved\" ] || velnor_fail \"$name: the project config no longer declares this tool; regenerate the workflow\"\n  printf '\\''%s=%s\\n'\\'' \"$name\" \"$resolved\" >> \"$GITHUB_ENV\"\n  if [ \"$name\" = VELNOR_TOOL_RUST ] && [ \"${velnor_export_rustup-0}\" = 1 ]; then\n    printf '\\''RUSTUP_TOOLCHAIN=%s\\n'\\'' \"$resolved\" >> \"$GITHUB_ENV\"\n  fi\n  printf '\\''velnor: %s=%s\\n'\\'' \"$name\" \"$resolved\"\n}\n# shellcheck disable=SC2016 # awk program text: awk, not the shell, expands it\nvelnor_lock_awk='\\''BEGIN { q = \"\\\"\"; e1 = \"[[tools.\" key \"]]\"; e2 = \"[[tools.\" q key q \"]]\"; e3 = \"[tools.\" key \"]\"; e4 = \"[tools.\" q key q \"]\"; s1 = \"[tools.\" key \".\"; s2 = \"[tools.\" q key q \".\"; p1 = s1 q \"platforms.\" platform q \"]\"; p2 = s2 q \"platforms.\" platform q \"]\"; p3 = s1 \"platforms.\" platform \"]\"; p4 = s2 \"platforms.\" platform \"]\"; want = \"version = \" q version q; inline = q \"platforms.\" platform q \" = {\"; state = 0 }\n{ line = $0; sub(/^[ \\t]+/, \"\", line); sub(/[ \\t\\r]+$/, \"\", line) }\nline == \"\" || substr(line, 1, 1) == \"#\" { next }\nsubstr(line, 1, 1) == \"[\" {\n  matched = state == 2 || state == 3 || state == 4; other = state == 1 || state == 5\n  if (line == e1 || line == e2 || line == e3 || line == e4) state = 1\n  else if (line == p1 || line == p2 || line == p3 || line == p4) state = matched ? 3 : (other ? 5 : 0)\n  else if (index(line, s1) == 1 || index(line, s2) == 1) state = matched ? 4 : (other ? 5 : 0)\n  else state = 0\n  next\n}\nstate == 1 && line == want { state = 2; next }\nstate == 3 && (index(line, \"checksum = \") == 1 || index(line, \"url = \") == 1) { print lock \" \" key \" \" line; next }\nstate == 2 && index(line, inline) == 1 {\n  if (match(line, /checksum = \"[^\"]*\"/)) print lock \" \" key \" \" substr(line, RSTART, RLENGTH)\n  if (match(line, /[{ ,]url = \"[^\"]*\"/)) print lock \" \" key \" \" substr(line, RSTART + 1, RLENGTH - 1)\n}'\\''\nvelnor_lock() {\n  name=$1\n  shift\n  case \"${RUNNER_OS-}:${RUNNER_ARCH-}\" in\n    Linux:X64) platform=linux-x64 ;;\n    Linux:ARM64) platform=linux-arm64 ;;\n    macOS:X64) platform=macos-x64 ;;\n    macOS:ARM64) platform=macos-arm64 ;;\n    Windows:X64) platform=windows-x64 ;;\n    Windows:ARM64) platform=windows-arm64 ;;\n    *) velnor_fail \"$name: unsupported runner platform '\\''${RUNNER_OS-}:${RUNNER_ARCH-}'\\''\" ;;\n  esac\n  : > \"$velnor_dir/lock\"\n  for lock in $velnor_locks; do\n    if [ ! -e \"$lock\" ] && [ ! -L \"$lock\" ]; then continue; fi\n    velnor_regular \"$lock\"\n    for key in \"$@\"; do\n      awk -v lock=\"$lock\" -v key=\"$key\" -v version=\"$resolved\" -v platform=\"$platform\" \"$velnor_lock_awk\" \"$lock\" >> \"$velnor_dir/lock\" || velnor_fail \"$lock could not be read\"\n    done\n  done\n  lock_digest=unlocked\n  if [ -s \"$velnor_dir/lock\" ]; then\n    if command -v sha256sum >/dev/null 2>&1; then\n      lock_digest=$(sha256sum < \"$velnor_dir/lock\") || velnor_fail \"$name: lock digest failed\"\n    else\n      lock_digest=$(shasum -a 256 < \"$velnor_dir/lock\") || velnor_fail \"$name: lock digest failed\"\n    fi\n    lock_digest=${lock_digest%% *}\n    case \"$lock_digest\" in\n      *[!0-9a-f]*) velnor_fail \"$name: lock digest is not hexadecimal\" ;;\n    esac\n    [ \"${#lock_digest}\" -eq 64 ] || velnor_fail \"$name: lock digest is not SHA-256\"\n  fi\n  printf '\\''%s=%s\\n'\\'' \"$name\" \"$lock_digest\" >> \"$GITHUB_ENV\"\n  printf '\\''velnor: %s=%s\\n'\\'' \"$name\" \"$lock_digest\"\n}\nvelnor_locks='\\''mise.lock .mise.lock'\\''\nfor velnor_file in mise.toml .mise.toml mise.*.toml .mise.*.toml .config/mise.toml .config/mise.*.toml .config/mise/config.toml .config/mise/config.*.toml .config/mise/conf.d/*.toml mise/config.toml mise/config.*.toml .mise/config.toml .mise/config.*.toml; do\n  if [ ! -e \"$velnor_file\" ] && [ ! -L \"$velnor_file\" ]; then continue; fi\n  velnor_regular \"$velnor_file\"\n  velnor_tools \"$velnor_file\"\ndone\nif [ -e .tool-versions ] || [ -L .tool-versions ]; then\n  velnor_regular .tool-versions\n  velnor_tool_versions .tool-versions\nfi\nif [ -e rust-toolchain.toml ] || [ -L rust-toolchain.toml ]; then\n  velnor_regular rust-toolchain.toml\n  velnor_toolchain rust-toolchain.toml\nfi\nif [ -e rust-toolchain ] || [ -L rust-toolchain ]; then\n  velnor_regular rust-toolchain\n  velnor_toolchain rust-toolchain\nfi\nvelnor_tool VELNOR_TOOL_JACTIONLINT '\\''jactionlint'\\'' '\\''github:jdx/jactionlint'\\'' '\\''packslip:github.com/jdx/jactionlint'\\''\nvelnor_tool VELNOR_TOOL_MR_BOXINGTON '\\''mr-boxington'\\'' '\\''mbx'\\'' '\\''github:jdx/mr-boxington'\\'' '\\''packslip:github.com/jdx/mr-boxington'\\''\nvelnor_tool VELNOR_TOOL_NEXTEST '\\''aqua:nextest-rs/nextest/cargo-nextest'\\'' '\\''cargo-nextest'\\'' '\\''cargo:cargo-nextest'\\'' '\\''github:nextest-rs/nextest'\\'' '\\''ubi:nextest-rs/nextest'\\''\nvelnor_tool VELNOR_TOOL_RUST '\\''rust'\\'' '\\''core:rust'\\''\nvelnor_tool VELNOR_TOOL_SHELLCHECK '\\''shellcheck'\\'' '\\''aqua:koalaman/shellcheck'\\''\nrm -rf \"$velnor_dir\"\n'" # zizmor: ignore[github-env]
       - *s3
       - *s4
       - *s8
-      - &s13
+      - &s12
         name: Prepare pinned tools
         env: *m9
         run: "mise --no-config --no-env --no-hooks install 'rust[profile=minimal]@'\"${VELNOR_TOOL_RUST}\" 'mr-boxington@'\"${VELNOR_TOOL_MR_BOXINGTON}\" 'jactionlint@'\"${VELNOR_TOOL_JACTIONLINT}\" 'shellcheck@'\"${VELNOR_TOOL_SHELLCHECK}\" 'aqua:nextest-rs/nextest/cargo-nextest@'\"${VELNOR_TOOL_NEXTEST}\""
       - *s7
-      - &s14
+      - &s13
         name: Prepare Rust components
         env: *m9
         run: "mise --no-config --no-env --no-hooks exec 'rust@'\"${VELNOR_TOOL_RUST}\" -- rustup component add --toolchain \"${VELNOR_TOOL_RUST}\"'-x86_64-unknown-linux-gnu' clippy rustfmt"
       - *s9
-      - &s15
+      - &s14
         name: Restore Cargo sources
         if: github.event_name != 'workflow_dispatch'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -511,29 +523,29 @@ jobs:
           key: ${{needs.plan.outputs.sources_key}}
           path: "${{ runner.temp }}/velnor/cargo/registry/index\n${{ runner.temp }}/velnor/cargo/registry/cache\n${{ runner.temp }}/velnor/cargo/git/db"
           restore-keys: ${{needs.plan.outputs.sources_restore_keys}}
-      - &s16
+      - &s15
         name: Verify Rust before MBX action
-        env: &m13
+        env: &m12
           CARGO_HOME: ${{ runner.temp }}/velnor/cargo
           MBX_CACHE_DIR: ${{ runner.temp }}/velnor/mbx
           MISE_CARGO_HOME: ${{ runner.temp }}/velnor/cargo
           MISE_RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
           RUSTUP_HOME: ${{ runner.temp }}/velnor/rustup
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; [ -d \"$RUNNER_TEMP\" ] || { printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must exist'\\'' >&2; exit 1; }; check_no_symlink() { path=$1; while [ \"$path\" != / ]; do [ ! -L \"$path\" ] || return 1; path=${path%/*}; [ -n \"$path\" ] || path=/; done; return 0; }; check_no_symlink \"$RUNNER_TEMP\" || { printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP path contains a symlink'\\'' >&2; exit 1; }; mbx_cache_dir=\"$RUNNER_TEMP/velnor/mbx\"; [ \"${MBX_CACHE_DIR:-}\" = \"$mbx_cache_dir\" ] || { printf '\\''%s\\n'\\'' '\\''MBX_CACHE_DIR must use the stable runner-temp path'\\'' >&2; exit 1; }; [ ! -L \"$RUNNER_TEMP/velnor\" ] || { printf '\\''%s\\n'\\'' '\\''Velnor temp root must not be a symlink'\\'' >&2; exit 1; }; if [ ! -e \"$RUNNER_TEMP/velnor\" ]; then (umask 077 && mkdir -m 700 \"$RUNNER_TEMP/velnor\"); fi; [ -d \"$RUNNER_TEMP/velnor\" ] && check_no_symlink \"$RUNNER_TEMP/velnor\" || { printf '\\''%s\\n'\\'' '\\''Velnor temp root must be a real directory'\\'' >&2; exit 1; }; [ ! -e \"$mbx_cache_dir\" ] && [ ! -L \"$mbx_cache_dir\" ] || { printf '\\''%s\\n'\\'' '\\''MBX store root already exists in this private runner namespace'\\'' >&2; exit 1; }; (umask 077 && mkdir -m 700 \"$mbx_cache_dir\" && mkdir -m 700 \"$mbx_cache_dir/actions\") || { printf '\\''%s\\n'\\'' '\\''could not reserve the MBX store root'\\'' >&2; exit 1; }; [ -n \"${GITHUB_ENV:-}\" ] && [ -f \"$GITHUB_ENV\" ] && [ ! -L \"$GITHUB_ENV\" ] || { printf '\\''%s\\n'\\'' '\\''GITHUB_ENV must be a regular runner file'\\'' >&2; exit 1; }; check_no_symlink \"$GITHUB_ENV\" || { printf '\\''%s\\n'\\'' '\\''GITHUB_ENV path contains a symlink'\\'' >&2; exit 1; }; printf '\\''MBX_CACHE_DIR=%s\\n'\\'' \"$mbx_cache_dir\" >> \"$GITHUB_ENV\"; [ -n \"$GITHUB_PATH\" ] || { printf '\\''%s\\n'\\'' '\\''GITHUB_PATH is required'\\'' >&2; exit 1; }; case \"$GITHUB_RUN_ID\" in '\\'''\\''|*[!0-9]*) printf '\\''%s\\n'\\'' '\\''run id must be numeric'\\'' >&2; exit 1 ;; esac; case \"$GITHUB_RUN_ATTEMPT\" in '\\'''\\''|*[!0-9]*) printf '\\''%s\\n'\\'' '\\''run attempt must be numeric'\\'' >&2; exit 1 ;; esac; probe_dir=\"$RUNNER_TEMP/velnor-mbx-preflight-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT\"; [ ! -e \"$probe_dir\" ] && [ ! -L \"$probe_dir\" ] || { printf '\\''%s\\n'\\'' '\\''preflight scratch already exists'\\'' >&2; exit 1; }; (umask 077 && mkdir -m 700 \"$probe_dir\") || { printf '\\''%s\\n'\\'' '\\''could not reserve preflight scratch'\\'' >&2; exit 1; }; cleanup() { rm -f \"$probe_dir/rust-root\" \"$probe_dir/rustc-output\"; rmdir \"$probe_dir\"; }; trap cleanup EXIT; trap '\\''exit 1'\\'' HUP INT TERM; mise --no-config --no-env --no-hooks where '\\''rust@'\"${VELNOR_TOOL_RUST}\"''\\'' > \"$probe_dir/rust-root\"; exec 3< \"$probe_dir/rust-root\"; IFS= read -r rust_root <&3 || { printf '\\''%s\\n'\\'' '\\''Mise returned no Rust install path'\\'' >&2; exit 1; }; extra=; if IFS= read -r extra <&3 || [ -n \"$extra\" ]; then printf '\\''%s\\n'\\'' '\\''Mise returned multiple Rust install paths'\\'' >&2; exit 1; fi; exec 3<&-; [ -n \"$rust_root\" ] || { printf '\\''%s\\n'\\'' '\\''Mise returned an empty Rust install path'\\'' >&2; exit 1; }; case \"$rust_root\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''Rust install path must be absolute'\\'' >&2; exit 1 ;; esac; rustc_bin=\"$rust_root/rustc\"; [ -x \"$rustc_bin\" ] || { printf '\\''expected Rustup shim at %s\\n'\\'' \"$rustc_bin\" >&2; exit 1; }; \"$rustc_bin\" '\\''+'\"${VELNOR_TOOL_RUST}\"''\\'' -vV > \"$probe_dir/rustc-output\"; grep -Fqx '\\''release: '\"${VELNOR_TOOL_RUST}\"''\\'' \"$probe_dir/rustc-output\" || { printf '\\''Rustup did not report exact toolchain '\"${VELNOR_TOOL_RUST}\"'\\n'\\'' >&2; exit 1; }; printf '\\''%s\\n'\\'' \"$rust_root\" >> \"$GITHUB_PATH\"; mbx_disk_sample() { boundary=$1; case \"${RUNNER_TEMP:-}\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''MBX_DISK_SAMPLE_ERROR runner_temp_not_absolute'\\'' >&2; return 0 ;; esac; if [ -d \"$RUNNER_TEMP\" ] && [ ! -L \"$RUNNER_TEMP\" ]; then printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp blocks_kib\\n'\\'' \"$boundary\"; if df -Pk \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_blocks\\n'\\'' \"$boundary\" >&2; fi; printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp inodes\\n'\\'' \"$boundary\"; if df -Pi \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_inodes\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s runner_temp_not_real_directory\\n'\\'' \"$boundary\" >&2; return 0; fi; store_path=\"$RUNNER_TEMP/velnor/mbx\"; if [ \"${MBX_CACHE_DIR:-}\" = \"$store_path\" ] && [ -d \"$store_path\" ] && [ ! -L \"$store_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=mbx_store\\n'\\'' \"$boundary\"; if du -sk \"$store_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store_unavailable\\n'\\'' \"$boundary\" >&2; fi; target_path=\"${target_dir:-target}\"; if [ ! -d \"$target_path\" ]; then for candidate in */target crates/*/target \"$RUNNER_TEMP/velnor/target\"; do if [ -d \"$candidate\" ]; then target_path=\"$candidate\"; break; fi; done; fi; if [ -L \"$target_path\" ]; then printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target_is_symlink\\n'\\'' \"$boundary\" >&2; elif [ -d \"$target_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target\\n'\\'' \"$boundary\"; if du -sk \"$target_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target state=absent\\n'\\'' \"$boundary\"; fi; }; mbx_disk_sample before-action-restore'"
-      - &s17
+      - &s16
         name: Set up MBX
         uses: jdx/mr-boxington-action@88acf2bb50552c7c508cbac13e5f8c576b95b1de
         with:
           backend: local
           toolchain: ${{ env.VELNOR_TOOL_RUST }}
           version: ${{ env.VELNOR_TOOL_MR_BOXINGTON }}
-        env: *m13
-      - &s18
+        env: *m12
+      - &s17
         name: Verify native MBX version
         id: mbx-ready
-        env: *m13
+        env: *m12
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; check_no_symlink() { path=$1; while [ \"$path\" != / ]; do [ ! -L \"$path\" ] || return 1; path=${path%/*}; [ -n \"$path\" ] || path=/; done; return 0; }; [ -d \"$RUNNER_TEMP\" ] && check_no_symlink \"$RUNNER_TEMP\" || { printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be a real directory'\\'' >&2; exit 1; }; [ \"${MBX_CACHE_DIR:-}\" = \"$RUNNER_TEMP/velnor/mbx\" ] || { printf '\\''%s\\n'\\'' '\\''MBX_CACHE_DIR changed from its stable runner-temp path'\\'' >&2; exit 1; }; [ -d \"$RUNNER_TEMP/velnor\" ] && [ -d \"$MBX_CACHE_DIR\" ] && [ -d \"$MBX_CACHE_DIR/actions\" ] || { printf '\\''%s\\n'\\'' '\\''MBX store directories are missing'\\'' >&2; exit 1; }; check_no_symlink \"$RUNNER_TEMP/velnor\" && check_no_symlink \"$MBX_CACHE_DIR/actions\" || { printf '\\''%s\\n'\\'' '\\''MBX store path contains a symlink'\\'' >&2; exit 1; }; case \"$GITHUB_RUN_ID\" in '\\'''\\''|*[!0-9]*) printf '\\''%s\\n'\\'' '\\''run id must be numeric'\\'' >&2; exit 1 ;; esac; case \"$GITHUB_RUN_ATTEMPT\" in '\\'''\\''|*[!0-9]*) printf '\\''%s\\n'\\'' '\\''run attempt must be numeric'\\'' >&2; exit 1 ;; esac; probe_dir=\"$RUNNER_TEMP/velnor-mbx-verify-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT\"; [ ! -e \"$probe_dir\" ] && [ ! -L \"$probe_dir\" ] || { printf '\\''%s\\n'\\'' '\\''verification scratch already exists'\\'' >&2; exit 1; }; (umask 077 && mkdir -m 700 \"$probe_dir\") || { printf '\\''%s\\n'\\'' '\\''could not reserve verification scratch'\\'' >&2; exit 1; }; cleanup() { rm -f \"$probe_dir/version\" \"$probe_dir/cache-dir\" \"$probe_dir/rustc-path\" \"$probe_dir/rustc-vv\" \"$probe_dir/mbx-rustc-vv\" \"$probe_dir/mbx-rustc\"; rmdir \"$probe_dir\"; }; trap cleanup EXIT; trap '\\''exit 1'\\'' HUP INT TERM; if ! mbx_bin=$(command -v mbx); then printf '\\''%s\\n'\\'' '\\''action-owned MBX is not on PATH'\\'' >&2; exit 1; fi; case \"$mbx_bin\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''action-owned MBX path must be absolute'\\'' >&2; exit 1 ;; esac; if [ ! -f \"$mbx_bin\" ] || [ ! -x \"$mbx_bin\" ]; then printf '\\''%s\\n'\\'' '\\''action-owned MBX path must be an executable file'\\'' >&2; exit 1; fi; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- \"$mbx_bin\" --version > \"$probe_dir/version\"; exec 3< \"$probe_dir/version\"; IFS= read -r version_line <&3 || { printf '\\''%s\\n'\\'' '\\''MBX version output is empty or unterminated'\\'' >&2; exit 1; }; extra=; if IFS= read -r extra <&3 || [ -n \"$extra\" ]; then printf '\\''%s\\n'\\'' '\\''MBX version output has extra data'\\'' >&2; exit 1; fi; exec 3<&-; [ \"$version_line\" = '\\''mbx '\"${VELNOR_TOOL_MR_BOXINGTON}\"''\\'' ] || { printf '\\''%s\\n'\\'' '\\''MBX on PATH does not match the pinned action version'\\'' >&2; exit 1; }; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- \"$mbx_bin\" cache dir > \"$probe_dir/cache-dir\"; exec 3< \"$probe_dir/cache-dir\"; IFS= read -r cache_dir <&3 || { printf '\\''%s\\n'\\'' '\\''MBX cache dir output is empty or unterminated'\\'' >&2; exit 1; }; extra=; if IFS= read -r extra <&3 || [ -n \"$extra\" ]; then printf '\\''%s\\n'\\'' '\\''MBX cache dir output has extra data'\\'' >&2; exit 1; fi; exec 3<&-; [ \"$cache_dir\" = \"$MBX_CACHE_DIR/actions\" ] || { printf '\\''%s\\n'\\'' '\\''MBX reported an unexpected object store path'\\'' >&2; exit 1; }; ln -s \"$mbx_bin\" \"$probe_dir/mbx-rustc\"; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- rustup which --toolchain '\\'''\"${VELNOR_TOOL_RUST}\"''\\'' rustc > \"$probe_dir/rustc-path\"; exec 3< \"$probe_dir/rustc-path\"; IFS= read -r rustc_path <&3 || { printf '\\''%s\\n'\\'' '\\''rustup returned no rustc path'\\'' >&2; exit 1; }; exec 3<&-; case \"$rustc_path\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''rustc path must be absolute'\\'' >&2; exit 1 ;; esac; \"$rustc_path\" -vV > \"$probe_dir/rustc-vv\"; mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- \"$probe_dir/mbx-rustc\" \"$rustc_path\" -vV > \"$probe_dir/mbx-rustc-vv\"; cmp -s \"$probe_dir/rustc-vv\" \"$probe_dir/mbx-rustc-vv\" || { printf '\\''%s\\n'\\'' '\\''mbx-rustc -vV differs from rustc -vV'\\'' >&2; exit 1; }; mbx_disk_sample() { boundary=$1; case \"${RUNNER_TEMP:-}\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''MBX_DISK_SAMPLE_ERROR runner_temp_not_absolute'\\'' >&2; return 0 ;; esac; if [ -d \"$RUNNER_TEMP\" ] && [ ! -L \"$RUNNER_TEMP\" ]; then printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp blocks_kib\\n'\\'' \"$boundary\"; if df -Pk \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_blocks\\n'\\'' \"$boundary\" >&2; fi; printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp inodes\\n'\\'' \"$boundary\"; if df -Pi \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_inodes\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s runner_temp_not_real_directory\\n'\\'' \"$boundary\" >&2; return 0; fi; store_path=\"$RUNNER_TEMP/velnor/mbx\"; if [ \"${MBX_CACHE_DIR:-}\" = \"$store_path\" ] && [ -d \"$store_path\" ] && [ ! -L \"$store_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=mbx_store\\n'\\'' \"$boundary\"; if du -sk \"$store_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store_unavailable\\n'\\'' \"$boundary\" >&2; fi; target_path=\"${target_dir:-target}\"; if [ ! -d \"$target_path\" ]; then for candidate in */target crates/*/target \"$RUNNER_TEMP/velnor/target\"; do if [ -d \"$candidate\" ]; then target_path=\"$candidate\"; break; fi; done; fi; if [ -L \"$target_path\" ]; then printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target_is_symlink\\n'\\'' \"$boundary\" >&2; elif [ -d \"$target_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target\\n'\\'' \"$boundary\"; if du -sk \"$target_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target state=absent\\n'\\'' \"$boundary\"; fi; }; mbx_disk_sample after-cache-restore'"
-      - &s19
+      - &s18
         name: Compute state snapshot key
         id: mbx-bundle-key
         env:
@@ -545,7 +557,7 @@ jobs:
           VELNOR_STATE_ATTESTED: ${{needs.plan.outputs.state_union_root_attested}}
           VELNOR_STATE_SNAPSHOT: ${{needs.plan.outputs.state_root_snapshot}}
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; d=\"$RUNNER_TEMP/velnor/state-snapshot-key\"; rm -rf \"$d\"; mkdir -p \"$d\"; s256() { sha256sum \"$1\" > \"$d/sum\" || return 1; h=; rest=; read -r h rest < \"$d/sum\" || [ -n \"$h\" ]; case \"$h\" in '\\'''\\''|*[!0-9a-f]*) printf '\\''%s\\n'\\'' '\\''sha256sum returned no digest'\\'' >&2; return 1 ;; esac; [ \"${#h}\" -eq 64 ] || return 1; }; default_ref=\"${VELNOR_DEFAULT_REF:-}\"; if [ -z \"${ImageOS-}\" ]; then rm -f \"$RUNNER_TEMP/velnor/state-discovery.record\"; printf '\\''%s\\n'\\'' '\\''reason=image_os_missing'\\'' '\\''save=false'\\'' '\\''restore=false'\\'' >> \"$GITHUB_OUTPUT\"; printf '\\''%s\\n'\\'' '\\''velnor: state snapshot disabled reason=image_os_missing'\\''; exit 0; fi; trust=none; if [ \"${GITHUB_EVENT_NAME:-}\" = push ] && [ -n \"${default_ref#refs/heads/}\" ] && [ \"${GITHUB_REF:-}\" = \"$default_ref\" ] && [ \"${GITHUB_REF_PROTECTED:-}\" = true ]; then trust=trusted; fi; uname -s > \"$d/uname_s\" || :; uname_s=; read -r uname_s < \"$d/uname_s\" || :; uname -m > \"$d/uname_m\" || :; uname_m=; read -r uname_m < \"$d/uname_m\" || :; printf '\\''%s\\n'\\'' \"family=state\" \"schema=4\" '\\''$RUNNER_TEMP/velnor-gc1/state'\\'' \"unit=union\" \"mbx=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=${VELNOR_MBX_BUNDLE_ROOT}\" \"MBX_SHARE_OUT_DIR=1\" \"MBX_CC=0\" \"SOURCE_DATE_EPOCH=0\" \"MBX_BUILD_SCRIPT_EXECUTION=hybrid\" \"uname_s=$uname_s\" \"uname_m=$uname_m\" \"ImageOS=${ImageOS-}\" \"store=$RUNNER_TEMP/velnor/mbx\" \"checkout=$GITHUB_WORKSPACE\" > \"$d/compat\"; s256 \"$d/compat\"; compat=\"s256-$h\"; snap=\"${VELNOR_STATE_SNAPSHOT-}\"; case \"$snap\" in s256-*) [ \"${#snap}\" -eq 69 ] || snap= ;; *) snap= ;; esac; case \"${snap#s256-}\" in *[!0-9a-f]*) snap= ;; esac; if [ -z \"$snap\" ]; then rm -f \"$RUNNER_TEMP/velnor/state-discovery.record\"; printf '\\''%s\\n'\\'' '\\''reason=snapshot_missing'\\'' '\\''save=false'\\'' '\\''restore=false'\\'' >> \"$GITHUB_OUTPUT\"; printf '\\''%s\\n'\\'' '\\''velnor: state snapshot disabled reason=snapshot_missing'\\''; exit 0; fi; restore_prefix=\"velnor-v4-state-trusted-union-root-$compat-\"; snapshot_prefix=\"$restore_prefix$snap-\"; key=\"$snapshot_prefix\"; [ \"${#key}\" -le 443 ] || { printf '\\''cache key exceeds the GitHub cap: %s\\n'\\'' \"$key\" >&2; exit 1; }; save=false; [ \"$trust\" != trusted ] || save=true; if [ \"$trust\" = trusted ]; then provenance=trusted; decision=admitted; else case \"${GITHUB_EVENT_NAME:-}\" in pull_request) provenance=untrusted ;; *) provenance=ambiguous ;; esac; decision=restore-only; fi; restore_key=; restore_digest=; exact=false; printf '\\''%s\\n'\\'' \"${VELNOR_STATE_ATTESTED-}\" > \"$d/attested\"; while IFS= read -r cand || [ -n \"$cand\" ]; do case \"$cand\" in \"$restore_prefix\"?*) ;; *) continue ;; esac; if printf '\\''%s\\n'\\'' \"${cand#\"$restore_prefix\"}\" | grep -Eq '\\''^s256-[0-9a-f]{64}-s256-[0-9a-f]{64}$'\\''; then restore_key=$cand; break; fi; done < \"$d/attested\"; if [ -n \"$restore_key\" ]; then restore_digest=\"s256-${restore_key##*-s256-}\"; case \"$restore_key\" in \"$snapshot_prefix\"?*) exact=true ;; esac; fi; printf '\\''%s\\n'\\'' \"key=$key\" \"save=$save\" \"restore=true\" \"provenance=$provenance\" \"decision=$decision\" \"restore_key=$restore_key\" \"restore_digest=$restore_digest\" \"exact=$exact\" >> \"$GITHUB_OUTPUT\"; record=\"$RUNNER_TEMP/velnor/state-discovery.record\"; printf '\\''%s\\n'\\'' \"key=$key\" \"snapshot_prefix=$snapshot_prefix\" \"restore_prefix=$restore_prefix\" \"compat=$compat\" \"provenance=$provenance\" \"decision=$decision\" \"save=$save\" \"unit=union\" \"mbx_version=${VELNOR_MBX_BUNDLE_VERSION}\" \"toolchain=${VELNOR_MBX_BUNDLE_TOOLCHAIN}\" \"root=${VELNOR_MBX_BUNDLE_ROOT}\" > \"$record\"; printf '\\''velnor: state snapshot trust=%s key=%s save=%s provenance=%s decision=%s\\n'\\'' \"$trust\" \"$key\" \"$save\" \"$provenance\" \"$decision\"'"
-      - &s20
+      - &s19
         name: Restore state snapshot
         id: mbx-bundle-restore
         if: (steps.mbx-bundle-key.outputs.restore == 'true' && steps.mbx-bundle-key.outputs.restore_key != '') && github.event_name != 'workflow_dispatch'
@@ -553,7 +565,7 @@ jobs:
         with:
           key: ${{steps.mbx-bundle-key.outputs.restore_key}}
           path: ${{ runner.temp }}/velnor-gc1/transport/state/payload.tar.zst
-      - &s21
+      - &s20
         name: Recover state snapshot
         id: mbx-bundle-import
         if: steps.mbx-bundle-restore.outputs.cache-matched-key != ''
@@ -599,7 +611,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: &r11 "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; job=\"${VELNOR_MBX_STATS_JOB-}\"; members=\"${VELNOR_MBX_STATS_WORKSPACE-}\"; out=\"${RUNNER_TEMP:?}/velnor-mbx-stats.line\"; set -- \"${MBX_CACHE_DIR-}\"/actions/sessions/v1/*.jsonl; if [ -z \"${MBX_CACHE_DIR-}\" ] || [ ! -f \"$1\" ]; then printf '\\''mbx-stats job=%s sessions=0\\n'\\'' \"$job\" > \"$out\"; else jq -r -n -R --arg job \"$job\" --arg members \"$members\" '\\''[inputs | fromjson? | select(type == \"object\" and .type == \"action\")] as $a | ($members | split(\" \") | map(select(length > 0) | {key: ., value: true}) | from_entries) as $m | def benign: .outcome.kind == \"bypass\" and (.outcome.reason == \"compiler-query\" or .outcome.reason == \"standard-input\"); def n($c; $k): [$a[] | select((benign | not) and .outcome.kind == $k and ((if $m[.crate_name // \"\"] then \"workspace\" else \"registry\" end) == $c))] | length; def group($c): \"\\($c) hit=\\(n($c; \"hit\")) miss=\\(n($c; \"miss\")) not_looked_up=\\(n($c; \"unconsulted\")) bypassed=\\(n($c; \"bypass\"))\"; def named: (.crate_name // \"unnamed\") | gsub(\" \"; \"_\"); def class: if $m[.crate_name // \"\"] then \"workspace\" else \"registry\" end; def outcome: if .outcome.kind == \"unconsulted\" then \"not_looked_up\" else .outcome.kind end; def bounded: unique | if length == 0 then \"none\" elif length > 40 then (.[:40] + [\"+\\(length - 40)\"]) | join(\",\") else join(\",\") end; [$a[] | select(benign | not)] as $c | \"mbx-stats job=\\($job) \\(group(\"registry\")) \\(group(\"workspace\")) bypassed_benign=\\([$a[] | select(benign)] | length) nonhit=\\([$c[] | select(.outcome.kind != \"hit\") | \"\\(class):\\(outcome):\\(named)\"] | bounded) bypass=\\([$c[] | select(.outcome.kind == \"bypass\") | \"\\(.outcome.reason // \"unrecorded\"):\\(named)\"] | bounded)\"'\\'' \"$@\" > \"$out\"; fi; read -r line < \"$out\"; printf '\\''%s\\n'\\'' \"$line\"; if [ -n \"${GITHUB_STEP_SUMMARY-}\" ]; then printf '\\''%s\\n'\\'' \"$line\" >> \"$GITHUB_STEP_SUMMARY\"; fi'"
-      - &s22
+      - &s21
         name: Emit group ledger
         if: always()
         env:
@@ -626,15 +638,18 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - &s23
+      - &s22
         name: Clean MBX workspace outputs
         if: always() && steps.mbx-ready.outcome == 'success'
-        env: *m13
+        env: *m12
         run: "sh -c 'unset ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL ACTIONS_RUNTIME_TOKEN GITHUB_TOKEN MISE_GITHUB_TOKEN GH_TOKEN GH_HOST GH_CONFIG_DIR; set -eu; check_no_symlink() { path=$1; while [ \"$path\" != / ]; do [ ! -L \"$path\" ] || return 1; path=${path%/*}; [ -n \"$path\" ] || path=/; done; return 0; }; case \"$RUNNER_TEMP\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be absolute'\\'' >&2; exit 1 ;; esac; [ -d \"$RUNNER_TEMP\" ] && check_no_symlink \"$RUNNER_TEMP\" || { printf '\\''%s\\n'\\'' '\\''RUNNER_TEMP must be a real directory'\\'' >&2; exit 1; }; [ \"${MBX_CACHE_DIR:-}\" = \"$RUNNER_TEMP/velnor/mbx\" ] && [ -d \"$RUNNER_TEMP/velnor\" ] && [ -d \"$MBX_CACHE_DIR/actions\" ] && check_no_symlink \"$RUNNER_TEMP/velnor\" && check_no_symlink \"$MBX_CACHE_DIR/actions\" || { printf '\\''%s\\n'\\'' '\\''MBX store path changed before cleanup'\\'' >&2; exit 1; }; mbx_disk_sample() { boundary=$1; case \"${RUNNER_TEMP:-}\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''MBX_DISK_SAMPLE_ERROR runner_temp_not_absolute'\\'' >&2; return 0 ;; esac; if [ -d \"$RUNNER_TEMP\" ] && [ ! -L \"$RUNNER_TEMP\" ]; then printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp blocks_kib\\n'\\'' \"$boundary\"; if df -Pk \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_blocks\\n'\\'' \"$boundary\" >&2; fi; printf '\\''MBX_DISK_SAMPLE boundary=%s volume=runner_temp inodes\\n'\\'' \"$boundary\"; if df -Pi \"$RUNNER_TEMP\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s command=df_inodes\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s runner_temp_not_real_directory\\n'\\'' \"$boundary\" >&2; return 0; fi; store_path=\"$RUNNER_TEMP/velnor/mbx\"; if [ \"${MBX_CACHE_DIR:-}\" = \"$store_path\" ] && [ -d \"$store_path\" ] && [ ! -L \"$store_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=mbx_store\\n'\\'' \"$boundary\"; if du -sk \"$store_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=mbx_store_unavailable\\n'\\'' \"$boundary\" >&2; fi; target_path=\"${target_dir:-target}\"; if [ ! -d \"$target_path\" ]; then for candidate in */target crates/*/target \"$RUNNER_TEMP/velnor/target\"; do if [ -d \"$candidate\" ]; then target_path=\"$candidate\"; break; fi; done; fi; if [ -L \"$target_path\" ]; then printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target_is_symlink\\n'\\'' \"$boundary\" >&2; elif [ -d \"$target_path\" ]; then printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target\\n'\\'' \"$boundary\"; if du -sk \"$target_path\"; then :; else printf '\\''MBX_DISK_SAMPLE_ERROR boundary=%s path=target command=du\\n'\\'' \"$boundary\" >&2; fi; else printf '\\''MBX_DISK_ALLOCATED_KIB boundary=%s root=target state=absent\\n'\\'' \"$boundary\"; fi; }; target_dir=\"target\"; mbx_disk_sample before-final-clean; if ! mbx_bin=$(command -v mbx); then printf '\\''%s\\n'\\'' '\\''action-owned MBX is not on PATH'\\'' >&2; exit 1; fi; case \"$mbx_bin\" in /*) ;; *) printf '\\''%s\\n'\\'' '\\''action-owned MBX path must be absolute'\\'' >&2; exit 1 ;; esac; if [ ! -f \"$mbx_bin\" ] || [ ! -x \"$mbx_bin\" ]; then printf '\\''%s\\n'\\'' '\\''action-owned MBX path must be an executable file'\\'' >&2; exit 1; fi; clean_status=0; if mise --no-config --no-env --no-hooks exec rust@'\"${VELNOR_TOOL_RUST}\"' -- \"$mbx_bin\" clean; then clean_status=0; else clean_status=$?; fi; mbx_disk_sample after-final-clean; exit \"$clean_status\"'"
   rust-jackin-core:
-    name: Rust / jackin-core
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-core / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -643,22 +658,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -692,7 +705,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-core
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -702,11 +715,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-image:
-    name: Rust / jackin-image
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-image / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -715,22 +731,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -764,7 +778,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-image
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -774,11 +788,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-openshell:
-    name: Rust / jackin-openshell
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-openshell / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -787,22 +804,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -836,7 +851,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-openshell
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -846,11 +861,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-session:
-    name: Rust / jackin-session
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-session / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -859,22 +877,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -908,7 +924,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-session
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -918,11 +934,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-testkit:
-    name: Rust / jackin-testkit
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-testkit / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -931,22 +950,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -980,7 +997,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-testkit
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -990,11 +1007,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-tui:
-    name: Rust / jackin-tui
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-tui / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1003,22 +1023,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1052,7 +1070,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-tui
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1062,11 +1080,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage:
-    name: Rust / jackin-usage
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1075,22 +1096,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1124,7 +1143,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1134,11 +1153,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-claude:
-    name: Rust / jackin-usage-provider-claude
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-claude / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1147,22 +1169,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1196,7 +1216,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-claude
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1206,11 +1226,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-codex:
-    name: Rust / jackin-usage-provider-codex
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-codex / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1219,22 +1242,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1268,7 +1289,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-codex
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1278,11 +1299,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-core:
-    name: Rust / jackin-usage-provider-core
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-core / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1291,22 +1315,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1340,7 +1362,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-core
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1350,11 +1372,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-cursor:
-    name: Rust / jackin-usage-provider-cursor
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-cursor / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1363,22 +1388,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1412,7 +1435,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-cursor
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1422,11 +1445,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-gemini:
-    name: Rust / jackin-usage-provider-gemini
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-gemini / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1435,22 +1461,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1484,7 +1508,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-gemini
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1494,11 +1518,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-grok:
-    name: Rust / jackin-usage-provider-grok
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-grok / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1507,22 +1534,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1556,7 +1581,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-grok
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1566,11 +1591,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-kimi:
-    name: Rust / jackin-usage-provider-kimi
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-kimi / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1579,22 +1607,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1628,7 +1654,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-kimi
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1638,11 +1664,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-minimax:
-    name: Rust / jackin-usage-provider-minimax
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-minimax / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1651,22 +1680,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1700,7 +1727,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-minimax
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1710,11 +1737,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-opencode:
-    name: Rust / jackin-usage-provider-opencode
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-opencode / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1723,22 +1753,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1772,7 +1800,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-opencode
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1782,11 +1810,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-openrouter:
-    name: Rust / jackin-usage-provider-openrouter
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-openrouter / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1795,22 +1826,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1844,7 +1873,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-openrouter
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1854,11 +1883,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-usage-provider-zai:
-    name: Rust / jackin-usage-provider-zai
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-usage-provider-zai / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1867,22 +1899,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1916,7 +1946,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-usage-provider-zai
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1926,11 +1956,14 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
   rust-jackin-xtask:
-    name: Rust / jackin-xtask
-    runs-on: ubuntu-26.04
+    name: Rust / jackin-xtask / Velnor Scale Set / Linux x64
+    runs-on: [velnor, ubuntu-26.04-scale-set]
     timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash -e {0}
     env: *m10
     needs:
       - plan
@@ -1939,22 +1972,20 @@ jobs:
       - *s5
       - *s2
       - *s11
-      - *s12
-      - *s6
       - *s3
       - *s4
       - *s8
-      - *s13
+      - *s12
       - *s7
-      - *s14
+      - *s13
       - *s9
+      - *s14
       - *s15
       - *s16
       - *s17
       - *s18
       - *s19
       - *s20
-      - *s21
       - *s10
       - name: Build test executables
         uses: ./.github/actions/declared-task-0 # zizmor: ignore[self-repository]
@@ -1988,7 +2019,7 @@ jobs:
           VELNOR_MBX_STATS_JOB: rust-jackin-xtask
           VELNOR_MBX_STATS_WORKSPACE: account_selection accounts agent_instances agent_plan agent_table attach build_images build_plan catalog cli clipboard_writer config_edit config_schema config_store connector console console_fixture credential_file credentials derived_scan display docker_capability docker_client dockerfile doctor e2e engine engine_cert engine_errors env_file export export_e2e_specs export_live export_memory fixture_mode fleet gates gateway host host_dialect host_runner identity ids image_io image_key image_tags jackin jackin_core jackin_image jackin_openshell jackin_session jackin_start jackin_testkit jackin_tui jackin_usage jackin_usage_provider_claude jackin_usage_provider_codex jackin_usage_provider_core jackin_usage_provider_cursor jackin_usage_provider_gemini jackin_usage_provider_grok jackin_usage_provider_kimi jackin_usage_provider_minimax jackin_usage_provider_opencode jackin_usage_provider_openrouter jackin_usage_provider_zai jackin_xtask labels launch lifecycle manifest multi_layout native_credentials paths phase plan policy poll process process_runner project provider_eligibility provider_files read_link repo_gates rig role_source sandbox_name seams secrets sources start std_filesystem supervisor terminal_pair terminal_text tie tuple_account tuple_policy typed union_policy upload_project usage views write_atomic write_symlink
         run: *r11
-      - *s22
+      - *s21
       - name: Upload crate reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -1998,4 +2029,4 @@ jobs:
           overwrite: "true"
           path: ${{ runner.temp }}/velnor/r${{ github.run_id }}-a${{ env.VELNOR_RUN_KEY_ATTEMPT }}
           retention-days: "30"
-      - *s23
+      - *s22
