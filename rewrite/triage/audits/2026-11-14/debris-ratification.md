@@ -129,12 +129,20 @@ RATIFY UNRECORDED DELETION: 1 branch (tailrocks/terminal-components-baseline wip
 
 The shorter form that stood here named the repository as `baseline` and would have been rejected.)
 
-Pre-flight (read-only, confirms the 15 tips before deleting):
-```bash
-for r in jackin-project/jackin jackin-project/jackin-agent-smith tailrocks/terminal-components-baseline; do
-  gh api "repos/$r/branches" --paginate --jq '.[].name'
-done
-```
+Pre-flight: **superseded - use the publication's complete pre-flight**
+(`rewrite/triage/debris-ratification-2026-11-14.md`, §1, "Pre-flight, deletion run and post-check").
+
+The block that stood here only printed branch names. It neither confirmed that the 15 refs still
+held their recorded tips nor created and verified the archive refs that the publication now makes a
+prerequisite, so an operator who ran it and then ran the publication's deletion commands could have
+deleted the last durable ref of a branch whose unique history or test revisions exist nowhere else.
+The publication's procedure replaces it in full: the manifest check over the 15 reviewed
+(repository, branch, tip) triples and their digest (with every deletion command regenerated from
+its own triple), the retained-ref check over every captured ref, the archive prerequisite that
+preserves each deleted tip and each captured retained ref under `refs/heads/archive/**`, the
+verification that re-reads every archive ref from the API, the ruleset that locks the archive
+namespace, and the deletion run that re-reads each archive ref immediately before its push. **Run
+the publication's pre-flight; nothing that stood here may be run in its place.**
 
 Deletion commands for the approved 15: **superseded - use the publication's table**
 (`rewrite/triage/debris-ratification-2026-11-14.md`, §1, one row per branch).
