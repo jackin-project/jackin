@@ -14,7 +14,7 @@
 **Absent-path accounting:** §1a accounts for **every** path that each of the 15 deletions would remove, re-derived against the live `main` tips; §1b gives the commands that reproduce the numbers and names the `main` tips they were measured against.
 **Manifest guard:** the operator's word in §4 carries the SHA-256 digest of the 15 (repository, branch, tip) triples of §1 — `72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a`. The pre-flight recomputes that digest from the live tips and refuses to proceed when it differs, and it regenerates every §1 deletion command from its own (repository, branch, tip) triple and refuses a row whose command is not that exact push — so a word can never be applied to a different 15-ref manifest, and a command edited after the ratification cannot change what runs. The deletion run re-checks the same digest against an in-memory snapshot of the manifest - read once from the §1 table of this publication, never from a file - and builds every push from that snapshot (§1, §4).
 **Revision guard:** the operator's word in §4 carries, next to the manifest digest, the SHA-256 digest of **this publication at the revision the operator reviewed**, and the deletion run executes only that revision: it recomputes the digest of the publication it reads and refuses the run when the file is not the one the word names. A publication edited after the ratification - in the table, in the commands or in the procedure itself - therefore **invalidates the word**, and every further run is a refusal; the deletion block is executed from the verified file, not copied (§4), so what runs is the revision the word names (§1, §4).
-**Archive prerequisite:** no deletion may run before every branch this document deletes — and every captured retained ref — is preserved under `refs/heads/archive/` **and verified**, and the `refs/heads/archive/**/*` namespace stays locked by a repository ruleset for the run, with each deletion push re-reading its own archive ref immediately before it runs. Fetching a recorded SHA is not preservation: once the last ref to an object is gone, the object is gone from the remote. Nothing in the deletions touches an archive ref and the lock keeps any other writer from touching one either, so the archive closes the window that the retained-ref check alone cannot close (§1, §1a, §9).
+**Archive prerequisite:** no deletion may run before every branch this document deletes — and every captured retained ref — is preserved under `refs/heads/archive/` **and verified again after the namespace lock is active**, and the `refs/heads/archive/**/*` namespace stays locked by a repository ruleset for the run, with each deletion push re-reading its own archive ref immediately before it runs. Fetching a recorded SHA is not preservation: once the last ref to an object is gone, the object is gone from the remote. Nothing in the deletions touches an archive ref and the lock keeps any other writer from touching one either, so the archive closes the window that the retained-ref check alone cannot close (§1, §1a, §9).
 
 ## Contents
 
@@ -27,7 +27,7 @@
 | §3 | CONTAINED candidates — containment UNPROVEN (kept, NOT deletable) | 4 |
 | §4 | The operator's one-word approval text | — |
 | §5 | Nothing merged, nothing deleted | — |
-| §6 | Recorded deletion — correction of the inventory's baseline count | 1 |
+| §6 | Recorded deletion — the baseline deletion, its proof and its provenance | 1 |
 | §7 | Live verification against the remotes | 15 + 9 + 4 + 50 |
 | §8 | Excluded rows (VALUABLE / ALREADY GONE — must not be deleted) | 6 |
 
@@ -200,7 +200,8 @@ while read -r repo ref sha; do
   archive_ref "$repo" "retained/$ref" "$sha"
 done < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt
 
-# 4. VERIFICATION: re-read every archive ref from the API. Each must hold the recorded tip, and
+# 4. VERIFICATION: re-read every archive ref from the API - the 15 target archives of the manifest
+#    and every retained archive of the retained list alike. Each must hold the recorded tip, and
 #    each is a ref that the deletions do not touch, so every object the deletion would orphan stays
 #    reachable. With the archive tips added to the retained set, the fourth bucket of §1a (§1b
 #    prints it) is 0 for every row.
@@ -208,6 +209,12 @@ while read -r repo branch tip; do
   got=$(gh_api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha')
   [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip"; exit 1; }
 done < "$MANIFEST_FILE"
+while read -r repo ref sha; do
+  case "$repo" in \#*) continue ;; esac
+  got=$(gh_api "repos/$repo/git/ref/heads/archive/retained/$ref" --jq '.object.sha') \
+    || { echo "retained archive ref $repo archive/retained/$ref is gone"; exit 1; }
+  [ "$got" = "$sha" ] || { echo "retained archive ref $repo archive/retained/$ref holds $got, not $sha"; exit 1; }
+done < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt
 
 # 5. ARCHIVE NAMESPACE LOCK (mandatory, before the first deletion push): make
 #    refs/heads/archive/**/* undeletable and un-force-updatable in each repository, so no authorized
@@ -241,6 +248,23 @@ for r in jackin-project/jackin jackin-project/jackin-agent-smith tailrocks/termi
 }
 JSON
 done
+
+# POST-LOCK RE-VERIFICATION (mandatory, with the lock active, before the operator's word and any
+# deletion): an authorized writer can delete or rewrite an archive ref between its individual
+# step-3 check and the lock above, and the lock would then seal the missing or incorrect state.
+# The lock is active now and immutable, so the state this loop reads is the state the deletions
+# will see: every archive ref of step 3 - the 15 target archives and the retained archives of the
+# retained list alike - must hold its recorded tip, or the run stops here.
+while read -r repo branch tip; do
+  got=$(gh_api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha')
+  [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip after the lock"; exit 1; }
+done < "$MANIFEST_FILE"
+while read -r repo ref sha; do
+  case "$repo" in \#*) continue ;; esac
+  got=$(gh_api "repos/$repo/git/ref/heads/archive/retained/$ref" --jq '.object.sha') \
+    || { echo "retained archive ref $repo archive/retained/$ref is gone after the lock"; exit 1; }
+  [ "$got" = "$sha" ] || { echo "retained archive ref $repo archive/retained/$ref holds $got, not $sha after the lock"; exit 1; }
+done < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt
 ```
 
 **The operator's word comes here (§4).** Steps 1-5 must all have passed. The deletion run below
@@ -250,10 +274,12 @@ edited with it - reads the manifest once into an in-memory snapshot - the §1 ta
 publication, and not a file of the pre-flight, whose private directory is gone by then - checks
 that snapshot's digest and the digest of this publication against the two the word carries, and
 builds every push from that snapshot — so nothing that is not the ratified revision runs, and a
-manifest or a publication that changed after the pre-flight cannot change what runs. Each iteration re-reads the row's own archive ref immediately before it
-runs exactly that row's §1 command, so a deletion happens only while the archive copy it orphans
-is present and intact. With the step-5 lock in place no writer can change that copy between the
-re-read and the push.
+manifest or a publication that changed after the pre-flight cannot change what runs. Step 5 re-reads **every** archive ref again after the lock is active - the 15 target archives and
+the retained archives of the retained list alike - so the lock never seals a missing or rewritten
+archive: what is locked is what was verified. Each iteration re-reads the row's own
+archive ref immediately before it runs exactly that row's §1 command, so a deletion happens only
+while the archive copy it orphans is present and intact. With the step-5 lock in place no writer
+can change that copy between the re-read and the push.
 
 Every push of this run goes out through a **sanitized Git context**. Git rewrites even an explicit
 repository URL when the configuration carries a `url.<base>.insteadOf` or `url.<base>.pushInsteadOf`
@@ -705,10 +731,23 @@ if (GIT_CONFIG_SYSTEM="$CONTROL_DIR/hostile-system.gitconfig"; refuse_unsafe_hel
   exit 1
 fi
 refuse_unsafe_helpers || { echo "the sanitized context was refused by the helper guard - the guard cannot be trusted" >&2; exit 1; }
-GIT_CONFIG_GLOBAL="$CONTROL_DIR/hostile.gitconfig" git push --dry-run --force-with-lease="refs/heads/control:$CONTROL_SHA" "$CONTROL_DIR/victim.git" --delete control 2>&1 | grep -qx "To $CONTROL_DIR/mirror.git" \
+# The two dry runs are parsed in the C locale and in the porcelain form `git push -h` documents as
+# machine-readable output: the "To" header is a gettext-translated message, so an exact English
+# grep of the human push output aborts the control on a host whose LC_MESSAGES is not English even
+# though URL sanitization works - LC_ALL=C pins the C-locale tokens of both forms, and the
+# tab-separated porcelain status line carries the leased deletion in a language-independent form.
+control_out=$(GIT_CONFIG_GLOBAL="$CONTROL_DIR/hostile.gitconfig" LC_ALL=C git push --dry-run --porcelain --force-with-lease="refs/heads/control:$CONTROL_SHA" "$CONTROL_DIR/victim.git" --delete control 2>&1) \
+  || { echo "the URL-rewrite control dry run failed - the guard cannot be trusted"; exit 1; }
+printf '%s\n' "$control_out" | grep -qxF "To $CONTROL_DIR/mirror.git" \
   || { echo "the URL-rewrite control did not reproduce the redirect - the guard cannot be trusted"; exit 1; }
-git push --dry-run --force-with-lease="refs/heads/control:$CONTROL_SHA" "$CONTROL_DIR/victim.git" --delete control 2>&1 | grep -qx "To $CONTROL_DIR/victim.git" \
+printf '%s\n' "$control_out" | awk -F'\t' '$1 == "-" && $2 == ":refs/heads/control" && $3 == "[deleted]" {ok++} END{exit !(ok == 1)}' \
+  || { echo "the URL-rewrite control dry run does not report the leased deletion of refs/heads/control - the guard cannot be trusted"; exit 1; }
+control_out=$(LC_ALL=C git push --dry-run --porcelain --force-with-lease="refs/heads/control:$CONTROL_SHA" "$CONTROL_DIR/victim.git" --delete control 2>&1) \
+  || { echo "the sanitized-context dry run failed - the guard cannot be trusted"; exit 1; }
+printf '%s\n' "$control_out" | grep -qxF "To $CONTROL_DIR/victim.git" \
   || { echo "the sanitized context did not push to the repository the command names"; exit 1; }
+printf '%s\n' "$control_out" | awk -F'\t' '$1 == "-" && $2 == ":refs/heads/control" && $3 == "[deleted]" {ok++} END{exit !(ok == 1)}' \
+  || { echo "the sanitized-context dry run does not report the leased deletion of refs/heads/control - the guard cannot be trusted"; exit 1; }
 
 # Every target URL must come back unchanged from the context the pushes run in: the fetch side
 # (ls-remote --get-url applies url.<base>.insteadOf) and the push side (remote get-url --push
@@ -1286,13 +1325,13 @@ prerequisite of §1 has run and been verified.**
 
 ---
 
-## 6. Recorded deletion — correction of the inventory's baseline count
+## 6. Recorded deletion — the baseline deletion, its proof and its provenance
 
 | repo | branch | status | recorded proof |
 |---|---|---|---|
 | tailrocks/terminal-components-baseline | `wip/tuiscotti-pin-fec38841` | **Already deleted from the remote** — live check on 2026-11-14: the ref is absent (§7). **No deletion command is needed.** | The branch's class was CONTAINED (superseded), so no work was lost: its single commit only bumps the `tuiscotti` dev-dependency `d8d54155` → `fec38841`, and `main` already pins the same dependency at the strictly newer rev `92ef2d9e` (`main:Cargo.toml`); the commit's doc intent is already in `main:docs/functional-testing.md:96`. The tip was `1c980e88` ("chore: pin tuiscotti to fec38841 for binary baseline review"). |
 
-**Correction to the merged inventory.** `rewrite/triage/branch-inventory-2026-11-12.md` records `tailrocks/terminal-components-baseline` as "0 deleted" (its branches section says the baseline branch was "left on the remote because baseline had 0 deletions", and its per-repo summary says "tailrocks/terminal-components-baseline: 0 deleted"). That claim is **stale**: `wip/tuiscotti-pin-fec38841` was in fact deleted from the remote without a recorded proof in the inventory. The corrected baseline deletion count is **1**, not 0, and the deletion happened under the superset proof above (main pins a strictly newer rev of the same dependency, two commits after `fec38841`). This document records that deletion; it does not undo it and does not re-delete it.
+**The deletion and its provenance, as the merged inventory records them.** `rewrite/triage/branch-inventory-2026-11-12.md` already records `tailrocks/terminal-components-baseline` `wip/tuiscotti-pin-fec38841` as deleted and reports **1** baseline deletion: the containment-proof table carries the row and its proof, the per-repo summary reports `tailrocks/terminal-components-baseline: 1 deleted`, and the inventory's own correction note marks its earlier revision's "kept - left on the remote because baseline had 0 deletions" sentence as **stale**. That correction - not this section - established the deletion provenance: the branch was already gone from the remote when it was inspected, so the record proves that deleting it was safe, not who deleted it, and the deletion is not attributed to the deletion worker. No count is corrected here, because the current inventory reports none wrong. The deletion happened under the superset proof above (main pins a strictly newer rev of the same dependency, two commits after `fec38841`). This document records that deletion; it does not undo it and does not re-delete it.
 
 ---
 
