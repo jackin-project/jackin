@@ -136,8 +136,21 @@ async fn another_account(default: bool) -> TestResult {
         retry(&rig, &other.config, &rig.loaded, request).await?,
     )
     .await?;
-    assert!(shown.contains("jackin.dev/account"), "{shown}");
-    assert!(shown.contains("work") && shown.contains("other"), "{shown}");
+    assert!(shown.contains("jackin.dev/agents"), "{shown}");
+    let work_hash = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+        jackin_core::Agent::Codex,
+        AccountName::parse("work")?,
+    ))
+    .agents_label();
+    let other_hash = jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+        jackin_core::Agent::Codex,
+        AccountName::parse("other")?,
+    ))
+    .agents_label();
+    assert!(
+        shown.contains(&work_hash) && shown.contains(&other_hash),
+        "{shown}"
+    );
     assert_eq!(snapshot(&rig).await?, kept);
 
     ready(retry(&rig, &rig.config, &rig.loaded, rig.request(1)?).await?)?;

@@ -64,8 +64,22 @@ pub struct ImageRequest {
     pub hooks: HookFiles,
     pub revision: RoleRevision,
     pub agent: Agent,
+    pub agents: Vec<Agent>,
     pub platform: Platform,
     pub builder: BuilderName,
     pub docker: DockerLayer,
     pub rebuild: Rebuild,
+}
+
+impl ImageRequest {
+    pub fn sorted_agents(&self) -> Vec<Agent> {
+        let mut agents = if self.agents.is_empty() {
+            vec![self.agent]
+        } else {
+            self.agents.clone()
+        };
+        agents.sort_by_key(|agent| agent.as_str());
+        agents.dedup();
+        agents
+    }
 }

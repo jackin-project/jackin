@@ -89,8 +89,10 @@ pub(crate) fn spec_with(
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("work")?,
         role: RoleName::parse("backend")?,
-        agent: Agent::Codex,
-        account: AccountName::parse("work")?,
+        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("work")?,
+        )),
         policy: PolicyLabel::of("policy"),
         launch: launch.clone(),
     };

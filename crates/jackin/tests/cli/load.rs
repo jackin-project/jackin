@@ -113,7 +113,14 @@ async fn load_without_a_terminal_prints_the_sandbox_and_launch_id_and_uses_the_c
         harness.run(&args).await?.ok()?;
         let handle = rig.handle(2).await?;
         let labels = SandboxLabels::from_labels(&handle.labels())?;
-        assert_eq!(labels.planned.account, AccountName::parse("second")?);
+        assert_eq!(
+            labels.planned.agents.agents_label(),
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+                jackin_core::Agent::Codex,
+                AccountName::parse("second")?
+            ))
+            .agents_label()
+        );
         assert!(rig.world.engine.builds().len() > builds);
         assert_eq!(rig.world.gateway.sandboxes().len(), 2);
         Ok(())

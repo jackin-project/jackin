@@ -218,7 +218,22 @@ impl Session {
             .map(RuleKey::provider_rule)
             .collect();
         let mut violations = Vec::new();
-        for asset in labels.planned.agent.spec().profiles() {
+        let mut profile_assets = Vec::new();
+        if let Some(lead) = labels.planned.agents.lead_opt() {
+            profile_assets.extend(lead.agent.spec().profiles());
+        } else {
+            for provider in &detail.providers {
+                let mut candidates: Vec<_> = jackin_core::Agent::ALL
+                    .into_iter()
+                    .filter(|agent| provider.as_str().ends_with(agent.as_str()))
+                    .collect();
+                candidates.sort_by_key(|agent| std::cmp::Reverse(agent.as_str().len()));
+                if let Some(agent) = candidates.first() {
+                    profile_assets.extend(agent.spec().profiles());
+                }
+            }
+        }
+        for asset in profile_assets {
             let profile = ProviderProfile::parse(asset)?;
             violations.extend(
                 detail

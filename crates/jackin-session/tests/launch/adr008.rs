@@ -85,8 +85,10 @@ async fn foreign(
     let labels = PlannedLabels {
         workspace: WorkspaceName::parse("platform-backend")?,
         role: RoleName::parse("sentinel")?,
-        agent: Agent::Codex,
-        account: AccountName::parse("work")?,
+        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("work")?,
+        )),
         policy: PolicyLabel::of("policy"),
         launch: launch_id(launch),
     }

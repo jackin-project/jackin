@@ -89,8 +89,10 @@ pub(crate) fn planned(workspace: &str, role: &str, account: &str, launch: &str) 
     PlannedLabels {
         workspace: WorkspaceName::parse(workspace).unwrap(),
         role: RoleName::parse(role).unwrap(),
-        agent: Agent::Codex,
-        account: AccountName::parse(account).unwrap(),
+        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse(account).unwrap(),
+        )),
         policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse(launch).unwrap(),
     }

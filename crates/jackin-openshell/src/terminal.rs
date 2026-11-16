@@ -38,6 +38,11 @@ pub enum TerminalKind {
         workdir: SandboxPath,
         env: BTreeMap<EnvName, String>,
     },
+    Exec {
+        argv: Vec<String>,
+        workdir: SandboxPath,
+        env: BTreeMap<EnvName, String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

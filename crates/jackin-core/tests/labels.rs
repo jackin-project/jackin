@@ -19,8 +19,10 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("My.Project")?,
         role: RoleName::parse("backend")?,
-        agent: Agent::Codex,
-        account: AccountName::parse("work")?,
+        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("work")?,
+        )),
         policy: PolicyLabel::of("policy"),
         launch: launch.clone(),
     };
@@ -35,8 +37,10 @@ fn planned_labels_complete_into_the_documented_label_set() -> TestResult {
         ("jackin.dev/managed", "true".to_owned()),
         ("jackin.dev/workspace", "My.Project".to_owned()),
         ("jackin.dev/role", "backend".to_owned()),
-        ("jackin.dev/agent", "codex".to_owned()),
-        ("jackin.dev/account", "work".to_owned()),
+        (
+            "jackin.dev/agents",
+            "235f80276e0174fa411c641b8bc2f777".to_owned(),
+        ),
         (
             "jackin.dev/policy",
             "823412d1eacb67956220e532959f0104".to_owned(),
@@ -58,8 +62,10 @@ fn planned() -> Result<PlannedLabels, Box<dyn std::error::Error>> {
     Ok(PlannedLabels {
         workspace: WorkspaceName::parse("proj")?,
         role: RoleName::parse("backend")?,
-        agent: Agent::Codex,
-        account: AccountName::parse("work")?,
+        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("work")?,
+        )),
         policy: PolicyLabel::of("policy"),
         launch: LaunchId::parse("01hzy3k5m7p9r2t4v6w8x0abcd")?,
     })

@@ -64,7 +64,7 @@ async fn roster_maps_phase_and_exit_code() -> TestResult {
         let first = console.console().app().world.instances[0].clone();
         assert_eq!(first.role, "sentinel");
         assert!(first.id.starts_with(ID_PREFIX), "{}", first.id);
-        assert_eq!(first.account.as_deref(), Some("work"));
+        assert_eq!(first.account.as_deref(), None);
         assert_eq!(first.workdir, "/sandbox/project");
         Ok(())
     })

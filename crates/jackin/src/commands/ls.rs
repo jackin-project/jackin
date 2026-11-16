@@ -32,7 +32,11 @@ pub(crate) async fn run(app: &mut App, arg: &JsonArg) -> Result<(), CommandError
         let labels = &sandbox.labels.planned;
         app.io.line(&format!(
             "{}\t{}\t{}\t{}\t{}",
-            sandbox.name, labels.workspace, labels.role, labels.account, sandbox.phase
+            sandbox.name,
+            labels.workspace,
+            labels.role,
+            labels.agents.agents_label(),
+            sandbox.phase
         ))?;
     }
     Ok(())

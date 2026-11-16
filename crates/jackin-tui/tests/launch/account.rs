@@ -29,13 +29,13 @@ fn login(rig: &Rig, account: &str) -> Result<ConfigEdit, Failure> {
     )?))
 }
 
-async fn launched(rig: &Rig) -> Result<(AccountName, String), Failure> {
+async fn launched(rig: &Rig) -> Result<(String, String), Failure> {
     let mut console = console(rig).await?;
     begin(&mut console)?;
     let picked = console.screen();
     answer(&mut console, None).await?;
     until_route(&mut console, Route::Capsule).await?;
-    Ok((labels(&only(rig)?)?.planned.account, picked))
+    Ok((labels(&only(rig)?)?.planned.agents.agents_label(), picked))
 }
 
 async fn launches(
@@ -81,7 +81,15 @@ async fn launches(
     })?;
     assert_eq!(selected.account.as_str(), expected);
     let (account, picked) = launched(&rig).await?;
-    assert_eq!(account.as_str(), expected, "{picked}");
+    assert_eq!(
+        account,
+        jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            name(expected)?
+        ))
+        .agents_label(),
+        "{picked}"
+    );
     let flat = picked.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         flat.contains(&format!("account Codex · {expected}")),

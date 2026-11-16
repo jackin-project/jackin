@@ -6,7 +6,7 @@ use jackin_session::{AttachRequest, LineDelivery, launch_events};
 
 use super::progress::launch_event;
 use crate::app::App;
-use crate::cli::AttachArgs;
+use crate::cli::{AttachArgs, parse_agent};
 use crate::error::CommandError;
 use crate::term;
 
@@ -34,6 +34,10 @@ pub(crate) async fn run(app: &mut App, args: AttachArgs) -> Result<(), CommandEr
             sandbox: args.sandbox,
             size,
             input: InputMode::Owner,
+            agent: match &args.agent {
+                Some(text) => Some(parse_agent(text)?),
+                None => None,
+            },
         }
     };
     term::attach(app, &session, request).await

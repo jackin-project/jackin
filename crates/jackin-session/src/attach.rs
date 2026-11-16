@@ -38,6 +38,7 @@ pub struct AttachRequest {
     pub sandbox: SandboxName,
     pub size: TermSize,
     pub input: InputMode,
+    pub agent: Option<jackin_core::Agent>,
 }
 
 #[derive(Debug)]
@@ -185,6 +186,7 @@ impl AttachRequest {
             sandbox: target.sandbox,
             size,
             input: InputMode::Owner,
+            agent: None,
         }
     }
 
@@ -193,6 +195,7 @@ impl AttachRequest {
             sandbox,
             size,
             input: InputMode::Viewer,
+            agent: None,
         }
     }
 }
@@ -428,6 +431,49 @@ impl Session {
             .await?
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;
+        if let Some(agent) = request.agent {
+            let names = self
+                .sandbox_agent_names(sandbox)
+                .await
+                .map_err(AttachError::Gateway)?;
+            let is_lead = names.first().is_none_or(|lead| lead == agent.as_str());
+            if !is_lead {
+                if !names.iter().any(|name| name == agent.as_str()) {
+                    return Err(AttachError::NotFound(sandbox.clone()));
+                }
+                let spec = agent.spec();
+                let mut env = BTreeMap::new();
+                env.insert(
+                    EnvName::parse("HOME").map_err(|_| AttachError::NotFound(sandbox.clone()))?,
+                    format!("/sandbox/.jackin/homes/{}", agent.as_str()),
+                );
+                let session = self
+                    .deps
+                    .gateway
+                    .open_terminal(&TerminalRequest {
+                        sandbox: sandbox.clone(),
+                        kind: TerminalKind::Exec {
+                            argv: spec.launch_argv(),
+                            workdir: jackin_core::SandboxPath::parse(&format!(
+                                "/sandbox/work/{}/project",
+                                agent.as_str()
+                            ))
+                            .map_err(|_| AttachError::NotFound(sandbox.clone()))?,
+                            env,
+                        },
+                        size: request.size,
+                    })
+                    .await?;
+                let supervisor = run_state(self.deps.gateway.as_ref(), sandbox).await?;
+                return Ok(AttachedTerminal {
+                    session,
+                    gateway: Arc::clone(&self.deps.gateway),
+                    sandbox: sandbox.clone(),
+                    supervisor,
+                    held: Vec::new(),
+                });
+            }
+        }
         let session = self
             .deps
             .gateway

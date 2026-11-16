@@ -265,8 +265,10 @@ impl Ctx<'_> {
         let planned = PlannedLabels {
             workspace: WorkspaceName::parse("contract").map_err(text)?,
             role: RoleName::parse("contract").map_err(text)?,
-            agent: Agent::Codex,
-            account: AccountName::parse("contract").map_err(text)?,
+            agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+                Agent::Codex,
+                AccountName::parse("contract").map_err(text)?,
+            )),
             policy: PolicyLabel::of("policy"),
             launch: launch.clone(),
         };

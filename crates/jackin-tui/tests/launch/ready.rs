@@ -95,8 +95,14 @@ async fn launch_runs_the_seven_stages() -> TestResult {
         let found = labels(&handle)?;
         assert_eq!(found.planned.workspace.as_str(), "platform-backend");
         assert_eq!(found.planned.role.as_str(), "sentinel");
-        assert_eq!(found.planned.agent, Agent::Codex);
-        assert_eq!(found.planned.account.as_str(), "work");
+        assert_eq!(
+            found.planned.agents.agents_label(),
+            jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+                Agent::Codex,
+                jackin_core::AccountName::parse("work")?
+            ))
+            .agents_label()
+        );
         let name = handle.name().to_string();
         assert!(name.len() <= 19, "{name}");
         assert!(name.starts_with("jackin-platfor-"), "{name}");
@@ -124,7 +130,7 @@ async fn ready_hands_over_the_backends_instance() -> TestResult {
         assert_eq!(record.workdir, "/sandbox/project");
         assert_eq!(record.run_id, found.planned.launch.to_string());
         assert_eq!(record.role, "sentinel");
-        assert_eq!(record.account.as_deref(), Some("work"));
+        assert_eq!(record.account.as_deref(), None);
         assert!(record.workspace.is_some());
         assert_eq!(record.github, None);
         assert_eq!(world.daemons.keys().collect::<Vec<_>>(), [&record.id]);

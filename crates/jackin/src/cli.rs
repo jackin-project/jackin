@@ -40,9 +40,13 @@ pub enum Command {
     #[command(about = "Build the role image and print its image ID")]
     Build(BuildArgs),
     #[command(about = "Build the image if needed, launch a sandbox, and attach to Codex")]
-    Load(LoadArgs),
+    Load(Box<LoadArgs>),
     #[command(about = "Reattach to the Codex terminal of a sandbox")]
     Attach(AttachArgs),
+    #[command(subcommand, about = "Manage agent instances in a sandbox")]
+    Agent(AgentCommand),
+    #[command(about = "Merge each agent branch into the lead branch in the sandbox")]
+    Integrate(SandboxArg),
     #[command(about = "Open a new shell in a sandbox")]
     Shell(SandboxArg),
     #[command(about = "List the jackin sandboxes")]
@@ -55,6 +59,20 @@ pub enum Command {
     Role(RoleCommand),
     #[command(subcommand, about = "Manage workspaces")]
     Workspace(WorkspaceCommand),
+}
+
+#[derive(Debug, Subcommand)]
+pub enum AgentCommand {
+    #[command(about = "Restart one agent instance in a sandbox")]
+    Restart(AgentRestartArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct AgentRestartArgs {
+    #[arg(help = "Sandbox name")]
+    pub sandbox: SandboxName,
+    #[arg(help = "Agent name")]
+    pub agent: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -387,12 +405,36 @@ pub struct LoadArgs {
     pub path: PathBuf,
     #[arg(long, help = "Account to use for this launch")]
     pub account: Option<AccountName>,
-    #[arg(long, help = "Agent to run for this launch")]
-    pub agent: Option<String>,
+    #[arg(long, help = "Agent to run for this launch; repeat for more instances")]
+    pub agent: Vec<String>,
     #[arg(long, help = "Provider to use for this launch")]
     pub provider: Option<String>,
+    #[arg(
+        long = "provider-for",
+        value_name = "AGENT=PROVIDER",
+        help = "Provider for one instance"
+    )]
+    pub provider_for: Vec<String>,
+    #[arg(
+        long = "account-for",
+        value_name = "AGENT=ACCOUNT",
+        help = "Account for one instance"
+    )]
+    pub account_for: Vec<String>,
+    #[arg(
+        long = "model-for",
+        value_name = "AGENT=MODEL",
+        help = "Model for one instance"
+    )]
+    pub model_for: Vec<String>,
     #[arg(long, help = "Model to use for this launch")]
     pub model: Option<String>,
+    #[arg(long, help = "Task text for the instances")]
+    pub task: Option<String>,
+    #[arg(long = "task-file", help = "Host file that holds the task text")]
+    pub task_file: Option<PathBuf>,
+    #[arg(long, help = "GitHub issue URL that holds the task")]
+    pub issue: Option<String>,
     #[arg(long, help = "Build the image again")]
     pub rebuild: bool,
     #[arg(long, help = "Continue an earlier launch")]
@@ -411,6 +453,8 @@ pub struct AttachArgs {
     pub sandbox: SandboxName,
     #[arg(long, help = "Run preflight and start Codex again after it exited")]
     pub restart: bool,
+    #[arg(long, help = "Attach to this agent instance instead of the lead")]
+    pub agent: Option<String>,
 }
 
 #[derive(Debug, Args)]

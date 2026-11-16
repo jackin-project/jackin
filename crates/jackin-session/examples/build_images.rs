@@ -207,6 +207,7 @@ async fn request(
             digest: Sha256::of(&digest_input),
         },
         agent: Agent::Codex,
+        agents: vec![Agent::Codex],
         platform: Platform::host_default(),
         builder: BuilderName::parse(&options.builder)?,
         docker: DockerLayer::Absent,

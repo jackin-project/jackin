@@ -26,8 +26,10 @@ async fn the_plan_derives_name_labels_and_draft_from_the_launch_id() -> TestResu
         let expected = PlannedLabels {
             workspace: WorkspaceName::parse("platform-backend")?,
             role: RoleName::parse("sentinel")?,
-            agent: Agent::Codex,
-            account: AccountName::parse("work")?,
+            agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+                Agent::Codex,
+                AccountName::parse("work")?,
+            )),
             policy: PolicyLabel::of(&setup.role.policy().document().render()?),
             launch: launch_id(1),
         };

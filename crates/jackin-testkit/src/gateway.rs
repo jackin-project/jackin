@@ -542,8 +542,10 @@ fn foreign_spec(name: &SandboxName) -> Result<SandboxCreate, GatewayError> {
     let planned = PlannedLabels {
         workspace: WorkspaceName::parse("foreign").map_err(protocol)?,
         role: RoleName::parse("foreign").map_err(protocol)?,
-        agent: Agent::Codex,
-        account: AccountName::parse("foreign").map_err(protocol)?,
+        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
+            Agent::Codex,
+            AccountName::parse("foreign").map_err(protocol)?,
+        )),
         policy: PolicyLabel::of("policy"),
         launch: LaunchId::from_entropy(&[0; 26]),
     };
@@ -1055,7 +1057,7 @@ impl Gateway for FakeGateway {
                     Err(GatewayError::NotReady { phase })
                 }
             }
-            TerminalKind::Shell { workdir, .. } => {
+            TerminalKind::Shell { workdir, .. } | TerminalKind::Exec { workdir, .. } => {
                 if !phase.accepts_exec() {
                     return Err(GatewayError::NotReady { phase });
                 }
