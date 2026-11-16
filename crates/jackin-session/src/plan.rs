@@ -106,7 +106,7 @@ pub struct LaunchPlan {
     role: RoleName,
     selection: AccountSelection,
     account: Account,
-    chatgpt_account: ChatgptAccountId,
+    chatgpt_account: Option<ChatgptAccountId>,
     project: ProjectRoot,
     docker: DockerCapability,
     warnings: Vec<LaunchWarning>,
@@ -487,6 +487,35 @@ fn validate_instances(instances: &jackin_core::AgentInstances) -> Result<(), Pla
     Ok(())
 }
 
+fn agent_config_file(
+    is_omp: bool,
+    tuple: &'static jackin_core::AgentTuple,
+    spec: &jackin_core::AgentSpec,
+    role: &LoadedRole,
+    model: Option<&str>,
+    agent: Agent,
+    provider: Provider,
+) -> Result<PlannedFile, PlanError> {
+    if is_omp {
+        return Ok(PlannedFile {
+            path: spec.user_config.path.clone(),
+            mode: spec.user_config.mode,
+            text: crate::files::render_omp_config(tuple, model).map_err(|_| {
+                PlanError::TupleNotSupported {
+                    agent,
+                    provider,
+                    reason: "unknown model".to_owned(),
+                }
+            })?,
+        });
+    }
+    Ok(PlannedFile {
+        path: spec.user_config.path.clone(),
+        mode: spec.user_config.mode,
+        text: render_codex_config(role.manifest().codex.model.as_ref(), &spec.workdir)?,
+    })
+}
+
 pub fn plan_launch(
     config: &Config,
     role: &LoadedRole,
@@ -537,19 +566,27 @@ pub fn plan_launch(
                 kind: "account",
                 name: selection.account.to_string(),
             })?;
-    let mode = account
-        .codex_auth_mode()
-        .ok_or_else(|| SelectionError::FlagProviderMismatch {
-            account: selection.account.clone(),
-            expected: Provider::Codex,
-        })?;
-    let chatgpt_account = account
-        .chatgpt_login()
-        .map(|login| login.account_id.clone())
-        .ok_or_else(|| PlanError::Unsupported {
-            account: selection.account.clone(),
-            mode,
-        })?;
+    let is_omp = agent == Agent::Omp;
+    let chatgpt_account = if is_omp {
+        None
+    } else {
+        let mode =
+            account
+                .codex_auth_mode()
+                .ok_or_else(|| SelectionError::FlagProviderMismatch {
+                    account: selection.account.clone(),
+                    expected: Provider::Codex,
+                })?;
+        Some(
+            account
+                .chatgpt_login()
+                .map(|login| login.account_id.clone())
+                .ok_or_else(|| PlanError::Unsupported {
+                    account: selection.account.clone(),
+                    mode,
+                })?,
+        )
+    };
     let docker = DockerCapability::resolve(
         role.manifest().docker.enabled,
         workspace.docker,
@@ -572,17 +609,25 @@ pub fn plan_launch(
     let files = PlannedFiles {
         multi: layout.files.clone(),
         layout: layout.clone(),
-        codex_config: PlannedFile {
-            path: spec.user_config.path.clone(),
-            mode: spec.user_config.mode,
-            text: render_codex_config(role.manifest().codex.model.as_ref(), &spec.workdir)?,
-        },
+        codex_config: agent_config_file(
+            is_omp,
+            tuple,
+            spec,
+            role,
+            request.model.as_deref(),
+            agent,
+            provider,
+        )?,
         env: PlannedFile {
             path: sandbox_layout::env_file(&request.launch),
             mode: ENV_FILE_MODE,
             text: EnvFile::new(values)?.render(),
         },
-        auth: placeholder_file(spec),
+        auth: if is_omp {
+            crate::files::omp_auth_file(tuple)
+        } else {
+            placeholder_file(spec)
+        },
     };
     let image_request = plan_image_for(
         config,
@@ -665,8 +710,14 @@ impl LaunchPlan {
         &self.account
     }
 
-    pub fn chatgpt_account(&self) -> &ChatgptAccountId {
-        &self.chatgpt_account
+    pub fn chatgpt_account(&self) -> Option<&ChatgptAccountId> {
+        self.chatgpt_account.as_ref()
+    }
+
+    pub fn is_omp(&self) -> bool {
+        self.instances
+            .iter()
+            .any(|instance| instance.agent == Agent::Omp)
     }
 
     pub fn project(&self) -> &ProjectRoot {

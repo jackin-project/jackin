@@ -523,6 +523,10 @@ impl Account {
 
     pub fn has_provider(&self) -> bool {
         self.chatgpt_login().is_some()
+            || (matches!(
+                self.provider,
+                Provider::Zai | Provider::Kimi | Provider::Minimax | Provider::Mimo
+            ) && !matches!(self.credential, CredentialSource::CodexLogin { .. }))
     }
 
     pub fn codex_auth_mode(&self) -> Option<CodexAuthMode> {

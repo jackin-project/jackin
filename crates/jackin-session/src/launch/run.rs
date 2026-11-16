@@ -504,6 +504,18 @@ impl Run<'_> {
     async fn credentials(&mut self, sandbox: &SandboxName, bound: &Bound) -> Result<(), Stop> {
         const STEP: LaunchStep = LaunchStep::Credentials;
         self.enter(STEP).await;
+        if self.plan.is_omp() {
+            let files = self.plan.files();
+            self.write_planned(sandbox, &files.auth).await?;
+            for file in &files.multi {
+                self.write_planned(sandbox, file).await?;
+            }
+            self.write_planned(sandbox, &files.codex_config).await?;
+            self.engine_certs(sandbox, bound).await?;
+            self.write_planned(sandbox, &files.env).await?;
+            self.done.steps.insert(STEP);
+            return Ok(());
+        }
         let spec = Agent::Codex.spec();
         let key = spec.codex.openshell.keys.access_token;
         let outcome = self
@@ -546,9 +558,20 @@ impl Run<'_> {
                 },
             ));
         }
+        let Some(chatgpt_account) = self.plan.chatgpt_account() else {
+            return Err(failed(
+                STEP,
+                LaunchError::ProviderUnavailable {
+                    account: self.plan.account_entry().name().clone(),
+                    source: Box::new(AccountError::MissingCredential {
+                        account: self.plan.account_entry().name().clone(),
+                    }),
+                },
+            ));
+        };
         let auth = render_auth_json(
             &placeholder,
-            self.plan.chatgpt_account(),
+            chatgpt_account,
             self.session.deps.host.clock.now(),
         );
         self.write(

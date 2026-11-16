@@ -661,15 +661,13 @@ impl Gateway for FakeGateway {
                 what: Missing::Profile(spec.profile.clone()),
             });
         }
-        let ProviderMaterial::ChatgptLogin {
-            access_token,
-            refresh_token,
-            client_id,
-            chatgpt_account_id,
-        } = &spec.material;
-        registry.providers.insert(
-            spec.name.clone(),
-            ProviderRecord {
+        let record = match &spec.material {
+            ProviderMaterial::ChatgptLogin {
+                access_token,
+                refresh_token,
+                client_id,
+                chatgpt_account_id,
+            } => ProviderRecord {
                 profile: spec.profile.clone(),
                 access_key: spec.keys.access_token.to_owned(),
                 account_id_key: spec.keys.account_id.to_owned(),
@@ -678,7 +676,26 @@ impl Gateway for FakeGateway {
                 client_id: client_id.clone(),
                 chatgpt_account_id: chatgpt_account_id.clone(),
             },
-        );
+            ProviderMaterial::StaticKey { key } => ProviderRecord {
+                profile: spec.profile.clone(),
+                access_key: spec.keys.access_token.to_owned(),
+                account_id_key: String::new(),
+                access_token: key.expose().to_owned(),
+                refresh_token: String::new(),
+                client_id: String::new(),
+                chatgpt_account_id: match ChatgptAccountId::parse(
+                    "00000000-0000-4000-8000-000000000000",
+                ) {
+                    Ok(id) => id,
+                    Err(_) => {
+                        return Err(GatewayError::Protocol {
+                            message: "static id".to_owned(),
+                        })
+                    }
+                },
+            },
+        };
+        registry.providers.insert(spec.name.clone(), record);
         match registry.put_fails_after_write.take() {
             Some(error) => Err(error),
             None => Ok(()),

@@ -245,12 +245,34 @@ impl Inner {
     }
 
     pub(crate) async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+        match &spec.material {
+            ProviderMaterial::StaticKey { key } => {
+                let redactor = Redactor::new([key]);
+                self.unary(
+                    GatewayOp::Profile,
+                    Some(Missing::Profile(spec.profile.clone())),
+                    self.grpc().get_provider_profile(GetProviderProfileRequest {
+                        workspace_scope: Some(self.scope()),
+                        id: spec.profile.to_string(),
+                    }),
+                )
+                .await?;
+                let credentials =
+                    HashMap::from([(spec.keys.access_token.to_owned(), key.expose().to_owned())]);
+                let result = self.write_provider(spec, credentials, None).await;
+                return result.map_err(|error| redact(error, &redactor));
+            }
+            ProviderMaterial::ChatgptLogin { .. } => {}
+        }
         let ProviderMaterial::ChatgptLogin {
             access_token,
             refresh_token,
             client_id,
             chatgpt_account_id,
-        } = &spec.material;
+        } = &spec.material
+        else {
+            unreachable!()
+        };
         let redactor = Redactor::new([access_token, refresh_token]);
         self.unary(
             GatewayOp::Profile,
@@ -278,7 +300,7 @@ impl Inner {
                 refresh_token.expose().to_owned(),
             ),
         ]);
-        let result = self.write_provider(spec, credentials, material).await;
+        let result = self.write_provider(spec, credentials, Some(material)).await;
         result.map_err(|error| redact(error, &redactor))
     }
 
@@ -286,7 +308,7 @@ impl Inner {
         &self,
         spec: &ProviderSpec,
         credentials: HashMap<String, String>,
-        material: HashMap<String, String>,
+        material: Option<HashMap<String, String>>,
     ) -> Result<(), GatewayError> {
         let mut record =
             provider_record(&spec.name, spec.profile.as_str(), self.workspace.as_str());
@@ -304,6 +326,9 @@ impl Inner {
             },
             ProviderState::Present => self.update_provider(spec, record).await?,
         }
+        let Some(material) = material else {
+            return Ok(());
+        };
         self.unary(
             GatewayOp::Provider,
             Some(Missing::Provider(spec.name.clone())),

@@ -116,6 +116,9 @@ pub struct ProviderSpec {
 
 #[derive(Debug)]
 pub enum ProviderMaterial {
+    StaticKey {
+        key: Secret,
+    },
     ChatgptLogin {
         access_token: Secret,
         refresh_token: Secret,

@@ -3,10 +3,16 @@
 
 use std::path::Path;
 
+use std::time::Duration;
+
 use jackin_core::{
-    ChatgptAccountId, CredentialFileProblem, FileSystem, FsError, HostPath, Secret, plain,
+    Account, ChatgptAccountId, CredentialFileProblem, CredentialSource, FileSystem, FsError,
+    HostPath, ProcessSpec, ProcessStatus, ProcessStdin, Program, Secret, plain,
     read_credential_file,
 };
+use tokio_util::sync::CancellationToken;
+
+use crate::service::HostPorts;
 use serde_json::Value;
 use thiserror::Error;
 use zeroize::{Zeroize, Zeroizing};
@@ -24,6 +30,8 @@ pub struct ChatgptLogin {
 
 #[derive(Debug, Error)]
 pub enum CredentialError {
+    #[error("no credential is available for the account")]
+    MissingStaticKey,
     #[error("cannot read the login at {path}")]
     LoginUnreadable { path: HostPath },
     #[error("the login at {path} is not a regular file")]
@@ -149,4 +157,76 @@ pub async fn read_chatgpt_login(
         client_id: client_id.to_owned(),
         account_id,
     })
+}
+
+pub async fn resolve_static_key(
+    host: &HostPorts,
+    account: &Account,
+    provider_id: &str,
+    cancel: &CancellationToken,
+) -> Result<Secret, CredentialError> {
+    let missing = || CredentialError::MissingStaticKey;
+    match account.credential() {
+        CredentialSource::Env { var } => std::env::var(var.as_str())
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+            .map(Secret::new)
+            .ok_or_else(missing),
+        CredentialSource::File { path } => {
+            let Ok(bytes) = read_credential_file(host.fs.as_ref(), path).await? else {
+                return Err(missing());
+            };
+            let text = String::from_utf8(bytes).map_err(|_| missing())?;
+            let value = text.trim().to_owned();
+            if value.is_empty() {
+                Err(missing())
+            } else {
+                Ok(Secret::new(value))
+            }
+        }
+        CredentialSource::OmpHost => {
+            let home = std::env::var("HOME").map_err(|_| missing())?;
+            let db = HostPath::parse(Path::new(&format!("{home}/.omp/agent/agent.db")))
+                .map_err(|_| missing())?;
+            read_omp_host_key(host.fs.as_ref(), &db, provider_id)
+                .await
+                .map_err(|_| missing())
+        }
+        CredentialSource::OnePassword {
+            reference,
+            account: op_account,
+        } => {
+            let mut args = vec!["read".to_owned()];
+            if let Some(op_account) = op_account {
+                args.extend(["--account".to_owned(), op_account.as_str().to_owned()]);
+            }
+            args.push(reference.as_str().to_owned());
+            let spec = ProcessSpec {
+                program: Program::Op,
+                args,
+                cwd: None,
+                env: Vec::new(),
+                env_remove_prefixes: Vec::new(),
+                stdin: ProcessStdin::Null,
+                timeout: Duration::from_secs(30),
+            };
+            let output = host
+                .runner
+                .run_secret(&spec, cancel)
+                .await
+                .map_err(|_| missing())?;
+            if output.status != ProcessStatus::Exited(0) {
+                return Err(missing());
+            }
+            let text = std::str::from_utf8(output.stdout.expose()).map_err(|_| missing())?;
+            let value = text.trim().to_owned();
+            if value.is_empty() {
+                Err(missing())
+            } else {
+                Ok(Secret::new(value))
+            }
+        }
+        CredentialSource::CodexLogin { .. } => Err(missing()),
+    }
 }
