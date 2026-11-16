@@ -24,7 +24,7 @@ fn instances() -> Result<AgentInstances, Box<dyn std::error::Error>> {
 }
 
 #[tokio::test]
-async fn two_instance_launch_starts_non_lead_detached_and_supervises_only_lead() -> Result<(), Box<dyn std::error::Error>> {
+async fn two_instance_launch_leaves_non_lead_ready_and_supervises_only_lead() -> Result<(), Box<dyn std::error::Error>> {
     guard(async {
         let rig = launch_rig().await?;
         seed_omp_provider(&rig).await?;
@@ -35,15 +35,9 @@ async fn two_instance_launch_starts_non_lead_detached_and_supervises_only_lead()
         assert_eq!(handle.supervisor(), Some(running(1)?));
         let sh = SandboxPath::from_static("/bin/sh");
         let runs = handle.runs(&sh);
-        let start = runs.iter().find(|run| run.args.iter().any(|arg| arg.contains("/sandbox/.jackin/run/omp/output"))).ok_or("no non-lead start exec record")?;
-        assert_eq!(start.workdir.as_ref().map(|p| p.as_str()), Some("/sandbox/work/omp/project"));
-        assert!(start.args.iter().any(|arg| arg.contains("omp")), "{start:?}");
-        assert!(start.env.values().any(|v| v == "/sandbox/.jackin/homes/omp"), "{start:?}");
-        let script = start.args.iter().find(|arg| arg.contains("setsid")).ok_or("no start script")?;
-        assert!(script.contains("setsid script -qec"), "{script}");
-        assert!(script.contains("/sandbox/.jackin/run/omp/input"), "{script}");
-        assert!(script.contains("/sandbox/.jackin/run/omp/output"), "{script}");
-        assert!(!script.contains("</dev/null"), "{script}");
+        assert_eq!(runs.iter().filter(|run| run.args.iter().any(|arg| arg.contains("/sandbox/.jackin/run/omp/output"))).count(), 0);
+        assert!(!runs.iter().any(|run| run.args.iter().any(|arg| arg.contains("setsid") || arg.contains("script -qec"))), "{runs:?}");
+        assert!(handle.root().join(".jackin/run/omp").is_dir());
         assert!(handle.root().join(".jackin/task/status").is_dir());
         assert!(handle.root().join(".jackin/task").is_dir());
         let lead_starts = runs.iter().filter(|run| run.args.iter().any(|arg| arg.contains("/sandbox/.jackin/run/codex/output"))).count();
@@ -53,7 +47,7 @@ async fn two_instance_launch_starts_non_lead_detached_and_supervises_only_lead()
 }
 
 #[tokio::test]
-async fn restart_omp_produces_new_pty_start_for_omp_only() -> Result<(), Box<dyn std::error::Error>> {
+async fn restart_omp_stops_omp_only_and_starts_no_process() -> Result<(), Box<dyn std::error::Error>> {
     guard(async {
         let rig = launch_rig().await?;
         seed_omp_provider(&rig).await?;
@@ -63,14 +57,17 @@ async fn restart_omp_produces_new_pty_start_for_omp_only() -> Result<(), Box<dyn
         let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox handle")?;
         let sh = SandboxPath::from_static("/bin/sh");
         let count = |handle: &jackin_testkit::SandboxHandle, agent: &str| handle.runs(&sh).iter().filter(|run| run.args.iter().any(|arg| arg.contains(&format!("/sandbox/.jackin/run/{agent}/output")))).count();
-        assert_eq!(count(&handle, "omp"), 1);
+        assert_eq!(count(&handle, "omp"), 0);
+        let pkill = SandboxPath::from_static("/usr/bin/pkill");
+        let stops_before = handle.runs(&pkill).len();
         let session = rig.session_with(crate::support::limits(30, 20));
         session.restart_instance(&target.sandbox, Agent::Omp, &CancellationToken::new()).await?;
-        assert_eq!(count(&handle, "omp"), 2);
+        assert_eq!(count(&handle, "omp"), 0);
         assert_eq!(count(&handle, "codex"), 0);
-        let runs = handle.runs(&sh);
-        let restarted = runs.iter().rev().find(|run| run.args.iter().any(|arg| arg.contains("/sandbox/.jackin/run/omp/output"))).ok_or("no restart exec")?;
-        assert!(restarted.args.iter().any(|arg| arg.contains("setsid script -qec") && arg.contains("/sandbox/.jackin/run/omp/input")), "{restarted:?}");
+        let stops = handle.runs(&pkill);
+        assert_eq!(stops.len(), stops_before + 1);
+        assert!(stops.last().is_some_and(|run| run.args == vec!["-x".to_owned(), "omp".to_owned()]), "{stops:?}");
+        assert!(!handle.runs(&sh).iter().any(|run| run.args.iter().any(|arg| arg.contains("setsid") || arg.contains("script"))));
         Ok(())
     }).await
 }

@@ -730,13 +730,6 @@ impl Run<'_> {
         )
         .await?;
         self.done.started = Some(attempt);
-        if self.plan.instances().len() > 1 {
-            let layout = self.plan.files().layout.clone();
-            let lead = self.plan.instances().lead().agent;
-            for launch in layout.exec.iter().filter(|item| item.agent != lead) {
-                self.session.start_instance_exec(sandbox, launch, self.cancel).await.map_err(|error| failed(LaunchStep::Start, error))?;
-            }
-        }
         Ok(())
     }
 }
