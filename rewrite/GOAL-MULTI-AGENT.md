@@ -57,7 +57,7 @@ Support only these 12 tuples. Reject all other tuples with a typed error.
 | T03 | Grok Build (`grok`) | xAI | Host Grok login from `~/.grok/auth.json`. |
 | T04 | Muse Code (`muse`) | Meta (Facebook) | Muse subscription login from onboarding. |
 | T05 | Antigravity (`agy`) | Google Gemini | Google account login. See the Google block rule below. |
-| T06 | MiniMax Code (verify binary name) | MiniMax | MiniMax Code OAuth login, then plan key if OAuth fails. |
+| T06 | MiniMax Code (verify binary name) | MiniMax | MiniMax Code native subscription login only. |
 | T07 | MiMo Code (`mimo`) | MiMo (Xiaomi) | Token Plan key, then MiMo Code login if key fails. |
 | T08 | Kimi Code (`kimi`) | Kimi (Moonshot) | Kimi Code membership key, then device login if key fails. |
 | T09 | omp (`omp`) | Z.AI | Z.AI coding plan key. |
@@ -360,21 +360,22 @@ Do all four in this one task. They share one adapter.
 
 Gate: G-E2E passes for each tuple that you mark `supported`. G-FULL passes at the end of this task.
 
-### A5. Native key agents (T07, T08, and T06 if a plan key exists)
+### A5. Native subscription agents (T06 to T08)
 
 Do the tuples in this order: Kimi Code (T08), MiMo Code (T07), MiniMax Code (T06).
 
 1. Install the agent binary in the derived image from the A1 artifact data.
-2. Write the placeholder config for the agent. For Kimi Code, set the provider `api_key_env` name. Do not rely only on an exported variable.
-3. Add the OpenShell profile with the plan key as the credential.
-4. Run the live gate as in A4 step 6. Record the result in `rewrite/evidence/A5-<agent>.md`.
-5. Prove that the plan cannot fall back to paid usage. For Kimi, check Extra Usage. For MiMo and MiniMax, check credit pack use. If you cannot turn the fallback off and prove it, keep the tuple `unavailable`.
+2. Import the native host subscription login. Do not substitute a membership, coding-plan, or Token Plan API key.
+3. Create the OpenShell provider with gateway-held access and refresh material and the vendor-documented refresh configuration.
+4. Write only the native placeholder config and auth files in the sandbox. Test their shapes with synthetic credentials first.
+5. Prove gateway refresh, host-login usability, second-sandbox isolation, and subscription billing without paid fallback.
+6. Record the result in `rewrite/evidence/A5-<agent>.md`. Keep the tuple unavailable until every required live check passes.
 
 Gate: G-E2E passes for each tuple that you mark `supported`.
 
-### A6. Native OAuth agents (T03, T04, and T06 if A5 fails)
+### A6. Native OAuth agents (T03 and T04)
 
-Do the tuples in this order: Grok Build (T03), Muse Code (T04), MiniMax Code OAuth (T06).
+Do the tuples in this order: Grok Build (T03), Muse Code (T04).
 
 1. Write the host import command: `jackin account add <provider> --from-host-login`. It reads the host login file. It prints no secret.
 2. Create the OpenShell provider with the access token, the refresh token, and the refresh block from the vendor token URL.
