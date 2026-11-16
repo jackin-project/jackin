@@ -80,17 +80,21 @@ fn text<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a str, Credent
         .ok_or_else(|| invalid(key))
 }
 
-pub fn extract_omp_api_key(bytes: &[u8], provider_id: &str) -> Option<Secret> {
-    let text = String::from_utf8_lossy(bytes);
-    let start = text.find(provider_id)?;
-    let window = &text[start..text.len().min(start + 8192)];
-    let key_at = window.find("\"key\"")?;
-    let rest = &window[key_at + 5..];
-    let colon = rest.find(':')?;
-    let rest = rest[colon + 1..].trim_start();
-    let rest = rest.strip_prefix('"')?;
-    let end = rest.find('"')?;
-    let value = &rest[..end];
+pub fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Option<Secret> {
+    let connection = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .ok()?;
+    let data: String = connection
+        .query_row(
+            "SELECT data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
+            [provider_id],
+            |row| row.get(0),
+        )
+        .ok()?;
+    let document = Document(serde_json::from_str(&data).ok()?);
+    let value = document.0.get("key")?.as_str()?;
     if value.is_empty() {
         None
     } else {
@@ -99,18 +103,14 @@ pub fn extract_omp_api_key(bytes: &[u8], provider_id: &str) -> Option<Secret> {
 }
 
 pub async fn read_omp_host_key(
-    fs: &dyn FileSystem,
+    _fs: &dyn FileSystem,
     db_path: &HostPath,
     provider_id: &str,
 ) -> Result<Secret, CredentialError> {
-    let bytes = fs
-        .read(db_path)
-        .await?
-        .ok_or_else(|| CredentialError::LoginUnreadable {
+    extract_omp_api_key(db_path.as_path(), provider_id).ok_or_else(|| {
+        CredentialError::LoginUnreadable {
             path: db_path.clone(),
-        })?;
-    extract_omp_api_key(&bytes, provider_id).ok_or_else(|| CredentialError::LoginUnreadable {
-        path: db_path.clone(),
+        }
     })
 }
 

@@ -23,6 +23,7 @@ mod roles_path;
 mod roles_race;
 mod roles_url;
 mod omp;
+mod omp_credentials;
 mod scoped_env;
 mod support;
 mod tuple;

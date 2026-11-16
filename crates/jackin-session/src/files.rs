@@ -72,8 +72,12 @@ pub fn render_omp_config(
     };
     let provider = tuple.omp_provider_id().unwrap_or_default();
     let env = tuple.omp_credential_env().unwrap_or_default();
+    let base_url = match tuple.omp_base_url() {
+        Some(url) => format!("    baseUrl: {url}\n"),
+        None => String::new(),
+    };
     Ok(format!(
-        "providers:\n  {provider}:\n    apiKey: placeholder\ncredentialEnv: {env}\nmodelRoles:\n  default: {provider}/{model}\n"
+        "providers:\n  {provider}:\n{base_url}    apiKey: placeholder\ncredentialEnv: {env}\nmodelRoles:\n  default: {provider}/{model}\n"
     ))
 }
 
