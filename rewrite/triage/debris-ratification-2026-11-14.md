@@ -122,6 +122,20 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# 0. REVISION GATE: the pre-flight below makes authenticated writes (archive refs,
+#    lock rulesets), so its own bytes are authenticated first. The operator's word
+#    carries the reviewed publication digest; the file this block runs from must
+#    hash to it, or nothing below runs. The §4 launcher repeats the check before
+#    the deletion block, so both executable halves are gated on the same digest.
+PUB=rewrite/triage/debris-ratification-2026-11-14.md
+[ -n "${RATIFY_WORD:-}" ] || { echo "refusing: set RATIFY_WORD to the operator's ratification word before the pre-flight" >&2; exit 1; }
+want=${RATIFY_WORD##*publication sha256:}
+case "$want" in ""|*[!0-9a-f]*) echo "refusing: the word carries no publication digest" >&2; exit 1 ;; esac
+if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum < "$PUB"); got=${got%% *}
+elif command -v shasum >/dev/null 2>&1; then got=$(shasum -a 256 < "$PUB"); got=${got%% *}
+else echo "refusing: no SHA-256 command on this host" >&2; exit 1; fi
+[ "$got" = "$want" ] || { echo "refusing: the publication changed after ratification" >&2; exit 1; }
+
 # 1. MANIFEST CHECK: the 15 (repository, branch, tip) triples of §1 must be the reviewed ones,
 #    and each §1 deletion command must be the push that triple generates. The manifest digest is
 #    the one the operator's word in §4 carries; a word without it, or with a different one, is a refusal
@@ -660,6 +674,11 @@ SIGNAL
 }
 
 unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+# Trace sweep. An inherited GIT_TRACE* setting would make the authenticated pushes below
+# emit an unredacted Authorization header to stderr or a trace file when redaction is
+# disabled, so every GIT_TRACE* variable is removed and redaction is forced on.
+unset GIT_TRACE GIT_TRACE_PERFORMANCE GIT_TRACE_PACK_ACCESS GIT_TRACE_PACKET GIT_TRACE_PACKFILE GIT_TRACE_CURL GIT_TRACE_REDACT GIT_TRACE_SETUP GIT_TRACE_SHALLOW GIT_TRACE_CURL_NO_DATA GIT_TRACE2 GIT_TRACE2_PERF GIT_TRACE2_EVENT
+export GIT_TRACE_REDACT=1
 sanitize_global_config "$SANITIZED_DIR" || { echo "the sanitizing refused a credential helper of the global configuration - the deletion run refuses to push" >&2; exit 1; }
 export GIT_CONFIG_GLOBAL="$SANITIZED_GLOBAL"
 credential_probe || { echo "the credential probe refused the sanitizing - the deletion run refuses to push" >&2; exit 1; }
@@ -771,10 +790,30 @@ for row in "${ROWS[@]}"; do
   [ "$push_url" = "$url" ] || { echo "the push URL $url is rewritten to $push_url"; exit 1; }
 done
 
+# The helper guard ran before the scratch repository had a remote, so a conditional
+# include keyed on the remote URL (includeIf "hasconfig:remote.*.url:...") could not
+# fire then and fires now that `target` exists. Re-run the guard in the exact push
+# context: a helper it refused above, or one the new remote activates, refuses here.
+refuse_unsafe_helpers || { echo "the push context carries a credential helper that can write a credential to a file - the deletion run refuses to push" >&2; exit 1; }
+
 # 6. DELETION RUN: one row at a time, archive first, push second. The push is built from the
 #    row's own (repository, branch, tip) triple of the snapshot, so it is the §1 command of that row.
+#    The archive-namespace lock is revalidated inside the loop, coupled to each push: an
+#    administrator change after the pre-flight (lock removed or altered) refuses the run
+#    before that row's deletion instead of deleting into an unprotected namespace.
 for row in "${ROWS[@]}"; do
   read -r repo branch tip <<< "$row"
+  case "$repo" in
+    jackin-project/jackin|jackin-project/jackin-agent-smith|tailrocks/terminal-components-baseline)
+      lock_id=$(gh_api "repos/$repo/rulesets" --jq '.[] | select(.name == "debris-archive-lock") | .id') \
+        || { echo "the archive lock of $repo cannot be read before deleting $branch"; exit 1; }
+      [ -n "$lock_id" ] || { echo "the archive lock of $repo is gone before deleting $branch"; exit 1; }
+      existing=$(gh_api "repos/$repo/rulesets/$lock_id" --jq '[.enforcement, (.conditions.ref_name.include | sort | join(",")), (.conditions.ref_name.exclude | sort | join(",")), ([.rules[].type] | sort | join(",")), (.bypass_actors | length), .target] | @tsv') \
+        || { echo "the archive lock of $repo cannot be validated before deleting $branch"; exit 1; }
+      printf '%s\n' "$existing" | awk -F'\t' '$1 == "active" && $2 == "refs/heads/archive/**/*" && $3 == "" && $4 == "deletion,non_fast_forward" && $5 == "0" && $6 == "branch" {ok++} END{exit !(ok == 1)}' \
+        || { echo "the archive lock of $repo is not the active, branch-targeted, unbypassed two-rule lock - refusing to delete $branch"; exit 1; }
+      ;;
+  esac
   got=$(gh_api "repos/$repo/git/ref/heads/archive/$branch" --jq '.object.sha') \
     || { echo "archive ref $repo archive/$branch is gone before deleting $branch"; exit 1; }
   [ "$got" = "$tip" ] || { echo "archive ref $repo archive/$branch holds $got, not $tip before deleting $branch"; exit 1; }
@@ -1100,7 +1139,18 @@ T=092fe1db796367479029d4e94379530f7f5965c0                 # the row's tip (row 
 M=926bbd49d171c2f389a766776ff3c418f8987fbd                 # that repository's main tip, pinned
 
 work=$(mktemp -d)                        # a fresh clone every time: a stale clone directory would
-git clone --quiet "$repo" "$work"        # leave every later command running in the wrong checkout
+scratch=${scratch:-}                    # leave every later command running in the wrong checkout
+cleanup_measurement() {
+  result=$?
+  trap - 0 HUP INT TERM
+  rm -rf ${scratch:+"$scratch"} "$work"
+  exit "$result"
+}
+trap cleanup_measurement 0
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+git clone --quiet "$repo" "$work"
 cd "$work" && git fetch origin --quiet
 
 # the scratch files of the measurement live in a private directory of their own. A fixed path
@@ -1109,16 +1159,6 @@ cd "$work" && git fetch origin --quiet
 # path would change the numbers this document rests on. The directory is private (mktemp -d) and
 # the cleanup removes it when the measurement ends.
 scratch=$(mktemp -d)
-cleanup_scratch() {
-  result=$?
-  trap - 0 HUP INT TERM
-  rm -rf "$scratch" "$work"
-  exit "$result"
-}
-trap cleanup_scratch 0
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
 # the measurement is pinned to those commits, not to the moving branch names:
 git fetch origin "$M" "$T" --quiet                         # fetch those exact commits
@@ -1309,15 +1349,21 @@ markers:
 ```bash
 PUB=rewrite/triage/debris-ratification-2026-11-14.md
 RATIFY_WORD='RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a publication sha256:<publication digest>' \
-  bash -c '
+  env PUB="$PUB" bash -c '
     set -euo pipefail
     want=${RATIFY_WORD##*publication sha256:}
     case "$want" in ""|*[!0-9a-f]*) echo "refusing: the word carries no publication digest" >&2; exit 1 ;; esac
-    if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum < "$PUB"); got=${got%% *}
-    elif command -v shasum >/dev/null 2>&1; then got=$(shasum -a 256 < "$PUB"); got=${got%% *}
+    snap=$(mktemp) || exit 1
+    trap "rm -f \"$snap\"" 0
+    trap "exit 129" HUP
+    trap "exit 130" INT
+    trap "exit 143" TERM
+    cat -- "$PUB" > "$snap"
+    if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum < "$snap"); got=${got%% *}
+    elif command -v shasum >/dev/null 2>&1; then got=$(shasum -a 256 < "$snap"); got=${got%% *}
     else echo "refusing: no SHA-256 command on this host" >&2; exit 1; fi
     [ "$got" = "$want" ] || { echo "refusing: the publication changed after ratification" >&2; exit 1; }
-    awk "/^# --- deletion run: begin ---$/,/^# --- deletion run: end ---$/" "$PUB" | bash'
+    awk "/^# --- deletion run: begin ---$/,/^# --- deletion run: end ---$/" "$snap" | bash'
 ```
 
 Optionally, to also ratify retroactively the one deletion that was performed without a recorded proof (§6):
