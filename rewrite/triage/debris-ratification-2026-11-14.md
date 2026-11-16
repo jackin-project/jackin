@@ -671,7 +671,7 @@ trap 'cleanup "${cleanup_paths[@]}"' 0
 trap 'exit 143' TERM
 kill -TERM $$
 SIGNAL
-          ( export -f cleanup; "${BASH:-bash}" "$script" "$sanitized" "$control" "$post" ) || status=$?
+          ( export -f cleanup; env -u SHELLOPTS -u BASH_XTRACEFD "${BASH:-bash}" "$script" "$sanitized" "$control" "$post" ) || status=$?
           ;;
       esac
       if [ -d "$sanitized" ] || [ -d "$control" ] || [ -e "$post" ]; then
@@ -693,9 +693,13 @@ SIGNAL
 unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_SYSTEM GIT_SSL_NO_VERIFY GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_WORK_TREE GIT_INDEX_FILE GIT_NAMESPACE
 # Tracing: inherited `set -x` (via SHELLOPTS/BASH_XTRACEFD, which survive
 # BASH_ENV=/dev/null) would print every credential the guards below read, so
-# tracing is off and the trace file descriptors are closed before anything runs.
+# tracing is off before anything runs. SHELLOPTS is readonly and cannot be
+# unset (an `unset` aborts under `set -e`), so children are started with it
+# removed from their environment instead.
 set +x
-unset SHELLOPTS BASH_XTRACEFD
+unset BASH_XTRACEFD 2>/dev/null || true
+export BASH_ENV=/dev/null
+CHILD_ENV="env -u SHELLOPTS -u BASH_XTRACEFD"
 # Certificate verification must stay on for authenticated pushes.
 # GIT_CONFIG_NOSYSTEM is deliberately NOT set: the operator's credential helper
 # may live in the system configuration, and every helper value the run can use
@@ -806,7 +810,7 @@ refuse_url_rewrites || { echo "the sanitized context was refused - the guard can
 # and it would write the credential to a file - and the sanitized context of the run must be
 # accepted. The hostile system configuration is a fixture of the control.
 printf '[credential]\n\thelper = store\n' > "$CONTROL_DIR/hostile-system.gitconfig"
-if (GIT_CONFIG_SYSTEM="$CONTROL_DIR/hostile-system.gitconfig"; refuse_unsafe_helpers) >/dev/null; then
+if (export GIT_CONFIG_SYSTEM="$CONTROL_DIR/hostile-system.gitconfig"; refuse_unsafe_helpers) >/dev/null; then
   echo "the helper control did not refuse the file-backed helper - the guard cannot be trusted" >&2
   exit 1
 fi
@@ -861,6 +865,44 @@ for row in "${ROWS[@]}"; do
   [ "$(git ls-remote --get-url "$url")" = "$url" ] || { echo "refusing: a target URL is rewritten in the push context - the deletion run refuses to push" >&2; exit 1; }
   [ "$(git remote get-url --push target)" = "$url" ] || { echo "refusing: a push URL is rewritten in the push context - the deletion run refuses to push" >&2; exit 1; }
 done
+
+# PRE-DELETION PROTECTED CHECK: a protected branch that already disappeared
+# (unrelated merge or cleanup) must stop the run BEFORE any deletion, not after
+# all 15 pushes. Read fresh branch lists and require every protected ref to be
+# present; a run that cannot be verified afterwards refuses to start.
+for r in "${POST_REPOS[@]}"; do
+  gh_api "repos/$r/branches" --paginate --jq '.[].name' > "$RUN_DIR/pre-$r.txt" \
+    || { echo "the pre-deletion branch list of $r could not be read"; exit 1; }
+done
+while read -r repo branch; do
+  list="$RUN_DIR/pre-$(echo "$repo" | tr '/' '-').txt"
+  [ -f "$list" ] || { echo "the pre-deletion branch list of $repo was not read"; exit 1; }
+  status=0
+  grep -qxF "$branch" "$list" || status=$?
+  case "$status" in
+    0) ;;
+    1) echo "refusing: the protected branch $repo $branch is already gone before any deletion"; exit 1 ;;
+    *) echo "the pre-deletion branch list of $repo could not be read (grep exit $status)"; exit 1 ;;
+  esac
+done <<'PROTECTED'
+jackin-project/jackin main
+jackin-project/jackin preserve/p0.6-prototype-20261109
+jackin-project/jackin recovery/pr1230-blob-auth-77b399f1-20261027
+jackin-project/jackin recovery/stash-adoption-6a0d2f03-20261025
+jackin-project/jackin recovery/strip-tests-restore-20261030
+jackin-project/jackin codex/openshell-integration-checkpoint-20261108-122311
+jackin-project/jackin codex/openshell-verified-checkpoint-20261108
+jackin-project/jackin preserve/session-boundaries-20261109
+jackin-project/jackin preserve/w1-fixes-20261109
+jackin-project/jackin fix/typed-model-selection
+jackin-project/jackin docs/triage-inventory-reclass-2026-11-13
+jackin-project/jackin-agent-smith main
+jackin-project/jackin-sentinel main
+jackin-project/jackin-sentinel fix/s158-postmerge-4
+jackin-project/jackin-sentinel preserve/probe-identity-20261109
+tailrocks/terminal-components-baseline main
+tailrocks/terminal-components-baseline preserve/local-unique-20261109
+PROTECTED
 
 # 6. DELETION RUN: one row at a time, archive first, push second. The push is built from the
 #    row's own (repository, branch, tip) triple of the snapshot, so it is the §1 command of that row.
@@ -1415,7 +1457,7 @@ markers:
 ```bash
 PUB=rewrite/triage/debris-ratification-2026-11-14.md
 RATIFY_WORD='RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a publication sha256:<publication digest>' \
-  env PUB="$PUB" BASH_ENV=/dev/null bash -c '
+  env -u SHELLOPTS -u BASH_XTRACEFD PUB="$PUB" BASH_ENV=/dev/null bash -c '
     set -euo pipefail
     case "$RATIFY_WORD" in
       "RATIFY DEBRIS: 15 branches manifest sha256:"????????????????????????????????????????????????????????????????" publication sha256:"????????????????????????????????????????????????????????????????)
@@ -1434,7 +1476,7 @@ RATIFY_WORD='RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd1
     elif command -v shasum >/dev/null 2>&1; then got=$(shasum -a 256 < "$snap"); got=${got%% *}
     else echo "refusing: no SHA-256 command on this host" >&2; exit 1; fi
     [ "$got" = "$want" ] || { echo "refusing: the publication changed after ratification" >&2; exit 1; }
-    awk "/^# --- deletion run: begin ---$/,/^# --- deletion run: end ---$/" "$snap" | BASH_ENV=/dev/null bash'
+    awk "/^# --- deletion run: begin ---$/,/^# --- deletion run: end ---$/" "$snap" | env -u SHELLOPTS -u BASH_XTRACEFD BASH_ENV=/dev/null bash'
 ```
 
 Optionally, to also ratify retroactively the one deletion that was performed without a recorded proof (§6):

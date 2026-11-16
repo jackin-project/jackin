@@ -104,22 +104,48 @@ Proof method per branch: `git merge-base --is-ancestor "$tip" origin/main`; `git
 **Every one of the three commands is lease-guarded against the audited tip.** A plain `git push origin --delete <branch>` removes whatever the ref points at *at the moment of the push*, so if the branch has advanced since the observation the deletion would remove a tip that was never audited. Each command therefore names the audited SHA as the expected old value, and `git push` refuses the deletion if the ref has moved: `git push --force-with-lease=refs/heads/<branch>:<audited-sha> https://github.com/jackin-project/jackin.git :refs/heads/<branch>` (`git push -h` documents `--force-with-lease=<refname>:<expect>` as "require old value of ref to be at this value"). Each command names the audited repository by its HTTPS URL, never by the remote alias `origin`, so a clone whose `origin` points at a fork deletes the ref in the audited repository and leaves the fork alone. The commands are:
 
 ```bash
+set +x
+unset BASH_XTRACEFD
 # Sanitize this shell before the cleanup push: the push authenticates, so a
 # file-backed credential helper would write the GitHub credential to disk, a
 # URL rewrite could redirect the push, and tracing could print the
 # Authorization header. Refuse all three and stop if any is present.
-unset GIT_TRACE GIT_TRACE_PERFORMANCE GIT_TRACE_PACK_ACCESS GIT_TRACE_PACKET GIT_TRACE_PACKFILE GIT_TRACE_CURL GIT_TRACE_REDACT GIT_TRACE_SETUP GIT_TRACE_SHALLOW GIT_TRACE_CURL_NO_DATA GIT_TRACE2 GIT_TRACE2_PERF GIT_TRACE2_EVENT
-export GIT_TRACE_REDACT=1
-helper=$(git config --global credential.helper 2>/dev/null || true)
-case "$helper" in ''|osxkeychain|manager|manager-core|wincred|libsecret|gnome-keychain|gpgme|cache) ;;
-  *) echo "refusing: the global credential helper is not known safe - remove or replace it before the cleanup" >&2; exit 1 ;; esac
-scoped=$(git config --global --get-regexp '^credential\..*\.helper$' 2>/dev/null || true)
-[ -z "$scoped" ] || { echo "refusing: a URL-scoped credential helper is configured - remove it before the cleanup" >&2; exit 1; }
+unset GIT_TRACE GIT_TRACE_PERFORMANCE GIT_TRACE_PACK_ACCESS GIT_TRACE_PACKET GIT_TRACE_PACKFILE GIT_TRACE_CURL GIT_TRACE_SHALLOW GIT_TRACE_CURL_NO_DATA GIT_TRACE2 GIT_TRACE2_PERF GIT_TRACE2_EVENT GIT_TRACE_REDACT GIT_CONFIG_COUNT GIT_CONFIG_PARAMETERS GIT_CONFIG_SYSTEM
+export GIT_TRACE_REDACT=1 BASH_ENV=/dev/null
+# Every credential helper in every scope the push consults - global, system and
+# local - must be known safe. The scan is NUL-delimited: a helper value with an
+# embedded newline must not be split into a separately validated first line.
+# Values are never printed: a helper string can carry a credential.
+helpers_ok() {
+  while IFS= read -r -d '' pair; do
+    case "$pair" in
+      credential.helper$'\n'*|credential.*.helper$'\n'*) ;;
+      *) continue ;;
+    esac
+    value=${pair#*$'\n'}
+    case "$value" in
+      ''|osxkeychain|manager|manager-core|wincred|libsecret|gnome-keychain|gpgme|cache) ;;
+      *) return 1 ;;
+    esac
+  done < <(git config --null --list 2>/dev/null; git config --null --includes --global --list 2>/dev/null; git config --null --includes --system --list 2>/dev/null; git config --null --list 2>/dev/null)
+}
+helpers_ok || { echo "refusing: the credential helpers in scope are not all known safe - remove or replace them before the cleanup" >&2; exit 1; }
 if git config --get-regexp '^url\..*\.(insteadOf|pushInsteadOf)$' >/dev/null 2>&1; then
   echo "refusing: the configuration carries a URL rewrite - remove it before the cleanup" >&2; exit 1; fi
-hooks=$(git config --global core.hooksPath 2>/dev/null; git config --system core.hooksPath 2>/dev/null) || true
-[ -z "$hooks" ] || { echo "refusing: a global or system hooks path is configured - remove it before the cleanup" >&2; exit 1; }
+hooks="$(git config --global core.hooksPath 2>/dev/null; git config --system core.hooksPath 2>/dev/null; git config --local core.hooksPath 2>/dev/null)" || true
+[ -z "$hooks" ] || { echo "refusing: a global, system or local hooks path is configured - remove it before the cleanup" >&2; exit 1; }
 unset GIT_TEMPLATE_DIR
+# Bind the cleanup to the reviewed revision: each command below carries the
+# audited tip SHA, and the ref must still point at exactly that SHA. A command
+# edited after review, or a ref that advanced since the audit, is a refusal
+# before any push - the lease alone is not enough, because a lease on a moved
+# ref still deletes a tip that was never audited.
+for spec in "fix/roles-review-impl 04471245d9b9f519690bb0a58353f9ee847d543a" "fix/typed-model-selection 0aaf7a411ce0f35ebd9ca7e7722caed7101c65c6" "docs/triage-inventory-reclass-2026-11-13 cf9acb7485e1800680fd00b62767af35e9713fe6"; do
+  read -r ref sha <<< "$spec"
+  live=$(git ls-remote --heads "https://github.com/jackin-project/jackin.git" "refs/heads/$ref" | awk '{print $1}')
+  [ -n "$live" ] || { echo "refusing: $ref is gone from the remote - re-audit before deleting" >&2; exit 1; }
+  [ "$live" = "$sha" ] || { echo "refusing: $ref moved (live $live, audited $sha) - re-audit before deleting" >&2; exit 1; }
+done
 ```
 
 - `git push --force-with-lease=refs/heads/fix/roles-review-impl:04471245d9b9f519690bb0a58353f9ee847d543a https://github.com/jackin-project/jackin.git :refs/heads/fix/roles-review-impl` - **the cleanup action of this section**: the ref is not protected by the ratification publication, so this is the one command of the three that may run now, after the live tip is re-read.
