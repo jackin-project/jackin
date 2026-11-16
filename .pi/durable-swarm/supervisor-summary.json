@@ -1,0 +1,69 @@
+{
+  "generatedAt": 1794797590871,
+  "version": "0.8.0",
+  "concurrency": {
+    "running": 0,
+    "queued": 0,
+    "byProvider": {
+      "openai-codex": {
+        "running": 0,
+        "queued": 0,
+        "limit": 4
+      }
+    }
+  },
+  "tokensByProvider": {
+    "openai-codex": {
+      "input": 187644,
+      "output": 3346,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 190990,
+      "cost": 0.408748
+    }
+  },
+  "agentsRunning": [],
+  "stockpile": {
+    "dirty": 0,
+    "unpushed": 0
+  },
+  "supervisorSummary": {
+    "generatedAt": 1794797590871,
+    "concurrency": {
+      "running": 0,
+      "queued": 0,
+      "byProvider": {
+        "openai-codex": {
+          "running": 0,
+          "queued": 0,
+          "limit": 4
+        }
+      }
+    },
+    "agents": [
+      {
+        "id": "tool:call_5cbb998b3ce24122be67f368",
+        "name": "w39-final-review",
+        "state": "completed",
+        "model": "openai-codex/gpt-6.1-sol",
+        "provider": "openai-codex"
+      }
+    ],
+    "tokensByProvider": {
+      "openai-codex": {
+        "input": 187644,
+        "output": 3346,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 190990,
+        "cost": 0.408748
+      }
+    },
+    "stockpileDirty": 0,
+    "stockpileUnpushed": 0,
+    "interrupted": {
+      "count": 0,
+      "agents": []
+    }
+  }
+}
