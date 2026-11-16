@@ -3,10 +3,13 @@
 
 use std::error::Error;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
-use jackin_core::EnvSnapshot;
+use async_trait::async_trait;
+use jackin_core::{Clock, EnvSnapshot, Timestamp};
 use jackin_session::{ClipboardTool, ClipboardWriter, HostOs};
 use tempfile::TempDir;
 
@@ -132,17 +135,72 @@ fn alive(pid: &str) -> Result<bool, Box<dyn Error>> {
         .success())
 }
 
+#[derive(Debug)]
+struct TestClock {
+    seconds: AtomicU64,
+    step: u64,
+}
+
+#[async_trait]
+impl Clock for TestClock {
+    fn now(&self) -> Timestamp {
+        Timestamp(0)
+    }
+
+    fn utc_offset_secs(&self) -> i32 {
+        0
+    }
+
+    fn monotonic(&self) -> Duration {
+        Duration::from_secs(self.seconds.fetch_add(self.step, Ordering::SeqCst))
+    }
+
+    async fn sleep(&self, duration: Duration) {
+        tokio::time::sleep(duration).await;
+    }
+}
+
+struct HungTool {
+    pid_file: PathBuf,
+    clock: Arc<TestClock>,
+}
+
+impl Drop for HungTool {
+    fn drop(&mut self) {
+        self.clock.seconds.store(61, Ordering::SeqCst);
+        if let Ok(pid) = std::fs::read_to_string(&self.pid_file) {
+            drop(
+                std::process::Command::new("/bin/kill")
+                    .args(["-KILL", pid.trim()])
+                    .stderr(std::process::Stdio::null())
+                    .status(),
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_tool_that_hangs_past_the_deadline_is_killed() -> TestResult {
     let dir = tempfile::tempdir()?;
     let pid_file = dir.path().join("pid");
+    let clock = Arc::new(TestClock {
+        seconds: AtomicU64::new(0),
+        step: 0,
+    });
+    let _cleanup = HungTool {
+        pid_file: pid_file.clone(),
+        clock: Arc::clone(&clock),
+    };
     tool(
         dir.path(),
         "pbcopy",
         &format!("echo $$ > '{}'\nexec /bin/sleep 30", pid_file.display()),
     )?;
-    let hung = writer(&dir, vec![ClipboardTool::Pbcopy]).within(Duration::from_secs(2));
-    assert!(!hung.write("Hello"));
+    let hung = writer(&dir, vec![ClipboardTool::Pbcopy]).clock(Arc::<TestClock>::clone(&clock));
+    let (done, answer) = mpsc::channel();
+    let worker = std::thread::spawn(move || {
+        done.send(hung.write("Hello")).unwrap_or(());
+    });
     let give_up = std::time::Instant::now() + Duration::from_secs(5);
     let pid = loop {
         if let Ok(text) = std::fs::read_to_string(&pid_file)
@@ -156,6 +214,11 @@ async fn a_tool_that_hangs_past_the_deadline_is_killed() -> TestResult {
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     };
+    assert!(alive(&pid)?, "the tool exited before its deadline");
+    clock.seconds.store(61, Ordering::SeqCst);
+    assert!(!answer.recv_timeout(Duration::from_secs(5))?);
+    worker.join().map_err(|_| "clipboard caller panicked")?;
+    let give_up = std::time::Instant::now() + Duration::from_secs(5);
     while alive(&pid)? {
         assert!(
             std::time::Instant::now() < give_up,
@@ -163,6 +226,25 @@ async fn a_tool_that_hangs_past_the_deadline_is_killed() -> TestResult {
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
+    Ok(())
+}
+
+#[test]
+fn a_deadline_that_expires_before_startup_does_not_run_a_tool() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    recording(dir.path(), "pbcopy")?;
+    recording(dir.path(), "xsel")?;
+    let clock = Arc::new(TestClock {
+        seconds: AtomicU64::new(0),
+        step: 61,
+    });
+    assert!(
+        !writer(&dir, vec![ClipboardTool::Pbcopy, ClipboardTool::Xsel])
+            .clock(clock)
+            .write("Hello")
+    );
+    assert!(!dir.path().join("pbcopy.args").exists());
+    assert!(!dir.path().join("xsel.args").exists());
     Ok(())
 }
 
