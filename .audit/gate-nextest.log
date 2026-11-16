@@ -1,0 +1,343 @@
+   Compiling aws-lc-sys v0.47.0
+   Compiling libsqlite3-sys v0.39.1
+   Compiling jackin-core v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-core)
+   Compiling rusqlite v0.41.1
+   Compiling aws-lc-rs v1.19.0
+   Compiling rustls v0.23.46
+   Compiling rustls-webpki v0.103.16
+   Compiling jsonwebtoken v10.4.0
+   Compiling rcgen v0.14.10
+   Compiling russh v0.65.1
+   Compiling tokio-rustls v0.26.6
+   Compiling rustls-platform-verifier v0.7.1
+   Compiling tungstenite v0.26.2
+   Compiling hyper-rustls v0.27.10
+   Compiling tonic v0.14.9
+   Compiling tokio-tungstenite v0.26.2
+   Compiling reqwest v0.13.5
+   Compiling reqwest v0.12.28
+   Compiling tonic-types v0.14.9
+   Compiling openshell-crypto v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling tonic-prost v0.14.9
+   Compiling openshell-extension-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling oauth2 v5.0.0
+   Compiling jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-core)
+   Compiling openshell-core v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-minimax)
+   Compiling jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-zai)
+   Compiling jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-codex)
+   Compiling jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-grok)
+   Compiling jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-opencode)
+   Compiling jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-cursor)
+   Compiling jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-kimi)
+   Compiling jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-openrouter)
+   Compiling jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-claude)
+   Compiling jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-gemini)
+   Compiling jackin-image v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-image)
+   Compiling jackin-usage v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage)
+   Compiling openshell-policy v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-sdk v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling openshell-providers v0.0.0 (https://github.com/NVIDIA/OpenShell?tag=v0.1.7#5d25211b)
+   Compiling jackin-openshell v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-openshell)
+   Compiling jackin-session v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-session)
+   Compiling jackin-tui v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-tui)
+   Compiling jackin-xtask v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/xtask)
+   Compiling jackin-testkit v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-testkit)
+    Finished `test` profile [unoptimized] target(s) in 53.20s
+────────────
+ Nextest run ID 9645e5e9-2c09-4328-aedc-faa5a454711d with nextest profile: default
+    Starting 288 tests across 5 binaries
+        PASS [   0.014s] (  1/288) jackin-xtask e2e::steps::j08::tests::a_leak_count_below_the_listed_leaks_is_a_problem
+        PASS [   0.015s] (  2/288) jackin-xtask repo::tests::comments_check_exempts_only_the_classified_sqlx_vendor_source
+        PASS [   0.020s] (  3/288) jackin-xtask e2e::steps::j08::tests::the_leak_count_covers_every_listed_leak
+        PASS [   0.021s] (  4/288) jackin-xtask e2e::steps::j08::tests::the_leak_count_stays_exact_when_the_list_is_capped
+        PASS [   0.021s] (  5/288) jackin-xtask e2e::credential::tests::environment_session_exposes_only_the_selected_secret_at_the_host_boundary
+        PASS [   0.021s] (  6/288) jackin-xtask e2e::target::tests::every_credential_and_runtime_value_is_outside_the_canonical_digest
+        PASS [   0.023s] (  7/288) jackin-xtask e2e::target::tests::every_target_identity_input_changes_the_digest
+        PASS [   0.026s] (  8/288) jackin-xtask e2e::credential::tests::environment_session_rejects_missing_values_without_echoing_siblings
+        PASS [   0.015s] (  9/288) jackin-xtask::e2e a_verdicts::exit_code_is_zero_only_when_every_line_passes
+        PASS [   0.022s] ( 10/288) jackin-xtask::e2e a_verdicts::reasons_are_one_sanitized_line_and_never_empty_for_fail_or_skip
+        PASS [   0.200s] ( 11/288) jackin-xtask::e2e b_probe::each_schema_violation_is_rejected_with_its_json_pointer
+        PASS [   0.129s] ( 12/288) jackin-xtask::e2e b_probe::launcher_identity_facts_validate_and_unknown_facts_are_rejected
+        PASS [   1.253s] ( 13/288) jackin-xtask::e2e a_verdicts::an_interrupt_with_a_failed_cleanup_still_exits_130
+        PASS [   1.328s] ( 14/288) jackin-xtask::e2e b_probe::a_failed_probe_check_fails_its_step_with_the_check_name
+        PASS [   1.394s] ( 15/288) jackin-xtask::e2e a_verdicts::a_needle_in_a_reason_is_scrubbed_from_the_line
+        PASS [   0.169s] ( 16/288) jackin-xtask::e2e b_probe::report_coverage_must_match_the_request
+        PASS [   0.165s] ( 17/288) jackin-xtask::e2e b_probe::schema_v3_rejects_old_and_incomplete_auth_and_identity_shapes
+        PASS [   0.131s] ( 18/288) jackin-xtask::e2e b_probe::stdout_must_be_exactly_one_json_object
+        PASS [   0.132s] ( 19/288) jackin-xtask::e2e b_probe::target_identity_and_engine_coverage_have_exact_errors
+        PASS [   0.015s] ( 20/288) jackin-xtask::e2e b_probe::the_runner_and_the_schema_agree_on_the_step_ids
+        PASS [   0.242s] ( 21/288) jackin-xtask::e2e b_probe::the_real_host_probe_report_validates_and_samples_are_schema_valid
+        PASS [   2.592s] ( 22/288) jackin-xtask::e2e a_verdicts::every_step_prints_one_line_in_id_order_even_when_they_settle_late
+        PASS [   3.084s] ( 23/288) jackin-xtask::e2e a_verdicts::a_failed_prerequisite_blocks_dependents_with_skip_and_exit_one
+        PASS [   3.107s] ( 24/288) jackin-xtask::e2e a_verdicts::elapsed_time_is_printed_for_each_step_and_the_total
+        PASS [   3.850s] ( 25/288) jackin-xtask::e2e a_verdicts::exit_codes_hold_end_to_end_for_setup_skip_and_interrupts
+        PASS [   2.995s] ( 26/288) jackin-xtask::e2e b_probe::the_j08_leak_count_is_the_exact_total_of_the_leaks
+        PASS [   2.782s] ( 27/288) jackin-xtask::e2e c_accounts::j17_usage_rejects_unsupported_and_accepts_complete_windows
+        PASS [   2.644s] ( 28/288) jackin-xtask::e2e c_early::a_consistent_scripted_journey_prints_all_pass_and_exits_zero
+        PASS [   5.539s] ( 29/288) jackin-xtask::e2e c_accounts::j15_skip_rule_follows_the_blocker_file_and_the_engine_flags
+        PASS [   7.838s] ( 30/288) jackin-xtask::e2e b_probe::probe_exit_status_and_stderr_decide_before_the_json_does
+        PASS [   6.891s] ( 31/288) jackin-xtask::e2e c_accounts::j17_selection_faults
+        PASS [   9.435s] ( 32/288) jackin-xtask::e2e b_probe::credentialed_exec_and_provider_evidence_cannot_be_skipped_or_absent
+        PASS [   9.618s] ( 33/288) jackin-xtask::e2e b_probe::a_probe_skip_in_a_complete_run_is_a_fail_except_the_start_record_case
+        PASS [   4.039s] ( 34/288) jackin-xtask::e2e c_early::j02_strict_manifest_faults
+        PASS [   5.380s] ( 35/288) jackin-xtask::e2e c_early::j01_doctor_faults
+        PASS [   1.261s] ( 36/288) jackin-xtask::e2e c_late::j07_looks_up_the_agent_by_the_adapter_comm_among_the_children_of_jackin_start
+        PASS [   5.343s] ( 37/288) jackin-xtask::e2e c_early::j04_identity_faults
+        PASS [   1.731s] ( 38/288) jackin-xtask::e2e c_late::j08_reflection_survives_an_enter_that_a_busy_codex_swallows
+        PASS [   8.275s] ( 39/288) jackin-xtask::e2e c_early::j05_upload_faults
+        PASS [  10.026s] ( 40/288) jackin-xtask::e2e c_early::j03_one_sandbox_per_launch_faults
+        PASS [  13.019s] ( 41/288) jackin-xtask::e2e c_early::j00_image_build_faults
+        PASS [  13.423s] ( 42/288) jackin-xtask::e2e c_late::j07_agent_process_faults
+        PASS [   7.113s] ( 43/288) jackin-xtask::e2e c_late::j10_filesystem_faults
+        PASS [  15.308s] ( 44/288) jackin-xtask::e2e c_late::j06_hook_faults
+        PASS [   8.111s] ( 45/288) jackin-xtask::e2e c_late::j09_passes_a_policy_refusal_and_the_exact_401_provider_body
+        PASS [  22.156s] ( 46/288) jackin-xtask::e2e c_accounts::j17_usage_content_faults
+        PASS [   9.708s] ( 47/288) jackin-xtask::e2e c_late::j11_detach_faults
+        PASS [   4.314s] ( 48/288) jackin-xtask::e2e c_late::j12_shell_faults
+        PASS [   1.401s] ( 49/288) jackin-xtask::e2e c_late::j16_engine_name_refused_while_the_resolver_works_passes
+        PASS [   0.015s] ( 50/288) jackin-xtask::e2e d_secrets::a1_lock_is_exclusive_and_fails_fast
+        PASS [   0.025s] ( 51/288) jackin-xtask::e2e d_secrets::a1_lock_never_follows_or_truncates_what_it_finds_at_its_path
+        PASS [   0.026s] ( 52/288) jackin-xtask::e2e d_secrets::a1_login_never_prints_through_debug_or_error_text
+        PASS [   0.023s] ( 53/288) jackin-xtask::e2e d_secrets::a_directory_pre_created_at_a_shared_name_does_not_block_the_lock
+        PASS [   1.481s] ( 54/288) jackin-xtask::e2e c_late::the_shared_probe_waits_until_codex_has_settled
+        PASS [   0.781s] ( 55/288) jackin-xtask::e2e d_secrets::a_needle_in_a_setup_error_is_scrubbed_from_stderr
+        PASS [   0.040s] ( 56/288) jackin-xtask::e2e d_secrets::fixture_logins_share_nothing_with_the_a1_login
+        PASS [   1.089s] ( 57/288) jackin-xtask::e2e d_secrets::a_step_panic_never_reaches_a_panic_hook_installed_before_the_run
+        PASS [  28.035s] ( 58/288) jackin-xtask::e2e c_accounts::j17_transient_usage_failures_are_retried_then_fail
+        PASS [   0.155s] ( 59/288) jackin-xtask::e2e d_secrets::only_a_chatgpt_login_is_an_a1_source
+        PASS [   6.752s] ( 60/288) jackin-xtask::e2e c_late::j13_export_faults
+        PASS [   0.015s] ( 61/288) jackin-xtask::e2e d_secrets::short_strings_are_not_needles
+        PASS [   2.535s] ( 62/288) jackin-xtask::e2e d_secrets::host_login_change_is_reported_without_a_hash
+        PASS [   1.303s] ( 63/288) jackin-xtask::e2e d_secrets::setup_supplies_three_independent_logins_to_the_account_boundary
+        PASS [  20.977s] ( 64/288) jackin-xtask::e2e c_late::j08_create_request_faults
+        PASS [   0.015s] ( 65/288) jackin-xtask::e2e e_scratch::a_tool_run_hands_the_group_fault_of_the_host_to_the_process_error
+        PASS [   0.023s] ( 66/288) jackin-xtask::e2e e_scratch::child_environment_is_an_allowlist
+        PASS [   0.189s] ( 67/288) jackin-xtask::e2e e_scratch::fixture_projects_have_the_shapes_journey_steps_need
+        PASS [   0.027s] ( 68/288) jackin-xtask::e2e e_scratch::real_host_caps_captured_output
+        PASS [   1.366s] ( 69/288) jackin-xtask::e2e e_scratch::real_host_kills_the_whole_process_group_on_timeout
+        PASS [   4.923s] ( 70/288) jackin-xtask::e2e d_secrets::no_output_channel_carries_a_secret
+        PASS [   0.628s] ( 71/288) jackin-xtask::e2e e_scratch::scratch_is_removed_even_when_the_setup_fails
+        PASS [   0.023s] ( 72/288) jackin-xtask::e2e e_scratch::the_scratch_parent_is_per_user_private_and_never_a_foreign_or_linked_directory
+        PASS [  10.327s] ( 73/288) jackin-xtask::e2e c_late::j16_docker_capability_off_faults
+        PASS [   5.047s] ( 74/288) jackin-xtask::e2e e_scratch::a_cancel_that_leaves_only_a_zombie_in_the_group_keeps_the_cancel_and_its_fault
+        PASS [   0.596s] ( 75/288) jackin-xtask::e2e f_pty::a_detach_key_ends_a_scripted_attach_child
+        PASS [   0.081s] ( 76/288) jackin-xtask::e2e f_pty::dropping_a_link_kills_the_child_and_its_group
+        PASS [   0.090s] ( 77/288) jackin-xtask::e2e f_pty::markers_defeat_the_terminal_echo
+        PASS [   2.378s] ( 78/288) jackin-xtask::e2e e_scratch::scratch_config_is_isolated_and_the_real_registry_is_not_written
+        PASS [   0.710s] ( 79/288) jackin-xtask::e2e f_pty::ansi_sequences_do_not_defeat_matching
+        PASS [   0.028s] ( 80/288) jackin-xtask::e2e g_cleanup::a_run_refuses_to_start_over_stale_e2e_resources
+        PASS [   0.195s] ( 81/288) jackin-xtask::e2e f_pty::resize_reaches_the_child
+        PASS [   0.535s] ( 82/288) jackin-xtask::e2e g_cleanup::an_unreadable_role_repository_stops_the_run_before_the_journey
+        PASS [   5.090s] ( 83/288) jackin-xtask::e2e e_scratch::a_failed_group_stop_after_too_much_output_is_a_group_error_and_never_swallowed
+        PASS [   1.355s] ( 84/288) jackin-xtask::e2e f_pty::expect_returns_text_before_the_match_and_keeps_the_rest
+        PASS [   1.589s] ( 85/288) jackin-xtask::e2e g_cleanup::a_cleanup_failure_is_a_clean_fail_line_and_does_not_stop_the_rest
+        PASS [  12.940s] ( 86/288) jackin-xtask::e2e c_late::j15_docker_capability_faults
+        PASS [   0.048s] ( 87/288) jackin-xtask::e2e g_cleanup::sweep_removes_only_e2e_leftovers
+        PASS [  13.697s] ( 88/288) jackin-xtask::e2e c_late::j14_lifecycle_faults
+        PASS [   1.395s] ( 89/288) jackin-xtask::e2e g_cleanup::cleanup_leaves_nothing_after_a_failure_in_the_middle_of_the_journey
+        PASS [  24.324s] ( 90/288) jackin-xtask::e2e c_late::j09_egress_faults
+        PASS [   0.016s] ( 91/288) jackin-xtask::e2e i_target::canonical_digest_matches_independent_fixture_and_excludes_runtime_values
+        PASS [   3.362s] ( 92/288) jackin-xtask::e2e g_cleanup::cleanup_also_runs_after_sigint_and_sigterm
+        PASS [   0.022s] ( 93/288) jackin-xtask::e2e i_target::every_behavior_and_profile_host_input_changes_the_digest
+        PASS [   2.774s] ( 94/288) jackin-xtask::e2e g_cleanup::cleanup_is_idempotent_and_only_touches_this_runs_tag
+        PASS [   8.019s] ( 95/288) jackin-xtask::e2e e_scratch::a_timeout_that_leaves_only_a_zombie_in_the_group_keeps_the_timeout_and_its_fault
+        PASS [   1.440s] ( 96/288) jackin-xtask::e2e h_args::the_e2e_command_parses_and_the_stub_is_gone
+        PASS [   0.760s] ( 97/288) jackin-xtask::e2e i_target::credential_descriptors_follow_cli_grammar_without_echoing_rejected_input
+        PASS [   3.744s] ( 98/288) jackin-xtask::e2e g_cleanup::cleanup_also_runs_after_timeout_panic_interrupt_and_signals
+        PASS [  28.889s] ( 99/288) jackin-xtask::e2e c_late::j08_credential_faults
+        PASS [   2.800s] (100/288) jackin-xtask::e2e g_cleanup::the_engine_container_is_removed_before_its_sandbox_is_deleted
+        PASS [   1.734s] (101/288) jackin-xtask::e2e i_target::invalid_targets_never_poll_production_and_valid_t01_polls_once
+        PASS [   0.053s] (102/288) jackin-xtask::e2e i_target::selection_errors_precede_every_secret_gateway_scratch_and_image_effect
+        PASS [   1.420s] (103/288) jackin-xtask::e2e i_target::j12_normal_and_shell_probes_share_the_private_invocation
+        PASS [   0.017s] (104/288) jackin-xtask::e2e i_target::t01_resolution_defaults_partial_selection_and_complete_behavior
+        PASS [   0.086s] (105/288) jackin-xtask::e2e i_target::t01_credential_source_errors_never_echo_the_parsed_descriptor
+        PASS [   1.713s] (106/288) jackin-xtask::e2e i_target::j00_and_j03_reject_build_and_load_identity_faults
+        PASS [   0.018s] (107/288) jackin-xtask::e2e i_target::target_resolution_rejects_every_unavailable_or_incomplete_contract
+        PASS [   0.079s] (108/288) jackin-xtask::e2e j_supported::credential_sources_and_discovery_follow_the_tuple_contract
+        PASS [   1.450s] (109/288) jackin-xtask::e2e i_target::j15_docker_shell_probe_uses_the_private_invocation_with_docker_and_engine
+        PASS [   0.430s] (110/288) jackin-xtask::e2e i_target::the_binary_rejects_an_invalid_target_before_it_starts_cargo_or_reaches_a_gateway
+        PASS [   4.447s] (111/288) jackin-xtask::e2e g_cleanup::host_refs_are_deleted_and_the_role_repository_ref_set_is_checked
+        PASS [   0.104s] (112/288) jackin-xtask::e2e j_supported::invalid_targets_and_incomplete_adapters_have_no_setup_effects
+        PASS [   1.758s] (113/288) jackin-xtask::e2e i_target::the_refresh_lock_is_held_through_both_fresh_replies_and_stops_a_contended_run
+        PASS [   5.711s] (114/288) jackin-xtask::e2e h_args::the_command_glue_maps_every_outcome_to_its_exit_code
+        PASS [   5.456s] (115/288) jackin-xtask::e2e i_target::j04_deadline_rejects_every_unqualified_or_young_child
+        PASS [   4.521s] (116/288) jackin-xtask::e2e j_supported::j09_provider_closure_and_response_classification_are_exact
+        PASS [   6.020s] (117/288) jackin-xtask::e2e j_supported::each_supported_target_completes_all_19_lines_without_skips
+        PASS [   0.071s] (118/288) jackin-xtask::e2e j_supported::onepassword_discovery_requires_whoami_and_one_zai_item
+        PASS [   0.133s] (119/288) jackin-xtask::e2e j_supported::schema_v3_private_specs_are_exact_distinct_and_secret_free
+        PASS [  10.203s] (120/288) jackin-xtask::e2e i_target::j12_rejects_shell_target_digest_and_engine_mismatches
+        PASS [   0.018s] (121/288) jackin-xtask::e2e j_supported::supported_target_resolution_matches_catalog_and_selection_defaults
+        PASS [   0.014s] (122/288) jackin-xtask::e2e k_identity::a_mismatched_exe_is_rejected_even_when_the_boolean_claims_a_match
+        PASS [   0.016s] (123/288) jackin-xtask::e2e k_identity::a_missing_pre_launch_stat_is_rejected
+        PASS [   0.015s] (124/288) jackin-xtask::e2e k_identity::a_null_or_empty_comm_is_rejected
+        PASS [   0.014s] (125/288) jackin-xtask::e2e k_identity::a_pre_launch_snapshot_from_another_pid_is_rejected
+        PASS [   0.015s] (126/288) jackin-xtask::e2e k_identity::a_stale_pid_or_start_time_is_rejected
+        PASS [   0.013s] (127/288) jackin-xtask::e2e k_identity::a_valid_launcher_identity_payload_still_passes_the_judge
+        PASS [   0.016s] (128/288) jackin-xtask::e2e k_identity::a_wrong_sandbox_uid_is_rejected
+        PASS [   0.015s] (129/288) jackin-xtask::e2e k_identity::absent_or_null_launcher_identity_facts_are_rejected
+        PASS [   0.015s] (130/288) jackin-xtask::e2e k_identity::stability_is_derived_from_the_stat_snapshots
+        PASS [   0.015s] (131/288) jackin-xtask::e2e k_identity::the_launcher_paths_are_compared_without_the_host_filesystem
+        PASS [   0.014s] (132/288) jackin-xtask::e2e k_identity::the_pre_launch_start_time_is_read_from_the_start_time_field
+        PASS [   0.013s] (133/288) jackin-xtask::e2e k_identity::the_sentinel_launcher_snapshot_payload_passes_the_judge
+        PASS [   8.862s] (134/288) jackin-xtask::e2e j_supported::j08_enforces_exact_target_credential_delivery_and_reflection
+        PASS [   0.098s] (135/288) jackin-xtask::gates baseline::branch_fails
+        PASS [   0.094s] (136/288) jackin-xtask::gates baseline::cargo_config_paths_fail
+        PASS [   0.397s] (137/288) jackin-xtask::gates baseline::allow_git_exact
+        PASS [   0.082s] (138/288) jackin-xtask::gates baseline::default_features_fail
+        PASS [   0.086s] (139/288) jackin-xtask::gates baseline::dev_edge_demo_passes
+        PASS [   0.083s] (140/288) jackin-xtask::gates baseline::dot_git_url_fails
+        PASS [   0.093s] (141/288) jackin-xtask::gates baseline::exact_pin_passes
+        PASS [   0.091s] (142/288) jackin-xtask::gates baseline::exemption_is_limited_to_testkit
+        PASS [   0.175s] (143/288) jackin-xtask::gates baseline::forwarded_feature_fails
+        PASS [   0.159s] (144/288) jackin-xtask::gates baseline::junie_cli_fails
+        PASS [   0.097s] (145/288) jackin-xtask::gates baseline::no_reference_fails
+        PASS [   0.180s] (146/288) jackin-xtask::gates baseline::lock_source_mismatch_fails
+        PASS [  12.094s] (147/288) jackin-xtask::e2e i_target::fresh_host_replies_are_distinct_exact_and_required
+        PASS [   0.098s] (148/288) jackin-xtask::gates baseline::normal_edge_demo_fails
+        PASS [   0.084s] (149/288) jackin-xtask::gates baseline::other_url_fails
+        PASS [   0.089s] (150/288) jackin-xtask::gates baseline::patch_dot_git_fails
+        PASS [   0.094s] (151/288) jackin-xtask::gates baseline::patch_package_key_fails
+        PASS [   0.082s] (152/288) jackin-xtask::gates baseline::path_dependency_fails
+        PASS [   0.165s] (153/288) jackin-xtask::gates baseline::patch_fails
+        PASS [   0.092s] (154/288) jackin-xtask::gates baseline::renamed_forward_fails
+        PASS [   0.100s] (155/288) jackin-xtask::gates baseline::renamed_path_fails
+        PASS [   9.898s] (156/288) jackin-xtask::e2e j_supported::j08_rejects_unrecognized_brokered_values
+        PASS [   0.093s] (157/288) jackin-xtask::gates baseline::replace_fails
+        PASS [   0.200s] (158/288) jackin-xtask::gates baseline::real_repo_passes
+        PASS [   0.112s] (159/288) jackin-xtask::gates baseline::rev_is_a_branch_name_fails
+        PASS [   0.088s] (160/288) jackin-xtask::gates baseline::short_rev_fails
+        PASS [   0.086s] (161/288) jackin-xtask::gates baseline::tag_fails
+        PASS [   0.102s] (162/288) jackin-xtask::gates baseline::testkit_exemption_covers_demo_only
+        PASS [   0.094s] (163/288) jackin-xtask::gates baseline::testkit_exemption_passes
+        PASS [   0.093s] (164/288) jackin-xtask::gates baseline::testkit_path_dependency_fails
+        PASS [   0.095s] (165/288) jackin-xtask::gates baseline::two_revs_fail
+        PASS [   0.113s] (166/288) jackin-xtask::gates baseline::unknown_git_must_deny
+        PASS [   0.108s] (167/288) jackin-xtask::gates baseline::uppercase_rev_fails
+        PASS [   0.096s] (168/288) jackin-xtask::gates baseline_branch::baseline_branch_ahead_and_identical_pass
+        PASS [   0.097s] (169/288) jackin-xtask::gates baseline_branch::baseline_branch_behind_diverged_empty_and_gh_failure_fail
+        PASS [   0.092s] (170/288) jackin-xtask::gates demo_gate::a_build_without_an_executable_is_an_error
+        PASS [   0.097s] (171/288) jackin-xtask::gates demo_gate::a_demo_feature_stops_the_product_check_before_the_release_build
+        PASS [   0.194s] (172/288) jackin-xtask::gates demo_gate::a_console_missing_from_every_measured_tree_is_a_violation_and_not_a_clean_pass
+        PASS [   0.179s] (173/288) jackin-xtask::gates demo_gate::a_console_missing_from_one_measured_tree_is_clean
+        PASS [   0.095s] (174/288) jackin-xtask::gates demo_gate::a_demo_symbol_in_the_rlib_stops_the_product_check
+        PASS [   0.112s] (175/288) jackin-xtask::gates demo_gate::a_release_build_failure_is_an_error
+        PASS [   0.096s] (176/288) jackin-xtask::gates demo_gate::an_executable_that_cannot_be_read_is_an_error
+        PASS [   0.740s] (177/288) jackin-xtask::gates baseline::source_replace_fails
+        PASS [   0.095s] (178/288) jackin-xtask::gates demo_gate::canary_in_binary_fails
+        PASS [   0.101s] (179/288) jackin-xtask::gates demo_gate::canary_in_rlib_fails
+        PASS [   0.090s] (180/288) jackin-xtask::gates demo_gate::clap_below_console_fails
+        PASS [   0.103s] (181/288) jackin-xtask::gates demo_gate::clean_texts_pass
+        PASS [   0.109s] (182/288) jackin-xtask::gates demo_gate::demo_feature_in_tree_fails
+        PASS [   0.408s] (183/288) jackin-xtask::gates demo_gate::a_missing_measured_package_is_a_violation_and_not_a_clean_pass
+        PASS [   0.152s] (184/288) jackin-xtask::gates demo_gate::forwarded_demo_feature_fails
+        PASS [   0.226s] (185/288) jackin-xtask::gates demo_gate::only_the_executable_is_scanned
+        PASS [   0.171s] (186/288) jackin-xtask::gates demo_gate::other_cargo_failure_is_an_error
+        PASS [   0.236s] (187/288) jackin-xtask::gates demo_gate::product_clean_binary_passes
+        PASS [   0.187s] (188/288) jackin-xtask::gates demo_gate::rlib_chosen_from_json_not_glob
+        PASS [   0.263s] (189/288) jackin-xtask::gates demo_gate::sim_symbol_fails
+        PASS [   0.274s] (190/288) jackin-xtask::gates demo_gate::static_edge_fails
+        PASS [   0.240s] (191/288) jackin-xtask::gates demo_gate::trait_impl_symbol_fails
+        PASS [   0.221s] (192/288) jackin-xtask::gates layers::a_member_may_dev_depend_on_itself_to_enable_its_own_test_features
+        PASS [   0.145s] (193/288) jackin-xtask::gates layers::layers_allow_the_console_crates
+        PASS [  13.129s] (194/288) jackin-xtask::e2e i_target::j15_rejects_shell_target_digest_engine_mode_and_docker_mismatches
+        PASS [   0.874s] (195/288) jackin-xtask::gates demo_gate::each_canary_in_binary_fails_by_name
+        PASS [   0.102s] (196/288) jackin-xtask::gates layers::layers_reject_termpane_vt100_config
+        PASS [   0.204s] (197/288) jackin-xtask::gates layers::layers_reject_normal_testkit_edge
+        PASS [   0.101s] (198/288) jackin-xtask::gates screen::a_module_that_is_merely_named_ratatui_is_not_the_crate
+        PASS [   0.098s] (199/288) jackin-xtask::gates screen::brackets_that_are_not_an_index_pass
+        PASS [   0.088s] (200/288) jackin-xtask::gates screen::const_literal_fails
+        PASS [   0.083s] (201/288) jackin-xtask::gates screen::display_literal_in_non_error_fails
+        PASS [   0.177s] (202/288) jackin-xtask::gates screen::allowed_literals_pass
+        PASS [   0.088s] (203/288) jackin-xtask::gates screen::format_literal_fails
+        PASS [   0.085s] (204/288) jackin-xtask::gates screen::indexing_a_buffer_fails
+        PASS [   0.247s] (205/288) jackin-xtask::gates screen::a_source_cut_off_inside_a_tracing_macro_is_not_a_panic
+        PASS [   0.098s] (206/288) jackin-xtask::gates screen::literal_in_function_fails
+        PASS [   0.093s] (207/288) jackin-xtask::gates screen::literals_in_display_pass
+        PASS [   0.098s] (208/288) jackin-xtask::gates screen::macro_literal_fails
+        PASS [   0.096s] (209/288) jackin-xtask::gates screen::other_attributes_pass
+        PASS [   0.095s] (210/288) jackin-xtask::gates screen::production_allowed_literals_pass
+        PASS [   0.092s] (211/288) jackin-xtask::gates screen::ratatui_allowed_imports_pass
+        PASS [   0.109s] (212/288) jackin-xtask::gates screen::ratatui_group_import_fails
+        PASS [   0.089s] (213/288) jackin-xtask::gates screen::ratatui_paths_with_a_leading_separator_fail
+        PASS [   0.106s] (214/288) jackin-xtask::gates screen::ratatui_layout_fails
+        PASS [   0.093s] (215/288) jackin-xtask::gates screen::ratatui_prelude_fails
+        PASS [   0.087s] (216/288) jackin-xtask::gates screen::ratatui_style_fails
+        PASS [   0.087s] (217/288) jackin-xtask::gates screen::raw_string_fails
+        PASS [   0.114s] (218/288) jackin-xtask::gates screen::ratatui_widgets_fails
+        PASS [   0.097s] (219/288) jackin-xtask::gates screen::silencing_the_drawing_ban_fails
+        PASS [   0.107s] (220/288) jackin-xtask::gates screen::stale_allowed_literal_fails
+        PASS [   0.181s] (221/288) jackin-xtask::gates screen::real_tree_passes
+        PASS [   0.406s] (222/288) jackin-xtask::repo_gates ci_run::a_tool_that_cannot_start_is_named_with_its_os_cause_once
+        PASS [   0.698s] (223/288) jackin-xtask::repo_gates ci_run::a_violation_in_baseline_or_screen_stops_before_the_later_tools
+        PASS [   0.314s] (224/288) jackin-xtask::repo_gates ci_run::invalid_selections_are_rejected_before_any_step_runs
+        PASS [   1.332s] (225/288) jackin-xtask::repo_gates ci_run::a_full_run_executes_each_tool_once_in_plan_order_and_exits_zero
+        PASS [   1.324s] (226/288) jackin-xtask::repo_gates ci_run::a_violation_in_a_repository_step_stops_before_the_later_tools
+        PASS [   1.467s] (227/288) jackin-xtask::repo_gates ci_run::a_failing_tool_stops_the_run_and_fails_the_exit_status
+        PASS [   1.119s] (228/288) jackin-xtask::repo_gates ci_run::fast_and_no_docs_skip_only_the_docs_build
+        PASS [   0.102s] (229/288) jackin-xtask::repo_gates comments::a_comment_in_the_usage_subtree_is_reported
+        PASS [   0.136s] (230/288) jackin-xtask::repo_gates comments::build_output_and_unscanned_file_types_are_skipped
+        PASS [   0.115s] (231/288) jackin-xtask::repo_gates comments::dockerfile_variants_and_shebang_scripts_are_scanned
+        PASS [   0.100s] (232/288) jackin-xtask::repo_gates comments::every_rust_comment_form_is_reported_at_its_line
+        PASS [   0.675s] (233/288) jackin-xtask::repo_gates ci_run::no_tool_inherits_a_git_variable_from_the_parent
+        PASS [   0.123s] (234/288) jackin-xtask::repo_gates comments::generated_exemption_needs_the_velnor_header_on_line_one_in_any_path
+        PASS [   0.112s] (235/288) jackin-xtask::repo_gates comments::non_rust_hash_comments_and_misplaced_directives_are_reported
+        PASS [   0.102s] (236/288) jackin-xtask::repo_gates comments::open_ignores_binary_files_without_a_shebang
+        PASS [   0.123s] (237/288) jackin-xtask::repo_gates comments::non_rust_headers_directives_and_quoted_hashes_pass
+        PASS [   0.102s] (238/288) jackin-xtask::repo_gates comments::rust_header_and_string_contents_are_not_comments
+        PASS [   0.106s] (239/288) jackin-xtask::repo_gates comments::shell_arithmetic_shift_is_not_a_heredoc
+        PASS [   0.108s] (240/288) jackin-xtask::repo_gates comments::shell_backtick_starts_a_word
+        PASS [   0.734s] (241/288) jackin-xtask::repo_gates ci_run::with_defects_in_every_repository_step_only_the_first_step_is_reported
+        PASS [   0.111s] (242/288) jackin-xtask::repo_gates comments::shell_heredoc_bodies_are_skipped_and_the_code_after_them_is_scanned
+        PASS [   8.209s] (243/288) jackin-xtask::e2e j_supported::static_key_sessions_isolate_a1_and_invalid_fixture_accounts
+        PASS [   0.115s] (244/288) jackin-xtask::repo_gates comments::spdx_lines_must_carry_a_known_tag_and_a_value
+        PASS [   0.135s] (245/288) jackin-xtask::repo_gates containers::aliases_and_globs_that_hide_program_docker_are_reported
+        PASS [   0.148s] (246/288) jackin-xtask::repo_gates containers::command_aliases_are_checked_like_command_new
+        PASS [   0.147s] (247/288) jackin-xtask::repo_gates containers::command_new_used_as_a_value_is_reported
+        PASS [   0.141s] (248/288) jackin-xtask::repo_gates containers::command_new_without_a_single_string_literal_is_reported
+        PASS [   0.138s] (249/288) jackin-xtask::repo_gates containers::docker_program_and_subcommand_type_outside_the_allowed_crates_are_reported
+        PASS [   0.130s] (250/288) jackin-xtask::repo_gates containers::docker_started_outside_jackin_image_is_reported
+        PASS [   0.187s] (251/288) jackin-xtask::repo_gates error_source::a_placeholder_naming_a_source_or_from_field_of_its_own_variant_is_reported
+        PASS [   0.220s] (252/288) jackin-xtask::repo_gates containers::permitted_docker_use_and_look_alikes_pass
+        PASS [   0.232s] (253/288) jackin-xtask::repo_gates containers::non_literal_command_new_is_allowed_in_xtask_the_session_host_file_and_the_jackin_process_main_file_only
+        PASS [   0.220s] (254/288) jackin-xtask::repo_gates containers::type_aliases_of_program_are_reported_outside_the_allowed_crates
+        PASS [   0.289s] (255/288) jackin-xtask::repo_gates containers::podman_and_container_are_reported_in_every_crate
+        PASS [   1.247s] (256/288) jackin-xtask::repo_gates ci_run::only_runs_the_named_steps_in_plan_order
+        PASS [   0.187s] (257/288) jackin-xtask::repo_gates error_source::a_source_placeholder_in_an_error_message_is_reported_at_the_literal_line
+        PASS [   0.184s] (258/288) jackin-xtask::repo_gates error_source::placeholders_that_only_resemble_source_and_source_outside_error_attributes_pass
+        PASS [   0.201s] (259/288) jackin-xtask::repo_gates error_source::a_source_field_that_the_message_does_not_print_and_unmarked_fields_pass
+        PASS [   0.192s] (260/288) jackin-xtask::repo_gates error_strings::a_bare_placeholder_of_a_string_field_is_reported_at_the_literal_line
+        PASS [   0.161s] (261/288) jackin-xtask::repo_gates error_strings::string_fields_passed_through_plain_and_other_types_pass
+        PASS [   0.146s] (262/288) jackin-xtask::repo_gates errors::debug_placeholder_forms_are_reported_at_the_literal_line
+        PASS [   0.130s] (263/288) jackin-xtask::repo_gates errors::display_placeholders_and_debug_outside_error_attributes_are_not_reported
+        PASS [   0.135s] (264/288) jackin-xtask::repo_gates errors::the_scan_covers_every_rust_file_under_crates
+        PASS [   0.199s] (265/288) jackin-xtask::repo_gates expose::expose_calls_outside_the_allowlist_are_reported_at_their_line
+        PASS [   0.212s] (266/288) jackin-xtask::repo_gates expose::expose_calls_in_the_allowlisted_credential_file_pass
+        PASS [   0.192s] (267/288) jackin-xtask::repo_gates expose::expose_in_strings_and_definitions_is_not_a_call
+        PASS [   0.227s] (268/288) jackin-xtask::repo_gates expose::expose_calls_under_a_tests_directory_pass
+        PASS [   0.191s] (269/288) jackin-xtask::repo_gates layers::edges_outside_the_row_are_reported
+        PASS [   0.215s] (270/288) jackin-xtask::repo_gates layers::d14_graph_with_inheritance_and_external_crates_passes
+        PASS [   0.189s] (271/288) jackin-xtask::repo_gates layers::gateway_crates_in_manifests_outside_openshell_are_reported
+        PASS [   0.205s] (272/288) jackin-xtask::repo_gates layers::gateway_crate_imports_in_source_outside_openshell_are_reported
+        PASS [   0.182s] (273/288) jackin-xtask::repo_gates layers::member_without_a_row_is_reported
+        PASS [   0.219s] (274/288) jackin-xtask::repo_gates layers::reqwest_imports_in_source_outside_the_http_owner_are_reported
+        PASS [   0.191s] (275/288) jackin-xtask::repo_gates layers::reqwest_in_a_manifest_outside_the_http_owner_is_reported
+        PASS [   0.190s] (276/288) jackin-xtask::repo_gates layers::usage_edges_inside_the_rows_pass
+        PASS [   0.015s] (277/288) jackin-xtask::repo_gates promotion_records::t03_live_record_distinguishes_models_and_closes_only_its_blocker
+        PASS [   0.139s] (278/288) jackin-xtask::repo_gates pins::agreeing_pins_pass
+        PASS [   0.017s] (279/288) jackin-xtask::repo_gates tool_text::output_of_other_tools_is_shown_without_control_characters
+        PASS [   0.194s] (280/288) jackin-xtask::repo_gates layers::usage_edges_outside_the_rows_are_reported
+        PASS [   0.130s] (281/288) jackin-xtask::repo_gates promotion_records::a14_evidence_and_blocker_records_are_consistent
+        PASS [   0.318s] (282/288) jackin-xtask::repo_gates pins::a_missing_pin_is_reported_not_skipped
+        PASS [   0.328s] (283/288) jackin-xtask::repo_gates repo::opening_from_a_subdirectory_checks_the_whole_workspace
+        PASS [   0.402s] (284/288) jackin-xtask::repo_gates pins::each_disagreeing_file_is_reported_at_its_line
+        PASS [  10.525s] (285/288) jackin-xtask::e2e j_supported::journey_process_terminal_and_restart_identity_uses_the_selected_adapter
+        PASS [  16.140s] (286/288) jackin-xtask::e2e j_supported::j11_and_j12_reject_wrong_comm_and_duplicate_children_for_each_target
+        PASS [  27.168s] (287/288) jackin-xtask::e2e j_supported::credentialed_exec_proves_identity_answer_and_real_tool_use
+        PASS [  29.456s] (288/288) jackin-xtask::e2e j_supported::j17_enforces_zai_plan_usage_and_account_precedence
+────────────
+     Summary [  75.226s] 288 tests run: 288 passed, 0 skipped
+mbx[cache]: 26 hits, 6 misses, 24 not looked up, 26 incremental; 0 B downloaded, 0 B uploaded, 75.4 MiB stored locally
+mbx[gc]: evicted 338 objects and 201 action results (466.6 MiB logical); 45.0 GiB logical remain
+mbx[savings]: escorted 2.0 TiB logical of ownerless outputs off the premises.
+EXIT=0

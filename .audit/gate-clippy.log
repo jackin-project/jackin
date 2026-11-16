@@ -1,0 +1,23 @@
+    Checking jackin-usage-provider-core v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-core)
+    Checking jackin-core v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-core)
+    Checking jackin-usage-provider-minimax v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-minimax)
+    Checking jackin-usage-provider-zai v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-zai)
+    Checking jackin-usage-provider-codex v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-codex)
+    Checking jackin-usage-provider-grok v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-grok)
+    Checking jackin-usage-provider-opencode v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-opencode)
+    Checking jackin-usage-provider-cursor v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-cursor)
+    Checking jackin-usage-provider-kimi v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-kimi)
+    Checking jackin-usage-provider-openrouter v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-openrouter)
+    Checking jackin-usage-provider-claude v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-claude)
+    Checking jackin-usage-provider-gemini v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage-provider-gemini)
+    Checking jackin-image v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-image)
+    Checking jackin-openshell v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-openshell)
+    Checking jackin-usage v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/usage/jackin-usage)
+    Checking jackin-session v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-session)
+    Checking jackin-tui v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-tui)
+    Checking jackin-xtask v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/xtask)
+    Checking jackin-testkit v0.1.0 (/private/tmp/jackin-a14-integrated/.w6-pr1282/crates/jackin-testkit)
+    Finished `dev` profile [unoptimized] target(s) in 14.26s
+mbx[cache]: 0 hits, 0 misses, 24 not looked up, 26 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 431454 compilations served. the monocle stays on.
+EXIT=0
