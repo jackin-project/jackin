@@ -199,7 +199,7 @@ async fn synced(rig: &Rig) -> Result<(Harness, ProviderName), Failure> {
     let account = rig.config.account(&work).ok_or("no work account")?;
     rig.world
         .session
-        .sync_account(account, &CancellationToken::new())
+        .sync_account(account, Agent::Codex, &CancellationToken::new())
         .await?;
     let provider = ProviderName::for_account(&work, Agent::Codex);
     assert!(rig.gateway().provider(&provider).is_some());
@@ -336,10 +336,13 @@ pub(super) async fn on_two_gateways(rig: &Rig, second_holds_it: bool) -> Result<
     let work = AccountName::parse("work")?;
     let account = rig.config.account(&work).ok_or("no work account")?;
     let cancel = CancellationToken::new();
-    rig.world.session.sync_account(account, &cancel).await?;
+    rig.world
+        .session
+        .sync_account(account, Agent::Codex, &cancel)
+        .await?;
     if second_holds_it {
         session_on(rig, &second)
-            .sync_account(account, &cancel)
+            .sync_account(account, Agent::Codex, &cancel)
             .await?;
     }
     let provider = ProviderName::for_account(&work, Agent::Codex);
@@ -473,7 +476,7 @@ async fn rm_reaches_a_gateway_that_was_added_while_it_waited_for_the_account_loc
         };
         rig.world.config.edit(vec![add.clone()]).await?;
         session_on(&rig, &third)
-            .sync_account(work, &CancellationToken::new())
+            .sync_account(work, Agent::Codex, &CancellationToken::new())
             .await?;
         rig.world
             .config

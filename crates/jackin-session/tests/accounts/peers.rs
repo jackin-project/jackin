@@ -87,16 +87,19 @@ async fn fleet(holding: [bool; 3]) -> Result<Fleet, Box<dyn std::error::Error>> 
     world.seed_config(&config).await?;
     let cancel = CancellationToken::new();
     if holding[0] {
-        world.session.sync_account(&account, &cancel).await?;
+        world
+            .session
+            .sync_account(&account, jackin_core::Agent::Codex, &cancel)
+            .await?;
     }
     if holding[1] {
         session_on(&world, &second)
-            .sync_account(&account, &cancel)
+            .sync_account(&account, jackin_core::Agent::Codex, &cancel)
             .await?;
     }
     if holding[2] {
         session_on(&world, &third)
-            .sync_account(&account, &cancel)
+            .sync_account(&account, jackin_core::Agent::Codex, &cancel)
             .await?;
     }
     Ok(Fleet {

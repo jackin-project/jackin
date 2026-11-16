@@ -9,7 +9,12 @@ use super::support::TestResult;
 fn cases() -> Vec<(Provider, &'static str, &'static str, &'static str)> {
     vec![
         (Provider::Zai, "zai", "ZAI_API_KEY", "glm-5.3"),
-        (Provider::Kimi, "moonshot", "KIMI_API_KEY", "kimi-for-coding"),
+        (
+            Provider::Kimi,
+            "moonshot",
+            "KIMI_API_KEY",
+            "kimi-for-coding",
+        ),
         (
             Provider::Minimax,
             "minimax-code",
@@ -27,10 +32,7 @@ fn cases() -> Vec<(Provider, &'static str, &'static str, &'static str)> {
 
 fn base_urls() -> Vec<(Provider, Option<&'static str>)> {
     vec![
-        (
-            Provider::Zai,
-            Some("https://api.z.ai/api/coding/paas/v4"),
-        ),
+        (Provider::Zai, Some("https://api.z.ai/api/coding/paas/v4")),
         (Provider::Kimi, Some("https://api.kimi.com/coding/v1")),
         (Provider::Minimax, None),
         (
@@ -60,10 +62,7 @@ fn omp_config_names_each_tuples_provider_env_model_and_one_placeholder() -> Test
         let text = render_omp_config(tuple, None)?;
         assert!(text.contains(&format!("  {id}:\n")), "{text}");
         assert!(text.contains(&format!("credentialEnv: {env}\n")), "{text}");
-        assert!(
-            text.contains(&format!("default: {id}/{model}\n")),
-            "{text}"
-        );
+        assert!(text.contains(&format!("default: {id}/{model}\n")), "{text}");
         assert_eq!(text.matches("placeholder").count(), 1, "{text}");
         assert!(!text.contains("MINIMAX_API_KEY"), "{text}");
         assert!(!text.contains("MIMO_API_KEY"), "{text}");
@@ -74,7 +73,9 @@ fn omp_config_names_each_tuples_provider_env_model_and_one_placeholder() -> Test
 #[test]
 fn omp_config_unknown_model_is_a_typed_error() -> TestResult {
     let tuple = lookup_tuple(Agent::Omp, Provider::Zai)?;
-    let err = render_omp_config(tuple, Some("no-such-model")).err().ok_or("expected error")?;
+    let err = render_omp_config(tuple, Some("no-such-model"))
+        .err()
+        .ok_or("expected error")?;
     assert!(
         matches!(err, CatalogError::UnknownModel { ref model, .. } if model == "no-such-model"),
         "{err}"

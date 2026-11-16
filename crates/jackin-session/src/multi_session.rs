@@ -80,7 +80,10 @@ impl Session {
         };
         let layout = crate::multi::plan_multi(instances, None, head);
         let mkdir = SandboxPath::from_static("/usr/bin/mkdir");
-        for directory in layout.directories.iter().filter(|path| path.as_str().starts_with("/sandbox/.jackin/task") || path.as_str().starts_with("/sandbox/.jackin/run/")) {
+        for directory in layout.directories.iter().filter(|path| {
+            path.as_str().starts_with("/sandbox/.jackin/task")
+                || path.as_str().starts_with("/sandbox/.jackin/run/")
+        }) {
             self.mkdir(sandbox, &mkdir, directory, cancel).await?;
         }
         for home in &layout.homes {
@@ -255,7 +258,12 @@ impl Session {
 }
 
 impl Session {
-    pub async fn restart_instance(&self, sandbox: &SandboxName, agent: Agent, cancel: &CancellationToken) -> Result<(), IntegrateError> {
+    pub async fn restart_instance(
+        &self,
+        sandbox: &SandboxName,
+        agent: Agent,
+        cancel: &CancellationToken,
+    ) -> Result<(), IntegrateError> {
         self.stop_instance(sandbox, agent, cancel).await
     }
 }

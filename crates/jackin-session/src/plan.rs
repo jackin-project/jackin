@@ -497,7 +497,18 @@ fn agent_config_file(
     model: Option<&str>,
     agent: Agent,
     provider: Provider,
+    account: &AccountName,
 ) -> Result<PlannedFile, PlanError> {
+    if agent == Agent::KimiCode {
+        return Ok(crate::files::render_kimi_config(
+            &ProviderName::for_account(account, agent),
+        ));
+    }
+    if agent == Agent::MimoCode {
+        return Ok(crate::files::render_mimo_config(
+            &ProviderName::for_account(account, agent),
+        ));
+    }
     if is_omp {
         return Ok(PlannedFile {
             path: spec.user_config.path.clone(),
@@ -540,7 +551,11 @@ pub fn plan_launch(
     let (agent, provider) = lead_agent_provider(&request);
     let tuple = lead_tuple(agent, provider, request.model.as_deref())?;
     let spec = agent.spec();
-    let lead_flag = match request.instances.as_ref().and_then(|items| items.lead_opt()) {
+    let lead_flag = match request
+        .instances
+        .as_ref()
+        .and_then(|items| items.lead_opt())
+    {
         Some(lead) => Some(lead.account.clone()),
         None => request.account.clone(),
     };
@@ -575,7 +590,13 @@ pub fn plan_launch(
     let mut instance_accounts = Vec::new();
     let mut chatgpt_accounts = Vec::new();
     for instance in instances.iter() {
-        let entry = config.account(&instance.account).ok_or_else(|| ConfigError::MissingReference { kind: "account", name: instance.account.to_string() })?;
+        let entry =
+            config
+                .account(&instance.account)
+                .ok_or_else(|| ConfigError::MissingReference {
+                    kind: "account",
+                    name: instance.account.to_string(),
+                })?;
         instance_accounts.push(entry.clone());
         if instance.agent == Agent::Codex {
             if let Some(login) = entry.chatgpt_login() {
@@ -584,7 +605,7 @@ pub fn plan_launch(
         }
     }
     let is_omp = agent == Agent::Omp;
-    let chatgpt_account = if is_omp {
+    let chatgpt_account = if agent != Agent::Codex {
         None
     } else {
         let mode =
@@ -634,6 +655,7 @@ pub fn plan_launch(
             request.model.as_deref(),
             agent,
             provider,
+            &selection.account,
         )?,
         env: PlannedFile {
             path: sandbox_layout::env_file(&request.launch),
@@ -734,7 +756,10 @@ impl LaunchPlan {
     }
 
     pub fn chatgpt_account_for(&self, agent: Agent) -> Option<&ChatgptAccountId> {
-        self.chatgpt_accounts.iter().find(|(found, _)| *found == agent).map(|(_, id)| id)
+        self.chatgpt_accounts
+            .iter()
+            .find(|(found, _)| *found == agent)
+            .map(|(_, id)| id)
     }
 
     pub fn instance_accounts(&self) -> &[Account] {

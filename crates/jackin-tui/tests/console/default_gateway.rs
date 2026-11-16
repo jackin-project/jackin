@@ -104,7 +104,7 @@ async fn assemble(peer: Peer, pinned: bool) -> Out<Box<Pair>> {
         .ok_or("the work account is missing")?;
     let link: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&second);
     session_over(&lab.rig.world, Arc::clone(&link))
-        .sync_account(&login, &CancellationToken::new())
+        .sync_account(&login, Agent::Codex, &CancellationToken::new())
         .await?;
     let home: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&lab.rig.world.gateway);
     let redial = match peer {

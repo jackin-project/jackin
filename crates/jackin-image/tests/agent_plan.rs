@@ -276,3 +276,19 @@ fn two_agent_plan_installs_and_scans_both_binaries() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn minimax_code_tuple_is_unavailable_and_image_plan_has_no_install_target() -> TestResult {
+    let tuple = lookup_tuple(Agent::MinimaxCode, Provider::Minimax)?;
+    assert_eq!(tuple.id, "T06");
+    assert_eq!(tuple.state, TupleState::Unavailable);
+    assert_eq!(tuple.reason, Some("no stable Linux artifact"));
+    let err = ImagePlan::new(&request(Agent::MinimaxCode)?)
+        .err()
+        .ok_or("expected error")?;
+    assert!(
+        matches!(err, jackin_image::ImageError::MissingInstallTarget { .. }),
+        "{err}"
+    );
+    Ok(())
+}
