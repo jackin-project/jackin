@@ -282,6 +282,30 @@ fn scan_absent_dockerfile(dockerfile: Vec<u8>, agents: &[jackin_core::Agent]) ->
         .into_bytes()
 }
 
+fn strip_system_config(dockerfile: Vec<u8>, prefix: &str) -> Vec<u8> {
+    let config = format!("${{{prefix}_SYSTEM_CONFIG}}");
+    let content = format!("${{{prefix}_SYSTEM_CONFIG_CONTENT}}");
+    let text = String::from_utf8_lossy(&dockerfile).into_owned();
+    let text = text.replace(
+        &format!("    && install -d -m 0755 -o root -g root \"/out$(dirname \"{config}\")\" \\\n"),
+        "",
+    );
+    let text = text.replace(
+        &format!("    && printf '%s' \"{content}\" > \"/out{config}\" \\\n"),
+        "",
+    );
+    let text = text.replace(
+        &format!("COPY --from=trusted --chown=root:root --chmod=u=rwX,go=rX {config} {config}\n"),
+        "",
+    );
+    let text = text.replace(
+        &format!("        --same-as {config}=/trusted{config} \\\n"),
+        "",
+    );
+    let text = text.replace(&format!("        --data {config} \\\n"), "");
+    text.into_bytes()
+}
+
 fn derived_context(request: &ImageRequest) -> Vec<MaterializedFile> {
     let agents = request.sorted_agents();
     let dockerfile = if agents.len() > 1 {
@@ -289,7 +313,17 @@ fn derived_context(request: &ImageRequest) -> Vec<MaterializedFile> {
     } else {
         DERIVED_DOCKERFILE.to_vec()
     };
-    let dockerfile = scan_absent_dockerfile(dockerfile, &agents);
+    let mut dockerfile = scan_absent_dockerfile(dockerfile, &agents);
+    for (index, agent) in agents.iter().enumerate() {
+        if agent.spec().install.system_config.as_str().is_empty() {
+            let prefix = if index == 0 {
+                "AGENT".to_owned()
+            } else {
+                format!("AGENT{}", index + 1)
+            };
+            dockerfile = strip_system_config(dockerfile, &prefix);
+        }
+    }
     vec![
         file("Dockerfile", &dockerfile),
         file("jackin-start", JACKIN_START),

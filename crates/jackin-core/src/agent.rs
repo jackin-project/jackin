@@ -381,8 +381,10 @@ impl AgentSpec {
             &self.workdir,
             &self.auth_file.path,
             &self.user_config.path,
-            &self.install.system_config,
         ]);
+        if !self.install.system_config.as_str().is_empty() {
+            paths.push(&self.install.system_config);
+        }
         paths
     }
 }
@@ -504,7 +506,7 @@ macro_rules! agent_spec {
                 url_template: $url,
                 archive_members: &[],
                 version_output: "",
-                system_config: SandboxPath::from_static($config),
+                system_config: SandboxPath::from_static(""),
                 system_config_content: "",
                 scan_absent_paths: &[],
                 targets: $targets,

@@ -135,14 +135,6 @@ pub(crate) fn derived_arguments_prefixed(
                 .replace("{version}", spec.install.version),
         ),
         build_arg(
-            &format!("{prefix}_SYSTEM_CONFIG"),
-            spec.install.system_config.as_str(),
-        ),
-        build_arg(
-            &format!("{prefix}_SYSTEM_CONFIG_CONTENT"),
-            spec.install.system_config_content,
-        ),
-        build_arg(
             &format!("{prefix}_SCAN_ABSENT"),
             &spec.install.scan_absent_paths.join(" "),
         ),
@@ -155,6 +147,22 @@ pub(crate) fn derived_arguments_prefixed(
             },
         ),
     ];
+    if !spec.install.system_config.as_str().is_empty() {
+        args.insert(
+            6,
+            build_arg(
+                &format!("{prefix}_SYSTEM_CONFIG"),
+                spec.install.system_config.as_str(),
+            ),
+        );
+        args.insert(
+            7,
+            build_arg(
+                &format!("{prefix}_SYSTEM_CONFIG_CONTENT"),
+                spec.install.system_config_content,
+            ),
+        );
+    }
     for platform in PLATFORMS {
         let target = install_target(agent, platform)?;
         let name = format!(
