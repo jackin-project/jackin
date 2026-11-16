@@ -44,6 +44,7 @@ fn choose(
         workspace: &workspace,
         role: &role,
         agent: Agent::Codex,
+        provider: Provider::Codex,
     };
     Ok(config
         .select_account(&query)

@@ -305,6 +305,22 @@ impl CredentialArg {
     }
 }
 
+pub fn parse_agent(text: &str) -> Result<jackin_core::Agent, CommandError> {
+    jackin_core::Agent::ALL
+        .into_iter()
+        .find(|agent| agent.as_str() == text)
+        .ok_or_else(|| {
+            let names: Vec<&str> = jackin_core::Agent::ALL
+                .into_iter()
+                .map(jackin_core::Agent::as_str)
+                .collect();
+            CommandError::Argument(format!(
+                "the agent is unknown; expected one of {}",
+                names.join(", ")
+            ))
+        })
+}
+
 pub fn parse_provider(text: &str) -> Result<Provider, CommandError> {
     Provider::ALL
         .into_iter()
@@ -371,6 +387,12 @@ pub struct LoadArgs {
     pub path: PathBuf,
     #[arg(long, help = "Account to use for this launch")]
     pub account: Option<AccountName>,
+    #[arg(long, help = "Agent to run for this launch")]
+    pub agent: Option<String>,
+    #[arg(long, help = "Provider to use for this launch")]
+    pub provider: Option<String>,
+    #[arg(long, help = "Model to use for this launch")]
+    pub model: Option<String>,
     #[arg(long, help = "Build the image again")]
     pub rebuild: bool,
     #[arg(long, help = "Continue an earlier launch")]

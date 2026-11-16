@@ -155,6 +155,59 @@ pub enum CatalogError {
     },
 }
 
+pub fn tuple_profile_asset(tuple: &AgentTuple) -> &'static ProfileAsset {
+    match tuple.id {
+        "T01" => &ProfileAsset {
+            id: "codex",
+            yaml: include_str!("assets/t01-codex.yaml"),
+        },
+        "T02" => &ProfileAsset {
+            id: "claude",
+            yaml: include_str!("assets/t02-claude.yaml"),
+        },
+        "T03" => &ProfileAsset {
+            id: "grok",
+            yaml: include_str!("assets/t03-grok.yaml"),
+        },
+        "T04" => &ProfileAsset {
+            id: "muse",
+            yaml: include_str!("assets/t04-muse.yaml"),
+        },
+        "T05" => &ProfileAsset {
+            id: "agy",
+            yaml: include_str!("assets/t05-antigravity.yaml"),
+        },
+        "T06" => &ProfileAsset {
+            id: "minimax-code",
+            yaml: include_str!("assets/t06-minimax.yaml"),
+        },
+        "T07" => &ProfileAsset {
+            id: "mimo",
+            yaml: include_str!("assets/t07-mimo.yaml"),
+        },
+        "T08" => &ProfileAsset {
+            id: "kimi",
+            yaml: include_str!("assets/t08-kimi.yaml"),
+        },
+        "T09" => &ProfileAsset {
+            id: "omp-zai",
+            yaml: include_str!("assets/t09-omp-zai.yaml"),
+        },
+        "T10" => &ProfileAsset {
+            id: "omp-kimi",
+            yaml: include_str!("assets/t10-omp-kimi.yaml"),
+        },
+        "T11" => &ProfileAsset {
+            id: "omp-minimax",
+            yaml: include_str!("assets/t11-omp-minimax.yaml"),
+        },
+        _ => &ProfileAsset {
+            id: "omp-mimo",
+            yaml: include_str!("assets/t12-omp-mimo.yaml"),
+        },
+    }
+}
+
 pub fn lookup_tuple(agent: Agent, provider: Provider) -> Result<&'static AgentTuple, CatalogError> {
     TUPLES
         .iter()

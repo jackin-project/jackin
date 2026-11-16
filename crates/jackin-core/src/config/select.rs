@@ -16,6 +16,7 @@ pub struct AccountQuery<'a> {
     pub workspace: &'a WorkspaceName,
     pub role: &'a RoleName,
     pub agent: Agent,
+    pub provider: Provider,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,7 +85,7 @@ impl Config {
         &self,
         query: &AccountQuery<'_>,
     ) -> Result<AccountSelection, SelectionError> {
-        let provider = query.agent.provider();
+        let provider = query.provider;
         if let Some(flag) = query.flag {
             return self.select_flag(flag, provider);
         }
@@ -93,7 +94,7 @@ impl Config {
             .and_then(|workspace| workspace.bindings.get(&provider));
         let role = self
             .role(query.role)
-            .and_then(|role| role.bindings.get(&query.agent));
+            .and_then(|role| role.bindings.get(&provider));
         let ranked = [
             (workspace, SelectionRule::WorkspaceBinding),
             (role, SelectionRule::RoleBinding),

@@ -155,10 +155,14 @@ impl World {
                 name: name.clone(),
                 source: role.source.clone(),
             });
-            for (agent, account) in &role.bindings {
+            for (provider, account) in &role.bindings {
+                let agent = jackin_core::TUPLES
+                    .iter()
+                    .find(|tuple| tuple.provider == *provider)
+                    .map_or(jackin_core::Agent::Codex, |tuple| tuple.agent);
                 edits.push(ConfigEdit::BindRoleAccount {
                     role: name.clone(),
-                    agent: *agent,
+                    agent,
                     account: account.clone(),
                 });
             }

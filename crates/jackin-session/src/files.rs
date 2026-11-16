@@ -46,3 +46,23 @@ pub(crate) fn render_auth_json(
     })
     .to_string()
 }
+
+pub(crate) fn render_placeholder_auth(spec: &jackin_core::AgentSpec) -> String {
+    if spec.agent == jackin_core::Agent::Codex {
+        return String::new();
+    }
+    let names: Vec<String> = spec
+        .credential_env_names
+        .iter()
+        .map(|name| format!("\"{name}\": \"placeholder\""))
+        .collect();
+    format!("{{{}}}", names.join(", "))
+}
+
+pub(crate) fn placeholder_file(spec: &jackin_core::AgentSpec) -> crate::plan::PlannedFile {
+    crate::plan::PlannedFile {
+        path: spec.auth_file.path.clone(),
+        mode: spec.auth_file.mode,
+        text: render_placeholder_auth(spec),
+    }
+}

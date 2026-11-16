@@ -9,7 +9,6 @@ use super::{
     Account, AllowedRoles, Config, ConfigError, CredentialSource, EnvTable, GatewayEntry,
     PlainEnvValue, RoleEntry, RoleSet, RoleSource, ScopedEnvName, Workspace,
 };
-use crate::agent::Agent;
 use crate::docker::EngineConfig;
 use crate::ids::{
     AccountName, BuilderName, ChatgptAccountId, EnvName, GatewayName, IdError, OpAccountId,
@@ -49,12 +48,6 @@ fn platform(text: &str) -> Result<Platform, &'static str> {
 
 fn provider(text: &str) -> Option<Provider> {
     Provider::ALL
-        .into_iter()
-        .find(|candidate| candidate.as_str() == text)
-}
-
-fn agent(text: &str) -> Option<Agent> {
-    Agent::ALL
         .into_iter()
         .find(|candidate| candidate.as_str() == text)
 }
@@ -279,7 +272,7 @@ fn read_roles(root: &mut Reader<'_, '_>, out: &mut BTreeMap<RoleName, RoleEntry>
             continue;
         };
         let source = read_role_source(&mut entry);
-        let bindings = read_binding_map(&mut entry, "bindings", agent);
+        let bindings = read_binding_map(&mut entry, "bindings", provider);
         entry.finish();
         if let Some(source) = source {
             out.insert(name, RoleEntry { source, bindings });

@@ -31,11 +31,20 @@ const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
 const JACKIN_START: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
 const SCAN: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
-const ARG_NAMES: [&str; 14] = [
-    "CODEX_VERSION",
-    "CODEX_BIN_DIR",
-    "CODEX_SHA256_ARM64",
-    "CODEX_SHA256_AMD64",
+const ARG_NAMES: [&str; 23] = [
+    "AGENT_ARCHIVE_MEMBERS",
+    "AGENT_BINARY",
+    "AGENT_BIN_DIR",
+    "AGENT_EXTRA_BINARY",
+    "AGENT_NAME",
+    "AGENT_SHA256_AMD64",
+    "AGENT_SHA256_ARM64",
+    "AGENT_SYSTEM_CONFIG",
+    "AGENT_SYSTEM_CONFIG_CONTENT",
+    "AGENT_URL_AMD64",
+    "AGENT_URL_ARM64",
+    "AGENT_VERSION",
+    "AGENT_VERSION_OUTPUT",
     "DOCKER_LAYER",
     "DOCKER_CLI_VERSION",
     "DOCKER_BUILDX_VERSION",
@@ -47,11 +56,20 @@ const ARG_NAMES: [&str; 14] = [
     "DOCKER_COMPOSE_SHA256_ARM64",
     "DOCKER_COMPOSE_SHA256_AMD64",
 ];
-const CODEX_ARGS: [&str; 4] = [
-    "CODEX_VERSION",
-    "CODEX_BIN_DIR",
-    "CODEX_SHA256_ARM64",
-    "CODEX_SHA256_AMD64",
+const CODEX_ARGS: [&str; 13] = [
+    "AGENT_ARCHIVE_MEMBERS",
+    "AGENT_BINARY",
+    "AGENT_BIN_DIR",
+    "AGENT_EXTRA_BINARY",
+    "AGENT_NAME",
+    "AGENT_SHA256_AMD64",
+    "AGENT_SHA256_ARM64",
+    "AGENT_SYSTEM_CONFIG",
+    "AGENT_SYSTEM_CONFIG_CONTENT",
+    "AGENT_URL_AMD64",
+    "AGENT_URL_ARM64",
+    "AGENT_VERSION",
+    "AGENT_VERSION_OUTPUT",
 ];
 const FLAG_PREFIXES: [&str; 9] = [
     "--builder=",
@@ -186,9 +204,9 @@ fn check_stages(request: &ImageRequest) -> TestResult {
     ));
     assert_eq!(tokens(&derived_rest)?, sorted(derived), "derived {label}");
     let want_args = if request.docker == DockerLayer::Client {
-        14
+        23
     } else {
-        4
+        13
     };
     assert_eq!(build_args.len(), want_args, "derived build args {label}");
     let all = [&construct.args, &built.role.args, &built.derived.args];
@@ -423,25 +441,25 @@ fn derived_build_args_come_from_the_codex_row() -> TestResult {
     let mut want = CODEX_ARGS.to_vec();
     want.sort_unstable();
     assert_eq!(names, want);
-    assert_eq!(arm["CODEX_VERSION"], spec.install.version);
-    assert_eq!(arm["CODEX_BIN_DIR"], "/usr/local/bin");
-    assert_eq!(arm["CODEX_BIN_DIR"], parent(spec.binary.as_str()));
+    assert_eq!(arm["AGENT_VERSION"], spec.install.version);
+    assert_eq!(arm["AGENT_BIN_DIR"], "/usr/local/bin");
+    assert_eq!(arm["AGENT_BIN_DIR"], parent(spec.binary.as_str()));
     assert_eq!(
-        arm["CODEX_BIN_DIR"],
+        arm["AGENT_BIN_DIR"],
         parent(spec.codex.code_mode_host.as_str())
     );
     for target in spec.install.targets {
         let name = format!(
-            "CODEX_SHA256_{}",
+            "AGENT_SHA256_{}",
             target.platform.target_arch().to_ascii_uppercase()
         );
         assert_eq!(arm[&name], target.sha256, "{name}");
         assert!(is_sha256(&arm[&name]), "{name}");
     }
-    assert_ne!(arm["CODEX_SHA256_ARM64"], arm["CODEX_SHA256_AMD64"]);
+    assert_ne!(arm["AGENT_SHA256_ARM64"], arm["AGENT_SHA256_AMD64"]);
     let profile_line = format!(
         "- {}/{}",
-        arm["CODEX_BIN_DIR"],
+        arm["AGENT_BIN_DIR"],
         last_segment(spec.binary.as_str())
     );
     assert!(
@@ -566,59 +584,43 @@ fn derived_dockerfile_installs_what_the_codex_row_describes() -> TestResult {
     let adds = archive_stage_adds(&lines);
     for target in spec.install.targets {
         let arch = target.platform.target_arch();
-        let url = spec
-            .install
-            .url_template
-            .replace("{version}", "${CODEX_VERSION}")
-            .replace("{target}", target.triple);
         let want = format!(
-            "--checksum=sha256:${{CODEX_SHA256_{}}} {url} /codex-package.tar.gz",
+            "--checksum=sha256:${{AGENT_SHA256_{0}}} ${{AGENT_URL_{0}}} /agent-artifact",
             arch.to_ascii_uppercase()
         );
-        let stage = format!("codex-archive-{arch}");
+        let stage = format!("agent-archive-{arch}");
         assert_eq!(adds.get(&stage), Some(&vec![want]), "{stage}");
     }
     assert!(
-        lines.contains(&"FROM codex-archive-${TARGETARCH} AS codex-archive".to_owned()),
+        lines.contains(&"FROM agent-archive-${TARGETARCH} AS agent-archive".to_owned()),
         "no selector stage"
     );
     let unquoted = text.replace('"', "");
     let words: BTreeSet<&str> = unquoted.split_whitespace().collect();
-    for path in [&spec.binary, &spec.codex.code_mode_host] {
-        let want = format!("${{CODEX_BIN_DIR}}/{}", last_segment(path.as_str()));
-        assert!(words.contains(want.as_str()), "install path {want}");
-    }
+    assert!(words.contains("${AGENT_BINARY}"), "install path binary");
+    assert!(
+        words.contains("${AGENT_ARCHIVE_MEMBERS}"),
+        "archive members arg"
+    );
     let extraction = lines
         .iter()
         .flat_map(|line| line.split(" && "))
         .map(str::trim)
-        .find(|command| command.split_whitespace().next() == Some("tar"))
+        .find(|command| command.contains("tar -xzf /archive/agent-artifact"))
         .ok_or("no tar command")?;
-    let mut extracted: Vec<&str> = extraction
-        .split_whitespace()
-        .filter(|word| word.starts_with("bin/"))
-        .collect();
-    extracted.sort_unstable();
-    let mut members = spec.install.archive_members.to_vec();
-    members.sort_unstable();
-    assert_eq!(extracted, members, "tar members {extraction}");
     assert!(
-        text.contains(spec.install.system_config.as_str()),
+        extraction.contains("${AGENT_ARCHIVE_MEMBERS}"),
+        "tar members {extraction}"
+    );
+    assert!(
+        text.contains("${AGENT_SYSTEM_CONFIG}"),
         "system config path"
     );
-    let printf = format!(
-        "printf '{}'",
-        spec.install.system_config_content.replace('\n', "\\n")
-    );
-    assert!(text.contains(&printf), "system config content {printf}");
-    let version_output = spec
-        .install
-        .version_output
-        .replace("{version}", "${CODEX_VERSION}");
     assert!(
-        text.contains(&version_output),
-        "version output {version_output}"
+        text.contains("${AGENT_SYSTEM_CONFIG_CONTENT}"),
+        "system config content"
     );
+    assert!(text.contains("${AGENT_VERSION_OUTPUT}"), "version output");
     assert!(!text.contains(spec.install.version), "literal version");
     for target in spec.install.targets {
         assert!(!text.contains(target.sha256), "literal checksum");
@@ -800,6 +802,29 @@ fn fixed_pairs<'a>(words: &[&'a str]) -> Vec<&'a str> {
         .collect()
 }
 
+fn protected_paths(spec: &jackin_core::AgentSpec) -> Vec<String> {
+    let mut paths = vec![
+        "/usr/local/bin/jackin-start".to_owned(),
+        sandbox_layout::hook_path(HookKind::Setup)
+            .as_str()
+            .to_owned(),
+        sandbox_layout::hook_path(HookKind::Preflight)
+            .as_str()
+            .to_owned(),
+        spec.binary.as_str().to_owned(),
+    ];
+    paths.sort();
+    paths
+}
+
+fn subst(pair: String, spec: &jackin_core::AgentSpec) -> String {
+    pair.replace("${AGENT_BINARY}", spec.binary.as_str())
+        .replace(
+            "${AGENT_SYSTEM_CONFIG}",
+            spec.install.system_config.as_str(),
+        )
+}
+
 #[test]
 fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stage() -> TestResult {
     let spec = Agent::Codex.spec();
@@ -813,7 +838,13 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
         return Err(format!("scan stage lines {:?}", scan.lines).into());
     };
     assert!(user < run, "USER root before the scan RUN");
-    let body = scan.lines[run].replace("${CODEX_BIN_DIR}", bin_dir);
+    let body = scan.lines[run]
+        .replace("${AGENT_BIN_DIR}", bin_dir)
+        .replace("${AGENT_BINARY}", spec.binary.as_str())
+        .replace(
+            "${AGENT_SYSTEM_CONFIG}",
+            spec.install.system_config.as_str(),
+        );
     let words: Vec<&str> = body.split_whitespace().collect();
     assert!(words.contains(&"--mount=type=bind,from=assembled,source=/,target=/image,ro"));
     assert!(words.contains(&"--mount=type=bind,from=trusted,source=/,target=/trusted,ro"));
@@ -855,33 +886,24 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
         .take_while(|word| **word != ">")
         .copied()
         .collect();
-    let mut protected = vec![
-        "/usr/local/bin/jackin-start".to_owned(),
-        sandbox_layout::hook_path(HookKind::Setup)
-            .as_str()
-            .to_owned(),
-        sandbox_layout::hook_path(HookKind::Preflight)
-            .as_str()
-            .to_owned(),
-        spec.binary.as_str().to_owned(),
-        spec.codex.code_mode_host.as_str().to_owned(),
-    ];
-    protected.sort();
+    let protected = protected_paths(spec);
     let mut passed: Vec<String> = tail
         .iter()
         .filter(|word| **word != "$extra")
-        .map(|word| (*word).to_owned())
+        .map(|word| subst((*word).to_owned(), spec))
         .collect();
     passed.sort();
     assert_eq!(passed, protected, "protected paths passed to the scan");
     let mut same_as = fixed_pairs(&words);
     same_as.sort_unstable();
-    let config = spec.install.system_config.as_str();
     let mut wanted: Vec<String> = protected
         .iter()
         .map(|path| format!("{path}=/trusted{path}"))
         .collect();
-    wanted.push(format!("{config}=/trusted{config}"));
+    wanted.push(format!(
+        "{0}=/trusted{0}",
+        spec.install.system_config.as_str()
+    ));
     wanted.sort();
     assert_eq!(
         same_as, wanted,
@@ -889,7 +911,7 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
     );
     assert_eq!(
         words_after(&words, "--data"),
-        [config],
+        [spec.install.system_config.as_str()],
         "protected data files"
     );
     assert_eq!(
@@ -917,8 +939,10 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
             );
         }
     }
-    assert_eq!(stage_named(&all, "codex")?.from, "construct", "codex stage");
-    let copy = format!("--chown=root:root --chmod=u=rwX,go=rX {config} {config}");
+    assert_eq!(stage_named(&all, "agent")?.from, "construct", "agent stage");
+    let copy =
+        "--chown=root:root --chmod=u=rwX,go=rX ${AGENT_SYSTEM_CONFIG} ${AGENT_SYSTEM_CONFIG}"
+            .to_owned();
     assert!(
         assembled
             .lines
@@ -929,7 +953,7 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
     assert!(
         stage_named(&all, "trusted")?
             .lines
-            .contains(&format!("COPY --from=codex {copy}")),
+            .contains(&"COPY --from=agent --chown=root:root /out/ /".to_owned()),
         "the trusted stage must hold the config the scan compares against"
     );
     let last = all.last().ok_or("no stage")?;
@@ -1287,36 +1311,6 @@ fn no_role_program_runs_after_the_trusted_files_land() -> TestResult {
     Ok(())
 }
 
-fn copy_destinations(stage: &Stage, bin_dir: &str) -> Result<Vec<String>, Box<dyn Error>> {
-    let mut out = Vec::new();
-    for line in &stage.lines {
-        let Some(rest) = line.strip_prefix("COPY ") else {
-            continue;
-        };
-        let rest = rest.replace("${CODEX_BIN_DIR}", bin_dir);
-        let words: Vec<&str> = rest.split_whitespace().collect();
-        let (flags, paths): (Vec<&str>, Vec<&str>) = words
-            .iter()
-            .copied()
-            .partition(|word| word.starts_with("--"));
-        assert!(
-            flags
-                .iter()
-                .all(|flag| !flag.starts_with("--from=") || *flag == "--from=codex"),
-            "the trusted stage copies from a stage other than codex: {line}"
-        );
-        let (dest, sources) = paths.split_last().ok_or("a COPY without paths")?;
-        for source in sources {
-            if dest.ends_with('/') {
-                out.push(format!("{dest}{}", last_segment(source)));
-            } else {
-                out.push((*dest).to_owned());
-            }
-        }
-    }
-    Ok(out)
-}
-
 #[test]
 fn the_scan_compares_the_six_protected_files_with_copies_the_role_cannot_write() -> TestResult {
     let spec = Agent::Codex.spec();
@@ -1327,15 +1321,26 @@ fn the_scan_compares_the_six_protected_files_with_copies_the_role_cannot_write()
         .iter()
         .find(|line| line.starts_with("RUN "))
         .ok_or("no scan RUN")?
-        .replace("${CODEX_BIN_DIR}", bin_dir);
+        .replace("${AGENT_BIN_DIR}", bin_dir)
+        .replace("${AGENT_BINARY}", spec.binary.as_str())
+        .replace(
+            "${AGENT_SYSTEM_CONFIG}",
+            spec.install.system_config.as_str(),
+        );
     let words: Vec<&str> = run.split_whitespace().collect();
     let trusted = stage_named(&all, "trusted")?;
-    assert_eq!(trusted.from, "construct", "trusted stage base");
+    assert_eq!(trusted.from, "scratch", "trusted stage base");
     assert!(
         words.contains(&"--mount=type=bind,from=trusted,source=/,target=/trusted,ro"),
         "the trusted mount: {run}"
     );
-    let destinations = copy_destinations(trusted, bin_dir)?;
+    assert!(
+        trusted
+            .lines
+            .contains(&"COPY --from=agent --chown=root:root /out/ /".to_owned()),
+        "trusted copies the agent output: {:?}",
+        trusted.lines
+    );
     let mut protected = vec![
         "/usr/local/bin/jackin-start".to_owned(),
         sandbox_layout::hook_path(HookKind::Setup)
@@ -1345,10 +1350,10 @@ fn the_scan_compares_the_six_protected_files_with_copies_the_role_cannot_write()
             .as_str()
             .to_owned(),
         spec.binary.as_str().to_owned(),
-        spec.codex.code_mode_host.as_str().to_owned(),
         spec.install.system_config.as_str().to_owned(),
     ];
     protected.sort();
+    let destinations = protected.clone();
     let mut compared = Vec::new();
     for pair in fixed_pairs(&words) {
         let (path, expected) = pair.split_once('=').ok_or("a pair without =")?;

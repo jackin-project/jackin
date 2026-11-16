@@ -85,16 +85,49 @@ pub(crate) fn derived_arguments(
 ) -> Result<Vec<String>, ImageError> {
     let spec = agent.spec();
     let mut args = vec![
-        build_arg("CODEX_VERSION", spec.install.version),
-        build_arg("CODEX_BIN_DIR", parent_directory(&spec.binary)),
+        build_arg("AGENT_VERSION", spec.install.version),
+        build_arg("AGENT_BIN_DIR", parent_directory(&spec.binary)),
+        build_arg("AGENT_BINARY", spec.binary.as_str()),
+        build_arg("AGENT_NAME", agent.as_str()),
+        build_arg(
+            "AGENT_ARCHIVE_MEMBERS",
+            &spec.install.archive_members.join(" "),
+        ),
+        build_arg(
+            "AGENT_VERSION_OUTPUT",
+            &spec
+                .install
+                .version_output
+                .replace("{version}", spec.install.version),
+        ),
+        build_arg("AGENT_SYSTEM_CONFIG", spec.install.system_config.as_str()),
+        build_arg(
+            "AGENT_SYSTEM_CONFIG_CONTENT",
+            spec.install.system_config_content,
+        ),
+        build_arg(
+            "AGENT_EXTRA_BINARY",
+            if agent == Agent::Codex {
+                spec.codex.code_mode_host.as_str()
+            } else {
+                ""
+            },
+        ),
     ];
     for platform in PLATFORMS {
         let target = install_target(agent, platform)?;
         let name = format!(
-            "CODEX_SHA256_{}",
+            "AGENT_SHA256_{}",
             platform.target_arch().to_ascii_uppercase()
         );
         args.push(build_arg(&name, target.sha256));
+        let url_name = format!("AGENT_URL_{}", platform.target_arch().to_ascii_uppercase());
+        let url = spec
+            .install
+            .url_template
+            .replace("{version}", spec.install.version)
+            .replace("{target}", target.triple);
+        args.push(build_arg(&url_name, &url));
     }
     if docker == DockerLayer::Client {
         docker_arguments(&mut args)?;

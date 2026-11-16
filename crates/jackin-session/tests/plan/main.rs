@@ -24,6 +24,7 @@ mod roles_race;
 mod roles_url;
 mod scoped_env;
 mod support;
+mod tuple;
 
 #[path = "../support/trap.rs"]
 mod trap;

@@ -220,13 +220,32 @@ impl AuthoredPolicy {
     }
 
     pub fn close(self) -> Result<ClosedPolicy, ClosedPolicyError> {
-        let profile = ProviderProfile::parse(&Agent::Codex.spec().codex.openshell.chatgpt_profile)?;
+        let tuple = jackin_core::lookup_tuple(Agent::Codex, jackin_core::Provider::Codex)
+            .map_err(|_| PolicyError::InvalidHost("codex tuple".to_owned()))?;
+        self.close_for_tuple(tuple)
+    }
+
+    pub fn close_for_tuple(
+        self,
+        tuple: &jackin_core::AgentTuple,
+    ) -> Result<ClosedPolicy, ClosedPolicyError> {
+        let profile = ProviderProfile::parse(jackin_core::tuple_profile_asset(tuple))?;
         let violations = self.0.closure_violations(&profile, &[]);
         if violations.is_empty() {
             Ok(ClosedPolicy(self.0))
         } else {
             Err(ClosedPolicyError::Violations(violations))
         }
+    }
+
+    pub fn close_for(
+        self,
+        agent: Agent,
+        provider: jackin_core::Provider,
+    ) -> Result<ClosedPolicy, ClosedPolicyError> {
+        let tuple = jackin_core::lookup_tuple(agent, provider)
+            .map_err(|_| PolicyError::InvalidHost("unknown tuple".to_owned()))?;
+        self.close_for_tuple(tuple)
     }
 }
 
