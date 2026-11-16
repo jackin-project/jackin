@@ -81,6 +81,9 @@ impl Session {
         };
         let layout = crate::multi::plan_multi(instances, None, head);
         let mkdir = SandboxPath::from_static("/usr/bin/mkdir");
+        for directory in layout.directories.iter().filter(|path| path.as_str().starts_with("/sandbox/.jackin/task")) {
+            self.mkdir(sandbox, &mkdir, directory, cancel).await?;
+        }
         for home in &layout.homes {
             self.mkdir(sandbox, &mkdir, home, cancel).await?;
         }
@@ -262,7 +265,8 @@ impl Session {
         let run_dir = format!("/sandbox/.jackin/run/{agent}");
         let output = format!("{run_dir}/output");
         let command = launch.argv.iter().map(|part| shell_quote(part)).collect::<Vec<_>>().join(" ");
-        let script = format!("mkdir -p {} && setsid nohup {command} </dev/null >{} 2>&1 &", shell_quote(&run_dir), shell_quote(&output));
+        let input = format!("{run_dir}/input");
+        let script = format!("mkdir -p {} && {{ [ -p {} ] || mkfifo {}; }} && setsid script -qec {} /dev/null <> {} > {} 2>&1 &", shell_quote(&run_dir), shell_quote(&input), shell_quote(&input), shell_quote(&command), shell_quote(&input), shell_quote(&output));
         let mut env = BTreeMap::new();
         env.insert(EnvName::parse("HOME").map_err(|_| GatewayError::Protocol { message: "invalid HOME".to_owned() })?, launch.home.as_str().to_owned());
         if launch.agent == Agent::Codex {

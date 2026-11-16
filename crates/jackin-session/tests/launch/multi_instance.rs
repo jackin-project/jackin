@@ -39,8 +39,38 @@ async fn two_instance_launch_starts_non_lead_detached_and_supervises_only_lead()
         assert_eq!(start.workdir.as_ref().map(|p| p.as_str()), Some("/sandbox/work/omp/project"));
         assert!(start.args.iter().any(|arg| arg.contains("omp")), "{start:?}");
         assert!(start.env.values().any(|v| v == "/sandbox/.jackin/homes/omp"), "{start:?}");
+        let script = start.args.iter().find(|arg| arg.contains("setsid")).ok_or("no start script")?;
+        assert!(script.contains("setsid script -qec"), "{script}");
+        assert!(script.contains("/sandbox/.jackin/run/omp/input"), "{script}");
+        assert!(script.contains("/sandbox/.jackin/run/omp/output"), "{script}");
+        assert!(!script.contains("</dev/null"), "{script}");
+        assert!(handle.root().join(".jackin/task/status").is_dir());
+        assert!(handle.root().join(".jackin/task").is_dir());
         let lead_starts = runs.iter().filter(|run| run.args.iter().any(|arg| arg.contains("/sandbox/.jackin/run/codex/output"))).count();
         assert_eq!(lead_starts, 0);
+        Ok(())
+    }).await
+}
+
+#[tokio::test]
+async fn restart_omp_produces_new_pty_start_for_omp_only() -> Result<(), Box<dyn std::error::Error>> {
+    guard(async {
+        let rig = launch_rig().await?;
+        seed_omp_provider(&rig).await?;
+        let request = rig.request(9)?.instances(instances()?);
+        let outcome = rig.run(request, CancellationToken::new()).await?;
+        let target = ready(outcome)?;
+        let handle = rig.gateway().sandbox(&target.sandbox).ok_or("sandbox handle")?;
+        let sh = SandboxPath::from_static("/bin/sh");
+        let count = |handle: &jackin_testkit::SandboxHandle, agent: &str| handle.runs(&sh).iter().filter(|run| run.args.iter().any(|arg| arg.contains(&format!("/sandbox/.jackin/run/{agent}/output")))).count();
+        assert_eq!(count(&handle, "omp"), 1);
+        let session = rig.session_with(crate::support::limits(30, 20));
+        session.restart_instance(&target.sandbox, Agent::Omp, &CancellationToken::new()).await?;
+        assert_eq!(count(&handle, "omp"), 2);
+        assert_eq!(count(&handle, "codex"), 0);
+        let runs = handle.runs(&sh);
+        let restarted = runs.iter().rev().find(|run| run.args.iter().any(|arg| arg.contains("/sandbox/.jackin/run/omp/output"))).ok_or("no restart exec")?;
+        assert!(restarted.args.iter().any(|arg| arg.contains("setsid script -qec") && arg.contains("/sandbox/.jackin/run/omp/input")), "{restarted:?}");
         Ok(())
     }).await
 }

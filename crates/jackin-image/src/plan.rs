@@ -190,6 +190,11 @@ fn hook_file(kind: HookKind, source: Option<&SourceFile>) -> MaterializedFile {
 fn multi_dockerfile(agents: &[jackin_core::Agent]) -> Vec<u8> {
     let text = String::from_utf8_lossy(DERIVED_DOCKERFILE).into_owned();
     let mut out = text;
+    out = out.replacen(
+        "FROM scratch AS trusted\n",
+        "FROM construct AS pty\n\nUSER root\nRUN apt-get update \\\n    && apt-get install --yes --no-install-recommends bsdextrautils \\\n    && install -D -m 0755 -o root -g root /usr/bin/script /out/usr/local/bin/script \\\n    && rm -rf /var/lib/apt/lists/*\n\nFROM scratch AS trusted\nCOPY --from=pty --chown=root:root /out/ /\n",
+        1,
+    );
     for index in 1..agents.len() {
         let n = index + 1;
         let prefix = format!("AGENT{n}");
