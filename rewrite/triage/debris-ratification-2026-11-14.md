@@ -80,6 +80,24 @@ between this check and the pushes (§9).
 ```bash
 set -euo pipefail
 
+# 0. REVISION GATE (first: nothing below runs unverified). The pre-flight makes
+#    authenticated writes (archive refs, lock rulesets), so its own bytes are
+#    authenticated before any of it runs - including this helper block itself.
+#    The operator's word carries the reviewed publication digest; the file this
+#    block runs from must hash to it. The §4 launcher repeats the check before
+#    the deletion block, so both executable halves are gated on the same digest.
+#    An operator who runs this fence from a copy must verify the copy first with
+#    an independent command (typed, not copied): compare the file's SHA-256 with
+#    the publication digest in the sent word before executing anything from it.
+PUB=rewrite/triage/debris-ratification-2026-11-14.md
+[ -n "${RATIFY_WORD:-}" ] || { echo "refusing: set RATIFY_WORD to the operator's ratification word before the pre-flight" >&2; exit 1; }
+want=${RATIFY_WORD##*publication sha256:}
+case "$want" in ""|*[!0-9a-f]*) echo "refusing: the word carries no publication digest" >&2; exit 1 ;; esac
+if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum < "$PUB"); got=${got%% *}
+elif command -v shasum >/dev/null 2>&1; then got=$(shasum -a 256 < "$PUB"); got=${got%% *}
+else echo "refusing: no SHA-256 command on this host" >&2; exit 1; fi
+[ "$got" = "$want" ] || { echo "refusing: the publication changed after ratification" >&2; exit 1; }
+
 # Every GitHub API call of this procedure is pinned to github.com. An unqualified call honors the
 # GH_HOST of the environment, so a run whose environment carries a GH_HOST reads and writes
 # another host - a GitHub Enterprise instance - where the 15 refs of the ratification are not,
@@ -121,20 +139,6 @@ trap cleanup_preflight 0
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-
-# 0. REVISION GATE: the pre-flight below makes authenticated writes (archive refs,
-#    lock rulesets), so its own bytes are authenticated first. The operator's word
-#    carries the reviewed publication digest; the file this block runs from must
-#    hash to it, or nothing below runs. The §4 launcher repeats the check before
-#    the deletion block, so both executable halves are gated on the same digest.
-PUB=rewrite/triage/debris-ratification-2026-11-14.md
-[ -n "${RATIFY_WORD:-}" ] || { echo "refusing: set RATIFY_WORD to the operator's ratification word before the pre-flight" >&2; exit 1; }
-want=${RATIFY_WORD##*publication sha256:}
-case "$want" in ""|*[!0-9a-f]*) echo "refusing: the word carries no publication digest" >&2; exit 1 ;; esac
-if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum < "$PUB"); got=${got%% *}
-elif command -v shasum >/dev/null 2>&1; then got=$(shasum -a 256 < "$PUB"); got=${got%% *}
-else echo "refusing: no SHA-256 command on this host" >&2; exit 1; fi
-[ "$got" = "$want" ] || { echo "refusing: the publication changed after ratification" >&2; exit 1; }
 
 # 1. MANIFEST CHECK: the 15 (repository, branch, tip) triples of §1 must be the reviewed ones,
 #    and each §1 deletion command must be the push that triple generates. The manifest digest is
@@ -289,10 +293,12 @@ while read -r repo ref sha; do
 done < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt
 ```
 
-**The operator's word comes here (§4).** Steps 1-5 must all have passed. The deletion run below
-executes only after the word is sent; it takes the word in `RATIFY_WORD` - **from the line the
-operator sent, and not from this file**, because a word that lived in the publication could be
-edited with it - reads the manifest once into an in-memory snapshot - the §1 table of this
+**The operator's word comes first (§4).** Set `RATIFY_WORD` to the sent line before
+running anything below: the pre-flight verifies the publication digest from the word
+before its first authenticated call, and the deletion run below executes only after
+the word exists. Steps 1-5 must all have passed before the deletion run proceeds; the
+word is taken in `RATIFY_WORD` - **from the line the operator sent, and not from this
+file**, because a word that lived in the publication could be edited with it - reads the manifest once into an in-memory snapshot - the §1 table of this
 publication, and not a file of the pre-flight, whose private directory is gone by then - checks
 that snapshot's digest and the digest of this publication against the two the word carries, and
 builds every push from that snapshot — so nothing that is not the ratified revision runs, and a
@@ -795,6 +801,19 @@ done
 # fire then and fires now that `target` exists. Re-run the guard in the exact push
 # context: a helper it refused above, or one the new remote activates, refuses here.
 refuse_unsafe_helpers || { echo "the push context carries a credential helper that can write a credential to a file - the deletion run refuses to push" >&2; exit 1; }
+
+# The same conditional include can activate a url.* rewrite only now that `target`
+# exists, so the rewrite refusal is re-run in the exact push context too, and every
+# row's push URL is resolved again: a URL that no longer names its repository is a
+# refusal before any push.
+refuse_url_rewrites || { echo "the push context carries a URL rewrite - the deletion run refuses to push" >&2; exit 1; }
+for row in "${ROWS[@]}"; do
+  read -r repo branch tip <<< "$row"
+  url="https://github.com/$repo.git"
+  [ "$(git ls-remote --get-url "$url")" = "$url" ] || { echo "the target URL $url is rewritten in the push context"; exit 1; }
+  [ "$(git remote get-url --push target)" = "$url" ] || true
+done
+git remote set-url target "https://github.com/jackin-project/jackin.git"
 
 # 6. DELETION RUN: one row at a time, archive first, push second. The push is built from the
 #    row's own (repository, branch, tip) triple of the snapshot, so it is the §1 command of that row.
