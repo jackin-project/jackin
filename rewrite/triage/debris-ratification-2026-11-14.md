@@ -690,21 +690,23 @@ SIGNAL
   )
 }
 
-unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_SYSTEM
-# GIT_CONFIG_SYSTEM is unset (not merely overridden): it names the file git reads
-# as the system configuration, so an attacker-chosen value would substitute the
-# helper dispatch the guards below inspect. The real system file is still read.
-# Hooks: template and hook paths are inherited from the environment and the
-# system configuration, and a lesser-privileged local writer could plant code
-# that runs with the operator's rights on push. Every repository this run
-# creates or uses gets an empty controlled template and hook path instead.
+unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_SYSTEM GIT_SSL_NO_VERIFY GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_WORK_TREE GIT_INDEX_FILE GIT_NAMESPACE
+# Tracing: inherited `set -x` (via SHELLOPTS/BASH_XTRACEFD, which survive
+# BASH_ENV=/dev/null) would print every credential the guards below read, so
+# tracing is off and the trace file descriptors are closed before anything runs.
+set +x
+unset SHELLOPTS BASH_XTRACEFD
+# Certificate verification must stay on for authenticated pushes.
+# GIT_CONFIG_NOSYSTEM is deliberately NOT set: the operator's credential helper
+# may live in the system configuration, and every helper value the run can use
+# is allowlisted below instead.
+export GIT_TRACE_REDACT=1
+# Hooks: inherited template and hook paths are distrusted - a lesser-privileged
+# local writer could plant code that runs with the operator's rights on push.
+# Every repository this run creates or uses gets an empty controlled template
+# and hook path instead.
 mkdir -p "$SANITIZED_DIR/empty-template" "$SANITIZED_DIR/empty-hooks" 2>/dev/null || true
 export GIT_TEMPLATE_DIR="$SANITIZED_DIR/empty-template"
-# Trace sweep. An inherited GIT_TRACE* setting would make the authenticated pushes below
-# emit an unredacted Authorization header to stderr or a trace file when redaction is
-# disabled, so every GIT_TRACE* variable is removed and redaction is forced on.
-unset GIT_TRACE GIT_TRACE_PERFORMANCE GIT_TRACE_PACK_ACCESS GIT_TRACE_PACKET GIT_TRACE_PACKFILE GIT_TRACE_CURL GIT_TRACE_REDACT GIT_TRACE_SETUP GIT_TRACE_SHALLOW GIT_TRACE_CURL_NO_DATA GIT_TRACE2 GIT_TRACE2_PERF GIT_TRACE2_EVENT
-export GIT_TRACE_REDACT=1
 sanitize_global_config "$SANITIZED_DIR" || { echo "the sanitizing refused a credential helper of the global configuration - the deletion run refuses to push" >&2; exit 1; }
 export GIT_CONFIG_GLOBAL="$SANITIZED_GLOBAL"
 credential_probe || { echo "the credential probe refused the sanitizing - the deletion run refuses to push" >&2; exit 1; }
@@ -855,6 +857,7 @@ refuse_url_rewrites || { echo "the push context carries a URL rewrite - the dele
 for row in "${ROWS[@]}"; do
   read -r repo branch tip <<< "$row"
   url="https://github.com/$repo.git"
+  git remote set-url target "$url"
   [ "$(git ls-remote --get-url "$url")" = "$url" ] || { echo "refusing: a target URL is rewritten in the push context - the deletion run refuses to push" >&2; exit 1; }
   [ "$(git remote get-url --push target)" = "$url" ] || { echo "refusing: a push URL is rewritten in the push context - the deletion run refuses to push" >&2; exit 1; }
 done
