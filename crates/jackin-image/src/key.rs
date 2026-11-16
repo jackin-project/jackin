@@ -89,7 +89,7 @@ pub(crate) fn derived_arguments_multi(
     if sorted.is_empty() {
         sorted.push(Agent::Codex);
     }
-    let mut args = derived_arguments(sorted[0], docker)?;
+    let mut args = derived_arguments_prefixed(sorted[0], docker, "AGENT")?;
     if sorted.len() == 1 {
         return Ok(args);
     }
@@ -101,65 +101,49 @@ pub(crate) fn derived_arguments_multi(
             .collect::<Vec<_>>()
             .join(","),
     ));
-    for agent in &sorted {
-        let spec = agent.spec();
-        args.push(build_arg(
-            &format!(
-                "AGENT_{}_VERSION",
-                agent.as_str().replace('-', "_").to_ascii_uppercase()
-            ),
-            spec.install.version,
-        ));
-        args.push(build_arg(
-            &format!(
-                "AGENT_{}_BINARY",
-                agent.as_str().replace('-', "_").to_ascii_uppercase()
-            ),
-            spec.binary.as_str(),
-        ));
-        for platform in PLATFORMS {
-            let target = install_target(*agent, platform)?;
-            args.push(build_arg(
-                &format!(
-                    "AGENT_{}_SHA256_{}",
-                    agent.as_str().replace('-', "_").to_ascii_uppercase(),
-                    platform.target_arch().to_ascii_uppercase()
-                ),
-                target.sha256,
-            ));
-        }
+    for (index, agent) in sorted.iter().enumerate().skip(1) {
+        let prefix = format!("AGENT{}", index + 1);
+        args.extend(derived_arguments_prefixed(
+            *agent,
+            DockerLayer::Absent,
+            &prefix,
+        )?);
     }
     Ok(args)
 }
 
-pub(crate) fn derived_arguments(
+pub(crate) fn derived_arguments_prefixed(
     agent: Agent,
     docker: DockerLayer,
+    prefix: &str,
 ) -> Result<Vec<String>, ImageError> {
     let spec = agent.spec();
     let mut args = vec![
-        build_arg("AGENT_VERSION", spec.install.version),
-        build_arg("AGENT_BIN_DIR", parent_directory(&spec.binary)),
-        build_arg("AGENT_BINARY", spec.binary.as_str()),
-        build_arg("AGENT_NAME", agent.as_str()),
+        build_arg(&format!("{prefix}_VERSION"), spec.install.version),
+        build_arg(&format!("{prefix}_BIN_DIR"), parent_directory(&spec.binary)),
+        build_arg(&format!("{prefix}_BINARY"), spec.binary.as_str()),
+        build_arg(&format!("{prefix}_NAME"), agent.as_str()),
         build_arg(
-            "AGENT_ARCHIVE_MEMBERS",
+            &format!("{prefix}_ARCHIVE_MEMBERS"),
             &spec.install.archive_members.join(" "),
         ),
         build_arg(
-            "AGENT_VERSION_OUTPUT",
+            &format!("{prefix}_VERSION_OUTPUT"),
             &spec
                 .install
                 .version_output
                 .replace("{version}", spec.install.version),
         ),
-        build_arg("AGENT_SYSTEM_CONFIG", spec.install.system_config.as_str()),
         build_arg(
-            "AGENT_SYSTEM_CONFIG_CONTENT",
+            &format!("{prefix}_SYSTEM_CONFIG"),
+            spec.install.system_config.as_str(),
+        ),
+        build_arg(
+            &format!("{prefix}_SYSTEM_CONFIG_CONTENT"),
             spec.install.system_config_content,
         ),
         build_arg(
-            "AGENT_EXTRA_BINARY",
+            &format!("{prefix}_EXTRA_BINARY"),
             if agent == Agent::Codex {
                 spec.codex.code_mode_host.as_str()
             } else {
@@ -170,11 +154,14 @@ pub(crate) fn derived_arguments(
     for platform in PLATFORMS {
         let target = install_target(agent, platform)?;
         let name = format!(
-            "AGENT_SHA256_{}",
+            "{prefix}_SHA256_{}",
             platform.target_arch().to_ascii_uppercase()
         );
         args.push(build_arg(&name, target.sha256));
-        let url_name = format!("AGENT_URL_{}", platform.target_arch().to_ascii_uppercase());
+        let url_name = format!(
+            "{prefix}_URL_{}",
+            platform.target_arch().to_ascii_uppercase()
+        );
         let url = spec
             .install
             .url_template

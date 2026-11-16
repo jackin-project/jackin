@@ -143,9 +143,10 @@ pub(crate) fn judge_selection(
     expected: &str,
 ) -> Option<String> {
     let provider = Names::provider(expected);
-    if label != Some(expected) {
+    let agents = crate::e2e::steps::j03::agents_label(expected);
+    if label != Some(agents.as_str()) {
         return Some(format!(
-            "{step}: the account label is {label:?}, expected {expected}"
+            "{step}: the agents label is {label:?}, expected {agents}"
         ));
     }
     (providers != [provider.clone()])
@@ -184,7 +185,7 @@ impl Run<'_> {
         let labels = labels_of(&detail.view);
         Ok(judge_selection(
             label,
-            labels.get("jackin.dev/account").map(String::as_str),
+            labels.get("jackin.dev/agents").map(String::as_str),
             &providers,
             expected,
         ))

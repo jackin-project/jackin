@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use jackin_core::{Agent, SandboxName, SandboxPath};
+use jackin_core::{Agent, AgentInstances, SandboxName, SandboxPath};
 use jackin_openshell::{GatewayError, ProgramRun, ProgramStdin};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -19,6 +19,10 @@ pub enum IntegrateError {
     Conflict { branch: String },
     #[error("agent {agent} is not in this sandbox")]
     UnknownAgent { agent: String },
+}
+
+fn layout_worktree_lead(instances: &AgentInstances) -> Option<Agent> {
+    instances.lead_opt().map(|item| item.agent)
 }
 
 fn agent_names(json: &str) -> Vec<String> {
@@ -37,6 +41,133 @@ fn agent_names(json: &str) -> Vec<String> {
 }
 
 impl Session {
+    pub async fn setup_worktrees(
+        &self,
+        sandbox: &SandboxName,
+        instances: &AgentInstances,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError> {
+        if instances.len() <= 1 {
+            return Ok(());
+        }
+        let git = SandboxPath::from_static("/usr/bin/git");
+        let project = SandboxPath::from_static("/sandbox/project");
+        let probe = self
+            .deps
+            .gateway
+            .run_program(
+                &ProgramRun {
+                    sandbox: sandbox.clone(),
+                    program: git.clone(),
+                    args: vec![
+                        "rev-parse".to_owned(),
+                        "--verify".to_owned(),
+                        "HEAD".to_owned(),
+                    ],
+                    workdir: Some(project.clone()),
+                    env: BTreeMap::new(),
+                    stdin: ProgramStdin::Closed,
+                    touch_on_success: None,
+                    timeout: Duration::from_secs(30),
+                },
+                cancel,
+            )
+            .await?;
+        let head = if probe.exit_code == 0 {
+            crate::multi::HeadState::Born
+        } else {
+            crate::multi::HeadState::Unborn
+        };
+        let layout = crate::multi::plan_multi(instances, None, head);
+        let mkdir = SandboxPath::from_static("/usr/bin/mkdir");
+        for home in &layout.homes {
+            self.mkdir(sandbox, &mkdir, home, cancel).await?;
+        }
+        for worktree in layout
+            .worktrees
+            .iter()
+            .filter(|item| Some(item.agent) != layout_worktree_lead(instances))
+        {
+            if worktree.worktree {
+                let parent = worktree.path.as_str().rsplit_once('/').map_or_else(
+                    || "/sandbox/work".to_owned(),
+                    |(parent, _)| parent.to_owned(),
+                );
+                let parent = SandboxPath::parse(&parent)
+                    .unwrap_or_else(|_| SandboxPath::from_static("/sandbox/work"));
+                self.mkdir(sandbox, &mkdir, &parent, cancel).await?;
+                let branch = worktree.branch.clone().unwrap_or_default();
+                let outcome = self
+                    .deps
+                    .gateway
+                    .run_program(
+                        &ProgramRun {
+                            sandbox: sandbox.clone(),
+                            program: git.clone(),
+                            args: vec![
+                                "worktree".to_owned(),
+                                "add".to_owned(),
+                                "-b".to_owned(),
+                                branch.clone(),
+                                worktree.path.as_str().to_owned(),
+                                "HEAD".to_owned(),
+                            ],
+                            workdir: Some(project.clone()),
+                            env: BTreeMap::new(),
+                            stdin: ProgramStdin::Closed,
+                            touch_on_success: None,
+                            timeout: Duration::from_secs(120),
+                        },
+                        cancel,
+                    )
+                    .await?;
+                if outcome.exit_code != 0 {
+                    return Err(GatewayError::Protocol {
+                        message: format!(
+                            "git worktree add for branch {branch} exited {}",
+                            outcome.exit_code
+                        ),
+                    });
+                }
+            } else {
+                self.mkdir(sandbox, &mkdir, &worktree.path, cancel).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn mkdir(
+        &self,
+        sandbox: &SandboxName,
+        mkdir: &SandboxPath,
+        path: &SandboxPath,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError> {
+        let outcome = self
+            .deps
+            .gateway
+            .run_program(
+                &ProgramRun {
+                    sandbox: sandbox.clone(),
+                    program: mkdir.clone(),
+                    args: vec!["-p".to_owned(), path.as_str().to_owned()],
+                    workdir: None,
+                    env: BTreeMap::new(),
+                    stdin: ProgramStdin::Closed,
+                    touch_on_success: None,
+                    timeout: Duration::from_secs(30),
+                },
+                cancel,
+            )
+            .await?;
+        if outcome.exit_code != 0 {
+            return Err(GatewayError::Protocol {
+                message: format!("mkdir {} exited {}", path.as_str(), outcome.exit_code),
+            });
+        }
+        Ok(())
+    }
+
     pub async fn sandbox_agent_names(
         &self,
         sandbox: &SandboxName,
