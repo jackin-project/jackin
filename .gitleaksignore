@@ -397,4 +397,4 @@ crates/xtask/tests/e2e/i_target.rs:generic-api-key:739
 
 # Reason: prose in the A14 decision log; the match is the evidence file name A14-t02-live-fixed.md that follows the word "auth" in the same cell; no credential.
 # 1 finding(s); rules: generic-api-key; files: rewrite/decisions.tsv (1)
-rewrite/decisions.tsv:generic-api-key:430
+rewrite/decisions.tsv:generic-api-key:413
