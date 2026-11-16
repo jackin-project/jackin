@@ -4,11 +4,14 @@
 use std::ffi::OsString;
 use std::io::{ErrorKind, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Arc;
 use std::sync::mpsc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use jackin_core::{EnvName, EnvSnapshot};
+use jackin_core::{Clock, EnvName, EnvSnapshot};
 use rustix::fs::OFlags;
+
+use crate::SystemClock;
 
 const ACCEPT: Duration = Duration::from_secs(2);
 const POLL: Duration = Duration::from_millis(5);
@@ -64,6 +67,7 @@ pub struct ClipboardWriter {
     tools: Vec<ClipboardTool>,
     search: Option<OsString>,
     deadline: Duration,
+    clock: Arc<dyn Clock>,
 }
 
 fn set(env: &EnvSnapshot, name: &str) -> bool {
@@ -92,6 +96,7 @@ impl ClipboardWriter {
             tools,
             search: None,
             deadline: ACCEPT,
+            clock: Arc::new(SystemClock),
         }
     }
 
@@ -101,6 +106,7 @@ impl ClipboardWriter {
             tools,
             search: None,
             deadline: ACCEPT,
+            clock: Arc::new(SystemClock),
         }
     }
 
@@ -116,6 +122,12 @@ impl ClipboardWriter {
         self
     }
 
+    #[must_use]
+    pub fn clock(mut self, clock: Arc<dyn Clock>) -> ClipboardWriter {
+        self.clock = clock;
+        self
+    }
+
     pub fn tools(&self) -> &[ClipboardTool] {
         &self.tools
     }
@@ -124,7 +136,7 @@ impl ClipboardWriter {
         let (done, answer) = mpsc::channel();
         let writer = self.clone();
         let text = text.to_owned();
-        let end = Instant::now() + self.deadline;
+        let end = self.clock.monotonic() + self.deadline;
         let spawned = std::thread::Builder::new().spawn(move || {
             done.send(
                 writer
@@ -141,8 +153,8 @@ impl ClipboardWriter {
         clippy::disallowed_methods,
         reason = "runs on the owned worker thread that write spawns"
     )]
-    fn run(&self, tool: ClipboardTool, text: &str, end: Instant) -> bool {
-        if Instant::now() >= end {
+    fn run(&self, tool: ClipboardTool, text: &str, end: Duration) -> bool {
+        if self.clock.monotonic() >= end {
             return false;
         }
         let mut command = tool.command();
@@ -169,7 +181,7 @@ impl ClipboardWriter {
             feed.advance();
             match child.try_wait() {
                 Ok(Some(status)) => return status.success() && feed.done(),
-                Ok(None) if Instant::now() < end => std::thread::sleep(POLL),
+                Ok(None) if self.clock.monotonic() < end => std::thread::sleep(POLL),
                 Ok(None) | Err(_) => {
                     reap(&mut child);
                     return false;
