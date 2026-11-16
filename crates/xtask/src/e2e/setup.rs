@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use jackin_core::AccountName;
+use jackin_core::{AccountName, Agent, ProviderName};
 use jackin_openshell::ProviderState;
 
 use super::a1::fixture_login;
@@ -361,6 +361,45 @@ impl Run<'_> {
         self.setup_command(
             "account default",
             &strings(&["account", "default", &a1]),
+            &main,
+        )
+        .await?;
+        for account in ["zai", "zai-role", "zai-workspace"] {
+            let name = AccountName::parse(account).map_err(|error| setup(error.to_string()))?;
+            let provider = ProviderName::for_account(&name, Agent::Omp);
+            let state = self
+                .b
+                .gateway
+                .provider_state(&provider)
+                .await
+                .map_err(|error| setup(error.to_string()))?;
+            if state != ProviderState::Absent {
+                return Err(setup(format!(
+                    "provider {provider} already exists; the runner never overwrites one"
+                )));
+            }
+            let key = self.scratch.root().join(format!("{account}.key"));
+            std::fs::write(&key, format!("e2e-{account}-test-key"))
+                .map_err(|error| setup(error.to_string()))?;
+            self.w.accounts_made.push(account.to_owned());
+            self.setup_command(
+                "account add zai",
+                &strings(&[
+                    "account",
+                    "add",
+                    "zai",
+                    "--name",
+                    account,
+                    "--credential",
+                    &format!("file:{}", key.display()),
+                ]),
+                &main,
+            )
+            .await?;
+        }
+        self.setup_command(
+            "account default zai",
+            &strings(&["account", "default", "zai"]),
             &main,
         )
         .await?;

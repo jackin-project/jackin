@@ -620,6 +620,18 @@ impl ScenarioHost {
             [
                 "account",
                 "add",
+                "zai",
+                "--name",
+                name,
+                "--credential",
+                source,
+            ] if source.starts_with("file:") => {
+                self.shared.state().accounts.push((*name).to_owned());
+                done(0, "", "")
+            }
+            [
+                "account",
+                "add",
                 provider,
                 "--name",
                 name,
