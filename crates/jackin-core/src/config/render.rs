@@ -48,6 +48,9 @@ fn credential(source: &CredentialSource) -> String {
             quote(account.as_str())
         ),
         CredentialSource::OmpHost => "{ source = \"omp-host\" }".to_owned(),
+        CredentialSource::HostLogin { path } => {
+            format!("{{ source = \"host-login\", path = {} }}", path_value(path))
+        }
         CredentialSource::File { path } => {
             format!("{{ source = \"file\", path = {} }}", path_value(path))
         }

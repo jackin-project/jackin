@@ -112,6 +112,75 @@ pub async fn read_omp_host_key(
     })
 }
 
+#[derive(Debug)]
+pub struct GrokLogin {
+    pub session_key: Secret,
+    pub issuer: String,
+}
+
+#[derive(Debug)]
+pub struct MuseHostMetadata {
+    pub subs_active: bool,
+    pub storage: String,
+}
+
+async fn read_host_auth(fs: &dyn FileSystem, path: &HostPath) -> Result<Document, CredentialError> {
+    let bytes = match read_credential_file(fs, path).await? {
+        Ok(bytes) => Zeroizing::new(bytes),
+        Err(CredentialFileProblem::Missing) => {
+            return Err(CredentialError::LoginUnreadable { path: path.clone() });
+        }
+        Err(CredentialFileProblem::NotARegularFile) => {
+            return Err(CredentialError::LoginNotRegular { path: path.clone() });
+        }
+        Err(CredentialFileProblem::TooLarge) => {
+            return Err(CredentialError::LoginTooLarge { path: path.clone() });
+        }
+    };
+    Ok(Document(
+        serde_json::from_slice(&bytes).map_err(|_| invalid(AUTH_FILE))?,
+    ))
+}
+
+pub async fn read_grok_login(
+    fs: &dyn FileSystem,
+    path: &HostPath,
+) -> Result<GrokLogin, CredentialError> {
+    let document = read_host_auth(fs, path).await?;
+    let root = document.0.as_object().ok_or_else(|| invalid(AUTH_FILE))?;
+    let mut entries = root.iter();
+    let (issuer, entry) = entries.next().ok_or_else(|| invalid(AUTH_FILE))?;
+    if entries.next().is_some() || issuer.is_empty() {
+        return Err(invalid(AUTH_FILE));
+    }
+    let key = entry
+        .get("key")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| invalid("key"))?;
+    Ok(GrokLogin {
+        session_key: Secret::new(key.to_owned()),
+        issuer: issuer.clone(),
+    })
+}
+
+pub async fn read_muse_host_metadata(
+    fs: &dyn FileSystem,
+    path: &HostPath,
+) -> Result<MuseHostMetadata, CredentialError> {
+    let document = read_host_auth(fs, path).await?;
+    let providers = field(&document.0, "providers", "providers")?;
+    let meta = field(providers, "meta", "providers.meta")?;
+    let subs_active = field(meta, "subs_active", "providers.meta.subs_active")?
+        .as_bool()
+        .ok_or_else(|| invalid("providers.meta.subs_active"))?;
+    let storage = text(meta, "storage", "providers.meta.storage")?;
+    Ok(MuseHostMetadata {
+        subs_active,
+        storage: storage.to_owned(),
+    })
+}
+
 pub async fn read_chatgpt_login(
     fs: &dyn FileSystem,
     home: &HostPath,
@@ -225,6 +294,6 @@ pub async fn resolve_static_key(
                 Ok(Secret::new(value))
             }
         }
-        CredentialSource::CodexLogin { .. } => Err(missing()),
+        CredentialSource::CodexLogin { .. } | CredentialSource::HostLogin { .. } => Err(missing()),
     }
 }

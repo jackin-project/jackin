@@ -15,7 +15,9 @@ use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::connect::{ConnectError, GatewayConnector};
-use crate::credentials::{CredentialError, read_chatgpt_login, resolve_static_key};
+use crate::credentials::{
+    CredentialError, read_chatgpt_login, read_grok_login, resolve_static_key,
+};
 use crate::gateways::{Gateways, UnreachableGateway};
 use crate::lock::{self, LockError};
 use crate::report::error_chain;
@@ -68,6 +70,8 @@ pub enum AccountError {
     AccountIdMismatch { account: AccountName },
     #[error("no credential is available for account {account}")]
     MissingCredential { account: AccountName },
+    #[error("the credential store for account {account} is not yet supported")]
+    HostLoginStoreUnsupported { account: AccountName },
 }
 
 #[derive(Debug, Error)]
@@ -98,6 +102,8 @@ pub enum AccountEditError {
 pub(crate) fn account_agent(account: &Account) -> Agent {
     match account.provider() {
         Provider::Codex => Agent::Codex,
+        Provider::Grok => Agent::GrokBuild,
+        Provider::Muse => Agent::MuseCode,
         Provider::Kimi => Agent::KimiCode,
         Provider::Mimo => Agent::MimoCode,
         provider if jackin_core::lookup_tuple(Agent::Omp, provider).is_ok() => Agent::Omp,
@@ -735,6 +741,48 @@ async fn sync_login(
     agent: Agent,
     cancel: &CancellationToken,
 ) -> Result<AccountSync, AccountError> {
+    if let jackin_core::CredentialSource::HostLogin { path } = account.credential() {
+        if agent == Agent::GrokBuild && account.provider() == Provider::Grok {
+            let login = read_grok_login(host.fs.as_ref(), path).await?;
+            let tuple = jackin_core::lookup_tuple(agent, account.provider()).map_err(|_| {
+                AccountError::MissingCredential {
+                    account: account.name().clone(),
+                }
+            })?;
+            let asset = jackin_core::tuple_profile_asset(tuple);
+            let profile = ProviderProfile::parse(asset)?;
+            let synced = gateway.ensure_profile(&profile).await?;
+            let name = ProviderName::for_account(account.name(), agent);
+            gateway
+                .put_provider(&ProviderSpec {
+                    name: name.clone(),
+                    profile: profile.id,
+                    keys: jackin_core::CredentialKeys {
+                        access_token: "access_token",
+                        refresh_token: "",
+                        account_id: "",
+                        id_token: "",
+                        token_url: "",
+                    },
+                    material: ProviderMaterial::StaticKey {
+                        key: login.session_key,
+                    },
+                })
+                .await?;
+            return Ok(AccountSync::ProviderReady {
+                provider: name,
+                profile: synced,
+            });
+        }
+        if agent == Agent::MuseCode && account.provider() == Provider::Muse {
+            return Err(AccountError::HostLoginStoreUnsupported {
+                account: account.name().clone(),
+            });
+        }
+        return Err(AccountError::MissingCredential {
+            account: account.name().clone(),
+        });
+    }
     if agent != Agent::Codex {
         let Ok(tuple) = jackin_core::lookup_tuple(agent, account.provider()) else {
             return Ok(AccountSync::HostOnly);

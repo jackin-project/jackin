@@ -81,6 +81,15 @@ pub fn render_omp_config(
     ))
 }
 
+pub fn grok_auth_file(issuer: &str) -> crate::plan::PlannedFile {
+    let spec = jackin_core::Agent::GrokBuild.spec();
+    crate::plan::PlannedFile {
+        path: spec.auth_file.path.clone(),
+        mode: spec.auth_file.mode,
+        text: json!({ issuer: { "key": "placeholder" } }).to_string(),
+    }
+}
+
 pub fn omp_auth_file(tuple: &jackin_core::AgentTuple) -> crate::plan::PlannedFile {
     let spec = jackin_core::Agent::Omp.spec();
     let provider = tuple.omp_provider_id().unwrap_or_default();

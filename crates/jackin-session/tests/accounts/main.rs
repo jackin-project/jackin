@@ -3,6 +3,7 @@
 
 mod edit;
 mod failed_add;
+mod host_login;
 mod lock;
 mod locked_view;
 mod login;

@@ -29,6 +29,46 @@ pub(crate) async fn run(app: &mut App, command: AccountCommand) -> Result<(), Co
 }
 
 async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, CommandError> {
+    if args.from_host_login {
+        let provider = parse_provider(&args.provider)?;
+        let home = app
+            .env
+            .get(
+                &jackin_core::EnvName::parse("HOME")
+                    .map_err(|_| CommandError::Argument("HOME is not set".to_owned()))?,
+            )
+            .ok_or_else(|| CommandError::Argument("HOME is not set".to_owned()))?
+            .clone();
+        let relative = match provider {
+            jackin_core::Provider::Grok => ".grok/auth.json",
+            jackin_core::Provider::Muse => ".config/muse/auth.json",
+            _ => {
+                return Err(CommandError::Argument(
+                    "--from-host-login needs the grok or muse provider".to_owned(),
+                ));
+            }
+        };
+        let path =
+            jackin_core::HostPath::parse(std::path::Path::new(&format!("{home}/{relative}")))
+                .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
+        match provider {
+            jackin_core::Provider::Grok => {
+                jackin_session::read_grok_login(app.deps.host.fs.as_ref(), &path)
+                    .await
+                    .map_err(|_| {
+                        CommandError::Argument("no grok host login is available".to_owned())
+                    })?;
+            }
+            _ => {
+                jackin_session::read_muse_host_metadata(app.deps.host.fs.as_ref(), &path)
+                    .await
+                    .map_err(|_| {
+                        CommandError::Argument("no muse host login is available".to_owned())
+                    })?;
+            }
+        }
+        return Ok(CredentialSource::HostLogin { path });
+    }
     if matches!(
         args.credential.as_deref().map(CredentialArg::parse),
         Some(Ok(CredentialArg::OmpHost))
@@ -116,6 +156,8 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
     };
     let account = Account::new(args.name.clone(), provider, source(app, &args).await?)?;
     let agent = agent.unwrap_or_else(|| match provider {
+        jackin_core::Provider::Grok => Agent::GrokBuild,
+        jackin_core::Provider::Muse => Agent::MuseCode,
         jackin_core::Provider::Kimi => Agent::KimiCode,
         jackin_core::Provider::Mimo => Agent::MimoCode,
         jackin_core::Provider::Codex => Agent::Codex,

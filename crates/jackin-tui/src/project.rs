@@ -205,6 +205,10 @@ pub(crate) fn source(credential: &CoreCredential, provider: Option<Provider>) ->
             path: home.as_path().display().to_string(),
             detected: DetectedKind::CodexAuthJson,
         },
+        CoreCredential::HostLogin { path } => CredentialSource::LocalFolder {
+            path: path.as_path().display().to_string(),
+            detected: DetectedKind::Unknown,
+        },
         CoreCredential::OmpHost => CredentialSource::HostEnv {
             var: String::new(),
             detected: DetectedKind::Unknown,

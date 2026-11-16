@@ -82,6 +82,9 @@ pub enum CredentialSource {
         home: HostPath,
         chatgpt_account_id: ChatgptAccountId,
     },
+    HostLogin {
+        path: HostPath,
+    },
     OmpHost,
 }
 
@@ -517,12 +520,15 @@ impl Account {
             CredentialSource::Env { .. }
             | CredentialSource::OnePassword { .. }
             | CredentialSource::OmpHost
+            | CredentialSource::HostLogin { .. }
             | CredentialSource::File { .. } => None,
         }
     }
 
     pub fn has_provider(&self) -> bool {
-        self.chatgpt_login().is_some()
+        matches!(self.credential, CredentialSource::HostLogin { .. })
+            && matches!(self.provider, Provider::Grok)
+            || self.chatgpt_login().is_some()
             || (matches!(
                 self.provider,
                 Provider::Zai | Provider::Kimi | Provider::Minimax | Provider::Mimo
