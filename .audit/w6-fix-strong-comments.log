@@ -1,0 +1,7 @@
+xtask: comments
+.audit/w6-fix-strong-counts.py:71: comments are not allowed (D17); only SPDX headers, a shebang, and parser directives are
+.audit/w6-fix-strong-edit.py:26: comments are not allowed (D17); only SPDX headers, a shebang, and parser directives are
+.audit/w6-fix-strong-edit.py:49: comments are not allowed (D17); only SPDX headers, a shebang, and parser directives are
+.audit/w6-fix-strong-edit.py:72: comments are not allowed (D17); only SPDX headers, a shebang, and parser directives are
+xtask: comments reported 4 violations
+EXIT=1

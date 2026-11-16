@@ -1,0 +1,75 @@
+{
+ "per_repo": {
+  "jackin-project/jackin": {
+   "VALUABLE": 2,
+   "CONTAINED": 18,
+   "DEBRIS": 14
+  },
+  "jackin-project/jackin-sentinel": {
+   "VALUABLE": 2,
+   "CONTAINED": 1,
+   "DEBRIS": 0
+  },
+  "jackin-project/jackin-the-architect": {
+   "VALUABLE": 0,
+   "CONTAINED": 9,
+   "DEBRIS": 0
+  },
+  "jackin-project/jackin-agent-smith": {
+   "VALUABLE": 0,
+   "CONTAINED": 1,
+   "DEBRIS": 2
+  },
+  "tailrocks/terminal-components-baseline": {
+   "VALUABLE": 1,
+   "CONTAINED": 1,
+   "DEBRIS": 3
+  }
+ },
+ "totals": {
+  "VALUABLE": 5,
+  "CONTAINED": 30,
+  "DEBRIS": 19
+ },
+ "live": {
+  "jackin-project/jackin": [
+   "chore/restore-1283-remainder",
+   "chore/triage-inventory-20261112",
+   "codex/openshell-integration-checkpoint-20261108-122311",
+   "codex/openshell-verified-checkpoint-20261108",
+   "docs/debris-ratification-2026-11-14",
+   "docs/pr1228-replacement-20261026",
+   "docs/triage-inventory-reclass-2026-11-13",
+   "preserve/p0.6-prototype-20261109",
+   "preserve/session-boundaries-20261109",
+   "preserve/w1-fixes-20261109",
+   "recovery/openrouter-exact-money-20261027",
+   "recovery/pr1230-blob-auth-77b399f1-20261027",
+   "recovery/stash-2f8cc42b-20261023",
+   "recovery/stash-2fb075f8-20261023",
+   "recovery/stash-88f5643c-20261023",
+   "recovery/stash-adoption-6a0d2f03-20261025",
+   "recovery/stash-be51ff69-20261023",
+   "recovery/stash-d808d094-20261023",
+   "recovery/strict-merge-gate-merge-readiness-20261022",
+   "recovery/strip-tests-restore-20261030",
+   "rollout/velnor-3-provider",
+   "test/provider-eligibility"
+  ],
+  "jackin-project/jackin-sentinel": [
+   "fix/s158-postmerge-4",
+   "preserve/probe-identity-20261109"
+  ],
+  "jackin-project/jackin-the-architect": [],
+  "jackin-project/jackin-agent-smith": [
+   "recovery/20261006/jackin-agent-smith/2e7119b9c668/branch/velnor/fleet-92c3478694ef423fb4160b8c934d6671ca85b51a",
+   "recovery/20261006/jackin-agent-smith/2e7119b9c668/jackin-agent-smith"
+  ],
+  "tailrocks/terminal-components-baseline": [
+   "preserve/local-unique-20261109",
+   "test/pre-refactor-protection",
+   "wip/tuiscotti-capture-only",
+   "wip/tuiscotti-fixcheck"
+  ]
+ }
+}
