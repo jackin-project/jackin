@@ -279,7 +279,7 @@ impl Inputs {
         config: &Config,
         observed: ObservedSandbox,
         origins: &Origins,
-    ) -> Instance {
+    ) -> Option<Instance> {
         let instance = project_instance(
             &observed,
             config,

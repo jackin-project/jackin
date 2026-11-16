@@ -329,7 +329,7 @@ async fn the_form_lists_every_provider_and_saves_each_one_that_has_a_login_file(
     guard(async {
         let mut lab = Lab::open().await?;
         let form = AccountForm::openshell();
-        assert_eq!(form.providers.len(), Provider::ALL.len());
+        assert_eq!(form.providers.len(), ConsoleProvider::ALL.len());
         for (index, choice) in form.providers.iter().enumerate() {
             let core = jackin_tui::core_provider(choice.provider);
             let name = format!("acct{index}");

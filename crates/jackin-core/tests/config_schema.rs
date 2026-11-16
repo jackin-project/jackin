@@ -464,8 +464,8 @@ fn unknown_cases() -> Vec<(&'static str, String, &'static str, &'static str)> {
         (
             "role binding with a provider key",
             format!("{CL}{ROLE}"),
-            "bindings.claude = \"cl\"",
-            "roles.r.bindings.claude",
+            "bindings.cursor = \"cl\"",
+            "roles.r.bindings.cursor",
         ),
         (
             "role binding with an unknown key",
@@ -1078,7 +1078,7 @@ fn every_provider_can_hold_an_account_a_default_and_a_binding() -> TestResult {
     }
     assert_eq!(
         config.workspace_accounts(&WorkspaceName::parse("w")?).len(),
-        14
+        Provider::ALL.len()
     );
     assert_eq!(Config::parse(&config.render())?, config);
     Ok(())

@@ -73,14 +73,15 @@ impl ScenarioGateway {
 
     pub(crate) async fn put_codex_provider(&self, account: &str) -> Result<(), GatewayError> {
         let spec = Agent::Codex.spec();
-        let profile = ProviderProfile::parse(&spec.openshell.chatgpt_profile).expect("profile");
+        let profile =
+            ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile).expect("profile");
         self.fake.ensure_profile(&profile).await?;
         let account_id = ChatgptAccountId::parse(ACCOUNT_ID).expect("account id");
         self.fake
             .put_provider(&ProviderSpec {
                 name: ProviderName::parse(&format!("jackin-{account}-codex")).expect("provider"),
                 profile: profile.id,
-                keys: spec.openshell.keys,
+                keys: spec.codex.openshell.keys,
                 material: ProviderMaterial::ChatgptLogin {
                     access_token: Secret::new(ACCESS.to_owned()),
                     refresh_token: Secret::new(REFRESH.to_owned()),

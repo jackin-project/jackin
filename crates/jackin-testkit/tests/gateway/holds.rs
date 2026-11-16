@@ -240,7 +240,7 @@ async fn a_hold_on_the_provider_op_holds_a_put_and_a_delete_until_they_are_relea
 {
     guard(async {
         let fake = Arc::new(fake()?);
-        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().codex.openshell.chatgpt_profile)?;
         let provider = ProviderName::for_account(&AccountName::parse("work")?, Agent::Codex);
         fake.ensure_profile(&profile).await?;
         let trigger = Trigger::Op(GatewayOp::Provider);

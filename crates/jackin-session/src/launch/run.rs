@@ -505,7 +505,7 @@ impl Run<'_> {
         const STEP: LaunchStep = LaunchStep::Credentials;
         self.enter(STEP).await;
         let spec = Agent::Codex.spec();
-        let key = spec.openshell.keys.access_token;
+        let key = spec.codex.openshell.keys.access_token;
         let outcome = self
             .session
             .deps

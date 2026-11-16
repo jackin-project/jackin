@@ -585,7 +585,7 @@ async fn maximum_length_names_and_labels_the_types_allow_are_accepted_by_the_gat
     let account = AccountName::parse(&"a".repeat(32)).unwrap();
     let provider = ProviderName::for_account(&account, Agent::Codex);
     assert_eq!(provider.as_str().len(), 45);
-    let codex = &Agent::Codex.spec().openshell;
+    let codex = &Agent::Codex.spec().codex.openshell;
     guard(gateway.ensure_profile(&ProviderProfile::parse(&codex.chatgpt_profile).unwrap()))
         .await
         .unwrap();

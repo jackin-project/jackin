@@ -72,8 +72,8 @@ pub struct ProjectInput<'a> {
     pub origins: &'a Origins,
 }
 
-pub fn provider(provider: CoreProvider) -> Provider {
-    match provider {
+pub fn provider(provider: CoreProvider) -> Option<Provider> {
+    Some(match provider {
         CoreProvider::Amp => Provider::Amp,
         CoreProvider::Antigravity => Provider::Antigravity,
         CoreProvider::Claude => Provider::Anthropic,
@@ -84,11 +84,12 @@ pub fn provider(provider: CoreProvider) -> Provider {
         CoreProvider::Hermes => Provider::Hermes,
         CoreProvider::Kimi => Provider::Moonshot,
         CoreProvider::Minimax => Provider::MiniMax,
+        CoreProvider::Mimo => return None,
         CoreProvider::Muse => Provider::Muse,
         CoreProvider::Opencode => Provider::OpenCode,
         CoreProvider::Openrouter => Provider::Openrouter,
         CoreProvider::Zai => Provider::Zai,
-    }
+    })
 }
 
 pub fn core_provider(provider: Provider) -> CoreProvider {
@@ -110,9 +111,17 @@ pub fn core_provider(provider: Provider) -> CoreProvider {
     }
 }
 
-fn agent(agent: CoreAgent) -> Agent {
+fn agent(agent: CoreAgent) -> Option<Agent> {
     match agent {
-        CoreAgent::Codex => Agent::Codex,
+        CoreAgent::Codex => Some(Agent::Codex),
+        CoreAgent::ClaudeCode => Some(Agent::ClaudeCode),
+        CoreAgent::GrokBuild => Some(Agent::GrokBuild),
+        CoreAgent::KimiCode => Some(Agent::KimiCode),
+        CoreAgent::MuseCode
+        | CoreAgent::Antigravity
+        | CoreAgent::MinimaxCode
+        | CoreAgent::MimoCode
+        | CoreAgent::Omp => None,
     }
 }
 
@@ -179,18 +188,18 @@ fn file_kind(provider: Provider) -> DetectedKind {
     }
 }
 
-pub(crate) fn source(credential: &CoreCredential, provider: Provider) -> CredentialSource {
+pub(crate) fn source(credential: &CoreCredential, provider: Option<Provider>) -> CredentialSource {
     match credential {
         CoreCredential::Env { var } => CredentialSource::HostEnv {
             var: var.as_str().to_owned(),
-            detected: env_kind(provider),
+            detected: provider.map_or(DetectedKind::Unknown, env_kind),
         },
         CoreCredential::OnePassword { reference, account } => {
             CredentialSource::OnePassword(op_reference(reference, account.as_ref()))
         }
         CoreCredential::File { path } => CredentialSource::LocalFolder {
             path: path.as_path().display().to_string(),
-            detected: file_kind(provider),
+            detected: provider.map_or(DetectedKind::Unknown, file_kind),
         },
         CoreCredential::CodexLogin { home, .. } => CredentialSource::LocalFolder {
             path: home.as_path().display().to_string(),
@@ -199,9 +208,9 @@ pub(crate) fn source(credential: &CoreCredential, provider: Provider) -> Credent
     }
 }
 
-fn account(config: &Config, core: &jackin_core::Account) -> Account {
-    let provider = provider(core.provider());
-    let credential = source(core.credential(), provider);
+fn account(config: &Config, core: &jackin_core::Account) -> Option<Account> {
+    let provider = provider(core.provider())?;
+    let credential = source(core.credential(), Some(provider));
     let local_login = core.chatgpt_login().is_some();
     let mut a = Account::registered(
         core.name().as_str(),
@@ -214,14 +223,14 @@ fn account(config: &Config, core: &jackin_core::Account) -> Account {
     a.launch_blocked = (core.provider() == CoreProvider::Codex && !local_login)
         .then_some(LaunchBlock::UsageOnlySource);
     normalize::account(&mut a);
-    a
+    Some(a)
 }
 
 fn registry(config: &Config) -> AccountRegistry {
     AccountRegistry {
         accounts: config
             .accounts()
-            .map(|core| account(config, core))
+            .filter_map(|core| account(config, core))
             .collect(),
         revision: 0,
     }
@@ -267,7 +276,7 @@ fn workspace(
     ws.accounts.preferred = core
         .bindings
         .iter()
-        .map(|(p, account)| (provider(*p), account.to_string()))
+        .filter_map(|(p, account)| provider(*p).map(|p| (p, account.to_string())))
         .collect();
     normalize::workspace(
         &mut ws,
@@ -435,7 +444,7 @@ fn session_record(
     };
     vec![SessionRecord {
         id: summary.labels.planned.launch.to_string(),
-        agent: Some(agent(summary.labels.planned.agent)),
+        agent: agent(summary.labels.planned.agent),
         label: Agent::Codex.label().to_owned(),
         status,
         started_secs: summary.created_at.map_or(0, |t| t.0),
@@ -490,7 +499,7 @@ pub(crate) fn instance(
     origins: &Origins,
     ids: &IdTable,
     now_secs: i64,
-) -> Instance {
+) -> Option<Instance> {
     let ObservedSandbox {
         gateway: _,
         summary,
@@ -517,7 +526,7 @@ pub(crate) fn instance(
             .and_then(|_| ids.lookup(&labels.workspace)),
         workdir: String::new(),
         role: labels.role.to_string(),
-        agent: agent(labels.agent),
+        agent: agent(labels.agent)?,
         status,
         created_secs: summary.created_at.map_or(0, |t| t.0),
         last_seen_secs: now_secs,
@@ -537,7 +546,7 @@ pub(crate) fn instance(
         accounts: vec![labels.account.to_string()],
     };
     normalize::instance(&mut record);
-    record
+    Some(record)
 }
 
 pub fn manifest_doc(doc: &jackin_core::RoleManifest) -> RoleManifestDoc {
@@ -581,7 +590,7 @@ fn role_admin(config: &Config, docs: &RoleDocs, checks: &RoleChecks) -> RoleAdmi
                 bindings: entry
                     .bindings
                     .iter()
-                    .map(|(a, account)| (agent(*a), account.to_string()))
+                    .filter_map(|(a, account)| agent(*a).map(|a| (a, account.to_string())))
                     .collect(),
                 files: Vec::new(),
             })
@@ -665,7 +674,7 @@ pub fn project(input: &ProjectInput<'_>, ids: &mut IdTable) -> Snapshot {
     let instances = fleet
         .sandboxes
         .iter()
-        .map(|observed| instance(observed, config, origins, ids, facts.now_secs))
+        .filter_map(|observed| instance(observed, config, origins, ids, facts.now_secs))
         .collect();
     Snapshot {
         workspaces,

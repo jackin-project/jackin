@@ -165,7 +165,10 @@ pub(crate) fn mapped(found: &jackin_usage::AccountUsage, now: i64) -> Mapped {
             let why = IssueReason::Usage(why);
             let sentinel = QuotaWindow::sentinel(
                 WindowKind::Other.id(),
-                provider(found.provider).usage_surface().surface_name(),
+                provider(found.provider).map_or_else(
+                    || found.provider.as_str(),
+                    |p| p.usage_surface().surface_name(),
+                ),
                 status,
                 &Vocabulary::openshell().reason(&why),
             );

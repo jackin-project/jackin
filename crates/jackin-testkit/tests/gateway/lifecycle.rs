@@ -109,7 +109,7 @@ pub(crate) fn login(
     Ok(ProviderSpec {
         name: name.clone(),
         profile: profile.clone(),
-        keys: Agent::Codex.spec().openshell.keys,
+        keys: Agent::Codex.spec().codex.openshell.keys,
         material: ProviderMaterial::ChatgptLogin {
             access_token: Secret::new(ACCESS.to_owned()),
             refresh_token: Secret::new(REFRESH.to_owned()),
@@ -148,7 +148,7 @@ async fn profile_flow(
 async fn providers_profiles_and_detail_follow_the_gateway_contract() -> TestResult {
     guard(async {
         let fake = fake()?;
-        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().codex.openshell.chatgpt_profile)?;
         let provider = ProviderName::for_account(&AccountName::parse("work")?, Agent::Codex);
         let early_error = profile_flow(&fake, &profile, &provider).await?;
         fake.put_provider(&login(&profile.id, &provider)?).await?;
@@ -244,7 +244,7 @@ async fn every_gateway_call_yields_to_the_scheduler_before_it_acts() -> TestResu
 async fn a_provider_fault_is_struck_before_the_attached_check_and_clears() -> TestResult {
     guard(async {
         let fake = fake()?;
-        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().codex.openshell.chatgpt_profile)?;
         let attached = ProviderName::for_account(&AccountName::parse("work")?, Agent::Codex);
         fake.ensure_profile(&profile).await?;
         fake.put_provider(&login(&profile.id, &attached)?).await?;
@@ -284,7 +284,7 @@ async fn a_provider_fault_is_struck_before_the_attached_check_and_clears() -> Te
 async fn delete_provider_is_refused_while_a_sandbox_lists_it_and_ok_after() -> TestResult {
     guard(async {
         let fake = fake()?;
-        let profile = ProviderProfile::parse(&Agent::Codex.spec().openshell.chatgpt_profile)?;
+        let profile = ProviderProfile::parse(&Agent::Codex.spec().codex.openshell.chatgpt_profile)?;
         let attached = ProviderName::for_account(&AccountName::parse("work")?, Agent::Codex);
         let free = ProviderName::for_account(&AccountName::parse("other")?, Agent::Codex);
         fake.ensure_profile(&profile).await?;

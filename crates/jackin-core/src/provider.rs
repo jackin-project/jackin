@@ -3,8 +3,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::agent::Agent;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Provider {
@@ -18,6 +16,7 @@ pub enum Provider {
     Hermes,
     Kimi,
     Minimax,
+    Mimo,
     Muse,
     Opencode,
     Openrouter,
@@ -25,7 +24,7 @@ pub enum Provider {
 }
 
 impl Provider {
-    pub const ALL: [Provider; 14] = [
+    pub const ALL: [Provider; 15] = [
         Provider::Amp,
         Provider::Antigravity,
         Provider::Claude,
@@ -36,6 +35,7 @@ impl Provider {
         Provider::Hermes,
         Provider::Kimi,
         Provider::Minimax,
+        Provider::Mimo,
         Provider::Muse,
         Provider::Opencode,
         Provider::Openrouter,
@@ -56,6 +56,7 @@ impl Provider {
             Provider::Hermes => "hermes",
             Provider::Kimi => "kimi",
             Provider::Minimax => "minimax",
+            Provider::Mimo => "mimo",
             Provider::Muse => "muse",
             Provider::Opencode => "opencode",
             Provider::Openrouter => "openrouter",
@@ -63,23 +64,11 @@ impl Provider {
         }
     }
 
-    pub fn agent(self) -> Option<Agent> {
-        match self {
-            Provider::Codex => Some(Agent::Codex),
-            Provider::Amp
-            | Provider::Antigravity
-            | Provider::Claude
-            | Provider::Cursor
-            | Provider::Gemini
-            | Provider::Grok
-            | Provider::Hermes
-            | Provider::Kimi
-            | Provider::Minimax
-            | Provider::Muse
-            | Provider::Opencode
-            | Provider::Openrouter
-            | Provider::Zai => None,
-        }
+    pub fn tuples(self) -> Vec<&'static crate::agent::AgentTuple> {
+        crate::agent::TUPLES
+            .iter()
+            .filter(|tuple| tuple.provider == self)
+            .collect()
     }
 
     pub fn login_file(self) -> Option<&'static str> {
@@ -96,6 +85,7 @@ impl Provider {
             Provider::Antigravity
             | Provider::Hermes
             | Provider::Minimax
+            | Provider::Mimo
             | Provider::Openrouter
             | Provider::Zai => None,
         }

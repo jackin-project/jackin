@@ -426,7 +426,10 @@ fn derived_build_args_come_from_the_codex_row() -> TestResult {
     assert_eq!(arm["CODEX_VERSION"], spec.install.version);
     assert_eq!(arm["CODEX_BIN_DIR"], "/usr/local/bin");
     assert_eq!(arm["CODEX_BIN_DIR"], parent(spec.binary.as_str()));
-    assert_eq!(arm["CODEX_BIN_DIR"], parent(spec.code_mode_host.as_str()));
+    assert_eq!(
+        arm["CODEX_BIN_DIR"],
+        parent(spec.codex.code_mode_host.as_str())
+    );
     for target in spec.install.targets {
         let name = format!(
             "CODEX_SHA256_{}",
@@ -442,7 +445,8 @@ fn derived_build_args_come_from_the_codex_row() -> TestResult {
         last_segment(spec.binary.as_str())
     );
     assert!(
-        spec.openshell
+        spec.codex
+            .openshell
             .chatgpt_profile
             .yaml
             .lines()
@@ -580,7 +584,7 @@ fn derived_dockerfile_installs_what_the_codex_row_describes() -> TestResult {
     );
     let unquoted = text.replace('"', "");
     let words: BTreeSet<&str> = unquoted.split_whitespace().collect();
-    for path in [&spec.binary, &spec.code_mode_host] {
+    for path in [&spec.binary, &spec.codex.code_mode_host] {
         let want = format!("${{CODEX_BIN_DIR}}/{}", last_segment(path.as_str()));
         assert!(words.contains(want.as_str()), "install path {want}");
     }
@@ -860,7 +864,7 @@ fn derived_dockerfile_runs_the_scan_in_a_construct_stage_over_the_assembled_stag
             .as_str()
             .to_owned(),
         spec.binary.as_str().to_owned(),
-        spec.code_mode_host.as_str().to_owned(),
+        spec.codex.code_mode_host.as_str().to_owned(),
     ];
     protected.sort();
     let mut passed: Vec<String> = tail
@@ -1341,7 +1345,7 @@ fn the_scan_compares_the_six_protected_files_with_copies_the_role_cannot_write()
             .as_str()
             .to_owned(),
         spec.binary.as_str().to_owned(),
-        spec.code_mode_host.as_str().to_owned(),
+        spec.codex.code_mode_host.as_str().to_owned(),
         spec.install.system_config.as_str().to_owned(),
     ];
     protected.sort();

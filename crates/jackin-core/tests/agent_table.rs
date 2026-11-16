@@ -22,6 +22,7 @@ fn expected_name(provider: Provider) -> &'static str {
         Provider::Hermes => "hermes",
         Provider::Kimi => "kimi",
         Provider::Minimax => "minimax",
+        Provider::Mimo => "mimo",
         Provider::Muse => "muse",
         Provider::Opencode => "opencode",
         Provider::Openrouter => "openrouter",
@@ -42,6 +43,7 @@ fn provider_all_lists_each_provider_once_with_one_spelling() -> TestResult {
         "hermes",
         "kimi",
         "minimax",
+        "mimo",
         "muse",
         "opencode",
         "openrouter",
@@ -55,24 +57,32 @@ fn provider_all_lists_each_provider_once_with_one_spelling() -> TestResult {
             serde_json::to_string(&provider)?,
             format!("\"{}\"", provider.as_str())
         );
-        let agent = provider.agent();
         if provider == Provider::Codex {
-            assert_eq!(agent, Some(Agent::Codex));
-        } else {
-            assert_eq!(agent, None, "{provider:?}");
+            assert_eq!(provider.tuples().len(), 1);
+            assert_eq!(provider.tuples()[0].agent, Agent::Codex);
         }
     }
     Ok(())
 }
 
 #[test]
-fn agent_all_rows_match_their_provider() {
+fn agent_all_rows_match_their_provider() -> TestResult {
     for agent in Agent::ALL {
         assert_eq!(agent.spec().agent, agent);
         assert_eq!(agent.spec().provider, agent.provider());
-        assert_eq!(agent.provider().agent(), Some(agent));
-        assert_eq!(agent.as_str(), "codex");
+        assert!(
+            agent
+                .provider()
+                .tuples()
+                .iter()
+                .any(|tuple| tuple.agent == agent)
+        );
+        assert_eq!(
+            serde_json::to_string(&agent)?,
+            format!("\"{}\"", agent.as_str())
+        );
     }
+    Ok(())
 }
 
 #[test]
@@ -90,7 +100,7 @@ fn codex_row_launches_codex_with_the_d04_command_and_paths() -> TestResult {
     );
     assert_eq!(spec.binary.as_str(), "/usr/local/bin/codex");
     assert_eq!(
-        spec.code_mode_host.as_str(),
+        spec.codex.code_mode_host.as_str(),
         "/usr/local/bin/codex-code-mode-host"
     );
     assert_eq!(spec.state_dir.as_str(), "/sandbox/.codex");
@@ -118,13 +128,13 @@ fn codex_row_launches_codex_with_the_d04_command_and_paths() -> TestResult {
         members,
         [
             file_name(spec.binary.as_str()),
-            file_name(spec.code_mode_host.as_str())
+            file_name(spec.codex.code_mode_host.as_str())
         ]
     );
     let paths = spec.paths();
     for expected in [
         &spec.binary,
-        &spec.code_mode_host,
+        &spec.codex.code_mode_host,
         &spec.state_dir,
         &spec.workdir,
         &spec.auth_file.path,
@@ -193,12 +203,12 @@ fn env_var_names(yaml: &str) -> BTreeSet<String> {
 fn codex_row_reserves_every_credential_env_name() -> TestResult {
     let spec = Agent::Codex.spec();
     assert_eq!(spec.reserved_env, ["CODEX_HOME"]);
-    let keys = &spec.openshell.keys;
+    let keys = &spec.codex.openshell.keys;
     assert_eq!(keys.access_token, "CODEX_AUTH_ACCESS_TOKEN");
     assert_eq!(keys.refresh_token, "CODEX_AUTH_REFRESH_TOKEN");
     assert_eq!(keys.account_id, "CODEX_AUTH_ACCOUNT_ID");
     assert_eq!(keys.token_url, "https://auth.openai.com/oauth/token");
-    let found = env_var_names(spec.openshell.chatgpt_profile.yaml);
+    let found = env_var_names(spec.codex.openshell.chatgpt_profile.yaml);
     for name in [
         "CODEX_AUTH_ACCESS_TOKEN",
         "CODEX_AUTH_REFRESH_TOKEN",
@@ -224,10 +234,11 @@ fn codex_row_reserves_every_credential_env_name() -> TestResult {
 fn codex_profiles_are_chatgpt_only_and_match_their_asset() -> TestResult {
     let spec = Agent::Codex.spec();
     let profile = spec
+        .codex
         .profile_for(CodexAuthMode::ChatgptLogin)
         .ok_or("missing chatgpt profile")?;
     assert_eq!(profile.id, "codex");
-    assert!(spec.profile_for(CodexAuthMode::ApiKey).is_none());
+    assert!(spec.codex.profile_for(CodexAuthMode::ApiKey).is_none());
     assert_eq!(spec.profiles().len(), 1);
     let yaml_id = profile
         .yaml
