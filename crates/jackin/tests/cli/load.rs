@@ -128,6 +128,51 @@ async fn load_without_a_terminal_prints_the_sandbox_and_launch_id_and_uses_the_c
     .await
 }
 
+fn multi_account_config(rig: &Rig) -> String {
+    format!(
+        "{}\n[defaults.accounts]\ncodex = \"work\"\n\n[accounts.second]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"{ACCOUNT_ID}\" }}\n\n[accounts.zaiacct]\nprovider = \"zai\"\ncredential = {{ source = \"file\", path = \"{}/zai.txt\" }}\n",
+        rig.config.render(),
+        rig.home.as_path().display(),
+        rig.home.as_path().display()
+    )
+}
+
+#[tokio::test]
+async fn account_for_and_provider_scoped_global_account_resolve_per_instance() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.cwd = rig.repo.root().clone();
+        std::fs::write(rig.home.as_path().join("zai.txt"), "test-key")?;
+        harness.write_config(&multi_account_config(&rig))?;
+        let base = ["load", "--agent", "codex", "--agent", "omp", "--provider-for", "omp=zai"];
+        let mut args: Vec<String> = base.iter().map(|s| (*s).to_owned()).collect();
+        args.extend(["--account-for", "codex=second", "--account-for", "omp=zaiacct", "--launch-id"].iter().map(|s| (*s).to_owned()));
+        args.push(launch_id(3).to_string());
+        harness.run(&args.iter().map(String::as_str).collect::<Vec<_>>()).await?.ok()?;
+        let boxes = rig.world.gateway.sandboxes();
+        assert_eq!(boxes.len(), 1);
+        let text = String::from_utf8(boxes[0].file(&jackin_core::SandboxPath::from_static("/sandbox/.jackin/agents.json")).ok_or("agents.json")?)?;
+        assert!(text.contains("\"account\":\"second\""), "{text}");
+        assert!(text.contains("\"account\":\"zaiacct\""), "{text}");
+
+        let mut args2: Vec<String> = base.iter().map(|s| (*s).to_owned()).collect();
+        args2.extend(["--account", "second", "--launch-id"].iter().map(|s| (*s).to_owned()));
+        args2.push(launch_id(4).to_string());
+        harness.run(&args2.iter().map(String::as_str).collect::<Vec<_>>()).await?.ok()?;
+        assert_eq!(rig.world.gateway.sandboxes().len(), 2);
+
+        let mut args3: Vec<String> = base.iter().map(|s| (*s).to_owned()).collect();
+        args3.extend(["--account-for", "codex=zaiacct", "--launch-id"].iter().map(|s| (*s).to_owned()));
+        args3.push(launch_id(5).to_string());
+        let ran = harness.run(&args3.iter().map(String::as_str).collect::<Vec<_>>()).await?;
+        failed(&ran, ExitClass::Usage, &["does not belong"])?;
+        assert_eq!(rig.world.gateway.sandboxes().len(), 2);
+        Ok(())
+    })
+    .await
+}
+
 #[tokio::test]
 async fn a_path_without_a_workspace_or_an_unknown_role_fails_and_creates_nothing() -> TestResult {
     guard(async {

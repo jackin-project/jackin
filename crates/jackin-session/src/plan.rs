@@ -106,6 +106,8 @@ pub struct LaunchPlan {
     role: RoleName,
     selection: AccountSelection,
     account: Account,
+    instance_accounts: Vec<Account>,
+    chatgpt_accounts: Vec<(Agent, ChatgptAccountId)>,
     chatgpt_account: Option<ChatgptAccountId>,
     project: ProjectRoot,
     docker: DockerCapability,
@@ -538,8 +540,12 @@ pub fn plan_launch(
     let (agent, provider) = lead_agent_provider(&request);
     let tuple = lead_tuple(agent, provider, request.model.as_deref())?;
     let spec = agent.spec();
+    let lead_flag = match request.instances.as_ref().and_then(|items| items.lead_opt()) {
+        Some(lead) => Some(lead.account.clone()),
+        None => request.account.clone(),
+    };
     let selection = config.select_account(&AccountQuery {
-        flag: request.account.as_ref(),
+        flag: lead_flag.as_ref(),
         workspace: workspace_name,
         role: &request.role,
         agent,
@@ -566,6 +572,17 @@ pub fn plan_launch(
                 kind: "account",
                 name: selection.account.to_string(),
             })?;
+    let mut instance_accounts = Vec::new();
+    let mut chatgpt_accounts = Vec::new();
+    for instance in instances.iter() {
+        let entry = config.account(&instance.account).ok_or_else(|| ConfigError::MissingReference { kind: "account", name: instance.account.to_string() })?;
+        instance_accounts.push(entry.clone());
+        if instance.agent == Agent::Codex {
+            if let Some(login) = entry.chatgpt_login() {
+                chatgpt_accounts.push((instance.agent, login.account_id.clone()));
+            }
+        }
+    }
     let is_omp = agent == Agent::Omp;
     let chatgpt_account = if is_omp {
         None
@@ -671,6 +688,8 @@ pub fn plan_launch(
         account: account.clone(),
         chatgpt_account,
         selection,
+        instance_accounts,
+        chatgpt_accounts,
         project: request.project,
         docker,
         warnings,
@@ -712,6 +731,14 @@ impl LaunchPlan {
 
     pub fn chatgpt_account(&self) -> Option<&ChatgptAccountId> {
         self.chatgpt_account.as_ref()
+    }
+
+    pub fn chatgpt_account_for(&self, agent: Agent) -> Option<&ChatgptAccountId> {
+        self.chatgpt_accounts.iter().find(|(found, _)| *found == agent).map(|(_, id)| id)
+    }
+
+    pub fn instance_accounts(&self) -> &[Account] {
+        &self.instance_accounts
     }
 
     pub fn is_omp(&self) -> bool {

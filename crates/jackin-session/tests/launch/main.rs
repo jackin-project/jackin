@@ -19,6 +19,7 @@ mod hostile_git;
 mod hostile_launch;
 mod image_handoff;
 mod modes;
+mod multi_instance;
 mod phases;
 mod proofs;
 mod provider;
