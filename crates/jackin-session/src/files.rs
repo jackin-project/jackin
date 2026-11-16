@@ -59,6 +59,34 @@ pub(crate) fn render_placeholder_auth(spec: &jackin_core::AgentSpec) -> String {
     format!("{{{}}}", names.join(", "))
 }
 
+pub fn render_omp_config(
+    tuple: &'static jackin_core::AgentTuple,
+    model: Option<&str>,
+) -> Result<String, jackin_core::CatalogError> {
+    let model = match model {
+        Some(model) => {
+            tuple.check_model(model)?;
+            model
+        }
+        None => tuple.default_model,
+    };
+    let provider = tuple.omp_provider_id().unwrap_or_default();
+    let env = tuple.omp_credential_env().unwrap_or_default();
+    Ok(format!(
+        "providers:\n  {provider}:\n    apiKey: placeholder\ncredentialEnv: {env}\nmodelRoles:\n  default: {provider}/{model}\n"
+    ))
+}
+
+pub fn omp_auth_file(tuple: &jackin_core::AgentTuple) -> crate::plan::PlannedFile {
+    let spec = jackin_core::Agent::Omp.spec();
+    let provider = tuple.omp_provider_id().unwrap_or_default();
+    crate::plan::PlannedFile {
+        path: spec.auth_file.path.clone(),
+        mode: spec.auth_file.mode,
+        text: format!("{{\"{provider}\": {{\"type\": \"api_key\", \"key\": \"placeholder\"}}}}"),
+    }
+}
+
 pub(crate) fn placeholder_file(spec: &jackin_core::AgentSpec) -> crate::plan::PlannedFile {
     crate::plan::PlannedFile {
         path: spec.auth_file.path.clone(),

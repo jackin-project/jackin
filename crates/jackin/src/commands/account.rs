@@ -4,7 +4,7 @@
 use jackin_core::{
     Account, AccountName, Agent, ConfigEdit, ConfigError, CredentialSource, read_credential_file,
 };
-use jackin_session::{AccountPlan, plan_account_edits, read_chatgpt_login};
+use jackin_session::{AccountPlan, plan_account_edits, read_chatgpt_login, read_omp_host_key};
 
 use crate::app::App;
 use crate::cli::{
@@ -26,6 +26,34 @@ pub(crate) async fn run(app: &mut App, command: AccountCommand) -> Result<(), Co
 }
 
 async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, CommandError> {
+    if matches!(
+        args.credential.as_deref().map(CredentialArg::parse),
+        Some(Ok(CredentialArg::OmpHost))
+    ) {
+        let provider = parse_provider(&args.provider)?;
+        let tuple = jackin_core::lookup_tuple(Agent::Omp, provider).map_err(|_| {
+            CommandError::Argument("omp-host needs an omp tuple provider".to_owned())
+        })?;
+        let provider_id = tuple.omp_provider_id().ok_or_else(|| {
+            CommandError::Argument("omp-host needs an omp tuple provider".to_owned())
+        })?;
+        let home = app
+            .env
+            .get(&jackin_core::EnvName::parse("HOME").map_err(|_| {
+                CommandError::Argument("HOME is not set".to_owned())
+            })?)
+            .ok_or_else(|| CommandError::Argument("HOME is not set".to_owned()))?;
+        let db = jackin_core::HostPath::parse(std::path::Path::new(&format!("{home}/.omp/agent/agent.db")))
+            .map_err(|_| CommandError::Argument("HOME is not usable".to_owned()))?;
+        let _key = read_omp_host_key(app.deps.host.fs.as_ref(), &db, provider_id)
+            .await
+            .map_err(|_| {
+                CommandError::Argument(
+                    "no omp host credential for the selected provider".to_owned(),
+                )
+            })?;
+        return Ok(CredentialSource::OmpHost);
+    }
     if let Some(path) = &args.chatgpt_from {
         let home = absolutize(path, &app.cwd)?;
         let login = read_chatgpt_login(app.deps.host.fs.as_ref(), &home)
@@ -66,6 +94,7 @@ async fn source(app: &App, args: &AccountAddArgs) -> Result<CredentialSource, Co
                 Ok(Err(_)) | Err(_) => Err(refused()),
             }
         }
+        Some(Ok(CredentialArg::OmpHost)) => Ok(CredentialSource::OmpHost),
         Some(Err(error)) => Err(error),
         None => Err(CommandError::Argument(
             "pass --chatgpt-from or --credential".to_owned(),

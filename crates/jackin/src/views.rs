@@ -86,6 +86,7 @@ pub(crate) fn credential_kind(account: &Account) -> &'static str {
     match account.credential() {
         CredentialSource::Env { .. } => "env",
         CredentialSource::OnePassword { .. } => "op",
+        CredentialSource::OmpHost => "omp-host",
         CredentialSource::File { .. } => "file",
         CredentialSource::CodexLogin { .. } => "codex-login",
     }

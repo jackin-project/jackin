@@ -82,6 +82,7 @@ pub enum CredentialSource {
         home: HostPath,
         chatgpt_account_id: ChatgptAccountId,
     },
+    OmpHost,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -515,6 +516,7 @@ impl Account {
             }),
             CredentialSource::Env { .. }
             | CredentialSource::OnePassword { .. }
+            | CredentialSource::OmpHost
             | CredentialSource::File { .. } => None,
         }
     }

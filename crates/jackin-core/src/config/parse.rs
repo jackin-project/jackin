@@ -232,6 +232,10 @@ fn read_credential(account: &mut Reader<'_, '_>) -> Option<CredentialSource> {
                 reference.map(|reference| CredentialSource::OnePassword { reference, account })
             }
         }
+        "omp-host" => {
+            credential.finish();
+            return Some(CredentialSource::OmpHost);
+        }
         "file" => credential
             .required_parsed("path", host_path, static_message)
             .map(|path| CredentialSource::File { path }),
@@ -248,7 +252,7 @@ fn read_credential(account: &mut Reader<'_, '_>) -> Option<CredentialSource> {
             })
         }
         _ => {
-            credential.report_invalid("source", "expected env, op, file, or codex-login");
+            credential.report_invalid("source", "expected env, op, file, omp-host, or codex-login");
             None
         }
     };
