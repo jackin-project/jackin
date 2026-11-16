@@ -195,6 +195,14 @@ archive_ref() {                       # $1 repository, $2 name under archive/, $
     || { echo "archive ref $1 archive/$2 does not hold $3"; exit 1; }
 }
 while read -r repo branch tip; do archive_ref "$repo" "$branch" "$tip"; done < "$MANIFEST_FILE"
+# the retained-ref companion is an executable input: its repo/ref/SHA fields drive
+# authenticated archive writes below. It is bound to the reviewed revision by digest -
+# a contributor edit after review is a refusal, not a silent input change:
+RETAINED_SHA_EXPECTED=2754c2826527978f42cd3d67d33d8681b104f79682fb380d62cf4523a211676f
+if command -v sha256sum >/dev/null 2>&1; then retained_got=$(sha256sum < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt); retained_got=${retained_got%% *}
+elif command -v shasum >/dev/null 2>&1; then retained_got=$(shasum -a 256 < rewrite/triage/audits/2026-11-14/retained-refs-2026-11-14.txt); retained_got=${retained_got%% *}
+else echo "refusing: no SHA-256 command on this host" >&2; exit 1; fi
+[ "$retained_got" = "$RETAINED_SHA_EXPECTED" ] || { echo "refusing: the retained-ref companion changed after review" >&2; exit 1; }
 while read -r repo ref sha; do
   case "$repo" in \#*) continue ;; esac
   archive_ref "$repo" "retained/$ref" "$sha"
@@ -1104,7 +1112,7 @@ scratch=$(mktemp -d)
 cleanup_scratch() {
   result=$?
   trap - 0 HUP INT TERM
-  rm -rf "$scratch"
+  rm -rf "$scratch" "$work"
   exit "$result"
 }
 trap cleanup_scratch 0
@@ -1293,12 +1301,23 @@ push from that snapshot, so a manifest or a publication that changed after the p
 refusal there as well.
 
 Run the deletion block of §1 **from this publication, not copied**, so what executes is the
-revision the word names; the block is fenced between its begin and end markers and refuses to start
-unless the file carries the digest the word names:
+revision the word names. The launcher below verifies the publication digest from the word
+**before** it extracts or executes anything: a publication edited after ratification is a
+refusal here, before any block reaches a shell. The block is fenced between its begin and end
+markers:
 
 ```bash
+PUB=rewrite/triage/debris-ratification-2026-11-14.md
 RATIFY_WORD='RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a publication sha256:<publication digest>' \
-  bash -c "$(awk '/^# --- deletion run: begin ---$/,/^# --- deletion run: end ---$/' rewrite/triage/debris-ratification-2026-11-14.md)"
+  bash -c '
+    set -euo pipefail
+    want=${RATIFY_WORD##*publication sha256:}
+    case "$want" in ""|*[!0-9a-f]*) echo "refusing: the word carries no publication digest" >&2; exit 1 ;; esac
+    if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum < "$PUB"); got=${got%% *}
+    elif command -v shasum >/dev/null 2>&1; then got=$(shasum -a 256 < "$PUB"); got=${got%% *}
+    else echo "refusing: no SHA-256 command on this host" >&2; exit 1; fi
+    [ "$got" = "$want" ] || { echo "refusing: the publication changed after ratification" >&2; exit 1; }
+    awk "/^# --- deletion run: begin ---$/,/^# --- deletion run: end ---$/" "$PUB" | bash'
 ```
 
 Optionally, to also ratify retroactively the one deletion that was performed without a recorded proof (§6):
