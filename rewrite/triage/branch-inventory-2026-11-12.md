@@ -103,6 +103,25 @@ Proof method per branch: `git merge-base --is-ancestor "$tip" origin/main`; `git
 
 **Every one of the three commands is lease-guarded against the audited tip.** A plain `git push origin --delete <branch>` removes whatever the ref points at *at the moment of the push*, so if the branch has advanced since the observation the deletion would remove a tip that was never audited. Each command therefore names the audited SHA as the expected old value, and `git push` refuses the deletion if the ref has moved: `git push --force-with-lease=refs/heads/<branch>:<audited-sha> https://github.com/jackin-project/jackin.git :refs/heads/<branch>` (`git push -h` documents `--force-with-lease=<refname>:<expect>` as "require old value of ref to be at this value"). Each command names the audited repository by its HTTPS URL, never by the remote alias `origin`, so a clone whose `origin` points at a fork deletes the ref in the audited repository and leaves the fork alone. The commands are:
 
+```bash
+# Sanitize this shell before the cleanup push: the push authenticates, so a
+# file-backed credential helper would write the GitHub credential to disk, a
+# URL rewrite could redirect the push, and tracing could print the
+# Authorization header. Refuse all three and stop if any is present.
+unset GIT_TRACE GIT_TRACE_PERFORMANCE GIT_TRACE_PACK_ACCESS GIT_TRACE_PACKET GIT_TRACE_PACKFILE GIT_TRACE_CURL GIT_TRACE_REDACT GIT_TRACE_SETUP GIT_TRACE_SHALLOW GIT_TRACE_CURL_NO_DATA GIT_TRACE2 GIT_TRACE2_PERF GIT_TRACE2_EVENT
+export GIT_TRACE_REDACT=1
+helper=$(git config --global credential.helper 2>/dev/null || true)
+case "$helper" in ''|osxkeychain|manager|manager-core|wincred|libsecret|gnome-keychain|gpgme|cache) ;;
+  *) echo "refusing: the global credential helper is not known safe - remove or replace it before the cleanup" >&2; exit 1 ;; esac
+scoped=$(git config --global --get-regexp '^credential\..*\.helper$' 2>/dev/null || true)
+[ -z "$scoped" ] || { echo "refusing: a URL-scoped credential helper is configured - remove it before the cleanup" >&2; exit 1; }
+if git config --get-regexp '^url\..*\.(insteadOf|pushInsteadOf)$' >/dev/null 2>&1; then
+  echo "refusing: the configuration carries a URL rewrite - remove it before the cleanup" >&2; exit 1; fi
+hooks=$(git config --global core.hooksPath 2>/dev/null; git config --system core.hooksPath 2>/dev/null) || true
+[ -z "$hooks" ] || { echo "refusing: a global or system hooks path is configured - remove it before the cleanup" >&2; exit 1; }
+unset GIT_TEMPLATE_DIR
+```
+
 - `git push --force-with-lease=refs/heads/fix/roles-review-impl:04471245d9b9f519690bb0a58353f9ee847d543a https://github.com/jackin-project/jackin.git :refs/heads/fix/roles-review-impl` - **the cleanup action of this section**: the ref is not protected by the ratification publication, so this is the one command of the three that may run now, after the live tip is re-read.
 - `git push --force-with-lease=refs/heads/fix/typed-model-selection:0aaf7a411ce0f35ebd9ca7e7722caed7101c65c6 https://github.com/jackin-project/jackin.git :refs/heads/fix/typed-model-selection` - **deferred**: the ref is protected by the ratification publication, so the command runs only under the operator's own word that lifts that entry, in the same change that lifts it.
 - `git push --force-with-lease=refs/heads/docs/triage-inventory-reclass-2026-11-13:cf9acb7485e1800680fd00b62767af35e9713fe6 https://github.com/jackin-project/jackin.git :refs/heads/docs/triage-inventory-reclass-2026-11-13` - **deferred**: the ref is protected by the ratification publication, so the command runs only under the operator's own word that lifts that entry, in the same change that lifts it.
@@ -277,7 +296,7 @@ The 4 branches whose verdict is **CONTAINED-safe-to-delete** are **not** DEBRIS 
 
 ### DEBRIS audit - reproducible commands
 
-The 15 rows below are backed by the one-line proofs of the 2026-11-13 DEBRIS audit. The two audit reports that produced them (`debris-ratification.md` for the 13 jackin/baseline rows and `smith-debris-verify.md` for the 2 smith rows) are **not committed to this tree** (`git ls-tree -r --name-only HEAD | grep -E 'debris-ratification|smith-debris'` = 0 hits), so every claim is reproduced here by the command that produced it and the measured output that the row cites. All of them run against the live remotes and need no private state.
+The 15 rows below are backed by the one-line proofs of the 2026-11-13 DEBRIS audit. The two audit reports that produced them (`debris-ratification.md` for the 13 jackin/baseline rows and `smith-debris-verify.md` for the 2 smith rows) were **not committed to `main`** (`git ls-tree -r --name-only origin/main | grep -E 'debris-ratification|smith-debris'` = 0 hits), so every claim is reproduced here by the command that produced it and the measured output that the row cites. This PR branch additionally carries the 2026-11-14 audit pack under `rewrite/triage/audits/2026-11-14/` (8 files) as reviewed evidence; the embedded commands below remain the reproducible record. All of them run against the live remotes and need no private state.
 
 **How to run them - every value is read from the repository, and every use of it is double-quoted:**
 

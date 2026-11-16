@@ -89,6 +89,9 @@ set -euo pipefail
 #    An operator who runs this fence from a copy must verify the copy first with
 #    an independent command (typed, not copied): compare the file's SHA-256 with
 #    the publication digest in the sent word before executing anything from it.
+# The manifest digest of the 15 reviewed triples, defined before the gate so the
+# gate checks the word's manifest digest against the reviewed value.
+MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
 PUB=rewrite/triage/debris-ratification-2026-11-14.md
 [ -n "${RATIFY_WORD:-}" ] || { echo "refusing: set RATIFY_WORD to the operator's ratification word before the pre-flight" >&2; exit 1; }
 case "$RATIFY_WORD" in
@@ -97,6 +100,8 @@ case "$RATIFY_WORD" in
   *) echo "refusing: the word is not the reviewed ratification word" >&2; exit 1 ;;
 esac
 want=${RATIFY_WORD##*publication sha256:}
+want_manifest=${RATIFY_WORD##*manifest sha256:}; want_manifest=${want_manifest%% *}
+[ "$want_manifest" = "$MANIFEST" ] || { echo "refusing: the word carries a manifest digest that is not the reviewed one" >&2; exit 1; }
 case "$want" in ""|*[!0-9a-f]*) echo "refusing: the word carries no publication digest" >&2; exit 1 ;; esac
 if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum < "$PUB"); got=${got%% *}
 elif command -v shasum >/dev/null 2>&1; then got=$(shasum -a 256 < "$PUB"); got=${got%% *}
@@ -151,7 +156,8 @@ trap 'exit 143' TERM
 #    (§4). A branch that moved is refused here and again by the --force-with-lease guard of its
 #    deletion command, and a command whose --delete operand is not the row's own branch is refused
 #    here, so a publication edited after the ratification cannot change what runs.
-MANIFEST=72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a
+#    (The manifest digest itself is defined once above the revision gate so the
+#    gate checks the word's digest against the reviewed value.)
 MANIFEST_ROWS="$PREFLIGHT_DIR/manifest-rows.txt"
 MANIFEST_FILE="$PREFLIGHT_DIR/manifest.txt"
 LIVE_MANIFEST="$PREFLIGHT_DIR/live-manifest.txt"
@@ -684,7 +690,10 @@ SIGNAL
   )
 }
 
-unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CONFIG_SYSTEM
+# GIT_CONFIG_SYSTEM is unset (not merely overridden): it names the file git reads
+# as the system configuration, so an attacker-chosen value would substitute the
+# helper dispatch the guards below inspect. The real system file is still read.
 # Hooks: template and hook paths are inherited from the environment and the
 # system configuration, and a lesser-privileged local writer could plant code
 # that runs with the operator's rights on push. Every repository this run
@@ -741,18 +750,21 @@ refuse_unsafe_helpers() {
   # URL-scoped helpers (credential.<url>.helper) apply to matching HTTPS pushes
   # too, but the literal query above does not see them. Re-read the effective
   # list and refuse any scoped helper that is not known safe. Values are never
-  # printed: a helper string can carry a credential.
-  scoped=$(git config --list 2>/dev/null | grep -E '^credential(\.[^=]*)?\.helper=' || true)
-  while IFS= read -r entry; do
-    [ -n "$entry" ] || continue
-    helper=${entry#*=}
-    case "$helper" in
+  # printed: a helper string can carry a credential. The parse is NUL-delimited:
+  # a helper value that embeds a newline must not be split into a
+  # separately-validated first line.
+  while IFS= read -r -d '' pair; do
+    key=${pair%%$'\n'*}
+    value=${pair#*$'\n'}
+    case "$key" in
+      credential.helper|credential.*.helper) ;;
+      *) continue ;;
+    esac
+    case "$value" in
       '') continue ;;
     esac
-    known_safe_helper "$helper" || return 1
-  done <<EOF
-$scoped
-EOF
+    known_safe_helper "$value" || return 1
+  done < <(git config --null --list 2>/dev/null || true)
   return 0
 }
 refuse_unsafe_helpers || { echo "the push context carries a credential helper that can write a credential to a file - the deletion run refuses to push" >&2; exit 1; }
@@ -825,8 +837,8 @@ for row in "${ROWS[@]}"; do
   git remote set-url target "$url"
   fetch_url=$(git ls-remote --get-url "$url")
   push_url=$(git remote get-url --push target)
-  [ "$fetch_url" = "$url" ] || { echo "the target URL $url is rewritten to $fetch_url"; exit 1; }
-  [ "$push_url" = "$url" ] || { echo "the push URL $url is rewritten to $push_url"; exit 1; }
+  [ "$fetch_url" = "$url" ] || { echo "refusing: a target URL is rewritten in this context - the deletion run refuses to push" >&2; exit 1; }
+  [ "$push_url" = "$url" ] || { echo "refusing: a push URL is rewritten in this context - the deletion run refuses to push" >&2; exit 1; }
 done
 
 # The helper guard ran before the scratch repository had a remote, so a conditional
@@ -843,10 +855,9 @@ refuse_url_rewrites || { echo "the push context carries a URL rewrite - the dele
 for row in "${ROWS[@]}"; do
   read -r repo branch tip <<< "$row"
   url="https://github.com/$repo.git"
-  [ "$(git ls-remote --get-url "$url")" = "$url" ] || { echo "the target URL $url is rewritten in the push context"; exit 1; }
-  [ "$(git remote get-url --push target)" = "$url" ] || true
+  [ "$(git ls-remote --get-url "$url")" = "$url" ] || { echo "refusing: a target URL is rewritten in the push context - the deletion run refuses to push" >&2; exit 1; }
+  [ "$(git remote get-url --push target)" = "$url" ] || { echo "refusing: a push URL is rewritten in the push context - the deletion run refuses to push" >&2; exit 1; }
 done
-git remote set-url target "https://github.com/jackin-project/jackin.git"
 
 # 6. DELETION RUN: one row at a time, archive first, push second. The push is built from the
 #    row's own (repository, branch, tip) triple of the snapshot, so it is the §1 command of that row.
