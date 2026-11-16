@@ -320,7 +320,7 @@ fn check_tags(request: &ImageRequest, construct: &str, key: &str, repo: &str) ->
 #[test]
 fn key_is_the_documented_sha256_encoding_including_the_embedded_digests() -> TestResult {
     let first_args = planned_build_args(&base()?)?;
-    assert_eq!(first_args.len(), 13, "derived build args");
+    assert_eq!(first_args.len(), 14, "derived build args");
     let first = Expect {
         role: "sentinel",
         revision: (&"1".repeat(40), &Sha256::of(b"clean").to_string()),
@@ -338,7 +338,7 @@ fn key_is_the_documented_sha256_encoding_including_the_embedded_digests() -> Tes
     let construct = format!("sha256:{}", "3".repeat(64));
     let dirty = Sha256::of(b"dirty").to_string();
     let second_args = planned_build_args(&second_request()?)?;
-    assert_eq!(second_args.len(), 23, "derived build args with the client");
+    assert_eq!(second_args.len(), 24, "derived build args with the client");
     assert!(second_args.contains(&"--build-arg=DOCKER_LAYER=client".to_owned()));
     let second = Expect {
         role: "Agent-Smith",

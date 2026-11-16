@@ -143,6 +143,10 @@ pub(crate) fn derived_arguments_prefixed(
             spec.install.system_config_content,
         ),
         build_arg(
+            &format!("{prefix}_SCAN_ABSENT"),
+            &spec.install.scan_absent_paths.join(" "),
+        ),
+        build_arg(
             &format!("{prefix}_EXTRA_BINARY"),
             if agent == Agent::Codex {
                 spec.codex.code_mode_host.as_str()

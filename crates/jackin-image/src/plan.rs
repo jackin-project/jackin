@@ -262,6 +262,26 @@ fn multi_dockerfile(agents: &[jackin_core::Agent]) -> Vec<u8> {
     out.into_bytes()
 }
 
+const CODEX_SCAN_ABSENT: &str = "        --absent /etc/codex/requirements.toml \\\n        --absent /etc/codex/managed_config.toml \\\n        --absent /etc/codex/hooks.json \\\n        --absent /etc/codex/rules \\\n        --absent /etc/codex/agents \\\n        --absent /etc/codex/skills \\\n";
+
+fn scan_absent_dockerfile(dockerfile: Vec<u8>, agents: &[jackin_core::Agent]) -> Vec<u8> {
+    let mut paths: Vec<&str> = Vec::new();
+    for agent in agents {
+        for path in agent.spec().install.scan_absent_paths {
+            if !paths.contains(path) {
+                paths.push(path);
+            }
+        }
+    }
+    let replacement = paths
+        .iter()
+        .map(|path| format!("        --absent {path} \\\n"))
+        .collect::<String>();
+    String::from_utf8_lossy(&dockerfile)
+        .replace(CODEX_SCAN_ABSENT, &replacement)
+        .into_bytes()
+}
+
 fn derived_context(request: &ImageRequest) -> Vec<MaterializedFile> {
     let agents = request.sorted_agents();
     let dockerfile = if agents.len() > 1 {
@@ -269,6 +289,7 @@ fn derived_context(request: &ImageRequest) -> Vec<MaterializedFile> {
     } else {
         DERIVED_DOCKERFILE.to_vec()
     };
+    let dockerfile = scan_absent_dockerfile(dockerfile, &agents);
     vec![
         file("Dockerfile", &dockerfile),
         file("jackin-start", JACKIN_START),

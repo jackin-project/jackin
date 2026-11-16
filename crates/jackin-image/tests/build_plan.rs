@@ -31,12 +31,13 @@ const DERIVED_DOCKERFILE: &[u8] = include_bytes!(concat!(
 const JACKIN_START: &[u8] =
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/jackin-start"));
 const SCAN: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/images/derived/scan"));
-const ARG_NAMES: [&str; 23] = [
+const ARG_NAMES: [&str; 24] = [
     "AGENT_ARCHIVE_MEMBERS",
     "AGENT_BINARY",
     "AGENT_BIN_DIR",
     "AGENT_EXTRA_BINARY",
     "AGENT_NAME",
+    "AGENT_SCAN_ABSENT",
     "AGENT_SHA256_AMD64",
     "AGENT_SHA256_ARM64",
     "AGENT_SYSTEM_CONFIG",
@@ -56,12 +57,13 @@ const ARG_NAMES: [&str; 23] = [
     "DOCKER_COMPOSE_SHA256_ARM64",
     "DOCKER_COMPOSE_SHA256_AMD64",
 ];
-const CODEX_ARGS: [&str; 13] = [
+const CODEX_ARGS: [&str; 14] = [
     "AGENT_ARCHIVE_MEMBERS",
     "AGENT_BINARY",
     "AGENT_BIN_DIR",
     "AGENT_EXTRA_BINARY",
     "AGENT_NAME",
+    "AGENT_SCAN_ABSENT",
     "AGENT_SHA256_AMD64",
     "AGENT_SHA256_ARM64",
     "AGENT_SYSTEM_CONFIG",
@@ -205,9 +207,9 @@ fn check_stages(request: &ImageRequest) -> TestResult {
     ));
     assert_eq!(tokens(&derived_rest)?, sorted(derived), "derived {label}");
     let want_args = if request.docker == DockerLayer::Client {
-        23
+        24
     } else {
-        13
+        14
     };
     assert_eq!(build_args.len(), want_args, "derived build args {label}");
     let all = [&construct.args, &built.role.args, &built.derived.args];
