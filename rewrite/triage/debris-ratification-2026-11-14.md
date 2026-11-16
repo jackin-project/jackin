@@ -91,6 +91,11 @@ set -euo pipefail
 #    the publication digest in the sent word before executing anything from it.
 PUB=rewrite/triage/debris-ratification-2026-11-14.md
 [ -n "${RATIFY_WORD:-}" ] || { echo "refusing: set RATIFY_WORD to the operator's ratification word before the pre-flight" >&2; exit 1; }
+case "$RATIFY_WORD" in
+  "RATIFY DEBRIS: 15 branches manifest sha256:"????????????????????????????????????????????????????????????????" publication sha256:"????????????????????????????????????????????????????????????????)
+    ;;
+  *) echo "refusing: the word is not the reviewed ratification word" >&2; exit 1 ;;
+esac
 want=${RATIFY_WORD##*publication sha256:}
 case "$want" in ""|*[!0-9a-f]*) echo "refusing: the word carries no publication digest" >&2; exit 1 ;; esac
 if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum < "$PUB"); got=${got%% *}
@@ -680,6 +685,12 @@ SIGNAL
 }
 
 unset GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT
+# Hooks: template and hook paths are inherited from the environment and the
+# system configuration, and a lesser-privileged local writer could plant code
+# that runs with the operator's rights on push. Every repository this run
+# creates or uses gets an empty controlled template and hook path instead.
+mkdir -p "$SANITIZED_DIR/empty-template" "$SANITIZED_DIR/empty-hooks" 2>/dev/null || true
+export GIT_TEMPLATE_DIR="$SANITIZED_DIR/empty-template"
 # Trace sweep. An inherited GIT_TRACE* setting would make the authenticated pushes below
 # emit an unredacted Authorization header to stderr or a trace file when redaction is
 # disabled, so every GIT_TRACE* variable is removed and redaction is forced on.
@@ -692,6 +703,13 @@ cleanup_probe || { echo "the cleanup probe refused the cleanup - the deletion ru
 
 git init --quiet --bare "$SANITIZED_DIR/push.git"
 export GIT_DIR="$SANITIZED_DIR/push.git"
+# Hooks: a template or system hooks path controlled by a lesser-privileged local
+# actor would run with the operator's rights on push. Point the template at an
+# empty controlled directory and pin the scratch repository's hooks path at an
+# empty controlled directory, so no inherited hook executes.
+mkdir -p "$SANITIZED_DIR/empty-template" "$SANITIZED_DIR/empty-hooks"
+export GIT_TEMPLATE_DIR="$SANITIZED_DIR/empty-template"
+git --git-dir="$SANITIZED_DIR/push.git" config core.hooksPath "$SANITIZED_DIR/empty-hooks"
 
 # The refusal check. The context of the pushes must carry no URL rewrite. The check reads the
 # configuration of that context, so a rewrite that survived the sanitizing - one in the system
@@ -720,6 +738,21 @@ refuse_unsafe_helpers() {
     esac
     known_safe_helper "$helper" || return 1
   done < <(git config --get-all --null credential.helper 2>/dev/null || true)
+  # URL-scoped helpers (credential.<url>.helper) apply to matching HTTPS pushes
+  # too, but the literal query above does not see them. Re-read the effective
+  # list and refuse any scoped helper that is not known safe. Values are never
+  # printed: a helper string can carry a credential.
+  scoped=$(git config --list 2>/dev/null | grep -E '^credential(\.[^=]*)?\.helper=' || true)
+  while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    helper=${entry#*=}
+    case "$helper" in
+      '') continue ;;
+    esac
+    known_safe_helper "$helper" || return 1
+  done <<EOF
+$scoped
+EOF
   return 0
 }
 refuse_unsafe_helpers || { echo "the push context carries a credential helper that can write a credential to a file - the deletion run refuses to push" >&2; exit 1; }
@@ -1368,8 +1401,13 @@ markers:
 ```bash
 PUB=rewrite/triage/debris-ratification-2026-11-14.md
 RATIFY_WORD='RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd12ecb19ecf65caca66c26b9e77a448de064bccb6a publication sha256:<publication digest>' \
-  env PUB="$PUB" bash -c '
+  env PUB="$PUB" BASH_ENV=/dev/null bash -c '
     set -euo pipefail
+    case "$RATIFY_WORD" in
+      "RATIFY DEBRIS: 15 branches manifest sha256:"????????????????????????????????????????????????????????????????" publication sha256:"????????????????????????????????????????????????????????????????)
+        ;;
+      *) echo "refusing: the word is not the reviewed ratification word" >&2; exit 1 ;;
+    esac
     want=${RATIFY_WORD##*publication sha256:}
     case "$want" in ""|*[!0-9a-f]*) echo "refusing: the word carries no publication digest" >&2; exit 1 ;; esac
     snap=$(mktemp) || exit 1
@@ -1382,7 +1420,7 @@ RATIFY_WORD='RATIFY DEBRIS: 15 branches manifest sha256:72224143c3f5aeb19e7a4cd1
     elif command -v shasum >/dev/null 2>&1; then got=$(shasum -a 256 < "$snap"); got=${got%% *}
     else echo "refusing: no SHA-256 command on this host" >&2; exit 1; fi
     [ "$got" = "$want" ] || { echo "refusing: the publication changed after ratification" >&2; exit 1; }
-    awk "/^# --- deletion run: begin ---$/,/^# --- deletion run: end ---$/" "$snap" | bash'
+    awk "/^# --- deletion run: begin ---$/,/^# --- deletion run: end ---$/" "$snap" | BASH_ENV=/dev/null bash'
 ```
 
 Optionally, to also ratify retroactively the one deletion that was performed without a recorded proof (§6):
