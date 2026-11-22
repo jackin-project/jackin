@@ -66,7 +66,7 @@ jackin usage refresh --account "$account_id"
 jackin usage share
 ```
 
-Use `jackin usage providers` to list products even before connecting your first account. Select **Antigravity (Google AI)** to track Gemini and Claude subscription quotas. **Google AI Ultra (Gemini)** directs you to the Gemini app for chat limits. **Gemini Code Assist** tracks eligible Cloud projects.
+Use `jackin usage providers` to list products even before connecting your first account. Select **Antigravity (Google AI)** to track Gemini and Claude subscription quotas. **Gemini app (web)** directs you to the Gemini app for chat limits. **Gemini Code Assist** tracks eligible Cloud projects.
 
 In the catalog JSON, each product has an `id`, `name`, `account_count` and `status`. A status of `connected` means at least one account is saved. A product with no saved accounts is `not_connected` when Jackin supports a connection, or `unavailable` with an `unavailable_reason` when it cannot read that product. Listing the catalog succeeds on an empty installation.
 
