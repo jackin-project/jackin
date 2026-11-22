@@ -54,18 +54,14 @@ impl Quota {
         if !(0.0..=1.0).contains(&fraction) {
             return Err(ProviderError::OUT_OF_RANGE);
         }
-        let reset = match (self.reset_time, self.reset_in_seconds) {
-            (Some(text), _) => Some(parse_iso_epoch(&text).ok_or(ProviderError::Decode(
-                "invalid Antigravity quota reset time",
-            ))?),
-            (None, Some(seconds)) => Some(
-                observed_at
-                    .checked_add(seconds)
-                    .filter(|_| seconds >= 0)
-                    .ok_or(ProviderError::OUT_OF_RANGE)?,
-            ),
-            (None, None) => None,
-        };
+        let reset = self
+            .reset_time
+            .as_deref()
+            .and_then(parse_iso_epoch)
+            .or_else(|| {
+                let seconds = self.reset_in_seconds.filter(|&seconds| seconds >= 0)?;
+                observed_at.checked_add(seconds)
+            });
         let mut resource = json!({
             "label":label, "kind":"quota", "unit":"percent",
             "remaining_fraction":fraction, "window_seconds":period,

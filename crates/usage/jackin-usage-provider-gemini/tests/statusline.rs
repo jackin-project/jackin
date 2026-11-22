@@ -14,8 +14,8 @@ fn distinguishes_all_antigravity_windows_and_keeps_only_account_usage() -> Resul
         "quota": {
             "gemini-5h":{"remaining_fraction":1.0,"reset_time":"2024-01-01T00:00:00Z","reset_in_seconds":3600},
             "gemini-weekly":{"remaining_fraction":0.9971966,"reset_in_seconds":600},
-            "3p-5h":{"remaining_fraction":0.0},
-            "3p-weekly":{"remaining_fraction":0.00280664},
+            "3p-5h":{"remaining_fraction":0.0,"reset_time":"unknown","reset_in_seconds":60},
+            "3p-weekly":{"remaining_fraction":0.00280664,"reset_time":"unknown"},
             "gemini-argon-wtu-weekly":{"remaining_fraction":0.98,"disabled":true},
             "future":{"remaining_amount":50}
         }
@@ -41,6 +41,7 @@ fn distinguishes_all_antigravity_windows_and_keeps_only_account_usage() -> Resul
     }
     assert_eq!(resources["gemini-5h"]["resets_at"], 1704067200);
     assert_eq!(resources["gemini-weekly"]["resets_at"], 700);
+    assert_eq!(resources["3p-5h"]["resets_at"], 160);
     assert!(resources["3p-weekly"].get("resets_at").is_none());
     assert!(!reading.snapshot.to_string().contains("private"));
     Ok(())
