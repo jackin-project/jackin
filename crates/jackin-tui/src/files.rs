@@ -7,7 +7,7 @@ use std::sync::Arc;
 use futures::executor::block_on;
 use jackin_core::{FileKind, FileSystem, HostPath};
 use jackin_session::error_chain;
-use junie_tui::widgets::file_browser::{FileEntry, FileSource};
+use termrock::widgets::file_browser::{FileEntry, FileSource};
 use tokio::runtime::Handle;
 
 pub(crate) struct HostFiles {

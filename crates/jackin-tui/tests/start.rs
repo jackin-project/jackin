@@ -8,7 +8,7 @@ use jackin_core::Config;
 use jackin_openshell::{Gateway, GatewayError, GatewayOp};
 use jackin_testkit::{ConsoleRig, Fault, Rig, TestResult, Trigger, World, guard};
 use jackin_tui::GatewayState;
-use junie_tui::motion::Motion;
+use termrock::motion::Motion;
 
 fn route(console: &mut ConsoleRig) -> Route {
     console.console().app().route()

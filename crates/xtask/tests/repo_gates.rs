@@ -266,14 +266,7 @@ fn d14() -> Specs {
         ("jackin-session", vec![core, image, openshell, testkit]),
         (
             "jackin-tui",
-            vec![
-                core,
-                image,
-                openshell,
-                session,
-                Normal("junie-tui"),
-                testkit,
-            ],
+            vec![core, image, openshell, session, Normal("termrock"), testkit],
         ),
         (
             "jackin-testkit",
@@ -2185,7 +2178,7 @@ mod ci_run {
         fixture.write("docs/index.md", "# Docs\n")?;
         fixture.write(
             "deny.toml",
-            "[sources]\nunknown-git = \"deny\"\nallow-git = [\"https://github.com/NVIDIA/OpenShell\", \"https://github.com/tailrocks/terminal-components-baseline\", \"https://github.com/tailrocks/termpane\", \"https://github.com/tailrocks/tuiscotti\"]\n",
+            "[sources]\nunknown-git = \"deny\"\nallow-git = [\"https://github.com/NVIDIA/OpenShell\", \"https://github.com/tailrocks/termrock\", \"https://github.com/tailrocks/termpane\", \"https://github.com/tailrocks/tuiscotti\"]\n",
         )?;
         Ok(fixture)
     }

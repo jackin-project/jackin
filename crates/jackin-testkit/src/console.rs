@@ -21,14 +21,14 @@ use jackin_tui::{
     SessionConnector, SessionSet, build_console,
 };
 use jackin_usage::{HostUsage, UsageDeps};
-use junie_tui::core::event::{Input, Key, Mouse, MouseKind};
-use junie_tui::runtime::Application;
-use junie_tui::shell::NativeClipboard;
-use junie_tui::theme::{ColorLevel, Theme, Tone};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::layout::Position;
+use termrock::core::event::{Input, Key, Mouse, MouseKind};
+use termrock::runtime::Application;
+use termrock::shell::NativeClipboard;
+use termrock::theme::{ColorLevel, Theme, Tone};
 use tokio_util::sync::CancellationToken;
 
 use crate::connector::ScriptedConnector;

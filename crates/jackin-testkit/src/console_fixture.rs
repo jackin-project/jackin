@@ -4,7 +4,7 @@
 use clap::Parser;
 use jackin_console::app::App;
 use jackin_console::fixtures::{Scenario, app_for};
-use junie_tui::cli::CommonArgs;
+use termrock::cli::CommonArgs;
 
 pub const NO_MOTION_ENV: &str = "JACKIN_NO_MOTION";
 

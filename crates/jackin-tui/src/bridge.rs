@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use jackin_console::app::Remote;
 use jackin_console::world::{Msg, Snapshot};
-use junie_tui::runtime::ExternalSender;
+use termrock::runtime::ExternalSender;
 use tokio::runtime::Handle;
 use tokio::sync::watch;
 
@@ -168,7 +168,7 @@ impl Bridge {
 mod tests {
     use std::time::Duration;
 
-    use junie_tui::runtime::{ExternalReceiver, external_channel};
+    use termrock::runtime::{ExternalReceiver, external_channel};
 
     use super::*;
     use crate::crashed;
@@ -183,9 +183,8 @@ mod tests {
         tokio::time::timeout(WAIT, async {
             loop {
                 if let Some(found) = receiver
-                    .drain()
-                    .iter()
-                    .find_map(|external| external.downcast_ref::<Remote>().cloned())
+                    .try_recv()
+                    .and_then(|external| external.downcast_ref::<Remote>().cloned())
                 {
                     return found;
                 }

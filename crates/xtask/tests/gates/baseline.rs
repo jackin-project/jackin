@@ -5,8 +5,8 @@ use std::path::Path;
 
 use crate::workspace::{
     OPENSHELL_URL, OTHER_REV, REV, TERMPANE_URL, TUISCOTTI_URL, TestResult, URL, Workspace,
-    add_member, console_line, deny_text, green, junie_line, lock_source, lock_text,
-    member_manifest, pin, testkit_manifest, workspace_manifest,
+    add_member, console_line, deny_text, green, lock_source, lock_text, member_manifest, pin,
+    termrock_line, testkit_manifest, workspace_manifest,
 };
 use jackin_xtask::{BaselineCheck, Check, Repo, Violation};
 
@@ -58,7 +58,7 @@ fn edit(workspace: &Workspace, relative: &str, from: &str, to: &str) -> TestResu
 }
 
 fn root_with_console(line: &str) -> String {
-    workspace_manifest(&["jackin-tui"], &[line.to_owned(), junie_line(REV)])
+    workspace_manifest(&["jackin-tui"], &[line.to_owned(), termrock_line(REV)])
 }
 
 fn with_console_line(line: &str) -> Result<Workspace, Box<dyn std::error::Error>> {
@@ -84,6 +84,31 @@ fn testkit_exemption_passes() -> TestResult {
 }
 
 #[test]
+fn testkit_cli_exemption_does_not_allow_other_facade_features() -> TestResult {
+    for feature in ["cli", "work-metrics"] {
+        let workspace = with_testkit()?;
+        workspace.write(
+            "crates/jackin-testkit/Cargo.toml",
+            &member_manifest(
+                "jackin-testkit",
+                &format!(
+                    "[dependencies]\njackin-console = {{ workspace = true, features = [\"demo\"] }}\ntermrock = {{ workspace = true, features = [\"{feature}\"] }}\n"
+                ),
+            ),
+        )?;
+        if feature == "cli" {
+            expect(&workspace, &[])?;
+        } else {
+            expect(
+                &workspace,
+                &[("R3", "crates/jackin-testkit/Cargo.toml", "work-metrics")],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn testkit_path_dependency_fails() -> TestResult {
     let workspace = with_testkit()?;
     workspace.write(
@@ -106,7 +131,7 @@ fn testkit_exemption_covers_demo_only() -> TestResult {
         "crates/jackin-testkit/Cargo.toml",
         &member_manifest(
             "jackin-testkit",
-            "[dependencies]\njackin-console = { version = \"0.1.0\", git = \"https://github.com/tailrocks/terminal-components-baseline\", rev = \"74244972a1183db85111332ddab7eeabcbae81cb\", features = [\"demo\"] }\n",
+            "[dependencies]\njackin-console = { version = \"0.1.0\", git = \"https://github.com/tailrocks/termrock\", rev = \"74244972a1183db85111332ddab7eeabcbae81cb\", features = [\"demo\"] }\n",
         ),
     )?;
     expect(
@@ -147,7 +172,7 @@ fn renamed_path_fails() -> TestResult {
         TUI,
         &member_manifest(
             "jackin-tui",
-            "[dependencies]\njackin-console = { workspace = true }\njunie-tui = { workspace = true }\nlocal-ui = { package = \"junie-tui\", path = \"../../../elsewhere/junie-tui\", default-features = false }\n",
+            "[dependencies]\njackin-console = { workspace = true }\ntermrock = { workspace = true }\nlocal-ui = { package = \"termrock\", path = \"../../../elsewhere/termrock\", default-features = false }\n",
         ),
     )?;
     expect(&workspace, &[("R1", TUI, "path dependency")])
@@ -217,7 +242,7 @@ fn two_revs_fail() -> TestResult {
         "Cargo.lock",
         &lock_text(&[
             ("jackin-console", lock_source(OTHER_REV)),
-            ("junie-tui", lock_source(REV)),
+            ("termrock", lock_source(REV)),
         ]),
     )?;
     expect(&workspace, &[("R2", "Cargo.toml", OTHER_REV)])
@@ -230,7 +255,7 @@ fn normal_edge_demo_fails() -> TestResult {
         TUI,
         &member_manifest(
             "jackin-tui",
-            "[dependencies]\njackin-console = { workspace = true, features = [\"demo\"] }\njunie-tui = { workspace = true }\n",
+            "[dependencies]\njackin-console = { workspace = true, features = [\"demo\"] }\ntermrock = { workspace = true }\n",
         ),
     )?;
     expect(&workspace, &[("R3", TUI, "demo")])
@@ -243,7 +268,7 @@ fn dev_edge_demo_passes() -> TestResult {
         TUI,
         &member_manifest(
             "jackin-tui",
-            "[dependencies]\njackin-console = { workspace = true }\njunie-tui = { workspace = true }\n\n[dev-dependencies]\njackin-console = { workspace = true, features = [\"demo\"] }\n",
+            "[dependencies]\njackin-console = { workspace = true }\ntermrock = { workspace = true }\n\n[dev-dependencies]\njackin-console = { workspace = true, features = [\"demo\"] }\n",
         ),
     )?;
     expect(&workspace, &[])
@@ -259,18 +284,18 @@ fn default_features_fail() -> TestResult {
 }
 
 #[test]
-fn junie_cli_fails() -> TestResult {
+fn termrock_cli_fails() -> TestResult {
     let workspace = green()?;
     workspace.write(
         TUI,
         &member_manifest(
             "jackin-tui",
-            "[dependencies]\njackin-console = { workspace = true }\njunie-tui = { workspace = true, features = [\"cli\"] }\n",
+            "[dependencies]\njackin-console = { workspace = true }\ntermrock = { workspace = true, features = [\"cli\"] }\n",
         ),
     )?;
     expect(&workspace, &[("R3", TUI, "cli")])?;
 
-    let line = junie_line(REV).replace(", default-features = false", "");
+    let line = termrock_line(REV).replace(", default-features = false", "");
     let workspace = green()?;
     workspace.write(
         "Cargo.toml",
@@ -288,7 +313,7 @@ fn forwarded_feature_fails() -> TestResult {
             &member_manifest(
                 "jackin-tui",
                 &format!(
-                    "[features]\nui = [\"{forward}\"]\n\n[dependencies]\njackin-console = {{ workspace = true, optional = true }}\njunie-tui = {{ workspace = true }}\n"
+                    "[features]\nui = [\"{forward}\"]\n\n[dependencies]\njackin-console = {{ workspace = true, optional = true }}\ntermrock = {{ workspace = true }}\n"
                 ),
             ),
         )?;
@@ -305,7 +330,7 @@ fn renamed_forward_fails() -> TestResult {
         &member_manifest(
             "jackin-tui",
             &format!(
-                "[features]\nui = [\"console/demo\"]\n\n[dependencies]\nconsole = {{ package = \"jackin-console\", version = \"0.1.0\", {}, default-features = false, optional = true }}\njunie-tui = {{ workspace = true }}\n",
+                "[features]\nui = [\"console/demo\"]\n\n[dependencies]\nconsole = {{ package = \"jackin-console\", version = \"0.1.0\", {}, default-features = false, optional = true }}\ntermrock = {{ workspace = true }}\n",
                 pin(REV)
             ),
         ),
@@ -317,7 +342,7 @@ fn renamed_forward_fails() -> TestResult {
 fn patch_fails() -> TestResult {
     for patch in [
         format!("[patch.\"{URL}\"]\nother = {{ path = \"../patched\" }}\n"),
-        "[patch.crates-io]\njunie-tui = { path = \"../patched\" }\n".to_owned(),
+        "[patch.crates-io]\ntermrock = { path = \"../patched\" }\n".to_owned(),
     ] {
         let workspace = green()?;
         edit(
@@ -348,36 +373,39 @@ fn patch_dot_git_fails() -> TestResult {
 fn patch_package_key_fails() -> TestResult {
     let workspace = green()?;
     let patch =
-        "[patch.crates-io]\nsomething = { path = \"../patched\", package = \"junie-tui\" }\n";
+        "[patch.crates-io]\nsomething = { path = \"../patched\", package = \"termrock\" }\n";
     edit(
         &workspace,
         "Cargo.toml",
         "[workspace.package]",
         &format!("{patch}\n[workspace.package]"),
     )?;
-    expect(&workspace, &[("R4", "Cargo.toml", "junie-tui")])
+    expect(&workspace, &[("R4", "Cargo.toml", "termrock")])
 }
 
 #[test]
 fn replace_fails() -> TestResult {
-    let workspace = green()?;
-    let replace = format!("[replace]\n\"{URL}#junie-tui:0.1.0\" = {{ path = \"../patched\" }}\n");
-    edit(
-        &workspace,
-        "Cargo.toml",
-        "[workspace.package]",
-        &format!("{replace}\n[workspace.package]"),
-    )?;
-    expect(&workspace, &[("R4", "Cargo.toml", "replace")])
+    for package in [
+        format!("{URL}#termrock:0.1.0"),
+        "termrock-terminal:0.1.0".into(),
+    ] {
+        let workspace = green()?;
+        let replace = format!("[replace]\n\"{package}\" = {{ path = \"../patched\" }}\n");
+        edit(
+            &workspace,
+            "Cargo.toml",
+            "[workspace.package]",
+            &format!("{replace}\n[workspace.package]"),
+        )?;
+        expect(&workspace, &[("R4", "Cargo.toml", "replace")])?;
+    }
+    Ok(())
 }
 
 #[test]
 fn cargo_config_paths_fail() -> TestResult {
     let workspace = green()?;
-    workspace.write(
-        ".cargo/config.toml",
-        "paths = [\"../terminal-components-baseline\"]\n",
-    )?;
+    workspace.write(".cargo/config.toml", "paths = [\"../termrock\"]\n")?;
     expect(&workspace, &[("R4", ".cargo/config.toml", "paths")])
 }
 
@@ -433,12 +461,29 @@ fn source_replace_fails() -> TestResult {
 
 #[test]
 fn lock_source_mismatch_fails() -> TestResult {
+    for rev in [REV, OTHER_REV] {
+        let workspace = green()?;
+        workspace.write(
+            "Cargo.lock",
+            &lock_text(&[
+                ("jackin-console", lock_source(REV)),
+                ("termrock", lock_source(REV)),
+                ("termrock-terminal", lock_source(rev)),
+            ]),
+        )?;
+        if rev == REV {
+            expect(&workspace, &[])?;
+        } else {
+            expect(&workspace, &[("R5", "Cargo.lock", "termrock-terminal")])?;
+        }
+    }
+
     let workspace = green()?;
     workspace.write(
         "Cargo.lock",
         &lock_text(&[
             ("jackin-console", lock_source(OTHER_REV)),
-            ("junie-tui", lock_source(REV)),
+            ("termrock", lock_source(REV)),
         ]),
     )?;
     expect(&workspace, &[("R5", "Cargo.lock", "jackin-console")])?;
@@ -446,7 +491,7 @@ fn lock_source_mismatch_fails() -> TestResult {
     let workspace = green()?;
     workspace.write(
         "Cargo.lock",
-        "version = 4\n\n[[package]]\nname = \"jackin-console\"\nversion = \"0.1.0\"\n\n[[package]]\nname = \"junie-tui\"\nversion = \"0.1.0\"\nsource = \"git+https://github.com/tailrocks/terminal-components-baseline?rev=74244972a1183db85111332ddab7eeabcbae81cb#74244972a1183db85111332ddab7eeabcbae81cb\"\n",
+        "version = 4\n\n[[package]]\nname = \"jackin-console\"\nversion = \"0.1.0\"\n\n[[package]]\nname = \"termrock\"\nversion = \"0.1.0\"\nsource = \"git+https://github.com/tailrocks/termrock?rev=74244972a1183db85111332ddab7eeabcbae81cb#74244972a1183db85111332ddab7eeabcbae81cb\"\n",
     )?;
     expect(&workspace, &[("R5", "Cargo.lock", "jackin-console")])
 }

@@ -9,8 +9,8 @@ use jackin_testkit::TestResult;
 use jackin_usage::accounts::{
     self, AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, UsageProvider,
 };
-use junie_tui::core::id::WidgetId;
 use serde_json::Value;
+use termrock::core::id::WidgetId;
 use uuid::Uuid;
 
 use super::support::Lab;

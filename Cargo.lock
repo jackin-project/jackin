@@ -2750,11 +2750,11 @@ dependencies = [
 [[package]]
 name = "jackin-console"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=e960b7066407a9ececae2d9e927bab44369ea52e#e960b7066407a9ececae2d9e927bab44369ea52e"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
 dependencies = [
  "clap",
- "junie-tui",
  "ratatui",
+ "termrock",
  "unicode-segmentation",
 ]
 
@@ -2869,12 +2869,12 @@ dependencies = [
  "jackin-session",
  "jackin-tui",
  "jackin-usage",
- "junie-tui",
  "portable-pty",
  "ratatui",
  "rusqlite",
  "serde_json",
  "tempfile",
+ "termrock",
  "tokio",
  "tokio-util",
  "tuiscotti",
@@ -2896,9 +2896,9 @@ dependencies = [
  "jackin-session",
  "jackin-testkit",
  "jackin-usage",
- "junie-tui",
  "ratatui",
  "serde_json",
+ "termrock",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
@@ -3322,19 +3322,6 @@ dependencies = [
  "signature 2.2.0",
  "simple_asn1",
  "zeroize",
-]
-
-[[package]]
-name = "junie-tui"
-version = "0.1.0"
-source = "git+https://github.com/tailrocks/terminal-components-baseline?rev=e960b7066407a9ececae2d9e927bab44369ea52e#e960b7066407a9ececae2d9e927bab44369ea52e"
-dependencies = [
- "clap",
- "libc",
- "ratatui",
- "termpane",
- "unicode-segmentation",
- "unicode-width 0.2.3",
 ]
 
 [[package]]
@@ -6647,12 +6634,345 @@ dependencies = [
 [[package]]
 name = "termpane"
 version = "0.1.1"
-source = "git+https://github.com/tailrocks/termpane?rev=46cc0977d8ee95d5284f75080d507ca2d116c007#46cc0977d8ee95d5284f75080d507ca2d116c007"
+source = "git+https://github.com/tailrocks/termpane?rev=d05d114bdce504d184b00836376a350851806f61#d05d114bdce504d184b00836376a350851806f61"
 dependencies = [
  "compact_str 0.10.0",
  "smallvec",
  "unicode-width 0.2.3",
  "vte",
+]
+
+[[package]]
+name = "termrock"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "termrock-catalog",
+ "termrock-cli",
+ "termrock-collections",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-dialogs",
+ "termrock-editors",
+ "termrock-feedback",
+ "termrock-fields",
+ "termrock-grid",
+ "termrock-layout",
+ "termrock-metrics",
+ "termrock-navigation",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-session",
+ "termrock-shell",
+ "termrock-terminal",
+ "termrock-text",
+ "termrock-theme",
+ "termrock-viewport",
+]
+
+[[package]]
+name = "termrock-catalog"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-collections",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-fields",
+ "termrock-grid",
+ "termrock-navigation",
+]
+
+[[package]]
+name = "termrock-cli"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "clap",
+ "termrock-core",
+ "termrock-theme",
+]
+
+[[package]]
+name = "termrock-collections"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-feedback",
+ "termrock-fields",
+ "termrock-layout",
+ "termrock-metrics",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+ "termrock-viewport",
+]
+
+[[package]]
+name = "termrock-controls"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-core",
+ "termrock-metrics",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "termrock-core"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "clap",
+ "ratatui",
+ "serde_json",
+ "termrock-metrics",
+ "termrock-text",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "termrock-dialogs"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-collections",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-editors",
+ "termrock-fields",
+ "termrock-layout",
+ "termrock-navigation",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+ "termrock-viewport",
+]
+
+[[package]]
+name = "termrock-editors"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-fields",
+ "termrock-metrics",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+ "termrock-viewport",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "termrock-feedback"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-metrics",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+]
+
+[[package]]
+name = "termrock-fields"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-metrics",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "termrock-grid"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-feedback",
+ "termrock-metrics",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+]
+
+[[package]]
+name = "termrock-layout"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+ "termrock-viewport",
+]
+
+[[package]]
+name = "termrock-metrics"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "termrock-navigation"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-collections",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-metrics",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "termrock-overlays"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-feedback",
+ "termrock-metrics",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+]
+
+[[package]]
+name = "termrock-runtime"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-core",
+ "termrock-metrics",
+ "termrock-text",
+ "termrock-theme",
+]
+
+[[package]]
+name = "termrock-session"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "libc",
+ "ratatui",
+ "termrock-core",
+ "termrock-metrics",
+ "termrock-text",
+]
+
+[[package]]
+name = "termrock-shell"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-dialogs",
+ "termrock-feedback",
+ "termrock-metrics",
+ "termrock-navigation",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-session",
+ "termrock-text",
+ "termrock-theme",
+]
+
+[[package]]
+name = "termrock-terminal"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termpane",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-metrics",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+ "termrock-viewport",
+ "unicode-width 0.2.3",
+]
+
+[[package]]
+name = "termrock-text"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-metrics",
+ "unicode-segmentation",
+ "unicode-width 0.2.3",
+]
+
+[[package]]
+name = "termrock-theme"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-core",
+]
+
+[[package]]
+name = "termrock-viewport"
+version = "0.1.0"
+source = "git+https://github.com/tailrocks/termrock?rev=4688a00467456eb15fb9dfa3bf1294fb42472ed4#4688a00467456eb15fb9dfa3bf1294fb42472ed4"
+dependencies = [
+ "ratatui",
+ "termrock-controls",
+ "termrock-core",
+ "termrock-metrics",
+ "termrock-overlays",
+ "termrock-runtime",
+ "termrock-text",
+ "termrock-theme",
+ "unicode-segmentation",
 ]
 
 [[package]]

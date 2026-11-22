@@ -121,7 +121,7 @@ jackin-image       Dockerfile validation, cache key, ImageEngine, ensure_image
 jackin-openshell   Gateway trait, GrpcGateway, TerminalSession, policy model, discovery
 jackin-session     plan_launch, Session, RoleCatalog, doctor, host implementations
 jackin-usage       (crates/usage, from U13) facade: HostUsage, UsageReport
-jackin-tui         Console over junie-tui; panes
+jackin-tui         Console over termrock; panes
 jackin-testkit     fakes, fixtures, contract runs (dev-dependency only)
 jackin             binary and lib: clap, wiring, terminal hand-off
 jackin-xtask       gates and e2e
@@ -136,7 +136,7 @@ The layer step of `xtask ci` reads one table, `LAYERS`, and fails when a workspa
 | `jackin-openshell` | core | testkit | the gateway crates |
 | `jackin-session` | core, image, openshell | testkit | no gateway crates |
 | `jackin-usage` and `jackin-usage-*` (from U13) | core, `jackin-usage-*` | testkit | `reqwest`; no `jackin-protocol`, `jackin-telemetry`, or Docker crates |
-| `jackin-tui` | core, image, openshell, session, `junie-tui`; `jackin-usage` from U13; the terminal pane block of `junie-tui` from U14 | testkit | no gateway crates |
+| `jackin-tui` | core, image, openshell, session, `termrock`; `jackin-usage` from U13; the terminal pane block of `termrock` from U14 | testkit | no gateway crates |
 | `jackin-testkit` | core, image, openshell, session, tui; `jackin-usage` from U13 | none | an HTTP server crate for `UsageServer` (from U13); no gateway crates |
 | `jackin` | core, image, openshell, session, tui; `jackin-usage` from U13 | testkit | no gateway crates |
 | `jackin-xtask` | none; optional (feature `e2e`): core, openshell, session, `jackin-usage` from U13 | testkit | `portable-pty` and `schemars`, optional (feature `e2e`) |
@@ -2636,9 +2636,9 @@ Location: `crates/usage/jackin-usage/tests/*.rs`. Boundaries faked: the network 
 
 ## 6. jackin-tui
 
-Role: the console (D27, D28). It is the glue between jackin data and the baseline application `jackin-console`. The baseline owns every screen, pixel, key binding, word, the UI model `World`, the Fixed state and the terminal emulation. Jackin owns four things: the projection of config, fleet, usage and gateway health into a baseline `Snapshot`; the persistence diff from a baseline payload into `ConfigEdit`s; `JackinBackend`, the baseline `Backend` implemented with `jackin-session`; and the tokio pane tasks that carry OpenShell terminal bytes to and from the baseline panes. `jackin-tui` draws nothing and writes no text for a screen. It adds no application loop: it runs the baseline `App` with `junie_tui::shell::run`.
+Role: the console (D27, D28). It is the glue between jackin data and the baseline application `jackin-console`. The baseline owns every screen, pixel, key binding, word, the UI model `World`, the Fixed state and the terminal emulation. Jackin owns four things: the projection of config, fleet, usage and gateway health into a baseline `Snapshot`; the persistence diff from a baseline payload into `ConfigEdit`s; `JackinBackend`, the baseline `Backend` implemented with `jackin-session`; and the tokio pane tasks that carry OpenShell terminal bytes to and from the baseline panes. `jackin-tui` draws nothing and writes no text for a screen. It adds no application loop: it runs the baseline `App` with `termrock::shell::run`.
 
-Dependencies on the baseline are git dependencies on `https://github.com/tailrocks/terminal-components-baseline` at one pinned `rev` on the branch `feature/openshell-native`, with `default-features = false` (`junie-tui` with `features = ["terminal"]`). The demo feature of the baseline is never enabled. The `baseline` and `demo-gate` steps of `xtask` enforce both (section 9).
+Dependencies on the baseline are git dependencies on `https://github.com/tailrocks/termrock` at one pinned `rev` on the branch `main`, with `default-features = false` (`termrock` with `features = ["terminal"]`). The demo feature of the baseline is never enabled. The `baseline` and `demo-gate` steps of `xtask` enforce both (section 9).
 
 ### Module map
 
@@ -2704,7 +2704,7 @@ pub fn run_console(deps: ConsoleDeps) -> Result<ConsoleExit, ConsoleError>;
 pub enum ConsoleError { Terminal(std::io::Error), Config(ConfigError) }
 ```
 
-`build_console` loads the config, waits for the first fleet listing (up to `limits.connect_deadline`) so that the baseline arbiter knows the running count before `App::start`, builds the `World` through the baseline `WorldParts` with `Surfaces::openshell` and the projection, and calls the baseline `assemble` with entry page `Manager`, clipboard `Host(HostClipboard)` and motion from `JACKIN_NO_MOTION` in `EnvSnapshot`. It returns the baseline `App` with an in-flight counter of effect tasks. `run_console` runs the app with `junie_tui::shell::run` under `spawn_blocking`, so the current-thread runtime keeps polling tasks. `drain` delivers queued external messages until no effect task is in flight; pane tasks are long-lived and are not counted, so the testkit rig waits for pane output with `wait_for_text` and a barrier byte. The testkit rig and the tests use it. A gateway that failed to connect stays in the set as `Failed`, so the console still opens and the doctor panel shows the error.
+`build_console` loads the config, waits for the first fleet listing (up to `limits.connect_deadline`) so that the baseline arbiter knows the running count before `App::start`, builds the `World` through the baseline `WorldParts` with `Surfaces::openshell` and the projection, and calls the baseline `assemble` with entry page `Manager`, clipboard `Host(HostClipboard)` and motion from `JACKIN_NO_MOTION` in `EnvSnapshot`. It returns the baseline `App` with an in-flight counter of effect tasks. `run_console` runs the app with `termrock::shell::run` under `spawn_blocking`, so the current-thread runtime keeps polling tasks. `drain` delivers queued external messages until no effect task is in flight; pane tasks are long-lived and are not counted, so the testkit rig waits for pane output with `wait_for_text` and a barrier byte. The testkit rig and the tests use it. A gateway that failed to connect stays in the set as `Failed`, so the console still opens and the doctor panel shows the error.
 
 ### Ownership and concurrency
 
@@ -2712,7 +2712,7 @@ pub enum ConsoleError { Terminal(std::io::Error), Config(ConfigError) }
 - One writer of `config.toml`: `ConfigStore::edit`. `Backend::perform` only spawns a task; the task runs the edit from the effect payload and its `base` (a three-way diff: only the fields the editor changed are written) and sends the reply, which carries the new `Snapshot` on success, through `ExternalSender`. After a failure the reply carries the error text and a `Reloaded(Snapshot)` of the last saved config follows. No screen writes `World` after an effect.
 - Each pane has one tokio task that owns the session (`AttachedTerminal` for the Codex pane, `TerminalSession` for a shell pane). The render thread talks to it through a `PaneLink`: a bounded command queue (input, reply, redraw, detach), a latest-wins size, and a bounded byte inbox the render thread drains. The task stops reading events at the inbox cap, so the bounded transport channel applies backpressure. One wake message per pane is outstanding at most.
 - Dropping the link ends the task: a main-process pane detaches, a shell pane closes.
-- Pane bytes: `TerminalEvent::Output` goes to the inbox; the render thread feeds `junie_tui::terminal::TerminalState`, which wraps `termpane`; the replies that `termpane` produces go back as `PaneCommand::Reply` and are written with `AttachedTerminal::reply`, which sends them only while the supervisor reads `Running`; the baseline drops replies produced while the attach replay window is open. The title is sanitised and shown in the info dialog. OSC 52 writes from the program are accepted only from the focused Codex pane within a short window after operator input, up to 100,000 decoded bytes, with a status each time; reads are refused and shell panes are always refused. A bell or notification from an unfocused pane marks the pane as needing input.
+- Pane bytes: `TerminalEvent::Output` goes to the inbox; the render thread feeds `termrock::terminal::TerminalState`, which wraps `termpane`; the replies that `termpane` produces go back as `PaneCommand::Reply` and are written with `AttachedTerminal::reply`, which sends them only while the supervisor reads `Running`; the baseline drops replies produced while the attach replay window is open. The title is sanitised and shown in the info dialog. OSC 52 writes from the program are accepted only from the focused Codex pane within a short window after operator input, up to 100,000 decoded bytes, with a status each time; reads are refused and shell panes are always refused. A bell or notification from an unfocused pane marks the pane as needing input.
 - Chords: the baseline capsule screen owns detach, close, focus and the prefix; `ForwardPolicy` (baseline) never sends `0x04` or `0x11` to a pane, and `Ctrl+B Ctrl+B` sends `0x02` to a Terminal pane. A lone `0x10` is sent as typed (D09, P0.6 fact 3). The wheel on the alternate screen sends arrow keys; no mouse bytes reach the program.
 - Each Codex attach uses `RepaintPolicy::NudgeAfter(600 ms)` through `Session::attach` and builds a fresh `TerminalState` (D28). The pane starts at its first valid grid size (at least 20 columns by 4 rows; the last inner column is the scroll track) and sends a new size only when it changes. A pane link has seven states (pending, attaching, owner, viewing, detached, exited, failed), each with a note row and one recovery.
 - On `Exited` or `Ended` for a Codex pane the console refreshes the fleet. The exit code shown comes from `SandboxSummary.phase`, not from the SSH status (P0.6 fact 6). No retry.
@@ -3434,7 +3434,7 @@ What waits, and why. U0 creates only items whose dependencies exist today.
 | Item | Arrives with | Reason |
 |---|---|---|
 | `jackin-usage` and its layer rows; testkit `UsageServer`, `World.usage`; tui `ConsoleDeps.usage`, `Model.usage`, `Msg::UsageRefreshed`, `pages/usage.rs`; binary `usage` command and `Deps.usage_endpoints`; xtask J17 usage parse | U13 (P6.3), tui parts in U14 | the usage crates are outside the workspace members until P6.3 (D25, PLAN P1.1) |
-| tui `Pane.screen` (`junie_tui::terminal::TerminalState`), the pane pages, the terminal pane block, `console-fixture` | U14, after P9.1 and P9.2 | the baseline has only `runtime::Application` until P9.1 |
+| tui `Pane.screen` (`termrock::terminal::TerminalState`), the pane pages, the terminal pane block, `console-fixture` | U14, after P9.1 and P9.2 | the baseline has only `runtime::Application` until P9.1 |
 | xtask `e2e` items | U15 | they need `jackin-openshell` and the usage facade |
 
 U5 comes before U6 because PLAN P4.2 depends on P4.1. The session units (U8 to U10) are built and proven against the fake. U7 follows U6 because `ensure_image` is tested over `FakeEngine`, and it also depends on P3.3, P0.3, P7.1, and P7.4. U4 and U5 are independent of each other and may run in parallel worktrees. U13 follows U12 (PLAN P6.3 depends on P6.1). U14 starts only after P9.1 and P9.2 finish in the baseline repository.
@@ -3445,7 +3445,7 @@ U5 comes before U6 because PLAN P4.2 depends on P4.1. The session units (U8 to U
 
 - U0 holds only types, traits, error enums, and data constants. Parsers, `Display`, `FromStr`, and `Deserialize` impls arrive with their units, because a stub that always fails would be wrong.
 - Deferred to U13 (P6.3): `ConsoleDeps.usage`, `Deps.usage_endpoints`, `CommandError::Usage`, `World.usage`, `UsageServer`.
-- Deferred to U14 (P9.3): `Pane.screen`, the pane model, the `junie-tui` dependency, and `impl Application for Console`.
+- Deferred to U14 (P9.3): `Pane.screen`, the pane model, the `termrock` dependency, and `impl Application for Console`.
 - Deferred to U12 (P6.1): `Cli`, `Command`, the argument structs, and `run`, because clap derive needs `FromStr` on the ids.
 - Deferred to U2 (P3.1): `sandbox_layout` and `Compatibility::pinned`.
 - Deferred to U1 (P2.3): the xtask `LAYERS` table, `run_ci`, and `RepoFile`. The `e2e` feature waits for U15.

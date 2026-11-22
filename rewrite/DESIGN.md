@@ -252,7 +252,7 @@ crates/
   jackin-image/     library. Dockerfile validation, construct and derived layers, cache key, buildx runner, image delivery.
   jackin-openshell/ library. Gateway trait, SDK adapter, CLI argument builders for connect, exec, upload, and download.
   jackin-session/   library. launch plan and execution, attach, shell, export, list, stop, start, purge, host process runner.
-  jackin-tui/       library. console wiring of the terminal-components-baseline blocks to jackin data (D27).
+  jackin-tui/       library. console wiring of the Termrock blocks to jackin data (D27).
   jackin-testkit/   library. in-process fake gateway and fixtures. Dev-dependency only.
   xtask/            binary. repository gates.
 ```
@@ -414,19 +414,19 @@ OpenShell 0.1.6 cannot keep a working engine credential outside the sandbox (`bl
 
 Evidence: `evidence/P0.5-docker.md`, `blockers/P0.5-docker-credentials.md`.
 
-### D27. The console looks identical to terminal-components-baseline
+### D27. Jackin uses the Termrock console
 
-The jackin console is visually identical to the `jackin-preview` app in `tailrocks/terminal-components-baseline`, called "the baseline" here. The usage-account parity phase uses this baseline. The following phase migrates jackin to the latest [Termrock](https://github.com/tailrocks/termrock) revision and carries forward these console journeys. See [the migration sequence](PLAN.md#migrate-jackin-to-termrock-after-usage-account-parity).
+Jackin uses the same screens and controls as Termrock’s Jackin preview. Termrock owns the terminal interface. Jackin owns the real account, agent, Docker and OpenShell services.
 
-- Jackin Console and Jackin Capsule always come from `https://github.com/tailrocks/terminal-components-baseline`, branch `feature/openshell-native`: git dependencies with that URL and a pinned `rev` on that branch, never a path dependency and never a copy. The baseline is the visual prototype of jackin: it has no real agents, accounts, Docker, or OpenShell isolation. Jackin implements those with OpenShell and takes every screen, look, and flow from the baseline. The two crates are:
-  - `junie-tui`: the reusable components, widgets, blocks, containers, shells, and utilities.
+- Pin both public crates to the same Git revision on the upstream `main` branch. [Termrock](https://github.com/tailrocks/termrock)
+  - `termrock` re-exports the reusable component crates. The terminal feature provides the pane implementation.
   - `jackin-console` (`apps/jackin`): the one jackin application. It owns every screen, every pixel, every key binding, the page router, the UI model `World`, the wording tables, and the fixed state. It talks to its data and actions only through its `Backend` interface and its external message input.
 - Jackin names them in its root `Cargo.toml` with `default-features = false`. The `xtask` step `baseline` fails on a path dependency, another URL, a branch or tag reference, a `[patch]`, a short rev, or two different revs.
 - The same `jackin-console` application runs in two ways:
   1. The baseline demo: `jackin-preview` is `jackin-console` with the demo backend and the demo fixtures, which live in the baseline. It looks and works exactly as the approved baseline, and its tuiscotti baselines prove it. The demo data, the demo backend, and the demo-only code sit behind a baseline Cargo feature that is off by default. Jackin never enables it, so no demo data ships in jackin. A jackin gate fails if that feature, or any demo or fixture symbol, reaches the jackin build.
   2. The jackin product: `jackin-tui` is `jackin-console` with `JackinBackend`, which implements the `Backend` interface with `jackin-session`, `jackin-core`, and the usage crates. `jackin-tui` draws nothing, defines no screen, and writes no user-visible text for a screen. It only projects jackin data into `World`, persists edits, performs effects, and bridges async events.
-- When jackin needs a screen, a control, a word, or a behavior that the demo lacks, the change goes into the baseline: the generic part into `junie-tui`, the jackin part into `jackin-console`, with the demo default unchanged. The baseline is refactored as needed so the one application serves both the demo and the product.
-- The baseline repository is `/Users/donbeave/Projects/jackin-project/terminal-components-baseline`. Its own `AGENTS.md` applies to every change in it. Read it before each baseline task.
+- When jackin needs a screen, a control, a word, or a behavior that the demo lacks, the change goes into the baseline: the generic part into its owning Termrock crate, the jackin part into `jackin-console`, with the demo default unchanged. The baseline is refactored as needed so the one application serves both the demo and the product.
+- The baseline repository is [Termrock](https://github.com/tailrocks/termrock). Its own `AGENTS.md` applies to every change in it. Read it before each baseline task.
 - On 2026-11-02 the `jackin-preview` screens exist only in the baseline binary. Move each screen pattern into a reusable block of the baseline library. Make `jackin-preview` use those blocks. Make jackin use the same blocks with real data.
 - If the baseline lacks what jackin needs, extend the baseline. Do not copy baseline code into jackin. The known extensions are:
   - the blocks for the jackin screens, behind a data interface

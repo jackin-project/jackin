@@ -736,6 +736,7 @@ The operator goal of 2026-11-08 extends D29 to twenty-two tuples and orders live
 
 ## Migrate jackin to Termrock after usage-account parity
 
-- [ ] Finish and verify native usage-account onboarding, management and tracking on the approved console baseline. Capture the keyboard journeys and screen fixtures for the migration.
-- [ ] At migration start, resolve the latest upstream Termrock revision, record the full commit SHA and pin the workspace dependencies and lockfile to it. Use the public `termrock` facade and upstream `jackin-console` host interface with demo features disabled. [Termrock](https://github.com/tailrocks/termrock)
-- [ ] Port jackin’s console integration and any usage-account components missing upstream. Update D27, the engineering instructions and the dependency and screen gates together. Verify the existing console journeys, Add Account, Sign In Again, Priority, All Usage and reset confirmation against the recorded fixtures. Run G-FAST, G-FULL and G-E2E on the migrated checkout.
+- [x] Capture the native onboarding, account management and usage journeys on the original console. Exercise the combined twelve-account fixture and review the eleven connected accounts together in both interfaces. The live Google Code Assist grant is tracked in the [provider verification report](../docs/usage/verification.md#live-verification-and-platform-limits).
+- [x] Pin the split-crate Termrock main revision in both workspace dependencies and the lockfile. [Merged revision 4688a00467456eb15fb9dfa3bf1294fb42472ed4](https://github.com/tailrocks/termrock/pull/596)
+- [x] Verify the public facade, console host, production feature boundary and recorded keyboard journeys on the pinned revision. G-FULL passed all 15 steps, including the G-FAST checks and 2,611 executed tests. The release product check passed and the remote ancestry check returned `identical`.
+- [ ] Run G-E2E with a reachable OpenShell gateway and a dedicated ChatGPT execution login. On November 22 the gateway refused the connection and the isolated execution login directory was empty.

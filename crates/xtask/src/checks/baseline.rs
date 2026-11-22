@@ -12,9 +12,9 @@ use crate::ci::CiStep;
 use crate::repo::{Dependency, DependencyKind, DependencySource, GitReference, Member, Repo};
 use crate::violation::{Violation, sorted};
 
-pub const BASELINE_URL: &str = "https://github.com/tailrocks/terminal-components-baseline";
+pub const BASELINE_URL: &str = "https://github.com/tailrocks/termrock";
 
-pub const BASELINE_BRANCH: &str = "feature/jackin-usage-accounts";
+pub const BASELINE_BRANCH: &str = "main";
 
 const TERMPANE_URL: &str = "https://github.com/tailrocks/termpane";
 
@@ -27,7 +27,7 @@ pub const ALLOWED_GIT: [&str; 4] = [
     TUISCOTTI_URL,
 ];
 
-const JUNIE_TUI: &str = "junie-tui";
+const TERMROCK: &str = "termrock";
 const JACKIN_CONSOLE: &str = "jackin-console";
 const DEMO_EXEMPT_MEMBER: &str = "jackin-testkit";
 const ROOT_MANIFEST: &str = "Cargo.toml";
@@ -55,7 +55,7 @@ impl Check for BaselineCheck {
 }
 
 fn is_baseline_crate(name: &str) -> bool {
-    name == JUNIE_TUI || name == JACKIN_CONSOLE
+    name == TERMROCK || name == JACKIN_CONSOLE || name.starts_with("termrock-")
 }
 
 fn edges(repo: &Repo) -> impl Iterator<Item = (&Member, &Dependency)> {
@@ -162,6 +162,7 @@ fn edge_problems(member: &Member, dependency: &Dependency) -> Vec<String> {
     for feature in dependency.features() {
         let allowed = match name {
             JACKIN_CONSOLE => feature != "demo" || exempt,
+            TERMROCK => feature == "terminal" || (exempt && feature == "cli"),
             _ => feature == "terminal",
         };
         if !allowed {
@@ -291,7 +292,7 @@ fn rev_disagreement(revs: &[String]) -> Option<Violation> {
             Path::new(ROOT_MANIFEST),
             "R2",
             format!(
-                "{JUNIE_TUI} and {JACKIN_CONSOLE} are pinned to different revs: {}",
+                "Termrock packages are pinned to different revs: {}",
                 revs.join(", ")
             ),
         )
@@ -428,41 +429,45 @@ fn lock_violations(repo: &Repo, revs: &[String]) -> Vec<Violation> {
             )];
         }
     };
-    let packages: Vec<&Table> = table
+    let packages = table
         .get("package")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(Value::as_table)
+        .filter_map(Value::as_table);
+    let mut missing: BTreeSet<&str> = edges(repo)
+        .map(|(_, dependency)| dependency.name())
         .collect();
     let mut violations = Vec::new();
-    for name in [JUNIE_TUI, JACKIN_CONSOLE] {
-        let entries: Vec<&&Table> = packages
-            .iter()
-            .filter(|package| package.get("name").and_then(Value::as_str) == Some(name))
-            .collect();
-        if entries.is_empty() && edges(repo).any(|(_, dependency)| dependency.name() == name) {
+    for package in packages {
+        let Some(name) = package
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|name| is_baseline_crate(name))
+        else {
+            continue;
+        };
+        missing.remove(name);
+        let source = package.get("source").and_then(Value::as_str);
+        if !source.is_some_and(|source| lock_source_matches(source, revs)) {
             violations.push(rule(
                 CiStep::Baseline,
                 lock,
                 "R5",
-                format!("{LOCK} has no entry for {name}; run cargo update -p {name}"),
+                format!(
+                    "{LOCK} locks {name} from {}, not from git+{BASELINE_URL}?rev=<rev>#<rev> with the manifest rev",
+                    source.unwrap_or("a path")
+                ),
             ));
         }
-        for entry in entries {
-            let source = entry.get("source").and_then(Value::as_str);
-            if !source.is_some_and(|source| lock_source_matches(source, revs)) {
-                violations.push(rule(
-                    CiStep::Baseline,
-                    lock,
-                    "R5",
-                    format!(
-                        "{LOCK} locks {name} from {}, not from git+{BASELINE_URL}?rev=<rev>#<rev> with the manifest rev",
-                        source.unwrap_or("a path")
-                    ),
-                ));
-            }
-        }
+    }
+    for name in missing {
+        violations.push(rule(
+            CiStep::Baseline,
+            lock,
+            "R5",
+            format!("{LOCK} has no entry for {name}; run cargo update -p {name}"),
+        ));
     }
     violations
 }

@@ -32,7 +32,7 @@ enum Command {
     Ci(CiArgs),
     #[command(
         name = "baseline-branch",
-        about = "Check that the pinned baseline rev is on feature/jackin-usage-accounts (needs gh and the network)"
+        about = "Check that the pinned Termrock commit is on main (needs gh and the network)"
     )]
     BaselineBranch,
     #[command(

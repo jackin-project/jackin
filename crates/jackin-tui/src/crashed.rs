@@ -83,13 +83,22 @@ pub(crate) fn reply(effect: &Effect) -> Msg {
             result: Err(error),
         },
         Effect::RefreshAccount {
-            account, source, ..
+            ticket,
+            account,
+            source,
+            ..
         } => Msg::AccountRefreshed {
+            ticket: *ticket,
             account: account.clone(),
             source: Box::new(source.clone()),
             result: Err(error),
         },
-        Effect::ValidateAccount { account, source } => Msg::AccountValidated {
+        Effect::ValidateAccount {
+            ticket,
+            account,
+            source,
+        } => Msg::AccountValidated {
+            ticket: *ticket,
             account: account.clone(),
             source: Box::new(source.clone()),
             result: Err(error),
@@ -219,18 +228,21 @@ mod tests {
             detected: DetectedKind::CodexAuthJson,
         };
         let validate = Effect::ValidateAccount {
+            ticket: 23,
             account: "personal".to_owned(),
             source: source.clone(),
         };
         assert_eq!(
             reply(&validate),
             Msg::AccountValidated {
+                ticket: 23,
                 account: "personal".to_owned(),
                 source: Box::new(source.clone()),
                 result: Err(Stopped.to_string()),
             }
         );
         let refresh = Effect::RefreshAccount {
+            ticket: 24,
             account: "personal".to_owned(),
             source: source.clone(),
             stagger_ms: 250,
@@ -238,6 +250,7 @@ mod tests {
         assert_eq!(
             reply(&refresh),
             Msg::AccountRefreshed {
+                ticket: 24,
                 account: "personal".to_owned(),
                 source: Box::new(source),
                 result: Err(Stopped.to_string()),

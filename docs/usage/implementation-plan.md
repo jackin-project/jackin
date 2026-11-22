@@ -40,4 +40,4 @@ Record execution and observed results separately for each gate, each account jou
 
 ## Next phase
 
-After usage-account parity is verified, migrate jackin to the latest Termrock library. Use the completed account journeys as regression coverage and resolve the upstream revision when migration starts. [Migration checklist](../../rewrite/PLAN.md#migrate-jackin-to-termrock-after-usage-account-parity) · [Termrock](https://github.com/tailrocks/termrock)
+Jackin uses the public Termrock facade and its Jackin console application. The migration reuses the recorded account journeys to verify keyboard navigation, account details and reset confirmation. Live provider coverage is tracked separately in the [verification report](verification.md). [Migration checklist](../../rewrite/PLAN.md#migrate-jackin-to-termrock-after-usage-account-parity) · [Termrock](https://github.com/tailrocks/termrock)

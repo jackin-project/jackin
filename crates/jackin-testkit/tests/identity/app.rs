@@ -4,8 +4,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use junie_tui::clock::TestRequest;
 use tempfile::TempDir;
+use termrock::clock::TestRequest;
+use termrock::core::event::ClientPlatform;
 use tui_test::{
     CheckedMouseAction, LaunchEnvMode, LaunchOptions, MouseOptions, OpenOptions, Operation,
     OperationResult, RunOptions, Session, SnapshotCell, SnapshotScope, TerminalSnapshot,
@@ -70,8 +71,8 @@ impl App {
             .with_env("LANG", "C.UTF-8")
             .with_env("LC_ALL", "C.UTF-8")
             .with_env("TZ", "UTC")
-            .with_env("JUNIE_TUI_CLIENT_PLATFORM", "macos")
-            .with_env("JUNIE_TUI_TEST_CLOCK", "1")
+            .with_env(ClientPlatform::OVERRIDE_ENV, "macos")
+            .with_env(TestRequest::ENV, "1")
             .with_env("HOLLA_NO_HISTORY", "1");
         if color == "nocolor" {
             launch = launch.with_env("NO_COLOR", "1");

@@ -101,7 +101,7 @@ unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = [
     "https://github.com/NVIDIA/OpenShell",
-    "https://github.com/tailrocks/terminal-components-baseline",
+    "https://github.com/tailrocks/termrock",
     "https://github.com/tailrocks/tuiscotti",
     "https://github.com/tailrocks/termpane",
 ]

@@ -7,7 +7,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use jackin_console::domain::doctor::{DoctorCheck, DoctorReport, DoctorState};
 use jackin_core::GatewayName;
 use jackin_session::{Check, CheckStatus, DoctorReport as SessionReport};
-use junie_tui::theme::StatusKind;
+use termrock::theme::StatusKind;
 
 struct OneLine<'a>(&'a str);
 

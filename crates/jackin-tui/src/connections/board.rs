@@ -201,7 +201,7 @@ fn metric(
         .and_then(percent)
         .map(|amount| (amount, row.pace_mark.and_then(percent)));
     use jackin_usage::dashboard::Severity;
-    use junie_tui::theme::Tone;
+    use termrock::theme::Tone;
     let severity = match row.severity {
         Severity::Normal => Tone::Normal,
         Severity::Warning => Tone::Warning,

@@ -22,7 +22,7 @@ jackin-image = { workspace = true }
 jackin-openshell = { workspace = true }
 jackin-session = { workspace = true }
 jackin-usage = { workspace = true }
-junie-tui = { workspace = true }
+termrock = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 tokio-util = { workspace = true }

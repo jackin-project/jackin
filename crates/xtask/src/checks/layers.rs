@@ -296,7 +296,7 @@ fn dependency_problem(
     }
     if TERMINAL_ENGINE_CRATES.contains(&name) {
         return Some(format!(
-            "{subject}; only the baseline crates junie-tui and jackin-console may use a terminal engine crate (D27)"
+            "{subject}; access the terminal engine through termrock or jackin-console (D27)"
         ));
     }
     if let Some(family) = gateway_family(name) {
