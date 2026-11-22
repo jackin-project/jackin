@@ -116,6 +116,14 @@ fn window_name(window: &UsageWindow) -> &str {
     }
 }
 
+fn declares_window(declared: &UsageWindow, window: &Value) -> bool {
+    window["kind"].as_str() == Some(window_name(declared))
+        && match declared {
+            UsageWindow::Other(label) => window["label"].as_str() == Some(label.as_str()),
+            _ => true,
+        }
+}
+
 pub(crate) fn judge_a1(row: Option<&UsageRow>, behavior: &UsageBehavior) -> A1Usage {
     let Some(row) = row else {
         return A1Usage::Broken("there is no usage record for the A1 account".to_owned());
@@ -141,23 +149,26 @@ pub(crate) fn judge_a1(row: Option<&UsageRow>, behavior: &UsageBehavior) -> A1Us
                 if let Some(problem) = windows.iter().find_map(judge_window) {
                     return A1Usage::Broken(problem);
                 }
-                let kinds: Vec<&str> = windows
-                    .iter()
-                    .filter_map(|window| window.get("kind").and_then(Value::as_str))
-                    .collect();
                 for required in required {
-                    let name = window_name(required);
-                    if !kinds.contains(&name) {
+                    if !windows
+                        .iter()
+                        .any(|window| declares_window(required, window))
+                    {
+                        let name = window_name(required);
                         return A1Usage::Broken(format!("A1 usage lacks required {name}"));
                     }
                 }
-                if let Some(unexpected) = kinds.iter().find(|kind| {
+                if let Some(window) = windows.iter().find(|window| {
                     !required
                         .iter()
                         .chain(optional)
-                        .any(|declared| window_name(declared) == **kind)
+                        .any(|declared| declares_window(declared, window))
                 }) {
-                    return A1Usage::Broken(format!("A1 usage has undeclared window {unexpected}"));
+                    let kind = window["kind"].as_str().unwrap_or_default();
+                    let label = window["label"].as_str().unwrap_or_default();
+                    return A1Usage::Broken(format!(
+                        "A1 usage has undeclared window {kind} ({label})"
+                    ));
                 }
                 return A1Usage::Good;
             }
@@ -259,11 +270,11 @@ impl Run<'_> {
     async fn usage_once(&mut self) -> Res<Vec<UsageRow>> {
         let main = self.projects.main.clone();
         let output = self
-            .jackin("J17 usage", &["usage", "--json"], &main)
+            .jackin("J17 usage", &["usage", "host", "--json"], &main)
             .await?;
         if !output.ok() {
             return Err(fail(format!(
-                "jackin usage --json exited {}: {}",
+                "jackin usage host --json exited {}: {}",
                 output.exit.describe(),
                 tail_of(&self.redactor, &output.stderr)
             )));
@@ -318,11 +329,22 @@ impl Run<'_> {
         let workspace = self.names.main.clone();
         let mut problems: Vec<String> = Vec::new();
         let a1 = self.names.a1.clone();
+        let role_account = self.names.fxr.clone();
+        let agent = self.credentials.target.tuple().agent.as_str();
+        let workspace_account = self.names.fxw.clone();
         problems.extend(self.load_for_account("J17 provider default", &a1).await?);
         let bound = self
             .jackin(
                 "J17 bind role",
-                &["account", "bind", "zai-role", "--role", "sentinel"],
+                &[
+                    "account",
+                    "bind",
+                    &role_account,
+                    "--role",
+                    "sentinel",
+                    "--agent",
+                    agent,
+                ],
                 &main,
             )
             .await?;
@@ -330,7 +352,7 @@ impl Run<'_> {
             return Err(fail("jackin account bind --role failed"));
         }
         problems.extend(
-            self.load_for_account("J17 role binding", "zai-role")
+            self.load_for_account("J17 role binding", &role_account)
                 .await?,
         );
         let bound = self
@@ -339,7 +361,7 @@ impl Run<'_> {
                 &[
                     "account",
                     "bind",
-                    "zai-workspace",
+                    &workspace_account,
                     "--workspace",
                     &workspace,
                 ],
@@ -350,7 +372,7 @@ impl Run<'_> {
             return Err(fail("jackin account bind --workspace failed"));
         }
         problems.extend(
-            self.load_for_account("J17 workspace binding", "zai-workspace")
+            self.load_for_account("J17 workspace binding", &workspace_account)
                 .await?,
         );
         problems.extend(self.usage_problems().await?);

@@ -1076,7 +1076,7 @@ async fn j17_enforces_zai_plan_usage_and_account_precedence() {
                 "{}\n",
                 json!({"schema": 1, "generated_at": 0, "accounts": accounts})
             );
-            scenario.host_reply_rule("usage --json", None, 0, &output, "");
+            scenario.host_reply_rule("usage host --json", None, 0, &output, "");
             let ran = scenario.run_with_env(&[("ZAI_API_KEY", ZAI)]).await;
             let case = format!("{id} {wrong} wrong provider");
             ran.expect(&case, &[("J17", "FAIL")]);

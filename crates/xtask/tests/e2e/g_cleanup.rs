@@ -93,7 +93,7 @@ async fn cleanup_also_runs_after_sigint_and_sigterm() {
     for (name, number) in [("SIGINT", 2), ("SIGTERM", 15)] {
         let scenario = Scenario::new().await;
         scenario.knobs().self_signals = vec![
-            ("usage --json".to_owned(), number),
+            ("usage host --json".to_owned(), number),
             ("account rm".to_owned(), number),
         ];
         let ran = scenario.run().await;
@@ -115,7 +115,7 @@ async fn cleanup_also_runs_after_sigint_and_sigterm() {
 #[tokio::test]
 async fn a_cleanup_failure_is_a_clean_fail_line_and_does_not_stop_the_rest() {
     let scenario = Scenario::new().await;
-    scenario.knobs().fail_delete_after = Some(("usage --json".to_owned(), 2));
+    scenario.knobs().fail_delete_after = Some(("usage host --json".to_owned(), 2));
     scenario.knobs().stuck_provider = Some("e2e-abcd-fxr".to_owned());
     let ran = scenario.run().await;
     ran.expect("every step passes, cleanup does not", &[("CLEAN", "FAIL")]);

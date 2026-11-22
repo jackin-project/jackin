@@ -38,16 +38,17 @@ async fn j17_selection_faults() {
         "J17 provider default: the agents label",
         |scenario| {
             scenario.knobs().account_override =
-                Some(("e2e-abcd-a1".to_owned(), "zai-role".to_owned()));
+                Some(("e2e-abcd-a1".to_owned(), "e2e-abcd-fxr".to_owned()));
         },
     )
     .await;
     fault(
-        "the role binding gives the provider default",
+        "the role binding gives the workspace account",
         "J17",
         "J17 role binding: the agents label",
         |scenario| {
-            scenario.knobs().account_override = Some(("zai-role".to_owned(), "zai".to_owned()));
+            scenario.knobs().account_override =
+                Some(("e2e-abcd-fxr".to_owned(), "e2e-abcd-fxw".to_owned()));
         },
     )
     .await;
@@ -57,7 +58,7 @@ async fn j17_selection_faults() {
         "the sandbox providers are",
         |scenario| {
             scenario.knobs().provider_account_override =
-                Some(("zai-workspace".to_owned(), "zai-role".to_owned()));
+                Some(("e2e-abcd-fxw".to_owned(), "e2e-abcd-fxr".to_owned()));
         },
     )
     .await;
@@ -76,7 +77,7 @@ async fn j17_selection_faults() {
         "J17 role binding: the agents label",
         |scenario| {
             scenario.knobs().account_override =
-                Some(("zai-role".to_owned(), "e2e-abcd-a1".to_owned()));
+                Some(("e2e-abcd-fxr".to_owned(), "e2e-abcd-a1".to_owned()));
         },
     )
     .await;
@@ -186,7 +187,7 @@ async fn j17_usage_content_faults() {
     )
     .await;
     fault(
-        "an other window is not declared for T01",
+        "an unrelated other amount is not declared for T01",
         "J17",
         "undeclared window",
         |scenario| {
@@ -194,7 +195,7 @@ async fn j17_usage_content_faults() {
             value["windows"]
                 .as_array_mut()
                 .expect("windows")
-                .push(json!({"kind": "other", "label": "o", "used_percent": 3.0, "resets_at": 1}));
+                .push(json!({"kind": "other", "label": "unrelated", "remaining": {"kind": "amount", "value": "3", "unit": "resets"}}));
             usage(vec![script(value, expired.clone())])(scenario);
         },
     )
@@ -219,19 +220,6 @@ async fn j17_usage_content_faults() {
         )]),
     )
     .await;
-    fault(
-        "five-hour is forbidden",
-        "J17",
-        "undeclared window five_hour",
-        |scenario| {
-            let mut value = windows();
-            value["windows"].as_array_mut().expect("windows").push(
-                json!({"kind": "five_hour", "label": "5h", "used_percent": 1.0, "resets_at": 1}),
-            );
-            usage(vec![script(value, expired.clone())])(scenario);
-        },
-    )
-    .await;
 }
 
 #[tokio::test]
@@ -245,11 +233,25 @@ async fn j17_usage_rejects_unsupported_and_accepts_complete_windows() {
     )
     .await;
     let complete = Scenario::new().await;
-    usage(vec![script(windows(), expired)])(&complete);
+    usage(vec![script(windows(), expired.clone())])(&complete);
     complete
         .run()
         .await
-        .expect("weekly and credits without five-hour pass", &[]);
+        .expect("required windows alone pass", &[]);
+
+    let extended = Scenario::new().await;
+    let mut observed = windows();
+    observed["windows"].as_array_mut().expect("windows").extend([
+        json!({"kind": "other", "label": "rate-limit resets", "remaining": {"kind": "amount", "value": "3", "unit": "resets"}}),
+        json!({"kind": "five_hour", "label": "5-hour", "used_percent": 5.0, "resets_at": 1}),
+        json!({"kind": "monthly", "label": "monthly", "used_percent": 5.0, "resets_at": 1}),
+        json!({"kind": "spend", "label": "Individual limit", "remaining": {"kind": "amount", "value": "10", "unit": "USD"}}),
+    ]);
+    usage(vec![script(observed, expired)])(&extended);
+    extended
+        .run()
+        .await
+        .expect("Codex optional windows pass", &[]);
 }
 
 #[tokio::test]

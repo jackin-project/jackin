@@ -635,7 +635,19 @@ impl ScenarioHost {
                 drop(self.gateway.put_static_provider(name, key).await);
                 done(0, "", "")
             }
-            ["account", "bind", name, "--role", _] => {
+            ["account", "bind", name, ..]
+                if !self
+                    .shared
+                    .state()
+                    .accounts
+                    .iter()
+                    .any(|account| account == name) =>
+            {
+                done(1, "", "scenario: unknown account\n")
+            }
+            ["account", "bind", name, "--role", _, "--agent", agent]
+                if *agent == self.target().tuple().agent.as_str() =>
+            {
                 self.shared.state().role_binding = Some((*name).to_owned());
                 done(0, "", "")
             }
@@ -693,7 +705,7 @@ impl ScenarioHost {
                 done(0, "", "")
             }
             ["purge", name, rest @ ..] => self.purge(name, rest.contains(&"--force")).await,
-            ["usage", "--json"] => self.usage(),
+            ["usage", "host", "--json"] => self.usage(),
             other => done(
                 2,
                 "",
