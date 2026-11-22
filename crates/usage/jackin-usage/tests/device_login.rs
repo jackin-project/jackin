@@ -133,7 +133,11 @@ async fn grok_uses_subject_and_rotates_refresh_token() -> Result<()> {
         p,
         Method::Post,
         "/oauth2/device/code",
-        Route::json(200, CODE).requires_text_body(&format!(
+        Route::json(
+            200,
+            &CODE.replace("/approve", "https://accounts.x.ai/approve"),
+        )
+        .requires_text_body(&format!(
             "client_id={client}&scope=openid+email+offline_access+grok-cli%3Aaccess"
         )),
     );

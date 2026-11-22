@@ -164,14 +164,15 @@ impl DeviceLogin {
             )
         } else {
             let origin = Url::parse(contract.start).map_err(|_| invalid.clone())?;
+            let issuer = origin.host_str().ok_or(invalid.clone())?;
+            let verification_hosts: &[&str] = match provider {
+                DeviceProvider::Grok => &[issuer, "accounts.x.ai"],
+                _ => &[issuer],
+            };
             let verification = ["/verification_uri_complete", "/verification_uri"]
                 .into_iter()
                 .filter_map(|key| origin.join(body.pointer(key)?.as_str()?).ok())
-                .find(|url| {
-                    origin.host_str().is_some_and(|issuer| {
-                        jackin_usage_provider_core::verification_host(url, &[issuer])
-                    })
-                })
+                .find(|url| jackin_usage_provider_core::verification_host(url, verification_hosts))
                 .ok_or(invalid.clone())?;
             (
                 verification,
