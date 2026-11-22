@@ -17,6 +17,7 @@ pub struct AccountDetails {
     pub id: String,
     pub label: String,
     pub provider: String,
+    pub summary: Vec<String>,
     pub details: Vec<String>,
     pub resets: Vec<ResetItem>,
     pub hub: Option<String>,
@@ -38,6 +39,7 @@ pub(crate) fn detail(
     settings: &DashboardSettings,
 ) -> AccountDetails {
     let mut inventory = Vec::new();
+    let mut summary = Vec::new();
     let mut lines = Vec::new();
     if let Some(epoch) = fetched {
         lines.push(format!(
@@ -129,17 +131,25 @@ pub(crate) fn detail(
         }
         if let Some(plan) = data.get("plan").and_then(Value::as_str) {
             lines.push(format!("Plan · {plan}"));
+            summary.push(caption("Plan", plan));
         }
         let measurements =
             crate::dashboard::account_detail_lines(account.provider, &data, settings, now.0);
+        let overview = crate::dashboard::account_summary_lines(&account, &data, settings, now.0);
         if let Some(notice) = data["notice"].as_str() {
             lines.push(notice.to_owned());
+            summary.push(plain(notice));
         } else if measurements.is_empty() {
             lines.push("No limits reported.".into());
+            summary.push("No limits reported.".into());
+        } else if overview.is_empty() {
+            summary.push("No visible usage metrics.".into());
         }
+        summary.extend(overview);
         lines.extend(measurements);
     } else {
         lines.push("Waiting for first usage refresh.".into());
+        summary.push("Waiting for first usage refresh.".into());
     }
     AccountDetails {
         resets: inventory,
@@ -149,6 +159,7 @@ pub(crate) fn detail(
         id: account.id.to_string(),
         label: plain(account.label),
         provider: account.provider.to_string(),
+        summary,
         details: lines.into_iter().map(plain).collect(),
     }
 }
@@ -166,6 +177,7 @@ pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionEr
             let mut entry = detail(row, service.now(), &settings);
             entry.hub = db.hub_link(id)?.map(|mirror| mirror.hub.to_string());
             if let Some(fail) = db.failure(id)? {
+                entry.summary.insert(0, plain(&fail.message));
                 entry.details.insert(
                     0,
                     format!(
@@ -201,14 +213,22 @@ flags! {
 }
 
 pub fn metric_value(row: &DashboardRow, remaining: bool) -> String {
+    metric_caption(row, remaining, &row.compact_value(remaining))
+}
+
+pub fn exact_metric_value(row: &DashboardRow, remaining: bool) -> String {
+    metric_caption(row, remaining, &row.value)
+}
+
+fn metric_caption(row: &DashboardRow, remaining: bool, value: &str) -> String {
     if row.display_fraction(remaining).is_some() {
         format!(
             "{} {}",
-            plain(&row.value),
+            plain(value),
             if remaining { "remaining" } else { "used" }
         )
     } else {
-        plain(&row.value)
+        plain(value)
     }
 }
 
@@ -221,17 +241,33 @@ pub fn reset_caption(reset: &str, exact: bool) -> String {
     }
 }
 
-pub fn metric_details(row: &DashboardRow) -> Vec<String> {
-    let mut details = row.quantity_details();
-    details.extend(row.details.iter().map(plain));
+pub fn metric_details(row: &DashboardRow, remaining: bool) -> Vec<String> {
+    let mut details = row.supplemental_quantities(remaining);
+    details.extend(
+        row.details
+            .iter()
+            .filter(|item| **item != row.value)
+            .map(plain),
+    );
     if let Some(plan) = &row.plan {
         details.push(format!("Plan · {}", plain(plan)));
     }
-    if let Some(reset) = &row.reset {
-        details.push(format!("Reset · {}", plain(reset)));
-    }
     if let Some(pace) = row.pace_mark {
         details.push(format!("Pace · {:.0}%", pace * 100.0));
+    }
+    if row.stale {
+        details.push("Last known usage · stale".into());
+    }
+    details
+}
+
+pub fn metric_inspector(row: &DashboardRow) -> Vec<String> {
+    let mut details = Vec::new();
+    if let Some(limit) = row.inspector_limit() {
+        details.push(caption("Limit", limit));
+    }
+    if let Some(plan) = &row.plan {
+        details.push(caption("Plan", plan));
     }
     if row.stale {
         details.push("Last known usage · stale".into());

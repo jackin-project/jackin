@@ -68,8 +68,8 @@ futures = "0.3.34"
 getrandom = "0.4.3"
 gix-hash = { version = "0.28.1", features = ["sha1", "sha256"] }
 globset = { version = "0.4.21", default-features = false }
-jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/termrock", rev = "1c9d94cbf245205c0318be398a68fcc65eb0dce5", default-features = false }
-termrock = { version = "0.1.0", git = "https://github.com/tailrocks/termrock", rev = "1c9d94cbf245205c0318be398a68fcc65eb0dce5", default-features = false, features = ["terminal"] }
+jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/termrock", rev = "87ea57089132d3b21a373fb52f5317eaaace082c", default-features = false }
+termrock = { version = "0.1.0", git = "https://github.com/tailrocks/termrock", rev = "87ea57089132d3b21a373fb52f5317eaaace082c", default-features = false, features = ["terminal"] }
 noyalib = { version = "0.0.58", default-features = false, features = ["std", "lossless-u64"] }
 openshell-core = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
 openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }

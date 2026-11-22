@@ -501,11 +501,19 @@ impl Measure {
     }
 
     pub(super) fn display(&self, remaining: bool) -> String {
+        self.display_amount(remaining, false)
+    }
+
+    pub(super) fn compact_display(&self, remaining: bool) -> String {
+        self.display_amount(remaining, true)
+    }
+
+    fn display_amount(&self, remaining: bool, compact: bool) -> String {
         if !self.parts.is_empty() {
             return self
                 .parts
                 .iter()
-                .map(|(u, n)| format_value(u, &number(*n)))
+                .map(|(u, n)| display_quantity(u, *n, None, compact))
                 .collect::<Vec<_>>()
                 .join(" · ");
         }
@@ -527,7 +535,7 @@ impl Measure {
         match value {
             Some(n) if self.unit == "percent" && n > 0.0 && n < 1.0 => "<1%".into(),
             Some(n) if self.unit == "percent" && n > 99.0 && n < 100.0 => ">99%".into(),
-            Some(n) => format_value(&self.unit, &exact.clone().unwrap_or_else(|| number(n))),
+            Some(n) => display_quantity(&self.unit, n, exact.as_deref(), compact),
             None => self
                 .detail
                 .first()
@@ -553,6 +561,23 @@ impl Measure {
             details.push(format!("Remaining · {}", self.display(true)));
         }
         details
+    }
+
+    pub(super) fn caption(&self, remaining: bool) -> String {
+        let value = self.compact_display(remaining);
+        if self.bounded() {
+            format!("{value} {}", if remaining { "remaining" } else { "used" })
+        } else {
+            value
+        }
+    }
+
+    pub(super) fn inspector_limit(&self, compact: bool) -> Option<String> {
+        if self.unit == "percent" || !self.bounded() {
+            return None;
+        }
+        self.limit
+            .map(|limit| display_quantity(&self.unit, limit, self.exact_limit.as_deref(), compact))
     }
 
     pub(super) fn clear_exact(&mut self) {
@@ -598,6 +623,45 @@ fn number(n: f64) -> String {
         .trim_end_matches('.')
         .to_owned()
 }
+
+fn display_quantity(unit: &str, amount: f64, exact: Option<&str>, compact: bool) -> String {
+    if compact
+        && matches!(
+            unit,
+            "count"
+                | "credits"
+                | "requests"
+                | "REQUESTS"
+                | "resets"
+                | "searches"
+                | "tokens"
+                | "turns"
+                | "usd"
+                | "USD"
+                | "eur"
+                | "EUR"
+                | "cny"
+                | "CNY"
+        )
+        && amount.abs() >= 10_000.0
+    {
+        let (scale, suffix) = [
+            (1_000_000_000_000.0, "T"),
+            (1_000_000_000.0, "B"),
+            (1_000_000.0, "M"),
+            (1_000.0, "K"),
+        ]
+        .into_iter()
+        .find(|(scale, _)| amount.abs() >= scale * 0.999_995)
+        .unwrap_or((1_000.0, "K"));
+        return format!("{}{suffix} {unit}", number(amount / scale));
+    }
+    match exact {
+        Some(exact) => format_value(unit, exact),
+        None => format_value(unit, &number(amount)),
+    }
+}
+
 fn format_value(unit: &str, n: &str) -> String {
     if unit == "percent" {
         format!(

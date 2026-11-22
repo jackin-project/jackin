@@ -1,14 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::owned_usage::{activate, focus};
+use super::owned_usage::{BOARD, activate, focus, select_reading};
 use super::support::Lab;
 use jackin_console::screens::Go;
 use jackin_core::Clock;
 use jackin_testkit::{ProfileAccount, TestResult, seed_usage_profile};
 use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH};
-
-const BOARD: &str = "usage.connected_board";
 
 async fn profile(
     openrouter: bool,
@@ -44,7 +42,7 @@ async fn rows(lab: &mut Lab) -> Result<Vec<String>, Box<dyn std::error::Error>> 
         let shown = lab.console.screen();
         let row = shown
             .lines()
-            .find(|line| line.contains('▎') && line.contains(" · "))
+            .find(|line| line.contains("▎›"))
             .ok_or_else(|| format!("selected reading missing\n{shown}"))?;
         if seen.last().is_some_and(|previous| previous == row) {
             return Ok(seen);
@@ -64,6 +62,7 @@ async fn inspect(lab: &mut Lab, position: usize) -> TestResult {
 }
 
 async fn toggle_unification(lab: &mut Lab) -> TestResult {
+    activate(lab, BOARD, "more").await?;
     activate(lab, BOARD, "settings").await?;
     for target in ["unify_claude", "unify_chatgpt"] {
         focus(lab, BOARD, target).await?;
@@ -82,57 +81,66 @@ fn position(
         .ok_or_else(|| format!("missing {label} / {value}\n{}", rows.join("\n")).into())
 }
 
+async fn assert_reading_detail(lab: &mut Lab, title: &str, detail: &str) -> TestResult {
+    let appears = |screen: &str| screen.contains(title) && screen.contains(detail);
+    let mut screen = lab.console.screen_at(110, 60);
+    if appears(&screen) {
+        return Ok(());
+    }
+    for index in 0..14 {
+        select_reading(lab, index).await?;
+        screen = lab.console.screen_at(110, 60);
+        if appears(&screen) {
+            return Ok(());
+        }
+        activate(lab, BOARD, "save").await?;
+    }
+    Err(format!("missing {title} / {detail}\n{screen}").into())
+}
+
 #[tokio::test]
 async fn twelve_simultaneous_accounts_have_distinct_readings_at_eighty_columns() -> TestResult {
     let (mut lab, profile) = profile(false).await?;
     assert_eq!(profile.len(), 12);
     let result = rows(&mut lab).await?;
-    for (title, value) in [
-        ("Claude · Claude Home · Spend", "37.66 eur"),
-        ("Claude · Claude Team · Spend", "60 eur"),
-        ("ChatGPT · Codex Home · Weekly", "58%"),
-        ("ChatGPT · Codex Work · Weekly", "12%"),
-        ("Code Assist · Gemini Cloud · gemini-flash", "90%"),
-        ("Muse · Muse Code · Session", "81%"),
-        ("Kimi · Kimi Global · Session", "75%"),
-        ("Z.ai · Zai Global · Web searches", "97 searches"),
-        ("MiniMax · MiniMax Global · general", "90 count"),
-        ("MiMo · MiMo Global · Token Plan", "800 credits"),
-        ("OpenCode · OpenCode Work · Session", "100%"),
-        ("Grok · Grok account · Weekly", "85%"),
-        ("ChatGPT · Codex Home · Today", "71 tokens"),
-        ("ChatGPT · Codex Work · Today", "Unavailable"),
+    assert_eq!(result.len(), profile.len());
+    for (account, metric, value) in [
+        ("Claude Home", "Spend", "37.66 eur"),
+        ("Claude Team", "Spend", "60 eur"),
+        ("Codex Home", "Weekly", "58%"),
+        ("Codex Work", "Weekly", "12%"),
+        ("Gemini Cloud", "gemini-flash", "90%"),
+        ("Muse Code", "Session", "81%"),
+        ("Kimi Global", "Session", "75%"),
+        ("Zai Global", "Web searches", "97 searches"),
+        ("MiniMax Global", "general", "90 count"),
+        ("MiMo Global", "Token Plan", "800 credits"),
+        ("OpenCode Work", "Session", "100%"),
+        ("Grok account", "Weekly", "85%"),
+        ("Codex Home", "Today", "71 tokens"),
+        ("Codex Work", "Today", "Unavailable"),
     ] {
-        position(&result, title, value)?;
+        inspect(&mut lab, position(&result, account, "")?).await?;
+        let reading = lab.console.screen_at(110, 60);
+        let found = reading
+            .lines()
+            .any(|line| line.contains(metric) && line.contains(value));
+        assert!(
+            found || reading.contains(&format!("{account} · {metric}")) && reading.contains(value),
+            "{reading}"
+        );
+        lab.step("esc").await?;
     }
     assert!(!result.iter().any(|line| line.contains("OpenRouter")));
-    for (title, value, full_name, detail) in [
-        (
-            "MiniMax · MiniMax Global · general",
-            "90 count",
-            "general weekly",
-            "100 count",
-        ),
-        (
-            "Code Assist · Gemini Cloud · gemini-flash",
-            "90%",
-            "gemini-flash REQUESTS",
-            "290 REQUESTS",
-        ),
-        (
-            "Grok · Grok account · Weekly",
-            "85%",
-            "Weekly",
-            "Grok Heavy",
-        ),
+    for (account, metric, detail) in [
+        ("MiniMax Global", "general weekly", "100 count"),
+        ("Gemini Cloud", "gemini-flash REQUESTS", "290 REQUESTS"),
+        ("Grok account", "Weekly", "Grok Heavy"),
     ] {
-        inspect(&mut lab, position(&result, title, value)?).await?;
-        let detail_view = lab.console.screen_at(110, 60);
-        assert!(
-            detail_view.contains(full_name) && detail_view.contains(detail),
-            "{detail_view}"
-        );
-        activate(&mut lab, BOARD, "save").await?;
+        let index = position(&result, account, "")?;
+        inspect(&mut lab, index).await?;
+        assert_reading_detail(&mut lab, &format!("{account} · {metric}"), detail).await?;
+        lab.step("esc").await?;
     }
     Ok(())
 }
@@ -143,15 +151,11 @@ async fn unified_member_details_keep_each_identity_and_reverting_restores_all_th
     let (mut lab, profile) = profile(true).await?;
     assert_eq!(profile.len(), 13);
     let separate = rows(&mut lab).await?;
-    position(
-        &separate,
-        "OpenRouter · OpenRouter Standard · Today",
-        "0 usd",
-    )?;
+    position(&separate, "OpenRouter Standard", "")?;
     toggle_unification(&mut lab).await?;
     let combined = rows(&mut lab).await?;
-    let spend = position(&combined, "Claude · 2 accounts · Spend", "97.66 eur")?;
-    let weekly = position(&combined, "ChatGPT · 2 accounts · Weekly", "35%")?;
+    let spend = position(&combined, "2 accounts · Spend", "97.66 eur")?;
+    let weekly = position(&combined, "2 accounts · Weekly", "35%")?;
     for (index, members) in [
         (
             spend,

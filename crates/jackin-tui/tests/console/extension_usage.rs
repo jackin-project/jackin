@@ -8,7 +8,7 @@ use jackin_usage::connected::KeyConnection;
 use jackin_usage::gemini_login;
 use serde_json::{Value, json};
 
-use super::owned_usage::{Expected, inspect};
+use super::owned_usage::{Expected, inspect, journey};
 
 async fn key_snapshot(
     provider: Provider,
@@ -78,16 +78,24 @@ async fn minimax_displays_model_windows_with_the_region() -> TestResult {
 async fn mimo_displays_plan_region_renewal_and_remaining_credits() -> TestResult {
     let snapshot=key_snapshot(Provider::Mimo,"tp-fixture","/v1/platform/token_plan",json!({
         "object":"token_plan","plan_code":"Lite","period":{"start_at":"2026-11-01 00:00:00","end_at":"2026-12-01 00:00:00"},
-        "quota":{"total_credits":1000,"used_credits":200,"remaining_credits":800},"auto_renew":false
+        "quota":{"total_credits":55000000000_i64,"used_credits":4525748922_i64,"remaining_credits":50474251078_i64},"auto_renew":false
     })).await?;
-    inspect(
+    journey(
         UsageProvider::Mimo,
         snapshot,
         Expected {
-            account: &["Singapore", "Automatic renewal · Off", "800 credits"],
-            board: &["800 credits"],
+            account: &[
+                "Singapore",
+                "Automatic renewal · Off",
+                "50474251078 credits",
+            ],
+            board: &["50.47B credits"],
             absent: &["auto_renew"],
         },
+        Some((
+            "Token Plan",
+            &["50474251078 credits", "55000000000 credits"],
+        )),
     )
     .await
 }

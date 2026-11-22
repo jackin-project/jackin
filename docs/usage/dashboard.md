@@ -1,6 +1,6 @@
 # Using Priority and All Usage
 
-Priority lists pinned metrics, limits running low, long windows about to reset with unused quota, accounts needing attention and spent limits. A pinned metric moves to **Used Up** when exhausted and returns to **Pinned** after recovery. A cash or credit balance of zero qualifies as spent. A reset inventory of zero simply means there are no resets available. All Usage keeps the per-account metrics in saved order. Hiding a metric also unpins it and excludes it from alerts.
+Priority lists pinned metrics, limits running low, long windows about to reset with unused quota, accounts needing attention and spent limits. A pinned metric moves to **Used Up** when exhausted and returns to **Pinned** after recovery. A cash or credit balance of zero qualifies as spent. A reset inventory of zero simply means there are no resets available. All Usage shows one row per account in saved order. Each row previews a reading. Press Enter to inspect the selected account’s metrics. Hiding a metric also unpins it and excludes it from alerts.
 
 **Waiting for usage** means at least one account has no first reading. **No reported limits** means the observed accounts had no visible bounded resources. **All clear** means bounded resources were observed and none require attention. Read failures retain the last successful values, together with the account's failure notice.
 

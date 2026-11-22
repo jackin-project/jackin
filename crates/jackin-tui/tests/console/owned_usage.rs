@@ -52,6 +52,18 @@ pub(super) async fn activate(lab: &mut Lab, dialog: &str, action: &str) -> TestR
     lab.step("enter").await
 }
 
+pub(super) const BOARD: &str = "usage.connected_board";
+const ACCOUNT: &str = "accounts.usage_connection";
+
+pub(super) async fn select_reading(lab: &mut Lab, index: usize) -> TestResult {
+    focus(lab, BOARD, "readings").await?;
+    lab.step("home").await?;
+    for _ in 0..index {
+        lab.console.keys("down")?;
+    }
+    activate(lab, BOARD, "save").await
+}
+
 pub(super) async fn inspect(
     provider: UsageProvider,
     snapshot: Value,
@@ -109,7 +121,8 @@ pub(super) async fn journey(
         .ok_or("missing product label")?
         .1;
     assert!(list.contains(&format!("{label} · {product}")), "{list}");
-    activate(&mut lab, "accounts.usage_connection", "save").await?;
+    activate(&mut lab, ACCOUNT, "save").await?;
+    activate(&mut lab, ACCOUNT, "save").await?;
     let account = lab.console.screen_at(180, 120);
     for text in expected.account {
         assert!(
@@ -117,11 +130,17 @@ pub(super) async fn journey(
             "missing account detail {text:?}\n{account}"
         );
     }
+    activate(&mut lab, ACCOUNT, "save").await?;
     lab.step("esc").await?;
     lab.console.console().app().go(Go::AllUsage);
     lab.console.settle().await?;
-    let board = lab.console.screen_at(180, 120);
-    assert!(board.contains("All Usage"), "{board}");
+    let overview = lab.console.screen_at(180, 120);
+    assert!(overview.contains("All Usage"), "{overview}");
+    let total = jackin_usage::dashboard::metric_order(&snapshot, &[]).len();
+    if total > 1 {
+        activate(&mut lab, BOARD, "save").await?;
+    }
+    let board = format!("{overview}\n{}", lab.console.screen_at(180, 120));
     for text in expected.board {
         assert!(board.contains(text), "missing board row {text:?}\n{board}");
     }
@@ -132,13 +151,12 @@ pub(super) async fn journey(
         );
     }
     if let Some((name, details)) = metric {
-        let total = jackin_usage::dashboard::metric_order(&snapshot, &[]).len();
         for index in 0..total {
-            lab.step("home").await?;
-            for _ in 0..index {
-                lab.console.keys("down")?;
+            if total > 1 {
+                select_reading(&mut lab, index).await?;
+            } else {
+                activate(&mut lab, BOARD, "save").await?;
             }
-            lab.step("enter").await?;
             let view = lab.console.screen_at(180, 100);
             if view.contains(&format!("{label} · {name}")) {
                 for value in details {
@@ -149,7 +167,7 @@ pub(super) async fn journey(
                 }
                 return Ok(());
             }
-            activate(&mut lab, "usage.connected_board", "save").await?;
+            activate(&mut lab, BOARD, "save").await?;
         }
         return Err(format!("metric {name} unavailable").into());
     }
