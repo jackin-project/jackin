@@ -510,3 +510,61 @@ mod claude_budget_tests;
 
 #[path = "connected_accounts/regional_device.rs"]
 mod regional_device;
+
+#[test]
+fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Result<()> {
+    use jackin_testkit::FakeClock;
+    use jackin_usage::{ProviderEndpoints, export, onboarding::OwnedLogin, presentation};
+
+    for (key_type, expected) in [
+        (
+            Some("standard"),
+            vec![
+                "Key type · standard",
+                "Workspace balance and activity history require a management key.",
+            ],
+        ),
+        (Some("management"), vec!["Key type · management"]),
+        (None, vec![]),
+    ] {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("usage/accounts.db");
+        let vault = Arc::new(Vault::default());
+        let mut registry = db(&path, &vault)?;
+        let login = OwnedLogin::new(path, ProviderEndpoints::real(), Arc::new(FakeClock::new()))
+            .with_vault(vault);
+        let mut snapshot = json!({"resources":{}});
+        if let Some(kind) = key_type {
+            snapshot["key_type"] = json!(kind);
+        }
+        registry.add_with_snapshot(
+            UsageProvider::OpenRouter,
+            "Work",
+            &CandidateIdentity::api_key(&Secret::new("fixture".into())),
+            &bytes("fixture"),
+            login.now().0,
+            &snapshot,
+        )?;
+        let entry = presentation::entries(&login)?
+            .pop()
+            .ok_or("missing console account")?;
+        let snapshot = registry.snapshots()?.pop().ok_or("missing snapshot")?;
+        let cli = export::details_account(
+            snapshot,
+            0,
+            &registry.dashboard_settings()?,
+            None,
+            login.now(),
+        );
+        let cli_lines: Vec<String> = serde_json::from_value(cli["details"].clone())?;
+        for lines in [&entry.details, &cli_lines] {
+            let scope: Vec<&str> = lines
+                .iter()
+                .map(String::as_str)
+                .filter(|line| line.starts_with("Key type") || line.contains("management key"))
+                .collect();
+            assert_eq!(scope, expected, "{key_type:?}: {lines:?}");
+        }
+    }
+    Ok(())
+}

@@ -109,6 +109,17 @@ pub(crate) fn detail(
                     }
                 }
             }
+            crate::accounts::UsageProvider::OpenRouter => {
+                if let Some(kind) = data["key_type"].as_str() {
+                    lines.push(format!("Key type · {kind}"));
+                    if kind == "standard" {
+                        lines.push(
+                            "Workspace balance and activity history require a management key."
+                                .into(),
+                        );
+                    }
+                }
+            }
             crate::accounts::UsageProvider::Gemini => {
                 if let Some(project) = data["project"].as_str() {
                     lines.push(format!("Code Assist project · {project}"));

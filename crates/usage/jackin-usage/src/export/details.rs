@@ -357,10 +357,8 @@ pub fn details_account(
             plain(kind)
         ));
     }
-    for (key, title) in [("authMethod", "Authentication"), ("key_type", "Key type")] {
-        if let Some(value) = out["usage"][key].as_str() {
-            lines.push(format!("{title} · {}", plain(value)));
-        }
+    if let Some(method) = out["usage"]["authMethod"].as_str() {
+        lines.push(format!("Authentication · {}", plain(method)));
     }
     if let Some(at) = out["usage"]["period_start"].as_i64() {
         lines.push(format!("Period started · {}", Timestamp(at).rfc3339()));
