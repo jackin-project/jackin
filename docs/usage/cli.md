@@ -26,7 +26,9 @@ For Grok, sign in with the xAI account linked to your eligible X subscription to
 
 For Kimi and MiniMax, select `global` or `cn` to match the coding plan. For MiMo Token Plan, select `cn`, `sgp` or `ams` and enter a Token Plan key. Omit the MiMo region to connect the separate regular-key balance product. For an international MiMo personal Token Plan, match the endpoint in your console to Singapore (`sgp`) or Europe (`ams`). [MiMo cluster guide](https://mimo.mi.com/docs/en-US/tokenplan/Token%20Plan/quick-access)
 
-Gemini tracks an eligible Cloud Code Assist project using a registered desktop OAuth client. Set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the downloaded Desktop app JSON for Jackin to open browser consent directly and discover a managed project. Leave it unset to enter the registration and a project ID interactively. Google retired consumer Code Assist access for Google AI Pro and Ultra on June 18, 2026. [Google consumer deprecation](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals)
+For a personal Google AI Ultra subscription, Google One shows your plan. In the Gemini app, open **Settings → Usage Limits** to see your current limits. Antigravity’s `/usage` command shows its own model quotas. Jackin does not yet read those consumer quotas. [Gemini Apps usage limits](https://support.google.com/gemini/answer/16275805?hl=en)
+
+The `gemini` connector tracks the separate Gemini Code Assist product for eligible projects using a registered desktop OAuth client. Set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the downloaded Desktop app JSON for Jackin to open browser consent directly and discover a managed project. Leave it unset to enter the registration and a project ID interactively. Google retired consumer Code Assist access for Google AI Pro and Ultra on June 18, 2026. [Google consumer deprecation](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals)
 
 ## Manage a connection
 

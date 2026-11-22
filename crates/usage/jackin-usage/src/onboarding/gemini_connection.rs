@@ -118,8 +118,20 @@ async fn begin(
         } else if let Some(file) = registration {
             (file.client().await?, None)
         } else {
-            let id = field(prompts, "Google desktop OAuth client ID", false, false).await?;
-            let secret = field(prompts, "Google desktop OAuth client secret", true, true).await?;
+            let id = field(
+                prompts,
+                "Gemini Code Assist desktop OAuth client ID",
+                false,
+                false,
+            )
+            .await?;
+            let secret = field(
+                prompts,
+                "Gemini Code Assist desktop OAuth client secret",
+                true,
+                true,
+            )
+            .await?;
             let project = field(
                 prompts,
                 "Google Cloud project ID (leave empty for a managed project)",
