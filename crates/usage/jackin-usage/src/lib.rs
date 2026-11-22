@@ -4,6 +4,7 @@
 pub mod accounts;
 pub mod browser;
 mod cache;
+pub mod catalog;
 pub mod connected;
 mod credential;
 pub mod dashboard;

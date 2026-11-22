@@ -49,14 +49,22 @@ Local removal deletes the usage connection. Workspace execution bindings and gat
 ```sh
 jackin usage
 jackin usage --json
+jackin usage providers
+jackin usage providers --json
+jackin usage providers google-ai-ultra
 jackin usage details
 jackin usage details --provider claude
 jackin usage details --account "$account_id" --json
 jackin usage snapshot --provider codex
 jackin usage snapshot --account "$account_id"
+jackin usage refresh
 jackin usage refresh --account "$account_id"
 jackin usage share
 ```
+
+Use `jackin usage providers` to list products even before connecting your first account. Google AI Ultra (Gemini) appears with instructions for checking your consumer subscription limits. Gemini Code Assist has its own entry.
+
+In the catalog JSON, each product has an `id`, `name`, `account_count` and `status`. A status of `connected` means at least one account is saved. A product with no saved accounts is `not_connected` when Jackin supports a connection, or `unavailable` with an `unavailable_reason` when it cannot read that product. Listing the catalog succeeds on an empty installation.
 
 Use `jackin usage details` to inspect all saved accounts side by side in text. Filter by provider or stable account ID. Add `--json` for numeric readings, quota reset times, and available model, day, and billing histories. The details command can run offline.
 
@@ -91,6 +99,7 @@ See the [terminal walkthrough](terminal-walkthrough.md) for the keyboard control
 | `schema` | Integer schema version, currently 1. |
 | `generated_at` | Time jackin read the database. |
 | `accounts` | Array of matching accounts in saved order. |
+| `providers` | In `jackin usage --json`, the same product inventory as `jackin usage providers --json`. |
 | `account.id`, `account.provider`, `account.label` | Stable UUID, provider ID and user-visible name within each array entry. The snapshot export includes account labels. Use `usage share` for a redacted report. |
 | `fetched_at`, `expires_at`, `stale` | Last successful fetch, its ten-minute freshness deadline, and whether that deadline has passed. An account awaiting its first snapshot has `stale: true` and omits both timestamps. |
 | `usage` | Null before the first successful fetch. Otherwise an object with optional `plan` and a `resources` map keyed by metric ID. |

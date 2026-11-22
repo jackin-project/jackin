@@ -113,6 +113,13 @@ pub struct UsageArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum UsageCommand {
+    #[command(about = "List usage providers, connection counts and tracking availability")]
+    Providers {
+        #[arg(help = "Show one provider by ID")]
+        provider: Option<String>,
+        #[arg(long, help = "Print a structured provider catalog")]
+        json: bool,
+    },
     #[command(about = "Set the usage proxy interactively, or disable it")]
     Proxy {
         #[arg(long, help = "Remove the usage proxy")]

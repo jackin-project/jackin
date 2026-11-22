@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::usage_connections::{
-    BoardEdit, BoardMetric, BoardSettings, MetricPreference, OrderingScope, UsageBoard, UsageEntry,
+    BoardEdit, BoardMetric, BoardProvider, BoardSettings, MetricPreference, OrderingScope,
+    UsageBoard, UsageEntry,
 };
 use jackin_core::plain;
 use jackin_usage::accounts::{
@@ -302,11 +303,7 @@ pub(super) fn load(
             .into_iter()
             .map(|row| {
                 metric(
-                    jackin_console::usage_connections::PRODUCTS
-                        .iter()
-                        .find(|(key, _)| *key == row.provider.as_str())
-                        .map_or(row.provider.as_str(), |(_, name)| *name)
-                        .to_owned(),
+                    row.provider.metric_group().into(),
                     row,
                     &accounts,
                     &registry,
@@ -369,7 +366,20 @@ pub(super) fn load(
         warning: data.settings.warning,
         critical: data.settings.critical,
     };
+    let providers = jackin_usage::catalog::providers()
+        .map(|product| BoardProvider {
+            id: product.id.into(),
+            name: product.name.into(),
+            accounts: accounts
+                .iter()
+                .filter(|entry| entry.provider == product.id)
+                .cloned()
+                .collect(),
+            unavailable_reason: product.unavailable_reason.map(str::to_owned),
+        })
+        .collect();
     Ok(UsageBoard {
+        providers,
         priority,
         summary: if priority || rows.is_empty() {
             data.summary.to_string()

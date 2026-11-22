@@ -182,6 +182,7 @@ pub struct Dashboard {
     pub alerts: Vec<String>,
     pub settings: DashboardSettings,
     pub shows_clear_row: bool,
+    pub has_snapshot: bool,
 }
 
 struct Projection<'a> {
@@ -193,7 +194,7 @@ struct Projection<'a> {
     now: i64,
 }
 
-pub(crate) fn concealed_label(index: usize) -> String {
+pub fn concealed_label(index: usize) -> String {
     format!("Account {}", index + 1)
 }
 
@@ -285,6 +286,7 @@ impl Dashboard {
                 .unwrap_or(usize::MAX)
         });
         let empty = snapshots.is_empty();
+        let has_snapshot = snapshots.iter().any(|(_, (_, _, body))| body.is_some());
         let mut notices = Vec::new();
         let mut waiting = Vec::new();
         let mut projected = Projection {
@@ -406,6 +408,7 @@ impl Dashboard {
             alerts,
             settings,
             shows_clear_row,
+            has_snapshot,
         })
     }
 

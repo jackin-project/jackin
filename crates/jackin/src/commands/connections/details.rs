@@ -1,10 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{database, failure, selected};
+use super::{database, failure, providers, selected};
 use crate::{app::App, cli::UsageFilter, error::CommandError};
 use jackin_core::plain;
-use jackin_usage::accounts::{AccountRegistry, UsageProvider};
+use jackin_usage::accounts::AccountRegistry;
 use serde_json::{Value, json};
 
 pub(super) fn show(
@@ -14,10 +14,9 @@ pub(super) fn show(
 ) -> Result<(), CommandError> {
     let provider = filter
         .provider
-        .as_ref()
-        .map(|p| p.parse::<UsageProvider>())
-        .transpose()
-        .map_err(|e| CommandError::Argument(e.to_string()))?;
+        .as_deref()
+        .map(providers::connector)
+        .transpose()?;
     let now = app.deps.host.clock.now();
     let mut accounts = Vec::new();
     if let Some(db) = AccountRegistry::open_read_only(&database(app)?).map_err(failure)? {

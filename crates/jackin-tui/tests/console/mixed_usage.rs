@@ -92,7 +92,7 @@ async fn twelve_simultaneous_accounts_have_distinct_readings_at_eighty_columns()
         ("Claude · Claude Team · Spend", "60 eur"),
         ("ChatGPT · Codex Home · Weekly", "58%"),
         ("ChatGPT · Codex Work · Weekly", "12%"),
-        ("Gemini · Gemini Cloud · gemini-flash", "90%"),
+        ("Code Assist · Gemini Cloud · gemini-flash", "90%"),
         ("Muse · Muse Code · Session", "81%"),
         ("Kimi · Kimi Global · Session", "75%"),
         ("Z.ai · Zai Global · Web searches", "97 searches"),
@@ -114,7 +114,7 @@ async fn twelve_simultaneous_accounts_have_distinct_readings_at_eighty_columns()
             "100 count",
         ),
         (
-            "Gemini · Gemini Cloud · gemini-flash",
+            "Code Assist · Gemini Cloud · gemini-flash",
             "90%",
             "gemini-flash REQUESTS",
             "290 REQUESTS",

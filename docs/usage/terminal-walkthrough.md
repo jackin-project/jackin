@@ -1,6 +1,8 @@
 # Connect and inspect a usage account in the terminal
 
-Launch `jackin`. Press **u** for Usage and choose **All Usage** to compare saved readings across accounts. To inspect one account, press **c** from the main screen, select its name under **Usage accounts**, and press **Enter**. The execution accounts listed on the same screen control sandbox launches.
+Launch `jackin`. Press **u** for Usage and choose **All Usage** to compare saved readings across accounts. Choose **Providers…** on the usage board to see every product and its connected account count. Select a product and press **Enter** to see its accounts or how to check its limits. For your personal Gemini subscription, select **Google AI Ultra (Gemini)**. To inspect one account, press **c** from the main screen, select its name under **Usage accounts**, and press **Enter**. The execution accounts listed on the same screen control sandbox launches.
+
+![Usage providers at 80 columns. Claude and ChatGPT each have two accounts. Google AI Ultra shows Quota unavailable.](screens/provider-directory.png)
 
 ## Connect another account
 
@@ -11,7 +13,7 @@ Open **Accounts** in the jackin console. With a provider selected in the tree, p
 | Claude or ChatGPT in the browser | Complete the provider’s sign-in. Return to the terminal after the browser redirects. When the terminal offers a paste field, you can submit the authorization response there. |
 | Device sign-in | Open the displayed URL and enter the displayed code. The dialog offers **Copy code**, **Copy URL**, and **Open browser** while it waits for authorization. |
 | API key | Use **Open key page** or **Copy URL**, enter the key in the masked field, and activate **Validate and save**. |
-| Gemini | For an eligible Cloud Code Assist project, set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the registered Desktop app JSON for direct browser consent and managed project discovery. With the variable unset, supply the client ID, optional secret and optional project when asked. Complete the sign-in in the browser and allow its loopback redirect. |
+| Gemini Code Assist | For an eligible Cloud Code Assist project, set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the registered Desktop app JSON for direct browser consent and managed project discovery. With the variable unset, supply the client ID, optional secret and optional project when asked. Complete the sign-in in the browser and allow its loopback redirect. |
 
 Esc dismisses an active sign-in. After a successful connection, the dialog displays the account and its usage. When you return to **Accounts**, select its saved name under **Usage accounts** to open its readings again. A saved account awaiting its first quota response displays a waiting message. Open **Usage accounts…** in Accounts, or press **N**, to inspect it again. The account details offer refresh, sign in again, rename, and remove. When the provider reports reset inventory, select an available reset and review its confirmation before redeeming it.
 
@@ -35,7 +37,7 @@ The native All Usage screen shows each reading beside its account name. The scre
 | Z.ai | [Sign-in prompt](screens/zai-prompt.png) | [Usage](screens/zai.png) |
 | MiniMax | [Sign-in prompt](screens/minimax-prompt.png) | [Usage](screens/minimax.png) |
 | MiMo | [Sign-in prompt](screens/mimo-prompt.png) | [Usage](screens/mimo.png) |
-| Gemini | [Sign-in prompt](screens/gemini-prompt.png) | [Usage](screens/gemini.png) |
+| Gemini Code Assist | [Sign-in prompt](screens/gemini-prompt.png) | [Usage](screens/gemini.png) |
 | OpenCode | [Sign-in prompt](screens/opencode-prompt.png) | [Usage](screens/opencode.png) |
 | OpenRouter | [Sign-in prompt](screens/openrouter-prompt.png) | [Usage](screens/openrouter.png) |
 
