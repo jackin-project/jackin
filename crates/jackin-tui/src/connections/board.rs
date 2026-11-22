@@ -313,10 +313,11 @@ pub(super) fn load(
             .collect()
     };
     let alerts: Vec<_> = data.alerts.into_iter().map(plain).collect();
-    let mut notices = Vec::new();
-    if alerts.len() > 1 {
-        notices.extend(alerts.iter().cloned());
-    }
+    let (alerts, mut notices) = if alerts.len() > 1 {
+        (vec![display::join_captions(&alerts)], alerts)
+    } else {
+        (alerts, Vec::new())
+    };
     if !data.notices.is_empty() {
         notices.push(display::NEEDS_ATTENTION.into());
         notices.extend(

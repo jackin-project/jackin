@@ -110,3 +110,88 @@ async fn only_opted_in_reports_create_and_update_accounts() -> Result<()> {
     assert_eq!(db.list()?[0].id, other);
     Ok(())
 }
+
+#[tokio::test]
+async fn untouched_antigravity_sessions_hide_their_future_reset_and_pace() -> Result<()> {
+    use jackin_usage::dashboard::{Dashboard, DashboardMemory, DashboardSettings};
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let email = "viewer@example.com";
+    let pending = begin(&service, email, None, &CancellationToken::new()).await?;
+    assert!(update(&service, email, None, now)?);
+    let account = pending.await??;
+    let mut registry = super::db(&path, &Arc::new(super::Vault::default()))?;
+    let settings = DashboardSettings {
+        pace_marks: true,
+        ..Default::default()
+    };
+    registry.set_dashboard_settings(&settings)?;
+
+    let other = registry.add(
+        UsageProvider::Claude,
+        "Other",
+        &super::scoped("other"),
+        &super::bytes("fixture"),
+    )?;
+    for (id, metric, period, fraction, offset, shows_reset, shows_pace) in [
+        (account, "gemini-5h", 18_000, 1.0, 3600, false, false),
+        (account, "3p-5h", 18_000, 1.0, 3600, false, false),
+        (account, "gemini-5h", 18_000, 0.99965, 3600, true, true),
+        (account, "gemini-weekly", 604_800, 1.0, 3600, true, true),
+        (account, "3p-5h", 18_000, 1.0, -1, true, false),
+        (other, "session", 18_000, 1.0, 3600, true, true),
+    ] {
+        let at = now + offset;
+        let body = json!({"resources":{metric:{
+            "kind":"quota","unit":"percent","remaining_fraction":fraction,
+            "window_seconds":period,"resets_at":at
+        }}});
+        registry.put_snapshot(id, registry.version(id)?, now, &body)?;
+        let board = Dashboard::load(&registry, &mut DashboardMemory::default(), now)?;
+        let row = board
+            .all
+            .iter()
+            .find(|r| r.account == Some(id))
+            .ok_or("missing row")?;
+        assert_eq!(
+            row.reset.is_some(),
+            shows_reset,
+            "{metric} {fraction} {offset}"
+        );
+        assert_eq!(
+            row.pace_mark.is_some(),
+            shows_pace,
+            "{metric} {fraction} {offset}"
+        );
+        let export = board.redacted_export();
+        assert!(
+            export["rows"]
+                .as_array()
+                .ok_or("missing rows")?
+                .iter()
+                .any(|r| r["provider"] == row.provider.to_string() && r["reset"] == at)
+        );
+        let snapshot = registry
+            .snapshots()?
+            .into_iter()
+            .find(|r| r.0.id == id)
+            .ok_or("missing snapshot")?;
+        let details = jackin_usage::export::details_account(
+            snapshot,
+            0,
+            &settings,
+            None,
+            jackin_core::Timestamp(now),
+        );
+        assert_eq!(details["usage"]["resources"][metric]["resets_at"], at);
+        let lines: Vec<String> = serde_json::from_value(details["details"].clone())?;
+        assert_eq!(
+            lines.iter().any(|line| line.starts_with("Reset · ")),
+            shows_reset
+        );
+    }
+    Ok(())
+}

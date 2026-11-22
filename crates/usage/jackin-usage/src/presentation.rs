@@ -130,7 +130,8 @@ pub(crate) fn detail(
         if let Some(plan) = data.get("plan").and_then(Value::as_str) {
             lines.push(format!("Plan · {plan}"));
         }
-        let measurements = crate::dashboard::account_detail_lines(&data, settings, now.0);
+        let measurements =
+            crate::dashboard::account_detail_lines(account.provider, &data, settings, now.0);
         if let Some(notice) = data["notice"].as_str() {
             lines.push(notice.to_owned());
         } else if measurements.is_empty() {
@@ -241,7 +242,11 @@ pub const NEEDS_ATTENTION: &str = "Needs Attention";
 pub const ALL_CLEAR: &str = "All clear";
 
 pub fn caption(first: impl AsRef<str>, second: impl AsRef<str>) -> String {
-    format!("{} · {}", plain(first.as_ref()), plain(second.as_ref()))
+    join_captions(&[first.as_ref(), second.as_ref()])
+}
+
+pub fn join_captions(parts: &[impl std::borrow::Borrow<str>]) -> String {
+    plain(parts.join(" · "))
 }
 
 pub fn waiting(label: &str) -> String {

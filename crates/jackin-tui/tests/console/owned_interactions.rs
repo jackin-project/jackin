@@ -281,17 +281,19 @@ async fn simultaneous_priority_alerts_identify_each_account_using_its_concealed_
             &usage(95),
         )?;
     }
-    activate(&mut lab, "usage.connected_board", "switch").await?;
-    let shown = lab.console.screen_at(160, 65);
-    for label in ["Account 1", "Account 2"] {
+    for _ in 0..2 {
+        activate(&mut lab, "usage.connected_board", "switch").await?;
+        let shown = lab.console.screen_at(160, 65);
+        for label in ["Account 1", "Account 2"] {
+            assert!(
+                shown.contains(&format!("Critical · {label} · Weekly")),
+                "{shown}"
+            );
+        }
         assert!(
-            shown.contains(&format!("Critical · {label} · Weekly")),
+            !shown.contains("Account Alpha") && !shown.contains("Account Beta"),
             "{shown}"
         );
     }
-    assert!(
-        !shown.contains("Account Alpha") && !shown.contains("Account Beta"),
-        "{shown}"
-    );
     Ok(())
 }

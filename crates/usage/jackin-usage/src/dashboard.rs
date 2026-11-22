@@ -430,7 +430,23 @@ impl Dashboard {
     }
 }
 
+fn visible_reset(
+    provider: UsageProvider,
+    metric: &str,
+    measure: &Measure,
+    now: i64,
+) -> Option<i64> {
+    let at = measure.reset?;
+    let idle = provider == UsageProvider::Antigravity
+        && matches!(metric, "gemini-5h" | "3p-5h")
+        && measure.bounded()
+        && measure.used == Some(0.0)
+        && at > now;
+    (!idle).then_some(at)
+}
+
 pub(crate) fn account_detail_lines(
+    provider: UsageProvider,
     body: &Value,
     settings: &DashboardSettings,
     now: i64,
@@ -438,14 +454,14 @@ pub(crate) fn account_detail_lines(
     let mut metrics = reading::read(body);
     metrics.sort_by_key(|(id, _)| reading::default_order(id));
     let mut lines = Vec::new();
-    for (_, measure) in metrics {
+    for (id, measure) in metrics {
         lines.push(format!(
             "{} · {}",
             measure.label,
             measure.display(settings.remaining)
         ));
         lines.extend(measure.quantity_details());
-        if let Some(at) = measure.reset {
+        if let Some(at) = visible_reset(provider, &id, &measure, now) {
             lines.push(format!(
                 "Reset · {}",
                 reading::reset_text(at, now, settings.exact_resets)
@@ -477,14 +493,12 @@ impl DashboardRow {
     ) -> Metrics {
         let m = self.reading.metrics(settings, now, prior_burn);
         self.value = self.reading.display(settings.remaining);
-        self.reset = self
-            .reading
-            .reset
+        self.reset = visible_reset(self.provider, &self.metric, &self.reading, now)
             .map(|t| reading::reset_text(t, now, settings.exact_resets));
         self.severity = m.severity;
         self.pace_mark = m
             .share
-            .filter(|_| settings.pace_marks && !m.spent)
+            .filter(|_| settings.pace_marks && !m.spent && self.reset.is_some())
             .map(|s| if settings.remaining { 1.0 - s } else { s });
         let (section, rank) = if m.spent || self.reading.empty_balance {
             (

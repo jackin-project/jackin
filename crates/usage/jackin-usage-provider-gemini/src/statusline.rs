@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_usage_provider_core::{ProviderError, parse_iso_epoch};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+use serde_json::value::RawValue;
 use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
 
 const SESSION: i64 = 5 * 60 * 60;
 const WEEK: i64 = 7 * 24 * 60 * 60;
@@ -22,38 +24,42 @@ pub struct AntigravityReading {
 }
 
 #[derive(Deserialize)]
-struct StatusLine {
+struct StatusLine<'a> {
     product: String,
     email: Option<String>,
     plan_tier: Option<String>,
-    #[serde(default)]
-    quota: Map<String, Value>,
+    #[serde(borrow, default)]
+    quota: BTreeMap<String, &'a RawValue>,
 }
 
 #[derive(Deserialize)]
 struct Quota {
     remaining_fraction: Option<f64>,
+    #[serde(default, deserialize_with = "optional_reset_field")]
     reset_time: Option<String>,
+    #[serde(default, deserialize_with = "optional_reset_field")]
     reset_in_seconds: Option<i64>,
     disabled: Option<bool>,
 }
 
+fn optional_reset_field<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    let value = <&RawValue>::deserialize(deserializer)?;
+    Ok(serde_json::from_str(value.get()).ok())
+}
+
 impl Quota {
-    fn resource(
-        self,
-        label: &str,
-        period: i64,
-        observed_at: i64,
-    ) -> Result<Option<Value>, ProviderError> {
+    fn resource(self, label: &str, period: i64, observed_at: i64) -> Option<Value> {
         if self.disabled == Some(true) {
-            return Ok(None);
+            return None;
         }
-        let Some(fraction) = self.remaining_fraction else {
-            return Ok(None);
-        };
-        if !(0.0..=1.0).contains(&fraction) {
-            return Err(ProviderError::OUT_OF_RANGE);
-        }
+        let fraction = self
+            .remaining_fraction
+            .filter(|value| value.is_finite())?
+            .clamp(0., 1.);
         let reset = self
             .reset_time
             .as_deref()
@@ -69,7 +75,7 @@ impl Quota {
         if let Some(reset) = reset {
             resource["resets_at"] = reset.into();
         }
-        Ok(Some(resource))
+        Some(resource)
     }
 }
 
@@ -77,7 +83,7 @@ pub fn antigravity_statusline(
     input: &[u8],
     observed_at: i64,
 ) -> Result<Option<AntigravityReading>, ProviderError> {
-    let status: StatusLine = serde_json::from_slice(input)
+    let status: StatusLine<'_> = serde_json::from_slice(input)
         .map_err(|_| ProviderError::Decode("invalid Antigravity status line"))?;
     if status.product != "antigravity" {
         return Err(ProviderError::Decode("expected an Antigravity status line"));
@@ -92,14 +98,12 @@ pub fn antigravity_statusline(
     };
     let email = antigravity_account_email(email)?;
     let mut resources = Map::new();
-    let mut quotas = status.quota;
     for (id, label, period) in WINDOWS {
-        if let Some(value) = quotas.remove(id) {
-            let quota: Quota = serde_json::from_value(value)
-                .map_err(|_| ProviderError::Decode("invalid Antigravity quota bucket"))?;
-            if let Some(reading) = quota.resource(label, period, observed_at)? {
-                resources.insert(id.to_owned(), reading);
-            }
+        if let Some(value) = status.quota.get(id)
+            && let Ok(quota) = serde_json::from_str::<Quota>(value.get())
+            && let Some(reading) = quota.resource(label, period, observed_at)
+        {
+            resources.insert(id.to_owned(), reading);
         }
     }
     if resources.is_empty() {

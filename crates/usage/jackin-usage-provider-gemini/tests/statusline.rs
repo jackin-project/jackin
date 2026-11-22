@@ -61,19 +61,41 @@ fn rejects_unusable_readings_and_preserves_omitted_values() -> Result<(), Box<dy
         .err()
         .ok_or("expected invalid reading to fail")?;
     payload["product"] = json!("antigravity");
-    for quota in [json!({}), json!({"gemini-weekly":{"remaining_amount":5}})] {
-        payload["quota"] = quota;
-        assert!(parse(&payload)?.is_none());
-    }
     for quota in [
-        json!({"gemini-weekly":{"remaining_fraction":1.1}}),
+        json!({}),
+        json!({"gemini-weekly":{"remaining_amount":5}}),
         json!({"gemini-weekly":{"remaining_fraction":0.5,"disabled":"false"}}),
     ] {
         payload["quota"] = quota;
-        parse(&payload)
-            .err()
-            .ok_or("expected invalid reading to fail")?;
+        assert!(parse(&payload)?.is_none());
     }
+    payload["quota"] = json!([]);
+    parse(&payload)
+        .err()
+        .ok_or("expected malformed quota object to fail")?;
+    let mixed_input = br#"{
+        "product":"antigravity", "email":"a@example.test",
+        "quota":{
+            "gemini-5h":{"remaining_fraction":1.1,"reset_time":{},"reset_in_seconds":10},
+            "gemini-weekly":{"remaining_fraction":-0.1,"reset_in_seconds":"unknown"},
+            "gemini-argon-wtu-weekly":{"remaining_fraction":0.4},
+            "3p-5h":{"remaining_fraction":"invalid"},
+            "3p-weekly":{"remaining_fraction":1e400}
+        }
+    }"#;
+    let mixed = antigravity_statusline(mixed_input, 1)?.ok_or("missing mixed reading")?;
+    let resources = mixed.snapshot["resources"]
+        .as_object()
+        .ok_or("missing resources")?;
+    assert_eq!(resources.len(), 3);
+    assert_eq!(resources["gemini-5h"]["remaining_fraction"], 1.);
+    assert_eq!(resources["gemini-5h"]["resets_at"], 11);
+    assert_eq!(resources["gemini-weekly"]["remaining_fraction"], 0.);
+    assert!(resources["gemini-weekly"].get("resets_at").is_none());
+    assert_eq!(
+        resources["gemini-argon-wtu-weekly"]["remaining_fraction"],
+        0.4
+    );
     payload["quota"] = json!({"gemini-argon-wtu-weekly":{"remaining_fraction":0.1}});
     assert_eq!(
         parse(&payload)?.ok_or("missing quota")?.snapshot["resources"]["gemini-argon-wtu-weekly"]["remaining_fraction"],
