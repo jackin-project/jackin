@@ -2,6 +2,8 @@
 
 Run `jackin account usage connect` with the provider ID. Interactive authentication needs a terminal. API keys, authorization responses, management keys and proxy credentials go into the prompts. Jackin stores credentials in the operating system credential store. On Linux, unlock a Secret Service collection in the host login session. On macOS, unlock the login Keychain.
 
+On macOS, choosing **Always Allow** for Jackin in the Keychain dialog remembers access to the requested credential item. Each account has its own credential, and macOS can ask again after a local rebuild changes the executable. [Apple Keychain access controls](https://support.apple.com/guide/mac-help/kychn002/mac)
+
 ```sh
 jackin account usage connect claude
 jackin account usage connect codex
