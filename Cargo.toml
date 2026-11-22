@@ -68,8 +68,8 @@ futures = "0.3.34"
 getrandom = "0.4.3"
 gix-hash = { version = "0.28.1", features = ["sha1", "sha256"] }
 globset = { version = "0.4.21", default-features = false }
-jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/termrock", rev = "4688a00467456eb15fb9dfa3bf1294fb42472ed4", default-features = false }
-termrock = { version = "0.1.0", git = "https://github.com/tailrocks/termrock", rev = "4688a00467456eb15fb9dfa3bf1294fb42472ed4", default-features = false, features = ["terminal"] }
+jackin-console = { version = "0.1.0", git = "https://github.com/tailrocks/termrock", rev = "a42b7d870b421af6ad61ac73da891896fd438953", default-features = false }
+termrock = { version = "0.1.0", git = "https://github.com/tailrocks/termrock", rev = "a42b7d870b421af6ad61ac73da891896fd438953", default-features = false, features = ["terminal"] }
 noyalib = { version = "0.0.58", default-features = false, features = ["std", "lossless-u64"] }
 openshell-core = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
 openshell-policy = { git = "https://github.com/NVIDIA/OpenShell", tag = "v0.1.7", version = "0.0.0" }
@@ -85,7 +85,7 @@ windows-native-keyring-store = "1.1.0"
 libsecret = "0.9.0"
 gio = "0.22"
 webbrowser = { version = "1.2.7", default-features = false }
-url = "2.5.8"
+url = "2.5.9"
 uuid = { version = "1.29.0", features = ["v4", "serde"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider"] }
 russh = { version = "0.65.1", default-features = false, features = ["aws-lc-rs", "flate2"] }
