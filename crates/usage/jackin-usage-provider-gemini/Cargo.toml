@@ -15,6 +15,7 @@ publish = false
 tokio = { workspace = true, features = ["time"] }
 jackin-usage-provider-core = { workspace = true }
 serde_json = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
 jackin-core = { workspace = true }

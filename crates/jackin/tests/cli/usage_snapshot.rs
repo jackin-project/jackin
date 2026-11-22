@@ -176,7 +176,16 @@ async fn provider_catalog_includes_disconnected_subscriptions_and_counts_each_ac
         let data: Value = serde_json::from_str(&empty.stdout)?;
         let providers = data["providers"].as_array().ok_or("providers")?;
         for id in [
-            "claude", "codex", "muse", "grok", "kimi", "zai", "minimax", "mimo", "opencode",
+            "claude",
+            "codex",
+            "muse",
+            "grok",
+            "kimi",
+            "zai",
+            "minimax",
+            "mimo",
+            "opencode",
+            "antigravity",
         ] {
             let row = providers
                 .iter()

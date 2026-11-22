@@ -113,6 +113,15 @@ pub struct UsageArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum UsageCommand {
+    #[command(about = "Receive quota updates from the signed-in Antigravity CLI status line")]
+    AntigravityStatusline {
+        #[arg(
+            long,
+            value_name = "PATH",
+            help = "Receive the report in the Jackin database used for enrollment"
+        )]
+        database: Option<PathBuf>,
+    },
     #[command(about = "List usage providers, connection counts and tracking availability")]
     Providers {
         #[arg(help = "Show one provider by ID")]

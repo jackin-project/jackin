@@ -102,3 +102,7 @@ fn bucket(entry: &Value) -> Option<Bucket> {
 mod account;
 
 pub use account::*;
+
+mod statusline;
+
+pub use statusline::{AntigravityReading, antigravity_account_email, antigravity_statusline};

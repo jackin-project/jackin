@@ -22,6 +22,7 @@ impl UsageProvider {
             Self::Zai => "Z.ai",
             Self::MiniMax => "MiniMax",
             Self::Mimo => "MiMo",
+            Self::Antigravity => "Antigravity",
             Self::Gemini => "Code Assist",
             Self::OpenCode => "OpenCode",
             Self::OpenRouter => "OpenRouter",
@@ -34,6 +35,7 @@ pub fn providers() -> impl Iterator<Item = UsageProduct> {
         id: provider.as_str(),
         name: match provider {
             UsageProvider::ChatGpt => "ChatGPT / Codex",
+            UsageProvider::Antigravity => "Antigravity (Google AI)",
             UsageProvider::Gemini => "Gemini Code Assist",
             UsageProvider::Zai => "Z.AI",
             _ => provider.metric_group(),
@@ -43,10 +45,10 @@ pub fn providers() -> impl Iterator<Item = UsageProduct> {
     });
     let google_ai_ultra = UsageProduct {
         id: "google-ai-ultra",
-        name: "Google AI Ultra (Gemini)",
+        name: "Gemini app (web)",
         connector: None,
         unavailable_reason: Some(
-            "Jackin cannot read this subscription’s quota. Open https://gemini.google.com and choose Settings → Usage Limits.",
+            "For Google AI Ultra quotas in Antigravity, connect antigravity. For Gemini app limits, open https://gemini.google.com and choose Settings → Usage Limits.",
         ),
     };
     connectable.chain(std::iter::once(google_ai_ultra))

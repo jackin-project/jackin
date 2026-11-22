@@ -26,12 +26,13 @@ pub enum UsageProvider {
     MiniMax,
     Mimo,
     Gemini,
+    Antigravity,
     OpenCode,
     OpenRouter,
 }
 
 impl UsageProvider {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Claude,
         Self::ChatGpt,
         Self::Muse,
@@ -41,6 +42,7 @@ impl UsageProvider {
         Self::MiniMax,
         Self::Mimo,
         Self::Gemini,
+        Self::Antigravity,
         Self::OpenCode,
         Self::OpenRouter,
     ];
@@ -55,6 +57,7 @@ impl UsageProvider {
             Self::Zai => "zai",
             Self::MiniMax => "minimax",
             Self::Mimo => "mimo",
+            Self::Antigravity => "antigravity",
             Self::Gemini => "gemini",
             Self::OpenCode => "opencode",
             Self::OpenRouter => "openrouter",

@@ -107,46 +107,49 @@ pub(super) async fn field(
     input.await.map_err(|_| LoginError::Cancelled)
 }
 
+pub(super) async fn text_field(
+    prompts: &mpsc::Sender<LoginPrompt>,
+    label: &'static str,
+    optional: bool,
+) -> Result<String, LoginError> {
+    Ok(field(prompts, label, optional, false)
+        .await?
+        .expose()
+        .trim()
+        .to_owned())
+}
+
 async fn begin(
     existing: Option<&SecretBytes>,
     registration: Option<&super::GoogleRegistrationFile>,
     prompts: &mpsc::Sender<LoginPrompt>,
 ) -> Result<(crate::browser::BrowserLogin, DesktopClient, Option<String>), LoginError> {
-    let (client, project) =
-        if let Some(old) = existing.and_then(|bytes| Credential::decode(bytes).ok()) {
-            (old.client, Some(old.project))
-        } else if let Some(file) = registration {
-            (file.client().await?, None)
-        } else {
-            let id = field(
-                prompts,
-                "Gemini Code Assist desktop OAuth client ID",
-                false,
-                false,
-            )
-            .await?;
-            let secret = field(
-                prompts,
-                "Gemini Code Assist desktop OAuth client secret",
-                true,
-                true,
-            )
-            .await?;
-            let project = field(
-                prompts,
-                "Google Cloud project ID (leave empty for a managed project)",
-                true,
-                false,
-            )
-            .await?;
-            (
-                DesktopClient::new(
-                    id.expose().trim().to_owned(),
-                    (!secret.expose().is_empty()).then_some(secret),
-                )?,
-                (!project.expose().trim().is_empty()).then(|| project.expose().trim().to_owned()),
-            )
-        };
+    let (client, project) = if let Some(old) =
+        existing.and_then(|bytes| Credential::decode(bytes).ok())
+    {
+        (old.client, Some(old.project))
+    } else if let Some(file) = registration {
+        (file.client().await?, None)
+    } else {
+        let id = text_field(prompts, "Gemini Code Assist desktop OAuth client ID", false).await?;
+        let secret = field(
+            prompts,
+            "Gemini Code Assist desktop OAuth client secret",
+            true,
+            true,
+        )
+        .await?;
+        let project = text_field(
+            prompts,
+            "Google Cloud project ID (leave empty for a managed project)",
+            true,
+        )
+        .await?;
+        (
+            DesktopClient::new(id, (!secret.expose().is_empty()).then_some(secret))?,
+            (!project.is_empty()).then_some(project),
+        )
+    };
     let login = gemini_login::start(&client).await?;
     Ok((login, client, project))
 }

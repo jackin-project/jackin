@@ -115,7 +115,7 @@ pub(super) async fn account(
     {
         let provider = providers::connector(&provider)?;
         if provider == UsageProvider::Gemini {
-            app.io.note("Connecting Gemini Code Assist for a Google Cloud project. For a personal Gemini subscription, run jackin usage providers google-ai-ultra.");
+            app.io.note("Connecting Gemini Code Assist for a Google Cloud project. For Antigravity on a personal Google AI subscription, run jackin account usage connect antigravity.");
         }
         return connect(app, provider, auth, region.as_deref(), None).await;
     }
@@ -274,6 +274,25 @@ async fn handle_prompt(app: &mut App, prompt: LoginPrompt) -> Result<(), Command
                 Secret::new(value.trim().to_owned())
             };
             reply.send(value).map_err(|_| cancelled())?;
+        }
+        LoginPrompt::AntigravityStatusLine { command } => {
+            app.io.note("In another terminal, run this command and sign in to Antigravity with the selected Google account:");
+            app.io.note(&command);
+            app.io
+                .note("Waiting for the first quota report. Press Esc to cancel.");
+            let terminal = app.terminal.as_mut().ok_or(CommandError::NoTerminal)?;
+            let _restore = terminal.enter_raw().map_err(CommandError::Terminal)?;
+            loop {
+                match terminal.next_input().await {
+                    TerminalInput::Closed => return Err(cancelled()),
+                    TerminalInput::Bytes(bytes)
+                        if bytes.iter().any(|b| matches!(b, 3 | 4 | 27)) =>
+                    {
+                        return Err(cancelled());
+                    }
+                    _ => {}
+                }
+            }
         }
         LoginPrompt::Callback { url } => app.io.note(&format!(
             "Authorize your Google account in the browser: {url}"
@@ -443,6 +462,38 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
     }
     let active = matches!(command, UsageCommand::Refresh(_));
     let filter = match command {
+        UsageCommand::AntigravityStatusline {
+            database: destination,
+        } => {
+            use std::io::{IsTerminal, Read};
+            if std::io::stdin().is_terminal() {
+                return Err(CommandError::Argument("Run jackin account usage connect antigravity to set up the Antigravity status line".into()));
+            }
+            const LIMIT: u64 = 1024 * 1024;
+            let mut input = zeroize::Zeroizing::new(Vec::new());
+            std::io::stdin()
+                .lock()
+                .take(LIMIT + 1)
+                .read_to_end(&mut input)
+                .map_err(failure)?;
+            if input.len() as u64 > LIMIT {
+                return Err(CommandError::Argument(
+                    "Antigravity status line exceeds 1 MiB".into(),
+                ));
+            }
+            let destination = destination.map_or_else(|| database(app), Ok)?;
+            let stored = jackin_usage::onboarding::receive_antigravity_statusline(
+                &destination,
+                &input,
+                app.deps.host.clock.now().0,
+            )
+            .map_err(failure)?;
+            return app.io.line(if stored {
+                "Jackin · quota received"
+            } else {
+                "Jackin · waiting for a connected Google account"
+            });
+        }
         UsageCommand::Refresh(f) | UsageCommand::Snapshot(f) => f,
         UsageCommand::Details { filter, json } => return details::show(app, &filter, json),
         UsageCommand::Providers { .. }
@@ -527,6 +578,10 @@ async fn refresh_selected(
             let Some(account) = accounts.next() else {
                 break;
             };
+            if account.provider == UsageProvider::Antigravity {
+                app.io.note("Antigravity updates while its signed-in CLI status line is running. Showing the last report received.");
+                continue;
+            }
             let service = owned.clone();
             let cancel = app.cancel.clone();
             tasks.spawn(async move { (account.id, service.refresh(&account, &cancel).await) });

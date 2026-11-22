@@ -2750,7 +2750,7 @@ dependencies = [
 [[package]]
 name = "jackin-console"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "clap",
  "ratatui",
@@ -2995,6 +2995,7 @@ dependencies = [
  "jackin-core",
  "jackin-testkit",
  "jackin-usage-provider-core",
+ "serde",
  "serde_json",
  "tokio",
 ]
@@ -6645,7 +6646,7 @@ dependencies = [
 [[package]]
 name = "termrock"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "termrock-catalog",
  "termrock-cli",
@@ -6673,7 +6674,7 @@ dependencies = [
 [[package]]
 name = "termrock-catalog"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-collections",
@@ -6687,7 +6688,7 @@ dependencies = [
 [[package]]
 name = "termrock-cli"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "clap",
  "termrock-core",
@@ -6697,7 +6698,7 @@ dependencies = [
 [[package]]
 name = "termrock-collections"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-controls",
@@ -6716,7 +6717,7 @@ dependencies = [
 [[package]]
 name = "termrock-controls"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-core",
@@ -6730,7 +6731,7 @@ dependencies = [
 [[package]]
 name = "termrock-core"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "clap",
  "ratatui",
@@ -6743,7 +6744,7 @@ dependencies = [
 [[package]]
 name = "termrock-dialogs"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-collections",
@@ -6763,7 +6764,7 @@ dependencies = [
 [[package]]
 name = "termrock-editors"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-controls",
@@ -6781,7 +6782,7 @@ dependencies = [
 [[package]]
 name = "termrock-feedback"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-controls",
@@ -6795,7 +6796,7 @@ dependencies = [
 [[package]]
 name = "termrock-fields"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-controls",
@@ -6811,7 +6812,7 @@ dependencies = [
 [[package]]
 name = "termrock-grid"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-controls",
@@ -6827,7 +6828,7 @@ dependencies = [
 [[package]]
 name = "termrock-layout"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-controls",
@@ -6842,7 +6843,7 @@ dependencies = [
 [[package]]
 name = "termrock-metrics"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "serde_json",
 ]
@@ -6850,7 +6851,7 @@ dependencies = [
 [[package]]
 name = "termrock-navigation"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-collections",
@@ -6867,7 +6868,7 @@ dependencies = [
 [[package]]
 name = "termrock-overlays"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-controls",
@@ -6882,7 +6883,7 @@ dependencies = [
 [[package]]
 name = "termrock-runtime"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-core",
@@ -6894,7 +6895,7 @@ dependencies = [
 [[package]]
 name = "termrock-session"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "libc",
  "ratatui",
@@ -6906,7 +6907,7 @@ dependencies = [
 [[package]]
 name = "termrock-shell"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-controls",
@@ -6925,7 +6926,7 @@ dependencies = [
 [[package]]
 name = "termrock-terminal"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termpane",
@@ -6942,7 +6943,7 @@ dependencies = [
 [[package]]
 name = "termrock-text"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-metrics",
@@ -6953,7 +6954,7 @@ dependencies = [
 [[package]]
 name = "termrock-theme"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-core",
@@ -6962,7 +6963,7 @@ dependencies = [
 [[package]]
 name = "termrock-viewport"
 version = "0.1.0"
-source = "git+https://github.com/tailrocks/termrock?rev=1c4e7d358a59abc5fb459eea2c3cc36408acfd2e#1c4e7d358a59abc5fb459eea2c3cc36408acfd2e"
+source = "git+https://github.com/tailrocks/termrock?rev=1c9d94cbf245205c0318be398a68fcc65eb0dce5#1c9d94cbf245205c0318be398a68fcc65eb0dce5"
 dependencies = [
  "ratatui",
  "termrock-controls",

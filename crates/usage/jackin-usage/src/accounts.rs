@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod antigravity;
 mod claims;
 pub(crate) mod claude_budget;
 pub mod hubs;
@@ -40,6 +41,14 @@ CREATE TABLE IF NOT EXISTS accounts (
     preferences TEXT NOT NULL DEFAULT '{}', fetched_at INTEGER, snapshot TEXT,
     UNIQUE(provider, kind, identity)
 );
+CREATE TABLE IF NOT EXISTS antigravity_enrollments (
+    ticket TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, expires INTEGER NOT NULL,
+    fetched_at INTEGER, snapshot TEXT
+);
+CREATE TRIGGER IF NOT EXISTS cancel_removed_antigravity_enrollment AFTER DELETE ON accounts
+WHEN OLD.provider='antigravity' AND OLD.kind='statusline' BEGIN
+    DELETE FROM antigravity_enrollments WHERE email=OLD.identity;
+END;
 CREATE TABLE IF NOT EXISTS refresh_failures (
     id TEXT PRIMARY KEY, slot TEXT NOT NULL, kind TEXT NOT NULL, failures INTEGER NOT NULL,
     retry_at INTEGER NOT NULL, message TEXT NOT NULL
@@ -89,6 +98,8 @@ pub enum ConnectionError {
     Io(#[from] std::io::Error),
     #[error("usage metadata must be in a private user-owned directory")]
     Private,
+    #[error("this Google account is already being connected")]
+    EnrollmentPending,
     #[error("usage metadata is invalid")]
     Invalid,
     #[error("unknown usage provider")]
@@ -148,6 +159,13 @@ impl AccountRegistry {
     }
 
     pub fn open_read_only(path: &Path) -> Result<Option<Self>, ConnectionError> {
+        Self::open_existing(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+    }
+
+    pub(crate) fn open_existing(
+        path: &Path,
+        mode: OpenFlags,
+    ) -> Result<Option<Self>, ConnectionError> {
         match std::fs::symlink_metadata(path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(e.into()),
@@ -159,7 +177,7 @@ impl AccountRegistry {
         let directory = directory.canonicalize()?;
         let db = Connection::open_with_flags(
             directory.join(path.file_name().ok_or(ConnectionError::Private)?),
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NOFOLLOW,
+            mode | OpenFlags::SQLITE_OPEN_NOFOLLOW,
         )?;
         db.busy_timeout(Duration::from_secs(10))?;
         Ok(Some(Self {
@@ -173,6 +191,15 @@ impl AccountRegistry {
         path: &Path,
         vault: Arc<dyn CredentialVault>,
     ) -> Result<Self, ConnectionError> {
+        let registry = Self::open_metadata(path, vault)?;
+        let _cleanup = registry.clean_idle_slots();
+        Ok(registry)
+    }
+
+    fn open_metadata(
+        path: &Path,
+        vault: Arc<dyn CredentialVault>,
+    ) -> Result<Self, ConnectionError> {
         let directory = path.parent().ok_or(ConnectionError::Private)?.to_owned();
         private::directory(&directory)?;
         let _private_file = private::file(path)?;
@@ -183,13 +210,11 @@ impl AccountRegistry {
         )?;
         db.busy_timeout(Duration::from_secs(10))?;
         db.execute_batch(SCHEMA)?;
-        let registry = Self {
+        Ok(Self {
             db,
             directory,
             vault,
-        };
-        let _cleanup = registry.clean_idle_slots();
-        Ok(registry)
+        })
     }
 
     pub fn list(&self) -> Result<Vec<ConnectedAccount>, ConnectionError> {
@@ -227,8 +252,19 @@ impl AccountRegistry {
         id: Uuid,
     ) -> Result<(CredentialVersion, SecretBytes), ConnectionError> {
         let _lock = self.mutation_lock()?;
-        let version = self.version(id)?;
-        Ok((version, self.vault.load(version.0)?))
+        let (slot, statusline) = self
+            .db
+            .query_row(
+                "SELECT slot,kind='statusline' FROM accounts WHERE id=?1",
+                [id.to_string()],
+                |row| Ok((uuid(row, 0)?, row.get::<_, bool>(1)?)),
+            )
+            .optional()?
+            .ok_or(ConnectionError::Changed)?;
+        if statusline {
+            return Err(ConnectionError::CredentialKind);
+        }
+        Ok((CredentialVersion(slot), self.vault.load(slot)?))
     }
 
     fn mutation_lock(&self) -> Result<File, ConnectionError> {
@@ -510,12 +546,15 @@ impl AccountRegistry {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let id = id.to_string();
-        changed(tx.execute(
-            "INSERT INTO retired_slots SELECT slot FROM accounts WHERE id=?1",
+        let retire = tx.execute(
+            "INSERT INTO retired_slots SELECT slot FROM accounts WHERE id=?1 AND kind != 'statusline'",
             [&id],
-        )?)?;
-        tx.execute("DELETE FROM accounts WHERE id=?1", [&id])?;
+        )?;
+        changed(tx.execute("DELETE FROM accounts WHERE id=?1", [&id])?)?;
         tx.commit()?;
+        if retire == 0 {
+            return Ok(());
+        }
         self.drain_retired()
             .map_err(|_| ConnectionError::RemovedPendingCleanup)
     }
@@ -601,7 +640,7 @@ fn replace_slot(
     slot: Uuid,
 ) -> Result<(), ConnectionError> {
     changed(tx.execute(
-        "UPDATE accounts SET slot=?1 WHERE id=?2 AND slot=?3",
+        "UPDATE accounts SET slot=?1 WHERE id=?2 AND slot=?3 AND kind!='statusline'",
         params![slot.to_string(), id.to_string(), expected.0.to_string()],
     )?)?;
     tx.execute(

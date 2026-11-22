@@ -223,6 +223,9 @@ impl JackinBackend {
                     accepts_paste: false,
                 }
             }
+            LoginPrompt::AntigravityStatusLine { command } => {
+                UsageUpdate::AntigravityStatusLine { command }
+            }
             LoginPrompt::BrowserUnavailable => UsageUpdate::OpenFailed,
         };
         self.bridge.send(message(ticket, update));

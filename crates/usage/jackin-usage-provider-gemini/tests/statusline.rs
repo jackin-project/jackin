@@ -1,0 +1,88 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use jackin_usage_provider_gemini::antigravity_statusline;
+use serde_json::json;
+use std::error::Error;
+
+#[test]
+fn distinguishes_all_antigravity_windows_and_keeps_only_account_usage() -> Result<(), Box<dyn Error>>
+{
+    let payload = json!({
+        "product": "antigravity", "email": "tester@example.test", "plan_tier": "Ultra",
+        "cwd": "/private/work", "conversation_title": "private conversation",
+        "quota": {
+            "gemini-5h":{"remaining_fraction":1.0,"reset_time":"2024-01-01T00:00:00Z","reset_in_seconds":3600},
+            "gemini-weekly":{"remaining_fraction":0.9971966,"reset_in_seconds":600},
+            "3p-5h":{"remaining_fraction":0.0},
+            "3p-weekly":{"remaining_fraction":0.00280664},
+            "gemini-argon-wtu-weekly":{"remaining_fraction":0.98,"disabled":true},
+            "future":{"remaining_amount":50}
+        }
+    });
+    let reading =
+        antigravity_statusline(&serde_json::to_vec(&payload)?, 100)?.ok_or("missing reading")?;
+    assert_eq!(reading.email, "tester@example.test");
+    assert_eq!(reading.snapshot["plan"], "Google AI Ultra");
+    let resources = reading.snapshot["resources"]
+        .as_object()
+        .ok_or("missing resources")?;
+    assert_eq!(resources.len(), 4);
+    for (id, remaining, seconds) in [
+        ("gemini-5h", 1., 18000),
+        ("gemini-weekly", 0.9971966, 604800),
+        ("3p-5h", 0., 18000),
+        ("3p-weekly", 0.00280664, 604800),
+    ] {
+        let row = &resources[id];
+        assert_eq!(row["remaining_fraction"], remaining);
+        assert_eq!(row["window_seconds"], seconds);
+        assert_eq!(row["unit"], "percent");
+    }
+    assert_eq!(resources["gemini-5h"]["resets_at"], 1704067200);
+    assert_eq!(resources["gemini-weekly"]["resets_at"], 700);
+    assert!(resources["3p-weekly"].get("resets_at").is_none());
+    assert!(!reading.snapshot.to_string().contains("private"));
+    Ok(())
+}
+
+#[test]
+fn rejects_unusable_readings_and_preserves_omitted_values() -> Result<(), Box<dyn Error>> {
+    let mut payload = json!({"product":"antigravity","email":"a@example.test","quota":{"gemini-weekly":{"remaining_fraction":0.6}}});
+    let parse = |v: &serde_json::Value| {
+        antigravity_statusline(&serde_json::to_vec(v)?, 1).map_err(Box::<dyn Error>::from)
+    };
+    let partial = parse(&payload)?.ok_or("missing partial reading")?;
+    assert!(partial.snapshot.get("plan").is_none());
+    assert!(partial.snapshot["resources"].get("3p-weekly").is_none());
+    payload["product"] = json!("gemini");
+    parse(&payload)
+        .err()
+        .ok_or("expected invalid reading to fail")?;
+    payload["product"] = json!("antigravity");
+    for quota in [json!({}), json!({"gemini-weekly":{"remaining_amount":5}})] {
+        payload["quota"] = quota;
+        assert!(parse(&payload)?.is_none());
+    }
+    for quota in [
+        json!({"gemini-weekly":{"remaining_fraction":1.1}}),
+        json!({"gemini-weekly":{"remaining_fraction":0.5,"disabled":"false"}}),
+    ] {
+        payload["quota"] = quota;
+        parse(&payload)
+            .err()
+            .ok_or("expected invalid reading to fail")?;
+    }
+    payload["quota"] = json!({"gemini-argon-wtu-weekly":{"remaining_fraction":0.1}});
+    assert_eq!(
+        parse(&payload)?.ok_or("missing quota")?.snapshot["resources"]["gemini-argon-wtu-weekly"]["remaining_fraction"],
+        0.1
+    );
+    payload["email"] = json!("");
+    assert!(parse(&payload)?.is_none());
+    payload["email"] = json!("bad email");
+    parse(&payload)
+        .err()
+        .ok_or("expected invalid reading to fail")?;
+    Ok(())
+}

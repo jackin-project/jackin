@@ -15,6 +15,7 @@ jackin account usage connect zai
 jackin account usage connect minimax --region cn
 jackin account usage connect minimax --auth device --region cn
 jackin account usage connect mimo --region sgp
+jackin account usage connect antigravity
 jackin account usage connect gemini
 jackin account usage connect opencode
 jackin account usage connect openrouter
@@ -26,7 +27,9 @@ For Grok, sign in with the xAI account linked to your eligible X subscription to
 
 For Kimi and MiniMax, select `global` or `cn` to match the coding plan. For MiMo Token Plan, select `cn`, `sgp` or `ams` and enter a Token Plan key. Omit the MiMo region to connect the separate regular-key balance product. For an international MiMo personal Token Plan, match the endpoint in your console to Singapore (`sgp`) or Europe (`ams`). [MiMo cluster guide](https://mimo.mi.com/docs/en-US/tokenplan/Token%20Plan/quick-access)
 
-For a personal Google AI Ultra subscription, Google One shows your plan. In the Gemini app, open **Settings → Usage Limits** to see your current limits. Antigravity’s `/usage` command shows its own model quotas. Jackin does not yet read those consumer quotas. [Gemini Apps usage limits](https://support.google.com/gemini/answer/16275805?hl=en)
+For the Gemini and Claude quotas on your **Google AI Ultra** subscription, run `jackin account usage connect antigravity`. Enter the email you use in Antigravity. In a second terminal, run the displayed `agy --settings …` command and sign in to that account if prompted. Leave Jackin open until it confirms the connection. The signed-in Antigravity CLI sends the plan, remaining quota and reset times to Jackin while that session runs. Reuse the displayed launch command for subsequent sessions. For continuous reporting from ordinary interactive launches, copy its `statusLine` setting into your Antigravity CLI settings. Set `stack_with_default` to `true` to keep the built-in status line visible. Once Antigravity closes, Jackin shows the last reading and its observation time. [Antigravity CLI status line](https://antigravity.google/docs/cli/statusline)
+
+To see the separate limits for chats in the Gemini app, open **Settings → Usage Limits** there. [Gemini Apps usage limits](https://support.google.com/gemini/answer/16275805?hl=en)
 
 The `gemini` connector tracks the separate Gemini Code Assist product for eligible projects using a registered desktop OAuth client. Set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the downloaded Desktop app JSON for Jackin to open browser consent directly and discover a managed project. Leave it unset to enter the registration and a project ID interactively. Google retired consumer Code Assist access for Google AI Pro and Ultra on June 18, 2026. [Google consumer deprecation](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals)
 
@@ -51,7 +54,8 @@ jackin usage
 jackin usage --json
 jackin usage providers
 jackin usage providers --json
-jackin usage providers google-ai-ultra
+jackin usage providers antigravity
+jackin usage details --provider antigravity --json
 jackin usage details
 jackin usage details --provider claude
 jackin usage details --account "$account_id" --json
@@ -62,13 +66,13 @@ jackin usage refresh --account "$account_id"
 jackin usage share
 ```
 
-Use `jackin usage providers` to list products even before connecting your first account. Google AI Ultra (Gemini) appears with instructions for checking your consumer subscription limits. Gemini Code Assist has its own entry.
+Use `jackin usage providers` to list products even before connecting your first account. Select **Antigravity (Google AI)** to track Gemini and Claude subscription quotas. **Google AI Ultra (Gemini)** directs you to the Gemini app for chat limits. **Gemini Code Assist** tracks eligible Cloud projects.
 
 In the catalog JSON, each product has an `id`, `name`, `account_count` and `status`. A status of `connected` means at least one account is saved. A product with no saved accounts is `not_connected` when Jackin supports a connection, or `unavailable` with an `unavailable_reason` when it cannot read that product. Listing the catalog succeeds on an empty installation.
 
 Use `jackin usage details` to inspect all saved accounts side by side in text. Filter by provider or stable account ID. Add `--json` for numeric readings, quota reset times, and available model, day, and billing histories. The details command can run offline.
 
-The plain `jackin usage` overview groups readings under each provider and account. A bounded reading says whether it shows the amount used or remaining. A stale reading is labeled on its own row. Snapshot and share commands read persisted data. Active refresh contacts the provider. A rejected refresh preserves the last successful reading. The snapshot becomes stale ten minutes after that reading. The console updates connected accounts while it runs. For existing execution-account sources, request an explicit host read with `jackin usage host`.
+The plain `jackin usage` overview groups readings under each provider and account. A bounded reading says whether it shows the amount used or remaining. A stale reading is labeled on its own row. Snapshot and share commands read persisted data. Active refresh contacts providers that support polling. For Antigravity it shows the most recent status-line report. Start Antigravity with the displayed launch command to receive a new report. A rejected refresh preserves the last successful reading. The snapshot becomes stale ten minutes after that reading. The console updates connected accounts while it runs. For existing execution-account sources, request an explicit host read with `jackin usage host`.
 
 Use `jackin usage redeem` to redeem an eligible account reset. Select the displayed reset and confirm the prompt. Jackin checks eligibility again before submitting the request. Reading, refreshing and exporting usage never redeems a reset.
 

@@ -1,8 +1,7 @@
 # Connect and inspect a usage account in the terminal
 
-Launch `jackin`. Press **u** for Usage and choose **All Usage** to compare saved readings across accounts. Choose **Providers…** on the usage board to see every product and its connected account count. Select a product and press **Enter** to see its accounts or how to check its limits. For your personal Gemini subscription, select **Google AI Ultra (Gemini)**. To inspect one account, press **c** from the main screen, select its name under **Usage accounts**, and press **Enter**. The execution accounts listed on the same screen control sandbox launches.
+Launch `jackin`. Press **u** for Usage and choose **All Usage** to compare saved readings across accounts. Choose **Providers…** on the usage board to see every product and its connected account count. Select a product and press **Enter** to see its accounts or how to check its limits. For the Gemini and Claude quotas included with Google AI Ultra, select **Antigravity (Google AI)**. To inspect one account, press **c** from the main screen, select its name under **Usage accounts**, and press **Enter**. The execution accounts listed on the same screen control sandbox launches.
 
-![Usage providers at 80 columns. Claude and ChatGPT each have two accounts. Google AI Ultra shows Quota unavailable.](screens/provider-directory.png)
 
 ## Connect another account
 
@@ -13,9 +12,12 @@ Open **Accounts** in the jackin console. With a provider selected in the tree, p
 | Claude or ChatGPT in the browser | Complete the provider’s sign-in. Return to the terminal after the browser redirects. When the terminal offers a paste field, you can submit the authorization response there. |
 | Device sign-in | Open the displayed URL and enter the displayed code. The dialog offers **Copy code**, **Copy URL**, and **Open browser** while it waits for authorization. |
 | API key | Use **Open key page** or **Copy URL**, enter the key in the masked field, and activate **Validate and save**. |
+| Antigravity (Google AI) | Enter the Google account email you use in Antigravity. Run the displayed `agy --settings …` command in another terminal and complete sign-in there if prompted. Keep the Jackin dialog open until it shows your account. |
 | Gemini Code Assist | For an eligible Cloud Code Assist project, set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the registered Desktop app JSON for direct browser consent and managed project discovery. With the variable unset, supply the client ID, optional secret and optional project when asked. Complete the sign-in in the browser and allow its loopback redirect. |
 
 Esc dismisses an active sign-in. After a successful connection, the dialog displays the account and its usage. When you return to **Accounts**, select its saved name under **Usage accounts** to open its readings again. A saved account awaiting its first quota response displays a waiting message. Open **Usage accounts…** in Accounts, or press **N**, to inspect it again. The account details offer refresh, sign in again, rename, and remove. When the provider reports reset inventory, select an available reset and review its confirmation before redeeming it.
+
+To check your Ultra subscription, open the saved Antigravity account. Compare **Gemini 5h**, **Gemini weekly**, **Claude 5h** and **Claude weekly** with the quotas in Antigravity. Each percentage is the amount remaining. The account can receive new readings while Antigravity runs with the displayed settings.
 
 Opening **Usage** shows Priority by default on a fresh installation or once you have connected a usage account. An installation with only execution accounts opens their usage view. Use **Settings…** to make All Usage your default. After closing a board, press **p** for Priority or **a** for All Usage. From an empty board, choose **Add account…**. For a failed account, use the **Needs attention** selector and choose **Fix…** to open that account. Use the arrow keys to browse readings. Each row identifies the account and the metric. Press **Enter** for its value, reset time, and other fields supplied by the provider. Use **End** to reach the final row in a long list. In account details, **Page Down** and **Page Up** scroll long histories. A combined metric offers a member selector and **Inspect account**. Use **Refresh all** on the board or **Refresh provider** in a metric’s details. Automatic refresh checks run every five minutes while the console is running.
 

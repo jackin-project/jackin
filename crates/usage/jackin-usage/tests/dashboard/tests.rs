@@ -66,6 +66,21 @@ fn priority_distinguishes_waiting_hidden_attention_empty_and_spent() -> Result {
             .to_string()
             .contains("private@example.invalid")
     );
+    body["resources"]["weekly"]["used"] = json!(99.72);
+    put(&mut registry, id, now, &body)?;
+    let low = Dashboard::load(&registry, &mut mem, now)?;
+    assert_eq!(
+        low.all
+            .iter()
+            .find(|r| r.metric == "weekly")
+            .map(|r| r.value.as_str()),
+        Some("<1%")
+    );
+    assert!(
+        !low.priority
+            .iter()
+            .any(|(s, r)| *s == Section::UsedUp && r.metric == "weekly")
+    );
     body["resources"]["weekly"]["used"] = json!(100);
     put(&mut registry, id, now, &body)?;
     assert!(

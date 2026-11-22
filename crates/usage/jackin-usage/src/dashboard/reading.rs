@@ -46,6 +46,11 @@ pub(super) struct Metrics {
 const LABELS: &[(&str, &str)] = &[
     ("session", "Session"),
     ("weekly", "Weekly"),
+    ("gemini-5h", "Gemini 5h"),
+    ("gemini-weekly", "Gemini weekly"),
+    ("3p-5h", "Claude 5h"),
+    ("3p-weekly", "Claude weekly"),
+    ("gemini-argon-wtu-weekly", "Argon weekly"),
     ("monthly", "Monthly"),
     ("monthlyTotal", "Monthly total"),
     ("monthlyCode", "Monthly code"),
@@ -414,13 +419,13 @@ impl Measure {
         if !self.bounded() {
             return false;
         }
-        let precision = if self.unit == "percent" {
-            1.0
-        } else if self.currency() {
-            100.0
-        } else {
-            10.0
-        };
+        if self.unit == "percent" {
+            return self
+                .available
+                .unwrap_or_else(|| self.limit.unwrap_or_default() - self.used.unwrap_or_default())
+                <= 0.0;
+        }
+        let precision = if self.currency() { 100.0 } else { 10.0 };
         ((self.limit.unwrap_or_default() - self.used.unwrap_or_default()) * precision).round()
             <= 0.0
     }
@@ -520,6 +525,8 @@ impl Measure {
             (self.used, &self.exact_used)
         };
         match value {
+            Some(n) if self.unit == "percent" && n > 0.0 && n < 1.0 => "<1%".into(),
+            Some(n) if self.unit == "percent" && n > 99.0 && n < 100.0 => ">99%".into(),
             Some(n) => format_value(&self.unit, &exact.clone().unwrap_or_else(|| number(n))),
             None => self
                 .detail

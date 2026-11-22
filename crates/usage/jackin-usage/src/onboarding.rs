@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod antigravity;
+pub use antigravity::receive_antigravity_statusline;
 mod gemini_connection;
 mod google_registration;
 pub use google_registration::GoogleRegistrationFile;
@@ -112,6 +114,9 @@ pub enum LoginPrompt {
         url: Url,
         code: Secret,
     },
+    AntigravityStatusLine {
+        command: String,
+    },
     BrowserUnavailable,
 }
 
@@ -123,6 +128,7 @@ impl fmt::Debug for LoginPrompt {
             Self::Key { .. } => "Key",
             Self::Browser { .. } => "Browser",
             Self::Device { .. } => "Device",
+            Self::AntigravityStatusLine { .. } => "AntigravityStatusLine",
             Self::BrowserUnavailable => "BrowserUnavailable",
         })
     }
@@ -154,6 +160,7 @@ fn core_provider(provider: UsageProvider) -> Provider {
         U::Kimi => Provider::Kimi,
         U::MiniMax => Provider::Minimax,
         U::Mimo => Provider::Mimo,
+        U::Antigravity => Provider::Antigravity,
         U::Gemini => Provider::Gemini,
         U::Zai => Provider::Zai,
         U::OpenCode => Provider::Opencode,
@@ -325,6 +332,9 @@ impl OwnedLogin {
                 "auth method selection applies to Kimi or MiniMax",
             )
             .into());
+        }
+        if provider == UsageProvider::Antigravity {
+            return self.connect_antigravity(replace, prompts, cancel).await;
         }
         let lease = match replace {
             Some(id) => Some(self.account_lease(id, cancel).await?),
@@ -652,6 +662,9 @@ impl OwnedLogin {
         trigger: RefreshTrigger,
         cancel: &CancellationToken,
     ) -> Result<(), LoginError> {
+        if account.provider == UsageProvider::Antigravity {
+            return Ok(());
+        }
         let manual = trigger != RefreshTrigger::Scheduled;
         let id = account.id;
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(120);
