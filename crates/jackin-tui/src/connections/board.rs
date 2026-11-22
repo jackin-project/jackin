@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_console::usage_connections::{
-    BoardEdit, BoardMetric, BoardSettings, OrderingScope, UsageBoard, UsageEntry,
+    BoardEdit, BoardMetric, BoardSettings, MetricPreference, OrderingScope, UsageBoard, UsageEntry,
 };
 use jackin_core::plain;
-use jackin_usage::accounts::{AccountRegistry, ConnectedAccount, ConnectionError, UsageProvider};
-use jackin_usage::dashboard::{Dashboard, DashboardMemory, DashboardRow};
+use jackin_usage::accounts::{
+    AccountRegistry, ConnectedAccount, ConnectionError, MetricEdit, MetricState,
+};
+use jackin_usage::dashboard::{Dashboard, DashboardMemory, DashboardRow, DashboardSettings};
 use jackin_usage::onboarding::OwnedLogin;
 use uuid::Uuid;
 
@@ -64,12 +66,23 @@ fn move_item(
         }
         OrderingScope::Provider => {
             let mut settings = db.dashboard_settings()?;
-            for kind in UsageProvider::ALL {
-                if !settings.provider_order.contains(&kind) {
-                    settings.provider_order.push(kind);
+            let mut visible = Vec::new();
+            for a in db.list()? {
+                if !visible.contains(&a.provider) {
+                    visible.push(a.provider);
                 }
             }
-            shift(&mut settings.provider_order, &account.provider, up);
+            visible.sort_by_key(|p| {
+                settings
+                    .provider_order
+                    .iter()
+                    .position(|kind| kind == p)
+                    .unwrap_or(usize::MAX)
+            });
+            shift(&mut visible, &account.provider, up);
+            settings.provider_order.retain(|p| !visible.contains(p));
+            visible.append(&mut settings.provider_order);
+            settings.provider_order = visible;
             db.set_dashboard_settings(&settings)
         }
         OrderingScope::Metric => {
@@ -79,17 +92,14 @@ fn move_item(
                 .into_iter()
                 .find(|(a, _, _)| a.id == account.id)
                 .ok_or(ConnectionError::Changed)?;
-            if let Some(resources) = payload.as_ref().and_then(|p| {
-                p.get(display::RESOURCES)
-                    .and_then(serde_json::Value::as_object)
-            }) {
-                for key in resources.keys() {
-                    if !prefs.metric_order.contains(key) {
-                        prefs.metric_order.push(key.clone());
-                    }
-                }
+            if let Some(body) = payload {
+                let mut visible = jackin_usage::dashboard::metric_order(&body, &prefs.metric_order);
+                visible.retain(|key| !prefs.hidden.contains(key));
+                shift(&mut visible, &metric, up);
+                prefs.metric_order.retain(|key| !visible.contains(key));
+                visible.append(&mut prefs.metric_order);
+                prefs.metric_order = visible;
             }
-            shift(&mut prefs.metric_order, &metric, up);
             db.set_preferences(account.id, &prefs)
         }
     }
@@ -124,6 +134,37 @@ fn apply(db: &mut AccountRegistry, edit: BoardEdit) -> Result<(), ConnectionErro
             }
             db.set_preferences(a.id, &a.preferences)
         }
+        BoardEdit::Unified {
+            metric,
+            before,
+            after,
+        } => {
+            if before.len() != after.len() {
+                return Err(ConnectionError::Changed);
+            }
+            let changes = before
+                .iter()
+                .zip(&after)
+                .map(|(from, to)| {
+                    if from.account != to.account {
+                        return Err(ConnectionError::Changed);
+                    }
+                    let state = |p: &MetricPreference| match (p.hidden, p.pinned) {
+                        (true, false) => Ok(MetricState::Hidden),
+                        (false, true) => Ok(MetricState::Pinned),
+                        (false, false) => Ok(MetricState::Visible),
+                        (true, true) => Err(ConnectionError::Invalid),
+                    };
+                    Ok(MetricEdit {
+                        account: Uuid::parse_str(&from.account)
+                            .map_err(|_| ConnectionError::Changed)?,
+                        before: state(from)?,
+                        after: state(to)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            db.edit_metric(&metric, &changes)
+        }
         BoardEdit::Move {
             scope,
             account,
@@ -146,8 +187,10 @@ fn metric(
     group: String,
     row: DashboardRow,
     accounts: &[UsageEntry],
-    remaining: bool,
+    registry: &[ConnectedAccount],
+    settings: &DashboardSettings,
 ) -> BoardMetric {
+    let remaining = settings.remaining;
     let percent = |fraction: f64| {
         jackin_usage::Percent::new(fraction * 100.0)
             .ok()
@@ -164,9 +207,26 @@ fn metric(
         Severity::Warning => Tone::Warning,
         Severity::Critical => Tone::Danger,
     };
-    let reset = row.reset.as_ref().map(plain);
+    let reset = row
+        .reset
+        .as_deref()
+        .map(|text| display::reset_caption(text, settings.exact_resets));
+    let value = display::metric_value(&row, remaining);
     let details = display::metric_details(&row);
     BoardMetric {
+        member_preferences: if row.account.is_none() {
+            row.members
+                .iter()
+                .filter_map(|id| registry.iter().find(|a| a.id == *id))
+                .map(|a| MetricPreference {
+                    account: a.id.to_string(),
+                    pinned: a.preferences.pinned.contains(&row.metric),
+                    hidden: a.preferences.hidden.contains(&row.metric),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
         account: row.account.map(|id| id.to_string()),
         members: if row.account.is_none() {
             row.members
@@ -183,7 +243,7 @@ fn metric(
         },
         provider: row.provider.to_string(),
         title: display::caption(row.label, row.metric_label),
-        value: plain(row.value),
+        value,
         metric: row.metric,
         group,
         details,
@@ -223,11 +283,18 @@ pub(super) fn load(
     };
     let share = data.redacted_export().to_string();
     let accounts = super::entries(service)?;
-    let rows = if priority {
+    let registry = db.list()?;
+    let rows: Vec<BoardMetric> = if priority {
         data.priority
             .into_iter()
             .map(|(section, row)| {
-                metric(section.to_string(), row, &accounts, data.settings.remaining)
+                metric(
+                    section.to_string(),
+                    row,
+                    &accounts,
+                    &registry,
+                    &data.settings,
+                )
             })
             .collect()
     } else {
@@ -235,15 +302,24 @@ pub(super) fn load(
             .into_iter()
             .map(|row| {
                 metric(
-                    row.provider.to_string(),
+                    jackin_console::usage_connections::PRODUCTS
+                        .iter()
+                        .find(|(key, _)| *key == row.provider.as_str())
+                        .map_or(row.provider.as_str(), |(_, name)| *name)
+                        .to_owned(),
                     row,
                     &accounts,
-                    data.settings.remaining,
+                    &registry,
+                    &data.settings,
                 )
             })
             .collect()
     };
+    let alerts: Vec<_> = data.alerts.into_iter().map(plain).collect();
     let mut notices = Vec::new();
+    if alerts.len() > 1 {
+        notices.extend(alerts.iter().cloned());
+    }
     if !data.notices.is_empty() {
         notices.push(display::NEEDS_ATTENTION.into());
         notices.extend(
@@ -267,12 +343,14 @@ pub(super) fn load(
                 .cloned()
         })
         .collect();
-    if data.shows_clear_row {
+    if priority
+        && data.shows_clear_row
+        && data.summary != jackin_usage::dashboard::Summary::AllClear
+    {
         notices.push(display::ALL_CLEAR.into());
     }
     let settings = BoardSettings {
-        hidden: db
-            .list()?
+        hidden: registry
             .into_iter()
             .flat_map(|a| {
                 let label = accounts
@@ -293,11 +371,15 @@ pub(super) fn load(
     };
     Ok(UsageBoard {
         priority,
-        summary: data.summary.to_string(),
+        summary: if priority || rows.is_empty() {
+            data.summary.to_string()
+        } else {
+            display::ALL_USAGE_TITLE.into()
+        },
         notices,
         attention,
         empty: accounts.is_empty(),
-        alerts: data.alerts.into_iter().map(plain).collect(),
+        alerts,
         rows,
         settings,
         share,

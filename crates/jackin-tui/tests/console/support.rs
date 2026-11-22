@@ -99,6 +99,26 @@ impl Lab {
 pub(crate) const CANARY: &str = "CANARY-op-secret-91c7d2e8";
 
 impl Lab {
+    pub(crate) async fn inspect_execution_account(
+        &mut self,
+        provider: &str,
+        name: &str,
+    ) -> TestResult {
+        self.console
+            .console()
+            .app()
+            .go(jackin_console::screens::Go::Accounts {
+                select: Some(name.into()),
+            });
+        self.console.settle().await?;
+        let view = self.console.screen();
+        assert!(
+            view.contains(&format!("Accounts › {provider} › {name}")),
+            "{view}"
+        );
+        Ok(())
+    }
+
     pub(crate) async fn step(&mut self, keys: &str) -> TestResult {
         self.console.keys(keys)?;
         self.console.settle().await

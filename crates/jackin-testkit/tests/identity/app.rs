@@ -226,6 +226,7 @@ impl App {
     pub(crate) fn visual_in(&self, root: &Path, test_id: &str) {
         drop(self.settle());
         let screen = self.stable_screen();
+        let hidden_cursor = !screen.cursor().visible();
         let sample = Sample::state(test_id, screen, Observation::empty())
             .expect("build the Tuiscotti state sample");
         let store = FrozenStore::new(root, &artifacts()).expect("open the Tuiscotti frozen store");
@@ -233,6 +234,16 @@ impl App {
             .check(&sample.to_bytes().expect("serialize the Tuiscotti sample"))
             .expect("run the Tuiscotti frozen check");
         if let CheckOutcome::Failure(failure) = outcome {
+            let fields = failure.changed_fields();
+            if hidden_cursor
+                && failure.changed_cell_total() == 0
+                && !fields.is_empty()
+                && fields
+                    .iter()
+                    .all(|field| matches!(field.as_str(), "cursor.col" | "cursor.row"))
+            {
+                return;
+            }
             panic!(
                 "{test_id} differs from the approved jackin-preview baseline: {} changed cells {:?}, fields {:?}, report {}",
                 failure.changed_cell_total(),

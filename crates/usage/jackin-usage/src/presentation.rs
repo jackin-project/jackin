@@ -10,6 +10,8 @@ use serde_json::Value;
 pub const RESOURCES: &str = "resources";
 pub const RESETS: &str = "resets";
 
+pub const ALL_USAGE_TITLE: &str = "All Usage";
+
 #[derive(Debug)]
 pub struct AccountDetails {
     pub id: String,
@@ -30,33 +32,10 @@ pub struct ResetItem {
     pub usable: bool,
 }
 
-fn resource_detail(name: &str, resource: &Value) -> String {
-    let unit = resource.get("unit").and_then(Value::as_str).unwrap_or("");
-    let mut values = Vec::new();
-    if let Some(fields) = resource.as_object() {
-        for (key, value) in fields {
-            if value.is_null() || matches!(key.as_str(), "unit" | "kind") {
-                continue;
-            }
-            let value = if key == "resets_at" {
-                value.as_i64().map_or_else(
-                    || value.to_string(),
-                    |epoch| jackin_core::Timestamp(epoch).rfc3339(),
-                )
-            } else {
-                value
-                    .as_str()
-                    .map_or_else(|| value.to_string(), str::to_owned)
-            };
-            values.push(format!("{} {value}", key.replace('_', " ")));
-        }
-    }
-    format!("{name} ({unit}) · {}", values.join(" · "))
-}
-
-fn detail(
+pub(crate) fn detail(
     (account, fetched, payload): StoredSnapshot,
     now: jackin_core::Timestamp,
+    settings: &DashboardSettings,
 ) -> AccountDetails {
     let mut inventory = Vec::new();
     let mut lines = Vec::new();
@@ -105,17 +84,48 @@ fn detail(
                 });
             }
         }
+        match account.provider {
+            crate::accounts::UsageProvider::Kimi
+            | crate::accounts::UsageProvider::MiniMax
+            | crate::accounts::UsageProvider::Mimo => {
+                if let Some(region) = region.as_deref() {
+                    let name = match region {
+                        "cn" => "China",
+                        "global" => "Global",
+                        "sgp" => "Singapore",
+                        "ams" => "Amsterdam",
+                        other => other,
+                    };
+                    lines.push(format!("Region · {name}"));
+                }
+                for (field, label) in [
+                    ("auto_renew", "Automatic renewal"),
+                    ("claw_enabled", "MiMo Claw"),
+                    ("is_available", "Balance available"),
+                    ("balanceAlertsEnabled", "Balance alerts"),
+                ] {
+                    if let Some(enabled) = data[field].as_bool() {
+                        lines.push(format!("{label} · {}", if enabled { "On" } else { "Off" }));
+                    }
+                }
+            }
+            crate::accounts::UsageProvider::Gemini => {
+                if let Some(project) = data["project"].as_str() {
+                    lines.push(format!("Code Assist project · {project}"));
+                }
+            }
+            _ => {}
+        }
         if let Some(plan) = data.get("plan").and_then(Value::as_str) {
             lines.push(format!("Plan · {plan}"));
         }
-        if let Some(resources) = data.get("resources").and_then(Value::as_object) {
-            for (name, resource) in resources {
-                lines.push(resource_detail(name, resource));
-            }
-        }
-        if lines.len() <= 1 {
+        let measurements = crate::dashboard::account_detail_lines(&data, settings, now.0);
+        if let Some(notice) = data["notice"].as_str() {
+            lines.push(notice.to_owned());
+        } else if measurements.is_empty() {
             lines.push("No limits reported.".into());
         }
+        lines.extend(measurements);
     } else {
         lines.push("Waiting for first usage refresh.".into());
     }
@@ -135,13 +145,13 @@ pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionEr
     let Some(db) = AccountRegistry::open_read_only(service.database())? else {
         return Ok(Vec::new());
     };
-    let concealed = db.dashboard_settings()?.conceal_names;
+    let settings = db.dashboard_settings()?;
     db.snapshots()?
         .into_iter()
         .enumerate()
         .map(|(index, row)| {
             let id = row.0.id;
-            let mut entry = detail(row, service.now());
+            let mut entry = detail(row, service.now(), &settings);
             entry.hub = db.hub_link(id)?.map(|mirror| mirror.hub.to_string());
             if let Some(fail) = db.failure(id)? {
                 entry.details.insert(
@@ -153,8 +163,8 @@ pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionEr
                     ),
                 );
             }
-            if concealed {
-                entry.label = format!("Account {}", index + 1);
+            if settings.conceal_names {
+                entry.label = crate::dashboard::concealed_label(index);
             }
             Ok(entry)
         })
@@ -178,8 +188,30 @@ flags! {
     notify_warning=>"Alert at warning",notify_critical=>"Alert at critical",notify_burning=>"Alert on Burning Fast",notify_unused=>"Alert on unused quota",
 }
 
+pub fn metric_value(row: &DashboardRow, remaining: bool) -> String {
+    if row.display_fraction(remaining).is_some() {
+        format!(
+            "{} {}",
+            plain(&row.value),
+            if remaining { "remaining" } else { "used" }
+        )
+    } else {
+        plain(&row.value)
+    }
+}
+
+pub fn reset_caption(reset: &str, exact: bool) -> String {
+    match reset {
+        "Imminent" => "reset due".into(),
+        "Unknown" => "reset time unknown".into(),
+        _ if exact => format!("resets at {}", plain(reset)),
+        _ => format!("resets in {}", plain(reset)),
+    }
+}
+
 pub fn metric_details(row: &DashboardRow) -> Vec<String> {
-    let mut details: Vec<_> = row.details.iter().map(plain).collect();
+    let mut details = row.quantity_details();
+    details.extend(row.details.iter().map(plain));
     if let Some(plan) = &row.plan {
         details.push(format!("Plan · {}", plain(plan)));
     }

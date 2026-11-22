@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use jackin_core::{Clock, EnvSnapshot, FileSystem, HostPath, ProcessRunner, Provider};
 
+use jackin_usage_provider_core::{Http, ProviderError};
+
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Clone, Debug)]
@@ -44,6 +46,14 @@ impl ProviderEndpoints {
     pub fn with_timeout(mut self, timeout: Duration) -> ProviderEndpoints {
         self.timeout = timeout;
         self
+    }
+
+    pub fn http(&self, provider: Provider) -> Result<Http, ProviderError> {
+        let http = Http::new(self.timeout);
+        match self.base(provider) {
+            Some(base) => http.with_base(base),
+            None => Ok(http),
+        }
     }
 
     pub(crate) fn base(&self, provider: Provider) -> Option<&str> {

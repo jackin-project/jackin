@@ -303,10 +303,7 @@ async fn validate_reports_quota_access_and_the_rejection_of_a_login() -> TestRes
         rejected_and_unsupported(&lab).await?;
         lab.reopen().await?;
         serve(&lab, &body(Some(20.0), 5.0)).await?;
-        lab.step("c").await?;
-        lab.step("down").await?;
-        lab.step("down").await?;
-        lab.step("down").await?;
+        lab.inspect_execution_account("Codex", "spare").await?;
         lab.step("v").await?;
         let spare = lab.world().accounts.get("spare").cloned().ok_or("spare")?;
         assert_eq!(
@@ -318,7 +315,7 @@ async fn validate_reports_quota_access_and_the_rejection_of_a_login() -> TestRes
             Some(IssueCode::Unauthorized)
         );
         assert_eq!(spare.lifecycle, Lifecycle::NeedsLogin);
-        lab.step("down").await?;
+        lab.inspect_execution_account("Codex", "work").await?;
         lab.step("v").await?;
         let work = lab.world().accounts.get("work").cloned().ok_or("work")?;
         assert_eq!(
@@ -454,7 +451,7 @@ async fn a_good_and_a_stale_refresh_name_their_outcome_in_the_vocabulary_words()
         let mut lab = Lab::open().await?;
         use_codex(&mut lab).await?;
         serve(&lab, &body(Some(40.0), 10.0)).await?;
-        lab.step("c down down").await?;
+        lab.inspect_execution_account("Codex", "work").await?;
         let current = refresh_codex(&mut lab).await?;
         let word = words.refresh_outcome(RefreshOutcome::Current);
         assert!(
@@ -490,7 +487,7 @@ async fn a_refresh_that_never_read_usage_is_named_failed_with_the_provider_reaso
             PATH,
             Route::status(500),
         );
-        lab.step("c down down").await?;
+        lab.inspect_execution_account("Codex", "work").await?;
         let failed = refresh_codex(&mut lab).await?;
         let word = words.refresh_outcome(RefreshOutcome::Failed);
         assert!(
@@ -547,7 +544,8 @@ async fn validate_words_its_rows_with_the_vocabulary() -> TestResult {
         rejected_and_unsupported(&lab).await?;
         lab.reopen().await?;
         serve(&lab, &body(Some(20.0), 5.0)).await?;
-        lab.step("c down down down v").await?;
+        lab.inspect_execution_account("Codex", "spare").await?;
+        lab.step("v").await?;
         let rejected = lab.console.screen();
         let expired = words.check(&IssueReason::Usage(UsageReason::ExpiredLogin));
         let start: String = expired.chars().take(13).collect();
@@ -555,7 +553,8 @@ async fn validate_words_its_rows_with_the_vocabulary() -> TestResult {
             rejected.contains(&format!("quota access · {start}")),
             "{rejected}"
         );
-        lab.step("down v").await?;
+        lab.inspect_execution_account("Codex", "work").await?;
+        lab.step("v").await?;
         let readable = lab.console.screen();
         let quota = words.found(&Found::Level(ValidationLevel::QuotaReadable));
         assert!(
@@ -598,10 +597,7 @@ async fn a_roster_refresh_keeps_the_last_validation_and_drops_a_reading_of_an_ed
         let mut lab = Lab::open().await?;
         use_codex(&mut lab).await?;
         serve(&lab, &body(Some(20.0), 5.0)).await?;
-        lab.step("c").await?;
-        lab.step("down").await?;
-        lab.step("down").await?;
-        lab.step("down").await?;
+        lab.inspect_execution_account("Codex", "work").await?;
         lab.step("v").await?;
         let checked = lab.world().accounts.get("work").cloned().ok_or("work")?;
         assert_eq!(

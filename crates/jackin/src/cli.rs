@@ -125,6 +125,13 @@ pub enum UsageCommand {
 
     #[command(about = "Read saved usage without accessing providers or credentials")]
     Snapshot(UsageFilter),
+    #[command(about = "Show saved account limits, reset inventory and usage history")]
+    Details {
+        #[command(flatten)]
+        filter: UsageFilter,
+        #[arg(long, help = "Print a structured JSON report")]
+        json: bool,
+    },
     #[command(about = "Refresh connected accounts from their providers")]
     Refresh(UsageFilter),
     #[command(about = "Confirm and spend one available reset from the account's saved inventory")]

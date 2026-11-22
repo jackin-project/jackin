@@ -248,6 +248,11 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         desk,
         usage,
         op: op.clone(),
+        google_registration: jackin_usage::onboarding::GoogleRegistrationFile::from_environment(
+            &env,
+            &cwd,
+            Arc::clone(&host.fs),
+        ),
         env: env.clone(),
         sessions,
         roles,

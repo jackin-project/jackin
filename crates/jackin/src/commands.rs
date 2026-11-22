@@ -45,6 +45,16 @@ pub(crate) async fn dispatch(app: &mut App, command: Command) -> Result<(), Comm
         Command::Ls(arg) => ls::run(app, &arg).await,
         Command::Usage(arg) => match arg.command {
             Some(crate::cli::UsageCommand::Host(host)) => usage::run(app, &host).await,
+            Some(crate::cli::UsageCommand::Details { filter, json }) => {
+                connections::usage(
+                    app,
+                    crate::cli::UsageCommand::Details {
+                        filter,
+                        json: json || arg.json,
+                    },
+                )
+                .await
+            }
             Some(command) => connections::usage(app, command).await,
             None => connections::overview(app, arg.json).await,
         },

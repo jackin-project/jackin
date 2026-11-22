@@ -193,23 +193,35 @@ struct Projection<'a> {
     now: i64,
 }
 
+pub(crate) fn concealed_label(index: usize) -> String {
+    format!("Account {}", index + 1)
+}
+
+fn ordered_measures(body: &Value, order: &[String]) -> Vec<(String, Measure)> {
+    let mut metrics = reading::read(body);
+    metrics.sort_by_key(|(id, _)| {
+        let saved = order.iter().position(|v| v == id);
+        (
+            saved.is_none(),
+            saved.unwrap_or_else(|| reading::default_order(id)),
+        )
+    });
+    metrics
+}
+
+pub fn metric_order(body: &Value, order: &[String]) -> Vec<String> {
+    ordered_measures(body, order)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
+}
+
 impl Projection<'_> {
     fn account(&mut self, account: &ConnectedAccount, body: &Value, label: &str, stale: bool) {
         let settings = self.settings;
         let now = self.now;
         let memory = &mut *self.memory;
-        let mut metrics = reading::read(body);
-        metrics.sort_by_key(|(id, _)| {
-            let saved = account
-                .preferences
-                .metric_order
-                .iter()
-                .position(|v| v == id);
-            (
-                saved.is_none(),
-                saved.unwrap_or_else(|| reading::default_order(id)),
-            )
-        });
+        let metrics = ordered_measures(body, &account.preferences.metric_order);
         for (id, measure) in metrics {
             if account.preferences.hidden.contains(&id) {
                 continue;
@@ -264,8 +276,8 @@ impl Dashboard {
         now: i64,
     ) -> Result<Self, ConnectionError> {
         let settings = db.dashboard_settings()?;
-        let mut snapshots = db.snapshots()?;
-        snapshots.sort_by_key(|(a, _, _)| {
+        let mut snapshots = db.snapshots()?.into_iter().enumerate().collect::<Vec<_>>();
+        snapshots.sort_by_key(|(_, (a, _, _))| {
             settings
                 .provider_order
                 .iter()
@@ -284,9 +296,9 @@ impl Dashboard {
             now,
         };
         let mut families = Vec::<(UsageProvider, Vec<ConnectedAccount>)>::new();
-        for (index, (account, stamp, payload)) in snapshots.into_iter().enumerate() {
+        for (index, (account, stamp, payload)) in snapshots {
             let label = if settings.conceal_names {
-                format!("{} account {}", account.provider, index + 1)
+                concealed_label(index)
             } else {
                 account.label.clone()
             };
@@ -415,7 +427,37 @@ impl Dashboard {
     }
 }
 
+pub(crate) fn account_detail_lines(
+    body: &Value,
+    settings: &DashboardSettings,
+    now: i64,
+) -> Vec<String> {
+    let mut metrics = reading::read(body);
+    metrics.sort_by_key(|(id, _)| reading::default_order(id));
+    let mut lines = Vec::new();
+    for (_, measure) in metrics {
+        lines.push(format!(
+            "{} · {}",
+            measure.label,
+            measure.display(settings.remaining)
+        ));
+        lines.extend(measure.quantity_details());
+        if let Some(at) = measure.reset {
+            lines.push(format!(
+                "Reset · {}",
+                reading::reset_text(at, now, settings.exact_resets)
+            ));
+        }
+        lines.extend(measure.detail);
+    }
+    lines
+}
+
 impl DashboardRow {
+    pub(crate) fn quantity_details(&self) -> Vec<String> {
+        self.reading.quantity_details()
+    }
+
     pub fn display_fraction(&self, remaining: bool) -> Option<f64> {
         if !self.reading.bounded() {
             return None;

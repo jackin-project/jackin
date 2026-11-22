@@ -34,6 +34,7 @@ mod shell;
 mod signals;
 mod support;
 mod usage;
+mod usage_details;
 mod usage_only;
 mod usage_snapshot;
 mod workspace_in_use;

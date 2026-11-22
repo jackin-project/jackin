@@ -91,7 +91,7 @@ The form asks for these fields:
 - `Provider`.
 - `Credential source`.
 
-Usage connections and execution accounts are separate. A usage connection signs in to a provider so the Usage dashboard can read limits. An execution account supplies credentials to a sandbox launch. Only a Codex execution account with a ChatGPT login can run in a sandbox. See [Accounts](/guides/accounts/) for both account types.
+Usage connections and execution accounts are separate. To add a usage connection, choose **Add usage account…** in the Accounts action buttons, or press `n` in the account tree. Choose a provider and complete its sign-in. Saved usage connections appear under **Usage accounts** by name. Select a name to reopen its readings. Use **Usage accounts…** or `Shift+N` from the tree to open the saved usage list. An execution account supplies credentials to a sandbox launch. Only a Codex execution account with a ChatGPT login can run in a sandbox. See [Accounts](/guides/accounts/) for both account types.
 
 ### Codex with the ChatGPT login folder
 
@@ -153,7 +153,7 @@ The console can remove a default account. The CLI cannot: `jackin account rm` re
 
 ## Read the usage panel
 
-Press `u` in the manager to open Usage. The dashboard lists connected usage accounts, including accounts that cannot run in a sandbox. It refreshes connected accounts while the console runs. The account screen's `m` key opens account management.
+Press `u` in the manager to open Usage. The dashboard lists connected usage accounts, including accounts that cannot run in a sandbox. It refreshes connected accounts while the console runs. On an empty board, choose **Add account…**. Press `p` for Priority or `a` for All Usage. From **All Usage**, compare saved readings across accounts; select a saved account name under Accounts to inspect that account directly. Use the CLI command `jackin usage details` to list saved account details, with `--provider` and `--account` filters. The account screen's `m` key opens account management.
 
 - `Overview` shows the health, the freshness, the registry, and one row per provider with its worst window and status.
 - An account page shows the provider, status, and metrics reported by the provider. These can include limit windows, balances, credits, spend, and reset times.

@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod details;
+pub use details::details_account;
+
 use crate::accounts::ConnectedAccount;
 use serde_json::{Map, Value, json};
 

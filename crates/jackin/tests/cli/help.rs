@@ -26,6 +26,7 @@ const COMMANDS: &[&str] = &[
     "doctor",
     "ls",
     "usage",
+    "usage details",
     "usage host",
     "usage share",
     "usage proxy",

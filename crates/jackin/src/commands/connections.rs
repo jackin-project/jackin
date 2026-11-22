@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+mod details;
+
 use std::path::PathBuf;
 
 use jackin_core::{Secret, TerminalText};
@@ -166,6 +168,13 @@ fn service(app: &App) -> Result<OwnedLogin, CommandError> {
         database(app)?,
         app.deps.usage_endpoints.clone(),
         Arc::clone(&app.deps.host.clock),
+    )
+    .with_google_registration(
+        jackin_usage::onboarding::GoogleRegistrationFile::from_environment(
+            &app.env,
+            &app.cwd,
+            Arc::clone(&app.deps.host.fs),
+        ),
     ))
 }
 
@@ -206,12 +215,17 @@ async fn handle_prompt(app: &mut App, prompt: LoginPrompt) -> Result<(), Command
         LoginPrompt::Browser { url, paste } => {
             app.io
                 .note(&format!("Authorize this account in your browser: {url}"));
-            let code = hidden_input(
-                app,
-                "Waiting for callback. You can paste the signed response here (Esc cancels): ",
-                false,
-            )
-            .await?;
+            let code = loop {
+                let code = hidden_input(
+                    app,
+                    "Waiting for the browser. Paste a signed response only if needed (Esc cancels): ",
+                    true,
+                )
+                .await?;
+                if !code.expose().is_empty() {
+                    break code;
+                }
+            };
             paste.send(code).map_err(|_| cancelled())?;
         }
         LoginPrompt::Device { url, code } => {
@@ -281,6 +295,7 @@ pub(super) async fn overview(app: &mut App, json: bool) -> Result<(), CommandErr
         .await;
     }
     let Some(db) = AccountRegistry::open_read_only(&database(app)?).map_err(failure)? else {
+        app.io.note("To connect your first provider, open Accounts in the console or run jackin account usage connect <provider>.");
         return Err(CommandError::NoUsageSnapshot);
     };
     let board = jackin_usage::dashboard::Dashboard::load(
@@ -289,17 +304,40 @@ pub(super) async fn overview(app: &mut App, json: bool) -> Result<(), CommandErr
         app.deps.host.clock.now().0,
     )
     .map_err(failure)?;
-    for row in board.all {
-        let text = format!(
-            "{}  {}  {}  {}  {}",
-            row.provider,
-            row.label,
-            row.metric_label,
-            row.value,
-            row.reset.as_deref().unwrap_or("")
-        );
+    let mut group = None;
+    for row in &board.all {
+        let next = (row.provider, row.account, row.label.as_str());
+        if group != Some(next) {
+            let heading = format!("{} · {}", row.provider, row.label);
+            app.io
+                .line(&TerminalText::sanitize(heading.as_bytes()).to_string())?;
+            group = Some(next);
+        }
+        let mut columns = vec![
+            jackin_core::plain(&row.metric_label),
+            jackin_usage::presentation::metric_value(row, board.settings.remaining),
+        ];
+        if let Some(reset) = &row.reset {
+            columns.push(jackin_usage::presentation::reset_caption(
+                reset,
+                board.settings.exact_resets,
+            ));
+        }
+        if row.stale {
+            columns.push("stale".into());
+        }
+        let line = format!("  {}", columns.join(" · "));
         app.io
-            .line(&TerminalText::sanitize(text.as_bytes()).to_string())?;
+            .line(&TerminalText::sanitize(line.as_bytes()).to_string())?;
+    }
+    if !board.waiting.is_empty() {
+        app.io.note(&format!(
+            "Waiting for a first usage reading: {}",
+            board.waiting.len()
+        ));
+    }
+    if board.all.is_empty() && board.waiting.is_empty() {
+        app.io.line(&board.summary.to_string())?;
     }
     for notice in board.notices {
         app.io.note(
@@ -357,6 +395,7 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
     let active = matches!(command, UsageCommand::Refresh(_));
     let filter = match command {
         UsageCommand::Refresh(f) | UsageCommand::Snapshot(f) => f,
+        UsageCommand::Details { filter, json } => return details::show(app, &filter, json),
         UsageCommand::Host(_) | UsageCommand::Share | UsageCommand::Proxy { .. } => {
             return Err(CommandError::Argument("choose a usage filter".into()));
         }

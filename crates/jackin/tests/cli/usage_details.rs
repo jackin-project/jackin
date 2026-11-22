@@ -1,0 +1,145 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use super::support::Harness;
+use jackin::ExitClass;
+use jackin_core::{Clock, SecretBytes};
+use jackin_testkit::{TestResult, World, guard, seed_usage_profile};
+use jackin_usage::accounts::{
+    AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, DATABASE_PATH,
+    UsageProvider,
+};
+use serde_json::{Value, json};
+use std::sync::Arc;
+use uuid::Uuid;
+
+#[tokio::test]
+async fn details_reads_all_thirteen_saved_accounts_and_filters_by_exact_identity() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let cli = Harness::new(&world);
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config dir")?
+            .join(DATABASE_PATH);
+        let no_data = cli.run(&["usage", "details", "--json"]).await?;
+        assert_eq!(no_data.exit, ExitClass::NoUsageSnapshot);
+        assert!(!path.exists());
+        let accounts = seed_usage_profile(&path, world.clock.now().0, true)?;
+        let report = cli.run(&["usage", "details", "--json"]).await?;
+        report.ok()?;
+        assert!(
+            !report.stdout.contains("private-reset-id")
+                && !report.stdout.contains("synthetic-team-reset")
+        );
+        let all: Value = serde_json::from_str(&report.stdout)?;
+        let listed = all["accounts"].as_array().ok_or("accounts")?;
+        assert_eq!(listed.len(), 13);
+        for (shown, account) in listed.iter().zip(&accounts) {
+            assert_eq!(shown["account"]["id"], account.id.to_string());
+            assert_eq!(shown["account"]["label"], account.label);
+            assert!(shown["usage"]["resources"].is_object());
+        }
+        let codex = cli
+            .run(&["usage", "--json", "details", "--provider", "codex"])
+            .await?;
+        codex.ok()?;
+        let codex: Value = serde_json::from_str(&codex.stdout)?;
+        let rows = codex["accounts"].as_array().ok_or("codex rows")?;
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            rows[0]["usage"]["history"]["counts"]["days"]["2026-01-01"]["by_model"]["model-fixture"]
+                ["turns"],
+            2.0
+        );
+        assert_eq!(
+            rows[1]["usage"]["history"]["ranges"]["today"]["observedDays"],
+            0
+        );
+        let selected = accounts
+            .iter()
+            .find(|a| a.label == "Claude Team")
+            .ok_or("team")?;
+        let one = cli
+            .run(&["usage", "details", "--account", &selected.id.to_string()])
+            .await?;
+        one.ok()?;
+        assert!(
+            one.stdout.contains("140 eur")
+                && one.stdout.contains("200 eur")
+                && one.stdout.contains("Reset 1")
+        );
+        assert!(!one.stdout.contains("Claude Home"));
+        let mismatch = cli
+            .run(&[
+                "usage",
+                "details",
+                "--account",
+                &selected.id.to_string(),
+                "--provider",
+                "codex",
+            ])
+            .await?;
+        assert_eq!(mismatch.exit, ExitClass::Usage);
+        Ok(())
+    })
+    .await
+}
+
+#[derive(Debug)]
+struct Offline;
+impl CredentialVault for Offline {
+    fn store(&self, _: Uuid, _: &SecretBytes) -> Result<(), ConnectionError> {
+        Ok(())
+    }
+    fn delete(&self, _: Uuid) -> Result<(), ConnectionError> {
+        Ok(())
+    }
+    fn load(&self, _: Uuid) -> Result<SecretBytes, ConnectionError> {
+        Err(ConnectionError::MissingCredential)
+    }
+}
+
+#[tokio::test]
+async fn daily_details_report_exact_amounts_optional_failures_and_no_private_fields() -> TestResult
+{
+    guard(async {
+        let world=World::builder().build()?;
+        let cli=Harness::new(&world);
+        let path=cli.config_path.as_path().parent().ok_or("config dir")?.join(DATABASE_PATH);
+        let mut db=AccountRegistry::with_vault(&path,Arc::new(Offline))?;
+        let data=json!({
+            "access_token":"PRIVATE-TOKEN", "nextGrantId":"PRIVATE-GRANT", "is_available":true,
+            "daily":{"consumption":{"start":"2026-11-01","end":"2026-11-22","rows":[{
+                "currency":"CNY","name":"MiMo fixture","date":"2026-11-22","resource_type":"model",
+                "consumed_amount":1,"request_count":2,"total_tokens":11,"input_cache_hit_amount":1,
+                "internal_id":"PRIVATE-ROW"
+            }]},"bills":{"unavailable":true,"attemptedAt":77}},
+            "resources":{"CNY/cash":{"kind":"balance","unit":"minor_currency","currency":"CNY","exponent":2,"available":0},
+                "daily/consumption":{"kind":"history","unit":"records","label":"Daily consumption","amount":1,"details":["PRIVATE-RAW-DETAIL"]}}
+        });
+        db.add_with_snapshot(UsageProvider::Mimo,"Daily",&CandidateIdentity::api_key(&jackin_core::Secret::new("test-only".into())),&SecretBytes::new(vec![1]),world.clock.now().0-900,&data)?;
+        let id=db.add(UsageProvider::Claude,"Awaiting usage",&CandidateIdentity::OAuth(None),&SecretBytes::new(vec![1]))?;
+        let pending=cli.run(&["usage","details","--account",&id.to_string(),"--json"]).await?;
+        assert_eq!(pending.exit,ExitClass::NoUsageSnapshot);
+        let record:Value=serde_json::from_str(&pending.stdout)?;
+        assert!(record["accounts"][0]["usage"].is_null());
+        for args in [vec!["usage","details"],vec!["usage","details","--json"]] {
+            let report=cli.run(&args).await?;
+            report.ok()?;
+            assert!(report.stdout.contains("0.000001 CNY") && report.stdout.contains("Daily history unavailable"),"{}", report.stdout);
+            assert!(!report.stdout.contains("PRIVATE-") && !report.stdout.contains("attemptedAt"));
+            if args.contains(&"--json") {
+                let data:Value=serde_json::from_str(&report.stdout)?;
+                let a=&data["accounts"][0];
+                assert_eq!(a["stale"],true);
+                assert_eq!(a["usage"]["resources"]["CNY/cash"]["available"],0);
+                assert_eq!(a["usage"]["daily"]["consumption"]["rows"][0]["input_cache_hit_amount"],1);
+                assert_eq!(a["usage"]["daily"]["bills"],json!({"unavailable":true}));
+            }
+        }
+        Ok(())
+    }).await
+}

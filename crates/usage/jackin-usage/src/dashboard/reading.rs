@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0 AND MIT
 
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use time::OffsetDateTime;
 
 use super::{DashboardSettings, Severity};
@@ -121,13 +122,59 @@ pub(super) fn read(body: &Value) -> Vec<(String, Measure)> {
     }
     if let Some(ranges) = body["history"]["ranges"].as_object() {
         for (id, range) in ranges {
-            readings.extend(history(id, range).map(|measure| (id.clone(), measure)));
+            readings.extend(history(id, range, false).map(|measure| (id.clone(), measure)));
+        }
+    }
+    for (id, key) in [
+        ("today", "today"),
+        ("week", "thisWeek"),
+        ("month", "thisMonth"),
+    ] {
+        if let Some(totals) = body["period_spend"].get(key) {
+            readings
+                .extend(history(id, &json!({"totals":totals}), true).map(|m| (id.to_owned(), m)));
+        }
+    }
+    let activity = &body["activity"];
+    if activity.is_object() {
+        let yesterday = &activity["yesterday"];
+        let prior = json!({"totals":activity["prior30Days"], "by_model":prior_models(&activity["days"]),"observedDays":activity["observed_days"],"expectedDays":activity["expected_days"]});
+        for (id, range) in [("yesterday", yesterday), ("prior30", &prior)] {
+            readings.extend(history(id, range, true).map(|m| (id.to_owned(), m)));
         }
     }
     readings
 }
 
-fn history(id: &str, range: &Value) -> Option<Measure> {
+fn prior_models(days: &Value) -> BTreeMap<&str, BTreeMap<&str, f64>> {
+    let mut models: BTreeMap<&str, BTreeMap<&str, f64>> = BTreeMap::new();
+    for (_, day) in days.as_object().into_iter().flatten() {
+        for (name, fields) in day["by_model"].as_object().into_iter().flatten() {
+            for (field, value) in fields.as_object().into_iter().flatten() {
+                if let Some(amount) = value.as_f64() {
+                    *models.entry(name).or_default().entry(field).or_default() += amount;
+                }
+            }
+        }
+    }
+    models
+}
+
+fn history_quantity(field: &str, value: &Value) -> Option<String> {
+    let amount = number(value.as_f64()?);
+    let unit = match field {
+        "spend" | "usageValue" => "USD spent",
+        "byokSpend" => "USD BYOK spend",
+        "inputTokens" => "input tokens",
+        "cacheReadTokens" => "cached input tokens",
+        "outputTokens" => "output tokens",
+        "reasoningTokens" => "reasoning tokens",
+        other => other,
+    };
+    Some(format!("{amount} {unit}"))
+}
+
+fn history(id: &str, range: &Value, spend: bool) -> Option<Measure> {
     if !matches!(
         id,
         "today" | "yesterday" | "last30" | "week" | "month" | "prior30"
@@ -135,15 +182,19 @@ fn history(id: &str, range: &Value) -> Option<Measure> {
         return None;
     }
     let totals = &range["totals"];
-    let (field, unit) = [
-        ("tokens", "tokens"),
-        ("usageValue", "usd"),
-        ("spend", "usd"),
-        ("turns", "turns"),
-    ]
-    .into_iter()
-    .find(|(k, _)| totals[*k].is_number())
-    .unwrap_or(("tokens", "tokens"));
+    let (field, unit) = if spend {
+        ("spend", "usd")
+    } else {
+        [
+            ("tokens", "tokens"),
+            ("usageValue", "usd"),
+            ("spend", "usd"),
+            ("turns", "turns"),
+        ]
+        .into_iter()
+        .find(|(k, _)| totals[*k].is_number())
+        .unwrap_or(("tokens", "tokens"))
+    };
     let mut m = decode(
         id,
         &json!({"kind":"history","unit":unit,"amount":totals[field]}),
@@ -157,28 +208,82 @@ fn history(id: &str, range: &Value) -> Option<Measure> {
     }
     if let Some(totals) = totals.as_object() {
         for (k, v) in totals {
-            if v.is_number() {
-                m.detail.push(format!("{k} · {v}"));
-            }
+            m.detail.extend(history_quantity(k, v));
         }
     }
-    if let Some(models) = range["byModel"].as_object() {
+    if let Some(models) = range
+        .get("byModel")
+        .or_else(|| range.get("by_model"))
+        .and_then(Value::as_object)
+    {
         for (name, values) in models {
-            if let Some(fields) = values.as_object() {
-                let detail = fields
-                    .iter()
-                    .filter(|(_, v)| v.is_number())
-                    .map(|(k, v)| format!("{v} {k}"))
-                    .collect::<Vec<_>>()
-                    .join(" · ");
-                if !detail.is_empty() {
-                    m.detail.push(format!("{name} · {detail}"));
-                }
+            if let Some(fields) = values.as_object()
+                && !fields.is_empty()
+            {
+                m.detail.push(name.clone());
+                m.detail
+                    .extend(fields.iter().filter_map(|(k, v)| history_quantity(k, v)));
             }
         }
     }
-
     Some(m)
+}
+
+fn metric_label(id: &str, v: &Value) -> String {
+    let known = safe_name(id);
+    v["label"]
+        .as_str()
+        .or_else(|| v["model"].as_str())
+        .map_or_else(
+            || {
+                if known != "Metric" {
+                    return known.to_owned();
+                }
+                if let Some((prefix, field)) = id.split_once('/')
+                    && v["currency"].as_str() == Some(prefix)
+                {
+                    let balance = match field {
+                        "cash" => "Cash",
+                        "gift" => "Gift balance",
+                        "frozen" => "Frozen balance",
+                        "creditLimit" => "Credit limit",
+                        "creditAvailable" => "Available credit",
+                        "totalAvailable" => "Total available",
+                        _ => return id.to_owned(),
+                    };
+                    return format!("{balance} ({prefix})");
+                }
+                id.to_owned()
+            },
+            |label| {
+                if let Some(window) = v["window"].as_str() {
+                    format!("{label} {window}")
+                } else if let Some(token) = v["unit"].as_str().filter(|_| v["model"].is_string()) {
+                    format!("{label} {token}")
+                } else {
+                    label.to_owned()
+                }
+            },
+        )
+}
+
+fn scaled_integer(field: &Value, exponent: u32) -> Option<String> {
+    let n = field
+        .as_i64()
+        .map(i128::from)
+        .or_else(|| field.as_u64().map(i128::from))?;
+    let scale = 10_i128.pow(exponent);
+    if n % scale == 0 {
+        return Some((n / scale).to_string());
+    }
+    let sign = if n < 0 { "-" } else { "" };
+    let value = n.abs();
+    let decimals = format!("{:0width$}", value % scale, width = exponent as usize);
+    Some(format!(
+        "{sign}{}.{}",
+        value / scale,
+        decimals.trim_end_matches('0')
+    ))
 }
 
 fn decode(id: &str, v: &Value) -> Option<Measure> {
@@ -189,10 +294,13 @@ fn decode(id: &str, v: &Value) -> Option<Measure> {
         .or_else(|| v["unit"].as_str())
         .unwrap_or("count")
         .to_owned();
-    let scale = v["exponent"]
-        .as_i64()
-        .filter(|n| (0..=9).contains(n))
-        .map_or(1.0, |n| 10f64.powf(n as f64));
+    let exponent = if unit == "millionths_of_cent" {
+        unit = "cents".into();
+        6
+    } else {
+        v["exponent"].as_u64().filter(|n| *n <= 9).unwrap_or(0) as u32
+    };
+    let scale = 10_u64.pow(exponent) as f64;
     let amount = |key: &str| v[key].as_f64().map(|n| n / scale);
     let mut used = amount("used");
     let mut limit = amount("limit");
@@ -209,10 +317,31 @@ fn decode(id: &str, v: &Value) -> Option<Measure> {
         .filter_map(Value::as_str)
         .map(str::to_owned)
         .collect();
-    if let Some(p) = raw_percent
-        && (used.is_none() || limit.is_none())
-        && !matches!(v["status"].as_str(), Some("unlimited" | "not_in_plan"))
+    if let Some(enabled) = v["monthly_charge_limit_enabled"].as_bool() {
+        detail.push(format!(
+            "Monthly charge limit · {}",
+            if enabled { "On" } else { "Off" }
+        ));
+    }
+    if let Some(boost) = v["boost_permille"].as_i64()
+        && boost != 1000
     {
+        detail.push(format!(
+            "Quota multiplier · {}×",
+            number(boost as f64 / 1000.0)
+        ));
+        if let Some(base) = v["base_remaining_percent"].as_f64() {
+            detail.push(format!("Base quota remaining · {}%", number(base)));
+        }
+        if let Some(effective) = raw_percent {
+            detail.push(format!("Boosted quota remaining · {}%", number(effective)));
+        }
+    }
+    let fraction = raw_percent.filter(|_| {
+        (used.is_none() || limit.is_none())
+            && !matches!(v["status"].as_str(), Some("unlimited" | "not_in_plan"))
+    });
+    if let Some(p) = fraction {
         if let Some(n) = available {
             detail.push(format!("Remaining {} {unit}", number(n)));
         }
@@ -231,34 +360,18 @@ fn decode(id: &str, v: &Value) -> Option<Measure> {
             "Outside plan".into()
         });
     }
-    let known = safe_name(id);
-    let label = v["label"]
-        .as_str()
-        .or_else(|| v["model"].as_str())
-        .map_or_else(
-            || {
-                if known == "Metric" {
-                    id.to_owned()
-                } else {
-                    known.to_owned()
-                }
-            },
-            |label| {
-                if let Some(window) = v["window"].as_str() {
-                    format!("{label} {window}")
-                } else if let Some(token) = v["unit"].as_str().filter(|_| v["model"].is_string()) {
-                    format!("{label} {token}")
-                } else {
-                    label.to_owned()
-                }
-            },
-        );
+    let label = metric_label(id, v);
     let reset = v["resetsAt"].as_i64().or_else(|| v["resets_at"].as_i64());
     let period = v["windowSeconds"]
         .as_i64()
         .or_else(|| v["window_seconds"].as_i64())
         .or_else(|| reset?.checked_sub(v["starts_at"].as_i64()?));
-    let exact = |k: &str| (scale <= 1.0 && v[k].is_u64()).then(|| v[k].to_string());
+    let exact = |key: &str| {
+        fraction
+            .is_none()
+            .then(|| scaled_integer(&v[key], exponent))
+            .flatten()
+    };
     let empty_balance = kind == "balance"
         && id != "rateLimitResets"
         && !id.to_lowercase().contains("reset")
@@ -278,7 +391,9 @@ fn decode(id: &str, v: &Value) -> Option<Measure> {
         detail,
         exact_limit: exact("limit"),
         exact_used: exact("used"),
-        exact_left: exact("remaining").or_else(|| exact("available")),
+        exact_left: exact("available")
+            .or_else(|| exact("amount"))
+            .or_else(|| exact("remaining")),
     })
 }
 
@@ -413,6 +528,24 @@ impl Measure {
                 .cloned()
                 .unwrap_or_else(|| "Unavailable".into()),
         }
+    }
+
+    pub(super) fn quantity_details(&self) -> Vec<String> {
+        let mut details = Vec::new();
+        if self.bounded() {
+            details.push(format!("Used · {}", self.display(false)));
+            if let Some(limit) = self.limit {
+                details.push(format!(
+                    "Limit · {}",
+                    format_value(
+                        &self.unit,
+                        &self.exact_limit.clone().unwrap_or_else(|| number(limit))
+                    )
+                ));
+            }
+            details.push(format!("Remaining · {}", self.display(true)));
+        }
+        details
     }
 
     pub(super) fn clear_exact(&mut self) {

@@ -12,6 +12,7 @@ use crate::ProviderEndpoints;
 mod extensions;
 pub(crate) use extensions::{kimi as kimi_snapshot, minimax as minimax_snapshot};
 mod mimo_history;
+pub(crate) use mimo_history::project as project_daily;
 mod openrouter;
 pub(crate) mod zai;
 use jackin_usage_provider_kimi::Region as KimiRegion;
@@ -141,10 +142,7 @@ impl KeyConnection {
         previous: Option<&Value>,
         manual: bool,
     ) -> Result<Value, ProviderError> {
-        let mut http = Http::new(endpoints.timeout());
-        if let Some(base) = endpoints.base(self.provider()) {
-            http = http.with_base(base)?;
-        }
+        let http = endpoints.http(self.provider())?;
         self.read_using_http(http, key, now, previous, manual).await
     }
 

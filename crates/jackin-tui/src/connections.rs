@@ -170,7 +170,8 @@ impl JackinBackend {
             dir.join(jackin_usage::accounts::DATABASE_PATH),
             self.inputs.usage.endpoints().clone(),
             Arc::clone(&self.inputs.host.clock),
-        ))
+        )
+        .with_google_registration(self.inputs.google_registration.clone()))
     }
 
     fn prompt(&self, ticket: Ticket, prompt: LoginPrompt) {

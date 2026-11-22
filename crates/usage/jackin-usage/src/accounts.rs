@@ -4,7 +4,9 @@
 mod claims;
 pub(crate) mod claude_budget;
 pub mod hubs;
+mod preferences;
 mod private;
+pub use preferences::{MetricEdit, MetricState};
 mod refresh;
 mod settings;
 pub use refresh::{FailureKind, RefreshFailure};
@@ -97,7 +99,9 @@ pub enum ConnectionError {
     Vault,
     #[error("usage account removed; unlock the credential store and retry cleanup")]
     RemovedPendingCleanup,
-    #[error("this sign-in or key is already connected")]
+    #[error(
+        "this sign-in or key is already connected. To add another account, switch accounts on the provider page or use a key for a different account"
+    )]
     Duplicate,
     #[error("the sign-in belongs to a different account; use Add Account")]
     DifferentIdentity,

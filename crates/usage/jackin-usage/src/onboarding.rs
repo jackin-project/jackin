@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod gemini_connection;
+mod google_registration;
+pub use google_registration::GoogleRegistrationFile;
 mod hub;
 mod kimi_connection;
 mod minimax_connection;
@@ -35,6 +37,7 @@ pub struct OwnedLogin {
     path: PathBuf,
     endpoints: ProviderEndpoints,
     clock: Arc<dyn Clock>,
+    google_registration: Option<GoogleRegistrationFile>,
     vault: Option<Arc<dyn crate::accounts::CredentialVault>>,
 }
 
@@ -46,6 +49,10 @@ pub enum LoginError {
     Timeout,
     #[error(transparent)]
     Reset(#[from] crate::resets::ResetError),
+    #[error(
+        "JACKIN_GOOGLE_OAUTH_CLIENT_FILE must name a readable Google Desktop app JSON file containing installed.client_id"
+    )]
+    GoogleRegistration,
     #[error("sign-in cancelled")]
     Cancelled,
     #[error(transparent)]
@@ -161,8 +168,18 @@ impl OwnedLogin {
             endpoints,
             clock,
             vault: None,
+            google_registration: None,
         }
     }
+    #[must_use]
+    pub fn with_google_registration(
+        mut self,
+        registration: Option<GoogleRegistrationFile>,
+    ) -> Self {
+        self.google_registration = registration;
+        self
+    }
+
     async fn account_http_budget(
         &self,
         account: &ConnectedAccount,
@@ -499,6 +516,7 @@ impl OwnedLogin {
                 &http,
                 self.clock.as_ref(),
                 current.as_ref().map(|(_, bytes)| bytes),
+                self.google_registration.as_ref(),
                 prompts,
                 cancel,
             )

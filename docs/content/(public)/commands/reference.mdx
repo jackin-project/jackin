@@ -646,6 +646,7 @@ Commands:
   host      Read usage for execution-account credential sources on this host
   share     Print a redacted usage report for sharing
   snapshot  Read saved usage without accessing providers or credentials
+  details   Show saved account limits, reset inventory and usage history
   refresh   Refresh connected accounts from their providers
   redeem    Confirm and spend one available reset from the account's saved inventory
   help      Print this message or the help of the given subcommand(s)
@@ -705,6 +706,21 @@ Options:
       --gateway <GATEWAY>    Gateway name from the jackin config
       --provider <PROVIDER>  Select a provider
       --account <ACCOUNT>    Select a usage account by its stable ID
+  -h, --help                 Print help
+```
+
+### jackin usage details
+
+```text
+Show saved account limits, reset inventory and usage history
+
+Usage: jackin usage details [OPTIONS]
+
+Options:
+      --gateway <GATEWAY>    Gateway name from the jackin config
+      --provider <PROVIDER>  Select a provider
+      --account <ACCOUNT>    Select a usage account by its stable ID
+      --json                 Print a structured JSON report
   -h, --help                 Print help
 ```
 

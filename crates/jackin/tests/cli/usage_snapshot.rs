@@ -65,6 +65,15 @@ async fn offline_snapshot_filters_accounts_and_preserves_absence_and_zero() -> T
             &secret,
         )?;
         drop(db);
+        let overview = cli.run(&["usage"]).await?;
+        overview.ok()?;
+        assert!(overview.stdout.contains("claude · Work"));
+        assert!(overview.stdout.contains("Session · 100% remaining · stale"));
+        assert!(
+            overview
+                .stderr
+                .contains("Waiting for a first usage reading")
+        );
         let all = cli.run(&["usage", "--json"]).await?;
         all.ok()?;
         let snapshot: Value = serde_json::from_str(&all.stdout)?;

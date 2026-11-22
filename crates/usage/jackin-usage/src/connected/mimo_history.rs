@@ -59,7 +59,7 @@ pub(super) async fn read(
     }
 }
 
-fn project(resources: &mut Map<String, Value>, source: &str, branch: &Value) {
+pub(crate) fn project(resources: &mut Map<String, Value>, source: &str, branch: &Value) {
     let title = if source == "bills" {
         "Daily bills"
     } else {

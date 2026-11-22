@@ -57,6 +57,7 @@ pub(crate) type DocCache = BTreeMap<
 >;
 
 pub(crate) struct Inputs {
+    pub(crate) google_registration: Option<jackin_usage::onboarding::GoogleRegistrationFile>,
     pub(crate) config: ConfigStore,
     pub(crate) desk: AccountDesk,
     pub(crate) usage: Arc<HostUsage>,
@@ -99,6 +100,7 @@ pub(crate) fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[derive(Debug)]
 pub(crate) struct InputsParts {
+    pub google_registration: Option<jackin_usage::onboarding::GoogleRegistrationFile>,
     pub config: ConfigStore,
     pub desk: AccountDesk,
     pub usage: Arc<HostUsage>,
@@ -121,6 +123,7 @@ pub(crate) struct InputsParts {
 impl Inputs {
     pub(crate) fn new(parts: InputsParts) -> Inputs {
         let InputsParts {
+            google_registration,
             config,
             desk,
             usage,
@@ -142,6 +145,7 @@ impl Inputs {
         let op_cli = OnePasswordCli::new(Arc::clone(&host.runner));
         let sources = SourceDesk::new(Arc::clone(&host.fs), env, op_cli.clone());
         Inputs {
+            google_registration,
             config,
             desk,
             usage,

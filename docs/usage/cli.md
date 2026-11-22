@@ -20,7 +20,11 @@ jackin account usage connect openrouter
 
 Claude and ChatGPT open a browser on the host. Finish sign-in there or paste the complete response that includes the state from this request. ChatGPT offers device authorization when its callback port is unavailable. Muse, Grok and OpenCode display a code. Press Enter to open the verification page. For OpenCode, choose the workspace in the provider's authorization flow. When using SSH, the browser must be able to reach the callback listener for a loopback flow.
 
-For Kimi and MiniMax, select `global` or `cn` to match the coding plan. For MiMo Token Plan, select `cn`, `sgp` or `ams` and enter a Token Plan key. Omit the MiMo region to connect the separate regular-key balance product. Gemini needs a Google Desktop OAuth client registered for this integration and a Google account entitled to Code Assist. Supply the requested Cloud project when the account requires one. The Gemini integration tracks the Code Assist project selected at sign-in.
+For Grok, sign in with the xAI account linked to your eligible X subscription to read the Grok CLI billing pool. For Z.ai Global, use the Personal Coding Plan key. [Grok Build eligibility](https://x.ai/news/grok-build-cli) · [Z.ai key types](https://docs.z.ai/devpack/notice/api-key-management)
+
+For Kimi and MiniMax, select `global` or `cn` to match the coding plan. For MiMo Token Plan, select `cn`, `sgp` or `ams` and enter a Token Plan key. Omit the MiMo region to connect the separate regular-key balance product. For an international MiMo personal Token Plan, match the endpoint in your console to Singapore (`sgp`) or Europe (`ams`). [MiMo cluster guide](https://mimo.mi.com/docs/en-US/tokenplan/Token%20Plan/quick-access)
+
+Gemini tracks an eligible Cloud Code Assist project using a registered desktop OAuth client. Set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the downloaded Desktop app JSON for Jackin to open browser consent directly and discover a managed project. Leave it unset to enter the registration and a project ID interactively. Google retired consumer Code Assist access for Google AI Pro and Ultra on June 18, 2026. [Google consumer deprecation](https://developers.google.com/gemini-code-assist/docs/deprecations/code-assist-individuals)
 
 ## Manage a connection
 
@@ -41,13 +45,18 @@ Local removal deletes the usage connection. Workspace execution bindings and gat
 ```sh
 jackin usage
 jackin usage --json
+jackin usage details
+jackin usage details --provider claude
+jackin usage details --account "$account_id" --json
 jackin usage snapshot --provider codex
 jackin usage snapshot --account "$account_id"
 jackin usage refresh --account "$account_id"
 jackin usage share
 ```
 
-Snapshot and share commands read persisted data. Active refresh contacts the provider. A rejected refresh preserves the last successful reading. The snapshot becomes stale ten minutes after that reading. The console updates connected accounts while it runs. For existing execution-account sources, request an explicit host read with `jackin usage host`.
+Use `jackin usage details` to inspect all saved accounts side by side in text. Filter by provider or stable account ID. Add `--json` for numeric readings, quota reset times, and available model, day, and billing histories. The details command can run offline.
+
+The plain `jackin usage` overview groups readings under each provider and account. A bounded reading says whether it shows the amount used or remaining. A stale reading is labeled on its own row. Snapshot and share commands read persisted data. Active refresh contacts the provider. A rejected refresh preserves the last successful reading. The snapshot becomes stale ten minutes after that reading. The console updates connected accounts while it runs. For existing execution-account sources, request an explicit host read with `jackin usage host`.
 
 Use `jackin usage redeem` to redeem an eligible account reset. Select the displayed reset and confirm the prompt. Jackin checks eligibility again before submitting the request. Reading, refreshing and exporting usage never redeems a reset.
 

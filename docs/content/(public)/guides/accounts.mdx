@@ -7,7 +7,7 @@ Jackin keeps two kinds of accounts on the host. A **usage account** connects dir
 
 ## Connect an account for usage
 
-Open the console and press `c` to open Accounts. Choose **Add account…**, select a provider, and follow its sign-in prompts. You can also connect an account from the CLI:
+Open the console and press `c` to open Accounts. In the account tree, press `n` to add a usage account, or focus the action buttons and choose **Add usage account…**. Select a provider and follow its sign-in prompts. To inspect a saved usage account, select its name under **Usage accounts** or open **Usage accounts…**. Usage accounts are separate from execution accounts, which supply credentials to sandbox launches. You can also connect an account from the CLI:
 
 ```sh
 jackin account usage connect claude
@@ -17,7 +17,7 @@ jackin account usage connect kimi --region global
 
 The provider determines the sign-in method. Some providers open a browser, some display a device code, and API-key providers ask for a key in a masked prompt. Jackin stores credentials in the host operating system's credential store. Unlock the Secret Service collection on Linux or the login Keychain on macOS before connecting.
 
-For regional providers, select the region that matches your account. MiMo Token Plan accounts also require the subscription region. Gemini requires a Google Desktop OAuth client and Code Assist access. The console prompts you for provider-specific details during sign-in.
+For regional providers, select the region that matches your account. MiMo Token Plan accounts also require the subscription region. Gemini usage requires an eligible Cloud Code Assist project and a registered Google Desktop OAuth client. Set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the downloaded Desktop app JSON for browser consent and managed project discovery. If it is unset, provide the client and project details when prompted. This connects Cloud Code Assist project usage, not consumer Gemini usage.
 
 List and manage saved connections with the CLI:
 
@@ -40,12 +40,15 @@ The CLI can show the dashboard summary, read a saved snapshot, or refresh connec
 ```sh
 jackin usage
 jackin usage --json
+jackin usage details
+jackin usage details --provider claude
+jackin usage details --account <account-id>
 jackin usage snapshot --account <account-id>
 jackin usage refresh --account <account-id>
 jackin usage share
 ```
 
-Snapshot commands read saved data without contacting providers. Refresh contacts the provider. `jackin usage share` prints a redacted report for sharing.
+`jackin usage details` lists saved accounts with their usage details. Use `--provider` or `--account` to filter the results. Details and snapshot commands read saved data without contacting providers. Refresh contacts the provider. `jackin usage share` prints a redacted report for sharing.
 
 ## Read usage from execution accounts
 
