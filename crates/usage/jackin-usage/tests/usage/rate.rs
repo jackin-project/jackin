@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{DateTime, Duration, Utc};
 use jackin_core::{Provider, Timestamp};
 use jackin_testkit::{Method, Route};
 use jackin_usage::{AccountUsage, Freshness, Refresh, UnavailableReason};
 use jackin_usage_provider_core::retry_after_text;
+use time::{
+    Duration, OffsetDateTime, format_description::well_known::Rfc2822, macros::format_description,
+};
 
 use crate::support::{
     CODEX_PATH, T0, TestResult, UsageHarness, codex_body, codex_route, guard, unavailable,
@@ -192,7 +194,7 @@ async fn a_retry_after_given_as_a_past_http_date_gives_no_retry_time() -> TestRe
 #[tokio::test]
 async fn a_retry_after_given_as_a_future_http_date_gives_the_retry_time() -> TestResult {
     guard(async {
-        let date = http_date(Utc::now() + Duration::seconds(600));
+        let date = http_date(OffsetDateTime::now_utc() + Duration::seconds(600));
         let (_harness, _account, first) = limited(&date).await?;
         match unavailable(&first.outcome) {
             UnavailableReason::RateLimited { retry_at: Some(at) } => {
@@ -208,14 +210,15 @@ async fn a_retry_after_given_as_a_future_http_date_gives_the_retry_time() -> Tes
     .await
 }
 
-fn http_date(at: DateTime<Utc>) -> String {
-    at.format("%a, %d %b %Y %H:%M:%S GMT").to_string()
+fn http_date(at: OffsetDateTime) -> String {
+    at.format(format_description!(
+        "[weekday repr:short], [day] [month repr:short] [year] [hour]:[minute]:[second] GMT"
+    ))
+    .expect("an HTTP date")
 }
 
-fn instant(text: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc2822(text)
-        .expect("an HTTP date")
-        .with_timezone(&Utc)
+fn instant(text: &str) -> OffsetDateTime {
+    OffsetDateTime::parse(text, &Rfc2822).expect("an HTTP date")
 }
 
 #[test]
@@ -252,4 +255,34 @@ fn an_http_date_with_an_offset_is_the_same_instant() {
 fn a_numeric_retry_after_of_zero_gives_no_wait() {
     let now = instant("Thu, 01 Jan 2026 00:00:00 GMT") + Duration::milliseconds(500);
     assert_eq!(retry_after_text("0", now), Some(0));
+}
+
+#[test]
+fn http_date_offsets_preserve_the_sign_of_minutes_and_validate_the_weekday() {
+    let now = instant("Thu, 01 Jan 2026 00:00:00 GMT");
+    for (header, wait) in [
+        ("Thu, 01 Jan 2026 00:00:00 -0030", Some(1800)),
+        ("Thu, 01 Jan 2026 00:00:00 +0030", None),
+        ("Thu, 01 Jan 2026 00:00:00 GMT", Some(0)),
+        ("Mon, 01 Jan 2026 00:00:00 GMT", None),
+        ("Fri, 02 Jan 2026 00:00:00 +2400", None),
+    ] {
+        assert_eq!(retry_after_text(header, now), wait, "{header}");
+    }
+}
+
+#[test]
+fn iso_epochs_accept_provider_separators_and_signed_offsets() {
+    use jackin_usage_provider_core::parse_iso_epoch;
+
+    for timestamp in [
+        "1970-01-01T00:00:00Z",
+        "1970-01-01t00:00:00Z",
+        "1970-01-01 00:00:00.999Z",
+        "1969-12-31T23:30:00-00:30",
+        "1970-01-01T00:30:00+00:30",
+    ] {
+        assert_eq!(parse_iso_epoch(timestamp), Some(0), "{timestamp}");
+    }
+    assert_eq!(parse_iso_epoch("1970-01-01X00:00:00Z"), None);
 }

@@ -48,5 +48,5 @@ Keep this section identical in all four repositories. Write the rules for one re
 - Use the gate commands in the Gates table of `rewrite/PLAN.md`. `COMMITS.md` gives the commit format.
 - Only `jackin-openshell` imports `openshell-sdk`. Only `jackin-image` starts `docker`. `compatibility.lock.toml` holds the OpenShell pin.
 - Velnor generates `.github/workflows/` from `.velnor/config.toml`. Do not edit the generated files. Run `velnor-actions generate`.
-- The console uses the `junie-tui` crate from `terminal-components-baseline` (decision D27). Do not use `termrock`. If the console needs more, extend the baseline. Never change an approved baseline visual.
+- The console uses the `junie-tui` crate from `terminal-components-baseline` (decision D27). Use this baseline through native usage-account parity, then migrate jackin to the latest [Termrock](https://github.com/tailrocks/termrock) revision as specified in `rewrite/PLAN.md`. If the console needs more, extend the baseline. Never change an approved baseline visual.
 - Use only `op` for 1Password. Never write a secret in a file, a log, a label, a commit, or the trail.

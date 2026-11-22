@@ -1,13 +1,83 @@
 ---
 title: Accounts
-description: Add accounts, bind them to workspaces and roles, and check their usage limits.
+description: Connect provider accounts for usage, add Codex credentials for launches, and bind launch accounts to workspaces and roles.
 ---
 
-An account is a named credential for one provider. Jackin keeps accounts in `~/.config/jackin/config.toml`. For the terms, see [Core concepts](/getting-started/concepts/).
+Jackin keeps two kinds of accounts on the host. A **usage account** connects directly to a provider and supplies usage data to the console and usage commands. An **execution account** supplies credentials for a sandbox launch. Usage accounts never provide launch credentials. For the terms, see [Core concepts](/getting-started/concepts/).
 
-## Add a Codex account
+## Connect an account for usage
 
-Codex runs in a sandbox only with a ChatGPT login. Import the login from a Codex home directory:
+Open the console and press `c` to open Accounts. Choose **Add account…**, select a provider, and follow its sign-in prompts. You can also connect an account from the CLI:
+
+```sh
+jackin account usage connect claude
+jackin account usage connect codex
+jackin account usage connect kimi --region global
+```
+
+The provider determines the sign-in method. Some providers open a browser, some display a device code, and API-key providers ask for a key in a masked prompt. Jackin stores credentials in the host operating system's credential store. Unlock the Secret Service collection on Linux or the login Keychain on macOS before connecting.
+
+For regional providers, select the region that matches your account. MiMo Token Plan accounts also require the subscription region. Gemini requires a Google Desktop OAuth client and Code Assist access. The console prompts you for provider-specific details during sign-in.
+
+List and manage saved connections with the CLI:
+
+```sh
+jackin account usage ls
+jackin account usage rename <account-id> "Work account"
+jackin account usage reconnect <account-id>
+jackin account usage replace-key <account-id>
+jackin account usage rm <account-id>
+```
+
+Reconnect or replace a key to keep the account ID and its dashboard settings. Removing a connection deletes the local account and its saved credentials. A connected hub has separate lifecycle commands under `jackin account usage hub`.
+
+## Check usage
+
+Run `jackin` and press `u` to open the Usage dashboard. It refreshes connected accounts while the console runs. Use **Refresh all** to request a refresh, or open an account to inspect its status and metrics. The dashboard can show limits, balances, credits, spend, and reset times when a provider reports them. A failed refresh keeps the last successful values and shows a failure notice.
+
+The CLI can show the dashboard summary, read a saved snapshot, or refresh connected accounts:
+
+```sh
+jackin usage
+jackin usage --json
+jackin usage snapshot --account <account-id>
+jackin usage refresh --account <account-id>
+jackin usage share
+```
+
+Snapshot commands read saved data without contacting providers. Refresh contacts the provider. `jackin usage share` prints a redacted report for sharing.
+
+## Read usage from execution accounts
+
+`jackin usage host` is a separate, read-only command for credentials configured as execution accounts. It reads credential sources on the host and checks the account providers. It does not use or modify the connected usage accounts above.
+
+```sh
+jackin usage host
+jackin usage host --json
+```
+
+This host read supports the credential sources configured for execution accounts. A `file:` source can contain a token or a JSON login. The command does not refresh tokens. Use native usage connections for the dashboard and the provider sign-in flows described above.
+
+Add a credential source to an execution account with `--credential`:
+
+```sh
+jackin account add claude --name personal --credential env:CLAUDE_TOKEN
+jackin account add openrouter --name routing --credential 'op://Private/OpenRouter/credential'
+jackin account add cursor --name editor --credential file:/Users/me/cursor-token
+```
+
+| Source | Meaning |
+|---|---|
+| `env:NAME` | The environment variable `NAME` on the host. |
+| `op://...` | A 1Password reference that `jackin usage host` resolves on the host. This account is usage-only, and a launch refuses it. |
+| `file:PATH` | A host file that contains a token or a JSON login. |
+| `omp-host` | A credential saved by OMP for the selected provider. |
+
+Jackin resolves each source on the host. An account can launch only when its credential type matches a supported provider and agent. A Codex account that uses a ChatGPT login must use `--chatgpt-from`.
+
+## Add a Codex account for launches
+
+Codex can run in a sandbox only with a ChatGPT login. Import the login from a Codex home directory:
 
 ```sh
 jackin account add codex --name work --chatgpt-from ~/.codex
@@ -17,45 +87,18 @@ Jackin reads `auth.json` from the directory. It puts the login into an OpenShell
 
 The gateway rotates the refresh token. The login in your Codex home can stop working afterwards. If that happens, run `codex login` on the host again.
 
-A device login needs a person, so jackin cannot create one for you.
-
-## Add an account for usage only
-
-Every other account stays on the host. Jackin uses it only to show usage limits. Give it a credential source with `--credential`:
-
-```sh
-jackin account add claude --name personal --credential env:CLAUDE_TOKEN
-jackin account add openrouter --name routing --credential 'op://Private/OpenRouter/credential'
-jackin account add cursor --name editor --credential file:/Users/me/cursor-token
-```
-
-A source is one of these:
-
-| Form | Meaning |
-|---|---|
-| `env:NAME` | The environment variable `NAME` on the host. You choose the name. |
-| `op://...` | A 1Password reference. Jackin resolves it on the host with `op read`. |
-| `file:PATH` | A file on the host. It holds a token, or a JSON login. |
-
-Jackin never sends a credential source to a sandbox or to an OpenShell provider. A Codex account that you add with `--credential` is also a usage account. A launch refuses it.
-
 ## Choose the default account
 
-Each provider has at most one default account:
+Each execution provider has at most one default account:
 
 ```sh
 jackin account default work
-```
-
-Clear the default of a provider with `--clear`:
-
-```sh
 jackin account default --clear codex
 ```
 
-The default account counts as a reference. `jackin account rm` refuses to remove an account while a default, a workspace binding, or a role binding still points at it. Clear the default first, then remove the account.
+The default account counts as a reference. `jackin account rm` refuses to remove an account while a default, a workspace binding, or a role binding still points at it. Clear the default or binding first, then remove the account.
 
-## Bind an account
+## Bind an execution account
 
 A workspace binding holds one account for each provider in that workspace. A role binding holds the default account of the role for the agent:
 
@@ -65,8 +108,6 @@ jackin account bind work --role my-role
 ```
 
 Pass exactly one of `--workspace` and `--role`.
-
-## Account selection
 
 For each launch, jackin picks the account of the agent in this order:
 
@@ -78,7 +119,7 @@ For each launch, jackin picks the account of the agent in this order:
 
 If no rule selects an account, the launch stops with an error that names the missing binding.
 
-## List and remove accounts
+## List and remove execution accounts
 
 ```sh
 jackin account ls
@@ -86,14 +127,3 @@ jackin account rm work
 ```
 
 `jackin account rm` first removes the OpenShell provider of the account from every configured gateway. If it cannot reach one of them, it stops and names the gateway. To remove a gateway entry without contacting it, run `jackin gateway rm <name> --offline`. Its OpenShell providers then stay on that gateway until you reset it.
-
-## Check usage
-
-```sh
-jackin usage
-jackin usage --json
-```
-
-For each account, jackin shows every limit window that the provider reports. Typical windows are the 5-hour window and the weekly window. Some providers also report a monthly window, credits, or spend. For each window you see the percentage used, the remaining amount when the provider gives it, and the reset time.
-
-When a provider gives no data for an account, jackin shows the reason, for example `login expired or rejected`. The JSON output names it `expired_login`. Jackin never refreshes a token for usage.

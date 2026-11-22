@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use chrono::{DateTime, Utc};
 use serde_json::Value;
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::error::ProviderError;
 use crate::model::Money;
@@ -30,9 +30,13 @@ pub fn json_text(value: &Value) -> Option<&str> {
 }
 
 pub fn parse_iso_epoch(text: &str) -> Option<i64> {
-    DateTime::parse_from_rfc3339(text.trim())
+    let text = text.trim();
+    if !matches!(text.as_bytes().get(10), Some(b'T' | b't' | b' ')) {
+        return None;
+    }
+    OffsetDateTime::parse(text, &Rfc3339)
         .ok()
-        .map(|date| date.with_timezone(&Utc).timestamp())
+        .map(OffsetDateTime::unix_timestamp)
 }
 
 pub fn epoch_seconds(value: f64) -> Option<i64> {

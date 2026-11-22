@@ -7,6 +7,7 @@ all-features = true
 [advisories]
 yanked = "deny"
 ignore = [
+    { id = "RUSTSEC-2026-0543", reason = "OpenShell SDK v0.1.7 and v0.1.9 require chrono via openshell-core telemetry and oauth2 5 even with SDK defaults disabled. Remove when the full Cargo graph is chrono-free. See docs/usage/verification.md." },
     { id = "RUSTSEC-2026-0206", reason = "rustybuzz comes through tuiscotti-tui-test, a dev dependency of jackin-testkit for the identity gate (P9.4); the pinned tuiscotti has no replacement." },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser comes through tuiscotti-tui-test, a dev dependency of jackin-testkit for the identity gate (P9.4); the pinned tuiscotti has no replacement." },
 ]
@@ -23,6 +24,7 @@ allow = [
 ]
 confidence-threshold = 0.8
 exceptions = [
+    { crate = "target-lexicon@0.13.5", allow = ["Apache-2.0 WITH LLVM-exception"] },
     { crate = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
 ]
 
@@ -49,6 +51,7 @@ deny = [
     { crate = "podman-api", reason = "Jackin never runs Podman, and Docker runs only through docker buildx in jackin-image; no container client crate (D01)." },
 ]
 skip = [
+    { crate = "system-deps@7.0.8", reason = "libsecret-sys 0.9 uses system-deps 7 while gio-sys and glib-sys 0.22 use system-deps 8." },
     { crate = "block-buffer@0.10.4", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
     { crate = "crypto-common@0.1.7", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },
     { crate = "digest@0.10.7", reason = "russh and the OpenShell SDK pull different RustCrypto generations; keep the older survivor visible for future drift." },

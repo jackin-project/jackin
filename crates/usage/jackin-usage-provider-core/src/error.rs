@@ -5,6 +5,8 @@ use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum ProviderError {
+    #[error("the hub refused its management key")]
+    HubRefused,
     #[error("the login was rejected")]
     Unauthorized,
     #[error("the login is not allowed to read this")]

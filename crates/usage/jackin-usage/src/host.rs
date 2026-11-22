@@ -40,6 +40,10 @@ struct Settled {
 }
 
 impl HostUsage {
+    pub fn endpoints(&self) -> &crate::ProviderEndpoints {
+        &self.deps.endpoints
+    }
+
     pub fn new(deps: UsageDeps) -> HostUsage {
         let http = Http::new(deps.endpoints.timeout());
         HostUsage { deps, http }

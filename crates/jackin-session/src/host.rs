@@ -45,7 +45,7 @@ impl Clock for SystemClock {
     }
 
     fn utc_offset_secs(&self) -> i32 {
-        chrono::Local::now().offset().local_minus_utc()
+        jiff::ZonedDateTime::now().offset().seconds()
     }
 
     async fn sleep(&self, duration: Duration) {
