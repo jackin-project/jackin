@@ -988,7 +988,7 @@ async fn a_late_write_after_removal_is_rejected() -> Result<()> {
 }
 
 #[tokio::test]
-async fn sign_in_uses_the_antigravity_installed_app_client() -> Result<()> {
+async fn prompt_asks_for_a_jackin_client_not_gemini_code_assist() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let server = UsageServer::start().await?;
     let service = OwnedLogin::new(
@@ -1003,15 +1003,15 @@ async fn sign_in_uses_the_antigravity_installed_app_client() -> Result<()> {
             .connect(UsageProvider::Antigravity, None, None, send, &cancel)
             .await
     });
-    let LoginPrompt::Browser { url, .. } = prompts.recv().await.ok_or("missing browser")? else {
-        return Err("expected the Antigravity installed-app client".into());
+    let LoginPrompt::Field { label, .. } = prompts.recv().await.ok_or("missing field")? else {
+        return Err("expected a Jackin client prompt".into());
     };
-    assert!(url.as_str().contains(FOREIGN_CLIENT));
-    assert!(!url.as_str().contains("Gemini Code Assist"));
+    assert!(label.contains("Jackin"));
+    assert!(!label.contains("Gemini Code Assist"));
     drop(prompts);
     let joined = pending.await.unwrap();
     if joined.is_ok() {
-        return Err("dropping the browser prompt stored an account".into());
+        return Err("the cancelled client prompt stored an account".into());
     }
     Ok(())
 }

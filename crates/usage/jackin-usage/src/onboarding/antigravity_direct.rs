@@ -28,10 +28,6 @@ const PLAN_TTL: i64 = 3600;
 const RENEW_EARLY: i64 = 300;
 const HOUR: u64 = 3600;
 
-const INSTALLED_CLIENT_ID: &str =
-    "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
-const INSTALLED_CLIENT_SECRET: &str = "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";
-
 const NO_PROJECT: &str =
     "Antigravity couldn't find a project with quota access for this account. Try again shortly.";
 const NO_SUBSCRIPTION: &str = "Google reports no Antigravity quota subscription for this project.";
@@ -574,7 +570,7 @@ async fn identify(http: &Http, token: &str) -> Result<Identity, LoginError> {
 async fn client_for(
     existing: Option<&SecretBytes>,
     registration: Option<&GoogleRegistrationFile>,
-    _prompts: &mpsc::Sender<LoginPrompt>,
+    prompts: &mpsc::Sender<LoginPrompt>,
 ) -> Result<DesktopClient, LoginError> {
     if let Some(saved) = existing.and_then(|bytes| Credential::decode(bytes).ok()) {
         return Ok(saved.client);
@@ -582,8 +578,21 @@ async fn client_for(
     if let Some(file) = registration {
         return file.client().await;
     }
+    let id = super::gemini_connection::text_field(
+        prompts,
+        "Jackin Google desktop OAuth client ID",
+        false,
+    )
+    .await?;
+    let secret = super::gemini_connection::field(
+        prompts,
+        "Jackin Google desktop OAuth client secret",
+        true,
+        true,
+    )
+    .await?;
     Ok(DesktopClient::new(
-        INSTALLED_CLIENT_ID.to_owned(),
-        Some(Secret::new(INSTALLED_CLIENT_SECRET.to_owned())),
+        id,
+        (!secret.expose().is_empty()).then_some(secret),
     )?)
 }
