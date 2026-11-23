@@ -507,7 +507,7 @@ pub(super) async fn connect(
     prompts: mpsc::Sender<LoginPrompt>,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<Candidate, LoginError> {
-    let client = client_for(existing, registration, &prompts).await?;
+    let client = client_for(existing, registration).await?;
     let mut login = BrowserLogin::listen(
         0,
         "/oauth-callback",
@@ -604,7 +604,6 @@ async fn identify(http: &Http, token: &str) -> Result<Identity, LoginError> {
 async fn client_for(
     existing: Option<&SecretBytes>,
     registration: Option<&GoogleRegistrationFile>,
-    prompts: &mpsc::Sender<LoginPrompt>,
 ) -> Result<DesktopClient, LoginError> {
     if let Some(saved) = existing.and_then(|bytes| Credential::decode(bytes).ok()) {
         return Ok(saved.client);
@@ -612,21 +611,8 @@ async fn client_for(
     if let Some(file) = registration {
         return file.client().await;
     }
-    let id = super::gemini_connection::text_field(
-        prompts,
-        "Jackin Google desktop OAuth client ID",
-        false,
+    Err(ProviderError::Unsupported(
+        "Google has not authorized Jackin to use the Antigravity installed-app OAuth client",
     )
-    .await?;
-    let secret = super::gemini_connection::field(
-        prompts,
-        "Jackin Google desktop OAuth client secret",
-        true,
-        true,
-    )
-    .await?;
-    Ok(DesktopClient::new(
-        id,
-        (!secret.expose().is_empty()).then_some(secret),
-    )?)
+    .into())
 }

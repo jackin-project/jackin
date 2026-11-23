@@ -1166,14 +1166,11 @@ async fn a_late_write_after_removal_is_rejected() -> Result<()> {
 }
 
 #[tokio::test]
-async fn prompt_asks_for_a_jackin_client_not_gemini_code_assist() -> Result<()> {
+async fn connect_without_registration_stops_before_browser_consent() -> Result<()> {
     let dir = tempfile::tempdir()?;
+    let path = dir.path().join("usage/accounts.sqlite3");
     let server = UsageServer::start().await?;
-    let service = OwnedLogin::new(
-        dir.path().join("usage/accounts.sqlite3"),
-        server.endpoints(),
-        Arc::new(FakeClock::new()),
-    );
+    let service = OwnedLogin::new(path.clone(), server.endpoints(), Arc::new(FakeClock::new()));
     let cancel = CancellationToken::new();
     let (send, mut prompts) = tokio::sync::mpsc::channel(2);
     let pending = tokio::spawn(async move {
@@ -1181,16 +1178,16 @@ async fn prompt_asks_for_a_jackin_client_not_gemini_code_assist() -> Result<()> 
             .connect(UsageProvider::Antigravity, None, None, send, &cancel)
             .await
     });
-    let LoginPrompt::Field { label, .. } = prompts.recv().await.ok_or("missing field")? else {
-        return Err("expected a Jackin client prompt".into());
-    };
-    assert!(label.contains("Jackin"));
-    assert!(!label.contains("Gemini Code Assist"));
-    drop(prompts);
-    let joined = pending.await.unwrap();
-    if joined.is_ok() {
-        return Err("the cancelled client prompt stored an account".into());
-    }
+    let error = pending
+        .await?
+        .expect_err("an unauthorized registration must stop sign-in");
+    assert_eq!(
+        error.to_string(),
+        "Google has not authorized Jackin to use the Antigravity installed-app OAuth client"
+    );
+    assert!(prompts.try_recv().is_err(), "sign-in opened a prompt");
+    let vault = Arc::new(Vault::default());
+    assert!(AccountRegistry::open(&path).is_err() || db(&path, &vault)?.list()?.is_empty());
     Ok(())
 }
 
