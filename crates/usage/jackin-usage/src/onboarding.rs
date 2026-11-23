@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod antigravity;
+mod antigravity_direct;
 pub use antigravity::receive_antigravity_statusline;
 mod gemini_connection;
 mod google_registration;
@@ -71,6 +72,8 @@ pub enum LoginError {
     OpenBrowser,
     #[error("the stored credential cannot be decoded; sign in again")]
     Encoding,
+    #[error("Antigravity has no direct sign-in, so this refresh did not read quota from Google")]
+    NotDirect,
     #[error("usage account operation was interrupted")]
     Worker,
 }
@@ -333,9 +336,6 @@ impl OwnedLogin {
             )
             .into());
         }
-        if provider == UsageProvider::Antigravity {
-            return self.connect_antigravity(replace, prompts, cancel).await;
-        }
         let lease = match replace {
             Some(id) => Some(self.account_lease(id, cancel).await?),
             None => None,
@@ -520,6 +520,18 @@ impl OwnedLogin {
             return self.key_candidate(provider, region, prompts).await;
         }
         let http = self.http(provider).await?;
+        if provider == U::Antigravity {
+            let current = self.previous_material(replace).await?;
+            return antigravity_direct::connect(
+                &http,
+                self.clock.now(),
+                current.as_ref().map(|(_, bytes)| bytes),
+                self.google_registration.as_ref(),
+                prompts,
+                cancel,
+            )
+            .await;
+        }
         if provider == U::Gemini {
             let current = self.previous_material(replace).await?;
             return gemini_connection::connect(
@@ -662,8 +674,13 @@ impl OwnedLogin {
         trigger: RefreshTrigger,
         cancel: &CancellationToken,
     ) -> Result<(), LoginError> {
-        if account.provider == UsageProvider::Antigravity {
-            return Ok(());
+        if account.provider == UsageProvider::Antigravity
+            && matches!(
+                self.read_credential(account.id).await,
+                Err(LoginError::Store(ConnectionError::CredentialKind))
+            )
+        {
+            return Err(LoginError::NotDirect);
         }
         let manual = trigger != RefreshTrigger::Scheduled;
         let id = account.id;
@@ -751,7 +768,30 @@ impl OwnedLogin {
             return Err(ConnectionError::Changed.into());
         }
         use UsageProvider as U;
-        let payload = if account.provider == U::Gemini {
+        let payload = if account.provider == U::Antigravity {
+            let http = self.http(account.provider).await?;
+            let mut credential = antigravity_direct::Credential::decode(&bytes)?;
+            let previous = trigger.previous(db, id)?;
+            let now = self.clock.now();
+            if let Some(material) = credential.renew_if_due(&http, now).await? {
+                *version = self.rotate(id, *version, material, lease).await?;
+            }
+            match credential.read(&http, previous.as_ref(), now).await {
+                Ok(snapshot) => snapshot,
+                Err(antigravity_direct::ReadError::Failed(error)) => return Err(error),
+                Err(antigravity_direct::ReadError::Refused) => {
+                    let material = credential.force_renew(&http, now).await?;
+                    *version = self.rotate(id, *version, material, lease).await?;
+                    match credential.read(&http, previous.as_ref(), now).await {
+                        Ok(snapshot) => snapshot,
+                        Err(antigravity_direct::ReadError::Refused) => {
+                            return Err(ProviderError::Unauthorized.into());
+                        }
+                        Err(antigravity_direct::ReadError::Failed(error)) => return Err(error),
+                    }
+                }
+            }
+        } else if account.provider == U::Gemini {
             let http = self.http(account.provider).await?;
             let mut credential = gemini_connection::Credential::decode(&bytes)?;
             if let Some(rotated) = credential.renew(&http, self.clock.now()).await? {

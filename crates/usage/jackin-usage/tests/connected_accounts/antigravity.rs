@@ -36,7 +36,7 @@ async fn begin(
     let (send, mut prompts) = tokio::sync::mpsc::channel(2);
     let task = tokio::spawn(async move {
         service
-            .connect(UsageProvider::Antigravity, None, replace, send, &token)
+            .connect_antigravity_statusline(replace, send, &token)
             .await
     });
     let Some(LoginPrompt::Field { reply, .. }) = prompts.recv().await else {
@@ -50,6 +50,53 @@ async fn begin(
     };
     assert!(command.contains("usage antigravity-statusline"));
     Ok(task)
+}
+
+#[tokio::test]
+async fn a_stored_statusline_report_is_not_a_network_refresh() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let observed = clock.now().0;
+    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let cancel = CancellationToken::new();
+    let email = "cached@example.com";
+    let pending = begin(&service, email, None, &cancel).await?;
+    assert!(update(&service, email, Some("ultra"), observed)?);
+    let id = pending.await??;
+    let db = AccountRegistry::open(&path)?;
+    let account = db
+        .list()?
+        .into_iter()
+        .find(|row| row.id == id)
+        .ok_or("missing account")?;
+    let before = db
+        .snapshots()?
+        .into_iter()
+        .find(|(row, _, _)| row.id == id)
+        .ok_or("missing snapshot")?;
+    let manual = service.refresh(&account, &cancel).await;
+    let scheduled = service.refresh_if_due(&account, false, &cancel).await;
+    for result in [&manual, &scheduled] {
+        let error = result
+            .as_ref()
+            .expect_err("a stored report is not a network refresh");
+        let text = error.to_string();
+        assert!(
+            !text.contains("last report"),
+            "the stored report must not be presented as a new reading"
+        );
+    }
+    let after = db
+        .snapshots()?
+        .into_iter()
+        .find(|(row, _, _)| row.id == id)
+        .ok_or("missing snapshot")?;
+    assert_eq!(before.1, after.1);
+    assert_eq!(before.2, after.2);
+    assert!(db.failure(id)?.is_none());
+    assert_eq!(after.1, Some(observed));
+    Ok(())
 }
 
 #[tokio::test]
@@ -89,7 +136,8 @@ async fn only_opted_in_reports_create_and_update_accounts() -> Result<()> {
         .into_iter()
         .find(|a| a.id == id)
         .ok_or("missing account")?;
-    service.refresh(&row, &cancel).await?;
+    let refresh = service.refresh(&row, &cancel).await;
+    assert!(matches!(refresh, Err(LoginError::NotDirect)));
     let (account, at, snapshot) = db
         .snapshots()?
         .into_iter()

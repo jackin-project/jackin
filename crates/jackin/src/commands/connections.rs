@@ -166,7 +166,7 @@ async fn reconnect(
 }
 
 fn service(app: &App) -> Result<OwnedLogin, CommandError> {
-    Ok(OwnedLogin::new(
+    let login = OwnedLogin::new(
         database(app)?,
         app.deps.usage_endpoints.clone(),
         Arc::clone(&app.deps.host.clock),
@@ -177,7 +177,11 @@ fn service(app: &App) -> Result<OwnedLogin, CommandError> {
             &app.cwd,
             Arc::clone(&app.deps.host.fs),
         ),
-    ))
+    );
+    Ok(match &app.deps.usage_vault {
+        Some(vault) => login.with_vault(Arc::clone(vault)),
+        None => login,
+    })
 }
 
 async fn connect(
@@ -467,7 +471,9 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
         } => {
             use std::io::{IsTerminal, Read};
             if std::io::stdin().is_terminal() {
-                return Err(CommandError::Argument("Run jackin account usage connect antigravity to set up the Antigravity status line".into()));
+                return Err(CommandError::Argument(
+                    "Pipe an Antigravity status-line payload on stdin. Direct quota sign-in is jackin account usage connect antigravity.".into(),
+                ));
             }
             const LIMIT: u64 = 1024 * 1024;
             let mut input = zeroize::Zeroizing::new(Vec::new());
@@ -520,18 +526,33 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
     let mut rows = Vec::new();
     let mut first_error = None;
     if let Some(db) = db.as_mut() {
+        let mut refresh_errors = Vec::new();
         if active {
-            first_error = refresh_selected(app, db, &filter, provider).await?;
+            let (error, messages) = refresh_selected(app, db, &filter, provider).await?;
+            first_error = error;
+            refresh_errors = messages;
         }
         let now = app.deps.host.clock.now().0;
         for (account, fetched_at, payload) in db.snapshots().map_err(failure)? {
             if selected(&account, &filter, provider) {
-                rows.push(jackin_usage::export::snapshot_account(
+                let mut row = jackin_usage::export::snapshot_account(
                     &account,
                     fetched_at,
                     payload.as_ref(),
                     now,
-                ));
+                );
+                if let Some(failure) = db.failure(account.id).map_err(failure)? {
+                    row["stale"] = true.into();
+                    row["failure"] = json!({
+                        "message": failure.message,
+                        "retry_at": failure.retry_at
+                    });
+                } else if let Some((_, message)) =
+                    refresh_errors.iter().find(|(id, _)| *id == account.id)
+                {
+                    row["failure"] = json!({"message": message});
+                }
+                rows.push(row);
             }
         }
     }
@@ -554,8 +575,9 @@ async fn refresh_selected(
     db: &AccountRegistry,
     filter: &UsageFilter,
     provider: Option<UsageProvider>,
-) -> Result<Option<CommandError>, CommandError> {
+) -> Result<(Option<CommandError>, Vec<(Uuid, String)>), CommandError> {
     let mut first_error = None;
+    let mut messages = Vec::new();
     let owned = service(app)?;
     if provider.is_none() && filter.account.is_none() {
         for hub in db.hubs().map_err(failure)? {
@@ -578,10 +600,6 @@ async fn refresh_selected(
             let Some(account) = accounts.next() else {
                 break;
             };
-            if account.provider == UsageProvider::Antigravity {
-                app.io.note("Antigravity updates while its signed-in CLI status line is running. Showing the last report received.");
-                continue;
-            }
             let service = owned.clone();
             let cancel = app.cancel.clone();
             tasks.spawn(async move { (account.id, service.refresh(&account, &cancel).await) });
@@ -594,11 +612,12 @@ async fn refresh_selected(
         let Some(result) = next else { break };
         let (id, result) = result.map_err(|_| failure(LoginError::Worker))?;
         if let Err(error) = result {
+            messages.push((id, error.to_string()));
             app.io.note(&format!("{id}: {error}"));
             first_error.get_or_insert_with(|| failure(error));
         }
     }
-    Ok(first_error)
+    Ok((first_error, messages))
 }
 
 fn selected(

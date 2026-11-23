@@ -117,12 +117,13 @@ impl CandidateIdentity {
         provider: UsageProvider,
     ) -> Result<(&'static str, Option<&str>), ConnectionError> {
         use UsageProvider::{
-            ChatGpt, Claude, Gemini, Grok, Kimi, Mimo, MiniMax, Muse, OpenCode, OpenRouter, Zai,
+            Antigravity, ChatGpt, Claude, Gemini, Grok, Kimi, Mimo, MiniMax, Muse, OpenCode,
+            OpenRouter, Zai,
         };
         match (self, provider) {
             (
                 Self::OAuth(id),
-                Claude | ChatGpt | Muse | Grok | Gemini | OpenCode | Kimi | MiniMax,
+                Claude | ChatGpt | Muse | Grok | Gemini | OpenCode | Kimi | MiniMax | Antigravity,
             ) => Ok(("oauth", id.as_deref().filter(|id| !id.is_empty()))),
             (Self::ApiKey(key), Zai | OpenRouter | Mimo | MiniMax | Kimi) => {
                 Ok(("key", Some(&key.0)))

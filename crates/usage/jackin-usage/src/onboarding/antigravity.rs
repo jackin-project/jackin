@@ -75,7 +75,7 @@ fn launch_command(database: &Path) -> Result<String, LoginError> {
 }
 
 impl OwnedLogin {
-    pub(super) async fn connect_antigravity(
+    pub async fn connect_antigravity_statusline(
         &self,
         replace: Option<Uuid>,
         prompts: mpsc::Sender<LoginPrompt>,

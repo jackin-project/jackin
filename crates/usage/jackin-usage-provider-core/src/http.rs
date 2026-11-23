@@ -275,6 +275,31 @@ impl Http {
         json_reply(request).await
     }
 
+    pub fn rewrites_origin(&self) -> bool {
+        self.base.is_some()
+    }
+
+    pub async fn post_reply(
+        &self,
+        url: &str,
+        auth: Auth<'_>,
+        headers: &[(&str, &str)],
+        body: &Value,
+    ) -> Result<JsonReply, ProviderError> {
+        if self.hub.is_some() {
+            return self
+                .hub_request(Method::POST, url, headers, Some(body))
+                .await;
+        }
+        let bytes = serde_json::to_vec(body)
+            .map_err(|_| ProviderError::Decode("the request body could not be encoded"))?;
+        let mut request = with_authorization(self.request(Method::POST, url)?, auth)?;
+        for (name, value) in headers {
+            request = with_header(request, name, value)?;
+        }
+        json_reply(request.header(CONTENT_TYPE, "application/json").body(bytes)).await
+    }
+
     pub async fn get_reply(
         &self,
         url: &str,

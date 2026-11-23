@@ -504,6 +504,8 @@ async fn hub_transport_limits_upstream_requests_to_the_mirrored_provider() -> Re
 
 #[path = "connected_accounts/antigravity.rs"]
 mod antigravity;
+#[path = "connected_accounts/antigravity_direct.rs"]
+mod antigravity_direct;
 #[path = "connected_accounts/leases.rs"]
 mod leases;
 

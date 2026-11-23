@@ -1,0 +1,267 @@
+// SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use jackin::ExitClass;
+use jackin_core::{Clock, Provider, Secret, SecretBytes};
+use jackin_testkit::{Method, Route, TestResult, UsageServer, World, guard};
+use jackin_usage::accounts::{
+    AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, UsageProvider,
+};
+use jackin_usage::onboarding::{LoginPrompt, OwnedLogin, receive_antigravity_statusline};
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+use super::support::Harness;
+
+#[derive(Debug, Default)]
+struct Memory {
+    values: Mutex<HashMap<Uuid, Vec<u8>>>,
+}
+
+impl CredentialVault for Memory {
+    fn store(&self, id: Uuid, secret: &SecretBytes) -> Result<(), ConnectionError> {
+        self.values
+            .lock()
+            .map_err(|_| ConnectionError::Vault)?
+            .insert(id, secret.expose().to_vec());
+        Ok(())
+    }
+    fn load(&self, id: Uuid) -> Result<SecretBytes, ConnectionError> {
+        self.values
+            .lock()
+            .map_err(|_| ConnectionError::Vault)?
+            .get(&id)
+            .cloned()
+            .map(SecretBytes::new)
+            .ok_or(ConnectionError::MissingCredential)
+    }
+    fn delete(&self, id: Uuid) -> Result<(), ConnectionError> {
+        self.values
+            .lock()
+            .map_err(|_| ConnectionError::Vault)?
+            .remove(&id);
+        Ok(())
+    }
+}
+
+fn quota_requests() -> &'static AtomicUsize {
+    static REQUESTS: AtomicUsize = AtomicUsize::new(0);
+    &REQUESTS
+}
+
+fn counted_reading(_: &[u8]) -> Value {
+    quota_requests().fetch_add(1, Ordering::SeqCst);
+    serde_json::from_str(&reading()).unwrap_or(Value::Null)
+}
+
+fn reading() -> String {
+    r#"{"groups":[{"displayName":"Gemini","buckets":[
+        {"bucketId":"gemini-5h","remainingFraction":0.99965,"resetTime":"2027-03-02T14:00:00Z"},
+        {"bucketId":"gemini-weekly","remainingFraction":0.9742,"resetTime":"2027-03-08T09:00:00Z"},
+        {"bucketId":"3p-5h","remainingFraction":0.5,"resetTime":"2027-03-02T15:00:00Z"},
+        {"bucketId":"3p-weekly","remainingFraction":0.4,"resetTime":"2027-03-08T09:00:00Z"}
+    ]},{"displayName":"Gemini 4 Argon","buckets":[
+        {"bucketId":"gemini-argon-wtu-weekly","window":"weekly","remainingFraction":0.8,"resetTime":"2027-03-09T00:00:00Z"}
+    ]}]}"#
+    .to_owned()
+}
+
+#[tokio::test]
+async fn cli_refresh_matches_across_launches_and_keeps_a_failed_reading() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let server = UsageServer::start().await?;
+        let mut cli = Harness::new(&world);
+        cli.usage_endpoints = server.endpoints();
+        let vault = Arc::new(Memory::default());
+        let shared = Arc::clone(&vault);
+        let shared: Arc<dyn CredentialVault> = shared;
+        cli.usage_vault = Some(shared);
+        let root = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?;
+        let path = root.join("usage/accounts.sqlite3");
+        let now = world.clock.now().0;
+        let stored = Arc::clone(&vault);
+        let stored: Arc<dyn CredentialVault> = stored;
+        let mut db = AccountRegistry::with_vault(&path, stored)?;
+        let id = db.add_with_snapshot(
+            UsageProvider::Antigravity,
+            "Personal",
+            &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
+            &SecretBytes::new(serde_json::to_vec(&json!({
+                "product": "antigravity",
+                "client_id": "jackin-fixture-desktop.apps.googleusercontent.com",
+                "client_secret": "fixture-not-a-secret",
+                "access": "old-access",
+                "refresh": "refresh-1",
+                "expires_at": now + 10_000
+            }))?),
+            now - 60,
+            &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}}),
+        )?;
+        drop(db);
+        let load = r#"{"paidTier":{"id":"g1-ultra-tier","name":"ignored"},"cloudaicompanionProject":"proj-1"}"#;
+        server.serve(
+            Provider::Antigravity,
+            Method::Post,
+            "/production/v1internal:loadCodeAssist",
+            Route::json(200, load),
+        );
+        quota_requests().store(0, Ordering::SeqCst);
+        server.serve(
+            Provider::Antigravity,
+            Method::Post,
+            "/daily/v1internal:retrieveUserQuotaSummary",
+            Route::json(200, "{}")
+                .requires_json_body(json!({"project": "proj-1"}))
+                .responding_with(counted_reading),
+        );
+        let args = ["usage", "refresh", "--account", &id.to_string()];
+        let first = cli.run(&args).await?;
+        first.ok()?;
+        let after_first = quota_requests().load(Ordering::SeqCst);
+        assert!(after_first >= 1, "the first refresh made no quota request");
+        let second = cli.run(&args).await?;
+        second.ok()?;
+        assert!(
+            quota_requests().load(Ordering::SeqCst) > after_first,
+            "the second refresh made no quota request"
+        );
+        assert_eq!(first.stdout, second.stdout);
+        assert!(!first.stdout.contains("last report"));
+        assert!(!first.stderr.contains("last report"));
+        let body: Value = serde_json::from_str(&first.stdout)?;
+        let account = &body["accounts"][0];
+        assert_eq!(account["account"]["id"], id.to_string());
+        assert_eq!(account["usage"]["plan"], "Google AI Ultra");
+        let resources = account["usage"]["resources"]
+            .as_object()
+            .ok_or("missing resources")?;
+        for key in [
+            "gemini-5h",
+            "gemini-weekly",
+            "gemini-argon-wtu-weekly",
+            "3p-5h",
+            "3p-weekly",
+        ] {
+            assert!(resources.contains_key(key), "missing {key}");
+        }
+        let details = cli
+            .run(&["usage", "details", "--account", &id.to_string()])
+            .await?;
+        details.ok()?;
+        let gemini = details.stdout.find("Gemini weekly").ok_or("missing Gemini weekly")?;
+        let argon = details.stdout.find("Argon weekly").ok_or("missing Argon")?;
+        let claude = details.stdout.find("Claude 5h").ok_or("missing Claude")?;
+        assert!(gemini < argon && argon < claude, "{}", details.stdout);
+        assert_eq!(resources["gemini-5h"]["remaining_fraction"], 0.99965);
+        assert_eq!(resources["gemini-5h"]["resets_at"], 1_803_996_000_i64);
+        assert_eq!(resources["gemini-weekly"]["resets_at"], 1_804_496_400_i64);
+        assert_eq!(resources["3p-5h"]["resets_at"], 1_803_999_600_i64);
+        assert_eq!(resources["3p-weekly"]["resets_at"], 1_804_496_400_i64);
+        assert_eq!(resources["gemini-argon-wtu-weekly"]["resets_at"], 1_804_550_400_i64);
+        let fetched = account["fetched_at"].as_i64().ok_or("missing age")?;
+        world.clock.advance(Duration::from_secs(120));
+        server.replace(
+            Provider::Antigravity,
+            Method::Post,
+            "/daily/v1internal:retrieveUserQuotaSummary",
+            Route::status(500),
+        );
+        server.replace(
+            Provider::Antigravity,
+            Method::Post,
+            "/production/v1internal:retrieveUserQuotaSummary",
+            Route::status(500),
+        );
+        let failed = cli.run(&args).await?;
+        assert_ne!(failed.exit, first.exit);
+        let failed_body: Value = serde_json::from_str(&failed.stdout)?;
+        let failed_account = &failed_body["accounts"][0];
+        assert_eq!(failed_account["fetched_at"], fetched);
+        assert_eq!(
+            failed_account["usage"]["resources"]["gemini-5h"]["remaining_fraction"],
+            0.99965
+        );
+        let message = failed_account["failure"]["message"]
+            .as_str()
+            .ok_or("missing refresh error")?;
+        assert!(message.contains("unavailable"), "{message}");
+        assert!(!failed.stdout.contains("fixture-not-a-secret"));
+        assert!(!failed.stderr.contains("fixture-not-a-secret"));
+        assert!(!failed.stdout.contains("old-access"));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cli_refresh_of_a_statusline_snapshot_is_not_a_network_success() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let cli = Harness::new(&world);
+        let root = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?;
+        let path = root.join("usage/accounts.sqlite3");
+        let clock = Arc::clone(&world.clock);
+        let clock: Arc<dyn Clock> = clock;
+        let service = OwnedLogin::new(path.clone(), cli.usage_endpoints.clone(), clock);
+        let cancel = tokio_util::sync::CancellationToken::new();
+        let (send, mut prompts) = tokio::sync::mpsc::channel(2);
+        let pending = tokio::spawn(async move {
+            service
+                .connect_antigravity_statusline(None, send, &cancel)
+                .await
+        });
+        let LoginPrompt::Field { reply, .. } = prompts.recv().await.ok_or("missing email prompt")?
+        else {
+            return Err("expected an email prompt".into());
+        };
+        reply
+            .send(Secret::new("cached@example.com".into()))
+            .map_err(|_| "prompt closed")?;
+        let LoginPrompt::AntigravityStatusLine { .. } =
+            prompts.recv().await.ok_or("missing status line")?
+        else {
+            return Err("expected the status-line command".into());
+        };
+        let observed = world.clock.now().0;
+        let input = json!({"product":"antigravity","email":"cached@example.com","plan_tier":"ultra","quota":{"3p-weekly":{"remaining_fraction":0.05}}});
+        assert!(receive_antigravity_statusline(
+            &path,
+            &serde_json::to_vec(&input)?,
+            observed
+        )?);
+        let id = pending.await?.map_err(|error| error.to_string())?;
+        let args = ["usage", "refresh", "--account", &id.to_string()];
+        let ran = cli.run(&args).await?;
+        assert_ne!(ran.exit, ExitClass::Ok);
+        assert!(!ran.stderr.contains("last report"));
+        assert!(!ran.stdout.contains("last report"));
+        let body: Value = serde_json::from_str(&ran.stdout)?;
+        let account = &body["accounts"][0];
+        assert_eq!(account["fetched_at"], observed);
+        assert_eq!(
+            account["usage"]["resources"]["3p-weekly"]["remaining_fraction"],
+            0.05
+        );
+        let message = account["failure"]["message"]
+            .as_str()
+            .ok_or("missing refresh error")?;
+        assert!(message.contains("no direct sign-in"), "{message}");
+        assert!(ran.stderr.contains("no direct sign-in"));
+        Ok(())
+    })
+    .await
+}

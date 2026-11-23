@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod accounts;
+mod antigravity_quota;
 pub mod browser;
 mod cache;
 pub mod catalog;

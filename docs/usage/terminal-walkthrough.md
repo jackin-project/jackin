@@ -13,16 +13,16 @@ Open **Accounts** in the jackin console. With a provider selected in the tree, p
 | Claude or ChatGPT in the browser | Complete the provider’s sign-in. Return to the terminal after the browser redirects. When the terminal offers a paste field, you can submit the authorization response there. |
 | Device sign-in | Open the displayed URL and enter the displayed code. The dialog offers **Copy code**, **Copy URL**, and **Open browser** while it waits for authorization. |
 | API key | Use **Open key page** or **Copy URL**, enter the key in the masked field, and activate **Validate and save**. |
-| Antigravity (Google AI) | Enter the Google account email you use in Antigravity. Run the displayed `agy --settings …` command in another terminal and complete sign-in there if prompted. Keep the Jackin dialog open until it shows your account. |
+| Antigravity (Google AI) | Set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the Jackin Desktop app JSON, or enter that client when asked. Complete Google consent in the browser. Jackin reads the identity before the quota. |
 | Gemini Code Assist | For an eligible Cloud Code Assist project, set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the registered Desktop app JSON for direct browser consent and managed project discovery. With the variable unset, supply the client ID, optional secret and optional project when asked. Complete the sign-in in the browser and allow its loopback redirect. |
 
 Esc dismisses an active sign-in. After a successful connection, the dialog displays the account and its usage. When you return to **Accounts**, select its saved name under **Usage accounts** to open its readings again. A saved account awaiting its first quota response displays a waiting message. Open **Usage accounts…** in Accounts, or press **N**, to inspect it again. The account opens on its plan and key readings. Choose **Full details** for its complete readings and history. The same dialog offers refresh, sign in again, rename, and remove. When the provider reports reset inventory, select an available reset and review its confirmation before redeeming it.
 
-To check your Ultra subscription, open the saved Antigravity account. Compare **Gemini 5h**, **Gemini weekly**, **Claude 5h** and **Claude weekly** with the quotas in Antigravity. Each percentage is the amount remaining. The account can receive new readings while Antigravity runs with the displayed settings.
+To check your Ultra subscription, open the saved Antigravity account. Compare **Gemini 5h**, **Gemini weekly**, **Claude 5h** and **Claude weekly** with the quotas in Antigravity. An Argon weekly window, when Google reports one, sits between the Gemini and Claude windows. Each percentage is the amount remaining.
 
 A fresh installation opens **Priority**. Under **All Usage**, scroll with the arrow keys or **PgUp/PgDn**. An account with several metrics opens a chooser. A single reading opens directly. For a combined metric, choose a member to inspect its account.
 
-Use **Refresh** for providers that support manual refresh. The console checks polling providers every five minutes while it runs. Antigravity publishes updates during its signed-in CLI sessions.
+Use **Refresh** on the usage board to read providers that support manual refresh, including a direct Antigravity account, while Antigravity is closed. The console checks polling providers every five minutes while it runs. A failed refresh keeps the previous reading and shows its age and the error.
 
 Open **Actions…** for settings and sharing. Settings control used or remaining amounts, warning thresholds, reset and pace displays, alerts, grouping and name concealment. **Copy report** exports a redacted dashboard. Hidden metrics can be restored through **Undo hide** or the hidden-metric settings.
 
