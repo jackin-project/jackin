@@ -39,12 +39,12 @@ pub(super) struct Credential {
 }
 
 #[derive(Serialize, Deserialize)]
-struct Stored<'a> {
-    product: &'a str,
-    client_id: &'a str,
-    client_secret: Option<&'a str>,
-    access: &'a str,
-    refresh: Option<&'a str>,
+struct Stored {
+    product: String,
+    client_id: String,
+    client_secret: Option<String>,
+    access: String,
+    refresh: Option<String>,
     expires_at: Option<i64>,
 }
 
@@ -55,21 +55,16 @@ pub(super) enum ReadError {
 
 impl Credential {
     pub(super) fn decode(bytes: &SecretBytes) -> Result<Self, LoginError> {
-        let stored: Stored<'_> =
+        let stored: Stored =
             serde_json::from_slice(bytes.expose()).map_err(|_| LoginError::Encoding)?;
         if stored.product != "antigravity" {
             return Err(LoginError::Encoding);
         }
         Ok(Self {
-            client: DesktopClient::new(
-                stored.client_id.to_owned(),
-                stored
-                    .client_secret
-                    .map(|text| Secret::new(text.to_owned())),
-            )?,
+            client: DesktopClient::new(stored.client_id, stored.client_secret.map(Secret::new))?,
             tokens: Tokens {
-                access: Secret::new(stored.access.to_owned()),
-                refresh: stored.refresh.map(|text| Secret::new(text.to_owned())),
+                access: Secret::new(stored.access),
+                refresh: stored.refresh.map(Secret::new),
                 expires_at: stored.expires_at.map(Timestamp),
             },
         })
@@ -77,11 +72,19 @@ impl Credential {
 
     fn encode(&self) -> Result<SecretBytes, LoginError> {
         let stored = Stored {
-            product: "antigravity",
-            client_id: &self.client.id,
-            client_secret: self.client.secret.as_ref().map(Secret::expose),
-            access: self.tokens.access.expose(),
-            refresh: self.tokens.refresh.as_ref().map(Secret::expose),
+            product: "antigravity".to_owned(),
+            client_id: self.client.id.clone(),
+            client_secret: self
+                .client
+                .secret
+                .as_ref()
+                .map(|secret| secret.expose().to_owned()),
+            access: self.tokens.access.expose().to_owned(),
+            refresh: self
+                .tokens
+                .refresh
+                .as_ref()
+                .map(|secret| secret.expose().to_owned()),
             expires_at: self.tokens.expires_at.map(|at| at.0),
         };
         serde_json::to_vec(&stored)

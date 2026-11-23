@@ -1016,6 +1016,30 @@ async fn prompt_asks_for_a_jackin_client_not_gemini_code_assist() -> Result<()> 
     Ok(())
 }
 
+fn escaped_slash_grant(expires: i64) -> SecretBytes {
+    let body = format!(
+        r#"{{"access":"old-access","client_id":"{CLIENT_ID}","client_secret":"{CLIENT_SECRET}","expires_at":{expires},"product":"antigravity","refresh":"refresh\/1"}}"#,
+    );
+    SecretBytes::new(body.into_bytes())
+}
+
+fn accept_unescaped_slash(body: &[u8]) -> Value {
+    let text = std::str::from_utf8(body).unwrap_or("");
+    if text.contains("grant_type=refresh_token")
+        && (text.contains("refresh%2F1") || text.contains("refresh/1"))
+        && !text.contains("%5C")
+        && !text.contains("\\/")
+    {
+        json!({
+            "access_token": "access-2",
+            "refresh_token": "refresh/2",
+            "expires_in": 3600
+        })
+    } else {
+        json!({"error": "invalid_grant"})
+    }
+}
+
 fn saved_refresh(path: &std::path::Path, vault: &Arc<Vault>, id: Uuid) -> Result<String> {
     let saved = db(path, vault)?.credential(id)?.1;
     let parsed: Value = serde_json::from_slice(saved.expose())?;
@@ -1023,6 +1047,64 @@ fn saved_refresh(path: &std::path::Path, vault: &Arc<Vault>, id: Uuid) -> Result
         .as_str()
         .map(str::to_owned)
         .ok_or_else(|| "stored grant has no refresh token".into())
+}
+
+#[tokio::test]
+async fn a_grant_with_an_escaped_slash_refreshes_and_the_stored_grant_reopens() -> Result<()> {
+    let turn = gate().lock().await;
+    let _pin = std::ptr::from_ref(&turn);
+    let fixture = Fixture::open().await?;
+    let now = fixture.clock.now().0;
+    let mut registry = db(&fixture.path, &fixture.vault)?;
+    let id = registry.add_with_snapshot(
+        UsageProvider::Antigravity,
+        "Personal",
+        &CandidateIdentity::OAuth(Some(EMAIL.into())),
+        &escaped_slash_grant(now + 60),
+        now - 60,
+        &json!({"plan":"Google AI Ultra","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.2,"window_seconds":18000}}}),
+    )?;
+    drop(registry);
+    let account = db(&fixture.path, &fixture.vault)?.list()?.remove(0);
+    fixture.serve(
+        Method::Post,
+        "/token",
+        Route::json(200, "{}").responding_with(accept_unescaped_slash),
+    );
+    fixture.serve(
+        Method::Post,
+        "/production/v1internal:loadCodeAssist",
+        Route::json(200, &load_body(r#"{"id":"g1-ultra-tier","name":"x"}"#)),
+    );
+    fixture.serve(
+        Method::Post,
+        "/daily/v1internal:retrieveUserQuotaSummary",
+        Route::json(200, &complete_body()).requires_header("authorization", "Bearer access-2"),
+    );
+    fixture
+        .service
+        .refresh(&account, &CancellationToken::new())
+        .await?;
+    assert_eq!(
+        saved_refresh(&fixture.path, &fixture.vault, id)?,
+        "refresh/2"
+    );
+    let path = fixture.path.clone();
+    let endpoints = fixture.server.endpoints();
+    let vault = Arc::clone(&fixture.vault);
+    let clock = Arc::clone(&fixture.clock);
+    let vault: Arc<dyn jackin_usage::accounts::CredentialVault> = vault;
+    let clock: Arc<dyn Clock> = clock;
+    drop(fixture.service);
+    let restarted = OwnedLogin::new(path, endpoints, clock).with_vault(vault);
+    let row = restarted
+        .with_registry(|db| db.list())
+        .await?
+        .into_iter()
+        .next()
+        .ok_or("missing restarted account")?;
+    restarted.refresh(&row, &CancellationToken::new()).await?;
+    Ok(())
 }
 
 #[tokio::test]
