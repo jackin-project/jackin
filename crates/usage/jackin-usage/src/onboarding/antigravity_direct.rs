@@ -309,11 +309,8 @@ async fn quota_bodies(
             ProviderError::Unsupported(message).into(),
         ));
     }
-    if replies
-        .iter()
-        .any(|reply| reply.status == 401 || reply.status == 403)
-    {
-        return Err(ReadError::Failed(ProviderError::Unauthorized.into()));
+    if let Some(reply) = replies.iter().find(|reply| reply.status == 403) {
+        return Err(ReadError::Failed(quota_denied(reply)));
     }
     if let Some(reply) = replies.iter().find(|reply| reply.status == 429) {
         return Err(ReadError::Failed(
@@ -329,6 +326,42 @@ async fn quota_bodies(
     Err(ReadError::Failed(
         ProviderError::Unsupported(UNAVAILABLE).into(),
     ))
+}
+
+fn quota_denied(reply: &JsonReply) -> LoginError {
+    ProviderError::Denied {
+        status: reply.status,
+        reason: provider_reason(&reply.body),
+    }
+    .into()
+}
+
+fn provider_reason(body: &Value) -> String {
+    let first = body
+        .pointer("/error/details")
+        .and_then(Value::as_array)
+        .and_then(|details| {
+            details
+                .iter()
+                .find_map(|item| item.get("reason").and_then(Value::as_str))
+        });
+    first
+        .and_then(safe_reason)
+        .or_else(|| {
+            body.pointer("/error/status")
+                .and_then(Value::as_str)
+                .and_then(safe_reason)
+        })
+        .unwrap_or_else(|| "DENIED".to_owned())
+}
+
+fn safe_reason(value: &str) -> Option<String> {
+    let usable = !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit() || byte == b'_');
+    usable.then(|| value.to_owned())
 }
 
 fn subscription_required(reply: &JsonReply) -> bool {
@@ -512,18 +545,19 @@ pub(super) async fn connect(
     .await?;
     let identity = identify(http, tokens.access.expose()).await?;
     let credential = Credential { client, tokens };
+    let material = credential.encode()?;
     let snapshot = credential
         .read(http, None, now)
         .await
         .map_err(|error| match error {
             ReadError::Refused => ProviderError::Unauthorized.into(),
             ReadError::Failed(error) => error,
-        })?;
+        });
     Ok(Candidate {
         label: identity.label,
         identity: CandidateIdentity::OAuth(Some(identity.key)),
-        material: credential.encode()?,
-        snapshot: Ok(snapshot),
+        material,
+        snapshot,
     })
 }
 

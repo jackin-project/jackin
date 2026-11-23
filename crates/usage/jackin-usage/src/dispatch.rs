@@ -201,7 +201,9 @@ fn reason(error: ProviderError, now: i64) -> UnavailableReason {
                 .map(Timestamp),
         },
         ProviderError::Network(message) => UnavailableReason::Network(message.to_owned()),
-        ProviderError::Status(_) | ProviderError::Decode(_) => UnavailableReason::Provider(text),
+        ProviderError::Status(_) | ProviderError::Decode(_) | ProviderError::Denied { .. } => {
+            UnavailableReason::Provider(text)
+        }
         ProviderError::Unsupported(detail) => unsupported(Some(detail)),
     }
 }

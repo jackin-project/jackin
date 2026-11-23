@@ -132,6 +132,16 @@ pub struct AccountRegistry {
 }
 
 #[derive(Debug)]
+pub struct KeptGrant<'a> {
+    pub identity: &'a CandidateIdentity,
+    pub secret: &'a SecretBytes,
+    pub now: i64,
+    pub kind: FailureKind,
+    pub retry_after: Option<u64>,
+    pub message: &'a str,
+}
+
+#[derive(Debug)]
 pub enum InitialRead<'a> {
     Pending,
     Snapshot(i64, &'a Value),
@@ -436,6 +446,50 @@ impl AccountRegistry {
             if let Some((at, payload)) = snapshot {
                 write_snapshot(tx, id, CredentialVersion(slot), at, payload)?;
             }
+            Ok(())
+        })
+        .map(|_| ())
+    }
+
+    pub fn replace_grant_keeping_reading(
+        &mut self,
+        id: Uuid,
+        expected: CredentialVersion,
+        grant: KeptGrant<'_>,
+        cancel: &CancellationToken,
+    ) -> Result<(), ConnectionError> {
+        self.install_cancellable(grant.secret, cancel, |tx, slot| {
+            let (provider, old_kind, known): (String, String, Option<String>) = tx
+                .query_row(
+                    "SELECT provider,kind,identity FROM accounts WHERE id=?1 AND slot=?2",
+                    params![id.to_string(), expected.0.to_string()],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                )
+                .optional()?
+                .ok_or(ConnectionError::Changed)?;
+            let provider = provider.parse()?;
+            let (kind_name, candidate) = grant.identity.parts(provider)?;
+            if kind_name != old_kind {
+                return Err(ConnectionError::CredentialKind);
+            }
+            if kind_name == "oauth" && known.is_some() && candidate != known.as_deref() {
+                return Err(ConnectionError::DifferentIdentity);
+            }
+            reject_duplicate(tx, provider, kind_name, candidate, id)?;
+            tx.execute(
+                "UPDATE accounts SET identity=?1 WHERE id=?2",
+                params![candidate, id.to_string()],
+            )?;
+            replace_slot(tx, id, expected, slot)?;
+            refresh::write_failure(
+                tx,
+                id,
+                CredentialVersion(slot),
+                grant.now,
+                grant.kind,
+                grant.retry_after,
+                grant.message,
+            )?;
             Ok(())
         })
         .map(|_| ())

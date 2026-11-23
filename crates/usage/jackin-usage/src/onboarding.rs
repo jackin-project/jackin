@@ -361,41 +361,7 @@ impl OwnedLogin {
         let cancel = cancel.clone();
         tokio::task::spawn_blocking(move || {
             let _lease = lease;
-            use crate::accounts::InitialRead;
-            match existing {
-                Some((id, version)) => {
-                    db.replace_candidate(
-                        id,
-                        version,
-                        &candidate.identity,
-                        &candidate.material,
-                        Some((fetched, &candidate.snapshot?)),
-                        &cancel,
-                    )?;
-                    Ok(id)
-                }
-                None => Ok(db.add_candidate(
-                    provider,
-                    &candidate.label,
-                    &candidate.identity,
-                    &candidate.material,
-                    match candidate.snapshot {
-                        Ok(ref payload) => InitialRead::Snapshot(fetched, payload),
-                        Err(error) => {
-                            let (kind, retry_after) = error
-                                .failure_class()
-                                .unwrap_or((FailureKind::Service, None));
-                            InitialRead::Failed {
-                                at: fetched,
-                                kind,
-                                retry_after,
-                                message: error.to_string(),
-                            }
-                        }
-                    },
-                    &cancel,
-                )?),
-            }
+            persist_candidate(&mut db, provider, candidate, existing, fetched, &cancel)
         })
         .await
         .map_err(|_| LoginError::Worker)?
@@ -915,6 +881,81 @@ impl RefreshTrigger {
             }
         }
         Ok(snapshot)
+    }
+}
+
+fn persist_candidate(
+    db: &mut AccountRegistry,
+    provider: UsageProvider,
+    candidate: Candidate,
+    existing: Option<(Uuid, CredentialVersion)>,
+    fetched: i64,
+    cancel: &CancellationToken,
+) -> Result<Uuid, LoginError> {
+    use crate::accounts::{InitialRead, KeptGrant};
+    let read = candidate.snapshot;
+    if let Some((id, version)) = existing {
+        return match read {
+            Ok(payload) => {
+                db.replace_candidate(
+                    id,
+                    version,
+                    &candidate.identity,
+                    &candidate.material,
+                    Some((fetched, &payload)),
+                    cancel,
+                )?;
+                Ok(id)
+            }
+            Err(error) if provider == UsageProvider::Antigravity => {
+                let (kind, retry_after) = error
+                    .failure_class()
+                    .unwrap_or((FailureKind::Service, None));
+                let message = error.to_string();
+                db.replace_grant_keeping_reading(
+                    id,
+                    version,
+                    KeptGrant {
+                        identity: &candidate.identity,
+                        secret: &candidate.material,
+                        now: fetched,
+                        kind,
+                        retry_after,
+                        message: &message,
+                    },
+                    cancel,
+                )?;
+                Err(error)
+            }
+            Err(error) => Err(error),
+        };
+    }
+    let initial = match &read {
+        Ok(payload) => InitialRead::Snapshot(fetched, payload),
+        Err(error) => {
+            let (kind, retry_after) = error
+                .failure_class()
+                .unwrap_or((FailureKind::Service, None));
+            InitialRead::Failed {
+                at: fetched,
+                kind,
+                retry_after,
+                message: error.to_string(),
+            }
+        }
+    };
+    let id = db.add_candidate(
+        provider,
+        &candidate.label,
+        &candidate.identity,
+        &candidate.material,
+        initial,
+        cancel,
+    )?;
+    if provider == UsageProvider::Antigravity {
+        read.map(|_| id)
+    } else {
+        Ok(id)
     }
 }
 

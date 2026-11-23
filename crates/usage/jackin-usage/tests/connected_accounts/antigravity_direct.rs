@@ -720,19 +720,31 @@ async fn token_refusal_renews_once_and_subscription_refusal_does_not() -> Result
         "/production/v1internal:retrieveUserQuotaSummary",
         Route::json(403, r#"{"error":{"status":"PERMISSION_DENIED"}}"#),
     );
-    let expired = fixture
+    let denied = fixture
         .service
         .refresh(&account, &CancellationToken::new())
         .await
-        .expect_err("expired grant");
+        .expect_err("provider denial");
+    let denial = denied.to_string();
+    assert!(denial.contains("HTTP 403"), "{denial}");
+    assert!(denial.contains("PERMISSION_DENIED"), "{denial}");
+    assert!(!denial.contains("login was rejected"), "{denial}");
+    assert!(!denial.contains("subscription"), "{denial}");
+    assert_clean(&denial);
     assert_eq!(
         db(&fixture.path, &fixture.vault)?
             .failure(id)?
             .ok_or("missing failure")?
             .kind,
-        FailureKind::Authentication
+        FailureKind::Service
     );
-    assert!(!expired.to_string().contains("subscription"));
+    let kept: Value = serde_json::from_slice(
+        db(&fixture.path, &fixture.vault)?
+            .credential(id)?
+            .1
+            .expose(),
+    )?;
+    assert_eq!(kept["access"], "old-access");
 
     fixture.replace(
         Method::Post,
@@ -776,6 +788,172 @@ async fn token_refusal_renews_once_and_subscription_refusal_does_not() -> Result
         .expect_err("a second refusal does not renew again");
     assert!(matches!(second, LoginError::Provider(_)));
     assert_eq!(token_posts().load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn quota_denial_reports_the_provider_reason_and_keeps_the_grant() -> Result<()> {
+    let turn = gate().lock().await;
+    let _pin = std::ptr::from_ref(&turn);
+    let fixture = Fixture::open().await?;
+    let id = seeded(
+        &fixture,
+        EMAIL,
+        "old-access",
+        fixture.clock.now().0 + 10_000,
+    )?;
+    let account = db(&fixture.path, &fixture.vault)?.list()?.remove(0);
+    let denied = r#"{"error":{"code":403,"status":"PERMISSION_DENIED","details":[{"reason":"SERVICE_DISABLED"}]}}"#;
+    fixture.serve(
+        Method::Post,
+        "/production/v1internal:loadCodeAssist",
+        Route::json(403, denied).requires_header("user-agent", agent()),
+    );
+    fixture.serve(
+        Method::Post,
+        "/daily/v1internal:loadCodeAssist",
+        Route::json(403, denied),
+    );
+    fixture.serve(
+        Method::Post,
+        "/daily/v1internal:retrieveUserQuotaSummary",
+        Route::json(403, denied).requires_header("user-agent", agent()),
+    );
+    fixture.serve(
+        Method::Post,
+        "/production/v1internal:retrieveUserQuotaSummary",
+        Route::json(403, denied),
+    );
+    let error = fixture
+        .service
+        .refresh(&account, &CancellationToken::new())
+        .await
+        .expect_err("quota denied");
+    let message = error.to_string();
+    assert_eq!(message, "HTTP 403 SERVICE_DISABLED");
+    assert_clean(&message);
+    let registry = db(&fixture.path, &fixture.vault)?;
+    let saved: Value = serde_json::from_slice(registry.credential(id)?.1.expose())?;
+    assert_eq!(saved["access"], "old-access");
+    let (_, _, snapshot) = registry
+        .snapshots()?
+        .into_iter()
+        .find(|(row, _, _)| row.id == id)
+        .ok_or("missing snapshot")?;
+    assert_eq!(snapshot.ok_or("empty snapshot")?["plan"], "Google AI Ultra");
+    assert_eq!(
+        registry.failure(id)?.ok_or("missing failure")?.kind,
+        FailureKind::Service
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn sign_in_keeps_the_grant_when_google_denies_the_quota() -> Result<()> {
+    let turn = gate().lock().await;
+    let _pin = std::ptr::from_ref(&turn);
+    let fixture = Fixture::open().await?;
+    let id = seeded(
+        &fixture,
+        EMAIL,
+        "old-access",
+        fixture.clock.now().0 + 10_000,
+    )?;
+    fixture.prepare_login();
+    let denied = r#"{"error":{"code":403,"status":"PERMISSION_DENIED","details":[{"reason":"SERVICE_DISABLED"}]}}"#;
+    fixture.replace(
+        Method::Post,
+        "/daily/v1internal:retrieveUserQuotaSummary",
+        Route::json(403, denied)
+            .requires_header("authorization", "Bearer access-1")
+            .requires_header("user-agent", agent())
+            .requires_json_body(json!({"project": "proj-1"})),
+    );
+    fixture.serve(
+        Method::Post,
+        "/production/v1internal:retrieveUserQuotaSummary",
+        Route::json(403, denied),
+    );
+    let (reconnect, url, paste) = browser_prompt(&fixture.service, Some(id)).await?;
+    *challenge_slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = parameter(&url, "code_challenge")?;
+    let state = parameter(&url, "state")?;
+    paste
+        .send(Secret::new(format!("again#{state}")))
+        .map_err(|_| "paste closed")?;
+    let error = reconnect.await?.expect_err("quota denied");
+    let message = error.to_string();
+    assert_eq!(message, "HTTP 403 SERVICE_DISABLED");
+    assert_clean(&message);
+    let registry = db(&fixture.path, &fixture.vault)?;
+    let saved: Value = serde_json::from_slice(registry.credential(id)?.1.expose())?;
+    assert_eq!(saved["access"], "access-1");
+    let account = registry
+        .list()?
+        .into_iter()
+        .find(|row| row.id == id)
+        .ok_or("missing account")?;
+    assert_eq!(account.label, "Personal");
+    let (_, _, snapshot) = registry
+        .snapshots()?
+        .into_iter()
+        .find(|(row, _, _)| row.id == id)
+        .ok_or("missing snapshot")?;
+    assert_eq!(snapshot.ok_or("empty snapshot")?["plan"], "Google AI Ultra");
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unsafe_first_quota_reason_uses_the_provider_status() -> Result<()> {
+    let turn = gate().lock().await;
+    let _pin = std::ptr::from_ref(&turn);
+    let fixture = Fixture::open().await?;
+    let id = seeded(
+        &fixture,
+        EMAIL,
+        "old-access",
+        fixture.clock.now().0 + 10_000,
+    )?;
+    let account = db(&fixture.path, &fixture.vault)?.list()?.remove(0);
+    let denied = r#"{"error":{"code":403,"status":"PERMISSION_DENIED","details":[{"reason":"https://console.cloud.google.com/project/proj-1"},{"reason":"OTHER_CODE"}]}}"#;
+    fixture.serve(
+        Method::Post,
+        "/production/v1internal:loadCodeAssist",
+        Route::json(403, denied),
+    );
+    fixture.serve(
+        Method::Post,
+        "/daily/v1internal:loadCodeAssist",
+        Route::json(403, denied),
+    );
+    fixture.serve(
+        Method::Post,
+        "/daily/v1internal:retrieveUserQuotaSummary",
+        Route::json(403, denied),
+    );
+    fixture.serve(
+        Method::Post,
+        "/production/v1internal:retrieveUserQuotaSummary",
+        Route::json(403, denied),
+    );
+    let error = fixture
+        .service
+        .refresh(&account, &CancellationToken::new())
+        .await
+        .expect_err("unsafe reason");
+    let message = error.to_string();
+    assert_eq!(message, "HTTP 403 PERMISSION_DENIED");
+    assert!(!message.contains("OTHER_CODE"), "{message}");
+    assert!(!message.contains("console.cloud.google.com"), "{message}");
+    assert_clean(&message);
+    let saved: Value = serde_json::from_slice(
+        db(&fixture.path, &fixture.vault)?
+            .credential(id)?
+            .1
+            .expose(),
+    )?;
+    assert_eq!(saved["access"], "old-access");
     Ok(())
 }
 
