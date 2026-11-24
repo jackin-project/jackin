@@ -785,6 +785,16 @@ async fn j15_docker_capability_faults() {
                 Box::new(|s| s.knobs().container_in_default_engine = true),
             ),
             (
+                "the host container list cannot be read",
+                "the host default engine container list could not be read: e2e injected host list failure",
+                Box::new(|s| s.knobs().host_container_list_fails = true),
+            ),
+            (
+                "the host engine id cannot be read",
+                "the host default engine id could not be read: e2e injected host id failure",
+                Box::new(|s| s.knobs().host_engine_id_fails = true),
+            ),
+            (
                 "the docker label is not the engine label",
                 "expected engine-2376-<16 hex digits of the engine CA>",
                 Box::new(|s| s.knobs().docker_label_off = true),
