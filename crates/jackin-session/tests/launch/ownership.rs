@@ -76,12 +76,18 @@ async fn an_unreadable_replacement_key_leaves_the_existing_provider_intact() -> 
         let (rig, key) = key_rig(b"KEY-ONE").await?;
         ready(launch(&rig, 31).await?)?;
         assert_eq!(access_token(&rig)?.as_deref(), Some("KEY-ONE"));
+        rig.gateway().delete_sandbox(&rig.sandbox_name(31)?).await?;
+        assert!(rig.gateway().sandboxes().is_empty());
 
         rig.world.fs.remove_file(&key).await?;
         let failed = failure(launch(&rig, 32).await?)?;
         assert_eq!(failed.step, LaunchStep::Provider);
         assert!(
-            matches!(&*failed.error, LaunchError::ProviderUnavailable { .. }),
+            matches!(
+                &*failed.error,
+                LaunchError::ProviderUnavailable { source, .. }
+                    if matches!(**source, AccountError::MissingCredential { .. })
+            ),
             "{:?}",
             failed.error
         );
