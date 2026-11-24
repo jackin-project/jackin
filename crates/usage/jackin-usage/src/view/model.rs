@@ -143,11 +143,17 @@ pub enum Note {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResetStatus {
+    Ready,
+    Queued,
+    Unavailable,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResetCredit {
     pub kind: String,
-    pub ready: bool,
-    pub redeemable: bool,
+    pub status: ResetStatus,
     pub expires_at: Timestamp,
 }
 

@@ -8,7 +8,7 @@ use jackin_usage::view::{
 use serde_json::json;
 use uuid::Uuid;
 
-use super::{database, failure, providers, selected};
+use super::{RefreshOutcome, database, failure, providers, selected};
 use crate::app::App;
 use crate::cli::UsageFilter;
 use crate::error::CommandError;
@@ -184,7 +184,7 @@ pub(super) fn refreshed(
     db: &AccountRegistry,
     filter: &UsageFilter,
     provider: Option<UsageProvider>,
-    refresh_errors: &[(Uuid, String)],
+    outcome: &RefreshOutcome,
 ) -> Result<(), CommandError> {
     let view = view::build(
         db,
@@ -205,25 +205,36 @@ pub(super) fn refreshed(
     }
     let failed = view
         .accounts()
-        .filter(|(_, quota)| refresh_errors.iter().any(|(id, _)| *id == quota.id))
+        .filter(|(_, quota)| outcome.failed(quota.id))
+        .count();
+    let skipped = view
+        .accounts()
+        .filter(|(_, quota)| outcome.skipped(quota.id))
         .count();
     let total = view.account_count();
-    let mut lines = vec![Line::of(vec![Span::strong(if failed == 0 {
-        format!("Refreshed {total} of {total} accounts")
-    } else {
-        format!(
-            "Refreshed {} of {total} accounts · {failed} failed",
-            total - failed
-        )
-    })])];
+    let mut headline = format!("Refreshed {} of {total} accounts", total - failed - skipped);
+    if skipped > 0 {
+        headline.push_str(&format!(" · {skipped} skipped"));
+    }
+    if failed > 0 {
+        headline.push_str(&format!(" · {failed} failed"));
+    }
+    let mut lines = vec![Line::of(vec![Span::strong(headline)])];
     for (group, quota) in view.accounts() {
         let name = format!("{} · {}", group.name, quota.label);
-        match refresh_errors.iter().find(|(id, _)| *id == quota.id) {
+        if outcome.skipped(quota.id) {
+            lines.push(Line::of(vec![
+                Span::new("  skipped ", Tone::Warn),
+                Span::plain(format!("{name}: {}", view::text::STATUS_LINE_FEED)),
+            ]));
+            continue;
+        }
+        match outcome.message(quota.id) {
             None => lines.push(Line::of(vec![
                 Span::new("  ok      ", Tone::Ok),
                 Span::plain(name),
             ])),
-            Some((_, message)) => {
+            Some(message) => {
                 lines.push(Line::of(vec![
                     Span::new("  failed  ", Tone::Crit),
                     Span::plain(format!("{name}: {message}")),

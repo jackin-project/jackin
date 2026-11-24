@@ -63,7 +63,7 @@ fn a_spend_period_the_provider_did_not_report_is_not_shown_as_zero() -> Result<(
 }
 
 #[test]
-fn reset_inventory_queued_behind_the_preferred_row_still_counts_as_ready() -> Result<()> {
+fn a_zai_reset_queued_behind_the_usable_one_is_queued_not_ready() -> Result<()> {
     let expiry = NOW.0 + 86_400;
     let rows = Rows::new(vec![row(
         UsageProvider::Zai,
@@ -74,8 +74,13 @@ fn reset_inventory_queued_behind_the_preferred_row_still_counts_as_ready() -> Re
             "resources":{"rateLimitResets":{"available":2,"expires_at":[expiry,expiry],"kind":"balance","unit":"resets"}}}),
     )])?;
     let text = rows.text(Report::Details)?;
-    assert!(text.contains("2 ready · next expires 25 Nov"), "{text}");
+    assert!(
+        text.contains("1 ready, 1 queued · next expires 25 Nov"),
+        "{text}"
+    );
     assert!(!text.contains("unavailable"), "{text}");
+    assert!(text.contains("1  weekly ready "), "{text}");
+    assert!(text.contains("2  weekly queued "), "{text}");
     assert!(text.contains("redeem a reset"), "{text}");
     Ok(())
 }

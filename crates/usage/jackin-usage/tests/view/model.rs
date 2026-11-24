@@ -11,8 +11,8 @@ use jackin_usage::accounts::{
 };
 use jackin_usage::dashboard::DashboardSettings;
 use jackin_usage::view::{
-    AccountQuota, Attention, Currency, Fact, Note, Reading, Role, Unit, UsageView, Used,
-    ViewFilter, build,
+    AccountQuota, Attention, Currency, Fact, Note, Reading, ResetStatus, Role, Unit, UsageView,
+    Used, ViewFilter, build,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -494,7 +494,7 @@ fn notes_and_facts_carry_credits_resets_tokens_spend_and_account_facts() -> Resu
             if (amount - 19_290.0).abs() < 1e-9 && (usd - 771.6).abs() < 1e-9 && currency.as_str() == "USD"
     ));
     assert!(
-        matches!(&codex.notes[1], Note::Resets(credits) if credits.len() == 1 && credits[0].ready)
+        matches!(&codex.notes[1], Note::Resets(credits) if credits.len() == 1 && credits[0].status == ResetStatus::Ready)
     );
     match &codex.notes[2] {
         Note::Tokens {
@@ -518,8 +518,14 @@ fn notes_and_facts_carry_credits_resets_tokens_spend_and_account_facts() -> Resu
     let zai = find(&view, seeded.id_of("zai", "Z.ai Account", 0)?)?;
     match zai.notes.first() {
         Some(Note::Resets(credits)) => {
-            assert_eq!(credits.iter().filter(|credit| credit.ready).count(), 2);
-            assert_eq!(credits.iter().filter(|credit| credit.redeemable).count(), 1);
+            let status = |wanted| {
+                credits
+                    .iter()
+                    .filter(|credit| credit.status == wanted)
+                    .count()
+            };
+            assert_eq!(status(ResetStatus::Ready), 1);
+            assert_eq!(status(ResetStatus::Queued), 1);
             assert_eq!(credits.len(), 2);
         }
         other => return Err(format!("unexpected reset note {other:?}").into()),

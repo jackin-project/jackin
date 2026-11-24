@@ -4,8 +4,8 @@
 use jackin_core::Timestamp;
 
 use super::model::{
-    AccountQuota, Activity, Currency, FRESH_SECS, Fact, Meter, Note, ResetCredit, Unit, UsageView,
-    Used, UsedFraction,
+    AccountQuota, Activity, Currency, FRESH_SECS, Fact, Meter, Note, ResetCredit, ResetStatus,
+    Unit, UsageView, Used, UsedFraction,
 };
 use super::render::{Ctx, Line, Span, Tone};
 use super::text;
@@ -76,7 +76,7 @@ pub fn footer(account: &AccountQuota, view: &UsageView, ctx: &Ctx) -> Vec<Line> 
     let mut lines = vec![foot(format!("id {}", account.id.hyphenated()))];
     lines.push(foot(fetched_text(account, view)));
     let redeemable = account.notes.iter().any(
-        |note| matches!(note, Note::Resets(credits) if credits.iter().any(|credit| credit.redeemable)),
+        |note| matches!(note, Note::Resets(credits) if credits.iter().any(|credit| credit.status == ResetStatus::Ready)),
     );
     if redeemable {
         lines.push(foot(REDEEM.to_owned()));
@@ -246,7 +246,11 @@ fn reset_lines(credits: &[ResetCredit], view: &UsageView, ctx: Ctx) -> Vec<Line>
         .iter()
         .enumerate()
         .flat_map(|(position, credit)| {
-            let status = if credit.ready { "ready" } else { "unavailable" };
+            let status = match credit.status {
+                ResetStatus::Ready => "ready",
+                ResetStatus::Queued => "queued",
+                ResetStatus::Unavailable => "unavailable",
+            };
             let expiry = format!(
                 "expires {}",
                 text::full_date(credit.expires_at, view.now, view.utc_offset_secs, true)

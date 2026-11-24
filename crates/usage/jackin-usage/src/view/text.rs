@@ -327,9 +327,11 @@ pub fn reconnect_command(id: uuid::Uuid) -> String {
     format!("run: jackin account usage reconnect {}", id.hyphenated())
 }
 
+pub const STATUS_LINE_FEED: &str = "updated by the Antigravity status-line hook";
+
 pub fn status_line_note(at: Timestamp, now: Timestamp) -> String {
     format!(
-        "updated by the Antigravity status-line hook · last update {} ago",
+        "{STATUS_LINE_FEED} · last update {} ago",
         rel(now.0.saturating_sub(at.0))
     )
 }

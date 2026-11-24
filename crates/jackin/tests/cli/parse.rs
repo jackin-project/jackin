@@ -421,6 +421,14 @@ async fn the_usage_surfaces_accept_their_json_and_wide_flags() -> TestResult {
             .await?;
         wide.ok()?;
         assert_eq!(wide.value()?, serde_json::Value::Array(Vec::new()));
+        let after = harness.run(&["usage", "refresh", "--json"]).await?;
+        let before = harness.run(&["usage", "--json", "refresh"]).await?;
+        assert_eq!(before.exit, after.exit);
+        assert_eq!(before.stdout, after.stdout);
+        assert_eq!(
+            before.value()?["accounts"],
+            serde_json::Value::Array(Vec::new())
+        );
         for args in [
             &["usage", "snapshot", "--wide"][..],
             &["usage", "refresh", "--wide"][..],
