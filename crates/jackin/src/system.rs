@@ -28,6 +28,7 @@ use crate::terminal::{RawMode, Terminal, TerminalInput};
 
 const TRANSFER_TIMEOUT: Duration = Duration::from_secs(600);
 const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 const READ_CHUNK: usize = 4096;
 const FALLBACK_SIZE: (u16, u16) = (80, 24);
 const DOCKER_SOCKET: &str = "/var/run/docker.sock";
@@ -39,7 +40,7 @@ pub fn drive<F: Future>(future: F) -> io::Result<F::Output> {
         .enable_all()
         .build()?;
     let output = runtime.block_on(future);
-    runtime.shutdown_background();
+    runtime.shutdown_timeout(SHUTDOWN_GRACE);
     Ok(output)
 }
 
