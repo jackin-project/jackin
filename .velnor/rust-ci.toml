@@ -52,3 +52,19 @@ id = "sonar"
 name = "Sonar config"
 task = "check:sonar"
 timeout_minutes = 10
+
+[[lint]]
+kind = "jactionlint"
+timeout_minutes = 10
+
+[[lint]]
+kind = "mise-task"
+id = "zizmor"
+name = "Zizmor"
+task = "check:zizmor"
+tools = ["zizmor"]
+timeout_minutes = 10
+
+[[lint]]
+kind = "generated-check"
+timeout_minutes = 10

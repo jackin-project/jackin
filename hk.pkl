@@ -34,7 +34,7 @@ steps {
   ["jactionlint"] = (Builtins.jactionlint) {
     fix = null
     check_diff = null
-    check = "jactionlint --config-file .github/jactionlint.yaml --format gcc --strict-exit --no-online --shellcheck=shellcheck --pyflakes= {{files}}"
+    check = "jactionlint --format gcc --strict-exit --no-online --shellcheck=shellcheck --pyflakes= {{files}}"
   }
   ["zizmor"] {
     glob = ".github/workflows/*.yml"

@@ -2,4 +2,3 @@ rules:
   self-repository:
     ignore:
       - ci.yml
-      - state-seal.yml
