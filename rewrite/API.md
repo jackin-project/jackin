@@ -1459,7 +1459,7 @@ pub trait Gateway: Send + Sync + Debug {
     async fn ensure_profile(&self, profile: &ProviderProfile) -> Result<ProfileSync, GatewayError>;
     async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError>;
     async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError>;
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError>;
+    async fn put_provider(&self, spec: &ProviderSpec) -> Result<ProviderWriteEffect, ProviderWriteError>;
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError>;
 
     async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError>;
@@ -1488,6 +1488,10 @@ The gateway name and the OpenShell workspace are fixed at construction, so every
 pub struct GatewayHealth { pub version: String, pub serving: bool }
 pub enum ProfileSync { Imported, Unchanged, Updated }
 pub enum ProviderState { Absent, Present }
+pub enum ProviderWriteEffect { NoWrite, Created, Existing, Unknown }
+pub struct ProviderWriteError { /* source: GatewayError, effect: ProviderWriteEffect */ }
+impl ProviderWriteError { pub fn new(source: GatewayError, effect: ProviderWriteEffect) -> ProviderWriteError; pub fn effect(&self) -> ProviderWriteEffect; pub fn gateway_error(&self) -> &GatewayError; pub fn into_parts(self) -> (GatewayError, ProviderWriteEffect) }
+impl GatewayError { pub fn outcome_unknown(&self) -> bool }   // exhaustive: true when the request may have reached the gateway and its outcome is not known
 pub struct ProviderSpec { pub name: ProviderName, pub profile: ProfileId, pub keys: CredentialKeys, pub material: ProviderMaterial }
 pub enum ProviderMaterial {
     ChatgptLogin {
@@ -1547,7 +1551,7 @@ impl SandboxCreate {
 Contract of each method. The fake and the real adapter obey the same text, and `contract::run` checks it.
 
 - `ensure_profile`: imports the profile when its ID is absent and returns `Imported`. A present profile with identical content gives `Unchanged`. A present profile with different content is replaced through `UpdateProviderProfiles` (`openshell.proto:366`), with the resource version that `GetProviderProfile` returned in the same call, and gives `Updated`. That RPC rejects a zero version, so an update is optimistic: a change between the read and the update gives `FailedPrecondition` and writes nothing, and the next launch converges. Idempotent.
-- `put_provider`: creates the provider, or updates its credentials when it exists, and configures refresh for `ChatgptLogin` (access token key, refresh token as secret material, client ID, and token URL, all from `ProviderSpec.keys`, so the adapter holds no agent knowledge). The refresh token is never readable back. Idempotent for equal input.
+- `put_provider`: returns the `ProviderWriteEffect` of the write, and the same effect inside `ProviderWriteError` when it fails after or around a write: `NoWrite` when nothing was written (a missing profile, a failed state lookup, or a create that failed with an outcome the gateway proves was not applied), `Created` when this call's `CreateProvider` succeeded, `Existing` when the provider was already there (an update, or a create that lost a race to `AlreadyExists` and then updated), and `Unknown` when a create failed with an outcome `GatewayError::outcome_unknown` cannot rule out. A refresh-configuration failure after the write keeps `Created` or `Existing`. A caller removes a provider only after `Created`. It creates the provider, or updates its credentials when it exists, and configures refresh for `ChatgptLogin` (access token key, refresh token as secret material, client ID, and token URL, all from `ProviderSpec.keys`, so the adapter holds no agent knowledge). The refresh token is never readable back. Idempotent for equal input.
 - `create_sandbox`: creates with the image tag, labels, the `JACKIN_LAUNCH_ID` environment, providers, policy, and the main process with a kept PTY and restart policy never. It returns when the call returns, not when `Ready` (P0.2). A second create with the same name returns `AlreadyExists`. Names and label values are validated by types, so the gateway never sees an invalid one, and the fake rejects an invalid one the same way the gateway does.
 - `find_sandboxes`: `Labels` lists every matching sandbox across all pages, and `managed()` returns only sandboxes that carry the jackin label set. `Name` returns zero or one result. A missing sandbox is an empty list, not an error. A view carries `Provisioning::Failed` when the gateway reports a failed provisioning.
 - `sandbox_detail`: the view, the attached OpenShell providers, and the effective policy as a `PolicyDocument`.
@@ -1944,7 +1948,7 @@ pub struct ChatgptLogin {
 
 pub async fn read_chatgpt_login(fs: &dyn FileSystem, home: &HostPath) -> Result<ChatgptLogin, CredentialError>;
 
-pub enum AccountSync { HostOnly, ProviderReady { provider: ProviderName, profile: ProfileSync } }
+pub enum AccountSync { HostOnly, ProviderReady { provider: ProviderName, profile: ProfileSync, write: ProviderWriteEffect } }
 ```
 
 `read_chatgpt_login` parses `<home>/auth.json` once into typed fields; `jackin account add codex --chatgpt-from <home>` calls it to learn the account ID for `CredentialSource::CodexLogin`. The secrets appear only inside `ChatgptLogin` and `ProviderMaterial`. `sync_account` runs on `account add` and on launch when the OpenShell provider is absent on the selected gateway. For a Codex account with a `CodexLogin` source it reads the login, calls `ensure_profile`, and calls `put_provider`. For a Codex account with any other source (credential mode A) it returns `AccountError::Unsupported { account, mode }`, because `profile_for(ApiKey)` is `None` until a profile is proven (P10.1 or later). For an account of any other provider it returns `HostOnly` and touches no gateway (D26). When mode A gets a profile, this file gains the `Env`, `OnePassword`, and `File` readers (D28 1Password flow); the usage crates read their own credentials. `sync_account(account, cancel)` and `forget_account(account, cancel)` hold the host lock file `account-<account>.lock` under `cache_dir`. `lock::hold` creates `cache_dir` with mode 0700, polls every 100 ms on the `Clock`, and returns `LockError::Cancelled` when the token fires. `sync_account` takes the lock through `hold_current`, so it fails with `Removed`, `Changed` or `GatewayRemoved` as the launch does, and then always puts. The launch calls the internal `sync_if_absent` instead: it takes the lock, re-checks `provider_state`, and puts only when the provider is still absent, so two launches of one account cannot overwrite a rotated login, and it never calls the public `sync_account`, which would wait on the lock it holds. `forget_account` ignores an account that is not a Codex login and deletes the OpenShell provider of a Codex login account (`account rm`). The gateway refuses to delete a provider that a sandbox lists, so the account stays in that case.
@@ -2503,8 +2507,10 @@ pub enum AccountError {
     Lock(LockError),
     Unsupported { account: AccountName, mode: CodexAuthMode },
     AccountIdMismatch { account: AccountName },
+    ProviderWrite(ProviderWriteError),                               // a provider write failed; `write_effect()` says whether it created, updated or wrote nothing
+    ProviderWriteUncertain { account: AccountName, source: Box<AccountError> },   // the write may have completed; nothing was deleted
 }
-impl AccountError { pub fn is_cancelled(&self) -> bool }   // a cancel before the commit, a cancelled lock, or a cancelled credential read
+impl AccountError { pub fn write_effect(&self) -> ProviderWriteEffect; pub fn is_cancelled(&self) -> bool }   // a cancel before the commit, a cancelled lock, or a cancelled credential read
 ```
 
 All error enums derive `Debug` and `thiserror::Error`, and none holds a secret. Their messages follow the error text rule of section 1. `RoleError::Manifest` prints only `invalid role manifest at <path>`, and the report of the binary adds the cause once. `ExportError::BundleHeads` reads `extra a, b; missing none`. `EnvFileProblem`, `LaunchStep`, `ProjectStep`, `EnvQuestion`, `UnknownReason`, `WorkState`, `ObjectFormat`, and `EntryKind` implement `Display` and print words.
