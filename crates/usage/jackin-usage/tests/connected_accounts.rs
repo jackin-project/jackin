@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex};
 
 use jackin_core::{Secret, SecretBytes};
 use jackin_usage::accounts::{
@@ -24,6 +24,39 @@ struct Vault {
     lock_write: AtomicBool,
     lock_delete: AtomicBool,
     cancel_store: Mutex<Option<tokio_util::sync::CancellationToken>>,
+    stall: Mutex<Option<Uuid>>,
+    stalled_reads: AtomicUsize,
+    released: (Mutex<bool>, Condvar),
+}
+
+impl Vault {
+    fn stall_reads_of(&self, slot: Uuid) {
+        if let Ok(mut stall) = self.stall.lock() {
+            *stall = Some(slot);
+        }
+    }
+
+    fn release_stalled_reads(&self) {
+        if let Ok(mut released) = self.released.0.lock() {
+            *released = true;
+            self.released.1.notify_all();
+        }
+    }
+
+    fn wait_if_stalled(&self, slot: Uuid) {
+        if self.stall.lock().ok().and_then(|stall| *stall) != Some(slot) {
+            return;
+        }
+        self.stalled_reads.fetch_add(1, Ordering::AcqRel);
+        if let Ok(mut released) = self.released.0.lock() {
+            while !*released {
+                match self.released.1.wait(released) {
+                    Ok(guard) => released = guard,
+                    Err(_) => return,
+                }
+            }
+        }
+    }
 }
 
 impl CredentialVault for Vault {
@@ -46,6 +79,7 @@ impl CredentialVault for Vault {
         Ok(())
     }
     fn load(&self, slot: Uuid) -> std::result::Result<SecretBytes, ConnectionError> {
+        self.wait_if_stalled(slot);
         self.values
             .lock()
             .map_err(|_| ConnectionError::Vault)?
@@ -508,6 +542,8 @@ mod antigravity;
 mod antigravity_direct;
 #[path = "connected_accounts/leases.rs"]
 mod leases;
+#[path = "connected_accounts/stalled_store.rs"]
+mod stalled_store;
 
 #[path = "connected_accounts/claude_budget.rs"]
 mod claude_budget_tests;
