@@ -27,7 +27,7 @@ const STATUS_MARK: &str = "jackin-git-status=";
 const HEAD_UNTRACKED: &str = "{ \"$1\" --no-optional-locks -C \"$2\" ls-files --others --exclude-standard -z; echo \"jackin-git-status=$?\" >&2; } | head -c 4194304";
 const COUNT_UNTRACKED: &str = "{ \"$1\" --no-optional-locks -C \"$2\" ls-files --others --exclude-standard -z; echo \"jackin-git-status=$?\" >&2; } | tr -cd '\\000' | wc -c";
 const COUNT_CHANGED: &str = "{ \"$1\" --no-optional-locks -C \"$2\" -c core.quotepath=false diff-index --numstat --find-renames \"$3\" --; echo \"jackin-git-status=$?\" >&2; } | wc -l";
-const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; p=$(cat \"$d/gitdir\"; printf x) || continue; p=${p%x}; p=${p%?}; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
+const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; p=$(cat \"$d/gitdir\"; printf x) || continue; p=${p%x}; p=${p%?}; if [ -d \"${p%/.git}\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
 static SH: SandboxPath = SandboxPath::from_static("/bin/sh");
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
@@ -573,6 +573,10 @@ impl Remote<'_> {
             Some(status) if outcome.exit_code == 0 && accepted.contains(&status) => {
                 Ok(outcome.stdout)
             }
+            Some(status) if outcome.exit_code == 0 => Err(RemoteError::Git {
+                exit_code: status,
+                output: TerminalText::sanitize(&outcome.stderr),
+            }),
             _ => Err(failure(&outcome)),
         }
     }
