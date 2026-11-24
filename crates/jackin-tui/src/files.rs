@@ -27,13 +27,18 @@ impl HostFiles {
         HostFiles { fs, handle, home }
     }
 
-    fn kind(&self, path: &HostPath, listed: FileKind) -> FileKind {
-        match listed {
-            FileKind::Symlink => block_on(self.fs.stat_following(path))
-                .ok()
-                .flatten()
-                .unwrap_or(FileKind::Symlink),
+    fn offered(&self, path: &str, listed: FileKind) -> Option<FileEntry> {
+        let kind = match listed {
+            FileKind::Symlink => {
+                let full = HostPath::parse(Path::new(path)).ok()?;
+                block_on(self.fs.stat_following(&full)).ok().flatten()?
+            }
             other => other,
+        };
+        match kind {
+            FileKind::Dir => Some(FileEntry::dir(path)),
+            FileKind::File => Some(FileEntry::file(path)),
+            FileKind::Symlink | FileKind::Socket | FileKind::Other => None,
         }
     }
 }
@@ -45,17 +50,12 @@ impl FileSource for HostFiles {
         let listed = block_on(self.fs.list(&root)).map_err(|error| error_chain(&error))?;
         Ok(listed
             .into_iter()
-            .map(|entry| {
+            .filter_map(|entry| {
                 let path = Path::new(dir)
                     .join(&entry.name)
                     .to_string_lossy()
                     .into_owned();
-                let kind = HostPath::parse(Path::new(&path))
-                    .map_or(entry.kind, |full| self.kind(&full, entry.kind));
-                match kind {
-                    FileKind::Dir => FileEntry::dir(&path),
-                    _ => FileEntry::file(&path),
-                }
+                self.offered(&path, entry.kind)
             })
             .collect())
     }
@@ -72,5 +72,68 @@ impl FileSource for HostFiles {
 
     fn home(&self) -> Option<String> {
         Some(self.home.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::symlink;
+    use std::os::unix::net::UnixListener;
+    use std::process::Command;
+
+    use jackin_core::StdFileSystem;
+
+    use super::*;
+
+    #[test]
+    fn only_directories_and_files_that_can_be_read_are_offered()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .build()?;
+        let source = HostFiles::new(
+            Arc::new(StdFileSystem::default()),
+            runtime.handle().clone(),
+            String::new(),
+        );
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let scratch = std::env::temp_dir().join(format!("jp-{}-{nanos}", std::process::id()));
+        std::fs::create_dir(&scratch)?;
+        let root = scratch.as_path();
+        std::fs::write(root.join("login.json"), b"{}")?;
+        std::fs::create_dir(root.join("folder"))?;
+        symlink(root.join("login.json"), root.join("to-file"))?;
+        symlink(root.join("folder"), root.join("to-folder"))?;
+        assert!(
+            Command::new("mkfifo")
+                .arg(root.join("pipe"))
+                .status()?
+                .success()
+        );
+        symlink(root.join("pipe"), root.join("to-pipe"))?;
+        let _socket = UnixListener::bind(root.join("s"))?;
+        symlink(root.join("missing"), root.join("dangling"))?;
+        symlink(root.join("loop-b"), root.join("loop-a"))?;
+        symlink(root.join("loop-a"), root.join("loop-b"))?;
+
+        let mut offered: Vec<(String, bool)> = source
+            .list(&root.to_string_lossy())?
+            .iter()
+            .map(|entry| (entry.name().to_owned(), entry.dir))
+            .collect();
+        offered.sort();
+        assert_eq!(
+            offered,
+            [
+                ("folder".to_owned(), true),
+                ("login.json".to_owned(), false),
+                ("to-file".to_owned(), false),
+                ("to-folder".to_owned(), true),
+            ]
+        );
+        std::fs::remove_dir_all(&scratch)?;
+        Ok(())
     }
 }
