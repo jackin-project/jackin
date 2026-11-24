@@ -36,6 +36,12 @@ use crate::project::{
 use crate::readings::Readings;
 use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
 
+type RoleDocWork = (
+    RoleName,
+    CoreRoleSource,
+    Option<Result<jackin_core::RoleManifest, RoleDocError>>,
+);
+
 #[derive(Debug)]
 pub(crate) struct Observation {
     pub(crate) snapshot: Snapshot,
@@ -349,30 +355,55 @@ impl Inputs {
         drop(self.run_doctor(false).await);
     }
 
+    async fn path_role_doc(
+        &self,
+        name: &RoleName,
+        path: &HostPath,
+        previous: Option<&Result<jackin_core::RoleManifest, RoleDocError>>,
+    ) -> Result<jackin_core::RoleManifest, RoleDocError> {
+        let read = self.roles.read_manifest(path).await;
+        if let (Ok(read), Some(Ok(known))) = (read, previous)
+            && read == *known
+        {
+            return Ok(read);
+        }
+        locked(&self.checks).remove(name);
+        match self.roles.load_path(path, &CancellationToken::new()).await {
+            Ok(role) => Ok(role.manifest().clone()),
+            Err(error) => match self.roles.read_manifest(path).await {
+                Ok(manifest) => Ok(manifest),
+                Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
+            },
+        }
+    }
+
     async fn role_docs(&self, config: &Config) -> RoleDocs {
-        let wanted: Vec<(RoleName, CoreRoleSource)> = {
+        let wanted: Vec<RoleDocWork> = {
             let cache = locked(&self.docs);
             config
                 .roles()
-                .filter(|(name, entry)| cache.get(*name).is_none_or(|(s, _)| *s != entry.source))
-                .map(|(name, entry)| (name.clone(), entry.source.clone()))
+                .filter(|(name, entry)| {
+                    matches!(entry.source, CoreRoleSource::Path(_))
+                        || cache.get(*name).is_none_or(|(s, _)| *s != entry.source)
+                })
+                .map(|(name, entry)| {
+                    let previous = cache
+                        .get(name)
+                        .filter(|(source, _)| *source == entry.source)
+                        .map(|(_, doc)| doc.clone());
+                    (name.clone(), entry.source.clone(), previous)
+                })
                 .collect()
         };
         let anywhere = HostPath::parse(Path::new(&self.home))
             .ok()
             .map(|home| CoreWorkspace::new(home, false));
-        let loaded = join_all(wanted.into_iter().map(|(name, source)| {
+        let loaded = join_all(wanted.into_iter().map(|(name, source, previous)| {
             let anywhere = anywhere.clone();
             Box::pin(async move {
                 let doc = match &source {
                     CoreRoleSource::Path(path) => {
-                        match self.roles.load_path(path, &CancellationToken::new()).await {
-                            Ok(role) => Ok(role.manifest().clone()),
-                            Err(error) => match self.roles.read_manifest(path).await {
-                                Ok(manifest) => Ok(manifest),
-                                Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
-                            },
-                        }
+                        self.path_role_doc(&name, path, previous.as_ref()).await
                     }
                     CoreRoleSource::Git { .. } => match &anywhere {
                         Some(anywhere) => match Box::pin(self.roles.load(

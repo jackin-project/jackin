@@ -188,6 +188,8 @@ pub(crate) fn kind(error: &GatewayError) -> &'static str {
         GatewayError::HostKeyMismatch => "HostKeyMismatch",
         GatewayError::TerminalRefused { .. } => "TerminalRefused",
         GatewayError::UnsafePath { .. } => "UnsafePath",
+        GatewayError::WriteUnconfirmed { .. } => "WriteUnconfirmed",
+        GatewayError::WriteNotDurable { .. } => "WriteNotDurable",
         GatewayError::Protocol { .. } => "Protocol",
     }
 }

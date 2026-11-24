@@ -315,6 +315,19 @@ fn text_supplied_by_the_gateway_is_shown_without_control_characters() {
             "refused to write /sandbox/x\\u{1b}[2J\\ny: a directory on its path below /sandbox is a symlink, or the target is a directory",
         ),
         (
+            GatewayError::WriteUnconfirmed {
+                path: SandboxPath::parse(&format!("/sandbox/{}", hostile())).unwrap(),
+                cause: Box::new(GatewayError::Protocol { message: hostile() }),
+            },
+            "the write of /sandbox/x\\u{1b}[2J\\ny may have taken effect, its outcome is unknown: protocol error: x\\u{1b}[2J\\ny",
+        ),
+        (
+            GatewayError::WriteNotDurable {
+                path: SandboxPath::parse(&format!("/sandbox/{}", hostile())).unwrap(),
+            },
+            "/sandbox/x\\u{1b}[2J\\ny was replaced, but its directory could not be synced",
+        ),
+        (
             GatewayError::Protocol { message: hostile() },
             "protocol error: x\\u{1b}[2J\\ny",
         ),
