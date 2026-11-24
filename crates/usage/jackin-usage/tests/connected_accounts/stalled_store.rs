@@ -152,22 +152,61 @@ fn a_writer_waiting_on_a_busy_store_fails_with_a_message_naming_the_keychain() -
     let temp = tempfile::tempdir()?;
     let path = temp.path().join("usage/accounts.db");
     let vault = Arc::new(Vault::default());
-    let (registry, first, _second) = two_accounts(&path, &vault)?;
+    let (registry, _first, _second) = two_accounts(&path, &vault)?;
     let mut registry = registry.with_lock_wait(Duration::from_millis(150));
-    let old = registry.version(first)?;
     let held = lock_file(&temp.path().join("usage"))?;
     let started = Instant::now();
     let error = registry
-        .rotate(first, old, &bytes("rotated"))
+        .add(
+            UsageProvider::Claude,
+            "third",
+            &scoped("user/third"),
+            &bytes("third-secret"),
+        )
         .err()
-        .ok_or("rotation succeeded while the store lock was held")?;
+        .ok_or("add succeeded while the store lock was held")?;
     assert!(started.elapsed() < PATIENCE);
     assert!(matches!(error, ConnectionError::StoreBusy));
     assert!(error.to_string().contains("Keychain"));
     drop(held);
-    assert_eq!(registry.version(first)?, old);
-    let rotated = registry.rotate(first, old, &bytes("rotated"))?;
-    assert_eq!(registry.credential(first)?.0, rotated);
+    assert_eq!(registry.list()?.len(), 2);
+    registry.add(
+        UsageProvider::Claude,
+        "third",
+        &scoped("user/third"),
+        &bytes("third-secret"),
+    )?;
+    assert_eq!(registry.list()?.len(), 3);
+    Ok(())
+}
+
+#[test]
+fn a_rotation_carrying_new_material_waits_for_the_store_lock_instead_of_dropping_it() -> Result<()>
+{
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("usage/accounts.db");
+    let vault = Arc::new(Vault::default());
+    let (registry, first, _second) = two_accounts(&path, &vault)?;
+    let old = registry.version(first)?;
+    let held = lock_file(&temp.path().join("usage"))?;
+    let (tx, rx) = mpsc::channel();
+    let (writer_path, writer_vault) = (path.clone(), Arc::clone(&vault));
+    std::thread::spawn(move || {
+        let rotated = AccountRegistry::with_vault(&writer_path, writer_vault)
+            .map(|registry| registry.with_lock_wait(Duration::from_millis(100)))
+            .and_then(|mut registry| registry.rotate(first, old, &bytes("rotated")))
+            .map_err(|e| e.to_string());
+        let _sent = tx.send(rotated);
+    });
+    assert!(
+        rx.recv_timeout(Duration::from_millis(600)).is_err(),
+        "the rotation gave up while the store lock was held"
+    );
+    drop(held);
+    let rotated = rx.recv_timeout(PATIENCE)??;
+    let (version, secret) = registry.credential(first)?;
+    assert_eq!(version, rotated);
+    assert_eq!(secret.expose(), b"rotated");
     Ok(())
 }
 
