@@ -272,62 +272,66 @@ const DUPLICATE_KEYS: [&str; 7] = ["down", "enter", "enter", "end", "up", "up", 
 const CLAUDE: usize = 1;
 const FIRST_KEYS: [&str; 4] = ["down", "enter", "enter", "enter"];
 
+fn input_line(screen: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let input = lines_with(screen, "▎ ");
+    let [line] = input.as_slice() else {
+        return Err(format!("one input line\n{screen}").into());
+    };
+    Ok(line
+        .trim_matches(|c: char| c == '│' || c.is_whitespace())
+        .trim_start_matches('▎')
+        .trim()
+        .to_owned())
+}
+
 #[tokio::test]
-async fn the_rename_dialog_is_prefilled_with_the_bare_label() -> TestResult {
-    for (keys, index, bare) in [
-        (&DUPLICATE_KEYS[..], DUPLICATE, "personal@example.com"),
-        (&FIRST_KEYS[..], CLAUDE, "work@example.com"),
-    ] {
-        let (screen, _, _) = rename_and_read(keys, None, index).await?;
-        let input: Vec<&str> = lines_with(&screen, "▎ ");
-        let [line] = input.as_slice() else {
-            return Err(format!("one input line\n{screen}").into());
-        };
-        assert!(
-            line.trim_matches(|c: char| c == '│' || c.is_whitespace())
-                .trim_start_matches('▎')
-                .trim()
-                == bare,
-            "{line}\n{screen}"
-        );
-    }
+async fn the_rename_dialog_is_prefilled_with_the_display_label() -> TestResult {
+    let (screen, _, _) = rename_and_read(&FIRST_KEYS, None, CLAUDE).await?;
+    assert_eq!(input_line(&screen)?, "Claude · work@example.com");
+    let (screen, _, short) = rename_and_read(&DUPLICATE_KEYS, None, DUPLICATE).await?;
+    assert_eq!(
+        input_line(&screen)?,
+        format!("Antigravity #{short} · personal@example.com")
+    );
     Ok(())
 }
 
 #[tokio::test]
-async fn an_unchanged_rename_keeps_the_label() -> TestResult {
+async fn an_unchanged_rename_keeps_the_stored_label() -> TestResult {
     let (_, label, _) = rename_and_read(&FIRST_KEYS, None, CLAUDE).await?;
     assert_eq!(label, "work@example.com");
     Ok(())
 }
 
 #[tokio::test]
-async fn renaming_a_flagged_duplicate_keeps_the_bare_label() -> TestResult {
+async fn renaming_a_flagged_duplicate_keeps_the_stored_label_and_accepts_a_new_one() -> TestResult {
     let (_, label, _) = rename_and_read(&DUPLICATE_KEYS, None, DUPLICATE).await?;
     assert_eq!(label, "personal@example.com");
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_typed_provider_prefix_is_stored_verbatim() -> TestResult {
-    let (_, label, _) = rename_and_read(&FIRST_KEYS, Some("Claude · foo"), CLAUDE).await?;
-    assert_eq!(label, "Claude · foo");
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_typed_tagged_prefix_on_a_duplicate_is_stored_verbatim() -> TestResult {
-    let (_, label, short) =
+    let (_, label, _) =
         rename_and_read(&DUPLICATE_KEYS, Some("Antigravity #{short} · x"), DUPLICATE).await?;
-    assert_eq!(label, format!("Antigravity #{short} · x"));
+    assert_eq!(label, "x");
     Ok(())
 }
 
 #[tokio::test]
-async fn a_typed_short_id_suffix_on_a_plain_account_is_stored_verbatim() -> TestResult {
+async fn another_providers_prefix_is_stored_verbatim() -> TestResult {
+    let (_, label, _) = rename_and_read(&FIRST_KEYS, Some("Codex · foo"), CLAUDE).await?;
+    assert_eq!(label, "Codex · foo");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_typed_short_id_suffix_is_stored_verbatim() -> TestResult {
     let (_, label, short) =
         rename_and_read(&FIRST_KEYS, Some("work@example.com #{short}"), CLAUDE).await?;
     assert_eq!(label, format!("work@example.com #{short}"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_accounts_own_provider_prefix_is_dropped_on_save() -> TestResult {
+    let (_, label, _) = rename_and_read(&FIRST_KEYS, Some("Claude · foo"), CLAUDE).await?;
+    assert_eq!(label, "foo");
     Ok(())
 }
 
@@ -368,18 +372,18 @@ async fn list_screen(
 }
 
 #[tokio::test]
-async fn accounts_list_shows_the_stored_label_of_every_row_at_120x40() -> TestResult {
+async fn accounts_list_names_the_provider_of_every_row_at_120x40() -> TestResult {
     let (screen, ids) = list_screen(120, 40, Go::Accounts { select: None }).await?;
     for row in [
-        "work@example.com",
-        "work2@example.com",
-        "home@example.com",
-        "personal@example.com",
+        "Claude · work@example.com",
+        "Claude · work2@example.com",
+        "ChatGPT / Codex · work@",
+        "ChatGPT / Codex · home@",
+        "Muse · work@example.com",
+        "Antigravity #",
+        "OpenCode · work@example.com",
     ] {
         assert!(screen.contains(row), "{row}\n{screen}");
-    }
-    for prefixed in ["Claude · work", "Antigravity #", "Muse · work"] {
-        assert!(!screen.contains(prefixed), "{prefixed}\n{screen}");
     }
     assert_golden(&format!("{GOLDEN}/accounts_120x40.txt"), &screen, &ids)
 }

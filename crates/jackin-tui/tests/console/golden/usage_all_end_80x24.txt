@@ -3,15 +3,15 @@
  ╭─ All Usage ────────────────────────────────────────────────── 14 accounts ─╮ 
  │   Priority    Providers    Refresh    Attention…    Metrics                │ 
  │  Account / reading                                                Value    │ 
- │     home@example.com · Weekly                   stale · 2% used · 4d 12h ┆ │ 
+ │     ChatGPT / Codex · home@example.com · Week…  stale · 2% used · 4d 12h ┆ │ 
  │     Muse · work@example.com · Weekly            stale · 99% used · 5d 8h ┆ │ 
  │     Grok Account · Weekly               stale reset 1h 49m ago · was 55% ┆ │ 
  │     Kimi Code · Weekly                         stale · <1% used · 5d 22h ┃ │ 
  │     Z.ai Account · Weekly                        stale · 0% used · 5d 0h ┃ │ 
  │     MiniMax Token Plan · General weekly        stale · 34% used · 8h 27m ┃ │ 
  │     MiMo Token Plan · Token Plan               stale · 38% used · 17d 8h ┃ │ 
- │     Antigravity · personal@example.com…  stale · dup · >99% used · 1d 7h ┃ │ 
- │     Antigravity · personal@example.co…  failed · dup · >99% used · 1d 7h ┃ │ 
+ │     Antigravity #a0000013 · personal@e…  stale · dup · >99% used · 1d 7h ┃ │ 
+ │     Antigravity #a0000014 · personal@…  failed · dup · >99% used · 1d 7h ┃ │ 
  │     OpenCode · work@example.com · Monthly     stale · 11% used · 13d 15h ┃ │ 
  │  ▎› OpenRouter Account · Free requests          stale · 0% used · 8h 23m ┃ │ 
  │    OpenRouter Account                                         OpenRouter   │ 

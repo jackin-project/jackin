@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::accounts::{AccountRegistry, ConnectionError, StoredSnapshot};
+use crate::accounts::{AccountRegistry, ConnectedAccount, ConnectionError, StoredSnapshot};
 use crate::dashboard::{DashboardRow, DashboardSettings};
 use crate::onboarding::OwnedLogin;
 use crate::view::{
@@ -184,7 +184,7 @@ pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionEr
         let mut entry = detail(stored.remove(position), now, &settings);
         entry.hub = db.hub_link(quota.id)?.map(|mirror| mirror.hub.to_string());
         entry.provider = group.provider.to_string();
-        entry.label = quota.label.clone();
+        entry.label = usage_label(group.name, quota);
         entry.summary = summary(&view, quota);
         entry.details = plain_lines(&card(quota, &view, &Ctx::new(CARD_WIDTH), Depth::Full));
         entries.push(entry);
@@ -198,6 +198,41 @@ pub fn entry_label(account: &AccountQuota) -> String {
     } else {
         account.label.clone()
     }
+}
+
+pub fn short_provider(name: &str) -> &str {
+    name.split_once(" (").map_or(name, |(short, _)| short)
+}
+
+fn names_provider(label: &str, provider: &str) -> bool {
+    label
+        .to_lowercase()
+        .starts_with(&short_provider(provider).to_lowercase())
+}
+
+pub fn usage_label(provider: &str, account: &AccountQuota) -> String {
+    let provider = short_provider(provider);
+    if account.is_duplicate() {
+        format!("{provider} #{} · {}", account.short(), account.label)
+    } else if names_provider(&account.label, provider) {
+        account.label.clone()
+    } else {
+        format!("{provider} · {}", account.label)
+    }
+}
+
+pub fn bare_label(name: String, account: &ConnectedAccount) -> String {
+    let provider = crate::catalog::providers()
+        .find(|product| product.id == account.provider.as_str())
+        .map_or("", |product| short_provider(product.name));
+    let tagged = format!("{provider} #{} · ", short_id(account.id));
+    let plain = format!("{provider} · ");
+    let own_plain = (!names_provider(&account.label, provider)).then_some(plain.as_str());
+    [Some(tagged.as_str()), own_plain]
+        .into_iter()
+        .flatten()
+        .find_map(|prefix| name.strip_prefix(prefix))
+        .map_or_else(|| name.clone(), str::to_owned)
 }
 
 fn plain_lines(lines: &[Line]) -> Vec<String> {
