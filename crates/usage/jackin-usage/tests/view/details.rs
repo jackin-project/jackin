@@ -179,7 +179,7 @@ fn each_card_ends_with_its_id_the_fetch_deadline_and_its_facts() -> Result<()> {
         &text,
         "fetched Mon 23 Nov 17:06 · fresh until Mon 17:16"
     ));
-    assert!(contains_line(&text, "Google project aicode-consumers"));
+    assert!(contains_line(&text, "Google project example-project"));
     let mimo = one(&seeded, "mimo", "MiMo Token Plan", 0)?;
     assert!(contains_line(
         &mimo,

@@ -485,7 +485,7 @@ fn notes_and_facts_carry_credits_resets_tokens_spend_and_account_facts() -> Resu
     )?;
     assert_eq!(
         google.facts,
-        [Fact::GoogleProject("aicode-consumers".to_owned())]
+        [Fact::GoogleProject("example-project".to_owned())]
     );
     Ok(())
 }
