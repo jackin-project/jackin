@@ -717,6 +717,27 @@ impl RoleCatalog {
             .then(|| String::from_utf8_lossy(&output.stdout).trim().to_owned()))
     }
 
+    async fn needs_remote_head(
+        &self,
+        dir: &HostPath,
+        rev: Option<&RoleRev>,
+        cancel: &CancellationToken,
+    ) -> Result<bool, RoleError> {
+        let Some(rev) = rev else {
+            return Ok(true);
+        };
+        let name = branch_name(rev.as_str());
+        if name == "HEAD" {
+            return Ok(true);
+        }
+        if !names_remote_head(name) {
+            return Ok(false);
+        }
+        Ok(!self
+            .resolves(dir, cancel, &format!("origin/{name}^{{commit}}"))
+            .await?)
+    }
+
     async fn checkout(
         &self,
         parent: &HostPath,
@@ -741,7 +762,7 @@ impl RoleCatalog {
                 ],
             )
             .await?;
-            if rev.is_none_or(|rev| names_remote_head(branch_name(rev.as_str()))) {
+            if self.needs_remote_head(dir, rev, cancel).await? {
                 self.git(dir, cancel, &["remote", "set-head", "origin", "--auto"])
                     .await?;
             }

@@ -1001,3 +1001,26 @@ async fn a_write_refused_before_the_exec_stream_opens_is_a_plain_error_and_a_lat
         "{error:?}"
     );
 }
+
+#[tokio::test]
+async fn a_sandbox_that_vanishes_during_a_write_is_not_found_because_it_holds_no_file_any_more() {
+    use tonic::Status;
+
+    let env = env().await;
+    env.server.state().exec = Some(Arc::new(|ctx: ExecCtx| {
+        Box::pin(async move {
+            drop(ctx.events.send(Ok(out_event(b"partial".to_vec()))).await);
+            drop(
+                ctx.events
+                    .send(Err(Status::not_found("sandbox deleted")))
+                    .await,
+            );
+        })
+    }));
+    ready(&env);
+    let gateway = connect(&env, WORKSPACE).await;
+    let error = guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file("/sandbox/a")))
+        .await
+        .unwrap_err();
+    assert!(matches!(&error, GatewayError::NotFound { .. }), "{error:?}");
+}

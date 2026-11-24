@@ -304,3 +304,35 @@ async fn a_revision_naming_the_remote_head_follows_a_new_default_branch_like_an_
     })
     .await
 }
+
+#[tokio::test]
+async fn a_branch_named_like_the_remote_head_alias_loads_while_the_origin_head_points_nowhere()
+-> TestResult {
+    guard(async {
+        let origin = Origin::new().await?;
+        git(
+            origin.role.root().as_path(),
+            &["branch", "origin/HEAD", &origin.commits[1]],
+        )
+        .await?;
+        let (cache, _keep) = cache()?;
+        let rev = "refs/heads/origin/HEAD";
+        let first = origin
+            .load(&cache, Some(rev))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(first.0, origin.commits[1]);
+        git(
+            origin.role.root().as_path(),
+            &["symbolic-ref", "HEAD", "refs/heads/gone"],
+        )
+        .await?;
+        let again = origin
+            .load(&cache, Some(rev))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(again.0, origin.commits[1]);
+        Ok(())
+    })
+    .await
+}
