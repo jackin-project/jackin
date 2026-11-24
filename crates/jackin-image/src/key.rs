@@ -79,7 +79,9 @@ fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
     Ok(())
 }
 
-const READ_WRITE_PATH_MAX_BYTES: usize = 4096;
+const SCAN_ROOT_PATH_BYTES: usize = 4095;
+const SCAN_ROOT: &str = "/image";
+const READ_WRITE_PATH_MAX_BYTES: usize = SCAN_ROOT_PATH_BYTES - SCAN_ROOT.len();
 
 fn read_write_argument(paths: &[SandboxPath]) -> Result<Option<String>, ImageError> {
     let mut sorted: Vec<&str> = paths.iter().map(SandboxPath::as_str).collect();

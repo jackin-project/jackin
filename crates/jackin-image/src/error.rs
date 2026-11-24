@@ -36,7 +36,7 @@ pub enum ImageError {
         found: Option<ImageId>,
     },
     #[error(
-        "the read_write path {} of the role policy names the root, is longer than 4096 bytes or holds a control character, which the image scan cannot take",
+        "the read_write path {} of the role policy names the root, is longer than 4089 bytes or holds a control character, which the image scan cannot take",
         plain(.path)
     )]
     ReadWritePath { path: String },

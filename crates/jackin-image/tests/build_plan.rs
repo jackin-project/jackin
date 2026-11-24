@@ -1824,14 +1824,14 @@ fn the_scan_stage_hands_each_policy_path_to_the_scan_as_exactly_one_argument() -
 }
 
 #[test]
-fn a_read_write_path_longer_than_the_gateway_accepts_is_refused_at_planning() -> TestResult {
-    let long = format!("/{}", "a".repeat(4096));
+fn a_read_write_path_the_scan_cannot_stat_below_its_root_is_refused_at_planning() -> TestResult {
+    let long = format!("/{}", "a".repeat(4089));
     let request = request_with(&[&long])?;
     assert!(matches!(
         ImagePlan::new(&request),
         Err(ImageError::ReadWritePath { .. })
     ));
-    let longest = format!("/{}", "a".repeat(4095));
+    let longest = format!("/{}", "a".repeat(4088));
     assert_eq!(
         read_write_argument(&[&longest])?.as_deref(),
         Some(longest.as_str())
