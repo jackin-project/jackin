@@ -243,7 +243,9 @@ fn footer() -> Vec<Line> {
         Line::of(vec![Span::plain(
             "Connect: jackin account usage connect <id>",
         )]),
-        Line::of(vec![Span::plain("Filter:  jackin usage --provider <id>")]),
+        Line::of(vec![Span::plain(
+            "Filter:  jackin usage details --provider <id>",
+        )]),
     ]
 }
 
