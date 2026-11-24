@@ -29,8 +29,8 @@ pub(crate) struct Shell {
 pub(crate) struct DockerSeen<'a> {
     pub load_text: &'a str,
     pub shell: &'a [Shell],
-    pub host_id: Option<&'a str>,
-    pub host_names: &'a [String],
+    pub host_id: Result<&'a str, &'a str>,
+    pub host_names: Result<&'a [String], &'a str>,
     pub container: &'a str,
     pub label: Option<&'a str>,
     pub port: u16,
@@ -119,18 +119,28 @@ pub(crate) fn judge_docker(
             seen.container
         ));
     }
-    if seen.host_names.iter().any(|name| name == seen.container) {
-        problems.push(format!(
-            "container {} exists in the host default engine",
-            seen.container
-        ));
+    match seen.host_names {
+        Ok(names) if names.iter().any(|name| name == seen.container) => {
+            problems.push(format!(
+                "container {} exists in the host default engine",
+                seen.container
+            ));
+        }
+        Ok(_) => {}
+        Err(reason) => problems.push(format!(
+            "the host default engine container list could not be read: {reason}"
+        )),
+    }
+    if facts.engine.id.is_none() {
+        problems.push("the probe reported no engine id".to_owned());
     }
     match (facts.engine.id.as_deref(), seen.host_id) {
-        (Some(chosen), Some(host)) if chosen == host => {
+        (_, Err(reason)) => problems.push(format!(
+            "the host default engine id could not be read: {reason}"
+        )),
+        (Some(chosen), Ok(host)) if chosen == host => {
             problems.push("the sandbox engine id equals the host default engine id".to_owned());
         }
-        (None, _) => problems.push("the probe reported no engine id".to_owned()),
-        (_, None) => problems.push("the host default engine id is unknown".to_owned()),
         _ => {}
     }
     problems
@@ -236,8 +246,8 @@ impl Run<'_> {
         for (label, command) in steps {
             shell.push(self.shell_step(&mut session, label, &command).await?);
         }
-        let host_id = self.b.engine.engine_id().await.ok();
-        let host_names = self.b.engine.container_names().await.unwrap_or_default();
+        let host_id = self.b.engine.engine_id().await;
+        let host_names = self.b.engine.container_names().await;
         let mut problems: Vec<String> = report
             .gate("J15")
             .into_iter()
@@ -249,8 +259,8 @@ impl Run<'_> {
             &DockerSeen {
                 load_text: &load_text,
                 shell: &shell,
-                host_id: host_id.as_deref(),
-                host_names: &host_names,
+                host_id: host_id.as_deref().map_err(String::as_str),
+                host_names: host_names.as_deref().map_err(String::as_str),
                 container: &container,
                 label: docker_label.as_deref(),
                 port,
