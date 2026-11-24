@@ -4,7 +4,7 @@
 use jackin_xtask::{Check, LayersCheck};
 
 use crate::workspace::{
-    REV, TestResult, Workspace, console_line, junie_line, member_manifest, workspace_manifest,
+    REV, TestResult, Workspace, console_line, member_manifest, termrock_line, workspace_manifest,
 };
 
 const OUTSIDE: [&str; 6] = [
@@ -18,7 +18,7 @@ const OUTSIDE: [&str; 6] = [
 
 fn layered(members: &[(&str, &str)]) -> Result<Workspace, Box<dyn std::error::Error>> {
     let names: Vec<&str> = members.iter().map(|(name, _)| *name).collect();
-    let mut dependencies = vec![console_line(REV), junie_line(REV)];
+    let mut dependencies = vec![console_line(REV), termrock_line(REV)];
     dependencies.extend(
         OUTSIDE
             .iter()
@@ -55,7 +55,7 @@ fn layers_allow_the_console_crates() -> TestResult {
     let workspace = layered(&[
         (
             "jackin-tui",
-            "[dependencies]\njunie-tui = { workspace = true }\njackin-console = { workspace = true }\nratatui = { workspace = true }\njackin-usage = { workspace = true }\n",
+            "[dependencies]\ntermrock = { workspace = true }\njackin-console = { workspace = true }\nratatui = { workspace = true }\njackin-usage = { workspace = true }\n",
         ),
         (
             "jackin-testkit",

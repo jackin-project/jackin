@@ -11,6 +11,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+uuid = { workspace = true }
+zeroize = { workspace = true }
 async-trait = { workspace = true }
 clap = { workspace = true }
 jackin-core = { workspace = true }

@@ -27,7 +27,9 @@ The option `--gateway <name>` is global. It selects a gateway entry from the jac
 | `jackin role check` | Validate a role manifest, its `Dockerfile`, and its policy. | [Create a role](/developing/creating-roles/) |
 | `jackin workspace add`, `ls`, `rm` | Manage workspaces. | [Workspaces](/guides/workspaces/) |
 | `jackin account add`, `ls`, `rm`, `default`, `bind` | Manage accounts and their bindings. | [Accounts](/guides/accounts/) |
-| `jackin usage` | Show the limit windows of each account. | [Accounts](/guides/accounts/#check-usage) |
+| `jackin account usage ...` | Connect and manage provider accounts for the Usage dashboard. | [Accounts](/guides/accounts/#connect-an-account-for-usage) |
+| `jackin usage` | Show usage from connected provider accounts. | [Accounts](/guides/accounts/#check-usage) |
+| `jackin usage host` | Read usage from execution-account credentials on this host. | [Accounts](/guides/accounts/#read-usage-from-execution-accounts) |
 | `jackin build` | Build the role image and print its image ID. | [Create a role](/developing/creating-roles/#use-the-role) |
 | `jackin load` | Launch a sandbox and attach to Codex. | [Quick start](/getting-started/quickstart/) |
 | `jackin attach` | Reattach to the Codex terminal. | [Work with sandboxes](/guides/sandboxes/) |

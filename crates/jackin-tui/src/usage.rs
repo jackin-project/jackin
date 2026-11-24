@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_console::backend::{CheckRow, Refresh, Validation, ValidationOutcome};
+use jackin_console::backend::{CheckRow, Refresh, Ticket, Validation, ValidationOutcome};
 use jackin_console::domain::account::{
     AccountIdentity, Confidence, CredentialSource, IssueCode, Lifecycle, Recoverability,
     RecoverableIssue, ValidationLevel,
@@ -317,6 +317,7 @@ impl Inputs {
 
     pub(crate) async fn refresh_account(
         &self,
+        ticket: Ticket,
         account: &str,
         requested: CredentialSource,
     ) -> Settled {
@@ -338,6 +339,7 @@ impl Inputs {
             Box::new(refresh)
         });
         Msg::AccountRefreshed {
+            ticket,
             account: account.to_owned(),
             source: Box::new(source),
             result,
@@ -347,6 +349,7 @@ impl Inputs {
 
     pub(crate) async fn validate_account(
         &self,
+        ticket: Ticket,
         account: &str,
         requested: CredentialSource,
     ) -> Settled {
@@ -358,6 +361,7 @@ impl Inputs {
             Validation::Checked(Box::new(outcome))
         });
         Msg::AccountValidated {
+            ticket,
             account: account.to_owned(),
             source: Box::new(source),
             result,

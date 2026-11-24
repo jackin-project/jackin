@@ -85,7 +85,7 @@ async fn usage_prints_one_line_per_window_in_account_order_and_marks_stale_and_u
             "/api/oauth/usage?cedar_ember=1",
             Route::status(401),
         );
-        harness.run(&["usage"]).await?.ok()?;
+        harness.run(&["usage","host"]).await?.ok()?;
         world.clock.advance(Duration::from_secs(600));
         server.replace(Provider::Codex, Method::Get, WHAM, codex_route(WORK, "acct-work"));
         server.serve(
@@ -94,7 +94,7 @@ async fn usage_prints_one_line_per_window_in_account_order_and_marks_stale_and_u
             WHAM,
             Route::status(500).requires_header("chatgpt-account-id", "acct-cached"),
         );
-        let ran = harness.run(&["usage"]).await?;
+        let ran = harness.run(&["usage","host"]).await?;
         ran.ok()?;
         let expected = [
             "cached\tcodex\t5-hour\t80% used\t20% left\t-\tresets 2026-01-01T05:00:00Z (in 4h50m)\tstale, fetched 2026-01-01T00:00:00Z",
@@ -128,7 +128,7 @@ async fn usage_needs_no_gateway_while_ls_fails_without_one() -> TestResult {
             codex_route(ONE, "acct-work"),
         );
         serve_reset_credits(server);
-        harness.run(&["usage"]).await?.ok()?;
+        harness.run(&["usage", "host"]).await?.ok()?;
         let ls = harness.run(&["ls"]).await?;
         assert_eq!(ls.exit, ExitClass::Failure, "{}", ls.stderr);
         Ok(())
@@ -160,11 +160,11 @@ async fn usage_shows_decimals_money_left_and_a_dash_for_no_reset() -> TestResult
             "/api/v1/key",
             Route::json(200, KEY).requires_header("authorization", bearer),
         );
-        let ran = harness.run(&["usage"]).await?;
+        let ran = harness.run(&["usage", "host"]).await?;
         ran.ok()?;
         assert_eq!(
             ran.stdout,
-            "gem\tgemini\tunavailable\tnot supported: Gemini API keys have no quota method\n\
+            "gem\tgemini\tunavailable\tnot supported for this provider\n\
              router\topenrouter\tKey limit\t24.68% used\t37.66 USD left\t-\t-\n\
              router\topenrouter\tKey spend\t-\t-\t12.34 USD spent\t-\n\
              router\topenrouter\tDaily spend\t-\t-\t1.00 USD spent\t-\n\
@@ -185,7 +185,7 @@ async fn usage_json_prints_the_report_compactly_and_unchanged() -> TestResult {
         let server = world.usage.get().await?;
         server.serve(Provider::Codex, Method::Get, WHAM, codex_route(ONE, "acct-work"));
         serve_reset_credits(server);
-        let ran = harness.run(&["usage", "--json"]).await?;
+        let ran = harness.run(&["usage","host","--json"]).await?;
         ran.ok()?;
         let expected = "{\"schema\":1,\"generated_at\":1767225600,\"accounts\":[{\"account\":\"work\",\"provider\":\"codex\",\"freshness\":{\"state\":\"fresh\"},\"outcome\":{\"state\":\"windows\",\"windows\":[{\"kind\":\"five_hour\",\"label\":\"5-hour\",\"used_percent\":42.0,\"remaining\":{\"kind\":\"percent\",\"value\":58.0},\"resets_at\":1767232800}]}}]}\n";
         assert_eq!(ran.stdout, expected);
@@ -200,10 +200,10 @@ async fn usage_without_accounts_prints_nothing_and_an_empty_json_report() -> Tes
     guard(async {
         let world = World::builder().build()?;
         let harness = started("", &world).await?;
-        let text = harness.run(&["usage"]).await?;
+        let text = harness.run(&["usage", "host"]).await?;
         text.ok()?;
         assert!(text.stdout.is_empty(), "{}", text.stdout);
-        let json = harness.run(&["usage", "--json"]).await?;
+        let json = harness.run(&["usage", "host", "--json"]).await?;
         json.ok()?;
         assert_eq!(
             json.stdout,
@@ -222,7 +222,11 @@ async fn a_cancelled_usage_run_exits_cancelled_with_no_output() -> TestResult {
         let harness = started(&config, &world).await?;
         let token = CancellationToken::new();
         token.cancel();
-        let ran = harness.command(&["usage"]).cancel(token).run().await?;
+        let ran = harness
+            .command(&["usage", "host"])
+            .cancel(token)
+            .run()
+            .await?;
         assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
         assert!(ran.stdout.is_empty(), "{}", ran.stdout);
         Ok(())
@@ -249,7 +253,7 @@ async fn an_unusable_cache_location_fails_the_command_and_names_the_path() -> Te
             world.cache_dir().as_path().join("usage"),
             "a file, not a directory",
         )?;
-        let ran = harness.run(&["usage"]).await?;
+        let ran = harness.run(&["usage", "host"]).await?;
         assert_eq!(ran.exit, ExitClass::Failure, "{}", ran.stderr);
         assert!(ran.stdout.is_empty(), "{}", ran.stdout);
         assert!(ran.stderr.contains("usage.json"), "{}", ran.stderr);
@@ -273,7 +277,7 @@ async fn usage_reads_the_cache_inside_the_ttl_and_fetches_again_after_it() -> Te
             codex_route(ONE, "acct-work"),
         );
         serve_reset_credits(server);
-        let first = harness.run(&["usage"]).await?;
+        let first = harness.run(&["usage", "host"]).await?;
         first.ok()?;
         assert!(first.stdout.contains("42% used"), "{}", first.stdout);
         server.replace(
@@ -283,12 +287,12 @@ async fn usage_reads_the_cache_inside_the_ttl_and_fetches_again_after_it() -> Te
             codex_route(CACHED, "acct-work"),
         );
         world.clock.advance(Duration::from_secs(60));
-        let inside = harness.run(&["usage"]).await?;
+        let inside = harness.run(&["usage", "host"]).await?;
         inside.ok()?;
         assert!(inside.stdout.contains("42% used"), "{}", inside.stdout);
         assert!(!inside.stdout.contains("80% used"), "{}", inside.stdout);
         world.clock.advance(Duration::from_secs(70));
-        let after = harness.run(&["usage"]).await?;
+        let after = harness.run(&["usage", "host"]).await?;
         after.ok()?;
         assert!(after.stdout.contains("80% used"), "{}", after.stdout);
         Ok(())
@@ -339,7 +343,7 @@ async fn failing_store(read: bool) -> TestResult {
     } else {
         make_unusable(&state, 0o555)?;
     }
-    let ran = harness.run(&["usage"]).await?;
+    let ran = harness.run(&["usage", "host"]).await?;
     make_unusable(&state, 0o755)?;
     if read {
         make_unusable(&file, 0o644)?;

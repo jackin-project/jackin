@@ -15,11 +15,11 @@ Codex starts with `--sandbox danger-full-access`. The Codex sandbox does not wor
 
 ## Credentials
 
-Your credentials stay on the gateway. Jackin never writes a real token into a sandbox, an image, a log, a label, or its configuration. The one exception is the Docker client key of the [Docker capability](/guides/docker-capability/).
+Execution credentials for Codex stay on the gateway. Jackin never writes a real token into a sandbox, an image, a log, a label, or its configuration. Usage-account credentials stay in the host operating system's credential store. The one exception is the Docker client key of the [Docker capability](/guides/docker-capability/).
 
 - The sandbox receives a placeholder. The gateway replaces it on the hosts that the policy allows.
 - A command that Codex starts can use the credential on an allowed host, but it cannot read it.
-- Usage checks run on the host. They read the credential of an account on the host and never send it to a sandbox. They never refresh a token.
+- `jackin usage host` reads execution-account credentials on the host and does not refresh tokens. Connected usage accounts store their credentials in the host operating system's credential store. Jackin uses those credentials to sign in to providers and refresh usage data. Neither account type sends its credential to a sandbox.
 - Only the generated OpenShell provider rule may match the hosts of the Codex provider. A role policy that overlaps those hosts is refused.
 
 ## The role image

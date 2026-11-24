@@ -3,7 +3,7 @@
 
 use jackin_core::EnvSnapshot;
 use jackin_session::{ClipboardWriter, HostOs};
-use junie_tui::shell::NativeClipboard;
+use termrock::shell::NativeClipboard;
 
 #[derive(Debug)]
 pub struct HostClipboard {

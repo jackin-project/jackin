@@ -6,14 +6,15 @@ name = "jackin-usage-provider-gemini"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
-description = "Gemini usage: the Code Assist quota buckets of a Google login."
+description = "Antigravity status-line quota readings."
 license.workspace = true
 repository.workspace = true
 publish = false
 
 [dependencies]
 jackin-usage-provider-core = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["raw_value"] }
+serde = { workspace = true }
 
 [lints]
 workspace = true

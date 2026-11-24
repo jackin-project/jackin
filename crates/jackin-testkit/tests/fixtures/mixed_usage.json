@@ -1,0 +1,457 @@
+[
+  {
+    "provider": "claude",
+    "label": "Claude Home",
+    "snapshot": {
+      "nextGrantId": null,
+      "plan": "Enterprise",
+      "planReadAt": 1767225600,
+      "resets": [
+        {
+          "clears": [],
+          "expiresAt": 1893456000,
+          "givesBackWeekly": false,
+          "id": "private-reset-id",
+          "kind": "full",
+          "remaining": 2,
+          "usable": true
+        }
+      ],
+      "resetsReadAt": 1767225600,
+      "resources": {
+        "extraUsage": {
+          "kind": "consumption",
+          "label": "Spend",
+          "limit": 50.0,
+          "remaining": 37.66,
+          "unit": "eur",
+          "used": 12.34,
+          "utilization": 0.2468
+        },
+        "rateLimitResets": {
+          "available": 2,
+          "kind": "balance",
+          "unit": "resets"
+        }
+      }
+    }
+  },
+  {
+    "provider": "claude",
+    "label": "Claude Team",
+    "snapshot": {
+      "nextGrantId": null,
+      "plan": "Enterprise",
+      "planReadAt": 1767225600,
+      "resets": [
+        {
+          "clears": [],
+          "expiresAt": 1893456000,
+          "givesBackWeekly": false,
+          "id": "synthetic-team-reset",
+          "kind": "full",
+          "remaining": 1,
+          "usable": true
+        }
+      ],
+      "resetsReadAt": 1767225600,
+      "resources": {
+        "extraUsage": {
+          "kind": "consumption",
+          "label": "Spend",
+          "limit": 200.0,
+          "remaining": 60.0,
+          "unit": "eur",
+          "used": 140.0,
+          "utilization": 0.7
+        },
+        "rateLimitResets": {
+          "available": 1,
+          "kind": "balance",
+          "unit": "resets"
+        }
+      }
+    }
+  },
+  {
+    "provider": "codex",
+    "label": "Codex Home",
+    "snapshot": {
+      "history": {
+        "counts": {
+          "days": {
+            "2025-12-03": {},
+            "2025-12-04": {},
+            "2025-12-05": {},
+            "2025-12-06": {},
+            "2025-12-07": {},
+            "2025-12-08": {},
+            "2025-12-09": {},
+            "2025-12-10": {},
+            "2025-12-11": {},
+            "2025-12-12": {},
+            "2025-12-13": {},
+            "2025-12-14": {},
+            "2025-12-15": {},
+            "2025-12-16": {},
+            "2025-12-17": {},
+            "2025-12-18": {},
+            "2025-12-19": {},
+            "2025-12-20": {},
+            "2025-12-21": {},
+            "2025-12-22": {},
+            "2025-12-23": {},
+            "2025-12-24": {},
+            "2025-12-25": {},
+            "2025-12-26": {},
+            "2025-12-27": {},
+            "2025-12-28": {},
+            "2025-12-29": {},
+            "2025-12-30": {},
+            "2025-12-31": {},
+            "2026-01-01": {
+              "byModel": {
+                "model-fixture": {
+                  "turns": 2.0
+                }
+              },
+              "totals": {
+                "tokens": 71.0,
+                "turns": 2.0
+              }
+            }
+          },
+          "readAt": 1767225600,
+          "today": "2026-01-01"
+        },
+        "ranges": {
+          "last30": {
+            "byModel": {
+              "model-fixture": {
+                "turns": 2.0
+              }
+            },
+            "expectedDays": 30,
+            "observedDays": 30,
+            "totals": {
+              "tokens": 71.0,
+              "turns": 2.0
+            }
+          },
+          "today": {
+            "byModel": {
+              "model-fixture": {
+                "turns": 2.0
+              }
+            },
+            "expectedDays": 1,
+            "observedDays": 1,
+            "totals": {
+              "tokens": 71.0,
+              "turns": 2.0
+            }
+          },
+          "yesterday": {
+            "expectedDays": 1,
+            "observedDays": 1
+          }
+        }
+      },
+      "plan": "Plus",
+      "resetDetail": {
+        "count": 0,
+        "items": []
+      },
+      "resets": [],
+      "resetsReadAt": 1767225600,
+      "resources": {
+        "rateLimitResets": {
+          "available": 0,
+          "kind": "balance",
+          "unit": "resets"
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 58.0,
+          "unit": "percent",
+          "used": 42.0,
+          "utilization": 0.42,
+          "windowSeconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "provider": "codex",
+    "label": "Codex Work",
+    "snapshot": {
+      "history": {
+        "counts": {
+          "days": {},
+          "readAt": 1767225600,
+          "today": "2026-01-01"
+        },
+        "ranges": {
+          "last30": {
+            "expectedDays": 30,
+            "observedDays": 0
+          },
+          "today": {
+            "expectedDays": 1,
+            "observedDays": 0
+          },
+          "yesterday": {
+            "expectedDays": 1,
+            "observedDays": 0
+          }
+        }
+      },
+      "plan": "Plus",
+      "resetDetail": {
+        "count": 0,
+        "items": []
+      },
+      "resets": [],
+      "resetsReadAt": 1767225600,
+      "resources": {
+        "rateLimitResets": {
+          "available": 0,
+          "kind": "balance",
+          "unit": "resets"
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 12.0,
+          "unit": "percent",
+          "used": 88.0,
+          "utilization": 0.88,
+          "windowSeconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "provider": "muse",
+    "label": "Muse Code",
+    "snapshot": {
+      "plan": "Muse Plus",
+      "resources": {
+        "session": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 81.0,
+          "resetsAt": 1893456000,
+          "unit": "percent",
+          "used": 19.0,
+          "utilization": 0.19,
+          "windowSeconds": 18000
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 93.0,
+          "resetsAt": 1893456000,
+          "unit": "percent",
+          "used": 7.0,
+          "utilization": 0.07,
+          "windowSeconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "provider": "kimi",
+    "label": "Kimi Global",
+    "snapshot": {
+      "authMethod": "key",
+      "region": "global",
+      "resources": {
+        "booster": {
+          "available": 125,
+          "kind": "balance",
+          "limit": 1000000,
+          "monthly_charge_limit_enabled": false,
+          "unit": "millionths_of_cent"
+        },
+        "session": {
+          "kind": "consumption",
+          "limit": 100,
+          "remaining": 75.0,
+          "resets_at": null,
+          "unit": "percent",
+          "used": 25.0,
+          "window_seconds": 18000
+        }
+      }
+    }
+  },
+  {
+    "provider": "zai",
+    "label": "Zai Global",
+    "snapshot": {
+      "plan": "GLM Pro",
+      "resets": [],
+      "resources": {
+        "rateLimitResets": {
+          "available": 0,
+          "kind": "balance",
+          "unit": "resets"
+        },
+        "session": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 72.0,
+          "resets_at": null,
+          "unit": "percent",
+          "used": 28.0,
+          "window_seconds": 18000
+        },
+        "webSearches": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 97.0,
+          "resets_at": null,
+          "unit": "searches",
+          "used": 3.0,
+          "window_seconds": 2592000
+        }
+      },
+      "secondaryReadAt": 1767225600
+    }
+  },
+  {
+    "provider": "minimax",
+    "label": "MiniMax Global",
+    "snapshot": {
+      "authMethod": "key",
+      "region": "global",
+      "resources": {
+        "general/weekly": {
+          "base_remaining_percent": 90.0,
+          "boost_permille": null,
+          "kind": "consumption",
+          "limit": 100,
+          "model": "general",
+          "remaining": 90,
+          "remaining_ms": null,
+          "remaining_percent": 90.0,
+          "resets_at": null,
+          "starts_at": null,
+          "status": "unreported",
+          "unit": "count",
+          "used": 10,
+          "window": "weekly"
+        }
+      }
+    }
+  },
+  {
+    "provider": "mimo",
+    "label": "MiMo Global",
+    "snapshot": {
+      "authMethod": "key",
+      "auto_renew": false,
+      "claw_enabled": null,
+      "period_start": 1793491200,
+      "plan": "Lite",
+      "region": "sgp",
+      "resources": {
+        "tokenPlan": {
+          "kind": "consumption",
+          "limit": 1000,
+          "remaining": 800,
+          "resets_at": 1796083200,
+          "starts_at": 1793491200,
+          "unit": "credits",
+          "used": 200
+        }
+      }
+    }
+  },
+  {
+    "provider": "opencode",
+    "label": "OpenCode Work",
+    "snapshot": {
+      "plan": "Go Plus",
+      "planReadAt": 1767225600,
+      "resources": {
+        "monthly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 54.0,
+          "resetsAt": 1769904000,
+          "unit": "percent",
+          "used": 46.0,
+          "utilization": 0.46,
+          "windowSeconds": 2592000
+        },
+        "session": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 100.0,
+          "unit": "percent",
+          "used": 0.0,
+          "utilization": 0.0,
+          "windowSeconds": 18000
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 75.0,
+          "resetsAt": 1767830400,
+          "unit": "percent",
+          "used": 25.0,
+          "utilization": 0.25,
+          "windowSeconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "provider": "grok",
+    "label": "Grok account",
+    "snapshot": {
+      "extraUsageCap": {
+        "limit": 1.5,
+        "unit": "usd"
+      },
+      "plan": "Grok Heavy",
+      "planReadAt": 1767225600,
+      "resources": {
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 85.0,
+          "resetsAt": 1767830400,
+          "unit": "percent",
+          "used": 15.0,
+          "utilization": 0.15,
+          "windowSeconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "provider": "openrouter",
+    "label": "OpenRouter Standard",
+    "snapshot": {
+      "activity": null,
+      "key_type": "standard",
+      "period_spend": {
+        "thisMonth": {
+          "spend": 2.5
+        },
+        "thisWeek": {
+          "spend": 1.25
+        },
+        "today": {
+          "spend": 0.0
+        }
+      },
+      "plan": "Free",
+      "resources": {}
+    }
+  }
+]

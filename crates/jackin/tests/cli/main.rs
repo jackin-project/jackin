@@ -4,6 +4,7 @@
 mod account_add;
 mod account_manage;
 mod agent;
+mod antigravity_refresh;
 mod attach;
 mod build;
 mod cancel;
@@ -34,5 +35,7 @@ mod shell;
 mod signals;
 mod support;
 mod usage;
+mod usage_details;
 mod usage_only;
+mod usage_snapshot;
 mod workspace_in_use;

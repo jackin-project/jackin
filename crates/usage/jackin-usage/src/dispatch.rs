@@ -6,7 +6,6 @@ use jackin_usage_provider_claude as claude;
 use jackin_usage_provider_codex as codex;
 use jackin_usage_provider_core::{Bucket, Http, ProviderError};
 use jackin_usage_provider_cursor as cursor;
-use jackin_usage_provider_gemini as gemini;
 use jackin_usage_provider_grok as grok;
 use jackin_usage_provider_kimi as kimi;
 use jackin_usage_provider_minimax as minimax;
@@ -45,6 +44,7 @@ pub(crate) fn unsupported_without_credentials(account: &UsageAccount) -> Option<
     match account.provider {
         Provider::Amp
         | Provider::Antigravity
+        | Provider::Gemini
         | Provider::Hermes
         | Provider::Mimo
         | Provider::Muse => Some(unsupported(None)),
@@ -61,7 +61,7 @@ pub(crate) async fn collect(call: &Call<'_>) -> Collected {
         Provider::Claude => claude_usage(call).await,
         Provider::Codex => codex_usage(call).await,
         Provider::Cursor => cursor_usage(call).await,
-        Provider::Gemini => gemini_usage(call).await,
+        Provider::Gemini => Err(unsupported(None).into()),
         Provider::Grok => grok_usage(call).await,
         Provider::Kimi => kimi_usage(call).await,
         Provider::Minimax => minimax_usage(call).await,
@@ -106,12 +106,6 @@ async fn claude_usage(call: &Call<'_>) -> Collected {
 
 async fn cursor_usage(call: &Call<'_>) -> Collected {
     cursor::fetch(call.http, call.material.credential())
-        .await
-        .map_err(|error| failure(error, call.now))
-}
-
-async fn gemini_usage(call: &Call<'_>) -> Collected {
-    gemini::fetch(call.http, call.material.credential(), call.now)
         .await
         .map_err(|error| failure(error, call.now))
 }
@@ -191,7 +185,7 @@ fn reason(error: ProviderError, now: i64) -> UnavailableReason {
     let text = error.to_string();
     match error {
         ProviderError::Unauthorized => UnavailableReason::ExpiredLogin,
-        ProviderError::Forbidden => UnavailableReason::Provider(text),
+        ProviderError::HubRefused | ProviderError::Forbidden => UnavailableReason::Provider(text),
         ProviderError::RateLimited {
             retry_after_seconds,
         } => UnavailableReason::RateLimited {
@@ -201,7 +195,9 @@ fn reason(error: ProviderError, now: i64) -> UnavailableReason {
                 .map(Timestamp),
         },
         ProviderError::Network(message) => UnavailableReason::Network(message.to_owned()),
-        ProviderError::Status(_) | ProviderError::Decode(_) => UnavailableReason::Provider(text),
+        ProviderError::Status(_) | ProviderError::Decode(_) | ProviderError::Denied { .. } => {
+            UnavailableReason::Provider(text)
+        }
         ProviderError::Unsupported(detail) => unsupported(Some(detail)),
     }
 }

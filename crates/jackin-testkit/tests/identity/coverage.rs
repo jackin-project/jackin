@@ -15,8 +15,11 @@ const JOURNEYS: [&str; 3] = [
     include_str!("capsule.rs"),
 ];
 
-const WITHOUT_CAPTURE: [&str; 11] = [
+const WITHOUT_CAPTURE: [&str; 14] = [
     "jackin_cockpit_docker_names_key_and_egress_bypass",
+    "jackin_status_outlives_wall_time_and_expires_on_the_test_clock",
+    "jackin_launch_handoff_lands_on_the_capsule_at_full_motion_on_the_test_clock",
+    "jackin_unknown_exit_returns_to_host_then_quits_after_the_test_clock_passes_2500_ms",
     "jackin_roles_add_role",
     "jackin_fixed_editor_refusals_carry_the_full_reason_at_80_by_24",
     "jackin_fixed_dirty_exit_refuses_the_list_by_key_and_click",

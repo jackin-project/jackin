@@ -402,7 +402,7 @@ pub fn t01_behavior() -> AgentBehaviorSpec {
                     auth_field("/tokens/id_token", AuthFieldKind::Placeholder),
                 ],
             },
-            config_files: vec![],
+            config_files: vec![config(agent.user_config.path.as_str(), &[], &[])],
         }),
         reflection: Some(ReflectionBehavior {
             url: "https://chatgpt.com/backend-api/e2e-reflect".to_owned(),
@@ -418,7 +418,12 @@ pub fn t01_behavior() -> AgentBehaviorSpec {
         }),
         usage: Some(UsageBehavior::Windows {
             required: vec![UsageWindow::Weekly, UsageWindow::Credits],
-            optional: vec![],
+            optional: vec![
+                UsageWindow::FiveHour,
+                UsageWindow::Monthly,
+                UsageWindow::Spend,
+                UsageWindow::Other("rate-limit resets".to_owned()),
+            ],
         }),
     }
 }

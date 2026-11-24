@@ -16,13 +16,12 @@ use jackin_core::{
 };
 use jackin_session::{AccountDesk, HostPorts, RoleCatalog};
 use jackin_usage::HostUsage;
-use junie_tui::clock::SimClock;
-use junie_tui::core::event::Input;
-use junie_tui::motion::Motion;
-use junie_tui::runtime::{Application, ExternalReceiver, external_channel};
-use junie_tui::shell::NativeClipboard;
-use junie_tui::shell::StopHandle;
-use junie_tui::theme::{ColorLevel, Theme, Tone};
+use termrock::clock::SimClock;
+use termrock::motion::Motion;
+use termrock::runtime::{Application, external_channel, pump_external};
+use termrock::shell::NativeClipboard;
+use termrock::shell::StopHandle;
+use termrock::theme::{ColorLevel, Theme, Tone};
 use thiserror::Error;
 use tokio::sync::oneshot;
 use tokio_util::sync::{CancellationToken, DropGuard};
@@ -115,7 +114,7 @@ impl ConsoleHost for TerminalConsole {
 }
 
 pub async fn run_console(deps: ConsoleDeps) -> Result<ConsoleExit, ConsoleError> {
-    run_console_with(deps, junie_tui::shell::run).await
+    run_console_with(deps, termrock::shell::run).await
 }
 
 pub async fn run_console_with<F>(
@@ -192,7 +191,10 @@ impl Console {
         let mut changes = self.inflight.subscribe();
         loop {
             let idle = *changes.borrow_and_update() == 0;
-            self.deliver();
+            if self.deliver() {
+                tokio::task::yield_now().await;
+                continue;
+            }
             if idle && *changes.borrow() == 0 {
                 break;
             }
@@ -202,13 +204,13 @@ impl Console {
         }
     }
 
-    fn deliver(&mut self) {
-        let pending = Application::external(self.app.as_ref())
-            .map(ExternalReceiver::drain)
-            .unwrap_or_default();
-        for message in pending {
-            Application::handle(self.app.as_mut(), Input::External(message));
-        }
+    fn deliver(&mut self) -> bool {
+        let Some(receiver) = self.app.external() else {
+            return false;
+        };
+        let policy = receiver.policy();
+        let start = tokio::time::Instant::now();
+        pump_external(self.app.as_mut(), policy, || start.elapsed()).exhausted
     }
 }
 
@@ -248,6 +250,11 @@ pub async fn build_console(deps: ConsoleDeps) -> Result<Console, ConsoleError> {
         desk,
         usage,
         op: op.clone(),
+        google_registration: jackin_usage::onboarding::GoogleRegistrationFile::from_environment(
+            &env,
+            &cwd,
+            Arc::clone(&host.fs),
+        ),
         env: env.clone(),
         sessions,
         roles,

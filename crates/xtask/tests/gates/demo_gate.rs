@@ -12,7 +12,8 @@ use jackin_xtask::{
 
 use crate::workspace::{TestResult, Workspace, green, member_manifest};
 
-const CONSOLE_SOURCE: &str = "https://github.com/tailrocks/terminal-components-baseline?rev=74244972a1183db85111332ddab7eeabcbae81cb#74244972";
+const CONSOLE_SOURCE: &str =
+    "https://github.com/tailrocks/termrock?rev=74244972a1183db85111332ddab7eeabcbae81cb#74244972";
 
 const NO_MATCH_CARGO_1_99_1: &str =
     "error: package ID specification `jackin-console` did not match any packages\n";
@@ -76,7 +77,7 @@ fn clean_tree() -> String {
 
 fn build_json_cargo_1_99_1(rlib: &str) -> String {
     let artifact = format!(
-        "{{\"reason\":\"compiler-artifact\",\"package_id\":\"git+https://github.com/tailrocks/terminal-components-baseline?rev=74244972a1183db85111332ddab7eeabcbae81cb#jackin-console@0.1.0\",\"manifest_path\":\"/cargo/git/checkouts/terminal-components-baseline/7424497/apps/jackin/Cargo.toml\",\"target\":{{\"kind\":[\"lib\"],\"crate_types\":[\"lib\"],\"name\":\"jackin_console\",\"src_path\":\"/cargo/git/checkouts/terminal-components-baseline/7424497/apps/jackin/src/lib.rs\",\"edition\":\"2024\",\"doc\":true,\"doctest\":false,\"test\":true}},\"profile\":{{\"opt_level\":\"0\",\"debuginfo\":0,\"debug_assertions\":true,\"overflow_checks\":true,\"test\":false}},\"features\":[],\"filenames\":[\"{rlib}\",\"{rlib}.rmeta\"],\"executable\":null,\"fresh\":false}}"
+        "{{\"reason\":\"compiler-artifact\",\"package_id\":\"git+https://github.com/tailrocks/termrock?rev=74244972a1183db85111332ddab7eeabcbae81cb#jackin-console@0.1.0\",\"manifest_path\":\"/cargo/git/checkouts/termrock/7424497/apps/jackin/Cargo.toml\",\"target\":{{\"kind\":[\"lib\"],\"crate_types\":[\"lib\"],\"name\":\"jackin_console\",\"src_path\":\"/cargo/git/checkouts/termrock/7424497/apps/jackin/src/lib.rs\",\"edition\":\"2024\",\"doc\":true,\"doctest\":false,\"test\":true}},\"profile\":{{\"opt_level\":\"0\",\"debuginfo\":0,\"debug_assertions\":true,\"overflow_checks\":true,\"test\":false}},\"features\":[],\"filenames\":[\"{rlib}\",\"{rlib}.rmeta\"],\"executable\":null,\"fresh\":false}}"
     );
     let other = "{\"reason\":\"compiler-artifact\",\"package_id\":\"registry+https://github.com/rust-lang/crates.io-index#ratatui@0.30.2\",\"manifest_path\":\"/cargo/registry/ratatui/Cargo.toml\",\"target\":{\"kind\":[\"lib\"],\"crate_types\":[\"lib\"],\"name\":\"ratatui\",\"src_path\":\"/cargo/registry/ratatui/src/lib.rs\",\"edition\":\"2024\",\"doc\":true,\"doctest\":true,\"test\":true},\"profile\":{\"opt_level\":\"0\",\"debuginfo\":0,\"debug_assertions\":true,\"overflow_checks\":true,\"test\":false},\"features\":[],\"filenames\":[\"/work/target/debug/deps/libratatui-0123.rlib\"],\"executable\":null,\"fresh\":false}";
     let finished = "{\"reason\":\"build-finished\",\"success\":true}";
@@ -210,7 +211,7 @@ fn static_edge_fails() -> TestResult {
         "crates/jackin-tui/Cargo.toml",
         &member_manifest(
             "jackin-tui",
-            "[dependencies]\njackin-console = { workspace = true, features = [\"demo\"] }\njunie-tui = { workspace = true }\n",
+            "[dependencies]\njackin-console = { workspace = true, features = [\"demo\"] }\ntermrock = { workspace = true }\n",
         ),
     )?;
     let violations = case.run()?;
@@ -263,7 +264,7 @@ fn clap_below_console_fails() -> TestResult {
     case.reply(
         format!("cargo tree {TREE_CLAP}"),
         ok(format!(
-            "clap v4.6.7 color,default,derive\n├── jackin v0.1.0 (/work/crates/jackin)\n└── junie-tui v0.1.0 ({CONSOLE_SOURCE}) cli\n    └── jackin-console v0.1.0 ({CONSOLE_SOURCE}) demo\n"
+            "clap v4.6.7 color,default,derive\n├── jackin v0.1.0 (/work/crates/jackin)\n└── termrock v0.1.0 ({CONSOLE_SOURCE}) cli\n    └── jackin-console v0.1.0 ({CONSOLE_SOURCE}) demo\n"
         )),
     );
     let violations = case.run()?;

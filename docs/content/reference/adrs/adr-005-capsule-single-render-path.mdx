@@ -2,8 +2,9 @@
 title: "ADR-005: Capsule single render path"
 ---
 
-**Status**: Superseded by <RepoFile path="rewrite/DESIGN.md">DESIGN.md</RepoFile> (decision D22). Jackin Capsule now runs on the host in the jackin process, and the console draws it with the `junie-tui` crate (D27, D28).  
-**Current state**: every frame is one `Terminal::draw` of the full widget tree encoded by `SocketBackend` and written by `ClientWriter` inside `?2026` synchronized-output brackets; handlers only mutate state and bump a frame generation; a real screen erase precedes a frame only on first attach and resize.  
+**Status**: Superseded by <RepoFile path="rewrite/DESIGN.md">DESIGN.md</RepoFile> (decision D22). Jackin Capsule runs on the host in the jackin process. The external `jackin-console` application supplies its screens, and `termrock` supplies the shared terminal runtime and components (D27, D28).
+
+**Current state**: Jackin uses the same `jackin-console` application as the Termrock `jackin-preview` demo, with Jackin's backend connected to its services. `termrock` provides the terminal application loop, and `termpane` maintains terminal screen state for each pane.
 **Date**: 2026-06-10  
 **Deciders**: Operator + agent
 

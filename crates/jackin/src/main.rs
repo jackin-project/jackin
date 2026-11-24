@@ -76,6 +76,7 @@ async fn start() -> ExitCode {
         host,
         limits: launch_limits(),
         usage_endpoints: ProviderEndpoints::real(),
+        usage_vault: None,
         console: Arc::new(TerminalConsole),
     };
     let mut run = Box::pin(jackin::run(

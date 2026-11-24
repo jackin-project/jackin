@@ -87,7 +87,7 @@ mise exec -- mbx +1.99.1 xtask ci --only comments,layers,pins,containers
 
 `xtask e2e` runs the live journey against a gateway. It is not part of `xtask ci`.
 
-`xtask baseline-branch` checks with `gh` that the pinned `terminal-components-baseline` rev is on `feature/openshell-native` (`ahead` or `identical`). It needs the network, so it is not part of `xtask ci`. Run it at every pin bump.
+`xtask baseline-branch` checks with `gh` that the pinned Termrock revision is on upstream `main` (`ahead` or `identical`). It needs the network, so it is not part of `xtask ci`. Run it at every pin bump.
 
 `xtask product-check` runs `cargo build --release -p jackin`, then fails if the feature graph, the `jackin-console` rlib symbols or the release binary hold the demo (the canaries of `demo-gate`). A release build takes several minutes, so it is not part of `xtask ci`. Run it at P9.3 J6, P9.4 and P13.1.
 

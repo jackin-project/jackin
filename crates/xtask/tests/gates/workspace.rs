@@ -10,7 +10,7 @@ use tempfile::TempDir;
 
 pub(crate) type TestResult = Result<(), Box<dyn Error>>;
 
-pub(crate) const URL: &str = "https://github.com/tailrocks/terminal-components-baseline";
+pub(crate) const URL: &str = "https://github.com/tailrocks/termrock";
 pub(crate) const REV: &str = "74244972a1183db85111332ddab7eeabcbae81cb";
 pub(crate) const OTHER_REV: &str = "1111111111111111111111111111111111111111";
 
@@ -25,7 +25,7 @@ impl Workspace {
         let root = dir.path().join("workspace");
         fs::create_dir(&root)?;
         let workspace = Self { dir, root };
-        for name in ["jackin-console", "junie-tui"] {
+        for name in ["jackin-console", "termrock"] {
             let sibling = workspace.dir.path().join("elsewhere").join(name);
             fs::create_dir_all(sibling.join("src"))?;
             fs::write(
@@ -86,9 +86,9 @@ pub(crate) fn console_line(rev: &str) -> String {
     )
 }
 
-pub(crate) fn junie_line(rev: &str) -> String {
+pub(crate) fn termrock_line(rev: &str) -> String {
     format!(
-        "junie-tui = {{ version = \"0.1.0\", {}, default-features = false, features = [\"terminal\"] }}",
+        "termrock = {{ version = \"0.1.0\", {}, default-features = false, features = [\"terminal\"] }}",
         pin(rev)
     )
 }
@@ -134,18 +134,18 @@ pub(crate) fn green_deny() -> String {
 pub(crate) fn green_lock() -> String {
     lock_text(&[
         ("jackin-console", lock_source(REV)),
-        ("junie-tui", lock_source(REV)),
+        ("termrock", lock_source(REV)),
     ])
 }
 
 pub(crate) fn green_root() -> String {
-    workspace_manifest(&["jackin-tui"], &[console_line(REV), junie_line(REV)])
+    workspace_manifest(&["jackin-tui"], &[console_line(REV), termrock_line(REV)])
 }
 
 pub(crate) fn green_tui() -> String {
     member_manifest(
         "jackin-tui",
-        "[dependencies]\njackin-console = { workspace = true }\njunie-tui = { workspace = true }\n",
+        "[dependencies]\njackin-console = { workspace = true }\ntermrock = { workspace = true }\n",
     )
 }
 

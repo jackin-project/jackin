@@ -5,7 +5,7 @@ description: Use the jackin console to manage workspaces, accounts and bindings,
 
 <EarlyDevelopmentNotice />
 
-The console is the main way to use jackin. It runs on your host and looks and works like the `jackin-preview` demo of the `terminal-components-baseline` repository, with OpenShell content in place of the demo text. Every CLI command stays available, and the console and the CLI change the same configuration.
+The console is the main way to use jackin. It runs on your host and uses the `jackin-console` application and `termrock` runtime from [Termrock](https://github.com/tailrocks/termrock). The application shares screens and controls with the `jackin-preview` demo, with Jackin's OpenShell services in place of demo data. Every CLI command stays available, and the console and the CLI change the same configuration.
 
 This page walks through one session: set up, launch, work, detach, and delete.
 
@@ -91,7 +91,7 @@ The form asks for these fields:
 - `Provider`.
 - `Credential source`.
 
-Only a Codex account with a ChatGPT login can run in a sandbox. Every other account is for usage only. Jackin keeps it on the host and uses it to read limits. A launch refuses a usage-only account.
+Usage connections and execution accounts are separate. To add a usage connection, choose **Add usage account…** in the Accounts action buttons, or press `n` in the account tree. Choose a provider and complete its sign-in. Saved usage connections appear under **Usage accounts** by name. Select a name to reopen its readings. Use **Usage accounts…** or `Shift+N` from the tree to open the saved usage list. An execution account supplies credentials to a sandbox launch. Only a Codex execution account with a ChatGPT login can run in a sandbox. See [Accounts](/guides/accounts/) for both account types.
 
 ### Codex with the ChatGPT login folder
 
@@ -109,20 +109,17 @@ Only a Codex account with a ChatGPT login can run in a sandbox. Every other acco
 
 Jackin puts the login into an OpenShell provider on the gateway. The sandbox gets a placeholder, never the token. See [Accounts](/guides/accounts/) for the details.
 
-### Other providers
+### Connect an account for usage
 
-Choose one of these sources:
+Choose a provider and complete its sign-in. Depending on the provider, the console opens a browser, displays a device code, or asks for a key in a masked field. Jackin stores the credential in the host operating system's credential store. A failed connection shows its status in Usage and keeps the last successful reading.
 
-- `Environment variable (usage only)`. Enter the name of the variable, never its value. Jackin saves only the name. The value stays in the environment of the console. The account detail then shows `Host env · $NAME`.
-- `1Password item / field (usage only)`. Jackin saves an `op://` reference. It resolves the reference on the host with `op`, only to read usage. It never sends the reference or the value to a sandbox or an OpenShell provider.
+### Add other credentials for launches
 
-The console accepts no typed keys. The `Plain-text API key` option and the `Enter plain text instead` button are fixed controls with a stated reason. The form shows `jackin stores no typed keys`.
-
-A usage account with a bad credential shows `failed` in the usage panel. A fake key in the live run did exactly that.
+Execution credentials can use a host environment variable, a 1Password reference, a file, or an imported host login. Enter only the source, never a secret value. Jackin resolves these credentials on the host. They are not usage connections. The console does not accept typed credential values. See [Accounts](/guides/accounts/) for supported sources and launch restrictions.
 
 ### Check an account
 
-Select an account and use these keys:
+Select a usage connection and use these keys:
 
 | Key | Action |
 |---|---|
@@ -156,12 +153,12 @@ The console can remove a default account. The CLI cannot: `jackin account rm` re
 
 ## Read the usage panel
 
-Press `u` in the manager, or `m` on an account screen, to open Usage. The title says `read-only`. The panel lists your accounts by provider and shows the usage of every one, not only of the accounts that jackin can run.
+Press `u` in the manager to open Usage. The dashboard lists connected usage accounts, including accounts that cannot run in a sandbox. It refreshes connected accounts while the console runs. On an empty board, choose **Add account…**. Press `p` for Priority or `a` for All Usage. From **All Usage**, compare saved readings across accounts; select a saved account name under Accounts to inspect that account directly. Use the CLI command `jackin usage details` to list saved account details, with `--provider` and `--account` filters. The account screen's `m` key opens account management.
 
 - `Overview` shows the health, the freshness, the registry, and one row per provider with its worst window and status.
-- An account page shows the provider, the credential, the status, and the limit windows. For example, a Codex account reads `weekly 82%` with a reset time.
+- An account page shows the provider, status, and metrics reported by the provider. These can include limit windows, balances, credits, spend, and reset times.
 
-Press `r` to refresh. Press `m` to manage the account in Accounts. The first read can show `failed` for a Codex account. One refresh brings the windows in.
+Press `r` to refresh. Failed refreshes keep the last successful values and show a failure notice. For account setup and provider sign-in details, see [Accounts](/guides/accounts/).
 
 ## Run the doctor
 

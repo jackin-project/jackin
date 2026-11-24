@@ -27,6 +27,11 @@ async fn login_folder(lab: &Lab) -> Result<String, Box<dyn std::error::Error>> {
     Ok(folder.display().to_string())
 }
 
+fn check_material(screen: &str, marker: &str, value: &str) {
+    let shown: String = value.chars().take(40).collect();
+    assert!(screen.contains(&format!("{marker}   {shown}")), "{screen}");
+}
+
 async fn codex_folder_form(lab: &mut Lab, folder: &str) -> TestResult {
     lab.open_form("spare").await?;
     lab.choose_codex().await?;
@@ -97,8 +102,7 @@ async fn validate_waits_and_then_reports_a_codex_folder_row_by_row() -> TestResu
         let login = Vocabulary::openshell().found(&Found::Login {
             account: ACCOUNT_ID.to_owned(),
         });
-        let shown: String = login.chars().take(40).collect();
-        assert!(done.contains(&format!("✓ material   {shown}")), "{done}");
+        check_material(&done, "✓ material", &login);
         assert!(!done.contains("checking"), "{done}");
         Ok(())
     })
@@ -414,7 +418,7 @@ async fn cli_file_account(
 }
 
 async fn validate_edit_form(lab: &mut Lab) -> Result<String, Box<dyn std::error::Error>> {
-    lab.step("c down down").await?;
+    lab.inspect_execution_account("Claude", "filed").await?;
     lab.step("e").await?;
     lab.step("tab tab tab tab").await?;
     lab.step("tab tab enter").await?;
@@ -694,11 +698,7 @@ async fn a_codex_folder_whose_auth_json_is_a_pipe_or_oversized_reads_as_unreadab
                 detail: format!("cannot read {canonical}"),
                 path: canonical,
             };
-            let expected: String = words.check(&reason).chars().take(40).collect();
-            assert!(
-                shown.contains(&format!("! material   {expected}")),
-                "{shown}"
-            );
+            check_material(&shown, "! material", &words.check(&reason));
         }
         Ok(())
     })

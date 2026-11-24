@@ -288,7 +288,7 @@ fn canonical_digest_matches_independent_fixture_and_excludes_runtime_values() {
     let target = E2eTarget::t01().expect("T01 target");
     assert_eq!(
         target.identity().spec_sha256,
-        "d567564363cd8a0cbb653e7138cf783502a2f39564754e8066587d9e803872bd"
+        "a010df9496f7eeb9322970a3bcd5bdc426eaee9579b400f924a654374d8342ae"
     );
     let other_home = E2eTarget::resolve(
         &E2eArgs {
@@ -325,6 +325,13 @@ fn canonical_digest_matches_independent_fixture_and_excludes_runtime_values() {
             assert!(!text.contains(excluded), "{name} spec contains {excluded}");
         }
         let value: Value = serde_json::from_str(&text).expect("spec JSON");
+        let configs = value["behavior"]["credential"]["config_files"]
+            .as_array()
+            .expect("sandbox configuration files");
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0]["path"], "/sandbox/.codex/config.toml");
+        assert_eq!(configs[0]["required_state"], "present");
+        assert_eq!(configs[0]["mode"], "600");
         let keys = |value: &Value| -> Vec<String> {
             let mut keys: Vec<String> =
                 value.as_object().expect("object").keys().cloned().collect();
@@ -735,8 +742,8 @@ async fn j00_and_j03_reject_build_and_load_identity_faults() {
 }
 
 const SIBLINGS: [(&str, &str); 2] = [
-    ("ZAI_API_KEY", "sibling-zai-secret-0123456789"),
-    ("KIMI_API_KEY", "sibling-kimi-secret-0123456789"),
+    ("ZAI_API_KEY", "zai-sibling-marker"),
+    ("KIMI_API_KEY", "kimi-sibling-marker"),
 ];
 
 fn files_under(root: &Path) -> Vec<(String, String)> {

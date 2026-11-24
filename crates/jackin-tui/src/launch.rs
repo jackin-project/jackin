@@ -31,7 +31,7 @@ use jackin_session::{
     WorkspaceLookup, adhoc_workspace_name, error_chain, launch_events, lookup_workspace,
     plan_launch,
 };
-use junie_tui::widgets::steps::StepState;
+use termrock::widgets::steps::StepState;
 use thiserror::Error;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tokio_util::sync::CancellationToken;

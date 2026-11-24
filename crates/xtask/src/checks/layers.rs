@@ -36,6 +36,26 @@ pub const EXPOSE_ALLOWLIST: &[&str] = &[
     "crates/xtask/src/e2e/a1.rs",
     "crates/xtask/src/e2e/credential.rs",
     "crates/xtask/src/e2e/redact.rs",
+    "crates/jackin-tui/src/connections.rs",
+    "crates/jackin/src/commands/connections.rs",
+    "crates/usage/jackin-usage-provider-kimi/src/account.rs",
+    "crates/usage/jackin-usage/src/accounts/hubs.rs",
+    "crates/usage/jackin-usage/src/accounts/types.rs",
+    "crates/usage/jackin-usage/src/accounts/vault.rs",
+    "crates/usage/jackin-usage/src/accounts/vault/secret_service.rs",
+    "crates/usage/jackin-usage/src/browser.rs",
+    "crates/usage/jackin-usage/src/connected.rs",
+    "crates/usage/jackin-usage/src/device_login.rs",
+    "crates/usage/jackin-usage/src/gemini_login.rs",
+    "crates/usage/jackin-usage/src/grants.rs",
+    "crates/usage/jackin-usage/src/onboarding.rs",
+    "crates/usage/jackin-usage/src/onboarding/antigravity_direct.rs",
+    "crates/usage/jackin-usage/src/onboarding/kimi_connection.rs",
+    "crates/usage/jackin-usage/src/onboarding/minimax_connection.rs",
+    "crates/usage/jackin-usage/src/onboarding/hub.rs",
+    "crates/usage/jackin-usage/src/onboarding/redemption.rs",
+    "crates/usage/jackin-usage/src/quota.rs",
+    "crates/usage/jackin-usage/src/resets.rs",
 ];
 
 pub const TERMINAL_ENGINE_CRATES: &[&str] = &["termpane", "vt100"];
@@ -44,7 +64,7 @@ pub const HTTP_CLIENT_CRATE: &str = "reqwest";
 
 pub const HTTP_CLIENT_OWNER: &str = "jackin-usage-provider-core";
 
-const USAGE_PROVIDERS: [&str; 10] = [
+const USAGE_PROVIDERS: [&str; 11] = [
     "jackin-usage-provider-claude",
     "jackin-usage-provider-codex",
     "jackin-usage-provider-cursor",
@@ -55,6 +75,7 @@ const USAGE_PROVIDERS: [&str; 10] = [
     "jackin-usage-provider-opencode",
     "jackin-usage-provider-openrouter",
     "jackin-usage-provider-zai",
+    "jackin-usage-provider-mimo",
 ];
 
 const fn provider(member: &'static str) -> LayerRule {
@@ -143,6 +164,7 @@ pub const LAYERS: &[LayerRule] = &[
             "jackin-usage-provider-grok",
             "jackin-usage-provider-kimi",
             "jackin-usage-provider-minimax",
+            "jackin-usage-provider-mimo",
             "jackin-usage-provider-opencode",
             "jackin-usage-provider-openrouter",
             "jackin-usage-provider-zai",
@@ -153,13 +175,34 @@ pub const LAYERS: &[LayerRule] = &[
     provider(USAGE_PROVIDERS[0]),
     provider(USAGE_PROVIDERS[1]),
     provider(USAGE_PROVIDERS[2]),
-    provider(USAGE_PROVIDERS[3]),
+    LayerRule {
+        member: USAGE_PROVIDERS[3],
+        depends: &["jackin-usage-provider-core"],
+        dev_depends: &["jackin-core", "jackin-testkit"],
+        imports: &[],
+    },
     provider(USAGE_PROVIDERS[4]),
-    provider(USAGE_PROVIDERS[5]),
-    provider(USAGE_PROVIDERS[6]),
+    LayerRule {
+        member: USAGE_PROVIDERS[5],
+        depends: &["jackin-core", "jackin-usage-provider-core"],
+        dev_depends: &["jackin-testkit"],
+        imports: &[],
+    },
+    LayerRule {
+        member: USAGE_PROVIDERS[6],
+        depends: &["jackin-usage-provider-core"],
+        dev_depends: &["jackin-core", "jackin-testkit"],
+        imports: &[],
+    },
     provider(USAGE_PROVIDERS[7]),
     provider(USAGE_PROVIDERS[8]),
     provider(USAGE_PROVIDERS[9]),
+    LayerRule {
+        member: USAGE_PROVIDERS[10],
+        depends: &["jackin-usage-provider-core"],
+        dev_depends: &["jackin-core", "jackin-testkit"],
+        imports: &[],
+    },
     LayerRule {
         member: "jackin-usage-provider-core",
         depends: &[],
@@ -253,7 +296,7 @@ fn dependency_problem(
     }
     if TERMINAL_ENGINE_CRATES.contains(&name) {
         return Some(format!(
-            "{subject}; only the baseline crates junie-tui and jackin-console may use a terminal engine crate (D27)"
+            "{subject}; access the terminal engine through termrock or jackin-console (D27)"
         ));
     }
     if let Some(family) = gateway_family(name) {

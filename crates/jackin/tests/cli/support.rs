@@ -298,6 +298,7 @@ pub(crate) struct Harness {
     pub(crate) cache_dir: HostPath,
     pub(crate) env: Vec<(String, String)>,
     pub(crate) usage_endpoints: ProviderEndpoints,
+    pub(crate) usage_vault: Option<Arc<dyn jackin_usage::accounts::CredentialVault>>,
     pub(crate) console: Arc<ScriptedConsole>,
     host: HostPorts,
     engine: Arc<dyn ImageEngine>,
@@ -328,6 +329,7 @@ impl Harness {
                 world.home().as_path().display().to_string(),
             )],
             usage_endpoints: closed_endpoints(),
+            usage_vault: None,
             console: Arc::new(ScriptedConsole::default()),
             host: HostPorts {
                 clock,
@@ -348,6 +350,7 @@ impl Harness {
             cache_dir: self.cache_dir.clone(),
             env: self.env.clone(),
             usage_endpoints: self.usage_endpoints.clone(),
+            usage_vault: self.usage_vault.clone(),
             console: Arc::clone(&self.console),
             host: HostPorts {
                 clock: Arc::clone(&self.host.clock),
@@ -368,6 +371,7 @@ impl Harness {
             cache_dir: self.cache_dir.clone(),
             env: self.env.clone(),
             usage_endpoints: self.usage_endpoints.clone(),
+            usage_vault: self.usage_vault.clone(),
             console: Arc::clone(&self.console),
             host: HostPorts {
                 clock: Arc::clone(&self.host.clock),
@@ -490,6 +494,7 @@ impl Invocation<'_> {
             connect,
             limits: default_limits(),
             usage_endpoints: harness.usage_endpoints.clone(),
+            usage_vault: harness.usage_vault.clone(),
             console: Arc::<ScriptedConsole>::clone(&harness.console),
         };
         let exit = jackin::run(env, deps).await;
