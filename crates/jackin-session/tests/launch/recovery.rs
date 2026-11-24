@@ -10,7 +10,7 @@ use jackin_session::{
     LaunchError, LaunchOutcome, LaunchStep, RECOVERY_LOOKUP_BUDGET, RestoreCandidate,
     RestoreFinding,
 };
-use jackin_testkit::{Fault, Outcome, Trigger, guard_within};
+use jackin_testkit::{Fault, Outcome, Rig, Trigger, guard_within};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{TestResult, converged, failure, guard, launch_id, launch_rig, ready};
@@ -558,6 +558,27 @@ async fn a_name_lookup_that_hangs_after_an_empty_label_lookup_is_unconfirmed_wit
     .await
 }
 
+async fn follow_finds_until_a_sandbox_exists(rig: &Rig, hold: &Trigger, token: &CancellationToken) {
+    while rig.gateway().until_held(hold).await {
+        let created = !rig.gateway().sandboxes().is_empty();
+        let next = if created {
+            Fault::CancelAt {
+                trigger: hold.clone(),
+                token: token.clone(),
+            }
+        } else {
+            Fault::HoldAt {
+                trigger: hold.clone(),
+            }
+        };
+        rig.gateway().inject(next);
+        rig.gateway().release(hold);
+        if created {
+            break;
+        }
+    }
+}
+
 #[tokio::test]
 async fn a_cancel_after_an_empty_lookup_that_followed_a_created_sandbox_stays_unconfirmed()
 -> TestResult {
@@ -570,24 +591,7 @@ async fn a_cancel_after_an_empty_lookup_that_followed_a_created_sandbox_stays_un
             trigger: hold.clone(),
         });
         let token = CancellationToken::new();
-        let driver = async {
-            loop {
-                assert!(rig.gateway().until_held(&hold).await);
-                if rig.gateway().sandboxes().is_empty() {
-                    rig.gateway().inject(Fault::HoldAt {
-                        trigger: hold.clone(),
-                    });
-                    rig.gateway().release(&hold);
-                } else {
-                    rig.gateway().inject(Fault::CancelAt {
-                        trigger: hold.clone(),
-                        token: token.clone(),
-                    });
-                    rig.gateway().release(&hold);
-                    break;
-                }
-            }
-        };
+        let driver = follow_finds_until_a_sandbox_exists(&rig, &hold, &token);
         let (outcome, ()) = tokio::join!(rig.run(rig.request(1)?, token.clone()), driver);
         assert_eq!(
             finding(outcome?)?,
