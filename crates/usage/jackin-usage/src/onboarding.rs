@@ -843,7 +843,10 @@ impl OwnedLogin {
             if matches!(result, Err(ProviderError::Unauthorized))
                 && !renewed
                 && tokens.refresh.is_some()
-                && matches!(account.provider, U::Claude | U::ChatGpt | U::Grok)
+                && matches!(
+                    account.provider,
+                    U::Claude | U::ChatGpt | U::Grok | U::OpenCode
+                )
             {
                 let fresh = renew_tokens(&http, account.provider, &tokens, now).await?;
                 *version = self
