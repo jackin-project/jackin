@@ -3,25 +3,46 @@
 
 use std::sync::Arc;
 
-use super::owned_usage::activate;
+use super::owned_usage::{BOARD, activate};
 use super::support::Lab;
 use jackin_console::screens::Go;
 use jackin_console::usage_connections::UsageBoard;
 use jackin_core::Clock;
 use jackin_testkit::{
-    ProfileAccount, TestResult, assert_golden, pin_usage_view_clock, seed_usage_view,
+    ConsoleRig, ProfileAccount, Rig, SeedRow, TestResult, assert_golden, pin_usage_view_clock,
+    seed_usage_rows, seed_usage_view,
 };
 use jackin_usage::ProviderEndpoints;
-use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH};
+use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH, FailureKind};
 use jackin_usage::onboarding::OwnedLogin;
+use termrock::core::id::WidgetId;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const ACCOUNT: &str = "accounts.usage_connection";
 const GOLDEN: &str = "tests/console/golden";
 
-async fn seeded() -> Result<(Lab, Vec<ProfileAccount>), Box<dyn std::error::Error>> {
-    let mut lab = Lab::open().await?;
+async fn quiet_lab() -> Result<(Lab, CancellationToken), Box<dyn std::error::Error>> {
+    let rig = Rig::new().await?;
+    let code = rig.world.home().as_path().join("code");
+    rig.world.seed_all(&rig.config).await?;
+    let cancel = CancellationToken::new();
+    let mut console = ConsoleRig::builder(&rig.world)
+        .cancel(cancel.clone())
+        .build()
+        .await?;
+    console.skip_intro();
+    Ok((Lab { rig, console, code }, cancel))
+}
+
+async fn seeded_at(
+    width: u16,
+    height: u16,
+) -> Result<(Lab, Vec<ProfileAccount>), Box<dyn std::error::Error>> {
+    let (mut lab, cancel) = quiet_lab().await?;
     pin_usage_view_clock(&lab.rig.world.clock);
+    lab.console.settle().await?;
+    cancel.cancel();
     let path = lab
         .console
         .config()
@@ -31,8 +52,12 @@ async fn seeded() -> Result<(Lab, Vec<ProfileAccount>), Box<dyn std::error::Erro
         .ok_or("config dir")?
         .join(DATABASE_PATH);
     let accounts = seed_usage_view(&path)?;
-    lab.console.resize(80, 24);
+    lab.console.resize(width, height);
     Ok((lab, accounts))
+}
+
+async fn seeded() -> Result<(Lab, Vec<ProfileAccount>), Box<dyn std::error::Error>> {
+    seeded_at(80, 24).await
 }
 
 fn ids(accounts: &[ProfileAccount]) -> Vec<Uuid> {
@@ -195,21 +220,38 @@ async fn priority_keeps_its_sections_and_speaks_in_used_percentages() -> TestRes
     Ok(())
 }
 
-#[tokio::test]
-async fn renaming_a_flagged_duplicate_drops_the_short_id_suffix() -> TestResult {
-    let (mut lab, accounts) = seeded().await?;
+const DUPLICATE: usize = 13;
+
+async fn open_rename(lab: &mut Lab, keys: &[&str]) -> TestResult {
     lab.console
         .console()
         .app()
         .go(Go::Accounts { select: None });
     lab.console.settle().await?;
-    for keys in ["down", "enter", "enter", "end", "up", "up", "enter"] {
-        lab.step(keys).await?;
+    for key in keys {
+        lab.step(key).await?;
     }
-    activate(&mut lab, ACCOUNT, "save").await?;
-    activate(&mut lab, ACCOUNT, "rename").await?;
+    activate(lab, ACCOUNT, "save").await?;
+    activate(lab, ACCOUNT, "rename").await
+}
+
+async fn rename_and_read(
+    keys: &[&str],
+    typed: Option<&str>,
+    index: usize,
+) -> Result<(String, String, String), Box<dyn std::error::Error>> {
+    let (mut lab, accounts) = seeded().await?;
+    let target = accounts.get(index).ok_or("account")?.id;
+    let short: String = target.hyphenated().to_string().chars().take(8).collect();
+    open_rename(&mut lab, keys).await?;
     let screen = lab.console.screen();
-    assert!(screen.contains("personal@example.com #"), "{screen}");
+    if let Some(text) = typed {
+        for _ in 0..80 {
+            lab.console.keys("backspace")?;
+        }
+        lab.console.type_text(&text.replace("{short}", &short));
+        lab.console.settle().await?;
+    }
     activate(&mut lab, ACCOUNT, "save").await?;
     let path = lab
         .console
@@ -223,8 +265,327 @@ async fn renaming_a_flagged_duplicate_drops_the_short_id_suffix() -> TestResult 
     let renamed = registry
         .list()?
         .into_iter()
-        .find(|account| Some(account.id) == accounts.get(13).map(|found| found.id))
+        .find(|account| account.id == target)
         .ok_or("renamed account")?;
-    assert_eq!(renamed.label, "personal@example.com");
+    Ok((screen, renamed.label, short))
+}
+
+const DUPLICATE_KEYS: [&str; 7] = ["down", "enter", "enter", "end", "up", "up", "enter"];
+const CLAUDE: usize = 1;
+const FIRST_KEYS: [&str; 4] = ["down", "enter", "enter", "enter"];
+
+fn input_line(screen: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let input = lines_with(screen, "▎ ");
+    let [line] = input.as_slice() else {
+        return Err(format!("one input line\n{screen}").into());
+    };
+    Ok(line
+        .trim_matches(|c: char| c == '│' || c.is_whitespace())
+        .trim_start_matches('▎')
+        .trim()
+        .to_owned())
+}
+
+#[tokio::test]
+async fn the_rename_dialog_is_prefilled_with_the_display_label() -> TestResult {
+    let (screen, _, _) = rename_and_read(&FIRST_KEYS, None, CLAUDE).await?;
+    assert_eq!(input_line(&screen)?, "Claude · work@example.com");
+    let (screen, _, short) = rename_and_read(&DUPLICATE_KEYS, None, DUPLICATE).await?;
+    assert_eq!(
+        input_line(&screen)?,
+        format!("Antigravity #{short} · personal@example.com")
+    );
     Ok(())
+}
+
+#[tokio::test]
+async fn an_unchanged_rename_keeps_the_stored_label() -> TestResult {
+    let (_, label, _) = rename_and_read(&FIRST_KEYS, None, CLAUDE).await?;
+    assert_eq!(label, "work@example.com");
+    Ok(())
+}
+
+#[tokio::test]
+async fn renaming_a_flagged_duplicate_keeps_the_stored_label_and_accepts_a_new_one() -> TestResult {
+    let (_, label, _) = rename_and_read(&DUPLICATE_KEYS, None, DUPLICATE).await?;
+    assert_eq!(label, "personal@example.com");
+    let (_, label, _) =
+        rename_and_read(&DUPLICATE_KEYS, Some("Antigravity #{short} · x"), DUPLICATE).await?;
+    assert_eq!(label, "x");
+    Ok(())
+}
+
+#[tokio::test]
+async fn another_providers_prefix_is_stored_verbatim() -> TestResult {
+    let (_, label, _) = rename_and_read(&FIRST_KEYS, Some("Codex · foo"), CLAUDE).await?;
+    assert_eq!(label, "Codex · foo");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_typed_short_id_suffix_is_stored_verbatim() -> TestResult {
+    let (_, label, short) =
+        rename_and_read(&FIRST_KEYS, Some("work@example.com #{short}"), CLAUDE).await?;
+    assert_eq!(label, format!("work@example.com #{short}"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_accounts_own_provider_prefix_is_dropped_on_save() -> TestResult {
+    let (_, label, _) = rename_and_read(&FIRST_KEYS, Some("Claude · foo"), CLAUDE).await?;
+    assert_eq!(label, "foo");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_typed_name_is_stored_trimmed() -> TestResult {
+    let (_, label, _) = rename_and_read(&FIRST_KEYS, Some("  spaced  "), CLAUDE).await?;
+    assert_eq!(label, "spaced");
+    Ok(())
+}
+
+fn lines_with<'a>(screen: &'a str, needle: &str) -> Vec<&'a str> {
+    screen
+        .lines()
+        .filter(|line| line.contains(needle))
+        .collect()
+}
+
+fn focus_row(lab: &mut Lab) -> TestResult {
+    let rows = WidgetId::of(BOARD).sub("row");
+    for _ in 0..24 {
+        if lab.console.console().app().shell.focus.current() == Some(rows) {
+            return Ok(());
+        }
+        lab.console.keys("tab")?;
+    }
+    Err("cannot focus the readings".into())
+}
+
+async fn list_screen(
+    width: u16,
+    height: u16,
+    go: Go,
+) -> Result<(String, Vec<Uuid>), Box<dyn std::error::Error>> {
+    let (mut lab, accounts) = seeded_at(width, height).await?;
+    lab.console.console().app().go(go);
+    lab.console.settle().await?;
+    Ok((lab.console.screen(), ids(&accounts)))
+}
+
+#[tokio::test]
+async fn accounts_list_names_the_provider_of_every_row_at_120x40() -> TestResult {
+    let (screen, ids) = list_screen(120, 40, Go::Accounts { select: None }).await?;
+    for row in [
+        "Claude · work@example.com",
+        "Claude · work2@example.com",
+        "ChatGPT / Codex · work@",
+        "ChatGPT / Codex · home@",
+        "Muse · work@example.com",
+        "Antigravity #",
+        "OpenCode · work@example.com",
+    ] {
+        assert!(screen.contains(row), "{row}\n{screen}");
+    }
+    assert_golden(&format!("{GOLDEN}/accounts_120x40.txt"), &screen, &ids)
+}
+
+#[tokio::test]
+async fn all_usage_marks_stale_and_duplicate_accounts_at_80x24() -> TestResult {
+    let (mut lab, accounts) = seeded().await?;
+    lab.console.console().app().go(Go::AllUsage);
+    lab.console.settle().await?;
+    let top = lab.console.screen();
+    assert!(
+        lines_with(&top, "Claude · work@example.com · Weekly")
+            .iter()
+            .any(|line| line.contains("stale · 9% used")),
+        "{top}"
+    );
+    focus_row(&mut lab)?;
+    lab.console.keys("end")?;
+    let bottom = lab.console.screen();
+    let antigravity = lines_with(&bottom, "Antigravity");
+    assert_eq!(antigravity.len(), 2, "{bottom}");
+    assert!(
+        antigravity
+            .iter()
+            .all(|line| line.contains("stale") || line.contains("failed")),
+        "{bottom}"
+    );
+    assert!(
+        antigravity.iter().all(|line| line.contains("dup")),
+        "{bottom}"
+    );
+    assert!(
+        antigravity.iter().any(|line| line.contains("failed · dup")),
+        "{bottom}"
+    );
+    assert_golden(
+        &format!("{GOLDEN}/usage_all_end_80x24.txt"),
+        &bottom,
+        &ids(&accounts),
+    )
+}
+
+#[tokio::test]
+async fn all_usage_rows_carry_the_freshness_failure_and_duplicate_flags() -> TestResult {
+    let (lab, accounts) = seeded().await?;
+    let short = |index: usize| -> Result<String, Box<dyn std::error::Error>> {
+        let id = accounts
+            .get(index)
+            .ok_or("account")?
+            .id
+            .hyphenated()
+            .to_string();
+        Ok(id.chars().take(8).collect())
+    };
+    let all = board(&lab, false)?;
+    let value = |title: &str| {
+        all.rows
+            .iter()
+            .find(|row| row.title.contains(title))
+            .map(|row| row.value.clone())
+            .ok_or_else(|| format!("missing row {title}"))
+    };
+    assert!(value("work@example.com · Weekly")?.starts_with("stale · "));
+    assert!(value(&format!("#{} · Claude weekly", short(12)?))?.starts_with("stale · dup · "));
+    assert!(value(&format!("#{} · Claude weekly", short(13)?))?.starts_with("failed · dup · "));
+    for row in &all.rows {
+        assert!(
+            row.value.chars().count() <= 32,
+            "{}: {}",
+            row.title,
+            row.value
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn priority_lists_the_cli_attention_entries_at_80x24() -> TestResult {
+    let (mut lab, accounts) = seeded().await?;
+    lab.console.console().app().go(Go::Usage { select: None });
+    lab.console.settle().await?;
+    let screen = lab.console.screen();
+    assert!(screen.contains("4 readings"), "{screen}");
+    for tag in ["FAILING", "NEAR LIMIT", "DUPLICATE"] {
+        assert!(screen.contains(tag), "{tag}\n{screen}");
+    }
+    assert!(!screen.contains("MiniMax"), "{screen}");
+    assert_golden(
+        &format!("{GOLDEN}/usage_priority_80x24.txt"),
+        &screen,
+        &ids(&accounts),
+    )
+}
+
+#[tokio::test]
+async fn priority_lists_the_cli_attention_entries_at_120x40() -> TestResult {
+    let (mut lab, accounts) = seeded_at(120, 40).await?;
+    lab.console.console().app().go(Go::Usage { select: None });
+    lab.console.settle().await?;
+    focus_row(&mut lab)?;
+    lab.console.keys("down")?;
+    let screen = lab.console.screen();
+    for tag in ["FAILING", "NEAR LIMIT", "DUPLICATE"] {
+        assert!(screen.contains(tag), "{tag}\n{screen}");
+    }
+    assert!(!screen.contains("MiniMax"), "{screen}");
+    assert_golden(
+        &format!("{GOLDEN}/usage_priority_120x40.txt"),
+        &screen,
+        &ids(&accounts),
+    )
+}
+
+#[tokio::test]
+async fn priority_rows_follow_the_attention_notices() -> TestResult {
+    let (lab, accounts) = seeded().await?;
+    let priority = board(&lab, true)?;
+    let tags = |texts: Vec<&str>| -> Vec<String> {
+        texts
+            .into_iter()
+            .map(|text| text.split(" · ").next().unwrap_or_default().to_owned())
+            .collect()
+    };
+    let notices: Vec<&str> = priority
+        .notices
+        .iter()
+        .filter(|notice| !notice.contains("All clear"))
+        .map(String::as_str)
+        .collect();
+    let rows: Vec<&str> = priority.rows.iter().map(|row| row.title.as_str()).collect();
+    assert_eq!(tags(rows.clone()), tags(notices));
+    assert!(
+        priority
+            .rows
+            .iter()
+            .all(|row| !row.title.contains("MiniMax")),
+        "{rows:?}"
+    );
+    assert_golden(
+        &format!("{GOLDEN}/usage_priority_rows.txt"),
+        &dump(&priority),
+        &ids(&accounts),
+    )
+}
+
+#[tokio::test]
+async fn a_reconnect_command_stays_on_one_line_at_80x24() -> TestResult {
+    let (mut lab, cancel) = quiet_lab().await?;
+    pin_usage_view_clock(&lab.rig.world.clock);
+    lab.console.settle().await?;
+    cancel.cancel();
+    let path = lab
+        .console
+        .config()
+        .path()
+        .as_path()
+        .parent()
+        .ok_or("config dir")?
+        .join(DATABASE_PATH);
+    let source: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+        "../../../jackin-testkit/tests/fixtures/usage_view.json"
+    ))?;
+    let antigravity = source
+        .iter()
+        .find(|row| row["provider"] == "antigravity")
+        .ok_or("antigravity fixture")?;
+    let accounts = seed_usage_rows(
+        &path,
+        vec![SeedRow {
+            provider: jackin_usage::accounts::UsageProvider::Antigravity,
+            label: "personal@example.com",
+            fetched_at: 1_795_428_364,
+            snapshot: antigravity["snapshot"].clone(),
+            failure: Some((
+                FailureKind::Authentication,
+                "the credential is missing; sign in again",
+                1_795_447_430,
+            )),
+        }],
+    )?;
+    lab.console.resize(80, 24);
+    lab.console
+        .console()
+        .app()
+        .go(Go::Accounts { select: None });
+    lab.console.settle().await?;
+    for keys in ["down", "enter", "enter"] {
+        lab.step(keys).await?;
+    }
+    activate(&mut lab, ACCOUNT, "save").await?;
+    let screen = lab.console.screen();
+    let simple = accounts.first().ok_or("account")?.id.simple().to_string();
+    let command = format!("jackin account usage reconnect {simple}");
+    assert!(
+        screen.lines().any(|line| line.contains(&command)),
+        "{screen}"
+    );
+    assert_golden(
+        &format!("{GOLDEN}/reconnect_detail_80x24.txt"),
+        &screen.replace(&simple, "a0000001000040008000000000000001"),
+        &ids(&accounts),
+    )
 }

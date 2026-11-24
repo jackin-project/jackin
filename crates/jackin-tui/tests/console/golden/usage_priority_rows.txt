@@ -1,0 +1,9 @@
+summary | Priority
+notice | FAILING · Antigravity (Google AI) · personal@example.com #a0000014 · HTTP 403 SERVICE_DISABLED · retry due since Mon 22:28
+notice | NEAR LIMIT · Muse · work@example.com · Weekly 99% used · resets in 5d 8h · Mon 07:00
+notice | NEAR LIMIT · Antigravity (Google AI) · personal@example.com #a0000013 #a0000014 · Claude weekly >99% used · resets in 1d 7h · Thu 06:19
+notice | DUPLICATE · Antigravity (Google AI) · personal@example.com #a0000013 #a0000014 · jackin account usage rm a0000014-0000-4000-8000-000000000014
+Needs Attention | FAILING · personal@example.com #a0000014 | failed · fetched 1d 5h ago | - | Danger
+Needs Attention | NEAR LIMIT · work@example.com | stale · 99% used · 5d 8h | resets in 5d 8h · Mon 07:00 | Danger
+Needs Attention | NEAR LIMIT · personal@example.com | stale · dup · >99% used · 1d 7h | resets in 1d 7h · Thu 06:19 | Danger
+Needs Attention | DUPLICATE · personal@example.com | duplicate · 2 connections | - | Warning
