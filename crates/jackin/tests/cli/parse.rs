@@ -402,3 +402,32 @@ async fn no_parse_error_prints_a_value_the_user_typed_and_each_names_the_expecte
 -> TestResult {
     guard(never_echoed(ECHO_CASES, "sk-FAKE")).await
 }
+
+#[tokio::test]
+async fn the_usage_surfaces_accept_their_json_and_wide_flags() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        let snapshot = harness.run(&["usage", "snapshot", "--json"]).await?;
+        assert_eq!(snapshot.exit, ExitClass::NoUsageSnapshot);
+        assert_eq!(
+            snapshot.value()?["accounts"],
+            serde_json::Value::Array(Vec::new())
+        );
+        let listed = harness.run(&["account", "usage", "ls", "--wide"]).await?;
+        listed.ok()?;
+        let wide = harness
+            .run(&["account", "usage", "ls", "--wide", "--json"])
+            .await?;
+        wide.ok()?;
+        assert_eq!(wide.value()?, serde_json::Value::Array(Vec::new()));
+        for args in [
+            &["usage", "snapshot", "--wide"][..],
+            &["usage", "refresh", "--json"][..],
+        ] {
+            assert_eq!(harness.run(args).await?.exit, ExitClass::Usage, "{args:?}");
+        }
+        Ok(())
+    })
+    .await
+}

@@ -1,0 +1,98 @@
+[bold]Usage[/] · Tue 24 Nov 2026 22:37 (+07) · 14 accounts · 11 providers
+
+[bold]Needs attention (4)[/]
+  [red]FAILING   [/]  Antigravity (Google AI) · personal@example.com #a0000014
+              HTTP 403 SERVICE_DISABLED · retry due since Mon 22:28
+  [red]NEAR LIMIT[/]  Muse · work@example.com
+              Weekly 99% used · resets in 5d 8h · Mon 07:00
+  [red]NEAR LIMIT[/]  Antigravity (Google AI) · personal@example.com #a0000013 #a0000014
+              Claude weekly >99% used · resets in 1d 7h · Thu 06:19
+  [yellow]DUPLICATE [/]  Antigravity (Google AI) · personal@example.com #a0000013 #a0000014
+              jackin account usage rm a0000014-0000-4000-8000-000000000014
+[yellow]Stale[/]  all 14 readings, fetched 13h 57m to 1d 7h ago · jackin usage refresh
+
+[bold]Claude[/]                                                                [dim]2 accounts[/]
+  [bold]work@example.com[/] · Ultra                           [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Weekly           [green]█[/][dim]░░░░░░░[/]   9% used  resets in 2d 15h · Fri 13:59
+      Fable weekly   [dim]░░░░░░░░[/]   0% used  resets in 2d 15h · Fri 14:00
+      Limit resets   3 ready · next expires 11 Dec
+
+  [bold]work2@example.com[/] · Ultra                          [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Weekly           [green]█[/][dim]░░░░░░░[/]   2% used  resets in 5d 3h · Mon 02:00
+      Fable weekly   [green]█[/][dim]░░░░░░░[/]   4% used  resets in 5d 3h · Mon 02:00
+      Extra usage    [dim]░░░░░░░░[/]   0% used  [dim]reset not reported[/]
+                     [dim]0 of 20 SGD used · 20 SGD left[/]
+      Limit resets   2 ready · next expires 11 Dec
+
+[bold]ChatGPT / Codex[/]                                                       [dim]2 accounts[/]
+  [bold]work@example.com[/] · Pro 200                         [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Weekly           [green]█[/][dim]░░░░░░░[/]   1% used  resets in 4d 6h · Sun 05:12
+      Credits        19,290 credits · ≈ 771.60 USD
+      Limit resets   1 ready · next expires 13 Dec
+      Tokens         today n/a · yesterday 420K · 30 days 96.7B
+
+  [bold]home@example.com[/] · Pro 200                         [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Weekly           [green]█[/][dim]░░░░░░░[/]   2% used  resets in 4d 12h · Sun 11:35
+      Credits        44,515 credits · ≈ 1,780.60 USD
+      Limit resets   2 ready · next expires 2 Dec
+      Tokens         today n/a · yesterday 4.17M · 30 days 60.8B
+
+[bold]Muse[/]                                                                   [dim]1 account[/]
+  [bold]work@example.com[/] · Muse Code Max Usage             [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Weekly           [red]███████[/][dim]░[/] [red] 99%[/] used  resets in 5d 8h · Mon 07:00
+      Session        [dim]╌╌╌╌╌╌╌╌[/] [dim]   -[/]       [dim]reset 11h 26m ago · 11:10[/] [dim]· was 9%[/]
+
+[bold]Grok[/]                                                                   [dim]1 account[/]
+  [bold]Grok Account[/] · SuperGrok Heavy                     [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Weekly           [dim]╌╌╌╌╌╌╌╌[/] [dim]   -[/]       [dim]reset 1h 49m ago · 20:47[/] [dim]· was 55%[/]
+
+[bold]Kimi[/]                                                                   [dim]1 account[/]
+  [bold]Kimi Code[/] · [dim]plan not reported[/]                      [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Weekly           [green]█[/][dim]░░░░░░░[/]  <1% used  resets in 5d 22h · Mon 21:33
+      Session        [dim]╌╌╌╌╌╌╌╌[/] [dim]   -[/]       [dim]reset 10h 3m ago · 12:33[/] [dim]· was 0%[/]
+
+[bold]Z.AI[/]                                                                   [dim]1 account[/]
+  [bold]Z.ai Account[/] · GLM Coding Max                      [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Weekly           [dim]░░░░░░░░[/]   0% used  resets in 5d 0h · Sun 22:49
+      Session        [dim]░░░░░░░░[/]   0% used  [dim]reset not reported[/]
+      Web searches   [green]█[/][dim]░░░░░░░[/]  <1% used  resets in 7d 1h · 2 Dec 00:08
+                     [dim]10 of 4,000 searches used · 3,990 left[/]
+      Limit resets   1 ready, 1 unavailable · next expires 22 Dec
+
+[bold]MiniMax[/]                                                                [dim]1 account[/]
+  [bold]MiniMax Token Plan[/] · [dim]plan not reported[/]             [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    General weekly   [green]███[/][dim]░░░░░[/]  34% used  resets in 8h 27m · Wed 07:04
+      General 5h     [dim]╌╌╌╌╌╌╌╌[/] [dim]   -[/]       [dim]reset 8h 57m ago · 13:39[/] [dim]· was 0%[/]
+
+[bold]MiMo[/]                                                                   [dim]1 account[/]
+  [bold]MiMo Token Plan[/] · max                              [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Token Plan       [green]███[/][dim]░░░░░[/]  38% used  resets in 17d 8h · 12 Dec 06:59
+                     [dim]31.5B of 82B credits used · 50.5B left[/]
+
+[bold]Antigravity (Google AI)[/]                                               [dim]2 accounts[/]
+  [bold]personal@example.com[/] [dim]#a0000013[/] · Google AI Ultra     [yellow]stale[/] · [dim]fetched 1d 7h ago[/]
+    Claude weekly    [red]███████[/][dim]░[/] [red]>99%[/] used  resets in 1d 7h · Thu 06:19
+      Claude 5h      [dim]╌╌╌╌╌╌╌╌[/] [dim]   -[/]       [dim]reset 1d 5h ago · Mon 17:15[/] [dim]· was 0%[/]
+      Gemini 5h      [dim]╌╌╌╌╌╌╌╌[/] [dim]   -[/]       [dim]reset 1d 5h ago · Mon 17:15[/] [dim]· was 0%[/]
+      Gemini weekly  [green]█[/][dim]░░░░░░░[/]  <1% used  resets in 3d 20h · Sat 19:05
+[yellow]    ! also connected as #a0000014[/][dim] (same provider and label)[/]
+
+  [bold]personal@example.com[/] [dim]#a0000014[/] · Google AI Ultra    [red]failed[/] · [dim]fetched 1d 5h ago[/]
+    Claude weekly    [red]███████[/][dim]░[/] [red]>99%[/] used  resets in 1d 7h · Thu 06:19
+      Claude 5h      [dim]╌╌╌╌╌╌╌╌[/] [dim]   -[/]       [dim]reset 1d 0h ago · Mon 22:06[/] [dim]· was 0%[/]
+      Gemini 5h      [dim]╌╌╌╌╌╌╌╌[/] [dim]   -[/]       [dim]reset 1d 0h ago · Mon 22:06[/] [dim]· was 0%[/]
+      Gemini weekly  [green]█[/][dim]░░░░░░░[/]  <1% used  resets in 3d 20h · Sat 19:05
+[red]    ! refresh failed: HTTP 403 SERVICE_DISABLED[/][dim] · retry due since Mon 22:28[/]
+[yellow]    ! also connected as #a0000013[/][dim] (same provider and label)[/]
+
+[bold]OpenCode[/]                                                               [dim]1 account[/]
+  [bold]work@example.com[/] · Go Plus                         [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Monthly          [green]█[/][dim]░░░░░░░[/]  11% used  resets in 13d 15h · 8 Dec 14:15
+      Session        [dim]╌╌╌╌╌╌╌╌[/] [dim]   -[/]       [dim]reset 9h 8m ago · 13:28[/] [dim]· was 0%[/]
+      Weekly         [green]█[/][dim]░░░░░░░[/]   8% used  resets in 5d 8h · Mon 07:00
+
+[bold]OpenRouter[/]                                                             [dim]1 account[/]
+  [bold]OpenRouter Account[/] · Pay-as-you-go                 [yellow]stale[/] · [dim]fetched 13h 57m ago[/]
+    Free requests    [dim]░░░░░░░░[/]   0% used  resets in 8h 23m · Wed 07:00
+                     [dim]0 of 1,000 requests used · 1,000 left[/]
+      Spend          today 0 USD · week 0 USD · month 0 USD

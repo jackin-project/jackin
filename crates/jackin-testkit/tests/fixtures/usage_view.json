@@ -1,0 +1,1832 @@
+[
+  {
+    "fetched_at": 1795484353,
+    "label": "work@example.com",
+    "provider": "codex",
+    "snapshot": {
+      "history": {
+        "counts": {
+          "days": {
+            "2026-10-26": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 1.0
+                },
+                "gpt-5.6-sol": {
+                  "turns": 2.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 11.0
+                },
+                "gpt-6-luna": {
+                  "turns": 9.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 20.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 6300402560.0,
+                "inputTokens": 104962844.0,
+                "outputTokens": 24380385.0,
+                "tokens": 6429745789.0,
+                "turns": 43.0
+              }
+            },
+            "2026-10-27": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 25.0
+                },
+                "gpt-6-luna": {
+                  "turns": 12.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 47.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 8204035072.0,
+                "inputTokens": 116824272.0,
+                "outputTokens": 27998219.0,
+                "tokens": 8348857563.0,
+                "turns": 84.0
+              }
+            },
+            "2026-10-28": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 624.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 23.0
+                },
+                "gpt-6-luna": {
+                  "turns": 11.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 256.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 7080295296.0,
+                "inputTokens": 97868972.0,
+                "outputTokens": 21706267.0,
+                "tokens": 7199870535.0,
+                "turns": 914.0
+              }
+            },
+            "2026-10-29": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 5.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 2.0
+                },
+                "gpt-6-luna": {
+                  "turns": 10.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 45.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 268709888.0,
+                "inputTokens": 4549769.0,
+                "outputTokens": 762481.0,
+                "tokens": 274022138.0,
+                "turns": 62.0
+              }
+            },
+            "2026-10-30": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 1.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 15.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 9.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 3798912.0,
+                "inputTokens": 105851.0,
+                "outputTokens": 6810.0,
+                "tokens": 3911573.0,
+                "turns": 25.0
+              }
+            },
+            "2026-10-31": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 13.0
+                }
+              },
+              "totals": {
+                "turns": 13.0
+              }
+            },
+            "2026-11-01": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 4.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 8.0
+                },
+                "gpt-6-luna": {
+                  "turns": 3.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 9.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 25.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 26683648.0,
+                "inputTokens": 577268.0,
+                "outputTokens": 41536.0,
+                "tokens": 27302452.0,
+                "turns": 49.0
+              }
+            },
+            "2026-11-02": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 2.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 2.0
+                },
+                "gpt-6-luna": {
+                  "turns": 6.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 40.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 28065792.0,
+                "inputTokens": 996683.0,
+                "outputTokens": 19853.0,
+                "tokens": 29082328.0,
+                "turns": 50.0
+              }
+            },
+            "2026-11-03": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 8.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 7.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 11.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 94.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 3225340416.0,
+                "inputTokens": 10400877.0,
+                "outputTokens": 1765168.0,
+                "tokens": 3237506461.0,
+                "turns": 120.0
+              }
+            },
+            "2026-11-04": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 5.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 3.0
+                },
+                "gpt-6-luna": {
+                  "turns": 83.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 14.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 454.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 15311944960.0,
+                "inputTokens": 93421579.0,
+                "outputTokens": 10841119.0,
+                "tokens": 15416207658.0,
+                "turns": 559.0
+              }
+            },
+            "2026-11-05": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 1.0
+                },
+                "gpt-6-astra": {
+                  "turns": 1.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 4.0
+                },
+                "gpt-6-luna": {
+                  "turns": 1.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 1.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 376.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 12996643584.0,
+                "inputTokens": 73807778.0,
+                "outputTokens": 10931298.0,
+                "tokens": 13081382660.0,
+                "turns": 384.0
+              }
+            },
+            "2026-11-06": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 2.0
+                },
+                "gpt-6-luna": {
+                  "turns": 2.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 13.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 169.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 10932233856.0,
+                "inputTokens": 46159983.0,
+                "outputTokens": 7415167.0,
+                "tokens": 10985809006.0,
+                "turns": 186.0
+              }
+            },
+            "2026-11-07": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 81.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 2.0
+                },
+                "gpt-6-luna": {
+                  "turns": 6.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 391.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 8596782080.0,
+                "inputTokens": 30623760.0,
+                "outputTokens": 4059599.0,
+                "tokens": 8631465439.0,
+                "turns": 480.0
+              }
+            },
+            "2026-11-08": {
+              "by_model": {
+                "gpt-6-luna": {
+                  "turns": 3.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 2.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 727.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 9186055040.0,
+                "inputTokens": 28603122.0,
+                "outputTokens": 4374983.0,
+                "tokens": 9219033145.0,
+                "turns": 732.0
+              }
+            },
+            "2026-11-09": {
+              "by_model": {
+                "gpt-6.1-terra": {
+                  "turns": 50.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 4073145088.0,
+                "inputTokens": 13191973.0,
+                "outputTokens": 2327562.0,
+                "tokens": 4088664623.0,
+                "turns": 50.0
+              }
+            },
+            "2026-11-10": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 4.0
+                }
+              },
+              "totals": {
+                "turns": 4.0
+              }
+            },
+            "2026-11-11": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 5.0
+                },
+                "gpt-6-luna": {
+                  "turns": 2.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 5.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 10737664.0,
+                "inputTokens": 229949.0,
+                "outputTokens": 5134.0,
+                "tokens": 10972747.0,
+                "turns": 12.0
+              }
+            },
+            "2026-11-12": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 8.0
+                },
+                "gpt-6-luna": {
+                  "turns": 6.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 7.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 11780224.0,
+                "inputTokens": 634770.0,
+                "outputTokens": 13566.0,
+                "tokens": 12428560.0,
+                "turns": 21.0
+              }
+            },
+            "2026-11-13": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 15.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 16.0
+                },
+                "gpt-6-luna": {
+                  "turns": 2.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 3.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 5178496.0,
+                "inputTokens": 235087.0,
+                "outputTokens": 5948.0,
+                "tokens": 5419531.0,
+                "turns": 36.0
+              }
+            },
+            "2026-11-14": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 1.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 6.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 6.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 10461952.0,
+                "inputTokens": 117032.0,
+                "outputTokens": 8477.0,
+                "tokens": 10587461.0,
+                "turns": 13.0
+              }
+            },
+            "2026-11-15": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 2.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 30.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 117067392.0,
+                "inputTokens": 2037665.0,
+                "outputTokens": 244841.0,
+                "tokens": 119349898.0,
+                "turns": 32.0
+              }
+            },
+            "2026-11-16": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 6.0
+                },
+                "gpt-6-luna": {
+                  "turns": 3.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 62.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 4055823616.0,
+                "inputTokens": 74593804.0,
+                "outputTokens": 10755896.0,
+                "tokens": 4141173316.0,
+                "turns": 71.0
+              }
+            },
+            "2026-11-17": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 20.0
+                },
+                "gpt-6-luna": {
+                  "turns": 66.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 42.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 134.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 5258263552.0,
+                "inputTokens": 127401246.0,
+                "outputTokens": 12539860.0,
+                "tokens": 5398204658.0,
+                "turns": 262.0
+              }
+            },
+            "2026-11-18": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 20.0
+                }
+              },
+              "totals": {
+                "turns": 20.0
+              }
+            },
+            "2026-11-19": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 4.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 37.0
+                }
+              },
+              "totals": {
+                "turns": 41.0
+              }
+            },
+            "2026-11-20": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 24.0
+                }
+              },
+              "totals": {
+                "turns": 24.0
+              }
+            },
+            "2026-11-21": {
+              "by_model": {
+                "gpt-5.6-sol": {
+                  "turns": 10.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 3659520.0,
+                "inputTokens": 367076.0,
+                "outputTokens": 38877.0,
+                "tokens": 4065473.0,
+                "turns": 10.0
+              }
+            },
+            "2026-11-22": {
+              "by_model": {
+                "gpt-5.6-sol": {
+                  "turns": 31.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 18.0
+                },
+                "gpt-6.2-sol": {
+                  "turns": 10.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 12450304.0,
+                "inputTokens": 1268845.0,
+                "outputTokens": 131413.0,
+                "tokens": 13850562.0,
+                "turns": 59.0
+              }
+            },
+            "2026-11-23": {
+              "by_model": {
+                "gpt-5.6-sol": {
+                  "turns": 2.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 354176.0,
+                "inputTokens": 59352.0,
+                "outputTokens": 6779.0,
+                "tokens": 420307.0,
+                "turns": 2.0
+              }
+            },
+            "2026-11-24": {}
+          }
+        },
+        "ranges": {
+          "last30": {
+            "by_model": {
+              "gpt-5.6-luna": {
+                "turns": 754.0
+              },
+              "gpt-5.6-sol": {
+                "turns": 45.0
+              },
+              "gpt-6-astra": {
+                "turns": 1.0
+              },
+              "gpt-6-chat-pro": {
+                "turns": 281.0
+              },
+              "gpt-6-luna": {
+                "turns": 225.0
+              },
+              "gpt-6.1-sol": {
+                "turns": 558.0
+              },
+              "gpt-6.1-terra": {
+                "turns": 2484.0
+              },
+              "gpt-6.2-sol": {
+                "turns": 10.0
+              }
+            },
+            "expectedDays": 30,
+            "observedDays": 30,
+            "totals": {
+              "cacheReadTokens": 95719913088.0,
+              "inputTokens": 829039557.0,
+              "outputTokens": 140381238.0,
+              "tokens": 96689333883.0,
+              "turns": 4358.0
+            }
+          },
+          "today": {
+            "expectedDays": 1,
+            "observedDays": 1
+          },
+          "yesterday": {
+            "by_model": {
+              "gpt-5.6-sol": {
+                "turns": 2.0
+              }
+            },
+            "expectedDays": 1,
+            "observedDays": 1,
+            "totals": {
+              "cacheReadTokens": 354176.0,
+              "inputTokens": 59352.0,
+              "outputTokens": 6779.0,
+              "tokens": 420307.0,
+              "turns": 2.0
+            }
+          }
+        }
+      },
+      "plan": "Pro 200",
+      "resets": [
+        {
+          "expiresAt": 1797113965,
+          "kind": "full",
+          "remaining": 1,
+          "usable": true
+        }
+      ],
+      "resources": {
+        "credits": {
+          "available": 19290.0,
+          "kind": "balance",
+          "unit": "credits",
+          "usd": 771.6
+        },
+        "rateLimitResets": {
+          "available": 1,
+          "expires_at": [
+            1797113965
+          ],
+          "kind": "balance",
+          "unit": "resets"
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 99.0,
+          "resets_at": 1795903948,
+          "unit": "percent",
+          "used": 1.0,
+          "utilization": 0.01,
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484367,
+    "label": "work@example.com",
+    "provider": "claude",
+    "snapshot": {
+      "plan": "Ultra",
+      "resets": [
+        {
+          "clears": [
+            "seven_day",
+            "seven_day_overage_included"
+          ],
+          "expiresAt": 1796940000,
+          "givesBackWeekly": false,
+          "kind": "weekly",
+          "remaining": 1,
+          "usable": true
+        },
+        {
+          "clears": [
+            "seven_day_overage_included"
+          ],
+          "expiresAt": 1804579140,
+          "givesBackWeekly": true,
+          "kind": "fable",
+          "remaining": 1,
+          "usable": true
+        },
+        {
+          "clears": [
+            "seven_day_overage_included"
+          ],
+          "expiresAt": 1804579140,
+          "givesBackWeekly": true,
+          "kind": "fable",
+          "remaining": 1,
+          "usable": true
+        }
+      ],
+      "resources": {
+        "fable": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 100.0,
+          "resets_at": 1795762800,
+          "unit": "percent",
+          "used": 0.0,
+          "utilization": 0.0,
+          "window_seconds": 604800
+        },
+        "rateLimitResets": {
+          "available": 3,
+          "expires_at": [
+            1796940000,
+            1804579140,
+            1804579140
+          ],
+          "kind": "balance",
+          "unit": "resets"
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 91.0,
+          "resets_at": 1795762799,
+          "unit": "percent",
+          "used": 9.0,
+          "utilization": 0.09,
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484368,
+    "label": "work2@example.com",
+    "provider": "claude",
+    "snapshot": {
+      "plan": "Ultra",
+      "resets": [
+        {
+          "clears": [
+            "seven_day",
+            "seven_day_overage_included"
+          ],
+          "expiresAt": 1796940000,
+          "givesBackWeekly": false,
+          "kind": "weekly",
+          "remaining": 1,
+          "usable": true
+        },
+        {
+          "clears": [
+            "seven_day_overage_included"
+          ],
+          "expiresAt": 1804579140,
+          "givesBackWeekly": true,
+          "kind": "fable",
+          "remaining": 1,
+          "usable": true
+        }
+      ],
+      "resources": {
+        "extraUsage": {
+          "kind": "consumption",
+          "limit": 20.0,
+          "remaining": 20.0,
+          "unit": "sgd",
+          "used": 0.0,
+          "utilization": 0.0
+        },
+        "fable": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 96.0,
+          "resets_at": 1795978800,
+          "unit": "percent",
+          "used": 4.0,
+          "utilization": 0.04,
+          "window_seconds": 604800
+        },
+        "rateLimitResets": {
+          "available": 2,
+          "expires_at": [
+            1796940000,
+            1804579140
+          ],
+          "kind": "balance",
+          "unit": "resets"
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 98.0,
+          "resets_at": 1795978800,
+          "unit": "percent",
+          "used": 2.0,
+          "utilization": 0.02,
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484369,
+    "label": "home@example.com",
+    "provider": "codex",
+    "snapshot": {
+      "history": {
+        "counts": {
+          "days": {
+            "2026-10-26": {
+              "by_model": {
+                "gpt-5.6-sol": {
+                  "turns": 183.0
+                },
+                "gpt-6-astra": {
+                  "turns": 13.0
+                },
+                "gpt-6-luna": {
+                  "turns": 14.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 90.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 6038427904.0,
+                "inputTokens": 89681336.0,
+                "outputTokens": 16622729.0,
+                "tokens": 6144731969.0,
+                "turns": 300.0
+              }
+            },
+            "2026-10-27": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 4.0
+                },
+                "gpt-6-astra": {
+                  "turns": 1.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 1.0
+                },
+                "gpt-6-luna": {
+                  "turns": 14.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 60.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 4870310784.0,
+                "inputTokens": 65310982.0,
+                "outputTokens": 13548909.0,
+                "tokens": 4949170675.0,
+                "turns": 80.0
+              }
+            },
+            "2026-10-28": {
+              "by_model": {
+                "gpt-6-luna": {
+                  "turns": 13.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 56.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 4450382464.0,
+                "inputTokens": 63790230.0,
+                "outputTokens": 10404637.0,
+                "tokens": 4524577331.0,
+                "turns": 69.0
+              }
+            },
+            "2026-10-29": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 2.0
+                },
+                "gpt-6-astra": {
+                  "turns": 5.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 3.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 3.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 1135616.0,
+                "inputTokens": 255137.0,
+                "outputTokens": 6155.0,
+                "tokens": 1396908.0,
+                "turns": 13.0
+              }
+            },
+            "2026-10-30": {
+              "by_model": {
+                "gpt-6-astra": {
+                  "turns": 2.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 74880.0,
+                "inputTokens": 32267.0,
+                "outputTokens": 1069.0,
+                "tokens": 108216.0,
+                "turns": 2.0
+              }
+            },
+            "2026-10-31": {
+              "by_model": {
+                "gpt-6-astra": {
+                  "turns": 8.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 429696.0,
+                "inputTokens": 90265.0,
+                "outputTokens": 1483.0,
+                "tokens": 521444.0,
+                "turns": 8.0
+              }
+            },
+            "2026-11-01": {
+              "by_model": {
+                "gpt-6-astra": {
+                  "turns": 5.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 192128.0,
+                "inputTokens": 55607.0,
+                "outputTokens": 2362.0,
+                "tokens": 250097.0,
+                "turns": 5.0
+              }
+            },
+            "2026-11-02": {},
+            "2026-11-03": {
+              "by_model": {
+                "gpt-5.6-sol": {
+                  "turns": 12.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 14.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 79232640.0,
+                "inputTokens": 4602979.0,
+                "outputTokens": 406199.0,
+                "tokens": 84241818.0,
+                "turns": 26.0
+              }
+            },
+            "2026-11-04": {
+              "by_model": {
+                "gpt-5.6-sol": {
+                  "turns": 17.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 15.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 108498816.0,
+                "inputTokens": 6156139.0,
+                "outputTokens": 540712.0,
+                "tokens": 115195667.0,
+                "turns": 32.0
+              }
+            },
+            "2026-11-05": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 4.0
+                },
+                "gpt-5.6-sol": {
+                  "turns": 8.0
+                },
+                "gpt-6-luna": {
+                  "turns": 5.0
+                },
+                "gpt-6-sol": {
+                  "turns": 1.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 38.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 3.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 5807060992.0,
+                "inputTokens": 60572563.0,
+                "outputTokens": 12166916.0,
+                "tokens": 5879800471.0,
+                "turns": 59.0
+              }
+            },
+            "2026-11-06": {
+              "by_model": {
+                "gpt-6-luna": {
+                  "turns": 1.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 47.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 4.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 10651508992.0,
+                "inputTokens": 116102392.0,
+                "outputTokens": 24843198.0,
+                "tokens": 10792454582.0,
+                "turns": 52.0
+              }
+            },
+            "2026-11-07": {
+              "by_model": {
+                "gpt-5.6-sol": {
+                  "turns": 11.0
+                },
+                "gpt-6-luna": {
+                  "turns": 5.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 207.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 2.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 10945299840.0,
+                "inputTokens": 120885084.0,
+                "outputTokens": 27615405.0,
+                "tokens": 11093800329.0,
+                "turns": 225.0
+              }
+            },
+            "2026-11-08": {
+              "by_model": {
+                "gpt-6-luna": {
+                  "turns": 3.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 79.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 2.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 6983989760.0,
+                "inputTokens": 82949192.0,
+                "outputTokens": 18274386.0,
+                "tokens": 7085213338.0,
+                "turns": 84.0
+              }
+            },
+            "2026-11-09": {
+              "by_model": {
+                "gpt-6-astra": {
+                  "turns": 6.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 1.0
+                },
+                "gpt-6-luna": {
+                  "turns": 3.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 88.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 1.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 5440502784.0,
+                "inputTokens": 75546436.0,
+                "outputTokens": 15741312.0,
+                "tokens": 5531790532.0,
+                "turns": 99.0
+              }
+            },
+            "2026-11-10": {
+              "by_model": {
+                "gpt-6.1-sol": {
+                  "turns": 39.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 610488320.0,
+                "inputTokens": 9713201.0,
+                "outputTokens": 1545349.0,
+                "tokens": 621746870.0,
+                "turns": 39.0
+              }
+            },
+            "2026-11-11": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 7.0
+                },
+                "gpt-6-chat-pro": {
+                  "turns": 7.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 10.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 4277120.0,
+                "inputTokens": 27296091.0,
+                "outputTokens": 329039.0,
+                "tokens": 31902250.0,
+                "turns": 24.0
+              }
+            },
+            "2026-11-12": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 2.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 4.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 3596160.0,
+                "inputTokens": 29978318.0,
+                "outputTokens": 285190.0,
+                "tokens": 33859668.0,
+                "turns": 6.0
+              }
+            },
+            "2026-11-13": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 3.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 678656.0,
+                "inputTokens": 9004104.0,
+                "outputTokens": 100474.0,
+                "tokens": 9783234.0,
+                "turns": 3.0
+              }
+            },
+            "2026-11-14": {
+              "by_model": {
+                "gpt-6.1-sol": {
+                  "turns": 1.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 3204096.0,
+                "inputTokens": 16631969.0,
+                "outputTokens": 171385.0,
+                "tokens": 20007450.0,
+                "turns": 1.0
+              }
+            },
+            "2026-11-15": {
+              "by_model": {
+                "gpt-6-chat-pro": {
+                  "turns": 2.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 7.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 2226688.0,
+                "inputTokens": 12175831.0,
+                "outputTokens": 149655.0,
+                "tokens": 14552174.0,
+                "turns": 9.0
+              }
+            },
+            "2026-11-16": {
+              "totals": {
+                "cacheReadTokens": 0.0,
+                "inputTokens": 357908.0,
+                "outputTokens": 4750.0,
+                "tokens": 362658.0,
+                "turns": 0.0
+              }
+            },
+            "2026-11-17": {
+              "by_model": {
+                "gpt-6-luna": {
+                  "turns": 69.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 25.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 91.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 1315435648.0,
+                "inputTokens": 33776166.0,
+                "outputTokens": 4265643.0,
+                "tokens": 1353477457.0,
+                "turns": 185.0
+              }
+            },
+            "2026-11-18": {
+              "by_model": {
+                "gpt-6-astra": {
+                  "turns": 4.0
+                },
+                "gpt-6-luna": {
+                  "turns": 12.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 13.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 34.0
+                },
+                "gpt-6.2-sol": {
+                  "turns": 4.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 168686464.0,
+                "inputTokens": 6791719.0,
+                "outputTokens": 773529.0,
+                "tokens": 176251712.0,
+                "turns": 67.0
+              }
+            },
+            "2026-11-19": {
+              "by_model": {
+                "gpt-6-astra": {
+                  "turns": 5.0
+                },
+                "gpt-6-luna": {
+                  "turns": 3.0
+                },
+                "gpt-6.1-terra": {
+                  "turns": 1.0
+                },
+                "gpt-6.2-sol": {
+                  "turns": 6.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 101783168.0,
+                "inputTokens": 6703397.0,
+                "outputTokens": 540438.0,
+                "tokens": 109027003.0,
+                "turns": 15.0
+              }
+            },
+            "2026-11-20": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 2.0
+                },
+                "gpt-6-astra": {
+                  "turns": 23.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 424656384.0,
+                "inputTokens": 3710189.0,
+                "outputTokens": 518429.0,
+                "tokens": 428885002.0,
+                "turns": 25.0
+              }
+            },
+            "2026-11-21": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 1.0
+                },
+                "gpt-6-astra": {
+                  "turns": 44.0
+                },
+                "gpt-6-luna": {
+                  "turns": 7.0
+                },
+                "gpt-6.2-sol": {
+                  "turns": 6.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 801397504.0,
+                "inputTokens": 13466132.0,
+                "outputTokens": 992859.0,
+                "tokens": 815856495.0,
+                "turns": 58.0
+              }
+            },
+            "2026-11-22": {
+              "by_model": {
+                "gpt-5.6-luna": {
+                  "turns": 2.0
+                },
+                "gpt-6-astra": {
+                  "turns": 37.0
+                },
+                "gpt-6-luna": {
+                  "turns": 5.0
+                },
+                "gpt-6.1-sol": {
+                  "turns": 13.0
+                },
+                "gpt-6.2-sol": {
+                  "turns": 14.0
+                }
+              },
+              "totals": {
+                "cacheReadTokens": 913743488.0,
+                "inputTokens": 12681574.0,
+                "outputTokens": 1571365.0,
+                "tokens": 927996427.0,
+                "turns": 71.0
+              }
+            },
+            "2026-11-23": {
+              "totals": {
+                "cacheReadTokens": 3956224.0,
+                "inputTokens": 203767.0,
+                "outputTokens": 9847.0,
+                "tokens": 4169838.0,
+                "turns": 0.0
+              }
+            },
+            "2026-11-24": {}
+          }
+        },
+        "ranges": {
+          "last30": {
+            "by_model": {
+              "gpt-5.6-luna": {
+                "turns": 22.0
+              },
+              "gpt-5.6-sol": {
+                "turns": 231.0
+              },
+              "gpt-6-astra": {
+                "turns": 153.0
+              },
+              "gpt-6-chat-pro": {
+                "turns": 16.0
+              },
+              "gpt-6-luna": {
+                "turns": 154.0
+              },
+              "gpt-6-sol": {
+                "turns": 1.0
+              },
+              "gpt-6.1-sol": {
+                "turns": 809.0
+              },
+              "gpt-6.1-terra": {
+                "turns": 141.0
+              },
+              "gpt-6.2-sol": {
+                "turns": 30.0
+              }
+            },
+            "expectedDays": 30,
+            "observedDays": 30,
+            "totals": {
+              "cacheReadTokens": 59731177216.0,
+              "inputTokens": 868520975.0,
+              "outputTokens": 151433424.0,
+              "tokens": 60751131615.0,
+              "turns": 1557.0
+            }
+          },
+          "today": {
+            "expectedDays": 1,
+            "observedDays": 1
+          },
+          "yesterday": {
+            "expectedDays": 1,
+            "observedDays": 1,
+            "totals": {
+              "cacheReadTokens": 3956224.0,
+              "inputTokens": 203767.0,
+              "outputTokens": 9847.0,
+              "tokens": 4169838.0,
+              "turns": 0.0
+            }
+          }
+        }
+      },
+      "plan": "Pro 200",
+      "resets": [
+        {
+          "expiresAt": 1796165340,
+          "kind": "full",
+          "remaining": 1,
+          "usable": true
+        },
+        {
+          "expiresAt": 1797115425,
+          "kind": "full",
+          "remaining": 1,
+          "usable": true
+        }
+      ],
+      "resources": {
+        "credits": {
+          "available": 44515.0,
+          "kind": "balance",
+          "unit": "credits",
+          "usd": 1780.6
+        },
+        "rateLimitResets": {
+          "available": 2,
+          "expires_at": [
+            1796165340,
+            1797115425
+          ],
+          "kind": "balance",
+          "unit": "resets"
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 98.0,
+          "resets_at": 1795926904,
+          "unit": "percent",
+          "used": 2.0,
+          "utilization": 0.02,
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484369,
+    "label": "work@example.com",
+    "provider": "muse",
+    "snapshot": {
+      "plan": "Muse Code Max Usage",
+      "resources": {
+        "session": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 91.0,
+          "resets_at": 1795493430,
+          "unit": "percent",
+          "used": 9.0,
+          "utilization": 0.09,
+          "window_seconds": 18000
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 1.0,
+          "resets_at": 1795996800,
+          "unit": "percent",
+          "used": 99.0,
+          "utilization": 0.99,
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484369,
+    "label": "work@example.com",
+    "provider": "opencode",
+    "snapshot": {
+      "plan": "Go Plus",
+      "resources": {
+        "monthly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 89.0,
+          "resets_at": 1796714136,
+          "unit": "percent",
+          "used": 11.0,
+          "utilization": 0.11,
+          "window_seconds": 2592000
+        },
+        "session": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 100.0,
+          "resets_at": 1795501735,
+          "unit": "percent",
+          "used": 0.0,
+          "utilization": 0.0,
+          "window_seconds": 18000
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 92.0,
+          "resets_at": 1795996800,
+          "unit": "percent",
+          "used": 8.0,
+          "utilization": 0.08,
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484372,
+    "label": "Grok Account",
+    "provider": "grok",
+    "snapshot": {
+      "plan": "SuperGrok Heavy",
+      "resources": {
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 45.0,
+          "resets_at": 1795528024,
+          "unit": "percent",
+          "used": 55.0,
+          "utilization": 0.55,
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484372,
+    "label": "Kimi Code",
+    "provider": "kimi",
+    "snapshot": {
+      "authMethod": "key",
+      "region": "global",
+      "resources": {
+        "session": {
+          "kind": "consumption",
+          "limit": 100,
+          "remaining": 100.0,
+          "resets_at": 1795498404,
+          "unit": "percent",
+          "used": 0.0,
+          "utilization": 0.0,
+          "window_seconds": 18000
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100,
+          "remaining": 99.96,
+          "resets_at": 1796049204,
+          "unit": "percent",
+          "used": 0.04,
+          "utilization": 0.0004,
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484371,
+    "label": "Z.ai Account",
+    "provider": "zai",
+    "snapshot": {
+      "plan": "GLM Coding Max",
+      "resets": [
+        {
+          "expiresAt": 1797955199,
+          "kind": "weekly",
+          "remaining": 1,
+          "usable": true
+        },
+        {
+          "expiresAt": 1797955199,
+          "kind": "weekly",
+          "remaining": 1,
+          "usable": false
+        }
+      ],
+      "resources": {
+        "rateLimitResets": {
+          "available": 2,
+          "expires_at": [
+            1797955199,
+            1797955199
+          ],
+          "kind": "balance",
+          "unit": "resets"
+        },
+        "session": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 100.0,
+          "unit": "percent",
+          "used": 0.0,
+          "utilization": 0.0,
+          "window_seconds": 18000
+        },
+        "webSearches": {
+          "kind": "consumption",
+          "limit": 4000.0,
+          "remaining": 3990.0,
+          "resets_at": 1796144889,
+          "unit": "searches",
+          "used": 10.0,
+          "utilization": 0.0025,
+          "window_seconds": 2592000
+        },
+        "weekly": {
+          "kind": "consumption",
+          "limit": 100.0,
+          "remaining": 100.0,
+          "resets_at": 1795967391,
+          "unit": "percent",
+          "used": 0.0,
+          "utilization": 0.0,
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484373,
+    "label": "MiniMax Token Plan",
+    "provider": "minimax",
+    "snapshot": {
+      "authMethod": "key",
+      "region": "global",
+      "resources": {
+        "general/interval": {
+          "base_remaining_percent": 100.0,
+          "kind": "consumption",
+          "limit": 0,
+          "model": "general",
+          "remaining_ms": 17999993,
+          "remaining_percent": 100.0,
+          "resets_at": 1795502373,
+          "starts_at": 1795484373,
+          "status": "limited",
+          "unit": "count",
+          "window": "interval"
+        },
+        "general/weekly": {
+          "base_remaining_percent": 66.0,
+          "kind": "consumption",
+          "limit": 0,
+          "model": "general",
+          "remaining_ms": 80680685,
+          "remaining_percent": 66.0,
+          "resets_at": 1795565053,
+          "starts_at": 1794960253,
+          "status": "limited",
+          "unit": "count",
+          "window": "weekly"
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484372,
+    "label": "MiMo Token Plan",
+    "provider": "mimo",
+    "snapshot": {
+      "authMethod": "key",
+      "auto_renew": true,
+      "claw_enabled": false,
+      "period_start": 1794407234,
+      "plan": "max",
+      "region": "sgp",
+      "resources": {
+        "tokenPlan": {
+          "kind": "consumption",
+          "limit": 82000000000,
+          "remaining": 50474251078,
+          "resets_at": 1797033599,
+          "starts_at": 1794407234,
+          "unit": "credits",
+          "used": 31525748922,
+          "utilization": 0.3844603527073171
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795484373,
+    "label": "OpenRouter Account",
+    "provider": "openrouter",
+    "snapshot": {
+      "key_type": "standard",
+      "period_spend": {
+        "thisMonth": {
+          "byokSpend": 0.0,
+          "spend": 0.0
+        },
+        "thisWeek": {
+          "byokSpend": 0.0,
+          "spend": 0.0
+        },
+        "today": {
+          "byokSpend": 0.0,
+          "spend": 0.0
+        }
+      },
+      "plan": "Pay-as-you-go",
+      "resources": {
+        "freeRequests": {
+          "kind": "consumption",
+          "limit": 1000.0,
+          "remaining": 1000.0,
+          "resets_at": 1795564800,
+          "unit": "requests",
+          "used": 0.0,
+          "utilization": 0.0,
+          "window_seconds": 86400
+        }
+      }
+    }
+  },
+  {
+    "fetched_at": 1795420416,
+    "label": "personal@example.com",
+    "provider": "antigravity",
+    "snapshot": {
+      "plan": "Google AI Ultra",
+      "resources": {
+        "3p-5h": {
+          "kind": "quota",
+          "label": "Claude 5h",
+          "remaining_fraction": 1.0,
+          "resets_at": 1795428944,
+          "unit": "percent",
+          "window_seconds": 18000
+        },
+        "3p-weekly": {
+          "kind": "quota",
+          "label": "Claude weekly",
+          "remaining_fraction": 0.00280664,
+          "resets_at": 1795648767,
+          "unit": "percent",
+          "window_seconds": 604800
+        },
+        "gemini-5h": {
+          "kind": "quota",
+          "label": "Gemini 5h",
+          "remaining_fraction": 1.0,
+          "resets_at": 1795428944,
+          "unit": "percent",
+          "window_seconds": 18000
+        },
+        "gemini-weekly": {
+          "kind": "quota",
+          "label": "Gemini weekly",
+          "remaining_fraction": 0.9971966,
+          "resets_at": 1795867545,
+          "unit": "percent",
+          "window_seconds": 604800
+        }
+      }
+    }
+  },
+  {
+    "failure": {
+      "failed_at": 1795447430,
+      "kind": "service",
+      "message": "HTTP 403 SERVICE_DISABLED"
+    },
+    "fetched_at": 1795428364,
+    "label": "personal@example.com",
+    "provider": "antigravity",
+    "snapshot": {
+      "plan": "Google AI Ultra",
+      "project": "aicode-consumers",
+      "resources": {
+        "3p-5h": {
+          "kind": "quota",
+          "label": "Claude 5h",
+          "remaining_fraction": 1.0,
+          "resets_at": 1795446364,
+          "unit": "percent",
+          "window_seconds": 18000
+        },
+        "3p-weekly": {
+          "kind": "quota",
+          "label": "Claude weekly",
+          "remaining_fraction": 0.00280664,
+          "resets_at": 1795648767,
+          "unit": "percent",
+          "window_seconds": 604800
+        },
+        "gemini-5h": {
+          "kind": "quota",
+          "label": "Gemini 5h",
+          "remaining_fraction": 1.0,
+          "resets_at": 1795446364,
+          "unit": "percent",
+          "window_seconds": 18000
+        },
+        "gemini-weekly": {
+          "kind": "quota",
+          "label": "Gemini weekly",
+          "remaining_fraction": 0.9971966,
+          "resets_at": 1795867545,
+          "unit": "percent",
+          "window_seconds": 604800
+        }
+      }
+    }
+  }
+]

@@ -140,7 +140,12 @@ pub enum UsageCommand {
     Share,
 
     #[command(about = "Read saved usage without accessing providers or credentials")]
-    Snapshot(UsageFilter),
+    Snapshot {
+        #[command(flatten)]
+        filter: UsageFilter,
+        #[arg(long, help = "Print JSON")]
+        json: bool,
+    },
     #[command(about = "Show saved account limits, reset inventory and usage history")]
     Details {
         #[command(flatten)]
@@ -160,6 +165,14 @@ pub enum UsageCommand {
 }
 
 #[derive(Debug, Args)]
+pub struct UsageLsArgs {
+    #[arg(long, help = "Print JSON")]
+    pub json: bool,
+    #[arg(long, help = "Show the fetch time, the full ID and the last error")]
+    pub wide: bool,
+}
+
+#[derive(Debug, Args)]
 pub struct UsageFilter {
     #[arg(long, help = "Select a provider")]
     pub provider: Option<String>,
@@ -175,7 +188,7 @@ pub enum UsageAccountCommand {
     )]
     Hub(HubCommand),
     #[command(about = "List usage connections")]
-    Ls(JsonArg),
+    Ls(UsageLsArgs),
     #[command(about = "Connect a usage account interactively")]
     Connect {
         #[arg(help = "Usage provider ID")]

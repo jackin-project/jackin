@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod details;
+mod ls;
+mod overview;
 mod providers;
 
+pub(super) use overview::overview;
 pub(super) use providers::show as providers;
 
 use std::path::PathBuf;
@@ -12,7 +15,6 @@ use jackin_core::{Secret, TerminalText};
 use jackin_usage::accounts::{AccountRegistry, ConnectedAccount, UsageProvider};
 use jackin_usage::dashboard::DashboardMemory;
 use jackin_usage::onboarding::{LoginError, LoginPrompt, OwnedLogin, open_browser};
-use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use uuid::Uuid;
@@ -88,24 +90,8 @@ pub(super) async fn account(
     app: &mut App,
     command: UsageAccountCommand,
 ) -> Result<(), CommandError> {
-    let path = database(app)?;
-    if let UsageAccountCommand::Ls(args) = command {
-        let rows = match AccountRegistry::open_read_only(&path).map_err(failure)? {
-            Some(db) => db.list().map_err(failure)?,
-            None => Vec::new(),
-        };
-        if args.json {
-            return app.io.json(&rows);
-        }
-        for row in rows {
-            app.io.line(&format!(
-                "{}\t{}\t{}",
-                row.id,
-                row.provider.as_str(),
-                TerminalText::sanitize(row.label.as_bytes())
-            ))?;
-        }
-        return Ok(());
+    if let UsageAccountCommand::Ls(args) = &command {
+        return ls::show(app, args);
     }
     if let UsageAccountCommand::Connect {
         provider,
@@ -305,127 +291,6 @@ async fn handle_prompt(app: &mut App, prompt: LoginPrompt) -> Result<(), Command
     Ok(())
 }
 
-pub(super) fn overview(app: &mut App, json: bool) -> Result<(), CommandError> {
-    let db = AccountRegistry::open_read_only(&database(app)?).map_err(failure)?;
-    if json {
-        let snapshots = db
-            .as_ref()
-            .map(AccountRegistry::snapshots)
-            .transpose()
-            .map_err(failure)?
-            .unwrap_or_default();
-        let now = app.deps.host.clock.now().0;
-        let catalog = providers::catalog(snapshots.iter().map(|(account, _, _)| account.provider));
-        let accounts: Vec<_> = snapshots
-            .iter()
-            .map(|(account, at, payload)| {
-                jackin_usage::export::snapshot_account(account, *at, payload.as_ref(), now)
-            })
-            .collect();
-        app.io.json(
-            &json!({"schema":1,"generated_at":now,"accounts":accounts,"providers":catalog}),
-        )?;
-        return if snapshots.iter().any(|(_, _, payload)| payload.is_some()) {
-            Ok(())
-        } else {
-            Err(CommandError::NoUsageSnapshot)
-        };
-    }
-    let accounts = db
-        .as_ref()
-        .map(AccountRegistry::list)
-        .transpose()
-        .map_err(failure)?
-        .unwrap_or_default();
-    let catalog = providers::catalog(accounts.iter().map(|a| a.provider));
-    let Some(db) = db else {
-        for provider in catalog {
-            app.io.line(&provider.to_string())?;
-        }
-        app.io.note("To connect your first provider, open Accounts in the console or run jackin account usage connect <provider>.");
-        return Err(CommandError::NoUsageSnapshot);
-    };
-    let board = jackin_usage::dashboard::Dashboard::load(
-        &db,
-        &mut DashboardMemory::default(),
-        app.deps.host.clock.now().0,
-    )
-    .map_err(failure)?;
-    let mut group = None;
-    for row in &board.all {
-        let next = (row.provider, row.account, row.label.as_str());
-        if group != Some(next) {
-            let heading = format!("{} · {}", row.provider, row.label);
-            app.io
-                .line(&TerminalText::sanitize(heading.as_bytes()).to_string())?;
-            group = Some(next);
-        }
-        let mut columns = vec![
-            jackin_core::plain(&row.metric_label),
-            jackin_usage::presentation::metric_value(row, board.settings.remaining),
-        ];
-        if let Some(reset) = &row.reset {
-            columns.push(jackin_usage::presentation::reset_caption(
-                reset,
-                board.settings.exact_resets,
-            ));
-        }
-        if row.stale {
-            columns.push("stale".into());
-        }
-        let line = format!("  {}", columns.join(" · "));
-        app.io
-            .line(&TerminalText::sanitize(line.as_bytes()).to_string())?;
-    }
-    if board.all.is_empty() && board.waiting.is_empty() {
-        app.io.line(&board.summary.to_string())?;
-    }
-    for (index, account) in accounts.iter().enumerate() {
-        let notice = board
-            .notices
-            .iter()
-            .find(|notice| notice.account == account.id);
-        if board
-            .all
-            .iter()
-            .any(|row| row.account == Some(account.id) || row.members.contains(&account.id))
-        {
-            if let Some(notice) = notice {
-                app.io.note(
-                    &TerminalText::sanitize(
-                        format!("{}: {}", notice.label, notice.message).as_bytes(),
-                    )
-                    .to_string(),
-                );
-            }
-            continue;
-        }
-        let label = if board.settings.conceal_names {
-            jackin_usage::dashboard::concealed_label(index)
-        } else {
-            account.label.clone()
-        };
-        let status = if let Some(notice) = notice {
-            notice.message.as_str()
-        } else if board.waiting.contains(&account.id) {
-            "Waiting for a first usage reading"
-        } else {
-            "No displayed readings"
-        };
-        let line = format!("{} · {label} · {status}", account.provider);
-        app.io
-            .line(&TerminalText::sanitize(line.as_bytes()).to_string())?;
-    }
-    for provider in catalog.iter().filter(|p| p.account_count == 0) {
-        app.io.line(&provider.to_string())?;
-    }
-    if board.has_snapshot {
-        Ok(())
-    } else {
-        Err(CommandError::NoUsageSnapshot)
-    }
-}
-
 pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), CommandError> {
     if let UsageCommand::Proxy { off } = command {
         let proxy = if off {
@@ -461,7 +326,6 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
     if let UsageCommand::Redeem { account, reset } = command {
         return redeem(app, account, reset.get() - 1).await;
     }
-    let active = matches!(command, UsageCommand::Refresh(_));
     let filter = match command {
         UsageCommand::AntigravityStatusline {
             database: destination,
@@ -497,7 +361,8 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
                 "Jackin · waiting for a connected Google account"
             });
         }
-        UsageCommand::Refresh(f) | UsageCommand::Snapshot(f) => f,
+        UsageCommand::Refresh(f) => f,
+        UsageCommand::Snapshot { filter, json } => return overview::snapshot(app, &filter, json),
         UsageCommand::Details { filter, json } => return details::show(app, &filter, json),
         UsageCommand::Providers { .. }
         | UsageCommand::Host(_)
@@ -514,57 +379,16 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
         .as_deref()
         .map(providers::connector)
         .transpose()?;
-    let path = database(app)?;
-    let mut db = if active {
-        Some(service(app)?.with_registry(Ok).await.map_err(failure)?)
-    } else {
-        AccountRegistry::open_read_only(&path).map_err(failure)?
-    };
-    let mut rows = Vec::new();
-    let mut first_error = None;
-    if let Some(db) = db.as_mut() {
-        let mut refresh_errors = Vec::new();
-        if active {
-            let (error, messages) = refresh_selected(app, db, &filter, provider).await?;
-            first_error = error;
-            refresh_errors = messages;
-        }
-        let now = app.deps.host.clock.now().0;
-        for (account, fetched_at, payload) in db.snapshots().map_err(failure)? {
-            if selected(&account, &filter, provider) {
-                let mut row = jackin_usage::export::snapshot_account(
-                    &account,
-                    fetched_at,
-                    payload.as_ref(),
-                    now,
-                );
-                if let Some(failure) = db.failure(account.id).map_err(failure)? {
-                    row["stale"] = true.into();
-                    row["failure"] = json!({
-                        "message": failure.message,
-                        "retry_at": failure.retry_at
-                    });
-                } else if let Some((_, message)) =
-                    refresh_errors.iter().find(|(id, _)| *id == account.id)
-                {
-                    row["failure"] = json!({"message": message});
-                }
-                rows.push(row);
-            }
-        }
-    }
-    if rows.is_empty() && (provider.is_some() || filter.account.is_some()) {
-        return Err(CommandError::Argument("no matching usage account".into()));
-    }
-    app.io
-        .json(&json!({"schema":1,"generated_at":app.deps.host.clock.now().0,"accounts":rows}))?;
-    if let Some(error) = first_error {
-        return Err(error);
-    }
-    if rows.iter().all(|r| r["usage"].is_null()) {
-        return Err(CommandError::NoUsageSnapshot);
-    }
-    Ok(())
+    let db = service(app)?.with_registry(Ok).await.map_err(failure)?;
+    let (first_error, refresh_errors) = refresh_selected(app, &db, &filter, provider).await?;
+    overview::emit(
+        app,
+        Some(&db),
+        &filter,
+        provider,
+        &refresh_errors,
+        first_error,
+    )
 }
 
 async fn refresh_selected(

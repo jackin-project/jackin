@@ -4,6 +4,8 @@
 use std::fmt::{self, Debug};
 use std::io::Write;
 
+use jackin_core::{EnvName, EnvSnapshot};
+use jackin_usage::view::{Line, render};
 use serde::Serialize;
 
 use crate::error::CommandError;
@@ -11,17 +13,51 @@ use crate::error::CommandError;
 pub(crate) struct Io {
     stdout: Box<dyn Write + Send>,
     stderr: Box<dyn Write + Send>,
+    color: bool,
+}
+
+pub(crate) fn wants_color(env: &EnvSnapshot, terminal: bool) -> bool {
+    let value = |name: &str| {
+        EnvName::parse(name)
+            .ok()
+            .and_then(|name| env.get(&name))
+            .filter(|value| !value.is_empty())
+    };
+    terminal && value("NO_COLOR").is_none() && value("TERM") != Some("dumb")
 }
 
 impl Debug for Io {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Io").finish_non_exhaustive()
+        f.debug_struct("Io")
+            .field("color", &self.color)
+            .finish_non_exhaustive()
     }
 }
 
 impl Io {
-    pub(crate) fn new(stdout: Box<dyn Write + Send>, stderr: Box<dyn Write + Send>) -> Io {
-        Io { stdout, stderr }
+    pub(crate) fn new(
+        stdout: Box<dyn Write + Send>,
+        stderr: Box<dyn Write + Send>,
+        color: bool,
+    ) -> Io {
+        Io {
+            stdout,
+            stderr,
+            color,
+        }
+    }
+
+    #[expect(
+        dead_code,
+        reason = "the surface units call it when they switch to the shared renderer"
+    )]
+    pub(crate) fn lines(&mut self, lines: &[Line]) -> Result<(), CommandError> {
+        let text = if self.color {
+            render::ansi(lines)
+        } else {
+            render::plain(lines)
+        };
+        self.data(&text)
     }
 
     pub(crate) fn data(&mut self, text: &str) -> Result<(), CommandError> {
@@ -61,5 +97,31 @@ impl Io {
     pub(crate) fn note(&mut self, text: &str) {
         drop(self.stderr.write_all(format!("{text}\n").as_bytes()));
         drop(self.stderr.flush());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jackin_core::EnvSnapshot;
+
+    use super::wants_color;
+
+    fn env(pairs: &[(&str, &str)]) -> EnvSnapshot {
+        EnvSnapshot::from_pairs(
+            pairs
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned())),
+        )
+    }
+
+    #[test]
+    fn color_needs_a_terminal_that_was_not_opted_out() {
+        let xterm = env(&[("TERM", "xterm-256color")]);
+        assert!(wants_color(&xterm, true));
+        assert!(wants_color(&env(&[]), true));
+        assert!(wants_color(&env(&[("NO_COLOR", "")]), true));
+        assert!(!wants_color(&xterm, false));
+        assert!(!wants_color(&env(&[("NO_COLOR", "1")]), true));
+        assert!(!wants_color(&env(&[("TERM", "dumb")]), true));
     }
 }

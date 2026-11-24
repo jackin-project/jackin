@@ -23,6 +23,7 @@ pub mod quota;
 mod request;
 pub mod resets;
 mod text;
+pub mod view;
 mod window;
 
 pub use deps::*;
