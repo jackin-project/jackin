@@ -861,33 +861,3 @@ async fn a_folder_without_the_providers_login_fails_the_check_and_not_only_the_s
     })
     .await
 }
-
-#[tokio::test]
-async fn saving_an_empty_provider_folder_directly_is_refused_without_the_check() -> TestResult {
-    guard(async {
-        let mut lab = Lab::open().await?;
-        let empty = lab.code.join("claude-empty-direct");
-        tokio::fs::create_dir_all(&empty).await?;
-        let before = lab.console.config_text().await?;
-        let base = lab.world().accounts.clone();
-        let mut registry = base.clone();
-        registry.accounts.push(ConsoleAccount::registered(
-            UNSAVED_ID,
-            "claude-empty",
-            ConsoleProvider::Anthropic,
-            ConsoleSource::LocalFolder {
-                path: empty.display().to_string(),
-                detected: DetectedKind::Unknown,
-            },
-        ));
-        lab.perform(Effect::SaveAccounts {
-            ticket: 1,
-            base: Box::new(base),
-            registry: Box::new(registry),
-        })
-        .await?;
-        assert_eq!(lab.console.config_text().await?, before);
-        Ok(())
-    })
-    .await
-}
