@@ -7,6 +7,7 @@ use jackin_testkit::{
     seed_usage_view,
 };
 use jackin_usage::accounts::{DATABASE_PATH, FailureKind, UsageProvider};
+use jackin_usage::view::text;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -93,8 +94,8 @@ fn assert_fits_outside_the_table(text: &str, width: u16) {
             }
             !table
         })
-        .filter(|line| line.chars().count() > usize::from(width))
-        .map(|line| format!("{:>3}  {line}", line.chars().count()))
+        .filter(|line| text::width(line) > usize::from(width))
+        .map(|line| format!("{:>3}  {line}", text::width(line)))
         .collect();
     assert!(
         wide.is_empty(),
@@ -205,7 +206,7 @@ async fn the_reports_fit_the_width_at_60_and_80_columns() -> TestResult {
                 let text = run(&harness, args, width).await?;
                 let over: Vec<&str> = text
                     .lines()
-                    .filter(|line| line.chars().count() > usize::from(width))
+                    .filter(|line| text::width(line) > usize::from(width))
                     .collect();
                 assert!(over.is_empty(), "{args:?} at {width}:\n{}", over.join("\n"));
             }

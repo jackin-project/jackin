@@ -360,7 +360,7 @@ fn marked(account: &AccountQuota, value: &str) -> String {
         return text::truncate(value, VALUE_COLUMNS);
     };
     let spaced = format!("{marks} · {value}");
-    let joined = if spaced.chars().count() <= VALUE_COLUMNS {
+    let joined = if text::width(&spaced) <= VALUE_COLUMNS {
         spaced
     } else {
         format!("{marks} {value}")

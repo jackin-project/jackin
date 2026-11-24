@@ -693,8 +693,8 @@ fn assert_summary_fits(stdout: &str, width: usize, id: Uuid) {
     assert!(!stdout.contains('\u{1b}'), "{stdout:?}");
     let wide: Vec<String> = stdout
         .lines()
-        .filter(|line| line.chars().count() > width)
-        .map(|line| format!("{:>3}  {line}", line.chars().count()))
+        .filter(|line| text::width(line) > width)
+        .map(|line| format!("{:>3}  {line}", text::width(line)))
         .collect();
     assert!(
         wide.is_empty(),

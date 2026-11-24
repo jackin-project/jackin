@@ -15,6 +15,7 @@ use jackin_testkit::{
 use jackin_usage::ProviderEndpoints;
 use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH, FailureKind};
 use jackin_usage::onboarding::OwnedLogin;
+use jackin_usage::view::text;
 use termrock::core::id::WidgetId;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -157,7 +158,7 @@ async fn the_mapped_board_rows_carry_normalized_quantities_and_no_remaining_word
     let all = board(&lab, false)?;
     for row in &all.rows {
         assert!(
-            row.value.chars().count() <= 32,
+            text::width(&row.value) <= 32,
             "{}: {}",
             row.title,
             row.value
@@ -453,7 +454,7 @@ async fn all_usage_rows_carry_the_freshness_failure_and_duplicate_flags() -> Tes
     assert!(value(&format!("#{} · Claude weekly", short(13)?))?.starts_with("failed · dup · "));
     for row in &all.rows {
         assert!(
-            row.value.chars().count() <= 32,
+            text::width(&row.value) <= 32,
             "{}: {}",
             row.title,
             row.value

@@ -307,7 +307,7 @@ impl ConsoleRig {
         let screen = self.screen();
         screen.lines().enumerate().find_map(|(row, line)| {
             let byte = line.find(text)?;
-            let column = line[..byte].chars().count();
+            let column = jackin_usage::view::text::width(&line[..byte]);
             Some((u16::try_from(column).ok()?, u16::try_from(row).ok()?))
         })
     }
