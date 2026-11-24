@@ -1186,6 +1186,11 @@ async fn connect_without_registration_stops_before_browser_consent() -> Result<(
         "Google has not authorized Jackin to use the Antigravity installed-app OAuth client"
     );
     assert!(prompts.try_recv().is_err(), "sign-in opened a prompt");
+    assert!(
+        server.mismatches().is_empty(),
+        "sign-in sent a request: {:?}",
+        server.mismatches()
+    );
     let vault = Arc::new(Vault::default());
     assert!(AccountRegistry::open(&path).is_err() || db(&path, &vault)?.list()?.is_empty());
     Ok(())
