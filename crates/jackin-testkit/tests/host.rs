@@ -1412,3 +1412,20 @@ async fn memfs_refuses_to_list_a_name_that_is_not_utf8() -> TestResult {
     ));
     Ok(())
 }
+
+#[tokio::test]
+async fn memfs_refuses_a_private_directory_leaf_that_is_a_file() -> TestResult {
+    let fs = MemFs::new();
+    let root = HostPath::parse(Path::new("/mem"))?;
+    fs.create_dir_all(&root).await?;
+    let file = HostPath::parse(Path::new("/mem/file"))?;
+    fs.write_new(&file, b"x", FileMode(0o600)).await?;
+    assert!(matches!(
+        fs.create_private_dir_all(&file).await,
+        Err(FsError::UnsafeEntry {
+            problem: jackin_core::EntryProblem::NotADirectory,
+            ..
+        })
+    ));
+    Ok(())
+}

@@ -280,6 +280,12 @@ impl FileSystem for MemFs {
 
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         let mut state = self.enter(FsOp::CreatePrivateDirAll)?;
+        if state.files.contains_key(dir.as_path()) {
+            return Err(FsError::UnsafeEntry {
+                path: dir.clone(),
+                problem: EntryProblem::NotADirectory,
+            });
+        }
         make_dirs(&mut state, dir, FileMode(0o700))?;
         state
             .dirs

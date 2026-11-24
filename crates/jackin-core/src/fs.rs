@@ -219,7 +219,7 @@ fn sync_directory(dir: &Path) -> io::Result<()> {
 fn lock_file(path: &Path) -> io::Result<Opened<Result<File, ()>>> {
     let file = match open(
         path,
-        OFlags::RDWR
+        OFlags::WRONLY
             | OFlags::CREATE
             | OFlags::NOFOLLOW
             | OFlags::NONBLOCK
