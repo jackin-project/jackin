@@ -1836,6 +1836,11 @@
               ]
             },
             {
+              "name": "tempfile",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
               "name": "tokio",
               "kind": "dev",
               "manifest": null,
@@ -3091,7 +3096,7 @@
     "crates/jackin-openshell/Cargo.toml": "6f0bc40a09df45272e0697b20345ed999e8f0118abc80a860c9fd57adfc7a4f3",
     "crates/jackin-session/Cargo.toml": "8cfe405cc6a03c342610da59ced121a806d356a0b85b414d514c957a0d4dc5f2",
     "crates/jackin-testkit/Cargo.toml": "0e57b6be30f4aa4a90038aee093c2842090820353d015785c98a954065b3e7fe",
-    "crates/jackin-tui/Cargo.toml": "6f540ae8df1d9b2c85dbafc7e1eceaf0327f9c575b6657df78a0aa4187e0342f",
+    "crates/jackin-tui/Cargo.toml": "d7ebbd3d21e1c8c77b9f89bea5c584d097300d188e7f47d9728e4a4a08308ebf",
     "crates/jackin/Cargo.toml": "e09c3b3344011f7cc087879ce2ffa485e096901723a6fac811e1c6f55e249f2e",
     "crates/usage/jackin-usage-provider-claude/Cargo.toml": "8a585594e1c95c6301ad39e7173cac73f6695253fbea3d13316dcb0af570dbd7",
     "crates/usage/jackin-usage-provider-codex/Cargo.toml": "84e88b1fc2d817a7c30f5c9b387035b2792c91845f6367fdfd8a0400912d9549",
