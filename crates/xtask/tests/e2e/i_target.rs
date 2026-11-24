@@ -742,8 +742,8 @@ async fn j00_and_j03_reject_build_and_load_identity_faults() {
 }
 
 const SIBLINGS: [(&str, &str); 2] = [
-    ("ZAI_API_KEY", "sibling-zai-secret-0123456789"),
-    ("KIMI_API_KEY", "sibling-kimi-secret-0123456789"),
+    ("ZAI_API_KEY", "zai-sibling-marker"),
+    ("KIMI_API_KEY", "kimi-sibling-marker"),
 ];
 
 fn files_under(root: &Path) -> Vec<(String, String)> {
