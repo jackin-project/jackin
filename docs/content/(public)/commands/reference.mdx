@@ -643,18 +643,49 @@ Show the limit windows of each account
 Usage: jackin usage [OPTIONS] [COMMAND]
 
 Commands:
-  proxy     Set the usage proxy interactively, or disable it
-  host      Read usage for execution-account credential sources on this host
-  share     Print a redacted usage report for sharing
-  snapshot  Read saved usage without accessing providers or credentials
-  details   Show saved account limits, reset inventory and usage history
-  refresh   Refresh connected accounts from their providers
-  redeem    Confirm and spend one available reset from the account's saved inventory
-  help      Print this message or the help of the given subcommand(s)
+  antigravity-statusline  Receive quota updates from the signed-in Antigravity CLI status line
+  providers               List usage providers, connection counts and tracking availability
+  proxy                   Set the usage proxy interactively, or disable it
+  host                    Read usage for execution-account credential sources on this host
+  share                   Print a redacted usage report for sharing
+  snapshot                Read saved usage without accessing providers or credentials
+  details                 Show saved account limits, reset inventory and usage history
+  refresh                 Refresh connected accounts from their providers
+  redeem                  Confirm and spend one available reset from the account's saved inventory
+  help                    Print this message or the help of the given subcommand(s)
 
 Options:
       --gateway <GATEWAY>  Gateway name from the jackin config
       --json               Print JSON
+  -h, --help               Print help
+```
+
+### jackin usage antigravity-statusline
+
+```text
+Receive quota updates from the signed-in Antigravity CLI status line
+
+Usage: jackin usage antigravity-statusline [OPTIONS]
+
+Options:
+      --database <PATH>    Receive the report in the Jackin database used for enrollment
+      --gateway <GATEWAY>  Gateway name from the jackin config
+  -h, --help               Print help
+```
+
+### jackin usage providers
+
+```text
+List usage providers, connection counts and tracking availability
+
+Usage: jackin usage providers [OPTIONS] [PROVIDER]
+
+Arguments:
+  [PROVIDER]  Show one provider by ID
+
+Options:
+      --gateway <GATEWAY>  Gateway name from the jackin config
+      --json               Print a structured provider catalog
   -h, --help               Print help
 ```
 
