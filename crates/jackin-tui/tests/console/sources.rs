@@ -827,3 +827,37 @@ async fn native_kimi_folder_saves_as_host_login_and_malformed_native_config_is_n
     })
     .await
 }
+
+#[tokio::test]
+async fn a_folder_without_the_providers_login_fails_the_check_and_not_only_the_save() -> TestResult
+{
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let empty = lab.code.join("claude-empty");
+        tokio::fs::create_dir_all(&empty).await?;
+        let valid = lab.code.join("claude-valid");
+        plant_login(&lab, &valid, Provider::Claude).await?;
+        let before = lab.console.config_text().await?;
+        let refused = Vocabulary::openshell().rejection(&Rejection::NotAFolder {
+            folder: "~/code/claude-empty".to_owned(),
+        });
+
+        lab.folder_form("claudette", 0, "~/code/claude-empty")
+            .await?;
+        lab.step("tab tab enter").await?;
+        let screen = lab.console.screen();
+        assert!(screen.contains(&refused), "{screen}");
+        assert!(!screen.contains("✓ material"), "{screen}");
+        assert_eq!(lab.console.config_text().await?, before);
+
+        lab.reopen().await?;
+        lab.folder_form("claudette", 0, "~/code/claude-valid")
+            .await?;
+        lab.step("tab tab enter").await?;
+        let screen = lab.console.screen();
+        assert!(screen.contains("✓ material"), "{screen}");
+        assert!(!screen.contains(&refused), "{screen}");
+        Ok(())
+    })
+    .await
+}

@@ -368,11 +368,16 @@ fn silencing_the_drawing_ban_fails() -> TestResult {
          #[allow(clippy::disallowed_methods)]\n\
          fn a() {}\n\
          #[cfg_attr(test, expect(clippy::too_many_lines, clippy::disallowed_methods))]\n\
-         fn b() {}\n",
+         fn b() {}\n\
+         #[allow(clippy::disallowed_fields)]\n\
+         fn c() {}\n\
+         #![expect(clippy::disallowed_fields)]\n",
         &[
             ("C1", 1, "disallowed_methods"),
             ("C1", 2, "disallowed_methods"),
             ("C1", 4, "disallowed_methods"),
+            ("C1", 6, "disallowed_fields"),
+            ("C1", 8, "disallowed_fields"),
         ],
     )
 }

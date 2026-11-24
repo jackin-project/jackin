@@ -1,9 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+use std::time::Duration;
+
 use jackin_core::{
-    DirEntry, FileKind, FileMode, FileSystem, FsError, HostPath, PathError, RegularFileProblem,
-    RepoPath, StdFileSystem,
+    DirEntry, EntryProblem, FileKind, FileMode, FileSystem, FsError, HostPath, PathError,
+    RegularFileProblem, RepoPath, StdFileSystem,
 };
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -28,7 +31,6 @@ async fn std_filesystem_reads_writes_lists_and_stats() -> TestResult {
     assert_eq!(fs.read(&file).await?, Some(b"hello".to_vec()));
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
         let mode = std::fs::metadata(file.as_path())?.permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
     }
@@ -37,7 +39,7 @@ async fn std_filesystem_reads_writes_lists_and_stats() -> TestResult {
     fs.create_dir_all(&sub).await?;
     fs.create_dir_all(&sub).await?;
     let link = at(&dir, "link")?;
-    std::os::unix::fs::symlink(sub.as_path(), link.as_path())?;
+    symlink(sub.as_path(), link.as_path())?;
     assert_eq!(fs.stat(&file).await?, Some(FileKind::File));
     assert_eq!(fs.stat(&sub).await?, Some(FileKind::Dir));
     assert_eq!(fs.stat(&link).await?, Some(FileKind::Symlink));
@@ -85,8 +87,6 @@ async fn file_lock_is_exclusive_until_dropped() -> TestResult {
 
 #[tokio::test]
 async fn std_filesystem_removes_trees_and_reports_modes() -> TestResult {
-    use std::os::unix::fs::{PermissionsExt, symlink};
-
     let dir = tempfile::tempdir()?;
     let fs = StdFileSystem::default();
     let outside = at(&dir, "outside")?;
@@ -125,8 +125,6 @@ async fn std_filesystem_removes_trees_and_reports_modes() -> TestResult {
 
 #[tokio::test]
 async fn private_dirs_are_created_with_mode_0700_at_every_new_level() -> TestResult {
-    use std::os::unix::fs::PermissionsExt;
-
     let dir = tempfile::tempdir()?;
     let fs = StdFileSystem::default();
     let leaf = at(&dir, "cache/stage/one")?;
@@ -159,7 +157,7 @@ async fn a_fifo_is_reported_as_other_and_never_as_a_file() -> TestResult {
             .success()
     );
     let to_pipe = at(&dir, "to-pipe")?;
-    std::os::unix::fs::symlink(pipe.as_path(), to_pipe.as_path())?;
+    symlink(pipe.as_path(), to_pipe.as_path())?;
     let file = at(&dir, "a.txt")?;
     fs.write_new(&file, b"abc", FileMode(0o600)).await?;
 
@@ -186,8 +184,6 @@ async fn a_fifo_is_reported_as_other_and_never_as_a_file() -> TestResult {
 
 #[tokio::test]
 async fn stat_following_resolves_links_and_reports_sockets() -> TestResult {
-    use std::os::unix::fs::symlink;
-
     let dir = tempfile::tempdir()?;
     let fs = StdFileSystem::default();
     let socket = at(&dir, "engine.sock")?;
@@ -273,7 +269,7 @@ async fn read_regular_returns_at_most_the_cap_plus_one_byte_and_keeps_every_refu
     std::fs::write(dir.path().join("exact"), vec![7_u8; CAP])?;
     std::fs::write(dir.path().join("over"), vec![7_u8; CAP + 1])?;
     std::fs::write(dir.path().join("small"), b"abc")?;
-    std::os::unix::fs::symlink("small", dir.path().join("link"))?;
+    symlink("small", dir.path().join("link"))?;
     assert!(
         std::process::Command::new("mkfifo")
             .arg(dir.path().join("pipe"))
@@ -313,5 +309,318 @@ async fn read_regular_returns_at_most_the_cap_plus_one_byte_and_keeps_every_refu
         let read = fs.read_regular(&base, &RepoPath::parse(name)?, CAP).await?;
         assert_eq!(read.err(), Some(problem), "{name}");
     }
+    Ok(())
+}
+
+fn lock_within_ten_seconds(
+    path: &HostPath,
+) -> Result<Result<(), FsError>, std::sync::mpsc::RecvTimeoutError> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let owned = path.clone();
+    std::thread::spawn(move || {
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .map(|runtime| {
+                runtime
+                    .block_on(StdFileSystem::default().lock(&owned))
+                    .map(drop)
+            });
+        if let Ok(outcome) = outcome {
+            drop(sender.send(outcome));
+        }
+    });
+    let received = receiver.recv_timeout(Duration::from_secs(10));
+    if received.is_err() {
+        release_pipe_writer(path);
+    }
+    received
+}
+
+fn release_pipe_writer(path: &HostPath) {
+    let flags = rustix::fs::OFlags::RDONLY | rustix::fs::OFlags::NONBLOCK;
+    drop(rustix::fs::open(
+        path.as_path(),
+        flags,
+        rustix::fs::Mode::empty(),
+    ));
+}
+
+#[tokio::test]
+async fn a_lock_never_follows_a_symlink_and_never_creates_through_one() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let victim = at(&dir, "victim")?;
+    fs.write_new(&victim, b"keep", FileMode(0o640)).await?;
+    let link = at(&dir, "victim.lock")?;
+    symlink(victim.as_path(), link.as_path())?;
+    assert!(matches!(fs.lock(&link).await, Err(FsError::SymlinkTarget(path)) if path == link));
+    assert_eq!(fs.read(&victim).await?, Some(b"keep".to_vec()));
+    assert_eq!(
+        std::fs::metadata(victim.as_path())?.permissions().mode() & 0o777,
+        0o640
+    );
+
+    let absent = at(&dir, "absent")?;
+    let dangling = at(&dir, "dangling.lock")?;
+    symlink(absent.as_path(), dangling.as_path())?;
+    assert!(
+        matches!(fs.lock(&dangling).await, Err(FsError::SymlinkTarget(path)) if path == dangling)
+    );
+    assert_eq!(fs.stat(&absent).await?, None);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_lock_refuses_a_pipe_a_directory_and_a_hard_linked_file_without_blocking() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+
+    let pipe = at(&dir, "pipe.lock")?;
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(pipe.as_path())
+            .status()?
+            .success()
+    );
+    let refused =
+        lock_within_ten_seconds(&pipe).map_err(|error| format!("lock on a pipe: {error}"))?;
+    assert!(matches!(
+        refused,
+        Err(FsError::UnsafeEntry {
+            problem: EntryProblem::NotARegularFile,
+            ..
+        })
+    ));
+
+    let folder = at(&dir, "folder.lock")?;
+    fs.create_dir_all(&folder).await?;
+    assert!(matches!(
+        fs.lock(&folder).await,
+        Err(FsError::UnsafeEntry {
+            problem: EntryProblem::NotARegularFile,
+            ..
+        })
+    ));
+
+    let original = at(&dir, "original")?;
+    fs.write_new(&original, b"x", FileMode(0o600)).await?;
+    let twin = at(&dir, "twin.lock")?;
+    std::fs::hard_link(original.as_path(), twin.as_path())?;
+    assert!(matches!(
+        fs.lock(&twin).await,
+        Err(FsError::UnsafeEntry {
+            problem: EntryProblem::MultipleLinks,
+            ..
+        })
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_lock_still_works_through_a_symlinked_ancestor_and_stays_exclusive() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    fs.create_dir_all(&at(&dir, "real")?).await?;
+    symlink(dir.path().join("real"), dir.path().join("via"))?;
+    let through = at(&dir, "via/state.lock")?;
+    let held = fs.lock(&through).await?;
+    assert!(matches!(
+        fs.lock(&at(&dir, "real/state.lock")?).await,
+        Err(FsError::LockHeld(_))
+    ));
+    drop(held);
+    fs.lock(&at(&dir, "real/state.lock")?).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_existing_private_leaf_is_tightened_and_its_parent_is_left_alone() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let parent = dir.path().join("parent");
+    std::fs::create_dir(&parent)?;
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755))?;
+    let leaf = parent.join("leaf");
+    std::fs::create_dir(&leaf)?;
+    std::fs::set_permissions(&leaf, std::fs::Permissions::from_mode(0o755))?;
+
+    fs.create_private_dir_all(&at(&dir, "parent/leaf")?).await?;
+    assert_eq!(
+        std::fs::metadata(&leaf)?.permissions().mode() & 0o7777,
+        0o700
+    );
+
+    let sealed = parent.join("sealed");
+    std::fs::create_dir(&sealed)?;
+    std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o555))?;
+    fs.create_private_dir_all(&at(&dir, "parent/sealed")?)
+        .await?;
+    assert_eq!(
+        std::fs::metadata(&sealed)?.permissions().mode() & 0o7777,
+        0o500
+    );
+    std::fs::set_permissions(&sealed, std::fs::Permissions::from_mode(0o700))?;
+    assert_eq!(
+        std::fs::metadata(&parent)?.permissions().mode() & 0o7777,
+        0o755
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_private_leaf_that_is_a_symlink_is_refused_and_its_target_is_not_touched() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let target = dir.path().join("target");
+    std::fs::create_dir(&target)?;
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))?;
+    let link = at(&dir, "leaf")?;
+    symlink(&target, link.as_path())?;
+    assert!(matches!(
+        fs.create_private_dir_all(&link).await,
+        Err(FsError::SymlinkTarget(path)) if path == link
+    ));
+    assert_eq!(
+        std::fs::metadata(&target)?.permissions().mode() & 0o7777,
+        0o755
+    );
+
+    let absent = dir.path().join("absent");
+    let dangling = at(&dir, "dangling")?;
+    symlink(&absent, dangling.as_path())?;
+    assert!(matches!(
+        fs.create_private_dir_all(&dangling).await,
+        Err(FsError::SymlinkTarget(path)) if path == dangling
+    ));
+    assert!(!absent.exists());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_private_leaf_owned_by_another_user_is_refused_and_keeps_its_mode() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let foreign = if rustix::process::geteuid().is_root() {
+        let owned = at(&dir, "foreign")?;
+        fs.create_dir_all(&owned).await?;
+        rustix::fs::chown(
+            owned.as_path(),
+            Some(rustix::fs::Uid::from_raw(65534)),
+            None,
+        )?;
+        owned
+    } else {
+        HostPath::parse(std::path::Path::new("/usr"))?
+    };
+    let before = std::fs::metadata(foreign.as_path())?;
+    assert_ne!(before.uid(), rustix::process::geteuid().as_raw());
+    assert!(matches!(
+        fs.create_private_dir_all(&foreign).await,
+        Err(FsError::UnsafeEntry {
+            problem: EntryProblem::ForeignOwner,
+            ..
+        })
+    ));
+    assert_eq!(std::fs::metadata(foreign.as_path())?.mode(), before.mode());
+    Ok(())
+}
+
+#[tokio::test]
+async fn listing_keeps_unicode_names_exact() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    for name in ["日本語.txt", "🦀"] {
+        fs.write_new(&at(&dir, name)?, b"x", FileMode(0o600))
+            .await?;
+    }
+    let listed = fs.list(&root(&dir)?).await?;
+    let names: Vec<&str> = listed.iter().map(|entry| entry.name.as_str()).collect();
+    assert_eq!(names, ["日本語.txt", "🦀"]);
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn listing_refuses_a_name_that_is_not_utf8_instead_of_aliasing_it() -> TestResult {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    for name in [&b"bad\xff1"[..], &b"bad\xff2"[..]] {
+        std::fs::write(dir.path().join(OsStr::from_bytes(name)), b"x")?;
+    }
+    let listed_dir = root(&dir)?;
+    assert!(matches!(
+        fs.list(&listed_dir).await,
+        Err(FsError::Io { kind: std::io::ErrorKind::InvalidData, path, .. }) if path == listed_dir
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_lock_on_a_file_owned_by_another_user_is_refused_and_leaves_it_alone() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let foreign = if rustix::process::geteuid().is_root() {
+        let owned = at(&dir, "foreign.lock")?;
+        fs.write_new(&owned, b"", FileMode(0o600)).await?;
+        rustix::fs::chown(
+            owned.as_path(),
+            Some(rustix::fs::Uid::from_raw(65534)),
+            None,
+        )?;
+        owned
+    } else {
+        HostPath::parse(std::path::Path::new("/etc/hosts"))?
+    };
+    let before = std::fs::metadata(foreign.as_path())?;
+    assert_ne!(before.uid(), rustix::process::geteuid().as_raw());
+    let refused = fs.lock(&foreign).await;
+    assert!(
+        matches!(
+            refused,
+            Err(FsError::UnsafeEntry {
+                problem: EntryProblem::ForeignOwner,
+                ..
+            } | FsError::Io {
+                kind: std::io::ErrorKind::PermissionDenied,
+                ..
+            })
+        ),
+        "{refused:?}"
+    );
+    let after = std::fs::metadata(foreign.as_path())?;
+    assert_eq!(
+        (after.mode(), after.mtime()),
+        (before.mode(), before.mtime())
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_lock_on_a_socket_and_a_private_directory_leaf_that_is_a_file_are_refused_by_kind()
+-> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let socket = at(&dir, "s.lock")?;
+    let _listener = std::os::unix::net::UnixListener::bind(socket.as_path())?;
+    assert!(matches!(
+        fs.lock(&socket).await,
+        Err(FsError::UnsafeEntry {
+            problem: EntryProblem::NotARegularFile,
+            ..
+        })
+    ));
+
+    let file = at(&dir, "plain")?;
+    fs.write_new(&file, b"x", FileMode(0o600)).await?;
+    assert!(matches!(
+        fs.create_private_dir_all(&file).await,
+        Err(FsError::UnsafeEntry {
+            problem: EntryProblem::NotADirectory,
+            ..
+        })
+    ));
     Ok(())
 }

@@ -93,7 +93,7 @@ pub(super) fn write_failure(
         .saturating_mul(1 << failures.saturating_sub(1).min(4))
         .min(3600);
     let wait = match kind {
-        FailureKind::Authentication => 3600,
+        FailureKind::Authentication | FailureKind::Limitation => 3600,
         FailureKind::Network => 300,
         FailureKind::RateLimited => retry_after.map_or(default_wait, |seconds| {
             i64::try_from(seconds).unwrap_or(3600).clamp(0, 3600)

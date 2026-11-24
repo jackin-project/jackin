@@ -42,3 +42,21 @@ pub fn providers() -> impl Iterator<Item = UsageProduct> {
         unavailable_reason: None,
     })
 }
+
+#[derive(Debug, Clone, Copy)]
+pub struct InfoProduct {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub reason: &'static str,
+    pub hint: &'static str,
+}
+
+pub fn info_only() -> impl Iterator<Item = InfoProduct> {
+    [InfoProduct {
+        id: "gemini-app",
+        name: "Gemini app (web)",
+        reason: "chat limits are not tracked; there is no usage source",
+        hint: "Google AI plan quotas appear under Antigravity (Google AI).",
+    }]
+    .into_iter()
+}

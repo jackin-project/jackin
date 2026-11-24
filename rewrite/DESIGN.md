@@ -340,7 +340,7 @@ Jackin keeps account usage tracking. The usage crates live in `crates/usage/`. P
 
 P6.3 deletes the other usage crates, because the program deletes what they serve: the broker, its wire, publish, and coordinator crates (the jackin daemon, D16); the snapshot store, the store backend, and the token monitor (SQLite and Capsule, D15 and D16); discovery, host accounts, host credentials, the credential resolver, and the credential snapshots (accounts live in the config, D26); host presentation, host glance, host runtime, projection, destination, and output (the native app, D16); and the antigravity, hermes, and muse providers, which have no host path to an account's usage. The amp provider crate is deleted too: its backend returns display text that the old code scraped, and no real response exists to test against. An Amp account shows the reason `unsupported` until a recorded response exists.
 
-The Gemini provider reads usage for a Google-login account through the Code Assist `loadCodeAssist` and `retrieveUserQuota` methods, as gemini-cli does. A Gemini API key has no quota method; its usage shows the reason.
+The Gemini provider does not read usage. For both Google-login and API-key accounts, dispatch returns the `unsupported` reason, and no Code Assist method is called.
 
 Obey these rules in the port:
 
