@@ -130,6 +130,18 @@ pub enum RegularFileProblem {
     Missing,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Error)]
+pub enum EntryProblem {
+    #[error("it is not a regular file")]
+    NotARegularFile,
+    #[error("it is not a directory")]
+    NotADirectory,
+    #[error("it is owned by another user")]
+    ForeignOwner,
+    #[error("it has more than one hard link")]
+    MultipleLinks,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum LinkProblem {
     Symlink,
@@ -404,6 +416,11 @@ pub enum FsError {
     WrongLock { lock: HostPath, target: HostPath },
     #[error("refusing the symbolic link {0}")]
     SymlinkTarget(HostPath),
+    #[error("refusing {path}: {problem}")]
+    UnsafeEntry {
+        path: HostPath,
+        problem: EntryProblem,
+    },
     #[error("{path} was replaced, but syncing its directory failed: {}", plain(.message))]
     Unsynced { path: HostPath, message: String },
 }
