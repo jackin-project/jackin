@@ -137,7 +137,12 @@ async fn only_opted_in_reports_create_and_update_accounts() -> Result<()> {
         .find(|a| a.id == id)
         .ok_or("missing account")?;
     let refresh = service.refresh(&row, &cancel).await;
-    assert!(matches!(refresh, Err(LoginError::NotDirect)));
+    let Err(LoginError::NotDirect) = &refresh else {
+        return Err("expected a status-line refusal".into());
+    };
+    let text = LoginError::NotDirect.to_string();
+    assert!(text.contains("status-line hook"), "{text}");
+    assert!(!text.contains("no direct sign-in"), "{text}");
     let (account, at, snapshot) = db
         .snapshots()?
         .into_iter()
@@ -265,11 +270,11 @@ async fn account_summary_surfaces_a_limiting_fourth_window_and_counts_visible_ex
         registry.version(account)?,
         now,
         &json!({"resources": {
-            "gemini-5h": {"kind":"window", "remaining_percent":99},
-            "gemini-weekly": {"kind":"window", "remaining_percent":95},
-            "gemini-argon-wtu-weekly": {"kind":"window", "remaining_percent":68},
-            "3p-5h": {"kind":"window", "remaining_percent":97},
-            "3p-weekly": {"kind":"window", "remaining_percent":0.5},
+            "gemini-5h": {"kind":"quota", "remaining_percent":99},
+            "gemini-weekly": {"kind":"quota", "remaining_percent":95},
+            "gemini-argon-wtu-weekly": {"kind":"quota", "remaining_percent":68},
+            "3p-5h": {"kind":"quota", "remaining_percent":97},
+            "3p-weekly": {"kind":"quota", "remaining_percent":0.5},
         }}),
     )?;
     let mut prefs = AccountPreferences::default();
@@ -281,11 +286,161 @@ async fn account_summary_surfaces_a_limiting_fourth_window_and_counts_visible_ex
     assert_eq!(
         entry.summary,
         [
-            "Claude weekly · <1% remaining",
-            "Gemini 5h · 99% remaining",
-            "Gemini weekly · 95% remaining",
-            "1 more metric",
+            "plan not reported · fetched <1m ago",
+            "Claude weekly >99% used · reset not reported",
         ]
     );
+    Ok(())
+}
+
+fn oauth(email: &str) -> jackin_usage::accounts::CandidateIdentity {
+    jackin_usage::accounts::CandidateIdentity::OAuth(Some(email.to_owned()))
+}
+
+pub(super) async fn statusline_account(
+    service: &OwnedLogin,
+    email: &str,
+    now: i64,
+) -> Result<Uuid> {
+    let cancel = CancellationToken::new();
+    let pending = begin(service, email, None, &cancel).await?;
+    assert!(update(service, email, Some("ultra"), now)?);
+    Ok(pending.await??)
+}
+
+#[tokio::test]
+async fn direct_sign_in_for_a_status_line_google_account_is_a_duplicate() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    statusline_account(&service, "me@example.com", now).await?;
+    let vault = Arc::new(super::Vault::default());
+    let mut registry = super::db(&path, &vault)?;
+    let error = registry.add(
+        UsageProvider::Antigravity,
+        "Direct",
+        &oauth("Me@Example.com"),
+        &super::bytes("grant"),
+    );
+    assert!(
+        matches!(error, Err(ConnectionError::DuplicateStatusline)),
+        "{error:?}"
+    );
+    let text = ConnectionError::DuplicateStatusline.to_string();
+    assert!(text.contains("status line"), "{text}");
+    assert_eq!(registry.list()?.len(), 1);
+    registry.add(
+        UsageProvider::Antigravity,
+        "Other",
+        &oauth("other@example.com"),
+        &super::bytes("grant"),
+    )?;
+    assert_eq!(registry.list()?.len(), 2);
+    Ok(())
+}
+
+#[tokio::test]
+async fn direct_sign_in_can_replace_a_status_line_account_of_the_same_google_account() -> Result<()>
+{
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let id = statusline_account(&service, "me@example.com", now).await?;
+    let vault = Arc::new(super::Vault::default());
+    let mut registry = super::db(&path, &vault)?;
+    let version = registry.version(id)?;
+    registry.replace(
+        id,
+        version,
+        &oauth("me@example.com"),
+        &super::bytes("grant"),
+    )?;
+    assert_eq!(registry.list()?.len(), 1);
+    assert_eq!(registry.credential(id)?.1.expose(), b"grant");
+    let error = registry.add(
+        UsageProvider::Antigravity,
+        "Again",
+        &oauth("me@example.com"),
+        &super::bytes("grant"),
+    );
+    assert!(matches!(error, Err(ConnectionError::Duplicate)));
+    assert!(!update(&service, "me@example.com", None, now + 1)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_line_enrollment_for_a_direct_google_account_is_a_duplicate() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let vault = Arc::new(super::Vault::default());
+    let mut registry = super::db(&path, &vault)?;
+    registry.add(
+        UsageProvider::Antigravity,
+        "Direct",
+        &oauth("me@example.com"),
+        &super::bytes("grant"),
+    )?;
+    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let (send, mut prompts) = tokio::sync::mpsc::channel(2);
+    let cancel = CancellationToken::new();
+    let task = {
+        let service = service.clone();
+        tokio::spawn(async move {
+            service
+                .connect_antigravity_statusline(None, send, &cancel)
+                .await
+        })
+    };
+    let Some(LoginPrompt::Field { reply, .. }) = prompts.recv().await else {
+        return Err("missing email prompt".into());
+    };
+    reply
+        .send(Secret::new("ME@example.com".into()))
+        .map_err(|_| "closed prompt")?;
+    assert!(matches!(
+        task.await?,
+        Err(LoginError::Store(ConnectionError::DuplicateDirect))
+    ));
+    assert_eq!(registry.list()?.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn direct_sign_in_cannot_convert_a_status_line_row_to_another_google_account() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let id = statusline_account(&service, "me@example.com", now).await?;
+    let vault = Arc::new(super::Vault::default());
+    let mut registry = super::db(&path, &vault)?;
+    let version = registry.version(id)?;
+    let error = registry.replace(
+        id,
+        version,
+        &oauth("other@example.com"),
+        &super::bytes("grant"),
+    );
+    assert!(
+        matches!(error, Err(ConnectionError::DifferentIdentity)),
+        "{error:?}"
+    );
+    assert!(registry.is_statusline(id)?);
+    let kept = registry.list()?.remove(0);
+    assert_eq!(kept.label, "me@example.com");
+    let version = registry.version(id)?;
+    registry.replace(
+        id,
+        version,
+        &oauth("ME@example.com"),
+        &super::bytes("grant"),
+    )?;
+    assert!(!registry.is_statusline(id)?);
     Ok(())
 }

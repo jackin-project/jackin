@@ -11,6 +11,8 @@ use jackin_usage::accounts::{
 };
 use jackin_usage::dashboard::{Dashboard, DashboardMemory, DashboardRow, DashboardSettings};
 use jackin_usage::onboarding::OwnedLogin;
+use jackin_usage::presentation::{Level, ReadingText};
+use jackin_usage::view::{self, AccountQuota, ProviderGroup, UsageView, ViewFilter};
 use uuid::Uuid;
 
 use jackin_usage::presentation as display;
@@ -184,39 +186,70 @@ fn apply(db: &mut AccountRegistry, edit: BoardEdit) -> Result<(), ConnectionErro
     }
 }
 
+fn percent(fraction: f64) -> Option<u8> {
+    jackin_usage::Percent::new(fraction * 100.0)
+        .ok()
+        .map(jackin_usage::Percent::rounded)
+}
+
+fn tone(level: Level) -> termrock::theme::Tone {
+    use termrock::theme::Tone;
+    match level {
+        Level::Normal => Tone::Normal,
+        Level::Warning => Tone::Warning,
+        Level::Critical => Tone::Danger,
+        Level::Muted => Tone::Muted,
+    }
+}
+
+fn pace(row: Option<&DashboardRow>) -> Option<u8> {
+    percent(row?.pace_mark?)
+}
+
+fn stored_reading(row: &DashboardRow, settings: &DashboardSettings) -> ReadingText {
+    use jackin_usage::dashboard::Severity;
+    ReadingText {
+        value: display::metric_value(row, false),
+        exact: display::exact_metric_value(row, false),
+        reset: row
+            .reset
+            .as_deref()
+            .map(|text| display::reset_caption(text, settings.exact_resets)),
+        inspector: display::metric_inspector(row),
+        details: display::metric_details(row, false),
+        level: match row.severity {
+            Severity::Normal => Level::Normal,
+            Severity::Warning => Level::Warning,
+            Severity::Critical => Level::Critical,
+        },
+        bar: row.display_fraction(false).and_then(percent),
+    }
+}
+
+fn reading_of(view: &UsageView, row: &DashboardRow, settings: &DashboardSettings) -> ReadingText {
+    row.account
+        .and_then(|id| view.account(id))
+        .and_then(|(_, account)| {
+            account
+                .meters()
+                .find(|meter| meter.key == row.metric)
+                .map(|meter| display::meter_reading(view, account, meter))
+        })
+        .unwrap_or_else(|| stored_reading(row, settings))
+}
+
 fn metric(
     group: String,
     row: DashboardRow,
+    reading: ReadingText,
     accounts: &[UsageEntry],
     registry: &[ConnectedAccount],
-    settings: &DashboardSettings,
 ) -> BoardMetric {
-    let remaining = settings.remaining;
-    let percent = |fraction: f64| {
-        jackin_usage::Percent::new(fraction * 100.0)
-            .ok()
-            .map(jackin_usage::Percent::rounded)
-    };
-    let bar = row
-        .display_fraction(remaining)
-        .and_then(percent)
-        .map(|amount| (amount, row.pace_mark.and_then(percent)));
-    use jackin_usage::dashboard::Severity;
-    use termrock::theme::Tone;
-    let severity = match row.severity {
-        Severity::Normal => Tone::Normal,
-        Severity::Warning => Tone::Warning,
-        Severity::Critical => Tone::Danger,
-    };
-    let reset = row
-        .reset
-        .as_deref()
-        .map(|text| display::reset_caption(text, settings.exact_resets));
-    let value = display::metric_value(&row, remaining);
-    let exact_value = display::exact_metric_value(&row, remaining);
-    let details = display::metric_details(&row, remaining);
-    let inspector = display::metric_inspector(&row);
-    let bounded = bar.is_some();
+    let bar = reading.bar.map(|amount| (amount, pace(Some(&row))));
+    let title_label = row
+        .account
+        .and_then(|id| accounts.iter().find(|entry| entry.id == id.to_string()))
+        .map_or_else(|| row.label.clone(), |entry| entry.label.clone());
     BoardMetric {
         member_preferences: if row.account.is_none() {
             row.members
@@ -246,20 +279,195 @@ fn metric(
             Vec::new()
         },
         provider: row.provider.to_string(),
-        title: display::caption(row.label, &row.metric_label),
+        title: display::caption(title_label, &row.metric_label),
         label: plain(row.metric_label),
-        value,
-        exact_value,
+        value: reading.value,
+        exact_value: reading.exact,
         metric: row.metric,
         group,
-        inspector,
-        details,
+        inspector: reading.inspector,
+        details: reading.details,
         pinned: row.pinned,
-        bounded,
+        bounded: bar.is_some(),
         bar,
-        severity,
-        reset,
+        severity: tone(reading.level),
+        reset: reading.reset,
     }
+}
+
+fn account_row(
+    group: &ProviderGroup,
+    account: &AccountQuota,
+    key: &str,
+    name: &str,
+    reading: ReadingText,
+    pinned: bool,
+    pace: Option<u8>,
+) -> BoardMetric {
+    let bar = reading.bar.map(|amount| (amount, pace));
+    BoardMetric {
+        member_preferences: Vec::new(),
+        account: Some(account.id.to_string()),
+        members: Vec::new(),
+        provider: group.provider.to_string(),
+        metric: key.to_owned(),
+        title: display::caption(display::entry_label(account), name),
+        label: plain(name),
+        bounded: bar.is_some(),
+        value: reading.value,
+        exact_value: reading.exact,
+        group: group.name.to_owned(),
+        bar,
+        severity: tone(reading.level),
+        reset: reading.reset,
+        inspector: reading.inspector,
+        details: reading.details,
+        pinned,
+    }
+}
+
+fn account_rows(
+    view: &UsageView,
+    group: &ProviderGroup,
+    stored: &[DashboardRow],
+    accounts: &[UsageEntry],
+    registry: &[ConnectedAccount],
+    settings: &DashboardSettings,
+) -> Vec<BoardMetric> {
+    let mut rows = Vec::new();
+    for account in &group.accounts {
+        let mut own = Vec::new();
+        let pinned = |key: &str| {
+            registry
+                .iter()
+                .find(|connected| connected.id == account.id)
+                .is_some_and(|connected| connected.preferences.pinned.contains(key))
+        };
+        for meter in account.meters() {
+            let marked = stored
+                .iter()
+                .find(|row| row.account == Some(account.id) && row.metric == meter.key);
+            own.push(account_row(
+                group,
+                account,
+                &meter.key,
+                &meter.name,
+                display::meter_reading(view, account, meter),
+                pinned(&meter.key),
+                pace(marked).filter(|_| !meter.rolled_over),
+            ));
+        }
+        for note in &account.notes {
+            let (name, reading) = display::note_reading(view, account, note);
+            let key = display::note_key(note);
+            own.push(account_row(
+                group,
+                account,
+                key,
+                &name,
+                reading,
+                pinned(key),
+                None,
+            ));
+        }
+        let covered = display::covered_keys(account);
+        for row in stored.iter().filter(|row| {
+            row.account == Some(account.id) && !covered.contains(&row.metric.as_str())
+        }) {
+            own.push(metric(
+                group.name.to_owned(),
+                row.clone(),
+                stored_reading(row, settings),
+                accounts,
+                registry,
+            ));
+        }
+        let order = registry
+            .iter()
+            .find(|connected| connected.id == account.id)
+            .map(|connected| connected.preferences.metric_order.as_slice())
+            .unwrap_or_default();
+        if !order.is_empty() {
+            own.sort_by_key(|row| {
+                order
+                    .iter()
+                    .position(|key| *key == row.metric)
+                    .unwrap_or(usize::MAX)
+            });
+        }
+        rows.extend(own);
+    }
+    rows
+}
+
+fn all_rows(
+    view: &UsageView,
+    data: &Dashboard,
+    accounts: &[UsageEntry],
+    registry: &[ConnectedAccount],
+) -> Vec<BoardMetric> {
+    use jackin_usage::accounts::UsageProvider;
+    let mut rows = Vec::new();
+    for group in &view.groups {
+        let unified = match group.provider {
+            UsageProvider::Claude => data.settings.unify_claude,
+            UsageProvider::ChatGpt => data.settings.unify_chatgpt,
+            _ => false,
+        } && group.accounts.len() > 1;
+        if unified {
+            rows.extend(
+                data.all
+                    .iter()
+                    .filter(|row| row.provider == group.provider)
+                    .map(|row| {
+                        let reading = stored_reading(row, &data.settings);
+                        metric(
+                            group.name.to_owned(),
+                            row.clone(),
+                            reading,
+                            accounts,
+                            registry,
+                        )
+                    }),
+            );
+        } else {
+            rows.extend(account_rows(
+                view,
+                group,
+                &data.all,
+                accounts,
+                registry,
+                &data.settings,
+            ));
+        }
+    }
+    rows
+}
+
+fn attention(view: &UsageView, accounts: &[UsageEntry]) -> Vec<UsageEntry> {
+    use jackin_usage::view::Attention;
+    let mut ids: Vec<Uuid> = Vec::new();
+    for item in &view.attention {
+        let listed: &[Uuid] = match item {
+            Attention::Failing { account } => std::slice::from_ref(account),
+            Attention::NearLimit { accounts, .. } | Attention::Duplicate { accounts, .. } => {
+                accounts
+            }
+        };
+        for id in listed {
+            if !ids.contains(id) {
+                ids.push(*id);
+            }
+        }
+    }
+    ids.iter()
+        .filter_map(|id| {
+            accounts
+                .iter()
+                .find(|entry| entry.id == id.to_string())
+                .cloned()
+        })
+        .collect()
 }
 
 pub(super) fn load(
@@ -292,62 +500,41 @@ pub(super) fn load(
     let share = data.redacted_export().to_string();
     let accounts = super::entries(service)?;
     let registry = db.list()?;
+    let view = view::build(
+        &db,
+        &ViewFilter::default(),
+        jackin_core::Timestamp(now),
+        service.utc_offset_secs(),
+    )?;
     let rows: Vec<BoardMetric> = if priority {
         data.priority
-            .into_iter()
+            .iter()
             .map(|(section, row)| {
                 metric(
                     section.to_string(),
-                    row,
+                    row.clone(),
+                    reading_of(&view, row, &data.settings),
                     &accounts,
                     &registry,
-                    &data.settings,
                 )
             })
             .collect()
     } else {
-        data.all
-            .into_iter()
-            .map(|row| {
-                metric(
-                    row.provider.metric_group().into(),
-                    row,
-                    &accounts,
-                    &registry,
-                    &data.settings,
-                )
-            })
-            .collect()
+        all_rows(&view, &data, &accounts, &registry)
     };
-    let alerts: Vec<_> = data.alerts.into_iter().map(plain).collect();
+    let alerts: Vec<_> = data.alerts.iter().cloned().map(plain).collect();
     let (alerts, mut notices) = if alerts.len() > 1 {
         (vec![display::join_captions(&alerts)], alerts)
     } else {
         (alerts, Vec::new())
     };
-    if !data.notices.is_empty() {
-        notices.push(display::NEEDS_ATTENTION.into());
-        notices.extend(
-            data.notices
-                .iter()
-                .map(|n| display::caption(&n.label, &n.message)),
-        );
-    }
+    notices.extend(display::attention_notices(&view));
     for id in &data.waiting {
         if let Some(entry) = accounts.iter().find(|a| a.id == id.to_string()) {
             notices.push(display::waiting(&entry.label));
         }
     }
-    let attention = data
-        .notices
-        .iter()
-        .filter_map(|n| {
-            accounts
-                .iter()
-                .find(|a| a.id == n.account.to_string())
-                .cloned()
-        })
-        .collect();
+    let attention = attention(&view, &accounts);
     if priority
         && data.shows_clear_row
         && data.summary != jackin_usage::dashboard::Summary::AllClear
@@ -392,7 +579,7 @@ pub(super) fn load(
         summary: if priority || rows.is_empty() {
             data.summary.to_string()
         } else {
-            display::ALL_USAGE_TITLE.into()
+            display::board_summary(&view)
         },
         notices,
         attention,
