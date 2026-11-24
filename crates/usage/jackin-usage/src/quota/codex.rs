@@ -23,6 +23,9 @@ pub(super) async fn read(ctx: &Read<'_>) -> Result<Value, ProviderError> {
         .await?;
     reply.ensure_success()?;
     reply.body.as_object().ok_or(INVALID)?;
+    if !recognized_quota(&reply.body) {
+        return Err(INVALID);
+    }
     let mut out = blank();
     let body = &reply.body;
     windows(
@@ -121,6 +124,20 @@ pub(super) async fn read(ctx: &Read<'_>) -> Result<Value, ProviderError> {
     }
     history::read(ctx, &headers, raw, &mut out).await;
     Ok(out)
+}
+
+fn recognized_quota(body: &Value) -> bool {
+    body["rate_limit"]["primary_window"].is_object()
+        || body["rate_limit"]["secondary_window"].is_object()
+        || body["credits"].is_object()
+        || body["additional_rate_limits"]
+            .as_array()
+            .is_some_and(|limits| !limits.is_empty())
+        || body["spend_control"]["individual_limit"].is_object()
+        || body["rate_limit_reset_credits"].is_object()
+        || body["plan_type"]
+            .as_str()
+            .is_some_and(|plan| !plan.trim().is_empty())
 }
 
 fn header_number(reply: &JsonReply, key: &str) -> Option<f64> {
