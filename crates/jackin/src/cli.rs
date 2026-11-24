@@ -140,7 +140,12 @@ pub enum UsageCommand {
     Share,
 
     #[command(about = "Read saved usage without accessing providers or credentials")]
-    Snapshot(UsageFilter),
+    Snapshot {
+        #[command(flatten)]
+        filter: UsageFilter,
+        #[arg(long, help = "Print JSON")]
+        json: bool,
+    },
     #[command(about = "Show saved account limits, reset inventory and usage history")]
     Details {
         #[command(flatten)]
@@ -149,7 +154,12 @@ pub enum UsageCommand {
         json: bool,
     },
     #[command(about = "Refresh connected accounts from their providers")]
-    Refresh(UsageFilter),
+    Refresh {
+        #[command(flatten)]
+        filter: UsageFilter,
+        #[arg(long, help = "Print the refreshed snapshot as JSON")]
+        json: bool,
+    },
     #[command(about = "Confirm and spend one available reset from the account's saved inventory")]
     Redeem {
         #[arg(help = "Stable usage account ID")]
@@ -157,6 +167,14 @@ pub enum UsageCommand {
         #[arg(help = "Reset number from the account inventory, starting at 1")]
         reset: std::num::NonZeroUsize,
     },
+}
+
+#[derive(Debug, Args)]
+pub struct UsageLsArgs {
+    #[arg(long, help = "Print JSON")]
+    pub json: bool,
+    #[arg(long, help = "Show the fetch time, the full ID and the last error")]
+    pub wide: bool,
 }
 
 #[derive(Debug, Args)]
@@ -175,7 +193,7 @@ pub enum UsageAccountCommand {
     )]
     Hub(HubCommand),
     #[command(about = "List usage connections")]
-    Ls(JsonArg),
+    Ls(UsageLsArgs),
     #[command(about = "Connect a usage account interactively")]
     Connect {
         #[arg(help = "Usage provider ID")]

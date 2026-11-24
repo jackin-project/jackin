@@ -23,13 +23,14 @@ List and manage saved connections with the CLI:
 
 ```sh
 jackin account usage ls
+jackin account usage ls --wide
 jackin account usage rename <account-id> "Work account"
 jackin account usage reconnect <account-id>
 jackin account usage replace-key <account-id>
 jackin account usage rm <account-id>
 ```
 
-Reconnect or replace a key to keep the account ID and its dashboard settings. Removing a connection deletes the local account and its saved credentials. A connected hub has separate lifecycle commands under `jackin account usage hub`.
+`ls` prints a table of provider, account, plan, status and flags. Account IDs appear only with `--wide` or `--json`. Reconnect or replace a key to keep the account ID and its dashboard settings. Removing a connection deletes the local account and its saved credentials. A connected hub has separate lifecycle commands under `jackin account usage hub`.
 
 ## Check usage
 
@@ -44,9 +45,12 @@ jackin usage details
 jackin usage details --provider claude
 jackin usage details --account <account-id>
 jackin usage snapshot --account <account-id>
+jackin usage snapshot --json
 jackin usage refresh --account <account-id>
 jackin usage share
 ```
+
+`jackin usage`, `jackin usage details` and `jackin usage snapshot` print text grouped by provider. A **Needs attention** block comes first. Each account shows its plan, a bar with the percentage used, the reset as a relative and a local time, and how fresh the reading is. Add `--json` for machine-readable output; it is the only JSON path, and `refresh` follows the same rule. Color appears only on a terminal and respects `NO_COLOR`. `jackin usage providers` prints a table of products with their connection counts.
 
 `jackin usage details` lists saved accounts with their usage details. Use `--provider` or `--account` to filter the results. Details and snapshot commands read saved data without contacting providers. Refresh contacts the provider. `jackin usage share` prints a redacted report for sharing.
 
