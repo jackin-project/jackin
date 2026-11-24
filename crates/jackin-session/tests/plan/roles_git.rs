@@ -278,6 +278,7 @@ async fn a_revision_naming_the_remote_head_follows_a_new_default_branch_like_an_
     guard(async {
         for rev in [
             "HEAD",
+            "refs/heads/HEAD",
             "origin/HEAD",
             "remotes/origin/HEAD",
             "refs/remotes/origin/HEAD",

@@ -741,7 +741,7 @@ impl RoleCatalog {
                 ],
             )
             .await?;
-            if rev.is_none_or(|rev| names_remote_head(rev.as_str())) {
+            if rev.is_none_or(|rev| names_remote_head(branch_name(rev.as_str()))) {
                 self.git(dir, cancel, &["remote", "set-head", "origin", "--auto"])
                     .await?;
             }
