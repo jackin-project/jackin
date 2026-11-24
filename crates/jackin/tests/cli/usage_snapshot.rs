@@ -6,7 +6,8 @@ use jackin::ExitClass;
 use jackin_core::{Clock, SecretBytes};
 use jackin_testkit::{TestResult, World, guard};
 use jackin_usage::accounts::{
-    AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, UsageProvider,
+    AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, FailureKind,
+    UsageProvider,
 };
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -75,23 +76,33 @@ async fn offline_snapshot_filters_accounts_and_preserves_absence_and_zero() -> T
         drop(db);
         let overview = cli.run(&["usage"]).await?;
         overview.ok()?;
-        assert!(overview.stdout.contains("claude · Work"));
-        assert!(overview.stdout.contains("Session · 100% remaining · stale"));
+        assert!(!overview.stdout.contains('\u{1b}'));
+        assert!(overview.stdout.contains("Claude  "));
+        assert!(overview.stdout.contains(
+            "Work · plan not reported                               stale · fetched 10m ago"
+        ));
         assert!(
             overview
                 .stdout
-                .contains("grok · Personal · Waiting for a first usage reading")
+                .contains("Session          ░░░░░░░░   0% used  reset not reported")
         );
+        assert!(overview.stdout.contains(
+            "Personal · plan not reported                         waiting for first refresh"
+        ));
+        assert!(overview.stdout.contains(
+            "Hidden workspace · plan not reported                  failed · fetched <1m ago"
+        ));
+        assert!(overview.stdout.contains("    ! Reconnect this workspace\n"));
         assert!(
             overview
                 .stdout
-                .contains("opencode · Hidden workspace · Reconnect this workspace")
+                .contains("FAILING     OpenCode · Hidden workspace")
         );
         assert_eq!(
             overview.stdout.matches("Reconnect this workspace").count(),
-            1
+            2
         );
-        assert!(!overview.stderr.contains("Reconnect this workspace"));
+        assert!(overview.stderr.is_empty(), "{}", overview.stderr);
         let db =
             AccountRegistry::with_vault(&root.join("usage/accounts.sqlite3"), Arc::new(WriteOnly))?;
         let mut settings = db.dashboard_settings()?;
@@ -100,16 +111,13 @@ async fn offline_snapshot_filters_accounts_and_preserves_absence_and_zero() -> T
         drop(db);
         let concealed = cli.run(&["usage"]).await?;
         concealed.ok()?;
-        assert!(
-            concealed
-                .stdout
-                .contains("grok · Account 2 · Waiting for a first usage reading")
-        );
-        assert!(
-            concealed
-                .stdout
-                .contains("opencode · Account 3 · Current usage unavailable.")
-        );
+        assert!(!concealed.stdout.contains('\u{1b}'));
+        assert!(concealed.stdout.contains("  Account 1 · plan not reported"));
+        assert!(concealed.stdout.lines().any(|line| {
+            line.starts_with("  Account 2 · plan not reported")
+                && line.ends_with("waiting for first refresh")
+        }));
+        assert!(concealed.stdout.contains("  Account 3 · plan not reported"));
         for output in [&concealed.stdout, &concealed.stderr] {
             assert!(
                 !output.contains("Personal")
@@ -135,6 +143,7 @@ async fn offline_snapshot_filters_accounts_and_preserves_absence_and_zero() -> T
                 "claude",
                 "--account",
                 &id.to_string(),
+                "--json",
             ])
             .await?;
         selected.ok()?;
@@ -210,6 +219,49 @@ async fn provider_catalog_includes_disconnected_subscriptions_and_counts_each_ac
             let text = cli.run(&["usage", "providers", id]).await?;
             text.ok()?;
             assert!(text.stdout.contains("2 connected accounts"));
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn control_bytes_in_a_failure_message_never_reach_the_text_report() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let cli = Harness::new(&world);
+        let root = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?;
+        let mut db =
+            AccountRegistry::with_vault(&root.join("usage/accounts.sqlite3"), Arc::new(WriteOnly))?;
+        let now = world.clock.now().0;
+        let id = db.add_with_snapshot(
+            UsageProvider::Claude,
+            "Work",
+            &CandidateIdentity::OAuth(None),
+            &SecretBytes::new(vec![]),
+            now,
+            &json!({"resources":{"session":{"kind":"consumption","unit":"percent","used":5,"limit":100}}}),
+        )?;
+        let version = db.version(id)?;
+        db.record_failure(
+            id,
+            version,
+            now,
+            FailureKind::Service,
+            None,
+            "\u{1b}[31mdenied\u{1b}]0;owned\u{7} by upstream",
+        )?;
+        drop(db);
+        for args in [&["usage"][..], &["usage", "snapshot"][..]] {
+            let ran = cli.run(args).await?;
+            ran.ok()?;
+            assert!(!ran.stdout.contains('\u{1b}'), "{}", ran.stdout);
+            assert!(!ran.stdout.contains('\u{7}'), "{}", ran.stdout);
+            assert!(ran.stdout.contains("denied"), "{}", ran.stdout);
         }
         Ok(())
     })
