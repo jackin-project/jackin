@@ -201,7 +201,8 @@ async fn cli_refresh_matches_across_launches_and_keeps_a_failed_reading() -> Tes
         let gemini = details.stdout.find("Gemini weekly").ok_or("missing Gemini weekly")?;
         let argon = details.stdout.find("Argon weekly").ok_or("missing Argon")?;
         let claude = details.stdout.find("Claude 5h").ok_or("missing Claude")?;
-        assert!(gemini < argon && argon < claude, "{}", details.stdout);
+        assert!(claude < argon && argon < gemini, "{}", details.stdout);
+        assert!(!details.stdout.contains('\x1b'));
         assert_eq!(resources["gemini-5h"]["remaining_fraction"], 0.99965);
         assert_eq!(resources["gemini-5h"]["resets_at"], 1_803_996_000_i64);
         assert_eq!(resources["gemini-weekly"]["resets_at"], 1_804_496_400_i64);
