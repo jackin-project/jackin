@@ -409,8 +409,8 @@ fn notes(
     if !hidden.contains("rateLimitResets") {
         notes.extend(resets(body, provider, now));
     }
-    notes.extend(tokens(body));
-    notes.extend(spend(body));
+    notes.extend(tokens(body, hidden));
+    notes.extend(spend(body, hidden));
     notes
 }
 
@@ -613,13 +613,14 @@ fn activity(range: &Value) -> Option<Activity> {
     })
 }
 
-fn tokens(body: &Value) -> Option<Note> {
+fn tokens(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
     let ranges = &body["history"]["ranges"];
+    let shown = |key: &str| !hidden.contains(key);
     let (today, yesterday, last30) = if ranges.is_object() {
         (
-            count(&ranges["today"]["totals"]["tokens"]),
-            activity(&ranges["yesterday"]),
-            activity(&ranges["last30"]),
+            count(&ranges["today"]["totals"]["tokens"]).filter(|_| shown("today")),
+            activity(&ranges["yesterday"]).filter(|_| shown("yesterday")),
+            activity(&ranges["last30"]).filter(|_| shown("last30")),
         )
     } else {
         let log = &body["activity"];
@@ -628,7 +629,11 @@ fn tokens(body: &Value) -> Option<Note> {
             "observedDays": log["observed_days"],
             "expectedDays": log["expected_days"],
         });
-        (None, activity(&log["yesterday"]), activity(&prior))
+        (
+            None,
+            activity(&log["yesterday"]).filter(|_| shown("yesterday")),
+            activity(&prior).filter(|_| shown("prior30")),
+        )
     };
     (today.is_some() || yesterday.is_some() || last30.is_some()).then_some(Note::Tokens {
         today,
@@ -637,12 +642,13 @@ fn tokens(body: &Value) -> Option<Note> {
     })
 }
 
-fn spend(body: &Value) -> Option<Note> {
+fn spend(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
     let period = |key: &str, field: &str| body["period_spend"][key][field].as_f64();
+    let shown = |key: &str| !hidden.contains(key);
     let (today, week, month) = (
-        period("today", "spend"),
-        period("thisWeek", "spend"),
-        period("thisMonth", "spend"),
+        period("today", "spend").filter(|_| shown("today")),
+        period("thisWeek", "spend").filter(|_| shown("week")),
+        period("thisMonth", "spend").filter(|_| shown("month")),
     );
     if today.is_none() && week.is_none() && month.is_none() {
         return None;
@@ -651,7 +657,7 @@ fn spend(body: &Value) -> Option<Note> {
         today,
         week,
         month,
-        byok: period("thisMonth", "byokSpend"),
+        byok: period("thisMonth", "byokSpend").filter(|_| shown("month")),
         currency: Currency::USD,
     })
 }

@@ -693,3 +693,129 @@ fn the_duplicate_to_remove_is_the_failing_one_else_the_last_connected() -> Resul
     assert_eq!(failing.attention[0], Attention::Failing { account: first });
     Ok(())
 }
+
+fn crafted_account(
+    provider: UsageProvider,
+    snapshot: serde_json::Value,
+    hidden: &[&str],
+) -> Result<AccountQuota> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join(DATABASE_PATH);
+    let seeded = seed_usage_rows(
+        &path,
+        vec![SeedRow {
+            provider,
+            label: "Account",
+            fetched_at: NOW.0 - 60,
+            snapshot,
+            failure: None,
+        }],
+    )?;
+    let id = seeded[0].id;
+    let registry = AccountRegistry::with_vault(&path, Arc::new(Vault))?;
+    registry.set_preferences(
+        id,
+        &AccountPreferences {
+            hidden: hidden.iter().map(|key| (*key).to_owned()).collect(),
+            ..AccountPreferences::default()
+        },
+    )?;
+    drop(registry);
+    let registry =
+        AccountRegistry::open_read_only(&path)?.ok_or("the usage registry is missing")?;
+    let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
+    Ok(find(&view, id)?.clone())
+}
+
+fn token_ranges() -> serde_json::Value {
+    let range = |tokens: u64| json!({"totals": {"tokens": tokens, "turns": 1}});
+    json!({"plan": "Plus", "resources": {}, "history": {"ranges": {
+        "today": range(10), "yesterday": range(20), "last30": range(30),
+    }}})
+}
+
+fn spend_periods() -> serde_json::Value {
+    json!({"plan": "Pay", "resources": {}, "period_spend": {
+        "today": {"spend": 1.0},
+        "thisWeek": {"spend": 2.0},
+        "thisMonth": {"spend": 3.0, "byokSpend": 0.5},
+    }})
+}
+
+fn tokens_of(account: &AccountQuota) -> Option<(Option<u64>, Option<u64>, Option<u64>)> {
+    account.notes.iter().find_map(|note| match note {
+        Note::Tokens {
+            today,
+            yesterday,
+            last30,
+        } => Some((
+            *today,
+            yesterday.as_ref().map(|activity| activity.tokens),
+            last30.as_ref().map(|activity| activity.tokens),
+        )),
+        _ => None,
+    })
+}
+
+type Periods = (Option<f64>, Option<f64>, Option<f64>, Option<f64>);
+
+fn spend_of(account: &AccountQuota) -> Option<Periods> {
+    account.notes.iter().find_map(|note| match note {
+        Note::Spend {
+            today,
+            week,
+            month,
+            byok,
+            ..
+        } => Some((*today, *week, *month, *byok)),
+        _ => None,
+    })
+}
+
+#[test]
+fn hidden_history_and_spend_periods_stay_out_of_the_notes() -> Result<()> {
+    let tokens = |hidden: &[&str]| -> Result<_> {
+        Ok(tokens_of(&crafted_account(
+            UsageProvider::ChatGpt,
+            token_ranges(),
+            hidden,
+        )?))
+    };
+    assert_eq!(tokens(&[])?, Some((Some(10), Some(20), Some(30))));
+    assert_eq!(tokens(&["today", "last30"])?, Some((None, Some(20), None)));
+    assert_eq!(tokens(&["today", "yesterday", "last30"])?, None);
+
+    let spend = |hidden: &[&str]| -> Result<_> {
+        Ok(spend_of(&crafted_account(
+            UsageProvider::OpenRouter,
+            spend_periods(),
+            hidden,
+        )?))
+    };
+    assert_eq!(
+        spend(&[])?,
+        Some((Some(1.0), Some(2.0), Some(3.0), Some(0.5)))
+    );
+    assert_eq!(
+        spend(&["week", "month"])?,
+        Some((Some(1.0), None, None, None))
+    );
+    assert_eq!(spend(&["today", "week", "month"])?, None);
+
+    let legacy = json!({"plan": "Pay", "resources": {}, "activity": {
+        "yesterday": {"totals": {"tokens": 7}},
+        "prior30Days": {"tokens": 70},
+        "observed_days": 30, "expected_days": 30,
+    }});
+    let legacy_tokens = |hidden: &[&str]| -> Result<_> {
+        Ok(tokens_of(&crafted_account(
+            UsageProvider::OpenRouter,
+            legacy.clone(),
+            hidden,
+        )?))
+    };
+    assert_eq!(legacy_tokens(&[])?, Some((None, Some(7), Some(70))));
+    assert_eq!(legacy_tokens(&["prior30"])?, Some((None, Some(7), None)));
+    assert_eq!(legacy_tokens(&["prior30", "yesterday"])?, None);
+    Ok(())
+}
