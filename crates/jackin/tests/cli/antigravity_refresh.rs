@@ -13,6 +13,7 @@ use jackin_usage::accounts::{
     AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, UsageProvider,
 };
 use jackin_usage::onboarding::{LoginPrompt, OwnedLogin, receive_antigravity_statusline};
+use jackin_usage::view::text;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -85,6 +86,10 @@ struct Lab {
 
 impl Lab {
     async fn open() -> Result<Lab, Failure> {
+        Lab::open_as("Personal").await
+    }
+
+    async fn open_as(label: &str) -> Result<Lab, Failure> {
         let world = World::builder().build()?;
         let server = UsageServer::start().await?;
         let mut cli = Harness::new(&world);
@@ -105,7 +110,7 @@ impl Lab {
         let mut db = AccountRegistry::with_vault(&path, stored)?;
         let id = db.add_with_snapshot(
             UsageProvider::Antigravity,
-            "Personal",
+            label,
             &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
             &SecretBytes::new(serde_json::to_vec(&json!({
                 "product": "antigravity",
@@ -746,6 +751,41 @@ async fn the_refresh_summary_wraps_to_60_columns_on_a_terminal() -> TestResult {
             .await?;
         assert_ne!(human.exit, ExitClass::Ok);
         assert_summary_fits(&human.stdout, 60, id);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_long_ok_row_wraps_inside_60_columns_with_a_hanging_indent() -> TestResult {
+    guard(async {
+        let label = "a very long account label that has to wrap on the ok row";
+        let mut lab = Lab::open_as(label).await?;
+        lab.cli.env.push(("NO_COLOR".to_owned(), "1".to_owned()));
+        let terminal = ScriptedTerminal::new(Vec::new())?.0.sized(60)?;
+        let human = lab
+            .cli
+            .command(&["usage", "refresh", "--account", &lab.id.to_string()])
+            .terminal(terminal)
+            .run()
+            .await?;
+        assert_eq!(human.exit, ExitClass::Ok, "{}", human.stdout);
+        let lines: Vec<&str> = human.stdout.lines().collect();
+        let start = lines
+            .iter()
+            .position(|line| line.starts_with("  ok      "))
+            .ok_or_else(|| format!("no ok row:\n{}", human.stdout))?;
+        let held = lines[start + 1..]
+            .iter()
+            .take_while(|line| line.starts_with(&" ".repeat(10)))
+            .count();
+        assert!(
+            held > 0,
+            "the ok row has no hanging continuation:\n{}",
+            human.stdout
+        );
+        let wide: Vec<&&str> = lines.iter().filter(|line| text::width(line) > 60).collect();
+        assert!(wide.is_empty(), "lines wider than 60 columns: {wide:?}");
         Ok(())
     })
     .await

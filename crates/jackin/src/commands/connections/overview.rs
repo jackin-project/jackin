@@ -238,10 +238,7 @@ pub(super) fn refreshed(
             continue;
         }
         match outcome.message(quota.id) {
-            None => lines.push(Line::of(vec![
-                Span::new("  ok      ", Tone::Ok),
-                Span::plain(name),
-            ])),
+            None => lines.extend(entry("  ok      ", Tone::Ok, &name, columns)),
             Some(message) => {
                 lines.extend(entry(
                     "  failed  ",
