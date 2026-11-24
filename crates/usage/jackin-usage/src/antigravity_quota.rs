@@ -42,15 +42,15 @@ pub(crate) fn is_complete(body: &Value) -> bool {
     let Some(groups) = groups(body) else {
         return false;
     };
-    let usable: Vec<&str> = shared_buckets(&groups)
+    let present: Vec<&str> = shared_buckets(&groups)
         .filter_map(|bucket| {
-            usable_fraction(bucket)?;
+            finite_fraction(bucket)?;
             bucket_id(bucket)
         })
         .collect();
     WINDOWS
         .iter()
-        .all(|(id, _, _)| usable.iter().any(|found| found == id))
+        .all(|(id, _, _)| present.iter().any(|found| found == id))
 }
 
 pub(crate) fn merge(bodies: &[Value]) -> Result<Map<String, Value>, ProviderError> {
@@ -69,7 +69,7 @@ pub(crate) fn merge(bodies: &[Value]) -> Result<Map<String, Value>, ProviderErro
             if pooled.iter().any(|(found, _, _)| *found == id) {
                 continue;
             }
-            let Some(fraction) = usable_fraction(bucket) else {
+            let Some(fraction) = finite_fraction(bucket) else {
                 continue;
             };
             pooled.push((id, fraction, reset_of(bucket)));
@@ -183,13 +183,6 @@ fn window_id(id: &str) -> Option<&'static str> {
         .iter()
         .find(|(key, _, _)| *key == id)
         .map(|(key, _, _)| *key)
-}
-
-fn usable_fraction(bucket: &Value) -> Option<f64> {
-    if disabled(bucket) != Disabled::Open {
-        return None;
-    }
-    finite_fraction(bucket)
 }
 
 fn finite_fraction(bucket: &Value) -> Option<f64> {

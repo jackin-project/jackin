@@ -66,9 +66,13 @@ fn marked(id: &str, fraction: &str, flag: &str) -> String {
 
 fn all_disabled() -> String {
     summary(
-        &["gemini-5h", "gemini-weekly", "3p-5h", "3p-weekly"]
-            .map(|id| marked(id, "1", "true"))
-            .join(","),
+        &[
+            marked("gemini-5h", "0.25", "true"),
+            marked("gemini-weekly", "0.75", "true"),
+            marked("3p-5h", "0.125", "true"),
+            marked("3p-weekly", "0.875", "true"),
+        ]
+        .join(","),
     )
 }
 
@@ -496,6 +500,16 @@ fn quota_hits() -> &'static AtomicUsize {
 fn count_hit(_: &[u8]) -> Value {
     quota_hits().fetch_add(1, Ordering::SeqCst);
     Value::Null
+}
+
+fn production_quota_hits() -> &'static AtomicUsize {
+    static HITS: AtomicUsize = AtomicUsize::new(0);
+    &HITS
+}
+
+fn counted_production(_: &[u8]) -> Value {
+    production_quota_hits().fetch_add(1, Ordering::SeqCst);
+    serde_json::from_str(&complete_body()).unwrap_or(Value::Null)
 }
 
 fn seeded(fixture: &Fixture, email: &str, access: &str, expires: i64) -> Result<Uuid> {
@@ -1397,7 +1411,7 @@ async fn a_renewed_grant_is_stored_before_a_failed_quota_read() -> Result<()> {
 }
 
 #[tokio::test]
-async fn disabled_windows_do_not_replace_the_previous_reading() -> Result<()> {
+async fn disabled_shared_windows_keep_the_daily_fraction() -> Result<()> {
     let turn = gate().lock().await;
     let _pin = std::ptr::from_ref(&turn);
     let fixture = Fixture::open().await?;
@@ -1427,10 +1441,11 @@ async fn disabled_windows_do_not_replace_the_previous_reading() -> Result<()> {
         "/daily/v1internal:retrieveUserQuotaSummary",
         Route::json(200, &daily),
     );
+    production_quota_hits().store(0, Ordering::SeqCst);
     fixture.serve(
         Method::Post,
         "/production/v1internal:retrieveUserQuotaSummary",
-        Route::json(200, &complete_body()),
+        Route::json(200, "{}").responding_with(counted_production),
     );
     fixture
         .service
@@ -1443,16 +1458,14 @@ async fn disabled_windows_do_not_replace_the_previous_reading() -> Result<()> {
         .ok_or("missing snapshot")?;
     let observed = stored.1.ok_or("missing time")?;
     let body = stored.2.ok_or("empty snapshot")?;
-    assert_eq!(
-        body["resources"]["gemini-5h"]["remaining_fraction"],
-        0.99965
-    );
+    assert_eq!(body["resources"]["gemini-5h"]["remaining_fraction"], 1.0);
     assert_eq!(
         body["resources"]["gemini-weekly"]["remaining_fraction"],
-        0.9742
+        1.0
     );
     assert_eq!(body["resources"]["3p-weekly"]["remaining_fraction"], 0.5);
-    assert_ne!(body["resources"]["gemini-5h"]["remaining_fraction"], 1.0);
+    assert!(body["resources"].get("gemini-argon-wtu-weekly").is_none());
+    assert_eq!(production_quota_hits().load(Ordering::SeqCst), 0);
 
     fixture.clock.advance(std::time::Duration::from_secs(5));
     fixture.replace(
@@ -1465,21 +1478,29 @@ async fn disabled_windows_do_not_replace_the_previous_reading() -> Result<()> {
         "/production/v1internal:retrieveUserQuotaSummary",
         Route::json(200, &all_disabled()),
     );
-    let error = fixture
+    fixture
         .service
         .refresh(&account, &CancellationToken::new())
-        .await
-        .expect_err("disabled windows are not a quota reading");
-    assert_clean(&error.to_string());
-    let (_, at, kept) = db(&fixture.path, &fixture.vault)?
+        .await?;
+    let (_, at, published) = db(&fixture.path, &fixture.vault)?
         .snapshots()?
         .into_iter()
         .find(|(row, _, _)| row.id == id)
         .ok_or("missing snapshot")?;
-    assert_eq!(at, Some(observed));
+    assert_eq!(at, Some(observed + 5));
+    let published = published.ok_or("empty snapshot")?;
     assert_eq!(
-        kept.ok_or("empty snapshot")?["resources"]["gemini-5h"]["remaining_fraction"],
-        0.99965
+        published["resources"]["gemini-5h"]["remaining_fraction"],
+        0.25
+    );
+    assert_eq!(
+        published["resources"]["gemini-weekly"]["remaining_fraction"],
+        0.75
+    );
+    assert_eq!(published["resources"]["3p-5h"]["remaining_fraction"], 0.125);
+    assert_eq!(
+        published["resources"]["3p-weekly"]["remaining_fraction"],
+        0.875
     );
 
     fixture.clock.advance(std::time::Duration::from_secs(5));
