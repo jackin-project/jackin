@@ -77,6 +77,13 @@ pub enum GatewayError {
     TerminalRefused { reason: String },
     #[error("refused to write {}: a directory on its path below /sandbox is a symlink, or the target is a directory", plain(.path.as_str()))]
     UnsafePath { path: SandboxPath },
+    #[error("the write of {} may have taken effect, its outcome is unknown: {cause}", plain(.path.as_str()))]
+    WriteUnconfirmed {
+        path: SandboxPath,
+        cause: Box<GatewayError>,
+    },
+    #[error("{} was replaced, but its directory could not be synced", plain(.path.as_str()))]
+    WriteNotDurable { path: SandboxPath },
     #[error("protocol error: {}", plain(.message))]
     Protocol { message: String },
 }
@@ -255,6 +262,7 @@ impl GatewayError {
             | GatewayError::SandboxUnreachable { .. }
             | GatewayError::Timeout { .. }
             | GatewayError::ResourceExhausted { .. } => true,
+            GatewayError::WriteUnconfirmed { cause, .. } => cause.is_retryable(),
             GatewayError::Tls { .. }
             | GatewayError::Unauthenticated
             | GatewayError::PermissionDenied { .. }
@@ -273,6 +281,7 @@ impl GatewayError {
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
             | GatewayError::UnsafePath { .. }
+            | GatewayError::WriteNotDurable { .. }
             | GatewayError::Protocol { .. } => false,
         }
     }

@@ -1060,7 +1060,9 @@ impl LoginError {
             },
             Self::Store(ConnectionError::MissingCredential)
             | Self::Grant(GrantError::SignInAgain) => FailureKind::Authentication,
-            Self::Timeout | Self::CredentialStoreTimeout => FailureKind::Timeout,
+            Self::Timeout
+            | Self::CredentialStoreTimeout
+            | Self::Store(ConnectionError::StoreBusy) => FailureKind::Timeout,
             _ => return None,
         };
         Some((kind, None))

@@ -333,9 +333,13 @@ impl AccountRegistry {
         }
     }
 
-    fn mutation_lock(&self) -> Result<File, ConnectionError> {
+    fn mutation_lock(&self, wait: Option<Duration>) -> Result<File, ConnectionError> {
         let f = private::file(&self.directory.join("credentials.lock"))?;
-        let deadline = std::time::Instant::now() + self.lock_wait;
+        let Some(wait) = wait else {
+            f.lock()?;
+            return Ok(f);
+        };
+        let deadline = std::time::Instant::now() + wait;
         loop {
             match f.try_lock() {
                 Ok(()) => return Ok(f),
@@ -580,7 +584,9 @@ impl AccountRegistry {
         expected: CredentialVersion,
         secret: &SecretBytes,
     ) -> Result<CredentialVersion, ConnectionError> {
-        self.install(secret, |tx, slot| replace_slot(tx, id, expected, slot))
+        self.install_within(None, secret, &CancellationToken::new(), |tx, slot| {
+            replace_slot(tx, id, expected, slot)
+        })
     }
 
     fn install(
@@ -597,7 +603,17 @@ impl AccountRegistry {
         cancel: &CancellationToken,
         change: impl FnOnce(&Connection, Uuid) -> Result<(), ConnectionError>,
     ) -> Result<CredentialVersion, ConnectionError> {
-        let _lock = self.mutation_lock()?;
+        self.install_within(Some(self.lock_wait), secret, cancel, change)
+    }
+
+    fn install_within(
+        &mut self,
+        wait: Option<Duration>,
+        secret: &SecretBytes,
+        cancel: &CancellationToken,
+        change: impl FnOnce(&Connection, Uuid) -> Result<(), ConnectionError>,
+    ) -> Result<CredentialVersion, ConnectionError> {
+        let _lock = self.mutation_lock(wait)?;
         if cancel.is_cancelled() {
             return Err(ConnectionError::Cancelled);
         }
@@ -671,7 +687,7 @@ impl AccountRegistry {
     }
 
     pub fn remove(&mut self, id: Uuid) -> Result<(), ConnectionError> {
-        let _lock = self.mutation_lock()?;
+        let _lock = self.mutation_lock(Some(self.lock_wait))?;
         if self.hub_link(id)?.is_some() {
             return Err(ConnectionError::HubManaged);
         }
@@ -710,7 +726,7 @@ impl AccountRegistry {
     }
 
     pub fn clean_retired(&mut self) -> Result<(), ConnectionError> {
-        let _lock = self.mutation_lock()?;
+        let _lock = self.mutation_lock(Some(self.lock_wait))?;
         self.drain_retired()
     }
 
