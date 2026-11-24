@@ -106,6 +106,7 @@ pub(crate) async fn within<T>(deadline: Duration, work: impl Future<Output = T>)
 struct Inspected {
     summary: SandboxSummary,
     supervisor: Option<SupervisorReading>,
+    stalled: bool,
 }
 
 impl Inspected {
@@ -219,12 +220,13 @@ async fn read_gateway(
             sandbox,
         })
         .collect();
+    let started = Instant::now();
     let reads = Reads {
         slots: Semaphore::new(limits.work_reads.get()),
         deadline,
-        until: Instant::now()
+        until: started
             .checked_add(deadline.saturating_mul(2))
-            .unwrap_or_else(|| Instant::now() + Duration::from_secs(3600)),
+            .unwrap_or(started),
         cancel,
     };
     let sandboxes = join_all(
@@ -252,10 +254,14 @@ async fn observe(
     reads: &Reads<'_>,
 ) -> ObservedSandbox {
     let inspected = inspect(session, summary, reads).await;
-    let (task, work) = tokio::join!(
-        read_task(session, &inspected.summary, reads),
-        read_work(session, config, &inspected, reads),
-    );
+    let (task, work) = if inspected.stalled {
+        (None, None)
+    } else {
+        tokio::join!(
+            read_task(session, &inspected.summary, reads),
+            read_work(session, config, &inspected, reads),
+        )
+    };
     ObservedSandbox {
         gateway: gateway.clone(),
         summary: inspected.summary,
@@ -266,18 +272,18 @@ async fn observe(
 }
 
 async fn inspect(session: &Session, summary: SandboxSummary, reads: &Reads<'_>) -> Inspected {
-    let supervisor = if summary.phase == Phase::Ready {
-        reads
-            .run(session.inspect(&summary.name))
-            .await
-            .and_then(Result::ok)
-            .map(|view| view.supervisor)
+    let (supervisor, stalled) = if summary.phase == Phase::Ready {
+        match reads.run(session.inspect(&summary.name)).await {
+            Some(inspected) => (inspected.ok().map(|view| view.supervisor), false),
+            None => (None, true),
+        }
     } else {
-        None
+        (None, false)
     };
     Inspected {
         summary,
         supervisor,
+        stalled,
     }
 }
 
