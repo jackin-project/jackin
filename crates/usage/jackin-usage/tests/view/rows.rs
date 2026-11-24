@@ -185,3 +185,30 @@ fn wallet_and_cap_readings_get_their_own_labeled_lines() -> Result<()> {
     assert!(!text.contains("Balance  "), "{text}");
     Ok(())
 }
+
+#[test]
+fn a_reset_grant_with_several_remaining_counts_every_one_and_keeps_its_index() -> Result<()> {
+    let expires = NOW.0 + 86_400;
+    let rows = Rows::new(vec![row(
+        UsageProvider::Claude,
+        json!({"plan":"Max","resources":{},"resets":[
+            {"id":"grant-0","kind":"session","remaining":1,"usable":true},
+            {"id":"grant-a","kind":"session","remaining":3,"usable":true,"expiresAt":expires},
+            {"id":"grant-b","kind":"weekly","remaining":2,"usable":true,"expiresAt":expires + 3_600},
+            {"id":"grant-c","kind":"full","remaining":1,"usable":false,"expiresAt":expires + 7_200},
+        ]}),
+    )])?;
+    let usage = rows.text(Report::Usage)?;
+    assert!(usage.contains("5 ready, 1 unavailable"), "{usage}");
+    let details = rows.text(Report::Details)?;
+    assert!(details.contains("5 ready, 1 unavailable"), "{details}");
+    for wanted in [
+        "2  session ready ×3",
+        "3  weekly  ready ×2",
+        "4  full    unavailable",
+    ] {
+        assert!(details.contains(wanted), "{wanted}\n{details}");
+    }
+    assert!(!details.contains("1  session"), "{details}");
+    Ok(())
+}

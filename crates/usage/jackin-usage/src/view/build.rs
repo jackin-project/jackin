@@ -542,7 +542,8 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
         .as_array()
         .into_iter()
         .flatten()
-        .filter_map(|grant| {
+        .enumerate()
+        .filter_map(|(index, grant)| {
             let at = grant["expiresAt"].as_i64()?;
             let live = at > now.0;
             let usable = grant["usable"] == true && live;
@@ -554,6 +555,8 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
                     (false, false) => ResetStatus::Unavailable,
                 },
                 expires_at: Timestamp(at),
+                remaining: grant["remaining"].as_u64().unwrap_or(1),
+                index,
             })
         })
         .collect();
@@ -563,7 +566,8 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
             .into_iter()
             .flatten()
             .filter_map(Value::as_i64)
-            .map(|at| ResetCredit {
+            .enumerate()
+            .map(|(index, at)| ResetCredit {
                 kind: "reset".to_owned(),
                 status: if at > now.0 {
                     ResetStatus::Ready
@@ -571,6 +575,8 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
                     ResetStatus::Unavailable
                 },
                 expires_at: Timestamp(at),
+                remaining: 1,
+                index,
             })
             .collect();
     }

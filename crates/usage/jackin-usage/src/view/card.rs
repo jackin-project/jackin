@@ -248,10 +248,10 @@ pub fn note_parts(note: &Note, view: &UsageView) -> (String, Vec<String>) {
         }
         Note::Resets(credits) => {
             let with = |status| credits.iter().filter(move |credit| credit.status == status);
-            let ready: Vec<_> = with(ResetStatus::Ready).collect();
-            let queued = with(ResetStatus::Queued).count();
-            let unavailable = with(ResetStatus::Unavailable).count();
-            let mut count = format!("{} ready", ready.len());
+            let total = |status| with(status).map(|credit| credit.remaining).sum::<u64>();
+            let queued = total(ResetStatus::Queued);
+            let unavailable = total(ResetStatus::Unavailable);
+            let mut count = format!("{} ready", total(ResetStatus::Ready));
             if queued > 0 {
                 count.push_str(&format!(", {queued} queued"));
             }
@@ -260,8 +260,7 @@ pub fn note_parts(note: &Note, view: &UsageView) -> (String, Vec<String>) {
             }
             let mut parts = vec![count];
             parts.extend(
-                ready
-                    .iter()
+                with(ResetStatus::Ready)
                     .map(|credit| credit.expires_at)
                     .min()
                     .map(|at| {
