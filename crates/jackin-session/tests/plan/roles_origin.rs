@@ -35,6 +35,7 @@ pub(crate) async fn git(dir: &Path, args: &[&str]) -> Result<String, Box<dyn Err
 }
 
 pub(crate) struct Origin {
+    pub(crate) name: String,
     pub(crate) role: RoleFixture,
     pub(crate) commits: Vec<String>,
     pub(crate) home: HostPath,
@@ -48,7 +49,11 @@ impl Origin {
     }
 
     pub(crate) async fn at(url: &str) -> Result<Origin, Box<dyn Error>> {
-        let role = RoleFixture::new("sentinel")?.model("glm-5.3");
+        Origin::named("sentinel", url).await
+    }
+
+    pub(crate) async fn named(name: &str, url: &str) -> Result<Origin, Box<dyn Error>> {
+        let role = RoleFixture::new(name)?.model("glm-5.3");
         role.commit().await?;
         let root = role.root().as_path();
         git(root, &["tag", "v1"]).await?;
@@ -65,6 +70,7 @@ impl Origin {
         )
         .await?;
         Ok(Origin {
+            name: name.to_owned(),
             role,
             commits: vec![first, dev],
             home,
@@ -81,7 +87,8 @@ impl Origin {
     pub(crate) fn config(&self, rev: Option<&str>) -> Result<Config, Box<dyn Error>> {
         let rev = rev.map_or_else(String::new, |rev| format!(", rev = \"{rev}\""));
         Ok(Config::parse(&format!(
-            "[roles.sentinel]\nsource = {{ git = \"{}\"{rev} }}\n\n[workspaces.w]\npath = \"{}\"\n",
+            "[roles.\"{}\"]\nsource = {{ git = \"{}\"{rev} }}\n\n[workspaces.w]\npath = \"{}\"\n",
+            self.name,
             self.url,
             self.home.as_path().display()
         ))?)
@@ -101,7 +108,7 @@ impl Origin {
         let workspace = config
             .workspace(&WorkspaceName::parse("w")?)
             .ok_or("no workspace")?;
-        let name = RoleName::parse("sentinel")?;
+        let name = RoleName::parse(&self.name)?;
         Ok(catalog
             .load(
                 &config,

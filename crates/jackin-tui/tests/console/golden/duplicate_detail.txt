@@ -1,0 +1,24 @@
+  jackin❯    File   Go   Help                     …  Accounts › Usage accounts  
+                                                                                
+ ╭─ Accounts ──────────────────────────────────────── 14 usage · 1 execution ─╮ 
+ │     Overview                                                             ┃ │ 
+ │     Usage accounts                                           14 accounts ┃ │ 
+ │ ╭─ Account usage ──────────────────────────────────────────────────── × ─╮ │ 
+ │ │   personal@example.com #a0000014 · Antigravity (Google AI)             │ │ 
+ │ │   Google AI Ultra · failed · fetched 1d 5h ago                         │ │ 
+ │ │   Claude weekly >99% used · resets in 1d 7h · Thu 06:19                │ │ 
+ │ │   ! refresh failed: HTTP 403 SERVICE_DISABLED                          │ │ 
+ │ │   ! also connected as #a0000013                                        │ │ 
+ │ │                                                                        │ │ 
+ │ │                                                                        │ │ 
+ │ │                                                                        │ │ 
+ ╰─│                                                                        │─╯ 
+   │     Reconnect Antigravity…   Rename…   Remove…   All accounts   Back   │   
+   │                                                Cancel  ▎Full details   │   
+   ╰────────────────────────────────────────────────────────────────────────╯   
+   14 accounts                                                                  
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ Tab Next field  Enter Full details  Esc Cancel                                 

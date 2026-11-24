@@ -44,7 +44,11 @@ pub async fn run(env: AppEnv, deps: Deps) -> ExitClass {
         env,
         cancel,
     } = env;
-    let mut io = Io::new(stdout, stderr);
+    let mut io = Io::new(
+        stdout,
+        stderr,
+        output::wants_color(&env, terminal.is_some()),
+    );
     let cli = match Cli::try_parse_from(&args) {
         Ok(cli) => cli,
         Err(error) => return usage(&mut io, &error, &args),
