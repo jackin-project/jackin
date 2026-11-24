@@ -170,8 +170,18 @@ pub(crate) fn digests(
     handle
         .files()
         .into_iter()
+        .filter(|(path, _)| !git_housekeeping(path.as_str()))
         .map(|(path, bytes)| (path, jackin_core::Sha256::of(&bytes)))
         .collect()
+}
+
+/// Git writes `maintenance.lock` and other `*.lock` files under `.git/` after a
+/// command returns. A before/after digest of a refused purge must not see them.
+fn git_housekeeping(path: &str) -> bool {
+    let Some(name) = path.rsplit('/').next() else {
+        return false;
+    };
+    path.contains("/.git/") && (name.ends_with(".lock") || name == "gc.pid")
 }
 
 pub(crate) async fn state(rig: &Rig, name: &SandboxName) -> jackin_session::WorkState {
