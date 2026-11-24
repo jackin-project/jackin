@@ -219,14 +219,22 @@ pub(super) fn refreshed(
     if failed > 0 {
         headline.push_str(&format!(" · {failed} failed"));
     }
-    let mut lines = vec![Line::of(vec![Span::strong(headline)])];
+    let columns = context(app).columns();
+    let mut lines = view::text::wrap(
+        Vec::new(),
+        0,
+        &view::text::split_parts(&headline, Tone::Strong),
+        columns,
+    );
     for (group, quota) in view.accounts() {
         let name = format!("{} · {}", group.name, quota.label);
         if outcome.skipped(quota.id) {
-            lines.push(Line::of(vec![
-                Span::new("  skipped ", Tone::Warn),
-                Span::plain(format!("{name}: {}", view::text::STATUS_LINE_FEED)),
-            ]));
+            lines.extend(entry(
+                "  skipped ",
+                Tone::Warn,
+                &format!("{name}: {}", view::text::STATUS_LINE_FEED),
+                columns,
+            ));
             continue;
         }
         match outcome.message(quota.id) {
@@ -235,10 +243,12 @@ pub(super) fn refreshed(
                 Span::plain(name),
             ])),
             Some(message) => {
-                lines.push(Line::of(vec![
-                    Span::new("  failed  ", Tone::Crit),
-                    Span::plain(format!("{name}: {message}")),
-                ]));
+                lines.extend(entry(
+                    "  failed  ",
+                    Tone::Crit,
+                    &format!("{name}: {message}"),
+                    columns,
+                ));
                 if matches!(
                     quota.reading,
                     Reading::Failed {
@@ -246,17 +256,36 @@ pub(super) fn refreshed(
                         ..
                     }
                 ) {
-                    lines.push(Line::of(vec![Span::dim(format!(
-                        "          {}",
-                        view::text::reconnect_command(quota.id)
-                    ))]));
+                    lines.extend(view::text::wrap(
+                        vec![Span::plain(" ".repeat(ENTRY_INDENT))],
+                        ENTRY_INDENT,
+                        &[(view::text::reconnect_command(quota.id), Tone::Dim)],
+                        columns,
+                    ));
                 }
             }
         }
     }
     lines.push(Line::blank());
-    lines.push(Line::of(vec![Span::dim(
-        "View usage: jackin usage · jackin usage details · jackin usage refresh --json",
-    )]));
+    lines.extend(view::text::wrap(
+        Vec::new(),
+        0,
+        &view::text::split_parts(
+            "View usage: jackin usage · jackin usage details · jackin usage refresh --json",
+            Tone::Dim,
+        ),
+        columns,
+    ));
     app.io.lines(&lines)
+}
+
+const ENTRY_INDENT: usize = 10;
+
+fn entry(tag: &str, tone: Tone, text: &str, columns: usize) -> Vec<Line> {
+    view::text::wrap(
+        vec![Span::new(tag, tone)],
+        ENTRY_INDENT,
+        &[(text.to_owned(), Tone::Plain)],
+        columns,
+    )
 }
