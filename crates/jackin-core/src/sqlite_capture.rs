@@ -3,7 +3,7 @@
 
 use zeroize::Zeroizing;
 
-use crate::boundary::{FileIdentity, FileSystem, FsError, RegularFileProblem};
+use crate::boundary::{FileIdentity, FileKind, FileSystem, FsError, RegularFileProblem};
 use crate::ids::Sha256;
 use crate::paths::{HostPath, RepoPath};
 
@@ -90,6 +90,11 @@ pub async fn capture(
     database: &HostPath,
     limits: CaptureLimits,
 ) -> Result<Capture, CaptureProblem> {
+    match fs.stat(database).await {
+        Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::NotARegularFile),
+        Ok(_) => {}
+        Err(_) => return Err(CaptureProblem::Unreadable),
+    }
     let target = fs
         .canonicalize(database)
         .await
@@ -159,9 +164,9 @@ pub async fn capture(
             continue;
         };
         let after = identity_of(fs, &target).await?;
-        let (same, _wiped) = offload(move || {
+        let same = offload(move || {
             let again = Zeroizing::new(again);
-            (Sha256::of(&again) == digest, again)
+            Sha256::of(&again) == digest
         })
         .await?;
         if before != after || !same {

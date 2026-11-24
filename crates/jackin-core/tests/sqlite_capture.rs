@@ -102,3 +102,22 @@ async fn a_missing_database_is_missing_and_a_database_alone_is_the_image() -> Te
     assert_eq!(captured.image.as_slice().len(), 2048);
     Ok(())
 }
+
+#[tokio::test]
+async fn a_database_that_is_a_symbolic_link_is_refused() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let real = dir.path().join("real.db");
+    std::fs::write(&real, database(512))?;
+    let link = dir.path().join("agent.db");
+    std::os::unix::fs::symlink(&real, &link)?;
+    let fs = jackin_core::StdFileSystem::default();
+    let refused = capture(&fs, &HostPath::parse(&link)?, LIMITS)
+        .await
+        .err()
+        .ok_or("the capture followed the link")?;
+    assert_eq!(refused, CaptureProblem::NotARegularFile);
+    capture(&fs, &HostPath::parse(&real)?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
+    Ok(())
+}
