@@ -58,9 +58,13 @@ description = "Run the repository gates; the docs build joins at P12.1"
 run = "mbx +1.99.1 xtask ci --no-docs"
 
 [tasks."check:secrets-scan"]
-description = "Scan the indexed tree in a temporary linked worktree and the history reachable from HEAD with gitleaks, betterleaks and Kingfisher"
+description = "Scan the indexed tree in a temporary linked worktree and the history reachable from HEAD with gitleaks, betterleaks and Kingfisher; a shallow checkout is deepened first because the ignore files key findings by commit id"
 run = """
 status=0
+if [ "$(git rev-parse --is-shallow-repository)" = true ]
+then
+  git fetch --no-tags --unshallow origin "$(git rev-parse HEAD)" || exit 1
+fi
 index_tree=$(git write-tree) || exit 1
 parent=$(mktemp -d) || exit 1
 tree="$parent/worktree"

@@ -22,12 +22,6 @@ name = "Install native libraries"
 run = "bash ci/native-libs.sh"
 phase = "build"
 
-[[test_lane]]
-root = "."
-all_features = true
-lint = true
-job = "parallel"
-
 [[lint]]
 kind = "mise-task"
 id = "secrets-scan"
