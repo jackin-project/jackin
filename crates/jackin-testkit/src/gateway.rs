@@ -33,7 +33,8 @@ pub use handle::SandboxHandle;
 
 use self::main_process::MainPlan;
 use self::state::{
-    Action, Armed, ArmedTrigger, Cell, Direction, Hold, HoldStatus, Registry, Sandbox, Settling,
+    Action, Armed, ArmedTrigger, Cell, Direction, Hiding, Hold, HoldStatus, Registry, Sandbox,
+    Settling,
 };
 use crate::engine::FakeEngine;
 use crate::host::{FakeClock, Working};
@@ -219,10 +220,9 @@ impl FakeGateway {
             Fault::CancelAt { trigger, token } => registry
                 .triggers
                 .push(ArmedTrigger::new(trigger, Action::Cancel(token))),
-            Fault::HideUntilCreateConflict => registry.hidden_until_conflict = true,
+            Fault::HideUntilCreateConflict => registry.hiding = Hiding::FromLabelQueries,
             Fault::HideEverywhereUntilCreateConflict => {
-                registry.hidden_until_conflict = true;
-                registry.hidden_by_name = true;
+                registry.hiding = Hiding::FromEveryQuery;
             }
             Fault::StartIgnored => registry.start_ignored = true,
             Fault::HoldAt { trigger } => registry.holds.push(Hold::new(trigger)),
@@ -752,8 +752,7 @@ impl Gateway for FakeGateway {
         let mut registry = self.registry();
         registry.strike(GatewayOp::Create)?;
         if registry.sandboxes.contains_key(spec.name()) {
-            registry.hidden_until_conflict = false;
-            registry.hidden_by_name = false;
+            registry.hiding = Hiding::Visible;
             return Err(GatewayError::AlreadyExists {
                 what: Missing::Sandbox(spec.name().clone()),
             });
@@ -810,11 +809,11 @@ impl Gateway for FakeGateway {
             let mut registry = self.registry();
             registry.strike(GatewayOp::Find)?;
             match query {
-                SandboxQuery::Name(_) if registry.hidden_by_name => Vec::new(),
+                SandboxQuery::Name(_) if registry.hiding == Hiding::FromEveryQuery => Vec::new(),
                 SandboxQuery::Name(name) => {
                     registry.sandboxes.get(name).cloned().into_iter().collect()
                 }
-                SandboxQuery::Labels(_) if registry.hidden_until_conflict => Vec::new(),
+                SandboxQuery::Labels(_) if registry.hiding != Hiding::Visible => Vec::new(),
                 SandboxQuery::Labels(selector) => {
                     let wanted = selector_pairs(&selector.render());
                     registry

@@ -467,3 +467,51 @@ async fn a_name_hit_on_another_launch_never_becomes_the_last_observed_sandbox() 
     })
     .await
 }
+
+#[tokio::test]
+async fn a_sandbox_that_is_being_deleted_is_not_offered_as_a_restore_candidate() -> TestResult {
+    guard(async {
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(1).await?)?;
+        let name = rig.sandbox_name(1)?;
+        rig.gateway().force_phase(&name, Phase::Deleting);
+        let found = finding(rig.run(rig.request(1)?, cancelled()).await?)?;
+        assert_eq!(
+            found,
+            RestoreFinding::Unconfirmed {
+                last_observed: Some(name),
+            }
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_found_sandbox_is_reported_without_waiting_for_the_name_lookup() -> TestResult {
+    guard_within(WITHIN, async {
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(1).await?)?;
+        let hold = Trigger::Op(GatewayOp::Find);
+        for _ in 0..2 {
+            rig.gateway().inject(Fault::HoldAt {
+                trigger: hold.clone(),
+            });
+        }
+        let before = rig.world.clock.stamp();
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            rig.gateway().release(&hold);
+        };
+        let (outcome, ()) = tokio::join!(rig.run(rig.request(1)?, cancelled()), driver);
+        let after = rig.world.clock.stamp();
+        assert_eq!(
+            finding(outcome?)?,
+            RestoreFinding::Observed(rig.sandbox_name(1)?)
+        );
+        assert_eq!((after.seconds, after.nanos), (before.seconds, before.nanos));
+        rig.gateway().release(&hold);
+        Ok(())
+    })
+    .await
+}

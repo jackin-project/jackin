@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use jackin_core::{
     AccountName, Agent, DockerCapability, DockerLabel, FileLock, FileMode, HookKind, HostPath,
-    LabelSelector, PLACEHOLDER_SCHEME, Provider, SandboxLabels, SandboxName, SandboxPath,
+    LabelSelector, PLACEHOLDER_SCHEME, Phase, Provider, SandboxLabels, SandboxName, SandboxPath,
     SecretBytes, StartRequest, sandbox_layout,
 };
 use jackin_image::{BuiltImage, ImageHold, ImageSource, ensure_held};
@@ -23,8 +23,8 @@ use crate::files::render_auth_json;
 use crate::launch::certs::{self, Bound};
 use crate::launch::decide::{Act, Boot, Decision, Done, Finish, HookPlan, Observed, Wait, decide};
 use crate::launch::hooks::{self, HookRun};
+use crate::launch::outcome::outcome_unknown;
 use crate::launch::probe;
-use crate::launch::settled::outcome_unknown;
 use crate::launch::tracker::Tracker;
 use crate::launch::{
     LaunchError, LaunchEvent, LaunchEvents, LaunchFailure, LaunchOutcome, LaunchStep,
@@ -98,6 +98,7 @@ struct Run<'a> {
     tracker: Tracker,
     known: Option<SandboxName>,
     touched: bool,
+    acknowledged: Option<SandboxName>,
     create_unsettled: bool,
     image_hold: Option<ImageHold>,
     kimi: BTreeMap<AccountName, KimiLoginMetadata>,
@@ -119,6 +120,7 @@ impl Session {
             tracker: Tracker::new(),
             known: None,
             touched: false,
+            acknowledged: None,
             create_unsettled: false,
             image_hold: None,
             kimi: BTreeMap::new(),
@@ -224,53 +226,75 @@ impl Run<'_> {
 
     async fn recovered(&self) -> RestoreFinding {
         let gateway = self.session.deps.gateway.as_ref();
-        let launch = self.plan.launch_id();
-        let by_label = SandboxQuery::Labels(LabelSelector::launch(launch));
+        let by_label = SandboxQuery::Labels(LabelSelector::launch(self.plan.launch_id()));
         let by_name = SandboxQuery::Name(self.plan.draft().name().clone());
-        let lookups = async {
-            let labelled = gateway.find_sandboxes(&by_label).await;
-            let named = gateway.find_sandboxes(&by_name).await;
-            (labelled, named)
-        };
-        let budget = self.session.deps.host.clock.sleep(RECOVERY_LOOKUP_BUDGET);
-        let (labelled, named) = tokio::select! {
-            biased;
-            found = lookups => found,
-            () = budget => return self.unconfirmed(None),
-        };
-        let hit = named.as_ref().ok().and_then(|views| {
-            views
-                .iter()
-                .find(|view| {
+        let mut labelled = None;
+        let mut named = None;
+        {
+            let lookups = async {
+                let found = gateway.find_sandboxes(&by_label).await;
+                let needs_name = found.as_ref().map_or(true, Vec::is_empty);
+                labelled = Some(found);
+                if needs_name {
+                    named = Some(gateway.find_sandboxes(&by_name).await);
+                }
+            };
+            let budget = self.session.deps.host.clock.sleep(RECOVERY_LOOKUP_BUDGET);
+            tokio::select! {
+                biased;
+                () = lookups => {}
+                () = budget => {}
+            }
+        }
+        self.finding(labelled, named)
+    }
+
+    fn finding(
+        &self,
+        labelled: Option<Result<Vec<SandboxView>, GatewayError>>,
+        named: Option<Result<Vec<SandboxView>, GatewayError>>,
+    ) -> RestoreFinding {
+        let launch = self.plan.launch_id();
+        let hit = named
+            .as_ref()
+            .and_then(|found| found.as_ref().ok())
+            .and_then(|views| {
+                views.iter().find(|view| {
                     SandboxLabels::from_labels(&view.labels)
                         .is_ok_and(|labels| labels.planned.launch == *launch)
                 })
-                .map(|view| view.name.clone())
-        });
+            });
         match labelled {
-            Err(_) => self.unconfirmed(hit),
-            Ok(views) if views.len() > 1 => {
+            None | Some(Err(_)) => self.unconfirmed(hit.map(|view| view.name.clone())),
+            Some(Ok(views)) if views.len() > 1 => {
                 let mut names: Vec<SandboxName> = views.into_iter().map(|view| view.name).collect();
                 names.sort();
                 RestoreFinding::Ambiguous(names)
             }
-            Ok(mut views) if views.len() == 1 => RestoreFinding::Observed(views.remove(0).name),
-            Ok(_) => match (named, hit) {
-                (Err(_), _) => self.unconfirmed(None),
-                (Ok(_), Some(name)) => RestoreFinding::Observed(name),
-                (Ok(_), None) if self.create_unsettled || self.known.is_some() => {
-                    self.unconfirmed(None)
+            Some(Ok(views)) if views.len() == 1 => self.seen(&views[0]),
+            Some(Ok(_)) => match (&named, hit) {
+                (Some(Ok(_)), Some(view)) => self.seen(view),
+                (Some(Ok(_)), None) if !self.create_unsettled && self.acknowledged.is_none() => {
+                    RestoreFinding::Absent {
+                        requested: self.touched,
+                    }
                 }
-                (Ok(_), None) => RestoreFinding::Absent {
-                    requested: self.touched,
-                },
+                _ => self.unconfirmed(None),
             },
+        }
+    }
+
+    fn seen(&self, view: &SandboxView) -> RestoreFinding {
+        if view.phase == Phase::Deleting {
+            self.unconfirmed(Some(view.name.clone()))
+        } else {
+            RestoreFinding::Observed(view.name.clone())
         }
     }
 
     fn unconfirmed(&self, seen: Option<SandboxName>) -> RestoreFinding {
         RestoreFinding::Unconfirmed {
-            last_observed: self.known.clone().or(seen),
+            last_observed: self.acknowledged.clone().or(seen),
         }
     }
 
@@ -313,6 +337,7 @@ impl Run<'_> {
             1 => {
                 let view = views.remove(0);
                 self.known = Some(view.name.clone());
+                self.acknowledged = Some(view.name.clone());
                 match self.settled(view, hint).await? {
                     Observed::Absent => Ok(self.vanished_sandbox()),
                     observed => Ok(observed),
@@ -427,7 +452,7 @@ impl Run<'_> {
                 .launch_metadata(account, *agent, self.cancel)
                 .await
                 .map_err(|source| match source {
-                    AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
+                    cancelled if cancelled.is_cancelled() => Stop::Cancelled,
                     other => failed(
                         LaunchStep::Provider,
                         LaunchError::ProviderUnavailable {
@@ -456,7 +481,7 @@ impl Run<'_> {
                 .sync_provider(account, name, *agent, metadata.as_ref(), self.cancel)
                 .await
                 .map_err(|source| match source {
-                    AccountError::Lock(LockError::Cancelled) => Stop::Cancelled,
+                    cancelled if cancelled.is_cancelled() => Stop::Cancelled,
                     other => failed(
                         LaunchStep::Provider,
                         LaunchError::ProviderUnavailable {
@@ -486,6 +511,7 @@ impl Run<'_> {
         match self.session.deps.gateway.create_sandbox(&create).await {
             Ok(view) => {
                 self.done.created = self.done.created.saturating_add(1);
+                self.acknowledged = Some(view.name.clone());
                 self.known = Some(view.name);
                 Ok(())
             }
@@ -565,6 +591,7 @@ impl Run<'_> {
             .map(|labels| labels.planned.launch);
         if other.as_ref() == Some(self.plan.launch_id()) {
             self.known = Some(view.name.clone());
+            self.acknowledged = Some(view.name.clone());
             Ok(())
         } else {
             Err(failed(
@@ -605,6 +632,7 @@ impl Run<'_> {
             .await
             .map_err(|error| failed(LaunchStep::Sandbox, error))?;
         self.known = None;
+        self.acknowledged = None;
         Ok(())
     }
 

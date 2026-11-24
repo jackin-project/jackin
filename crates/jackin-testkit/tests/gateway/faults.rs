@@ -345,11 +345,10 @@ async fn lose_response_applies_the_operation_then_fails_once_for_each_operation(
             op: GatewayOp::WriteFile,
             error: lost(),
         });
-        assert!(
-            write(&fake, &name, "/sandbox/lost.txt", "kept")
-                .await
-                .is_err()
-        );
+        write(&fake, &name, "/sandbox/lost.txt", "kept")
+            .await
+            .err()
+            .ok_or("the lost write reported success")?;
         assert_eq!(
             read(&fake, &name, "/sandbox/lost.txt").await?,
             Some(b"kept".to_vec())
@@ -360,14 +359,20 @@ async fn lose_response_applies_the_operation_then_fails_once_for_each_operation(
             op: GatewayOp::Power,
             error: lost(),
         });
-        assert!(fake.set_power(&name, PowerAction::Stop).await.is_err());
+        assert!(matches!(
+            fake.set_power(&name, PowerAction::Stop).await,
+            Err(GatewayError::Protocol { .. })
+        ));
         assert_eq!(observe(&fake, &name).await?.phase, Phase::Stopped);
 
         fake.inject(Fault::LoseResponse {
             op: GatewayOp::Delete,
             error: lost(),
         });
-        assert!(fake.delete_sandbox(&name).await.is_err());
+        assert!(matches!(
+            fake.delete_sandbox(&name).await,
+            Err(GatewayError::Protocol { .. })
+        ));
         assert!(fake.sandboxes().is_empty());
         fake.delete_sandbox(&name).await?;
         Ok(())

@@ -4,9 +4,9 @@
 mod certs;
 mod decide;
 pub(crate) mod hooks;
+mod outcome;
 pub(crate) mod probe;
 mod run;
-mod settled;
 mod tracker;
 
 use std::fmt;

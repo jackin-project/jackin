@@ -1177,6 +1177,7 @@ pub enum ManifestError {
     ReservedEnvName(EnvName),
 }
 pub enum ConfigError {
+    Cancelled,   // returned only before the commit point: nothing was written
     Syntax { line: usize, column: usize, message: String },
     UnknownField { key: String },
     DuplicateName { kind: &'static str, name: String },
@@ -2319,6 +2320,8 @@ pub enum LifecycleError {
     PowerTimeout { sandbox: SandboxName, wanted: Phase, after: Duration },
     MainProcessEnded { sandbox: SandboxName, phase: Phase },
     Profile(PolicyError),
+    Cancelled,
+    PowerCancelled { sandbox: SandboxName, wanted: Phase },   // the power request was already sent
 }
 ```
 
@@ -2406,10 +2409,10 @@ pub struct GatewayPlan { }
 pub async fn plan_account_edits(desk: &AccountDesk, edits: Vec<ConfigEdit>, cancel: &CancellationToken) -> Result<AccountPlan, AccountEditError>;
 impl AccountPlan {
     pub fn needs_gateway(&self) -> bool;
-    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError>;
+    pub async fn apply(self, gateways: &Gateways, cancel: &CancellationToken) -> Result<Config, AccountEditError>;
 }
-impl OfflinePlan { pub async fn apply(self) -> Result<Config, ConfigError> }
-impl GatewayPlan { pub fn config(&self) -> &Config; pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> }   // build `gateways` from config()
+impl OfflinePlan { pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, ConfigError> }
+impl GatewayPlan { pub fn config(&self) -> &Config; pub async fn apply(self, gateways: &Gateways, cancel: &CancellationToken) -> Result<Config, AccountEditError> }   // build `gateways` from config()
 pub async fn plan_gateway_removal(desk: &AccountDesk, name: &GatewayName, cancel: &CancellationToken) -> Result<GatewayRemoval, AccountEditError>;
 pub enum GatewayRemoval { Offline(OfflinePlan), Online(RemovalPlan) }
 impl RemovalPlan { pub fn gateway(&self) -> &GatewayName; pub async fn apply(self, connector: &dyn GatewayConnector, cancel: &CancellationToken) -> Result<Config, AccountEditError> }
@@ -3942,7 +3945,7 @@ This file records where U8 (`jackin-session` planner, role catalog, account sync
 - U8-A4. Credentials step. It runs `/usr/bin/printenv` with `args == [keys.access_token]`. A non-zero exit or empty stdout fails at `Credentials` with the new variant `LaunchError::PlaceholderMissing { sandbox, key }`. A value that does not start with `openshell:resolve:`, or that spans more than one line, fails at `Credentials` with `LaunchError::PlaceholderInvalid { sandbox, key }`, which never holds the value (D10). No `auth.json` is written in either case. `auth.json` has mode `0o600` from `spec.auth_file`. Its top-level keys are exactly `auth_mode` (`chatgptAuthTokens`), `OPENAI_API_KEY` (null), `tokens`, `last_refresh`. `last_refresh` is the `Clock` time as RFC 3339 UTC in whole seconds (`2026-11-02T10:11:12Z`, 20 characters, as P0.3 shows). `tokens` holds exactly `id_token` (the P0.3 non-secret placeholder JWT: header `{"alg":"none","typ":"JWT"}`, payload `{"iss":"https://auth.openai.com","aud":"codex","sub":"openshell-app-server"}`, signature part `placeholder`), `access_token` (the printenv output without its trailing newline), `refresh_token` (`""`) and `account_id` (the real ID of the account's `CredentialSource::CodexLogin`). The step writes `auth.json`, `files().codex_config` and `files().env`; the env file is written even when the role has no `[env]`. `read_chatgpt_login` reads `auth_mode`, `tokens.access_token`, `tokens.refresh_token`, `tokens.oauth_provenance.client_id` and `tokens.account_id` (U8-B3).
 - U8-A5. `HookPresence`. A hook counts as present only when `read_files(hook_path)` returns non-empty bytes. An undeclared hook is an empty file in the image and is not run.
 - U8-A6. Hook output. `HookFailed.output == TerminalText::sanitize(stdout ++ stderr)`. Setup and preflight run with `workdir == sandbox_layout::PROJECT`, the env file values as env, and `ProgramStdin::Closed`. A non-zero exit stops the launch. `touch_on_success` is set only for setup.
-- U8-A7. Cancel path. On cancel the executor runs one bounded recovery lookup, a `find_sandboxes(launch label)` and a `find_sandboxes(planned name)` under one `RECOVERY_LOOKUP_BUDGET` deadline that the caller token does not cancel, and returns `Cancelled(RestoreCandidate { launch_id, finding })`. `finding` is `Observed(name)` when exactly one sandbox carries the launch label (or the planned name carries it), `Ambiguous(names)` when several do, `Absent { requested }` only when both lookups succeeded empty, no sandbox was seen in this run and no create ended with an unknown outcome (`requested` says whether a create was attempted or a sandbox seen), and `Unconfirmed { last_observed }` in every other case: a lookup error or timeout, empty lookups after a sandbox was seen, or empty lookups after a create whose response was lost. A cancel never calls `delete_sandbox` and never returns `Err`. Read-only lookups are raced against the token; create, delete, power and write calls are never abandoned, so their outcome is known or classified unknown. A token that is cancelled while an act runs turns any error of that act into the cancel outcome.
+- U8-A7. Cancel path. On cancel the executor runs one bounded recovery: a `find_sandboxes(launch label)` and, only when that is empty or fails, a `find_sandboxes(planned name)`, under one `RECOVERY_LOOKUP_BUDGET` deadline that the caller token does not cancel, and returns `Cancelled(RestoreCandidate { launch_id, finding })`. `finding` is `Observed(name)` when exactly one live sandbox carries the launch label (or the planned name carries the launch label), `Ambiguous(names)` when several carry it, `Absent { requested }` only when both lookups succeeded empty, the gateway never acknowledged a sandbox in this run and no create ended with an unknown outcome (`requested` is true once a create was attempted or a sandbox was seen), and `Unconfirmed { last_observed }` in every other case: a lookup error or timeout, empty lookups after the gateway acknowledged a sandbox, empty lookups after a create whose response was lost, or a sandbox that is being deleted. A cancel never calls `delete_sandbox` and never returns `Err`. Read-only lookups are raced against the token; create, delete, power and write calls are never abandoned, so their outcome is known or classified unknown. A token that is cancelled while an act runs turns any error of that act into the cancel outcome.
 - U8-A8. Concurrency. Two concurrent `launch` calls with one ID both return `Ok(Ready)`. The loser of the create race gets `AlreadyExists`, reads by name and joins. Setup and preflight may run twice. The attempt write is fenced by the attempt ID.
 - U8-A9. Test limits and harness rules. `LaunchLimits { ready: 30 s, supervisor: 20 s, attempt: 20 s, hook: 600 s, upload: 600 s, create_attempts: 3 }`. Timeout assertions use `>=` on `FakeClock::slept()` sums and on the error's `after`; they do not pin the 500 ms poll interval. The integration targets are `tests/plan/main.rs`, `tests/launch/main.rs` and `tests/accounts/main.rs` (U8-B7), each with modules. No comments. `type TestResult = Result<(), Box<dyn std::error::Error>>`. Every async test sits under a 10 s `tokio::time::timeout` hang guard. The default `#[tokio::test]` runtime. Each test is under 150 lines. Dev-dependencies: `jackin-testkit`, `tempfile`, `serde_json`, `toml`, `tokio` (`macros rt time`).
 

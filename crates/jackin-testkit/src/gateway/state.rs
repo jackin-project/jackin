@@ -110,6 +110,13 @@ pub(super) enum Direction {
     Upload,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Hiding {
+    Visible,
+    FromLabelQueries,
+    FromEveryQuery,
+}
+
 #[derive(Debug)]
 pub(super) struct Registry {
     pub(super) sandboxes: BTreeMap<SandboxName, Arc<Cell>>,
@@ -130,8 +137,7 @@ pub(super) struct Registry {
     pub(super) provision_polls: u32,
     pub(super) failing_creates: u32,
     pub(super) supervisor: SupervisorModel,
-    pub(super) hidden_until_conflict: bool,
-    pub(super) hidden_by_name: bool,
+    pub(super) hiding: Hiding,
     pub(super) start_ignored: bool,
     pub(super) serving: bool,
     pub(super) version: String,
@@ -164,8 +170,7 @@ impl Registry {
             provision_polls: 0,
             failing_creates: 0,
             supervisor: SupervisorModel::Cooperative,
-            hidden_until_conflict: false,
-            hidden_by_name: false,
+            hiding: Hiding::Visible,
             start_ignored: false,
             serving: true,
             version: "0.1.7".to_owned(),

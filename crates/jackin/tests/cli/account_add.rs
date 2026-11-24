@@ -3,10 +3,14 @@
 
 use jackin::ExitClass;
 use jackin_core::{
-    AccountName, Agent, CredentialSource, ProfileId, Provider, ProviderName, TupleState,
+    AccountName, Agent, CredentialSource, ProfileId, Program, Provider, ProviderName, TupleState,
 };
 use jackin_openshell::GatewayOp;
-use jackin_testkit::{ACCESS, ACCOUNT_ID, Fault, Rig, TestResult, Trigger, World, guard};
+use jackin_session::CLAUDE_KEYCHAIN_ARGS;
+use jackin_testkit::{
+    ACCESS, ACCOUNT_ID, Fault, ProcessReply, Rig, ScriptedProgram, TestResult, Trigger, World,
+    guard,
+};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{FixedConnector, GATEWAY_CONFIG, Harness, failed};
@@ -581,6 +585,51 @@ async fn a_cancelled_account_add_exits_cancelled_and_leaves_the_gateway_and_conf
             .await?
             .ok()?;
         assert!(rig.gateway().provider(&provider("work")?).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_while_reading_the_host_keychain_exits_cancelled_and_adds_nothing() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let harness = Harness::new(&world);
+        harness.write_config(GATEWAY_CONFIG)?;
+        let before = harness.config_bytes()?;
+        world.runner.scripted().expect(
+            ScriptedProgram::Security,
+            &CLAUDE_KEYCHAIN_ARGS,
+            ProcessReply::until_cancelled(Vec::new()),
+        );
+        let token = CancellationToken::new();
+        let running = harness
+            .command(&[
+                "account",
+                "add",
+                "claude",
+                "--name",
+                "native",
+                "--from-host-login",
+            ])
+            .cancel(token.clone())
+            .run();
+        let canceller = async {
+            while !world
+                .runner
+                .scripted()
+                .seen()
+                .iter()
+                .any(|call| call.program == Program::Security)
+            {
+                tokio::task::yield_now().await;
+            }
+            token.cancel();
+        };
+        let (ran, ()) = tokio::join!(running, canceller);
+        let ran = ran?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert_eq!(harness.config_bytes()?, before);
         Ok(())
     })
     .await

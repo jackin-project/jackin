@@ -89,6 +89,8 @@ pub enum LifecycleError {
     Profile(#[from] PolicyError),
     #[error("cancelled")]
     Cancelled,
+    #[error("cancelled while {sandbox} was changing to {wanted}; the request was already sent")]
+    PowerCancelled { sandbox: SandboxName, wanted: Phase },
 }
 
 const INSPECT_SCHEMA: u32 = 1;
@@ -388,7 +390,10 @@ impl Session {
             }
             tokio::select! {
                 biased;
-                () = cancel.cancelled() => return Err(LifecycleError::Cancelled),
+                () = cancel.cancelled() => return Err(LifecycleError::PowerCancelled {
+                    sandbox: sandbox.clone(),
+                    wanted,
+                }),
                 () = self.deps.host.clock.sleep(POLL) => {}
             }
             waited += POLL;

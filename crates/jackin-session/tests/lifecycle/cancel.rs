@@ -3,13 +3,28 @@
 
 use std::time::Duration;
 
-use jackin_core::Phase;
+use jackin_core::{Phase, SandboxName};
 use jackin_openshell::{GatewayOp, PowerAction};
 use jackin_session::LifecycleError;
 use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard_within};
 use tokio_util::sync::CancellationToken;
 
 const WITHIN: Duration = Duration::from_secs(20);
+
+async fn power(
+    rig: &Rig,
+    name: &SandboxName,
+    action: PowerAction,
+    token: &CancellationToken,
+    readable: bool,
+) -> Result<(), LifecycleError> {
+    let session = &rig.world.session;
+    if readable {
+        session.power(name, action, token).await.map(drop)
+    } else {
+        session.power_unreadable(name, action, token).await
+    }
+}
 
 #[tokio::test]
 async fn a_cancel_interrupts_a_hung_lookup_in_a_power_change_and_changes_nothing() -> TestResult {
@@ -24,24 +39,12 @@ async fn a_cancel_interrupts_a_hung_lookup_in_a_power_change_and_changes_nothing
                 trigger: hold.clone(),
             });
             let token = CancellationToken::new();
-            let session = &rig.world.session;
-            let power = async {
-                if readable {
-                    session
-                        .power(&name, PowerAction::Stop, &token)
-                        .await
-                        .map(drop)
-                } else {
-                    session
-                        .power_unreadable(&name, PowerAction::Stop, &token)
-                        .await
-                }
-            };
+            let stopping = power(&rig, &name, PowerAction::Stop, &token, readable);
             let driver = async {
                 assert!(rig.gateway().until_held(&hold).await);
                 token.cancel();
             };
-            let (result, ()) = tokio::join!(power, driver);
+            let (result, ()) = tokio::join!(stopping, driver);
             assert!(
                 matches!(result, Err(LifecycleError::Cancelled)),
                 "{readable}: {result:?}"
@@ -74,18 +77,10 @@ async fn a_cancel_after_the_power_request_was_sent_leaves_the_sandbox_changing_n
                 trigger: Trigger::Op(GatewayOp::Power),
                 token: token.clone(),
             });
-            let result = if readable {
-                session
-                    .power(&name, PowerAction::Start, &token)
-                    .await
-                    .map(drop)
-            } else {
-                session
-                    .power_unreadable(&name, PowerAction::Start, &token)
-                    .await
-            };
+            let result = power(&rig, &name, PowerAction::Start, &token, readable).await;
             assert!(
-                matches!(result, Err(LifecycleError::Cancelled)),
+                matches!(&result, Err(LifecycleError::PowerCancelled { sandbox, wanted })
+                    if *sandbox == name && *wanted == Phase::Ready),
                 "{readable}: {result:?}"
             );
             assert_ne!(handle.phase(), Phase::Stopped, "{readable}");

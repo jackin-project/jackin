@@ -172,18 +172,19 @@ impl CommandError {
             | CommandError::Purge(
                 PurgeError::WorkNotExported { .. } | PurgeError::Replaced { .. },
             ) => ExitClass::Refused,
-            CommandError::Config(error) | CommandError::Account(AccountError::Config(error))
-                if error.cancelled() =>
-            {
+            CommandError::Config(error) if error.cancelled() => ExitClass::Cancelled,
+            CommandError::Account(error) if error.is_cancelled() => ExitClass::Cancelled,
+            CommandError::WorkspaceInUse(WorkspaceGuardError::Lock(LockError::Cancelled)) => {
                 ExitClass::Cancelled
             }
             CommandError::Cancelled(_)
             | CommandError::Usage(UsageError::Cancelled)
             | CommandError::Role(RoleError::Cancelled)
-            | CommandError::Lifecycle(LifecycleError::Cancelled)
+            | CommandError::Lifecycle(
+                LifecycleError::Cancelled | LifecycleError::PowerCancelled { .. },
+            )
             | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
-            | CommandError::Account(AccountError::Lock(LockError::Cancelled))
             | CommandError::Console(ConsoleError::Cancelled)
             | CommandError::Attach(AttachError::Gateway(GatewayError::Cancelled { .. }))
             | CommandError::Restart(RestartError::Gateway(GatewayError::Cancelled { .. }))
@@ -230,7 +231,7 @@ impl CommandError {
 mod tests {
     use jackin_core::{AccountName, GatewayName};
     use jackin_openshell::GatewayOp;
-    use jackin_session::AttachError;
+    use jackin_session::{AttachError, CredentialError};
 
     use super::*;
 
@@ -253,6 +254,22 @@ mod tests {
         }
         let refused = CommandError::Config(ConfigError::NoGateway);
         assert_eq!(refused.class(), ExitClass::Failure);
+    }
+
+    #[test]
+    fn nested_workspace_account_and_power_cancels_classify_as_cancelled() {
+        for error in [
+            CommandError::WorkspaceInUse(WorkspaceGuardError::Lock(LockError::Cancelled)),
+            CommandError::Account(AccountError::Credential(CredentialError::Cancelled)),
+            CommandError::Account(AccountError::Lock(LockError::Cancelled)),
+            CommandError::Lifecycle(LifecycleError::Cancelled),
+        ] {
+            assert_eq!(error.class(), ExitClass::Cancelled, "{error:?}");
+        }
+        let missing = CommandError::Account(AccountError::Credential(
+            CredentialError::KeychainLoginMissing,
+        ));
+        assert_eq!(missing.class(), ExitClass::Failure);
     }
 
     #[test]

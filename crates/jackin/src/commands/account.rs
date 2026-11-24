@@ -67,15 +67,23 @@ async fn host_login_source(
         jackin_core::Provider::Claude => {
             jackin_session::read_claude_host_login(&app.deps.host, &path, &app.cancel)
                 .await
-                .map_err(|_| {
-                    CommandError::Argument("no claude host login is available".to_owned())
+                .map_err(|error| match error {
+                    jackin_session::CredentialError::Cancelled => CommandError::Cancelled(
+                        "cancelled while reading the host credential store".to_owned(),
+                    ),
+                    _ => CommandError::Argument("no claude host login is available".to_owned()),
                 })?;
         }
         jackin_core::Provider::Antigravity => {
             jackin_session::read_antigravity_host_login(&app.deps.host, &app.cancel)
                 .await
-                .map_err(|_| {
-                    CommandError::Argument("no antigravity host login is available".to_owned())
+                .map_err(|error| match error {
+                    jackin_session::CredentialError::Cancelled => CommandError::Cancelled(
+                        "cancelled while reading the host credential store".to_owned(),
+                    ),
+                    _ => {
+                        CommandError::Argument("no antigravity host login is available".to_owned())
+                    }
                 })?;
         }
         jackin_core::Provider::Minimax => {

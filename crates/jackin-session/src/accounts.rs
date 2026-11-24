@@ -87,6 +87,18 @@ pub enum AccountError {
     HostLoginStoreUnsupported { account: AccountName },
 }
 
+impl AccountError {
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        match self {
+            AccountError::Lock(LockError::Cancelled)
+            | AccountError::Credential(CredentialError::Cancelled) => true,
+            AccountError::Config(error) => error.cancelled(),
+            _ => false,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum AccountEditError {
     #[error(transparent)]
@@ -174,14 +186,6 @@ struct Locked {
     desk: AccountDesk,
     config: Config,
     _held: Vec<FileLock>,
-}
-
-fn live(cancel: &CancellationToken) -> Result<(), ConfigError> {
-    if cancel.is_cancelled() {
-        Err(ConfigError::Cancelled)
-    } else {
-        Ok(())
-    }
 }
 
 fn account_lock(name: &AccountName) -> String {
@@ -459,7 +463,7 @@ impl RemovalPlan {
         let mut journal = Vec::new();
         let written = async {
             for account in &self.forget {
-                live(cancel)?;
+                ConfigError::unless_cancelled(cancel)?;
                 let held = holds(gateway.as_ref(), account)
                     .await
                     .map_err(|error| on_gateway(&self.name, error))?;
@@ -618,7 +622,7 @@ impl GatewayPlan {
             effects,
             agents,
         } = self;
-        live(cancel)?;
+        ConfigError::unless_cancelled(cancel)?;
         check_gateways(&locked.config, gateways)?;
         let store = &locked.desk.store;
         let home = gateways.home();
@@ -653,7 +657,7 @@ async fn forget<'a>(
 ) -> Result<(), AccountEditError> {
     for account in accounts {
         for &session in sessions {
-            live(cancel)?;
+            ConfigError::unless_cancelled(cancel)?;
             let held = holds(session.deps.gateway.as_ref(), account)
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error))?;
@@ -679,7 +683,7 @@ async fn publish<'a>(
         return Ok(());
     };
     for entry in publish {
-        live(cancel)?;
+        ConfigError::unless_cancelled(cancel)?;
         let acting = agents.get(entry.account.name()).copied();
         let agent = acting.unwrap_or_else(|| account_agent(&entry.account));
         let provider = ProviderName::for_account(entry.account.name(), agent);
@@ -691,7 +695,7 @@ async fn publish<'a>(
                 .await
                 .map_err(|error| on_gateway(home.gateway_name(), error.into()))?;
             let held = state == ProviderState::Present;
-            live(cancel)?;
+            ConfigError::unless_cancelled(cancel)?;
             journal.push(home.undo(
                 if held {
                     Action::Restore
@@ -701,7 +705,7 @@ async fn publish<'a>(
                 &entry.account,
                 agent,
             ));
-            home.sync_locked_agent(&entry.account, agent)
+            home.sync_locked_agent(&entry.account, agent, cancel)
                 .await
                 .map_err(|error| on_gateway(home.gateway_name(), error))?;
             continue;
@@ -720,7 +724,7 @@ async fn publish<'a>(
                     .map_err(|error| on_gateway(session.gateway_name(), error.into()))?
                     == ProviderState::Present;
                 if held_previous {
-                    live(cancel)?;
+                    ConfigError::unless_cancelled(cancel)?;
                     journal.push(session.undo(Action::Restore, previous, previous_agent));
                     session
                         .deps
@@ -738,14 +742,14 @@ async fn publish<'a>(
                 .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
             let held = state == ProviderState::Present;
             if held || index == 0 || held_previous {
-                live(cancel)?;
+                ConfigError::unless_cancelled(cancel)?;
                 journal.push(if held {
                     session.undo(Action::Restore, previous, previous_agent)
                 } else {
                     session.undo(Action::Remove, &entry.account, agent)
                 });
                 session
-                    .sync_locked_agent(&entry.account, agent)
+                    .sync_locked_agent(&entry.account, agent, cancel)
                     .await
                     .map_err(|error| on_gateway(session.gateway_name(), error))?;
             }
@@ -800,7 +804,7 @@ async fn refresh_held<'a>(
     if !held {
         return Ok(());
     }
-    live(cancel)?;
+    ConfigError::unless_cancelled(cancel)?;
     if account.has_provider_for(candidate) {
         journal.push(session.undo(
             if previous.has_provider_for(candidate) {
@@ -812,7 +816,7 @@ async fn refresh_held<'a>(
             candidate,
         ));
         session
-            .sync_locked_agent(account, candidate)
+            .sync_locked_agent(account, candidate, cancel)
             .await
             .map_err(|error| on_gateway(session.gateway_name(), error))?;
         return Ok(());
@@ -970,9 +974,9 @@ impl Session {
         &self,
         account: &Account,
         agent: Agent,
+        cancel: &CancellationToken,
     ) -> Result<AccountSync, AccountError> {
-        self.sync_locked_c(account, agent, None, &CancellationToken::new())
-            .await
+        self.sync_locked_c(account, agent, None, cancel).await
     }
 
     async fn sync_locked_c(
@@ -1227,6 +1231,7 @@ async fn sync_muse_login(
             ProcessError::Spawn { .. } => AccountError::HostLoginStoreUnsupported {
                 account: account.name().clone(),
             },
+            ProcessError::Cancelled { .. } => AccountError::Credential(CredentialError::Cancelled),
             _ => AccountError::MissingCredential {
                 account: account.name().clone(),
             },
@@ -1258,6 +1263,7 @@ async fn sync_claude_login(
             CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
                 account: account.name().clone(),
             },
+            CredentialError::Cancelled => AccountError::Credential(CredentialError::Cancelled),
             _ => AccountError::MissingCredential {
                 account: account.name().clone(),
             },
@@ -1291,6 +1297,7 @@ async fn sync_antigravity_login(
             CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
                 account: account.name().clone(),
             },
+            CredentialError::Cancelled => AccountError::Credential(CredentialError::Cancelled),
             _ => AccountError::MissingCredential {
                 account: account.name().clone(),
             },

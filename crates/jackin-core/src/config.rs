@@ -459,6 +459,16 @@ impl ConfigError {
     pub const fn cancelled(&self) -> bool {
         matches!(self, ConfigError::Cancelled)
     }
+
+    pub fn unless_cancelled(
+        cancel: &tokio_util::sync::CancellationToken,
+    ) -> Result<(), ConfigError> {
+        if cancel.is_cancelled() {
+            Err(ConfigError::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 impl From<Finding> for ConfigError {

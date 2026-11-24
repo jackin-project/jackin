@@ -180,6 +180,8 @@ pub enum CredentialError {
     KeychainUnavailable,
     #[error("the host credential store has no usable login")]
     KeychainLoginMissing,
+    #[error("cancelled while reading the host credential store")]
+    Cancelled,
     #[error(transparent)]
     Fs(#[from] FsError),
 }
@@ -1041,6 +1043,7 @@ async fn keychain_secret(
         .await
         .map_err(|error| match error {
             ProcessError::Spawn { .. } => CredentialError::KeychainUnavailable,
+            ProcessError::Cancelled { .. } => CredentialError::Cancelled,
             _ => CredentialError::KeychainLoginMissing,
         })?;
     if output.status != ProcessStatus::Exited(0) {
