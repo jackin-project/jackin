@@ -391,15 +391,23 @@ async fn refresh(app: &mut App, filter: UsageFilter, json: bool) -> Result<(), C
         );
     }
     overview::refreshed(app, &db, &filter, provider, &outcome)?;
-    let failed = outcome.messages.len() - outcome.skipped.len();
+    let accounts = outcome.messages.len() - outcome.skipped.len();
     match outcome.first_error {
         None => Ok(()),
-        Some(first) if failed == 0 => Err(first),
-        Some(_) => Err(failure(format!(
-            "refresh failed for {failed} account{}",
-            if failed == 1 { "" } else { "s" }
-        ))),
+        Some(_) => Err(failure(failure_summary(accounts, outcome.hubs_failed))),
     }
+}
+
+fn failure_summary(accounts: usize, hubs: usize) -> String {
+    let count = |n: usize, noun: &str| format!("{n} {noun}{}", if n == 1 { "" } else { "s" });
+    let mut parts = Vec::new();
+    if accounts > 0 {
+        parts.push(count(accounts, "account"));
+    }
+    if hubs > 0 {
+        parts.push(count(hubs, "hub"));
+    }
+    format!("refresh failed for {}", parts.join(" and "))
 }
 
 #[derive(Default)]
@@ -407,6 +415,7 @@ pub(super) struct RefreshOutcome {
     first_error: Option<CommandError>,
     messages: Vec<(Uuid, String)>,
     skipped: Vec<Uuid>,
+    hubs_failed: usize,
 }
 
 impl RefreshOutcome {
@@ -441,7 +450,13 @@ async fn refresh_selected(
                 if app.cancel.is_cancelled() {
                     return Err(cancelled());
                 }
-                app.io.note(&format!("{}: {error}", hub.id));
+                let text = format!("{}: {error}", hub.id);
+                if noisy {
+                    app.io.note(&text);
+                } else {
+                    overview::note(app, &text);
+                }
+                outcome.hubs_failed += 1;
                 outcome.first_error.get_or_insert_with(|| failure(error));
             }
         }

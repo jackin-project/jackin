@@ -61,11 +61,24 @@ fn print(app: &mut App, view: &UsageView, kind: Report) -> Result<(), CommandErr
     app.io.lines(&lines)
 }
 
+pub(super) fn note(app: &mut App, text: &str) {
+    let lines = view::text::wrap(
+        Vec::new(),
+        2,
+        &[(text.to_owned(), Tone::Plain)],
+        context(app).columns(),
+    );
+    app.io.note(&render::plain(&lines));
+}
+
 fn introduce(app: &mut App) -> Result<(), CommandError> {
     for provider in providers::catalog(std::iter::empty()) {
         app.io.line(&provider.to_string())?;
     }
-    app.io.note("To connect your first provider, open Accounts in the console or run jackin account usage connect <provider>.");
+    note(
+        app,
+        "To connect your first provider, open Accounts in the console or run jackin account usage connect <provider>.",
+    );
     Err(CommandError::NoUsageSnapshot)
 }
 

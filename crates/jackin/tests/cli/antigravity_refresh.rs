@@ -846,3 +846,75 @@ async fn the_final_error_line_of_a_failed_refresh_fits_80_piped_and_60_on_a_term
     })
     .await
 }
+
+async fn failing_hub_lab(world: &World) -> Result<Harness, Failure> {
+    use jackin_usage::onboarding::OwnedLogin as Login;
+    use tokio_util::sync::CancellationToken;
+    let server = UsageServer::start().await?;
+    let mut cli = Harness::new(world);
+    cli.usage_endpoints = server.endpoints();
+    cli.env.push(("NO_COLOR".to_owned(), "1".to_owned()));
+    let vault: Arc<dyn CredentialVault> = Arc::new(Memory::default());
+    cli.usage_vault = Some(Arc::clone(&vault));
+    let path = cli
+        .config_path
+        .as_path()
+        .parent()
+        .ok_or("config directory")?
+        .join("usage/accounts.sqlite3");
+    let listing = "/v0/management/auth-files";
+    server.serve(
+        Provider::Claude,
+        Method::Get,
+        listing,
+        Route::json(200, r#"{"files":[]}"#).requires_header("authorization", "Bearer fixture"),
+    );
+    let clock = Arc::clone(&world.clock);
+    let clock: Arc<dyn Clock> = clock;
+    Login::new(path.clone(), cli.usage_endpoints.clone(), clock)
+        .with_vault(vault)
+        .connect_hub(
+            &format!("{}/management.html", server.provider_base(Provider::Claude)),
+            &Secret::new("fixture".into()),
+            None,
+            &CancellationToken::new(),
+        )
+        .await?;
+    statusline_account(world, &cli, &path).await?;
+    server.replace(Provider::Claude, Method::Get, listing, Route::status(500));
+    std::mem::forget(server);
+    Ok(cli)
+}
+
+#[tokio::test]
+async fn a_failed_hub_sync_note_and_error_fit_80_piped_and_60_on_a_terminal() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let cli = failing_hub_lab(&world).await?;
+        let piped = cli.run(&["usage", "refresh"]).await?;
+        assert_ne!(piped.exit, ExitClass::Ok, "{}", piped.stderr);
+        assert!(!piped.stderr.is_empty());
+        assert_every_line_fits("piped stderr", &piped.stderr, 80);
+        assert_every_line_fits("piped stdout", &piped.stdout, 80);
+        assert!(
+            piped
+                .stderr
+                .lines()
+                .any(|line| line == "error: refresh failed for 1 hub"),
+            "{}",
+            piped.stderr
+        );
+
+        let terminal = ScriptedTerminal::new(Vec::new())?.0.sized(60)?;
+        let tty = cli
+            .command(&["usage", "refresh"])
+            .terminal(terminal)
+            .run()
+            .await?;
+        assert_ne!(tty.exit, ExitClass::Ok);
+        assert_every_line_fits("terminal stderr", &tty.stderr, 60);
+        assert_every_line_fits("terminal stdout", &tty.stdout, 60);
+        Ok(())
+    })
+    .await
+}
