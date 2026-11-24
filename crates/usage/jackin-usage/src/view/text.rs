@@ -17,6 +17,8 @@ const SCALES: [(f64, &str); 4] = [(1e3, "K"), (1e6, "M"), (1e9, "B"), (1e12, "T"
 const COMPACT_FROM: f64 = 100_000.0;
 const NEARBY_DAYS: i64 = 7;
 const BOUNDARY: f64 = 1e-9;
+const SEPARATOR: &str = " · ";
+const MIN_HANG: usize = 2;
 
 pub fn percent(used: UsedFraction) -> String {
     let points = used.percent();
@@ -346,34 +348,116 @@ pub fn truncate(text: &str, columns: usize) -> String {
     cut
 }
 
+pub fn split_parts(text: &str, tone: Tone) -> Vec<(String, Tone)> {
+    text.split(SEPARATOR)
+        .map(|part| (part.to_owned(), tone))
+        .collect()
+}
+
+struct Flow {
+    lines: Vec<Line>,
+    spans: Vec<Span>,
+    used: usize,
+    indent: usize,
+    columns: usize,
+    started: bool,
+}
+
+impl Flow {
+    fn push(&mut self, text: String, tone: Tone) {
+        self.used += text.chars().count();
+        match self.spans.last_mut() {
+            Some(last) if self.started && last.tone == tone => last.text.push_str(&text),
+            _ => self.spans.push(Span::new(text, tone)),
+        }
+        self.started = true;
+    }
+
+    fn turn(&mut self) {
+        self.lines.push(Line::of(std::mem::take(&mut self.spans)));
+        self.spans = vec![Span::plain(" ".repeat(self.indent))];
+        self.used = self.indent;
+        self.started = false;
+    }
+
+    fn dedent(&mut self, width: usize) {
+        let room = self.columns.saturating_sub(width);
+        if self.used + width > self.columns && room >= MIN_HANG {
+            self.spans = vec![Span::plain(" ".repeat(room))];
+            self.used = room;
+        }
+    }
+
+    fn put(&mut self, text: &str, tone: Tone) {
+        if self.used + text.chars().count() <= self.columns {
+            self.push(text.to_owned(), tone);
+            return;
+        }
+        if let Some((head, tail)) = text.split_once(": ") {
+            let head = format!("{head}:");
+            if self.used + head.chars().count() <= self.columns
+                && self.indent + tail.chars().count() <= self.columns
+            {
+                self.push(head, tone);
+                self.turn();
+                self.push(tail.to_owned(), tone);
+                return;
+            }
+        }
+        let mut chunk = " ".repeat(text.len() - text.trim_start().len());
+        let mut empty = true;
+        for word in text.split_whitespace() {
+            let gap = usize::from(!empty);
+            let reach = self.used + chunk.chars().count() + gap + word.chars().count();
+            if reach <= self.columns {
+                chunk.push_str(&" ".repeat(gap));
+                chunk.push_str(word);
+                empty = false;
+                continue;
+            }
+            if !empty {
+                self.push(std::mem::take(&mut chunk), tone);
+                self.turn();
+            }
+            let room = self
+                .columns
+                .saturating_sub(self.used + chunk.chars().count());
+            chunk.push_str(&truncate(word, room));
+            empty = false;
+        }
+        if !chunk.is_empty() {
+            self.push(chunk, tone);
+        }
+    }
+}
+
 pub fn wrap(
     prefix: Vec<Span>,
     indent: usize,
     parts: &[(String, Tone)],
     columns: usize,
 ) -> Vec<Line> {
-    let mut lines = Vec::new();
-    let mut spans = prefix;
-    let mut used: usize = spans.iter().map(Span::width).sum();
-    let mut first = true;
-    for (text, tone) in parts {
+    let used = prefix.iter().map(Span::width).sum();
+    let mut flow = Flow {
+        lines: Vec::new(),
+        spans: prefix,
+        used,
+        indent,
+        columns,
+        started: false,
+    };
+    for (position, (text, tone)) in parts.iter().enumerate() {
         let width = text.chars().count();
-        if first {
-            spans.push(Span::new(text.clone(), *tone));
-            used += width;
-            first = false;
-        } else if used + 3 + width <= columns {
-            spans.push(Span::new(format!(" · {text}"), *tone));
-            used += 3 + width;
+        if position == 0 {
+            flow.put(text, *tone);
+        } else if flow.used + SEPARATOR.chars().count() + width <= columns {
+            flow.push(format!("{SEPARATOR}{text}"), *tone);
         } else {
-            lines.push(Line::of(std::mem::take(&mut spans)));
-            spans = vec![
-                Span::plain(" ".repeat(indent)),
-                Span::new(text.clone(), *tone),
-            ];
-            used = indent + width;
+            flow.turn();
+            flow.dedent(width);
+            flow.put(text, *tone);
         }
     }
-    lines.push(Line::of(spans));
-    lines
+    flow.lines.push(Line::of(flow.spans));
+    flow.lines
 }

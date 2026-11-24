@@ -151,6 +151,7 @@ pub fn seed_usage_view(path: &Path) -> Result<Vec<ProfileAccount>, Box<dyn std::
 pub struct SeedRow<'a> {
     pub provider: UsageProvider,
     pub label: &'a str,
+    pub identity: Option<&'a str>,
     pub fetched_at: i64,
     pub snapshot: Value,
     pub failure: Option<(FailureKind, &'a str, i64)>,
@@ -163,14 +164,16 @@ pub fn seed_usage_rows(
     let mut db = AccountRegistry::with_vault(path, Arc::new(ProfileVault))?;
     let mut accounts = Vec::new();
     for (index, row) in rows.into_iter().enumerate() {
-        let identity = match row.provider {
-            UsageProvider::Kimi
-            | UsageProvider::Zai
-            | UsageProvider::MiniMax
-            | UsageProvider::Mimo
-            | UsageProvider::OpenRouter => {
-                CandidateIdentity::api_key(&Secret::new(format!("row-{index}-{}", row.label)))
-            }
+        let identity = match (row.provider, row.identity) {
+            (_, Some(shared)) => CandidateIdentity::OAuth(Some(shared.to_owned())),
+            (
+                UsageProvider::Kimi
+                | UsageProvider::Zai
+                | UsageProvider::MiniMax
+                | UsageProvider::Mimo
+                | UsageProvider::OpenRouter,
+                None,
+            ) => CandidateIdentity::api_key(&Secret::new(format!("row-{index}-{}", row.label))),
             _ => CandidateIdentity::OAuth(Some(format!("row-subject-{index}-{}", row.label))),
         };
         let id = db.add_with_snapshot(

@@ -443,6 +443,16 @@ fn visible_reset(
     (!idle).then_some(at)
 }
 
+pub(crate) fn visible_resource_reset(
+    provider: UsageProvider,
+    key: &str,
+    resource: &Value,
+    now: i64,
+) -> Option<i64> {
+    let measure = reading::decode(key, resource)?;
+    visible_reset(provider, key, &measure, now)
+}
+
 pub(crate) fn account_detail_lines(
     provider: UsageProvider,
     body: &Value,

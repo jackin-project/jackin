@@ -1,0 +1,11 @@
+PROVIDER                 ACCOUNT               PLAN  STATUS      FLAGS      FETCHED           ID                                    LAST ERROR
+Claude                   work@example.com      Max   failing 2m             Tue 24 Nov 22:35  a0000001-0000-4000-8000-000000000001  the credential is missing; sign in again
+Antigravity (Google AI)  personal@example.com  Max   fresh 2m    duplicate  Tue 24 Nov 22:35  a0000002-0000-4000-8000-000000000002  -
+Antigravity (Google AI)  personal@example.com  Max   failing 2m  duplicate  Tue 24 Nov 22:35  a0000003-0000-4000-8000-000000000003  refresh timed out
+
+3 accounts · 2 providers · 2 failing · 1 duplicate
+! Antigravity (Google AI): personal@example.com is connected twice.
+  Remove the failing one:
+    jackin account usage rm a0000003-0000-4000-8000-000000000003
+! work@example.com needs sign-in:
+  jackin account usage reconnect a0000001-0000-4000-8000-000000000001
