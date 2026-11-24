@@ -384,3 +384,39 @@ async fn a_local_role_manifest_edited_outside_the_console_shows_after_a_refresh(
     })
     .await
 }
+
+#[tokio::test]
+async fn a_manifest_edited_outside_the_console_clears_the_check_that_was_shown_for_it() -> TestResult
+{
+    guard(async {
+        let mut lab = Lab::open().await?;
+        lab.console.keys("R v")?;
+        lab.console.settle().await?;
+        assert_eq!(lab.console.status_line(), "Role sentinel: check passed");
+        let checked = |lab: &mut Lab| -> Result<bool, Box<dyn std::error::Error>> {
+            let record = lab
+                .world()
+                .surfaces
+                .roles
+                .as_ref()
+                .and_then(|admin| admin.role("sentinel"))
+                .cloned()
+                .ok_or("role")?;
+            Ok(matches!(
+                record.check,
+                jackin_console::domain::role::RoleCheckState::Done(_)
+            ))
+        };
+        assert!(checked(&mut lab)?);
+        after_refresh(&mut lab, 12).await?;
+        assert!(checked(&mut lab)?, "an unchanged manifest kept its check");
+
+        let file = lab.rig.loaded.root().as_path().join("jackin.role.toml");
+        let original = tokio::fs::read_to_string(&file).await?;
+        tokio::fs::write(&file, original.replace("enabled = false", "enabled = true")).await?;
+        after_refresh(&mut lab, 12).await?;
+        assert!(!checked(&mut lab)?, "the check of the old manifest stayed");
+        Ok(())
+    })
+    .await
+}

@@ -350,7 +350,11 @@ impl Inputs {
     }
 
     async fn role_docs(&self, config: &Config) -> RoleDocs {
-        let wanted: Vec<(RoleName, CoreRoleSource)> = {
+        let wanted: Vec<(
+            RoleName,
+            CoreRoleSource,
+            Option<Result<jackin_core::RoleManifest, RoleDocError>>,
+        )> = {
             let cache = locked(&self.docs);
             config
                 .roles()
@@ -358,23 +362,35 @@ impl Inputs {
                     matches!(entry.source, CoreRoleSource::Path(_))
                         || cache.get(*name).is_none_or(|(s, _)| *s != entry.source)
                 })
-                .map(|(name, entry)| (name.clone(), entry.source.clone()))
+                .map(|(name, entry)| {
+                    let previous = cache.get(name).map(|(_, doc)| doc.clone());
+                    (name.clone(), entry.source.clone(), previous)
+                })
                 .collect()
         };
         let anywhere = HostPath::parse(Path::new(&self.home))
             .ok()
             .map(|home| CoreWorkspace::new(home, false));
-        let loaded = join_all(wanted.into_iter().map(|(name, source)| {
+        let loaded = join_all(wanted.into_iter().map(|(name, source, previous)| {
             let anywhere = anywhere.clone();
             Box::pin(async move {
                 let doc = match &source {
                     CoreRoleSource::Path(path) => {
-                        match self.roles.load_path(path, &CancellationToken::new()).await {
-                            Ok(role) => Ok(role.manifest().clone()),
-                            Err(error) => match self.roles.read_manifest(path).await {
-                                Ok(manifest) => Ok(manifest),
-                                Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
-                            },
+                        let unchanged = match (self.roles.read_manifest(path).await, &previous) {
+                            (Ok(read), Some(Ok(known))) if read == *known => Some(read),
+                            _ => None,
+                        };
+                        if let Some(manifest) = unchanged {
+                            Ok(manifest)
+                        } else {
+                            locked(&self.checks).remove(&name);
+                            match self.roles.load_path(path, &CancellationToken::new()).await {
+                                Ok(role) => Ok(role.manifest().clone()),
+                                Err(error) => match self.roles.read_manifest(path).await {
+                                    Ok(manifest) => Ok(manifest),
+                                    Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
+                                },
+                            }
                         }
                     }
                     CoreRoleSource::Git { .. } => match &anywhere {
