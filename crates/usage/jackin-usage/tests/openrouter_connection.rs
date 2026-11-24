@@ -492,33 +492,60 @@ async fn stored_days_that_are_not_exact_amounts_are_refetched_not_summed()
 #[tokio::test]
 async fn a_fresh_stored_activity_with_numeric_amounts_is_read_again() -> Result<(), Box<dyn Error>>
 {
-    let legacy = json!({"activity":{
-        "as_of":"2025-01-06","read_at":NOW.0 - 60,"expected_days":30,"observed_days":1,
-        "prior30Days":{"spend":0.1,"tokens":0},
-        "yesterday":{"totals":{"spend":0.1,"tokens":0},"by_model":{}},
-        "days":{"2025-01-05":{"totals":{"spend":0.1,"byokSpend":0,"tokens":0},"by_model":{}}}}});
-    let snapshot = activity_read(
-        &format!("{{\"data\":[{}]}}", beta("2025-01-05", "0.5")),
-        Some(&legacy),
-        false,
-    )
-    .await?;
-    assert_eq!(
-        snapshot["activity"]["days"]["2025-01-05"]["totals"]["spend"],
-        "0.5"
+    let exact_day = json!({"totals":{"spend":"0.1"},"by_model":{}});
+    let legacy_day = json!({"totals":{"spend":0.1,"tokens":0},"by_model":{}});
+    let stored = |days: Value, yesterday: Value, prior: Value| {
+        json!({"activity":{
+            "as_of":"2025-01-06","read_at":NOW.0 - 60,"expected_days":30,"observed_days":1,
+            "prior30Days":prior,"yesterday":yesterday,"days":days}})
+    };
+    let row = format!("{{\"data\":[{}]}}", beta("2025-01-05", "0.5"));
+    for (name, previous) in [
+        (
+            "numeric days",
+            stored(
+                json!({"2025-01-05":legacy_day}),
+                exact_day.clone(),
+                json!({"spend":"0.1"}),
+            ),
+        ),
+        (
+            "numeric yesterday",
+            stored(
+                json!({"2025-01-05":exact_day}),
+                legacy_day.clone(),
+                json!({"spend":"0.1"}),
+            ),
+        ),
+        (
+            "numeric prior total",
+            stored(
+                json!({"2025-01-05":exact_day}),
+                exact_day.clone(),
+                json!({"spend":0.1}),
+            ),
+        ),
+        (
+            "numeric prior total without days",
+            stored(Value::Null, Value::Null, json!({"spend":0.1})),
+        ),
+    ] {
+        let snapshot = activity_read(&row, Some(&previous), false).await?;
+        assert_eq!(
+            snapshot["activity"]["prior30Days"]["spend"], "0.5",
+            "{name}"
+        );
+        assert_eq!(
+            snapshot["activity"]["days"]["2025-01-05"]["totals"]["spend"], "0.5",
+            "{name}"
+        );
+    }
+    let exact = stored(
+        json!({"2025-01-05":exact_day}),
+        exact_day.clone(),
+        json!({"spend":"0.1"}),
     );
-    assert_eq!(snapshot["activity"]["prior30Days"]["spend"], "0.5");
-    let exact = json!({"activity":{
-        "as_of":"2025-01-06","read_at":NOW.0 - 60,"expected_days":30,"observed_days":1,
-        "prior30Days":{"spend":"0.1"},
-        "yesterday":{"totals":{"spend":"0.1"},"by_model":{}},
-        "days":{"2025-01-05":{"totals":{"spend":"0.1"},"by_model":{}}}}});
-    let kept = activity_read(
-        &format!("{{\"data\":[{}]}}", beta("2025-01-05", "0.5")),
-        Some(&exact),
-        false,
-    )
-    .await?;
+    let kept = activity_read(&row, Some(&exact), false).await?;
     assert_eq!(kept["activity"], exact["activity"]);
     Ok(())
 }

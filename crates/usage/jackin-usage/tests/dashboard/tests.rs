@@ -213,6 +213,44 @@ fn unified_limits_keep_members_units_and_the_earliest_reset() -> Result {
 }
 
 #[test]
+fn a_pooled_row_of_exact_amounts_does_not_inherit_an_exhausted_member() -> Result {
+    let temp = tempfile::tempdir()?;
+    let mut registry = db(
+        &temp.path().join("usage/accounts.db"),
+        &Arc::new(Vault::default()),
+    )?;
+    let now = 1700000000;
+    for (label, used) in [("spent", "10"), ("fresh", "1")] {
+        registry.add_with_snapshot(
+            UsageProvider::Claude,
+            label,
+            &scoped(label),
+            &bytes("sample"),
+            now,
+            &json!({"resources":{"extraUsage":{"kind":"consumption","unit":"usd","used":used,"limit":"10"}}}),
+        )?;
+    }
+    registry.set_dashboard_settings(&DashboardSettings {
+        unify_claude: true,
+        ..Default::default()
+    })?;
+    let d = Dashboard::load(&registry, &mut DashboardMemory::default(), now)?;
+    let pooled = d
+        .all
+        .iter()
+        .find(|r| r.metric == "extraUsage")
+        .ok_or("missing pooled row")?;
+    assert_eq!(pooled.members.len(), 2);
+    assert_eq!(pooled.value, "9 usd");
+    assert!(
+        !d.priority
+            .iter()
+            .any(|(section, _)| *section == Section::UsedUp)
+    );
+    Ok(())
+}
+
+#[test]
 fn unused_warning_needs_a_long_non_spend_window_and_an_observed_reset() -> Result {
     let temp = tempfile::tempdir()?;
     let mut registry = db(

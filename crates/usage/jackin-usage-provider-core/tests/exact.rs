@@ -129,12 +129,28 @@ fn nesting_beyond_the_limit_is_an_error_not_a_stack_overflow() {
 
 #[test]
 fn brackets_inside_text_do_not_count_as_nesting() -> Result<(), ProviderError> {
-    let body = parsed(&format!(
-        "{{\"a\":\"{}\\\"[[[[\",\"b\":[1]}}",
-        "[".repeat(100)
-    ))?;
+    let brackets = "[".repeat(20);
+    let body = parsed(&format!("{{\"a\":\"{brackets}\\\"{brackets}\",\"b\":[1]}}"))?;
     assert_eq!(body["b"].as_list().map(<[Exact]>::len), Some(1));
-    assert_eq!(body["a"].as_str().map(str::len), Some(105));
+    assert_eq!(body["a"].as_str().map(str::len), Some(41));
+    let after_a_backslash = format!(
+        "{{\"a\":\"x\\\\\",\"b\":{}1{}}}",
+        "[".repeat(17),
+        "]".repeat(17)
+    );
+    assert_eq!(parsed(&after_a_backslash), Err(NOT_JSON));
+    Ok(())
+}
+
+#[test]
+fn debug_output_hides_the_body() -> Result<(), ProviderError> {
+    let shown = format!(
+        "{:?}",
+        parsed(r#"{"label":"sk-or-v1-private","limit":1.5}"#)?
+    );
+    for hidden in ["label", "sk-or-v1-private", "1.5", "limit"] {
+        assert!(!shown.contains(hidden), "{shown}");
+    }
     Ok(())
 }
 

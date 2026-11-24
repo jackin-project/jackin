@@ -635,6 +635,7 @@ impl Measure {
         self.exact_limit = None;
         self.exact_used = None;
         self.exact_left = None;
+        self.exhausted = None;
     }
 
     pub(super) fn redacted_values(&self) -> Value {
