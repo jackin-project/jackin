@@ -620,7 +620,7 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
     ] {
         let entry = entries
             .iter()
-            .find(|entry| entry.label == format!("Claude · {label}"))
+            .find(|entry| entry.label == label)
             .ok_or(label)?;
         assert!(
             entry

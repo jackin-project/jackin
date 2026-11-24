@@ -4,7 +4,7 @@
  │     Overview                                                             ┃ │ 
  │     Usage accounts                                             1 account ┃ │ 
  │ ╭─ Account usage ──────────────────────────────────────────────────── × ─╮ │ 
- │ │   Antigravity · personal@example.com · Antigravity (Google AI)         │ │ 
+ │ │   personal@example.com · Antigravity (Google AI)                       │ │ 
  │ │   Google AI Ultra · failed · fetched 1d 5h ago                         │ │ 
  │ │   Claude weekly >99% used · resets in 1d 7h · Thu 06:19                │ │ 
  │ │   ! refresh failed: the credential is missing; sign in again           │ │ 

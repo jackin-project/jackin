@@ -218,22 +218,38 @@ async fn priority_keeps_its_sections_and_speaks_in_used_percentages() -> TestRes
     Ok(())
 }
 
-#[tokio::test]
-async fn renaming_a_flagged_duplicate_drops_the_short_id_suffix() -> TestResult {
-    let (mut lab, accounts) = seeded().await?;
+const DUPLICATE: usize = 13;
+
+async fn open_rename(lab: &mut Lab, keys: &[&str]) -> TestResult {
     lab.console
         .console()
         .app()
         .go(Go::Accounts { select: None });
     lab.console.settle().await?;
-    for keys in ["down", "enter", "enter", "end", "up", "up", "enter"] {
-        lab.step(keys).await?;
+    for key in keys {
+        lab.step(key).await?;
     }
-    activate(&mut lab, ACCOUNT, "save").await?;
-    activate(&mut lab, ACCOUNT, "rename").await?;
+    activate(lab, ACCOUNT, "save").await?;
+    activate(lab, ACCOUNT, "rename").await
+}
+
+async fn rename_and_read(
+    keys: &[&str],
+    typed: Option<&str>,
+    index: usize,
+) -> Result<(String, String, String), Box<dyn std::error::Error>> {
+    let (mut lab, accounts) = seeded().await?;
+    let target = accounts.get(index).ok_or("account")?.id;
+    let short: String = target.hyphenated().to_string().chars().take(8).collect();
+    open_rename(&mut lab, keys).await?;
     let screen = lab.console.screen();
-    assert!(screen.contains("Antigravity #"), "{screen}");
-    assert!(screen.contains("· personal@example.com"), "{screen}");
+    if let Some(text) = typed {
+        for _ in 0..80 {
+            lab.console.keys("backspace")?;
+        }
+        lab.console.type_text(&text.replace("{short}", &short));
+        lab.console.settle().await?;
+    }
     activate(&mut lab, ACCOUNT, "save").await?;
     let path = lab
         .console
@@ -247,9 +263,78 @@ async fn renaming_a_flagged_duplicate_drops_the_short_id_suffix() -> TestResult 
     let renamed = registry
         .list()?
         .into_iter()
-        .find(|account| Some(account.id) == accounts.get(13).map(|found| found.id))
+        .find(|account| account.id == target)
         .ok_or("renamed account")?;
-    assert_eq!(renamed.label, "personal@example.com");
+    Ok((screen, renamed.label, short))
+}
+
+const DUPLICATE_KEYS: [&str; 7] = ["down", "enter", "enter", "end", "up", "up", "enter"];
+const CLAUDE: usize = 1;
+const FIRST_KEYS: [&str; 4] = ["down", "enter", "enter", "enter"];
+
+#[tokio::test]
+async fn the_rename_dialog_is_prefilled_with_the_bare_label() -> TestResult {
+    for (keys, index, bare) in [
+        (&DUPLICATE_KEYS[..], DUPLICATE, "personal@example.com"),
+        (&FIRST_KEYS[..], CLAUDE, "work@example.com"),
+    ] {
+        let (screen, _, _) = rename_and_read(keys, None, index).await?;
+        let input: Vec<&str> = lines_with(&screen, "▎ ");
+        let [line] = input.as_slice() else {
+            return Err(format!("one input line\n{screen}").into());
+        };
+        assert!(
+            line.trim_matches(|c: char| c == '│' || c.is_whitespace())
+                .trim_start_matches('▎')
+                .trim()
+                == bare,
+            "{line}\n{screen}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_unchanged_rename_keeps_the_label() -> TestResult {
+    let (_, label, _) = rename_and_read(&FIRST_KEYS, None, CLAUDE).await?;
+    assert_eq!(label, "work@example.com");
+    Ok(())
+}
+
+#[tokio::test]
+async fn renaming_a_flagged_duplicate_keeps_the_bare_label() -> TestResult {
+    let (_, label, _) = rename_and_read(&DUPLICATE_KEYS, None, DUPLICATE).await?;
+    assert_eq!(label, "personal@example.com");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_typed_provider_prefix_is_stored_verbatim() -> TestResult {
+    let (_, label, _) = rename_and_read(&FIRST_KEYS, Some("Claude · foo"), CLAUDE).await?;
+    assert_eq!(label, "Claude · foo");
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_typed_tagged_prefix_on_a_duplicate_is_stored_verbatim() -> TestResult {
+    let (_, label, short) =
+        rename_and_read(&DUPLICATE_KEYS, Some("Antigravity #{short} · x"), DUPLICATE).await?;
+    assert_eq!(label, format!("Antigravity #{short} · x"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_typed_short_id_suffix_on_a_plain_account_is_stored_verbatim() -> TestResult {
+    let (_, label, short) =
+        rename_and_read(&FIRST_KEYS, Some("work@example.com #{short}"), CLAUDE).await?;
+    assert_eq!(label, format!("work@example.com #{short}"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_typed_name_is_stored_trimmed() -> TestResult {
+    let (_, label, _) = rename_and_read(&FIRST_KEYS, Some("  spaced  "), CLAUDE).await?;
+    assert_eq!(label, "spaced");
     Ok(())
 }
 
@@ -283,18 +368,18 @@ async fn list_screen(
 }
 
 #[tokio::test]
-async fn accounts_list_names_the_provider_of_every_row_at_120x40() -> TestResult {
+async fn accounts_list_shows_the_stored_label_of_every_row_at_120x40() -> TestResult {
     let (screen, ids) = list_screen(120, 40, Go::Accounts { select: None }).await?;
     for row in [
-        "Claude · work@example.com",
-        "Claude · work2@example.com",
-        "ChatGPT / Codex · work@",
-        "ChatGPT / Codex · home@",
-        "Muse · work@example.com",
-        "Antigravity #",
-        "OpenCode · work@example.com",
+        "work@example.com",
+        "work2@example.com",
+        "home@example.com",
+        "personal@example.com",
     ] {
         assert!(screen.contains(row), "{row}\n{screen}");
+    }
+    for prefixed in ["Claude · work", "Antigravity #", "Muse · work"] {
+        assert!(!screen.contains(prefixed), "{prefixed}\n{screen}");
     }
     assert_golden(&format!("{GOLDEN}/accounts_120x40.txt"), &screen, &ids)
 }

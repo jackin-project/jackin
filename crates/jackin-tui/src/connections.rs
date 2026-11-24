@@ -603,14 +603,7 @@ async fn account_action(
         UsageAction::Rename { id, name } => {
             let id = Uuid::parse_str(&id).map_err(|_| AdapterError::AccountId.to_string())?;
             service
-                .with_registry(move |db| {
-                    let account = db
-                        .list()?
-                        .into_iter()
-                        .find(|account| account.id == id)
-                        .ok_or(ConnectionError::Changed)?;
-                    db.rename(id, &display::bare_label(name, &account))
-                })
+                .with_registry(move |db| db.rename(id, &name))
                 .await
                 .map_err(|e| e.to_string())?;
             saved(service, id).map_err(|e| e.to_string())

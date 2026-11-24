@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::accounts::{AccountRegistry, ConnectedAccount, ConnectionError, StoredSnapshot};
+use crate::accounts::{AccountRegistry, ConnectionError, StoredSnapshot};
 use crate::dashboard::{DashboardRow, DashboardSettings};
 use crate::onboarding::OwnedLogin;
 use crate::view::{
@@ -184,7 +184,7 @@ pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionEr
         let mut entry = detail(stored.remove(position), now, &settings);
         entry.hub = db.hub_link(quota.id)?.map(|mirror| mirror.hub.to_string());
         entry.provider = group.provider.to_string();
-        entry.label = usage_label(group.name, quota);
+        entry.label = quota.label.clone();
         entry.summary = summary(&view, quota);
         entry.details = plain_lines(&card(quota, &view, &Ctx::new(CARD_WIDTH), Depth::Full));
         entries.push(entry);
@@ -198,46 +198,6 @@ pub fn entry_label(account: &AccountQuota) -> String {
     } else {
         account.label.clone()
     }
-}
-
-pub fn short_provider(name: &str) -> &str {
-    name.split_once(" (").map_or(name, |(short, _)| short)
-}
-
-fn names_provider(label: &str, provider: &str) -> bool {
-    label
-        .to_lowercase()
-        .starts_with(&short_provider(provider).to_lowercase())
-}
-
-pub fn usage_label(provider: &str, account: &AccountQuota) -> String {
-    let provider = short_provider(provider);
-    let tag = if account.is_duplicate() {
-        format!(" #{}", account.short())
-    } else {
-        String::new()
-    };
-    if names_provider(&account.label, provider) {
-        format!("{}{tag}", account.label)
-    } else {
-        format!("{provider}{tag} · {}", account.label)
-    }
-}
-
-pub fn bare_label(name: String, account: &ConnectedAccount) -> String {
-    let provider = crate::catalog::providers()
-        .find(|product| product.id == account.provider.as_str())
-        .map_or("", |product| short_provider(product.name));
-    if names_provider(&account.label, provider) {
-        return strip_short_id(name, account.id);
-    }
-    let plain = format!("{provider} · ");
-    let tagged = format!("{provider} #{} · ", short_id(account.id));
-    let bare = name
-        .strip_prefix(&tagged)
-        .or_else(|| name.strip_prefix(&plain))
-        .map_or_else(|| name.clone(), str::to_owned);
-    strip_short_id(bare, account.id)
 }
 
 fn plain_lines(lines: &[Line]) -> Vec<String> {
@@ -540,14 +500,6 @@ fn attention_row(view: &UsageView, item: &Attention) -> Option<AttentionRow> {
         },
         reading,
     })
-}
-
-fn strip_short_id(name: String, id: uuid::Uuid) -> String {
-    let suffix = format!(" #{}", short_id(id));
-    match name.strip_suffix(&suffix) {
-        Some(rest) => rest.to_owned(),
-        None => name,
-    }
 }
 
 pub fn note_reading(

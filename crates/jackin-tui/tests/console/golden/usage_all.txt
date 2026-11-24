@@ -4,17 +4,17 @@
  │   Priority    Providers    Refresh    Attention…    Metrics                │ 
  │  Account / reading                                                Value    │ 
  │  ▎› Claude · work@example.com · Weekly          stale · 9% used · 2d 15h ┃ │ 
- │     Claude · work2@example.com · Weekly          stale · 2% used · 5d 3h ┃ │ 
+ │     work2@example.com · Weekly                   stale · 2% used · 5d 3h ┃ │ 
  │     ChatGPT / Codex · work@example.com · Weekly  stale · 1% used · 4d 6h ┃ │ 
- │     ChatGPT / Codex · home@example.com · Week…  stale · 2% used · 4d 12h ┃ │ 
+ │     home@example.com · Weekly                   stale · 2% used · 4d 12h ┃ │ 
  │     Muse · work@example.com · Weekly            stale · 99% used · 5d 8h ┃ │ 
  │     Grok Account · Weekly               stale reset 1h 49m ago · was 55% ┃ │ 
  │     Kimi Code · Weekly                         stale · <1% used · 5d 22h ┃ │ 
  │     Z.ai Account · Weekly                        stale · 0% used · 5d 0h ┃ │ 
  │     MiniMax Token Plan · General weekly        stale · 34% used · 8h 27m ┆ │ 
  │     MiMo Token Plan · Token Plan               stale · 38% used · 17d 8h ┆ │ 
- │     Antigravity #a0000013 · personal@e…  stale · dup · >99% used · 1d 7h ┆ │ 
- │    Claude · work@example.com                                      Claude   │ 
+ │     Antigravity · personal@example.com…  stale · dup · >99% used · 1d 7h ┆ │ 
+ │    work@example.com                                               Claude   │ 
  │    ─────────────────────────────────────────────────────────────────────   │ 
  │    Weekly                         ━━──────────  stale · 9% used · 2d 15h   │ 
  │    Fable weekly                   ────────────  stale · 0% used · 2d 15h   │ 

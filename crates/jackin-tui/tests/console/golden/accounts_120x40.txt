@@ -3,19 +3,19 @@
  ╭─ Accounts ─ 14 usage · 1 execution ─╮ │  Overview                                           14 usage · 1 execution   
  │ ▎   Overview                        │ │  ─────────────────────────────────────────────────────────────────────────   
  │     Usage accounts                  │ │  Usage accounts                                                14 accounts   
- │       Claude · work@example.com     │ │  Select Usage accounts to browse connected identities.                       
- │       Claude · work2@example.com    │ │                                                                              
- │       ChatGPT / Codex · work@exam…  │ │  Execution health   blocked · 1 failed · 1 identity unresolved               
- │       ChatGPT / Codex · home@exam…  │ │  Execution registry 1 account · 1 enabled · 1 provider                       
- │       Muse · work@example.com       │ │  Sources            1 registered · 0 discovered · 1Password available        
+ │       work@example.com              │ │  Select Usage accounts to browse connected identities.                       
+ │       work2@example.com             │ │                                                                              
+ │       work@example.com              │ │  Execution health   blocked · 1 failed · 1 identity unresolved               
+ │       home@example.com              │ │  Execution registry 1 account · 1 enabled · 1 provider                       
+ │       work@example.com              │ │  Sources            1 registered · 0 discovered · 1Password available        
  │       Grok Account                  │ │                                                                              
  │       Kimi Code                     │ │  Comparable execution windows     identical provider, window and unit only   
  │       Z.ai Account                  │ │  No execution accounts share a comparable provider window.                   
  │       MiniMax Token Plan            │ │                                                                              
  │       MiMo Token Plan               │ │  Execution warnings                                                          
- │       Antigravity #a0000013 · per…  │ │  No warnings                                                                 
- │       Antigravity #a0000014 · per…  │ │                                                                              
- │       OpenCode · work@example.com   │ │  Execution identity                                                          
+ │       personal@example.com          │ │  No warnings                                                                 
+ │       personal@example.com          │ │                                                                              
+ │       work@example.com              │ │  Execution identity                                                          
  │       OpenRouter Account            │ │  Z.AI · work · local folder · none — not an authenticated account            
  │     Execution accounts              │ │                                                                              
  │     Claude                          │ │                                                                              
