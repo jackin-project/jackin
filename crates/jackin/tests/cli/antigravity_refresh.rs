@@ -59,6 +59,46 @@ fn counted_reading(_: &[u8]) -> Value {
     serde_json::from_str(&reading()).unwrap_or(Value::Null)
 }
 
+fn record_shared_board(
+    id: Uuid,
+    account: &Value,
+    resources: &serde_json::Map<String, Value>,
+    board: &[(Option<String>, String, String, Option<String>)],
+) -> TestResult {
+    for label in [
+        "Gemini weekly",
+        "Argon weekly",
+        "Claude 5h",
+        "Claude weekly",
+    ] {
+        if !board.iter().any(|(_, title, _, _)| title.contains(label)) {
+            return Err(format!("{board:?}").into());
+        }
+    }
+    if !board
+        .iter()
+        .any(|(account_id, _, _, _)| account_id.as_deref() == Some(id.to_string().as_str()))
+    {
+        return Err(format!("{board:?}").into());
+    }
+    if account["usage"]["plan"] != "Google AI Ultra" {
+        return Err(format!("{}", account["usage"]["plan"]).into());
+    }
+    for (key, fraction, reset) in [
+        ("gemini-5h", 0.99965, 1_803_996_000_i64),
+        ("gemini-weekly", 0.9742, 1_804_496_400_i64),
+        ("gemini-argon-wtu-weekly", 0.8, 1_804_550_400_i64),
+        ("3p-5h", 0.5, 1_803_999_600_i64),
+        ("3p-weekly", 0.4, 1_804_496_400_i64),
+    ] {
+        if resources[key]["remaining_fraction"] != fraction || resources[key]["resets_at"] != reset
+        {
+            return Err(format!("{key} {}", resources[key]).into());
+        }
+    }
+    Ok(())
+}
+
 fn reading() -> String {
     r#"{"groups":[{"displayName":"Gemini","buckets":[
         {"bucketId":"gemini-5h","remainingFraction":0.99965,"resetTime":"2027-03-02T14:00:00Z"},
@@ -168,34 +208,13 @@ async fn cli_refresh_matches_across_launches_and_keeps_a_failed_reading() -> Tes
         assert_eq!(resources["3p-5h"]["resets_at"], 1_803_999_600_i64);
         assert_eq!(resources["3p-weekly"]["resets_at"], 1_804_496_400_i64);
         assert_eq!(resources["gemini-argon-wtu-weekly"]["resets_at"], 1_804_550_400_i64);
-        let clock: Arc<dyn Clock> = world.clock.clone();
-        let again: Arc<dyn CredentialVault> = vault.clone();
+        let clock = Arc::<jackin_testkit::FakeClock>::clone(&world.clock);
+        let clock: Arc<dyn Clock> = clock;
+        let again = Arc::<Memory>::clone(&vault);
+        let again: Arc<dyn CredentialVault> = again;
         let login = OwnedLogin::new(path.clone(), server.endpoints(), clock).with_vault(again);
         let board = jackin_tui::reload_usage_board(&login).await?;
-        assert!(
-            board.iter().any(|line| line.contains(&id.to_string())),
-            "{board:?}"
-        );
-        for label in ["Gemini weekly", "Argon weekly", "Claude 5h", "Claude weekly"] {
-            assert!(board.iter().any(|line| line.contains(label)), "{board:?}");
-        }
-        eprintln!("cli-account {id}");
-        eprintln!("cli-plan {}", account["usage"]["plan"]);
-        for key in [
-            "gemini-5h",
-            "gemini-weekly",
-            "gemini-argon-wtu-weekly",
-            "3p-5h",
-            "3p-weekly",
-        ] {
-            eprintln!(
-                "cli-window {key} fraction {} resets {}",
-                resources[key]["remaining_fraction"], resources[key]["resets_at"]
-            );
-        }
-        for line in &board {
-            eprintln!("tui-row {line}");
-        }
+        record_shared_board(id, account, resources, &board)?;
         let fetched = account["fetched_at"].as_i64().ok_or("missing age")?;
         world.clock.advance(Duration::from_secs(120));
         server.replace(
