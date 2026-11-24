@@ -22,7 +22,7 @@ pub(super) async fn read(
             &[],
         )
         .await?;
-    if body["success"] == false {
+    if body["success"] != true || json_integer(&body["code"]) != Some(200) {
         return Err(if body["code"] == 401 {
             ProviderError::Unauthorized
         } else if body["msg"]
@@ -91,26 +91,48 @@ pub(super) async fn read(
             .as_i64()
             .is_none_or(|t| now.saturating_sub(t) >= 3600);
     if due {
-        out["secondaryReadAt"] = json!(now);
-        if let Ok(s) = http
+        let subscription = http
             .get(
                 "https://api.z.ai/api/biz/subscription/list",
                 Auth::Bearer(key),
                 &[],
             )
-            .await
-            && let Some(plan) = s
-                .pointer("/data/0/productName")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-        {
-            out["plan"] = json!(plan);
+            .await;
+        let inventory_body = http.get(INVENTORY, Auth::Bearer(key), &[]).await;
+        match &subscription {
+            Ok(body) => {
+                if let Some(plan) = body
+                    .pointer("/data/0/productName")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|plan| !plan.is_empty())
+                {
+                    out["plan"] = json!(plan);
+                }
+            }
+            Err(_) => {
+                if let Some(plan) = previous.get("plan") {
+                    out["plan"] = plan.clone();
+                }
+            }
         }
-        if let Ok(v) = http.get(INVENTORY, Auth::Bearer(key), &[]).await
-            && let Ok(rows) = inventory(&v, now)
-        {
-            out["resets"] = json!(rows);
+        let resets_read = match &inventory_body {
+            Ok(body) => match inventory(body, now) {
+                Ok(rows) => {
+                    out["resets"] = json!(rows);
+                    true
+                }
+                Err(_) => false,
+            },
+            Err(_) => false,
+        };
+        if !resets_read && let Some(resets) = previous.get("resets") {
+            out["resets"] = resets.clone();
+        }
+        if subscription.is_ok() && resets_read {
+            out["secondaryReadAt"] = json!(now);
+        } else if let Some(read_at) = previous.get("secondaryReadAt") {
+            out["secondaryReadAt"] = read_at.clone();
         }
     } else {
         for k in ["secondaryReadAt", "plan", "resets"] {

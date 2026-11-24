@@ -282,6 +282,8 @@ async fn zai_token_limit_and_search_allowance_are_distinct() -> TestResult {
                 Method::Get,
                 "/api/monitor/usage/quota/limit",
                 json!({
+                    "success": true,
+                    "code": 200,
                     "data": {
                         "limits": [
                             {

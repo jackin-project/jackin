@@ -36,7 +36,7 @@ async fn cancelling_refresh_during_key_prompt_preserves_last_snapshot_and_new_ke
         OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new())).with_vault(vault);
     let quota = "/api/monitor/usage/quota/limit";
     let reading = |used: u32, key: &str| {
-        Route::json(200,&json!({"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":used}]}}).to_string()).requires_header("authorization",key)
+        Route::json(200,&json!({"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":used}]}}).to_string()).requires_header("authorization",key)
     };
     server.serve(
         Provider::Zai,

@@ -233,7 +233,7 @@ async fn zai_earliest_reset_is_rechecked_and_ambiguous_claim_is_never_retried() 
         p,
         Method::Get,
         "/api/monitor/usage/quota/limit",
-        Route::json(200, r#"{"data":{"limits":[]}}"#),
+        Route::json(200, r#"{"success":true,"code":200,"data":{"limits":[]}}"#),
     );
     server.serve(
         p,
