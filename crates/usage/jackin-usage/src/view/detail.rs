@@ -240,7 +240,11 @@ fn balance_lines(amount: f64, unit: Unit, approx: Option<(f64, Currency)>, ctx: 
 }
 
 fn reset_lines(credits: &[ResetCredit], view: &UsageView, ctx: Ctx) -> Vec<Line> {
-    let index_width = credits.len().to_string().len();
+    let index_width = credits
+        .iter()
+        .map(|credit| credit.number().to_string().len())
+        .max()
+        .unwrap_or(1);
     let kind_width = credits
         .iter()
         .map(|credit| credit.kind.chars().count())
@@ -249,12 +253,16 @@ fn reset_lines(credits: &[ResetCredit], view: &UsageView, ctx: Ctx) -> Vec<Line>
         .max(MIN_KIND_WIDTH);
     credits
         .iter()
-        .enumerate()
-        .flat_map(|(position, credit)| {
-            let status = match credit.status {
+        .flat_map(|credit| {
+            let name = match credit.status {
                 ResetStatus::Ready => "ready",
                 ResetStatus::Queued => "queued",
                 ResetStatus::Unavailable => "unavailable",
+            };
+            let status = if credit.remaining > 1 {
+                format!("{name} ×{}", credit.remaining)
+            } else {
+                name.to_owned()
             };
             let expiry = format!(
                 "expires {}",
@@ -262,13 +270,13 @@ fn reset_lines(credits: &[ResetCredit], view: &UsageView, ctx: Ctx) -> Vec<Line>
             );
             let aligned = format!(
                 "{:<index_width$}  {:<kind_width$} {status:<STATUS_WIDTH$} {expiry}",
-                position + 1,
+                credit.number(),
                 credit.kind,
             );
             if SUB_INDENT + aligned.chars().count() <= ctx.columns() {
                 sub(&[aligned], SUB_INDENT, ctx)
             } else {
-                let head = format!("{} {} {status}", position + 1, credit.kind);
+                let head = format!("{} {} {status}", credit.number(), credit.kind);
                 sub(&[head, expiry], SUB_INDENT, ctx)
             }
         })
