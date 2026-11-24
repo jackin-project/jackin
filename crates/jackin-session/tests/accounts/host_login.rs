@@ -468,8 +468,11 @@ async fn muse_host_login_account_plans_no_gateway_sync() -> TestResult {
         )
         .await?;
         assert!(!plan.needs_gateway());
-        plan.apply(&jackin_session::Gateways::single(world.session.clone()))
-            .await?;
+        plan.apply(
+            &jackin_session::Gateways::single(world.session.clone()),
+            &CancellationToken::new(),
+        )
+        .await?;
         assert!(world.gateway.providers().is_empty());
         Ok(())
     })
@@ -1022,8 +1025,11 @@ async fn claude_and_antigravity_host_login_accounts_plan_no_gateway_sync() -> Te
             )
             .await?;
             assert!(!plan.needs_gateway());
-            plan.apply(&jackin_session::Gateways::single(world.session.clone()))
-                .await?;
+            plan.apply(
+                &jackin_session::Gateways::single(world.session.clone()),
+                &CancellationToken::new(),
+            )
+            .await?;
             assert!(world.gateway.providers().is_empty(), "{tuple_id}");
         }
         Ok(())

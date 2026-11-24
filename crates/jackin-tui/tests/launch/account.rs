@@ -13,6 +13,7 @@ use jackin_core::{
 use jackin_testkit::{Rig, TestResult, guard};
 
 use super::support::{console, labels, only, picker_account};
+use tokio_util::sync::CancellationToken;
 
 type Failure = Box<dyn std::error::Error>;
 
@@ -169,7 +170,10 @@ async fn launches(
             account: name("by-role")?,
         });
     }
-    rig.world.config.edit(edits).await?;
+    rig.world
+        .config
+        .edit(edits, &CancellationToken::new())
+        .await?;
     let config = rig.world.config.load().await?;
     let workspace_name = WorkspaceName::parse(WORKSPACE)?;
     let role_name = RoleName::parse("sentinel")?;
@@ -229,13 +233,16 @@ async fn an_explicit_non_default_zai_account_is_selected_exactly() -> TestResult
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![
-                login(&rig, "by-explicit")?,
-                login(&rig, "by-default")?,
-                ConfigEdit::SetDefaultAccount {
-                    account: name("by-default")?,
-                },
-            ])
+            .edit(
+                vec![
+                    login(&rig, "by-explicit")?,
+                    login(&rig, "by-default")?,
+                    ConfigEdit::SetDefaultAccount {
+                        account: name("by-default")?,
+                    },
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let selected = launched(&rig, "by-explicit").await?;
         assert_eq!(

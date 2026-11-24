@@ -5,7 +5,9 @@ use jackin::ExitClass;
 use jackin_core::{
     AccountName, Agent, CredentialSource, ProfileId, Provider, ProviderName, TupleState,
 };
-use jackin_testkit::{ACCESS, ACCOUNT_ID, Rig, TestResult, World, guard};
+use jackin_openshell::GatewayOp;
+use jackin_testkit::{ACCESS, ACCOUNT_ID, Fault, Rig, TestResult, Trigger, World, guard};
+use tokio_util::sync::CancellationToken;
 
 use super::support::{FixedConnector, GATEWAY_CONFIG, Harness, failed};
 
@@ -533,6 +535,52 @@ async fn a_large_opencode_store_is_accepted_as_a_credential_source() -> TestResu
         let config = harness.stored().await?;
         let stored = config.account(&account("store")?).ok_or("no account")?;
         assert!(matches!(stored.credential(), CredentialSource::File { .. }));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancelled_account_add_exits_cancelled_and_leaves_the_gateway_and_config_as_before()
+-> TestResult {
+    guard(async {
+        let (rig, harness, home) = rigged().await?;
+        let before = harness.config_bytes()?;
+        let token = CancellationToken::new();
+        rig.gateway().inject(Fault::CancelAt {
+            trigger: Trigger::Op(GatewayOp::Profile),
+            token: token.clone(),
+        });
+        let ran = harness
+            .command(&[
+                "account",
+                "add",
+                "codex",
+                "--name",
+                "work",
+                "--chatgpt-from",
+                &home,
+            ])
+            .cancel(token)
+            .run()
+            .await?;
+        assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
+        assert!(rig.gateway().providers().is_empty());
+        assert_eq!(harness.config_bytes()?, before);
+
+        harness
+            .run(&[
+                "account",
+                "add",
+                "codex",
+                "--name",
+                "work",
+                "--chatgpt-from",
+                &home,
+            ])
+            .await?
+            .ok()?;
+        assert!(rig.gateway().provider(&provider("work")?).is_some());
         Ok(())
     })
     .await

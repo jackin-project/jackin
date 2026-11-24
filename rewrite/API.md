@@ -980,7 +980,7 @@ impl ConfigStore {
     pub fn new(fs: Arc<dyn FileSystem>, path: HostPath) -> ConfigStore;
     pub fn default_path(home: &HostPath) -> HostPath;
     pub async fn load(&self) -> Result<Config, ConfigError>;
-    pub async fn edit(&self, edits: Vec<ConfigEdit>) -> Result<Config, ConfigError>;
+    pub async fn edit(&self, edits: Vec<ConfigEdit>, cancel: &CancellationToken) -> Result<Config, ConfigError>;
 }
 ```
 
@@ -996,7 +996,7 @@ Invariants that `Config::parse` and `apply` hold, so no later code re-checks the
 - `resolve_gateway(None)` returns `default_gateway`, else the only configured gateway, else `NoGateway` or `AmbiguousGateway`.
 - `select_account` is pure and follows D26: flag, workspace binding for `agent.provider()`, role binding for `agent`, default of the provider, the only account of the provider. If no rule selects, the error carries `MissingBinding` so the message names what to bind.
 
-`ConfigStore::edit` takes an exclusive lock on `config.toml.lock` through `FileSystem::lock`, re-reads and parses, applies all edits in order, validates, and writes with `write_atomic` (temporary file in the same directory, `write_new`, `sync`, `rename`, `sync_dir`). If any edit fails, nothing is written. Two jackin processes (CLI and console) serialize on the lock, so there is no lost update. `render` is deterministic (sorted tables), so equal configs give equal bytes. The file holds no secret; a `CredentialSource` is a pointer.
+`ConfigStore::edit` takes an exclusive lock on `config.toml.lock` through `FileSystem::lock` (a held lock is retried until the token is cancelled or the wait ends), re-reads and parses, applies all edits in order, validates, and writes with `write_atomic` (temporary file in the same directory, `write_new`, `sync`, `rename`, `sync_dir`). If any edit fails, nothing is written. Two jackin processes (CLI and console) serialize on the lock, so there is no lost update. `render` is deterministic (sorted tables), so equal configs give equal bytes. The file holds no secret; a `CredentialSource` is a pointer.
 
 ### Boundary traits
 
@@ -2073,7 +2073,8 @@ impl LaunchFeed {
 }
 
 pub struct AttachTarget { pub sandbox: SandboxName, pub state: SupervisorState }
-pub struct RestoreCandidate { pub launch_id: LaunchId, pub sandbox: Option<SandboxName> }
+pub struct RestoreCandidate { pub launch_id: LaunchId, pub finding: RestoreFinding }
+pub enum RestoreFinding { Observed(SandboxName), Absent { requested: bool }, Ambiguous(Vec<SandboxName>), Unconfirmed { last_observed: Option<SandboxName> } }
 pub enum LaunchOutcome { Ready(AttachTarget), Cancelled(RestoreCandidate) }
 pub struct LaunchFailure { pub launch_id: LaunchId, pub step: LaunchStep, pub sandbox: Option<SandboxName>, pub error: Box<LaunchError> }
 pub enum LaunchError {
@@ -3941,7 +3942,7 @@ This file records where U8 (`jackin-session` planner, role catalog, account sync
 - U8-A4. Credentials step. It runs `/usr/bin/printenv` with `args == [keys.access_token]`. A non-zero exit or empty stdout fails at `Credentials` with the new variant `LaunchError::PlaceholderMissing { sandbox, key }`. A value that does not start with `openshell:resolve:`, or that spans more than one line, fails at `Credentials` with `LaunchError::PlaceholderInvalid { sandbox, key }`, which never holds the value (D10). No `auth.json` is written in either case. `auth.json` has mode `0o600` from `spec.auth_file`. Its top-level keys are exactly `auth_mode` (`chatgptAuthTokens`), `OPENAI_API_KEY` (null), `tokens`, `last_refresh`. `last_refresh` is the `Clock` time as RFC 3339 UTC in whole seconds (`2026-11-02T10:11:12Z`, 20 characters, as P0.3 shows). `tokens` holds exactly `id_token` (the P0.3 non-secret placeholder JWT: header `{"alg":"none","typ":"JWT"}`, payload `{"iss":"https://auth.openai.com","aud":"codex","sub":"openshell-app-server"}`, signature part `placeholder`), `access_token` (the printenv output without its trailing newline), `refresh_token` (`""`) and `account_id` (the real ID of the account's `CredentialSource::CodexLogin`). The step writes `auth.json`, `files().codex_config` and `files().env`; the env file is written even when the role has no `[env]`. `read_chatgpt_login` reads `auth_mode`, `tokens.access_token`, `tokens.refresh_token`, `tokens.oauth_provenance.client_id` and `tokens.account_id` (U8-B3).
 - U8-A5. `HookPresence`. A hook counts as present only when `read_files(hook_path)` returns non-empty bytes. An undeclared hook is an empty file in the image and is not run.
 - U8-A6. Hook output. `HookFailed.output == TerminalText::sanitize(stdout ++ stderr)`. Setup and preflight run with `workdir == sandbox_layout::PROJECT`, the env file values as env, and `ProgramStdin::Closed`. A non-zero exit stops the launch. `touch_on_success` is set only for setup.
-- U8-A7. Cancel path. On cancel the executor does one final `find_sandboxes(launch label)` and returns `Cancelled(RestoreCandidate { launch_id, sandbox })`. `sandbox` is `Some(name)` exactly when the gateway holds one sandbox with that label, even when the token was cancelled before the call. A cancel never calls `delete_sandbox` and never returns `Err`. A token that is cancelled while an act runs turns any error of that act into the cancel outcome.
+- U8-A7. Cancel path. On cancel the executor runs one bounded recovery lookup, a `find_sandboxes(launch label)` and a `find_sandboxes(planned name)` under one `RECOVERY_LOOKUP_BUDGET` deadline that the caller token does not cancel, and returns `Cancelled(RestoreCandidate { launch_id, finding })`. `finding` is `Observed(name)` when exactly one sandbox carries the launch label (or the planned name carries it), `Ambiguous(names)` when several do, `Absent { requested }` only when both lookups succeeded empty, no sandbox was seen in this run and no create ended with an unknown outcome (`requested` says whether a create was attempted or a sandbox seen), and `Unconfirmed { last_observed }` in every other case: a lookup error or timeout, empty lookups after a sandbox was seen, or empty lookups after a create whose response was lost. A cancel never calls `delete_sandbox` and never returns `Err`. Read-only lookups are raced against the token; create, delete, power and write calls are never abandoned, so their outcome is known or classified unknown. A token that is cancelled while an act runs turns any error of that act into the cancel outcome.
 - U8-A8. Concurrency. Two concurrent `launch` calls with one ID both return `Ok(Ready)`. The loser of the create race gets `AlreadyExists`, reads by name and joins. Setup and preflight may run twice. The attempt write is fenced by the attempt ID.
 - U8-A9. Test limits and harness rules. `LaunchLimits { ready: 30 s, supervisor: 20 s, attempt: 20 s, hook: 600 s, upload: 600 s, create_attempts: 3 }`. Timeout assertions use `>=` on `FakeClock::slept()` sums and on the error's `after`; they do not pin the 500 ms poll interval. The integration targets are `tests/plan/main.rs`, `tests/launch/main.rs` and `tests/accounts/main.rs` (U8-B7), each with modules. No comments. `type TestResult = Result<(), Box<dyn std::error::Error>>`. Every async test sits under a 10 s `tokio::time::timeout` hang guard. The default `#[tokio::test]` runtime. Each test is under 150 lines. Dev-dependencies: `jackin-testkit`, `tempfile`, `serde_json`, `toml`, `tokio` (`macros rt time`).
 
@@ -3998,7 +3999,7 @@ This file records where U8 (`jackin-session` planner, role catalog, account sync
 
 Decisions.
 
-- The cancel check at the head of the executor loop is deleted. An observation is read-only and the check after it covers every cancel. A token that is cancelled before `launch` now costs one `find_sandboxes` and still returns `Cancelled` with the restore candidate.
+- The cancel check at the head of the executor loop is deleted. An observation is read-only and the check after it covers every cancel. A token that is cancelled before `launch` now costs one recovery lookup (label and name) and still returns `Cancelled` with the restore candidate.
 - `Tracker.known_sent` is deleted. The tracker moves forward only, so `StepFinished(Sandbox)` is emitted once and `SandboxKnown` follows it once.
 - The `quote` escape arms of `files.rs` are deleted. `ModelName` allows only alphanumerics and `. _ : / -` and the work directory is the constant `/sandbox/project`, so no input needs an escape. The renderer wraps the two values in plain quotes.
 - `PlanError::RoleMismatch` stays. `LaunchRequest::role` is part of API.md, so the planner keeps checking it against the `LoadedRole` and a row in P8 pins the check.

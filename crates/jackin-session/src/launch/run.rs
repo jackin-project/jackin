@@ -27,7 +27,7 @@ use crate::launch::probe;
 use crate::launch::tracker::Tracker;
 use crate::launch::{
     LaunchError, LaunchEvent, LaunchEvents, LaunchFailure, LaunchOutcome, LaunchStep,
-    RestoreCandidate, SkipReason,
+    RestoreCandidate, RestoreFinding, SkipReason,
 };
 use crate::lock::{self, LockError};
 use crate::plan::{LaunchPlan, PlannedFile};
@@ -226,7 +226,10 @@ impl Run<'_> {
         };
         LaunchOutcome::Cancelled(RestoreCandidate {
             launch_id: self.plan.launch_id().clone(),
-            sandbox,
+            finding: match sandbox {
+                Some(name) => RestoreFinding::Observed(name),
+                None => RestoreFinding::Absent { requested: false },
+            },
         })
     }
 

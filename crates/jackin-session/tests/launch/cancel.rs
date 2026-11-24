@@ -3,7 +3,7 @@
 
 use jackin_core::{Agent, HookKind, sandbox_layout};
 use jackin_openshell::GatewayOp;
-use jackin_session::{LaunchOutcome, RestoreCandidate};
+use jackin_session::{LaunchOutcome, RestoreCandidate, RestoreFinding};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
@@ -58,18 +58,18 @@ async fn cancel_at(point: Point) -> TestResult {
         let outcome = rig.run(rig.request(1)?, token).await?;
         let Ok(LaunchOutcome::Cancelled(RestoreCandidate {
             launch_id: id,
-            sandbox,
+            finding,
         })) = outcome.result
         else {
             return Err(format!("{point:?}: not cancelled: {:?}", outcome.result).into());
         };
         assert_eq!(id, launch_id(1));
         let found = rig.sandbox(1).await?;
-        assert_eq!(
-            sandbox,
-            found.as_ref().map(jackin_testkit::SandboxHandle::name),
-            "{point:?}"
-        );
+        let expected = match &found {
+            Some(handle) => RestoreFinding::Observed(handle.name()),
+            None => RestoreFinding::Absent { requested: false },
+        };
+        assert_eq!(finding, expected, "{point:?}");
         assert!(rig.gateway().sandboxes().len() <= 1);
         let setup = sandbox_layout::hook_path(HookKind::Setup);
         match (point, &found) {

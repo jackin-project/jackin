@@ -157,10 +157,20 @@ pub struct AttachTarget {
     pub state: SupervisorState,
 }
 
+pub const RECOVERY_LOOKUP_BUDGET: Duration = Duration::from_secs(3);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RestoreFinding {
+    Observed(SandboxName),
+    Absent { requested: bool },
+    Ambiguous(Vec<SandboxName>),
+    Unconfirmed { last_observed: Option<SandboxName> },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RestoreCandidate {
     pub launch_id: LaunchId,
-    pub sandbox: Option<SandboxName>,
+    pub finding: RestoreFinding,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -26,11 +26,14 @@ async fn seed_kimi_provider(rig: &mut Rig) -> Result<(), Box<dyn std::error::Err
         .await?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddAccount(Account::new(
-            AccountName::parse(KIMI_ACCOUNT)?,
-            Provider::Kimi,
-            CredentialSource::File { path },
-        )?)])
+        .edit(
+            vec![ConfigEdit::AddAccount(Account::new(
+                AccountName::parse(KIMI_ACCOUNT)?,
+                Provider::Kimi,
+                CredentialSource::File { path },
+            )?)],
+            &CancellationToken::new(),
+        )
         .await?;
     rig.config = rig.world.config.load().await?;
     let tuple = jackin_core::lookup_tuple(Agent::Omp, Provider::Kimi)?;
@@ -103,11 +106,14 @@ async fn seed_omp_provider(rig: &mut Rig) -> Result<(), Box<dyn std::error::Erro
         .await?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddAccount(Account::new(
-            AccountName::parse(OMP_ACCOUNT)?,
-            Provider::Zai,
-            CredentialSource::File { path },
-        )?)])
+        .edit(
+            vec![ConfigEdit::AddAccount(Account::new(
+                AccountName::parse(OMP_ACCOUNT)?,
+                Provider::Zai,
+                CredentialSource::File { path },
+            )?)],
+            &CancellationToken::new(),
+        )
         .await?;
     rig.config = rig.world.config.load().await?;
     let tuple = jackin_core::lookup_tuple(Agent::Omp, Provider::Zai)?;
@@ -349,7 +355,10 @@ async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_si
         for edit in &edits {
             rig.config.apply(edit.clone())?;
         }
-        rig.world.config.edit(edits).await?;
+        rig.world
+            .config
+            .edit(edits, &CancellationToken::new())
+            .await?;
         rig.world
             .session
             .sync_account(&account, Agent::Omp, &CancellationToken::new())
@@ -361,7 +370,10 @@ async fn failed_codex_provider_publication_cleans_up_only_codex_and_preserves_si
         )?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddAccount(other.clone())])
+            .edit(
+                vec![ConfigEdit::AddAccount(other.clone())],
+                &CancellationToken::new(),
+            )
             .await?;
         rig.world
             .session
@@ -528,10 +540,13 @@ async fn inspect_covers_the_instances_after_their_local_accounts_are_removed()
         let target = ready(rig.run(request, CancellationToken::new()).await?)?;
         rig.world
             .config
-            .edit(vec![
-                ConfigEdit::RemoveAccountClearingBindings(AccountName::parse("work")?),
-                ConfigEdit::RemoveAccountClearingBindings(AccountName::parse(KIMI_ACCOUNT)?),
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::RemoveAccountClearingBindings(AccountName::parse("work")?),
+                    ConfigEdit::RemoveAccountClearingBindings(AccountName::parse(KIMI_ACCOUNT)?),
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         rig.world.gateway.add_live_rule(
             &target.sandbox,

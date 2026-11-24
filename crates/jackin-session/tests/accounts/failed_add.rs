@@ -31,7 +31,11 @@ fn reset() -> GatewayError {
 async fn apply(world: &World, edit: ConfigEdit) -> Result<jackin_core::Config, AccountEditError> {
     let cancel = CancellationToken::new();
     let plan = plan_account_edits(&world.desk(), vec![edit], &cancel).await?;
-    plan.apply(&Gateways::single(world.session.clone())).await
+    plan.apply(
+        &Gateways::single(world.session.clone()),
+        &CancellationToken::new(),
+    )
+    .await
 }
 
 async fn login_account() -> Result<(Home, Account), Box<dyn std::error::Error>> {

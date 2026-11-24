@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use std::time::Duration;
 
+use tokio_util::sync::CancellationToken;
+
 use super::{Config, ConfigEdit, ConfigError};
 use crate::boundary::{Clock, FileLock, FileMode, FileSystem, FsError, RegularFileProblem};
 use crate::fs::{lock_path, write_atomic_locked};
@@ -42,13 +44,18 @@ impl ConfigStore {
         self.read().await
     }
 
-    pub async fn edit(&self, edits: Vec<ConfigEdit>) -> Result<Config, ConfigError> {
-        self.edit_checked(edits, |_| Ok(())).await
+    pub async fn edit(
+        &self,
+        edits: Vec<ConfigEdit>,
+        cancel: &CancellationToken,
+    ) -> Result<Config, ConfigError> {
+        self.edit_checked(edits, cancel, |_| Ok(())).await
     }
 
     pub async fn edit_checked<E>(
         &self,
         edits: Vec<ConfigEdit>,
+        _cancel: &CancellationToken,
         check: impl FnOnce(&Config) -> Result<(), E>,
     ) -> Result<Config, E>
     where

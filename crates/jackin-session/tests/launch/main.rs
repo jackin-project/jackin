@@ -25,6 +25,7 @@ mod omp_models;
 mod phases;
 mod proofs;
 mod provider;
+mod recovery;
 mod recreate;
 mod static_files;
 mod supervisor;

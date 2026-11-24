@@ -56,10 +56,13 @@ async fn configure(rig: &Rig, name: &GatewayName) -> TestResult {
         .ok_or("the rig has no gateway")?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddGateway {
-            name: name.clone(),
-            entry,
-        }])
+        .edit(
+            vec![ConfigEdit::AddGateway {
+                name: name.clone(),
+                entry,
+            }],
+            &CancellationToken::new(),
+        )
         .await?;
     Ok(())
 }

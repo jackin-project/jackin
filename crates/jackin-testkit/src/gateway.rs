@@ -158,6 +158,7 @@ pub enum Fault {
         token: CancellationToken,
     },
     HideUntilCreateConflict,
+    HideEverywhereUntilCreateConflict,
     StartIgnored,
     HoldAt {
         trigger: Trigger,
@@ -166,6 +167,10 @@ pub enum Fault {
         error: GatewayError,
     },
     DeleteProviderFailsAfterWrite {
+        error: GatewayError,
+    },
+    LoseResponse {
+        op: GatewayOp,
         error: GatewayError,
     },
 }
@@ -215,6 +220,10 @@ impl FakeGateway {
                 .triggers
                 .push(ArmedTrigger::new(trigger, Action::Cancel(token))),
             Fault::HideUntilCreateConflict => registry.hidden_until_conflict = true,
+            Fault::HideEverywhereUntilCreateConflict => {
+                registry.hidden_until_conflict = true;
+                registry.hidden_by_name = true;
+            }
             Fault::StartIgnored => registry.start_ignored = true,
             Fault::HoldAt { trigger } => registry.holds.push(Hold::new(trigger)),
             Fault::PutProviderFailsAfterWrite { error } => {
@@ -223,6 +232,7 @@ impl FakeGateway {
             Fault::DeleteProviderFailsAfterWrite { error } => {
                 registry.delete_fails_after_write = Some(error);
             }
+            Fault::LoseResponse { op, error } => registry.lost_responses.push((op, error)),
         }
     }
 
@@ -743,6 +753,7 @@ impl Gateway for FakeGateway {
         registry.strike(GatewayOp::Create)?;
         if registry.sandboxes.contains_key(spec.name()) {
             registry.hidden_until_conflict = false;
+            registry.hidden_by_name = false;
             return Err(GatewayError::AlreadyExists {
                 what: Missing::Sandbox(spec.name().clone()),
             });
@@ -788,6 +799,7 @@ impl Gateway for FakeGateway {
                 inner: Mutex::new(sandbox),
             }),
         );
+        registry.lose_response(GatewayOp::Create)?;
         Ok(view)
     }
 
@@ -798,6 +810,7 @@ impl Gateway for FakeGateway {
             let mut registry = self.registry();
             registry.strike(GatewayOp::Find)?;
             match query {
+                SandboxQuery::Name(_) if registry.hidden_by_name => Vec::new(),
                 SandboxQuery::Name(name) => {
                     registry.sandboxes.get(name).cloned().into_iter().collect()
                 }
@@ -929,7 +942,10 @@ impl Gateway for FakeGateway {
             }
             (PowerAction::Start, _) => return Err(already_running()),
         }
-        Ok(state.view())
+        let view = state.view();
+        drop(state);
+        self.registry().lose_response(GatewayOp::Power)?;
+        Ok(view)
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
@@ -943,6 +959,7 @@ impl Gateway for FakeGateway {
             cell.closed.cancel();
             cell.state().main.exit(None);
         }
+        self.registry().lose_response(GatewayOp::Delete)?;
         Ok(())
     }
 
@@ -991,7 +1008,8 @@ impl Gateway for FakeGateway {
         self.pause(GatewayOp::WriteFile, Some(&trigger), None)
             .await?;
         let cell = self.exec_cell_at(GatewayOp::WriteFile, Some(&trigger), sandbox)?;
-        files::write_file(&cell, file).await
+        files::write_file(&cell, file).await?;
+        self.registry().lose_response(GatewayOp::WriteFile)
     }
 
     async fn upload_tree(

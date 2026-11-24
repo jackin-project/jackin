@@ -223,6 +223,7 @@ impl CommandError {
 
 #[cfg(test)]
 mod tests {
+    use jackin_core::{AccountName, GatewayName};
     use jackin_openshell::GatewayOp;
     use jackin_session::AttachError;
 
@@ -235,5 +236,32 @@ mod tests {
             group: None,
         }));
         assert_eq!(error.class(), ExitClass::Cancelled);
+    }
+
+    #[test]
+    fn a_config_edit_cancelled_before_its_commit_classifies_as_cancelled() {
+        for error in [
+            CommandError::Config(ConfigError::Cancelled),
+            CommandError::Account(AccountError::Config(ConfigError::Cancelled)),
+        ] {
+            assert_eq!(error.class(), ExitClass::Cancelled, "{error:?}");
+        }
+        let refused = CommandError::Config(ConfigError::NoGateway);
+        assert_eq!(refused.class(), ExitClass::Failure);
+    }
+
+    #[test]
+    fn a_cancelled_account_edit_whose_rollback_failed_is_a_failure_not_a_cancel()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let account = AccountName::parse("work")?;
+        let gateway = GatewayName::parse("fake-gateway")?;
+        let error = CommandError::Accounts(AccountEditError::RollbackFailed {
+            account: account.clone(),
+            gateway,
+            original: Box::new(AccountEditError::Config(ConfigError::Cancelled)),
+            rollback: Box::new(AccountError::MissingCredential { account }),
+        });
+        assert_eq!(error.class(), ExitClass::Failure);
+        Ok(())
     }
 }

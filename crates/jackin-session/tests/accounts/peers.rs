@@ -146,7 +146,7 @@ impl Fleet {
                 .map_err(AccountEditError::Connect)?,
             AccountPlan::Offline(_) => Gateways::single(self.world.session.clone()),
         };
-        plan.apply(&gateways).await
+        plan.apply(&gateways, &CancellationToken::new()).await
     }
 
     fn holders(&self) -> Result<[bool; 3], Box<dyn std::error::Error>> {
@@ -363,7 +363,10 @@ async fn a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached(
             .clone();
         fleet
             .store
-            .edit(vec![ConfigEdit::RemoveGateway(third.clone())])
+            .edit(
+                vec![ConfigEdit::RemoveGateway(third.clone())],
+                &CancellationToken::new(),
+            )
             .await?;
         let held = hold_account(&fleet.world, "work").await?;
 
@@ -376,7 +379,10 @@ async fn a_gateway_added_while_an_account_removal_waits_for_the_lock_is_reached(
             until_polling(&fleet.world, 1).await;
             fleet
                 .store
-                .edit(vec![ConfigEdit::AddGateway { name: third, entry }])
+                .edit(
+                    vec![ConfigEdit::AddGateway { name: third, entry }],
+                    &CancellationToken::new(),
+                )
                 .await?;
             drop(held);
             Ok::<(), Box<dyn std::error::Error>>(())
@@ -405,7 +411,7 @@ async fn gateways_connected_before_a_gateway_was_added_are_refused_and_nothing_c
         )
         .await?;
 
-        let refused = plan.apply(&gateways).await;
+        let refused = plan.apply(&gateways, &CancellationToken::new()).await;
 
         assert!(
             matches!(
@@ -429,10 +435,13 @@ async fn an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publi
         let fleet = fleet([false, false, false]).await?;
         fleet
             .store
-            .edit(vec![
-                ConfigEdit::RemoveGateway(GatewayName::parse("second")?),
-                ConfigEdit::RemoveAccountClearingBindings(name("work")?),
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::RemoveGateway(GatewayName::parse("second")?),
+                    ConfigEdit::RemoveAccountClearingBindings(name("work")?),
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let gateways = Gateways::single(session_on(&fleet.world, &fleet.second));
         let plan = plan_account_edits(
@@ -442,7 +451,7 @@ async fn an_add_refuses_a_home_gateway_that_the_config_no_longer_holds_and_publi
         )
         .await?;
 
-        let refused = plan.apply(&gateways).await;
+        let refused = plan.apply(&gateways, &CancellationToken::new()).await;
 
         assert!(
             matches!(
@@ -674,7 +683,7 @@ async fn removing_a_zai_account_forgets_omp_and_codex_on_every_gateway_only_for_
             &cancel,
         )
         .await?;
-        let after = plan.apply(&gateways).await?;
+        let after = plan.apply(&gateways, &CancellationToken::new()).await?;
 
         assert!(after.account(work.name()).is_none());
         assert_eq!(after.account(other.name()), Some(&other));

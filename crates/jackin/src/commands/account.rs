@@ -248,11 +248,11 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
     .await?
     {
         AccountPlan::Offline(plan) => {
-            plan.apply().await?;
+            plan.apply(&app.cancel).await?;
         }
         AccountPlan::Gateway(plan) => {
             let gateways = app.gateways(plan.config()).await?;
-            plan.apply(&gateways).await?;
+            plan.apply(&gateways, &app.cancel).await?;
         }
     }
     Ok(())
@@ -261,11 +261,11 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
 async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
     match plan_account_edits(&app.desk(), edits, &app.cancel).await? {
         AccountPlan::Offline(plan) => {
-            plan.apply().await?;
+            plan.apply(&app.cancel).await?;
         }
         AccountPlan::Gateway(plan) => {
             let gateways = app.gateways(plan.config()).await?;
-            plan.apply(&gateways).await?;
+            plan.apply(&gateways, &app.cancel).await?;
         }
     }
     Ok(())
@@ -295,7 +295,10 @@ async fn default(app: &App, args: &AccountDefaultArgs) -> Result<(), CommandErro
     if let Some(provider) = &args.clear {
         let provider = parse_provider(provider)?;
         app.store
-            .edit(vec![ConfigEdit::ClearDefaultAccount { provider }])
+            .edit(
+                vec![ConfigEdit::ClearDefaultAccount { provider }],
+                &app.cancel,
+            )
             .await?;
         return Ok(());
     }
@@ -303,7 +306,7 @@ async fn default(app: &App, args: &AccountDefaultArgs) -> Result<(), CommandErro
         CommandError::Argument("pass an account name or --clear PROVIDER".to_owned())
     })?;
     app.store
-        .edit(vec![ConfigEdit::SetDefaultAccount { account }])
+        .edit(vec![ConfigEdit::SetDefaultAccount { account }], &app.cancel)
         .await?;
     Ok(())
 }
@@ -320,6 +323,6 @@ async fn bind(app: &App, args: &BindArgs) -> Result<(), CommandError> {
             account: args.account.clone(),
         },
     };
-    app.store.edit(vec![edit]).await?;
+    app.store.edit(vec![edit], &app.cancel).await?;
     Ok(())
 }

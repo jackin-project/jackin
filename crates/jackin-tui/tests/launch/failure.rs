@@ -4,13 +4,14 @@
 use jackin_console::app::Route;
 use jackin_console::domain::launch::{LaunchContent, NextStep};
 use jackin_core::{ConfigEdit, GatewayName, HookKind, SupervisorState, sandbox_layout};
-use jackin_openshell::GatewayOp;
+use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_testkit::{ConsoleRig, Fault, ProgramScript, Rig, TestResult, Trigger, guard};
 
 use super::support::{
     Stage, answer, begin, console, dialog, env_file, labels, launch, only, quiet, record_id, stage,
     until_route, until_shows, until_stage, until_untouched,
 };
+use tokio_util::sync::CancellationToken;
 
 const SANDBOX: &str = "03 Sandbox";
 
@@ -75,13 +76,16 @@ async fn a_launch_with_no_gateway_selected_fails_before_any_stage_and_says_to_ru
             .ok_or("the rig has no gateway")?;
         rig.world
             .config
-            .edit(vec![
-                ConfigEdit::AddGateway {
-                    name: GatewayName::parse("second-gateway")?,
-                    entry,
-                },
-                ConfigEdit::SetDefaultGateway(None),
-            ])
+            .edit(
+                vec![
+                    ConfigEdit::AddGateway {
+                        name: GatewayName::parse("second-gateway")?,
+                        entry,
+                    },
+                    ConfigEdit::SetDefaultGateway(None),
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::builder(&rig.world)
             .size(160, 44)
@@ -179,6 +183,77 @@ async fn cancel_during_upload_keeps_the_sandbox() -> TestResult {
         assert_eq!(handle.attachments(), 0);
         assert_eq!(handle.supervisor(), Some(SupervisorState::Waiting));
         assert!(console.console().app().world.daemons.is_empty());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancel_during_upload_with_an_unconfirmed_lookup_still_shows_the_last_observed_sandbox()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut console = console(&rig).await?;
+        let upload = Trigger::Op(GatewayOp::UploadTree);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: upload.clone(),
+        });
+        launch(&mut console).await?;
+        assert!(rig.gateway().until_held(&upload).await);
+        until_stage(&mut console, "05 Upload", Stage::Running).await?;
+        rig.gateway().inject(Fault::FailNext {
+            op: GatewayOp::Find,
+            error: GatewayError::Unreachable {
+                endpoint: "fake".to_owned(),
+                message: "down".to_owned(),
+            },
+        });
+        let wanted = record_id(&rig, &only(&rig)?);
+        console.keys("x right enter")?;
+        until_route(&mut console, Route::Manager).await?;
+        until_untouched(&mut console, "the cancel record on the roster", |c| {
+            c.console()
+                .app()
+                .world
+                .instances
+                .iter()
+                .any(|record| record.id() == &wanted)
+        })
+        .await?;
+        rig.gateway().release(&upload);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn cancel_after_a_lost_create_response_returns_to_the_manager_without_a_fabricated_record()
+-> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut console = console(&rig).await?;
+        let create = Trigger::Op(GatewayOp::Create);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: create.clone(),
+        });
+        launch(&mut console).await?;
+        assert!(rig.gateway().until_held(&create).await);
+        rig.gateway()
+            .inject(Fault::HideEverywhereUntilCreateConflict);
+        rig.gateway().inject(Fault::LoseResponse {
+            op: GatewayOp::Create,
+            error: GatewayError::Timeout {
+                op: GatewayOp::Create,
+                after: std::time::Duration::from_secs(30),
+                group: None,
+            },
+        });
+        console.keys("x right enter")?;
+        until_route(&mut console, Route::Manager).await?;
+        rig.gateway().release(&create);
+        console.settle().await?;
+        assert_eq!(console.console().app().route(), Route::Manager);
+        assert!(console.console().app().world.instances.is_empty());
         Ok(())
     })
     .await

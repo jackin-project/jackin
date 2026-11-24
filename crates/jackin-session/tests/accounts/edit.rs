@@ -67,7 +67,11 @@ async fn put_key(world: &World, target: &str) -> Result<(), Box<dyn std::error::
 async fn run(world: &World, edits: Vec<ConfigEdit>) -> Result<Config, AccountEditError> {
     let cancel = CancellationToken::new();
     let plan = plan_account_edits(&world.desk(), edits, &cancel).await?;
-    plan.apply(&Gateways::single(world.session.clone())).await
+    plan.apply(
+        &Gateways::single(world.session.clone()),
+        &CancellationToken::new(),
+    )
+    .await
 }
 
 #[tokio::test]
@@ -137,7 +141,7 @@ async fn accounts_without_a_provider_credential_never_need_the_gateway() -> Test
         let AccountPlan::Offline(offline) = plan else {
             return Err("a plan without providers needs the gateway".into());
         };
-        let config = offline.apply().await?;
+        let config = offline.apply(&CancellationToken::new()).await?;
         assert_eq!(config.accounts().count(), 3);
         assert!(world.gateway.providers().is_empty());
         assert!(world.gateway.profiles().is_empty());
@@ -164,7 +168,7 @@ async fn a_one_password_account_is_saved_without_any_provider_work() -> TestResu
         let AccountPlan::Offline(offline) = plan else {
             return Err("a usage only account needs the gateway".into());
         };
-        let config = offline.apply().await?;
+        let config = offline.apply(&CancellationToken::new()).await?;
         assert_eq!(
             config.account(&name("vault")?).map(Account::credential),
             Some(&credential)
@@ -429,7 +433,11 @@ async fn after_two_edits(
         assert_eq!(providers_of(&world), start_providers, "{case}");
         return Ok(false);
     };
-    plan.apply(&Gateways::single(world.session.clone())).await?;
+    plan.apply(
+        &Gateways::single(world.session.clone()),
+        &CancellationToken::new(),
+    )
+    .await?;
     let finished = world.config.load().await?;
     assert_eq!(
         providers_of(&world),
@@ -470,20 +478,27 @@ async fn the_plan_needs_the_gateway_exactly_when_an_account_gains_changes_or_los
         put_key(&world, "keyed").await?;
         world
             .config
-            .edit(vec![
-                edit(Kind::AddLogin, "chat", &home, &world)?,
-                edit(Kind::AddKey, "keyed", &home, &world)?,
-                ConfigEdit::AddAccount(account(
-                    "vault",
-                    Provider::Codex,
-                    CredentialSource::OnePassword {
-                        reference: OpReference::parse("op://Dev/OpenAI/key")?,
-                        account: None,
-                    },
-                )?),
-                ConfigEdit::AddAccount(account("claude", Provider::Claude, env("CLAUDE_KEY")?)?),
-                ConfigEdit::AddAccount(account("plain", Provider::Grok, env("GROK_KEY")?)?),
-            ])
+            .edit(
+                vec![
+                    edit(Kind::AddLogin, "chat", &home, &world)?,
+                    edit(Kind::AddKey, "keyed", &home, &world)?,
+                    ConfigEdit::AddAccount(account(
+                        "vault",
+                        Provider::Codex,
+                        CredentialSource::OnePassword {
+                            reference: OpReference::parse("op://Dev/OpenAI/key")?,
+                            account: None,
+                        },
+                    )?),
+                    ConfigEdit::AddAccount(account(
+                        "claude",
+                        Provider::Claude,
+                        env("CLAUDE_KEY")?,
+                    )?),
+                    ConfigEdit::AddAccount(account("plain", Provider::Grok, env("GROK_KEY")?)?),
+                ],
+                &CancellationToken::new(),
+            )
             .await?;
         let table = [
             (

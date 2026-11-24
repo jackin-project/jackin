@@ -409,17 +409,21 @@ impl AccountPlan {
         matches!(self, AccountPlan::Gateway(_))
     }
 
-    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
+    pub async fn apply(
+        self,
+        gateways: &Gateways,
+        cancel: &CancellationToken,
+    ) -> Result<Config, AccountEditError> {
         match self {
-            AccountPlan::Offline(plan) => Ok(plan.apply().await?),
-            AccountPlan::Gateway(plan) => plan.apply(gateways).await,
+            AccountPlan::Offline(plan) => Ok(plan.apply(cancel).await?),
+            AccountPlan::Gateway(plan) => plan.apply(gateways, cancel).await,
         }
     }
 }
 
 impl OfflinePlan {
-    pub async fn apply(self) -> Result<Config, ConfigError> {
-        self.locked.desk.store.edit(self.edits).await
+    pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, ConfigError> {
+        self.locked.desk.store.edit(self.edits, cancel).await
     }
 }
 
@@ -463,7 +467,7 @@ impl RemovalPlan {
                     .await
                     .map_err(|error| on_gateway(&self.name, error))?;
             }
-            Ok(self.locked.desk.store.edit(vec![edit]).await?)
+            Ok(self.locked.desk.store.edit(vec![edit], cancel).await?)
         }
         .await;
         match written {
@@ -594,7 +598,11 @@ impl GatewayPlan {
         &self.locked.config
     }
 
-    pub async fn apply(self, gateways: &Gateways) -> Result<Config, AccountEditError> {
+    pub async fn apply(
+        self,
+        gateways: &Gateways,
+        cancel: &CancellationToken,
+    ) -> Result<Config, AccountEditError> {
         let GatewayPlan {
             locked,
             edits,
@@ -614,7 +622,7 @@ impl GatewayPlan {
             forget(&sessions, &effects.forget, &mut journal).await?;
             publish(&sessions, &effects.publish, &agents, &mut journal).await?;
             store
-                .edit_checked(edits, |live| {
+                .edit_checked(edits, cancel, |live| {
                     check_gateway_entries(&locked.config, live).map_err(AccountEditError::from)
                 })
                 .await

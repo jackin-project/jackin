@@ -313,3 +313,89 @@ async fn start_ignored_accepts_the_start_and_leaves_the_sandbox_stopped() -> Tes
     })
     .await
 }
+
+fn lost() -> GatewayError {
+    GatewayError::Protocol {
+        message: "the response was lost".to_owned(),
+    }
+}
+
+#[tokio::test]
+async fn lose_response_applies_the_operation_then_fails_once_for_each_operation() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        fake.inject(Fault::LoseResponse {
+            op: GatewayOp::Create,
+            error: lost(),
+        });
+        let spec = spec(sh("sleep 3600")?)?;
+        assert!(matches!(
+            fake.create_sandbox(&spec).await,
+            Err(GatewayError::Protocol { .. })
+        ));
+        assert_eq!(fake.sandboxes().len(), 1);
+        assert!(matches!(
+            fake.create_sandbox(&spec).await,
+            Err(GatewayError::AlreadyExists { .. })
+        ));
+        let name = spec.name().clone();
+        observe(&fake, &name).await?;
+
+        fake.inject(Fault::LoseResponse {
+            op: GatewayOp::WriteFile,
+            error: lost(),
+        });
+        assert!(
+            write(&fake, &name, "/sandbox/lost.txt", "kept")
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            read(&fake, &name, "/sandbox/lost.txt").await?,
+            Some(b"kept".to_vec())
+        );
+        write(&fake, &name, "/sandbox/lost.txt", "again").await?;
+
+        fake.inject(Fault::LoseResponse {
+            op: GatewayOp::Power,
+            error: lost(),
+        });
+        assert!(fake.set_power(&name, PowerAction::Stop).await.is_err());
+        assert_eq!(observe(&fake, &name).await?.phase, Phase::Stopped);
+
+        fake.inject(Fault::LoseResponse {
+            op: GatewayOp::Delete,
+            error: lost(),
+        });
+        assert!(fake.delete_sandbox(&name).await.is_err());
+        assert!(fake.sandboxes().is_empty());
+        fake.delete_sandbox(&name).await?;
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn hide_everywhere_hides_label_and_name_queries_until_a_create_conflict() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let launch = LaunchId::generate()?;
+        let sandbox = spec_with(&launch, IMAGE, Vec::new(), sh("sleep 3600")?)?;
+        fake.create_sandbox(&sandbox).await?;
+        let by_label = SandboxQuery::Labels(LabelSelector::launch(&launch));
+        let by_name = SandboxQuery::Name(sandbox.name().clone());
+        fake.inject(Fault::HideEverywhereUntilCreateConflict);
+        for _ in 0..3 {
+            assert!(fake.find_sandboxes(&by_label).await?.is_empty());
+            assert!(fake.find_sandboxes(&by_name).await?.is_empty());
+        }
+        assert!(matches!(
+            fake.create_sandbox(&sandbox).await,
+            Err(GatewayError::AlreadyExists { .. })
+        ));
+        assert_eq!(fake.find_sandboxes(&by_label).await?.len(), 1);
+        assert_eq!(fake.find_sandboxes(&by_name).await?.len(), 1);
+        Ok(())
+    })
+    .await
+}

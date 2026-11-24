@@ -16,6 +16,7 @@ use jackin_core::{
     WorkspaceName,
 };
 use tokio::sync::{Semaphore, oneshot};
+use tokio_util::sync::CancellationToken;
 
 type Fallible<T> = Result<T, Box<dyn std::error::Error>>;
 type TestResult = Fallible<()>;
@@ -136,6 +137,7 @@ fn label(error: &ConfigError) -> String {
                 .join(",")
         ),
         ConfigError::Fs(_) => "fs".to_owned(),
+        ConfigError::Cancelled => "cancelled".to_owned(),
     }
 }
 
@@ -156,7 +158,10 @@ async fn edit_settled(
     edits: Vec<ConfigEdit>,
 ) -> Fallible<Result<Config, ConfigError>> {
     let store = store.clone();
-    settle(tokio::spawn(async move { store.edit(edits).await })).await
+    settle(tokio::spawn(async move {
+        store.edit(edits, &CancellationToken::new()).await
+    }))
+    .await
 }
 
 #[tokio::test]
@@ -167,20 +172,29 @@ async fn store_creates_the_file_applies_edits_in_order_and_reads_them_back() -> 
     let store = plain_with(&path, &clock);
     assert_eq!(store.load().await?, Config::empty());
     let saved = store
-        .edit(vec![gateway("g1")?, default_gateway("g1")?, account("a")?])
+        .edit(
+            vec![gateway("g1")?, default_gateway("g1")?, account("a")?],
+            &CancellationToken::new(),
+        )
         .await?;
     assert_eq!(std::fs::read(path.as_path())?, saved.render().as_bytes());
     assert_eq!(store.load().await?, saved);
     let before = std::fs::read(path.as_path())?;
     let error = store
-        .edit(vec![default_gateway("g2")?, gateway("g2")?])
+        .edit(
+            vec![default_gateway("g2")?, gateway("g2")?],
+            &CancellationToken::new(),
+        )
         .await
         .err()
         .ok_or("reverse order")?;
     assert_eq!(label(&error), "reference:gateway:g2");
     assert_eq!(std::fs::read(path.as_path())?, before);
     let config = store
-        .edit(vec![gateway("g2")?, default_gateway("g2")?])
+        .edit(
+            vec![gateway("g2")?, default_gateway("g2")?],
+            &CancellationToken::new(),
+        )
         .await?;
     assert_eq!(
         config.default_gateway().map(ToString::to_string),
@@ -200,7 +214,9 @@ async fn a_failing_edit_or_a_corrupt_file_leaves_the_file_untouched_and_the_lock
     let dir = tempfile::tempdir()?;
     let path = hp(&dir.path().join("config.toml"))?;
     let store = plain(&path);
-    store.edit(vec![gateway("g1")?]).await?;
+    store
+        .edit(vec![gateway("g1")?], &CancellationToken::new())
+        .await?;
     let before = std::fs::read(path.as_path())?;
     let error = edit_settled(&store, vec![role("ok")?, default_gateway("ghost")?])
         .await?
@@ -213,7 +229,7 @@ async fn a_failing_edit_or_a_corrupt_file_leaves_the_file_untouched_and_the_lock
 
     let fresh = hp(&dir.path().join("fresh").join("config.toml"))?;
     let error = plain(&fresh)
-        .edit(vec![default_gateway("ghost")?])
+        .edit(vec![default_gateway("ghost")?], &CancellationToken::new())
         .await
         .err()
         .ok_or("fresh")?;
@@ -384,7 +400,9 @@ async fn crash_case(fault: Fault, existing: bool) -> TestResult {
     let fresh = plain(&path);
     let mut old = Config::empty();
     if existing {
-        old = fresh.edit(vec![gateway("g1")?]).await?;
+        old = fresh
+            .edit(vec![gateway("g1")?], &CancellationToken::new())
+            .await?;
     }
     let before = std::fs::read(path.as_path()).ok();
     let mut with_new = old.clone();
@@ -395,7 +413,7 @@ async fn crash_case(fault: Fault, existing: bool) -> TestResult {
         fired: AtomicBool::new(false),
     });
     let error = ConfigStore::new(crashing, Arc::new(StepClock::default()), path.clone())
-        .edit(vec![account("new")?])
+        .edit(vec![account("new")?], &CancellationToken::new())
         .await
         .err()
         .ok_or("crash")?;
@@ -600,7 +618,9 @@ async fn until(what: &str, mut ready: impl FnMut() -> bool) -> TestResult {
 async fn concurrent_edits_serialise_on_the_lock_and_lose_no_update() -> TestResult {
     let dir = tempfile::tempdir()?;
     let path = hp(&dir.path().join("config.toml"))?;
-    plain(&path).edit(vec![gateway("g1")?]).await?;
+    plain(&path)
+        .edit(vec![gateway("g1")?], &CancellationToken::new())
+        .await?;
     let old_bytes = std::fs::read(path.as_path())?;
     let (entered_tx, entered_rx) = oneshot::channel();
     let (release_tx, release_rx) = oneshot::channel();
@@ -618,10 +638,10 @@ async fn concurrent_edits_serialise_on_the_lock_and_lose_no_update() -> TestResu
     let first = ConfigStore::new(Arc::clone(&fs), Arc::clone(&tick), path.clone());
     let second = ConfigStore::new(fs, tick, path.clone());
     let edit_a = vec![role("a")?];
-    let task_a = tokio::spawn(async move { first.edit(edit_a).await });
+    let task_a = tokio::spawn(async move { first.edit(edit_a, &CancellationToken::new()).await });
     entered_rx.await?;
     let edit_b = vec![role("b")?];
-    let task_b = tokio::spawn(async move { second.edit(edit_b).await });
+    let task_b = tokio::spawn(async move { second.edit(edit_b, &CancellationToken::new()).await });
     until("the first failed lock attempt of B", || {
         clock.sleep_count() >= 1 || gate.reads.load(Ordering::SeqCst) >= 2
     })
@@ -656,7 +676,7 @@ async fn a_held_lock_is_retried_on_a_fixed_interval_then_edit_gives_up_with_lock
     let held = StdFileSystem::default().lock(&lock_path).await?;
     let clock = Arc::new(StepClock::default());
     let error = plain_with(&path, &clock)
-        .edit(vec![role("a")?])
+        .edit(vec![role("a")?], &CancellationToken::new())
         .await
         .err()
         .ok_or("edit under a held lock")?;
@@ -680,7 +700,9 @@ async fn a_held_lock_is_retried_on_a_fixed_interval_then_edit_gives_up_with_lock
     );
     drop(held);
     let fresh = Arc::new(StepClock::default());
-    let config = plain_with(&path, &fresh).edit(vec![role("a")?]).await?;
+    let config = plain_with(&path, &fresh)
+        .edit(vec![role("a")?], &CancellationToken::new())
+        .await?;
     assert!(has_role(&config, "a")?);
     assert!(fresh.sleeps().is_empty());
     Ok(())
@@ -738,7 +760,9 @@ async fn a_lock_released_during_the_wait_lets_the_edit_succeed() -> TestResult {
     let fs: Arc<dyn FileSystem> = fs_copy;
     let ticking: Arc<dyn Clock> = clock_copy;
     let store = ConfigStore::new(fs, ticking, path.clone());
-    let config = store.edit(vec![role("a")?]).await?;
+    let config = store
+        .edit(vec![role("a")?], &CancellationToken::new())
+        .await?;
     assert!(has_role(&config, "a")?);
     assert_eq!(
         *clock.slept.lock().unwrap_or_else(PoisonError::into_inner),
@@ -757,12 +781,14 @@ async fn edit_through_a_symlinked_config_is_refused_and_leaves_the_target_untouc
     let real_dir = dir.path().join("real");
     std::fs::create_dir(&real_dir)?;
     let real = hp(&real_dir.join("config.toml"))?;
-    plain(&real).edit(vec![gateway("g1")?]).await?;
+    plain(&real)
+        .edit(vec![gateway("g1")?], &CancellationToken::new())
+        .await?;
     let before = std::fs::read(real.as_path())?;
     let link = dir.path().join("config.toml");
     std::os::unix::fs::symlink(real.as_path(), &link)?;
     let error = plain(&hp(&link)?)
-        .edit(vec![role("a")?])
+        .edit(vec![role("a")?], &CancellationToken::new())
         .await
         .err()
         .ok_or("edit through a link")?;
@@ -774,14 +800,16 @@ async fn edit_through_a_symlinked_config_is_refused_and_leaves_the_target_untouc
     assert_eq!(std::fs::read_link(&link)?, real.as_path());
     assert!(!dir.path().join(".config.toml.tmp").exists());
     assert!(!real_dir.join(".config.toml.tmp").exists());
-    let config = plain(&real).edit(vec![role("a")?]).await?;
+    let config = plain(&real)
+        .edit(vec![role("a")?], &CancellationToken::new())
+        .await?;
     assert!(has_role(&config, "a")?);
 
     let dangling = dir.path().join("dangling.toml");
     let missing = dir.path().join("missing.toml");
     std::os::unix::fs::symlink(&missing, &dangling)?;
     let error = plain(&hp(&dangling)?)
-        .edit(vec![role("a")?])
+        .edit(vec![role("a")?], &CancellationToken::new())
         .await
         .err()
         .ok_or("edit through a dangling link")?;
@@ -814,7 +842,9 @@ async fn an_edit_sweeps_the_crash_leftovers_of_its_file_and_keeps_every_other_fi
         std::fs::write(dir.path().join(name), b"leftover")?;
     }
     std::fs::create_dir(dir.path().join(".config.toml.9-9.tmp"))?;
-    plain(&path).edit(vec![role("a")?]).await?;
+    plain(&path)
+        .edit(vec![role("a")?], &CancellationToken::new())
+        .await?;
     let mut expected: Vec<String> = others.iter().map(ToString::to_string).collect();
     expected.extend([".config.toml.9-9.tmp", "config.toml", "config.toml.lock"].map(str::to_owned));
     expected.sort();
@@ -835,27 +865,321 @@ async fn a_rename_keeps_what_another_handle_wrote_after_the_caller_read() -> Tes
     let from = WorkspaceName::parse("proj")?;
     let to = WorkspaceName::parse("app")?;
     store
-        .edit(vec![ConfigEdit::AddWorkspace {
-            name: from.clone(),
-            workspace: Workspace::new(hp(Path::new("/p/proj"))?, false),
-        }])
+        .edit(
+            vec![ConfigEdit::AddWorkspace {
+                name: from.clone(),
+                workspace: Workspace::new(hp(Path::new("/p/proj"))?, false),
+            }],
+            &CancellationToken::new(),
+        )
         .await?;
     let stale = store.load().await?;
     other
-        .edit(vec![ConfigEdit::SetWorkspaceDocker {
-            workspace: from.clone(),
-            docker: true,
-        }])
+        .edit(
+            vec![ConfigEdit::SetWorkspaceDocker {
+                workspace: from.clone(),
+                docker: true,
+            }],
+            &CancellationToken::new(),
+        )
         .await?;
     assert!(stale.workspace(&from).is_some_and(|saved| !saved.docker));
     let saved = store
-        .edit(vec![ConfigEdit::RenameWorkspace {
-            from: from.clone(),
-            to: to.clone(),
-        }])
+        .edit(
+            vec![ConfigEdit::RenameWorkspace {
+                from: from.clone(),
+                to: to.clone(),
+            }],
+            &CancellationToken::new(),
+        )
         .await?;
     assert!(saved.workspace(&from).is_none());
     assert!(saved.workspace(&to).is_some_and(|moved| moved.docker));
     assert_eq!(store.load().await?, saved);
+    Ok(())
+}
+
+#[derive(Debug)]
+struct CancelOnSleep {
+    token: CancellationToken,
+    at: usize,
+    slept: Mutex<usize>,
+}
+
+impl CancelOnSleep {
+    fn new(token: &CancellationToken, at: usize) -> CancelOnSleep {
+        CancelOnSleep {
+            token: token.clone(),
+            at,
+            slept: Mutex::new(0),
+        }
+    }
+
+    fn sleeps(&self) -> usize {
+        *self.slept.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+#[async_trait]
+impl Clock for CancelOnSleep {
+    fn now(&self) -> Timestamp {
+        Timestamp(0)
+    }
+
+    fn utc_offset_secs(&self) -> i32 {
+        0
+    }
+
+    async fn sleep(&self, _duration: Duration) {
+        let count = {
+            let mut slept = self.slept.lock().unwrap_or_else(PoisonError::into_inner);
+            *slept += 1;
+            *slept
+        };
+        if count == self.at {
+            self.token.cancel();
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_precancelled_edit_changes_nothing_and_takes_no_lock() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let nested = dir.path().join("jackin");
+    let path = hp(&nested.join("config.toml"))?;
+    let store = plain(&path);
+    let cancelled = CancellationToken::new();
+    cancelled.cancel();
+    let error = store
+        .edit(vec![gateway("g1")?], &cancelled)
+        .await
+        .err()
+        .ok_or("a precancelled edit succeeded")?;
+    assert_eq!(label(&error), "cancelled");
+    assert!(!nested.exists());
+
+    store
+        .edit(vec![gateway("g1")?], &CancellationToken::new())
+        .await?;
+    let before = std::fs::read(path.as_path())?;
+    let error = store
+        .edit(vec![role("a")?], &cancelled)
+        .await
+        .err()
+        .ok_or("a precancelled edit of an existing file succeeded")?;
+    assert_eq!(label(&error), "cancelled");
+    assert_eq!(std::fs::read(path.as_path())?, before);
+    StdFileSystem::default()
+        .lock(&hp(&nested.join("config.toml.lock"))?)
+        .await?;
+    let config = store
+        .edit(vec![role("a")?], &CancellationToken::new())
+        .await?;
+    assert!(has_role(&config, "a")?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_cancel_while_the_lock_is_contended_stops_the_wait_and_changes_nothing() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let lock_path = hp(&dir.path().join("config.toml.lock"))?;
+    let held = StdFileSystem::default().lock(&lock_path).await?;
+    let cancel = CancellationToken::new();
+    let clock = Arc::new(CancelOnSleep::new(&cancel, 3));
+    let shared = Arc::clone(&clock);
+    let ticking: Arc<dyn Clock> = shared;
+    let store = ConfigStore::new(Arc::new(StdFileSystem::default()), ticking, path.clone());
+    let error = store
+        .edit(vec![role("a")?], &cancel)
+        .await
+        .err()
+        .ok_or("an edit under a held lock succeeded")?;
+    assert_eq!(label(&error), "cancelled");
+    assert_eq!(clock.sleeps(), 3);
+    assert!(!path.as_path().exists());
+
+    drop(held);
+    let config = store
+        .edit(vec![role("a")?], &CancellationToken::new())
+        .await?;
+    assert!(has_role(&config, "a")?);
+    assert_eq!(clock.sleeps(), 3);
+    Ok(())
+}
+
+#[derive(Debug)]
+enum Rejected {
+    Config(ConfigError),
+    Mine,
+}
+
+impl From<ConfigError> for Rejected {
+    fn from(error: ConfigError) -> Rejected {
+        Rejected::Config(error)
+    }
+}
+
+#[tokio::test]
+async fn a_cancel_before_the_commit_point_discards_the_edit_and_the_next_edit_succeeds()
+-> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let store = plain(&path);
+    store
+        .edit(vec![gateway("g1")?], &CancellationToken::new())
+        .await?;
+    let before = std::fs::read(path.as_path())?;
+
+    let cancel = CancellationToken::new();
+    let error = store
+        .edit_checked(vec![role("a")?], &cancel, |_| {
+            cancel.cancel();
+            Ok::<(), Rejected>(())
+        })
+        .await
+        .err()
+        .ok_or("a cancel inside the check did not stop the edit")?;
+    assert!(
+        matches!(&error, Rejected::Config(ConfigError::Cancelled)),
+        "{error:?}"
+    );
+    assert_eq!(std::fs::read(path.as_path())?, before);
+
+    let rejected = store
+        .edit_checked(vec![role("a")?], &CancellationToken::new(), |_| {
+            Err::<(), Rejected>(Rejected::Mine)
+        })
+        .await
+        .err()
+        .ok_or("the check was not honoured")?;
+    assert!(matches!(rejected, Rejected::Mine), "{rejected:?}");
+    assert_eq!(std::fs::read(path.as_path())?, before);
+
+    let config = store
+        .edit(vec![role("a")?], &CancellationToken::new())
+        .await?;
+    assert!(has_role(&config, "a")?);
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CancelAt {
+    WriteNew,
+    Rename,
+    SyncDir,
+}
+
+#[derive(Debug)]
+struct CancelFs {
+    inner: StdFileSystem,
+    at: CancelAt,
+    token: CancellationToken,
+}
+
+impl CancelFs {
+    async fn cancelling(&self, at: CancelAt) {
+        if self.at == at {
+            self.token.cancel();
+            tokio::task::yield_now().await;
+        }
+    }
+}
+
+#[async_trait]
+impl FileSystem for CancelFs {
+    async fn read(&self, p: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
+        self.inner.read(p).await
+    }
+    async fn stat(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat(p).await
+    }
+    async fn stat_following(&self, p: &HostPath) -> Result<Option<FileKind>, FsError> {
+        self.inner.stat_following(p).await
+    }
+    async fn canonicalize(&self, p: &HostPath) -> Result<Option<HostPath>, FsError> {
+        self.inner.canonicalize(p).await
+    }
+    async fn file_len(&self, p: &HostPath) -> Result<Option<u64>, FsError> {
+        self.inner.file_len(p).await
+    }
+    async fn identity(&self, p: &HostPath) -> Result<Option<FileIdentity>, FsError> {
+        self.inner.identity(p).await
+    }
+    async fn list(&self, d: &HostPath) -> Result<Vec<DirEntry>, FsError> {
+        self.inner.list(d).await
+    }
+    async fn create_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
+        self.inner.create_dir_all(d).await
+    }
+    async fn create_private_dir_all(&self, d: &HostPath) -> Result<(), FsError> {
+        self.inner.create_private_dir_all(d).await
+    }
+    async fn remove_file(&self, p: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_file(p).await
+    }
+    async fn read_at(&self, p: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
+        self.inner.read_at(p, offset, len).await
+    }
+    async fn read_link(
+        &self,
+        root: &HostPath,
+        file: &RepoPath,
+    ) -> Result<Result<String, LinkProblem>, FsError> {
+        self.inner.read_link(root, file).await
+    }
+    async fn write_symlink(&self, path: &HostPath, target: &str) -> Result<(), FsError> {
+        self.inner.write_symlink(path, target).await
+    }
+    async fn read_regular(
+        &self,
+        r: &HostPath,
+        f: &RepoPath,
+        max_bytes: usize,
+    ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        self.inner.read_regular(r, f, max_bytes).await
+    }
+    async fn lock(&self, p: &HostPath) -> Result<FileLock, FsError> {
+        self.inner.lock(p).await
+    }
+    async fn write_new(&self, p: &HostPath, b: &[u8], m: FileMode) -> Result<(), FsError> {
+        self.cancelling(CancelAt::WriteNew).await;
+        self.inner.write_new(p, b, m).await
+    }
+    async fn rename(&self, f: &HostPath, t: &HostPath) -> Result<(), FsError> {
+        self.cancelling(CancelAt::Rename).await;
+        self.inner.rename(f, t).await
+    }
+    async fn remove_dir_all(&self, p: &HostPath) -> Result<(), FsError> {
+        self.inner.remove_dir_all(p).await
+    }
+    async fn mode(&self, p: &HostPath) -> Result<Option<FileMode>, FsError> {
+        self.inner.mode(p).await
+    }
+    async fn sync_dir(&self, d: &HostPath) -> Result<(), FsError> {
+        self.cancelling(CancelAt::SyncDir).await;
+        self.inner.sync_dir(d).await
+    }
+}
+
+#[tokio::test]
+async fn a_cancel_that_arrives_during_the_commit_does_not_abandon_the_write() -> TestResult {
+    for at in [CancelAt::WriteNew, CancelAt::Rename, CancelAt::SyncDir] {
+        let dir = tempfile::tempdir()?;
+        let path = hp(&dir.path().join("config.toml"))?;
+        let cancel = CancellationToken::new();
+        let fs = Arc::new(CancelFs {
+            inner: StdFileSystem::default(),
+            at,
+            token: cancel.clone(),
+        });
+        let store = ConfigStore::new(fs, Arc::new(StepClock::default()), path.clone());
+        let saved = store
+            .edit(vec![gateway("g1")?, account("a")?], &cancel)
+            .await?;
+        assert!(cancel.is_cancelled(), "{at:?}");
+        assert_eq!(std::fs::read(path.as_path())?, saved.render().as_bytes());
+        assert_eq!(plain(&path).load().await?, saved, "{at:?}");
+    }
     Ok(())
 }

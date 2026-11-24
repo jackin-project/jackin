@@ -150,18 +150,21 @@ async fn use_chatgpt_account(rig: &mut Rig) -> TestResult {
     ))?;
     rig.world
         .config
-        .edit(vec![jackin_core::ConfigEdit::AddAccount(
-            jackin_core::Account::new(
-                jackin_core::AccountName::parse("chatgpt")?,
-                Provider::Codex,
-                jackin_core::CredentialSource::CodexLogin {
-                    home: rig.home.clone(),
-                    chatgpt_account_id: jackin_core::ChatgptAccountId::parse(
-                        "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f",
-                    )?,
-                },
-            )?,
-        )])
+        .edit(
+            vec![jackin_core::ConfigEdit::AddAccount(
+                jackin_core::Account::new(
+                    jackin_core::AccountName::parse("chatgpt")?,
+                    Provider::Codex,
+                    jackin_core::CredentialSource::CodexLogin {
+                        home: rig.home.clone(),
+                        chatgpt_account_id: jackin_core::ChatgptAccountId::parse(
+                            "3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f",
+                        )?,
+                    },
+                )?,
+            )],
+            &CancellationToken::new(),
+        )
         .await?;
     Ok(())
 }

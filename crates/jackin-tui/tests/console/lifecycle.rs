@@ -8,6 +8,7 @@ use jackin_openshell::Gateway;
 use jackin_testkit::{TestResult, guard};
 
 use super::support::Lab;
+use tokio_util::sync::CancellationToken;
 
 async fn launched()
 -> Result<(Lab, jackin_console::domain::instance::InstanceId), Box<dyn std::error::Error>> {
@@ -454,10 +455,13 @@ async fn paired_lab(
         .ok_or("home gateway entry")?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddGateway {
-            name: second.name().clone(),
-            entry,
-        }])
+        .edit(
+            vec![ConfigEdit::AddGateway {
+                name: second.name().clone(),
+                entry,
+            }],
+            &CancellationToken::new(),
+        )
         .await?;
     let home: std::sync::Arc<dyn Gateway> =
         std::sync::Arc::<jackin_testkit::FakeGateway>::clone(&rig.world.gateway);
