@@ -947,3 +947,56 @@ async fn a_write_whose_exit_event_is_lost_is_unconfirmed_and_the_new_bytes_are_t
         file.content.expose()
     );
 }
+
+#[tokio::test]
+async fn a_write_refused_before_the_exec_stream_opens_is_a_plain_error_and_a_later_failure_is_unconfirmed()
+ {
+    use tonic::{Code, Status};
+
+    for code in [Code::PermissionDenied, Code::FailedPrecondition] {
+        let env = env().await;
+        let root = TempDir::new().unwrap();
+        env.server.state().exec = Some(host_shell(root.path().to_path_buf()));
+        ready(&env);
+        let gateway = connect(&env, WORKSPACE).await;
+        env.server.state().faults.insert(
+            "exec_sandbox_interactive",
+            super::server::Fault::Status(code, "refused".to_owned()),
+        );
+        let error = guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file("/sandbox/a")))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GatewayError::PermissionDenied { .. } | GatewayError::FailedPrecondition { .. }
+            ),
+            "{code:?}: {error:?}"
+        );
+    }
+
+    let env = env().await;
+    env.server.state().exec = Some(Arc::new(|ctx: ExecCtx| {
+        Box::pin(async move {
+            drop(ctx.events.send(Ok(out_event(b"partial".to_vec()))).await);
+            drop(
+                ctx.events
+                    .send(Err(Status::permission_denied("late")))
+                    .await,
+            );
+        })
+    }));
+    ready(&env);
+    let gateway = connect(&env, WORKSPACE).await;
+    let error = guard(gateway.write_file(&sandbox_name(SANDBOX), &secret_file("/sandbox/a")))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            GatewayError::WriteUnconfirmed { cause, .. }
+                if matches!(**cause, GatewayError::PermissionDenied { .. })
+        ),
+        "{error:?}"
+    );
+}
