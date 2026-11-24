@@ -5,11 +5,15 @@ use std::fmt;
 
 use jackin_usage::accounts::{AccountRegistry, ConnectedAccount, UsageProvider};
 use jackin_usage::catalog::{InfoProduct, UsageProduct, info_only, providers};
-use jackin_usage::view::{Line, Span, Tone};
+use jackin_usage::view::{Ctx, Line, Span, Tone, text};
 use serde::Serialize;
 
+use super::overview::context;
 use super::{database, failure};
 use crate::{app::App, error::CommandError};
+
+const INFO_TAG: &str = "Info";
+const INFO_INDENT: usize = 6;
 
 #[derive(Serialize)]
 pub(super) struct ProviderRow {
@@ -175,6 +179,7 @@ fn table(
     rows: &[&ProviderRow],
     totals: &[ProviderRow],
     accounts: &[ConnectedAccount],
+    ctx: Ctx,
 ) -> Vec<Line> {
     let tracked = totals.iter().filter(|r| r.status != "unavailable").count();
     let connected = totals.iter().filter(|r| r.account_count > 0).count();
@@ -183,11 +188,19 @@ fn table(
     let name_width = widest(&cells, |c| c.name, "PROVIDER");
     let id_width = widest(&cells, |c| c.id, "ID");
     let count_width = widest(&cells, |c| &c.count, "ACCOUNTS");
-    let mut lines = vec![
-        Line::of(vec![Span::strong(format!(
-            "Providers · {tracked} tracked · {connected} connected · {}",
-            plural(total, "account")
-        ))]),
+    let mut lines = text::wrap(
+        Vec::new(),
+        0,
+        &text::split_parts(
+            &format!(
+                "Providers · {tracked} tracked · {connected} connected · {}",
+                plural(total, "account")
+            ),
+            Tone::Strong,
+        ),
+        ctx.columns(),
+    );
+    lines.extend([
         Line::blank(),
         Line::of(vec![Span::dim(format!(
             "{}  {}  {:>count_width$}  NOTE",
@@ -195,7 +208,7 @@ fn table(
             pad("ID", id_width),
             "ACCOUNTS"
         ))]),
-    ];
+    ]);
     for cell in cells {
         let figure = format!("{:>count_width$}", cell.count);
         let mut spans = vec![
@@ -216,15 +229,22 @@ fn table(
     lines
 }
 
-fn info_lines() -> Vec<Line> {
+fn info_lines(ctx: Ctx) -> Vec<Line> {
     let mut lines = Vec::new();
     for info in info_only() {
         lines.push(Line::blank());
-        lines.push(Line::of(vec![
-            Span::strong("Info"),
-            Span::plain(format!("  {}: {}.", info.name, info.reason)),
-        ]));
-        lines.push(Line::of(vec![Span::plain(format!("      {}", info.hint))]));
+        lines.extend(text::wrap(
+            vec![Span::strong(INFO_TAG), Span::plain("  ")],
+            INFO_INDENT,
+            &[(format!("{}: {}.", info.name, info.reason), Tone::Plain)],
+            ctx.columns(),
+        ));
+        lines.extend(text::wrap(
+            vec![Span::plain(" ".repeat(INFO_INDENT))],
+            INFO_INDENT,
+            &[(info.hint.to_owned(), Tone::Plain)],
+            ctx.columns(),
+        ));
     }
     lines
 }
@@ -261,9 +281,10 @@ pub(crate) fn show(app: &mut App, id: Option<&str>, json: bool) -> Result<(), Co
         app.io
             .json(&serde_json::json!({"schema":1,"providers":rows,"info":info}))
     } else {
-        let mut lines = table(&rows, &totals, &accounts);
+        let ctx = context(app);
+        let mut lines = table(&rows, &totals, &accounts, ctx);
         if selected.is_none() {
-            lines.extend(info_lines());
+            lines.extend(info_lines(ctx));
         }
         lines.extend(footer());
         app.io.lines(&lines)

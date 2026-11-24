@@ -9,6 +9,8 @@ use super::text;
 const TAG_WIDTH: usize = 10;
 const DETAIL_INDENT: usize = 14;
 const BANNER: &str = "Saved readings only; no provider or credential access.";
+const STALE_TAG: &str = "Stale";
+const TITLE_INDENT: usize = 2;
 const REFRESH_COMMAND: &str = "jackin usage refresh";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -25,15 +27,15 @@ pub fn report(view: &UsageView, ctx: &Ctx, kind: Report) -> Vec<Line> {
     } else {
         Depth::Summary
     };
-    let mut lines = vec![title(view, kind)];
+    let mut lines = title(view, kind, ctx);
     if kind == Report::Snapshot {
         lines.push(Line::of(vec![Span::dim(BANNER)]));
     }
     let mut before = Vec::new();
     if kind != Report::Details {
-        before.extend(attention_lines(view));
+        before.extend(attention_lines(view, ctx));
     }
-    before.extend(stale_line(view));
+    before.extend(stale_lines(view, ctx));
     if !before.is_empty() {
         lines.push(Line::blank());
         lines.extend(before);
@@ -59,27 +61,42 @@ fn plural(count: usize, noun: &str) -> String {
     }
 }
 
-pub fn title(view: &UsageView, kind: Report) -> Line {
+pub fn title(view: &UsageView, kind: Report, ctx: &Ctx) -> Vec<Line> {
     let word = match kind {
         Report::Usage => "Usage",
         Report::Snapshot => "Usage snapshot",
         Report::Details => "Usage details",
     };
-    Line::of(vec![
-        Span::strong(word),
-        Span::plain(format!(
-            " · {} ({}) · {} · {}",
-            text::full_date(view.now, view.now, view.utc_offset_secs, true),
-            text::offset_label(view.utc_offset_secs),
-            plural(view.account_count(), "account"),
-            plural(view.groups.len(), "provider"),
-        )),
-    ])
+    let offset = text::offset_label(view.utc_offset_secs);
+    let stamps = [
+        text::full_date(view.now, view.now, view.utc_offset_secs, true),
+        format!(
+            "{} {}",
+            text::date(view.now, view.now, view.utc_offset_secs),
+            text::clock(view.now, view.now, view.utc_offset_secs)
+        ),
+    ];
+    let mut lines = Vec::new();
+    for stamp in stamps {
+        let parts = [
+            (word.to_owned(), Tone::Strong),
+            (format!("{stamp} ({offset})"), Tone::Plain),
+            (plural(view.account_count(), "account"), Tone::Plain),
+            (plural(view.groups.len(), "provider"), Tone::Plain),
+        ];
+        lines = text::wrap(Vec::new(), TITLE_INDENT, &parts, ctx.columns());
+        if lines.len() == 1 {
+            break;
+        }
+    }
+    lines
 }
 
-pub fn stale_line(view: &UsageView) -> Option<Line> {
+pub fn stale_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
     let ages = view.stale_ages();
-    let (youngest, oldest) = (ages.first()?, ages.last()?);
+    let (Some(youngest), Some(oldest)) = (ages.first(), ages.last()) else {
+        return Vec::new();
+    };
     let total = view.account_count();
     let who = if ages.len() < total {
         format!("{} of {total} readings", ages.len())
@@ -94,13 +111,19 @@ pub fn stale_line(view: &UsageView) -> Option<Line> {
     } else {
         format!("{near} to {far}")
     };
-    Some(Line::of(vec![
-        Span::new("Stale", Tone::Warn),
-        Span::plain(format!("  {who}, fetched {range} ago · {REFRESH_COMMAND}")),
-    ]))
+    let parts = [
+        (format!("{who}, fetched {range} ago"), Tone::Plain),
+        (REFRESH_COMMAND.to_owned(), Tone::Plain),
+    ];
+    text::wrap(
+        vec![Span::new(STALE_TAG, Tone::Warn), Span::plain("  ")],
+        STALE_TAG.len() + 2,
+        &parts,
+        ctx.columns(),
+    )
 }
 
-pub fn attention_lines(view: &UsageView) -> Vec<Line> {
+pub fn attention_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
     let entries: Vec<AttentionText> = view
         .attention
         .iter()
@@ -114,15 +137,22 @@ pub fn attention_lines(view: &UsageView) -> Vec<Line> {
         entries.len()
     ))])];
     for entry in entries {
-        lines.push(Line::of(vec![
-            Span::plain("  "),
-            Span::new(format!("{:<TAG_WIDTH$}", entry.tag), entry.tone),
-            Span::plain(format!("  {}", entry.subject)),
-        ]));
-        lines.push(Line::of(vec![Span::plain(format!(
-            "{:DETAIL_INDENT$}{}",
-            "", entry.detail
-        ))]));
+        lines.extend(text::wrap(
+            vec![
+                Span::plain("  "),
+                Span::new(format!("{:<TAG_WIDTH$}", entry.tag), entry.tone),
+                Span::plain("  "),
+            ],
+            DETAIL_INDENT,
+            &text::split_parts(&entry.subject, Tone::Plain),
+            ctx.columns(),
+        ));
+        lines.extend(text::wrap(
+            vec![Span::plain(" ".repeat(DETAIL_INDENT))],
+            DETAIL_INDENT,
+            &text::split_parts(&entry.detail, Tone::Plain),
+            ctx.columns(),
+        ));
     }
     lines
 }

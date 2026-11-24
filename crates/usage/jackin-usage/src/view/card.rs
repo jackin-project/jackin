@@ -47,7 +47,7 @@ pub fn card(account: &AccountQuota, view: &UsageView, ctx: &Ctx, depth: Depth) -
         }
     }
     lines.extend(failure_lines(account, view, ctx));
-    lines.extend(feed_lines(account, view));
+    lines.extend(feed_lines(account, view, ctx));
     lines.extend(duplicate_lines(account));
     if depth == Depth::Full {
         lines.extend(detail::footer(account, view, &ctx));
@@ -125,10 +125,12 @@ fn meter_block(
 ) -> Vec<Line> {
     let mut lines = vec![gauge(meter, indent, name_width, view, ctx)];
     if let Used::Amount { used, limit, unit } = &meter.used {
-        lines.push(Line::of(vec![
-            Span::plain(" ".repeat(SUB_INDENT)),
-            Span::dim(text::quantity(*used, limit.get(), *unit)),
-        ]));
+        lines.extend(text::wrap(
+            vec![Span::plain(" ".repeat(SUB_INDENT))],
+            SUB_INDENT,
+            &text::split_parts(&text::quantity(*used, limit.get(), *unit), Tone::Dim),
+            ctx.columns(),
+        ));
     }
     if depth == Depth::Full {
         lines.extend(detail::meter_lines(account, meter, view, &ctx));
@@ -375,12 +377,14 @@ fn failure_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line
     text::wrap(Vec::new(), FAILURE_INDENT, &parts, ctx.columns())
 }
 
-fn feed_lines(account: &AccountQuota, view: &UsageView) -> Vec<Line> {
+fn feed_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line> {
     match (account.feed, &account.reading) {
-        (Feed::StatusLine, Reading::Stale { at }) => vec![Line::of(vec![
-            Span::plain(" ".repeat(MAIN_INDENT)),
-            Span::dim(text::status_line_note(*at, view.now)),
-        ])],
+        (Feed::StatusLine, Reading::Stale { at }) => text::wrap(
+            vec![Span::plain(" ".repeat(MAIN_INDENT))],
+            MAIN_INDENT,
+            &text::split_parts(&text::status_line_note(*at, view.now), Tone::Dim),
+            ctx.columns(),
+        ),
         _ => Vec::new(),
     }
 }
