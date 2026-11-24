@@ -1,0 +1,3112 @@
+{
+  "roots": {
+    "Cargo.toml": {
+      "target_dir": "target",
+      "members": [
+        {
+          "name": "jackin",
+          "version": "0.1.0",
+          "manifest": "crates/jackin/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "async-trait",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "clap",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "jackin-core",
+              "kind": "normal",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-image",
+              "kind": "normal",
+              "manifest": "crates/jackin-image/Cargo.toml"
+            },
+            {
+              "name": "jackin-openshell",
+              "kind": "normal",
+              "manifest": "crates/jackin-openshell/Cargo.toml"
+            },
+            {
+              "name": "jackin-session",
+              "kind": "normal",
+              "manifest": "crates/jackin-session/Cargo.toml"
+            },
+            {
+              "name": "jackin-tui",
+              "kind": "normal",
+              "manifest": "crates/jackin-tui/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage/Cargo.toml"
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs",
+                "process",
+                "termios"
+              ]
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "io-util",
+                "macros",
+                "rt",
+                "signal",
+                "sync",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "uuid",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "v4",
+                "serde"
+              ]
+            },
+            {
+              "name": "zeroize",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "process",
+                "rt",
+                "time"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/jackin/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "jackin",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin/src/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "cli",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin/tests/cli/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "process",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin/tests/process/main.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-core",
+          "version": "0.1.0",
+          "manifest": "crates/jackin-core/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "async-trait",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "base64",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "std"
+              ]
+            },
+            {
+              "name": "getrandom",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "toml",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "display",
+                "parse",
+                "serde"
+              ]
+            },
+            {
+              "name": "zeroize",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "static_assertions",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_core",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/jackin-core/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "account_selection",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/account_selection.rs",
+              "requires_features": false
+            },
+            {
+              "name": "agent_instances",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/agent_instances.rs",
+              "requires_features": false
+            },
+            {
+              "name": "agent_table",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/agent_table.rs",
+              "requires_features": false
+            },
+            {
+              "name": "catalog",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/catalog.rs",
+              "requires_features": false
+            },
+            {
+              "name": "config_edit",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/config_edit.rs",
+              "requires_features": false
+            },
+            {
+              "name": "config_schema",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/config_schema.rs",
+              "requires_features": false
+            },
+            {
+              "name": "config_store",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/config_store.rs",
+              "requires_features": false
+            },
+            {
+              "name": "credential_file",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/credential_file.rs",
+              "requires_features": false
+            },
+            {
+              "name": "display",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/display.rs",
+              "requires_features": false
+            },
+            {
+              "name": "docker_capability",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/docker_capability.rs",
+              "requires_features": false
+            },
+            {
+              "name": "docker_client",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/docker_client.rs",
+              "requires_features": false
+            },
+            {
+              "name": "engine_cert",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/engine_cert.rs",
+              "requires_features": false
+            },
+            {
+              "name": "env_file",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/env_file.rs",
+              "requires_features": false
+            },
+            {
+              "name": "ids",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/ids.rs",
+              "requires_features": false
+            },
+            {
+              "name": "labels",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/labels.rs",
+              "requires_features": false
+            },
+            {
+              "name": "manifest",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/manifest.rs",
+              "requires_features": false
+            },
+            {
+              "name": "native_credentials",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/native_credentials.rs",
+              "requires_features": false
+            },
+            {
+              "name": "paths",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/paths.rs",
+              "requires_features": false
+            },
+            {
+              "name": "phase",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/phase.rs",
+              "requires_features": false
+            },
+            {
+              "name": "poll",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/poll.rs",
+              "requires_features": false
+            },
+            {
+              "name": "provider_eligibility",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/provider_eligibility.rs",
+              "requires_features": false
+            },
+            {
+              "name": "provider_files",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/provider_files.rs",
+              "requires_features": false
+            },
+            {
+              "name": "read_link",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/read_link.rs",
+              "requires_features": false
+            },
+            {
+              "name": "role_source",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/role_source.rs",
+              "requires_features": false
+            },
+            {
+              "name": "sandbox_name",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/sandbox_name.rs",
+              "requires_features": false
+            },
+            {
+              "name": "secrets",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/secrets.rs",
+              "requires_features": false
+            },
+            {
+              "name": "std_filesystem",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/std_filesystem.rs",
+              "requires_features": false
+            },
+            {
+              "name": "supervisor",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/supervisor.rs",
+              "requires_features": false
+            },
+            {
+              "name": "terminal_text",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/terminal_text.rs",
+              "requires_features": false
+            },
+            {
+              "name": "tuple_account",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/tuple_account.rs",
+              "requires_features": false
+            },
+            {
+              "name": "views",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/views.rs",
+              "requires_features": false
+            },
+            {
+              "name": "write_atomic",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/write_atomic.rs",
+              "requires_features": false
+            },
+            {
+              "name": "write_symlink",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-core/tests/write_symlink.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-testkit",
+          "version": "0.1.0",
+          "manifest": "crates/jackin-testkit/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "async-trait",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "clap",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "jackin-console",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "demo"
+              ]
+            },
+            {
+              "name": "jackin-core",
+              "kind": "normal",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-image",
+              "kind": "normal",
+              "manifest": "crates/jackin-image/Cargo.toml"
+            },
+            {
+              "name": "jackin-openshell",
+              "kind": "normal",
+              "manifest": "crates/jackin-openshell/Cargo.toml"
+            },
+            {
+              "name": "jackin-session",
+              "kind": "normal",
+              "manifest": "crates/jackin-session/Cargo.toml"
+            },
+            {
+              "name": "jackin-tui",
+              "kind": "normal",
+              "manifest": "crates/jackin-tui/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage/Cargo.toml"
+            },
+            {
+              "name": "portable-pty",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "ratatui",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "crossterm_0_29"
+              ]
+            },
+            {
+              "name": "rusqlite",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "bundled",
+                "serialize"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "termrock",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "terminal",
+                "cli"
+              ]
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "fs",
+                "io-util",
+                "macros",
+                "net",
+                "process",
+                "rt",
+                "sync",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "uuid",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "v4",
+                "serde"
+              ]
+            },
+            {
+              "name": "jackin-openshell",
+              "kind": "dev",
+              "manifest": "crates/jackin-openshell/Cargo.toml",
+              "features": [
+                "contract"
+              ]
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt",
+                "test-util"
+              ]
+            },
+            {
+              "name": "tuiscotti-tui-test",
+              "kind": "dev",
+              "manifest": null,
+              "rename": "tui-test"
+            },
+            {
+              "name": "tuiscotti",
+              "kind": "dev",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_testkit",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/jackin-testkit/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "console-fixture",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/src/bin/console-fixture.rs",
+              "requires_features": false
+            },
+            {
+              "name": "connector",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/connector.rs",
+              "requires_features": false
+            },
+            {
+              "name": "engine",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/engine.rs",
+              "requires_features": false
+            },
+            {
+              "name": "gateway",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/gateway/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "host",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/host.rs",
+              "requires_features": false
+            },
+            {
+              "name": "host_runner",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/host_runner.rs",
+              "requires_features": false
+            },
+            {
+              "name": "identity",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/identity/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "rig",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-testkit/tests/rig.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-image",
+          "version": "0.1.0",
+          "manifest": "crates/jackin-image/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "async-trait",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "jackin-core",
+              "kind": "normal",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "sync",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "regex",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "std",
+                "unicode-perl"
+              ]
+            },
+            {
+              "name": "sha2",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt",
+                "test-util",
+                "time"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_image",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/jackin-image/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "agent_plan",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-image/tests/agent_plan.rs",
+              "requires_features": false
+            },
+            {
+              "name": "build_plan",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-image/tests/build_plan.rs",
+              "requires_features": false
+            },
+            {
+              "name": "derived_scan",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-image/tests/derived_scan.rs",
+              "requires_features": false
+            },
+            {
+              "name": "dockerfile",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-image/tests/dockerfile.rs",
+              "requires_features": false
+            },
+            {
+              "name": "engine_errors",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-image/tests/engine_errors.rs",
+              "requires_features": false
+            },
+            {
+              "name": "image_io",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-image/tests/image_io/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "image_key",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-image/tests/image_key.rs",
+              "requires_features": false
+            },
+            {
+              "name": "image_tags",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-image/tests/image_tags.rs",
+              "requires_features": false
+            },
+            {
+              "name": "jackin_start",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-image/tests/jackin_start.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-openshell",
+          "version": "0.1.0",
+          "manifest": "crates/jackin-openshell/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "async-trait",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "jackin-core",
+              "kind": "normal",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "noyalib",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "std",
+                "lossless-u64"
+              ]
+            },
+            {
+              "name": "openshell-core",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "openshell-policy",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "openshell-providers",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "openshell-sdk",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "russh",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "aws-lc-rs",
+                "flate2"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "fs",
+                "io-util",
+                "macros",
+                "net",
+                "rt",
+                "sync",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-stream",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tonic",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "tls-aws-lc"
+              ]
+            },
+            {
+              "name": "futures",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "globset",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "jackin-openshell",
+              "kind": "dev",
+              "manifest": "crates/jackin-openshell/Cargo.toml",
+              "features": [
+                "contract"
+              ]
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "rcgen",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "aws_lc_rs",
+                "pem"
+              ]
+            },
+            {
+              "name": "tempfile",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "io-util",
+                "macros",
+                "net",
+                "process",
+                "rt",
+                "rt-multi-thread",
+                "sync",
+                "test-util",
+                "time"
+              ]
+            },
+            {
+              "name": "tonic-types",
+              "kind": "dev",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_openshell",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/jackin-openshell/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "gateway",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-openshell/tests/gateway/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "host_dialect",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-openshell/tests/host_dialect.rs",
+              "requires_features": false
+            },
+            {
+              "name": "policy",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-openshell/tests/policy.rs",
+              "requires_features": false
+            },
+            {
+              "name": "terminal_pair",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-openshell/tests/terminal_pair.rs",
+              "requires_features": false
+            },
+            {
+              "name": "tuple_policy",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-openshell/tests/tuple_policy.rs",
+              "requires_features": false
+            },
+            {
+              "name": "union_policy",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-openshell/tests/union_policy.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-session",
+          "version": "0.1.0",
+          "manifest": "crates/jackin-session/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "async-trait",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "base64",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "std"
+              ]
+            },
+            {
+              "name": "caseless",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "flate2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "gix-hash",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sha1",
+                "sha256"
+              ]
+            },
+            {
+              "name": "jackin-core",
+              "kind": "normal",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-image",
+              "kind": "normal",
+              "manifest": "crates/jackin-image/Cargo.toml"
+            },
+            {
+              "name": "jackin-openshell",
+              "kind": "normal",
+              "manifest": "crates/jackin-openshell/Cargo.toml"
+            },
+            {
+              "name": "jiff",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rusqlite",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "bundled",
+                "serialize"
+              ]
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "fs",
+                "io-util",
+                "macros",
+                "process",
+                "rt",
+                "sync",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "toml",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "display",
+                "parse",
+                "serde"
+              ]
+            },
+            {
+              "name": "unicode-normalization",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "std"
+              ]
+            },
+            {
+              "name": "zeroize",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "alacritty_terminal",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "jackin-openshell",
+              "kind": "dev",
+              "manifest": "crates/jackin-openshell/Cargo.toml",
+              "features": [
+                "contract"
+              ]
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "noyalib",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "std",
+                "lossless-u64"
+              ]
+            },
+            {
+              "name": "rusqlite",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "bundled",
+                "serialize"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "sha1",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "termwiz",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt",
+                "time"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_session",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/jackin-session/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "build_images",
+              "kinds": [
+                "example"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "crates/jackin-session/examples/build_images.rs",
+              "requires_features": false
+            },
+            {
+              "name": "export_live",
+              "kinds": [
+                "example"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "crates/jackin-session/examples/export_live.rs",
+              "requires_features": false
+            },
+            {
+              "name": "export_memory",
+              "kinds": [
+                "example"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "crates/jackin-session/examples/export_memory.rs",
+              "requires_features": false
+            },
+            {
+              "name": "upload_project",
+              "kinds": [
+                "example"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "crates/jackin-session/examples/upload_project.rs",
+              "requires_features": false
+            },
+            {
+              "name": "accounts",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/accounts/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "attach",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/attach/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "clipboard_writer",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/clipboard_writer/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "doctor",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/doctor/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "export",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/export/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "launch",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/launch/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "lifecycle",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/lifecycle/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "multi_layout",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/multi_layout.rs",
+              "requires_features": false
+            },
+            {
+              "name": "plan",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/plan/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "process_runner",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/process_runner/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "project",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/project/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "seams",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/seams/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "sources",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-session/tests/sources/main.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-tui",
+          "version": "0.1.0",
+          "manifest": "crates/jackin-tui/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "async-trait",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "futures",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "jackin-console",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "jackin-core",
+              "kind": "normal",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-image",
+              "kind": "normal",
+              "manifest": "crates/jackin-image/Cargo.toml"
+            },
+            {
+              "name": "jackin-openshell",
+              "kind": "normal",
+              "manifest": "crates/jackin-openshell/Cargo.toml"
+            },
+            {
+              "name": "jackin-session",
+              "kind": "normal",
+              "manifest": "crates/jackin-session/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "termrock",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "terminal"
+              ]
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt",
+                "sync",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "url",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "uuid",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "v4",
+                "serde"
+              ]
+            },
+            {
+              "name": "clap",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "jackin-console",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "demo"
+              ]
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "ratatui",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "crossterm_0_29"
+              ]
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt",
+                "test-util",
+                "time"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_tui",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/jackin-tui/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "console",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/console/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "credentials",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/credentials.rs",
+              "requires_features": false
+            },
+            {
+              "name": "doctor",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/doctor.rs",
+              "requires_features": false
+            },
+            {
+              "name": "fixture_mode",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/fixture_mode.rs",
+              "requires_features": false
+            },
+            {
+              "name": "fleet",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/fleet.rs",
+              "requires_features": false
+            },
+            {
+              "name": "host",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/host.rs",
+              "requires_features": false
+            },
+            {
+              "name": "launch",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/launch/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "start",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/start.rs",
+              "requires_features": false
+            },
+            {
+              "name": "tie",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/tie.rs",
+              "requires_features": false
+            },
+            {
+              "name": "typed",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/jackin-tui/tests/typed.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "base64",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "std"
+              ]
+            },
+            {
+              "name": "futures",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "getrandom",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "jackin-core",
+              "kind": "normal",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-claude",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-claude/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-codex",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-codex/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-cursor",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-cursor/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-gemini",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-gemini/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-grok",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-grok/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-kimi",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-kimi/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-mimo",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-mimo/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-minimax",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-minimax/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-opencode",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-opencode/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-openrouter",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-openrouter/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-zai",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-zai/Cargo.toml"
+            },
+            {
+              "name": "keyring-core",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rusqlite",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "bundled",
+                "serialize"
+              ]
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "time",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "formatting",
+                "macros",
+                "parsing"
+              ]
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "io-util",
+                "macros",
+                "net",
+                "rt",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "toml",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "display",
+                "parse",
+                "serde"
+              ]
+            },
+            {
+              "name": "url",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "uuid",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "v4",
+                "serde"
+              ]
+            },
+            {
+              "name": "webbrowser",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "async-trait",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tempfile",
+              "kind": "dev",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "process",
+                "rt",
+                "time",
+                "test-util"
+              ]
+            },
+            {
+              "name": "gio",
+              "kind": "normal",
+              "manifest": null,
+              "platform": "cfg(all(unix, not(any(target_os = \"macos\", target_os = \"ios\", target_os = \"android\"))))"
+            },
+            {
+              "name": "libsecret",
+              "kind": "normal",
+              "manifest": null,
+              "platform": "cfg(all(unix, not(any(target_os = \"macos\", target_os = \"ios\", target_os = \"android\"))))"
+            },
+            {
+              "name": "apple-native-keyring-store",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "keychain"
+              ],
+              "platform": "cfg(target_os = \"macos\")"
+            },
+            {
+              "name": "windows-native-keyring-store",
+              "kind": "normal",
+              "manifest": null,
+              "platform": "cfg(target_os = \"windows\")"
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "browser",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/browser.rs",
+              "requires_features": false
+            },
+            {
+              "name": "connected_accounts",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/connected_accounts.rs",
+              "requires_features": false
+            },
+            {
+              "name": "device_login",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/device_login.rs",
+              "requires_features": false
+            },
+            {
+              "name": "extension_connections",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/extension_connections.rs",
+              "requires_features": false
+            },
+            {
+              "name": "grants",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/grants.rs",
+              "requires_features": false
+            },
+            {
+              "name": "openrouter_connection",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/openrouter_connection.rs",
+              "requires_features": false
+            },
+            {
+              "name": "snapshot_export",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/snapshot_export.rs",
+              "requires_features": false
+            },
+            {
+              "name": "subscription_quota",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/subscription_quota.rs",
+              "requires_features": false
+            },
+            {
+              "name": "usage",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage/tests/usage/main.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-claude",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-claude/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_claude",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-claude/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-core",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "reqwest",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "rustls-no-provider",
+                "form"
+              ]
+            },
+            {
+              "name": "rustls",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "aws_lc_rs",
+                "std"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "time",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "formatting",
+                "macros",
+                "parsing"
+              ]
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "uuid",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "v4",
+                "serde"
+              ]
+            },
+            {
+              "name": "zeroize",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_core",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-core/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-codex",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-codex/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_codex",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-codex/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-cursor",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-cursor/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_cursor",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-cursor/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-gemini",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-gemini/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "raw_value"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_gemini",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-gemini/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "statusline",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage-provider-gemini/tests/statusline.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-grok",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-grok/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_grok",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-grok/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-kimi",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-kimi/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-core",
+              "kind": "normal",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "url",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt",
+                "test-util"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_kimi",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-kimi/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "account",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage-provider-kimi/tests/account.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-mimo",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-mimo/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "time",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "formatting",
+                "macros",
+                "parsing"
+              ]
+            },
+            {
+              "name": "jackin-core",
+              "kind": "dev",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_mimo",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-mimo/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "token_plan",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage-provider-mimo/tests/token_plan.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-minimax",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-minimax/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "jackin-core",
+              "kind": "dev",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "tokio",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "sync",
+                "macros",
+                "rt",
+                "test-util"
+              ]
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_minimax",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-minimax/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "plan",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/usage/jackin-usage-provider-minimax/tests/plan.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-opencode",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-opencode/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_opencode",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-opencode/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-openrouter",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-openrouter/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_openrouter",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-openrouter/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-usage-provider-zai",
+          "version": "0.1.0",
+          "manifest": "crates/usage/jackin-usage-provider-zai/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "jackin-usage-provider-core",
+              "kind": "normal",
+              "manifest": "crates/usage/jackin-usage-provider-core/Cargo.toml"
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_usage_provider_zai",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/usage/jackin-usage-provider-zai/src/lib.rs",
+              "requires_features": false
+            }
+          ]
+        },
+        {
+          "name": "jackin-xtask",
+          "version": "0.1.0",
+          "manifest": "crates/xtask/Cargo.toml",
+          "dependencies": [
+            {
+              "name": "async-trait",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "clap",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "futures",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "getrandom",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "jackin-core",
+              "kind": "normal",
+              "manifest": "crates/jackin-core/Cargo.toml"
+            },
+            {
+              "name": "jackin-openshell",
+              "kind": "normal",
+              "manifest": "crates/jackin-openshell/Cargo.toml"
+            },
+            {
+              "name": "jackin-session",
+              "kind": "normal",
+              "manifest": "crates/jackin-session/Cargo.toml"
+            },
+            {
+              "name": "jsonschema",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "portable-pty",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "rustix",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "fs",
+                "process"
+              ]
+            },
+            {
+              "name": "serde",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "serde_json",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "sha2",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "thiserror",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "tokio",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "sync",
+                "fs",
+                "io-util",
+                "macros",
+                "net",
+                "process",
+                "rt-multi-thread",
+                "signal",
+                "time"
+              ]
+            },
+            {
+              "name": "tokio-util",
+              "kind": "normal",
+              "manifest": null
+            },
+            {
+              "name": "toml",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "display",
+                "parse",
+                "serde"
+              ]
+            },
+            {
+              "name": "zeroize",
+              "kind": "normal",
+              "manifest": null,
+              "features": [
+                "derive"
+              ]
+            },
+            {
+              "name": "jackin-testkit",
+              "kind": "dev",
+              "manifest": "crates/jackin-testkit/Cargo.toml"
+            },
+            {
+              "name": "regex",
+              "kind": "dev",
+              "manifest": null,
+              "features": [
+                "std",
+                "unicode-perl"
+              ]
+            },
+            {
+              "name": "tempfile",
+              "kind": "dev",
+              "manifest": null
+            }
+          ],
+          "targets": [
+            {
+              "name": "jackin_xtask",
+              "kinds": [
+                "lib"
+              ],
+              "tests": true,
+              "doctest": true,
+              "source": "crates/xtask/src/lib.rs",
+              "requires_features": false
+            },
+            {
+              "name": "jackin-xtask",
+              "kinds": [
+                "bin"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/xtask/src/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "export_e2e_specs",
+              "kinds": [
+                "example"
+              ],
+              "tests": false,
+              "doctest": false,
+              "source": "crates/xtask/examples/export_e2e_specs.rs",
+              "requires_features": false
+            },
+            {
+              "name": "e2e",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/xtask/tests/e2e/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "gates",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/xtask/tests/gates/main.rs",
+              "requires_features": false
+            },
+            {
+              "name": "repo_gates",
+              "kinds": [
+                "test"
+              ],
+              "tests": true,
+              "doctest": false,
+              "source": "crates/xtask/tests/repo_gates.rs",
+              "requires_features": false
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "manifests": {
+    "Cargo.toml": "63a9fd9cac4188f6ffcaca4b2521286615131642f79c2d260e344ee9a23b2c73",
+    "crates/jackin-core/Cargo.toml": "2aaf16f5373ba4736f842d4ad961f1c77fc551b6120587def2cd4bc524a7d0cb",
+    "crates/jackin-image/Cargo.toml": "9b97498a682f4cb9550f4019c4839a2c3a5ff99c142235d9e34edab30cb062f3",
+    "crates/jackin-openshell/Cargo.toml": "6f0bc40a09df45272e0697b20345ed999e8f0118abc80a860c9fd57adfc7a4f3",
+    "crates/jackin-session/Cargo.toml": "8cfe405cc6a03c342610da59ced121a806d356a0b85b414d514c957a0d4dc5f2",
+    "crates/jackin-testkit/Cargo.toml": "0e57b6be30f4aa4a90038aee093c2842090820353d015785c98a954065b3e7fe",
+    "crates/jackin-tui/Cargo.toml": "6f540ae8df1d9b2c85dbafc7e1eceaf0327f9c575b6657df78a0aa4187e0342f",
+    "crates/jackin/Cargo.toml": "e09c3b3344011f7cc087879ce2ffa485e096901723a6fac811e1c6f55e249f2e",
+    "crates/usage/jackin-usage-provider-claude/Cargo.toml": "8a585594e1c95c6301ad39e7173cac73f6695253fbea3d13316dcb0af570dbd7",
+    "crates/usage/jackin-usage-provider-codex/Cargo.toml": "84e88b1fc2d817a7c30f5c9b387035b2792c91845f6367fdfd8a0400912d9549",
+    "crates/usage/jackin-usage-provider-core/Cargo.toml": "97f0fcdcc0b4c758ed23ba46c8ea96e7620b96183ccaac4c7adc677fea8e1c78",
+    "crates/usage/jackin-usage-provider-cursor/Cargo.toml": "0bfc3fc123137c71ef6f37d443506c6bfd1756240c332e0421d3d01a22615cfd",
+    "crates/usage/jackin-usage-provider-gemini/Cargo.toml": "fc303542aea4f9c0d81da127c7c3f17867a5aea938c90f8dd2e555a5eeda9127",
+    "crates/usage/jackin-usage-provider-grok/Cargo.toml": "cab97348389b3238df8f50847f5a530bd16f8f496ce2bb77e14753d135812229",
+    "crates/usage/jackin-usage-provider-kimi/Cargo.toml": "945c14d7234720f1be1896cc1396bf28759fbd9804bd1da5eaf9e22ea9d4d577",
+    "crates/usage/jackin-usage-provider-mimo/Cargo.toml": "04ae983c3589d322f6dcf6fc025a3931b8be81af1a85205285b51327051e26c2",
+    "crates/usage/jackin-usage-provider-minimax/Cargo.toml": "6d7de6bf66dcdcda132e7389f1b2c921ab570adf45ab3b9de3d457b6d2750ae1",
+    "crates/usage/jackin-usage-provider-opencode/Cargo.toml": "9407c38d4d49990f32090a78162e44f0fef7d9556180e87fc80e7db3a8a7cce3",
+    "crates/usage/jackin-usage-provider-openrouter/Cargo.toml": "5ffa1637f775e24d5c24a5fd390995a3d197341bb3050b87cb4befa5bd355fa4",
+    "crates/usage/jackin-usage-provider-zai/Cargo.toml": "96721af941ffee4a68c58efbc6bd0473921a6fa73edc1bd80a9ed4e54bc84381",
+    "crates/usage/jackin-usage/Cargo.toml": "d2c2a81c400ddbe691b221ef372afdbaa5287d08e143c3db36342454095374de",
+    "crates/xtask/Cargo.toml": "8a80645825f1a28861ca030bcc830651a97e2ec12f9528d47c9f8dbc46ef8048"
+  },
+  "layout": "d7ebbd3d21e1c8c77b9f89bea5c584d097300d188e7f47d9728e4a4a08308ebf"
+}

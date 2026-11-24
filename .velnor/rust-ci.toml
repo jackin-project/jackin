@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2026 Alexey Zhokhov
+# SPDX-License-Identifier: Apache-2.0
+
+runner = "ubuntu-26.04-scale-set"
+hosted = false
+fork_runner = "ubuntu-26.04"
+default_branch = "main"
+timeout_minutes = 180
+exclude = ["vendor/sqlx-sqlite/**"]
+
+[public_sources]
+git = [
+  "https://github.com/NVIDIA/OpenShell",
+  "https://github.com/tailrocks/termpane",
+  "https://github.com/tailrocks/termrock",
+  "https://github.com/tailrocks/tuiscotti",
+]
+
+[[test_setup]]
+root = "."
+name = "Install native libraries"
+run = "bash ci/native-libs.sh"
+phase = "build"
+
+[[test_lane]]
+root = "."
+all_features = true
+lint = true
+job = "parallel"
+
+[[lint]]
+kind = "mise-task"
+id = "secrets-scan"
+name = "Secrets scan"
+task = "check:secrets-scan"
+tools = ["betterleaks", "gitleaks", "kingfisher"]
+timeout_minutes = 20
+
+[[lint]]
+kind = "mise-task"
+id = "dependency-usage"
+name = "Dependency usage"
+task = "check:dependency-usage"
+tools = ["cargo-shear", "rust"]
+timeout_minutes = 20
+
+[[lint]]
+kind = "mise-task"
+id = "repository-steps"
+name = "Repository steps"
+task = "check:repository-steps"
+tools = ["rust"]
+timeout_minutes = 20
+
+[[lint]]
+kind = "mise-task"
+id = "sonar"
+name = "Sonar config"
+task = "check:sonar"
+timeout_minutes = 10
