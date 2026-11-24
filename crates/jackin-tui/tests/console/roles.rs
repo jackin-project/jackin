@@ -337,3 +337,156 @@ async fn check_passes_an_edit_that_points_at_a_good_file_when_the_saved_file_is_
     })
     .await
 }
+
+const REFRESH_WINDOW_SECS: u64 = 12;
+
+type Failure = Box<dyn std::error::Error>;
+
+async fn after_refresh(lab: &mut Lab) -> TestResult {
+    for _ in 0..REFRESH_WINDOW_SECS {
+        lab.console.elapse(1);
+        lab.console.tick(1);
+        lab.console.settle().await?;
+    }
+    Ok(())
+}
+
+fn record(lab: &mut Lab, name: &str) -> Result<jackin_console::domain::role::RoleRecord, Failure> {
+    lab.world()
+        .surfaces
+        .roles
+        .as_ref()
+        .and_then(|admin| admin.role(name))
+        .cloned()
+        .ok_or_else(|| format!("no role {name}").into())
+}
+
+fn docker(lab: &mut Lab, name: &str) -> Result<Option<bool>, Failure> {
+    Ok(record(lab, name)?.manifest.ok().map(|doc| doc.docker))
+}
+
+fn check_state_is_done(lab: &mut Lab, name: &str) -> Result<bool, Failure> {
+    Ok(matches!(
+        record(lab, name)?.check,
+        jackin_console::domain::role::RoleCheckState::Done(_)
+    ))
+}
+
+fn check_state_is_unchecked(lab: &mut Lab, name: &str) -> Result<bool, Failure> {
+    Ok(matches!(
+        record(lab, name)?.check,
+        jackin_console::domain::role::RoleCheckState::Unchecked
+    ))
+}
+
+async fn edit_manifest(root: &jackin_core::HostPath, enabled: bool) -> TestResult {
+    let file = root.as_path().join("jackin.role.toml");
+    let text = tokio::fs::read_to_string(&file).await?;
+    let (from, to) = if enabled {
+        ("enabled = false", "enabled = true")
+    } else {
+        ("enabled = true", "enabled = false")
+    };
+    let edited = text.replace(from, to);
+    assert_ne!(edited, text);
+    tokio::fs::write(&file, edited).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_local_role_manifest_edited_outside_the_console_shows_after_a_refresh() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let other = lab.add_role("other").await?;
+        lab.reopen().await?;
+        assert_eq!(docker(&mut lab, "sentinel")?, Some(false));
+        let sentinel_root = lab.rig.loaded.root().clone();
+
+        edit_manifest(&sentinel_root, true).await?;
+        after_refresh(&mut lab).await?;
+        assert_eq!(docker(&mut lab, "sentinel")?, Some(true));
+        assert_eq!(docker(&mut lab, "other")?, Some(false));
+
+        let file = sentinel_root.as_path().join("jackin.role.toml");
+        let good = tokio::fs::read(&file).await?;
+        tokio::fs::write(&file, b"not [ valid").await?;
+        after_refresh(&mut lab).await?;
+        let broken = record(&mut lab, "sentinel")?;
+        assert!(
+            matches!(&broken.manifest, Err(text) if !text.is_empty()),
+            "{:?}",
+            broken.manifest
+        );
+        assert_eq!(docker(&mut lab, "other")?, Some(false));
+
+        tokio::fs::write(&file, good).await?;
+        after_refresh(&mut lab).await?;
+        assert_eq!(docker(&mut lab, "sentinel")?, Some(true));
+        assert_eq!(docker(&mut lab, "other")?, Some(false));
+        drop(other);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_manifest_edited_outside_the_console_clears_only_its_own_check() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let other = lab.add_role("other").await?;
+        lab.reopen().await?;
+        lab.console.keys("R v")?;
+        lab.console.settle().await?;
+        assert_eq!(lab.console.status_line(), "Role other: check passed");
+        lab.console.keys("down v")?;
+        lab.console.settle().await?;
+        assert_eq!(lab.console.status_line(), "Role sentinel: check passed");
+        assert!(check_state_is_done(&mut lab, "other")?);
+        assert!(check_state_is_done(&mut lab, "sentinel")?);
+
+        let file = lab.rig.loaded.root().as_path().join("jackin.role.toml");
+        let same = tokio::fs::read(&file).await?;
+        tokio::fs::write(&file, same).await?;
+        edit_manifest(other.root(), true).await?;
+        after_refresh(&mut lab).await?;
+        assert_eq!(docker(&mut lab, "other")?, Some(true));
+        assert!(
+            check_state_is_unchecked(&mut lab, "other")?,
+            "the check of the edited manifest stayed"
+        );
+        assert!(
+            check_state_is_done(&mut lab, "sentinel")?,
+            "a manifest rewritten with the same bytes lost its check"
+        );
+        assert_eq!(docker(&mut lab, "sentinel")?, Some(false));
+
+        edit_manifest(lab.rig.loaded.root(), true).await?;
+        after_refresh(&mut lab).await?;
+        assert_eq!(docker(&mut lab, "sentinel")?, Some(true));
+        assert!(
+            check_state_is_unchecked(&mut lab, "sentinel")?,
+            "the check of the old manifest stayed"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_manifest_that_becomes_invalid_outside_the_console_clears_its_check() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        lab.console.keys("R v")?;
+        lab.console.settle().await?;
+        assert!(check_state_is_done(&mut lab, "sentinel")?);
+
+        let file = lab.rig.loaded.root().as_path().join("jackin.role.toml");
+        tokio::fs::write(&file, b"not [ valid").await?;
+        after_refresh(&mut lab).await?;
+        let broken = record(&mut lab, "sentinel")?;
+        assert!(broken.manifest.is_err(), "{:?}", broken.manifest);
+        assert!(check_state_is_unchecked(&mut lab, "sentinel")?);
+        Ok(())
+    })
+    .await
+}
