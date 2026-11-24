@@ -15,6 +15,7 @@ use openshell_sdk::raw::proto::{Provider, SandboxPhase, SandboxRestartPolicy};
 
 use super::harness::{WORKSPACE, connect, env, guard};
 use super::sandbox_rpc::CREATED_MILLIS;
+use super::server::Broken;
 use super::support::{
     IMAGE_DIGEST, LAUNCH, SANDBOX, add_sandbox, create_spec, planned, policy, policy_text,
     sandbox_name, set_conditions,
@@ -710,4 +711,52 @@ async fn a_managed_sandbox_with_an_invalid_label_is_listed_without_that_label() 
             .is_err(),
         "a single-sandbox lookup still refuses invalid labels"
     );
+}
+
+fn protocol_repeat(error: &jackin_openshell::GatewayError) -> bool {
+    matches!(
+        error,
+        jackin_openshell::GatewayError::Protocol { message }
+            if message.contains("repeated a page token")
+    )
+}
+
+#[tokio::test]
+async fn a_looping_page_token_fails_the_listing_at_its_first_recurrence() {
+    for broken in [Broken::PageTokenCycle, Broken::PageTokenRepeat] {
+        let env = env().await;
+        let gateway = connect(&env, WORKSPACE).await;
+        env.server.state().broken = Some(broken);
+        let before = env.server.state().rpc_count;
+        let error = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
+            .await
+            .unwrap_err();
+        assert!(protocol_repeat(&error), "{broken:?}: {error:?}");
+        assert!(
+            env.server.state().rpc_count - before <= 3,
+            "{broken:?} issued {} requests",
+            env.server.state().rpc_count - before
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_looping_provider_page_token_fails_the_detail_at_its_first_recurrence() {
+    for broken in [Broken::PageTokenCycle, Broken::PageTokenRepeat] {
+        let env = env().await;
+        let gateway = connect(&env, WORKSPACE).await;
+        let spec = create_spec(SANDBOX, LAUNCH);
+        guard(gateway.create_sandbox(&spec)).await.unwrap();
+        env.server.state().broken = Some(broken);
+        let before = env.server.state().rpc_count;
+        let error = guard(gateway.sandbox_detail(&sandbox_name(SANDBOX)))
+            .await
+            .unwrap_err();
+        assert!(protocol_repeat(&error), "{broken:?}: {error:?}");
+        assert!(
+            env.server.state().rpc_count - before <= 6,
+            "{broken:?} issued {} requests",
+            env.server.state().rpc_count - before
+        );
+    }
 }

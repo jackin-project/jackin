@@ -114,6 +114,14 @@ fn selected(state: &State, key: &Key) -> Result<Sandbox, Status> {
         .ok_or_else(|| Status::not_found("sandbox not found"))
 }
 
+fn looping_token(broken: Option<Broken>, token: &str) -> Option<String> {
+    match broken? {
+        Broken::PageTokenCycle => Some(if token == "a" { "b" } else { "a" }.to_owned()),
+        Broken::PageTokenRepeat => Some("a".to_owned()),
+        _ => None,
+    }
+}
+
 fn page_of(token: &str) -> usize {
     token.parse().unwrap_or(0)
 }
@@ -204,6 +212,12 @@ impl Fake {
         let workspace = scope_name(request.workspace_scope.as_ref())?;
         let wanted = parse_selector(&request.label_selector)?;
         let mut state = self.shared.lock();
+        if let Some(next_page_token) = looping_token(state.broken, &request.page_token) {
+            return Ok(Response::new(ListSandboxesResponse {
+                sandboxes: Vec::new(),
+                next_page_token,
+            }));
+        }
         let keys: Vec<Key> = state
             .sandboxes
             .keys()
@@ -245,6 +259,12 @@ impl Fake {
         let request = request.into_inner();
         let workspace = scope_name(request.workspace_scope.as_ref())?;
         let state = self.shared.lock();
+        if let Some(next_page_token) = looping_token(state.broken, &request.page_token) {
+            return Ok(Response::new(ListSandboxProvidersResponse {
+                providers: Vec::new(),
+                next_page_token,
+            }));
+        }
         let sandbox = selected(&state, &(workspace.clone(), request.sandbox))?;
         let names = sandbox.spec.map(|spec| spec.providers).unwrap_or_default();
         let providers: Vec<_> = names

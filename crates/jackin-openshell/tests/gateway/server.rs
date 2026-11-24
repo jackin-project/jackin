@@ -81,6 +81,8 @@ pub(crate) enum Broken {
     DeleteAttachedProviders,
     DeleteAfterRefusal,
     DeleteAbsentRefused,
+    PageTokenCycle,
+    PageTokenRepeat,
 }
 
 pub(crate) type ProfileHook = Box<dyn FnMut(&mut State) + Send>;
