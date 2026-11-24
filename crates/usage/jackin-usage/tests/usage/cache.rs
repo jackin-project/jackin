@@ -1541,7 +1541,7 @@ async fn a_clearing_dated_after_the_clock_does_not_drop_the_reports_that_follow(
         let (harness, account) = start(10).await?;
         harness.one(&account, Refresh::Cached).await?;
         edit_entries(&harness, |entry| {
-            entry["cleared_at"] = 9_999_999_999_i64.into()
+            entry["cleared_at"] = 9_999_999_999_i64.into();
         })
         .await?;
         serve(&harness, codex_route(&codex_body(90)));
