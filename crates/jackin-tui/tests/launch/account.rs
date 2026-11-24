@@ -231,18 +231,16 @@ async fn an_explicit_non_default_zai_account_is_selected_exactly() -> TestResult
     guard(async {
         let rig = Rig::new().await?;
         rig.world.seed_all(&rig.config).await?;
+        let mut edits = Vec::new();
+        for account in ["by-explicit", "by-default"] {
+            edits.push(login(&rig, account)?);
+        }
+        edits.push(ConfigEdit::SetDefaultAccount {
+            account: name("by-default")?,
+        });
         rig.world
             .config
-            .edit(
-                vec![
-                    login(&rig, "by-explicit")?,
-                    login(&rig, "by-default")?,
-                    ConfigEdit::SetDefaultAccount {
-                        account: name("by-default")?,
-                    },
-                ],
-                &CancellationToken::new(),
-            )
+            .edit(edits, &CancellationToken::new())
             .await?;
         let selected = launched(&rig, "by-explicit").await?;
         assert_eq!(
