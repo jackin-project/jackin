@@ -443,6 +443,22 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
         GatewayError::UnsafePath {
             path: SandboxPath::parse("/sandbox/a").unwrap(),
         },
+        GatewayError::WriteUnconfirmed {
+            path: SandboxPath::parse("/sandbox/a").unwrap(),
+            cause: Box::new(GatewayError::Unreachable {
+                endpoint: String::new(),
+                message: String::new(),
+            }),
+        },
+        GatewayError::WriteUnconfirmed {
+            path: SandboxPath::parse("/sandbox/a").unwrap(),
+            cause: Box::new(GatewayError::Protocol {
+                message: String::new(),
+            }),
+        },
+        GatewayError::WriteNotDurable {
+            path: SandboxPath::parse("/sandbox/a").unwrap(),
+        },
         GatewayError::Protocol {
             message: String::new(),
         },
@@ -471,9 +487,11 @@ fn is_retryable_is_true_only_for_unreachable_timeout_and_resource_exhausted() {
             | GatewayError::HostKeyMismatch
             | GatewayError::TerminalRefused { .. }
             | GatewayError::UnsafePath { .. }
+            | GatewayError::WriteNotDurable { .. }
             | GatewayError::Protocol { .. } => false,
+            GatewayError::WriteUnconfirmed { cause, .. } => cause.is_retryable(),
         };
         assert_eq!(error.is_retryable(), expected, "{}", kind(error));
     }
-    assert_eq!(errors.len(), 23);
+    assert_eq!(errors.len(), 26);
 }

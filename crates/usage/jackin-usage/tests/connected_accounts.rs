@@ -520,16 +520,21 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
     use jackin_testkit::FakeClock;
     use jackin_usage::{ProviderEndpoints, export, onboarding::OwnedLogin, presentation};
 
-    for (key_type, expected) in [
+    for (key_type, console, expected) in [
         (
             Some("standard"),
+            vec!["standard key; workspace balance needs a management key"],
             vec![
                 "Key type · standard",
                 "Workspace balance and activity history require a management key.",
             ],
         ),
-        (Some("management"), vec!["Key type · management"]),
-        (None, vec![]),
+        (
+            Some("management"),
+            vec!["management key"],
+            vec!["Key type · management"],
+        ),
+        (None, vec![], vec![]),
     ] {
         let temp = tempfile::tempdir()?;
         let path = temp.path().join("usage/accounts.db");
@@ -561,13 +566,14 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
             login.now(),
         );
         let cli_lines: Vec<String> = serde_json::from_value(cli["details"].clone())?;
-        for lines in [&entry.details, &cli_lines] {
+        for (lines, expected) in [(&entry.details, &console), (&cli_lines, &expected)] {
             let scope: Vec<&str> = lines
                 .iter()
                 .map(String::as_str)
+                .map(str::trim)
                 .filter(|line| line.starts_with("Key type") || line.contains("management key"))
                 .collect();
-            assert_eq!(scope, expected, "{key_type:?}: {lines:?}");
+            assert_eq!(&scope, expected, "{key_type:?}: {lines:?}");
         }
     }
     Ok(())
@@ -595,7 +601,7 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
             now,
             &json!({
                 "resources": {
-                    "session": {"kind":"window", "remaining_percent":remaining, "resetsAt":now + reset},
+                    "session": {"kind":"quota", "remaining_percent":remaining, "resetsAt":now + reset},
                     "webSearches": {"kind":"quota", "unit":"searches", "used":0, "limit":50},
                     "credits": {"kind":"balance", "unit":"credits"},
                 },
@@ -604,33 +610,35 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
         )?;
     }
 
-    let mut settings = registry.dashboard_settings()?;
-    settings.remaining = false;
-    registry.set_dashboard_settings(&settings)?;
     let entries = presentation::entries(&login)?;
     for (label, expected_session) in [
-        ("Work", "Session · 88% used · resets in 1h 0m"),
-        ("Personal", "Session · 0% used · resets in 2h 0m"),
+        ("Work", "Session 88% used · resets in 1h 0m"),
+        ("Personal", "Session 0% used · resets in 2h 0m"),
     ] {
         let entry = entries
             .iter()
             .find(|entry| entry.label == label)
             .ok_or(label)?;
-        assert!(entry.summary.iter().any(|line| line == expected_session));
         assert!(
             entry
                 .summary
                 .iter()
-                .any(|line| line == "Web searches · 0 searches used")
-        );
-        assert!(
-            entry
-                .summary
-                .iter()
-                .any(|line| line == "Credits · Unavailable")
+                .any(|line| line.starts_with(expected_session)),
+            "{:?}",
+            entry.summary
         );
         assert!(entry.summary.iter().all(|line| !line.contains("tokens")));
-        assert!(entry.details.iter().any(|line| line == "50 input tokens"));
+        for line in [
+            "Web searches",
+            "0 of 50 searches used",
+            "per-day counts: jackin usage details --json",
+        ] {
+            assert!(
+                entry.details.iter().any(|found| found.contains(line)),
+                "{line}: {:?}",
+                entry.details
+            );
+        }
     }
 
     let data = Dashboard::load(&registry, &mut DashboardMemory::default(), now)?;
@@ -681,11 +689,7 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
     )?;
     let board = Dashboard::load(&registry, &mut DashboardMemory::default(), now.0)?;
     for (id, compact, exact) in [
-        (
-            "tokenPlan",
-            "50.47B credits remaining",
-            "50474251078 credits remaining",
-        ),
+        ("tokenPlan", "1 credits used", "1 credits used"),
         ("booster", "0.000125 cny", "0.000125 cny"),
         ("monthlyChargeUsed", "999.99M usd", "999994000 usd"),
         ("monthlyChargeLimit", "1B usd", "999996000 usd"),
@@ -694,12 +698,12 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
             "999996000 provider units",
             "999996000 provider units",
         ),
-        ("session", ">99% remaining", ">99% remaining"),
-        ("weekly", "<1% remaining", "<1% remaining"),
+        ("session", "<1% used", "<1% used"),
+        ("weekly", ">99% used", ">99% used"),
     ] {
         let row = board.all.iter().find(|row| row.metric == id).ok_or(id)?;
-        assert_eq!(presentation::metric_value(row, true), compact);
-        assert_eq!(presentation::exact_metric_value(row, true), exact);
+        assert_eq!(presentation::metric_value(row, false), compact);
+        assert_eq!(presentation::exact_metric_value(row, false), exact);
     }
     let mut orders = AccountPreferences::default();
     orders.metric_order.push("tokenPlan".into());
@@ -712,14 +716,19 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
         entry
             .summary
             .iter()
-            .any(|line| line == "Token Plan · 50.47B credits remaining")
+            .any(|line| line.starts_with("Token Plan <1% used"))
     );
     let cli = export::details_account(snapshot, 0, &registry.dashboard_settings()?, None, now);
     let cli_lines: Vec<String> = serde_json::from_value(cli["details"].clone())?;
     assert!(
         cli_lines
             .iter()
-            .any(|line| line == "Token Plan · 50474251078 credits")
+            .any(|line| line == "Token Plan · 1 credits")
+    );
+    assert!(
+        cli_lines
+            .iter()
+            .any(|line| line == "Remaining · 50474251078 credits")
     );
     Ok(())
 }

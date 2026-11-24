@@ -465,15 +465,7 @@ pub async fn reload_usage_board(
     service: &OwnedLogin,
 ) -> Result<Vec<(Option<String>, String, String, Option<String>)>, ConnectionError> {
     refresh_accounts(service, true, true, None, &CancellationToken::new()).await?;
-    let mut memory = jackin_usage::dashboard::DashboardMemory::default();
-    let board = board::load(
-        service,
-        false,
-        jackin_console::usage_connections::BoardEdit::Read,
-        &mut memory,
-        service.now().0,
-    )?;
-    Ok(board
+    Ok(read_usage_board(service, false)?
         .rows
         .iter()
         .map(|row| {
@@ -485,6 +477,19 @@ pub async fn reload_usage_board(
             )
         })
         .collect())
+}
+
+pub fn read_usage_board(
+    service: &OwnedLogin,
+    priority: bool,
+) -> Result<jackin_console::usage_connections::UsageBoard, ConnectionError> {
+    board::load(
+        service,
+        priority,
+        jackin_console::usage_connections::BoardEdit::Read,
+        &mut jackin_usage::dashboard::DashboardMemory::default(),
+        service.now().0,
+    )
 }
 
 fn hubs(service: &OwnedLogin) -> Result<UsageUpdate, ConnectionError> {
@@ -597,6 +602,7 @@ async fn account_action(
         }
         UsageAction::Rename { id, name } => {
             let id = Uuid::parse_str(&id).map_err(|_| AdapterError::AccountId.to_string())?;
+            let name = display::strip_short_id(name, id);
             service
                 .with_registry(move |db| db.rename(id, &name))
                 .await
