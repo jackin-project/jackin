@@ -12,7 +12,6 @@ mod terminal;
 use std::collections::BTreeMap;
 use std::collections::btree_map::Entry;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
 
 use async_trait::async_trait;
 use jackin_core::{
@@ -61,7 +60,6 @@ pub struct RunRecord {
     pub args: Vec<String>,
     pub workdir: Option<SandboxPath>,
     pub env: BTreeMap<EnvName, String>,
-    pub timeout: Duration,
     pub exit_code: i32,
 }
 

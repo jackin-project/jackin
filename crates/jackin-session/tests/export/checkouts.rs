@@ -3,19 +3,18 @@
 
 use std::error::Error;
 use std::path::Path;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use jackin_core::{SandboxPath, Sha256, TerminalText};
+use jackin_openshell::GatewayError;
 use jackin_session::{
     ChangeHunk, ChangeLine, ChangeSet, ChangeStatus, ChangedFile, ChangesError, Unread,
 };
-use jackin_testkit::{Rig, SandboxHandle, TestResult, guard};
+use jackin_testkit::{Fault, Rig, SandboxHandle, TestResult, guard};
 use tokio_util::sync::CancellationToken;
 
 const LIMIT: usize = 256 * 1024;
-const LINE: &str = "0123456789abcde";
 const FILES: usize = 500;
-const TOTAL_BYTES: usize = 8 * 1024 * 1024;
 
 fn t(text: &str) -> TerminalText {
     TerminalText::sanitize(text.as_bytes())
@@ -324,7 +323,7 @@ async fn the_file_cap_is_shared_by_every_checkout_and_the_rest_is_counted() -> T
 }
 
 #[tokio::test]
-async fn tracked_edits_spend_the_same_file_cap_as_untracked_files() -> TestResult {
+async fn tracked_edits_are_not_held_to_the_untracked_file_cap() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
@@ -342,22 +341,23 @@ async fn tracked_edits_spend_the_same_file_cap_as_untracked_files() -> TestResul
         let found = changes(&rig, &handle).await?;
 
         let listed = paths(&found);
-        assert_eq!(listed.len(), FILES);
+        assert_eq!(listed.len(), FILES + 1);
         assert_eq!(
             &listed[FILES - 2..],
             [
                 format!("{agent}/README.md").as_str(),
-                format!("{agent}/b0.txt").as_str()
+                format!("{agent}/b0.txt").as_str(),
+                format!("{agent}/b1.txt").as_str()
             ]
         );
-        assert_eq!(found.omitted, 2);
+        assert_eq!(found.omitted, 1);
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn tracked_edits_beyond_the_file_cap_are_counted_not_listed() -> TestResult {
+async fn more_tracked_edits_than_the_untracked_cap_are_all_listed() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
@@ -374,110 +374,62 @@ async fn tracked_edits_beyond_the_file_cap_are_counted_not_listed() -> TestResul
 
         let found = changes(&rig, &handle).await?;
 
-        assert_eq!(found.files.len(), FILES);
-        assert_eq!(found.omitted, 2);
-        Ok(())
-    })
-    .await
-}
-
-fn full_file() -> String {
-    let full = format!("{LINE}\n").repeat(LIMIT / (LINE.len() + 1));
-    assert_eq!(full.len(), LIMIT);
-    full
-}
-
-#[tokio::test]
-async fn the_untracked_byte_budget_is_spent_across_checkouts_not_per_checkout() -> TestResult {
-    guard(async {
-        let rig = Rig::new().await?;
-        rig.launch(1).await?;
-        let handle = rig.handle(1).await?;
-        let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
-        let lead = lead(&handle)?;
-        let full = full_file();
-        let each = TOTAL_BYTES / LIMIT;
-        for index in 0..each - 2 {
-            write(&lead, &format!("a{index:02}.txt"), full.as_bytes())?;
-        }
-        for index in 0..8 {
-            write(&agent, &format!("b{index:02}.txt"), full.as_bytes())?;
-        }
-
-        let found = changes(&rig, &handle).await?;
-
-        let expected: Vec<String> = (0..each - 2)
-            .map(|index| format!("a{index:02}.txt"))
-            .chain((0..2).map(|index| format!("{agent}/b{index:02}.txt")))
-            .collect();
-        assert_eq!(paths(&found), expected);
-        assert!(found.files.iter().all(|file| file.unread.is_none()));
-        assert_eq!(found.omitted, 6);
+        assert_eq!(found.files.len(), FILES + 2);
+        assert_eq!(found.omitted, 0);
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn a_file_that_does_not_fit_the_remaining_byte_budget_is_counted_not_truncated() -> TestResult
-{
+async fn a_worktree_directory_with_a_newline_in_its_name_is_still_listed() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
-        let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
-        let lead = lead(&handle)?;
-        let full = full_file();
-        let each = TOTAL_BYTES / LIMIT;
-        for index in 0..each - 1 {
-            write(&lead, &format!("a{index:02}.txt"), full.as_bytes())?;
-        }
-        write(&lead, "a-last.txt", &full.as_bytes()[..LIMIT / 2])?;
-        write(&agent, "b00.txt", full.as_bytes())?;
-        write(&agent, "b01.txt", b"tiny\n")?;
+        let agent = add_agent(&handle, "work/two\nlines/project", "agent/lines").await?;
+        write(&agent, "README.md", b"readme\nedited\n")?;
 
         let found = changes(&rig, &handle).await?;
 
-        assert_eq!(found.files.len(), each);
-        assert!(
-            found
-                .files
-                .iter()
-                .all(|file| !file.path.as_str().starts_with(&agent))
+        assert_eq!(
+            found.files,
+            vec![edited(&format!("{agent}/README.md"), "edited")]
         );
-        assert!(found.files.iter().all(|file| file.unread.is_none()));
-        assert_eq!(found.omitted, 2);
         Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn oversized_unread_files_still_spend_the_byte_budget() -> TestResult {
+async fn a_stalled_read_ends_the_listing_within_the_one_deadline() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
         let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
-        let lead = lead(&handle)?;
-        let big = vec![b'x'; LIMIT + 1024];
-        let each = TOTAL_BYTES / LIMIT;
-        for index in 0..each / 2 {
-            write(&lead, &format!("a{index:02}.bin"), &big)?;
-            write(&agent, &format!("b{index:02}.bin"), &big)?;
-        }
-        write(&agent, "c-extra.bin", &big)?;
+        write(&agent, "loose.txt", b"x\n")?;
+        let total = Duration::from_secs(2);
+        let mut limits = jackin_testkit::default_limits();
+        limits.upload = total;
+        let session = rig.session_with(limits);
+        rig.world.gateway.inject(Fault::StallProgram {
+            program: SandboxPath::from_static("/bin/sh"),
+        });
 
-        let found = changes(&rig, &handle).await?;
+        let started = Instant::now();
+        let outcome = session
+            .changes(&handle.name(), &CancellationToken::new())
+            .await;
 
-        assert_eq!(found.files.len(), each);
         assert!(
-            found
-                .files
-                .iter()
-                .all(|file| file.unread == Some(Unread::TooLarge))
+            matches!(
+                outcome,
+                Err(ChangesError::Gateway(GatewayError::Timeout { .. }))
+            ),
+            "{outcome:?}"
         );
-        assert_eq!(found.omitted, 1);
+        assert!(started.elapsed() < total * 3, "{:?}", started.elapsed());
         Ok(())
     })
     .await
@@ -568,53 +520,6 @@ async fn asking_for_the_changes_never_rewrites_a_linked_checkout_index() -> Test
 
         handle.git(&["-C", &agent, "status", "--porcelain"]).await?;
         assert_ne!(worktree_index_digest(&lead)?, before);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn every_call_runs_under_the_time_left_of_one_total_budget() -> TestResult {
-    guard(async {
-        let rig = Rig::new().await?;
-        rig.launch(1).await?;
-        let handle = rig.handle(1).await?;
-        let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
-        let lead = lead(&handle)?;
-        for index in 0..3 {
-            write(&lead, &format!("a{index}.txt"), b"x\n")?;
-            write(&agent, &format!("b{index}.txt"), b"x\n")?;
-        }
-        let total = Duration::from_secs(120);
-        let mut limits = jackin_testkit::default_limits();
-        limits.upload = total;
-        let session = rig.session_with(limits);
-        let git = SandboxPath::from_static("/usr/bin/git");
-        let shell = SandboxPath::from_static("/bin/sh");
-        let seen = (handle.runs(&git).len(), handle.runs(&shell).len());
-
-        session
-            .changes(&handle.name(), &CancellationToken::new())
-            .await?;
-
-        for (program, from) in [(&git, seen.0), (&shell, seen.1)] {
-            let timeouts: Vec<Duration> = handle.runs(program)[from..]
-                .iter()
-                .map(|run| run.timeout)
-                .collect();
-            assert!(timeouts.len() >= 6, "{timeouts:?}");
-            assert!(timeouts.iter().all(|timeout| *timeout <= total));
-            assert!(
-                timeouts.windows(2).all(|pair| pair[1] <= pair[0]),
-                "{timeouts:?}"
-            );
-            assert!(
-                timeouts
-                    .last()
-                    .is_some_and(|last| *last < total && !last.is_zero()),
-                "{timeouts:?}"
-            );
-        }
         Ok(())
     })
     .await

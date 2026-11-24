@@ -18,9 +18,8 @@ use tokio_util::sync::CancellationToken;
 const HEADS: &str = "refs/heads/";
 const NOT_A_REPOSITORY: &str = "not a git repository";
 const CLEANUP: Duration = Duration::from_secs(10);
-const CHANGED_FILES: usize = 500;
+const UNTRACKED_FILES: usize = 500;
 const UNTRACKED_BYTES: usize = 256 * 1024;
-const TOTAL_UNTRACKED_BYTES: usize = 8 * 1024 * 1024;
 const TOTAL_PATCH_BYTES: usize = 16 * 1024 * 1024;
 const NOT_READ: i32 = 66;
 const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; IFS= read -r p < \"$d/gitdir\" || [ -n \"$p\" ]; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
@@ -82,16 +81,9 @@ pub(super) struct Remote<'a> {
 }
 
 struct Budget {
-    files: usize,
     untracked: usize,
     patches: usize,
     omitted: usize,
-}
-
-enum Fetched {
-    Content(Vec<u8>),
-    Unread(Unread),
-    Beyond,
 }
 
 fn failure(outcome: &ProgramOutcome) -> RemoteError {
@@ -104,6 +96,13 @@ fn failure(outcome: &ProgramOutcome) -> RemoteError {
         exit_code: outcome.exit_code,
         output: TerminalText::sanitize(text),
     }
+}
+
+fn lines_starting(output: &[u8], prefix: &[u8]) -> usize {
+    output
+        .split(|byte| *byte == b'\n')
+        .filter(|line| line.starts_with(prefix))
+        .count()
 }
 
 fn lines(output: &[u8]) -> usize {
@@ -404,8 +403,7 @@ impl Remote<'_> {
         let mut linked: Vec<&String> = rest.iter().collect();
         linked.sort();
         let mut budget = Budget {
-            files: CHANGED_FILES,
-            untracked: TOTAL_UNTRACKED_BYTES,
+            untracked: UNTRACKED_FILES,
             patches: TOTAL_PATCH_BYTES,
             omitted: 0,
         };
@@ -455,16 +453,12 @@ impl Remote<'_> {
                 "--",
             ])
             .await?;
-        let tracked = parse_patch(&patch).map_err(RemoteError::Malformed)?;
         let mut files = Vec::new();
         if patch.len() > budget.patches {
-            budget.omitted += tracked.len();
+            budget.omitted += lines_starting(&patch, b"diff --git ");
         } else {
             budget.patches -= patch.len();
-            let room = tracked.len().min(budget.files);
-            budget.files -= room;
-            budget.omitted += tracked.len() - room;
-            files.extend(tracked.into_iter().take(room));
+            files = parse_patch(&patch).map_err(RemoteError::Malformed)?;
         }
         let listed = self
             .require(&[
@@ -480,35 +474,15 @@ impl Remote<'_> {
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty())
         {
-            if budget.files == 0 || budget.untracked == 0 {
+            if budget.untracked == 0 {
                 budget.omitted += 1;
                 continue;
             }
+            budget.untracked -= 1;
             let content = match std::str::from_utf8(name) {
-                Ok(name) => {
-                    self.read_untracked(root, name, budget.untracked.min(UNTRACKED_BYTES))
-                        .await?
-                }
-                Err(_) => Fetched::Unread(Unread::UndecodableName),
+                Ok(name) => self.read_untracked(root, name).await?,
+                Err(_) => Err(Unread::UndecodableName),
             };
-            let content = match content {
-                Fetched::Content(bytes) => {
-                    budget.untracked -= bytes.len();
-                    Ok(bytes)
-                }
-                Fetched::Unread(unread) => {
-                    if unread == Unread::TooLarge {
-                        budget.untracked -= UNTRACKED_BYTES.min(budget.untracked);
-                    }
-                    Err(unread)
-                }
-                Fetched::Beyond => {
-                    budget.untracked = 0;
-                    budget.omitted += 1;
-                    continue;
-                }
-            };
-            budget.files -= 1;
             files.push(added_file(
                 name,
                 content.as_deref().map_err(|unread| *unread),
@@ -521,11 +495,10 @@ impl Remote<'_> {
         &self,
         root: &str,
         name: &str,
-        allowance: usize,
-    ) -> Result<Fetched, RemoteError> {
+    ) -> Result<Result<Vec<u8>, Unread>, RemoteError> {
         let script = format!(
             "[ -f \"$1\" ] && [ ! -L \"$1\" ] || exit {NOT_READ}; head -c {} -- \"$1\" 2>/dev/null || exit {NOT_READ}",
-            allowance + 1
+            UNTRACKED_BYTES + 1
         );
         let outcome = self
             .exec(
@@ -539,12 +512,9 @@ impl Remote<'_> {
             )
             .await?;
         match outcome.exit_code {
-            0 if outcome.stdout.len() > allowance && allowance < UNTRACKED_BYTES => {
-                Ok(Fetched::Beyond)
-            }
-            0 if outcome.stdout.len() > allowance => Ok(Fetched::Unread(Unread::TooLarge)),
-            0 => Ok(Fetched::Content(outcome.stdout)),
-            NOT_READ => Ok(Fetched::Unread(Unread::NotRegular)),
+            0 if outcome.stdout.len() > UNTRACKED_BYTES => Ok(Err(Unread::TooLarge)),
+            0 => Ok(Ok(outcome.stdout)),
+            NOT_READ => Ok(Err(Unread::NotRegular)),
             _ => Err(failure(&outcome)),
         }
     }
