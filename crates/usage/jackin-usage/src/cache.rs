@@ -64,7 +64,7 @@ impl Entry {
     fn not_after(mut self, now: i64) -> Entry {
         self.good = self.good.filter(|good| good.fetched_at <= now);
         self.hold.observed_at = self.hold.observed_at.min(now);
-        self.cleared_at = self.cleared_at.map(|at| at.min(now));
+        self.cleared_at = self.cleared_at.filter(|at| *at <= now);
         self
     }
 

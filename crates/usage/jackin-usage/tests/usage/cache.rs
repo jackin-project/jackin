@@ -1521,3 +1521,74 @@ async fn a_cooldown_and_a_report_in_the_same_second_keep_the_one_that_saves_last
     })
     .await
 }
+
+async fn edit_entries(harness: &UsageHarness, edit: impl Fn(&mut serde_json::Value)) -> TestResult {
+    let mut file: serde_json::Value =
+        serde_json::from_str(&harness.cache_text().ok_or("no cache file")?)?;
+    for entry in file["entries"]
+        .as_object_mut()
+        .ok_or("no entries")?
+        .values_mut()
+    {
+        edit(entry);
+    }
+    replace_cache(harness, &file.to_string()).await
+}
+
+#[tokio::test]
+async fn a_clearing_dated_after_the_clock_does_not_drop_the_reports_that_follow() -> TestResult {
+    guard(async {
+        let (harness, account) = start(10).await?;
+        harness.one(&account, Refresh::Cached).await?;
+        edit_entries(&harness, |entry| {
+            entry["cleared_at"] = 9_999_999_999_i64.into()
+        })
+        .await?;
+        serve(&harness, codex_route(&codex_body(90)));
+        harness.advance(200);
+        assert_eq!(
+            used_of(&harness.one(&account, Refresh::Cached).await?),
+            90.0
+        );
+        serve(&harness, codex_route(&codex_body(20)));
+        harness.advance(1);
+        assert_eq!(
+            used_of(&harness.one(&account, Refresh::Cached).await?),
+            90.0
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cooldown_observation_dated_after_the_clock_does_not_hide_a_later_cooldown() -> TestResult
+{
+    guard(async {
+        let (harness, account) = start(10).await?;
+        harness.one(&account, Refresh::Cached).await?;
+        edit_entries(&harness, |entry| {
+            entry["hold"]["observed_at"] = 9_999_999_999_i64.into();
+        })
+        .await?;
+        serve(
+            &harness,
+            Route::status(429).reply_header("Retry-After", "600"),
+        );
+        harness.advance(200);
+        let limited = harness.one(&account, Refresh::Cached).await?;
+        assert!(matches!(limited.freshness, Freshness::Stale { .. }));
+        serve(&harness, codex_route(&codex_body(90)));
+        harness.advance(130);
+        let held = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!(
+            (
+                used_of(&held),
+                matches!(held.freshness, Freshness::Stale { .. })
+            ),
+            (10.0, true)
+        );
+        Ok(())
+    })
+    .await
+}
