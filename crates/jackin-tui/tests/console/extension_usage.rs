@@ -49,7 +49,7 @@ async fn kimi_displays_the_fractional_booster_balance_and_plan_window() -> TestR
                 "75%",
                 "Monthly charge limit · Off",
             ],
-            board: &["Booster", "0.000125 cents", "75%"],
+            board: &["Booster", "0.000125 cents", "25% used"],
             absent: &["millionths_of_cent"],
         },
     )
@@ -66,7 +66,7 @@ async fn minimax_displays_model_windows_with_the_region() -> TestResult {
         snapshot,
         Expected {
             account: &["Global", "general weekly"],
-            board: &["general weekly"],
+            board: &["General weekly"],
             absent: &["current_weekly_total_count"],
         },
     )
@@ -88,13 +88,10 @@ async fn mimo_displays_plan_region_renewal_and_remaining_credits() -> TestResult
                 "Automatic renewal · Off",
                 "50474251078 credits",
             ],
-            board: &["50.47B credits"],
+            board: &["8% used"],
             absent: &["auto_renew"],
         },
-        Some((
-            "Token Plan",
-            &["50474251078 credits", "55000000000 credits"],
-        )),
+        Some(("Token Plan", &["55B credits", "50.5B left"])),
     )
     .await
 }

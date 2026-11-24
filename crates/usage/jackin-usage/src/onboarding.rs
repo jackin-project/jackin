@@ -241,6 +241,10 @@ impl OwnedLogin {
         self.clock.now()
     }
 
+    pub fn utc_offset_secs(&self) -> i32 {
+        self.clock.utc_offset_secs()
+    }
+
     #[must_use]
     pub fn with_vault(mut self, vault: Arc<dyn crate::accounts::CredentialVault>) -> Self {
         self.vault = Some(vault);
