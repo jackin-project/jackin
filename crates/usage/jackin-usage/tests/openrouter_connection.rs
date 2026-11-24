@@ -452,6 +452,13 @@ async fn an_activity_row_that_is_negative_unreadable_or_too_large_rejects_the_wh
     );
     let snapshot = activity_read(&merged, None, true).await?;
     assert_eq!(snapshot["activity"]["observed_days"], 0);
+    let models = format!(
+        "{{\"data\":[{},{}]}}",
+        beta("2025-01-05", widest),
+        beta("2025-01-05", widest).replace("beta", "gamma")
+    );
+    let snapshot = activity_read(&models, None, true).await?;
+    assert_eq!(snapshot["activity"]["observed_days"], 0);
     let across = format!(
         "{{\"data\":[{},{}]}}",
         beta("2025-01-05", widest),
