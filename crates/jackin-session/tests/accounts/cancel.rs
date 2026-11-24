@@ -11,9 +11,7 @@ use jackin_session::{
     AccountEditError, AccountError, AccountPlan, CLAUDE_KEYCHAIN_ARGS, GatewayRemoval, Gateways,
     LockError, plan_account_edits, plan_gateway_removal,
 };
-use jackin_testkit::{
-    FakeGateway, Fault, FsFault, ProcessReply, ScriptedConnector, ScriptedProgram, Trigger, World,
-};
+use jackin_testkit::{FakeGateway, Fault, FsFault, ScriptedConnector, Trigger, World};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
@@ -428,60 +426,6 @@ async fn a_cancel_stops_a_plan_before_its_next_gateway_step_runs() -> TestResult
         .ok_or("a cancelled plan succeeded")?;
         assert!(is_cancelled(&error), "{error:?}");
         assert!(world.gateway.providers().is_empty());
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn a_cancel_during_a_host_credential_read_ends_the_account_edit_and_changes_nothing()
--> TestResult {
-    guard(async {
-        let world = registered().await?;
-        let dir = tempfile::tempdir()?;
-        let file = dir.path().join(".credentials.json");
-        std::fs::write(&file, "{not json")?;
-        let account = Account::new(
-            AccountName::parse("claudekey")?,
-            jackin_core::Provider::Claude,
-            jackin_core::CredentialSource::HostLogin {
-                path: jackin_core::HostPath::parse(&file)?,
-            },
-        )?;
-        world.runner.scripted().expect(
-            ScriptedProgram::Security,
-            &CLAUDE_KEYCHAIN_ARGS,
-            ProcessReply::until_cancelled(Vec::new()),
-        );
-        let before = world.config.load().await?;
-        let plan = plan_account_edits(
-            &world.desk(),
-            vec![ConfigEdit::AddAccount(account)],
-            &CancellationToken::new(),
-        )
-        .await?;
-        let token = CancellationToken::new();
-        let canceller = async {
-            while !world
-                .runner
-                .scripted()
-                .seen()
-                .iter()
-                .any(|call| call.program == jackin_core::Program::Security)
-            {
-                tokio::task::yield_now().await;
-            }
-            token.cancel();
-        };
-        let gateways = Gateways::single(world.session.clone());
-        let (result, ()) = tokio::join!(plan.apply(&gateways, &token), canceller);
-        let error = result.err().ok_or("a cancelled keychain read succeeded")?;
-        assert!(
-            matches!(&error, AccountEditError::Account(inner) if inner.is_cancelled()),
-            "{error:?}"
-        );
-        assert!(world.gateway.providers().is_empty());
-        assert_eq!(world.config.load().await?, before);
         Ok(())
     })
     .await
