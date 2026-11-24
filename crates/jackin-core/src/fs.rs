@@ -12,12 +12,15 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
-use rustix::fs::{AtFlags, FileType, Mode, OFlags, open, openat, readlinkat, statat};
+use rustix::fs::{
+    AtFlags, FileType, Mode, OFlags, RawMode, fchmod, open, openat, readlinkat, statat,
+};
 use rustix::io::Errno;
+use rustix::process::geteuid;
 
 use crate::boundary::{
-    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, LinkProblem,
-    RegularFile, RegularFileProblem,
+    DirEntry, EntryProblem, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError,
+    LinkProblem, RegularFile, RegularFileProblem,
 };
 use crate::paths::{HostPath, RepoPath};
 
@@ -25,6 +28,23 @@ use crate::paths::{HostPath, RepoPath};
 pub struct StdFileSystem {}
 
 static TEMP_WRITES: AtomicU64 = AtomicU64::new(0);
+
+enum Opened<T> {
+    Ready(T),
+    Symlink,
+    Unsafe(EntryProblem),
+}
+
+fn refusal<T>(opened: Opened<T>, path: &HostPath) -> Result<T, FsError> {
+    match opened {
+        Opened::Ready(value) => Ok(value),
+        Opened::Symlink => Err(FsError::SymlinkTarget(path.clone())),
+        Opened::Unsafe(problem) => Err(FsError::UnsafeEntry {
+            path: path.clone(),
+            problem,
+        }),
+    }
+}
 
 async fn blocking<T, F>(path: &HostPath, work: F) -> Result<T, FsError>
 where
@@ -100,8 +120,14 @@ fn sorted_entries(dir: &Path) -> io::Result<Vec<DirEntry>> {
     let mut entries = Vec::new();
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
+        let name = entry.file_name().into_string().map_err(|name| {
+            io::Error::new(
+                ErrorKind::InvalidData,
+                format!("the entry {name:?} is not valid UTF-8"),
+            )
+        })?;
         entries.push(DirEntry {
-            name: entry.file_name().to_string_lossy().into_owned(),
+            name,
             kind: kind_of(entry.file_type()?),
         });
     }
@@ -113,8 +139,37 @@ fn create_all(dir: &Path) -> io::Result<()> {
     fs::create_dir_all(dir)
 }
 
-fn create_private_all(dir: &Path) -> io::Result<()> {
-    DirBuilder::new().recursive(true).mode(0o700).create(dir)
+fn is_symlink(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
+}
+
+fn create_private_all(dir: &Path) -> io::Result<Opened<()>> {
+    if let Err(source) = DirBuilder::new().recursive(true).mode(0o700).create(dir) {
+        return match fs::symlink_metadata(dir) {
+            Ok(meta) if meta.file_type().is_symlink() => Ok(Opened::Symlink),
+            Ok(meta) if !meta.is_dir() => Ok(Opened::Unsafe(EntryProblem::NotADirectory)),
+            _ => Err(source),
+        };
+    }
+    let leaf = match open(
+        dir,
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(leaf) => File::from(leaf),
+        Err(_) if is_symlink(dir) => return Ok(Opened::Symlink),
+        Err(failure) => return Err(failure.into()),
+    };
+    let meta = leaf.metadata()?;
+    if !meta.is_dir() {
+        return Ok(Opened::Unsafe(EntryProblem::NotADirectory));
+    }
+    if meta.uid() != geteuid().as_raw() {
+        return Ok(Opened::Unsafe(EntryProblem::ForeignOwner));
+    }
+    let owner = RawMode::try_from(meta.mode() & 0o700).map_err(io::Error::other)?;
+    fchmod(&leaf, Mode::from_raw_mode(owner))?;
+    Ok(Opened::Ready(()))
 }
 
 fn rename_path(from: &Path, to: &Path) -> io::Result<()> {
@@ -161,20 +216,39 @@ fn sync_directory(dir: &Path) -> io::Result<()> {
     File::open(dir)?.sync_all()
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "runs on the blocking pool through StdFileSystem::lock"
-)]
-fn lock_file(path: &Path) -> io::Result<Result<File, ()>> {
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .mode(0o600)
-        .open(path)?;
+fn lock_file(path: &Path) -> io::Result<Opened<Result<File, ()>>> {
+    let file = match open(
+        path,
+        OFlags::WRONLY
+            | OFlags::CREATE
+            | OFlags::NOFOLLOW
+            | OFlags::NONBLOCK
+            | OFlags::NOCTTY
+            | OFlags::CLOEXEC,
+        Mode::from_raw_mode(0o600),
+    ) {
+        Ok(file) => File::from(file),
+        Err(failure) => {
+            return match fs::symlink_metadata(path) {
+                Ok(meta) if meta.file_type().is_symlink() => Ok(Opened::Symlink),
+                Ok(meta) if !meta.is_file() => Ok(Opened::Unsafe(EntryProblem::NotARegularFile)),
+                _ => Err(failure.into()),
+            };
+        }
+    };
+    let meta = file.metadata()?;
+    if !meta.is_file() {
+        return Ok(Opened::Unsafe(EntryProblem::NotARegularFile));
+    }
+    if meta.uid() != geteuid().as_raw() {
+        return Ok(Opened::Unsafe(EntryProblem::ForeignOwner));
+    }
+    if meta.nlink() != 1 {
+        return Ok(Opened::Unsafe(EntryProblem::MultipleLinks));
+    }
     match file.try_lock() {
-        Ok(()) => Ok(Ok(file)),
-        Err(TryLockError::WouldBlock) => Ok(Err(())),
+        Ok(()) => Ok(Opened::Ready(Ok(file))),
+        Err(TryLockError::WouldBlock) => Ok(Opened::Ready(Err(()))),
         Err(TryLockError::Error(source)) => Err(source),
     }
 }
@@ -332,7 +406,8 @@ impl FileSystem for StdFileSystem {
     }
 
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
-        blocking(dir, create_private_all).await
+        let opened = blocking(dir, create_private_all).await?;
+        refusal(opened, dir)
     }
 
     async fn write_new(
@@ -376,7 +451,8 @@ impl FileSystem for StdFileSystem {
     }
 
     async fn lock(&self, path: &HostPath) -> Result<FileLock, FsError> {
-        match blocking(path, lock_file).await? {
+        let opened = blocking(path, lock_file).await?;
+        match refusal(opened, path)? {
             Ok(file) => Ok(FileLock::new(path.clone(), file)),
             Err(()) => Err(FsError::LockHeld(path.clone())),
         }

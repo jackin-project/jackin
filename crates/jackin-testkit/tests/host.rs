@@ -134,6 +134,11 @@ async fn fs_boundary_extras(fs: &dyn FileSystem, root: &HostPath) -> TestResult 
     assert_eq!(fs.stat(&private).await?, Some(FileKind::Dir));
     assert_eq!(fs.mode(&private).await?, Some(FileMode(0o700)));
     assert_eq!(fs.mode(&child(root, "priv")?).await?, Some(FileMode(0o700)));
+    let broad = child(root, "broad")?;
+    fs.create_dir_all(&broad).await?;
+    fs.create_private_dir_all(&broad).await?;
+    assert_eq!(fs.mode(&broad).await?, Some(FileMode(0o700)));
+    fs.remove_dir_all(&child(root, "broad")?).await?;
     fs.remove_dir_all(&child(root, "priv")?).await?;
     let ranged = child(root, "range.bin")?;
     fs.write_new(&ranged, b"0123456789", FileMode(0o600))
@@ -1409,5 +1414,42 @@ async fn the_working_fs_cancel_hook_fires_once_at_the_armed_operation_and_lets_i
     untouched.cancel_next(FsFault::SyncDir, &token);
     untouched.read(&child(&root, "WriteNew.txt")?).await?;
     assert!(!token.is_cancelled());
+    Ok(())
+}
+
+#[tokio::test]
+async fn memfs_refuses_to_list_a_name_that_is_not_utf8() -> TestResult {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let fs = MemFs::new();
+    let root = HostPath::parse(Path::new("/mem"))?;
+    fs.create_dir_all(&root).await?;
+    let bad = HostPath::parse(&Path::new("/mem").join(OsStr::from_bytes(b"bad\xff")))?;
+    fs.write_new(&bad, b"x", FileMode(0o600)).await?;
+    assert!(matches!(
+        fs.list(&root).await,
+        Err(FsError::Io {
+            kind: ErrorKind::InvalidData,
+            ..
+        })
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn memfs_refuses_a_private_directory_leaf_that_is_a_file() -> TestResult {
+    let fs = MemFs::new();
+    let root = HostPath::parse(Path::new("/mem"))?;
+    fs.create_dir_all(&root).await?;
+    let file = HostPath::parse(Path::new("/mem/file"))?;
+    fs.write_new(&file, b"x", FileMode(0o600)).await?;
+    assert!(matches!(
+        fs.create_private_dir_all(&file).await,
+        Err(FsError::UnsafeEntry {
+            problem: jackin_core::EntryProblem::NotADirectory,
+            ..
+        })
+    ));
     Ok(())
 }
