@@ -1,0 +1,19 @@
+PROVIDER                 ACCOUNT               PLAN                 STATUS         FLAGS      FETCHED           ID                                    LAST ERROR
+Claude                   work@example.com      Ultra                stale 13h 57m             Tue 24 Nov 08:39  a0000002-0000-4000-8000-000000000002  -
+Claude                   work2@example.com     Ultra                stale 13h 57m             Tue 24 Nov 08:39  a0000003-0000-4000-8000-000000000003  -
+ChatGPT / Codex          work@example.com      Pro 200              stale 13h 57m             Tue 24 Nov 08:39  a0000001-0000-4000-8000-000000000001  -
+ChatGPT / Codex          home@example.com      Pro 200              stale 13h 57m             Tue 24 Nov 08:39  a0000004-0000-4000-8000-000000000004  -
+Muse                     work@example.com      Muse Code Max Usage  stale 13h 57m             Tue 24 Nov 08:39  a0000005-0000-4000-8000-000000000005  -
+Grok                     Grok Account          SuperGrok Heavy      stale 13h 57m             Tue 24 Nov 08:39  a0000007-0000-4000-8000-000000000007  -
+Kimi                     Kimi Code             -                    stale 13h 57m             Tue 24 Nov 08:39  a0000008-0000-4000-8000-000000000008  -
+Z.AI                     Z.ai Account          GLM Coding Max       stale 13h 57m             Tue 24 Nov 08:39  a0000009-0000-4000-8000-000000000009  -
+MiniMax                  MiniMax Token Plan    -                    stale 13h 57m             Tue 24 Nov 08:39  a0000010-0000-4000-8000-000000000010  -
+MiMo                     MiMo Token Plan       max                  stale 13h 57m             Tue 24 Nov 08:39  a0000011-0000-4000-8000-000000000011  -
+Antigravity (Google AI)  personal@example.com  Google AI Ultra      stale 1d 7h    duplicate  Mon 23 Nov 14:53  a0000013-0000-4000-8000-000000000013  -
+Antigravity (Google AI)  personal@example.com  Google AI Ultra      failing 1d 5h  duplicate  Mon 23 Nov 17:06  a0000014-0000-4000-8000-000000000014  HTTP 403 SERVICE_DISABLED
+OpenCode                 work@example.com      Go Plus              stale 13h 57m             Tue 24 Nov 08:39  a0000006-0000-4000-8000-000000000006  -
+OpenRouter               OpenRouter Account    Pay-as-you-go        stale 13h 57m             Tue 24 Nov 08:39  a0000012-0000-4000-8000-000000000012  -
+
+14 accounts · 11 providers · 1 failing · 1 duplicate · all stale
+! Antigravity (Google AI): personal@example.com is connected twice.
+  Remove the failing one: jackin account usage rm a0000014-0000-4000-8000-000000000014
