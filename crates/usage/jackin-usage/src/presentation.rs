@@ -275,10 +275,7 @@ pub fn summary(view: &UsageView, account: &AccountQuota) -> Vec<String> {
             format!("! {message}")
         });
         if *reconnect {
-            lines.push(format!(
-                "jackin account usage reconnect {}",
-                account.id.simple()
-            ));
+            lines.push(text::reconnect_command(account.id, text::IdForm::Simple));
         }
     }
     if let (view::Feed::StatusLine, Reading::Stale { at }) = (account.feed, &account.reading) {
@@ -522,8 +519,14 @@ fn attention_row(view: &UsageView, item: &Attention) -> Option<AttentionRow> {
             Attention::Failing { .. } | Attention::NearLimit { .. } => freshness_text(quota, view),
         };
     }
+    let key = match item {
+        Attention::NearLimit { meter, .. } => format!("{kind}:{}:{meter}", first.hyphenated()),
+        Attention::Failing { .. } | Attention::Duplicate { .. } => {
+            format!("{kind}:{}", first.hyphenated())
+        }
+    };
     Some(AttentionRow {
-        key: format!("{kind}:{}", first.hyphenated()),
+        key,
         provider: group.provider,
         accounts,
         title: format!("{} · {subject}", text.tag),

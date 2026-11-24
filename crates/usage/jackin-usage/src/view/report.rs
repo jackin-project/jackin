@@ -186,7 +186,10 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
                 .collect();
             let detail = match retry_at {
                 Some(_) if *reconnect => {
-                    format!("{message} · {}", text::reconnect_command(account.id))
+                    format!(
+                        "{message} · run: {}",
+                        text::reconnect_command(account.id, text::IdForm::Hyphenated)
+                    )
                 }
                 Some(at) if *at <= view.now => format!(
                     "{message} · retry due since {}",

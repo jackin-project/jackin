@@ -248,7 +248,10 @@ pub(super) fn refreshed(
                 ) {
                     lines.push(Line::of(vec![Span::dim(format!(
                         "          {}",
-                        view::text::reconnect_command(quota.id)
+                        format_args!(
+                            "run: {}",
+                            view::text::reconnect_command(quota.id, view::text::IdForm::Hyphenated)
+                        )
                     ))]));
                 }
             }

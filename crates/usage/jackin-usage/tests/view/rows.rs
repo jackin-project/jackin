@@ -4,7 +4,7 @@
 use jackin_testkit::{SeedRow, seed_usage_rows};
 use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH, FailureKind, UsageProvider};
 use jackin_usage::view::render::{self, Ctx};
-use jackin_usage::view::{Report, ViewFilter, build, report};
+use jackin_usage::view::{Report, ViewFilter, build, report, text};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -48,6 +48,19 @@ fn row(provider: UsageProvider, snapshot: Value) -> SeedRow<'static> {
 
 fn has_line(text: &str, wanted: &str) -> bool {
     text.lines().any(|line| line.trim() == wanted)
+}
+
+#[test]
+fn the_reconnect_command_names_the_id_in_the_form_asked_for() {
+    let id = Uuid::from_u128(0xa000_0014_0000_4000_8000_0000_0000_0014);
+    assert_eq!(
+        text::reconnect_command(id, text::IdForm::Hyphenated),
+        "jackin account usage reconnect a0000014-0000-4000-8000-000000000014"
+    );
+    assert_eq!(
+        text::reconnect_command(id, text::IdForm::Simple),
+        "jackin account usage reconnect a0000014000040008000000000000014"
+    );
 }
 
 #[test]
@@ -99,6 +112,27 @@ fn a_reset_the_provider_reports_unusable_stays_unavailable() -> Result<()> {
     )])?;
     let text = rows.text(Report::Details)?;
     assert!(text.contains("1 ready, 1 unavailable"), "{text}");
+    Ok(())
+}
+
+#[test]
+fn a_usable_reset_with_nothing_remaining_is_unavailable_not_ready() -> Result<()> {
+    let expiry = NOW.0 + 86_400;
+    for provider in [UsageProvider::Claude, UsageProvider::Zai] {
+        let rows = Rows::new(vec![row(
+            provider,
+            json!({"plan":"Max",
+                "resets":[{"expiresAt":expiry,"kind":"weekly","remaining":0,"usable":true}],
+                "resources":{}}),
+        )])?;
+        let text = rows.text(Report::Details)?;
+        assert!(
+            text.lines()
+                .any(|line| line.contains("weekly") && line.contains("unavailable")),
+            "{text}"
+        );
+        assert!(!text.contains("redeem"), "{text}");
+    }
     Ok(())
 }
 

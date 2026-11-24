@@ -4,7 +4,9 @@
 use jackin_core::Timestamp;
 
 use super::detail;
-use super::model::{AccountQuota, Feed, Meter, Note, Reading, ResetStatus, UsageView, Used};
+use super::model::{
+    AccountQuota, Feed, Meter, Note, Reading, ResetStatus, TodayTokens, UsageView, Used,
+};
 use super::render::{Ctx, Depth, Line, Span, Tone};
 use super::text;
 
@@ -280,7 +282,11 @@ pub fn note_parts(note: &Note, view: &UsageView) -> (String, Vec<String>) {
             last30,
         } => {
             let total = |tokens: u64| text::number(tokens as f64);
-            let mut parts = vec![format!("today {}", today.map_or("n/a".to_owned(), total))];
+            let mut parts: Vec<String> = match today {
+                TodayTokens::Hidden => Vec::new(),
+                TodayTokens::Unavailable => vec!["today n/a".to_owned()],
+                TodayTokens::Count(tokens) => vec![format!("today {}", total(*tokens))],
+            };
             parts.extend(
                 yesterday
                     .iter()
@@ -355,7 +361,13 @@ fn failure_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line
                 Tone::Crit,
             ));
             if *reconnect {
-                parts.push((text::reconnect_command(account.id), Tone::Plain));
+                parts.push((
+                    format!(
+                        "run: {}",
+                        text::reconnect_command(account.id, text::IdForm::Hyphenated)
+                    ),
+                    Tone::Plain,
+                ));
             } else {
                 let retry = if *at <= view.now {
                     format!(
