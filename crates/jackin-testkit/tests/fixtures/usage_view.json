@@ -1741,6 +1741,7 @@
   },
   {
     "fetched_at": 1795420416,
+    "identity": "subject-personal",
     "label": "personal@example.com",
     "provider": "antigravity",
     "snapshot": {
@@ -1788,6 +1789,7 @@
       "message": "HTTP 403 SERVICE_DISABLED"
     },
     "fetched_at": 1795428364,
+    "identity": "SUBJECT-Personal",
     "label": "personal@example.com",
     "provider": "antigravity",
     "snapshot": {

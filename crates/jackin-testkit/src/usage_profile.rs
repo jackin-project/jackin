@@ -105,14 +105,16 @@ pub fn seed_usage_view(path: &Path) -> Result<Vec<ProfileAccount>, Box<dyn std::
         let fetched_at = row["fetched_at"]
             .as_i64()
             .ok_or("fixture fetched_at missing")?;
-        let identity = match provider {
-            UsageProvider::Kimi
-            | UsageProvider::Zai
-            | UsageProvider::MiniMax
-            | UsageProvider::Mimo
-            | UsageProvider::OpenRouter => {
-                CandidateIdentity::api_key(&Secret::new(format!("synthetic-{index}-{label}")))
-            }
+        let identity = match (provider, row["identity"].as_str()) {
+            (_, Some(shared)) => CandidateIdentity::OAuth(Some(shared.to_owned())),
+            (
+                UsageProvider::Kimi
+                | UsageProvider::Zai
+                | UsageProvider::MiniMax
+                | UsageProvider::Mimo
+                | UsageProvider::OpenRouter,
+                None,
+            ) => CandidateIdentity::api_key(&Secret::new(format!("synthetic-{index}-{label}"))),
             _ => CandidateIdentity::OAuth(Some(format!("synthetic-subject-{index}-{label}"))),
         };
         let snapshot = row["snapshot"].clone();

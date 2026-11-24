@@ -14,6 +14,7 @@ pub use refresh::{FailureKind, RefreshFailure};
 mod types;
 mod vault;
 
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -247,6 +248,16 @@ impl AccountRegistry {
         Ok(stmt.query_map([], account)?.collect::<Result<_, _>>()?)
     }
 
+    pub fn identities(&self) -> Result<BTreeMap<Uuid, String>, ConnectionError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id,CASE WHEN provider='antigravity' THEN lower(identity) ELSE identity END
+             FROM accounts WHERE identity IS NOT NULL",
+        )?;
+        Ok(stmt
+            .query_map([], |row| Ok((uuid(row, 0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()?)
+    }
+
     pub fn version(&self, id: Uuid) -> Result<CredentialVersion, ConnectionError> {
         self.db
             .query_row(
@@ -457,28 +468,8 @@ impl AccountRegistry {
                 .ok_or(ConnectionError::Changed)?;
             let provider = provider.parse()?;
             let (kind, candidate) = identity.parts(provider)?;
-            if provider == UsageProvider::Antigravity
-                && old_kind == "statusline"
-                && kind == "oauth"
-            {
-                reject_duplicate(tx, provider, kind, candidate, id)?;
-                reject_cross_kind(tx, provider, kind, candidate, id)?;
-                if let Some(known) = known.as_deref() {
-                    tx.execute(
-                        "DELETE FROM antigravity_enrollments WHERE email=?1",
-                        [known],
-                    )?;
-                }
-                changed(tx.execute(
-                    "UPDATE accounts SET kind='oauth', identity=?1, slot=?2, fetched_at=NULL, snapshot=NULL
-                     WHERE id=?3 AND slot=?4 AND kind='statusline'",
-                    params![
-                        candidate,
-                        slot.to_string(),
-                        id.to_string(),
-                        expected.0.to_string()
-                    ],
-                )?)?;
+            if converts_statusline(provider, &old_kind, kind) {
+                convert_statusline(tx, id, expected, slot, known.as_deref(), candidate)?;
                 if let Some((at, payload)) = snapshot {
                     write_snapshot(tx, id, CredentialVersion(slot), at, payload)?;
                 }
@@ -522,18 +513,22 @@ impl AccountRegistry {
                 .ok_or(ConnectionError::Changed)?;
             let provider = provider.parse()?;
             let (kind_name, candidate) = grant.identity.parts(provider)?;
-            if kind_name != old_kind {
-                return Err(ConnectionError::CredentialKind);
+            if converts_statusline(provider, &old_kind, kind_name) {
+                convert_statusline(tx, id, expected, slot, known.as_deref(), candidate)?;
+            } else {
+                if kind_name != old_kind {
+                    return Err(ConnectionError::CredentialKind);
+                }
+                if kind_name == "oauth" && known.is_some() && candidate != known.as_deref() {
+                    return Err(ConnectionError::DifferentIdentity);
+                }
+                reject_duplicate(tx, provider, kind_name, candidate, id)?;
+                tx.execute(
+                    "UPDATE accounts SET identity=?1 WHERE id=?2",
+                    params![candidate, id.to_string()],
+                )?;
+                replace_slot(tx, id, expected, slot)?;
             }
-            if kind_name == "oauth" && known.is_some() && candidate != known.as_deref() {
-                return Err(ConnectionError::DifferentIdentity);
-            }
-            reject_duplicate(tx, provider, kind_name, candidate, id)?;
-            tx.execute(
-                "UPDATE accounts SET identity=?1 WHERE id=?2",
-                params![candidate, id.to_string()],
-            )?;
-            replace_slot(tx, id, expected, slot)?;
             refresh::write_failure(
                 tx,
                 id,
@@ -755,6 +750,43 @@ fn replace_slot(
         [expected.0.to_string()],
     )?;
     Ok(())
+}
+
+fn converts_statusline(provider: UsageProvider, old_kind: &str, kind: &str) -> bool {
+    provider == UsageProvider::Antigravity && old_kind == "statusline" && kind == "oauth"
+}
+
+fn convert_statusline(
+    tx: &Connection,
+    id: Uuid,
+    expected: CredentialVersion,
+    slot: Uuid,
+    known: Option<&str>,
+    candidate: Option<&str>,
+) -> Result<(), ConnectionError> {
+    if let Some(known) = known
+        && !candidate.is_some_and(|candidate| candidate.eq_ignore_ascii_case(known))
+    {
+        return Err(ConnectionError::DifferentIdentity);
+    }
+    reject_duplicate(tx, UsageProvider::Antigravity, "oauth", candidate, id)?;
+    reject_cross_kind(tx, UsageProvider::Antigravity, "oauth", candidate, id)?;
+    if let Some(known) = known {
+        tx.execute(
+            "DELETE FROM antigravity_enrollments WHERE email=?1",
+            [known],
+        )?;
+    }
+    changed(tx.execute(
+        "UPDATE accounts SET kind='oauth', identity=?1, slot=?2, fetched_at=NULL, snapshot=NULL
+         WHERE id=?3 AND slot=?4 AND kind='statusline'",
+        params![
+            candidate,
+            slot.to_string(),
+            id.to_string(),
+            expected.0.to_string()
+        ],
+    )?)
 }
 
 fn reject_duplicate(

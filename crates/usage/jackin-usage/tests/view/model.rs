@@ -4,13 +4,15 @@
 use std::sync::Arc;
 
 use jackin_core::{SecretBytes, Timestamp};
+use jackin_testkit::{SeedRow, seed_usage_rows};
 use jackin_usage::accounts::{
-    AccountPreferences, AccountRegistry, ConnectionError, CredentialVault, DATABASE_PATH,
-    FailureKind, UsageProvider,
+    AccountPreferences, AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault,
+    DATABASE_PATH, FailureKind, UsageProvider,
 };
 use jackin_usage::dashboard::DashboardSettings;
 use jackin_usage::view::{
-    AccountQuota, Attention, Currency, Fact, Note, Reading, Role, Unit, UsageView, Used, ViewFilter,
+    AccountQuota, Attention, Currency, Fact, Note, Reading, Role, Unit, UsageView, Used,
+    ViewFilter, build,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -304,6 +306,69 @@ fn attention_lists_failures_near_limits_and_duplicates_and_folds_repeats() -> Re
         }]
     );
     assert!(find(&only_first, first)?.duplicates.is_empty());
+    Ok(())
+}
+
+#[test]
+fn accounts_sharing_a_label_with_different_identities_are_not_duplicates() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let snapshot = json!({"plan": "Google AI Ultra", "resources": {}});
+    let rows = ["first", "second"]
+        .map(|_| SeedRow {
+            provider: UsageProvider::Antigravity,
+            label: "shared",
+            fetched_at: NOW.0 - 60,
+            snapshot: snapshot.clone(),
+            failure: None,
+        })
+        .into();
+    let seeded = seed_usage_rows(&dir.path().join(DATABASE_PATH), rows)?;
+    let registry = AccountRegistry::open_read_only(&dir.path().join(DATABASE_PATH))?
+        .ok_or("the usage registry is missing")?;
+    let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
+    for account in &seeded {
+        assert!(find(&view, account.id)?.duplicates.is_empty());
+    }
+    assert!(
+        !view
+            .attention
+            .iter()
+            .any(|item| matches!(item, Attention::Duplicate { .. }))
+    );
+    Ok(())
+}
+
+#[test]
+fn accounts_with_one_identity_are_duplicates_whatever_their_labels_or_case() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let path = dir.path().join(DATABASE_PATH);
+    let mut registry = AccountRegistry::with_vault(&path, Arc::new(Vault))?;
+    let secret = SecretBytes::new(vec![1]);
+    let first = registry.add(
+        UsageProvider::Antigravity,
+        "Work",
+        &CandidateIdentity::OAuth(Some("Me@Example.com".to_owned())),
+        &secret,
+    )?;
+    let second = registry.add(
+        UsageProvider::Antigravity,
+        "Home",
+        &CandidateIdentity::OAuth(Some("me@example.com".to_owned())),
+        &secret,
+    )?;
+    let other = registry.add(
+        UsageProvider::Antigravity,
+        "Work",
+        &CandidateIdentity::OAuth(Some("other@example.com".to_owned())),
+        &secret,
+    )?;
+    drop(registry);
+    let registry =
+        AccountRegistry::open_read_only(&path)?.ok_or("the usage registry is missing")?;
+    let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
+    assert_eq!(find(&view, first)?.duplicates, [second]);
+    assert_eq!(find(&view, second)?.duplicates, [first]);
+    assert!(find(&view, other)?.duplicates.is_empty());
     Ok(())
 }
 
