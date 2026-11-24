@@ -50,6 +50,7 @@ pub struct WorkingFs {
     clock: Arc<FakeClock>,
     fault: Mutex<Option<FsFault>>,
     parked: Mutex<Option<Parked>>,
+    reads: Mutex<std::collections::BTreeMap<String, usize>>,
 }
 
 impl WorkingFs {
@@ -59,18 +60,32 @@ impl WorkingFs {
             clock: Arc::clone(clock),
             fault: Mutex::new(None),
             parked: Mutex::new(None),
+            reads: Mutex::new(std::collections::BTreeMap::new()),
         }
     }
 
     pub fn hold_read(&self, file: &str) -> ReadHold {
         let arrived = Arc::new(AtomicBool::new(false));
         let (open, receiver) = watch::channel(false);
-        *self.parked.lock().unwrap_or_else(PoisonError::into_inner) = Some(Parked {
+        let mut armed = self.parked.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(armed.is_none(), "a read is already held");
+        *armed = Some(Parked {
             file: file.to_owned(),
             arrived: Arc::clone(&arrived),
             open: receiver,
         });
+        drop(armed);
         ReadHold { arrived, open }
+    }
+
+    pub fn reads_of(&self, file: &str) -> usize {
+        let reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
+        reads.get(file).copied().unwrap_or(0)
+    }
+
+    fn counted(&self, file: &RepoPath) {
+        let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
+        *reads.entry(file.as_str().to_owned()).or_insert(0) += 1;
     }
 
     async fn parked_at(&self, file: &RepoPath) {
@@ -213,7 +228,9 @@ impl FileSystem for WorkingFs {
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
         self.parked_at(file).await;
         let _working = self.clock.working();
-        self.inner.read_regular(root, file, max_bytes).await
+        let read = self.inner.read_regular(root, file, max_bytes).await;
+        self.counted(file);
+        read
     }
 
     async fn read_link(

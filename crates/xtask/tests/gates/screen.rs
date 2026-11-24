@@ -430,7 +430,7 @@ fn destructuring_a_buffer_fails() -> TestResult {
             ("C1", 9, "Buffer"),
             ("C1", 14, "Buffer"),
             ("C1", 28, "Buffer"),
-            ("C1", 33, "Buffer"),
+            ("C1", 34, "Buffer"),
         ],
     )
 }

@@ -538,7 +538,7 @@ async fn a_check_running_while_the_manifest_changes_does_not_restore_its_stale_r
 
         let hold = lab.rig.world.hold_read("Dockerfile");
         lab.console.keys("down v")?;
-        for _ in 0..200 {
+        for _ in 0..500 {
             if hold.has_arrived() {
                 break;
             }
@@ -546,12 +546,21 @@ async fn a_check_running_while_the_manifest_changes_does_not_restore_its_stale_r
         }
         assert!(hold.has_arrived(), "the check never reached its inspection");
 
+        let before = lab.rig.world.reads_of("jackin.role.toml");
         edit_manifest(twin.root(), true).await?;
-        for _ in 0..REFRESH_WINDOW_SECS {
+        for _ in 0..500 {
+            if lab.rig.world.reads_of("jackin.role.toml") > before {
+                break;
+            }
             lab.console.elapse(1);
             lab.console.tick(1);
             lab.console.pump(2).await;
         }
+        assert!(
+            lab.rig.world.reads_of("jackin.role.toml") > before,
+            "no refresh read the edited manifest while the check was parked"
+        );
+        lab.console.pump(10).await;
         hold.release();
         lab.console.settle().await?;
         after_refresh(&mut lab).await?;
