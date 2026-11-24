@@ -99,9 +99,9 @@ async fn assert_reading_detail(lab: &mut Lab, title: &str, detail: &str) -> Test
 }
 
 #[tokio::test]
-async fn twelve_simultaneous_accounts_have_distinct_readings_at_eighty_columns() -> TestResult {
+async fn eleven_simultaneous_accounts_have_distinct_readings_at_eighty_columns() -> TestResult {
     let (mut lab, profile) = profile(false).await?;
-    assert_eq!(profile.len(), 12);
+    assert_eq!(profile.len(), 11);
     let result = rows(&mut lab).await?;
     assert_eq!(result.len(), profile.len());
     for (account, metric, value) in [
@@ -109,7 +109,6 @@ async fn twelve_simultaneous_accounts_have_distinct_readings_at_eighty_columns()
         ("Claude Team", "Spend", "60 eur"),
         ("Codex Home", "Weekly", "58%"),
         ("Codex Work", "Weekly", "12%"),
-        ("Gemini Cloud", "gemini-flash", "90%"),
         ("Muse Code", "Session", "81%"),
         ("Kimi Global", "Session", "75%"),
         ("Zai Global", "Web searches", "97 searches"),
@@ -134,7 +133,6 @@ async fn twelve_simultaneous_accounts_have_distinct_readings_at_eighty_columns()
     assert!(!result.iter().any(|line| line.contains("OpenRouter")));
     for (account, metric, detail) in [
         ("MiniMax Global", "general weekly", "100 count"),
-        ("Gemini Cloud", "gemini-flash REQUESTS", "290 REQUESTS"),
         ("Grok account", "Weekly", "Grok Heavy"),
     ] {
         let index = position(&result, account, "")?;
@@ -146,10 +144,10 @@ async fn twelve_simultaneous_accounts_have_distinct_readings_at_eighty_columns()
 }
 
 #[tokio::test]
-async fn unified_member_details_keep_each_identity_and_reverting_restores_all_thirteen_accounts()
+async fn unified_member_details_keep_each_identity_and_reverting_restores_all_twelve_accounts()
 -> TestResult {
     let (mut lab, profile) = profile(true).await?;
-    assert_eq!(profile.len(), 13);
+    assert_eq!(profile.len(), 12);
     let separate = rows(&mut lab).await?;
     position(&separate, "OpenRouter Standard", "")?;
     toggle_unification(&mut lab).await?;

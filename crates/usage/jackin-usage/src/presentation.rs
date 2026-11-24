@@ -122,11 +122,6 @@ pub(crate) fn detail(
                     }
                 }
             }
-            crate::accounts::UsageProvider::Gemini => {
-                if let Some(project) = data["project"].as_str() {
-                    lines.push(format!("Code Assist project · {project}"));
-                }
-            }
             _ => {}
         }
         if let Some(plan) = data.get("plan").and_then(Value::as_str) {

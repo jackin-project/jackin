@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{AccountRegistry, LoginError, LoginPrompt, OwnedLogin, gemini_connection::text_field};
+use super::{AccountRegistry, LoginError, LoginPrompt, OwnedLogin, text_field};
 use jackin_usage_provider_core::ProviderError;
 use jackin_usage_provider_gemini::{antigravity_account_email, antigravity_statusline};
 use std::{path::Path, time::Duration};

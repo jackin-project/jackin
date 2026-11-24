@@ -2,22 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::error::Error;
-use std::time::Duration;
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use jackin_core::{Provider, Secret, Timestamp};
 use jackin_testkit::{Method, Route, UsageServer};
-use jackin_usage::browser::BrowserGrant;
 use jackin_usage::connected::KeyConnection;
-use jackin_usage::gemini_login::{self, DesktopClient};
-use jackin_usage::grants::GrantError;
-use jackin_usage_provider_core::Http;
 use serde_json::json;
-use sha2::{Digest, Sha256};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
-use tokio_util::sync::CancellationToken;
-use url::Url;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -44,123 +33,6 @@ async fn regional_and_balance_credentials_reopen_the_same_usage_source() -> Resu
             assert_eq!(snapshot["resources"]["CNY/cash"]["currency"], "CNY");
         }
     }
-    Ok(())
-}
-
-async fn grant(client: &DesktopClient) -> Result<BrowserGrant> {
-    let login = gemini_login::start(client).await?;
-    let param = |name: &str| {
-        login
-            .authorization_url()
-            .query_pairs()
-            .find(|(k, _)| k == name)
-            .map(|(_, v)| v.into_owned())
-    };
-    assert_eq!(param("access_type").as_deref(), Some("offline"));
-    assert_eq!(param("client_id").as_deref(), Some(client.id.as_str()));
-    let redirect = Url::parse(&param("redirect_uri").ok_or("no redirect")?)?;
-    assert_eq!(redirect.host_str(), Some("127.0.0.1"));
-    assert_eq!(redirect.path(), "/oauth2callback");
-    let challenge = param("code_challenge").ok_or("no PKCE")?;
-    let path = format!(
-        "/oauth2callback?state={}&code=sample",
-        param("state").ok_or("no state")?
-    );
-    let callback =
-        tokio::spawn(async move { login.wait_callback(&CancellationToken::new()).await });
-    let mut socket = TcpStream::connect(("127.0.0.1", redirect.port().ok_or("no port")?)).await?;
-    socket
-        .write_all(format!("GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n").as_bytes())
-        .await?;
-    let mut reply = String::new();
-    socket.read_to_string(&mut reply).await?;
-    assert!(reply.starts_with("HTTP/1.1 200"));
-    let grant = callback.await??;
-    assert_eq!(
-        URL_SAFE_NO_PAD.encode(Sha256::digest(grant.verifier.expose().as_bytes())),
-        challenge
-    );
-    Ok(grant)
-}
-
-#[tokio::test]
-async fn google_reauthentication_uses_the_subject_and_entitled_project_and_keeps_rotation()
--> Result<()> {
-    let client = DesktopClient::new("fixture.apps.googleusercontent.com".into(), None)?;
-    let server = UsageServer::start().await?;
-    let http =
-        Http::new(Duration::from_secs(3)).with_base(&server.provider_base(Provider::Gemini))?;
-    server.serve(Provider::Gemini,Method::Post,"/token",Route::json(200,r#"{"access_token":"sample-access","expires_in":3600,"refresh_token":"sample-refresh"}"#));
-    server.serve(
-        Provider::Gemini,
-        Method::Get,
-        "/oauth2/v2/userinfo",
-        Route::json(200, r#"{"id":"123","email":"person@example.invalid"}"#),
-    );
-    let load = "/v1internal:loadCodeAssist";
-    server.serve(
-        Provider::Gemini,
-        Method::Post,
-        load,
-        Route::json(
-            200,
-            r#"{"currentTier":{"id":"standard"},"cloudaicompanionProject":"one"}"#,
-        ),
-    );
-    let signed = gemini_login::exchange(
-        &http,
-        &client,
-        grant(&client).await?,
-        Some("one"),
-        Timestamp(50),
-    )
-    .await?;
-    assert_eq!(signed.identity.as_deref(), Some(r#"["123","one"]"#));
-    assert_eq!(signed.organization.as_deref(), Some("one"));
-    let refresh = signed.tokens.refresh.ok_or("no refresh")?;
-    server.replace(
-        Provider::Gemini,
-        Method::Post,
-        "/token",
-        Route::json(200, r#"{"access_token":"rotated","expires_in":1800}"#),
-    );
-    let renewed = gemini_login::renew(&http, &client, &refresh, Timestamp(100)).await?;
-    assert_eq!(
-        renewed.refresh.ok_or("no retained refresh")?.expose(),
-        refresh.expose()
-    );
-    assert_eq!(renewed.expires_at, Some(Timestamp(1900)));
-    server.replace(
-        Provider::Gemini,
-        Method::Post,
-        "/token",
-        Route::json(400, r#"{"error":"invalid_grant"}"#),
-    );
-    assert!(matches!(
-        gemini_login::renew(&http, &client, &refresh, Timestamp(200)).await,
-        Err(GrantError::SignInAgain)
-    ));
-    server.replace(
-        Provider::Gemini,
-        Method::Post,
-        "/token",
-        Route::json(
-            200,
-            r#"{"access_token":"sample","expires_in":3600,"refresh_token":"sample-refresh"}"#,
-        ),
-    );
-    server.replace(
-        Provider::Gemini,
-        Method::Post,
-        load,
-        Route::json(
-            200,
-            &json!({"ineligibleTiers":[{"reasonCode":"INELIGIBLE"}]}).to_string(),
-        ),
-    );
-    gemini_login::exchange(&http, &client, grant(&client).await?, None, Timestamp(201))
-        .await
-        .expect_err("an ineligible project must refuse sign-in");
     Ok(())
 }
 

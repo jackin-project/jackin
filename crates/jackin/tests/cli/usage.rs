@@ -164,7 +164,7 @@ async fn usage_shows_decimals_money_left_and_a_dash_for_no_reset() -> TestResult
         ran.ok()?;
         assert_eq!(
             ran.stdout,
-            "gem\tgemini\tunavailable\tnot supported: Gemini API keys have no quota method\n\
+            "gem\tgemini\tunavailable\tnot supported for this provider\n\
              router\topenrouter\tKey limit\t24.68% used\t37.66 USD left\t-\t-\n\
              router\topenrouter\tKey spend\t-\t-\t12.34 USD spent\t-\n\
              router\topenrouter\tDaily spend\t-\t-\t1.00 USD spent\t-\n\

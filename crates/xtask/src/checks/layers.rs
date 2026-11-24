@@ -50,7 +50,6 @@ pub const EXPOSE_ALLOWLIST: &[&str] = &[
     "crates/usage/jackin-usage/src/grants.rs",
     "crates/usage/jackin-usage/src/onboarding.rs",
     "crates/usage/jackin-usage/src/onboarding/antigravity_direct.rs",
-    "crates/usage/jackin-usage/src/onboarding/gemini_connection.rs",
     "crates/usage/jackin-usage/src/onboarding/kimi_connection.rs",
     "crates/usage/jackin-usage/src/onboarding/minimax_connection.rs",
     "crates/usage/jackin-usage/src/onboarding/hub.rs",

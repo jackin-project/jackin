@@ -114,9 +114,6 @@ pub(super) async fn account(
     } = command
     {
         let provider = providers::connector(&provider)?;
-        if provider == UsageProvider::Gemini {
-            app.io.note("Connecting Gemini Code Assist for a Google Cloud project. For Antigravity on a personal Google AI subscription, run jackin account usage connect antigravity.");
-        }
         return connect(app, provider, auth, region.as_deref(), None).await;
     }
     let mut db = service(app)?.with_registry(Ok).await.map_err(failure)?;

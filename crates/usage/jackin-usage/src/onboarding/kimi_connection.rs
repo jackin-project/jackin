@@ -132,13 +132,7 @@ pub(super) async fn connect(
     let client = if let Some(old) = old.filter(|c| c.region == selected) {
         old.client
     } else {
-        let input = super::gemini_connection::field(
-            &prompts,
-            "Kimi registered OAuth client ID",
-            false,
-            false,
-        )
-        .await?;
+        let input = super::field(&prompts, "Kimi registered OAuth client ID", false, false).await?;
         let id = input.expose().trim();
         if id.is_empty() {
             return Err(ProviderError::Decode("missing Kimi OAuth client ID").into());

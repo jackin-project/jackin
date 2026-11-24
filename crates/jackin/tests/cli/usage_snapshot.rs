@@ -194,21 +194,9 @@ async fn provider_catalog_includes_disconnected_subscriptions_and_counts_each_ac
             assert_eq!(row["status"], "not_connected");
             assert_eq!(row["account_count"], 0);
         }
-        let google = cli.run(&["usage", "providers", "google-ai-ultra"]).await?;
-        google.ok()?;
-        assert!(
-            google.stdout.contains("Google AI Ultra") && google.stdout.contains("Usage Limits")
-        );
-        let row = providers
-            .iter()
-            .find(|p| p["id"] == "google-ai-ultra")
-            .ok_or("Google AI Ultra")?;
-        assert_eq!(row["status"], "unavailable");
-        assert!(
-            google
-                .stdout
-                .contains(row["unavailable_reason"].as_str().ok_or("reason")?)
-        );
+        let missing = cli.run(&["usage", "providers", "gemini"]).await?;
+        assert_eq!(missing.exit, ExitClass::Usage);
+        assert!(missing.stdout.is_empty());
         assert!(!path.exists());
         jackin_testkit::seed_usage_profile(&path, world.clock.now().0, true)?;
         let overview = cli.run(&["usage", "--json"]).await?;

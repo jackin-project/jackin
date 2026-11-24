@@ -12,7 +12,6 @@ use crate::support::{
 mod claude;
 mod codex;
 mod cursor;
-mod gemini;
 mod grok;
 mod kimi;
 mod minimax;
@@ -37,7 +36,6 @@ pub(crate) async fn cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
         claude::case().await?,
         codex::case().await?,
         cursor::case().await?,
-        gemini::case().await?,
         grok::case().await?,
         kimi::case().await?,
         minimax::case().await?,
@@ -51,7 +49,6 @@ async fn login_cases() -> Result<Vec<Case>, Box<dyn std::error::Error>> {
     Ok(vec![
         claude::login_case().await?,
         cursor::login_case().await?,
-        gemini::login_case().await?,
         grok::login_case().await?,
         kimi::login_case().await?,
     ])

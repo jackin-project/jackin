@@ -14,7 +14,6 @@ Open **Accounts** in the jackin console. With a provider selected in the tree, p
 | Device sign-in | Open the displayed URL and enter the displayed code. The dialog offers **Copy code**, **Copy URL**, and **Open browser** while it waits for authorization. |
 | API key | Use **Open key page** or **Copy URL**, enter the key in the masked field, and activate **Validate and save**. |
 | Antigravity (Google AI) | Live sign-in uses the same OAuth registration as OpenUsage. Google has not authorized Jackin for that registration, so the command stops before browser consent. A stored account still refreshes from the CLI or the usage board. |
-| Gemini Code Assist | For an eligible Cloud Code Assist project, set `JACKIN_GOOGLE_OAUTH_CLIENT_FILE` to the registered Desktop app JSON for direct browser consent and managed project discovery. With the variable unset, supply the client ID, optional secret and optional project when asked. Complete the sign-in in the browser and allow its loopback redirect. |
 
 Esc dismisses an active sign-in. After a successful connection, the dialog displays the account and its usage. When you return to **Accounts**, select its saved name under **Usage accounts** to open its readings again. A saved account awaiting its first quota response displays a waiting message. Open **Usage accounts…** in Accounts, or press **N**, to inspect it again. The account opens on its plan and key readings. Choose **Full details** for its complete readings and history. The same dialog offers refresh, sign in again, rename, and remove. When the provider reports reset inventory, select an available reset and review its confirmation before redeeming it.
 
@@ -42,7 +41,6 @@ The All Usage page shows each account with a representative reading. The screens
 | Z.ai | [Sign-in prompt](screens/zai-prompt.png) | [Usage](screens/zai.png) |
 | MiniMax | [Sign-in prompt](screens/minimax-prompt.png) | [Usage](screens/minimax.png) |
 | MiMo | [Sign-in prompt](screens/mimo-prompt.png) | [Usage](screens/mimo.png) |
-| Gemini Code Assist | [Sign-in prompt](screens/gemini-prompt.png) | [Usage](screens/gemini.png) |
 | OpenCode | [Sign-in prompt](screens/opencode-prompt.png) | [Usage](screens/opencode.png) |
 | OpenRouter | [Sign-in prompt](screens/openrouter-prompt.png) | [Usage](screens/openrouter.png) |
 

@@ -2992,12 +2992,9 @@ dependencies = [
 name = "jackin-usage-provider-gemini"
 version = "0.1.0"
 dependencies = [
- "jackin-core",
- "jackin-testkit",
  "jackin-usage-provider-core",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]

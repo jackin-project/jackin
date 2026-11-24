@@ -5,7 +5,6 @@ use jackin_core::{Provider, Secret};
 use jackin_testkit::{Method, Route, TestResult, UsageServer};
 use jackin_usage::accounts::UsageProvider;
 use jackin_usage::connected::KeyConnection;
-use jackin_usage::gemini_login;
 use serde_json::{Value, json};
 
 use super::owned_usage::{Expected, inspect, journey};
@@ -96,26 +95,6 @@ async fn mimo_displays_plan_region_renewal_and_remaining_credits() -> TestResult
             "Token Plan",
             &["50474251078 credits", "55000000000 credits"],
         )),
-    )
-    .await
-}
-
-#[tokio::test]
-async fn gemini_displays_remaining_fraction_as_percent_and_raw_requests_separately() -> TestResult {
-    let server = UsageServer::start().await?;
-    server.serve(Provider::Gemini,Method::Post,"/v1internal:retrieveUserQuota",
-        Route::json(200,r#"{"buckets":[{"modelId":"gemini-flash","tokenType":"REQUESTS","remainingAmount":"290","remainingFraction":0.9}]}"#));
-    let http = server.endpoints().http(Provider::Gemini)?;
-    let snapshot =
-        gemini_login::snapshot(&http, &Secret::new("fixture".into()), "fixture-project").await?;
-    inspect(
-        UsageProvider::Gemini,
-        snapshot,
-        Expected {
-            account: &["fixture-project", "90%", "290 REQUESTS"],
-            board: &["gemini-flash", "90%"],
-            absent: &["290%", "remaining_fraction"],
-        },
     )
     .await
 }

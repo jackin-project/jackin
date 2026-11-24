@@ -4,7 +4,6 @@
 mod antigravity;
 mod antigravity_direct;
 pub use antigravity::receive_antigravity_statusline;
-mod gemini_connection;
 mod google_registration;
 pub use google_registration::GoogleRegistrationFile;
 mod hub;
@@ -153,6 +152,37 @@ pub async fn open_browser(url: &Url) -> Result<(), LoginError> {
     .map_err(|_| LoginError::Worker)?
 }
 
+pub(super) async fn field(
+    prompts: &mpsc::Sender<LoginPrompt>,
+    label: &'static str,
+    optional: bool,
+    masked: bool,
+) -> Result<Secret, LoginError> {
+    let (reply, input) = oneshot::channel();
+    prompts
+        .send(LoginPrompt::Field {
+            label,
+            optional,
+            masked,
+            reply,
+        })
+        .await
+        .map_err(|_| LoginError::Cancelled)?;
+    input.await.map_err(|_| LoginError::Cancelled)
+}
+
+pub(super) async fn text_field(
+    prompts: &mpsc::Sender<LoginPrompt>,
+    label: &'static str,
+    optional: bool,
+) -> Result<String, LoginError> {
+    Ok(field(prompts, label, optional, false)
+        .await?
+        .expose()
+        .trim()
+        .to_owned())
+}
+
 fn core_provider(provider: UsageProvider) -> Provider {
     use UsageProvider as U;
     match provider {
@@ -164,7 +194,6 @@ fn core_provider(provider: UsageProvider) -> Provider {
         U::MiniMax => Provider::Minimax,
         U::Mimo => Provider::Mimo,
         U::Antigravity => Provider::Antigravity,
-        U::Gemini => Provider::Gemini,
         U::Zai => Provider::Zai,
         U::OpenCode => Provider::Opencode,
         U::OpenRouter => Provider::Openrouter,
@@ -498,18 +527,6 @@ impl OwnedLogin {
             )
             .await;
         }
-        if provider == U::Gemini {
-            let current = self.previous_material(replace).await?;
-            return gemini_connection::connect(
-                &http,
-                self.clock.as_ref(),
-                current.as_ref().map(|(_, bytes)| bytes),
-                self.google_registration.as_ref(),
-                prompts,
-                cancel,
-            )
-            .await;
-        }
         let login = match provider {
             U::Claude => ChatGptLogin::Browser(BrowserLogin::start(BrowserProvider::Claude).await?),
             U::ChatGpt => ChatGptLogin::start(&http, cancel).await?,
@@ -517,10 +534,9 @@ impl OwnedLogin {
                 DeviceLogin::start(device_provider(provider)?, &http, cancel).await?,
             ),
             _ => {
-                return Err(ProviderError::Unsupported(
-                    "Google Code Assist requires a registered desktop OAuth client",
-                )
-                .into());
+                return Err(
+                    ProviderError::Unsupported("this usage provider has no sign-in flow").into(),
+                );
             }
         };
         let signed = match login {
@@ -757,13 +773,6 @@ impl OwnedLogin {
                     }
                 }
             }
-        } else if account.provider == U::Gemini {
-            let http = self.http(account.provider).await?;
-            let mut credential = gemini_connection::Credential::decode(&bytes)?;
-            if let Some(rotated) = credential.renew(&http, self.clock.now()).await? {
-                *version = self.rotate(id, *version, rotated, lease).await?;
-            }
-            credential.snapshot(&http).await?
         } else if account.provider == U::MiniMax
             && let Some(mut credential) = minimax_connection::Credential::decode(&bytes)
         {

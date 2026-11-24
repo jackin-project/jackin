@@ -14,7 +14,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 #[tokio::test]
-async fn details_reads_all_thirteen_saved_accounts_and_filters_by_exact_identity() -> TestResult {
+async fn details_reads_all_twelve_saved_accounts_and_filters_by_exact_identity() -> TestResult {
     guard(async {
         let world = World::builder().build()?;
         let cli = Harness::new(&world);
@@ -36,7 +36,7 @@ async fn details_reads_all_thirteen_saved_accounts_and_filters_by_exact_identity
         );
         let all: Value = serde_json::from_str(&report.stdout)?;
         let listed = all["accounts"].as_array().ok_or("accounts")?;
-        assert_eq!(listed.len(), 13);
+        assert_eq!(listed.len(), 12);
         for (shown, account) in listed.iter().zip(&accounts) {
             assert_eq!(shown["account"]["id"], account.id.to_string());
             assert_eq!(shown["account"]["label"], account.label);

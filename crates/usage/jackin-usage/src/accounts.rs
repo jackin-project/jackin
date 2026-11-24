@@ -220,6 +220,11 @@ impl AccountRegistry {
         )?;
         db.busy_timeout(Duration::from_secs(10))?;
         db.execute_batch(SCHEMA)?;
+        db.execute_batch(
+            "INSERT OR IGNORE INTO retired_slots
+             SELECT slot FROM accounts WHERE provider='gemini' AND kind != 'statusline';
+             DELETE FROM accounts WHERE provider='gemini';",
+        )?;
         Ok(Self {
             db,
             directory,

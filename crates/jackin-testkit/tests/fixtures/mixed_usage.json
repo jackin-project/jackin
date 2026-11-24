@@ -233,23 +233,6 @@
     }
   },
   {
-    "provider": "gemini",
-    "label": "Gemini Cloud",
-    "snapshot": {
-      "project": "fixture-project",
-      "resources": {
-        "[\"gemini-flash\",\"REQUESTS\"]": {
-          "kind": "quota",
-          "model": "gemini-flash",
-          "remaining": 290,
-          "remaining_fraction": 0.9,
-          "resets_at": null,
-          "unit": "REQUESTS"
-        }
-      }
-    }
-  },
-  {
     "provider": "muse",
     "label": "Muse Code",
     "snapshot": {

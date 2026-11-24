@@ -25,14 +25,13 @@ pub enum UsageProvider {
     Zai,
     MiniMax,
     Mimo,
-    Gemini,
     Antigravity,
     OpenCode,
     OpenRouter,
 }
 
 impl UsageProvider {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 11] = [
         Self::Claude,
         Self::ChatGpt,
         Self::Muse,
@@ -41,7 +40,6 @@ impl UsageProvider {
         Self::Zai,
         Self::MiniMax,
         Self::Mimo,
-        Self::Gemini,
         Self::Antigravity,
         Self::OpenCode,
         Self::OpenRouter,
@@ -58,7 +56,6 @@ impl UsageProvider {
             Self::MiniMax => "minimax",
             Self::Mimo => "mimo",
             Self::Antigravity => "antigravity",
-            Self::Gemini => "gemini",
             Self::OpenCode => "opencode",
             Self::OpenRouter => "openrouter",
         }
@@ -117,13 +114,13 @@ impl CandidateIdentity {
         provider: UsageProvider,
     ) -> Result<(&'static str, Option<&str>), ConnectionError> {
         use UsageProvider::{
-            Antigravity, ChatGpt, Claude, Gemini, Grok, Kimi, Mimo, MiniMax, Muse, OpenCode,
-            OpenRouter, Zai,
+            Antigravity, ChatGpt, Claude, Grok, Kimi, Mimo, MiniMax, Muse, OpenCode, OpenRouter,
+            Zai,
         };
         match (self, provider) {
             (
                 Self::OAuth(id),
-                Claude | ChatGpt | Muse | Grok | Gemini | OpenCode | Kimi | MiniMax | Antigravity,
+                Claude | ChatGpt | Muse | Grok | OpenCode | Kimi | MiniMax | Antigravity,
             ) => Ok(("oauth", id.as_deref().filter(|id| !id.is_empty()))),
             (Self::ApiKey(key), Zai | OpenRouter | Mimo | MiniMax | Kimi) => {
                 Ok(("key", Some(&key.0)))
