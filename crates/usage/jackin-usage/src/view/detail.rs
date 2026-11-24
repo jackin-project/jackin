@@ -322,7 +322,10 @@ fn token_lines(yesterday: Option<&Activity>, last30: Option<&Activity>, ctx: Ctx
     lines
 }
 
-fn spend_lines(periods: [f64; 3], byok: f64, currency: Currency, ctx: Ctx) -> Vec<Line> {
+fn spend_lines(periods: [f64; 3], byok: Option<f64>, currency: Currency, ctx: Ctx) -> Vec<Line> {
+    let Some(byok) = byok else {
+        return Vec::new();
+    };
     let line = if byok <= 0.0 && periods.iter().all(|spend| *spend <= 0.0) {
         format!("BYOK spend {} in every period", text::money(0.0, currency))
     } else {

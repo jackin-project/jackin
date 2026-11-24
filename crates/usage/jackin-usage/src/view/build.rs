@@ -527,7 +527,7 @@ fn spend(body: &Value) -> Option<Note> {
         today: today.unwrap_or(0.0),
         week: week.unwrap_or(0.0),
         month: month.unwrap_or(0.0),
-        byok: period("thisMonth", "byokSpend").unwrap_or(0.0),
+        byok: period("thisMonth", "byokSpend"),
         currency: Currency::USD,
     })
 }

@@ -462,7 +462,7 @@ fn notes_and_facts_carry_credits_resets_tokens_spend_and_account_facts() -> Resu
     assert!(matches!(
         openrouter.notes.last(),
         Some(Note::Spend { today, week, month, byok, currency })
-            if [*today, *week, *month, *byok].iter().all(|amount| amount.abs() < 1e-12) && *currency == Currency::USD
+            if [*today, *week, *month].iter().all(|amount| amount.abs() < 1e-12) && *byok == Some(0.0) && *currency == Currency::USD
     ));
     assert_eq!(openrouter.facts, [Fact::KeyType("standard".to_owned())]);
 

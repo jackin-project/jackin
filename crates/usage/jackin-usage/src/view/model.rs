@@ -120,7 +120,7 @@ pub enum Note {
         today: f64,
         week: f64,
         month: f64,
-        byok: f64,
+        byok: Option<f64>,
         currency: Currency,
     },
 }
