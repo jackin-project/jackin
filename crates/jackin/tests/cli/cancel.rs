@@ -340,8 +340,7 @@ async fn a_cancelled_load_never_says_no_sandbox_when_the_gateway_cannot_confirm(
         assert!(
             line.contains(&format!(
                 "could not confirm whether sandbox {planned} exists"
-            ))
-                && !line.contains("before a sandbox existed")
+            )) && !line.contains("before a sandbox existed")
                 && line.contains(&id),
             "{line}"
         );
