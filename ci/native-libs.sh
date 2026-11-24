@@ -2,8 +2,6 @@
 # SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 # SPDX-License-Identifier: Apache-2.0
 
-# libsecret-sys, glib-sys, gobject-sys and gio-sys need these pkg-config
-# modules. The scale-set image already has them. A hosted runner does not.
 set -eu
 
 if command -v pkg-config >/dev/null 2>&1 \
