@@ -490,3 +490,37 @@ async fn a_manifest_that_becomes_invalid_outside_the_console_clears_its_check() 
     })
     .await
 }
+
+#[tokio::test]
+async fn a_role_repointed_to_an_equal_manifest_loses_the_check_of_the_old_source() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let _twin = lab.add_role("twin").await?;
+        lab.reopen().await?;
+        lab.console.keys("R v")?;
+        lab.console.settle().await?;
+        lab.console.keys("down v")?;
+        lab.console.settle().await?;
+        assert_eq!(lab.console.status_line(), "Role twin: check passed");
+        assert!(check_state_is_done(&mut lab, "twin")?);
+
+        let moved = RoleFixture::new("twin")?;
+        moved.commit().await?;
+        moved.remove("Dockerfile").await?;
+        lab.edit(vec![
+            ConfigEdit::RemoveRole(RoleName::parse("twin")?),
+            ConfigEdit::AddRole {
+                name: RoleName::parse("twin")?,
+                source: RoleSource::Path(moved.root().clone()),
+            },
+        ])
+        .await?;
+        after_refresh(&mut lab).await?;
+        assert!(
+            check_state_is_unchecked(&mut lab, "twin")?,
+            "the check of the old source stayed"
+        );
+        Ok(())
+    })
+    .await
+}

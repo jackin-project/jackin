@@ -387,7 +387,10 @@ impl Inputs {
                         || cache.get(*name).is_none_or(|(s, _)| *s != entry.source)
                 })
                 .map(|(name, entry)| {
-                    let previous = cache.get(name).map(|(_, doc)| doc.clone());
+                    let previous = cache
+                        .get(name)
+                        .filter(|(source, _)| *source == entry.source)
+                        .map(|(_, doc)| doc.clone());
                     (name.clone(), entry.source.clone(), previous)
                 })
                 .collect()
