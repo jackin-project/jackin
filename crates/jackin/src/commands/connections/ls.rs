@@ -4,7 +4,7 @@
 use jackin_usage::accounts::AccountRegistry;
 use jackin_usage::view::text;
 use jackin_usage::view::{
-    AccountQuota, Attention, Line, Reading, Span, Tone, UsageView, ViewFilter, build,
+    AccountQuota, Attention, Feed, Line, Reading, Span, Tone, UsageView, ViewFilter, build,
 };
 use serde_json::{Value, json};
 
@@ -102,11 +102,7 @@ fn cells(provider: &str, quota: &AccountQuota, view: &UsageView, wide: bool) -> 
         vec![Span::strong(quota.label.as_str())],
         vec![Span::plain(quota.plan.as_deref().unwrap_or(NONE))],
         status_cell(&quota.reading, view.now),
-        if quota.is_duplicate() {
-            vec![Span::new("duplicate", Tone::Warn)]
-        } else {
-            Vec::new()
-        },
+        flags(quota),
     ];
     if wide {
         row.push(vec![Span::plain(quota.reading.fetched_at().map_or_else(
@@ -119,6 +115,34 @@ fn cells(provider: &str, quota: &AccountQuota, view: &UsageView, wide: bool) -> 
         )]);
     }
     row
+}
+
+fn flags(quota: &AccountQuota) -> Vec<Span> {
+    let mut flags = Vec::new();
+    if quota.is_duplicate() {
+        flags.push(Span::new("duplicate", Tone::Warn));
+    }
+    if quota.feed == Feed::StatusLine {
+        flags.push(Span::dim("status-line"));
+    }
+    let mut cell = Vec::new();
+    for flag in flags {
+        if !cell.is_empty() {
+            cell.push(Span::plain(", "));
+        }
+        cell.push(flag);
+    }
+    cell
+}
+
+fn needs_sign_in(quota: &AccountQuota) -> bool {
+    matches!(
+        quota.reading,
+        Reading::Failed {
+            reconnect: true,
+            ..
+        }
+    )
 }
 
 fn width(cell: &[Span]) -> usize {
@@ -225,6 +249,39 @@ fn footnotes(view: &UsageView, wide: bool) -> Vec<Line> {
                 remove.hyphenated()
             ))]));
         }
+    }
+    let signing_in: Vec<&AccountQuota> = view
+        .accounts()
+        .map(|(_, quota)| quota)
+        .filter(|quota| needs_sign_in(quota))
+        .collect();
+    if wide {
+        lines.extend(signing_in.iter().map(|quota| {
+            Line::of(vec![Span::new(
+                format!(
+                    "! {} needs sign-in: jackin account usage reconnect {}",
+                    quota.label,
+                    quota.id.hyphenated()
+                ),
+                Tone::Warn,
+            )])
+        }));
+    } else if !signing_in.is_empty() {
+        lines.push(Line::of(vec![Span::new(
+            format!(
+                "! {} to sign in again: jackin account usage reconnect <id> (IDs: jackin account usage ls --wide)",
+                count(signing_in.len(), "account")
+            ),
+            Tone::Warn,
+        )]));
+    }
+    let hooked = view.accounts().any(|(_, quota)| {
+        quota.feed == Feed::StatusLine && matches!(quota.reading, Reading::Stale { .. })
+    });
+    if hooked {
+        lines.push(Line::of(vec![Span::dim(
+            "  status-line accounts update when the Antigravity status-line hook runs; refresh cannot read them",
+        )]));
     }
     if duplicated && !wide {
         lines.push(Line::of(vec![Span::plain(

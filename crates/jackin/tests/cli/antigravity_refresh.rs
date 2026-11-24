@@ -164,7 +164,7 @@ async fn cli_refresh_matches_across_launches_and_keeps_a_failed_reading() -> Tes
                 .requires_json_body(json!({"project": "proj-1"}))
                 .responding_with(counted_reading),
         );
-        let args = ["usage", "refresh", "--account", &id.to_string()];
+        let args = ["usage", "refresh", "--json", "--account", &id.to_string()];
         let first = cli.run(&args).await?;
         first.ok()?;
         let after_first = quota_requests().load(Ordering::SeqCst);
@@ -251,6 +251,44 @@ async fn cli_refresh_matches_across_launches_and_keeps_a_failed_reading() -> Tes
     .await
 }
 
+async fn statusline_account(
+    world: &World,
+    cli: &Harness,
+    path: &std::path::Path,
+) -> Result<(Uuid, i64), Box<dyn std::error::Error>> {
+    let clock = Arc::clone(&world.clock);
+    let clock: Arc<dyn Clock> = clock;
+    let service = OwnedLogin::new(path.to_path_buf(), cli.usage_endpoints.clone(), clock);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let (send, mut prompts) = tokio::sync::mpsc::channel(2);
+    let pending = tokio::spawn(async move {
+        service
+            .connect_antigravity_statusline(None, send, &cancel)
+            .await
+    });
+    let LoginPrompt::Field { reply, .. } = prompts.recv().await.ok_or("missing email prompt")?
+    else {
+        return Err("expected an email prompt".into());
+    };
+    reply
+        .send(Secret::new("cached@example.com".into()))
+        .map_err(|_| "prompt closed")?;
+    let LoginPrompt::AntigravityStatusLine { .. } =
+        prompts.recv().await.ok_or("missing status line")?
+    else {
+        return Err("expected the status-line command".into());
+    };
+    let observed = world.clock.now().0;
+    let input = json!({"product":"antigravity","email":"cached@example.com","plan_tier":"ultra","quota":{"3p-weekly":{"remaining_fraction":0.05}}});
+    assert!(receive_antigravity_statusline(
+        path,
+        &serde_json::to_vec(&input)?,
+        observed
+    )?);
+    let id = pending.await?.map_err(|error| error.to_string())?;
+    Ok((id, observed))
+}
+
 #[tokio::test]
 async fn cli_refresh_of_a_statusline_snapshot_is_not_a_network_success() -> TestResult {
     guard(async {
@@ -262,37 +300,8 @@ async fn cli_refresh_of_a_statusline_snapshot_is_not_a_network_success() -> Test
             .parent()
             .ok_or("config directory")?;
         let path = root.join("usage/accounts.sqlite3");
-        let clock = Arc::clone(&world.clock);
-        let clock: Arc<dyn Clock> = clock;
-        let service = OwnedLogin::new(path.clone(), cli.usage_endpoints.clone(), clock);
-        let cancel = tokio_util::sync::CancellationToken::new();
-        let (send, mut prompts) = tokio::sync::mpsc::channel(2);
-        let pending = tokio::spawn(async move {
-            service
-                .connect_antigravity_statusline(None, send, &cancel)
-                .await
-        });
-        let LoginPrompt::Field { reply, .. } = prompts.recv().await.ok_or("missing email prompt")?
-        else {
-            return Err("expected an email prompt".into());
-        };
-        reply
-            .send(Secret::new("cached@example.com".into()))
-            .map_err(|_| "prompt closed")?;
-        let LoginPrompt::AntigravityStatusLine { .. } =
-            prompts.recv().await.ok_or("missing status line")?
-        else {
-            return Err("expected the status-line command".into());
-        };
-        let observed = world.clock.now().0;
-        let input = json!({"product":"antigravity","email":"cached@example.com","plan_tier":"ultra","quota":{"3p-weekly":{"remaining_fraction":0.05}}});
-        assert!(receive_antigravity_statusline(
-            &path,
-            &serde_json::to_vec(&input)?,
-            observed
-        )?);
-        let id = pending.await?.map_err(|error| error.to_string())?;
-        let args = ["usage", "refresh", "--account", &id.to_string()];
+        let (id, observed) = statusline_account(&world, &cli, &path).await?;
+        let args = ["usage", "refresh", "--json", "--account", &id.to_string()];
         let ran = cli.run(&args).await?;
         assert_ne!(ran.exit, ExitClass::Ok);
         assert!(!ran.stderr.contains("last report"));
@@ -309,6 +318,163 @@ async fn cli_refresh_of_a_statusline_snapshot_is_not_a_network_success() -> Test
             .ok_or("missing refresh error")?;
         assert!(message.contains("status-line hook"), "{message}");
         assert!(ran.stderr.contains("status-line hook"));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn refresh_prints_a_summary_by_default_and_json_only_with_the_flag() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let cli = Harness::new(&world);
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .join("usage/accounts.sqlite3");
+        let (id, _) = statusline_account(&world, &cli, &path).await?;
+        let account = id.to_string();
+        let human = cli
+            .run(&["usage", "refresh", "--account", &account])
+            .await?;
+        assert_ne!(human.exit, ExitClass::Ok);
+        assert!(
+            serde_json::from_str::<Value>(&human.stdout).is_err(),
+            "{}",
+            human.stdout
+        );
+        assert!(
+            human
+                .stdout
+                .starts_with("Refreshed 0 of 1 accounts · 1 failed"),
+            "{}",
+            human.stdout
+        );
+        assert!(
+            human.stdout.contains("cached@example.com"),
+            "{}",
+            human.stdout
+        );
+        assert!(
+            human.stdout.contains("status-line hook"),
+            "{}",
+            human.stdout
+        );
+        assert!(
+            human.stdout.contains("jackin usage details"),
+            "{}",
+            human.stdout
+        );
+        assert!(
+            human.stderr.contains("status-line hook"),
+            "{}",
+            human.stderr
+        );
+        let json = cli
+            .run(&["usage", "refresh", "--json", "--account", &account])
+            .await?;
+        let body: Value = serde_json::from_str(&json.stdout)?;
+        assert_eq!(body["accounts"][0]["account"]["id"], account);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_status_line_reading_that_went_stale_says_which_hook_feeds_it() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let cli = Harness::new(&world);
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .join("usage/accounts.sqlite3");
+        statusline_account(&world, &cli, &path).await?;
+        world.clock.advance(Duration::from_hours(25));
+        let usage = cli.run(&["usage"]).await?;
+        assert!(
+            usage
+                .stdout
+                .contains("updated by the Antigravity status-line hook · last update 1d 1h ago"),
+            "{}",
+            usage.stdout
+        );
+        let listed = cli.run(&["account", "usage", "ls"]).await?;
+        let row = listed
+            .stdout
+            .lines()
+            .find(|line| line.contains("cached@example.com"))
+            .ok_or("missing row")?;
+        assert!(
+            row.contains("stale 1d 1h") && row.contains("status-line"),
+            "{row}"
+        );
+        assert!(
+            listed.stdout.contains("status-line hook runs"),
+            "{}",
+            listed.stdout
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_missing_credential_failure_names_the_sign_in_command_and_no_retry() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let mut cli = Harness::new(&world);
+        let empty: Arc<dyn CredentialVault> = Arc::new(Memory::default());
+        cli.usage_vault = Some(empty);
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .join("usage/accounts.sqlite3");
+        let stored: Arc<dyn CredentialVault> = Arc::new(Memory::default());
+        let mut db = AccountRegistry::with_vault(&path, stored)?;
+        let id = db.add_with_snapshot(
+            UsageProvider::Antigravity,
+            "Personal",
+            &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
+            &SecretBytes::new(vec![1]),
+            world.clock.now().0,
+            &json!({"plan":"Ultra","resources":{}}),
+        )?;
+        drop(db);
+        let refreshed = cli
+            .run(&["usage", "refresh", "--account", &id.to_string()])
+            .await?;
+        assert!(
+            refreshed
+                .stdout
+                .contains("the credential is missing; sign in again"),
+            "{}",
+            refreshed.stdout
+        );
+        let command = format!("jackin account usage reconnect {id}");
+        assert!(refreshed.stdout.contains(&command), "{}", refreshed.stdout);
+        let usage = cli.run(&["usage"]).await?;
+        assert!(usage.stdout.contains(&command), "{}", usage.stdout);
+        assert!(!usage.stdout.contains("retry"), "{}", usage.stdout);
+        let listed = cli.run(&["account", "usage", "ls"]).await?;
+        assert!(
+            !listed.stdout.contains(&id.to_string()),
+            "{}",
+            listed.stdout
+        );
+        assert!(
+            listed
+                .stdout
+                .contains("jackin account usage reconnect <id>"),
+            "{}",
+            listed.stdout
+        );
         Ok(())
     })
     .await

@@ -58,6 +58,7 @@ jackin usage snapshot --provider codex
 jackin usage snapshot --account "$account_id"
 jackin usage refresh
 jackin usage refresh --account "$account_id"
+jackin usage refresh --json
 jackin usage share
 ```
 
@@ -67,7 +68,7 @@ In the catalog JSON, each product has an `id`, `name`, `account_count` and `stat
 
 Use `jackin usage details` to inspect all saved accounts side by side in text. Filter by provider or stable account ID. Add `--json` for numeric readings, quota reset times, and available model, day, and billing histories. The details command can run offline.
 
-The plain `jackin usage` overview groups readings under each provider and account. A bounded reading says whether it shows the amount used or remaining. A stale reading is labeled on its own row. Snapshot and share commands read persisted data. Active refresh contacts providers that support polling, including a direct Antigravity account. A rejected refresh preserves the last successful reading and reports that reading's age with the error. The snapshot becomes stale ten minutes after that reading. The console updates connected accounts while it runs. For existing execution-account sources, request an explicit host read with `jackin usage host`.
+The plain `jackin usage` overview groups readings under each provider and account. A bounded reading says whether it shows the amount used or remaining. A stale reading is labeled on its own row. Snapshot and share commands read persisted data. Active refresh contacts providers that support polling, prints one line per account, and prints the refreshed snapshot as JSON only with `--json`, including a direct Antigravity account. A rejected refresh preserves the last successful reading and reports that reading's age with the error. The snapshot becomes stale ten minutes after that reading. The console updates connected accounts while it runs. For existing execution-account sources, request an explicit host read with `jackin usage host`.
 
 Use `jackin usage redeem` to redeem an eligible account reset. Select the displayed reset and confirm the prompt. Jackin checks eligibility again before submitting the request. Reading, refreshing and exporting usage never redeems a reset.
 

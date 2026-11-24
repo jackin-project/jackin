@@ -326,7 +326,7 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
     if let UsageCommand::Redeem { account, reset } = command {
         return redeem(app, account, reset.get() - 1).await;
     }
-    let filter = match command {
+    match command {
         UsageCommand::AntigravityStatusline {
             database: destination,
         } => {
@@ -355,40 +355,43 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
                 app.deps.host.clock.now().0,
             )
             .map_err(failure)?;
-            return app.io.line(if stored {
+            app.io.line(if stored {
                 "Jackin · quota received"
             } else {
                 "Jackin · waiting for a connected Google account"
-            });
+            })
         }
-        UsageCommand::Refresh(f) => f,
-        UsageCommand::Snapshot { filter, json } => return overview::snapshot(app, &filter, json),
-        UsageCommand::Details { filter, json } => return details::show(app, &filter, json),
+        UsageCommand::Refresh { filter, json } => refresh(app, filter, json).await,
+        UsageCommand::Snapshot { filter, json } => overview::snapshot(app, &filter, json),
+        UsageCommand::Details { filter, json } => details::show(app, &filter, json),
         UsageCommand::Providers { .. }
         | UsageCommand::Host(_)
         | UsageCommand::Share
-        | UsageCommand::Proxy { .. } => {
-            return Err(CommandError::Argument("choose a usage filter".into()));
-        }
-        UsageCommand::Redeem { .. } => {
-            return Err(CommandError::Argument("invalid reset action".into()));
-        }
-    };
+        | UsageCommand::Proxy { .. } => Err(CommandError::Argument("choose a usage filter".into())),
+        UsageCommand::Redeem { .. } => Err(CommandError::Argument("invalid reset action".into())),
+    }
+}
+
+async fn refresh(app: &mut App, filter: UsageFilter, json: bool) -> Result<(), CommandError> {
     let provider = filter
         .provider
         .as_deref()
         .map(providers::connector)
         .transpose()?;
     let db = service(app)?.with_registry(Ok).await.map_err(failure)?;
-    let (first_error, refresh_errors) = refresh_selected(app, &db, &filter, provider).await?;
-    overview::emit(
-        app,
-        Some(&db),
-        &filter,
-        provider,
-        &refresh_errors,
-        first_error,
-    )
+    let (first_error, refresh_errors) = refresh_selected(app, &db, &filter, provider, json).await?;
+    if json {
+        return overview::emit(
+            app,
+            Some(&db),
+            &filter,
+            provider,
+            &refresh_errors,
+            first_error,
+        );
+    }
+    overview::refreshed(app, &db, &filter, provider, &refresh_errors)?;
+    first_error.map_or(Ok(()), Err)
 }
 
 async fn refresh_selected(
@@ -396,6 +399,7 @@ async fn refresh_selected(
     db: &AccountRegistry,
     filter: &UsageFilter,
     provider: Option<UsageProvider>,
+    noisy: bool,
 ) -> Result<(Option<CommandError>, Vec<(Uuid, String)>), CommandError> {
     let mut first_error = None;
     let mut messages = Vec::new();
@@ -434,7 +438,9 @@ async fn refresh_selected(
         let (id, result) = result.map_err(|_| failure(LoginError::Worker))?;
         if let Err(error) = result {
             messages.push((id, error.to_string()));
-            app.io.note(&format!("{id}: {error}"));
+            if noisy {
+                app.io.note(&format!("{id}: {error}"));
+            }
             first_error.get_or_insert_with(|| failure(error));
         }
     }

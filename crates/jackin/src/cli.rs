@@ -154,7 +154,12 @@ pub enum UsageCommand {
         json: bool,
     },
     #[command(about = "Refresh connected accounts from their providers")]
-    Refresh(UsageFilter),
+    Refresh {
+        #[command(flatten)]
+        filter: UsageFilter,
+        #[arg(long, help = "Print the refreshed snapshot as JSON")]
+        json: bool,
+    },
     #[command(about = "Confirm and spend one available reset from the account's saved inventory")]
     Redeem {
         #[arg(help = "Stable usage account ID")]

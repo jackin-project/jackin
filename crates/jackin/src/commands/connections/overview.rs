@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_usage::accounts::{AccountRegistry, UsageProvider};
-use jackin_usage::view::{self, Ctx, Report, UsageView, ViewFilter, render};
+use jackin_usage::view::{
+    self, Ctx, Line, Reading, Report, Span, Tone, UsageView, ViewFilter, render,
+};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -175,4 +177,75 @@ pub(super) fn emit(
         return Err(CommandError::NoUsageSnapshot);
     }
     Ok(())
+}
+
+pub(super) fn refreshed(
+    app: &mut App,
+    db: &AccountRegistry,
+    filter: &UsageFilter,
+    provider: Option<UsageProvider>,
+    refresh_errors: &[(Uuid, String)],
+) -> Result<(), CommandError> {
+    let view = view::build(
+        db,
+        &ViewFilter {
+            provider,
+            account: filter.account,
+        },
+        app.deps.host.clock.now(),
+        app.deps.host.clock.utc_offset_secs(),
+    )
+    .map_err(failure)?;
+    if view.account_count() == 0 {
+        return if provider.is_some() || filter.account.is_some() {
+            Err(CommandError::Argument("no matching usage account".into()))
+        } else {
+            introduce(app)
+        };
+    }
+    let failed = view
+        .accounts()
+        .filter(|(_, quota)| refresh_errors.iter().any(|(id, _)| *id == quota.id))
+        .count();
+    let total = view.account_count();
+    let mut lines = vec![Line::of(vec![Span::strong(if failed == 0 {
+        format!("Refreshed {total} of {total} accounts")
+    } else {
+        format!(
+            "Refreshed {} of {total} accounts · {failed} failed",
+            total - failed
+        )
+    })])];
+    for (group, quota) in view.accounts() {
+        let name = format!("{} · {}", group.name, quota.label);
+        match refresh_errors.iter().find(|(id, _)| *id == quota.id) {
+            None => lines.push(Line::of(vec![
+                Span::new("  ok      ", Tone::Ok),
+                Span::plain(name),
+            ])),
+            Some((_, message)) => {
+                lines.push(Line::of(vec![
+                    Span::new("  failed  ", Tone::Crit),
+                    Span::plain(format!("{name}: {message}")),
+                ]));
+                if matches!(
+                    quota.reading,
+                    Reading::Failed {
+                        reconnect: true,
+                        ..
+                    }
+                ) {
+                    lines.push(Line::of(vec![Span::dim(format!(
+                        "          {}",
+                        view::text::reconnect_command(quota.id)
+                    ))]));
+                }
+            }
+        }
+    }
+    lines.push(Line::blank());
+    lines.push(Line::of(vec![Span::dim(
+        "View usage: jackin usage · jackin usage details · jackin usage refresh --json",
+    )]));
+    app.io.lines(&lines)
 }

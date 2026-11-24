@@ -423,7 +423,7 @@ async fn the_usage_surfaces_accept_their_json_and_wide_flags() -> TestResult {
         assert_eq!(wide.value()?, serde_json::Value::Array(Vec::new()));
         for args in [
             &["usage", "snapshot", "--wide"][..],
-            &["usage", "refresh", "--json"][..],
+            &["usage", "refresh", "--wide"][..],
         ] {
             assert_eq!(harness.run(args).await?.exit, ExitClass::Usage, "{args:?}");
         }
