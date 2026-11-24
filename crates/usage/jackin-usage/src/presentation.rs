@@ -1,12 +1,12 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::accounts::{AccountRegistry, ConnectionError, StoredSnapshot};
+use crate::accounts::{AccountRegistry, ConnectedAccount, ConnectionError, StoredSnapshot};
 use crate::dashboard::{DashboardRow, DashboardSettings};
 use crate::onboarding::OwnedLogin;
 use crate::view::{
-    self, AccountQuota, Ctx, Depth, Line, Meter, Note, Reading, UsageView, Used, ViewFilter, card,
-    detail as extras, short_id, text,
+    self, AccountQuota, Attention, Ctx, Depth, Line, Meter, Note, Reading, UsageView, Used,
+    ViewFilter, card, detail as extras, short_id, text,
 };
 use jackin_core::plain;
 use serde_json::Value;
@@ -184,7 +184,7 @@ pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionEr
         let mut entry = detail(stored.remove(position), now, &settings);
         entry.hub = db.hub_link(quota.id)?.map(|mirror| mirror.hub.to_string());
         entry.provider = group.provider.to_string();
-        entry.label = entry_label(quota);
+        entry.label = usage_label(group.name, quota);
         entry.summary = summary(&view, quota);
         entry.details = plain_lines(&card(quota, &view, &Ctx::new(CARD_WIDTH), Depth::Full));
         entries.push(entry);
@@ -198,6 +198,46 @@ pub fn entry_label(account: &AccountQuota) -> String {
     } else {
         account.label.clone()
     }
+}
+
+pub fn short_provider(name: &str) -> &str {
+    name.split_once(" (").map_or(name, |(short, _)| short)
+}
+
+fn names_provider(label: &str, provider: &str) -> bool {
+    label
+        .to_lowercase()
+        .starts_with(&short_provider(provider).to_lowercase())
+}
+
+pub fn usage_label(provider: &str, account: &AccountQuota) -> String {
+    let provider = short_provider(provider);
+    let tag = if account.is_duplicate() {
+        format!(" #{}", account.short())
+    } else {
+        String::new()
+    };
+    if names_provider(&account.label, provider) {
+        format!("{}{tag}", account.label)
+    } else {
+        format!("{provider}{tag} · {}", account.label)
+    }
+}
+
+pub fn bare_label(name: String, account: &ConnectedAccount) -> String {
+    let provider = crate::catalog::providers()
+        .find(|product| product.id == account.provider.as_str())
+        .map_or("", |product| short_provider(product.name));
+    if names_provider(&account.label, provider) {
+        return strip_short_id(name, account.id);
+    }
+    let plain = format!("{provider} · ");
+    let tagged = format!("{provider} #{} · ", short_id(account.id));
+    let bare = name
+        .strip_prefix(&tagged)
+        .or_else(|| name.strip_prefix(&plain))
+        .map_or_else(|| name.clone(), str::to_owned);
+    strip_short_id(bare, account.id)
 }
 
 fn plain_lines(lines: &[Line]) -> Vec<String> {
@@ -241,7 +281,10 @@ pub fn summary(view: &UsageView, account: &AccountQuota) -> Vec<String> {
             format!("! {message}")
         });
         if *reconnect {
-            lines.push(text::reconnect_command(account.id));
+            lines.push(format!(
+                "jackin account usage reconnect {}",
+                account.id.simple()
+            ));
         }
     }
     if let (view::Feed::StatusLine, Reading::Stale { at }) = (account.feed, &account.reading) {
@@ -310,6 +353,30 @@ fn inspector(view: &UsageView, account: &AccountQuota, window: Option<u32>) -> V
     lines
 }
 
+fn marks(account: &AccountQuota) -> Option<String> {
+    let state = match account.reading {
+        Reading::Stale { .. } => Some("stale"),
+        Reading::Failed { .. } => Some("failed"),
+        Reading::Waiting | Reading::Fresh { .. } => None,
+    };
+    let duplicate = account.is_duplicate().then_some("dup");
+    let marks: Vec<&str> = state.into_iter().chain(duplicate).collect();
+    (!marks.is_empty()).then(|| marks.join(" · "))
+}
+
+fn marked(account: &AccountQuota, value: &str) -> String {
+    let Some(marks) = marks(account) else {
+        return text::truncate(value, VALUE_COLUMNS);
+    };
+    let spaced = format!("{marks} · {value}");
+    let joined = if spaced.chars().count() <= VALUE_COLUMNS {
+        spaced
+    } else {
+        format!("{marks} {value}")
+    };
+    text::truncate(&joined, VALUE_COLUMNS)
+}
+
 pub fn meter_reading(view: &UsageView, account: &AccountQuota, meter: &Meter) -> ReadingText {
     let fraction = meter.fraction();
     let shown = text::percent(fraction);
@@ -340,7 +407,7 @@ pub fn meter_reading(view: &UsageView, account: &AccountQuota, meter: &Meter) ->
         Level::Normal
     };
     ReadingText {
-        value: text::truncate(&value, VALUE_COLUMNS),
+        value: marked(account, &value),
         exact: exact.join(" · "),
         reset: Some(card::reset_phrase(meter.resets_at, view, true)),
         inspector: inspector(view, account, meter.window_secs),
@@ -386,7 +453,96 @@ pub fn attention_notices(view: &UsageView) -> Vec<String> {
         .collect()
 }
 
-pub fn strip_short_id(name: String, id: uuid::Uuid) -> String {
+#[derive(Clone, Debug)]
+pub struct AttentionRow {
+    pub key: String,
+    pub provider: crate::accounts::UsageProvider,
+    pub accounts: Vec<uuid::Uuid>,
+    pub title: String,
+    pub label: String,
+    pub reading: ReadingText,
+}
+
+pub fn attention_rows(view: &UsageView) -> Vec<AttentionRow> {
+    view.attention
+        .iter()
+        .filter_map(|item| attention_row(view, item))
+        .collect()
+}
+
+fn attention_row(view: &UsageView, item: &Attention) -> Option<AttentionRow> {
+    let text = view::report::attention_text(view, item)?;
+    let (kind, accounts, level) = match item {
+        Attention::Failing { account } => ("failing", vec![*account], Level::Critical),
+        Attention::NearLimit { accounts, .. } => ("near-limit", accounts.clone(), Level::Critical),
+        Attention::Duplicate { accounts, .. } => ("duplicate", accounts.clone(), Level::Warning),
+    };
+    let first = *accounts.first()?;
+    let (group, quota) = view.account(first)?;
+    let subject = if accounts.len() == 1 {
+        entry_label(quota)
+    } else {
+        quota.label.clone()
+    };
+    let near = match item {
+        Attention::NearLimit { meter, .. } => quota.meters().find(|found| &found.name == meter),
+        Attention::Failing { .. } | Attention::Duplicate { .. } => None,
+    };
+    let mut reading = match near {
+        Some(meter) => meter_reading(view, quota, meter),
+        None => ReadingText {
+            value: String::new(),
+            exact: String::new(),
+            reset: None,
+            inspector: inspector(view, quota, None),
+            details: Vec::new(),
+            level,
+            bar: None,
+        },
+    };
+    reading.level = level;
+    reading.exact = text.detail.clone();
+    reading.details = match item {
+        Attention::Failing { .. } => summary(view, quota),
+        Attention::NearLimit { .. } => vec![text.detail.clone()],
+        Attention::Duplicate { accounts, .. } => {
+            let mut lines = vec![format!(
+                "Connected {} times: {}",
+                accounts.len(),
+                accounts
+                    .iter()
+                    .copied()
+                    .map(|id| format!("#{}", short_id(id)))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )];
+            lines.push(text.detail.clone());
+            lines
+        }
+    };
+    if near.is_none() {
+        reading.value = match item {
+            Attention::Duplicate { accounts, .. } => {
+                format!("duplicate · {} connections", accounts.len())
+            }
+            Attention::Failing { .. } | Attention::NearLimit { .. } => freshness_text(quota, view),
+        };
+    }
+    Some(AttentionRow {
+        key: format!("{kind}:{}", first.hyphenated()),
+        provider: group.provider,
+        accounts,
+        title: format!("{} · {subject}", text.tag),
+        label: match (item, near) {
+            (_, Some(meter)) => meter.name.clone(),
+            (Attention::Duplicate { .. }, None) => "Connections".to_owned(),
+            (_, None) => "Refresh".to_owned(),
+        },
+        reading,
+    })
+}
+
+fn strip_short_id(name: String, id: uuid::Uuid) -> String {
     let suffix = format!(" #{}", short_id(id));
     match name.strip_suffix(&suffix) {
         Some(rest) => rest.to_owned(),
