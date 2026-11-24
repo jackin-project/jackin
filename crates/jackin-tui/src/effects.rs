@@ -397,6 +397,17 @@ impl Inputs {
         Ok(resolved)
     }
 
+    pub(crate) async fn check_local(
+        &self,
+        console_provider: Provider,
+        path: &str,
+    ) -> Result<(), String> {
+        self.local_source(console_provider, path)
+            .await
+            .map(drop)
+            .map_err(|refused| text(&refused))
+    }
+
     async fn local_source(
         &self,
         console_provider: Provider,
