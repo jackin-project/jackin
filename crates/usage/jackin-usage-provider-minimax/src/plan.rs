@@ -69,14 +69,21 @@ pub async fn fetch_oauth_plan(
             "MiniMax rejected the Token Plan request",
         ));
     }
-    body.get("model_remains")
+    let models = body
+        .get("model_remains")
         .and_then(Value::as_array)
         .ok_or(ProviderError::Decode(
             "MiniMax did not return Token Plan quotas",
         ))?
         .iter()
         .map(model_quota)
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    if models.is_empty() {
+        return Err(ProviderError::Decode(
+            "MiniMax did not return Token Plan quotas",
+        ));
+    }
+    Ok(models)
 }
 
 fn model_quota(model: &Value) -> Result<ModelQuota, ProviderError> {
