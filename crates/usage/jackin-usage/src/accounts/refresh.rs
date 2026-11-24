@@ -95,9 +95,9 @@ pub(super) fn write_failure(
     let wait = match kind {
         FailureKind::Authentication => 3600,
         FailureKind::Network => 300,
-        FailureKind::RateLimited => {
-            retry_after.map_or(default_wait, |t| i64::try_from(t).unwrap_or(i64::MAX))
-        }
+        FailureKind::RateLimited => retry_after.map_or(default_wait, |seconds| {
+            i64::try_from(seconds).unwrap_or(3600).clamp(0, 3600)
+        }),
         _ => default_wait,
     };
     let kind = serde_json::to_string(&kind).map_err(|_| ConnectionError::Changed)?;
