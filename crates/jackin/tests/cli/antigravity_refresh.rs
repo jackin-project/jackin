@@ -790,3 +790,59 @@ async fn a_long_ok_row_wraps_inside_60_columns_with_a_hanging_indent() -> TestRe
     })
     .await
 }
+
+fn assert_every_line_fits(label: &str, output: &str, width: usize) {
+    let wide: Vec<String> = output
+        .lines()
+        .filter(|line| text::width(line) > width)
+        .map(|line| format!("{:>3}  {line}", text::width(line)))
+        .collect();
+    assert!(
+        wide.is_empty(),
+        "{label} has lines wider than {width} columns:\n{}",
+        wide.join("\n")
+    );
+}
+
+#[tokio::test]
+async fn the_final_error_line_of_a_failed_refresh_fits_80_piped_and_60_on_a_terminal() -> TestResult
+{
+    guard(async {
+        let mut lab = Lab::open().await?;
+        lab.cli.env.push(("NO_COLOR".to_owned(), "1".to_owned()));
+        lab.fail_quota(|| Route::status(500));
+        let account = lab.id.to_string();
+        let args = ["usage", "refresh", "--account", account.as_str()];
+        let piped = lab.cli.run(&args).await?;
+        assert_ne!(piped.exit, ExitClass::Ok);
+        assert_every_line_fits("piped stdout", &piped.stdout, 80);
+        assert_every_line_fits("piped stderr", &piped.stderr, 80);
+        assert!(
+            piped
+                .stderr
+                .lines()
+                .any(|line| line == "error: refresh failed for 1 account"),
+            "{}",
+            piped.stderr
+        );
+
+        let terminal = ScriptedTerminal::new(Vec::new())?.0.sized(60)?;
+        let tty = lab.cli.command(&args).terminal(terminal).run().await?;
+        assert_ne!(tty.exit, ExitClass::Ok);
+        assert_every_line_fits("terminal stdout", &tty.stdout, 60);
+        assert_every_line_fits("terminal stderr", &tty.stderr, 60);
+
+        let json = lab
+            .cli
+            .run(&["usage", "refresh", "--json", "--account", &account])
+            .await?;
+        assert!(
+            json.stderr
+                .contains("Antigravity usage is temporarily unavailable"),
+            "{}",
+            json.stderr
+        );
+        Ok(())
+    })
+    .await
+}

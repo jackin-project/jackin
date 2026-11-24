@@ -391,7 +391,15 @@ async fn refresh(app: &mut App, filter: UsageFilter, json: bool) -> Result<(), C
         );
     }
     overview::refreshed(app, &db, &filter, provider, &outcome)?;
-    outcome.first_error.map_or(Ok(()), Err)
+    let failed = outcome.messages.len() - outcome.skipped.len();
+    match outcome.first_error {
+        None => Ok(()),
+        Some(first) if failed == 0 => Err(first),
+        Some(_) => Err(failure(format!(
+            "refresh failed for {failed} account{}",
+            if failed == 1 { "" } else { "s" }
+        ))),
+    }
 }
 
 #[derive(Default)]
