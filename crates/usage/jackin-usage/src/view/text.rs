@@ -3,6 +3,7 @@
 
 use jackin_core::Timestamp;
 use time::{Date, OffsetDateTime, UtcOffset};
+use unicode_width::UnicodeWidthStr;
 
 use super::model::{Currency, Reading, Unit, UsedFraction};
 use super::render::{Line, Span, Tone};
@@ -339,13 +340,29 @@ pub fn status_line_note(at: Timestamp, now: Timestamp) -> String {
 }
 
 pub fn truncate(text: &str, columns: usize) -> String {
-    if text.chars().count() <= columns {
+    if width(text) <= columns {
         return text.to_owned();
     }
     let keep = columns.max(1) - 1;
-    let mut cut: String = text.chars().take(keep).collect();
+    let mut end = 0;
+    for (index, ch) in text.char_indices() {
+        let next = index + ch.len_utf8();
+        if text.get(..next).is_none_or(|head| width(head) > keep) {
+            break;
+        }
+        end = next;
+    }
+    let mut cut = text.get(..end).unwrap_or_default().to_owned();
     cut.push('…');
     cut
+}
+
+pub fn width(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
+}
+
+pub fn pad(text: &str, columns: usize) -> String {
+    format!("{text}{}", " ".repeat(columns.saturating_sub(width(text))))
 }
 
 pub fn split_parts(text: &str, tone: Tone) -> Vec<(String, Tone)> {
@@ -365,7 +382,7 @@ struct Flow {
 
 impl Flow {
     fn push(&mut self, text: String, tone: Tone) {
-        self.used += text.chars().count();
+        self.used += width(&text);
         match self.spans.last_mut() {
             Some(last) if self.started && last.tone == tone => last.text.push_str(&text),
             _ => self.spans.push(Span::new(text, tone)),
@@ -389,14 +406,13 @@ impl Flow {
     }
 
     fn put(&mut self, text: &str, tone: Tone) {
-        if self.used + text.chars().count() <= self.columns {
+        if self.used + width(text) <= self.columns {
             self.push(text.to_owned(), tone);
             return;
         }
         if let Some((head, tail)) = text.split_once(": ") {
             let head = format!("{head}:");
-            if self.used + head.chars().count() <= self.columns
-                && self.indent + tail.chars().count() <= self.columns
+            if self.used + width(&head) <= self.columns && self.indent + width(tail) <= self.columns
             {
                 self.push(head, tone);
                 self.turn();
@@ -408,7 +424,7 @@ impl Flow {
         let mut empty = true;
         for word in text.split_whitespace() {
             let gap = usize::from(!empty);
-            let reach = self.used + chunk.chars().count() + gap + word.chars().count();
+            let reach = self.used + width(&chunk) + gap + width(word);
             if reach <= self.columns {
                 chunk.push_str(&" ".repeat(gap));
                 chunk.push_str(word);
@@ -419,9 +435,7 @@ impl Flow {
                 self.push(std::mem::take(&mut chunk), tone);
                 self.turn();
             }
-            let room = self
-                .columns
-                .saturating_sub(self.used + chunk.chars().count());
+            let room = self.columns.saturating_sub(self.used + width(&chunk));
             chunk.push_str(&truncate(word, room));
             empty = false;
         }
@@ -447,14 +461,14 @@ pub fn wrap(
         started: false,
     };
     for (position, (text, tone)) in parts.iter().enumerate() {
-        let width = text.chars().count();
+        let size = width(text);
         if position == 0 {
             flow.put(text, *tone);
-        } else if flow.used + SEPARATOR.chars().count() + width <= columns {
+        } else if flow.used + width(SEPARATOR) + size <= columns {
             flow.push(format!("{SEPARATOR}{text}"), *tone);
         } else {
             flow.turn();
-            flow.dedent(width);
+            flow.dedent(size);
             flow.put(text, *tone);
         }
     }

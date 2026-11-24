@@ -220,7 +220,7 @@ fn exact_quantity(used: f64, limit: f64, unit: Unit) -> (String, String) {
 fn fitted((first, second): (impl AsRef<str>, impl AsRef<str>), ctx: Ctx) -> Vec<Line> {
     let (first, second) = (first.as_ref(), second.as_ref());
     let whole = format!("{first} {second}");
-    if SUB_INDENT + whole.chars().count() <= ctx.columns() {
+    if SUB_INDENT + text::width(&whole) <= ctx.columns() {
         sub(&[whole], SUB_INDENT, ctx)
     } else {
         let mut lines = sub(&[first.to_owned()], SUB_INDENT, ctx);
@@ -247,7 +247,7 @@ fn reset_lines(credits: &[ResetCredit], view: &UsageView, ctx: Ctx) -> Vec<Line>
         .unwrap_or(1);
     let kind_width = credits
         .iter()
-        .map(|credit| credit.kind.chars().count())
+        .map(|credit| text::width(&credit.kind))
         .max()
         .unwrap_or(0)
         .max(MIN_KIND_WIDTH);
@@ -269,11 +269,11 @@ fn reset_lines(credits: &[ResetCredit], view: &UsageView, ctx: Ctx) -> Vec<Line>
                 text::full_date(credit.expires_at, view.now, view.utc_offset_secs, true)
             );
             let aligned = format!(
-                "{:<index_width$}  {:<kind_width$} {status:<STATUS_WIDTH$} {expiry}",
+                "{:<index_width$}  {} {status:<STATUS_WIDTH$} {expiry}",
                 credit.number(),
-                credit.kind,
+                text::pad(&credit.kind, kind_width),
             );
-            if SUB_INDENT + aligned.chars().count() <= ctx.columns() {
+            if SUB_INDENT + text::width(&aligned) <= ctx.columns() {
                 sub(&[aligned], SUB_INDENT, ctx)
             } else {
                 let head = format!("{} {} {status}", credit.number(), credit.kind);
