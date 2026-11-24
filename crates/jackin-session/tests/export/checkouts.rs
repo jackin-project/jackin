@@ -3,14 +3,16 @@
 
 use std::error::Error;
 use std::path::Path;
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, UNIX_EPOCH};
 
-use jackin_core::{SandboxPath, Sha256, TerminalText};
+use jackin_core::{Sha256, TerminalText};
 use jackin_openshell::GatewayError;
 use jackin_session::{
     ChangeHunk, ChangeLine, ChangeSet, ChangeStatus, ChangedFile, ChangesError, Unread,
 };
-use jackin_testkit::{Fault, Rig, SandboxHandle, TestResult, guard};
+use jackin_testkit::{Rig, SandboxHandle, TestResult, guard};
+
+use super::tap::Tap;
 use tokio_util::sync::CancellationToken;
 
 const LIMIT: usize = 256 * 1024;
@@ -402,25 +404,30 @@ async fn a_worktree_directory_with_a_newline_in_its_name_is_still_listed() -> Te
 }
 
 #[tokio::test]
-async fn a_stalled_read_ends_the_listing_within_the_one_deadline() -> TestResult {
+async fn calls_that_each_fit_the_limit_but_together_exceed_it_end_in_a_timeout() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
         let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
         write(&agent, "loose.txt", b"x\n")?;
-        let total = Duration::from_secs(2);
         let mut limits = jackin_testkit::default_limits();
-        limits.upload = total;
-        let session = rig.session_with(limits);
-        rig.world.gateway.inject(Fault::StallProgram {
-            program: SandboxPath::from_static("/bin/sh"),
-        });
+        limits.upload = Duration::from_secs(2);
+        let tap = Tap::new(&rig);
+        let session = tap.session(&rig, limits);
+        let name = handle.name();
 
-        let started = Instant::now();
-        let outcome = session
-            .changes(&handle.name(), &CancellationToken::new())
-            .await;
+        assert_eq!(
+            session
+                .changes(&name, &CancellationToken::new())
+                .await?
+                .files
+                .len(),
+            1
+        );
+
+        tap.slow_programs(Duration::from_millis(400));
+        let outcome = session.changes(&name, &CancellationToken::new()).await;
 
         assert!(
             matches!(
@@ -429,7 +436,6 @@ async fn a_stalled_read_ends_the_listing_within_the_one_deadline() -> TestResult
             ),
             "{outcome:?}"
         );
-        assert!(started.elapsed() < total * 3, "{:?}", started.elapsed());
         Ok(())
     })
     .await
