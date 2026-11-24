@@ -9,8 +9,8 @@ use jackin_console::screens::Go;
 use jackin_console::usage_connections::UsageBoard;
 use jackin_core::Clock;
 use jackin_testkit::{
-    ConsoleRig, ProfileAccount, Rig, SeedRow, TestResult, assert_golden, pin_usage_view_clock,
-    seed_usage_rows, seed_usage_view,
+    ConsoleRig, ProfileAccount, Rig, SeedRow, TestResult, USAGE_VIEW_NOW, assert_golden,
+    pin_usage_view_clock, seed_usage_rows, seed_usage_view,
 };
 use jackin_usage::ProviderEndpoints;
 use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH, FailureKind};
@@ -530,6 +530,80 @@ async fn priority_rows_follow_the_attention_notices() -> TestResult {
         &dump(&priority),
         &ids(&accounts),
     )
+}
+
+#[tokio::test]
+async fn a_duplicate_only_registry_does_not_claim_all_clear() -> TestResult {
+    let (lab, cancel) = quiet_lab().await?;
+    pin_usage_view_clock(&lab.rig.world.clock);
+    cancel.cancel();
+    let path = lab
+        .console
+        .config()
+        .path()
+        .as_path()
+        .parent()
+        .ok_or("config dir")?
+        .join(DATABASE_PATH);
+    let snapshot = serde_json::json!({
+        "plan": "Google AI Ultra",
+        "resources": {
+            "3p-weekly": {
+                "kind": "quota",
+                "label": "Claude weekly",
+                "remaining_fraction": 0.9,
+                "resets_at": USAGE_VIEW_NOW + 86_400,
+                "unit": "percent",
+                "window_seconds": 604_800
+            }
+        }
+    });
+    let seeds = ["subject-shared", "SUBJECT-Shared"]
+        .into_iter()
+        .map(|identity| SeedRow {
+            provider: jackin_usage::accounts::UsageProvider::Antigravity,
+            label: "work@example.com",
+            identity: Some(identity),
+            fetched_at: USAGE_VIEW_NOW,
+            snapshot: snapshot.clone(),
+            failure: None,
+        })
+        .collect();
+    seed_usage_rows(&path, seeds)?;
+    let priority = board(&lab, true)?;
+    assert!(
+        priority
+            .rows
+            .iter()
+            .any(|row| row.title.contains("work@example.com")),
+        "{}",
+        dump(&priority)
+    );
+    assert!(
+        priority.notices.iter().any(|n| n.starts_with("DUPLICATE")),
+        "{}",
+        dump(&priority)
+    );
+    assert!(
+        !priority.summary.contains("All clear") && !priority.summary.contains("Waiting"),
+        "{}",
+        dump(&priority)
+    );
+    assert_eq!(
+        priority.summary,
+        "Needs attention (1)",
+        "{}",
+        dump(&priority)
+    );
+    assert!(
+        priority
+            .notices
+            .iter()
+            .all(|notice| !notice.contains("All clear")),
+        "{}",
+        dump(&priority)
+    );
+    Ok(())
 }
 
 #[tokio::test]

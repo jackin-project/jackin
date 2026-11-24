@@ -590,7 +590,11 @@ pub(super) fn load(
         }
     }
     let attention = attention(&view, &accounts);
-    if priority && data.shows_clear_row && data.summary != Summary::AllClear {
+    if priority
+        && data.shows_clear_row
+        && data.summary != Summary::AllClear
+        && display::attention_summary(&view).is_none()
+    {
         notices.push(display::ALL_CLEAR.into());
     }
     let settings = BoardSettings {
@@ -628,12 +632,18 @@ pub(super) fn load(
     Ok(UsageBoard {
         providers,
         priority,
-        summary: if priority && rows.is_empty() && data.summary == Summary::Listed {
+        summary: if !priority {
+            if rows.is_empty() {
+                data.summary.to_string()
+            } else {
+                display::board_summary(&view)
+            }
+        } else if let Some(summary) = display::attention_summary(&view) {
+            summary
+        } else if rows.is_empty() && data.summary == Summary::Listed {
             Summary::AllClear.to_string()
-        } else if priority || rows.is_empty() {
-            data.summary.to_string()
         } else {
-            display::board_summary(&view)
+            data.summary.to_string()
         },
         notices,
         attention,
