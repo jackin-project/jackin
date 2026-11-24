@@ -4,7 +4,7 @@
 use jackin_core::Timestamp;
 use jackin_testkit::assert_golden;
 use jackin_usage::view::render::{self, Ctx};
-use jackin_usage::view::{Feed, Reading, Report, UsageView, ViewFilter, report};
+use jackin_usage::view::{Feed, Note, Reading, Report, UsageView, ViewFilter, report};
 
 use super::{NOW, Result, Seeded};
 
@@ -107,4 +107,46 @@ fn the_sign_in_view_matches_the_goldens_at_60_and_80_columns() -> Result<()> {
         &text(&view, 60, Report::Details),
         &seeded.ids(),
     )
+}
+
+fn with_long_model_names(seeded: &Seeded, names: &[&str]) -> Result<UsageView> {
+    let mut view = seeded.view(&ViewFilter::default(), NOW)?;
+    for group in &mut view.groups {
+        for account in &mut group.accounts {
+            for note in &mut account.notes {
+                if let Note::Tokens {
+                    last30: Some(activity),
+                    ..
+                } = note
+                {
+                    activity.models = names
+                        .iter()
+                        .zip(1u64..)
+                        .map(|(name, turns)| ((*name).to_owned(), turns * 1_111))
+                        .collect();
+                }
+            }
+        }
+    }
+    Ok(view)
+}
+
+#[test]
+fn long_model_names_wrap_every_continuation_line_inside_the_width() -> Result<()> {
+    let seeded = Seeded::new()?;
+    let sets: [&[&str]; 3] = [
+        &["gpt-6.1-sol-extended-reasoning", "gpt-5.6-sol", "o"],
+        &[
+            "anthropic/claude-opus-5-5-thinking-high-effort-2026-11-25",
+            "gpt-5.6-sol-2026-11-25",
+        ],
+        &["gpt-6.1-sol", "gpt-5.6-sol", "gpt-6-luna", "gpt-6.1-terra"],
+    ];
+    for names in sets {
+        let view = with_long_model_names(&seeded, names)?;
+        for width in WIDTHS {
+            assert_fits(&text(&view, width, Report::Details), width);
+        }
+    }
+    Ok(())
 }
