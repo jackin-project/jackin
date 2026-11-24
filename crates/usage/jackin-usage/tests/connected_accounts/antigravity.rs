@@ -297,7 +297,11 @@ fn oauth(email: &str) -> jackin_usage::accounts::CandidateIdentity {
     jackin_usage::accounts::CandidateIdentity::OAuth(Some(email.to_owned()))
 }
 
-async fn statusline_account(service: &OwnedLogin, email: &str, now: i64) -> Result<Uuid> {
+pub(super) async fn statusline_account(
+    service: &OwnedLogin,
+    email: &str,
+    now: i64,
+) -> Result<Uuid> {
     let cancel = CancellationToken::new();
     let pending = begin(service, email, None, &cancel).await?;
     assert!(update(service, email, Some("ultra"), now)?);
@@ -403,5 +407,40 @@ async fn status_line_enrollment_for_a_direct_google_account_is_a_duplicate() -> 
         Err(LoginError::Store(ConnectionError::DuplicateDirect))
     ));
     assert_eq!(registry.list()?.len(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn direct_sign_in_cannot_convert_a_status_line_row_to_another_google_account() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let service = OwnedLogin::new(path.clone(), ProviderEndpoints::real(), clock);
+    let id = statusline_account(&service, "me@example.com", now).await?;
+    let vault = Arc::new(super::Vault::default());
+    let mut registry = super::db(&path, &vault)?;
+    let version = registry.version(id)?;
+    let error = registry.replace(
+        id,
+        version,
+        &oauth("other@example.com"),
+        &super::bytes("grant"),
+    );
+    assert!(
+        matches!(error, Err(ConnectionError::DifferentIdentity)),
+        "{error:?}"
+    );
+    assert!(registry.is_statusline(id)?);
+    let kept = registry.list()?.remove(0);
+    assert_eq!(kept.label, "me@example.com");
+    let version = registry.version(id)?;
+    registry.replace(
+        id,
+        version,
+        &oauth("ME@example.com"),
+        &super::bytes("grant"),
+    )?;
+    assert!(!registry.is_statusline(id)?);
     Ok(())
 }

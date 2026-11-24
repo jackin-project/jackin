@@ -918,6 +918,49 @@ async fn sign_in_keeps_the_grant_when_google_denies_the_quota() -> Result<()> {
 }
 
 #[tokio::test]
+async fn sign_in_converts_a_status_line_row_even_when_the_first_quota_read_is_denied() -> Result<()>
+{
+    let turn = gate().lock().await;
+    let _pin = std::ptr::from_ref(&turn);
+    let fixture = Fixture::open().await?;
+    let now = fixture.clock.now().0;
+    let id = super::antigravity::statusline_account(&fixture.service, EMAIL, now).await?;
+    assert!(db(&fixture.path, &fixture.vault)?.is_statusline(id)?);
+    fixture.prepare_login();
+    let denied = r#"{"error":{"code":403,"status":"PERMISSION_DENIED","details":[{"reason":"SERVICE_DISABLED"}]}}"#;
+    fixture.replace(
+        Method::Post,
+        "/daily/v1internal:retrieveUserQuotaSummary",
+        Route::json(403, denied),
+    );
+    fixture.serve(
+        Method::Post,
+        "/production/v1internal:retrieveUserQuotaSummary",
+        Route::json(403, denied),
+    );
+    let (reconnect, url, paste) = browser_prompt(&fixture.service, Some(id)).await?;
+    *challenge_slot()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = parameter(&url, "code_challenge")?;
+    let state = parameter(&url, "state")?;
+    paste
+        .send(Secret::new(format!("again#{state}")))
+        .map_err(|_| "paste closed")?;
+    let error = reconnect.await?.expect_err("quota denied");
+    let message = error.to_string();
+    assert_eq!(message, "HTTP 403 SERVICE_DISABLED");
+    assert_clean(&message);
+    let registry = db(&fixture.path, &fixture.vault)?;
+    assert!(!registry.is_statusline(id)?);
+    let saved: Value = serde_json::from_slice(registry.credential(id)?.1.expose())?;
+    assert_eq!(saved["access"], "access-1");
+    let failure = registry.failure(id)?.ok_or("missing failure")?;
+    assert_eq!(failure.kind, FailureKind::Limitation);
+    assert_eq!(failure.message, "HTTP 403 SERVICE_DISABLED");
+    Ok(())
+}
+
+#[tokio::test]
 async fn an_unsafe_first_quota_reason_uses_the_provider_status() -> Result<()> {
     let turn = gate().lock().await;
     let _pin = std::ptr::from_ref(&turn);
