@@ -275,10 +275,7 @@ pub fn summary(view: &UsageView, account: &AccountQuota) -> Vec<String> {
             format!("! {message}")
         });
         if *reconnect {
-            lines.push(format!(
-                "jackin account usage reconnect {}",
-                account.id.simple()
-            ));
+            lines.push(text::reconnect_command(account.id, text::IdForm::Simple));
         }
     }
     if let (view::Feed::StatusLine, Reading::Stale { at }) = (account.feed, &account.reading) {

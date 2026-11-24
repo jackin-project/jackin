@@ -4,7 +4,7 @@
 use jackin_testkit::{SeedRow, seed_usage_rows};
 use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH, FailureKind, UsageProvider};
 use jackin_usage::view::render::{self, Ctx};
-use jackin_usage::view::{Report, ViewFilter, build, report};
+use jackin_usage::view::{Report, ViewFilter, build, report, text};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -48,6 +48,19 @@ fn row(provider: UsageProvider, snapshot: Value) -> SeedRow<'static> {
 
 fn has_line(text: &str, wanted: &str) -> bool {
     text.lines().any(|line| line.trim() == wanted)
+}
+
+#[test]
+fn the_reconnect_command_names_the_id_in_the_form_asked_for() {
+    let id = Uuid::from_u128(0xa000_0014_0000_4000_8000_0000_0000_0014);
+    assert_eq!(
+        text::reconnect_command(id, text::IdForm::Hyphenated),
+        "jackin account usage reconnect a0000014-0000-4000-8000-000000000014"
+    );
+    assert_eq!(
+        text::reconnect_command(id, text::IdForm::Simple),
+        "jackin account usage reconnect a0000014000040008000000000000014"
+    );
 }
 
 #[test]

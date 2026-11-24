@@ -325,8 +325,18 @@ fn marked(word: &str, tone: Tone, age: Option<String>, narrow: bool) -> Vec<Span
     }
 }
 
-pub fn reconnect_command(id: uuid::Uuid) -> String {
-    format!("run: jackin account usage reconnect {}", id.hyphenated())
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdForm {
+    Hyphenated,
+    Simple,
+}
+
+pub fn reconnect_command(id: uuid::Uuid, form: IdForm) -> String {
+    let id = match form {
+        IdForm::Hyphenated => id.hyphenated().to_string(),
+        IdForm::Simple => id.simple().to_string(),
+    };
+    format!("jackin account usage reconnect {id}")
 }
 
 pub const STATUS_LINE_FEED: &str = "updated by the Antigravity status-line hook";

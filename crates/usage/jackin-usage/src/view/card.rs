@@ -361,7 +361,13 @@ fn failure_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line
                 Tone::Crit,
             ));
             if *reconnect {
-                parts.push((text::reconnect_command(account.id), Tone::Plain));
+                parts.push((
+                    format!(
+                        "run: {}",
+                        text::reconnect_command(account.id, text::IdForm::Hyphenated)
+                    ),
+                    Tone::Plain,
+                ));
             } else {
                 let retry = if *at <= view.now {
                     format!(

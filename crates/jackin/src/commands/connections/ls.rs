@@ -291,9 +291,9 @@ fn footnotes(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
         for quota in &signing_in {
             lines.extend(flagged(
                 &format!(
-                    "! {} needs sign-in: jackin account usage reconnect {}",
+                    "! {} needs sign-in: {}",
                     quota.label,
-                    quota.id.hyphenated()
+                    text::reconnect_command(quota.id, text::IdForm::Hyphenated)
                 ),
                 Tone::Warn,
                 ctx,
