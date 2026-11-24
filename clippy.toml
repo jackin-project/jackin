@@ -39,3 +39,11 @@ disallowed-methods = [
     { path = "ratatui::Frame::render_widget", reason = "C1: the baseline draws, jackin-tui draws nothing" },
     { path = "ratatui::Frame::render_stateful_widget", reason = "C1: the baseline draws, jackin-tui draws nothing" },
 ]
+disallowed-fields = [
+    { path = "ratatui_core::buffer::Buffer::content", reason = "C1: the baseline draws, jackin-tui draws nothing" },
+    { path = "ratatui_core::buffer::Cell::fg", reason = "C1: the baseline draws, jackin-tui draws nothing" },
+    { path = "ratatui_core::buffer::Cell::bg", reason = "C1: the baseline draws, jackin-tui draws nothing" },
+    { path = "ratatui_core::buffer::Cell::modifier", reason = "C1: the baseline draws, jackin-tui draws nothing" },
+    { path = "ratatui_core::buffer::Cell::diff_option", reason = "C1: the baseline draws, jackin-tui draws nothing" },
+    { path = "ratatui_core::buffer::Cell::skip", reason = "C1: the baseline draws, jackin-tui draws nothing" },
+]
