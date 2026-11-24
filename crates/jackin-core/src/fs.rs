@@ -145,10 +145,10 @@ fn is_symlink(path: &Path) -> bool {
 
 fn create_private_all(dir: &Path) -> io::Result<Opened<()>> {
     if let Err(source) = DirBuilder::new().recursive(true).mode(0o700).create(dir) {
-        return if is_symlink(dir) {
-            Ok(Opened::Symlink)
-        } else {
-            Err(source)
+        return match fs::symlink_metadata(dir) {
+            Ok(meta) if meta.file_type().is_symlink() => Ok(Opened::Symlink),
+            Ok(meta) if !meta.is_dir() => Ok(Opened::Unsafe(EntryProblem::NotADirectory)),
+            _ => Err(source),
         };
     }
     let leaf = match open(
@@ -228,9 +228,13 @@ fn lock_file(path: &Path) -> io::Result<Opened<Result<File, ()>>> {
         Mode::from_raw_mode(0o600),
     ) {
         Ok(file) => File::from(file),
-        Err(_) if is_symlink(path) => return Ok(Opened::Symlink),
-        Err(_) if path.is_dir() => return Ok(Opened::Unsafe(EntryProblem::NotARegularFile)),
-        Err(failure) => return Err(failure.into()),
+        Err(failure) => {
+            return match fs::symlink_metadata(path) {
+                Ok(meta) if meta.file_type().is_symlink() => Ok(Opened::Symlink),
+                Ok(meta) if !meta.is_file() => Ok(Opened::Unsafe(EntryProblem::NotARegularFile)),
+                _ => Err(failure.into()),
+            };
+        }
     };
     let meta = file.metadata()?;
     if !meta.is_file() {

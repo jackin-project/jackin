@@ -1392,3 +1392,23 @@ async fn a_scripted_program_records_a_file_stdin_with_its_path_and_offset() -> T
     assert_eq!(runner.seen()[0].stdin, SeenStdin::File { path, offset: 12 });
     Ok(())
 }
+
+#[tokio::test]
+async fn memfs_refuses_to_list_a_name_that_is_not_utf8() -> TestResult {
+    use std::ffi::OsStr;
+    use std::os::unix::ffi::OsStrExt;
+
+    let fs = MemFs::new();
+    let root = HostPath::parse(Path::new("/mem"))?;
+    fs.create_dir_all(&root).await?;
+    let bad = HostPath::parse(&Path::new("/mem").join(OsStr::from_bytes(b"bad\xff")))?;
+    fs.write_new(&bad, b"x", FileMode(0o600)).await?;
+    assert!(matches!(
+        fs.list(&root).await,
+        Err(FsError::Io {
+            kind: ErrorKind::InvalidData,
+            ..
+        })
+    ));
+    Ok(())
+}

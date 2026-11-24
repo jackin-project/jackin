@@ -238,12 +238,23 @@ impl FileSystem for MemFs {
         if !state.is_dir(dir.as_path()) {
             return Err(io_error(dir, ErrorKind::NotFound, "no such directory"));
         }
+        if state.files.keys().chain(state.dirs.keys()).any(|path| {
+            path.parent() == Some(dir.as_path())
+                && path.file_name().is_some_and(|name| name.to_str().is_none())
+        }) {
+            return Err(io_error(
+                dir,
+                ErrorKind::InvalidData,
+                "an entry name is not valid UTF-8",
+            ));
+        }
         let child = |path: &PathBuf, kind: FileKind| {
             (path.parent() == Some(dir.as_path())).then(|| DirEntry {
                 name: path
                     .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default()
+                    .to_owned(),
                 kind,
             })
         };

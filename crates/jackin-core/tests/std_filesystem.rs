@@ -597,3 +597,30 @@ async fn a_lock_on_a_file_owned_by_another_user_is_refused_and_leaves_it_alone()
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn a_lock_on_a_socket_and_a_private_directory_leaf_that_is_a_file_are_refused_by_kind()
+-> TestResult {
+    let dir = tempfile::tempdir()?;
+    let fs = StdFileSystem::default();
+    let socket = at(&dir, "s.lock")?;
+    let _listener = std::os::unix::net::UnixListener::bind(socket.as_path())?;
+    assert!(matches!(
+        fs.lock(&socket).await,
+        Err(FsError::UnsafeEntry {
+            problem: EntryProblem::NotARegularFile,
+            ..
+        })
+    ));
+
+    let file = at(&dir, "plain")?;
+    fs.write_new(&file, b"x", FileMode(0o600)).await?;
+    assert!(matches!(
+        fs.create_private_dir_all(&file).await,
+        Err(FsError::UnsafeEntry {
+            problem: EntryProblem::NotADirectory,
+            ..
+        })
+    ));
+    Ok(())
+}
