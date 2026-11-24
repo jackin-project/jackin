@@ -167,13 +167,13 @@ fn cells(
 }
 
 fn pad(text: &str, width: usize) -> String {
-    format!("{text:<width$}")
+    text::pad(text, width)
 }
 
 fn widest(cells: &[Cells], column: fn(&Cells) -> &str, header: &str) -> usize {
     cells
         .iter()
-        .map(|c| column(c).chars().count())
+        .map(|c| text::width(column(c)))
         .max()
         .unwrap_or(0)
         .max(header.len())

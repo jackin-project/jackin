@@ -42,6 +42,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "time"] }
 tokio-util = { workspace = true }
 toml = { workspace = true }
+unicode-width = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 apple-native-keyring-store = { workspace = true }

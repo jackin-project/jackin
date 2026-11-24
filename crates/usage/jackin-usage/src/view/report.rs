@@ -117,7 +117,7 @@ pub fn stale_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
     ];
     text::wrap(
         vec![Span::new(STALE_TAG, Tone::Warn), Span::plain("  ")],
-        STALE_TAG.len() + 2,
+        text::width(STALE_TAG) + 2,
         &parts,
         ctx.columns(),
     )
@@ -140,7 +140,7 @@ pub fn attention_lines(view: &UsageView, ctx: &Ctx) -> Vec<Line> {
         lines.extend(text::wrap(
             vec![
                 Span::plain("  "),
-                Span::new(format!("{:<TAG_WIDTH$}", entry.tag), entry.tone),
+                Span::new(text::pad(entry.tag, TAG_WIDTH), entry.tone),
                 Span::plain("  "),
             ],
             DETAIL_INDENT,

@@ -3,8 +3,11 @@
 
 use jackin_core::Timestamp;
 use jackin_testkit::assert_golden;
-use jackin_usage::view::render::{self, Ctx};
-use jackin_usage::view::{Feed, Note, Reading, Report, UsageView, ViewFilter, report};
+use jackin_usage::view::render::{self, Ctx, Span, Tone};
+use jackin_usage::view::{
+    Feed, Note, Reading, Report, UsageView, ViewFilter, report, text as view_text,
+};
+use unicode_width::UnicodeWidthStr;
 
 use super::{NOW, Result, Seeded};
 
@@ -18,8 +21,8 @@ fn text(view: &UsageView, width: u16, kind: Report) -> String {
 fn assert_fits(text: &str, width: u16) {
     let wide: Vec<String> = text
         .lines()
-        .filter(|line| line.chars().count() > usize::from(width))
-        .map(|line| format!("{:>3}  {line}", line.chars().count()))
+        .filter(|line| line.width() > usize::from(width))
+        .map(|line| format!("{:>3}  {line}", line.width()))
         .collect();
     assert!(
         wide.is_empty(),
@@ -149,4 +152,65 @@ fn long_model_names_wrap_every_continuation_line_inside_the_width() -> Result<()
         }
     }
     Ok(())
+}
+
+const CJK_LABEL: &str = "日本語の長いアカウント名前🙂テスト用";
+
+fn relabelled(seeded: &Seeded) -> Result<UsageView> {
+    let mut view = needing_sign_in(seeded)?;
+    for group in &mut view.groups {
+        for account in &mut group.accounts {
+            account.label = CJK_LABEL.to_owned();
+        }
+    }
+    Ok(view)
+}
+
+#[test]
+fn cjk_and_emoji_labels_keep_every_line_inside_the_width() -> Result<()> {
+    let seeded = Seeded::new()?;
+    let view = relabelled(&seeded)?;
+    for width in WIDTHS {
+        for kind in REPORTS {
+            assert_fits(&text(&view, width, kind), width);
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn truncate_cuts_by_display_width() {
+    let cut = view_text::truncate("日本語日本語", 7);
+    assert_eq!(cut, "日本語…");
+    assert!(cut.width() <= 7);
+    let cut = view_text::truncate("ab🙂🙂🙂", 4);
+    assert!(cut.width() <= 4, "{cut}");
+    assert_eq!(view_text::truncate("日本", 4), "日本");
+}
+
+#[test]
+fn zero_width_and_combining_characters_take_no_columns() {
+    let accented = "e\u{301}e\u{301}e\u{301}";
+    assert_eq!(view_text::truncate(accented, 3), accented);
+    assert_eq!(Span::plain("a\u{200b}b\u{301}").width(), 2);
+    let cut = view_text::truncate("abcde\u{301}f", 5);
+    assert_eq!(cut, "abcd…");
+}
+
+#[test]
+fn wrap_measures_display_width_for_wide_words() {
+    let parts = [("日本語日本語日本語".to_owned(), Tone::Plain)];
+    let lines = view_text::wrap(vec![Span::plain("  ")], 2, &parts, 12);
+    for line in &lines {
+        let shown = render::plain(std::slice::from_ref(line));
+        assert!(shown.width() <= 12, "{shown}");
+    }
+}
+
+#[test]
+fn spans_pad_to_the_same_column_whatever_their_script() {
+    let padded = |text: &str| view_text::pad(text, 10).width();
+    assert_eq!(padded("ascii"), 10);
+    assert_eq!(padded("日本語"), 10);
+    assert_eq!(padded("🙂ab"), 10);
 }
