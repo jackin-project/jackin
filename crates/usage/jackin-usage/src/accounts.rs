@@ -114,6 +114,14 @@ pub enum ConnectionError {
         "this sign-in or key is already connected. To add another account, switch accounts on the provider page or use a key for a different account"
     )]
     Duplicate,
+    #[error(
+        "this Google account is already connected through the Antigravity status line; replace that connection with direct sign-in instead of adding another"
+    )]
+    DuplicateStatusline,
+    #[error(
+        "this Google account is already connected with direct sign-in; remove the status-line connection or keep using the existing account"
+    )]
+    DuplicateDirect,
     #[error("the sign-in belongs to a different account; use Add Account")]
     DifferentIdentity,
     #[error("the usage account changed or was removed; reopen it and retry")]
@@ -343,6 +351,7 @@ impl AccountRegistry {
         let id = Uuid::new_v4();
         self.install_cancellable(secret, cancel, |tx, slot| {
             reject_duplicate(tx, provider, kind, identity, id)?;
+            reject_cross_kind(tx, provider, kind, identity, id)?;
             tx.execute(
                 "INSERT INTO accounts(id, provider, label, kind, identity, slot, position)
                 SELECT ?1,?2,?3,?4,?5,?6,COALESCE(MAX(position),-1)+1 FROM accounts",
@@ -436,6 +445,33 @@ impl AccountRegistry {
                 .ok_or(ConnectionError::Changed)?;
             let provider = provider.parse()?;
             let (kind, candidate) = identity.parts(provider)?;
+            if provider == UsageProvider::Antigravity
+                && old_kind == "statusline"
+                && kind == "oauth"
+            {
+                reject_duplicate(tx, provider, kind, candidate, id)?;
+                reject_cross_kind(tx, provider, kind, candidate, id)?;
+                if let Some(known) = known.as_deref() {
+                    tx.execute(
+                        "DELETE FROM antigravity_enrollments WHERE email=?1",
+                        [known],
+                    )?;
+                }
+                changed(tx.execute(
+                    "UPDATE accounts SET kind='oauth', identity=?1, slot=?2, fetched_at=NULL, snapshot=NULL
+                     WHERE id=?3 AND slot=?4 AND kind='statusline'",
+                    params![
+                        candidate,
+                        slot.to_string(),
+                        id.to_string(),
+                        expected.0.to_string()
+                    ],
+                )?)?;
+                if let Some((at, payload)) = snapshot {
+                    write_snapshot(tx, id, CredentialVersion(slot), at, payload)?;
+                }
+                return Ok(());
+            }
             if kind != old_kind {
                 return Err(ConnectionError::CredentialKind);
             }
@@ -721,6 +757,35 @@ fn reject_duplicate(
         return Err(ConnectionError::Duplicate);
     }
     Ok(())
+}
+
+fn reject_cross_kind(
+    db: &Connection,
+    provider: UsageProvider,
+    kind: &str,
+    identity: Option<&str>,
+    except: Uuid,
+) -> Result<(), ConnectionError> {
+    if provider != UsageProvider::Antigravity {
+        return Ok(());
+    }
+    let Some(identity) = identity else {
+        return Ok(());
+    };
+    let other: Option<String> = db
+        .query_row(
+            "SELECT kind FROM accounts
+             WHERE provider='antigravity' AND kind<>?1 AND lower(identity)=lower(?2) AND id<>?3
+             ORDER BY position LIMIT 1",
+            params![kind, identity, except.to_string()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    match other.as_deref() {
+        None => Ok(()),
+        Some("statusline") => Err(ConnectionError::DuplicateStatusline),
+        Some(_) => Err(ConnectionError::DuplicateDirect),
+    }
 }
 
 fn nonempty(label: &str) -> Result<&str, ConnectionError> {

@@ -71,7 +71,9 @@ pub enum LoginError {
     OpenBrowser,
     #[error("the stored credential cannot be decoded; sign in again")]
     Encoding,
-    #[error("Antigravity has no direct sign-in, so this refresh did not read quota from Google")]
+    #[error(
+        "this Antigravity account is updated by the Antigravity status-line hook, so refresh cannot read it from Google; sign in directly to refresh it"
+    )]
     NotDirect,
     #[error("usage account operation was interrupted")]
     Worker,
@@ -403,7 +405,9 @@ impl OwnedLogin {
         let Some(id) = replace else { return Ok(None) };
         match self.read_credential(id).await {
             Ok(value) => Ok(Some(value)),
-            Err(LoginError::Store(ConnectionError::MissingCredential)) => Ok(None),
+            Err(LoginError::Store(
+                ConnectionError::MissingCredential | ConnectionError::CredentialKind,
+            )) => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -1023,6 +1027,9 @@ impl LoginError {
                     FailureKind::Authentication
                 }
                 ProviderError::Unsupported(_) => FailureKind::Limitation,
+                ProviderError::Denied { reason, .. } if reason == "SERVICE_DISABLED" => {
+                    FailureKind::Limitation
+                }
                 ProviderError::Network(_) => FailureKind::Network,
                 ProviderError::RateLimited {
                     retry_after_seconds,
