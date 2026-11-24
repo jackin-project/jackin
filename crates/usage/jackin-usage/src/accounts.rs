@@ -14,6 +14,7 @@ pub use refresh::{FailureKind, RefreshFailure};
 mod types;
 mod vault;
 
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -245,6 +246,16 @@ impl AccountRegistry {
             "SELECT {COLUMNS} FROM accounts ORDER BY position,id"
         ))?;
         Ok(stmt.query_map([], account)?.collect::<Result<_, _>>()?)
+    }
+
+    pub fn identities(&self) -> Result<BTreeMap<Uuid, String>, ConnectionError> {
+        let mut stmt = self.db.prepare(
+            "SELECT id,CASE WHEN provider='antigravity' THEN lower(identity) ELSE identity END
+             FROM accounts WHERE identity IS NOT NULL",
+        )?;
+        Ok(stmt
+            .query_map([], |row| Ok((uuid(row, 0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()?)
     }
 
     pub fn version(&self, id: Uuid) -> Result<CredentialVersion, ConnectionError> {

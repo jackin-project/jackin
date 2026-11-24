@@ -55,6 +55,7 @@ pub struct ViewFilter {
 
 struct Source {
     index: usize,
+    identity: Option<String>,
     account: ConnectedAccount,
     fetched_at: Option<i64>,
     payload: Option<Value>,
@@ -69,6 +70,7 @@ pub fn build(
     utc_offset_secs: i32,
 ) -> Result<UsageView, ConnectionError> {
     let settings = db.dashboard_settings()?;
+    let identities = db.identities()?;
     let mut sources = Vec::new();
     for (index, (account, fetched_at, payload)) in db.snapshots()?.into_iter().enumerate() {
         let wanted = filter
@@ -84,6 +86,7 @@ pub fn build(
             };
             sources.push(Source {
                 index,
+                identity: identities.get(&account.id).cloned(),
                 account,
                 fetched_at,
                 payload,
@@ -178,7 +181,9 @@ fn quota(
         duplicates: members
             .iter()
             .filter(|other| {
-                other.account.id != source.account.id && other.account.label == source.account.label
+                other.account.id != source.account.id
+                    && source.identity.is_some()
+                    && other.identity == source.identity
             })
             .map(|other| other.account.id)
             .collect(),
