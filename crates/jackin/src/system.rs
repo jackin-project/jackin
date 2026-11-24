@@ -34,6 +34,15 @@ const DOCKER_SOCKET: &str = "/var/run/docker.sock";
 const PANE_INBOX_BYTES: usize = 1024 * 1024;
 const UNIX_SCHEME: &str = "unix://";
 
+pub fn drive<F: Future>(future: F) -> io::Result<F::Output> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let output = runtime.block_on(future);
+    runtime.shutdown_background();
+    Ok(output)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Locations {
     pub config_path: HostPath,

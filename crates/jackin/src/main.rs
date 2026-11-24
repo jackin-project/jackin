@@ -22,11 +22,8 @@ fn fail(message: &str) -> ExitCode {
 }
 
 fn main() -> ExitCode {
-    match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime.block_on(start()),
+    match jackin::drive(start()) {
+        Ok(code) => code,
         Err(error) => fail(&error.to_string()),
     }
 }
