@@ -5,7 +5,22 @@ mod details;
 pub use details::details_account;
 
 use crate::accounts::ConnectedAccount;
+use jackin_usage_provider_core::Decimal;
 use serde_json::{Map, Value, json};
+
+pub(crate) fn is_quantity(value: &Value) -> bool {
+    value.is_number()
+        || value
+            .as_str()
+            .is_some_and(|text| Decimal::parse_text(text).is_ok())
+}
+
+fn float(value: &Value) -> Option<f64> {
+    match value {
+        Value::String(text) => Decimal::parse_text(text).ok().map(|exact| exact.to_f64()),
+        other => other.as_f64(),
+    }
+}
 
 pub fn snapshot_account(
     account: &ConnectedAccount,
@@ -76,7 +91,7 @@ fn public_resource(resource: &Value) -> Option<Value> {
         "remaining_ms",
         "usd",
     ] {
-        if resource[field].is_number() {
+        if is_quantity(&resource[field]) {
             reading[field] = resource[field].clone();
         }
     }
@@ -92,8 +107,8 @@ fn public_resource(resource: &Value) -> Option<Value> {
         }
     }
     if reading.get("utilization").is_none()
-        && let Some(limit) = reading["limit"].as_f64().filter(|n| *n > 0.0)
-        && let Some(used) = reading["used"].as_f64()
+        && let Some(limit) = float(&reading["limit"]).filter(|n| *n > 0.0)
+        && let Some(used) = float(&reading["used"])
     {
         reading["utilization"] = json!(used / limit);
     }

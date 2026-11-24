@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::snapshot_account;
+use super::{is_quantity, snapshot_account};
 use crate::accounts::{RefreshFailure, StoredSnapshot};
 use crate::dashboard::DashboardSettings;
 use jackin_core::{Timestamp, plain};
@@ -29,7 +29,7 @@ fn fields(data: &Value, names: &[&str], valid: fn(&Value) -> bool) -> Map<String
 }
 
 fn numbers(data: &Value) -> Value {
-    Value::Object(fields(data, COUNTERS, Value::is_number))
+    Value::Object(fields(data, COUNTERS, is_quantity))
 }
 
 fn range(data: &Value) -> Value {
@@ -251,7 +251,7 @@ fn enrich(usage: &mut Value, data: &Value) {
                 continue;
             };
             item.extend(fields(r, &["label", "model", "window"], Value::is_string));
-            item.extend(fields(r, &["amount"], Value::is_number));
+            item.extend(fields(r, &["amount"], is_quantity));
             item.extend(fields(
                 r,
                 &["monthly_charge_limit_enabled"],
@@ -267,7 +267,12 @@ fn day_lines(report: &str, source: &Value, out: &mut Vec<String>) {
             v.as_object()
                 .into_iter()
                 .flatten()
-                .map(|(key, n)| format!("{key} {n}"))
+                .map(|(key, n)| {
+                    format!(
+                        "{key} {}",
+                        n.as_str().map_or_else(|| n.to_string(), str::to_owned)
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(" · ")
         };
