@@ -114,11 +114,18 @@ const GATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const HOST_SHELL: &str = "/bin/sh";
 const MISSING_PROGRAM: i32 = 127;
 
+pub(crate) type Plant =
+    Arc<dyn Fn(&openshell_sdk::raw::proto::ExecSandboxRequest, &Path) + Send + Sync>;
+
 #[derive(Clone)]
 enum Hook {
     Plain,
     AbortAfter(usize),
     GateAfter(usize, Arc<Barrier>),
+    Truncate(usize),
+    Extra(Vec<u8>),
+    DropExit,
+    BeforeSpawn(Plant),
 }
 
 const SANDBOX_TOOLS: [&str; 2] = ["/usr/bin/stat", "/usr/bin/sha256sum"];
@@ -194,6 +201,22 @@ pub(crate) fn host_shell_gated(
     host_shell_with(root, Hook::GateAfter(after_chunks, rendezvous))
 }
 
+pub(crate) fn host_shell_truncating(root: PathBuf, keep_bytes: usize) -> ExecBackend {
+    host_shell_with(root, Hook::Truncate(keep_bytes))
+}
+
+pub(crate) fn host_shell_padding(root: PathBuf, extra: Vec<u8>) -> ExecBackend {
+    host_shell_with(root, Hook::Extra(extra))
+}
+
+pub(crate) fn host_shell_dropping_exit(root: PathBuf) -> ExecBackend {
+    host_shell_with(root, Hook::DropExit)
+}
+
+pub(crate) fn host_shell_planting(root: PathBuf, plant: Plant) -> ExecBackend {
+    host_shell_with(root, Hook::BeforeSpawn(plant))
+}
+
 fn host_shell_with(root: PathBuf, hook: Hook) -> ExecBackend {
     Arc::new(move |ctx: ExecCtx| {
         let root = root.clone();
@@ -224,6 +247,9 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
         return;
     }
     tokio::fs::create_dir_all(&workdir).await.unwrap();
+    if let Hook::BeforeSpawn(plant) = &hook {
+        plant(&start, &root);
+    }
     let mut command = Command::new("/bin/sh");
     command
         .args(&argv[1..])
@@ -247,14 +273,23 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
     let stderr = child.stderr.take().unwrap();
     let out_task = tokio::spawn(pump_output(stdout, events.clone(), false));
     let err_task = tokio::spawn(pump_output(stderr, events.clone(), true));
+    let drop_exit = matches!(hook, Hook::DropExit);
     let (abort_tx, abort_rx) = tokio::sync::oneshot::channel::<()>();
     let abort_events = events.clone();
     let feeder = tokio::spawn(async move {
         let mut chunks = 0_usize;
+        let mut sent = 0_usize;
         while let Some(payload) = inputs.recv().await {
-            let exec_sandbox_input::Payload::Stdin(bytes) = payload else {
+            let exec_sandbox_input::Payload::Stdin(mut bytes) = payload else {
                 continue;
             };
+            if let Hook::Truncate(keep) = &hook {
+                bytes.truncate(keep.saturating_sub(sent));
+                sent += bytes.len();
+                if bytes.is_empty() {
+                    break;
+                }
+            }
             chunks += 1;
             if let Hook::AbortAfter(limit) = hook
                 && chunks > limit
@@ -275,6 +310,9 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
                 drop(tokio::time::timeout(GATE_TIMEOUT, rendezvous.wait()).await);
             }
         }
+        if let (Hook::Extra(extra), Some(pipe)) = (&hook, stdin.as_mut()) {
+            drop(pipe.write_all(extra).await);
+        }
         drop(stdin);
     });
     tokio::select! {
@@ -282,7 +320,9 @@ async fn run_host(ctx: ExecCtx, root: PathBuf, hook: Hook) {
             drop(out_task.await);
             drop(err_task.await);
             let code = status.ok().and_then(|status| status.code()).unwrap_or(-1);
-            drop(events.send(Ok(exit_event(code))).await);
+            if !drop_exit {
+                drop(events.send(Ok(exit_event(code))).await);
+            }
         }
         () = events.closed() => {
             drop(child.kill().await);
