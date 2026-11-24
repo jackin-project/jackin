@@ -77,4 +77,4 @@ After jackin creates the sandbox, only the `network_policies` section can change
 
 `jackin role check` also refuses any policy that the gateway itself would refuse.
 
-The image build checks the paths against the final image, including `/tmp` and `/dev/null`, which OpenShell adds. It fails when a `read_write` path, or a directory above it, is a symbolic link there, because the sandbox would then be able to write where the link points. List the real directory instead. A path that does not exist in the image is allowed.
+The image build checks the paths against the final image, including `/tmp` and `/dev/null`, which OpenShell adds. It fails when a `read_write` path, or a directory above it, is a symbolic link there, because the sandbox would then be able to write where the link points. List the real directory instead. A path that does not exist in the image is allowed by the scan. OpenShell opens each path as the user that runs the sandbox. When that user starts the sandbox, OpenShell leaves out a path it cannot open. When a privileged process applies the rules under `hard_requirement`, a missing path stops the sandbox.

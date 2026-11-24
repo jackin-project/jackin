@@ -92,10 +92,11 @@ async fn the_image_request_follows_gateway_role_and_workspace_inputs() -> TestRe
 }
 
 fn policy_with(read_write: &[&str]) -> String {
-    let lines: String = read_write
+    let lines = read_write
         .iter()
         .map(|path| format!("    - '{}'\n", path.replace('\'', "''")))
-        .collect();
+        .collect::<Vec<_>>()
+        .concat();
     format!(
         "version: 1\nfilesystem_policy:\n  include_workdir: true\n  read_only:\n    - /usr\n  read_write:\n{lines}landlock:\n  compatibility: hard_requirement\nprocess:\n  run_as_user: sandbox\n  run_as_group: sandbox\nnetwork_policies:\n  github:\n    name: github\n    endpoints:\n      - host: github.com\n        port: 443\n    binaries:\n      - path: /usr/bin/git\n"
     )

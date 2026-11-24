@@ -1739,9 +1739,9 @@ fn the_derived_scan_stage_hands_the_read_write_paths_and_the_sandbox_owner_to_th
 -> TestResult {
     let run = scan_run(derived_text()?)?;
     assert!(run.contains("--sandbox-owner 1000:1000"), "{run}");
-    let split = "IFS=$nl; set -f; for rw in $READ_WRITE_PATHS; do set -- \"$@\" --read-write \"$rw\"; done; set +f; IFS=$old_ifs;";
-    assert!(run.contains(split), "{run}");
-    let loop_at = run.find(split).ok_or("no split loop")?;
+    let loop_at = run
+        .find("if [ -n \"$READ_WRITE_PATHS\" ]")
+        .ok_or("no read_write hand-over")?;
     let scan_at = run.find("/bin/sh /jackin-scan").ok_or("no scan call")?;
     assert!(loop_at < scan_at, "{run}");
     Ok(())
@@ -1820,6 +1820,39 @@ fn the_scan_stage_hands_each_policy_path_to_the_scan_as_exactly_one_argument() -
     let (argv, stderr) = hand_over(&dir, "")?;
     assert_eq!(argv, ["--owner", "0:0", "--sandbox-owner", "1000:1000"]);
     assert_eq!(stderr, "");
+    for (value, passed) in [
+        ("/only", &["/only"][..]),
+        ("/a\n\n/b\n", &["/a", "/b"][..]),
+        ("\n/a\n", &["/a"][..]),
+        ("\n", &[][..]),
+    ] {
+        let (argv, stderr) = hand_over(&dir, value)?;
+        let mut wanted = vec!["--owner", "0:0", "--sandbox-owner", "1000:1000"];
+        for path in passed {
+            wanted.extend(["--read-write", path]);
+        }
+        assert_eq!(argv, wanted, "{value:?}");
+        assert_eq!(stderr, "", "{value:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn the_read_write_paths_of_a_policy_never_outgrow_one_build_argument() -> TestResult {
+    let distinct = |count: usize| -> Vec<String> {
+        (0..count)
+            .map(|index| format!("/{index:04}{}", "a".repeat(4084)))
+            .collect()
+    };
+    let fits = distinct(31);
+    let fits: Vec<&str> = fits.iter().map(String::as_str).collect();
+    assert!(read_write_argument(&fits)?.is_some());
+    let over = distinct(33);
+    let over: Vec<&str> = over.iter().map(String::as_str).collect();
+    assert!(matches!(
+        ImagePlan::new(&request_with(&over)?),
+        Err(ImageError::ReadWritePathsTotal { .. })
+    ));
     Ok(())
 }
 

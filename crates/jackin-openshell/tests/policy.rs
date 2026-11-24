@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU16;
 
-use jackin_core::ProviderName;
+use jackin_core::{Compatibility, ProviderName, SandboxPath};
 use jackin_openshell::{
     AuthoredPolicy, ClosedPolicy, ClosedPolicyError, ClosureViolation, EndpointProtocol,
     HostPattern, NetworkRule, PolicyDocument, PolicyError, RuleKey, TlsMode,
@@ -1073,10 +1073,12 @@ fn policy_errors_print_no_control_sequences() {
     ] {
         let text = format!("version: 1\nfilesystem_policy:\n  {list}:\n    - \"{path}\"\n{HARD}");
         let error = AuthoredPolicy::parse(&text).unwrap_err();
-        assert!(
-            matches!(error, PolicyError::Gateway { .. }),
-            "{list}: {error:?}"
-        );
+        let refused = if list == "read_write" {
+            matches!(error, PolicyError::ReadWritePath { .. })
+        } else {
+            matches!(error, PolicyError::Gateway { .. })
+        };
+        assert!(refused, "{list}: {error:?}");
         let closed = ClosedPolicy::parse(&text).unwrap_err();
         for shown in [error.to_string(), closed.to_string()] {
             assert!(shown.contains("[31m"), "{shown}");
@@ -1230,10 +1232,11 @@ fn role_check_gives_the_policy_crate_verdict_of_the_gateway_create_check_for_eve
 }
 
 fn read_write_of(listed: &[&str]) -> Result<Vec<String>, PolicyError> {
-    let lines: String = listed
+    let lines = listed
         .iter()
         .map(|path| format!("    - '{}'\n", path.replace('\'', "''")))
-        .collect();
+        .collect::<Vec<_>>()
+        .concat();
     let text = format!(
         "version: 1\nfilesystem_policy:\n  read_only:\n    - /usr\n  read_write:\n{lines}{HARD}"
     );
@@ -1280,6 +1283,17 @@ fn the_effective_read_write_paths_add_the_baseline_the_gateway_grants_to_every_p
     assert_eq!(listed, ["/dev/null", "/sandbox", "/tmp"]);
 }
 
+const BASELINE_READ_FROM_OPENSHELL_COMMIT: &str = "5d25211b25a8fc887e8d5c606d57d6ab22f1d76c";
+
+#[test]
+fn the_proxy_baseline_was_read_from_the_pinned_openshell_commit() {
+    let pinned = Compatibility::pinned().unwrap().openshell_commit;
+    assert_eq!(
+        pinned, BASELINE_READ_FROM_OPENSHELL_COMMIT,
+        "OpenShell was bumped: read PROXY_BASELINE_READ_WRITE in crates/openshell-supervisor/src/lib.rs of the new commit, update PROXY_BASELINE_READ_WRITE in crates/jackin-openshell/src/policy.rs if it differs, then update this commit"
+    );
+}
+
 #[test]
 fn a_live_policy_with_an_unusable_read_write_path_is_never_silently_dropped() {
     let live = PolicyDocument::parse(
@@ -1318,7 +1332,7 @@ fn an_authored_read_write_list_refuses_control_characters_and_the_live_parse_kee
             .unwrap();
     let paths = live.read_write_paths().unwrap();
     assert_eq!(
-        paths.iter().map(|path| path.as_str()).collect::<Vec<_>>(),
+        paths.iter().map(SandboxPath::as_str).collect::<Vec<_>>(),
         ["/"]
     );
 }

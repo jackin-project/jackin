@@ -188,10 +188,12 @@ RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
         done; \
     fi \
     ; if [ -n "$READ_WRITE_PATHS" ]; then \
-        nl=$(printf '\n_'); nl=${nl%_}; old_ifs=$IFS; \
-        IFS=$nl; set -f; \
-        for rw in $READ_WRITE_PATHS; do set -- "$@" --read-write "$rw"; done; \
-        set +f; IFS=$old_ifs; \
+        nl=$(printf '\n_'); nl=${nl%_}; rest=$READ_WRITE_PATHS; \
+        while [ -n "$rest" ]; do \
+            rw=${rest%%"$nl"*}; \
+            case "$rest" in *"$nl"*) rest=${rest#*"$nl"} ;; *) rest= ;; esac; \
+            if [ -n "$rw" ]; then set -- "$@" --read-write "$rw"; fi; \
+        done; \
     fi \
     ; /bin/sh /jackin-scan "$@" \
         /image \

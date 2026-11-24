@@ -40,6 +40,10 @@ pub enum ImageError {
         plain(.path)
     )]
     ReadWritePath { path: String },
+    #[error(
+        "the read_write paths of the role policy add up to {bytes} bytes, more than the {limit} bytes that one build argument can hold"
+    )]
+    ReadWritePathsTotal { bytes: usize, limit: usize },
     #[error("gave up waiting for another process to finish building {key}")]
     LockTimeout { key: ImageTag },
     #[error("cancelled{}", GroupFault::note(.group.as_ref()))]

@@ -187,7 +187,7 @@ check_accounts() {
 }
 
 good_home() {
-    [ -n "$(find "$root/sandbox" -maxdepth 0 -type d -uid "$sandbox_uid" -gid "$sandbox_gid" ! \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]
+    [ -n "$(find "$root/sandbox" -maxdepth 0 -type d -uid "$sandbox_uid" -gid "$sandbox_gid" -perm -200 ! \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]
 }
 
 home_reason() {
@@ -199,6 +199,8 @@ home_reason() {
         echo "wrong type"
     elif [ -z "$(find "$root/sandbox" -maxdepth 0 -uid "$sandbox_uid" -gid "$sandbox_gid" -print 2>/dev/null)" ]; then
         echo "not owned by $sandbox_uid:$sandbox_gid"
+    elif [ -z "$(find "$root/sandbox" -maxdepth 0 -perm -200 -print 2>/dev/null)" ]; then
+        echo "not writable by its owner"
     else
         echo "writable by group or others"
     fi

@@ -90,6 +90,7 @@ fn plan_verdict(result: Result<ImagePlan, ImageError>) -> Verdict {
             | ImageError::Rule { .. }
             | ImageError::SourceMoved { .. }
             | ImageError::ReadWritePath { .. }
+            | ImageError::ReadWritePathsTotal { .. }
             | ImageError::LockTimeout { .. }
             | ImageError::Cancelled { .. },
         ) => Verdict::Other,

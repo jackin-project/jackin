@@ -576,19 +576,19 @@ fn scan_stage(text: &str) -> Result<String, Box<dyn Error>> {
 
 fn upper_variables(text: &str) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
-    let bytes: Vec<char> = text.chars().collect();
+    let chars: Vec<char> = text.chars().collect();
     let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == '$' {
+    while index < chars.len() {
+        if chars[index] == '$' {
             let mut next = index + 1;
-            if bytes.get(next) == Some(&'{') {
+            if chars.get(next) == Some(&'{') {
                 next += 1;
             }
-            let name: String = bytes[next..]
+            let name: String = chars[next..]
                 .iter()
                 .take_while(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || **c == '_')
                 .collect();
-            if name != "IFS" && name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+            if name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
                 found.insert(name);
             }
         }

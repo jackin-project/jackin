@@ -82,6 +82,7 @@ fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
 const SCAN_ROOT_PATH_BYTES: usize = 4095;
 const SCAN_ROOT: &str = "/image";
 const READ_WRITE_PATH_MAX_BYTES: usize = SCAN_ROOT_PATH_BYTES - SCAN_ROOT.len();
+const READ_WRITE_ARGUMENT_MAX_BYTES: usize = 131_072 - "READ_WRITE_PATHS=".len() - 1;
 
 fn read_write_argument(paths: &[SandboxPath]) -> Result<Option<String>, ImageError> {
     let mut sorted: Vec<&str> = paths.iter().map(SandboxPath::as_str).collect();
@@ -96,7 +97,14 @@ fn read_write_argument(paths: &[SandboxPath]) -> Result<Option<String>, ImageErr
             path: (*path).to_owned(),
         });
     }
-    Ok((!sorted.is_empty()).then(|| build_arg("READ_WRITE_PATHS", &sorted.join("\n"))))
+    let joined = sorted.join("\n");
+    if joined.len() > READ_WRITE_ARGUMENT_MAX_BYTES {
+        return Err(ImageError::ReadWritePathsTotal {
+            bytes: joined.len(),
+            limit: READ_WRITE_ARGUMENT_MAX_BYTES,
+        });
+    }
+    Ok((!sorted.is_empty()).then(|| build_arg("READ_WRITE_PATHS", &joined)))
 }
 
 pub(crate) fn derived_arguments_multi(

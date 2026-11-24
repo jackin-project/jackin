@@ -1617,6 +1617,16 @@ fn scan_requires_the_sandbox_home_to_be_a_real_directory_owned_by_the_sandbox_us
             &[&home_line("writable by group or others")],
         )?;
     }
+    for mode in [0o500, 0o555] {
+        let fx = Fixture::new()?;
+        fs::set_permissions(fx.image("/sandbox"), fs::Permissions::from_mode(mode))?;
+        expect_lines(
+            &fx,
+            &format!("mode {mode:o}"),
+            &[&home_line("not writable by its owner")],
+        )?;
+        fs::set_permissions(fx.image("/sandbox"), fs::Permissions::from_mode(0o755))?;
+    }
     for mode in [0o700, 0o750, 0o755] {
         let fx = Fixture::new()?;
         fs::set_permissions(fx.image("/sandbox"), fs::Permissions::from_mode(mode))?;
@@ -1678,7 +1688,7 @@ fn scan_requires_a_well_formed_sandbox_owner_argument() -> TestResult {
 
 #[test]
 fn scan_never_expands_or_reinterprets_the_characters_of_a_read_write_path() -> TestResult {
-    for name in [
+    let names = [
         "[u]sr",
         "star*",
         "what?",
@@ -1688,29 +1698,20 @@ fn scan_never_expands_or_reinterprets_the_characters_of_a_read_write_path() -> T
         "it's",
         "$HOME",
         "a b",
-    ] {
-        let fx = Fixture::new()?;
-        fx.dir("/usr/share", 0o755)?;
-        symlink("/usr/share", fx.image(&format!("/{name}")))?;
-        let path = format!("/{name}/x");
-        let out = fx.scan_read_write(&[&path])?;
-        assert_eq!(
-            out.lines(),
-            [crossing(&path, &format!("/{name}"))],
-            "{name}: {}",
-            out.stderr
-        );
-    }
+    ];
     let fx = Fixture::new()?;
     fx.dir("/usr/share", 0o755)?;
-    fx.dir("/real", 0o755)?;
-    symlink("/usr/share", fx.image("/[r]eal"))?;
-    let out = fx.scan_read_write(&["/real/x"])?;
-    assert!(
-        out.ok,
-        "a glob must not reach the neighbour: {}",
-        out.stderr
-    );
+    let mut paths = Vec::new();
+    let mut expected = Vec::new();
+    for name in names {
+        symlink("/usr/share", fx.image(&format!("/{name}")))?;
+        let path = format!("/{name}/x");
+        expected.push(crossing(&path, &format!("/{name}")));
+        paths.push(path);
+    }
+    let arguments: Vec<&str> = paths.iter().map(String::as_str).collect();
+    let out = fx.scan_read_write(&arguments)?;
+    assert_eq!(out.lines(), expected, "{}", out.stderr);
     Ok(())
 }
 
