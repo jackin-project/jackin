@@ -557,6 +557,7 @@ async fn a_reconnect_command_stays_on_one_line_at_80x24() -> TestResult {
         vec![SeedRow {
             provider: jackin_usage::accounts::UsageProvider::Antigravity,
             label: "personal@example.com",
+            identity: None,
             fetched_at: 1_795_428_364,
             snapshot: antigravity["snapshot"].clone(),
             failure: Some((

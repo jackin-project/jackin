@@ -707,6 +707,7 @@ fn crafted_account(
         vec![SeedRow {
             provider,
             label: "Account",
+            identity: None,
             fetched_at: NOW.0 - 60,
             snapshot,
             failure: None,
