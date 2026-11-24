@@ -12,7 +12,7 @@ use jackin_usage::accounts::{
 use jackin_usage::dashboard::{Dashboard, DashboardMemory, DashboardRow, DashboardSettings};
 use jackin_usage::onboarding::OwnedLogin;
 use jackin_usage::presentation::{Level, ReadingText};
-use jackin_usage::view::{self, AccountQuota, Note, ProviderGroup, UsageView, ViewFilter};
+use jackin_usage::view::{self, AccountQuota, ProviderGroup, UsageView, ViewFilter};
 use uuid::Uuid;
 
 use jackin_usage::presentation as display;
@@ -374,7 +374,7 @@ fn account_rows(
                 None,
             ));
         }
-        let covered = covered_keys(account);
+        let covered = display::covered_keys(account);
         for row in stored.iter().filter(|row| {
             row.account == Some(account.id) && !covered.contains(&row.metric.as_str())
         }) {
@@ -403,18 +403,6 @@ fn account_rows(
         rows.extend(own);
     }
     rows
-}
-
-fn covered_keys(account: &AccountQuota) -> Vec<&str> {
-    let mut keys: Vec<&str> = account.meters().map(|meter| meter.key.as_str()).collect();
-    for note in &account.notes {
-        match note {
-            Note::Balance { .. } | Note::Resets(_) => keys.push(display::note_key(note)),
-            Note::Tokens { .. } => keys.extend(["today", "yesterday", "last30", "prior30"]),
-            Note::Spend { .. } => keys.extend(["today", "week", "month"]),
-        }
-    }
-    keys
 }
 
 fn all_rows(
@@ -460,14 +448,6 @@ fn all_rows(
         }
     }
     rows
-}
-
-fn notices(view: &UsageView) -> Vec<String> {
-    view.attention
-        .iter()
-        .filter_map(|item| view::report::attention_text(view, item))
-        .map(|item| format!("{} · {} · {}", item.tag, item.subject, item.detail))
-        .collect()
 }
 
 fn attention(view: &UsageView, accounts: &[UsageEntry]) -> Vec<UsageEntry> {
@@ -555,7 +535,7 @@ pub(super) fn load(
     } else {
         (alerts, Vec::new())
     };
-    notices.extend(self::notices(&view));
+    notices.extend(display::attention_notices(&view));
     for id in &data.waiting {
         if let Some(entry) = accounts.iter().find(|a| a.id == id.to_string()) {
             notices.push(display::waiting(&entry.label));

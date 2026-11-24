@@ -602,11 +602,7 @@ async fn account_action(
         }
         UsageAction::Rename { id, name } => {
             let id = Uuid::parse_str(&id).map_err(|_| AdapterError::AccountId.to_string())?;
-            let suffix = format!(" #{}", jackin_usage::view::short_id(id));
-            let name = match name.strip_suffix(&suffix) {
-                Some(rest) => rest.to_owned(),
-                None => name,
-            };
+            let name = display::strip_short_id(name, id);
             service
                 .with_registry(move |db| db.rename(id, &name))
                 .await

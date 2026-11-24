@@ -157,7 +157,10 @@ async fn unified_member_details_keep_each_identity_and_reverting_restores_all_tw
     for (index, members) in [
         (
             spend,
-            [("Claude Home", "12.34 eur"), ("Claude Team", "140 eur")],
+            [
+                ("Claude Home", "12.34 of 50 EUR used"),
+                ("Claude Team", "140 of 200 EUR used"),
+            ],
         ),
         (weekly, [("Codex Home", "42%"), ("Codex Work", "88%")]),
     ] {

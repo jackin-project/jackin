@@ -89,7 +89,12 @@ async fn claude_currency_and_reset_inventory_reach_the_account() -> TestResult {
             ),
         ],
         Expected {
-            account: &["Enterprise", "Spend", "12.34 eur", "50 eur", "Limit resets"],
+            account: &[
+                "Enterprise",
+                "Extra usage",
+                "12.34 of 50 EUR used",
+                "Limit resets",
+            ],
             board: &["Extra usage", "Limit resets"],
             absent: &["private-reset-id", "synthetic-access"],
         },
@@ -133,11 +138,11 @@ async fn codex_model_history_survives_the_account_and_board() -> TestResult {
     ]
 }))
     ],Expected {
-            account: &["Weekly","Today","71 tokens","model-fixture"],
+            account: &["Weekly","Tokens","71 tokens","2 turns","model-fixture"],
             board: &["Weekly","Tokens","today 71"],
             absent: &["synthetic-access"]
         },
-        Some(("Tokens",&["today 71"])),
+        Some(("Tokens",&["today 71","2 turns","model-fixture 2"])),
     ).await
 }
 
@@ -221,7 +226,7 @@ async fn grok_uncapped_extra_usage_keeps_its_currency() -> TestResult {
             ),
         ],
         Expected {
-            account: &["Grok Heavy", "Weekly", "Extra usage cap", "1.5 usd"],
+            account: &["Grok Heavy", "Weekly", "15% used"],
             board: &["Extra usage cap", "1.5 usd"],
             absent: &["synthetic-access"],
         },
@@ -313,7 +318,7 @@ async fn zai_token_limit_and_search_allowance_are_distinct() -> TestResult {
             ),
         ],
         Expected {
-            account: &["GLM Pro", "Web searches", "3 searches", "100 searches"],
+            account: &["GLM Pro", "Web searches", "3 of 100 searches used"],
             board: &["Session", "Web searches"],
             absent: &["synthetic-access"],
         },
@@ -376,18 +381,26 @@ async fn openrouter_separates_period_spend_and_management_activity() -> TestResu
         ],
         Expected {
             account: &[
-                "Today",
-                "3.25 usd",
-                "This week",
-                "9 usd",
-                "Yesterday",
-                "7.5 usd",
-                "router-model",
+                "Spend",
+                "today 3.25 USD",
+                "week 9 USD",
+                "yesterday 30",
+                "13 in",
+                "17 out",
             ],
             board: &["Spend", "today 3.25 USD", "Tokens", "yesterday 30"],
             absent: &["synthetic-access"],
         },
-        Some(("Spend", &["today 3.25 USD", "week 9 USD", "month 11 USD"])),
+        Some((
+            "Tokens",
+            &[
+                "yesterday: 30 tokens",
+                "13 in",
+                "17 out",
+                "30 days: 30 tokens",
+                "30/30 days",
+            ],
+        )),
     )
     .await?;
     check(
@@ -402,7 +415,7 @@ async fn openrouter_separates_period_spend_and_management_activity() -> TestResu
             }}),
         )],
         Expected {
-            account: &["Free", "Today", "0 usd", "This week", "1.25 usd"],
+            account: &["Free", "Spend", "today 0 USD", "week 1.25 USD"],
             board: &["Spend", "today 0 USD", "week 1.25 USD"],
             absent: &["Prior 30 days", "Yesterday", "BYOK spend"],
         },

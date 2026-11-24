@@ -11,10 +11,7 @@ use crate::view::{
 use jackin_core::plain;
 use serde_json::Value;
 
-pub const RESOURCES: &str = "resources";
 pub const RESETS: &str = "resets";
-
-pub const ALL_USAGE_TITLE: &str = "All Usage";
 
 const CARD_WIDTH: u16 = 80;
 const VALUE_COLUMNS: usize = 32;
@@ -189,14 +186,7 @@ pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionEr
         entry.provider = group.provider.to_string();
         entry.label = entry_label(quota);
         entry.summary = summary(&view, quota);
-        let mut lines = plain_lines(&card(quota, &view, &Ctx::new(CARD_WIDTH), Depth::Full));
-        lines.extend(
-            entry
-                .details
-                .into_iter()
-                .filter(|line| !line.starts_with("Plan · ")),
-        );
-        entry.details = lines;
+        entry.details = plain_lines(&card(quota, &view, &Ctx::new(CARD_WIDTH), Depth::Full));
         entries.push(entry);
     }
     Ok(entries)
@@ -210,14 +200,14 @@ pub fn entry_label(account: &AccountQuota) -> String {
     }
 }
 
-pub fn plain_lines(lines: &[Line]) -> Vec<String> {
+fn plain_lines(lines: &[Line]) -> Vec<String> {
     lines
         .iter()
         .map(|line| line.text().trim_end().to_owned())
         .collect()
 }
 
-pub fn freshness_text(account: &AccountQuota, view: &UsageView) -> String {
+fn freshness_text(account: &AccountQuota, view: &UsageView) -> String {
     text::freshness(&account.reading, view.now, false)
         .into_iter()
         .map(|span| span.text)
@@ -369,6 +359,34 @@ pub fn note_key(note: &Note) -> &'static str {
     }
 }
 
+pub fn covered_keys(account: &AccountQuota) -> Vec<&str> {
+    let mut keys: Vec<&str> = account.meters().map(|meter| meter.key.as_str()).collect();
+    for note in &account.notes {
+        match note {
+            Note::Balance { .. } | Note::Resets(_) => keys.push(note_key(note)),
+            Note::Tokens { .. } => keys.extend(["today", "yesterday", "last30", "prior30"]),
+            Note::Spend { .. } => keys.extend(["today", "week", "month"]),
+        }
+    }
+    keys
+}
+
+pub fn attention_notices(view: &UsageView) -> Vec<String> {
+    view.attention
+        .iter()
+        .filter_map(|item| view::report::attention_text(view, item))
+        .map(|item| format!("{} · {} · {}", item.tag, item.subject, item.detail))
+        .collect()
+}
+
+pub fn strip_short_id(name: String, id: uuid::Uuid) -> String {
+    let suffix = format!(" #{}", short_id(id));
+    match name.strip_suffix(&suffix) {
+        Some(rest) => rest.to_owned(),
+        None => name,
+    }
+}
+
 pub fn note_reading(
     view: &UsageView,
     account: &AccountQuota,
@@ -472,7 +490,6 @@ pub fn metric_inspector(row: &DashboardRow) -> Vec<String> {
     }
     details
 }
-pub const NEEDS_ATTENTION: &str = "Needs Attention";
 pub const ALL_CLEAR: &str = "All clear";
 
 pub fn caption(first: impl AsRef<str>, second: impl AsRef<str>) -> String {

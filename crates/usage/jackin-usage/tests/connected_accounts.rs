@@ -520,16 +520,21 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
     use jackin_testkit::FakeClock;
     use jackin_usage::{ProviderEndpoints, export, onboarding::OwnedLogin, presentation};
 
-    for (key_type, expected) in [
+    for (key_type, console, expected) in [
         (
             Some("standard"),
+            vec!["standard key; workspace balance needs a management key"],
             vec![
                 "Key type · standard",
                 "Workspace balance and activity history require a management key.",
             ],
         ),
-        (Some("management"), vec!["Key type · management"]),
-        (None, vec![]),
+        (
+            Some("management"),
+            vec!["management key"],
+            vec!["Key type · management"],
+        ),
+        (None, vec![], vec![]),
     ] {
         let temp = tempfile::tempdir()?;
         let path = temp.path().join("usage/accounts.db");
@@ -561,13 +566,14 @@ fn openrouter_account_details_explain_key_scope_in_the_console_and_cli() -> Resu
             login.now(),
         );
         let cli_lines: Vec<String> = serde_json::from_value(cli["details"].clone())?;
-        for lines in [&entry.details, &cli_lines] {
+        for (lines, expected) in [(&entry.details, &console), (&cli_lines, &expected)] {
             let scope: Vec<&str> = lines
                 .iter()
                 .map(String::as_str)
+                .map(str::trim)
                 .filter(|line| line.starts_with("Key type") || line.contains("management key"))
                 .collect();
-            assert_eq!(scope, expected, "{key_type:?}: {lines:?}");
+            assert_eq!(&scope, expected, "{key_type:?}: {lines:?}");
         }
     }
     Ok(())
@@ -626,11 +632,15 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
         );
         assert!(entry.summary.iter().all(|line| !line.contains("tokens")));
         for line in [
-            "Web searches · 0 searches",
-            "Credits · Unavailable",
-            "50 input tokens",
+            "Web searches",
+            "0 of 50 searches used",
+            "per-day counts: jackin usage details --json",
         ] {
-            assert!(entry.details.iter().any(|found| found == line), "{line}");
+            assert!(
+                entry.details.iter().any(|found| found.contains(line)),
+                "{line}: {:?}",
+                entry.details
+            );
         }
     }
 

@@ -639,7 +639,7 @@ async fn refresh_merges_fallback_buckets_and_retains_the_previous_reading() -> R
         .into_iter()
         .find(|entry| entry.id == id.to_string())
         .ok_or("missing details")?;
-    assert!(details.details.iter().any(|line| line.contains("Updated")));
+    assert!(details.details.iter().any(|line| line.contains("fetched")));
     assert!(
         details
             .details
