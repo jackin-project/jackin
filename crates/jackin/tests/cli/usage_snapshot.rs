@@ -209,7 +209,12 @@ async fn provider_catalog_includes_disconnected_subscriptions_and_counts_each_ac
             assert_eq!(row["status"], "connected");
             let text = cli.run(&["usage", "providers", id]).await?;
             text.ok()?;
-            assert!(text.stdout.contains("2 connected accounts"));
+            let row_text = text
+                .stdout
+                .lines()
+                .find(|line| line.split_whitespace().any(|word| word == id))
+                .ok_or("provider row")?;
+            assert!(row_text.trim_end().ends_with(" 2"));
         }
         Ok(())
     })

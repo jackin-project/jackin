@@ -3,8 +3,9 @@
 
 use std::fmt;
 
-use jackin_usage::accounts::{AccountRegistry, UsageProvider};
-use jackin_usage::catalog::{UsageProduct, providers};
+use jackin_usage::accounts::{AccountRegistry, ConnectedAccount, UsageProvider};
+use jackin_usage::catalog::{InfoProduct, UsageProduct, info_only, providers};
+use jackin_usage::view::{Line, Span, Tone};
 use serde::Serialize;
 
 use super::{database, failure};
@@ -78,6 +79,166 @@ pub(super) fn catalog(accounts: impl Iterator<Item = UsageProvider> + Clone) -> 
         .collect()
 }
 
+#[derive(Serialize)]
+struct InfoRow {
+    id: &'static str,
+    name: &'static str,
+    tracked: bool,
+    reason: &'static str,
+}
+
+impl From<InfoProduct> for InfoRow {
+    fn from(product: InfoProduct) -> Self {
+        InfoRow {
+            id: product.id,
+            name: product.name,
+            tracked: false,
+            reason: product.reason,
+        }
+    }
+}
+
+fn plural(count: usize, noun: &str) -> String {
+    if count == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{count} {noun}s")
+    }
+}
+
+fn duplicate_note(
+    accounts: &[ConnectedAccount],
+    connector: Option<UsageProvider>,
+) -> Option<String> {
+    let labels: Vec<&str> = accounts
+        .iter()
+        .filter(|a| Some(a.provider) == connector)
+        .map(|a| a.label.as_str())
+        .collect();
+    let repeats = labels
+        .iter()
+        .map(|label| labels.iter().filter(|other| *other == label).count())
+        .max()
+        .unwrap_or(0);
+    match repeats {
+        0 | 1 => None,
+        2 => Some("same account connected twice".to_owned()),
+        n => Some(format!("same account connected {n} times")),
+    }
+}
+
+struct Cells {
+    name: &'static str,
+    id: &'static str,
+    count: String,
+    connected: bool,
+    note: Option<(String, Tone)>,
+}
+
+fn cells(row: &ProviderRow, accounts: &[ConnectedAccount]) -> Cells {
+    let connector = providers()
+        .find(|p| p.id == row.id)
+        .and_then(|p| p.connector);
+    let (count, note) = if let Some(reason) = row.unavailable_reason {
+        ("-".to_owned(), Some((reason.to_owned(), Tone::Plain)))
+    } else if row.account_count == 0 {
+        ("not connected".to_owned(), None)
+    } else {
+        (
+            row.account_count.to_string(),
+            duplicate_note(accounts, connector).map(|note| (note, Tone::Warn)),
+        )
+    };
+    Cells {
+        name: row.name,
+        id: row.id,
+        count,
+        connected: row.account_count > 0,
+        note,
+    }
+}
+
+fn pad(text: &str, width: usize) -> String {
+    format!("{text:<width$}")
+}
+
+fn widest(cells: &[Cells], column: fn(&Cells) -> &str, header: &str) -> usize {
+    cells
+        .iter()
+        .map(|c| column(c).chars().count())
+        .max()
+        .unwrap_or(0)
+        .max(header.len())
+}
+
+fn table(
+    rows: &[&ProviderRow],
+    totals: &[ProviderRow],
+    accounts: &[ConnectedAccount],
+) -> Vec<Line> {
+    let tracked = totals.iter().filter(|r| r.status != "unavailable").count();
+    let connected = totals.iter().filter(|r| r.account_count > 0).count();
+    let total: usize = totals.iter().map(|r| r.account_count).sum();
+    let cells: Vec<Cells> = rows.iter().map(|row| cells(row, accounts)).collect();
+    let name_width = widest(&cells, |c| c.name, "PROVIDER");
+    let id_width = widest(&cells, |c| c.id, "ID");
+    let count_width = widest(&cells, |c| &c.count, "ACCOUNTS");
+    let mut lines = vec![
+        Line::of(vec![Span::strong(format!(
+            "Providers · {tracked} tracked · {connected} connected · {}",
+            plural(total, "account")
+        ))]),
+        Line::blank(),
+        Line::of(vec![Span::dim(format!(
+            "{}  {}  {:>count_width$}  NOTE",
+            pad("PROVIDER", name_width),
+            pad("ID", id_width),
+            "ACCOUNTS"
+        ))]),
+    ];
+    for cell in cells {
+        let figure = format!("{:>count_width$}", cell.count);
+        let mut spans = vec![
+            Span::strong(pad(cell.name, name_width)),
+            Span::plain(format!("  {}  ", pad(cell.id, id_width))),
+            if cell.connected {
+                Span::plain(figure)
+            } else {
+                Span::dim(figure)
+            },
+        ];
+        if let Some((text, tone)) = cell.note {
+            spans.push(Span::plain("  "));
+            spans.push(Span::new(text, tone));
+        }
+        lines.push(Line::of(spans));
+    }
+    lines
+}
+
+fn info_lines() -> Vec<Line> {
+    let mut lines = Vec::new();
+    for info in info_only() {
+        lines.push(Line::blank());
+        lines.push(Line::of(vec![
+            Span::strong("Info"),
+            Span::plain(format!("  {}: {}.", info.name, info.reason)),
+        ]));
+        lines.push(Line::of(vec![Span::plain(format!("      {}", info.hint))]));
+    }
+    lines
+}
+
+fn footer() -> Vec<Line> {
+    vec![
+        Line::blank(),
+        Line::of(vec![Span::plain(
+            "Connect: jackin account usage connect <id>",
+        )]),
+        Line::of(vec![Span::plain("Filter:  jackin usage --provider <id>")]),
+    ]
+}
+
 pub(crate) fn show(app: &mut App, id: Option<&str>, json: bool) -> Result<(), CommandError> {
     let selected = id.map(product).transpose()?;
     let accounts = AccountRegistry::open_read_only(&database(app)?)
@@ -86,17 +247,25 @@ pub(crate) fn show(app: &mut App, id: Option<&str>, json: bool) -> Result<(), Co
         .transpose()
         .map_err(failure)?
         .unwrap_or_default();
-    let mut rows = catalog(accounts.iter().map(|a| a.provider));
-    if let Some(p) = selected {
-        rows.retain(|r| r.id == p.id);
-    }
+    let totals = catalog(accounts.iter().map(|a| a.provider));
+    let rows: Vec<&ProviderRow> = totals
+        .iter()
+        .filter(|r| selected.as_ref().is_none_or(|p| r.id == p.id))
+        .collect();
     if json {
+        let info: Vec<InfoRow> = if selected.is_some() {
+            Vec::new()
+        } else {
+            info_only().map(InfoRow::from).collect()
+        };
         app.io
-            .json(&serde_json::json!({"schema":1,"providers":rows}))
+            .json(&serde_json::json!({"schema":1,"providers":rows,"info":info}))
     } else {
-        for row in rows {
-            app.io.line(&row.to_string())?;
+        let mut lines = table(&rows, &totals, &accounts);
+        if selected.is_none() {
+            lines.extend(info_lines());
         }
-        Ok(())
+        lines.extend(footer());
+        app.io.lines(&lines)
     }
 }

@@ -47,10 +47,6 @@ impl Io {
         }
     }
 
-    #[expect(
-        dead_code,
-        reason = "the surface units call it when they switch to the shared renderer"
-    )]
     pub(crate) fn lines(&mut self, lines: &[Line]) -> Result<(), CommandError> {
         let text = if self.color {
             render::ansi(lines)
