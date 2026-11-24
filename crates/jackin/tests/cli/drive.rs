@@ -17,20 +17,21 @@ fn drive_returns_while_a_blocking_task_is_stuck() -> TestResult {
     let driver = std::thread::spawn(move || {
         let output = jackin::drive(async move {
             let stuck = tokio::task::spawn_blocking(move || {
-                drop(started_tx.send(()));
-                drop(parked.recv());
+                started_tx.send(()).is_ok() && parked.recv().is_err()
             });
-            started_rx.recv().ok();
-            tokio::time::timeout(Duration::from_millis(50), stuck)
+            let started = started_rx.recv().is_ok();
+            let abandoned = tokio::time::timeout(Duration::from_millis(50), stuck)
                 .await
-                .is_err()
-                .into()
+                .is_err();
+            u8::from(started && abandoned)
         });
-        drop(done_tx.send(output.unwrap_or(u8::MAX)));
+        done_tx
+            .send(output.unwrap_or(u8::MAX))
+            .map_err(|_| "the test stopped listening")
     });
     let outcome = done_rx.recv_timeout(BOUND);
     drop(release);
-    driver.join().map_err(|_| "driver thread panicked")?;
+    driver.join().map_err(|_| "driver thread panicked")??;
     assert_eq!(outcome, Ok(1), "drive waited for a stuck blocking task");
     Ok(())
 }
@@ -41,8 +42,9 @@ fn drive_lets_short_blocking_work_finish_before_it_returns() -> TestResult {
     let flag = Arc::clone(&finished);
     jackin::drive(async move {
         drop(tokio::task::spawn_blocking(move || {
-            std::thread::sleep(Duration::from_millis(300));
-            flag.store(true, Ordering::SeqCst);
+            let (_hold, wait) = mpsc::channel::<()>();
+            let waited = wait.recv_timeout(Duration::from_millis(300)).is_err();
+            flag.store(waited, Ordering::SeqCst);
         }));
         tokio::task::yield_now().await;
     })?;
