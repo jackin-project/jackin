@@ -41,6 +41,7 @@ pub struct OwnedLogin {
     clock: Arc<dyn Clock>,
     google_registration: Option<GoogleRegistrationFile>,
     vault: Option<Arc<dyn crate::accounts::CredentialVault>>,
+    store_wait: std::time::Duration,
 }
 
 #[derive(Debug, Error)]
@@ -49,6 +50,10 @@ pub enum LoginError {
     Wait(i64),
     #[error("refresh timed out after 120 seconds")]
     Timeout,
+    #[error(
+        "the OS credential store did not answer in time; approve the Keychain access prompt or unlock the credential store, then retry"
+    )]
+    CredentialStoreTimeout,
     #[error(transparent)]
     Reset(#[from] crate::resets::ResetError),
     #[error(
@@ -210,7 +215,14 @@ impl OwnedLogin {
             clock,
             vault: None,
             google_registration: None,
+            store_wait: std::time::Duration::from_secs(30),
         }
+    }
+
+    #[must_use]
+    pub fn with_store_wait(mut self, wait: std::time::Duration) -> Self {
+        self.store_wait = wait;
+        self
     }
     #[must_use]
     pub fn with_google_registration(
@@ -256,6 +268,7 @@ impl OwnedLogin {
             Some(vault) => AccountRegistry::with_vault(&self.path, Arc::clone(vault)),
             None => AccountRegistry::open(&self.path),
         }
+        .map(|registry| registry.with_lock_wait(self.store_wait))
     }
 
     pub async fn with_registry<T: Send + 'static>(
@@ -273,7 +286,12 @@ impl OwnedLogin {
         &self,
         id: Uuid,
     ) -> Result<(CredentialVersion, SecretBytes), LoginError> {
-        self.with_registry(move |db| db.credential(id)).await
+        tokio::time::timeout(
+            self.store_wait,
+            self.with_registry(move |db| db.credential(id)),
+        )
+        .await
+        .map_err(|_| LoginError::CredentialStoreTimeout)?
     }
 
     async fn rotate(
@@ -1042,7 +1060,7 @@ impl LoginError {
             },
             Self::Store(ConnectionError::MissingCredential)
             | Self::Grant(GrantError::SignInAgain) => FailureKind::Authentication,
-            Self::Timeout => FailureKind::Timeout,
+            Self::Timeout | Self::CredentialStoreTimeout => FailureKind::Timeout,
             _ => return None,
         };
         Some((kind, None))

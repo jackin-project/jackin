@@ -1,0 +1,113 @@
+Usage · 24 Nov 22:37 (+07) · 14 accounts · 11 providers
+
+Needs attention (4)
+  FAILING     Antigravity (Google AI)
+              personal@example.com #a0000014
+              the credential is missing; sign in again
+              run: jackin account usage reconnect
+              a0000014-0000-4000-8000-000000000014
+  NEAR LIMIT  Muse · work@example.com
+              Weekly 99% used · resets in 5d 8h · Mon 07:00
+  NEAR LIMIT  Antigravity (Google AI)
+              personal@example.com #a0000013 #a0000014
+              Claude weekly >99% used · resets in 1d 7h
+              Thu 06:19
+  DUPLICATE   Antigravity (Google AI)
+              personal@example.com #a0000013 #a0000014
+              jackin account usage rm
+              a0000014-0000-4000-8000-000000000014
+Stale  all 14 readings, fetched 13h 57m to 1d 7h ago
+       jackin usage refresh
+
+Claude                                            2 accounts
+  work@example.com · Ultra                     stale 13h 57m
+    Weekly           █░░░░░░░   9% used  resets in 2d 15h
+      Fable weekly   ░░░░░░░░   0% used  resets in 2d 15h
+      Limit resets   3 ready · next expires 11 Dec
+
+  work2@example.com · Ultra                    stale 13h 57m
+    Weekly           █░░░░░░░   2% used  resets in 5d 3h
+      Fable weekly   █░░░░░░░   4% used  resets in 5d 3h
+      Extra usage    ░░░░░░░░   0% used  reset not reported
+                     0 of 20 SGD used · 20 SGD left
+      Limit resets   2 ready · next expires 11 Dec
+
+ChatGPT / Codex                                   2 accounts
+  work@example.com · Pro 200                   stale 13h 57m
+    Weekly           █░░░░░░░   1% used  resets in 4d 6h
+      Credits        19,290 credits · ≈ 771.60 USD
+      Limit resets   1 ready · next expires 13 Dec
+      Tokens         today n/a · yesterday 420K
+                     30 days 96.7B
+
+  home@example.com · Pro 200                   stale 13h 57m
+    Weekly           █░░░░░░░   2% used  resets in 4d 12h
+      Credits        44,515 credits · ≈ 1,780.60 USD
+      Limit resets   2 ready · next expires 2 Dec
+      Tokens         today n/a · yesterday 4.17M
+                     30 days 60.8B
+
+Muse                                               1 account
+  work@example.com · Muse Code Max Usage       stale 13h 57m
+    Weekly           ███████░  99% used  resets in 5d 8h
+      Session        ╌╌╌╌╌╌╌╌    -       reset 11h 26m ago
+
+Grok                                               1 account
+  Grok Account · SuperGrok Heavy               stale 13h 57m
+    Weekly           ╌╌╌╌╌╌╌╌    -       reset 1h 49m ago
+
+Kimi                                               1 account
+  Kimi Code · plan not reported                stale 13h 57m
+    Weekly           █░░░░░░░  <1% used  resets in 5d 22h
+      Session        ╌╌╌╌╌╌╌╌    -       reset 10h 3m ago
+
+Z.AI                                               1 account
+  Z.ai Account · GLM Coding Max                stale 13h 57m
+    Weekly           ░░░░░░░░   0% used  resets in 5d 0h
+      Session        ░░░░░░░░   0% used  reset not reported
+      Web searches   █░░░░░░░  <1% used  resets in 7d 1h
+                     10 of 4,000 searches used · 3,990 left
+      Limit resets   1 ready, 1 queued · next expires 22 Dec
+
+MiniMax                                            1 account
+  MiniMax Token Plan · plan not reported       stale 13h 57m
+    General weekly   ███░░░░░  34% used  resets in 8h 27m
+      General 5h     ╌╌╌╌╌╌╌╌    -       reset 8h 57m ago
+
+MiMo                                               1 account
+  MiMo Token Plan · max                        stale 13h 57m
+    Token Plan       ███░░░░░  38% used  resets in 17d 8h
+                     31.5B of 82B credits used · 50.5B left
+
+Antigravity (Google AI)                           2 accounts
+  personal@example.com #a0000013 · Google AI U…  stale 1d 7h
+    Claude weekly    ███████░ >99% used  resets in 1d 7h
+      Claude 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 5h ago
+      Gemini 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 5h ago
+      Gemini weekly  █░░░░░░░  <1% used  resets in 3d 20h
+    updated by the Antigravity status-line hook
+    last update 1d 7h ago
+    ! also connected as #a0000014 (same provider and label)
+
+  personal@example.com #a0000014 · Google AI …  failed 1d 5h
+    Claude weekly    ███████░ >99% used  resets in 1d 7h
+      Claude 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 0h ago
+      Gemini 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 0h ago
+      Gemini weekly  █░░░░░░░  <1% used  resets in 3d 20h
+    ! refresh failed:
+      the credential is missing; sign in again
+      run: jackin account usage reconnect
+      a0000014-0000-4000-8000-000000000014
+    ! also connected as #a0000013 (same provider and label)
+
+OpenCode                                           1 account
+  work@example.com · Go Plus                   stale 13h 57m
+    Monthly          █░░░░░░░  11% used  resets in 13d 15h
+      Session        ╌╌╌╌╌╌╌╌    -       reset 9h 8m ago
+      Weekly         █░░░░░░░   8% used  resets in 5d 8h
+
+OpenRouter                                         1 account
+  OpenRouter Account · Pay-as-you-go           stale 13h 57m
+    Free requests    ░░░░░░░░   0% used  resets in 8h 23m
+                     0 of 1,000 requests used · 1,000 left
+      Spend          today 0 USD · week 0 USD · month 0 USD

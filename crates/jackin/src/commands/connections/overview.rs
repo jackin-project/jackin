@@ -49,7 +49,7 @@ pub(in crate::commands) fn overview(app: &mut App, json: bool) -> Result<(), Com
     )
 }
 
-fn context(app: &App) -> Ctx {
+pub(super) fn context(app: &App) -> Ctx {
     let width = app.terminal.as_ref().map_or(render::WIDE, |terminal| {
         terminal.size().cols.get().min(render::WIDE)
     });

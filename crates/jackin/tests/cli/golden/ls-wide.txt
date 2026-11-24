@@ -16,4 +16,5 @@ OpenRouter               OpenRouter Account    Pay-as-you-go        stale 13h 57
 
 14 accounts · 11 providers · 1 failing · 1 duplicate · all stale
 ! Antigravity (Google AI): personal@example.com is connected twice.
-  Remove the failing one: jackin account usage rm a0000014-0000-4000-8000-000000000014
+  Remove the failing one:
+    jackin account usage rm a0000014-0000-4000-8000-000000000014

@@ -41,4 +41,5 @@ mod usage_only;
 mod usage_providers;
 mod usage_snapshot;
 mod usage_view;
+mod usage_width;
 mod workspace_in_use;

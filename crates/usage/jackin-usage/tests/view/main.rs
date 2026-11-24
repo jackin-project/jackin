@@ -5,6 +5,7 @@ mod details;
 mod model;
 mod render;
 mod rows;
+mod width;
 
 use std::error::Error;
 
