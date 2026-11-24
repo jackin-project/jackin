@@ -524,3 +524,43 @@ async fn a_role_repointed_to_an_equal_manifest_loses_the_check_of_the_old_source
     })
     .await
 }
+
+#[tokio::test]
+async fn a_check_running_while_the_manifest_changes_does_not_restore_its_stale_result() -> TestResult
+{
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let twin = lab.add_role("twin").await?;
+        lab.reopen().await?;
+        lab.console.keys("R v")?;
+        lab.console.settle().await?;
+        assert!(check_state_is_unchecked(&mut lab, "twin")?);
+
+        let hold = lab.rig.world.hold_read("Dockerfile");
+        lab.console.keys("down v")?;
+        for _ in 0..200 {
+            if hold.has_arrived() {
+                break;
+            }
+            lab.console.pump(1).await;
+        }
+        assert!(hold.has_arrived(), "the check never reached its inspection");
+
+        edit_manifest(twin.root(), true).await?;
+        for _ in 0..REFRESH_WINDOW_SECS {
+            lab.console.elapse(1);
+            lab.console.tick(1);
+            lab.console.pump(2).await;
+        }
+        hold.release();
+        lab.console.settle().await?;
+        after_refresh(&mut lab).await?;
+
+        assert!(
+            check_state_is_unchecked(&mut lab, "twin")?,
+            "the result of the check that read the old manifest was restored"
+        );
+        Ok(())
+    })
+    .await
+}

@@ -416,6 +416,13 @@ fn destructuring_a_buffer_fails() -> TestResult {
          }\n\
          fn j() -> ratatui::buffer::Buffer {\n\
          \x20   Default::default()\n\
+         }\n\
+         fn k(x: u8, area: Rect, content: Vec<u8>) {\n\
+         \x20   let _ = match x { _ => Buffer { area, content } };\n\
+         }\n\
+         #[cfg(test)]\n\
+         mod tests {\n\
+         \x20   fn t(b: Buffer) { let Buffer { content, .. } = b; }\n\
          }\n",
         &[
             ("C1", 3, "Buffer"),
@@ -423,6 +430,7 @@ fn destructuring_a_buffer_fails() -> TestResult {
             ("C1", 9, "Buffer"),
             ("C1", 14, "Buffer"),
             ("C1", 28, "Buffer"),
+            ("C1", 33, "Buffer"),
         ],
     )
 }

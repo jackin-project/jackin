@@ -75,6 +75,10 @@ impl World {
         &self.home
     }
 
+    pub fn hold_read(&self, file: &str) -> crate::host::ReadHold {
+        self.working_fs.hold_read(file)
+    }
+
     pub fn fail_fs(&self, fault: FsFault) {
         self.working_fs.fail_next(fault);
     }

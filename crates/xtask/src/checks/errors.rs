@@ -88,11 +88,9 @@ fn attribute_problems(attribute: &ErrorAttribute<'_>) -> Vec<(u32, String)> {
             if let Some(message) = literal_problem(literal, attribute) {
                 problems.push((token.line, message));
             }
-        } else if token.is_punct('.') && is_display_call(arguments, index) {
-            if !inside_plain(arguments, index) {
-                problems.push((token.line, display_message()));
-            }
-        } else if is_qualified_display(arguments, index) {
+        } else if (token.is_punct('.') && is_display_call(arguments, index))
+            || is_qualified_display(arguments, index)
+        {
             if !inside_plain(arguments, index) {
                 problems.push((token.line, display_message()));
             }

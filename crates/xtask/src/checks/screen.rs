@@ -422,12 +422,14 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
 }
 
 fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
+    let tests = test_modules(tokens);
     (1..tokens.len())
         .filter(|index| {
             tokens[*index].is_ident("Buffer")
                 && tokens.get(index + 1).is_some_and(|t| t.is_punct('{'))
                 && opens_fields(tokens, index + 2)
                 && !is_type_position(tokens, *index)
+                && !tests.iter().any(|range| range.contains(index))
         })
         .map(|index| {
             Violation::at_line(
@@ -464,7 +466,7 @@ fn is_type_position(tokens: &[Token], index: usize) -> bool {
     let Some(before) = start.checked_sub(1).map(|at| &tokens[at]) else {
         return false;
     };
-    before.is_punct('>')
+    (before.is_punct('>') && start >= 2 && tokens[start - 2].is_punct('-'))
         || before.is_punct('&')
         || before.kind == Tok::Other
         || NON_PATTERN_KEYWORDS
