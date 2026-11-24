@@ -123,6 +123,7 @@ fn an_authentication_failure_names_the_sign_in_command_and_no_retry() -> Result<
         .lines()
         .filter(|line| line.contains("credential is missing"))
         .collect();
+    assert!(!auth_lines.is_empty(), "{text}");
     assert!(
         auth_lines.iter().all(|line| !line.contains("retry")),
         "{text}"
