@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use jackin_core::{EnvName, Labels, Phase, ProviderName, SandboxName, TerminalText};
 use openshell_sdk::raw::proto::GetSandboxConfigRequest;
@@ -23,6 +23,7 @@ const PROVISIONING_FAILED: &str = "ProvisioningFailed";
 const READY_CONDITION: &str = "Ready";
 const PAGE_SIZE: i32 = 100;
 const MAX_PAGES: usize = 1_000;
+const TOKEN_MAX_BYTES: usize = 4_096;
 const MAX_RECORDS: usize = 10_000;
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 
@@ -265,6 +266,7 @@ impl Inner {
         let mut views = Vec::new();
         let mut listing = Listing::new();
         let mut token = String::new();
+        let mut issued = HashSet::from([String::new()]);
         for _ in 0..MAX_PAGES {
             let page = self
                 .unary(
@@ -286,7 +288,10 @@ impl Inner {
             if page.next_page_token.is_empty() {
                 return Ok(views);
             }
-            if page.next_page_token == token {
+            if page.next_page_token.len() > TOKEN_MAX_BYTES {
+                return Err(protocol("the gateway returned an oversized page token"));
+            }
+            if !issued.insert(page.next_page_token.clone()) {
                 return Err(protocol("the gateway repeated a page token"));
             }
             token = page.next_page_token;
@@ -372,6 +377,7 @@ impl Inner {
         let mut providers = Vec::new();
         let mut listing = Listing::new();
         let mut token = String::new();
+        let mut issued = HashSet::from([String::new()]);
         for _ in 0..MAX_PAGES {
             let page = self
                 .unary(
@@ -398,7 +404,10 @@ impl Inner {
             if page.next_page_token.is_empty() {
                 return Ok(providers);
             }
-            if page.next_page_token == token {
+            if page.next_page_token.len() > TOKEN_MAX_BYTES {
+                return Err(protocol("the gateway returned an oversized page token"));
+            }
+            if !issued.insert(page.next_page_token.clone()) {
                 return Err(protocol("the gateway repeated a page token"));
             }
             token = page.next_page_token;

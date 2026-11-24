@@ -127,6 +127,8 @@ pub(crate) struct Knobs {
     pub warning_missing: bool,
     pub container_in_default_engine: bool,
     pub same_engine_id: bool,
+    pub host_engine_id_fails: bool,
+    pub host_container_list_fails: bool,
     pub registry_write: bool,
     pub preflight_fail_exits_zero: bool,
     pub hook_error_text: Option<String>,
@@ -297,6 +299,9 @@ pub(crate) struct ScenarioEngine {
 #[async_trait::async_trait]
 impl HostEngine for ScenarioEngine {
     async fn engine_id(&self) -> Result<String, String> {
+        if self.shared.knobs().host_engine_id_fails {
+            return Err("e2e injected host id failure".to_owned());
+        }
         Ok(if self.shared.knobs().same_engine_id {
             "ENGINE-D24".to_owned()
         } else {
@@ -305,6 +310,9 @@ impl HostEngine for ScenarioEngine {
     }
 
     async fn container_names(&self) -> Result<Vec<String>, String> {
+        if self.shared.knobs().host_container_list_fails {
+            return Err("e2e injected host list failure".to_owned());
+        }
         Ok(if self.shared.knobs().container_in_default_engine {
             vec![format!("e2e-{}", self.shared.state().tag)]
         } else {
