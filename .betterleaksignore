@@ -476,6 +476,11 @@ rewrite/reconciliation/P13.3.md:generic-credential-uri:162
 344472d4a3b78cc24cff00e0a96aac0e52599268:crates/jackin-tui/tests/launch/account.rs:generic-password:233
 344472d4a3b78cc24cff00e0a96aac0e52599268:crates/jackin-tui/tests/launch/account.rs:generic-password:234
 
+# Reason: launch-account test fixture re-indented by a pushed commit of the cancellation work (a7d05033b); the same synthetic account names the 344472d4a entry above covers, no credential. The working tree no longer contains the literal calls, but a pushed commit cannot be rewritten.
+# 2 finding(s); rules: generic-password; files: crates/jackin-tui/tests/launch/account.rs (2)
+a7d05033b5761f543b41501fe2777e89c043ca95:crates/jackin-tui/tests/launch/account.rs:generic-password:238
+a7d05033b5761f543b41501fe2777e89c043ca95:crates/jackin-tui/tests/launch/account.rs:generic-password:239
+
 # Working-tree fingerprints (file:rule:line) for the `betterleaks dir` scan of the indexed tree.
 # Reason: launch-account test fixture: the synthetic account names the test registers to prove that an explicit account wins over the default one; no credential.
 # 2 finding(s); rules: generic-password; files: crates/jackin-tui/tests/launch/account.rs (2)
