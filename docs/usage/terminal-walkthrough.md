@@ -23,7 +23,7 @@ A fresh installation opens **Priority**. Under **All Usage**, scroll with the ar
 
 Use **Refresh** on the usage board to read providers that support manual refresh, including a direct Antigravity account, while Antigravity is closed. The console checks polling providers every five minutes while it runs. A failed refresh keeps the previous reading and shows its age and the error.
 
-Open **Actions…** for settings and sharing. Settings control used or remaining amounts, warning thresholds, reset and pace displays, alerts, grouping and name concealment. **Copy report** exports a redacted dashboard. Hidden metrics can be restored through **Undo hide** or the hidden-metric settings.
+Open **Actions…** for settings and sharing. Settings control warning thresholds, reset and pace displays, alerts, grouping and name concealment. **Copy report** exports a redacted dashboard. Hidden metrics can be restored through **Undo hide** or the hidden-metric settings.
 
 ## Screen gallery
 
