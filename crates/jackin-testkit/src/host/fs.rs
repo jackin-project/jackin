@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
-    LinkProblem, RegularFile, RegularFileProblem, RepoPath,
+    DirEntry, EntryProblem, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError,
+    HostPath, LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
 
 use crate::sync::locked;
@@ -238,12 +238,23 @@ impl FileSystem for MemFs {
         if !state.is_dir(dir.as_path()) {
             return Err(io_error(dir, ErrorKind::NotFound, "no such directory"));
         }
+        if state.files.keys().chain(state.dirs.keys()).any(|path| {
+            path.parent() == Some(dir.as_path())
+                && path.file_name().is_some_and(|name| name.to_str().is_none())
+        }) {
+            return Err(io_error(
+                dir,
+                ErrorKind::InvalidData,
+                "an entry name is not valid UTF-8",
+            ));
+        }
         let child = |path: &PathBuf, kind: FileKind| {
             (path.parent() == Some(dir.as_path())).then(|| DirEntry {
                 name: path
                     .file_name()
-                    .map(|name| name.to_string_lossy().into_owned())
-                    .unwrap_or_default(),
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default()
+                    .to_owned(),
                 kind,
             })
         };
@@ -269,7 +280,20 @@ impl FileSystem for MemFs {
 
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         let mut state = self.enter(FsOp::CreatePrivateDirAll)?;
-        make_dirs(&mut state, dir, FileMode(0o700))
+        if state.files.contains_key(dir.as_path()) {
+            return Err(FsError::UnsafeEntry {
+                path: dir.clone(),
+                problem: EntryProblem::NotADirectory,
+            });
+        }
+        let prior = state.dirs.get(dir.as_path()).copied();
+        make_dirs(&mut state, dir, FileMode(0o700))?;
+        if let Some(mode) = prior {
+            state
+                .dirs
+                .insert(dir.as_path().to_path_buf(), FileMode(mode.0 & 0o700));
+        }
+        Ok(())
     }
 
     async fn write_new(
@@ -367,7 +391,10 @@ impl FileSystem for MemFs {
         let mut state = self.enter(FsOp::Lock)?;
         state.parent_dir(path)?;
         if state.is_dir(path.as_path()) {
-            return Err(io_error(path, ErrorKind::IsADirectory, "is a directory"));
+            return Err(FsError::UnsafeEntry {
+                path: path.clone(),
+                problem: EntryProblem::NotARegularFile,
+            });
         }
         if !state.locked.insert(path.as_path().to_path_buf()) {
             return Err(FsError::LockHeld(path.clone()));

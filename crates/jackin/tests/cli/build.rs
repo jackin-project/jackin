@@ -258,3 +258,80 @@ async fn build_selectors_choose_the_installed_agent_and_never_silently_fall_back
     })
     .await
 }
+
+const UNSAVED_NOTE: &str = "is not a saved workspace";
+
+#[tokio::test]
+async fn a_build_outside_a_saved_workspace_says_it_uses_the_unsaved_settings_once() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = built(&rig)?;
+        harness.cwd = rig.world.home().clone();
+        for args in [vec!["build"], vec!["build", "--json"]] {
+            let ran = harness.run(&args).await?;
+            ran.ok()?;
+            assert_eq!(
+                ran.stderr.matches(UNSAVED_NOTE).count(),
+                1,
+                "{}",
+                ran.stderr
+            );
+            assert!(
+                ran.stderr.contains("jackin workspace add"),
+                "{}",
+                ran.stderr
+            );
+            assert_eq!(ran.stdout.lines().count(), 1, "{}", ran.stdout);
+        }
+        let json: BuildOutput = harness.run(&["build", "--json"]).await?.json()?;
+        assert_eq!(json.schema, 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_build_in_a_saved_workspace_has_no_unsaved_note() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let harness = built(&rig)?;
+        let ran = harness.run(&["build"]).await?;
+        ran.ok()?;
+        assert!(!ran.stderr.contains(UNSAVED_NOTE), "{}", ran.stderr);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn explicit_build_selectors_outside_a_saved_workspace_keep_working_and_say_so() -> TestResult
+{
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut harness = Harness::new(&rig.world);
+        harness.write_config(&format!(
+            "{}\n[accounts.t01]\nprovider = \"codex\"\ncredential = {{ source = \"codex-login\", home = \"{}\", chatgpt_account_id = \"3f2b8c1e-5d4a-4e7b-9c6d-1a2b3c4d5e6f\" }}\n",
+            rig.config.render(),
+            rig.home.as_path().display()
+        ))?;
+        harness.cwd = rig.world.home().clone();
+        let ran = harness
+            .run(&[
+                "build",
+                "--agent",
+                "codex",
+                "--provider",
+                "codex",
+                "--model",
+                "gpt-6.1-sol",
+                "--json",
+            ])
+            .await?;
+        ran.ok()?;
+        assert_eq!(ran.stderr.matches(UNSAVED_NOTE).count(), 1, "{}", ran.stderr);
+        let typed: BuildOutput = ran.json()?;
+        assert_eq!(typed.schema, 1);
+        Ok(())
+    })
+    .await
+}
