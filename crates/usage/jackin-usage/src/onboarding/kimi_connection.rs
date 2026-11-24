@@ -93,12 +93,13 @@ impl Credential {
             return Ok(None);
         }
         let tokens = kimi::renew(http, self.region, &self.client, &self.refresh).await?;
-        let profile = kimi::identify(http, self.region, tokens.access_token.expose()).await?;
-        if profile.user_id != self.subject {
-            return Err(crate::accounts::ConnectionError::DifferentIdentity.into());
-        }
         self.update(tokens, now)?;
-        Ok(Some(self.encode()?))
+        let stored = self.encode()?;
+        match kimi::identify(http, self.region, self.access.expose()).await {
+            Ok(profile) if profile.user_id == self.subject => Ok(Some(stored)),
+            Ok(_) => Err(crate::accounts::ConnectionError::DifferentIdentity.into()),
+            Err(_) => Ok(Some(stored)),
+        }
     }
 
     pub(super) async fn snapshot(&self, http: &Http) -> Result<Value, LoginError> {
