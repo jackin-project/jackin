@@ -230,6 +230,7 @@ pub(super) async fn run_program(
             args: run.args.clone(),
             workdir: run.workdir.clone(),
             env: run.env.clone(),
+            timeout: run.timeout,
             exit_code: finished.exit_code,
         },
     ));

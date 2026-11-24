@@ -8,15 +8,20 @@ use jackin_core::{
     BranchName, CommitId, EnvName, SandboxName, SandboxPath, TerminalText, sandbox_layout,
 };
 
-use super::diff::{ChangedFile, Unread, added_file, parse_patch};
-use jackin_openshell::{Gateway, GatewayError, ProgramOutcome, ProgramRun, ProgramStdin};
+use super::diff::{ChangeStatus, ChangedFile, Unread, added_file, parse_patch};
+use jackin_openshell::{
+    Gateway, GatewayError, GatewayOp, ProgramOutcome, ProgramRun, ProgramStdin,
+};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 const HEADS: &str = "refs/heads/";
 const NOT_A_REPOSITORY: &str = "not a git repository";
 const CLEANUP: Duration = Duration::from_secs(10);
-const UNTRACKED_FILES: usize = 500;
+const CHANGED_FILES: usize = 500;
 const UNTRACKED_BYTES: usize = 256 * 1024;
+const TOTAL_UNTRACKED_BYTES: usize = 8 * 1024 * 1024;
+const TOTAL_PATCH_BYTES: usize = 16 * 1024 * 1024;
 const NOT_READ: i32 = 66;
 const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; IFS= read -r p < \"$d/gitdir\" || [ -n \"$p\" ]; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
 static SH: SandboxPath = SandboxPath::from_static("/bin/sh");
@@ -73,6 +78,20 @@ pub(super) struct Remote<'a> {
     pub(super) name: &'a SandboxName,
     pub(super) timeout: Duration,
     pub(super) cancel: &'a CancellationToken,
+    pub(super) deadline: Option<Instant>,
+}
+
+struct Budget {
+    files: usize,
+    untracked: usize,
+    patches: usize,
+    omitted: usize,
+}
+
+enum Fetched {
+    Content(Vec<u8>),
+    Unread(Unread),
+    Beyond,
 }
 
 fn failure(outcome: &ProgramOutcome) -> RemoteError {
@@ -144,6 +163,20 @@ impl Remote<'_> {
         program: &SandboxPath,
         args: Vec<String>,
     ) -> Result<ProgramOutcome, GatewayError> {
+        let timeout = match self.deadline {
+            Some(end) => {
+                let left = end.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(GatewayError::Timeout {
+                        op: GatewayOp::Program,
+                        after: self.timeout,
+                        group: None,
+                    });
+                }
+                timeout.min(left)
+            }
+            None => timeout,
+        };
         let env = EnvName::parse("LC_ALL")
             .map(|name| BTreeMap::from([(name, "C".to_owned())]))
             .unwrap_or_default();
@@ -362,9 +395,33 @@ impl Remote<'_> {
         &self,
         repository: &Repository,
     ) -> Result<(Vec<ChangedFile>, usize), RemoteError> {
-        let root = repository.checkouts.first().ok_or(RemoteError::Malformed(
-            "git worktree list printed no checkout",
-        ))?;
+        let (lead, rest) = repository
+            .checkouts
+            .split_first()
+            .ok_or(RemoteError::Malformed(
+                "git worktree list printed no checkout",
+            ))?;
+        let mut linked: Vec<&String> = rest.iter().collect();
+        linked.sort();
+        let mut budget = Budget {
+            files: CHANGED_FILES,
+            untracked: TOTAL_UNTRACKED_BYTES,
+            patches: TOTAL_PATCH_BYTES,
+            omitted: 0,
+        };
+        let mut files = self.changes_in(lead, &mut budget).await?;
+        for root in linked {
+            let found = self.changes_in(root, &mut budget).await?;
+            files.extend(found.into_iter().map(|file| in_checkout(root, file)));
+        }
+        Ok((files, budget.omitted))
+    }
+
+    async fn changes_in(
+        &self,
+        root: &str,
+        budget: &mut Budget,
+    ) -> Result<Vec<ChangedFile>, RemoteError> {
         let head = self
             .git(&["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"])
             .await?;
@@ -398,7 +455,17 @@ impl Remote<'_> {
                 "--",
             ])
             .await?;
-        let mut files = parse_patch(&patch).map_err(RemoteError::Malformed)?;
+        let tracked = parse_patch(&patch).map_err(RemoteError::Malformed)?;
+        let mut files = Vec::new();
+        if patch.len() > budget.patches {
+            budget.omitted += tracked.len();
+        } else {
+            budget.patches -= patch.len();
+            let room = tracked.len().min(budget.files);
+            budget.files -= room;
+            budget.omitted += tracked.len() - room;
+            files.extend(tracked.into_iter().take(room));
+        }
         let listed = self
             .require(&[
                 "-C",
@@ -409,30 +476,56 @@ impl Remote<'_> {
                 "-z",
             ])
             .await?;
-        let mut names = listed
+        for name in listed
             .split(|byte| *byte == 0)
-            .filter(|name| !name.is_empty());
-        for name in names.by_ref().take(UNTRACKED_FILES) {
+            .filter(|name| !name.is_empty())
+        {
+            if budget.files == 0 || budget.untracked == 0 {
+                budget.omitted += 1;
+                continue;
+            }
             let content = match std::str::from_utf8(name) {
-                Ok(name) => self.read_untracked(root, name).await?,
-                Err(_) => Err(Unread::UndecodableName),
+                Ok(name) => {
+                    self.read_untracked(root, name, budget.untracked.min(UNTRACKED_BYTES))
+                        .await?
+                }
+                Err(_) => Fetched::Unread(Unread::UndecodableName),
             };
+            let content = match content {
+                Fetched::Content(bytes) => {
+                    budget.untracked -= bytes.len();
+                    Ok(bytes)
+                }
+                Fetched::Unread(unread) => {
+                    if unread == Unread::TooLarge {
+                        budget.untracked -= UNTRACKED_BYTES.min(budget.untracked);
+                    }
+                    Err(unread)
+                }
+                Fetched::Beyond => {
+                    budget.untracked = 0;
+                    budget.omitted += 1;
+                    continue;
+                }
+            };
+            budget.files -= 1;
             files.push(added_file(
                 name,
                 content.as_deref().map_err(|unread| *unread),
             ));
         }
-        Ok((files, names.count()))
+        Ok(files)
     }
 
     async fn read_untracked(
         &self,
         root: &str,
         name: &str,
-    ) -> Result<Result<Vec<u8>, Unread>, RemoteError> {
+        allowance: usize,
+    ) -> Result<Fetched, RemoteError> {
         let script = format!(
             "[ -f \"$1\" ] && [ ! -L \"$1\" ] || exit {NOT_READ}; head -c {} -- \"$1\" 2>/dev/null || exit {NOT_READ}",
-            UNTRACKED_BYTES + 1
+            allowance + 1
         );
         let outcome = self
             .exec(
@@ -446,9 +539,12 @@ impl Remote<'_> {
             )
             .await?;
         match outcome.exit_code {
-            0 if outcome.stdout.len() > UNTRACKED_BYTES => Ok(Err(Unread::TooLarge)),
-            0 => Ok(Ok(outcome.stdout)),
-            NOT_READ => Ok(Err(Unread::NotRegular)),
+            0 if outcome.stdout.len() > allowance && allowance < UNTRACKED_BYTES => {
+                Ok(Fetched::Beyond)
+            }
+            0 if outcome.stdout.len() > allowance => Ok(Fetched::Unread(Unread::TooLarge)),
+            0 => Ok(Fetched::Content(outcome.stdout)),
+            NOT_READ => Ok(Fetched::Unread(Unread::NotRegular)),
             _ => Err(failure(&outcome)),
         }
     }
@@ -496,4 +592,16 @@ impl Remote<'_> {
             Err(failure(&outcome))
         }
     }
+}
+
+fn qualified(root: &str, path: &TerminalText) -> TerminalText {
+    TerminalText::sanitize(format!("{root}/{}", path.as_str()).as_bytes())
+}
+
+fn in_checkout(root: &str, mut file: ChangedFile) -> ChangedFile {
+    file.path = qualified(root, &file.path);
+    if let ChangeStatus::Renamed { from } = &mut file.status {
+        *from = qualified(root, from);
+    }
+    file
 }
