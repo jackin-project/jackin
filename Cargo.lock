@@ -2898,7 +2898,6 @@ dependencies = [
  "jackin-usage",
  "ratatui",
  "serde_json",
- "tempfile",
  "termrock",
  "thiserror 2.0.21",
  "tokio",

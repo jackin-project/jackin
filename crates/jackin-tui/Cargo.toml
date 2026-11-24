@@ -32,7 +32,6 @@ clap = { workspace = true }
 jackin-console = { workspace = true, features = ["demo"] }
 jackin-testkit = { workspace = true }
 ratatui = { workspace = true }
-tempfile = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "test-util", "time"] }
 
 [lints]

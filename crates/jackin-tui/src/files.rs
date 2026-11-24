@@ -96,8 +96,12 @@ mod tests {
             runtime.handle().clone(),
             String::new(),
         );
-        let dir = tempfile::tempdir()?;
-        let root = dir.path();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_nanos();
+        let scratch = std::env::temp_dir().join(format!("jp-{}-{nanos}", std::process::id()));
+        std::fs::create_dir(&scratch)?;
+        let root = scratch.as_path();
         std::fs::write(root.join("login.json"), b"{}")?;
         std::fs::create_dir(root.join("folder"))?;
         symlink(root.join("login.json"), root.join("to-file"))?;
@@ -129,6 +133,7 @@ mod tests {
                 ("to-folder".to_owned(), true),
             ]
         );
+        std::fs::remove_dir_all(&scratch)?;
         Ok(())
     }
 }
