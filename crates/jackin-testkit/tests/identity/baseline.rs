@@ -7,9 +7,28 @@ use std::sync::OnceLock;
 
 const PACKAGE: &str = "jackin-console";
 
+fn host_triple() -> String {
+    let output = Command::new("rustc")
+        .arg("-vV")
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("start rustc -vV")
+        .wait_with_output()
+        .expect("read rustc -vV");
+    assert!(output.status.success(), "rustc -vV failed");
+    String::from_utf8(output.stdout)
+        .expect("rustc -vV is UTF-8")
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .expect("rustc -vV names its host")
+        .to_owned()
+}
+
 fn console_directory() -> PathBuf {
     let output = Command::new("cargo")
         .args(["metadata", "--format-version", "1", "--offline", "--locked"])
+        .args(["--filter-platform", &host_triple()])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .stdout(Stdio::piped())
         .spawn()

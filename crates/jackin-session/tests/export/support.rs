@@ -179,7 +179,11 @@ fn git_housekeeping(path: &str) -> bool {
     let Some(name) = path.rsplit('/').next() else {
         return false;
     };
-    path.contains("/.git/") && (name.ends_with(".lock") || name == "gc.pid")
+    path.contains("/.git/")
+        && (std::path::Path::new(name)
+            .extension()
+            .is_some_and(|ext| ext == "lock")
+            || name == "gc.pid")
 }
 
 pub(crate) async fn state(rig: &Rig, name: &SandboxName) -> jackin_session::WorkState {
