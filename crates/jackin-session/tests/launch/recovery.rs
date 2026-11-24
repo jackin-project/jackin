@@ -70,7 +70,8 @@ async fn a_failed_recovery_lookup_is_unconfirmed_and_never_absent() -> TestResul
         assert_eq!(
             found,
             RestoreFinding::Unconfirmed {
-                last_observed: None
+                last_observed: None,
+                planned: rig.sandbox_name(1)?,
             }
         );
         assert!(rig.gateway().sandboxes().is_empty());
@@ -97,7 +98,8 @@ async fn a_hung_recovery_lookup_gives_up_after_its_budget_as_unconfirmed() -> Te
         assert_eq!(
             found,
             RestoreFinding::Unconfirmed {
-                last_observed: None
+                last_observed: None,
+                planned: rig.sandbox_name(1)?,
             }
         );
         assert_eq!(
@@ -352,6 +354,7 @@ async fn a_cancel_with_a_failing_recovery_lookup_keeps_the_last_observed_sandbox
             finding(outcome?)?,
             RestoreFinding::Unconfirmed {
                 last_observed: Some(rig.sandbox_name(1)?),
+                planned: rig.sandbox_name(1)?,
             }
         );
 
@@ -382,7 +385,8 @@ async fn an_unsettled_create_that_no_lookup_can_see_is_unconfirmed_not_absent() 
         assert_eq!(
             found,
             RestoreFinding::Unconfirmed {
-                last_observed: None
+                last_observed: None,
+                planned: rig.sandbox_name(1)?,
             }
         );
         assert_eq!(rig.gateway().sandboxes().len(), 1);
@@ -411,6 +415,7 @@ async fn a_created_sandbox_that_no_lookup_can_see_keeps_its_name_as_last_observe
             found,
             RestoreFinding::Unconfirmed {
                 last_observed: Some(rig.sandbox_name(1)?),
+                planned: rig.sandbox_name(1)?,
             }
         );
         assert_eq!(rig.gateway().sandboxes().len(), 1);
@@ -443,6 +448,7 @@ async fn a_name_hit_names_the_sandbox_when_the_label_lookup_fails() -> TestResul
             found,
             RestoreFinding::Unconfirmed {
                 last_observed: Some(rig.sandbox_name(1)?),
+                planned: rig.sandbox_name(1)?,
             }
         );
         Ok(())
@@ -464,7 +470,8 @@ async fn a_name_hit_on_another_launch_never_becomes_the_last_observed_sandbox() 
         assert_eq!(
             found,
             RestoreFinding::Unconfirmed {
-                last_observed: None
+                last_observed: None,
+                planned: rig.sandbox_name(1)?,
             }
         );
         Ok(())
@@ -484,6 +491,7 @@ async fn a_sandbox_that_is_being_deleted_is_not_offered_as_a_restore_candidate()
             found,
             RestoreFinding::Unconfirmed {
                 last_observed: Some(name),
+                planned: rig.sandbox_name(1)?,
             }
         );
         Ok(())
@@ -542,7 +550,8 @@ async fn a_name_lookup_that_hangs_after_an_empty_label_lookup_is_unconfirmed_wit
         assert_eq!(
             finding(outcome?)?,
             RestoreFinding::Unconfirmed {
-                last_observed: None
+                last_observed: None,
+                planned: rig.sandbox_name(1)?,
             }
         );
         assert_eq!(
@@ -597,6 +606,7 @@ async fn a_cancel_after_an_empty_lookup_that_followed_a_created_sandbox_stays_un
             finding(outcome?)?,
             RestoreFinding::Unconfirmed {
                 last_observed: Some(rig.sandbox_name(1)?),
+                planned: rig.sandbox_name(1)?,
             }
         );
         assert_eq!(rig.gateway().sandboxes().len(), 1);

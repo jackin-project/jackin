@@ -903,6 +903,7 @@ async fn a_rename_keeps_what_another_handle_wrote_after_the_caller_read() -> Tes
 struct CancelOnSleep {
     token: CancellationToken,
     at: usize,
+    hangs: bool,
     slept: Mutex<usize>,
 }
 
@@ -911,7 +912,15 @@ impl CancelOnSleep {
         CancelOnSleep {
             token: token.clone(),
             at,
+            hangs: false,
             slept: Mutex::new(0),
+        }
+    }
+
+    fn hanging(token: &CancellationToken, at: usize) -> CancelOnSleep {
+        CancelOnSleep {
+            hangs: true,
+            ..CancelOnSleep::new(token, at)
         }
     }
 
@@ -938,6 +947,9 @@ impl Clock for CancelOnSleep {
         };
         if count == self.at {
             self.token.cancel();
+            if self.hangs {
+                std::future::pending::<()>().await;
+            }
         }
     }
 }
@@ -1005,6 +1017,30 @@ async fn a_cancel_while_the_lock_is_contended_stops_the_wait_and_changes_nothing
         .await?;
     assert!(has_role(&config, "a")?);
     assert_eq!(clock.sleeps(), 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_cancel_during_the_lock_retry_sleep_does_not_wait_for_the_sleep_to_end() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let path = hp(&dir.path().join("config.toml"))?;
+    let lock_path = hp(&dir.path().join("config.toml.lock"))?;
+    let held = StdFileSystem::default().lock(&lock_path).await?;
+    let cancel = CancellationToken::new();
+    let clock = Arc::new(CancelOnSleep::hanging(&cancel, 1));
+    let shared = Arc::clone(&clock);
+    let ticking: Arc<dyn Clock> = shared;
+    let store = ConfigStore::new(Arc::new(StdFileSystem::default()), ticking, path.clone());
+    let edit = store.edit(vec![role("a")?], &cancel);
+    let error = tokio::time::timeout(Duration::from_secs(10), edit)
+        .await
+        .map_err(|_| "the cancelled edit kept waiting for the retry sleep")?
+        .err()
+        .ok_or("an edit under a held lock succeeded")?;
+    assert_eq!(label(&error), "cancelled");
+    assert_eq!(clock.sleeps(), 1);
+    assert!(!path.as_path().exists());
+    drop(held);
     Ok(())
 }
 

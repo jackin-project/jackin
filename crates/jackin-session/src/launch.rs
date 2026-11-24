@@ -165,7 +165,10 @@ pub enum RestoreFinding {
     Observed(SandboxName),
     Absent { requested: bool },
     Ambiguous(Vec<SandboxName>),
-    Unconfirmed { last_observed: Option<SandboxName> },
+    Unconfirmed {
+        last_observed: Option<SandboxName>,
+        planned: SandboxName,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

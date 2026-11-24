@@ -336,6 +336,9 @@ impl Rig {
             ))
             .await?;
         self.gateway()
+            .find_sandboxes(&SandboxQuery::Name(name.clone()))
+            .await?;
+        self.gateway()
             .sandbox(&name)
             .ok_or_else(|| "the foreign sandbox is missing".into())
     }

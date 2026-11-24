@@ -371,6 +371,9 @@ impl Session {
             PowerAction::Start => Phase::Ready,
             PowerAction::Stop => Phase::Stopped,
         };
+        if cancel.is_cancelled() {
+            return Err(LifecycleError::Cancelled);
+        }
         let mut view = self.deps.gateway.set_power(sandbox, action).await?;
         let limit = self.deps.limits.ready;
         let mut waited = Duration::ZERO;

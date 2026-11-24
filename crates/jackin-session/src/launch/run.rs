@@ -295,6 +295,7 @@ impl Run<'_> {
     fn unconfirmed(&self, seen: Option<SandboxName>) -> RestoreFinding {
         RestoreFinding::Unconfirmed {
             last_observed: self.acknowledged.clone().or(seen),
+            planned: self.plan.draft().name().clone(),
         }
     }
 

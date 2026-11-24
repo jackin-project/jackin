@@ -683,11 +683,13 @@ impl Run {
             RestoreFinding::Observed(sandbox)
             | RestoreFinding::Unconfirmed {
                 last_observed: Some(sandbox),
+                ..
             } => sandbox,
             RestoreFinding::Absent { .. } => return,
             RestoreFinding::Ambiguous(_)
             | RestoreFinding::Unconfirmed {
                 last_observed: None,
+                ..
             } => {
                 self.backend.refresh();
                 return;

@@ -58,6 +58,31 @@ async fn a_cancel_interrupts_a_hung_lookup_in_a_power_change_and_changes_nothing
 }
 
 #[tokio::test]
+async fn a_cancel_that_arrives_after_the_lookup_sends_no_power_request() -> TestResult {
+    guard_within(WITHIN, async {
+        for readable in [true, false] {
+            let rig = Rig::new().await?;
+            rig.launch(1).await?;
+            let handle = rig.handle(1).await?;
+            let name = handle.name();
+            let token = CancellationToken::new();
+            rig.gateway().inject(Fault::CancelAt {
+                trigger: Trigger::Op(GatewayOp::Find),
+                token: token.clone(),
+            });
+            let result = power(&rig, &name, PowerAction::Stop, &token, readable).await;
+            assert!(
+                matches!(result, Err(LifecycleError::Cancelled)),
+                "{readable}: {result:?}"
+            );
+            assert_eq!(handle.phase(), Phase::Ready, "{readable}");
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_cancel_after_the_power_request_was_sent_leaves_the_sandbox_changing_not_unchanged()
 -> TestResult {
     guard_within(WITHIN, async {

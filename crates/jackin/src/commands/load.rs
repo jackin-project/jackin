@@ -114,13 +114,15 @@ fn cancelled(candidate: &RestoreCandidate) -> CommandError {
         ),
         RestoreFinding::Unconfirmed {
             last_observed: Some(sandbox),
+            ..
         } => format!(
-            "cancelled; sandbox {sandbox} was last observed, but the gateway could not confirm its state (launch {launch}); repeat the same jackin load command with --launch-id {launch}"
+            "cancelled; sandbox {sandbox} was seen during this launch, but the gateway's lookups do not settle whether it still exists (launch {launch}); jackin ls shows the current state; repeat the same jackin load command with --launch-id {launch}"
         ),
         RestoreFinding::Unconfirmed {
             last_observed: None,
+            planned,
         } => format!(
-            "cancelled; the gateway could not confirm whether a sandbox exists (launch {launch}); repeat the same jackin load command with --launch-id {launch}"
+            "cancelled; the gateway could not confirm whether sandbox {planned} exists (launch {launch}); jackin ls shows the current state; repeat the same jackin load command with --launch-id {launch}"
         ),
     })
 }

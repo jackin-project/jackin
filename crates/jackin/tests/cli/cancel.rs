@@ -336,8 +336,11 @@ async fn a_cancelled_load_never_says_no_sandbox_when_the_gateway_cannot_confirm(
             .await?;
         assert_eq!(ran.exit, ExitClass::Cancelled, "{}", ran.stderr);
         let line = cancelled_line(&ran.stderr)?;
+        let planned = rig.sandbox_name(1)?;
         assert!(
-            line.contains("could not confirm whether a sandbox exists")
+            line.contains(&format!(
+                "could not confirm whether sandbox {planned} exists"
+            ))
                 && !line.contains("before a sandbox existed")
                 && line.contains(&id),
             "{line}"
@@ -375,7 +378,7 @@ async fn a_cancelled_load_never_says_no_sandbox_when_the_gateway_cannot_confirm(
         let name = rig.sandbox_name(1)?;
         assert!(
             line.contains(name.as_str())
-                && line.contains("last observed")
+                && line.contains("was seen during this launch")
                 && !line.contains("before a sandbox existed"),
             "{line}"
         );
