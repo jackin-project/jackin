@@ -68,6 +68,7 @@ After jackin creates the sandbox, only the `network_policies` section can change
 | `landlock.compatibility` must be `hard_requirement`. A missing section and `landlock: {}` also fail. | Without it OpenShell applies Landlock on a best-effort basis. |
 | `read_only` and `read_write` must not both be empty. | OpenShell then applies no Landlock, even with `hard_requirement`. |
 | A `read_write` path must not be `/`, `/proc`, `/sys`, or a path below them. | They alias the filesystem root. |
+| A `read_write` path must not hold a control character. | The image build hands the paths to its scan one per line. |
 | A network rule name must not be one that OpenShell reserves for provider rules. | Only the generated rule may match the Codex provider hosts. |
 | A host label may hold only letters, digits, `_`, `-`, and `*`, or be exactly `**`. | The sandbox and the gateway read other glob syntax in different ways. |
 | No rule other than the generated provider rule may match a host of the Codex provider, including through a wildcard, on any port, for any binary. | The gateway swaps in the real credential on those hosts. |
@@ -75,3 +76,5 @@ After jackin creates the sandbox, only the `network_policies` section can change
 | A port must be valid, and a rule name must be unique. | The gateway would refuse the policy. |
 
 `jackin role check` also refuses any policy that the gateway itself would refuse.
+
+The image build checks the paths against the final image, including `/tmp` and `/dev/null`, which OpenShell adds. It fails when a `read_write` path, or a directory above it, is a symbolic link there, because the sandbox would then be able to write where the link points. List the real directory instead. A path that does not exist in the image is allowed.

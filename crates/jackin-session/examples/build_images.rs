@@ -11,7 +11,8 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, BuilderName, CommitId, DockerLayer, FileSystem, HostPath, Platform, ProcessRunner,
-    ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath, RoleName, Sha256, StdFileSystem,
+    ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath, RoleName, SandboxPath, Sha256,
+    StdFileSystem,
 };
 use jackin_image::{
     BuildxEngine, ContextEntry, HookFiles, ImageEvent, ImageRequest, Rebuild, RoleRevision,
@@ -28,6 +29,7 @@ struct Options {
     work_dir: PathBuf,
     rebuild: Rebuild,
     calls: usize,
+    read_write: Vec<SandboxPath>,
 }
 
 fn state_work_dir() -> Result<PathBuf, Box<dyn Error>> {
@@ -70,6 +72,7 @@ fn options() -> Result<Options, Box<dyn Error>> {
         work_dir: state_work_dir()?,
         rebuild: Rebuild::No,
         calls: 2,
+        read_write: Vec::new(),
     };
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
@@ -81,6 +84,9 @@ fn options() -> Result<Options, Box<dyn Error>> {
             "--work-dir" => options.work_dir = PathBuf::from(value("--work-dir")?),
             "--calls" => options.calls = value("--calls")?.parse()?,
             "--rebuild" => options.rebuild = Rebuild::Yes,
+            "--read-write" => options
+                .read_write
+                .push(SandboxPath::parse(&value("--read-write")?)?),
             other => return Err(format!("unknown argument {other}").into()),
         }
     }
@@ -213,6 +219,7 @@ async fn request(
         platform: Platform::host_default(),
         builder: BuilderName::parse(&options.builder)?,
         docker: DockerLayer::Absent,
+        read_write: options.read_write.clone(),
         rebuild: options.rebuild,
     })
 }

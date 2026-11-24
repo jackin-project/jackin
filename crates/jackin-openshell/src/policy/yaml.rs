@@ -105,13 +105,16 @@ fn check_shape(root: &Value, source: Source) -> Result<(), PolicyError> {
     Ok(())
 }
 
-fn normalized(path: &str) -> Vec<&str> {
+pub(super) fn normalized(path: &str) -> Vec<&str> {
     path.split('/')
         .filter(|piece| !piece.is_empty() && *piece != ".")
         .collect()
 }
 
 fn check_read_write(paths: &[String]) -> Result<(), PolicyError> {
+    if let Some(path) = paths.iter().find(|path| path.chars().any(char::is_control)) {
+        return Err(PolicyError::ReadWritePath { path: path.clone() });
+    }
     for path in paths.iter().filter(|path| path.starts_with('/')) {
         match normalized(path).first().copied() {
             None => return Err(PolicyError::ReadWriteRoot { path: path.clone() }),

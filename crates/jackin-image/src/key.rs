@@ -79,9 +79,28 @@ fn docker_arguments(args: &mut Vec<String>) -> Result<(), ImageError> {
     Ok(())
 }
 
+const READ_WRITE_PATH_MAX_BYTES: usize = 4096;
+
+fn read_write_argument(paths: &[SandboxPath]) -> Result<Option<String>, ImageError> {
+    let mut sorted: Vec<&str> = paths.iter().map(SandboxPath::as_str).collect();
+    sorted.sort_unstable();
+    sorted.dedup();
+    if let Some(path) = sorted.iter().find(|path| {
+        **path == "/"
+            || path.len() > READ_WRITE_PATH_MAX_BYTES
+            || path.chars().any(char::is_control)
+    }) {
+        return Err(ImageError::ReadWritePath {
+            path: (*path).to_owned(),
+        });
+    }
+    Ok((!sorted.is_empty()).then(|| build_arg("READ_WRITE_PATHS", &sorted.join("\n"))))
+}
+
 pub(crate) fn derived_arguments_multi(
     agents: &[Agent],
     docker: DockerLayer,
+    read_write: &[SandboxPath],
 ) -> Result<Vec<String>, ImageError> {
     let mut sorted = agents.to_vec();
     sorted.sort_by_key(|agent| agent.as_str());
@@ -90,6 +109,7 @@ pub(crate) fn derived_arguments_multi(
         sorted.push(Agent::Codex);
     }
     let mut args = derived_arguments_prefixed(sorted[0], docker, "AGENT")?;
+    args.extend(read_write_argument(read_write)?);
     if sorted.len() == 1 {
         return Ok(args);
     }
@@ -189,7 +209,11 @@ pub(crate) fn derived_arguments_prefixed(
 
 impl ImageKey {
     pub fn derive(request: &ImageRequest, construct: &ImageId) -> Result<ImageKey, ImageError> {
-        let derived_args = derived_arguments_multi(&request.sorted_agents(), request.docker)?;
+        let derived_args = derived_arguments_multi(
+            &request.sorted_agents(),
+            request.docker,
+            &request.read_write,
+        )?;
         Ok(ImageKey::compute(request, &derived_args, construct))
     }
 
@@ -213,6 +237,7 @@ impl ImageKey {
             platform,
             builder: _,
             docker,
+            read_write: _,
             rebuild: _,
         } = request;
         let SourceFile {

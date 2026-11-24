@@ -9,7 +9,7 @@ newline='
 '
 
 usage() {
-    echo "usage: scan --owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... [--data PATH]... [--absent PATH]... ROOT PROTECTED..." >&2
+    echo "usage: scan --owner UID:GID --sandbox-owner UID:GID [--same-as PATH=EXPECTED]... [--allow-tool PATH]... [--data PATH]... [--absent PATH]... [--read-write PATH]... ROOT PROTECTED..." >&2
     exit 64
 }
 
@@ -186,6 +186,61 @@ check_accounts() {
     done
 }
 
+good_home() {
+    [ -n "$(find "$root/sandbox" -maxdepth 0 -type d -uid "$sandbox_uid" -gid "$sandbox_gid" ! \( -perm -020 -o -perm -002 \) -print 2>/dev/null)" ]
+}
+
+home_reason() {
+    if [ -L "$root/sandbox" ]; then
+        echo "symlink"
+    elif [ ! -e "$root/sandbox" ]; then
+        echo "missing"
+    elif [ -z "$(find "$root/sandbox" -maxdepth 0 -type d -print 2>/dev/null)" ]; then
+        echo "wrong type"
+    elif [ -z "$(find "$root/sandbox" -maxdepth 0 -uid "$sandbox_uid" -gid "$sandbox_gid" -print 2>/dev/null)" ]; then
+        echo "not owned by $sandbox_uid:$sandbox_gid"
+    else
+        echo "writable by group or others"
+    fi
+}
+
+check_home() {
+    good_home && return 0
+    report "sandbox home is not a real directory owned by the sandbox user: /sandbox ($(home_reason))"
+}
+
+check_read_write() {
+    if [ $((${#root} + ${#1})) -gt 4095 ]; then
+        report "read_write path of the role policy is too long to inspect: $(show "$1")"
+        return 0
+    fi
+    prefix=
+    rest=${1#/}
+    while [ -n "$rest" ]; do
+        prefix=$prefix/${rest%%/*}
+        case $rest in
+            */*) rest=${rest#*/} ;;
+            *) rest= ;;
+        esac
+        if [ -L "$root$prefix" ]; then
+            report "read_write path of the role policy is or crosses a symlink: $(show "$1") (at $(show "$prefix")); list the real directory instead"
+            return 0
+        fi
+        [ -e "$root$prefix" ] || return 0
+    done
+}
+
+normal_path() {
+    case $1 in
+        /*) ;;
+        *) return 1 ;;
+    esac
+    case $1 in
+        *//* | */./* | */../* | */. | */.. | */ | *[[:cntrl:]]*) return 1 ;;
+    esac
+    return 0
+}
+
 trusted_of() {
     for pair in $pairs; do
         if [ "${pair%%=*}" = "$1" ]; then
@@ -205,15 +260,22 @@ exempt() {
 }
 
 owner=
+sandbox_owner=
 pairs=
 allow=
 data=
 absent=
+read_write=
 while [ "$#" -gt 0 ]; do
     case $1 in
         --owner)
             [ "$#" -ge 2 ] || usage
             owner=$2
+            shift 2
+            ;;
+        --sandbox-owner)
+            [ "$#" -ge 2 ] || usage
+            sandbox_owner=$2
             shift 2
             ;;
         --same-as)
@@ -234,6 +296,12 @@ while [ "$#" -gt 0 ]; do
         --absent)
             [ "$#" -ge 2 ] || usage
             absent="$absent $2"
+            shift 2
+            ;;
+        --read-write)
+            [ "$#" -ge 2 ] || usage
+            normal_path "$2" || usage
+            read_write="$read_write$newline$2"
             shift 2
             ;;
         -*) usage ;;
@@ -267,9 +335,18 @@ case $owner in
     *:*) ;;
     *) usage ;;
 esac
+case $sandbox_owner in
+    '' | *[!0-9:]* | :* | *: | *:*:*) usage ;;
+    *:*) ;;
+    *) usage ;;
+esac
 [ "$#" -ge 2 ] || usage
 uid=${owner%%:*}
 gid=${owner#*:}
+sandbox_uid=${sandbox_owner%%:*}
+sandbox_gid=${sandbox_owner#*:}
+canonical "$sandbox_uid" || usage
+canonical "$sandbox_gid" || usage
 root=${1%/}
 shift
 protected=$*
@@ -335,6 +412,13 @@ for path in $absent; do
     fi
 done
 
+while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    check_read_write "$path"
+done <<EOF
+$read_write
+EOF
+
 for pair in $pairs; do
     path=${pair%%=*}
     if [ -f "$root$path" ] && [ ! -L "$root$path" ] && cmp -s "$root$path" "${pair#*=}"; then
@@ -344,6 +428,7 @@ for pair in $pairs; do
 done
 
 check_accounts
+check_home
 
 [ "$failed" -eq 0 ] || exit 1
 echo "jackin-image-scan 1"

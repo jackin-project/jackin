@@ -11,11 +11,11 @@ use std::process::{Command, Stdio};
 
 use jackin_core::{
     Agent, AttemptId, BuilderName, CommitId, DOCKER_CLIENT, DockerLayer, HookKind, ImageId,
-    Platform, RepoPath, RoleName, SupervisorState, sandbox_layout,
+    Platform, RepoPath, RoleName, SandboxPath, SupervisorState, sandbox_layout,
 };
 use jackin_image::{
-    BuildStage, ContextSource, FinalBuilds, HookFiles, ImagePlan, ImageRequest, MaterializedFile,
-    PlannedBuild, Rebuild, RoleRevision, SourceFile,
+    BuildStage, ContextSource, FinalBuilds, HookFiles, ImageError, ImageKey, ImagePlan,
+    ImageRequest, MaterializedFile, PlannedBuild, Rebuild, RoleRevision, SourceFile,
 };
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -122,6 +122,7 @@ fn base() -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: Vec::new(),
         rebuild: Rebuild::No,
     })
 }
@@ -625,7 +626,8 @@ fn derived_dockerfile_installs_what_the_codex_row_describes() -> TestResult {
     let spec = Agent::Codex.spec();
     let text = derived_text()?;
     let lines = instructions(text);
-    let wanted: BTreeSet<String> = ARG_NAMES.iter().map(|name| (*name).to_owned()).collect();
+    let mut wanted: BTreeSet<String> = ARG_NAMES.iter().map(|name| (*name).to_owned()).collect();
+    wanted.insert("READ_WRITE_PATHS".to_owned());
     assert_eq!(declared_args(&lines), wanted, "declared ARG names");
     let adds = archive_stage_adds(&lines);
     for target in spec.install.targets {
@@ -1595,5 +1597,244 @@ fn derived_dockerfile_copies_the_client_once_and_scans_it_against_the_client_sta
     assert!(run.contains(r#"--allow-tool "$path" --same-as "$path=/trusted-docker$path""#));
     assert!(run.contains(r#"extra="$extra $path""#), "{run}");
     assert!(run.contains(" $extra > /verdict"), "{run}");
+    Ok(())
+}
+
+fn request_with(paths: &[&str]) -> Result<ImageRequest, Box<dyn Error>> {
+    let mut request = base()?;
+    request.read_write = paths
+        .iter()
+        .map(|path| SandboxPath::parse(path))
+        .collect::<Result<_, _>>()?;
+    Ok(request)
+}
+
+fn read_write_argument(paths: &[&str]) -> Result<Option<String>, Box<dyn Error>> {
+    let plan = ImagePlan::new(&request_with(paths)?)?;
+    let args = build_arg_map(&plan.final_builds(&construct_id()?).derived.args)?;
+    Ok(args.get("READ_WRITE_PATHS").cloned())
+}
+
+#[test]
+fn the_policy_read_write_paths_reach_the_derived_build_as_one_sorted_argument() -> TestResult {
+    assert_eq!(read_write_argument(&[])?, None);
+    assert_eq!(
+        read_write_argument(&["/tmp", "/sandbox"])?.as_deref(),
+        Some("/sandbox\n/tmp")
+    );
+    assert_eq!(
+        read_write_argument(&["/sandbox", "/tmp", "/sandbox"])?.as_deref(),
+        Some("/sandbox\n/tmp")
+    );
+    Ok(())
+}
+
+#[test]
+fn every_legitimate_path_character_is_carried_verbatim() -> TestResult {
+    for path in [
+        "/sand box",
+        "/a:b",
+        "/semi;colon",
+        "/q'uote\"s",
+        "/dollar$x`tick`",
+        "/star*?[glob]",
+        "/back\\slash",
+        "/caf\u{e9}/\u{65e5}\u{672c}",
+        "/-dash",
+        "/#hash",
+    ] {
+        assert_eq!(
+            read_write_argument(&[path])?.as_deref(),
+            Some(path),
+            "{path}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_read_write_path_the_scan_cannot_carry_is_refused_at_planning() -> TestResult {
+    for path in [
+        "/",
+        "/a\nb",
+        "/a\tb",
+        "/a\rb",
+        "/a\u{1b}[2J",
+        "/a\0b",
+        "/a\u{7f}",
+        "/a\u{85}b",
+    ] {
+        let request = request_with(&[path])?;
+        let Err(error) = ImagePlan::new(&request) else {
+            return Err(format!("{path:?} was planned").into());
+        };
+        assert!(
+            matches!(error, ImageError::ReadWritePath { .. }),
+            "{path:?}: {error:?}"
+        );
+        let key = ImageKey::derive(&request, &construct_id()?);
+        assert!(
+            matches!(key, Err(ImageError::ReadWritePath { .. })),
+            "{path:?}: {key:?}"
+        );
+        let shown = format!("{error} {error:?}");
+        assert!(
+            !shown.chars().any(|c| c.is_control() && c != ' '),
+            "{path:?}: {shown:?}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn a_changed_policy_changes_the_image_key_and_a_reordered_one_does_not() -> TestResult {
+    let construct = construct_id()?;
+    let tag = |paths: &[&str]| -> Result<String, Box<dyn Error>> {
+        Ok(ImagePlan::new(&request_with(paths)?)?
+            .final_tag(&construct)
+            .to_string())
+    };
+    let key = |paths: &[&str]| -> Result<ImageKey, Box<dyn Error>> {
+        Ok(ImageKey::derive(&request_with(paths)?, &construct)?)
+    };
+    let tags: BTreeSet<String> = [
+        tag(&[])?,
+        tag(&["/sandbox"])?,
+        tag(&["/sandbox", "/tmp"])?,
+        tag(&["/sandbox", "/data"])?,
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(tags.len(), 4, "{tags:?}");
+    assert_eq!(tag(&["/tmp", "/sandbox"])?, tag(&["/sandbox", "/tmp"])?);
+    assert_eq!(tag(&["/sandbox", "/sandbox"])?, tag(&["/sandbox"])?);
+    assert_eq!(key(&["/tmp", "/sandbox"])?, key(&["/sandbox", "/tmp"])?);
+    assert_ne!(key(&["/sandbox"])?, key(&["/sandbox", "/tmp"])?);
+    assert_ne!(key(&[])?, key(&["/sandbox"])?);
+    let plan = ImagePlan::new(&request_with(&["/sandbox", "/tmp"])?)?;
+    assert_eq!(
+        plan.final_builds(&construct).key,
+        key(&["/sandbox", "/tmp"])?
+    );
+    Ok(())
+}
+
+fn scan_run(dockerfile: &str) -> Result<String, Box<dyn Error>> {
+    let all = stages(&instructions(dockerfile));
+    let scan = stage_named(&all, "scan")?;
+    assert!(
+        scan.lines.iter().any(|line| line == "ARG READ_WRITE_PATHS"),
+        "{:?}",
+        scan.lines
+    );
+    scan.lines
+        .iter()
+        .find(|line| line.starts_with("RUN "))
+        .cloned()
+        .ok_or_else(|| "no scan RUN".into())
+}
+
+#[test]
+fn the_derived_scan_stage_hands_the_read_write_paths_and_the_sandbox_owner_to_the_scan()
+-> TestResult {
+    let run = scan_run(derived_text()?)?;
+    assert!(run.contains("--sandbox-owner 1000:1000"), "{run}");
+    let split = "IFS=$nl; set -f; for rw in $READ_WRITE_PATHS; do set -- \"$@\" --read-write \"$rw\"; done; set +f; IFS=$old_ifs;";
+    assert!(run.contains(split), "{run}");
+    let loop_at = run.find(split).ok_or("no split loop")?;
+    let scan_at = run.find("/bin/sh /jackin-scan").ok_or("no scan call")?;
+    assert!(loop_at < scan_at, "{run}");
+    Ok(())
+}
+
+fn hand_over_fragment() -> Result<String, Box<dyn Error>> {
+    let run = scan_run(derived_text()?)?;
+    let start = run
+        .find("if [ -n \"$READ_WRITE_PATHS\" ]")
+        .ok_or("no read_write hand-over")?;
+    let end = run[start..]
+        .find(" ; /bin/sh /jackin-scan")
+        .ok_or("no scan call after the hand-over")?;
+    Ok(run[start..start + end].to_owned())
+}
+
+fn hand_over(dir: &Path, value: &str) -> Result<(Vec<String>, String), Box<dyn Error>> {
+    let fragment = hand_over_fragment()?;
+    let body = format!(
+        "set -u; set -- --owner 0:0 --sandbox-owner 1000:1000; saved=$IFS; {fragment}; printf '%s\\0' \"$@\"; case $- in *f*) echo globbing-left-off >&2 ;; esac; [ \"$IFS\" = \"$saved\" ] || echo ifs-changed >&2"
+    );
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(&body)
+        .current_dir(dir)
+        .env("LC_ALL", "C")
+        .env("READ_WRITE_PATHS", value)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?
+        .wait_with_output()?;
+    assert!(output.status.success(), "{output:?}");
+    let argv = output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|part| !part.is_empty())
+        .map(|part| String::from_utf8_lossy(part).into_owned())
+        .collect();
+    Ok((argv, String::from_utf8(output.stderr)?))
+}
+
+#[test]
+fn the_scan_stage_hands_each_policy_path_to_the_scan_as_exactly_one_argument() -> TestResult {
+    let scratch = Scratch::new("read-write-hand-over")?;
+    let dir = scratch.fresh("cwd")?;
+    assert!(Path::new("/usr").is_dir() && Path::new("/etc").is_dir());
+    let paths = [
+        "/sand box",
+        "/a:b",
+        "/semi;colon",
+        "/q'uote\"s",
+        "/dollar$x`tick`",
+        "/[u]sr",
+        "/[e]tc",
+        "/us?",
+        "/e*c",
+        "/back\\slash",
+        "/-dash",
+        "/  lead and trail  ",
+        "/caf\u{e9}",
+        "/--read-write",
+        "/#hash",
+    ];
+    let (argv, stderr) = hand_over(&dir, &paths.join("\n"))?;
+    let mut wanted: Vec<String> = ["--owner", "0:0", "--sandbox-owner", "1000:1000"]
+        .iter()
+        .map(|arg| (*arg).to_owned())
+        .collect();
+    for path in paths {
+        wanted.push("--read-write".to_owned());
+        wanted.push(path.to_owned());
+    }
+    assert_eq!(argv, wanted);
+    assert_eq!(stderr, "", "the shell state was not restored");
+    let (argv, stderr) = hand_over(&dir, "")?;
+    assert_eq!(argv, ["--owner", "0:0", "--sandbox-owner", "1000:1000"]);
+    assert_eq!(stderr, "");
+    Ok(())
+}
+
+#[test]
+fn a_read_write_path_longer_than_the_gateway_accepts_is_refused_at_planning() -> TestResult {
+    let long = format!("/{}", "a".repeat(4096));
+    let request = request_with(&[&long])?;
+    assert!(matches!(
+        ImagePlan::new(&request),
+        Err(ImageError::ReadWritePath { .. })
+    ));
+    let longest = format!("/{}", "a".repeat(4095));
+    assert_eq!(
+        read_write_argument(&[&longest])?.as_deref(),
+        Some(longest.as_str())
+    );
     Ok(())
 }

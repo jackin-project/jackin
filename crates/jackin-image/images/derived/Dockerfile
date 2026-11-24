@@ -14,6 +14,7 @@ ARG AGENT_SHA256_ARM64
 ARG AGENT_SHA256_AMD64
 ARG AGENT_URL_ARM64
 ARG AGENT_URL_AMD64
+ARG READ_WRITE_PATHS=
 ARG DOCKER_LAYER=absent
 ARG DOCKER_CLI_VERSION
 ARG DOCKER_BUILDX_VERSION
@@ -152,6 +153,7 @@ COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/bin/jackin-start /
 COPY --from=trusted --chown=root:root --chmod=0755 /usr/local/lib/jackin/hooks/setup /usr/local/lib/jackin/hooks/preflight /usr/local/lib/jackin/hooks/
 
 FROM construct AS scan
+ARG READ_WRITE_PATHS
 ARG AGENT_BIN_DIR
 ARG AGENT_BINARY
 ARG AGENT_SYSTEM_CONFIG
@@ -164,6 +166,7 @@ RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
     --mount=type=bind,from=trusted,source=/,target=/trusted,ro \
     --mount=type=bind,from=docker-client,source=/,target=/trusted-docker,ro \
     set -- --owner 0:0 \
+        --sandbox-owner 1000:1000 \
         --same-as /usr/local/bin/jackin-start=/trusted/usr/local/bin/jackin-start \
         --same-as /usr/local/lib/jackin/hooks/setup=/trusted/usr/local/lib/jackin/hooks/setup \
         --same-as /usr/local/lib/jackin/hooks/preflight=/trusted/usr/local/lib/jackin/hooks/preflight \
@@ -183,6 +186,12 @@ RUN --mount=type=bind,from=assembled,source=/,target=/image,ro \
             set -- "$@" --allow-tool "$path" --same-as "$path=/trusted-docker$path"; \
             extra="$extra $path"; \
         done; \
+    fi \
+    ; if [ -n "$READ_WRITE_PATHS" ]; then \
+        nl=$(printf '\n_'); nl=${nl%_}; old_ifs=$IFS; \
+        IFS=$nl; set -f; \
+        for rw in $READ_WRITE_PATHS; do set -- "$@" --read-write "$rw"; done; \
+        set +f; IFS=$old_ifs; \
     fi \
     ; /bin/sh /jackin-scan "$@" \
         /image \

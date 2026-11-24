@@ -402,6 +402,7 @@ pub fn plan_image_for(
         platform: entry.platform,
         builder: entry.builder.clone(),
         docker: layer,
+        read_write: role.policy().document().effective_read_write_paths()?,
         rebuild,
     })
 }
