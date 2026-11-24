@@ -29,7 +29,7 @@ rumdl = "0.3.2"
 uv = "0.13.7"
 node = "26.13.0"
 python = "3.15.2"
-"pipx:reuse" = { version = "6.3.0", extras = "charset-normalizer" }
+"pipx:reuse" = { version = "6.3.0", extras = "charset-normalizer", os = ["macos"] }
 zizmor = "1.32.0"
 
 [settings]
@@ -49,6 +49,10 @@ run = "cargo shear --deny-warnings"
 description = "Run the repository steps that start no external tool: comments, layers, pins, containers, errors"
 run = "cargo xtask ci --only comments,layers,pins,containers,errors"
 
+[tasks."check:zizmor"]
+description = "Audit the GitHub workflows with zizmor"
+run = "zizmor --offline --no-progress --min-severity low .github/workflows"
+
 [tasks."ci:fast"]
 description = "Run the repository gates without the docs build"
 run = "mbx +1.99.1 xtask ci --fast"
@@ -58,9 +62,13 @@ description = "Run the repository gates; the docs build joins at P12.1"
 run = "mbx +1.99.1 xtask ci --no-docs"
 
 [tasks."check:secrets-scan"]
-description = "Scan the indexed tree in a temporary linked worktree and the history reachable from HEAD with gitleaks, betterleaks and Kingfisher"
+description = "Scan the indexed tree in a temporary linked worktree and the history reachable from HEAD with gitleaks, betterleaks and Kingfisher; a shallow checkout is deepened first because the ignore files key findings by commit id"
 run = """
 status=0
+if [ "$(git rev-parse --is-shallow-repository)" = true ]
+then
+  git fetch --no-tags --unshallow origin "$(git rev-parse HEAD)" || exit 1
+fi
 index_tree=$(git write-tree) || exit 1
 parent=$(mktemp -d) || exit 1
 tree="$parent/worktree"

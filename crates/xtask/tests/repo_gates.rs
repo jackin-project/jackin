@@ -2081,6 +2081,16 @@ mod ci_run {
 
     const INSPECTOR_SCRIPT: &str = "#!/bin/sh\nexit 0\n";
 
+    fn real_cargo(inherited_path: &std::ffi::OsStr) -> Result<std::path::PathBuf, Box<dyn Error>> {
+        if let Some(cargo) = std::env::var_os("CARGO") {
+            return Ok(cargo.into());
+        }
+        std::env::split_paths(inherited_path)
+            .map(|dir| dir.join("cargo"))
+            .find(|candidate| candidate.is_file())
+            .ok_or_else(|| "no cargo on PATH for the shim to forward `cargo metadata` to".into())
+    }
+
     struct Outcome {
         code: Option<i32>,
         success: bool,
@@ -2138,10 +2148,8 @@ mod ci_run {
                 .current_dir(fixture.dir.path())
                 .env("PATH", path)
                 .env("CARGO", self.dir.path().join("cargo"))
-                .env(
-                    "REAL_CARGO",
-                    std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()),
-                )
+                .env("REAL_CARGO", real_cargo(&inherited)?)
+                .env("MISE_TRUSTED_CONFIG_PATHS", fixture.dir.path())
                 .env("XTASK_LOG", &log)
                 .env("XTASK_GIT_ENV", &git_env)
                 .env("GIT_DIR", "/nonexistent/jackin-test-git-dir")
