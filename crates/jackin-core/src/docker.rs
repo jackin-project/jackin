@@ -17,6 +17,8 @@ use crate::ids::EnvName;
 use crate::paths::{HostPath, SandboxPath, sandbox_layout};
 use crate::platform::Platform;
 
+mod pair;
+
 pub const ENGINE_HOST: &str = "host.openshell.internal";
 pub const HOST_GATEWAY_ALIASES: [&str; 3] = [
     ENGINE_HOST,
@@ -380,9 +382,23 @@ pub enum EngineCertProblem {
     WrongKind,
     #[error("the private key is encrypted")]
     EncryptedKey,
+    #[error("it does not hold a valid X.509 certificate")]
+    MalformedCertificate,
+    #[error("it does not hold a supported RSA, ECDSA or Ed25519 private key")]
+    MalformedKey,
+    #[error("the client certificate and private key do not form a matching pair")]
+    PairMismatch,
     #[error("it changed after the launch bound its fingerprint")]
     Changed,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct EnginePairProblem {
+    pub file: EngineCert,
+    pub problem: EngineCertProblem,
+}
+
+const KEY_LABELS: [&str; 3] = ["PRIVATE KEY", "RSA PRIVATE KEY", "EC PRIVATE KEY"];
 
 impl EngineCert {
     pub const ALL: [EngineCert; 3] = [EngineCert::Ca, EngineCert::Cert, EngineCert::Key];
@@ -418,7 +434,7 @@ impl EngineCert {
         for block in pem_blocks(text)? {
             match (self, block.label) {
                 (EngineCert::Ca | EngineCert::Cert, "CERTIFICATE") => {}
-                (EngineCert::Key, "PRIVATE KEY" | "RSA PRIVATE KEY" | "EC PRIVATE KEY") => {
+                (EngineCert::Key, label) if KEY_LABELS.contains(&label) => {
                     keys += 1;
                 }
                 (EngineCert::Key, "EC PARAMETERS" | "DH PARAMETERS") => {}
@@ -432,6 +448,10 @@ impl EngineCert {
             return Err(EngineCertProblem::WrongKind);
         }
         Ok(())
+    }
+
+    pub fn check_pair(cert: &[u8], key: &[u8]) -> Result<(), EnginePairProblem> {
+        pair::check(cert, key)
     }
 }
 
