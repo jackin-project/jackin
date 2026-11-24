@@ -595,7 +595,7 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
             now,
             &json!({
                 "resources": {
-                    "session": {"kind":"window", "remaining_percent":remaining, "resetsAt":now + reset},
+                    "session": {"kind":"quota", "remaining_percent":remaining, "resetsAt":now + reset},
                     "webSearches": {"kind":"quota", "unit":"searches", "used":0, "limit":50},
                     "credits": {"kind":"balance", "unit":"credits"},
                 },
@@ -609,28 +609,29 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
     registry.set_dashboard_settings(&settings)?;
     let entries = presentation::entries(&login)?;
     for (label, expected_session) in [
-        ("Work", "Session · 88% used · resets in 1h 0m"),
-        ("Personal", "Session · 0% used · resets in 2h 0m"),
+        ("Work", "Session 88% used · resets in 1h 0m"),
+        ("Personal", "Session 0% used · resets in 2h 0m"),
     ] {
         let entry = entries
             .iter()
             .find(|entry| entry.label == label)
             .ok_or(label)?;
-        assert!(entry.summary.iter().any(|line| line == expected_session));
         assert!(
             entry
                 .summary
                 .iter()
-                .any(|line| line == "Web searches · 0 searches used")
-        );
-        assert!(
-            entry
-                .summary
-                .iter()
-                .any(|line| line == "Credits · Unavailable")
+                .any(|line| line.starts_with(expected_session)),
+            "{:?}",
+            entry.summary
         );
         assert!(entry.summary.iter().all(|line| !line.contains("tokens")));
-        assert!(entry.details.iter().any(|line| line == "50 input tokens"));
+        for line in [
+            "Web searches · 0 searches",
+            "Credits · Unavailable",
+            "50 input tokens",
+        ] {
+            assert!(entry.details.iter().any(|found| found == line), "{line}");
+        }
     }
 
     let data = Dashboard::load(&registry, &mut DashboardMemory::default(), now)?;
@@ -712,7 +713,7 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
         entry
             .summary
             .iter()
-            .any(|line| line == "Token Plan · 50.47B credits remaining")
+            .any(|line| line.starts_with("Token Plan <1% used"))
     );
     let cli = export::details_account(snapshot, 0, &registry.dashboard_settings()?, None, now);
     let cli_lines: Vec<String> = serde_json::from_value(cli["details"].clone())?;

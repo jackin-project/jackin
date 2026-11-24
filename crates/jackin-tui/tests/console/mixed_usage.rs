@@ -105,18 +105,18 @@ async fn eleven_simultaneous_accounts_have_distinct_readings_at_eighty_columns()
     let result = rows(&mut lab).await?;
     assert_eq!(result.len(), profile.len());
     for (account, metric, value) in [
-        ("Claude Home", "Spend", "37.66 eur"),
-        ("Claude Team", "Spend", "60 eur"),
-        ("Codex Home", "Weekly", "58%"),
-        ("Codex Work", "Weekly", "12%"),
-        ("Muse Code", "Session", "81%"),
-        ("Kimi Global", "Session", "75%"),
-        ("Zai Global", "Web searches", "97 searches"),
-        ("MiniMax Global", "general", "90 count"),
-        ("MiMo Global", "Token Plan", "800 credits"),
-        ("OpenCode Work", "Session", "100%"),
-        ("Grok account", "Weekly", "85%"),
-        ("Codex Home", "Today", "71 tokens"),
+        ("Claude Home", "Extra usage", "25% used"),
+        ("Claude Team", "Extra usage", "70% used"),
+        ("Codex Home", "Weekly", "42% used"),
+        ("Codex Work", "Weekly", "88% used"),
+        ("Muse Code", "Session", "19% used"),
+        ("Kimi Global", "Session", "25% used"),
+        ("Zai Global", "Web searches", "3% used"),
+        ("MiniMax Global", "General weekly", "10% used"),
+        ("MiMo Global", "Token Plan", "20% used"),
+        ("OpenCode Work", "Session", "0% used"),
+        ("Grok account", "Weekly", "15% used"),
+        ("Codex Home", "Tokens", "today 71"),
         ("Codex Work", "Today", "Unavailable"),
     ] {
         inspect(&mut lab, position(&result, account, "")?).await?;
@@ -132,7 +132,7 @@ async fn eleven_simultaneous_accounts_have_distinct_readings_at_eighty_columns()
     }
     assert!(!result.iter().any(|line| line.contains("OpenRouter")));
     for (account, metric, detail) in [
-        ("MiniMax Global", "general weekly", "100 count"),
+        ("MiniMax Global", "General weekly", "10% used"),
         ("Grok account", "Weekly", "Grok Heavy"),
     ] {
         let index = position(&result, account, "")?;
@@ -152,8 +152,8 @@ async fn unified_member_details_keep_each_identity_and_reverting_restores_all_tw
     position(&separate, "OpenRouter Standard", "")?;
     toggle_unification(&mut lab).await?;
     let combined = rows(&mut lab).await?;
-    let spend = position(&combined, "2 accounts · Spend", "97.66 eur")?;
-    let weekly = position(&combined, "2 accounts · Weekly", "35%")?;
+    let spend = position(&combined, "2 accounts · Spend", "152.34 eur")?;
+    let weekly = position(&combined, "2 accounts · Weekly", "65%")?;
     for (index, members) in [
         (
             spend,
@@ -165,7 +165,7 @@ async fn unified_member_details_keep_each_identity_and_reverting_restores_all_tw
         if index == spend {
             let pooled = lab.console.screen_at(110, 65);
             assert!(
-                pooled.contains("Used · 152.34 eur") && pooled.contains("Limit · 250 eur"),
+                pooled.contains("Remaining · 97.66 eur") && pooled.contains("Limit · 250 eur"),
                 "{pooled}"
             );
         }

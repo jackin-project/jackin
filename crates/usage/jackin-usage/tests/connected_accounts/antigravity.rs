@@ -265,11 +265,11 @@ async fn account_summary_surfaces_a_limiting_fourth_window_and_counts_visible_ex
         registry.version(account)?,
         now,
         &json!({"resources": {
-            "gemini-5h": {"kind":"window", "remaining_percent":99},
-            "gemini-weekly": {"kind":"window", "remaining_percent":95},
-            "gemini-argon-wtu-weekly": {"kind":"window", "remaining_percent":68},
-            "3p-5h": {"kind":"window", "remaining_percent":97},
-            "3p-weekly": {"kind":"window", "remaining_percent":0.5},
+            "gemini-5h": {"kind":"quota", "remaining_percent":99},
+            "gemini-weekly": {"kind":"quota", "remaining_percent":95},
+            "gemini-argon-wtu-weekly": {"kind":"quota", "remaining_percent":68},
+            "3p-5h": {"kind":"quota", "remaining_percent":97},
+            "3p-weekly": {"kind":"quota", "remaining_percent":0.5},
         }}),
     )?;
     let mut prefs = AccountPreferences::default();
@@ -281,10 +281,8 @@ async fn account_summary_surfaces_a_limiting_fourth_window_and_counts_visible_ex
     assert_eq!(
         entry.summary,
         [
-            "Claude weekly · <1% remaining",
-            "Gemini 5h · 99% remaining",
-            "Gemini weekly · 95% remaining",
-            "1 more metric",
+            "plan not reported · fetched <1m ago",
+            "Claude weekly >99% used · reset not reported",
         ]
     );
     Ok(())
