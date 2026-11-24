@@ -39,6 +39,7 @@ fn row(provider: UsageProvider, snapshot: Value) -> SeedRow<'static> {
     SeedRow {
         provider,
         label: "Account",
+        identity: None,
         fetched_at: FETCHED,
         snapshot,
         failure: None,

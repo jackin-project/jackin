@@ -33,9 +33,10 @@ fn seeded(world: &World, harness: &Harness) -> Result<Vec<Uuid>, Failure> {
 
 fn needing_sign_in(world: &World, harness: &Harness) -> Result<Vec<Uuid>, Failure> {
     pin_usage_view_clock(&world.clock);
-    let row = |provider, label, failure| SeedRow {
+    let row = |provider, label, identity, failure| SeedRow {
         provider,
         label,
+        identity,
         fetched_at: FETCHED,
         snapshot: json!({"plan":"Max","resources":{}}),
         failure,
@@ -44,16 +45,23 @@ fn needing_sign_in(world: &World, harness: &Harness) -> Result<Vec<Uuid>, Failur
         row(
             UsageProvider::Claude,
             "work@example.com",
+            None,
             Some((
                 FailureKind::Authentication,
                 "the credential is missing; sign in again",
                 FAILED_AT,
             )),
         ),
-        row(UsageProvider::Antigravity, "personal@example.com", None),
         row(
             UsageProvider::Antigravity,
             "personal@example.com",
+            Some("subject-personal"),
+            None,
+        ),
+        row(
+            UsageProvider::Antigravity,
+            "personal@example.com",
+            Some("SUBJECT-Personal"),
             Some((FailureKind::Timeout, "refresh timed out", FAILED_AT)),
         ),
     ];

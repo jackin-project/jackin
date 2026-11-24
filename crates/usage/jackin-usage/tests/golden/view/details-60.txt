@@ -140,10 +140,10 @@ Z.AI                                               1 account
                      >99% left
                      30d window from Mon 2 Nov 00:08
                      exact 0.25%
-      Limit resets   2 ready · next expires 22 Dec
+      Limit resets   1 ready, 1 queued · next expires 22 Dec
                      1 weekly ready
                      expires Tue 22 Dec 2026 22:59
-                     2 weekly ready
+                     2 weekly queued
                      expires Tue 22 Dec 2026 22:59
     id a0000009-0000-4000-8000-000000000009
     fetched Tue 24 Nov 08:39 · fresh until 08:49
@@ -214,7 +214,7 @@ Antigravity (Google AI)                           2 accounts
     ! also connected as #a0000013 (same provider and label)
     id a0000014-0000-4000-8000-000000000014
     fetched Mon 23 Nov 17:06 · fresh until Mon 17:16
-    Google project aicode-consumers
+    Google project example-project
 
 OpenCode                                           1 account
   work@example.com · Go Plus                   stale 13h 57m

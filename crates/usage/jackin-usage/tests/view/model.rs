@@ -317,6 +317,7 @@ fn accounts_sharing_a_label_with_different_identities_are_not_duplicates() -> Re
         .map(|_| SeedRow {
             provider: UsageProvider::Antigravity,
             label: "shared",
+            identity: None,
             fetched_at: NOW.0 - 60,
             snapshot: snapshot.clone(),
             failure: None,
