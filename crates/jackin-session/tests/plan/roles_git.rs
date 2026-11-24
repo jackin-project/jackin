@@ -271,3 +271,28 @@ async fn a_pinned_role_updates_while_the_origin_head_points_nowhere_and_an_unpin
     })
     .await
 }
+
+#[tokio::test]
+async fn an_explicit_head_revision_follows_a_new_default_branch_like_an_unpinned_role() -> TestResult
+{
+    guard(async {
+        let origin = Origin::new().await?;
+        let (cache, _keep) = cache()?;
+        origin
+            .load(&cache, Some("HEAD"))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        git(
+            origin.role.root().as_path(),
+            &["symbolic-ref", "HEAD", "refs/heads/dev"],
+        )
+        .await?;
+        let (commit, _) = origin
+            .load(&cache, Some("HEAD"))
+            .await?
+            .map_err(|e| format!("{e:?}"))?;
+        assert_eq!(commit, origin.commits[1]);
+        Ok(())
+    })
+    .await
+}
