@@ -157,10 +157,26 @@ async fn ledger(
     result
 }
 
+fn canonical_day(raw: &str) -> Option<&str> {
+    let day = raw.get(..10)?;
+    if raw.len() != 10 && !matches!(raw.as_bytes().get(10), Some(b'T' | b' ')) {
+        return None;
+    }
+    let parsed = time::Date::parse(
+        day,
+        time::macros::format_description!("[year]-[month]-[day]"),
+    )
+    .ok()?;
+    let formatted = parsed
+        .format(time::macros::format_description!("[year]-[month]-[day]"))
+        .ok()?;
+    (formatted == day).then_some(day)
+}
+
 fn parse(body: &Value, report: Report) -> Option<(Map<String, Value>, Value)> {
     let mut days = Map::new();
     for record in body["data"].as_array()? {
-        let date = record["date"].as_str()?.get(..10)?;
+        let date = canonical_day(record["date"].as_str()?)?;
         let mut day = json!({});
         match report {
             Report::Counts => {
