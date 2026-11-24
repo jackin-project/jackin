@@ -8,11 +8,14 @@ use crate::accounts::ConnectedAccount;
 use jackin_usage_provider_core::Decimal;
 use serde_json::{Map, Value, json};
 
-pub(crate) fn is_quantity(value: &Value) -> bool {
-    value.is_number()
-        || value
-            .as_str()
-            .is_some_and(|text| Decimal::parse_text(text).is_ok())
+pub(crate) fn amount(value: &Value) -> Option<Value> {
+    match value {
+        Value::Number(_) => Some(value.clone()),
+        Value::String(text) => Decimal::parse_text(text)
+            .ok()
+            .map(|exact| Value::String(exact.to_string())),
+        _ => None,
+    }
 }
 
 fn float(value: &Value) -> Option<f64> {
@@ -75,12 +78,12 @@ fn public_resource(resource: &Value) -> Option<Value> {
     }
     let unit = resource["unit"].as_str()?;
     let mut reading = json!({"kind":kind,"unit":unit});
+    for field in ["used", "limit", "remaining", "available", "amount"] {
+        if let Some(value) = amount(&resource[field]) {
+            reading[field] = value;
+        }
+    }
     for field in [
-        "used",
-        "limit",
-        "remaining",
-        "available",
-        "amount",
         "remaining_fraction",
         "remaining_percent",
         "utilization",
@@ -91,7 +94,7 @@ fn public_resource(resource: &Value) -> Option<Value> {
         "remaining_ms",
         "usd",
     ] {
-        if is_quantity(&resource[field]) {
+        if resource[field].is_number() {
             reading[field] = resource[field].clone();
         }
     }

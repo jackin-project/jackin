@@ -717,3 +717,27 @@ async fn string_amounts_drive_every_dashboard_surface() -> Result<(), Box<dyn Er
     assert!(values["values"]["limit"].is_number(), "{values}");
     Ok(())
 }
+
+#[tokio::test]
+async fn a_stored_activity_read_after_the_clock_is_read_again() -> Result<(), Box<dyn Error>> {
+    let exact_day = json!({"totals":{"spend":"0.1"},"by_model":{}});
+    let stored = json!({"activity":{
+        "as_of":"2025-01-06","read_at":NOW.0 + 100_000,"expected_days":30,"observed_days":1,
+        "prior30Days":{"spend":"0.1"},"yesterday":exact_day,
+        "days":{"2025-01-05":exact_day}}});
+    let row = format!("{{\"data\":[{}]}}", beta("2025-01-05", "0.5"));
+    let snapshot = activity_read(&row, Some(&stored), false).await?;
+    assert_eq!(snapshot["activity"]["prior30Days"]["spend"], "0.5");
+    Ok(())
+}
+
+#[tokio::test]
+async fn cached_tokens_above_the_input_never_make_a_negative_count() -> Result<(), Box<dyn Error>> {
+    let row = r#"{"data":[{"date":"2025-01-05","model":"beta","usage":1,"prompt_tokens":5,"cached_tokens":9,"completion_tokens":4,"reasoning_tokens":6}]}"#;
+    let snapshot = activity_read(row, None, true).await?;
+    let totals = &snapshot["activity"]["days"]["2025-01-05"]["totals"];
+    assert_eq!(totals["inputTokens"], 0);
+    assert_eq!(totals["outputTokens"], 0);
+    assert_eq!(totals["tokens"], 9);
+    Ok(())
+}

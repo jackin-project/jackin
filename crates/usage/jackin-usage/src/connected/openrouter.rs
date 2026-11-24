@@ -279,8 +279,14 @@ fn amounts(row: &Exact) -> Option<Measures> {
     let cached = result.get("cacheReadTokens").copied().unwrap_or_default();
     let reasoning = result.get("reasoningTokens").copied().unwrap_or_default();
     result.insert("tokens".into(), input.checked_add(&output)?);
-    result.insert("inputTokens".into(), input.checked_sub(&cached)?);
-    result.insert("outputTokens".into(), output.checked_sub(&reasoning)?);
+    result.insert(
+        "inputTokens".into(),
+        input.checked_sub(&cached)?.clamped_at_zero(),
+    );
+    result.insert(
+        "outputTokens".into(),
+        output.checked_sub(&reasoning)?.clamped_at_zero(),
+    );
     Some(result)
 }
 
@@ -359,7 +365,7 @@ async fn activity(
         && prior["as_of"] == today.to_string()
         && prior["read_at"]
             .as_i64()
-            .is_some_and(|at| now < at.saturating_add(3600))
+            .is_some_and(|at| at <= now && now < at.saturating_add(3600))
     {
         return prior.clone();
     }

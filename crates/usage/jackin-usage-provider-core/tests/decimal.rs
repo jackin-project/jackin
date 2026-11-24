@@ -280,6 +280,13 @@ fn fixed_pads_to_the_places_and_never_drops_a_digit() -> Result<(), DecimalError
 }
 
 #[test]
+fn fixed_never_pads_beyond_the_scale_bound() -> Result<(), DecimalError> {
+    let text = number("1")?.fixed(u32::MAX);
+    assert_eq!(text.len(), "1.".len() + 38);
+    Ok(())
+}
+
+#[test]
 fn a_json_value_is_read_as_a_number_or_as_text() {
     assert_eq!(
         Decimal::from_json(&json!(1.5)).map(|amount| amount.to_string()),

@@ -34,9 +34,15 @@ impl CredentialVault for ProfileVault {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct MemoryVault {
     values: Mutex<HashMap<Uuid, Vec<u8>>>,
+}
+
+impl std::fmt::Debug for MemoryVault {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("MemoryVault(<redacted>)")
+    }
 }
 
 impl CredentialVault for MemoryVault {

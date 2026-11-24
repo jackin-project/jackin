@@ -129,7 +129,7 @@ impl Decimal {
                 ),
             )
         };
-        let padding = (places as usize).saturating_sub(fraction.len());
+        let padding = (places.min(MAX_SCALE) as usize).saturating_sub(fraction.len());
         if fraction.is_empty() && padding == 0 {
             return format!("{sign}{whole}");
         }

@@ -99,3 +99,26 @@ fn exact_string_amounts_pass_through_the_snapshot_and_the_details_without_quotes
     );
     assert!(lines.iter().all(|line| !line.contains('"')), "{lines:?}");
 }
+
+#[test]
+fn stored_amount_text_is_written_in_canonical_form_and_only_amount_fields_take_text() {
+    let account = ConnectedAccount {
+        id: Uuid::new_v4(),
+        provider: UsageProvider::OpenRouter,
+        label: "Router".into(),
+        position: 0,
+        preferences: AccountPreferences::default(),
+    };
+    let snapshot = json!({
+        "resources":{
+            "keyLimit":{"kind":"consumption","unit":"usd","used":" +1.50 ","limit":".5e1",
+                "remaining":"abc","exponent":"2","starts_at":"7","remaining_ms":"1"}}
+    });
+    let public = snapshot_account(&account, Some(20), Some(&snapshot), 620);
+    let reading = &public["usage"]["resources"]["keyLimit"];
+    assert_eq!(reading["used"], "1.5");
+    assert_eq!(reading["limit"], "5");
+    for absent in ["remaining", "exponent", "starts_at", "remaining_ms"] {
+        assert!(reading.get(absent).is_none(), "{absent}: {reading}");
+    }
+}
