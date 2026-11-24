@@ -118,6 +118,7 @@ fn looping_token(broken: Option<Broken>, token: &str) -> Option<String> {
     match broken? {
         Broken::PageTokenCycle => Some(if token == "a" { "b" } else { "a" }.to_owned()),
         Broken::PageTokenRepeat => Some("a".to_owned()),
+        Broken::PageTokenHuge => Some("t".repeat(1 << 20)),
         _ => None,
     }
 }

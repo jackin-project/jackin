@@ -748,3 +748,27 @@ async fn a_looping_provider_page_token_fails_the_detail_at_its_first_recurrence(
         assert!(protocol_repeat(&error), "{broken:?}: {error:?}");
     }
 }
+
+#[tokio::test]
+async fn an_oversized_page_token_fails_both_listings_without_being_kept() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let spec = create_spec(SANDBOX, LAUNCH);
+    guard(gateway.create_sandbox(&spec)).await.unwrap();
+    env.server.state().broken = Some(Broken::PageTokenHuge);
+    let oversized = |error: &jackin_openshell::GatewayError| {
+        matches!(
+            error,
+            jackin_openshell::GatewayError::Protocol { message }
+                if message.contains("oversized page token")
+        )
+    };
+    let listing = guard(gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())))
+        .await
+        .unwrap_err();
+    assert!(oversized(&listing), "{listing:?}");
+    let detail = guard(gateway.sandbox_detail(&sandbox_name(SANDBOX)))
+        .await
+        .unwrap_err();
+    assert!(oversized(&detail), "{detail:?}");
+}

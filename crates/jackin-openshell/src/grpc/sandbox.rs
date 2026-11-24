@@ -23,6 +23,7 @@ const PROVISIONING_FAILED: &str = "ProvisioningFailed";
 const READY_CONDITION: &str = "Ready";
 const PAGE_SIZE: i32 = 100;
 const MAX_PAGES: usize = 1_000;
+const TOKEN_MAX_BYTES: usize = 4_096;
 const MAX_RECORDS: usize = 10_000;
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 
@@ -287,6 +288,9 @@ impl Inner {
             if page.next_page_token.is_empty() {
                 return Ok(views);
             }
+            if page.next_page_token.len() > TOKEN_MAX_BYTES {
+                return Err(protocol("the gateway returned an oversized page token"));
+            }
             if !issued.insert(page.next_page_token.clone()) {
                 return Err(protocol("the gateway repeated a page token"));
             }
@@ -399,6 +403,9 @@ impl Inner {
             }
             if page.next_page_token.is_empty() {
                 return Ok(providers);
+            }
+            if page.next_page_token.len() > TOKEN_MAX_BYTES {
+                return Err(protocol("the gateway returned an oversized page token"));
             }
             if !issued.insert(page.next_page_token.clone()) {
                 return Err(protocol("the gateway repeated a page token"));
