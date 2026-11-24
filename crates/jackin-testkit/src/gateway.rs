@@ -22,9 +22,10 @@ use jackin_core::{
 use jackin_openshell::{
     ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
     Missing, NetworkRule, PolicyDocument, PolicyReport, PowerAction, ProfileSync, ProgramOutcome,
-    ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint,
-    RuleKey, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TermSize,
-    TerminalKind, TerminalRequest, TerminalSession, TlsMode, TransferOp,
+    ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState,
+    ProviderWriteEffect, ProviderWriteError, RuleEndpoint, RuleKey, SandboxCreate, SandboxDetail,
+    SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalKind, TerminalRequest,
+    TerminalSession, TlsMode, TransferOp,
 };
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
@@ -167,6 +168,9 @@ pub enum Fault {
     PutProviderFailsAfterWrite {
         error: GatewayError,
     },
+    PutProviderOutcomeUnknown {
+        error: GatewayError,
+    },
     DeleteProviderFailsAfterWrite {
         error: GatewayError,
     },
@@ -228,6 +232,9 @@ impl FakeGateway {
             Fault::HoldAt { trigger } => registry.holds.push(Hold::new(trigger)),
             Fault::PutProviderFailsAfterWrite { error } => {
                 registry.put_fails_after_write = Some(error);
+            }
+            Fault::PutProviderOutcomeUnknown { error } => {
+                registry.put_outcome_unknown = Some(error);
             }
             Fault::DeleteProviderFailsAfterWrite { error } => {
                 registry.delete_fails_after_write = Some(error);
@@ -667,15 +674,21 @@ impl Gateway for FakeGateway {
         })
     }
 
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
+        let untouched = |error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite);
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::Provider, None, None).await?;
+        self.pause(GatewayOp::Provider, None, None)
+            .await
+            .map_err(untouched)?;
         let mut registry = self.registry();
-        registry.strike(GatewayOp::Provider)?;
+        registry.strike(GatewayOp::Provider).map_err(untouched)?;
         if !registry.profiles.contains_key(&spec.profile) {
-            return Err(GatewayError::NotFound {
+            return Err(untouched(GatewayError::NotFound {
                 what: Missing::Profile(spec.profile.clone()),
-            });
+            }));
         }
         let record = match &spec.material {
             ProviderMaterial::OAuth2RefreshToken {
@@ -706,11 +719,19 @@ impl Gateway for FakeGateway {
                 additional_credentials: BTreeMap::new(),
             },
         };
+        let effect = if registry.providers.contains_key(&spec.name) {
+            ProviderWriteEffect::Existing
+        } else {
+            ProviderWriteEffect::Created
+        };
         registry.providers.insert(spec.name.clone(), record);
-        match registry.put_fails_after_write.take() {
-            Some(error) => Err(error),
-            None => Ok(()),
+        if let Some(error) = registry.put_fails_after_write.take() {
+            return Err(ProviderWriteError::new(error, effect));
         }
+        if let Some(error) = registry.put_outcome_unknown.take() {
+            return Err(ProviderWriteError::new(error, ProviderWriteEffect::Unknown));
+        }
+        Ok(effect)
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {

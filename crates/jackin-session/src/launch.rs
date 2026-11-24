@@ -4,7 +4,6 @@
 mod certs;
 mod decide;
 pub(crate) mod hooks;
-mod outcome;
 pub(crate) mod probe;
 mod run;
 mod tracker;
@@ -163,7 +162,9 @@ pub const RECOVERY_LOOKUP_BUDGET: Duration = Duration::from_secs(3);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RestoreFinding {
     Observed(SandboxName),
-    Absent { requested: bool },
+    Absent {
+        requested: bool,
+    },
     Ambiguous(Vec<SandboxName>),
     Unconfirmed {
         last_observed: Option<SandboxName>,

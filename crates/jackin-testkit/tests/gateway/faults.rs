@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use jackin_core::{HostPath, LabelSelector, LaunchId, Phase};
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayOp, InputMode, Missing, PowerAction, Provisioning, SandboxQuery,
-    SandboxView, TransferOp,
+    Gateway, GatewayError, GatewayOp, InputMode, Missing, PowerAction, ProviderWriteEffect,
+    Provisioning, SandboxQuery, SandboxView, TransferOp,
 };
 use jackin_testkit::{Fault, ProgramScript};
 use tokio_util::sync::CancellationToken;
@@ -400,6 +400,69 @@ async fn hide_everywhere_hides_label_and_name_queries_until_a_create_conflict() 
         ));
         assert_eq!(fake.find_sandboxes(&by_label).await?.len(), 1);
         assert_eq!(fake.find_sandboxes(&by_name).await?.len(), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn put_provider_reports_what_it_wrote_and_the_injected_outcomes() -> TestResult {
+    guard(async {
+        let fake = fake()?;
+        let profile = jackin_openshell::ProviderProfile::parse(
+            &jackin_core::Agent::Codex
+                .spec()
+                .codex
+                .openshell
+                .chatgpt_profile,
+        )?;
+        fake.ensure_profile(&profile).await?;
+        let login =
+            |key: &str| -> Result<jackin_openshell::ProviderSpec, Box<dyn std::error::Error>> {
+                Ok(jackin_openshell::ProviderSpec {
+                    name: jackin_core::ProviderName::parse("jackin-work-codex")?,
+                    profile: profile.id.clone(),
+                    keys: jackin_core::Agent::Codex.spec().codex.openshell.keys,
+                    material: jackin_openshell::ProviderMaterial::StaticKey {
+                        key: jackin_core::Secret::new(key.to_owned()),
+                    },
+                })
+            };
+        assert_eq!(
+            fake.put_provider(&login("one")?).await?,
+            ProviderWriteEffect::Created
+        );
+        assert_eq!(
+            fake.put_provider(&login("two")?).await?,
+            ProviderWriteEffect::Existing
+        );
+
+        fake.inject(Fault::PutProviderFailsAfterWrite { error: lost() });
+        let after = fake
+            .put_provider(&login("three")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(after.effect(), ProviderWriteEffect::Existing);
+
+        fake.inject(Fault::PutProviderOutcomeUnknown { error: lost() });
+        let unknown = fake
+            .put_provider(&login("four")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(unknown.effect(), ProviderWriteEffect::Unknown);
+
+        fake.inject(Fault::FailNext {
+            op: GatewayOp::Provider,
+            error: unreachable(),
+        });
+        let refused = fake
+            .put_provider(&login("five")?)
+            .await
+            .err()
+            .ok_or("an injected failure reported success")?;
+        assert_eq!(refused.effect(), ProviderWriteEffect::NoWrite);
         Ok(())
     })
     .await

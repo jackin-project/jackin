@@ -14,7 +14,10 @@ use openshell_sdk::raw::proto::{
 
 use super::Inner;
 use crate::error::{GatewayError, GatewayOp, Missing};
-use crate::gateway::{ProfileSync, ProviderMaterial, ProviderSpec, ProviderState};
+use crate::gateway::{
+    ProfileSync, ProviderMaterial, ProviderSpec, ProviderState, ProviderWriteEffect,
+    ProviderWriteError,
+};
 use crate::policy::ProviderProfile as ProfileModel;
 
 const PROFILE_SOURCE: &str = "jackin";
@@ -249,7 +252,10 @@ impl Inner {
         })
     }
 
-    pub(crate) async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    pub(crate) async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         let (credentials, refresh, redactor) = match &spec.material {
             ProviderMaterial::StaticKey { key } => (
                 HashMap::from([(spec.keys.access_token.to_owned(), key.expose().to_owned())]),
@@ -302,10 +308,14 @@ impl Inner {
                 id: spec.profile.to_string(),
             }),
         )
-        .await?;
+        .await
+        .map_err(|error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite))?;
         self.write_provider(spec, credentials, refresh)
             .await
-            .map_err(|error| redact(error, &redactor))
+            .map_err(|error| {
+                let (source, effect) = error.into_parts();
+                ProviderWriteError::new(redact(source, &redactor), effect)
+            })
     }
 
     async fn write_provider(
@@ -313,25 +323,41 @@ impl Inner {
         spec: &ProviderSpec,
         credentials: HashMap<String, String>,
         refresh: Option<RefreshConfiguration>,
-    ) -> Result<(), GatewayError> {
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         let mut record =
             provider_record(&spec.name, spec.profile.as_str(), self.workspace.as_str());
         record.credentials = credentials;
-        match self.provider_state(&spec.name).await? {
+        let untouched = |error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite);
+        let existing = |error| ProviderWriteError::new(error, ProviderWriteEffect::Existing);
+        let effect = match self.provider_state(&spec.name).await.map_err(untouched)? {
             ProviderState::Absent => match self.create_provider(spec, record.clone()).await {
-                Ok(()) => {}
+                Ok(()) => ProviderWriteEffect::Created,
                 Err(error @ GatewayError::AlreadyExists { .. }) => {
-                    match self.provider_state(&spec.name).await? {
-                        ProviderState::Present => self.update_provider(spec, record).await?,
-                        ProviderState::Absent => return Err(error),
+                    match self.provider_state(&spec.name).await.map_err(untouched)? {
+                        ProviderState::Present => {
+                            self.update_provider(spec, record).await.map_err(existing)?;
+                            ProviderWriteEffect::Existing
+                        }
+                        ProviderState::Absent => return Err(untouched(error)),
                     }
                 }
-                Err(error) => return Err(error),
+                Err(error) => {
+                    let effect = if error.outcome_unknown() {
+                        ProviderWriteEffect::Unknown
+                    } else {
+                        ProviderWriteEffect::NoWrite
+                    };
+                    return Err(ProviderWriteError::new(error, effect));
+                }
             },
-            ProviderState::Present => self.update_provider(spec, record).await?,
-        }
+            ProviderState::Present => {
+                self.update_provider(spec, record).await.map_err(existing)?;
+                ProviderWriteEffect::Existing
+            }
+        };
+        let after = |error| ProviderWriteError::new(error, effect);
         let Some(refresh) = refresh else {
-            return Ok(());
+            return Ok(effect);
         };
         let mut request = ConfigureProviderRefreshRequest {
             workspace_scope: Some(self.scope()),
@@ -347,10 +373,10 @@ impl Inner {
             timestamp.seconds = expires_at.div_euclid(1_000);
             timestamp.nanos =
                 i32::try_from(expires_at.rem_euclid(1_000) * 1_000_000).map_err(|_| {
-                    GatewayError::Protocol {
+                    after(GatewayError::Protocol {
                         message: "the OAuth expiration nanoseconds are not representable"
                             .to_owned(),
-                    }
+                    })
                 })?;
         }
         self.unary(
@@ -358,8 +384,9 @@ impl Inner {
             Some(Missing::Provider(spec.name.clone())),
             self.grpc().configure_provider_refresh(request),
         )
-        .await?;
-        Ok(())
+        .await
+        .map_err(after)?;
+        Ok(effect)
     }
 
     async fn create_provider(

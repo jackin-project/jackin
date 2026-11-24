@@ -4,7 +4,7 @@
 use jackin_core::{Agent, ProfileId, Provider as ProviderKind, ProviderName, Secret};
 use jackin_openshell::{
     Gateway, GatewayError, Missing, ProfileSync, ProviderMaterial, ProviderProfile, ProviderSpec,
-    ProviderState,
+    ProviderState, ProviderWriteEffect,
 };
 use openshell_sdk::raw::proto::{ObjectMeta, Provider, ProviderCredentialRefreshStrategy};
 use tonic::Code;
@@ -417,9 +417,10 @@ async fn provider_state_delete_and_missing_profile() {
     let error = guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
         .await
         .unwrap_err();
+    assert_eq!(error.effect(), ProviderWriteEffect::NoWrite);
     assert!(matches!(
-        error,
-        GatewayError::NotFound { what: Missing::Profile(ref id) } if id.as_str() == "codex"
+        error.gateway_error(),
+        GatewayError::NotFound { what: Missing::Profile(id) } if id.as_str() == "codex"
     ));
     assert!(env.server.state().providers.is_empty());
 
@@ -623,8 +624,132 @@ async fn put_provider_converges_when_a_concurrent_writer_creates_first() {
     let error = guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
         .await
         .unwrap_err();
+    assert_eq!(error.effect(), ProviderWriteEffect::NoWrite);
     assert!(
-        matches!(&error, GatewayError::AlreadyExists { what: Missing::Provider(name) } if name.as_str() == PROVIDER),
+        matches!(error.gateway_error(), GatewayError::AlreadyExists { what: Missing::Provider(name) } if name.as_str() == PROVIDER),
+        "{error:?}"
+    );
+    assert!(env.server.state().providers.is_empty());
+}
+
+#[tokio::test]
+async fn put_provider_reports_whether_it_created_or_updated() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    assert_eq!(
+        guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+            .await
+            .unwrap(),
+        ProviderWriteEffect::Created
+    );
+    assert_eq!(
+        guard(gateway.put_provider(&spec("next-access-token", "next-refresh-token")))
+            .await
+            .unwrap(),
+        ProviderWriteEffect::Existing
+    );
+    assert_eq!(
+        guard(gateway.put_provider(&static_spec("static-key")))
+            .await
+            .unwrap(),
+        ProviderWriteEffect::Existing
+    );
+}
+
+#[tokio::test]
+async fn a_failed_refresh_configuration_reports_who_owns_the_provider() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    let provider_key = (WORKSPACE.to_owned(), PROVIDER.to_owned());
+    env.server.state().faults.insert(
+        "configure_provider_refresh",
+        Fault::Status(Code::Internal, "refresh failed".to_owned()),
+    );
+    let created = guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_eq!(created.effect(), ProviderWriteEffect::Created);
+    assert!(env.server.state().providers.contains_key(&provider_key));
+
+    let updated = guard(gateway.put_provider(&spec("next-access-token", "next-refresh-token")))
+        .await
+        .unwrap_err();
+    assert_eq!(updated.effect(), ProviderWriteEffect::Existing);
+    assert!(env.server.state().providers.contains_key(&provider_key));
+}
+
+#[tokio::test]
+async fn a_rival_create_followed_by_a_refresh_failure_is_never_reported_as_created() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    let keys = Agent::Codex.spec().codex.openshell.keys;
+    let provider_key = (WORKSPACE.to_owned(), PROVIDER.to_owned());
+    let rival_key = provider_key.clone();
+    env.server.state().before_create_provider = Some(Box::new(move |state: &mut State| {
+        state.providers.insert(
+            rival_key.clone(),
+            Provider {
+                metadata: Some(ObjectMeta {
+                    name: PROVIDER.to_owned(),
+                    ..ObjectMeta::default()
+                }),
+                r#type: "codex".to_owned(),
+                profile_workspace: WORKSPACE.to_owned(),
+                credentials: [(keys.access_token.to_owned(), "rival-access".to_owned())].into(),
+                ..Provider::default()
+            },
+        );
+    }));
+    env.server.state().faults.insert(
+        "configure_provider_refresh",
+        Fault::Status(Code::Internal, "refresh failed".to_owned()),
+    );
+    let error = guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_eq!(error.effect(), ProviderWriteEffect::Existing);
+    assert!(env.server.state().providers.contains_key(&provider_key));
+}
+
+#[tokio::test]
+async fn a_failed_create_reports_unknown_unless_the_failure_proves_nothing_was_written() {
+    for (code, expected) in [
+        (Code::Unavailable, ProviderWriteEffect::Unknown),
+        (Code::Internal, ProviderWriteEffect::Unknown),
+        (Code::DeadlineExceeded, ProviderWriteEffect::Unknown),
+        (Code::InvalidArgument, ProviderWriteEffect::NoWrite),
+        (Code::PermissionDenied, ProviderWriteEffect::NoWrite),
+        (Code::FailedPrecondition, ProviderWriteEffect::NoWrite),
+        (Code::ResourceExhausted, ProviderWriteEffect::NoWrite),
+    ] {
+        let env = env().await;
+        let gateway = connect(&env, WORKSPACE).await;
+        guard(gateway.ensure_profile(&profile())).await.unwrap();
+        env.server.state().faults.insert(
+            "create_provider",
+            Fault::Status(code, "create failed".to_owned()),
+        );
+        let error = guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+            .await
+            .unwrap_err();
+        assert_eq!(error.effect(), expected, "{code:?}: {error:?}");
+        assert!(env.server.state().providers.is_empty(), "{code:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_missing_profile_is_reported_as_no_write() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    let error = guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_eq!(error.effect(), ProviderWriteEffect::NoWrite);
+    assert!(
+        matches!(error.gateway_error(), GatewayError::NotFound { .. }),
         "{error:?}"
     );
     assert!(env.server.state().providers.is_empty());

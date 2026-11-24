@@ -16,8 +16,8 @@ use tokio_util::sync::CancellationToken;
 use crate::error::{GatewayError, GatewayOp, Missing, TransferOp};
 use crate::gateway::{
     Gateway, MainProcess, PowerAction, ProfileSync, ProgramRun, ProgramStdin, ProviderMaterial,
-    ProviderSpec, ProviderState, Provisioning, SandboxCreate, SandboxFile, SandboxQuery,
-    SandboxView,
+    ProviderSpec, ProviderState, ProviderWriteEffect, Provisioning, SandboxCreate, SandboxFile,
+    SandboxQuery, SandboxView,
 };
 use crate::policy::{ClosedPolicy, ProviderProfile};
 use crate::terminal::{
@@ -948,8 +948,12 @@ async fn provider_put_and_delete(ctx: &Ctx<'_>) -> Outcome<()> {
         sync_contract_profile(ctx, "first").await?;
         let spec = contract_provider_spec(ctx)?;
         let name = spec.name.clone();
-        ctx.gateway.put_provider(&spec).await.map_err(text)?;
-        ctx.gateway.put_provider(&spec).await.map_err(text)?;
+        let first = ctx.gateway.put_provider(&spec).await.map_err(text)?;
+        let second = ctx.gateway.put_provider(&spec).await.map_err(text)?;
+        expect(
+            first == ProviderWriteEffect::Created && second == ProviderWriteEffect::Existing,
+            "the first put did not report a create, or the second did not report an update",
+        )?;
         expect(
             provider_state_is(ctx, &name, ProviderState::Present).await?,
             "the provider is absent after a put",

@@ -23,7 +23,6 @@ use crate::files::render_auth_json;
 use crate::launch::certs::{self, Bound};
 use crate::launch::decide::{Act, Boot, Decision, Done, Finish, HookPlan, Observed, Wait, decide};
 use crate::launch::hooks::{self, HookRun};
-use crate::launch::outcome::outcome_unknown;
 use crate::launch::probe;
 use crate::launch::tracker::Tracker;
 use crate::launch::{
@@ -518,7 +517,7 @@ impl Run<'_> {
             }
             Err(GatewayError::AlreadyExists { .. }) => self.join(create.name()).await,
             Err(error) => {
-                self.create_unsettled = outcome_unknown(&error);
+                self.create_unsettled = error.outcome_unknown();
                 Err(failed(LaunchStep::Sandbox, error))
             }
         }

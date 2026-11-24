@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{Account, AccountName, ConfigEdit, ProviderName};
-use jackin_openshell::{GatewayError, GatewayOp};
+use jackin_openshell::{GatewayError, GatewayOp, ProviderWriteEffect};
 use jackin_session::{
     AccountEditError, AccountError, Gateways, LaunchError, LaunchStep, plan_account_edits,
 };
@@ -153,7 +153,9 @@ async fn a_launch_whose_provider_write_fails_after_it_landed_leaves_no_provider(
             matches!(
                 &*failed.error,
                 LaunchError::ProviderUnavailable { source, .. }
-                    if matches!(**source, AccountError::Gateway(GatewayError::Unreachable { .. }))
+                    if matches!(&**source, AccountError::ProviderWrite(write)
+                        if write.effect() == ProviderWriteEffect::Created
+                            && matches!(write.gateway_error(), GatewayError::Unreachable { .. }))
             ),
             "{:?}",
             failed.error
@@ -193,7 +195,7 @@ async fn a_launch_that_cannot_remove_the_provider_it_wrote_reports_both_failures
                         &**source,
                         AccountError::RollbackFailed { account, original, rollback }
                             if account.as_str() == "work"
-                                && matches!(**original, AccountError::Gateway(_))
+                                && matches!(&**original, AccountError::ProviderWrite(write) if write.effect() == ProviderWriteEffect::Created)
                                 && matches!(**rollback, AccountError::Gateway(_))
                     )
             ),

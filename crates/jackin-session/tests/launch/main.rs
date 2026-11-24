@@ -22,6 +22,7 @@ mod instance_identity;
 mod modes;
 mod multi_instance;
 mod omp_models;
+mod ownership;
 mod phases;
 mod proofs;
 mod provider;

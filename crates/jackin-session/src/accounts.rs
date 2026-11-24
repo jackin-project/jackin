@@ -12,7 +12,7 @@ use jackin_core::{
 };
 use jackin_openshell::{
     Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile,
-    ProviderSpec, ProviderState,
+    ProviderSpec, ProviderState, ProviderWriteEffect, ProviderWriteError,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -36,6 +36,7 @@ pub enum AccountSync {
     ProviderReady {
         provider: ProviderName,
         profile: ProfileSync,
+        write: ProviderWriteEffect,
     },
 }
 
@@ -47,6 +48,14 @@ pub enum AccountError {
     NativeCredential(#[from] NativeCredentialError),
     #[error(transparent)]
     Gateway(#[from] GatewayError),
+    #[error(transparent)]
+    ProviderWrite(#[from] ProviderWriteError),
+    #[error("the provider write for account {account} may have completed")]
+    ProviderWriteUncertain {
+        account: AccountName,
+        #[source]
+        source: Box<AccountError>,
+    },
     #[error(transparent)]
     Policy(#[from] PolicyError),
     #[error(transparent)]
@@ -88,6 +97,14 @@ pub enum AccountError {
 }
 
 impl AccountError {
+    #[must_use]
+    pub fn write_effect(&self) -> ProviderWriteEffect {
+        match self {
+            AccountError::ProviderWrite(write) => write.effect(),
+            _ => ProviderWriteEffect::NoWrite,
+        }
+    }
+
     #[must_use]
     pub fn is_cancelled(&self) -> bool {
         match self {
@@ -560,7 +577,30 @@ fn on_gateway(gateway: &GatewayName, error: AccountError) -> AccountEditError {
             gateway: gateway.clone(),
             source,
         },
+        AccountError::ProviderWrite(write) => AccountEditError::OnGateway {
+            gateway: gateway.clone(),
+            source: write.into_parts().0,
+        },
         other => AccountEditError::Account(other),
+    }
+}
+
+fn owns_write(synced: &Result<AccountSync, AccountError>) -> bool {
+    match synced {
+        Ok(AccountSync::ProviderReady { write, .. }) => *write == ProviderWriteEffect::Created,
+        Ok(AccountSync::HostOnly) => false,
+        Err(error) => error.write_effect() == ProviderWriteEffect::Created,
+    }
+}
+
+fn written(gateway: &GatewayName, account: &Account, error: AccountError) -> AccountEditError {
+    if error.write_effect() == ProviderWriteEffect::Unknown {
+        AccountEditError::Account(AccountError::ProviderWriteUncertain {
+            account: account.name().clone(),
+            source: Box::new(error),
+        })
+    } else {
+        on_gateway(gateway, error)
     }
 }
 
@@ -696,18 +736,14 @@ async fn publish<'a>(
                 .map_err(|error| on_gateway(home.gateway_name(), error.into()))?;
             let held = state == ProviderState::Present;
             ConfigError::unless_cancelled(cancel)?;
-            journal.push(home.undo(
-                if held {
-                    Action::Restore
-                } else {
-                    Action::Remove
-                },
-                &entry.account,
-                agent,
-            ));
-            home.sync_locked(&entry.account, agent, None, cancel)
-                .await
-                .map_err(|error| on_gateway(home.gateway_name(), error))?;
+            if held {
+                journal.push(home.undo(Action::Restore, &entry.account, agent));
+            }
+            let synced = home.sync_locked(&entry.account, agent, None, cancel).await;
+            if owns_write(&synced) {
+                journal.push(home.undo(Action::Remove, &entry.account, agent));
+            }
+            synced.map_err(|error| written(home.gateway_name(), &entry.account, error))?;
             continue;
         };
         let previous_agent = acting.unwrap_or_else(|| account_agent(previous));
@@ -743,15 +779,16 @@ async fn publish<'a>(
             let held = state == ProviderState::Present;
             if held || index == 0 || held_previous {
                 ConfigError::unless_cancelled(cancel)?;
-                journal.push(if held {
-                    session.undo(Action::Restore, previous, previous_agent)
-                } else {
-                    session.undo(Action::Remove, &entry.account, agent)
-                });
-                session
+                if held {
+                    journal.push(session.undo(Action::Restore, previous, previous_agent));
+                }
+                let synced = session
                     .sync_locked(&entry.account, agent, None, cancel)
-                    .await
-                    .map_err(|error| on_gateway(session.gateway_name(), error))?;
+                    .await;
+                if owns_write(&synced) {
+                    journal.push(session.undo(Action::Remove, &entry.account, agent));
+                }
+                synced.map_err(|error| written(session.gateway_name(), &entry.account, error))?;
             }
             for candidate in &extra {
                 refresh_held(
@@ -806,19 +843,14 @@ async fn refresh_held<'a>(
     }
     ConfigError::unless_cancelled(cancel)?;
     if account.has_provider_for(candidate) {
-        journal.push(session.undo(
-            if previous.has_provider_for(candidate) {
-                Action::Restore
-            } else {
-                Action::Remove
-            },
-            previous,
-            candidate,
-        ));
-        session
-            .sync_locked(account, candidate, None, cancel)
-            .await
-            .map_err(|error| on_gateway(session.gateway_name(), error))?;
+        if previous.has_provider_for(candidate) {
+            journal.push(session.undo(Action::Restore, previous, candidate));
+        }
+        let synced = session.sync_locked(account, candidate, None, cancel).await;
+        if owns_write(&synced) {
+            journal.push(session.undo(Action::Remove, account, candidate));
+        }
+        synced.map_err(|error| written(session.gateway_name(), account, error))?;
         return Ok(());
     }
     journal.push(session.undo(Action::Restore, previous, candidate));
@@ -879,17 +911,33 @@ impl Session {
         {
             return Ok(false);
         }
-        if let Err(original) = self.sync_locked(account, agent, expected, cancel).await {
-            return Err(match self.forget_locked(account, provider).await {
+        match self.sync_locked(account, agent, expected, cancel).await {
+            Ok(_) => Ok(true),
+            Err(original) => Err(self.compensate(account, provider, original).await),
+        }
+    }
+
+    async fn compensate(
+        &self,
+        account: &Account,
+        provider: &ProviderName,
+        original: AccountError,
+    ) -> AccountError {
+        match original.write_effect() {
+            ProviderWriteEffect::Created => match self.forget_locked(account, provider).await {
                 Ok(()) => original,
                 Err(rollback) => AccountError::RollbackFailed {
                     account: account.name().clone(),
                     original: Box::new(original),
                     rollback: Box::new(rollback),
                 },
-            });
+            },
+            ProviderWriteEffect::Unknown => AccountError::ProviderWriteUncertain {
+                account: account.name().clone(),
+                source: Box::new(original),
+            },
+            ProviderWriteEffect::NoWrite | ProviderWriteEffect::Existing => original,
         }
-        Ok(true)
     }
 
     pub(crate) async fn launch_metadata(
@@ -1084,7 +1132,7 @@ async fn publish_profile_login(
 ) -> Result<AccountSync, AccountError> {
     let synced = gateway.ensure_profile(&profile).await?;
     let name = ProviderName::for_account(account.name(), agent);
-    gateway
+    let write = gateway
         .put_provider(&ProviderSpec {
             name: name.clone(),
             profile: profile.id,
@@ -1101,6 +1149,7 @@ async fn publish_profile_login(
     Ok(AccountSync::ProviderReady {
         provider: name,
         profile: synced,
+        write,
     })
 }
 
@@ -1363,7 +1412,7 @@ async fn sync_login(
         let env = tuple
             .credential_env()
             .or_else(|| agent.spec().credential_env_names.first().copied());
-        gateway
+        let write = gateway
             .put_provider(&ProviderSpec {
                 name: name.clone(),
                 profile: profile.id,
@@ -1380,6 +1429,7 @@ async fn sync_login(
         return Ok(AccountSync::ProviderReady {
             provider: name,
             profile: synced,
+            write,
         });
     }
     if agent != Agent::Codex {
@@ -1404,7 +1454,7 @@ async fn sync_login(
     let profile = ProviderProfile::parse(&spec.codex.openshell.chatgpt_profile)?;
     let synced = gateway.ensure_profile(&profile).await?;
     let name = ProviderName::for_account(account.name(), Agent::Codex);
-    gateway
+    let write = gateway
         .put_provider(&ProviderSpec {
             name: name.clone(),
             profile: profile.id,
@@ -1425,5 +1475,6 @@ async fn sync_login(
     Ok(AccountSync::ProviderReady {
         provider: name,
         profile: synced,
+        write,
     })
 }

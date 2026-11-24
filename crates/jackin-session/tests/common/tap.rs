@@ -13,8 +13,9 @@ use jackin_core::{
 use jackin_image::ImageEngine;
 use jackin_openshell::{
     Gateway, GatewayError, GatewayHealth, GatewayOp, PowerAction, ProfileSync, ProgramOutcome,
-    ProgramRun, ProviderProfile, ProviderSpec, ProviderState, SandboxCreate, SandboxDetail,
-    SandboxFile, SandboxQuery, SandboxView, TerminalRequest, TerminalSession,
+    ProgramRun, ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect,
+    ProviderWriteError, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView,
+    TerminalRequest, TerminalSession,
 };
 use jackin_session::{HostPorts, LaunchLimits, Session, SessionDeps};
 use jackin_testkit::{FakeClock, FakeEngine, FakeGateway, Rig, TestRunner};
@@ -164,7 +165,10 @@ impl Gateway for Tap {
         self.inner.provider_state(name).await
     }
 
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         self.inner.put_provider(spec).await
     }
 
