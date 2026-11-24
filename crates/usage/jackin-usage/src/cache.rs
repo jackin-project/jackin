@@ -33,11 +33,64 @@ pub(crate) struct Good {
     pub(crate) windows: Vec<LimitWindow>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Hold {
+    pub(crate) observed_at: i64,
+    pub(crate) until: Option<i64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct Entry {
     pub(crate) fingerprint: String,
     pub(crate) good: Option<Good>,
-    pub(crate) retry_at: Option<i64>,
+    pub(crate) hold: Hold,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) cleared_at: Option<i64>,
+}
+
+impl Entry {
+    pub(crate) fn cleared(fingerprint: String, at: i64) -> Entry {
+        Entry {
+            fingerprint,
+            good: None,
+            hold: Hold {
+                observed_at: at,
+                until: None,
+            },
+            cleared_at: Some(at),
+        }
+    }
+
+    fn observed_at(&self) -> i64 {
+        let good = self.good.as_ref().map_or(i64::MIN, |good| good.fetched_at);
+        good.max(self.hold.observed_at)
+            .max(self.cleared_at.unwrap_or(i64::MIN))
+    }
+
+    fn merged(&self, edit: &Entry) -> Entry {
+        let mut good = match (&self.good, &edit.good) {
+            (Some(stored), Some(edited)) if stored.fetched_at > edited.fetched_at => {
+                Some(stored.clone())
+            }
+            (Some(stored), None) => Some(stored.clone()),
+            (_, edited) => edited.clone(),
+        };
+        let hold = if self.hold.observed_at > edit.hold.observed_at {
+            self.hold
+        } else {
+            edit.hold
+        };
+        let cleared_at = self.cleared_at.max(edit.cleared_at);
+        if let Some(at) = cleared_at {
+            good = good.filter(|good| good.fetched_at > at);
+        }
+        Entry {
+            fingerprint: edit.fingerprint.clone(),
+            good,
+            hold,
+            cleared_at,
+        }
+    }
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -50,7 +103,7 @@ struct CacheFile {
 pub(crate) struct Cache {
     path: HostPath,
     file: CacheFile,
-    edits: Vec<(String, Option<Entry>)>,
+    edits: Vec<(String, Entry)>,
 }
 
 impl Cache {
@@ -70,12 +123,7 @@ impl Cache {
     }
 
     pub(crate) fn put(&mut self, account: &UsageAccount, entry: Entry) {
-        self.edits
-            .push((account.name.as_str().to_owned(), Some(entry)));
-    }
-
-    pub(crate) fn remove(&mut self, account: &UsageAccount) {
-        self.edits.push((account.name.as_str().to_owned(), None));
+        self.edits.push((account.name.as_str().to_owned(), entry));
     }
 
     pub(crate) async fn save(
@@ -100,10 +148,7 @@ impl Cache {
             })?;
         let mut file = read(deps, &self.path).await?;
         for (key, edit) in &self.edits {
-            match edit {
-                Some(entry) => file.entries.insert(key.clone(), entry.clone()),
-                None => file.entries.remove(key),
-            };
+            apply(&mut file.entries, key, edit);
         }
         let bytes =
             serde_json::to_vec(&file).map_err(|error| UsageError::Internal(error.to_string()))?;
@@ -111,6 +156,15 @@ impl Cache {
             .await
             .map_err(|error| store(&self.path, &error))
     }
+}
+
+fn apply(entries: &mut BTreeMap<String, Entry>, key: &str, edit: &Entry) {
+    let next = match entries.get(key) {
+        Some(stored) if stored.fingerprint == edit.fingerprint => stored.merged(edit),
+        Some(stored) if stored.observed_at() > edit.observed_at() => return,
+        _ => edit.clone(),
+    };
+    entries.insert(key.to_owned(), next);
 }
 
 async fn read(deps: &UsageDeps, path: &HostPath) -> Result<CacheFile, UsageError> {

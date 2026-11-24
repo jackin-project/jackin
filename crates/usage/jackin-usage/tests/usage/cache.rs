@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::io::ErrorKind;
+use std::time::Duration;
 
 use jackin_core::{FileMode, FileSystem, FsError, Provider, Timestamp};
-use jackin_testkit::{FsOp, Held, Method, Route};
+use jackin_testkit::{FsOp, Held, Method, Route, UsageServer};
 use jackin_usage::{
     AccountUsage, Freshness, Percent, Refresh, UnavailableReason, UsageAccount, UsageError,
     UsageOutcome,
 };
 
 use crate::support::{
-    CODEX_PATH, T0, TestResult, UsageHarness, account, codex_body, codex_login, codex_route,
-    env_source, file_source, guard, host_path, put_codex_auth, serve_codex, unavailable,
-    windows_of,
+    AUTH_CHATGPT, CODEX_PATH, CODEX_TOKEN, RESET_CREDITS_PATH, T0, TestResult, UsageHarness,
+    account, codex_body, codex_login, codex_reset_credits_route, codex_route, env_source,
+    file_source, guard, host_path, put_codex_auth, serve_codex, unavailable, windows_of,
 };
 
 async fn start(used: u32) -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {
@@ -909,6 +910,485 @@ async fn an_environment_credential_that_changed_is_fetched_again_inside_the_ttl(
         assert!(
             (first_used(&again) - 75.32).abs() < 1e-9,
             "the cached windows of the old environment value were served"
+        );
+        Ok(())
+    })
+    .await
+}
+
+const NEWER_TOKEN: &str = "SECRET_TOKEN_CODEX_NEWER";
+const CODEX_AUTH_PATH: &str = "/home/work/.codex/auth.json";
+
+#[derive(Clone, Copy)]
+enum First {
+    Early,
+    Late,
+}
+
+struct Side {
+    token: &'static str,
+    usage: Route,
+    refresh: Refresh,
+}
+
+async fn side_server(side: &Side) -> Result<(UsageServer, Held), Box<dyn std::error::Error>> {
+    let server = UsageServer::start().await?;
+    server.serve(
+        Provider::Codex,
+        Method::Get,
+        CODEX_PATH,
+        side.usage
+            .clone()
+            .requires_header("authorization", &format!("Bearer {}", side.token))
+            .requires_header("chatgpt-account-id", "acct-1"),
+    );
+    server.serve(
+        Provider::Codex,
+        Method::Get,
+        RESET_CREDITS_PATH,
+        codex_reset_credits_route(side.token),
+    );
+    let held = server.hold(Provider::Codex, Method::Get, CODEX_PATH);
+    Ok((server, held))
+}
+
+async fn wait_for_a_save(harness: &UsageHarness, before: Option<String>) -> TestResult {
+    for _ in 0..500 {
+        if harness.cache_text() != before {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    Err("the instance never saved".into())
+}
+
+async fn overlapped(
+    harness: &UsageHarness,
+    account: &UsageAccount,
+    early: Side,
+    late: Side,
+    gap: u64,
+    late_login: Option<String>,
+    first: First,
+) -> TestResult {
+    let (early_server, early_gate) = side_server(&early).await?;
+    let (late_server, late_gate) = side_server(&late).await?;
+    let early_host = harness.host_with(early_server.endpoints());
+    let late_host = harness.host_with(late_server.endpoints());
+    let early_run = harness.report_on(&early_host, std::slice::from_ref(account), early.refresh);
+    let late_run = async {
+        early_gate.arrived().await;
+        harness.advance(gap);
+        if let Some(login) = &late_login {
+            harness.fs.remove_file(&host_path(CODEX_AUTH_PATH)).await?;
+            harness.put(CODEX_AUTH_PATH, login).await?;
+        }
+        harness
+            .report_on(&late_host, std::slice::from_ref(account), late.refresh)
+            .await?;
+        Ok::<(), Box<dyn std::error::Error>>(())
+    };
+    let order = async {
+        late_gate.arrived().await;
+        let (now, then) = match first {
+            First::Early => (&early_gate, &late_gate),
+            First::Late => (&late_gate, &early_gate),
+        };
+        let before = harness.cache_text();
+        now.release();
+        wait_for_a_save(harness, before).await?;
+        then.release();
+        Ok::<(), Box<dyn std::error::Error>>(())
+    };
+    let (early_done, late_done, ordered) = tokio::join!(early_run, late_run, order);
+    early_done?;
+    late_done?;
+    ordered
+}
+
+fn side(token: &'static str, usage: Route, refresh: Refresh) -> Side {
+    Side {
+        token,
+        usage,
+        refresh,
+    }
+}
+
+fn windows_route(used: u32) -> Route {
+    Route::json(200, &codex_body(used))
+}
+
+async fn account_only() -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {
+    let harness = UsageHarness::new().await?;
+    harness.put(CODEX_AUTH_PATH, AUTH_CHATGPT).await?;
+    Ok((harness, codex_login("work", "/home/work/.codex", "acct-1")))
+}
+
+async fn settled_read(
+    harness: &UsageHarness,
+    account: &UsageAccount,
+) -> Result<AccountUsage, Box<dyn std::error::Error>> {
+    harness.advance(1);
+    Ok(harness.one(account, Refresh::Cached).await?)
+}
+
+#[tokio::test]
+async fn an_earlier_request_that_finishes_last_does_not_replace_the_later_report() -> TestResult {
+    guard(async {
+        let (harness, account) = account_only().await?;
+        overlapped(
+            &harness,
+            &account,
+            side(CODEX_TOKEN, windows_route(10), Refresh::Cached),
+            side(CODEX_TOKEN, windows_route(70), Refresh::Cached),
+            100,
+            None,
+            First::Late,
+        )
+        .await?;
+        let usage = settled_read(&harness, &account).await?;
+        assert_eq!((usage.freshness, used_of(&usage)), (Freshness::Fresh, 70.0));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_later_request_that_finishes_last_replaces_the_earlier_report() -> TestResult {
+    guard(async {
+        let (harness, account) = account_only().await?;
+        overlapped(
+            &harness,
+            &account,
+            side(CODEX_TOKEN, windows_route(10), Refresh::Cached),
+            side(CODEX_TOKEN, windows_route(70), Refresh::Cached),
+            100,
+            None,
+            First::Early,
+        )
+        .await?;
+        let usage = settled_read(&harness, &account).await?;
+        assert_eq!(used_of(&usage), 70.0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn requests_that_start_in_the_same_second_keep_the_report_that_saves_last() -> TestResult {
+    guard(async {
+        for (first, expected) in [(First::Early, 70.0), (First::Late, 10.0)] {
+            let (harness, account) = account_only().await?;
+            overlapped(
+                &harness,
+                &account,
+                side(CODEX_TOKEN, windows_route(10), Refresh::Cached),
+                side(CODEX_TOKEN, windows_route(70), Refresh::Cached),
+                0,
+                None,
+                first,
+            )
+            .await?;
+            assert_eq!(used_of(&settled_read(&harness, &account).await?), expected);
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_later_rate_limit_keeps_its_cooldown_and_an_earlier_report_that_saves_last() -> TestResult
+{
+    guard(async {
+        for first in [First::Late, First::Early] {
+            let (harness, account) = account_only().await?;
+            overlapped(
+                &harness,
+                &account,
+                side(CODEX_TOKEN, windows_route(10), Refresh::Cached),
+                side(
+                    CODEX_TOKEN,
+                    Route::status(429).reply_header("Retry-After", "600"),
+                    Refresh::Cached,
+                ),
+                100,
+                None,
+                first,
+            )
+            .await?;
+            serve_codex(&harness, CODEX_TOKEN, codex_route(&codex_body(90)));
+            harness.advance(150);
+            let usage = harness.one(&account, Refresh::Cached).await?;
+            assert_eq!(
+                usage.freshness,
+                Freshness::Stale {
+                    since: Timestamp(T0)
+                }
+            );
+            assert_eq!(used_of(&usage), 10.0);
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_success_after_a_cooldown_that_started_earlier_clears_it() -> TestResult {
+    guard(async {
+        let (harness, account) = account_only().await?;
+        overlapped(
+            &harness,
+            &account,
+            side(
+                CODEX_TOKEN,
+                Route::status(429).reply_header("Retry-After", "600"),
+                Refresh::Cached,
+            ),
+            side(CODEX_TOKEN, windows_route(70), Refresh::Cached),
+            100,
+            None,
+            First::Early,
+        )
+        .await?;
+        serve_codex(&harness, CODEX_TOKEN, codex_route(&codex_body(90)));
+        harness.advance(150);
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!((usage.freshness, used_of(&usage)), (Freshness::Fresh, 90.0));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_rotated_credential_is_not_replaced_by_the_older_credential_that_saves_last() -> TestResult
+{
+    guard(async {
+        for (first, expected) in [(First::Late, 70.0), (First::Early, 70.0)] {
+            let (harness, account) = account_only().await?;
+            let login = AUTH_CHATGPT.replace(CODEX_TOKEN, NEWER_TOKEN);
+            overlapped(
+                &harness,
+                &account,
+                side(CODEX_TOKEN, windows_route(10), Refresh::Cached),
+                side(NEWER_TOKEN, windows_route(70), Refresh::Cached),
+                100,
+                Some(login),
+                first,
+            )
+            .await?;
+            let usage = settled_read(&harness, &account).await?;
+            assert_eq!(used_of(&usage), expected);
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_older_removal_does_not_delete_a_newer_report_and_a_newer_one_does() -> TestResult {
+    guard(async {
+        let (harness, account) = account_only().await?;
+        overlapped(
+            &harness,
+            &account,
+            side(CODEX_TOKEN, Route::status(401), Refresh::Cached),
+            side(CODEX_TOKEN, windows_route(70), Refresh::Cached),
+            100,
+            None,
+            First::Late,
+        )
+        .await?;
+        assert_eq!(used_of(&settled_read(&harness, &account).await?), 70.0);
+
+        let (harness, account) = account_only().await?;
+        overlapped(
+            &harness,
+            &account,
+            side(CODEX_TOKEN, windows_route(10), Refresh::Cached),
+            side(CODEX_TOKEN, Route::status(401), Refresh::Cached),
+            100,
+            None,
+            First::Early,
+        )
+        .await?;
+        serve_codex(&harness, CODEX_TOKEN, codex_route(&codex_body(55)));
+        assert_eq!(used_of(&settled_read(&harness, &account).await?), 55.0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_newer_removal_is_not_undone_by_an_older_report_that_saves_after_it() -> TestResult {
+    guard(async {
+        let (harness, account) = account_only().await?;
+        overlapped(
+            &harness,
+            &account,
+            side(CODEX_TOKEN, windows_route(10), Refresh::Cached),
+            side(CODEX_TOKEN, Route::status(401), Refresh::Cached),
+            100,
+            None,
+            First::Late,
+        )
+        .await?;
+        serve_codex(&harness, CODEX_TOKEN, codex_route(&codex_body(55)));
+        assert_eq!(used_of(&settled_read(&harness, &account).await?), 55.0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_removal_wins_over_a_report_observed_in_the_same_second_in_either_order() -> TestResult {
+    guard(async {
+        for first in [First::Early, First::Late] {
+            let (harness, account) = account_only().await?;
+            overlapped(
+                &harness,
+                &account,
+                side(CODEX_TOKEN, windows_route(10), Refresh::Cached),
+                side(CODEX_TOKEN, Route::status(401), Refresh::Cached),
+                0,
+                None,
+                first,
+            )
+            .await?;
+            serve_codex(&harness, CODEX_TOKEN, codex_route(&codex_body(55)));
+            assert_eq!(used_of(&settled_read(&harness, &account).await?), 55.0);
+        }
+        Ok(())
+    })
+    .await
+}
+
+async fn seeded() -> Result<(UsageHarness, UsageAccount), Box<dyn std::error::Error>> {
+    let (harness, account) = account_only().await?;
+    serve_codex(&harness, CODEX_TOKEN, codex_route(&codex_body(5)));
+    assert_eq!(used_of(&harness.one(&account, Refresh::Cached).await?), 5.0);
+    harness.advance(10);
+    Ok((harness, account))
+}
+
+#[tokio::test]
+async fn a_failed_refresh_that_saves_last_does_not_bring_back_the_older_report() -> TestResult {
+    guard(async {
+        let (harness, account) = seeded().await?;
+        overlapped(
+            &harness,
+            &account,
+            side(CODEX_TOKEN, Route::status(500), Refresh::Force),
+            side(CODEX_TOKEN, windows_route(70), Refresh::Force),
+            20,
+            None,
+            First::Late,
+        )
+        .await?;
+        let usage = settled_read(&harness, &account).await?;
+        assert_eq!((usage.freshness, used_of(&usage)), (Freshness::Fresh, 70.0));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_later_failed_refresh_keeps_the_report_the_earlier_request_saved() -> TestResult {
+    guard(async {
+        let (harness, account) = seeded().await?;
+        overlapped(
+            &harness,
+            &account,
+            side(CODEX_TOKEN, windows_route(10), Refresh::Force),
+            side(CODEX_TOKEN, Route::status(500), Refresh::Force),
+            20,
+            None,
+            First::Early,
+        )
+        .await?;
+        let usage = settled_read(&harness, &account).await?;
+        assert_eq!((usage.freshness, used_of(&usage)), (Freshness::Fresh, 10.0));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn credentials_that_rotate_in_the_same_second_keep_the_credential_that_saves_last()
+-> TestResult {
+    guard(async {
+        for (first, expected) in [(First::Early, 70.0), (First::Late, 33.0)] {
+            let (harness, account) = account_only().await?;
+            let login = AUTH_CHATGPT.replace(CODEX_TOKEN, NEWER_TOKEN);
+            overlapped(
+                &harness,
+                &account,
+                side(CODEX_TOKEN, windows_route(10), Refresh::Cached),
+                side(NEWER_TOKEN, windows_route(70), Refresh::Cached),
+                0,
+                Some(login),
+                first,
+            )
+            .await?;
+            serve_codex(
+                &harness,
+                NEWER_TOKEN,
+                windows_route(33)
+                    .requires_header("authorization", &format!("Bearer {NEWER_TOKEN}"))
+                    .requires_header("chatgpt-account-id", "acct-1"),
+            );
+            let usage = settled_read(&harness, &account).await?;
+            assert_eq!(used_of(&usage), expected);
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cooldown_that_has_passed_does_not_hold_a_later_request() -> TestResult {
+    guard(async {
+        let (harness, account) = seeded().await?;
+        harness.server.replace(
+            Provider::Codex,
+            Method::Get,
+            CODEX_PATH,
+            Route::status(429).reply_header("Retry-After", "60"),
+        );
+        let limited = harness.one(&account, Refresh::Force).await?;
+        assert!(matches!(limited.freshness, Freshness::Stale { .. }));
+        harness.advance(30);
+        let held = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!(used_of(&held), 5.0);
+        harness.server.replace(
+            Provider::Codex,
+            Method::Get,
+            CODEX_PATH,
+            codex_route(&codex_body(90)),
+        );
+        harness.advance(120);
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!((usage.freshness, used_of(&usage)), (Freshness::Fresh, 90.0));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cache_file_from_before_observation_times_is_replaced_not_trusted() -> TestResult {
+    guard(async {
+        let (harness, account) = start(10).await?;
+        harness
+            .put(
+                "/state/usage/usage.json",
+                r#"{"entries":{"work":{"fingerprint":"f","good":null,"retry_at":99999999999}}}"#,
+            )
+            .await?;
+        let first = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!(used_of(&first), 10.0);
+        let text = harness.cache_text().unwrap_or_default();
+        assert!(
+            text.contains("\"hold\"") && !text.contains("retry_at"),
+            "{text}"
         );
         Ok(())
     })
