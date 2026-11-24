@@ -300,7 +300,14 @@ impl Inputs {
                     return Ok(Box::new(outcome(source, &Ok(SourceFound::File))));
                 }
                 let login = core_provider(provider) == jackin_core::Provider::Codex;
-                self.sources.check(kind.source(login), &self.cancel).await
+                let checked = self.sources.check(kind.source(login), &self.cancel).await;
+                if checked.is_ok()
+                    && matches!(kind, LocalKind::Folder(_))
+                    && let Err(error) = self.check_local(provider, path).await
+                {
+                    return Err(error);
+                }
+                checked
             }
             CredentialSource::OnePassword(found) => {
                 reference = found.canonical();

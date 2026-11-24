@@ -17,7 +17,7 @@ const NO_SOURCE: &str = "A1 has no usable source; write blockers/A1.md";
 
 #[derive(Debug, Error)]
 pub enum A1Error {
-    #[error("{NO_SOURCE}: {} is missing", .0.display())]
+    #[error("{NO_SOURCE}: {} is missing", plain(.0.display()))]
     Missing(PathBuf),
     #[error("{NO_SOURCE}: auth_mode is not chatgpt")]
     NotChatgpt,
@@ -25,11 +25,11 @@ pub enum A1Error {
     Malformed,
     #[error("{NO_SOURCE}: {0} is empty or absent")]
     EmptyField(&'static str),
-    #[error("another e2e run holds the A1 lock at {}", .0.display())]
+    #[error("another e2e run holds the A1 lock at {}", plain(.0.display()))]
     LockHeld(PathBuf),
-    #[error("cannot take the A1 lock at {}: {}", .path.display(), plain(.message))]
+    #[error("cannot take the A1 lock at {}: {}", plain(.path.display()), plain(.message))]
     LockIo { path: PathBuf, message: String },
-    #[error("cannot write a fixture login at {}: {}", .path.display(), plain(.message))]
+    #[error("cannot write a fixture login at {}: {}", plain(.path.display()), plain(.message))]
     Write { path: PathBuf, message: String },
     #[error("no entropy for the fixture login: {}", plain(.0))]
     Entropy(String),
