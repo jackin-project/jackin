@@ -10,9 +10,10 @@ use jackin_usage::accounts::{
     DATABASE_PATH, FailureKind, UsageProvider,
 };
 use jackin_usage::dashboard::DashboardSettings;
+use jackin_usage::view::card;
 use jackin_usage::view::{
-    AccountQuota, Attention, Currency, Fact, Note, Reading, ResetStatus, Role, Unit, UsageView,
-    Used, ViewFilter, build,
+    AccountQuota, Attention, Currency, Fact, Note, Reading, ResetStatus, Role, TodayTokens, Unit,
+    UsageView, Used, ViewFilter, build,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -499,7 +500,7 @@ fn notes_and_facts_carry_credits_resets_tokens_spend_and_account_facts() -> Resu
     );
     match &codex.notes[2] {
         Note::Tokens {
-            today: None,
+            today: TodayTokens::Unavailable,
             yesterday: Some(yesterday),
             last30: Some(last30),
         } => {
@@ -700,6 +701,15 @@ fn crafted_account(
     snapshot: serde_json::Value,
     hidden: &[&str],
 ) -> Result<AccountQuota> {
+    let (view, id) = crafted_view(provider, snapshot, hidden)?;
+    Ok(find(&view, id)?.clone())
+}
+
+fn crafted_view(
+    provider: UsageProvider,
+    snapshot: serde_json::Value,
+    hidden: &[&str],
+) -> Result<(UsageView, Uuid)> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join(DATABASE_PATH);
     let seeded = seed_usage_rows(
@@ -726,7 +736,7 @@ fn crafted_account(
     let registry =
         AccountRegistry::open_read_only(&path)?.ok_or("the usage registry is missing")?;
     let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
-    Ok(find(&view, id)?.clone())
+    Ok((view, id))
 }
 
 fn token_ranges() -> serde_json::Value {
@@ -751,7 +761,10 @@ fn tokens_of(account: &AccountQuota) -> Option<(Option<u64>, Option<u64>, Option
             yesterday,
             last30,
         } => Some((
-            *today,
+            match today {
+                TodayTokens::Count(tokens) => Some(*tokens),
+                TodayTokens::Hidden | TodayTokens::Unavailable => None,
+            },
             yesterday.as_ref().map(|activity| activity.tokens),
             last30.as_ref().map(|activity| activity.tokens),
         )),
@@ -870,6 +883,45 @@ fn an_idle_antigravity_five_hour_window_has_no_reset_but_a_used_one_keeps_it() -
     assert_eq!(
         reset_of(&other, "gemini-5h")?,
         Some(Timestamp(NOW.0 + 3_600))
+    );
+    Ok(())
+}
+
+fn token_parts(snapshot: serde_json::Value, hidden: &[&str]) -> Result<Option<Vec<String>>> {
+    let (view, id) = crafted_view(UsageProvider::ChatGpt, snapshot, hidden)?;
+    Ok(find(&view, id)?
+        .notes
+        .iter()
+        .find(|note| matches!(note, Note::Tokens { .. }))
+        .map(|note| card::note_parts(note, &view).1))
+}
+
+#[test]
+fn a_hidden_today_is_omitted_and_an_unreported_one_reads_n_a() -> Result<()> {
+    assert_eq!(
+        token_parts(token_ranges(), &[])?,
+        Some(vec![
+            "today 10".to_owned(),
+            "yesterday 20".to_owned(),
+            "30 days 30".to_owned()
+        ])
+    );
+    assert_eq!(
+        token_parts(token_ranges(), &["today"])?,
+        Some(vec!["yesterday 20".to_owned(), "30 days 30".to_owned()])
+    );
+    let legacy = json!({"plan": "Pay", "resources": {}, "activity": {
+        "yesterday": {"totals": {"tokens": 7}},
+        "prior30Days": {"tokens": 70},
+        "observed_days": 30, "expected_days": 30,
+    }});
+    assert_eq!(
+        token_parts(legacy, &[])?,
+        Some(vec![
+            "today n/a".to_owned(),
+            "yesterday 7".to_owned(),
+            "30 days 70".to_owned()
+        ])
     );
     Ok(())
 }
