@@ -6,9 +6,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use jackin_core::{
-    CodexAuthMode, CompatibilityError, ConfigError, DockerSource, DockerSubcommand, FsError,
-    GroupFault, HookKind, HostPath, LabelError, ManifestError, OutputStream, PathError, Platform,
-    ProcessError, ProcessStatus, Program, SupervisorReading, SupervisorState, plain,
+    CodexAuthMode, CompatibilityError, ConfigError, DockerSource, DockerSubcommand, EntryProblem,
+    FsError, GroupFault, HookKind, HostPath, LabelError, ManifestError, OutputStream, PathError,
+    Platform, ProcessError, ProcessStatus, Program, SupervisorReading, SupervisorState, plain,
     plain_duration, plain_list,
 };
 
@@ -97,6 +97,14 @@ fn file_and_process_errors_name_paths_programs_and_streams_plainly() -> TestResu
         (
             FsError::SymlinkTarget(dir.clone()).to_string(),
             "refusing the symbolic link /home/me/my project",
+        ),
+        (
+            FsError::UnsafeEntry {
+                path: dir.clone(),
+                problem: EntryProblem::ForeignOwner,
+            }
+            .to_string(),
+            "refusing /home/me/my project: it is owned by another user",
         ),
         (
             FsError::Unsynced {

@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use async_trait::async_trait;
 use jackin_core::{
-    DirEntry, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath,
-    LinkProblem, RegularFile, RegularFileProblem, RepoPath,
+    DirEntry, EntryProblem, FileIdentity, FileKind, FileLock, FileMode, FileSystem, FsError,
+    HostPath, LinkProblem, RegularFile, RegularFileProblem, RepoPath,
 };
 
 use crate::sync::locked;
@@ -269,7 +269,11 @@ impl FileSystem for MemFs {
 
     async fn create_private_dir_all(&self, dir: &HostPath) -> Result<(), FsError> {
         let mut state = self.enter(FsOp::CreatePrivateDirAll)?;
-        make_dirs(&mut state, dir, FileMode(0o700))
+        make_dirs(&mut state, dir, FileMode(0o700))?;
+        state
+            .dirs
+            .insert(dir.as_path().to_path_buf(), FileMode(0o700));
+        Ok(())
     }
 
     async fn write_new(
@@ -367,7 +371,10 @@ impl FileSystem for MemFs {
         let mut state = self.enter(FsOp::Lock)?;
         state.parent_dir(path)?;
         if state.is_dir(path.as_path()) {
-            return Err(io_error(path, ErrorKind::IsADirectory, "is a directory"));
+            return Err(FsError::UnsafeEntry {
+                path: path.clone(),
+                problem: EntryProblem::NotARegularFile,
+            });
         }
         if !state.locked.insert(path.as_path().to_path_buf()) {
             return Err(FsError::LockHeld(path.clone()));
