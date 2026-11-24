@@ -20,9 +20,9 @@ const NOT_A_REPOSITORY: &str = "not a git repository";
 const CLEANUP: Duration = Duration::from_secs(10);
 const UNTRACKED_FILES: usize = 500;
 const UNTRACKED_BYTES: usize = 256 * 1024;
-const TOTAL_PATCH_BYTES: usize = 16 * 1024 * 1024;
+const TOTAL_PATCH_BYTES: usize = 8 * 1024 * 1024;
 const NOT_READ: i32 = 66;
-const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; IFS= read -r p < \"$d/gitdir\" || [ -n \"$p\" ]; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
+const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; p=$(cat \"$d/gitdir\"; printf x) || continue; p=${p%x}; p=${p%?}; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
 static SH: SandboxPath = SandboxPath::from_static("/bin/sh");
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
@@ -437,7 +437,7 @@ impl Remote<'_> {
             _ => return Err(failure(&head)),
         };
         let patch = self
-            .require(&[
+            .git(&[
                 "-C",
                 root,
                 "-c",
@@ -452,13 +452,36 @@ impl Remote<'_> {
                 &base,
                 "--",
             ])
-            .await?;
+            .await;
         let mut files = Vec::new();
-        if patch.len() > budget.patches {
-            budget.omitted += lines_starting(&patch, b"diff --git ");
-        } else {
-            budget.patches -= patch.len();
-            files = parse_patch(&patch).map_err(RemoteError::Malformed)?;
+        match patch {
+            Ok(outcome) if outcome.exit_code != 0 => return Err(failure(&outcome)),
+            Ok(outcome) if outcome.stdout.len() <= budget.patches => {
+                budget.patches -= outcome.stdout.len();
+                files = parse_patch(&outcome.stdout).map_err(RemoteError::Malformed)?;
+            }
+            Ok(outcome) => {
+                budget.omitted += lines_starting(&outcome.stdout, b"diff --git ");
+            }
+            Err(GatewayError::OutputTooLarge { .. }) => {
+                let names = self
+                    .require(&[
+                        "-C",
+                        root,
+                        "diff-index",
+                        "--name-only",
+                        "-z",
+                        "--find-renames",
+                        &base,
+                        "--",
+                    ])
+                    .await?;
+                budget.omitted += names
+                    .split(|byte| *byte == 0)
+                    .filter(|name| !name.is_empty())
+                    .count();
+            }
+            Err(error) => return Err(error.into()),
         }
         let listed = self
             .require(&[

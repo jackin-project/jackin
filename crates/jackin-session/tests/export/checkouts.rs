@@ -448,7 +448,7 @@ async fn the_tracked_patch_byte_budget_is_spent_across_checkouts() -> TestResult
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
         let lead = lead(&handle)?;
-        let big = |tag: &str| format!("{tag}-0123456789\n").repeat(600_000);
+        let big = |tag: &str| format!("{tag}-0123456789\n").repeat(300_000);
         write(&lead, "big.txt", b"old\n")?;
         handle.git(&["add", "-A"]).await?;
         handle.git(&["commit", "-q", "-m", "big"]).await?;
@@ -460,6 +460,55 @@ async fn the_tracked_patch_byte_budget_is_spent_across_checkouts() -> TestResult
 
         assert_eq!(paths(&found), ["big.txt"]);
         assert_eq!(found.omitted, 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_patch_over_the_gateway_output_limit_is_counted_not_fatal() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let lead = lead(&handle)?;
+        write(&lead, "big.txt", b"old\n")?;
+        handle.git(&["add", "-A"]).await?;
+        handle.git(&["commit", "-q", "-m", "big"]).await?;
+        let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
+        write(
+            &agent,
+            "big.txt",
+            "0123456789abcdef\n".repeat(1_100_000).as_bytes(),
+        )?;
+        write(&agent, "small.txt", b"x\n")?;
+
+        let found = changes(&rig, &handle).await?;
+
+        assert_eq!(paths(&found), [format!("{agent}/small.txt")]);
+        assert_eq!(found.omitted, 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_removed_worktree_directory_with_a_newline_in_its_name_is_skipped() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let gone = add_agent(&handle, "work/two\nlines/project", "agent/lines").await?;
+        let kept = add_agent(&handle, "work/kept/project", "agent/kept").await?;
+        write(&kept, "README.md", b"readme\nstays\n")?;
+        std::fs::remove_dir_all(&gone)?;
+
+        let found = changes(&rig, &handle).await?;
+
+        assert_eq!(
+            found.files,
+            vec![edited(&format!("{kept}/README.md"), "stays")]
+        );
         Ok(())
     })
     .await
