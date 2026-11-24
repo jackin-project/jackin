@@ -1,0 +1,32 @@
+Usage details · Tue 24 Nov 2026 22:37 (+07) · 2 accounts · 1 provider
+
+Stale  all 2 readings, fetched 1d 5h to 1d 7h ago · jackin usage refresh
+
+Antigravity (Google AI)                                               2 accounts
+  personal@example.com #a0000013 · Google AI Ultra     stale · fetched 1d 7h ago
+    Claude weekly    ███████░ >99% used  resets in 1d 7h · Thu 06:19
+                     <1% left · 7d window from Thu 19 Nov 06:19 · exact 99.72%
+      Claude 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 5h ago · Mon 17:15 · was 0%
+                     was 0% at fetch · 5h window from Mon 23 Nov 12:15
+      Gemini 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 5h ago · Mon 17:15 · was 0%
+                     was 0% at fetch · 5h window from Mon 23 Nov 12:15
+      Gemini weekly  █░░░░░░░  <1% used  resets in 3d 20h · Sat 19:05
+                     >99% left · 7d window from Sat 21 Nov 19:05 · exact 0.28%
+    ! also connected as #a0000014 (same provider and label)
+    id a0000013-0000-4000-8000-000000000013
+    fetched Mon 23 Nov 14:53 · fresh until Mon 15:03
+
+  personal@example.com #a0000014 · Google AI Ultra    failed · fetched 1d 5h ago
+    Claude weekly    ███████░ >99% used  resets in 1d 7h · Thu 06:19
+                     <1% left · 7d window from Thu 19 Nov 06:19 · exact 99.72%
+      Claude 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 0h ago · Mon 22:06 · was 0%
+                     was 0% at fetch · 5h window from Mon 23 Nov 17:06
+      Gemini 5h      ╌╌╌╌╌╌╌╌    -       reset 1d 0h ago · Mon 22:06 · was 0%
+                     was 0% at fetch · 5h window from Mon 23 Nov 17:06
+      Gemini weekly  █░░░░░░░  <1% used  resets in 3d 20h · Sat 19:05
+                     >99% left · 7d window from Sat 21 Nov 19:05 · exact 0.28%
+    ! refresh failed: HTTP 403 SERVICE_DISABLED · retry due since Mon 22:28
+    ! also connected as #a0000013 (same provider and label)
+    id a0000014-0000-4000-8000-000000000014
+    fetched Mon 23 Nov 17:06 · fresh until Mon 17:16
+    Google project aicode-consumers
