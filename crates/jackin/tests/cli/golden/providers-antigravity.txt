@@ -4,4 +4,4 @@ PROVIDER                 ID           ACCOUNTS  NOTE
 Antigravity (Google AI)  antigravity         2  same account connected twice
 
 Connect: jackin account usage connect <id>
-Filter:  jackin usage --provider <id>
+Filter:  jackin usage details --provider <id>

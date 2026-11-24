@@ -19,4 +19,4 @@ Info  Gemini app (web):
       AI).
 
 Connect: jackin account usage connect <id>
-Filter:  jackin usage --provider <id>
+Filter:  jackin usage details --provider <id>

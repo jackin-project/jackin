@@ -4,10 +4,11 @@
 use super::support::Harness;
 use jackin::ExitClass;
 use jackin_testkit::{
-    TestResult, World, assert_golden, guard, pin_usage_view_clock, seed_usage_view,
+    SeedRow, TestResult, World, assert_golden, guard, pin_usage_view_clock, seed_usage_rows,
+    seed_usage_view,
 };
-use jackin_usage::accounts::DATABASE_PATH;
-use serde_json::Value;
+use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH, UsageProvider};
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 const GEMINI_APP_REASON: &str = "chat limits are not tracked; there is no usage source";
@@ -132,6 +133,72 @@ async fn json_adds_the_info_array_and_keeps_the_provider_keys() -> TestResult {
         assert_eq!(info[0]["name"], "Gemini app (web)");
         assert_eq!(info[0]["tracked"], false);
         assert_eq!(info[0]["reason"], GEMINI_APP_REASON);
+        Ok(())
+    })
+    .await
+}
+
+const DUPLICATE_NOTE: &str = "same account connected";
+
+#[tokio::test]
+async fn two_different_accounts_sharing_a_label_are_not_flagged_as_a_duplicate() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        pin_usage_view_clock(&world.clock);
+        let cli = Harness::new(&world);
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .join(DATABASE_PATH);
+        let rows = ["first", "second"]
+            .map(|_| SeedRow {
+                provider: UsageProvider::Claude,
+                label: "Work",
+                identity: None,
+                fetched_at: 1_795_534_000,
+                snapshot: json!({"resources":{}}),
+                failure: None,
+            })
+            .into();
+        seed_usage_rows(&path, rows)?;
+        let ran = cli.run(&["usage", "providers"]).await?;
+        ran.ok()?;
+        assert!(ran.stdout.contains("Claude"));
+        assert!(!ran.stdout.contains(DUPLICATE_NOTE), "{}", ran.stdout);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn one_identity_under_different_labels_is_still_flagged_as_a_duplicate() -> TestResult {
+    guard(async {
+        let (_world, cli, _ids) = seeded()?;
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .join(DATABASE_PATH);
+        let registry = AccountRegistry::open(&path)?;
+        let antigravity: Vec<_> = registry
+            .list()?
+            .into_iter()
+            .filter(|a| a.provider == UsageProvider::Antigravity)
+            .collect();
+        assert_eq!(antigravity.len(), 2);
+        registry.rename(antigravity[0].id, "Personal laptop")?;
+        registry.rename(antigravity[1].id, "Personal desktop")?;
+        drop(registry);
+        let ran = cli.run(&["usage", "providers", "antigravity"]).await?;
+        ran.ok()?;
+        assert!(
+            ran.stdout.contains("same account connected twice"),
+            "{}",
+            ran.stdout
+        );
         Ok(())
     })
     .await
