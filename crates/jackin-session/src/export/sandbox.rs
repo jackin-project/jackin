@@ -483,20 +483,9 @@ impl Remote<'_> {
             }
             Err(error) => return Err(error.into()),
         }
-        let listed = self
-            .require(&[
-                "-C",
-                root,
-                "ls-files",
-                "--others",
-                "--exclude-standard",
-                "-z",
-            ])
-            .await?;
-        for name in listed
-            .split(|byte| *byte == 0)
-            .filter(|name| !name.is_empty())
-        {
+        let (listed, unlisted) = self.untracked_names(root).await?;
+        budget.omitted += unlisted;
+        for name in &listed {
             if budget.untracked == 0 {
                 budget.omitted += 1;
                 continue;
@@ -512,6 +501,81 @@ impl Remote<'_> {
             ));
         }
         Ok(files)
+    }
+
+    async fn untracked_names(&self, root: &str) -> Result<(Vec<Vec<u8>>, usize), RemoteError> {
+        let listed = self
+            .git(&[
+                "-C",
+                root,
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ])
+            .await;
+        let names = |bytes: &[u8]| -> Vec<Vec<u8>> {
+            bytes
+                .split(|byte| *byte == 0)
+                .filter(|name| !name.is_empty())
+                .map(<[u8]>::to_vec)
+                .collect()
+        };
+        match listed {
+            Ok(outcome) if outcome.exit_code == 0 => Ok((names(&outcome.stdout), 0)),
+            Ok(outcome) => Err(failure(&outcome)),
+            Err(GatewayError::OutputTooLarge { .. }) => {
+                let git = sandbox_layout::GIT.as_str();
+                let head = self
+                    .shell(
+                        "\"$1\" --no-optional-locks -C \"$2\" ls-files --others --exclude-standard -z | head -c 4194304",
+                        git,
+                        root,
+                    )
+                    .await?;
+                let count = self
+                    .shell(
+                        "\"$1\" --no-optional-locks -C \"$2\" ls-files --others --exclude-standard -z | tr -cd '\\000' | wc -c",
+                        git,
+                        root,
+                    )
+                    .await?;
+                let total: usize = std::str::from_utf8(&count)
+                    .ok()
+                    .and_then(|text| text.trim().parse().ok())
+                    .ok_or(RemoteError::Malformed(
+                        "git ls-files printed an unreadable count",
+                    ))?;
+                let complete = head
+                    .iter()
+                    .rposition(|byte| *byte == 0)
+                    .map_or(&head[..0], |last| &head[..=last]);
+                let kept = names(complete);
+                let unlisted = total.saturating_sub(kept.len());
+                Ok((kept, unlisted))
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn shell(&self, script: &str, first: &str, second: &str) -> Result<Vec<u8>, RemoteError> {
+        let outcome = self
+            .exec(
+                &SH,
+                vec![
+                    "-c".to_owned(),
+                    script.to_owned(),
+                    "jackin-list".to_owned(),
+                    first.to_owned(),
+                    second.to_owned(),
+                ],
+            )
+            .await?;
+        if outcome.exit_code == 0 {
+            Ok(outcome.stdout)
+        } else {
+            Err(failure(&outcome))
+        }
     }
 
     async fn read_untracked(

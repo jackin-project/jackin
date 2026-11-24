@@ -493,6 +493,38 @@ async fn a_patch_over_the_gateway_output_limit_is_counted_not_fatal() -> TestRes
 }
 
 #[tokio::test]
+async fn an_untracked_listing_over_the_gateway_output_limit_is_counted_not_fatal() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
+        let deep = format!("{}/", vec!["d".repeat(100); 7].join("/"));
+        let total = 21_000;
+        for index in 0..total {
+            write(
+                &agent,
+                &format!("{deep}{index:05}{}", "x".repeat(140)),
+                b"x",
+            )?;
+        }
+
+        let found = changes(&rig, &handle).await?;
+
+        assert_eq!(found.files.len(), FILES);
+        assert_eq!(found.omitted, total - FILES);
+        assert!(
+            found
+                .files
+                .iter()
+                .all(|file| file.path.as_str().starts_with(&agent))
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_removed_worktree_directory_with_a_newline_in_its_name_is_skipped() -> TestResult {
     guard(async {
         let rig = Rig::new().await?;
