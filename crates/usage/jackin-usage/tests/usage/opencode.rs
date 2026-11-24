@@ -185,6 +185,7 @@ impl StoreFs {
 
     fn is_store(&self, path: &HostPath) -> bool {
         path.as_path() == self.store.as_path()
+            || std::fs::canonicalize(self.store.as_path()).is_ok_and(|real| real == path.as_path())
     }
 
     fn is_log(path: &HostPath) -> bool {
@@ -285,6 +286,24 @@ impl FileSystem for StoreFs {
         file: &RepoPath,
         max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
+        let path =
+            HostPath::resolve(Path::new(file.as_str()), root).map_err(|error| FsError::Io {
+                path: root.clone(),
+                kind: std::io::ErrorKind::InvalidInput,
+                message: error.to_string(),
+            })?;
+        let scripted = self.is_store(&path)
+            || (matches!(self.behaviour, StoreBehaviour::Checkpointed { .. })
+                && Self::is_log(&path));
+        if scripted {
+            return Ok(match self.read(&path).await? {
+                Some(bytes) => Ok(RegularFile {
+                    bytes,
+                    mode: FileMode(0o600),
+                }),
+                None => Err(RegularFileProblem::Missing),
+            });
+        }
         self.inner.read_regular(root, file, max_bytes).await
     }
 }

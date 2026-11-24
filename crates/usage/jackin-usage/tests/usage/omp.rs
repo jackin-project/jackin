@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
@@ -13,7 +13,7 @@ use jackin_core::{
     HostPath, LinkProblem, Provider, RegularFile, RegularFileProblem, RepoPath, StdFileSystem,
 };
 use jackin_testkit::{Method, Route, WorkingFs};
-use jackin_usage::{Refresh, UnavailableReason, UsageError, UsageRequest};
+use jackin_usage::{Refresh, UnavailableReason, UsageRequest};
 use rusqlite::Connection;
 use tokio_util::sync::CancellationToken;
 
@@ -51,16 +51,6 @@ fn store(home: &Path, rows: &[(i64, &str)]) {
 
 fn key_json(key: &str) -> String {
     format!("{{\"key\":\"{key}\"}}")
-}
-
-fn unblock_fifo(fifo: PathBuf) {
-    for attempt in 0..30 {
-        let delay = if attempt == 0 { 2 } else { 1 };
-        std::thread::park_timeout(Duration::from_secs(delay));
-        if std::fs::write(&fifo, b"").is_ok() {
-            break;
-        }
-    }
 }
 
 struct Omp {
@@ -131,7 +121,7 @@ async fn an_omp_account_reads_the_key_of_its_store() -> TestResult {
 }
 
 #[tokio::test]
-async fn a_slow_omp_store_is_cancelled_without_blocking_the_console() -> TestResult {
+async fn a_pipe_at_the_omp_store_is_refused_without_blocking_the_console() -> TestResult {
     guard(async {
         let directory = tempfile::tempdir()?;
         let store = directory.path().join(".omp").join("agent");
@@ -142,17 +132,7 @@ async fn a_slow_omp_store_is_cancelled_without_blocking_the_console() -> TestRes
             .status()
             .await?;
         assert!(made.success(), "mkfifo failed");
-        let _releaser = std::thread::spawn({
-            let fifo = fifo.clone();
-            move || unblock_fifo(fifo)
-        });
         let harness = UsageHarness::new().await?;
-        harness.server.replace(
-            Provider::Zai,
-            Method::Get,
-            PATH,
-            Route::json(200, QUOTA).requires_header("authorization", KEY),
-        );
         let host = {
             let fs: Arc<dyn FileSystem> = Arc::new(WorkingFs::new(
                 Arc::new(StdFileSystem::default()),
@@ -164,38 +144,25 @@ async fn a_slow_omp_store_is_cancelled_without_blocking_the_console() -> TestRes
                 host_path_of(directory.path()),
             )
         };
-        let cancel = CancellationToken::new();
-        let stopping = {
-            let cancel = cancel.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(200)).await;
-                cancel.cancel();
-            })
-        };
         let request = UsageRequest {
             accounts: vec![account("omp", Provider::Zai, CredentialSource::OmpHost)],
             refresh: Refresh::Cached,
         };
+        let cancel = CancellationToken::new();
         let reporting = tokio::spawn(async move { host.report(&request, &cancel).await });
         let finished = tokio::time::timeout(Duration::from_millis(1500), reporting).await;
-        if finished.is_err() {
+        let Ok(joined) = finished else {
             return Err("the OMP store blocked the console".into());
-        }
-        let released = tokio::task::spawn_blocking({
-            let fifo = fifo.clone();
-            move || std::fs::write(fifo, b"")
-        })
-        .await;
-        released??;
-        stopping.abort();
-        match finished?? {
-            Err(UsageError::Cancelled) => {}
-            Err(other) => panic!("expected cancellation, found {other:?}"),
-            Ok(report) => panic!(
-                "expected cancellation, found {} windows",
-                report.accounts.len()
+        };
+        let report = joined??;
+        assert!(
+            matches!(
+                unavailable(&report.accounts[0].outcome),
+                UnavailableReason::Provider(message) if message == "the OMP store could not be read"
             ),
-        }
+            "{:?}",
+            report.accounts[0].outcome
+        );
         Ok(())
     })
     .await
@@ -293,7 +260,7 @@ async fn an_omp_store_that_is_recreated_with_a_reused_inode_is_fetched_again() -
 }
 
 #[tokio::test]
-async fn an_identical_omp_store_that_is_recreated_with_a_reused_inode_is_fetched_again()
+async fn an_identical_omp_store_that_is_recreated_with_a_reused_inode_keeps_its_cached_windows()
 -> TestResult {
     guard(async {
         let omp = started(&[(1, &key_json(KEY))]).await?;
@@ -317,10 +284,7 @@ async fn an_identical_omp_store_that_is_recreated_with_a_reused_inode_is_fetched
         store(omp.directory.path(), &[(1, &key_json(KEY))]);
         harness_failing(&omp);
         let outcome = omp.report_over(fs).await?;
-        assert!(
-            matches!(unavailable(&outcome), UnavailableReason::Provider(_)),
-            "the cached windows of the recreated store with unchanged rows were served"
-        );
+        assert_eq!(windows_of(&outcome).len(), 2);
         Ok(())
     })
     .await
@@ -482,7 +446,9 @@ impl FileSystem for ReplacingFs {
         self.inner.file_len(path).await
     }
     async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
-        if path == &self.target && self.identities.fetch_add(1, Ordering::SeqCst) == 1 {
+        if path.as_path().ends_with(".omp/agent/agent.db")
+            && self.identities.fetch_add(1, Ordering::SeqCst) == 1
+        {
             replace_store(self.target.as_path(), KEY_REPLACED);
         }
         self.inner.identity(path).await
@@ -580,7 +546,7 @@ impl FileSystem for ReusedInodeFs {
         self.inner.file_len(path).await
     }
     async fn identity(&self, path: &HostPath) -> Result<Option<FileIdentity>, FsError> {
-        if path == &self.target {
+        if path.as_path().file_name() == self.target.as_path().file_name() {
             return Ok(Some(FileIdentity { dev: 1, ino: 42 }));
         }
         self.inner.identity(path).await
@@ -660,4 +626,171 @@ fn replace_store(live: &Path, key: &str) {
         .expect("the staged row");
     drop(connection);
     std::fs::rename(&staged, live).expect("the staged store replaces the live store");
+}
+
+fn wal_store(home: &Path, page_size: u32) -> Connection {
+    let directory = home.join(".omp").join("agent");
+    std::fs::create_dir_all(&directory).expect("the store directory");
+    let connection = Connection::open(directory.join("agent.db")).expect("the store opens");
+    connection
+        .execute_batch(&format!(
+            "PRAGMA page_size = {page_size}; PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;
+             CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT);
+             INSERT INTO auth_credentials (id, provider, credential_type, data) VALUES (1, 'zai', 'api_key', '{}');
+             PRAGMA wal_checkpoint(TRUNCATE);",
+            key_json(KEY)
+        ))
+        .expect("the log store");
+    connection
+        .execute(
+            "INSERT INTO auth_credentials (id, provider, credential_type, data) VALUES (2, 'zai', 'api_key', ?1)",
+            [key_json(KEY_REPLACED)],
+        )
+        .expect("the logged row");
+    connection
+}
+
+fn wal_checksum(data: &[u8], mut one: u32, mut two: u32, big_endian: bool) -> (u32, u32) {
+    for pair in data.chunks_exact(8) {
+        let word = |bytes: &[u8]| {
+            let array: [u8; 4] = bytes.try_into().expect("four bytes");
+            if big_endian {
+                u32::from_be_bytes(array)
+            } else {
+                u32::from_le_bytes(array)
+            }
+        };
+        one = one.wrapping_add(word(&pair[0..4])).wrapping_add(two);
+        two = two.wrapping_add(word(&pair[4..8])).wrapping_add(one);
+    }
+    (one, two)
+}
+
+fn rewrite_pages(wal: &[u8], page_size: usize, set: &dyn Fn(usize, u32) -> u32) -> Vec<u8> {
+    let big_endian = wal[3] & 1 == 1;
+    let mut out = wal.to_vec();
+    let header = wal[0..24].to_vec();
+    let (mut one, mut two) = wal_checksum(&header, 0, 0, big_endian);
+    let frame = 24 + page_size;
+    let mut index = 0;
+    let mut offset = 32;
+    while offset + frame <= out.len() && out[offset + 8..offset + 16] == wal[16..24] {
+        let page = u32::from_be_bytes(out[offset..offset + 4].try_into().expect("page"));
+        out[offset..offset + 4].copy_from_slice(&set(index, page).to_be_bytes());
+        let (next_one, next_two) = wal_checksum(&out[offset..offset + 8], one, two, big_endian);
+        let (next_one, next_two) = wal_checksum(
+            &out[offset + 24..offset + frame],
+            next_one,
+            next_two,
+            big_endian,
+        );
+        out[offset + 16..offset + 20].copy_from_slice(&next_one.to_be_bytes());
+        out[offset + 20..offset + 24].copy_from_slice(&next_two.to_be_bytes());
+        (one, two) = (next_one, next_two);
+        index += 1;
+        offset += frame;
+    }
+    out
+}
+
+#[tokio::test]
+async fn a_committed_update_that_only_the_log_holds_is_read() -> TestResult {
+    guard(async {
+        let omp = started(&[]).await?;
+        std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
+        let _live = wal_store(omp.directory.path(), 4096);
+        omp.harness.server.replace(
+            Provider::Zai,
+            Method::Get,
+            PATH,
+            Route::json(200, QUOTA).requires_header("authorization", KEY_REPLACED),
+        );
+        let outcome = omp.report().await?;
+        assert_eq!(windows_of(&outcome).len(), 2);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_log_frame_rewriter_reproduces_the_log_that_sqlite_wrote() -> TestResult {
+    let directory = tempfile::tempdir()?;
+    let _live = wal_store(directory.path(), 4096);
+    let wal = std::fs::read(
+        directory
+            .path()
+            .join(".omp")
+            .join("agent")
+            .join("agent.db-wal"),
+    )?;
+    assert!(wal.len() >= 32 + 24 + 4096);
+    assert_eq!(rewrite_pages(&wal, 4096, &|_, page| page), wal);
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_log_that_names_a_page_far_beyond_the_store_cannot_exhaust_memory() -> TestResult {
+    guard(async {
+        let omp = started(&[]).await?;
+        std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
+        let _live = wal_store(omp.directory.path(), 65_536);
+        let log = omp
+            .directory
+            .path()
+            .join(".omp")
+            .join("agent")
+            .join("agent.db-wal");
+        let wal = std::fs::read(&log)?;
+        let last = wal.len() / (24 + 65_536) - 1;
+        let hostile = rewrite_pages(&wal, 65_536, &|index, page| {
+            if index == last { u32::MAX } else { page }
+        });
+        std::fs::write(&log, hostile)?;
+        let finished = tokio::time::timeout(Duration::from_secs(20), omp.report()).await;
+        let outcome = finished.map_err(|_| "the report did not finish")??;
+        assert!(
+            matches!(
+                unavailable_or_windows(&outcome),
+                Ok(()) | Err(UnavailableReason::Provider(_) | UnavailableReason::NoCredentials)
+            ),
+            "{outcome:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+fn unavailable_or_windows(outcome: &jackin_usage::UsageOutcome) -> Result<(), &UnavailableReason> {
+    match outcome {
+        jackin_usage::UsageOutcome::Unavailable(reason) => Err(reason),
+        _ => Ok(()),
+    }
+}
+
+#[tokio::test]
+async fn a_credential_view_that_never_finishes_is_given_up_on() -> TestResult {
+    guard(async {
+        let omp = started(&[]).await?;
+        let directory = omp.directory.path().join(".omp").join("agent");
+        std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
+        std::fs::create_dir_all(&directory)?;
+        let connection = Connection::open(directory.join("agent.db"))?;
+        connection.execute_batch(
+            "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'zai' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;",
+        )?;
+        drop(connection);
+        let finished = tokio::time::timeout(Duration::from_secs(30), omp.report()).await;
+        let outcome = finished.map_err(|_| "the report did not finish")??;
+        assert!(
+            matches!(
+                unavailable(&outcome),
+                UnavailableReason::Provider(message) if message.contains("could not be read")
+            ),
+            "{outcome:?}"
+        );
+        let again = started(&[(1, &key_json(KEY))]).await?;
+        assert_eq!(windows_of(&again.report().await?).len(), 2);
+        Ok(())
+    })
+    .await
 }

@@ -218,15 +218,26 @@ fn text<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a str, Credent
         .ok_or_else(|| invalid(key))
 }
 
-pub fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Option<Secret> {
-    let connection =
-        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .ok()?;
+const OMP_LIMITS: jackin_core::CaptureLimits = jackin_core::CaptureLimits {
+    database_bytes: 64 * 1024 * 1024,
+    log_bytes: 16 * 1024 * 1024,
+    image_bytes: 80 * 1024 * 1024,
+};
+const OMP_VALUE_MAX_BYTES: usize = 64 * 1024;
+const OMP_SQL_DEADLINE: Duration = Duration::from_secs(5);
+
+fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Secret> {
     let data: String = connection
         .query_row(
             "SELECT data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
             [provider_id],
-            |row| row.get(0),
+            |row| {
+                let text = row.get_ref(0)?.as_str()?;
+                if text.len() > OMP_VALUE_MAX_BYTES {
+                    return Err(rusqlite::Error::InvalidQuery);
+                }
+                Ok(text.to_owned())
+            },
         )
         .ok()?;
     let document = Document(serde_json::from_str(&data).ok()?);
@@ -238,16 +249,44 @@ pub fn extract_omp_api_key(db_path: &Path, provider_id: &str) -> Option<Secret> 
     }
 }
 
-pub fn read_omp_host_key(
-    _fs: &dyn FileSystem,
+struct InterruptOnDrop(rusqlite::InterruptHandle);
+
+impl Drop for InterruptOnDrop {
+    fn drop(&mut self) {
+        self.0.interrupt();
+    }
+}
+
+pub async fn read_omp_host_key(
+    fs: &dyn FileSystem,
     db_path: &HostPath,
     provider_id: &str,
 ) -> Result<Secret, CredentialError> {
-    extract_omp_api_key(db_path.as_path(), provider_id).ok_or_else(|| {
-        CredentialError::LoginUnreadable {
-            path: db_path.clone(),
-        }
-    })
+    let unreadable = || CredentialError::LoginUnreadable {
+        path: db_path.clone(),
+    };
+    let captured = jackin_core::capture(fs, db_path, OMP_LIMITS)
+        .await
+        .map_err(|_| unreadable())?;
+    let connection = rusqlite::Connection::open_in_memory().map_err(|_| unreadable())?;
+    connection
+        .execute_batch("PRAGMA temp_store = MEMORY;")
+        .map_err(|_| unreadable())?;
+    let _interrupt = InterruptOnDrop(connection.get_interrupt_handle());
+    let wanted = provider_id.to_owned();
+    let task = tokio::task::spawn_blocking(move || {
+        let mut connection = connection;
+        let image = captured.image;
+        let length = image.as_slice().len();
+        connection
+            .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
+            .ok()?;
+        omp_key_of(&connection, &wanted)
+    });
+    match tokio::time::timeout(OMP_SQL_DEADLINE, task).await {
+        Ok(Ok(Some(key))) => Ok(key),
+        _ => Err(unreadable()),
+    }
 }
 
 #[derive(Debug)]
@@ -1142,7 +1181,9 @@ pub async fn resolve_static_key(
         CredentialSource::OmpHost => {
             let db = HostPath::resolve(Path::new(jackin_core::OMP_HOST_STORE), &host.home)
                 .map_err(|_| missing())?;
-            read_omp_host_key(host.fs.as_ref(), &db, provider_id).map_err(|_| missing())
+            read_omp_host_key(host.fs.as_ref(), &db, provider_id)
+                .await
+                .map_err(|_| missing())
         }
         CredentialSource::OnePassword { .. }
         | CredentialSource::CodexLogin { .. }

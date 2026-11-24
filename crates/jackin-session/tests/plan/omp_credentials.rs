@@ -1,12 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_session::extract_omp_api_key;
+use jackin_core::{HostPath, StdFileSystem};
+use jackin_session::read_omp_host_key;
 
 use super::support::TestResult;
 
-#[test]
-fn omp_api_key_comes_from_the_selected_providers_sqlite_row() -> TestResult {
+#[tokio::test]
+async fn omp_api_key_comes_from_the_selected_providers_sqlite_row() -> TestResult {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join("agent.db");
     let connection = rusqlite::Connection::open(&path)?;
@@ -19,8 +20,10 @@ fn omp_api_key_comes_from_the_selected_providers_sqlite_row() -> TestResult {
          INSERT INTO auth_credentials (provider, credential_type, data) VALUES ('wanted', 'api_key', '{\"key\": \"fake-wanted-key\", \"source\": \"test\"}');",
     )?;
     drop(connection);
-    let key = extract_omp_api_key(&path, "wanted").ok_or("missing wanted key")?;
+    let host = HostPath::parse(&std::fs::canonicalize(&path)?)?;
+    let fs = StdFileSystem::default();
+    let key = read_omp_host_key(&fs, &host, "wanted").await?;
     assert_eq!(key.expose(), "fake-wanted-key");
-    assert!(extract_omp_api_key(&path, "absent").is_none());
+    assert!(read_omp_host_key(&fs, &host, "absent").await.is_err());
     Ok(())
 }
