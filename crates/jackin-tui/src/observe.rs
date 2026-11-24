@@ -36,6 +36,12 @@ use crate::project::{
 use crate::readings::Readings;
 use crate::sessions::{Access, Reached, SessionConnector, SessionSet};
 
+type RoleDocWork = (
+    RoleName,
+    CoreRoleSource,
+    Option<Result<jackin_core::RoleManifest, RoleDocError>>,
+);
+
 #[derive(Debug)]
 pub(crate) struct Observation {
     pub(crate) snapshot: Snapshot,
@@ -349,12 +355,30 @@ impl Inputs {
         drop(self.run_doctor(false).await);
     }
 
+    async fn path_role_doc(
+        &self,
+        name: &RoleName,
+        path: &HostPath,
+        previous: Option<&Result<jackin_core::RoleManifest, RoleDocError>>,
+    ) -> Result<jackin_core::RoleManifest, RoleDocError> {
+        let read = self.roles.read_manifest(path).await;
+        if let (Ok(read), Some(Ok(known))) = (read, previous)
+            && read == *known
+        {
+            return Ok(read);
+        }
+        locked(&self.checks).remove(name);
+        match self.roles.load_path(path, &CancellationToken::new()).await {
+            Ok(role) => Ok(role.manifest().clone()),
+            Err(error) => match self.roles.read_manifest(path).await {
+                Ok(manifest) => Ok(manifest),
+                Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
+            },
+        }
+    }
+
     async fn role_docs(&self, config: &Config) -> RoleDocs {
-        let wanted: Vec<(
-            RoleName,
-            CoreRoleSource,
-            Option<Result<jackin_core::RoleManifest, RoleDocError>>,
-        )> = {
+        let wanted: Vec<RoleDocWork> = {
             let cache = locked(&self.docs);
             config
                 .roles()
@@ -376,22 +400,7 @@ impl Inputs {
             Box::pin(async move {
                 let doc = match &source {
                     CoreRoleSource::Path(path) => {
-                        let unchanged = match (self.roles.read_manifest(path).await, &previous) {
-                            (Ok(read), Some(Ok(known))) if read == *known => Some(read),
-                            _ => None,
-                        };
-                        if let Some(manifest) = unchanged {
-                            Ok(manifest)
-                        } else {
-                            locked(&self.checks).remove(&name);
-                            match self.roles.load_path(path, &CancellationToken::new()).await {
-                                Ok(role) => Ok(role.manifest().clone()),
-                                Err(error) => match self.roles.read_manifest(path).await {
-                                    Ok(manifest) => Ok(manifest),
-                                    Err(_) => Err(RoleDocError::Unreadable(error.to_string())),
-                                },
-                            }
-                        }
+                        self.path_role_doc(&name, path, previous.as_ref()).await
                     }
                     CoreRoleSource::Git { .. } => match &anywhere {
                         Some(anywhere) => match Box::pin(self.roles.load(
