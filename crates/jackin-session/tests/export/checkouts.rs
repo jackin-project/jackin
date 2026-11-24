@@ -498,9 +498,14 @@ async fn an_untracked_listing_over_the_gateway_output_limit_is_counted_not_fatal
         let rig = Rig::new().await?;
         rig.launch(1).await?;
         let handle = rig.handle(1).await?;
-        let agent = add_agent(&handle, "work/omp/project", "agent/omp").await?;
-        let deep = format!("{}/", vec!["d".repeat(100); 7].join("/"));
-        let total = 21_000;
+        let agent = add_agent(
+            &handle,
+            "work/$(touch pwned) \"q\" -x/project",
+            "agent/hostile",
+        )
+        .await?;
+        let deep = format!("{}/", vec!["d".repeat(100); 6].join("/"));
+        let total = 22_500;
         for index in 0..total {
             write(
                 &agent,
@@ -513,12 +518,51 @@ async fn an_untracked_listing_over_the_gateway_output_limit_is_counted_not_fatal
 
         assert_eq!(found.files.len(), FILES);
         assert_eq!(found.omitted, total - FILES);
+        assert!(!Path::new("pwned").exists());
+        assert!(!handle.root().join("pwned").exists());
         assert!(
             found
                 .files
                 .iter()
                 .all(|file| file.path.as_str().starts_with(&agent))
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn names_with_shell_syntax_are_read_as_data() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let agent = add_agent(
+            &handle,
+            "work/$(touch pwned) \"q\" -x/project",
+            "agent/hostile",
+        )
+        .await?;
+        write(
+            &agent,
+            "$(touch pwned2) `touch pwned3` \"q\" -f.txt",
+            b"x\n",
+        )?;
+
+        let found = changes(&rig, &handle).await?;
+
+        assert_eq!(
+            found.files,
+            vec![untracked(
+                &format!("{agent}/$(touch pwned2) `touch pwned3` \"q\" -f.txt"),
+                "x"
+            )]
+        );
+        for name in ["pwned", "pwned2", "pwned3"] {
+            assert!(!handle.root().join(name).exists());
+            assert!(!Path::new(&agent).join(name).exists());
+            assert!(!handle.root().join("project").join(name).exists());
+        }
         Ok(())
     })
     .await
