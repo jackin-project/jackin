@@ -102,6 +102,14 @@ pub async fn capture(
         return Err(CaptureProblem::NotARegularFile);
     };
     let log_name = format!("{name}-wal");
+    let probe = RepoPath::parse(name).map_err(|_| CaptureProblem::Unreadable)?;
+    match fs.read_regular(&dir, &probe, SQLITE_MAGIC.len()).await {
+        Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC) => {}
+        Ok(Ok(_)) => return Err(CaptureProblem::NotSqlite),
+        Ok(Err(RegularFileProblem::Missing)) => return Err(CaptureProblem::Missing),
+        Ok(Err(_)) => return Err(CaptureProblem::NotARegularFile),
+        Err(_) => return Err(CaptureProblem::Unreadable),
+    }
     for _ in 0..ATTEMPTS {
         let before = identity_of(fs, &target).await?;
         let Read::Bytes(first) = read_file(
@@ -116,10 +124,15 @@ pub async fn capture(
         else {
             return Err(CaptureProblem::Missing);
         };
+        let (first, digest) = offload(move || {
+            let first = Zeroizing::new(first);
+            let digest = Sha256::of(&first);
+            (first, digest)
+        })
+        .await?;
         if !first.starts_with(SQLITE_MAGIC) {
             return Err(CaptureProblem::NotSqlite);
         }
-        let digest = Sha256::of(&first);
         let log = match read_file(
             fs,
             &dir,
@@ -146,17 +159,32 @@ pub async fn capture(
             continue;
         };
         let after = identity_of(fs, &target).await?;
-        if before != after || Sha256::of(&again) != digest {
+        let (same, _wiped) = offload(move || {
+            let again = Zeroizing::new(again);
+            (Sha256::of(&again) == digest, again)
+        })
+        .await?;
+        if before != after || !same {
             continue;
         }
-        drop(Zeroizing::new(again));
-        let image = store_image(first, log.as_deref().map(Vec::as_slice), limits.image_bytes)?;
+        let image_bytes = limits.image_bytes;
+        let image =
+            offload(move || store_image(first, log.as_deref().map(Vec::as_slice), image_bytes))
+                .await??;
         return Ok(Capture {
             image: StoreImage(image),
             identity: before,
         });
     }
     Err(CaptureProblem::Changed)
+}
+
+async fn offload<T: Send + 'static>(
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, CaptureProblem> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|_| CaptureProblem::Unreadable)
 }
 
 async fn identity_of(
@@ -170,11 +198,11 @@ async fn identity_of(
 }
 
 fn store_image(
-    database: Vec<u8>,
+    database: Zeroizing<Vec<u8>>,
     log: Option<&[u8]>,
     image_bytes: usize,
 ) -> Result<Zeroizing<Vec<u8>>, CaptureProblem> {
-    let mut image = Zeroizing::new(database);
+    let mut image = database;
     if image.len() > image_bytes {
         return Err(CaptureProblem::ImageTooLarge);
     }
@@ -210,7 +238,8 @@ fn page_size_of(raw: u32) -> Option<usize> {
 }
 
 fn checksum(data: &[u8], mut one: u32, mut two: u32, big_endian: bool) -> (u32, u32) {
-    for pair in data.chunks_exact(8) {
+    let (pairs, _) = data.as_chunks::<8>();
+    for pair in pairs {
         let (Some(first), Some(second)) = (pair.get(0..4), pair.get(4..8)) else {
             break;
         };

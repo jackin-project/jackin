@@ -24,6 +24,6 @@ async fn omp_api_key_comes_from_the_selected_providers_sqlite_row() -> TestResul
     let fs = StdFileSystem::default();
     let key = read_omp_host_key(&fs, &host, "wanted").await?;
     assert_eq!(key.expose(), "fake-wanted-key");
-    assert!(read_omp_host_key(&fs, &host, "absent").await.is_err());
+    read_omp_host_key(&fs, &host, "absent").await.unwrap_err();
     Ok(())
 }

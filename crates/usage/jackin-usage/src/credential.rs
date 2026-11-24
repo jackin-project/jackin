@@ -380,7 +380,7 @@ async fn opencode_store(deps: &UsageDeps, path: &HostPath) -> Result<Option<Mate
         }
     };
     let identity = captured.identity;
-    let found = query_image(captured.image, |connection| {
+    let found = query_image(captured.image, OPENCODE_WORDS, |connection| {
         extract_opencode_credential(connection)
     })
     .await?;
@@ -410,12 +410,15 @@ fn extract_opencode_credential(
         .next()
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?
     {
-        let id: String = row
-            .get(0)
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
-        let value: String = row
-            .get(1)
-            .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
+        let unreadable = || Unresolved::Unreadable("the OpenCode store could not be read");
+        let id = row
+            .get_ref(0)
+            .and_then(bounded_text)
+            .map_err(|_| unreadable())?;
+        let value = row
+            .get_ref(1)
+            .and_then(bounded_text)
+            .map_err(|_| unreadable())?;
         let updated: i64 = row
             .get(2)
             .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
@@ -489,7 +492,7 @@ async fn omp_key(deps: &UsageDeps, account: &UsageAccount) -> Result<(String, Se
     };
     let identity = captured.identity;
     let wanted = provider_id.to_owned();
-    let found = query_image(captured.image, move |connection| {
+    let found = query_image(captured.image, OMP_WORDS, move |connection| {
         read_omp_api_key(connection, &wanted)
     })
     .await?;
@@ -549,35 +552,52 @@ fn bounded_text(value: rusqlite::types::ValueRef<'_>) -> rusqlite::Result<String
     Ok(text.to_owned())
 }
 
-async fn query_image<T, Work>(image: StoreImage, work: Work) -> Result<T, Unresolved>
+struct StoreWords {
+    opened: &'static str,
+    read: &'static str,
+}
+
+const OPENCODE_WORDS: StoreWords = StoreWords {
+    opened: "the OpenCode store could not be opened",
+    read: "the OpenCode store could not be read",
+};
+const OMP_WORDS: StoreWords = StoreWords {
+    opened: "the OMP store could not be opened",
+    read: "the OMP store could not be read",
+};
+
+async fn query_image<T, Work>(
+    image: StoreImage,
+    words: StoreWords,
+    work: Work,
+) -> Result<T, Unresolved>
 where
     T: Send + 'static,
     Work: FnOnce(&rusqlite::Connection) -> Result<T, Unresolved> + Send + 'static,
 {
-    let connection = store_connection()?;
+    let connection = store_connection(words.opened)?;
     let _interrupt = InterruptOnDrop(connection.get_interrupt_handle());
+    let (opened, read) = (words.opened, words.read);
     let task = tokio::task::spawn_blocking(move || {
         let mut connection = connection;
         let length = image.as_slice().len();
         connection
             .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
-            .map_err(|_| Unresolved::Unreadable("the credential store could not be opened"))?;
+            .map_err(|_| Unresolved::Unreadable(opened))?;
         work(&connection)
     });
     match tokio::time::timeout(SQL_DEADLINE, task).await {
         Ok(Ok(result)) => result,
-        Ok(Err(_)) | Err(_) => Err(Unresolved::Unreadable(
-            "the credential store could not be read",
-        )),
+        Ok(Err(_)) | Err(_) => Err(Unresolved::Unreadable(read)),
     }
 }
 
-fn store_connection() -> Result<rusqlite::Connection, Unresolved> {
-    let connection = rusqlite::Connection::open_in_memory()
-        .map_err(|_| Unresolved::Unreadable("the credential store could not be opened"))?;
+fn store_connection(opened: &'static str) -> Result<rusqlite::Connection, Unresolved> {
+    let connection =
+        rusqlite::Connection::open_in_memory().map_err(|_| Unresolved::Unreadable(opened))?;
     connection
         .execute_batch("PRAGMA temp_store = MEMORY;")
-        .map_err(|_| Unresolved::Unreadable("the credential store could not be opened"))?;
+        .map_err(|_| Unresolved::Unreadable(opened))?;
     Ok(connection)
 }
 
@@ -726,7 +746,7 @@ mod tests {
 
     #[test]
     fn the_store_connection_keeps_its_temporary_storage_in_memory() {
-        let Ok(connection) = super::store_connection() else {
+        let Ok(connection) = super::store_connection("opened") else {
             panic!("a connection");
         };
         let store: i64 = connection
@@ -767,7 +787,7 @@ mod tests {
                 .expect("the newer row");
         }
         let bytes = std::fs::read(&path).expect("the store bytes");
-        let Ok(mut loaded) = super::store_connection() else {
+        let Ok(mut loaded) = super::store_connection("opened") else {
             panic!("a connection");
         };
         loaded
@@ -783,7 +803,7 @@ mod tests {
         };
         assert_eq!(found.id, "cred_newer");
         assert!(found.value.contains("newer"));
-        let Ok(connection) = super::store_connection() else {
+        let Ok(connection) = super::store_connection("opened") else {
             panic!("a connection");
         };
         connection

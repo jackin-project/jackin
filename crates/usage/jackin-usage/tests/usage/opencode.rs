@@ -850,3 +850,60 @@ fn holds_secret(secret: &str, root: &Path) -> bool {
     }
     false
 }
+
+#[tokio::test]
+async fn a_log_that_names_a_page_far_beyond_the_store_is_ignored_where_it_cannot_apply()
+-> TestResult {
+    use crate::support::rewrite_pages;
+    guard(async {
+        let directory = tempfile::tempdir()?;
+        let db = directory.path().join("opencode.db");
+        let connection = Connection::open(&db)?;
+        connection.execute_batch(
+            "PRAGMA page_size = 65536; PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;",
+        )?;
+        connection.execute_batch(SCHEMA)?;
+        connection.execute(
+            "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_1', 'opencode', 'opencode', ?1, 1, 1, 1)",
+            rusqlite::params![credential(TOKEN, EXPIRES, None)],
+        )?;
+        connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        connection.execute(
+            "INSERT INTO credential (id, integration_id, label, value, active, time_created, time_updated) VALUES ('cred_2', 'opencode', 'opencode', ?1, 1, 2, 2)",
+            rusqlite::params![credential("SECRET_TOKEN_FROM_THE_LOG", EXPIRES, None)],
+        )?;
+        let log = directory.path().join("opencode.db-wal");
+        let wal = std::fs::read(&log)?;
+        assert!(wal.len() >= 32 + 24 + 65_536);
+        assert_eq!(rewrite_pages(&wal, 65_536, &|_, page| page), wal);
+        let last = wal.len() / (24 + 65_536) - 1;
+        std::fs::write(
+            &log,
+            rewrite_pages(&wal, 65_536, &|index, page| {
+                if index == last { u32::MAX } else { page }
+            }),
+        )?;
+        let harness = UsageHarness::new().await?;
+        harness.server.replace(
+            Provider::Opencode,
+            Method::Get,
+            PATH,
+            Route::json(200, USAGE).requires_header("authorization", "Bearer SECRET_TOKEN_FROM_THE_LOG"),
+        );
+        let account = account(
+            "opencode",
+            Provider::Opencode,
+            CredentialSource::File { path: host_path_of(&db) },
+        );
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            harness.report_cached(&account, directory.path()),
+        )
+        .await
+        .map_err(|_| "the report did not finish")??;
+        assert_windows(&outcome, &[FIVE, WEEK, MONTH]);
+        drop(connection);
+        Ok(())
+    })
+    .await
+}

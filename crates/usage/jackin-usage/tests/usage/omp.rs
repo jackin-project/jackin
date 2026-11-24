@@ -650,49 +650,6 @@ fn wal_store(home: &Path, page_size: u32) -> Connection {
     connection
 }
 
-fn wal_checksum(data: &[u8], mut one: u32, mut two: u32, big_endian: bool) -> (u32, u32) {
-    for pair in data.chunks_exact(8) {
-        let word = |bytes: &[u8]| {
-            let array: [u8; 4] = bytes.try_into().expect("four bytes");
-            if big_endian {
-                u32::from_be_bytes(array)
-            } else {
-                u32::from_le_bytes(array)
-            }
-        };
-        one = one.wrapping_add(word(&pair[0..4])).wrapping_add(two);
-        two = two.wrapping_add(word(&pair[4..8])).wrapping_add(one);
-    }
-    (one, two)
-}
-
-fn rewrite_pages(wal: &[u8], page_size: usize, set: &dyn Fn(usize, u32) -> u32) -> Vec<u8> {
-    let big_endian = wal[3] & 1 == 1;
-    let mut out = wal.to_vec();
-    let header = wal[0..24].to_vec();
-    let (mut one, mut two) = wal_checksum(&header, 0, 0, big_endian);
-    let frame = 24 + page_size;
-    let mut index = 0;
-    let mut offset = 32;
-    while offset + frame <= out.len() && out[offset + 8..offset + 16] == wal[16..24] {
-        let page = u32::from_be_bytes(out[offset..offset + 4].try_into().expect("page"));
-        out[offset..offset + 4].copy_from_slice(&set(index, page).to_be_bytes());
-        let (next_one, next_two) = wal_checksum(&out[offset..offset + 8], one, two, big_endian);
-        let (next_one, next_two) = wal_checksum(
-            &out[offset + 24..offset + frame],
-            next_one,
-            next_two,
-            big_endian,
-        );
-        out[offset + 16..offset + 20].copy_from_slice(&next_one.to_be_bytes());
-        out[offset + 20..offset + 24].copy_from_slice(&next_two.to_be_bytes());
-        (one, two) = (next_one, next_two);
-        index += 1;
-        offset += frame;
-    }
-    out
-}
-
 #[tokio::test]
 async fn a_committed_update_that_only_the_log_holds_is_read() -> TestResult {
     guard(async {
@@ -710,61 +667,6 @@ async fn a_committed_update_that_only_the_log_holds_is_read() -> TestResult {
         Ok(())
     })
     .await
-}
-
-#[tokio::test]
-async fn the_log_frame_rewriter_reproduces_the_log_that_sqlite_wrote() -> TestResult {
-    let directory = tempfile::tempdir()?;
-    let _live = wal_store(directory.path(), 4096);
-    let wal = std::fs::read(
-        directory
-            .path()
-            .join(".omp")
-            .join("agent")
-            .join("agent.db-wal"),
-    )?;
-    assert!(wal.len() >= 32 + 24 + 4096);
-    assert_eq!(rewrite_pages(&wal, 4096, &|_, page| page), wal);
-    Ok(())
-}
-
-#[tokio::test]
-async fn a_log_that_names_a_page_far_beyond_the_store_cannot_exhaust_memory() -> TestResult {
-    guard(async {
-        let omp = started(&[]).await?;
-        std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
-        let _live = wal_store(omp.directory.path(), 65_536);
-        let log = omp
-            .directory
-            .path()
-            .join(".omp")
-            .join("agent")
-            .join("agent.db-wal");
-        let wal = std::fs::read(&log)?;
-        let last = wal.len() / (24 + 65_536) - 1;
-        let hostile = rewrite_pages(&wal, 65_536, &|index, page| {
-            if index == last { u32::MAX } else { page }
-        });
-        std::fs::write(&log, hostile)?;
-        let finished = tokio::time::timeout(Duration::from_secs(20), omp.report()).await;
-        let outcome = finished.map_err(|_| "the report did not finish")??;
-        assert!(
-            matches!(
-                unavailable_or_windows(&outcome),
-                Ok(()) | Err(UnavailableReason::Provider(_) | UnavailableReason::NoCredentials)
-            ),
-            "{outcome:?}"
-        );
-        Ok(())
-    })
-    .await
-}
-
-fn unavailable_or_windows(outcome: &jackin_usage::UsageOutcome) -> Result<(), &UnavailableReason> {
-    match outcome {
-        jackin_usage::UsageOutcome::Unavailable(reason) => Err(reason),
-        _ => Ok(()),
-    }
 }
 
 #[tokio::test]
