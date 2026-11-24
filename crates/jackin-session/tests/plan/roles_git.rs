@@ -273,25 +273,27 @@ async fn a_pinned_role_updates_while_the_origin_head_points_nowhere_and_an_unpin
 }
 
 #[tokio::test]
-async fn an_explicit_head_revision_follows_a_new_default_branch_like_an_unpinned_role() -> TestResult
-{
+async fn a_revision_naming_the_remote_head_follows_a_new_default_branch_like_an_unpinned_role()
+-> TestResult {
     guard(async {
-        let origin = Origin::new().await?;
-        let (cache, _keep) = cache()?;
-        origin
-            .load(&cache, Some("HEAD"))
-            .await?
-            .map_err(|e| format!("{e:?}"))?;
-        git(
-            origin.role.root().as_path(),
-            &["symbolic-ref", "HEAD", "refs/heads/dev"],
-        )
-        .await?;
-        let (commit, _) = origin
-            .load(&cache, Some("HEAD"))
-            .await?
-            .map_err(|e| format!("{e:?}"))?;
-        assert_eq!(commit, origin.commits[1]);
+        for rev in ["HEAD", "origin/HEAD", "remotes/origin/HEAD", "refs/remotes/origin/HEAD"] {
+            let origin = Origin::new().await?;
+            let (cache, _keep) = cache()?;
+            origin
+                .load(&cache, Some(rev))
+                .await?
+                .map_err(|e| format!("{rev}: {e:?}"))?;
+            git(
+                origin.role.root().as_path(),
+                &["symbolic-ref", "HEAD", "refs/heads/dev"],
+            )
+            .await?;
+            let (commit, _) = origin
+                .load(&cache, Some(rev))
+                .await?
+                .map_err(|e| format!("{rev}: {e:?}"))?;
+            assert_eq!(commit, origin.commits[1], "{rev}");
+        }
         Ok(())
     })
     .await

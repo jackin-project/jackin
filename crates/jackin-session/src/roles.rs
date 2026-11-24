@@ -741,7 +741,7 @@ impl RoleCatalog {
                 ],
             )
             .await?;
-            if rev.is_none_or(|rev| rev.as_str() == "HEAD") {
+            if rev.is_none_or(|rev| names_remote_head(rev.as_str())) {
                 self.git(dir, cancel, &["remote", "set-head", "origin", "--auto"])
                     .await?;
             }
@@ -774,6 +774,13 @@ impl RoleCatalog {
 
 fn join_repo(root: &HostPath, path: &RepoPath) -> Result<HostPath, PathError> {
     HostPath::resolve(Path::new(path.as_str()), root)
+}
+
+fn names_remote_head(rev: &str) -> bool {
+    matches!(
+        rev,
+        "HEAD" | "origin/HEAD" | "remotes/origin/HEAD" | "refs/remotes/origin/HEAD"
+    )
 }
 
 fn branch_name(rev: &str) -> &str {
