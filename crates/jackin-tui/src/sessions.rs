@@ -11,7 +11,8 @@ use futures::future::join_all;
 use jackin_core::{Config, ConfigError, GatewayEntry, GatewayName};
 use jackin_openshell::{Gateway, GatewayError};
 use jackin_session::{
-    ConnectError, GatewayAccess, GatewayConnector, Gateways, Session, UnreachableGateway,
+    ConnectError, GatewayAccess, GatewayConnector, GatewayScope, Gateways, Session,
+    UnreachableGateway,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -341,6 +342,7 @@ impl SessionSet {
     pub(crate) async fn home(
         &self,
         config: &Config,
+        scope: GatewayScope,
         connector: &dyn SessionConnector,
         cancel: &CancellationToken,
     ) -> Home {
@@ -354,6 +356,9 @@ impl SessionSet {
                 Some(Slot::Down(error)) => return Home::Down(Arc::clone(error)),
                 Some(Slot::Up(session)) => Session::clone(session),
             };
+            if scope == GatewayScope::Home {
+                return Home::Ready(Box::new(Gateways::single(home)));
+            }
             let known: BTreeMap<GatewayName, Reached> = state
                 .slots
                 .iter()

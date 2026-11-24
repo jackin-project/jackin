@@ -623,6 +623,123 @@ async fn a_removal_reaches_a_gateway_that_was_added_after_the_console_opened() -
     .await
 }
 
+async fn with_unreached_peer(
+    lab: &mut Lab,
+) -> Result<(Arc<ScriptedConnector>, GatewayName, Arc<FakeGateway>), Box<dyn std::error::Error>> {
+    let name = GatewayName::parse("late")?;
+    let peer = Arc::new(FakeGateway::new(
+        name.clone(),
+        OpenShellWorkspace::parse("default")?,
+    ));
+    let entry = lab
+        .config()
+        .await?
+        .gateways()
+        .next()
+        .map(|(_, entry)| entry.clone())
+        .ok_or("entry")?;
+    let home: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&lab.rig.world.gateway);
+    let other: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&peer);
+    let connector = Arc::new(
+        ScriptedConnector::new()
+            .gateway(home, Vec::new())
+            .gateway(other, Vec::new()),
+    );
+    lab.console = ConsoleRig::builder(&lab.rig.world)
+        .connector(connector_over(
+            &lab.rig.world,
+            Arc::<ScriptedConnector>::clone(&connector),
+        ))
+        .build()
+        .await?;
+    lab.console.skip_intro();
+    lab.edit(vec![ConfigEdit::AddGateway {
+        name: name.clone(),
+        entry,
+    }])
+    .await?;
+    Ok((connector, name, peer))
+}
+
+fn added_login(registry: &mut jackin_console::domain::account::AccountRegistry, lab: &Lab) {
+    registry.accounts.push(Account::registered(
+        UNSAVED_ID,
+        "newlogin",
+        Provider::OpenAi,
+        CredentialSource::LocalFolder {
+            path: lab.rig.home.as_path().display().to_string(),
+            detected: DetectedKind::CodexAuthJson,
+        },
+    ));
+}
+
+#[tokio::test]
+async fn a_new_account_does_not_dial_a_peer_the_console_has_not_reached() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (connector, name, peer) = with_unreached_peer(&mut lab).await?;
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        added_login(&mut registry, &lab);
+        lab.perform(Effect::SaveAccounts {
+            ticket: 1,
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        assert!(lab.config().await?.account(&account("newlogin")?).is_some());
+        assert!(
+            lab.rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("newlogin")?)
+        );
+        assert!(!peer.providers().contains(&provider_of("newlogin")?));
+        assert_eq!(connector.calls(&name), 0);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_add_with_a_removal_forgets_the_provider_on_a_peer_the_console_has_not_reached()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        second_login(&lab).await?;
+        lab.reopen().await?;
+        let (_connector, _name, peer) = with_unreached_peer(&mut lab).await?;
+        let login = lab
+            .config()
+            .await?
+            .account(&account("second")?)
+            .cloned()
+            .ok_or("second")?;
+        let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&peer);
+        session_over(&lab.rig.world, port)
+            .sync_account(&login, Agent::Codex, &CancellationToken::new())
+            .await?;
+        assert!(peer.providers().contains(&provider_of("second")?));
+        let base = lab.world().accounts.clone();
+        let mut registry = base.clone();
+        remove_second(&mut registry);
+        added_login(&mut registry, &lab);
+        lab.perform(Effect::SaveAccounts {
+            ticket: 1,
+            base: Box::new(base),
+            registry: Box::new(registry),
+        })
+        .await?;
+        let config = lab.config().await?;
+        assert!(config.account(&account("newlogin")?).is_some());
+        assert!(config.account(&account("second")?).is_none());
+        assert!(!peer.providers().contains(&provider_of("second")?));
+        Ok(())
+    })
+    .await
+}
+
 #[tokio::test]
 async fn an_add_publishes_nothing_when_the_home_gateway_left_the_config() -> TestResult {
     guard(async {
