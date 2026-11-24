@@ -740,6 +740,137 @@ async fn an_add_with_a_removal_forgets_the_provider_on_a_peer_the_console_has_no
     .await
 }
 
+#[derive(Debug)]
+struct RecordingConnector {
+    gateway: Arc<dyn Gateway>,
+    entries: std::sync::Mutex<Vec<jackin_core::GatewayEntry>>,
+    refuse: bool,
+}
+
+#[async_trait::async_trait]
+impl jackin_session::GatewayConnector for RecordingConnector {
+    async fn connect(
+        &self,
+        _name: &GatewayName,
+        entry: &jackin_core::GatewayEntry,
+        _cancel: &CancellationToken,
+    ) -> Result<Arc<dyn Gateway>, jackin_session::ConnectError> {
+        if let Ok(mut entries) = self.entries.lock() {
+            entries.push(entry.clone());
+            if self.refuse {
+                return Err(jackin_session::ConnectError::Gateway(
+                    jackin_openshell::GatewayError::Unreachable {
+                        endpoint: "moved".to_owned(),
+                        message: "refused".to_owned(),
+                    },
+                ));
+            }
+        }
+        Ok(Arc::clone(&self.gateway))
+    }
+}
+
+async fn save_after_the_home_entry_moved(
+    lab: &mut Lab,
+    refuse: bool,
+) -> Result<(Arc<RecordingConnector>, jackin_core::GatewayEntry), Box<dyn std::error::Error>> {
+    let home = lab
+        .config()
+        .await?
+        .gateways()
+        .next()
+        .map(|(name, _)| name.clone())
+        .ok_or("home gateway")?;
+    let port: Arc<dyn Gateway> = Arc::<FakeGateway>::clone(&lab.rig.world.gateway);
+    let connector = Arc::new(RecordingConnector {
+        gateway: port,
+        entries: std::sync::Mutex::new(Vec::new()),
+        refuse,
+    });
+    lab.console = ConsoleRig::builder(&lab.rig.world)
+        .connector(connector_over(
+            &lab.rig.world,
+            Arc::<RecordingConnector>::clone(&connector),
+        ))
+        .build()
+        .await?;
+    lab.console.skip_intro();
+    let moved = jackin_core::Config::parse(
+        "[gateways.moved]\nopenshell_workspace = \"default\"\nbuilder = \"moved\"\nplatform = \"linux/arm64\"\n",
+    )?
+    .gateway(&GatewayName::parse("moved")?)
+    .ok_or("moved")?
+    .clone();
+    lab.edit(vec![
+        ConfigEdit::SetDefaultGateway(None),
+        ConfigEdit::RemoveGateway(home.clone()),
+        ConfigEdit::AddGateway {
+            name: home.clone(),
+            entry: moved.clone(),
+        },
+        ConfigEdit::SetDefaultGateway(Some(home)),
+    ])
+    .await?;
+    let base = lab.world().accounts.clone();
+    let mut registry = base.clone();
+    added_login(&mut registry, lab);
+    lab.perform(Effect::SaveAccounts {
+        ticket: 1,
+        base: Box::new(base),
+        registry: Box::new(registry),
+    })
+    .await?;
+    Ok((connector, moved))
+}
+
+#[tokio::test]
+async fn a_new_account_publishes_through_a_home_gateway_dialed_with_the_current_entry() -> TestResult
+{
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let (connector, moved) = save_after_the_home_entry_moved(&mut lab, false).await?;
+        assert!(lab.config().await?.account(&account("newlogin")?).is_some());
+        assert!(
+            lab.rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("newlogin")?)
+        );
+        let dialed = connector
+            .entries
+            .lock()
+            .map_err(|_| "poisoned")?
+            .last()
+            .cloned();
+        assert_eq!(dialed, Some(moved));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_home_gateway_that_refuses_its_moved_entry_blocks_the_save_and_publishes_nothing()
+-> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        let before = lab.config().await?;
+        let (_connector, _moved) = save_after_the_home_entry_moved(&mut lab, true).await?;
+        let config = lab.config().await?;
+        assert!(config.account(&account("newlogin")?).is_none());
+        assert!(
+            !lab.rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("newlogin")?)
+        );
+        assert_eq!(config.accounts().count(), before.accounts().count());
+        Ok(())
+    })
+    .await
+}
+
 #[tokio::test]
 async fn an_add_publishes_nothing_when_the_home_gateway_left_the_config() -> TestResult {
     guard(async {

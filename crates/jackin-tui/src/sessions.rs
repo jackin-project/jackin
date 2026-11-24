@@ -346,32 +346,53 @@ impl SessionSet {
         connector: &dyn SessionConnector,
         cancel: &CancellationToken,
     ) -> Home {
-        let (default, home, known) = {
+        let (default, cached, stale) = {
             let state = locked(&self.state);
             let Some(default) = state.default.name().cloned() else {
                 return Home::NotChosen;
             };
-            let home = match state.slots.get(&default) {
+            let cached = match state.slots.get(&default) {
                 None => return Home::NotChosen,
                 Some(Slot::Down(error)) => return Home::Down(Arc::clone(error)),
                 Some(Slot::Up(session)) => Session::clone(session),
             };
-            if scope == GatewayScope::Home {
-                return Home::Ready(Box::new(Gateways::single(home)));
-            }
-            let known: BTreeMap<GatewayName, Reached> = state
-                .slots
-                .iter()
-                .map(|(name, slot)| {
-                    let reached = match slot {
-                        Slot::Up(session) => Reached::Up(session.clone()),
-                        Slot::Down(error) => Reached::Down(Arc::clone(error)),
-                    };
-                    (name.clone(), reached)
-                })
-                .collect();
-            (default, home, known)
+            let built = state.built.get(&default).cloned();
+            let stale = config
+                .gateway(&default)
+                .filter(|entry| built.as_ref() != Some(*entry))
+                .map(|entry| (entry.clone(), built));
+            (default, cached, stale)
         };
+        let home = match stale {
+            None => cached,
+            Some((entry, previous)) => match connector.connect(&default, &entry, cancel).await {
+                Ok(session) => {
+                    let mut state = locked(&self.state);
+                    if state.built.get(&default) == previous.as_ref() {
+                        state
+                            .slots
+                            .insert(default.clone(), Slot::Up(Box::new(session.clone())));
+                        state.built.insert(default.clone(), entry);
+                    }
+                    session
+                }
+                Err(error) => return Home::Down(Arc::new(error)),
+            },
+        };
+        if scope == GatewayScope::Home {
+            return Home::Ready(Box::new(Gateways::single(home)));
+        }
+        let known: BTreeMap<GatewayName, Reached> = locked(&self.state)
+            .slots
+            .iter()
+            .map(|(name, slot)| {
+                let reached = match slot {
+                    Slot::Up(session) => Reached::Up(session.clone()),
+                    Slot::Down(error) => Reached::Down(Arc::clone(error)),
+                };
+                (name.clone(), reached)
+            })
+            .collect();
         let unreachable = |name: &GatewayName, error: &GatewayError| {
             UnreachableGateway::new(
                 name.clone(),

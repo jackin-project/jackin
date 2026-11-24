@@ -518,6 +518,7 @@ async fn a_gateway_added_after_a_home_only_plan_refuses_the_apply_and_undoes_the
         assert_eq!(fleet.store.load().await?, before);
         let other_provider = ProviderName::parse("jackin-other-codex")?;
         assert!(fleet.world.gateway.provider(&other_provider).is_none());
+        assert_eq!(fleet.world.gateway.calls(GatewayOp::Provider), 0);
         Ok(())
     })
     .await
@@ -558,6 +559,7 @@ async fn a_peer_removed_after_a_home_only_plan_refuses_the_apply_and_undoes_the_
         assert_eq!(fleet.store.load().await?, before);
         let other_provider = ProviderName::parse("jackin-other-codex")?;
         assert!(fleet.world.gateway.provider(&other_provider).is_none());
+        assert_eq!(fleet.world.gateway.calls(GatewayOp::Provider), 0);
         Ok(())
     })
     .await
@@ -610,6 +612,7 @@ async fn the_home_entry_changed_after_a_home_only_plan_refuses_the_apply_and_und
         assert_eq!(fleet.store.load().await?, before);
         let other_provider = ProviderName::parse("jackin-other-codex")?;
         assert!(fleet.world.gateway.provider(&other_provider).is_none());
+        assert_eq!(fleet.world.gateway.calls(GatewayOp::Provider), 0);
         Ok(())
     })
     .await
@@ -661,6 +664,7 @@ async fn a_peer_entry_changed_after_a_home_only_plan_refuses_the_apply_and_undoe
         assert_eq!(fleet.store.load().await?, before);
         let other_provider = ProviderName::parse("jackin-other-codex")?;
         assert!(fleet.world.gateway.provider(&other_provider).is_none());
+        assert_eq!(fleet.world.gateway.calls(GatewayOp::Provider), 0);
         Ok(())
     })
     .await

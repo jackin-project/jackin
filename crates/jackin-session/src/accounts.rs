@@ -640,6 +640,7 @@ impl GatewayPlan {
         let scope = effects.scope();
         check_gateways(&locked.config, gateways, scope)?;
         let store = &locked.desk.store;
+        check_gateway_entries(&locked.config, &store.load().await?)?;
         let sessions = match scope {
             GatewayScope::Every => gateways.every().map_err(AccountEditError::Unreachable)?,
             GatewayScope::Home => vec![gateways.home()],
