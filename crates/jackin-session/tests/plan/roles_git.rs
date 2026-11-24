@@ -276,7 +276,12 @@ async fn a_pinned_role_updates_while_the_origin_head_points_nowhere_and_an_unpin
 async fn a_revision_naming_the_remote_head_follows_a_new_default_branch_like_an_unpinned_role()
 -> TestResult {
     guard(async {
-        for rev in ["HEAD", "origin/HEAD", "remotes/origin/HEAD", "refs/remotes/origin/HEAD"] {
+        for rev in [
+            "HEAD",
+            "origin/HEAD",
+            "remotes/origin/HEAD",
+            "refs/remotes/origin/HEAD",
+        ] {
             let origin = Origin::new().await?;
             let (cache, _keep) = cache()?;
             origin
