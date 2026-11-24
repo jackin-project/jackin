@@ -1,12 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::mpsc;
-use std::thread;
 use std::time::Duration;
 
 use jackin_usage_provider_core::{Decimal, DecimalError};
 use serde_json::json;
+
+#[path = "support/promptly.rs"]
+mod promptly_support;
+use promptly_support::promptly;
 
 type Outcome = Result<String, DecimalError>;
 
@@ -20,16 +22,6 @@ fn lenient(text: &str) -> Outcome {
 
 fn number(text: &str) -> Result<Decimal, DecimalError> {
     Decimal::parse_number(text)
-}
-
-fn promptly<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T, String> {
-    let (sender, receiver) = mpsc::channel();
-    let _worker = thread::spawn(move || {
-        let _sent = sender.send(work());
-    });
-    receiver
-        .recv_timeout(Duration::from_secs(20))
-        .map_err(|error| error.to_string())
 }
 
 #[test]
@@ -317,6 +309,16 @@ fn a_json_value_is_read_as_a_number_or_as_text() {
         Decimal::from_json(&json!(1e40)),
         Err(DecimalError::OutOfRange)
     );
+}
+
+#[test]
+fn only_a_whole_amount_within_the_integers_is_a_count() -> Result<(), DecimalError> {
+    assert_eq!(number("39")?.to_i64(), Some(39));
+    assert_eq!(number("-5")?.to_i64(), Some(-5));
+    assert_eq!(number("39.5")?.to_i64(), None);
+    assert_eq!(number("9223372036854775808")?.to_i64(), None);
+    assert_eq!(number("1e30")?.to_i64(), None);
+    Ok(())
 }
 
 #[test]

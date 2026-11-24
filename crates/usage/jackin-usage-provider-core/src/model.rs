@@ -60,12 +60,12 @@ impl Money {
         }
     }
 
-    pub fn exact(amount: Decimal, places: u32, unit: impl Into<String>) -> Money {
-        Money {
+    pub fn exact(amount: Decimal, places: u32, unit: impl Into<String>) -> Option<Money> {
+        (places <= MAX_EXPONENT).then(|| Money {
             amount,
-            places: places.min(MAX_EXPONENT),
+            places,
             unit: unit.into(),
-        }
+        })
     }
 
     pub fn from_f64(value: f64, exponent: u32, unit: impl Into<String>) -> Option<Money> {

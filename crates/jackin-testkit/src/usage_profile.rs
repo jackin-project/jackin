@@ -6,7 +6,9 @@ use jackin_usage::accounts::{
     AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, UsageProvider,
 };
 use serde_json::Value;
-use std::{path::Path, sync::Arc};
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -29,6 +31,37 @@ impl CredentialVault for ProfileVault {
     }
     fn load(&self, _id: Uuid) -> Result<SecretBytes, ConnectionError> {
         Err(ConnectionError::MissingCredential)
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct MemoryVault {
+    values: Mutex<HashMap<Uuid, Vec<u8>>>,
+}
+
+impl CredentialVault for MemoryVault {
+    fn store(&self, id: Uuid, secret: &SecretBytes) -> Result<(), ConnectionError> {
+        self.values
+            .lock()
+            .map_err(|_| ConnectionError::Vault)?
+            .insert(id, secret.expose().to_vec());
+        Ok(())
+    }
+    fn load(&self, id: Uuid) -> Result<SecretBytes, ConnectionError> {
+        self.values
+            .lock()
+            .map_err(|_| ConnectionError::Vault)?
+            .get(&id)
+            .cloned()
+            .map(SecretBytes::new)
+            .ok_or(ConnectionError::MissingCredential)
+    }
+    fn delete(&self, id: Uuid) -> Result<(), ConnectionError> {
+        self.values
+            .lock()
+            .map_err(|_| ConnectionError::Vault)?
+            .remove(&id);
+        Ok(())
     }
 }
 

@@ -4,7 +4,7 @@
 use jackin_usage_provider_core::{Decimal, DecimalError, Money};
 
 fn exact(lexeme: &str, places: u32, unit: &str) -> Result<Money, DecimalError> {
-    Ok(Money::exact(Decimal::parse_number(lexeme)?, places, unit))
+    Money::exact(Decimal::parse_number(lexeme)?, places, unit).ok_or(DecimalError::OutOfRange)
 }
 
 #[test]
@@ -42,7 +42,8 @@ fn exact_money_shows_every_digit_and_pads_to_its_places() -> Result<(), DecimalE
         exact("0.30000000000000004", 2, "USD")?.text(),
         "0.30000000000000004"
     );
-    assert_eq!(exact("1", 12, "USD")?.text(), "1.000000000");
+    assert_eq!(exact("1", 9, "USD")?.text(), "1.000000000");
+    assert_eq!(exact("1", 10, "USD"), Err(DecimalError::OutOfRange));
     assert_eq!(exact("1.5", 2, "USD")?, exact("1.50", 2, "USD")?);
     assert_eq!(exact("1.5", 2, "USD")?.unit(), "USD");
     Ok(())

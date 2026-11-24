@@ -69,6 +69,12 @@ impl Decimal {
         self.coefficient > 0
     }
 
+    pub fn to_i64(&self) -> Option<i64> {
+        (self.scale == 0)
+            .then(|| i64::try_from(self.coefficient).ok())
+            .flatten()
+    }
+
     #[must_use]
     pub fn clamped_at_zero(self) -> Decimal {
         if self.is_negative() {

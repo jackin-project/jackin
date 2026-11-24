@@ -170,8 +170,8 @@ async fn a_standard_key_keeps_every_digit_of_each_amount() -> Result<(), Box<dyn
             &json!("0.0000001")
         )
     );
-    assert_eq!(snapshot["resources"]["freeRequests"]["limit"], 2.0);
-    assert_eq!(snapshot["resources"]["freeRequests"]["used"], 1.0);
+    assert_eq!(snapshot["resources"]["freeRequests"]["limit"], json!(2));
+    assert_eq!(snapshot["resources"]["freeRequests"]["used"], json!(1));
     assert!(snapshot["resources"].get("balance").is_none());
     assert!(snapshot["activity"].is_null());
     assert!(server.mismatches().is_empty());
@@ -372,7 +372,7 @@ async fn management_sums_and_activity_stay_exact() -> Result<(), Box<dyn Error>>
     let days = &snapshot["activity"]["days"];
     assert_eq!(days["2025-01-05"]["totals"]["spend"], "0.30000000000000003");
     assert_eq!(days["2025-01-05"]["totals"]["byokSpend"], "0.6");
-    assert_eq!(days["2025-01-05"]["totals"]["tokens"], 39.0);
+    assert_eq!(days["2025-01-05"]["totals"]["tokens"], json!(39));
     assert_eq!(
         days["2025-01-05"]["by_model"]["alpha"]["spend"],
         "0.30000000000000003"
@@ -547,6 +547,9 @@ async fn a_fresh_stored_activity_with_numeric_amounts_is_read_again() -> Result<
     );
     let kept = activity_read(&row, Some(&exact), false).await?;
     assert_eq!(kept["activity"], exact["activity"]);
+    let empty = stored(Value::Null, Value::Null, Value::Null);
+    let kept = activity_read(&row, Some(&empty), false).await?;
+    assert_eq!(kept["activity"], empty["activity"]);
     Ok(())
 }
 
@@ -574,48 +577,12 @@ async fn a_remainder_below_a_cent_is_not_used_up_and_zero_is() -> Result<(), Box
     Ok(())
 }
 
-#[derive(Debug, Default)]
-struct Memory(std::sync::Mutex<std::collections::HashMap<uuid::Uuid, Vec<u8>>>);
-
-impl jackin_usage::accounts::CredentialVault for Memory {
-    fn store(
-        &self,
-        slot: uuid::Uuid,
-        value: &jackin_core::SecretBytes,
-    ) -> Result<(), jackin_usage::accounts::ConnectionError> {
-        self.0
-            .lock()
-            .map_err(|_| jackin_usage::accounts::ConnectionError::Vault)?
-            .insert(slot, value.expose().to_vec());
-        Ok(())
-    }
-    fn load(
-        &self,
-        slot: uuid::Uuid,
-    ) -> Result<jackin_core::SecretBytes, jackin_usage::accounts::ConnectionError> {
-        self.0
-            .lock()
-            .map_err(|_| jackin_usage::accounts::ConnectionError::Vault)?
-            .get(&slot)
-            .cloned()
-            .map(jackin_core::SecretBytes::new)
-            .ok_or(jackin_usage::accounts::ConnectionError::MissingCredential)
-    }
-    fn delete(&self, slot: uuid::Uuid) -> Result<(), jackin_usage::accounts::ConnectionError> {
-        self.0
-            .lock()
-            .map_err(|_| jackin_usage::accounts::ConnectionError::Vault)?
-            .remove(&slot);
-        Ok(())
-    }
-}
-
 fn stored(
     snapshot: &Value,
 ) -> Result<(tempfile::TempDir, jackin_usage::accounts::AccountRegistry), Box<dyn Error>> {
     use jackin_usage::accounts::{AccountRegistry, CandidateIdentity, UsageProvider};
     let temp = tempfile::tempdir()?;
-    let vault = std::sync::Arc::new(Memory::default());
+    let vault = std::sync::Arc::new(jackin_testkit::MemoryVault::default());
     let mut registry = AccountRegistry::with_vault(&temp.path().join("usage/accounts.db"), vault)?;
     registry.add_with_snapshot(
         UsageProvider::OpenRouter,

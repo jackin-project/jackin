@@ -22,9 +22,10 @@ pub async fn fetch(http: &Http, key: &str) -> Result<Vec<Bucket>, ProviderError>
 }
 
 fn money(value: &Exact) -> Result<Option<Money>, ProviderError> {
-    Ok(value
+    value
         .decimal()?
-        .map(|amount| Money::exact(amount, PLACES, UNIT)))
+        .map(|amount| Money::exact(amount, PLACES, UNIT).ok_or(ProviderError::OUT_OF_RANGE))
+        .transpose()
 }
 
 fn key_windows(body: &Exact) -> Result<Vec<Bucket>, ProviderError> {

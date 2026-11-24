@@ -157,7 +157,9 @@ fn quantity(unit: &str, amount: &Decimal) -> Value {
     if unit == "usd" {
         Value::String(amount.to_string())
     } else {
-        json!(amount.to_f64())
+        amount
+            .to_i64()
+            .map_or_else(|| json!(amount.to_f64()), |count| json!(count))
     }
 }
 

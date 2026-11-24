@@ -1,17 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use jackin_core::{Provider, Secret, SecretBytes};
-use jackin_testkit::{Method, Route, TestResult, UsageServer, World, guard};
-use jackin_usage::accounts::{
-    AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, UsageProvider,
-};
+use jackin_core::{Provider, Secret};
+use jackin_testkit::{MemoryVault, Method, Route, TestResult, UsageServer, World, guard};
+use jackin_usage::accounts::{AccountRegistry, CandidateIdentity, CredentialVault, UsageProvider};
 use jackin_usage::connected::KeyConnection;
 use serde_json::Value;
-use uuid::Uuid;
 
 use super::support::Harness;
 
@@ -21,37 +17,6 @@ const KEY: &str = r#"{"data":{"is_management_key":false,"limit":100.10,"limit_re
 "effective_budget":{"limit_usd":10000000000.0000001,"spend_usd":10000000000,"reset_interval":"weekly"},
 "free_model_daily_requests":{"used":1,"limit":2}}}"#;
 
-#[derive(Debug, Default)]
-struct Memory {
-    values: Mutex<HashMap<Uuid, Vec<u8>>>,
-}
-
-impl CredentialVault for Memory {
-    fn store(&self, id: Uuid, secret: &SecretBytes) -> Result<(), ConnectionError> {
-        self.values
-            .lock()
-            .map_err(|_| ConnectionError::Vault)?
-            .insert(id, secret.expose().to_vec());
-        Ok(())
-    }
-    fn load(&self, id: Uuid) -> Result<SecretBytes, ConnectionError> {
-        self.values
-            .lock()
-            .map_err(|_| ConnectionError::Vault)?
-            .get(&id)
-            .cloned()
-            .map(SecretBytes::new)
-            .ok_or(ConnectionError::MissingCredential)
-    }
-    fn delete(&self, id: Uuid) -> Result<(), ConnectionError> {
-        self.values
-            .lock()
-            .map_err(|_| ConnectionError::Vault)?
-            .remove(&id);
-        Ok(())
-    }
-}
-
 #[tokio::test]
 async fn a_refreshed_openrouter_account_keeps_every_digit_in_json_and_text() -> TestResult {
     guard(async {
@@ -59,7 +24,7 @@ async fn a_refreshed_openrouter_account_keeps_every_digit_in_json_and_text() -> 
         let server = UsageServer::start().await?;
         let mut cli = Harness::new(&world);
         cli.usage_endpoints = server.endpoints();
-        let vault = Arc::new(Memory::default());
+        let vault = Arc::new(MemoryVault::default());
         let shared = Arc::clone(&vault);
         let shared: Arc<dyn CredentialVault> = shared;
         cli.usage_vault = Some(shared);
