@@ -1794,7 +1794,7 @@
     "provider": "antigravity",
     "snapshot": {
       "plan": "Google AI Ultra",
-      "project": "aicode-consumers",
+      "project": "example-project",
       "resources": {
         "3p-5h": {
           "kind": "quota",

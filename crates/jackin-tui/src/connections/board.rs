@@ -202,9 +202,8 @@ fn tone(level: Level) -> termrock::theme::Tone {
     }
 }
 
-fn pace(row: Option<&DashboardRow>, settings: &DashboardSettings) -> Option<u8> {
-    let mark = row?.pace_mark?;
-    percent(if settings.remaining { 1.0 - mark } else { mark })
+fn pace(row: Option<&DashboardRow>) -> Option<u8> {
+    percent(row?.pace_mark?)
 }
 
 fn stored_reading(row: &DashboardRow, settings: &DashboardSettings) -> ReadingText {
@@ -245,11 +244,8 @@ fn metric(
     reading: ReadingText,
     accounts: &[UsageEntry],
     registry: &[ConnectedAccount],
-    settings: &DashboardSettings,
 ) -> BoardMetric {
-    let bar = reading
-        .bar
-        .map(|amount| (amount, pace(Some(&row), settings)));
+    let bar = reading.bar.map(|amount| (amount, pace(Some(&row))));
     let title_label = row
         .account
         .and_then(|id| accounts.iter().find(|entry| entry.id == id.to_string()))
@@ -358,7 +354,7 @@ fn account_rows(
                 &meter.name,
                 display::meter_reading(view, account, meter),
                 pinned(&meter.key),
-                pace(marked, settings).filter(|_| !meter.rolled_over),
+                pace(marked).filter(|_| !meter.rolled_over),
             ));
         }
         for note in &account.notes {
@@ -384,7 +380,6 @@ fn account_rows(
                 stored_reading(row, settings),
                 accounts,
                 registry,
-                settings,
             ));
         }
         let order = registry
@@ -432,7 +427,6 @@ fn all_rows(
                             reading,
                             accounts,
                             registry,
-                            &data.settings,
                         )
                     }),
             );
@@ -522,7 +516,6 @@ pub(super) fn load(
                     reading_of(&view, row, &data.settings),
                     &accounts,
                     &registry,
-                    &data.settings,
                 )
             })
             .collect()

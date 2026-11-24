@@ -610,9 +610,6 @@ fn usage_inspectors_keep_account_quota_and_leave_history_in_details() -> Result<
         )?;
     }
 
-    let mut settings = registry.dashboard_settings()?;
-    settings.remaining = false;
-    registry.set_dashboard_settings(&settings)?;
     let entries = presentation::entries(&login)?;
     for (label, expected_session) in [
         ("Work", "Session 88% used · resets in 1h 0m"),
@@ -692,11 +689,7 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
     )?;
     let board = Dashboard::load(&registry, &mut DashboardMemory::default(), now.0)?;
     for (id, compact, exact) in [
-        (
-            "tokenPlan",
-            "50.47B credits remaining",
-            "50474251078 credits remaining",
-        ),
+        ("tokenPlan", "1 credits used", "1 credits used"),
         ("booster", "0.000125 cny", "0.000125 cny"),
         ("monthlyChargeUsed", "999.99M usd", "999994000 usd"),
         ("monthlyChargeLimit", "1B usd", "999996000 usd"),
@@ -705,12 +698,12 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
             "999996000 provider units",
             "999996000 provider units",
         ),
-        ("session", ">99% remaining", ">99% remaining"),
-        ("weekly", "<1% remaining", "<1% remaining"),
+        ("session", "<1% used", "<1% used"),
+        ("weekly", ">99% used", ">99% used"),
     ] {
         let row = board.all.iter().find(|row| row.metric == id).ok_or(id)?;
-        assert_eq!(presentation::metric_value(row, true), compact);
-        assert_eq!(presentation::exact_metric_value(row, true), exact);
+        assert_eq!(presentation::metric_value(row, false), compact);
+        assert_eq!(presentation::exact_metric_value(row, false), exact);
     }
     let mut orders = AccountPreferences::default();
     orders.metric_order.push("tokenPlan".into());
@@ -730,7 +723,12 @@ fn usage_overview_compacts_large_known_quantities_and_details_keep_exact_values(
     assert!(
         cli_lines
             .iter()
-            .any(|line| line == "Token Plan · 50474251078 credits")
+            .any(|line| line == "Token Plan · 1 credits")
+    );
+    assert!(
+        cli_lines
+            .iter()
+            .any(|line| line == "Remaining · 50474251078 credits")
     );
     Ok(())
 }

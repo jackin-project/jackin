@@ -168,8 +168,7 @@ pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionEr
     let Some(db) = AccountRegistry::open_read_only(service.database())? else {
         return Ok(Vec::new());
     };
-    let mut settings = db.dashboard_settings()?;
-    settings.remaining = false;
+    let settings = db.dashboard_settings()?;
     let now = service.now();
     let view = view::build(&db, &ViewFilter::default(), now, service.utc_offset_secs())?;
     let mut stored = db.snapshots()?;
