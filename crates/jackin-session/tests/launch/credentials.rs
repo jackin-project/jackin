@@ -240,7 +240,18 @@ async fn t01_launch_writes_placeholder_auth_without_host_tokens() -> TestResult 
         let parts: Vec<&str> = id_token.split('.').collect();
         assert_eq!(parts.len(), 3, "id_token is not JWT-shaped");
         let header: serde_json::Value = serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[0])?)?;
-        assert_eq!(header["alg"], "none");
+        assert_eq!(header, serde_json::json!({"alg": "none", "typ": "JWT"}));
+        let payload: serde_json::Value =
+            serde_json::from_slice(&URL_SAFE_NO_PAD.decode(parts[1])?)?;
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "iss": "https://auth.openai.com",
+                "aud": "codex",
+                "sub": "openshell-app-server"
+            })
+        );
+        assert_eq!(parts[2], "placeholder");
         assert!(!auth.contains(ACCESS));
         assert!(!auth.contains(REFRESH));
         Ok(())
