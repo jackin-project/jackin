@@ -8,11 +8,11 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::model::{
-    AccountQuota, Activity, Attention, Currency, FRESH_SECS, Fact, Meter, Note, PositiveAmount,
-    ProviderGroup, Reading, ResetCredit, Role, Unit, UsageView, Used, UsedFraction,
+    AccountQuota, Activity, Attention, Currency, FRESH_SECS, Fact, Feed, Meter, Note,
+    PositiveAmount, ProviderGroup, Reading, ResetCredit, Role, Unit, UsageView, Used, UsedFraction,
 };
 use crate::accounts::{
-    AccountRegistry, ConnectedAccount, ConnectionError, RefreshFailure, UsageProvider,
+    AccountRegistry, ConnectedAccount, ConnectionError, FailureKind, RefreshFailure, UsageProvider,
 };
 use crate::catalog;
 use crate::dashboard::{DashboardSettings, concealed_label};
@@ -59,6 +59,7 @@ struct Source {
     fetched_at: Option<i64>,
     payload: Option<Value>,
     failure: Option<RefreshFailure>,
+    feed: Feed,
 }
 
 pub fn build(
@@ -76,12 +77,18 @@ pub fn build(
             && filter.account.is_none_or(|id| id == account.id);
         if wanted {
             let failure = db.failure(account.id)?;
+            let feed = if db.is_statusline(account.id)? {
+                Feed::StatusLine
+            } else {
+                Feed::Provider
+            };
             sources.push(Source {
                 index,
                 account,
                 fetched_at,
                 payload,
                 failure,
+                feed,
             });
         }
     }
@@ -175,10 +182,11 @@ fn quota(
             })
             .map(|other| other.account.id)
             .collect(),
+        feed: source.feed,
         main,
         secondary: meters,
         notes: body
-            .map(|body| notes(body, now, hidden))
+            .map(|body| notes(body, source.account.provider, now, hidden))
             .unwrap_or_default(),
         facts: body.map(facts).unwrap_or_default(),
     }
@@ -198,6 +206,7 @@ fn reading(source: &Source, conceal: bool, now: Timestamp) -> Reading {
             at,
             message: message(&failure.message),
             retry_at: Some(Timestamp(failure.retry_at)),
+            reconnect: failure.kind == FailureKind::Authentication,
         };
     }
     if let Some(notice) = source
@@ -209,6 +218,7 @@ fn reading(source: &Source, conceal: bool, now: Timestamp) -> Reading {
             at,
             message: message(notice),
             retry_at: None,
+            reconnect: false,
         };
     }
     match at {
@@ -337,6 +347,8 @@ fn unit_of(resource: &Value) -> Option<Unit> {
         "tokens" => Some(Unit::Tokens),
         "requests" | "REQUESTS" => Some(Unit::Requests),
         "searches" => Some(Unit::Searches),
+        "millionths_of_cent" => Some(Unit::Cents),
+        "monetary units" => Some(Unit::Monetary),
         "day" => None,
         other => Currency::new(other).map(Unit::Money),
     }
@@ -379,14 +391,61 @@ fn used_of(resource: &Value) -> Option<Used> {
     }
 }
 
-fn notes(body: &Value, now: Timestamp, hidden: &BTreeSet<String>) -> Vec<Note> {
+fn notes(
+    body: &Value,
+    provider: UsageProvider,
+    now: Timestamp,
+    hidden: &BTreeSet<String>,
+) -> Vec<Note> {
     let mut notes = balances(body, hidden);
+    notes.extend(cap(body, hidden));
+    notes.extend(daily(body, hidden));
     if !hidden.contains("rateLimitResets") {
-        notes.extend(resets(body, now));
+        notes.extend(resets(body, provider, now));
     }
     notes.extend(tokens(body));
     notes.extend(spend(body));
     notes
+}
+
+fn cap(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
+    if hidden.contains("payAsYouGo") {
+        return None;
+    }
+    let limit = body["extraUsageCap"]["limit"].as_f64()?;
+    Some(Note::Balance {
+        key: "payAsYouGo".to_owned(),
+        label: "Extra cap".to_owned(),
+        amount: limit,
+        unit: Unit::Money(Currency::USD),
+        approx: None,
+    })
+}
+
+fn daily(body: &Value, hidden: &BTreeSet<String>) -> Vec<Note> {
+    body["resources"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(key, resource)| !hidden.contains(key.as_str()) && resource["kind"] == "history")
+        .map(|(key, resource)| Note::Daily {
+            key: plain(key),
+            label: match key.as_str() {
+                "daily/consumption" => "Daily usage".to_owned(),
+                other => resource["label"]
+                    .as_str()
+                    .map_or_else(|| plain(other), plain),
+            },
+            records: resource["amount"].as_u64(),
+            lines: resource["details"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+                .map(plain)
+                .collect(),
+        })
+        .collect()
 }
 
 fn balances(body: &Value, hidden: &BTreeSet<String>) -> Vec<Note> {
@@ -397,12 +456,52 @@ fn balances(body: &Value, hidden: &BTreeSet<String>) -> Vec<Note> {
         .filter(|(key, _)| !hidden.contains(key.as_str()))
         .filter_map(|(key, resource)| Some((key, balance(key, resource)?)))
         .collect();
-    found.sort_by_key(|(key, _)| key.as_str() != "credits");
+    found.sort_by_key(|(key, _)| (key.as_str() != "credits", wallet_rank(key)));
     found.into_iter().map(|(_, note)| note).collect()
 }
 
+fn wallet_rank(key: &str) -> u8 {
+    match key.rsplit_once('/').map(|(_, field)| field) {
+        Some("totalAvailable") => 0,
+        Some("cash") => 1,
+        Some("gift") => 2,
+        Some("frozen") => 3,
+        Some("creditLimit") => 4,
+        Some("creditAvailable") => 5,
+        _ => 0,
+    }
+}
+
+fn balance_label(key: &str, resource: &Value, unit: Unit) -> String {
+    if unit == Unit::Credits {
+        return "Credits".to_owned();
+    }
+    if let Some(label) = resource["label"]
+        .as_str()
+        .filter(|label| !label.trim().is_empty())
+    {
+        return plain(label);
+    }
+    let named = match key.rsplit_once('/').map_or(key, |(_, field)| field) {
+        "booster" => "Booster",
+        "monthlyChargeLimit" => "Charge limit",
+        "monthlyChargeUsed" => "Charged",
+        "totalAvailable" => "Available",
+        "cash" => "Cash",
+        "gift" => "Gift",
+        "frozen" => "Frozen",
+        "creditLimit" => "Credit limit",
+        "creditAvailable" => "Credit left",
+        _ => "Balance",
+    };
+    named.to_owned()
+}
+
 fn balance(key: &str, resource: &Value) -> Option<Note> {
-    if resource["kind"] != "balance" || key == "rateLimitResets" || resource["unit"] == "resets" {
+    if !matches!(resource["kind"].as_str(), Some("balance" | "amount"))
+        || key == "rateLimitResets"
+        || resource["unit"] == "resets"
+    {
         return None;
     }
     let scale = scale_of(resource);
@@ -412,27 +511,39 @@ fn balance(key: &str, resource: &Value) -> Option<Note> {
         .or_else(|| resource["remaining"].as_f64())?
         / scale;
     let unit = unit_of(resource)?;
+    let optional = ["gift", "frozen", "creditLimit", "creditAvailable"]
+        .iter()
+        .any(|field| key.ends_with(&format!("/{field}")));
+    if optional && amount == 0.0 {
+        return None;
+    }
     let approx = resource["usd"]
         .as_f64()
         .filter(|_| unit == Unit::Credits)
         .map(|usd| (usd, Currency::USD));
     Some(Note::Balance {
+        key: plain(key),
+        label: balance_label(key, resource, unit),
         amount,
         unit,
         approx,
     })
 }
 
-fn resets(body: &Value, now: Timestamp) -> Option<Note> {
+fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note> {
+    let queued_ready = provider == UsageProvider::Zai;
     let mut credits: Vec<ResetCredit> = body["resets"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|grant| {
             let at = grant["expiresAt"].as_i64()?;
+            let live = at > now.0;
+            let usable = grant["usable"] == true && live;
             Some(ResetCredit {
                 kind: plain(grant["kind"].as_str().unwrap_or("reset")),
-                ready: grant["usable"] == true && at > now.0,
+                ready: if queued_ready { live } else { usable },
+                redeemable: usable,
                 expires_at: Timestamp(at),
             })
         })
@@ -446,6 +557,7 @@ fn resets(body: &Value, now: Timestamp) -> Option<Note> {
             .map(|at| ResetCredit {
                 kind: "reset".to_owned(),
                 ready: at > now.0,
+                redeemable: at > now.0,
                 expires_at: Timestamp(at),
             })
             .collect();
@@ -524,9 +636,9 @@ fn spend(body: &Value) -> Option<Note> {
         return None;
     }
     Some(Note::Spend {
-        today: today.unwrap_or(0.0),
-        week: week.unwrap_or(0.0),
-        month: month.unwrap_or(0.0),
+        today,
+        week,
+        month,
         byok: period("thisMonth", "byokSpend"),
         currency: Currency::USD,
     })

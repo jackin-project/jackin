@@ -270,6 +270,18 @@ impl AccountRegistry {
             .ok_or(ConnectionError::Changed)
     }
 
+    pub fn is_statusline(&self, id: Uuid) -> Result<bool, ConnectionError> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT kind='statusline' FROM accounts WHERE id=?1",
+                [id.to_string()],
+                |row| row.get::<_, bool>(0),
+            )
+            .optional()?
+            .unwrap_or(false))
+    }
+
     pub fn credential(
         &self,
         id: Uuid,

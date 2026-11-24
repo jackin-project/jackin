@@ -141,7 +141,10 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
         Attention::Failing { account } => {
             let (group, account) = view.account(*account)?;
             let Reading::Failed {
-                message, retry_at, ..
+                message,
+                retry_at,
+                reconnect,
+                ..
             } = &account.reading
             else {
                 return None;
@@ -152,6 +155,9 @@ pub fn attention_text(view: &UsageView, item: &Attention) -> Option<AttentionTex
                 .into_iter()
                 .collect();
             let detail = match retry_at {
+                Some(_) if *reconnect => {
+                    format!("{message} · {}", text::reconnect_command(account.id))
+                }
                 Some(at) if *at <= view.now => format!(
                     "{message} · retry due since {}",
                     text::clock(*at, view.now, view.utc_offset_secs)

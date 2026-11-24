@@ -368,7 +368,7 @@ fn account_rows(
                 group,
                 account,
                 key,
-                name,
+                &name,
                 reading,
                 pinned(key),
                 None,

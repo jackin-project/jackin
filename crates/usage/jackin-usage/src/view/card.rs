@@ -4,7 +4,7 @@
 use jackin_core::Timestamp;
 
 use super::detail;
-use super::model::{AccountQuota, Meter, Note, Reading, Unit, UsageView, Used};
+use super::model::{AccountQuota, Feed, Meter, Note, Reading, UsageView, Used};
 use super::render::{Ctx, Depth, Line, Span, Tone};
 use super::text;
 
@@ -46,7 +46,8 @@ pub fn card(account: &AccountQuota, view: &UsageView, ctx: &Ctx, depth: Depth) -
             lines.extend(detail::note_lines(account, note, view, &ctx));
         }
     }
-    lines.extend(failure_lines(&account.reading, view, ctx));
+    lines.extend(failure_lines(account, view, ctx));
+    lines.extend(feed_lines(account, view));
     lines.extend(duplicate_lines(account));
     if depth == Depth::Full {
         lines.extend(detail::footer(account, view, &ctx));
@@ -219,6 +220,7 @@ fn reset_spans(meter: &Meter, view: &UsageView, with_clock: bool, with_was: bool
 
 fn note_block(note: &Note, view: &UsageView, ctx: Ctx) -> Vec<Line> {
     let (name, parts) = note_parts(note, view);
+    let name = text::truncate(&name, SIDE_NAME);
     let prefix = vec![Span::plain(format!(
         "{:SIDE_INDENT$}{name:<SIDE_NAME$} ",
         ""
@@ -227,25 +229,22 @@ fn note_block(note: &Note, view: &UsageView, ctx: Ctx) -> Vec<Line> {
     text::wrap(prefix, SUB_INDENT, &parts, ctx.columns())
 }
 
-pub fn note_parts(note: &Note, view: &UsageView) -> (&'static str, Vec<String>) {
+pub fn note_parts(note: &Note, view: &UsageView) -> (String, Vec<String>) {
     match note {
         Note::Balance {
+            label,
             amount,
             unit,
             approx,
+            ..
         } => {
-            let name = if *unit == Unit::Credits {
-                "Credits"
-            } else {
-                "Balance"
-            };
             let mut parts = vec![text::amount(*amount, *unit)];
             parts.extend(
                 approx
                     .iter()
                     .map(|(value, currency)| format!("≈ {}", text::money(*value, *currency))),
             );
-            (name, parts)
+            (label.clone(), parts)
         }
         Note::Resets(credits) => {
             let ready: Vec<_> = credits.iter().filter(|credit| credit.ready).collect();
@@ -267,7 +266,7 @@ pub fn note_parts(note: &Note, view: &UsageView) -> (&'static str, Vec<String>) 
                         )
                     }),
             );
-            ("Limit resets", parts)
+            ("Limit resets".to_owned(), parts)
         }
         Note::Tokens {
             today,
@@ -286,7 +285,7 @@ pub fn note_parts(note: &Note, view: &UsageView) -> (&'static str, Vec<String>) 
                     .iter()
                     .map(|activity| format!("30 days {}", total(activity.tokens))),
             );
-            ("Tokens", parts)
+            ("Tokens".to_owned(), parts)
         }
         Note::Spend {
             today,
@@ -294,21 +293,51 @@ pub fn note_parts(note: &Note, view: &UsageView) -> (&'static str, Vec<String>) 
             month,
             currency,
             ..
-        } => (
-            "Spend",
-            vec![
-                format!("today {}", text::money(*today, *currency)),
-                format!("week {}", text::money(*week, *currency)),
-                format!("month {}", text::money(*month, *currency)),
-            ],
-        ),
+        } => {
+            let period = |name: &str, spend: &Option<f64>| {
+                spend.map(|value| format!("{name} {}", text::money(value, *currency)))
+            };
+            (
+                "Spend".to_owned(),
+                [
+                    period("today", today),
+                    period("week", week),
+                    period("month", month),
+                ]
+                .into_iter()
+                .flatten()
+                .collect(),
+            )
+        }
+        Note::Daily {
+            label,
+            records,
+            lines,
+            ..
+        } => {
+            let mut parts: Vec<String> = records
+                .iter()
+                .map(|count| {
+                    if *count == 1 {
+                        "1 record".to_owned()
+                    } else {
+                        format!("{count} records")
+                    }
+                })
+                .collect();
+            parts.extend(lines.first().cloned());
+            (label.clone(), parts)
+        }
     }
 }
 
-fn failure_lines(reading: &Reading, view: &UsageView, ctx: Ctx) -> Vec<Line> {
+fn failure_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line> {
     let Reading::Failed {
-        message, retry_at, ..
-    } = reading
+        message,
+        retry_at,
+        reconnect,
+        ..
+    } = &account.reading
     else {
         return Vec::new();
     };
@@ -319,15 +348,19 @@ fn failure_lines(reading: &Reading, view: &UsageView, ctx: Ctx) -> Vec<Line> {
                 format!("{}! refresh failed: {message}", " ".repeat(MAIN_INDENT)),
                 Tone::Crit,
             ));
-            let retry = if *at <= view.now {
-                format!(
-                    "retry due since {}",
-                    text::clock(*at, view.now, view.utc_offset_secs)
-                )
+            if *reconnect {
+                parts.push((text::reconnect_command(account.id), Tone::Plain));
             } else {
-                format!("next retry in {}", text::rel(at.0 - view.now.0))
-            };
-            parts.push((retry, Tone::Dim));
+                let retry = if *at <= view.now {
+                    format!(
+                        "retry due since {}",
+                        text::clock(*at, view.now, view.utc_offset_secs)
+                    )
+                } else {
+                    format!("next retry in {}", text::rel(at.0 - view.now.0))
+                };
+                parts.push((retry, Tone::Dim));
+            }
         }
         None => parts.push((
             format!("{}! {message}", " ".repeat(MAIN_INDENT)),
@@ -335,6 +368,16 @@ fn failure_lines(reading: &Reading, view: &UsageView, ctx: Ctx) -> Vec<Line> {
         )),
     }
     text::wrap(Vec::new(), FAILURE_INDENT, &parts, ctx.columns())
+}
+
+fn feed_lines(account: &AccountQuota, view: &UsageView) -> Vec<Line> {
+    match (account.feed, &account.reading) {
+        (Feed::StatusLine, Reading::Stale { at }) => vec![Line::of(vec![
+            Span::plain(" ".repeat(MAIN_INDENT)),
+            Span::dim(text::status_line_note(*at, view.now)),
+        ])],
+        _ => Vec::new(),
+    }
 }
 
 fn duplicate_lines(account: &AccountQuota) -> Vec<Line> {

@@ -229,7 +229,10 @@ pub fn summary(view: &UsageView, account: &AccountQuota) -> Vec<String> {
     let mut lines = vec![format!("{plan} · {}", freshness_text(account, view))];
     lines.extend(account.main.iter().map(|meter| main_line(view, meter)));
     if let Reading::Failed {
-        message, retry_at, ..
+        message,
+        retry_at,
+        reconnect,
+        ..
     } = &account.reading
     {
         lines.push(if retry_at.is_some() {
@@ -237,6 +240,12 @@ pub fn summary(view: &UsageView, account: &AccountQuota) -> Vec<String> {
         } else {
             format!("! {message}")
         });
+        if *reconnect {
+            lines.push(text::reconnect_command(account.id));
+        }
+    }
+    if let (view::Feed::StatusLine, Reading::Stale { at }) = (account.feed, &account.reading) {
+        lines.push(text::status_line_note(*at, view.now));
     }
     lines.extend(
         account
@@ -346,13 +355,9 @@ pub fn meter_reading(view: &UsageView, account: &AccountQuota, meter: &Meter) ->
     }
 }
 
-pub fn note_key(note: &Note) -> &'static str {
+pub fn note_key(note: &Note) -> &str {
     match note {
-        Note::Balance {
-            unit: view::Unit::Credits,
-            ..
-        } => "credits",
-        Note::Balance { .. } => "balance",
+        Note::Balance { key, .. } | Note::Daily { key, .. } => key,
         Note::Resets(_) => "rateLimitResets",
         Note::Tokens { .. } => "history",
         Note::Spend { .. } => "spend",
@@ -363,7 +368,9 @@ pub fn covered_keys(account: &AccountQuota) -> Vec<&str> {
     let mut keys: Vec<&str> = account.meters().map(|meter| meter.key.as_str()).collect();
     for note in &account.notes {
         match note {
-            Note::Balance { .. } | Note::Resets(_) => keys.push(note_key(note)),
+            Note::Balance { .. } | Note::Resets(_) | Note::Daily { .. } => {
+                keys.push(note_key(note));
+            }
             Note::Tokens { .. } => keys.extend(["today", "yesterday", "last30", "prior30"]),
             Note::Spend { .. } => keys.extend(["today", "week", "month"]),
         }
@@ -391,7 +398,7 @@ pub fn note_reading(
     view: &UsageView,
     account: &AccountQuota,
     note: &Note,
-) -> (&'static str, ReadingText) {
+) -> (String, ReadingText) {
     let (name, parts) = card::note_parts(note, view);
     let full = parts.join(" · ");
     let reading = ReadingText {

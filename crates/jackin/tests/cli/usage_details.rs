@@ -126,7 +126,7 @@ async fn daily_details_report_exact_amounts_optional_failures_and_no_private_fie
                 "internal_id":"PRIVATE-ROW"
             }]},"bills":{"unavailable":true,"attemptedAt":77}},
             "resources":{"CNY/cash":{"kind":"balance","unit":"minor_currency","currency":"CNY","exponent":2,"available":0},
-                "daily/consumption":{"kind":"history","unit":"records","label":"Daily consumption","amount":1,"details":["PRIVATE-RAW-DETAIL"]}}
+                "daily/consumption":{"kind":"history","unit":"records","label":"Daily consumption","amount":1,"details":["2026-11-01 to 2026-11-22 UTC","2026-11-22 · MiMo fixture 0.000001 CNY · 2 requests · 11 tokens"]}}
         });
         db.add_with_snapshot(UsageProvider::Mimo,"Daily",&CandidateIdentity::api_key(&jackin_core::Secret::new("test-only".into())),&SecretBytes::new(vec![1]),world.clock.now().0-900,&data)?;
         let id=db.add(UsageProvider::Claude,"Awaiting usage",&CandidateIdentity::OAuth(None),&SecretBytes::new(vec![1]))?;
@@ -138,7 +138,8 @@ async fn daily_details_report_exact_amounts_optional_failures_and_no_private_fie
         text.ok()?;
         assert!(!text.stdout.contains('\x1b'));
         assert!(!text.stdout.contains("PRIVATE-") && !text.stdout.contains("attemptedAt"),"{}", text.stdout);
-        assert!(text.stdout.contains("Balance        0 CNY") && text.stdout.contains("not fetched yet"),"{}", text.stdout);
+        assert!(text.stdout.contains("Daily usage    1 record · 2026-11-01 to 2026-11-22 UTC") && text.stdout.contains("2026-11-22 · MiMo fixture 0.000001 CNY"),"{}", text.stdout);
+        assert!(text.stdout.contains("Cash           0 CNY") && text.stdout.contains("not fetched yet"),"{}", text.stdout);
         let report=cli.run(&["usage","details","--json"]).await?;
         report.ok()?;
         assert!(report.stdout.contains("0.000001 CNY") && report.stdout.contains("Daily history unavailable"),"{}", report.stdout);

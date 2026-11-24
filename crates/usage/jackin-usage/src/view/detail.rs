@@ -54,6 +54,7 @@ pub fn note_lines(_account: &AccountQuota, note: &Note, view: &UsageView, ctx: &
             amount,
             unit,
             approx,
+            ..
         } => balance_lines(*amount, *unit, *approx, ctx),
         Note::Resets(credits) => reset_lines(credits, view, ctx),
         Note::Tokens {
@@ -66,6 +67,7 @@ pub fn note_lines(_account: &AccountQuota, note: &Note, view: &UsageView, ctx: &
             byok,
             currency,
         } => spend_lines([*today, *week, *month], *byok, *currency, ctx),
+        Note::Daily { lines, .. } => daily_lines(lines, ctx),
     }
 }
 
@@ -74,7 +76,7 @@ pub fn footer(account: &AccountQuota, view: &UsageView, ctx: &Ctx) -> Vec<Line> 
     let mut lines = vec![foot(format!("id {}", account.id.hyphenated()))];
     lines.push(foot(fetched_text(account, view)));
     let redeemable = account.notes.iter().any(
-        |note| matches!(note, Note::Resets(credits) if credits.iter().any(|credit| credit.ready)),
+        |note| matches!(note, Note::Resets(credits) if credits.iter().any(|credit| credit.redeemable)),
     );
     if redeemable {
         lines.push(foot(REDEEM.to_owned()));
@@ -184,6 +186,8 @@ fn unit_word(unit: Unit) -> &'static str {
         Unit::Tokens => "tokens",
         Unit::Requests => "requests",
         Unit::Searches => "searches",
+        Unit::Cents => "cents",
+        Unit::Monetary => "monetary units",
         Unit::Money(_) => "",
     }
 }
@@ -322,11 +326,33 @@ fn token_lines(yesterday: Option<&Activity>, last30: Option<&Activity>, ctx: Ctx
     lines
 }
 
-fn spend_lines(periods: [f64; 3], byok: Option<f64>, currency: Currency, ctx: Ctx) -> Vec<Line> {
+fn daily_lines(lines: &[String], ctx: Ctx) -> Vec<Line> {
+    lines
+        .iter()
+        .skip(1)
+        .flat_map(|line| {
+            sub(
+                &[text::truncate(
+                    line,
+                    ctx.columns().saturating_sub(SUB_INDENT),
+                )],
+                SUB_INDENT,
+                ctx,
+            )
+        })
+        .collect()
+}
+
+fn spend_lines(
+    periods: [Option<f64>; 3],
+    byok: Option<f64>,
+    currency: Currency,
+    ctx: Ctx,
+) -> Vec<Line> {
     let Some(byok) = byok else {
         return Vec::new();
     };
-    let line = if byok <= 0.0 && periods.iter().all(|spend| *spend <= 0.0) {
+    let line = if byok <= 0.0 && periods.iter().flatten().all(|spend| *spend <= 0.0) {
         format!("BYOK spend {} in every period", text::money(0.0, currency))
     } else {
         format!("BYOK spend {} this month", text::money(byok, currency))

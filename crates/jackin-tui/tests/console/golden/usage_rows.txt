@@ -26,7 +26,7 @@ Kimi | Kimi Code · Session | reset 10h 3m ago · was 0% | reset 10h 3m ago · 1
 Z.AI | Z.ai Account · Weekly | 0% used · 5d 0h | resets in 5d 0h · Sun 22:49 | Normal
 Z.AI | Z.ai Account · Session | 0% used | reset not reported | Normal
 Z.AI | Z.ai Account · Web searches | <1% used · 7d 1h | resets in 7d 1h · 2 Dec 00:08 | Normal
-Z.AI | Z.ai Account · Limit resets | 1 ready, 1 unavailable · next e… | - | Normal
+Z.AI | Z.ai Account · Limit resets | 2 ready · next expires 22 Dec | - | Normal
 MiniMax | MiniMax Token Plan · General weekly | 34% used · 8h 27m | resets in 8h 27m · Wed 07:04 | Normal
 MiniMax | MiniMax Token Plan · General 5h | reset 8h 57m ago · was 0% | reset 8h 57m ago · 13:39 | Muted
 MiMo | MiMo Token Plan · Token Plan | 38% used · 17d 8h | resets in 17d 8h · 12 Dec 06:59 | Normal

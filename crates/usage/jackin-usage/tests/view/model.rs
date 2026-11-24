@@ -254,6 +254,7 @@ fn readings_distinguish_fresh_stale_failed_and_report_the_retry() -> Result<()> 
             at: Some(Timestamp(1_795_428_364)),
             message: "HTTP 403 SERVICE_DISABLED".to_owned(),
             retry_at: Some(Timestamp(1_795_447_730)),
+            reconnect: false,
         }
     );
     assert_eq!(view.stale_ages().len(), 14);
@@ -424,7 +425,7 @@ fn notes_and_facts_carry_credits_resets_tokens_spend_and_account_facts() -> Resu
     let codex = find(&view, seeded.id_of("codex", "work@example.com", 0)?)?;
     assert!(matches!(
         &codex.notes[0],
-        Note::Balance { amount, unit: Unit::Credits, approx: Some((usd, currency)) }
+        Note::Balance { amount, unit: Unit::Credits, approx: Some((usd, currency)), .. }
             if (amount - 19_290.0).abs() < 1e-9 && (usd - 771.6).abs() < 1e-9 && currency.as_str() == "USD"
     ));
     assert!(
@@ -452,7 +453,8 @@ fn notes_and_facts_carry_credits_resets_tokens_spend_and_account_facts() -> Resu
     let zai = find(&view, seeded.id_of("zai", "Z.ai Account", 0)?)?;
     match zai.notes.first() {
         Some(Note::Resets(credits)) => {
-            assert_eq!(credits.iter().filter(|credit| credit.ready).count(), 1);
+            assert_eq!(credits.iter().filter(|credit| credit.ready).count(), 2);
+            assert_eq!(credits.iter().filter(|credit| credit.redeemable).count(), 1);
             assert_eq!(credits.len(), 2);
         }
         other => return Err(format!("unexpected reset note {other:?}").into()),
@@ -462,7 +464,7 @@ fn notes_and_facts_carry_credits_resets_tokens_spend_and_account_facts() -> Resu
     assert!(matches!(
         openrouter.notes.last(),
         Some(Note::Spend { today, week, month, byok, currency })
-            if [*today, *week, *month].iter().all(|amount| amount.abs() < 1e-12) && *byok == Some(0.0) && *currency == Currency::USD
+            if [*today, *week, *month].iter().all(|amount| amount.is_some_and(|value| value.abs() < 1e-12)) && *byok == Some(0.0) && *currency == Currency::USD
     ));
     assert_eq!(openrouter.facts, [Fact::KeyType("standard".to_owned())]);
 

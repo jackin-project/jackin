@@ -59,8 +59,7 @@ Z.AI                                               1 account
       Session        ░░░░░░░░   0% used  reset not reported
       Web searches   █░░░░░░░  <1% used  resets in 7d 1h
                      10 of 4,000 searches used · 3,990 left
-      Limit resets   1 ready, 1 unavailable
-                     next expires 22 Dec
+      Limit resets   2 ready · next expires 22 Dec
 
 MiniMax                                            1 account
   MiniMax Token Plan · plan not reported       stale 13h 57m

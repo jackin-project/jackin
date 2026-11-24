@@ -57,7 +57,7 @@
       Session        [dim]░░░░░░░░[/]   0% used  [dim]reset not reported[/]
       Web searches   [green]█[/][dim]░░░░░░░[/]  <1% used  resets in 7d 1h · 2 Dec 00:08
                      [dim]10 of 4,000 searches used · 3,990 left[/]
-      Limit resets   1 ready, 1 unavailable · next expires 22 Dec
+      Limit resets   2 ready · next expires 22 Dec
 
 [bold]MiniMax[/]                                                                [dim]1 account[/]
   [bold]MiniMax Token Plan[/] · [dim]plan not reported[/]             [yellow]stale[/] · [dim]fetched 13h 57m ago[/]

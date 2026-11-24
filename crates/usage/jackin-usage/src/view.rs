@@ -12,8 +12,8 @@ pub mod text;
 pub use build::{ViewFilter, build};
 pub use card::card;
 pub use model::{
-    AccountQuota, Activity, Attention, Currency, Fact, Meter, Note, PositiveAmount, ProviderGroup,
-    Reading, ResetCredit, Role, Unit, UsageView, Used, UsedFraction, short_id,
+    AccountQuota, Activity, Attention, Currency, Fact, Feed, Meter, Note, PositiveAmount,
+    ProviderGroup, Reading, ResetCredit, Role, Unit, UsageView, Used, UsedFraction, short_id,
 };
 pub use render::{Ctx, Depth, Line, Report, Span, Tone};
 pub use report::report;

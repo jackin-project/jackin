@@ -130,7 +130,7 @@ fn every_reset_gets_its_own_line_with_its_own_status_and_full_expiry() -> Result
     ));
     assert!(contains_line(
         &zai,
-        "2  weekly unavailable expires Tue 22 Dec 2026 22:59"
+        "2  weekly ready       expires Tue 22 Dec 2026 22:59"
     ));
     let claude = one(&seeded, "claude", "work@example.com", 0)?;
     assert!(contains_line(

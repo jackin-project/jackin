@@ -133,7 +133,7 @@ async fn eleven_simultaneous_accounts_have_distinct_readings_at_eighty_columns()
     assert!(!result.iter().any(|line| line.contains("OpenRouter")));
     for (account, metric, detail) in [
         ("MiniMax Global", "General weekly", "10% used"),
-        ("Grok account", "Weekly", "Grok Heavy"),
+        ("Grok account", "Weekly", "85% left"),
     ] {
         let index = position(&result, account, "")?;
         inspect(&mut lab, index).await?;

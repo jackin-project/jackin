@@ -227,10 +227,10 @@ async fn grok_uncapped_extra_usage_keeps_its_currency() -> TestResult {
         ],
         Expected {
             account: &["Grok Heavy", "Weekly", "15% used"],
-            board: &["Extra usage cap", "1.5 usd"],
+            board: &["Extra cap", "1.50 USD"],
             absent: &["synthetic-access"],
         },
-        Some(("Extra usage cap", &["1.5 usd"])),
+        Some(("Extra cap", &["1.50 USD"])),
     )
     .await
 }

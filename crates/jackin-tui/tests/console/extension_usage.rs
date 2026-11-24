@@ -138,13 +138,8 @@ async fn mimo_account_shows_balance_currency_partial_history_and_exact_daily_cos
         UsageProvider::Mimo,
         snapshot,
         Expected {
-            account: &["Balance", "1.25 CNY"],
-            board: &[
-                "Total available",
-                "1.25 CNY",
-                "Daily consumption",
-                "Daily bills",
-            ],
+            account: &["Available", "1.25 CNY"],
+            board: &["Available", "1.25 CNY", "Daily usage", "Daily bills"],
             absent: &["CNY/totalAvailable"],
         },
     )

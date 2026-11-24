@@ -4,6 +4,7 @@
 mod details;
 mod model;
 mod render;
+mod rows;
 
 use std::error::Error;
 

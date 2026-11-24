@@ -35,10 +35,17 @@ pub struct AccountQuota {
     pub plan: Option<String>,
     pub reading: Reading,
     pub duplicates: Vec<Uuid>,
+    pub feed: Feed,
     pub main: Option<Meter>,
     pub secondary: Vec<Meter>,
     pub notes: Vec<Note>,
     pub facts: Vec<Fact>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Feed {
+    Provider,
+    StatusLine,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,6 +61,7 @@ pub enum Reading {
         at: Option<Timestamp>,
         message: String,
         retry_at: Option<Timestamp>,
+        reconnect: bool,
     },
 }
 
@@ -97,6 +105,8 @@ pub enum Unit {
     Tokens,
     Requests,
     Searches,
+    Cents,
+    Monetary,
     Money(Currency),
 }
 
@@ -106,6 +116,8 @@ pub struct Currency([u8; 3]);
 #[derive(Clone, Debug, PartialEq)]
 pub enum Note {
     Balance {
+        key: String,
+        label: String,
         amount: f64,
         unit: Unit,
         approx: Option<(f64, Currency)>,
@@ -117,11 +129,17 @@ pub enum Note {
         last30: Option<Activity>,
     },
     Spend {
-        today: f64,
-        week: f64,
-        month: f64,
+        today: Option<f64>,
+        week: Option<f64>,
+        month: Option<f64>,
         byok: Option<f64>,
         currency: Currency,
+    },
+    Daily {
+        key: String,
+        label: String,
+        records: Option<u64>,
+        lines: Vec<String>,
     },
 }
 
@@ -129,6 +147,7 @@ pub enum Note {
 pub struct ResetCredit {
     pub kind: String,
     pub ready: bool,
+    pub redeemable: bool,
     pub expires_at: Timestamp,
 }
 

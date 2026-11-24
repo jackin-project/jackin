@@ -75,7 +75,24 @@ fn group(digits: &str) -> String {
     out
 }
 
+fn tiny(value: f64) -> Option<String> {
+    if value == 0.0 || value.abs() >= 0.005 {
+        return None;
+    }
+    let fixed = format!("{:.6}", value.abs());
+    let trimmed = fixed.trim_end_matches('0');
+    let sign = if value < 0.0 { "-" } else { "" };
+    Some(if trimmed == "0." {
+        format!("{sign}<0.000001")
+    } else {
+        format!("{sign}{trimmed}")
+    })
+}
+
 fn decimal(value: f64, keep_cents: bool) -> String {
+    if let Some(text) = tiny(value) {
+        return text;
+    }
     let fixed = format!("{:.2}", value.abs());
     let (whole, cents) = fixed.split_once('.').unwrap_or((fixed.as_str(), "00"));
     let sign = if value < 0.0 && fixed != "0.00" {
@@ -145,6 +162,8 @@ fn unit_word(unit: Unit) -> Option<&'static str> {
         Unit::Tokens => Some("tokens"),
         Unit::Requests => Some("requests"),
         Unit::Searches => Some("searches"),
+        Unit::Cents => Some("cents"),
+        Unit::Monetary => Some("monetary units"),
         Unit::Money(_) => None,
     }
 }
@@ -302,6 +321,17 @@ fn marked(word: &str, tone: Tone, age: Option<String>, narrow: bool) -> Vec<Span
             Span::dim(format!("fetched {age} ago")),
         ],
     }
+}
+
+pub fn reconnect_command(id: uuid::Uuid) -> String {
+    format!("run: jackin account usage reconnect {}", id.hyphenated())
+}
+
+pub fn status_line_note(at: Timestamp, now: Timestamp) -> String {
+    format!(
+        "updated by the Antigravity status-line hook · last update {} ago",
+        rel(now.0.saturating_sub(at.0))
+    )
 }
 
 pub fn truncate(text: &str, columns: usize) -> String {

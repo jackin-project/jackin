@@ -145,6 +145,54 @@ pub fn seed_usage_view(path: &Path) -> Result<Vec<ProfileAccount>, Box<dyn std::
     Ok(accounts)
 }
 
+#[derive(Debug)]
+pub struct SeedRow<'a> {
+    pub provider: UsageProvider,
+    pub label: &'a str,
+    pub fetched_at: i64,
+    pub snapshot: Value,
+    pub failure: Option<(FailureKind, &'a str, i64)>,
+}
+
+pub fn seed_usage_rows(
+    path: &Path,
+    rows: Vec<SeedRow<'_>>,
+) -> Result<Vec<ProfileAccount>, Box<dyn std::error::Error>> {
+    let mut db = AccountRegistry::with_vault(path, Arc::new(ProfileVault))?;
+    let mut accounts = Vec::new();
+    for (index, row) in rows.into_iter().enumerate() {
+        let identity = match row.provider {
+            UsageProvider::Kimi
+            | UsageProvider::Zai
+            | UsageProvider::MiniMax
+            | UsageProvider::Mimo
+            | UsageProvider::OpenRouter => {
+                CandidateIdentity::api_key(&Secret::new(format!("row-{index}-{}", row.label)))
+            }
+            _ => CandidateIdentity::OAuth(Some(format!("row-subject-{index}-{}", row.label))),
+        };
+        let id = db.add_with_snapshot(
+            row.provider,
+            row.label,
+            &identity,
+            &SecretBytes::new(vec![1]),
+            row.fetched_at,
+            &row.snapshot,
+        )?;
+        if let Some((kind, message, failed_at)) = row.failure {
+            let version = db.version(id)?;
+            db.record_failure(id, version, failed_at, kind, None, message)?;
+        }
+        accounts.push(ProfileAccount {
+            id,
+            provider: row.provider,
+            label: row.label.to_owned(),
+            snapshot: row.snapshot,
+        });
+    }
+    Ok(accounts)
+}
+
 pub fn pin_usage_view_clock(clock: &FakeClock) {
     let behind = USAGE_VIEW_NOW.saturating_sub(clock.now().0);
     clock.advance(Duration::from_secs(u64::try_from(behind).unwrap_or(0)));
