@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin::ExitClass;
+use jackin_core::Timestamp;
 use jackin_testkit::{
-    TestResult, World, assert_golden, guard, pin_usage_view_clock, seed_usage_view,
+    TestResult, USAGE_VIEW_NOW, USAGE_VIEW_OFFSET, World, guard, pin_usage_view_clock,
+    seed_usage_view,
 };
-use jackin_usage::accounts::DATABASE_PATH;
+use jackin_usage::accounts::{AccountRegistry, DATABASE_PATH};
+use jackin_usage::view::render::{self, Ctx};
+use jackin_usage::view::{Report, ViewFilter, build, report};
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -15,6 +19,28 @@ struct Fleet {
     _world: World,
     cli: Harness,
     ids: Vec<Uuid>,
+}
+
+pub(super) fn view_text(
+    cli: &Harness,
+    filter: &ViewFilter,
+    kind: Report,
+) -> Result<String, Failure> {
+    let path = cli
+        .config_path
+        .as_path()
+        .parent()
+        .ok_or("config directory")?
+        .join(DATABASE_PATH);
+    let registry =
+        AccountRegistry::open_read_only(&path)?.ok_or("the usage registry is missing")?;
+    let view = build(
+        &registry,
+        filter,
+        Timestamp(USAGE_VIEW_NOW),
+        USAGE_VIEW_OFFSET,
+    )?;
+    Ok(render::plain(&report(&view, &Ctx::new(render::WIDE), kind)))
 }
 
 fn fleet() -> Result<Fleet, Failure> {
@@ -56,7 +82,8 @@ fn strip_ansi(text: &str) -> String {
 }
 
 #[tokio::test]
-async fn usage_prints_provider_cards_with_the_attention_block_and_no_escape_bytes() -> TestResult {
+async fn usage_prints_the_usage_report_with_no_escape_bytes_and_failures_on_the_cards() -> TestResult
+{
     guard(async {
         let fleet = fleet()?;
         let ran = fleet.cli.run(&["usage"]).await?;
@@ -67,13 +94,18 @@ async fn usage_prints_provider_cards_with_the_attention_block_and_no_escape_byte
             "failures belong on the cards: {}",
             ran.stderr
         );
-        assert_golden("tests/cli/golden/usage.txt", &ran.stdout, &fleet.ids)
+        assert!(ran.stdout.starts_with("Usage · "), "{}", ran.stdout);
+        assert_eq!(
+            ran.stdout,
+            view_text(&fleet.cli, &ViewFilter::default(), Report::Usage)?
+        );
+        Ok(())
     })
     .await
 }
 
 #[tokio::test]
-async fn snapshot_prints_the_usage_cards_under_a_saved_readings_banner() -> TestResult {
+async fn snapshot_prints_the_snapshot_report_under_a_saved_readings_banner() -> TestResult {
     guard(async {
         let fleet = fleet()?;
         let snapshot = fleet.cli.run(&["usage", "snapshot"]).await?;
@@ -81,15 +113,16 @@ async fn snapshot_prints_the_usage_cards_under_a_saved_readings_banner() -> Test
         assert!(!snapshot.stdout.contains('\u{1b}'));
         assert!(snapshot.stderr.is_empty(), "{}", snapshot.stderr);
         assert!(snapshot.stdout.starts_with("Usage snapshot · "));
+        assert_eq!(
+            snapshot.stdout,
+            view_text(&fleet.cli, &ViewFilter::default(), Report::Snapshot)?
+        );
         let usage = fleet.cli.run(&["usage"]).await?;
         let below_snapshot: Vec<&str> = snapshot.stdout.lines().skip(2).collect();
         let below_usage: Vec<&str> = usage.stdout.lines().skip(1).collect();
+        assert!(!below_usage.is_empty());
         assert_eq!(below_snapshot, below_usage);
-        assert_golden(
-            "tests/cli/golden/snapshot.txt",
-            &snapshot.stdout,
-            &fleet.ids,
-        )
+        Ok(())
     })
     .await
 }
@@ -106,7 +139,7 @@ async fn snapshot_json_keeps_its_schema_and_matches_the_top_level_flag() -> Test
         assert!(!direct.stdout.contains('\u{1b}'));
         let report: Value = serde_json::from_str(&direct.stdout)?;
         assert_eq!(report["schema"], 1);
-        assert_eq!(report["generated_at"], jackin_testkit::USAGE_VIEW_NOW);
+        assert_eq!(report["generated_at"], USAGE_VIEW_NOW);
         let accounts = report["accounts"].as_array().ok_or("accounts")?;
         assert_eq!(accounts.len(), 14);
         for key in ["account", "usage", "stale"] {

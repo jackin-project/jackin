@@ -156,11 +156,13 @@ async fn the_mapped_board_rows_carry_normalized_quantities_and_no_remaining_word
         row("MiniMax Token Plan · General weekly")?.exact_value,
         "34% used"
     );
+    assert!(!all.providers.is_empty());
     assert!(
         all.providers
             .iter()
             .all(|provider| !provider.name.contains("Gemini Code Assist"))
     );
+    assert!(!all.settings.flags.is_empty());
     assert!(
         all.settings
             .flags

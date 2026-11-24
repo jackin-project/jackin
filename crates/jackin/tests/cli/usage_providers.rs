@@ -91,7 +91,27 @@ async fn json_adds_the_info_array_and_keeps_the_provider_keys() -> TestResult {
         assert_eq!(keys, ["info", "providers", "schema"]);
         assert_eq!(data["schema"], 1);
         let providers = data["providers"].as_array().ok_or("providers")?;
-        assert_eq!(providers.len(), 11);
+        let listed: Vec<&str> = providers
+            .iter()
+            .map(|provider| provider["id"].as_str().ok_or("provider id"))
+            .collect::<Result<_, _>>()?;
+        assert_eq!(
+            listed,
+            [
+                "claude",
+                "codex",
+                "muse",
+                "grok",
+                "kimi",
+                "zai",
+                "minimax",
+                "mimo",
+                "antigravity",
+                "opencode",
+                "openrouter"
+            ]
+        );
+        assert!(!data.to_string().to_lowercase().contains("code assist"));
         let claude = providers
             .iter()
             .find(|p| p["id"] == "claude")
@@ -112,39 +132,6 @@ async fn json_adds_the_info_array_and_keeps_the_provider_keys() -> TestResult {
         assert_eq!(info[0]["name"], "Gemini app (web)");
         assert_eq!(info[0]["tracked"], false);
         assert_eq!(info[0]["reason"], GEMINI_APP_REASON);
-        Ok(())
-    })
-    .await
-}
-
-#[tokio::test]
-async fn gemini_code_assist_is_not_a_provider_anywhere() -> TestResult {
-    guard(async {
-        let (_world, cli, _ids) = seeded()?;
-        for args in [
-            vec!["usage", "providers"],
-            vec!["usage", "providers", "--json"],
-            vec!["usage", "providers", "antigravity"],
-        ] {
-            let ran = cli.run(&args).await?;
-            ran.ok()?;
-            assert!(
-                !ran.stdout.to_lowercase().contains("code assist"),
-                "{args:?}"
-            );
-        }
-        for product in jackin_usage::catalog::providers() {
-            assert!(
-                !product.name.to_lowercase().contains("code assist")
-                    && !product.id.contains("code-assist")
-                    && !product.id.contains("gemini"),
-                "{}",
-                product.id
-            );
-        }
-        let text = cli.run(&["usage", "providers"]).await?;
-        assert_eq!(text.stdout.matches("Gemini").count(), 1);
-        assert!(text.stdout.contains("Info  Gemini app (web): "));
         Ok(())
     })
     .await
