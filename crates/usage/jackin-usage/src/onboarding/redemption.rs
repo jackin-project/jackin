@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::Secret;
+use jackin_usage_provider_core::ProviderError;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::{
-    AccountRegistry, BrowserProvider, ConnectedAccount, KeyConnection, LoginError, OwnedLogin,
-    UsageProvider, core_provider, grants, pack, unpack,
+    AccountRegistry, BrowserProvider, ConnectedAccount, GrantError, KeyConnection, LoginError,
+    OwnedLogin, UsageProvider, core_provider, grants, pack, unpack,
 };
 use crate::accounts::CredentialVersion;
 use crate::resets::{ClaimOutcome, ResetError, ResetSelection};
@@ -37,6 +38,9 @@ impl OwnedLogin {
             result=self.claim(&mut db,&account,&selection,&lease)=>result,
         };
         drop(lease);
+        if result.as_ref().is_err_and(ambiguous_claim) {
+            return result;
+        }
         let refreshed = self
             .refresh_for(&account, super::RefreshTrigger::Redemption, cancel)
             .await;
@@ -70,9 +74,9 @@ impl OwnedLogin {
                         .pointer("/organization/uuid")
                         .and_then(serde_json::Value::as_str)
                         .map(str::to_owned),
-                    Err(jackin_usage_provider_core::ProviderError::HubRefused) => {
+                    Err(ProviderError::HubRefused) => {
                         db.refuse_hub(hub.id, hub.slot)?;
-                        return Err(jackin_usage_provider_core::ProviderError::HubRefused.into());
+                        return Err(ProviderError::HubRefused.into());
                     }
                     Err(e) => return Err(e.into()),
                 }
@@ -86,7 +90,7 @@ impl OwnedLogin {
             if matches!(
                 result,
                 Err(LoginError::Reset(ResetError::Provider(
-                    jackin_usage_provider_core::ProviderError::HubRefused
+                    ProviderError::HubRefused
                 )))
             ) {
                 db.refuse_hub(hub.id, hub.slot)?;
@@ -103,7 +107,7 @@ impl OwnedLogin {
         if matches!(
             result,
             Err(LoginError::Reset(ResetError::Provider(
-                jackin_usage_provider_core::ProviderError::Unauthorized
+                ProviderError::Unauthorized
             )))
         ) && matches!(
             account.provider,
@@ -190,5 +194,20 @@ impl OwnedLogin {
                 .await?;
         }
         Ok((tokens.access, org, version))
+    }
+}
+
+fn ambiguous_claim(error: &LoginError) -> bool {
+    let provider = match error {
+        LoginError::Timeout => return true,
+        LoginError::Provider(error)
+        | LoginError::Grant(GrantError::Provider(error))
+        | LoginError::Reset(ResetError::Provider(error)) => error,
+        _ => return false,
+    };
+    match provider {
+        ProviderError::Network(_) => true,
+        ProviderError::Status(status) | ProviderError::Denied { status, .. } => *status >= 500,
+        _ => false,
     }
 }
