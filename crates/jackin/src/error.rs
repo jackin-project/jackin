@@ -229,7 +229,7 @@ impl CommandError {
 
 #[cfg(test)]
 mod tests {
-    use jackin_core::{AccountName, GatewayName};
+    use jackin_core::{AccountName, GatewayName, Phase, SandboxName};
     use jackin_openshell::GatewayOp;
     use jackin_session::{AttachError, CredentialError};
 
@@ -257,12 +257,19 @@ mod tests {
     }
 
     #[test]
-    fn nested_workspace_account_and_power_cancels_classify_as_cancelled() {
+    fn nested_workspace_account_and_power_cancels_classify_as_cancelled()
+    -> Result<(), Box<dyn std::error::Error>> {
         for error in [
             CommandError::WorkspaceInUse(WorkspaceGuardError::Lock(LockError::Cancelled)),
-            CommandError::Account(AccountError::Credential(CredentialError::Cancelled)),
+            CommandError::Account(AccountError::Credential(CredentialError::Cancelled {
+                group: None,
+            })),
             CommandError::Account(AccountError::Lock(LockError::Cancelled)),
             CommandError::Lifecycle(LifecycleError::Cancelled),
+            CommandError::Lifecycle(LifecycleError::PowerCancelled {
+                sandbox: SandboxName::parse("jackin-sandbox-a1b2")?,
+                wanted: Phase::Ready,
+            }),
         ] {
             assert_eq!(error.class(), ExitClass::Cancelled, "{error:?}");
         }
@@ -270,6 +277,7 @@ mod tests {
             CredentialError::KeychainLoginMissing,
         ));
         assert_eq!(missing.class(), ExitClass::Failure);
+        Ok(())
     }
 
     #[test]

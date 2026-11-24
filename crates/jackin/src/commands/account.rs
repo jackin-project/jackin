@@ -68,9 +68,9 @@ async fn host_login_source(
             jackin_session::read_claude_host_login(&app.deps.host, &path, &app.cancel)
                 .await
                 .map_err(|error| match error {
-                    jackin_session::CredentialError::Cancelled => CommandError::Cancelled(
-                        "cancelled while reading the host credential store".to_owned(),
-                    ),
+                    cancelled @ jackin_session::CredentialError::Cancelled { .. } => {
+                        CommandError::Cancelled(cancelled.to_string())
+                    }
                     _ => CommandError::Argument("no claude host login is available".to_owned()),
                 })?;
         }
@@ -78,9 +78,9 @@ async fn host_login_source(
             jackin_session::read_antigravity_host_login(&app.deps.host, &app.cancel)
                 .await
                 .map_err(|error| match error {
-                    jackin_session::CredentialError::Cancelled => CommandError::Cancelled(
-                        "cancelled while reading the host credential store".to_owned(),
-                    ),
+                    cancelled @ jackin_session::CredentialError::Cancelled { .. } => {
+                        CommandError::Cancelled(cancelled.to_string())
+                    }
                     _ => {
                         CommandError::Argument("no antigravity host login is available".to_owned())
                     }

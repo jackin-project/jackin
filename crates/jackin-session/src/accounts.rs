@@ -92,7 +92,7 @@ impl AccountError {
     pub fn is_cancelled(&self) -> bool {
         match self {
             AccountError::Lock(LockError::Cancelled)
-            | AccountError::Credential(CredentialError::Cancelled) => true,
+            | AccountError::Credential(CredentialError::Cancelled { .. }) => true,
             AccountError::Config(error) => error.cancelled(),
             _ => false,
         }
@@ -705,7 +705,7 @@ async fn publish<'a>(
                 &entry.account,
                 agent,
             ));
-            home.sync_locked_agent(&entry.account, agent, cancel)
+            home.sync_locked(&entry.account, agent, None, cancel)
                 .await
                 .map_err(|error| on_gateway(home.gateway_name(), error))?;
             continue;
@@ -749,7 +749,7 @@ async fn publish<'a>(
                     session.undo(Action::Remove, &entry.account, agent)
                 });
                 session
-                    .sync_locked_agent(&entry.account, agent, cancel)
+                    .sync_locked(&entry.account, agent, None, cancel)
                     .await
                     .map_err(|error| on_gateway(session.gateway_name(), error))?;
             }
@@ -816,7 +816,7 @@ async fn refresh_held<'a>(
             candidate,
         ));
         session
-            .sync_locked_agent(account, candidate, cancel)
+            .sync_locked(account, candidate, None, cancel)
             .await
             .map_err(|error| on_gateway(session.gateway_name(), error))?;
         return Ok(());
@@ -849,7 +849,7 @@ impl Session {
         cancel: &CancellationToken,
     ) -> Result<AccountSync, AccountError> {
         let _held = self.hold_current(account, cancel).await?;
-        self.sync_locked_c(account, agent, None, cancel).await
+        self.sync_locked(account, agent, None, cancel).await
     }
 
     async fn forget_locked(
@@ -879,7 +879,7 @@ impl Session {
         {
             return Ok(false);
         }
-        if let Err(original) = self.sync_locked_c(account, agent, expected, cancel).await {
+        if let Err(original) = self.sync_locked(account, agent, expected, cancel).await {
             return Err(match self.forget_locked(account, provider).await {
                 Ok(()) => original,
                 Err(rollback) => AccountError::RollbackFailed {
@@ -970,16 +970,7 @@ impl Session {
         .await?)
     }
 
-    async fn sync_locked_agent(
-        &self,
-        account: &Account,
-        agent: Agent,
-        cancel: &CancellationToken,
-    ) -> Result<AccountSync, AccountError> {
-        self.sync_locked_c(account, agent, None, cancel).await
-    }
-
-    async fn sync_locked_c(
+    async fn sync_locked(
         &self,
         account: &Account,
         agent: Agent,
@@ -1231,7 +1222,9 @@ async fn sync_muse_login(
             ProcessError::Spawn { .. } => AccountError::HostLoginStoreUnsupported {
                 account: account.name().clone(),
             },
-            ProcessError::Cancelled { .. } => AccountError::Credential(CredentialError::Cancelled),
+            ProcessError::Cancelled { group, .. } => {
+                AccountError::Credential(CredentialError::Cancelled { group })
+            }
             _ => AccountError::MissingCredential {
                 account: account.name().clone(),
             },
@@ -1263,7 +1256,7 @@ async fn sync_claude_login(
             CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
                 account: account.name().clone(),
             },
-            CredentialError::Cancelled => AccountError::Credential(CredentialError::Cancelled),
+            cancelled @ CredentialError::Cancelled { .. } => AccountError::Credential(cancelled),
             _ => AccountError::MissingCredential {
                 account: account.name().clone(),
             },
@@ -1297,7 +1290,7 @@ async fn sync_antigravity_login(
             CredentialError::KeychainUnavailable => AccountError::HostLoginStoreUnsupported {
                 account: account.name().clone(),
             },
-            CredentialError::Cancelled => AccountError::Credential(CredentialError::Cancelled),
+            cancelled @ CredentialError::Cancelled { .. } => AccountError::Credential(cancelled),
             _ => AccountError::MissingCredential {
                 account: account.name().clone(),
             },

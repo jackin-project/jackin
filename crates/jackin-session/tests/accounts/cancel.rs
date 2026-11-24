@@ -8,8 +8,8 @@ use jackin_core::{
 };
 use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_session::{
-    AccountEditError, AccountError, AccountPlan, CLAUDE_KEYCHAIN_ARGS, GatewayRemoval, Gateways,
-    LockError, plan_account_edits, plan_gateway_removal,
+    AccountEditError, AccountError, AccountPlan, GatewayRemoval, Gateways, LockError,
+    plan_account_edits, plan_gateway_removal,
 };
 use jackin_testkit::{FakeGateway, Fault, FsFault, ScriptedConnector, Trigger, World};
 use tokio_util::sync::CancellationToken;

@@ -100,9 +100,13 @@ async fn a_hung_recovery_lookup_gives_up_after_its_budget_as_unconfirmed() -> Te
                 last_observed: None
             }
         );
-        assert_eq!(after.seconds - before.seconds, 3);
-        assert_eq!(after.nanos, before.nanos);
-        assert_eq!(RECOVERY_LOOKUP_BUDGET, Duration::from_secs(3));
+        assert_eq!(
+            Duration::new(
+                u64::try_from(after.seconds - before.seconds)?,
+                after.nanos.abs_diff(before.nanos)
+            ),
+            RECOVERY_LOOKUP_BUDGET
+        );
         rig.gateway().release(&hold);
 
         ready(rig.launch_observed(1).await?)?;
@@ -511,6 +515,87 @@ async fn a_found_sandbox_is_reported_without_waiting_for_the_name_lookup() -> Te
         );
         assert_eq!((after.seconds, after.nanos), (before.seconds, before.nanos));
         rig.gateway().release(&hold);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_name_lookup_that_hangs_after_an_empty_label_lookup_is_unconfirmed_within_the_budget()
+-> TestResult {
+    guard_within(WITHIN, async {
+        let rig = launch_rig().await?;
+        let hold = Trigger::Op(GatewayOp::Find);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let before = rig.world.clock.stamp();
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            rig.gateway().inject(Fault::HoldAt {
+                trigger: hold.clone(),
+            });
+            rig.gateway().release(&hold);
+        };
+        let (outcome, ()) = tokio::join!(rig.run(rig.request(1)?, cancelled()), driver);
+        let after = rig.world.clock.stamp();
+        assert_eq!(
+            finding(outcome?)?,
+            RestoreFinding::Unconfirmed {
+                last_observed: None
+            }
+        );
+        assert_eq!(
+            Duration::new(
+                u64::try_from(after.seconds - before.seconds)?,
+                after.nanos.abs_diff(before.nanos)
+            ),
+            RECOVERY_LOOKUP_BUDGET
+        );
+        rig.gateway().release(&hold);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_after_an_empty_lookup_that_followed_a_created_sandbox_stays_unconfirmed()
+-> TestResult {
+    guard_within(WITHIN, async {
+        let rig = launch_rig().await?;
+        let hold = Trigger::Op(GatewayOp::Find);
+        rig.gateway()
+            .inject(Fault::HideEverywhereUntilCreateConflict);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let driver = async {
+            loop {
+                assert!(rig.gateway().until_held(&hold).await);
+                if rig.gateway().sandboxes().is_empty() {
+                    rig.gateway().inject(Fault::HoldAt {
+                        trigger: hold.clone(),
+                    });
+                    rig.gateway().release(&hold);
+                } else {
+                    rig.gateway().inject(Fault::CancelAt {
+                        trigger: hold.clone(),
+                        token: token.clone(),
+                    });
+                    rig.gateway().release(&hold);
+                    break;
+                }
+            }
+        };
+        let (outcome, ()) = tokio::join!(rig.run(rig.request(1)?, token.clone()), driver);
+        assert_eq!(
+            finding(outcome?)?,
+            RestoreFinding::Unconfirmed {
+                last_observed: Some(rig.sandbox_name(1)?),
+            }
+        );
+        assert_eq!(rig.gateway().sandboxes().len(), 1);
         Ok(())
     })
     .await

@@ -89,3 +89,44 @@ async fn a_cancel_after_the_power_request_was_sent_leaves_the_sandbox_changing_n
     })
     .await
 }
+
+#[tokio::test]
+async fn a_cancel_during_a_lookup_after_the_power_request_still_says_the_request_was_sent()
+-> TestResult {
+    guard_within(WITHIN, async {
+        for readable in [true, false] {
+            let rig = Rig::new().await?;
+            rig.launch(1).await?;
+            let handle = rig.handle(1).await?;
+            let name = handle.name();
+            rig.world
+                .session
+                .power(&name, PowerAction::Stop, &CancellationToken::new())
+                .await?;
+            let hold = Trigger::Op(GatewayOp::Find);
+            for _ in 0..2 {
+                rig.gateway().inject(Fault::HoldAt {
+                    trigger: hold.clone(),
+                });
+            }
+            let token = CancellationToken::new();
+            let starting = power(&rig, &name, PowerAction::Start, &token, readable);
+            let driver = async {
+                assert!(rig.gateway().until_held(&hold).await);
+                rig.gateway().release(&hold);
+                assert!(rig.gateway().until_held(&hold).await);
+                token.cancel();
+            };
+            let (result, ()) = tokio::join!(starting, driver);
+            assert!(
+                matches!(&result, Err(LifecycleError::PowerCancelled { sandbox, wanted })
+                    if *sandbox == name && *wanted == Phase::Ready),
+                "{readable}: {result:?}"
+            );
+            assert_ne!(handle.phase(), Phase::Stopped, "{readable}");
+            rig.gateway().release(&hold);
+        }
+        Ok(())
+    })
+    .await
+}

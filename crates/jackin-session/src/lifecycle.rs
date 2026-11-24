@@ -397,7 +397,15 @@ impl Session {
                 () = self.deps.host.clock.sleep(POLL) => {}
             }
             waited += POLL;
-            view = self.found_until(sandbox, cancel).await?;
+            view = match self.found_until(sandbox, cancel).await {
+                Err(LifecycleError::Cancelled) => {
+                    return Err(LifecycleError::PowerCancelled {
+                        sandbox: sandbox.clone(),
+                        wanted,
+                    });
+                }
+                other => other?,
+            };
         }
         Ok(view)
     }

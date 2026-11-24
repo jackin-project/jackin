@@ -981,8 +981,12 @@ impl ConfigStore {
     pub fn default_path(home: &HostPath) -> HostPath;
     pub async fn load(&self) -> Result<Config, ConfigError>;
     pub async fn edit(&self, edits: Vec<ConfigEdit>, cancel: &CancellationToken) -> Result<Config, ConfigError>;
+    pub async fn edit_checked<E: From<ConfigError>>(&self, edits: Vec<ConfigEdit>, cancel: &CancellationToken, check: impl FnOnce(&Config) -> Result<(), E>) -> Result<Config, E>;   // `check` sees the edited config under the lock; the commit point is after it
 }
+impl ConfigError { pub const fn committed(&self) -> bool; pub const fn cancelled(&self) -> bool; pub fn unless_cancelled(cancel: &CancellationToken) -> Result<(), ConfigError> }
 ```
+
+`edit_checked` checks the token before it creates the directory, while it waits for the lock, after the lock, and after `check`; each of those returns `ConfigError::Cancelled` and writes nothing. The atomic write is never raced against the token, so once it starts the caller gets its real outcome: `Ok`, a write error, or `FsError::Unsynced`, which `committed()` reports as written.
 
 Gateway keys are the registered OpenShell gateway names (D03). `jackin gateway add` writes `builder` (default `default`) and `platform` (default `Platform::host_default()` evaluated at add time), so a stored entry is always explicit and no later code guesses a default. The `docker_engine` entry exists because OpenShell has no place for an engine endpoint (D24).
 
@@ -2490,7 +2494,7 @@ pub enum RoleError {
     Fs(FsError),
     Process(ProcessError),
 }
-pub enum CredentialError { LoginUnreadable { path: HostPath }, LoginNotRegular { path: HostPath }, LoginTooLarge { path: HostPath }, AuthJsonInvalid { key: String }, NotAChatgptLogin, Fs(FsError) }
+pub enum CredentialError { LoginUnreadable { path: HostPath }, LoginNotRegular { path: HostPath }, LoginTooLarge { path: HostPath }, AuthJsonInvalid { key: String }, NotAChatgptLogin, KeychainUnavailable, KeychainLoginMissing, Cancelled { group: Option<GroupFault> }, Fs(FsError) }
 pub enum AccountError {
     Credential(CredentialError),
     Gateway(GatewayError),
@@ -4002,7 +4006,7 @@ This file records where U8 (`jackin-session` planner, role catalog, account sync
 
 Decisions.
 
-- The cancel check at the head of the executor loop is deleted. An observation is read-only and the check after it covers every cancel. A token that is cancelled before `launch` now costs one recovery lookup (label and name) and still returns `Cancelled` with the restore candidate.
+- The cancel check at the head of the executor loop is deleted. An observation is read-only and the check after it covers every cancel. A token that is cancelled before `launch` now costs one recovery (a label lookup, then a name lookup only when the label lookup is empty or failed) and still returns `Cancelled` with the restore candidate.
 - `Tracker.known_sent` is deleted. The tracker moves forward only, so `StepFinished(Sandbox)` is emitted once and `SandboxKnown` follows it once.
 - The `quote` escape arms of `files.rs` are deleted. `ModelName` allows only alphanumerics and `. _ : / -` and the work directory is the constant `/sandbox/project`, so no input needs an escape. The renderer wraps the two values in plain quotes.
 - `PlanError::RoleMismatch` stays. `LaunchRequest::role` is part of API.md, so the planner keeps checking it against the `LoadedRole` and a row in P8 pins the check.
