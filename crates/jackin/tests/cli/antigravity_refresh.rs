@@ -16,7 +16,7 @@ use jackin_usage::onboarding::{LoginPrompt, OwnedLogin, receive_antigravity_stat
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::support::{Failure, Harness, Ran};
+use super::support::{Failure, Harness, Ran, ScriptedTerminal};
 
 #[derive(Debug, Default)]
 struct Memory {
@@ -484,7 +484,7 @@ async fn refresh_prints_a_summary_by_default_and_json_only_with_the_flag() -> Te
         assert!(!human.stdout.contains("failed"), "{}", human.stdout);
         assert!(
             human.stdout.contains(
-                "skipped Antigravity (Google AI) · cached@example.com: updated by the Antigravity status-line hook"
+                "  skipped Antigravity (Google AI) · cached@example.com:\n          updated by the Antigravity status-line hook\n"
             ),
             "{}",
             human.stdout
@@ -653,6 +653,99 @@ async fn a_missing_credential_failure_names_the_sign_in_command_and_no_retry() -
             "{}",
             listed.stdout
         );
+        Ok(())
+    })
+    .await
+}
+
+async fn mixed_refresh_lab(world: &World) -> Result<(Harness, Uuid), Failure> {
+    let mut cli = Harness::new(world);
+    cli.env.push(("NO_COLOR".to_owned(), "1".to_owned()));
+    let empty: Arc<dyn CredentialVault> = Arc::new(Memory::default());
+    cli.usage_vault = Some(empty);
+    let path = cli
+        .config_path
+        .as_path()
+        .parent()
+        .ok_or("config directory")?
+        .join("usage/accounts.sqlite3");
+    statusline_account(world, &cli, &path).await?;
+    let stored: Arc<dyn CredentialVault> = Arc::new(Memory::default());
+    let mut db = AccountRegistry::with_vault(&path, stored)?;
+    let id = db.add_with_snapshot(
+        UsageProvider::Antigravity,
+        "Personal",
+        &CandidateIdentity::OAuth(Some("ultra.quota.owner@example.com".into())),
+        &SecretBytes::new(vec![1]),
+        world.clock.now().0,
+        &json!({"plan":"Ultra","resources":{}}),
+    )?;
+    drop(db);
+    Ok((cli, id))
+}
+
+fn assert_summary_fits(stdout: &str, width: usize, id: Uuid) {
+    assert!(!stdout.contains('\u{1b}'), "{stdout:?}");
+    let wide: Vec<String> = stdout
+        .lines()
+        .filter(|line| line.chars().count() > width)
+        .map(|line| format!("{:>3}  {line}", line.chars().count()))
+        .collect();
+    assert!(
+        wide.is_empty(),
+        "lines wider than {width} columns:\n{}",
+        wide.join("\n")
+    );
+    for tag in ["  failed  ", "  skipped "] {
+        let start = stdout
+            .lines()
+            .position(|line| line.starts_with(tag))
+            .unwrap_or(usize::MAX);
+        assert_ne!(start, usize::MAX, "{stdout}");
+        let held = stdout
+            .lines()
+            .skip(start + 1)
+            .take_while(|line| line.starts_with(&" ".repeat(10)))
+            .count();
+        assert!(held > 0, "{tag:?} has no hanging continuation:\n{stdout}");
+    }
+    assert!(stdout.contains(&id.to_string()), "{stdout}");
+    assert!(stdout.contains("sign in again"), "{stdout}");
+    assert!(stdout.contains("status-line hook"), "{stdout}");
+}
+
+#[tokio::test]
+async fn the_refresh_summary_wraps_to_80_columns_on_a_pipe() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let (cli, id) = mixed_refresh_lab(&world).await?;
+        let human = cli.run(&["usage", "refresh"]).await?;
+        assert_ne!(human.exit, ExitClass::Ok);
+        assert_summary_fits(&human.stdout, 80, id);
+        let command = format!("jackin account usage reconnect {id}");
+        assert!(
+            human.stdout.lines().any(|line| line.trim() == command),
+            "{}",
+            human.stdout
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_refresh_summary_wraps_to_60_columns_on_a_terminal() -> TestResult {
+    guard(async {
+        let world = World::builder().build()?;
+        let (cli, id) = mixed_refresh_lab(&world).await?;
+        let terminal = ScriptedTerminal::new(Vec::new())?.0.sized(60)?;
+        let human = cli
+            .command(&["usage", "refresh"])
+            .terminal(terminal)
+            .run()
+            .await?;
+        assert_ne!(human.exit, ExitClass::Ok);
+        assert_summary_fits(&human.stdout, 60, id);
         Ok(())
     })
     .await
