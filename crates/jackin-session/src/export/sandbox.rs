@@ -8,8 +8,11 @@ use jackin_core::{
     BranchName, CommitId, EnvName, SandboxName, SandboxPath, TerminalText, sandbox_layout,
 };
 
-use super::diff::{ChangedFile, Unread, added_file, parse_patch};
-use jackin_openshell::{Gateway, GatewayError, ProgramOutcome, ProgramRun, ProgramStdin};
+use super::diff::{ChangeStatus, ChangedFile, Unread, added_file, parse_patch};
+use jackin_openshell::{
+    Gateway, GatewayError, GatewayOp, ProgramOutcome, ProgramRun, ProgramStdin,
+};
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 const HEADS: &str = "refs/heads/";
@@ -17,8 +20,14 @@ const NOT_A_REPOSITORY: &str = "not a git repository";
 const CLEANUP: Duration = Duration::from_secs(10);
 const UNTRACKED_FILES: usize = 500;
 const UNTRACKED_BYTES: usize = 256 * 1024;
+const TOTAL_PATCH_BYTES: usize = 8 * 1024 * 1024;
 const NOT_READ: i32 = 66;
-const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; IFS= read -r p < \"$d/gitdir\" || [ -n \"$p\" ]; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
+const SIGPIPE_STATUS: i32 = 141;
+const STATUS_MARK: &str = "jackin-git-status=";
+const HEAD_UNTRACKED: &str = "{ \"$1\" --no-optional-locks -C \"$2\" ls-files --others --exclude-standard -z; echo \"jackin-git-status=$?\" >&2; } | head -c 4194304";
+const COUNT_UNTRACKED: &str = "{ \"$1\" --no-optional-locks -C \"$2\" ls-files --others --exclude-standard -z; echo \"jackin-git-status=$?\" >&2; } | tr -cd '\\000' | wc -c";
+const COUNT_CHANGED: &str = "{ \"$1\" --no-optional-locks -C \"$2\" -c core.quotepath=false diff-index --numstat --find-renames \"$3\" --; echo \"jackin-git-status=$?\" >&2; } | wc -l";
+const RECORDED_WORKTREES: &str = "for d in .git/worktrees/*; do [ -f \"$d/gitdir\" ] || continue; p=$(cat \"$d/gitdir\"; printf x) || continue; p=${p%x}; p=${p%?}; if [ -e \"$p\" ]; then t=1; else t=0; fi; printf '%s\\0%s\\0%s\\0' \"${d##*/}\" \"$p\" \"$t\"; done";
 static SH: SandboxPath = SandboxPath::from_static("/bin/sh");
 static MKDIR: SandboxPath = SandboxPath::from_static("/usr/bin/mkdir");
 static RM: SandboxPath = SandboxPath::from_static("/usr/bin/rm");
@@ -73,6 +82,13 @@ pub(super) struct Remote<'a> {
     pub(super) name: &'a SandboxName,
     pub(super) timeout: Duration,
     pub(super) cancel: &'a CancellationToken,
+    pub(super) deadline: Option<Instant>,
+}
+
+struct Budget {
+    untracked: usize,
+    patches: usize,
+    omitted: usize,
 }
 
 fn failure(outcome: &ProgramOutcome) -> RemoteError {
@@ -85,6 +101,36 @@ fn failure(outcome: &ProgramOutcome) -> RemoteError {
         exit_code: outcome.exit_code,
         output: TerminalText::sanitize(text),
     }
+}
+
+fn first_names(listed: &[u8], keep: usize, hidden: usize) -> (Vec<Vec<u8>>, usize) {
+    let mut kept = Vec::new();
+    let mut rest = hidden;
+    for name in listed
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+    {
+        if kept.len() < keep {
+            kept.push(name.to_vec());
+        } else {
+            rest += 1;
+        }
+    }
+    (kept, rest)
+}
+
+fn parse_count(printed: &[u8]) -> Result<usize, RemoteError> {
+    std::str::from_utf8(printed)
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .ok_or(RemoteError::Malformed("git printed an unreadable count"))
+}
+
+fn lines_starting(output: &[u8], prefix: &[u8]) -> usize {
+    output
+        .split(|byte| *byte == b'\n')
+        .filter(|line| line.starts_with(prefix))
+        .count()
 }
 
 fn lines(output: &[u8]) -> usize {
@@ -144,6 +190,20 @@ impl Remote<'_> {
         program: &SandboxPath,
         args: Vec<String>,
     ) -> Result<ProgramOutcome, GatewayError> {
+        let timeout = match self.deadline {
+            Some(end) => {
+                let left = end.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return Err(GatewayError::Timeout {
+                        op: GatewayOp::Program,
+                        after: self.timeout,
+                        group: None,
+                    });
+                }
+                timeout.min(left)
+            }
+            None => timeout,
+        };
         let env = EnvName::parse("LC_ALL")
             .map(|name| BTreeMap::from([(name, "C".to_owned())]))
             .unwrap_or_default();
@@ -362,9 +422,32 @@ impl Remote<'_> {
         &self,
         repository: &Repository,
     ) -> Result<(Vec<ChangedFile>, usize), RemoteError> {
-        let root = repository.checkouts.first().ok_or(RemoteError::Malformed(
-            "git worktree list printed no checkout",
-        ))?;
+        let (lead, rest) = repository
+            .checkouts
+            .split_first()
+            .ok_or(RemoteError::Malformed(
+                "git worktree list printed no checkout",
+            ))?;
+        let mut linked: Vec<&String> = rest.iter().collect();
+        linked.sort();
+        let mut budget = Budget {
+            untracked: UNTRACKED_FILES,
+            patches: TOTAL_PATCH_BYTES,
+            omitted: 0,
+        };
+        let mut files = self.changes_in(lead, &mut budget).await?;
+        for root in linked {
+            let found = self.changes_in(root, &mut budget).await?;
+            files.extend(found.into_iter().map(|file| in_checkout(root, file)));
+        }
+        Ok((files, budget.omitted))
+    }
+
+    async fn changes_in(
+        &self,
+        root: &str,
+        budget: &mut Budget,
+    ) -> Result<Vec<ChangedFile>, RemoteError> {
         let head = self
             .git(&["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"])
             .await?;
@@ -382,7 +465,7 @@ impl Remote<'_> {
             _ => return Err(failure(&head)),
         };
         let patch = self
-            .require(&[
+            .git(&[
                 "-C",
                 root,
                 "-c",
@@ -397,22 +480,37 @@ impl Remote<'_> {
                 &base,
                 "--",
             ])
-            .await?;
-        let mut files = parse_patch(&patch).map_err(RemoteError::Malformed)?;
-        let listed = self
-            .require(&[
-                "-C",
-                root,
-                "ls-files",
-                "--others",
-                "--exclude-standard",
-                "-z",
-            ])
-            .await?;
-        let mut names = listed
-            .split(|byte| *byte == 0)
-            .filter(|name| !name.is_empty());
-        for name in names.by_ref().take(UNTRACKED_FILES) {
+            .await;
+        let mut files = Vec::new();
+        match patch {
+            Ok(outcome) if outcome.exit_code != 0 => return Err(failure(&outcome)),
+            Ok(outcome) if outcome.stdout.len() <= budget.patches => {
+                budget.patches -= outcome.stdout.len();
+                files = parse_patch(&outcome.stdout).map_err(RemoteError::Malformed)?;
+            }
+            Ok(outcome) => {
+                budget.omitted += lines_starting(&outcome.stdout, b"diff --git ");
+            }
+            Err(GatewayError::OutputTooLarge { .. }) => {
+                let counted = self
+                    .shell(
+                        COUNT_CHANGED,
+                        &[sandbox_layout::GIT.as_str(), root, &base],
+                        &[0],
+                    )
+                    .await?;
+                budget.omitted += parse_count(&counted)?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+        let (listed, unlisted) = self.untracked_names(root, budget.untracked).await?;
+        budget.omitted += unlisted;
+        for name in &listed {
+            if budget.untracked == 0 {
+                budget.omitted += 1;
+                continue;
+            }
+            budget.untracked -= 1;
             let content = match std::str::from_utf8(name) {
                 Ok(name) => self.read_untracked(root, name).await?,
                 Err(_) => Err(Unread::UndecodableName),
@@ -422,7 +520,65 @@ impl Remote<'_> {
                 content.as_deref().map_err(|unread| *unread),
             ));
         }
-        Ok((files, names.count()))
+        Ok(files)
+    }
+
+    async fn untracked_names(
+        &self,
+        root: &str,
+        keep: usize,
+    ) -> Result<(Vec<Vec<u8>>, usize), RemoteError> {
+        let listed = self
+            .git(&[
+                "-C",
+                root,
+                "ls-files",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ])
+            .await;
+        match listed {
+            Ok(outcome) if outcome.exit_code == 0 => Ok(first_names(&outcome.stdout, keep, 0)),
+            Ok(outcome) => Err(failure(&outcome)),
+            Err(GatewayError::OutputTooLarge { .. }) => {
+                let git = sandbox_layout::GIT.as_str();
+                let head = self
+                    .shell(HEAD_UNTRACKED, &[git, root], &[0, SIGPIPE_STATUS])
+                    .await?;
+                let count = self.shell(COUNT_UNTRACKED, &[git, root], &[0]).await?;
+                let total = parse_count(&count)?;
+                let complete = head
+                    .iter()
+                    .rposition(|byte| *byte == 0)
+                    .map_or(&head[..0], |last| &head[..=last]);
+                let (kept, _) = first_names(complete, keep, 0);
+                let unlisted = total.saturating_sub(kept.len());
+                Ok((kept, unlisted))
+            }
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    async fn shell(
+        &self,
+        script: &str,
+        arguments: &[&str],
+        accepted: &[i32],
+    ) -> Result<Vec<u8>, RemoteError> {
+        let mut args = vec!["-c".to_owned(), script.to_owned(), "jackin-list".to_owned()];
+        args.extend(arguments.iter().map(|argument| (*argument).to_owned()));
+        let outcome = self.exec(&SH, args).await?;
+        let status = String::from_utf8_lossy(&outcome.stderr)
+            .lines()
+            .rev()
+            .find_map(|line| line.strip_prefix(STATUS_MARK)?.parse::<i32>().ok());
+        match status {
+            Some(status) if outcome.exit_code == 0 && accepted.contains(&status) => {
+                Ok(outcome.stdout)
+            }
+            _ => Err(failure(&outcome)),
+        }
     }
 
     async fn read_untracked(
@@ -496,4 +652,16 @@ impl Remote<'_> {
             Err(failure(&outcome))
         }
     }
+}
+
+fn qualified(root: &str, path: &TerminalText) -> TerminalText {
+    TerminalText::sanitize(format!("{root}/{}", path.as_str()).as_bytes())
+}
+
+fn in_checkout(root: &str, mut file: ChangedFile) -> ChangedFile {
+    file.path = qualified(root, &file.path);
+    if let ChangeStatus::Renamed { from } = &mut file.status {
+        *from = qualified(root, from);
+    }
+    file
 }
