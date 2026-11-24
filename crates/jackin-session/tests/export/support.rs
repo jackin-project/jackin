@@ -170,8 +170,16 @@ pub(crate) fn digests(
     handle
         .files()
         .into_iter()
+        .filter(|(path, _)| !git_housekeeping(path.as_str()))
         .map(|(path, bytes)| (path, jackin_core::Sha256::of(&bytes)))
         .collect()
+}
+
+fn git_housekeeping(path: &str) -> bool {
+    let Some(name) = path.rsplit('/').next() else {
+        return false;
+    };
+    path.contains("/.git/") && (name.ends_with(".lock") || name == "gc.pid")
 }
 
 pub(crate) async fn state(rig: &Rig, name: &SandboxName) -> jackin_session::WorkState {
