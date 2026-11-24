@@ -10,6 +10,7 @@ use jackin_usage::accounts::{
     DATABASE_PATH, FailureKind, UsageProvider,
 };
 use jackin_usage::dashboard::DashboardSettings;
+use jackin_usage::presentation;
 use jackin_usage::view::card;
 use jackin_usage::view::{
     AccountQuota, Attention, Currency, Fact, Note, Reading, ResetStatus, Role, TodayTokens, Unit,
@@ -923,5 +924,29 @@ fn a_hidden_today_is_omitted_and_an_unreported_one_reads_n_a() -> Result<()> {
             "30 days 70".to_owned()
         ])
     );
+    Ok(())
+}
+
+#[test]
+fn one_account_with_two_near_limit_meters_gets_two_distinct_attention_rows() -> Result<()> {
+    let (live, week, five) = (NOW.0 + 3_600, 604_800, 18_000);
+    let (view, id) = crafted_view(
+        UsageProvider::Claude,
+        windows(&[
+            ("session", 99.0, Some(live), five),
+            ("weekly", 98.0, Some(live), week),
+        ]),
+        &[],
+    )?;
+    let rows = presentation::attention_rows(&view);
+    let near: Vec<_> = rows
+        .iter()
+        .filter(|row| row.accounts == [id] && row.key.starts_with("near-limit:"))
+        .collect();
+    assert_eq!(near.len(), 2, "{rows:?}");
+    assert_ne!(near[0].key, near[1].key);
+    let mut labels: Vec<&str> = near.iter().map(|row| row.label.as_str()).collect();
+    labels.sort_unstable();
+    assert_eq!(labels, ["Session", "Weekly"]);
     Ok(())
 }

@@ -519,8 +519,14 @@ fn attention_row(view: &UsageView, item: &Attention) -> Option<AttentionRow> {
             Attention::Failing { .. } | Attention::NearLimit { .. } => freshness_text(quota, view),
         };
     }
+    let key = match item {
+        Attention::NearLimit { meter, .. } => format!("{kind}:{}:{meter}", first.hyphenated()),
+        Attention::Failing { .. } | Attention::Duplicate { .. } => {
+            format!("{kind}:{}", first.hyphenated())
+        }
+    };
     Some(AttentionRow {
-        key: format!("{kind}:{}", first.hyphenated()),
+        key,
         provider: group.provider,
         accounts,
         title: format!("{} · {subject}", text.tag),
