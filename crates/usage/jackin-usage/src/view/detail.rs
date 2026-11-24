@@ -73,13 +73,13 @@ pub fn note_lines(_account: &AccountQuota, note: &Note, view: &UsageView, ctx: &
 
 pub fn footer(account: &AccountQuota, view: &UsageView, ctx: &Ctx) -> Vec<Line> {
     let ctx = *ctx;
-    let mut lines = vec![foot(format!("id {}", account.id.hyphenated()))];
-    lines.push(foot(fetched_text(account, view)));
+    let mut lines = foot(format!("id {}", account.id.hyphenated()), ctx);
+    lines.extend(foot(fetched_text(account, view), ctx));
     let redeemable = account.notes.iter().any(
         |note| matches!(note, Note::Resets(credits) if credits.iter().any(|credit| credit.redeemable)),
     );
     if redeemable {
-        lines.push(foot(REDEEM.to_owned()));
+        lines.extend(foot(REDEEM.to_owned(), ctx));
     }
     lines.extend(fact_lines(&account.facts, view, ctx));
     lines
@@ -95,8 +95,13 @@ fn sub(parts: &[String], indent: usize, ctx: Ctx) -> Vec<Line> {
     )
 }
 
-fn foot(text: String) -> Line {
-    Line::of(vec![Span::plain(" ".repeat(FOOT_INDENT)), Span::dim(text)])
+fn foot(text: String, ctx: Ctx) -> Vec<Line> {
+    text::wrap(
+        vec![Span::plain(" ".repeat(FOOT_INDENT))],
+        FOOT_INDENT,
+        &text::split_parts(&text, Tone::Dim),
+        ctx.columns(),
+    )
 }
 
 fn left(used: UsedFraction) -> String {
@@ -419,7 +424,7 @@ fn fact_lines(facts: &[Fact], view: &UsageView, ctx: Ctx) -> Vec<Line> {
     if !inline.is_empty() {
         lines.extend(foot_wrapped(&inline, ctx));
     }
-    lines.extend(apart.into_iter().map(|(_, text)| foot(text)));
+    lines.extend(apart.into_iter().flat_map(|(_, text)| foot(text, ctx)));
     lines
 }
 

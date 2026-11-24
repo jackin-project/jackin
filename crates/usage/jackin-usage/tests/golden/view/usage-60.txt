@@ -1,15 +1,22 @@
-Usage · Tue 24 Nov 2026 22:37 (+07) · 14 accounts · 11 providers
+Usage · 24 Nov 22:37 (+07) · 14 accounts · 11 providers
 
 Needs attention (4)
-  FAILING     Antigravity (Google AI) · personal@example.com #a0000014
-              HTTP 403 SERVICE_DISABLED · retry due since Mon 22:28
+  FAILING     Antigravity (Google AI)
+              personal@example.com #a0000014
+              HTTP 403 SERVICE_DISABLED
+              retry due since Mon 22:28
   NEAR LIMIT  Muse · work@example.com
               Weekly 99% used · resets in 5d 8h · Mon 07:00
-  NEAR LIMIT  Antigravity (Google AI) · personal@example.com #a0000013 #a0000014
-              Claude weekly >99% used · resets in 1d 7h · Thu 06:19
-  DUPLICATE   Antigravity (Google AI) · personal@example.com #a0000013 #a0000014
-              jackin account usage rm a0000014-0000-4000-8000-000000000014
-Stale  all 14 readings, fetched 13h 57m to 1d 7h ago · jackin usage refresh
+  NEAR LIMIT  Antigravity (Google AI)
+              personal@example.com #a0000013 #a0000014
+              Claude weekly >99% used · resets in 1d 7h
+              Thu 06:19
+  DUPLICATE   Antigravity (Google AI)
+              personal@example.com #a0000013 #a0000014
+              jackin account usage rm
+              a0000014-0000-4000-8000-000000000014
+Stale  all 14 readings, fetched 13h 57m to 1d 7h ago
+       jackin usage refresh
 
 Claude                                            2 accounts
   work@example.com · Ultra                     stale 13h 57m

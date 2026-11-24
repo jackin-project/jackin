@@ -4,10 +4,11 @@
 use jackin_usage::accounts::AccountRegistry;
 use jackin_usage::view::text;
 use jackin_usage::view::{
-    AccountQuota, Attention, Feed, Line, Reading, Span, Tone, UsageView, ViewFilter, build,
+    AccountQuota, Attention, Ctx, Feed, Line, Reading, Span, Tone, UsageView, ViewFilter, build,
 };
 use serde_json::{Value, json};
 
+use super::overview::context;
 use super::{database, failure};
 use crate::app::App;
 use crate::cli::UsageLsArgs;
@@ -17,6 +18,9 @@ const HEADERS: [&str; 5] = ["PROVIDER", "ACCOUNT", "PLAN", "STATUS", "FLAGS"];
 const WIDE_HEADERS: [&str; 3] = ["FETCHED", "ID", "LAST ERROR"];
 const GAP: usize = 2;
 const NONE: &str = "-";
+const FLAG_INDENT: usize = 2;
+const NOTE_LEAD: &str = "  ";
+const NOTE_INDENT: usize = 4;
 
 pub(super) fn show(app: &mut App, args: &UsageLsArgs) -> Result<(), CommandError> {
     let now = app.deps.host.clock.now();
@@ -54,7 +58,7 @@ pub(super) fn show(app: &mut App, args: &UsageLsArgs) -> Result<(), CommandError
             .collect::<Result<_, CommandError>>()?;
         return app.io.json(&rows);
     }
-    app.io.lines(&table(&view, args.wide))
+    app.io.lines(&table(&view, args.wide, context(app)))
 }
 
 fn none_connected() -> Vec<Line> {
@@ -185,7 +189,25 @@ fn count(number: usize, noun: &str) -> String {
     }
 }
 
-fn summary(view: &UsageView) -> Line {
+fn flagged(text: &str, tone: Tone, ctx: Ctx) -> Vec<Line> {
+    text::wrap(
+        Vec::new(),
+        FLAG_INDENT,
+        &text::split_parts(text, tone),
+        ctx.columns(),
+    )
+}
+
+fn indented(text: &str, tone: Tone, ctx: Ctx) -> Vec<Line> {
+    text::wrap(
+        vec![Span::plain(NOTE_LEAD)],
+        NOTE_INDENT,
+        &text::split_parts(text, tone),
+        ctx.columns(),
+    )
+}
+
+fn summary(view: &UsageView, ctx: Ctx) -> Vec<Line> {
     let accounts = view.account_count();
     let mut parts = vec![
         count(accounts, "account"),
@@ -212,10 +234,18 @@ fn summary(view: &UsageView) -> Line {
     } else if stale > 0 {
         parts.push(format!("{stale} of {accounts} stale"));
     }
-    Line::of(vec![Span::dim(parts.join(" · "))])
+    text::wrap(
+        Vec::new(),
+        0,
+        &parts
+            .into_iter()
+            .map(|part| (part, Tone::Dim))
+            .collect::<Vec<_>>(),
+        ctx.columns(),
+    )
 }
 
-fn footnotes(view: &UsageView, wide: bool) -> Vec<Line> {
+fn footnotes(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
     let mut lines = Vec::new();
     let mut duplicated = false;
     for entry in &view.attention {
@@ -231,10 +261,11 @@ fn footnotes(view: &UsageView, wide: bool) -> Vec<Line> {
         } else {
             format!("{} times", accounts.len())
         };
-        lines.push(Line::of(vec![Span::new(
-            format!("! {}: {} is connected {times}.", group.name, quota.label),
+        lines.extend(flagged(
+            &format!("! {}: {} is connected {times}.", group.name, quota.label),
             Tone::Warn,
-        )]));
+            ctx,
+        ));
         if wide {
             let which = if view
                 .account(*remove)
@@ -244,10 +275,11 @@ fn footnotes(view: &UsageView, wide: bool) -> Vec<Line> {
             } else {
                 "Remove one"
             };
-            lines.push(Line::of(vec![Span::plain(format!(
-                "  {which}: jackin account usage rm {}",
-                remove.hyphenated()
-            ))]));
+            lines.extend(indented(
+                &format!("{which}: jackin account usage rm {}", remove.hyphenated()),
+                Tone::Plain,
+                ctx,
+            ));
         }
     }
     let signing_in: Vec<&AccountQuota> = view
@@ -256,42 +288,48 @@ fn footnotes(view: &UsageView, wide: bool) -> Vec<Line> {
         .filter(|quota| needs_sign_in(quota))
         .collect();
     if wide {
-        lines.extend(signing_in.iter().map(|quota| {
-            Line::of(vec![Span::new(
-                format!(
+        for quota in &signing_in {
+            lines.extend(flagged(
+                &format!(
                     "! {} needs sign-in: jackin account usage reconnect {}",
                     quota.label,
                     quota.id.hyphenated()
                 ),
                 Tone::Warn,
-            )])
-        }));
+                ctx,
+            ));
+        }
     } else if !signing_in.is_empty() {
-        lines.push(Line::of(vec![Span::new(
-            format!(
+        lines.extend(flagged(
+            &format!(
                 "! {} to sign in again: jackin account usage reconnect <id> (IDs: jackin account usage ls --wide)",
                 count(signing_in.len(), "account")
             ),
             Tone::Warn,
-        )]));
+            ctx,
+        ));
     }
     let hooked = view.accounts().any(|(_, quota)| {
         quota.feed == Feed::StatusLine && matches!(quota.reading, Reading::Stale { .. })
     });
     if hooked {
-        lines.push(Line::of(vec![Span::dim(
-            "  status-line accounts update when the Antigravity status-line hook runs; refresh cannot read them",
-        )]));
+        lines.extend(indented(
+            "status-line accounts update when the Antigravity status-line hook runs; refresh cannot read them",
+            Tone::Dim,
+            ctx,
+        ));
     }
     if duplicated && !wide {
-        lines.push(Line::of(vec![Span::plain(
-            "  IDs: jackin account usage ls --wide · remove one: jackin account usage rm <id>",
-        )]));
+        lines.extend(indented(
+            "IDs: jackin account usage ls --wide · remove one: jackin account usage rm <id>",
+            Tone::Plain,
+            ctx,
+        ));
     }
     lines
 }
 
-pub(super) fn table(view: &UsageView, wide: bool) -> Vec<Line> {
+pub(super) fn table(view: &UsageView, wide: bool, ctx: Ctx) -> Vec<Line> {
     if view.account_count() == 0 {
         return none_connected();
     }
@@ -306,7 +344,7 @@ pub(super) fn table(view: &UsageView, wide: bool) -> Vec<Line> {
         .collect();
     let mut lines = grid(header, body);
     lines.push(Line::blank());
-    lines.push(summary(view));
-    lines.extend(footnotes(view, wide));
+    lines.extend(summary(view, ctx));
+    lines.extend(footnotes(view, wide, ctx));
     lines
 }
