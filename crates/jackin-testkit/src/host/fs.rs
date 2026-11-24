@@ -286,10 +286,13 @@ impl FileSystem for MemFs {
                 problem: EntryProblem::NotADirectory,
             });
         }
+        let prior = state.dirs.get(dir.as_path()).copied();
         make_dirs(&mut state, dir, FileMode(0o700))?;
-        state
-            .dirs
-            .insert(dir.as_path().to_path_buf(), FileMode(0o700));
+        if let Some(mode) = prior {
+            state
+                .dirs
+                .insert(dir.as_path().to_path_buf(), FileMode(mode.0 & 0o700));
+        }
         Ok(())
     }
 
