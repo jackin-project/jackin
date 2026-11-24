@@ -912,7 +912,8 @@ async fn write_file_never_writes_through_an_entry_planted_at_the_staging_name() 
         );
         let meta = tokio::fs::symlink_metadata(&old).await.unwrap();
         assert!(meta.is_file(), "{kind}");
-        for at in planted.lock().unwrap().iter() {
+        let entries = planted.lock().unwrap().clone();
+        for at in &entries {
             assert!(
                 tokio::fs::symlink_metadata(at).await.is_ok(),
                 "{kind}: the planted entry was removed"
