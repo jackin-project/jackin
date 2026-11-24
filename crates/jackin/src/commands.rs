@@ -58,6 +58,16 @@ pub(crate) async fn dispatch(app: &mut App, command: Command) -> Result<(), Comm
                 )
                 .await
             }
+            Some(crate::cli::UsageCommand::Refresh { filter, json }) => {
+                connections::usage(
+                    app,
+                    crate::cli::UsageCommand::Refresh {
+                        filter,
+                        json: json || arg.json,
+                    },
+                )
+                .await
+            }
             Some(crate::cli::UsageCommand::Snapshot { filter, json }) => {
                 connections::usage(
                     app,

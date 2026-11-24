@@ -106,9 +106,9 @@ Z.AI                                                                   1 account
       Web searches   █░░░░░░░  <1% used  resets in 7d 1h · 2 Dec 00:08
                      10 of 4,000 searches used · 3,990 left
                      >99% left · 30d window from Mon 2 Nov 00:08 · exact 0.25%
-      Limit resets   2 ready · next expires 22 Dec
+      Limit resets   1 ready, 1 queued · next expires 22 Dec
                      1  weekly ready       expires Tue 22 Dec 2026 22:59
-                     2  weekly ready       expires Tue 22 Dec 2026 22:59
+                     2  weekly queued      expires Tue 22 Dec 2026 22:59
     id a0000009-0000-4000-8000-000000000009
     fetched Tue 24 Nov 08:39 · fresh until 08:49
     redeem a reset: jackin usage redeem <id> <n>

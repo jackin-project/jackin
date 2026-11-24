@@ -303,7 +303,7 @@ async fn cli_refresh_of_a_statusline_snapshot_is_not_a_network_success() -> Test
         let (id, observed) = statusline_account(&world, &cli, &path).await?;
         let args = ["usage", "refresh", "--json", "--account", &id.to_string()];
         let ran = cli.run(&args).await?;
-        assert_ne!(ran.exit, ExitClass::Ok);
+        assert_eq!(ran.exit, ExitClass::Ok);
         assert!(!ran.stderr.contains("last report"));
         assert!(!ran.stdout.contains("last report"));
         let body: Value = serde_json::from_str(&ran.stdout)?;
@@ -339,7 +339,7 @@ async fn refresh_prints_a_summary_by_default_and_json_only_with_the_flag() -> Te
         let human = cli
             .run(&["usage", "refresh", "--account", &account])
             .await?;
-        assert_ne!(human.exit, ExitClass::Ok);
+        assert_eq!(human.exit, ExitClass::Ok);
         assert!(
             serde_json::from_str::<Value>(&human.stdout).is_err(),
             "{}",
@@ -348,7 +348,15 @@ async fn refresh_prints_a_summary_by_default_and_json_only_with_the_flag() -> Te
         assert!(
             human
                 .stdout
-                .starts_with("Refreshed 0 of 1 accounts · 1 failed"),
+                .starts_with("Refreshed 0 of 1 accounts · 1 skipped\n"),
+            "{}",
+            human.stdout
+        );
+        assert!(!human.stdout.contains("failed"), "{}", human.stdout);
+        assert!(
+            human.stdout.contains(
+                "skipped Antigravity (Google AI) · cached@example.com: updated by the Antigravity status-line hook"
+            ),
             "{}",
             human.stdout
         );
@@ -367,16 +375,57 @@ async fn refresh_prints_a_summary_by_default_and_json_only_with_the_flag() -> Te
             "{}",
             human.stdout
         );
-        assert!(
-            human.stderr.contains("status-line hook"),
-            "{}",
-            human.stderr
-        );
+        assert!(human.stderr.is_empty(), "{}", human.stderr);
         let json = cli
             .run(&["usage", "refresh", "--json", "--account", &account])
             .await?;
         let body: Value = serde_json::from_str(&json.stdout)?;
         assert_eq!(body["accounts"][0]["account"]["id"], account);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_real_failure_beside_a_skipped_status_line_account_still_fails_the_refresh() -> TestResult
+{
+    guard(async {
+        let world = World::builder().build()?;
+        let mut cli = Harness::new(&world);
+        let empty: Arc<dyn CredentialVault> = Arc::new(Memory::default());
+        cli.usage_vault = Some(empty);
+        let path = cli
+            .config_path
+            .as_path()
+            .parent()
+            .ok_or("config directory")?
+            .join("usage/accounts.sqlite3");
+        statusline_account(&world, &cli, &path).await?;
+        let stored: Arc<dyn CredentialVault> = Arc::new(Memory::default());
+        let mut db = AccountRegistry::with_vault(&path, stored)?;
+        db.add_with_snapshot(
+            UsageProvider::Antigravity,
+            "Personal",
+            &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
+            &SecretBytes::new(vec![1]),
+            world.clock.now().0,
+            &json!({"plan":"Ultra","resources":{}}),
+        )?;
+        drop(db);
+        let human = cli.run(&["usage", "refresh"]).await?;
+        assert_ne!(human.exit, ExitClass::Ok);
+        assert!(
+            human
+                .stdout
+                .starts_with("Refreshed 0 of 2 accounts · 1 skipped · 1 failed\n"),
+            "{}",
+            human.stdout
+        );
+        assert!(
+            human.stdout.contains("failed  Antigravity"),
+            "{}",
+            human.stdout
+        );
         Ok(())
     })
     .await

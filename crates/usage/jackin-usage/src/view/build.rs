@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use super::model::{
     AccountQuota, Activity, Attention, Currency, FRESH_SECS, Fact, Feed, Meter, Note,
-    PositiveAmount, ProviderGroup, Reading, ResetCredit, Role, Unit, UsageView, Used, UsedFraction,
+    PositiveAmount, ProviderGroup, Reading, ResetCredit, ResetStatus, Role, Unit, UsageView, Used,
+    UsedFraction,
 };
 use crate::accounts::{
     AccountRegistry, ConnectedAccount, ConnectionError, FailureKind, RefreshFailure, UsageProvider,
@@ -531,7 +532,7 @@ fn balance(key: &str, resource: &Value) -> Option<Note> {
 }
 
 fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note> {
-    let queued_ready = provider == UsageProvider::Zai;
+    let queues = provider == UsageProvider::Zai;
     let mut credits: Vec<ResetCredit> = body["resets"]
         .as_array()
         .into_iter()
@@ -542,8 +543,11 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
             let usable = grant["usable"] == true && live;
             Some(ResetCredit {
                 kind: plain(grant["kind"].as_str().unwrap_or("reset")),
-                ready: if queued_ready { live } else { usable },
-                redeemable: usable,
+                status: match (usable, live && queues) {
+                    (true, _) => ResetStatus::Ready,
+                    (false, true) => ResetStatus::Queued,
+                    (false, false) => ResetStatus::Unavailable,
+                },
                 expires_at: Timestamp(at),
             })
         })
@@ -556,8 +560,11 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
             .filter_map(Value::as_i64)
             .map(|at| ResetCredit {
                 kind: "reset".to_owned(),
-                ready: at > now.0,
-                redeemable: at > now.0,
+                status: if at > now.0 {
+                    ResetStatus::Ready
+                } else {
+                    ResetStatus::Unavailable
+                },
                 expires_at: Timestamp(at),
             })
             .collect();

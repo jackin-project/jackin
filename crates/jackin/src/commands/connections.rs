@@ -379,19 +379,43 @@ async fn refresh(app: &mut App, filter: UsageFilter, json: bool) -> Result<(), C
         .map(providers::connector)
         .transpose()?;
     let db = service(app)?.with_registry(Ok).await.map_err(failure)?;
-    let (first_error, refresh_errors) = refresh_selected(app, &db, &filter, provider, json).await?;
+    let outcome = refresh_selected(app, &db, &filter, provider, json).await?;
     if json {
         return overview::emit(
             app,
             Some(&db),
             &filter,
             provider,
-            &refresh_errors,
-            first_error,
+            &outcome.messages,
+            outcome.first_error,
         );
     }
-    overview::refreshed(app, &db, &filter, provider, &refresh_errors)?;
-    first_error.map_or(Ok(()), Err)
+    overview::refreshed(app, &db, &filter, provider, &outcome)?;
+    outcome.first_error.map_or(Ok(()), Err)
+}
+
+#[derive(Default)]
+pub(super) struct RefreshOutcome {
+    first_error: Option<CommandError>,
+    messages: Vec<(Uuid, String)>,
+    skipped: Vec<Uuid>,
+}
+
+impl RefreshOutcome {
+    fn message(&self, id: Uuid) -> Option<&str> {
+        self.messages
+            .iter()
+            .find(|(candidate, _)| *candidate == id)
+            .map(|(_, message)| message.as_str())
+    }
+
+    fn skipped(&self, id: Uuid) -> bool {
+        self.skipped.contains(&id)
+    }
+
+    fn failed(&self, id: Uuid) -> bool {
+        self.message(id).is_some() && !self.skipped(id)
+    }
 }
 
 async fn refresh_selected(
@@ -400,9 +424,8 @@ async fn refresh_selected(
     filter: &UsageFilter,
     provider: Option<UsageProvider>,
     noisy: bool,
-) -> Result<(Option<CommandError>, Vec<(Uuid, String)>), CommandError> {
-    let mut first_error = None;
-    let mut messages = Vec::new();
+) -> Result<RefreshOutcome, CommandError> {
+    let mut outcome = RefreshOutcome::default();
     let owned = service(app)?;
     if provider.is_none() && filter.account.is_none() {
         for hub in db.hubs().map_err(failure)? {
@@ -411,7 +434,7 @@ async fn refresh_selected(
                     return Err(cancelled());
                 }
                 app.io.note(&format!("{}: {error}", hub.id));
-                first_error.get_or_insert_with(|| failure(error));
+                outcome.first_error.get_or_insert_with(|| failure(error));
             }
         }
     }
@@ -437,14 +460,18 @@ async fn refresh_selected(
         let Some(result) = next else { break };
         let (id, result) = result.map_err(|_| failure(LoginError::Worker))?;
         if let Err(error) = result {
-            messages.push((id, error.to_string()));
+            outcome.messages.push((id, error.to_string()));
             if noisy {
                 app.io.note(&format!("{id}: {error}"));
             }
-            first_error.get_or_insert_with(|| failure(error));
+            if matches!(error, LoginError::NotDirect) {
+                outcome.skipped.push(id);
+            } else {
+                outcome.first_error.get_or_insert_with(|| failure(error));
+            }
         }
     }
-    Ok((first_error, messages))
+    Ok(outcome)
 }
 
 fn selected(
