@@ -116,6 +116,27 @@ fn a_reset_the_provider_reports_unusable_stays_unavailable() -> Result<()> {
 }
 
 #[test]
+fn a_usable_reset_with_nothing_remaining_is_unavailable_not_ready() -> Result<()> {
+    let expiry = NOW.0 + 86_400;
+    for provider in [UsageProvider::Claude, UsageProvider::Zai] {
+        let rows = Rows::new(vec![row(
+            provider,
+            json!({"plan":"Max",
+                "resets":[{"expiresAt":expiry,"kind":"weekly","remaining":0,"usable":true}],
+                "resources":{}}),
+        )])?;
+        let text = rows.text(Report::Details)?;
+        assert!(
+            text.lines()
+                .any(|line| line.contains("weekly") && line.contains("unavailable")),
+            "{text}"
+        );
+        assert!(!text.contains("redeem"), "{text}");
+    }
+    Ok(())
+}
+
+#[test]
 fn an_authentication_failure_names_the_sign_in_command_and_no_retry() -> Result<()> {
     let mut failing = row(UsageProvider::Claude, json!({"plan":"Max","resources":{}}));
     failing.failure = Some((

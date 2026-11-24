@@ -562,16 +562,17 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
         .filter_map(|(index, grant)| {
             let at = grant["expiresAt"].as_i64()?;
             let live = at > now.0;
-            let usable = grant["usable"] == true && live;
+            let remaining = grant["remaining"].as_u64().unwrap_or(1);
+            let usable = grant["usable"] == true && live && remaining > 0;
             Some(ResetCredit {
                 kind: plain(grant["kind"].as_str().unwrap_or("reset")),
                 status: match (usable, live && queues) {
                     (true, _) => ResetStatus::Ready,
-                    (false, true) => ResetStatus::Queued,
-                    (false, false) => ResetStatus::Unavailable,
+                    (false, true) if remaining > 0 => ResetStatus::Queued,
+                    (false, _) => ResetStatus::Unavailable,
                 },
                 expires_at: Timestamp(at),
-                remaining: grant["remaining"].as_u64().unwrap_or(1),
+                remaining,
                 index,
             })
         })
