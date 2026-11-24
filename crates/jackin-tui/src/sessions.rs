@@ -215,6 +215,14 @@ pub struct SessionSet {
     state: Mutex<State>,
 }
 
+fn built_matches(
+    built: &BTreeMap<GatewayName, GatewayEntry>,
+    config: &Config,
+    name: &GatewayName,
+) -> bool {
+    built.get(name) == config.gateway(name)
+}
+
 fn locked<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -281,7 +289,7 @@ impl SessionSet {
             let mut guard = locked(&self.state);
             let State { slots, built, .. } = &mut *guard;
             slots.retain(|name, _| {
-                config.gateway(name).is_some() && built.get(name) == config.gateway(name)
+                config.gateway(name).is_some() && built_matches(built, config, name)
             });
             built.retain(|name, _| slots.contains_key(name));
             config
@@ -349,14 +357,19 @@ impl SessionSet {
             let Some(default) = state.default.name().cloned() else {
                 return Home::NotChosen;
             };
+            let stale = |name: &GatewayName| {
+                config.gateway(name).is_some() && !built_matches(&state.built, config, name)
+            };
             let home = match state.slots.get(&default) {
                 None => return Home::NotChosen,
+                Some(_) if stale(&default) => None,
                 Some(Slot::Down(error)) => return Home::Down(Arc::clone(error)),
-                Some(Slot::Up(session)) => Session::clone(session),
+                Some(Slot::Up(session)) => Some(Session::clone(session)),
             };
             let known: BTreeMap<GatewayName, Reached> = state
                 .slots
                 .iter()
+                .filter(|(name, _)| !stale(name))
                 .map(|(name, slot)| {
                     let reached = match slot {
                         Slot::Up(session) => Reached::Up(session.clone()),
@@ -366,6 +379,14 @@ impl SessionSet {
                 })
                 .collect();
             (default, home, known)
+        };
+        let home = match (home, config.gateway(&default)) {
+            (Some(home), _) => home,
+            (None, Some(entry)) => match self.redial(&default, entry, connector, cancel).await {
+                Ok(session) => session,
+                Err(error) => return Home::Down(error),
+            },
+            (None, None) => return Home::NotChosen,
         };
         let unreachable = |name: &GatewayName, error: &GatewayError| {
             UnreachableGateway::new(
@@ -388,6 +409,33 @@ impl SessionSet {
             });
         }
         Home::Ready(Box::new(Gateways::assemble(home, peers)))
+    }
+
+    async fn redial(
+        &self,
+        name: &GatewayName,
+        entry: &GatewayEntry,
+        connector: &dyn SessionConnector,
+        cancel: &CancellationToken,
+    ) -> Result<Session, Arc<GatewayError>> {
+        let outcome = connector.connect(name, entry, cancel).await;
+        let mut state = locked(&self.state);
+        state.built.insert(name.clone(), entry.clone());
+        match outcome {
+            Ok(session) => {
+                state
+                    .slots
+                    .insert(name.clone(), Slot::Up(Box::new(session.clone())));
+                Ok(session)
+            }
+            Err(error) => {
+                let error = Arc::new(error);
+                state
+                    .slots
+                    .insert(name.clone(), Slot::Down(Arc::clone(&error)));
+                Err(error)
+            }
+        }
     }
 
     pub(crate) fn access(&self, name: &GatewayName) -> Access {

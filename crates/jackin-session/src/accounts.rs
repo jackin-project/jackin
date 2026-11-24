@@ -603,6 +603,7 @@ impl GatewayPlan {
         } = self;
         check_gateways(&locked.config, gateways)?;
         let store = &locked.desk.store;
+        check_gateway_entries(&locked.config, &store.load().await?)?;
         let home = gateways.home();
         let sessions = if effects.needs_every_gateway() {
             gateways.every().map_err(AccountEditError::Unreachable)?

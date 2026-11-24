@@ -1961,6 +1961,39 @@ mod error_paths {
     }
 
     #[test]
+    fn a_qualified_display_call_and_a_multi_line_attribute_are_reported() -> TestResult {
+        let source = text(&[
+            "enum E {",
+            "    #[error(\"qualified {}\", Path::display(.path.as_path()))] // p_qualified",
+            "    A { path: PathBuf },",
+            "    #[error(\"full {}\", std::path::Path::display(.0.as_path()))] // p_full",
+            "    B(HostPath),",
+            "    #[error(",
+            "        \"multi {}\",",
+            "        .dir.display() // p_multi",
+            "    )]",
+            "    C { dir: PathBuf },",
+            "    #[error(\"wrapped {}\", plain(Path::display(.path.as_path())))]",
+            "    D { path: PathBuf },",
+            "    #[error(\"mapped {}\", .paths.iter().map(Path::display).count())] // p_mapped",
+            "    F { paths: Vec<PathBuf> },",
+            "    #[error(\"other {}\", Label::display(.0))]",
+            "    E(Label),",
+            "}",
+        ]);
+        assert_eq!(
+            summary(&run(&source)?),
+            lines(
+                CiStep::Errors,
+                LIB,
+                &source,
+                &["p_qualified", "p_full", "p_multi", "p_mapped"]
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
     fn a_display_call_wrapped_in_plain_or_outside_an_error_attribute_passes() -> TestResult {
         let source = text(&[
             "enum E {",

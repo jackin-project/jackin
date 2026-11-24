@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::Check;
 use crate::ci::CiStep;
-use crate::lex::{Token, lex_rust};
+use crate::lex::{Tok, Token, lex_rust};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
@@ -41,6 +41,8 @@ const KEYWORDS_BEFORE_ARRAY: [&str; 13] = [
     "in", "return", "mut", "else", "break", "let", "const", "ref", "dyn", "impl", "if", "while",
     "match",
 ];
+
+const NON_PATTERN_KEYWORDS: [&str; 7] = ["for", "struct", "impl", "enum", "trait", "type", "mut"];
 
 const SILENCING_ATTRIBUTES: [&str; 2] = ["allow", "expect"];
 
@@ -88,6 +90,7 @@ impl Check for ScreenCheck {
             violations.extend(import_violations(file.path(), &tokens));
             violations.extend(index_violations(file.path(), &tokens));
             violations.extend(silencing_violations(file.path(), &tokens));
+            violations.extend(pattern_violations(file.path(), &tokens));
             violations.extend(literal_violations(
                 file.path(),
                 &tokens,
@@ -416,6 +419,57 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
             )
         })
         .collect()
+}
+
+fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
+    (1..tokens.len())
+        .filter(|index| {
+            tokens[*index].is_ident("Buffer")
+                && tokens.get(index + 1).is_some_and(|t| t.is_punct('{'))
+                && opens_fields(tokens, index + 2)
+                && !is_type_position(tokens, *index)
+        })
+        .map(|index| {
+            Violation::at_line(
+                CiStep::Screen,
+                path,
+                tokens[index].line,
+                "C1: destructures a ratatui Buffer; its cells are public fields, and jackin-tui draws nothing",
+            )
+        })
+        .collect()
+}
+
+fn opens_fields(tokens: &[Token], start: usize) -> bool {
+    let skipped = tokens[start..]
+        .iter()
+        .take_while(|t| t.is_ident("ref") || t.is_ident("mut"))
+        .count();
+    let first = start + skipped;
+    let named = tokens.get(first).is_some_and(|t| t.ident().is_some())
+        && tokens
+            .get(first + 1)
+            .is_some_and(|t| t.is_punct(',') || t.is_punct(':') || t.is_punct('}'));
+    named
+        || (tokens.get(first).is_some_and(|t| t.is_punct('.'))
+            && tokens.get(first + 1).is_some_and(|t| t.is_punct('.')))
+}
+
+fn is_type_position(tokens: &[Token], index: usize) -> bool {
+    let mut start = index;
+    while start >= 3 && is_path_separator(tokens, start - 2) && tokens[start - 3].ident().is_some()
+    {
+        start -= 3;
+    }
+    let Some(before) = start.checked_sub(1).map(|at| &tokens[at]) else {
+        return false;
+    };
+    before.is_punct('>')
+        || before.is_punct('&')
+        || before.kind == Tok::Other
+        || NON_PATTERN_KEYWORDS
+            .iter()
+            .any(|keyword| before.is_ident(keyword))
 }
 
 fn silencing_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {

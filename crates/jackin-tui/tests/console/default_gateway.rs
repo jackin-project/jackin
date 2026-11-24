@@ -163,6 +163,27 @@ async fn health_row(lab: &mut Lab) -> Out<String> {
     Ok(row.to_owned())
 }
 
+async fn save_new_login(lab: &mut Lab) -> TestResult {
+    let base = lab.world().accounts.clone();
+    let mut registry = base.clone();
+    registry.accounts.push(Account::registered(
+        UNSAVED_ID,
+        "newlogin",
+        Provider::OpenAi,
+        CredentialSource::LocalFolder {
+            path: lab.rig.home.as_path().display().to_string(),
+            detected: DetectedKind::CodexAuthJson,
+        },
+    ));
+    lab.perform(Effect::SaveAccounts {
+        ticket: 1,
+        base: Box::new(base),
+        registry: Box::new(registry),
+    })
+    .await?;
+    Ok(())
+}
+
 fn provider_of(name: &str) -> Out<ProviderName> {
     Ok(ProviderName::for_account(
         &AccountName::parse(name)?,
@@ -222,24 +243,7 @@ async fn an_account_add_publishes_to_the_new_default_after_the_default_left_the_
             .edit(vec![ConfigEdit::RemoveGateway(pair.first.clone())])
             .await?;
         refresh(&mut pair.lab).await?;
-        let base = pair.lab.world().accounts.clone();
-        let mut registry = base.clone();
-        registry.accounts.push(Account::registered(
-            UNSAVED_ID,
-            "newlogin",
-            Provider::OpenAi,
-            CredentialSource::LocalFolder {
-                path: pair.lab.rig.home.as_path().display().to_string(),
-                detected: DetectedKind::CodexAuthJson,
-            },
-        ));
-        pair.lab
-            .perform(Effect::SaveAccounts {
-                ticket: 1,
-                base: Box::new(base),
-                registry: Box::new(registry),
-            })
-            .await?;
+        save_new_login(&mut pair.lab).await?;
         assert!(pair.second.providers().contains(&provider_of("newlogin")?));
         assert!(
             !pair
@@ -473,6 +477,43 @@ async fn a_gateway_whose_entry_changed_under_the_same_name_is_dialed_afresh() ->
         assert_eq!(pair.connector.calls(&name), 1);
         refresh(&mut pair.lab).await?;
         assert_eq!(pair.connector.calls(&name), 1);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_account_add_dials_a_default_whose_entry_changed_since_the_last_refresh() -> TestResult {
+    guard(async {
+        let mut pair = pair(Peer::Absent).await?;
+        let mut entry = pair
+            .lab
+            .config()
+            .await?
+            .gateway(&pair.first)
+            .cloned()
+            .ok_or("the first gateway has no entry")?;
+        entry.openshell_workspace = OpenShellWorkspace::parse("moved")?;
+        pair.lab
+            .edit(vec![
+                ConfigEdit::RemoveGateway(pair.first.clone()),
+                ConfigEdit::AddGateway {
+                    name: pair.first.clone(),
+                    entry,
+                },
+                ConfigEdit::SetDefaultGateway(Some(pair.first.clone())),
+            ])
+            .await?;
+        save_new_login(&mut pair.lab).await?;
+        assert_eq!(pair.connector.calls(&pair.first), 1);
+        assert!(
+            pair.lab
+                .rig
+                .world
+                .gateway
+                .providers()
+                .contains(&provider_of("newlogin")?)
+        );
         Ok(())
     })
     .await

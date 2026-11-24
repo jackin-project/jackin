@@ -417,7 +417,7 @@ impl ImageEngine for BuildxEngine {
         cancel: &CancellationToken,
     ) -> Result<Option<FileLock>, EngineError> {
         let dir = child(&self.work_dir, LOCKS_DIR)?;
-        self.fs.create_dir_all(&dir).await?;
+        self.fs.create_private_dir_all(&dir).await?;
         let digest = Sha256::of(key.to_string().as_bytes());
         let file = child(&dir, &format!("{}.lock", digest.as_str()))?;
         let started = Instant::now();

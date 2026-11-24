@@ -13,7 +13,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use rustix::fs::{
-    AtFlags, FileType, Mode, OFlags, RawMode, fchmod, open, openat, readlinkat, statat,
+    AtFlags, CWD, FileType, Mode, OFlags, RawMode, chmodat, fchmod, open, openat, readlinkat,
+    statat,
 };
 use rustix::io::Errno;
 use rustix::process::geteuid;
@@ -33,6 +34,16 @@ enum Opened<T> {
     Ready(T),
     Symlink,
     Unsafe(EntryProblem),
+}
+
+impl<T> Opened<T> {
+    fn and_then<U>(self, work: impl FnOnce(T) -> io::Result<U>) -> io::Result<Opened<U>> {
+        Ok(match self {
+            Opened::Ready(value) => Opened::Ready(work(value)?),
+            Opened::Symlink => Opened::Symlink,
+            Opened::Unsafe(problem) => Opened::Unsafe(problem),
+        })
+    }
 }
 
 fn refusal<T>(opened: Opened<T>, path: &HostPath) -> Result<T, FsError> {
@@ -85,8 +96,40 @@ fn kind_of(file_type: fs::FileType) -> FileKind {
     }
 }
 
-fn read_file(path: &Path) -> io::Result<Option<Vec<u8>>> {
-    missing_is_none(fs::read(path))
+fn is_special(kind: fs::FileType) -> bool {
+    kind.is_fifo() || kind.is_socket() || kind.is_char_device() || kind.is_block_device()
+}
+
+fn open_readable(path: &Path) -> io::Result<Opened<Option<File>>> {
+    if let Some(meta) = missing_is_none(fs::metadata(path))?
+        && is_special(meta.file_type())
+    {
+        return Ok(Opened::Unsafe(EntryProblem::NotARegularFile));
+    }
+    let file = match open(
+        path,
+        OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOCTTY | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(file) => File::from(file),
+        Err(Errno::NOENT) => return Ok(Opened::Ready(None)),
+        Err(other) => return Err(other.into()),
+    };
+    if is_special(file.metadata()?.file_type()) {
+        return Ok(Opened::Unsafe(EntryProblem::NotARegularFile));
+    }
+    Ok(Opened::Ready(Some(file)))
+}
+
+fn read_file(path: &Path) -> io::Result<Opened<Option<Vec<u8>>>> {
+    open_readable(path)?.and_then(|file| {
+        let Some(mut file) = file else {
+            return Ok(None);
+        };
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        Ok(Some(bytes))
+    })
 }
 
 fn stat_kind(path: &Path) -> io::Result<Option<FileKind>> {
@@ -157,10 +200,17 @@ fn create_private_all(dir: &Path) -> io::Result<Opened<()>> {
         Mode::empty(),
     ) {
         Ok(leaf) => File::from(leaf),
+        Err(Errno::ACCESS) => return tighten_unreadable(dir),
         Err(_) if is_symlink(dir) => return Ok(Opened::Symlink),
         Err(failure) => return Err(failure.into()),
     };
-    let meta = leaf.metadata()?;
+    tighten(&leaf.metadata()?, |mode| Ok(fchmod(&leaf, mode)?))
+}
+
+fn tighten(
+    meta: &fs::Metadata,
+    apply: impl FnOnce(Mode) -> io::Result<()>,
+) -> io::Result<Opened<()>> {
     if !meta.is_dir() {
         return Ok(Opened::Unsafe(EntryProblem::NotADirectory));
     }
@@ -168,8 +218,38 @@ fn create_private_all(dir: &Path) -> io::Result<Opened<()>> {
         return Ok(Opened::Unsafe(EntryProblem::ForeignOwner));
     }
     let owner = RawMode::try_from(meta.mode() & 0o700).map_err(io::Error::other)?;
-    fchmod(&leaf, Mode::from_raw_mode(owner))?;
+    apply(Mode::from_raw_mode(owner))?;
     Ok(Opened::Ready(()))
+}
+
+#[cfg(target_os = "linux")]
+fn tighten_unreadable(dir: &Path) -> io::Result<Opened<()>> {
+    use std::os::fd::AsRawFd;
+
+    let leaf = match open(
+        dir,
+        OFlags::PATH | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    ) {
+        Ok(leaf) => File::from(leaf),
+        Err(_) if is_symlink(dir) => return Ok(Opened::Symlink),
+        Err(failure) => return Err(failure.into()),
+    };
+    tighten(&leaf.metadata()?, |mode| {
+        let through = format!("/proc/self/fd/{}", leaf.as_raw_fd());
+        Ok(chmodat(CWD, through, mode, AtFlags::empty())?)
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+fn tighten_unreadable(dir: &Path) -> io::Result<Opened<()>> {
+    let meta = fs::symlink_metadata(dir)?;
+    if meta.file_type().is_symlink() {
+        return Ok(Opened::Symlink);
+    }
+    tighten(&meta, |mode| {
+        Ok(chmodat(CWD, dir, mode, AtFlags::SYMLINK_NOFOLLOW)?)
+    })
 }
 
 fn rename_path(from: &Path, to: &Path) -> io::Result<()> {
@@ -237,11 +317,11 @@ fn lock_file(path: &Path) -> io::Result<Opened<Result<File, ()>>> {
         }
     };
     let meta = file.metadata()?;
-    if !meta.is_file() {
-        return Ok(Opened::Unsafe(EntryProblem::NotARegularFile));
-    }
     if meta.uid() != geteuid().as_raw() {
         return Ok(Opened::Unsafe(EntryProblem::ForeignOwner));
+    }
+    if !meta.is_file() {
+        return Ok(Opened::Unsafe(EntryProblem::NotARegularFile));
     }
     if meta.nlink() != 1 {
         return Ok(Opened::Unsafe(EntryProblem::MultipleLinks));
@@ -253,17 +333,15 @@ fn lock_file(path: &Path) -> io::Result<Opened<Result<File, ()>>> {
     }
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "runs on the blocking pool through StdFileSystem::read_at"
-)]
-fn read_range(path: &Path, offset: u64, len: usize) -> io::Result<Vec<u8>> {
-    let mut file = File::open(path)?;
-    file.seek(SeekFrom::Start(offset))?;
-    let mut bytes = Vec::new();
-    file.take(u64::try_from(len).unwrap_or(u64::MAX))
-        .read_to_end(&mut bytes)?;
-    Ok(bytes)
+fn read_range(path: &Path, offset: u64, len: usize) -> io::Result<Opened<Vec<u8>>> {
+    open_readable(path)?.and_then(|file| {
+        let mut file = file.ok_or(ErrorKind::NotFound)?;
+        file.seek(SeekFrom::Start(offset))?;
+        let mut bytes = Vec::new();
+        file.take(u64::try_from(len).unwrap_or(u64::MAX))
+            .read_to_end(&mut bytes)?;
+        Ok(bytes)
+    })
 }
 
 fn classify(
@@ -374,7 +452,7 @@ fn read_link_below(root: &Path, file: &RepoPath) -> io::Result<Result<String, Li
 #[async_trait]
 impl FileSystem for StdFileSystem {
     async fn read(&self, path: &HostPath) -> Result<Option<Vec<u8>>, FsError> {
-        blocking(path, read_file).await
+        refusal(blocking(path, read_file).await?, path)
     }
 
     async fn stat(&self, path: &HostPath) -> Result<Option<FileKind>, FsError> {
@@ -492,7 +570,8 @@ impl FileSystem for StdFileSystem {
     }
 
     async fn read_at(&self, path: &HostPath, offset: u64, len: usize) -> Result<Vec<u8>, FsError> {
-        blocking(path, move |p| read_range(p, offset, len)).await
+        let opened = blocking(path, move |p| read_range(p, offset, len)).await?;
+        refusal(opened, path)
     }
 }
 

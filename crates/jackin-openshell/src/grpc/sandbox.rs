@@ -36,6 +36,7 @@ fn protocol(message: impl ToString) -> GatewayError {
 struct Listing {
     records: usize,
     bytes: usize,
+    issued: HashSet<String>,
 }
 
 impl Listing {
@@ -43,7 +44,21 @@ impl Listing {
         Listing {
             records: 0,
             bytes: 0,
+            issued: HashSet::new(),
         }
+    }
+
+    fn follow(&mut self, next: String) -> Result<Option<String>, GatewayError> {
+        if next.is_empty() {
+            return Ok(None);
+        }
+        if next.len() > TOKEN_MAX_BYTES {
+            return Err(protocol("the gateway returned an oversized page token"));
+        }
+        if !self.issued.insert(next.clone()) {
+            return Err(protocol("the gateway repeated a page token"));
+        }
+        Ok(Some(next))
     }
 
     fn add(&mut self, bytes: usize) -> Result<(), GatewayError> {
@@ -266,7 +281,6 @@ impl Inner {
         let mut views = Vec::new();
         let mut listing = Listing::new();
         let mut token = String::new();
-        let mut issued = HashSet::from([String::new()]);
         for _ in 0..MAX_PAGES {
             let page = self
                 .unary(
@@ -285,16 +299,10 @@ impl Inner {
                 listing.add(view_bytes(&view))?;
                 views.push(view);
             }
-            if page.next_page_token.is_empty() {
+            let Some(next) = listing.follow(page.next_page_token)? else {
                 return Ok(views);
-            }
-            if page.next_page_token.len() > TOKEN_MAX_BYTES {
-                return Err(protocol("the gateway returned an oversized page token"));
-            }
-            if !issued.insert(page.next_page_token.clone()) {
-                return Err(protocol("the gateway repeated a page token"));
-            }
-            token = page.next_page_token;
+            };
+            token = next;
         }
         Err(protocol("the sandbox listing has too many pages"))
     }
@@ -377,7 +385,6 @@ impl Inner {
         let mut providers = Vec::new();
         let mut listing = Listing::new();
         let mut token = String::new();
-        let mut issued = HashSet::from([String::new()]);
         for _ in 0..MAX_PAGES {
             let page = self
                 .unary(
@@ -401,16 +408,10 @@ impl Inner {
                 listing.add(name.as_str().len())?;
                 providers.push(name);
             }
-            if page.next_page_token.is_empty() {
+            let Some(next) = listing.follow(page.next_page_token)? else {
                 return Ok(providers);
-            }
-            if page.next_page_token.len() > TOKEN_MAX_BYTES {
-                return Err(protocol("the gateway returned an oversized page token"));
-            }
-            if !issued.insert(page.next_page_token.clone()) {
-                return Err(protocol("the gateway repeated a page token"));
-            }
-            token = page.next_page_token;
+            };
+            token = next;
         }
         Err(protocol("the provider listing has too many pages"))
     }

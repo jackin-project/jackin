@@ -383,6 +383,51 @@ fn silencing_the_drawing_ban_fails() -> TestResult {
 }
 
 #[test]
+fn destructuring_a_buffer_fails() -> TestResult {
+    expect(
+        "use ratatui::buffer::Buffer;\n\
+         fn a(buf: Buffer) {\n\
+         \x20   let Buffer { content, .. } = buf;\n\
+         }\n\
+         fn b(buf: ratatui::buffer::Buffer) {\n\
+         \x20   let ratatui::buffer::Buffer { area, .. } = buf;\n\
+         }\n\
+         fn c(buf: &mut Buffer) {\n\
+         \x20   if let Buffer { content, .. } = buf {}\n\
+         }\n\
+         fn d() -> Buffer {\n\
+         \x20   Buffer::empty(Default::default())\n\
+         }\n\
+         fn e(Buffer { area, .. }: Buffer) {}\n\
+         fn f(x: &Buffer) -> &Buffer {\n\
+         \x20   x\n\
+         }\n\
+         fn g<'a>(x: &'a Buffer) -> &'a Buffer {\n\
+         \x20   x\n\
+         }\n\
+         fn h(x: &mut Buffer) -> &mut Buffer {\n\
+         \x20   x\n\
+         }\n\
+         impl Draw for &Buffer {\n\
+         \x20   fn draw(&self) {}\n\
+         }\n\
+         fn i(buf: Buffer) {\n\
+         \x20   let Buffer { ref content, .. } = buf;\n\
+         }\n\
+         fn j() -> ratatui::buffer::Buffer {\n\
+         \x20   Default::default()\n\
+         }\n",
+        &[
+            ("C1", 3, "Buffer"),
+            ("C1", 6, "Buffer"),
+            ("C1", 9, "Buffer"),
+            ("C1", 14, "Buffer"),
+            ("C1", 28, "Buffer"),
+        ],
+    )
+}
+
+#[test]
 fn other_attributes_pass() -> TestResult {
     expect(
         "#![deny(clippy::disallowed_methods)]\n\

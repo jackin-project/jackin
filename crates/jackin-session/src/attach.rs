@@ -569,7 +569,7 @@ impl Session {
 
     async fn restart_lock(&self, sandbox: &SandboxName) -> Result<FileLock, RestartError> {
         let fs = self.deps.host.fs.as_ref();
-        fs.create_dir_all(&self.deps.cache_dir).await?;
+        fs.create_private_dir_all(&self.deps.cache_dir).await?;
         let path = HostPath::resolve(
             Path::new(&format!("restart-{sandbox}.lock")),
             &self.deps.cache_dir,
