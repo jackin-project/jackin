@@ -288,6 +288,9 @@ fn reconcile(tx: &Connection, hub: Uuid, listing: &Listing) -> Result<(), Connec
         let Some(provider) = entry.provider() else {
             continue;
         };
+        let Some(index) = entry.auth_index.as_deref().filter(|s| !s.is_empty()) else {
+            continue;
+        };
         let previous = old.remove(login);
         let id = match previous {
             Some((id, kind)) if kind == provider.as_str() => Some(id),
@@ -296,9 +299,6 @@ fn reconcile(tx: &Connection, hub: Uuid, listing: &Listing) -> Result<(), Connec
                 None
             }
             None => None,
-        };
-        let Some(index) = entry.auth_index.as_deref().filter(|s| !s.is_empty()) else {
-            continue;
         };
         let workspace = entry
             .id_token
