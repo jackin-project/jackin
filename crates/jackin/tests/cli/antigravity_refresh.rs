@@ -306,8 +306,8 @@ async fn cli_refresh_of_a_statusline_snapshot_is_not_a_network_success() -> Test
         let message = account["failure"]["message"]
             .as_str()
             .ok_or("missing refresh error")?;
-        assert!(message.contains("no direct sign-in"), "{message}");
-        assert!(ran.stderr.contains("no direct sign-in"));
+        assert!(message.contains("status-line hook"), "{message}");
+        assert!(ran.stderr.contains("status-line hook"));
         Ok(())
     })
     .await

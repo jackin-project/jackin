@@ -855,10 +855,9 @@ async fn quota_denial_reports_the_provider_reason_and_keeps_the_grant() -> Resul
         .find(|(row, _, _)| row.id == id)
         .ok_or("missing snapshot")?;
     assert_eq!(snapshot.ok_or("empty snapshot")?["plan"], "Google AI Ultra");
-    assert_eq!(
-        registry.failure(id)?.ok_or("missing failure")?.kind,
-        FailureKind::Service
-    );
+    let failure = registry.failure(id)?.ok_or("missing failure")?;
+    assert_eq!(failure.kind, FailureKind::Limitation);
+    assert_eq!(failure.retry_at, fixture.clock.now().0 + 3600);
     Ok(())
 }
 
