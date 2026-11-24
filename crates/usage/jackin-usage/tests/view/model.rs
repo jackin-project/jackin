@@ -819,3 +819,55 @@ fn hidden_history_and_spend_periods_stay_out_of_the_notes() -> Result<()> {
     assert_eq!(legacy_tokens(&["prior30", "yesterday"])?, None);
     Ok(())
 }
+
+#[test]
+fn an_idle_antigravity_five_hour_window_has_no_reset_but_a_used_one_keeps_it() -> Result<()> {
+    let window = |used: f64| {
+        json!({
+            "kind": "quota", "unit": "percent",
+            "remaining_fraction": 1.0 - used,
+            "resets_at": NOW.0 + 3_600, "window_seconds": 18_000,
+        })
+    };
+    let reset_of = |account: &AccountQuota, key: &str| -> Result<Option<Timestamp>> {
+        account
+            .meters()
+            .find(|meter| meter.key == key)
+            .map(|meter| meter.resets_at)
+            .ok_or_else(|| format!("no {key} meter").into())
+    };
+    let idle = crafted_account(
+        UsageProvider::Antigravity,
+        json!({"plan": "Ultra", "resources": {
+            "gemini-5h": window(0.0), "3p-5h": window(0.0), "gemini-weekly": window(0.0),
+        }}),
+        &[],
+    )?;
+    assert_eq!(reset_of(&idle, "gemini-5h")?, None);
+    assert_eq!(reset_of(&idle, "3p-5h")?, None);
+    assert_eq!(
+        reset_of(&idle, "gemini-weekly")?,
+        Some(Timestamp(NOW.0 + 3_600))
+    );
+
+    let used = crafted_account(
+        UsageProvider::Antigravity,
+        json!({"plan": "Ultra", "resources": {"gemini-5h": window(0.25)}}),
+        &[],
+    )?;
+    assert_eq!(
+        reset_of(&used, "gemini-5h")?,
+        Some(Timestamp(NOW.0 + 3_600))
+    );
+
+    let other = crafted_account(
+        UsageProvider::Claude,
+        json!({"plan": "Max", "resources": {"gemini-5h": window(0.0)}}),
+        &[],
+    )?;
+    assert_eq!(
+        reset_of(&other, "gemini-5h")?,
+        Some(Timestamp(NOW.0 + 3_600))
+    );
+    Ok(())
+}

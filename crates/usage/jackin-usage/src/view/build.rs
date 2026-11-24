@@ -16,7 +16,7 @@ use crate::accounts::{
     AccountRegistry, ConnectedAccount, ConnectionError, FailureKind, RefreshFailure, UsageProvider,
 };
 use crate::catalog;
-use crate::dashboard::{DashboardSettings, concealed_label};
+use crate::dashboard::{DashboardSettings, concealed_label, visible_resource_reset};
 
 const CONCEALED_FAILURE: &str = "Current usage unavailable.";
 
@@ -157,7 +157,15 @@ fn quota(
     let body = source.payload.as_ref();
     let hidden = &source.account.preferences.hidden;
     let mut meters = body
-        .map(|body| meters(body, source.fetched_at, now, hidden))
+        .map(|body| {
+            meters(
+                body,
+                source.account.provider,
+                source.fetched_at,
+                now,
+                hidden,
+            )
+        })
         .unwrap_or_default();
     meters.sort_by(|left, right| {
         (left.role, left.window_secs.unwrap_or(u32::MAX), &left.name).cmp(&(
@@ -269,6 +277,7 @@ fn best<K: Ord>(
 
 fn meters(
     body: &Value,
+    provider: UsageProvider,
     fetched_at: Option<i64>,
     now: Timestamp,
     hidden: &BTreeSet<String>,
@@ -278,11 +287,17 @@ fn meters(
         .into_iter()
         .flatten()
         .filter(|(key, _)| !hidden.contains(key.as_str()))
-        .filter_map(|(key, resource)| meter(key, resource, fetched_at, now))
+        .filter_map(|(key, resource)| meter(key, resource, provider, fetched_at, now))
         .collect()
 }
 
-fn meter(key: &str, resource: &Value, fetched_at: Option<i64>, now: Timestamp) -> Option<Meter> {
+fn meter(
+    key: &str,
+    resource: &Value,
+    provider: UsageProvider,
+    fetched_at: Option<i64>,
+    now: Timestamp,
+) -> Option<Meter> {
     if !matches!(resource["kind"].as_str()?, "consumption" | "quota") {
         return None;
     }
@@ -301,7 +316,8 @@ fn meter(key: &str, resource: &Value, fetched_at: Option<i64>, now: Timestamp) -
         name,
         role,
         window_secs: window(resource, resets_at),
-        resets_at,
+        resets_at: resets_at
+            .filter(|_| visible_resource_reset(provider, key, resource, now.0).is_some()),
         used,
         rolled_over,
     })
