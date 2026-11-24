@@ -130,20 +130,22 @@ fn a_read_that_races_a_rotation_returns_the_new_credential() -> Result<()> {
     let vault = Arc::new(Vault::default());
     let (mut registry, first, _second) = two_accounts(&path, &vault)?;
     let old = registry.version(first)?;
+    vault.stall_reads_of(slot_holding(&vault, b"first-secret")?);
+    let (tx, rx) = mpsc::channel();
+    let (reader_path, reader_vault) = (path.clone(), Arc::clone(&vault));
+    std::thread::spawn(move || {
+        let read = AccountRegistry::with_vault(&reader_path, reader_vault)
+            .and_then(|registry| registry.credential(first))
+            .map(|(version, secret)| (version, secret.expose().to_vec()))
+            .map_err(|e| e.to_string());
+        let _sent = tx.send(read);
+    });
+    wait_for_stalled_read(&vault)?;
     let rotated = registry.rotate(first, old, &bytes("rotated"))?;
-    let (version, secret) = registry.credential(first)?;
+    vault.release_stalled_reads();
+    let (version, secret) = rx.recv_timeout(PATIENCE)??;
     assert_eq!(version, rotated);
-    assert_eq!(secret.expose(), b"rotated");
-    let slot = slot_holding(&vault, b"rotated")?;
-    vault
-        .values
-        .lock()
-        .map_err(|_| "vault poisoned")?
-        .remove(&slot);
-    assert!(matches!(
-        registry.credential(first),
-        Err(ConnectionError::MissingCredential)
-    ));
+    assert_eq!(secret, b"rotated".to_vec());
     Ok(())
 }
 
