@@ -131,8 +131,10 @@ pub(crate) fn judge_docker(
             "the host default engine container list could not be read: {reason}"
         )),
     }
+    if facts.engine.id.is_none() {
+        problems.push("the probe reported no engine id".to_owned());
+    }
     match (facts.engine.id.as_deref(), seen.host_id) {
-        (None, _) => problems.push("the probe reported no engine id".to_owned()),
         (_, Err(reason)) => problems.push(format!(
             "the host default engine id could not be read: {reason}"
         )),
