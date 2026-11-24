@@ -1373,23 +1373,150 @@ async fn a_cooldown_that_has_passed_does_not_hold_a_later_request() -> TestResul
     .await
 }
 
+async fn replace_cache(harness: &UsageHarness, text: &str) -> TestResult {
+    let path = host_path("/state/usage/usage.json");
+    harness.fs.remove_file(&path).await?;
+    harness.put("/state/usage/usage.json", text).await?;
+    Ok(())
+}
+
 #[tokio::test]
-async fn a_cache_file_from_before_observation_times_is_replaced_not_trusted() -> TestResult {
+async fn a_cache_file_from_before_observation_times_is_read_as_empty() -> TestResult {
     guard(async {
         let (harness, account) = start(10).await?;
-        harness
-            .put(
-                "/state/usage/usage.json",
-                r#"{"entries":{"work":{"fingerprint":"f","good":null,"retry_at":99999999999}}}"#,
-            )
-            .await?;
-        let first = harness.one(&account, Refresh::Cached).await?;
-        assert_eq!(used_of(&first), 10.0);
+        harness.one(&account, Refresh::Cached).await?;
+        let mut file: serde_json::Value =
+            serde_json::from_str(&harness.cache_text().ok_or("no cache file")?)?;
+        for entry in file["entries"]
+            .as_object_mut()
+            .ok_or("no entries")?
+            .values_mut()
+        {
+            entry
+                .as_object_mut()
+                .ok_or("entry")?
+                .remove("hold")
+                .ok_or("no hold")?;
+            entry["retry_at"] = serde_json::Value::Null;
+        }
+        replace_cache(&harness, &file.to_string()).await?;
+        serve(&harness, codex_route(&codex_body(90)));
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!((usage.freshness, used_of(&usage)), (Freshness::Fresh, 90.0));
         let text = harness.cache_text().unwrap_or_default();
         assert!(
             text.contains("\"hold\"") && !text.contains("retry_at"),
             "{text}"
         );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_report_dated_after_the_clock_is_fetched_again() -> TestResult {
+    guard(async {
+        let (harness, account) = start(10).await?;
+        harness.one(&account, Refresh::Cached).await?;
+        let text = harness.cache_text().ok_or("no cache file")?;
+        let dated = text.replace(&format!("\"fetched_at\":{T0}"), "\"fetched_at\":9999999999");
+        assert_ne!(dated, text);
+        replace_cache(&harness, &dated).await?;
+        serve(&harness, codex_route(&codex_body(90)));
+        harness.advance(5);
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!((usage.freshness, used_of(&usage)), (Freshness::Fresh, 90.0));
+        harness.advance(5);
+        serve(&harness, codex_route(&codex_body(20)));
+        assert_eq!(
+            used_of(&harness.one(&account, Refresh::Cached).await?),
+            90.0
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_removal_wins_over_a_cooldown_observed_in_the_same_second_in_either_order() -> TestResult
+{
+    guard(async {
+        for first in [First::Early, First::Late] {
+            let (harness, account) = account_only().await?;
+            overlapped(
+                &harness,
+                &account,
+                side(
+                    CODEX_TOKEN,
+                    Route::status(429).reply_header("Retry-After", "600"),
+                    Refresh::Cached,
+                ),
+                side(CODEX_TOKEN, Route::status(401), Refresh::Cached),
+                0,
+                None,
+                first,
+            )
+            .await?;
+            serve_codex(&harness, CODEX_TOKEN, codex_route(&codex_body(90)));
+            let usage = settled_read(&harness, &account).await?;
+            assert_eq!((usage.freshness, used_of(&usage)), (Freshness::Fresh, 90.0));
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_rate_limit_without_a_retry_time_ends_the_earlier_cooldown() -> TestResult {
+    guard(async {
+        let (harness, account) = seeded().await?;
+        serve(
+            &harness,
+            Route::status(429).reply_header("Retry-After", "600"),
+        );
+        harness.one(&account, Refresh::Force).await?;
+        harness.advance(20);
+        serve(&harness, Route::status(429));
+        harness.one(&account, Refresh::Force).await?;
+        serve(&harness, codex_route(&codex_body(90)));
+        harness.advance(130);
+        let usage = harness.one(&account, Refresh::Cached).await?;
+        assert_eq!((usage.freshness, used_of(&usage)), (Freshness::Fresh, 90.0));
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cooldown_and_a_report_in_the_same_second_keep_the_one_that_saves_last() -> TestResult {
+    guard(async {
+        for (first, freshness) in [
+            (First::Early, Freshness::Fresh),
+            (
+                First::Late,
+                Freshness::Stale {
+                    since: Timestamp(T0),
+                },
+            ),
+        ] {
+            let (harness, account) = account_only().await?;
+            overlapped(
+                &harness,
+                &account,
+                side(
+                    CODEX_TOKEN,
+                    Route::status(429).reply_header("Retry-After", "600"),
+                    Refresh::Cached,
+                ),
+                side(CODEX_TOKEN, windows_route(70), Refresh::Cached),
+                0,
+                None,
+                first,
+            )
+            .await?;
+            let usage = settled_read(&harness, &account).await?;
+            assert_eq!((usage.freshness, used_of(&usage)), (freshness, 70.0));
+        }
         Ok(())
     })
     .await

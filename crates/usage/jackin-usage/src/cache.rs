@@ -44,7 +44,7 @@ pub(crate) struct Entry {
     pub(crate) fingerprint: String,
     pub(crate) good: Option<Good>,
     pub(crate) hold: Hold,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) cleared_at: Option<i64>,
 }
 
@@ -61,10 +61,11 @@ impl Entry {
         }
     }
 
-    fn observed_at(&self) -> i64 {
-        let good = self.good.as_ref().map_or(i64::MIN, |good| good.fetched_at);
-        good.max(self.hold.observed_at)
-            .max(self.cleared_at.unwrap_or(i64::MIN))
+    fn not_after(mut self, now: i64) -> Entry {
+        self.good = self.good.filter(|good| good.fetched_at <= now);
+        self.hold.observed_at = self.hold.observed_at.min(now);
+        self.cleared_at = self.cleared_at.map(|at| at.min(now));
+        self
     }
 
     fn merged(&self, edit: &Entry) -> Entry {
@@ -75,7 +76,7 @@ impl Entry {
             (Some(stored), None) => Some(stored.clone()),
             (_, edited) => edited.clone(),
         };
-        let hold = if self.hold.observed_at > edit.hold.observed_at {
+        let mut hold = if self.hold.observed_at > edit.hold.observed_at {
             self.hold
         } else {
             edit.hold
@@ -83,6 +84,12 @@ impl Entry {
         let cleared_at = self.cleared_at.max(edit.cleared_at);
         if let Some(at) = cleared_at {
             good = good.filter(|good| good.fetched_at > at);
+            if hold.observed_at <= at {
+                hold = Hold {
+                    observed_at: at,
+                    until: None,
+                };
+            }
         }
         Entry {
             fingerprint: edit.fingerprint.clone(),
@@ -161,7 +168,7 @@ impl Cache {
 fn apply(entries: &mut BTreeMap<String, Entry>, key: &str, edit: &Entry) {
     let next = match entries.get(key) {
         Some(stored) if stored.fingerprint == edit.fingerprint => stored.merged(edit),
-        Some(stored) if stored.observed_at() > edit.observed_at() => return,
+        Some(stored) if stored.hold.observed_at > edit.hold.observed_at => return,
         _ => edit.clone(),
     };
     entries.insert(key.to_owned(), next);
@@ -190,9 +197,16 @@ async fn read(deps: &UsageDeps, path: &HostPath) -> Result<CacheFile, UsageError
         }) => None,
         Err(error) => return Err(store(path, &error)),
     };
-    Ok(bytes
+    let now = deps.clock.now().0;
+    let mut file: CacheFile = bytes
         .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default())
+        .unwrap_or_default();
+    file.entries = file
+        .entries
+        .into_iter()
+        .map(|(key, entry)| (key, entry.not_after(now)))
+        .collect();
+    Ok(file)
 }
 
 fn store(path: &HostPath, error: &FsError) -> UsageError {
