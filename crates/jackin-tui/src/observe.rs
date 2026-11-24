@@ -354,7 +354,10 @@ impl Inputs {
             let cache = locked(&self.docs);
             config
                 .roles()
-                .filter(|(name, entry)| cache.get(*name).is_none_or(|(s, _)| *s != entry.source))
+                .filter(|(name, entry)| {
+                    matches!(entry.source, CoreRoleSource::Path(_))
+                        || cache.get(*name).is_none_or(|(s, _)| *s != entry.source)
+                })
                 .map(|(name, entry)| (name.clone(), entry.source.clone()))
                 .collect()
         };

@@ -337,3 +337,50 @@ async fn check_passes_an_edit_that_points_at_a_good_file_when_the_saved_file_is_
     })
     .await
 }
+
+async fn after_refresh(lab: &mut Lab, secs: u64) -> TestResult {
+    for _ in 0..secs {
+        lab.console.elapse(1);
+        lab.console.tick(1);
+        lab.console.settle().await?;
+    }
+    Ok(())
+}
+
+fn sentinel_docker(lab: &mut Lab) -> Result<Option<bool>, Box<dyn std::error::Error>> {
+    let record = lab
+        .world()
+        .surfaces
+        .roles
+        .as_ref()
+        .and_then(|admin| admin.role("sentinel"))
+        .cloned()
+        .ok_or("role")?;
+    Ok(record.manifest.ok().map(|doc| doc.docker))
+}
+
+#[tokio::test]
+async fn a_local_role_manifest_edited_outside_the_console_shows_after_a_refresh() -> TestResult {
+    guard(async {
+        let mut lab = Lab::open().await?;
+        assert_eq!(sentinel_docker(&mut lab)?, Some(false));
+
+        let file = lab.rig.loaded.root().as_path().join("jackin.role.toml");
+        let original = tokio::fs::read_to_string(&file).await?;
+        let good = original.replace("enabled = false", "enabled = true");
+        assert_ne!(good, original);
+        tokio::fs::write(&file, &good).await?;
+        after_refresh(&mut lab, 12).await?;
+        assert_eq!(sentinel_docker(&mut lab)?, Some(true));
+
+        tokio::fs::write(&file, b"not [ valid").await?;
+        after_refresh(&mut lab, 12).await?;
+        assert_eq!(sentinel_docker(&mut lab)?, None);
+
+        tokio::fs::write(&file, good).await?;
+        after_refresh(&mut lab, 12).await?;
+        assert_eq!(sentinel_docker(&mut lab)?, Some(true));
+        Ok(())
+    })
+    .await
+}
