@@ -18,6 +18,14 @@ const CONFIG_MAX_BYTES: usize = 1 << 20;
 const LOCK_RETRY_INTERVAL: Duration = Duration::from_millis(20);
 const LOCK_WAIT: Duration = Duration::from_secs(10);
 
+fn live(cancel: &CancellationToken) -> Result<(), ConfigError> {
+    if cancel.is_cancelled() {
+        Err(ConfigError::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ConfigStore {
     fs: Arc<dyn FileSystem>,
@@ -55,24 +63,27 @@ impl ConfigStore {
     pub async fn edit_checked<E>(
         &self,
         edits: Vec<ConfigEdit>,
-        _cancel: &CancellationToken,
+        cancel: &CancellationToken,
         check: impl FnOnce(&Config) -> Result<(), E>,
     ) -> Result<Config, E>
     where
         E: From<ConfigError>,
     {
+        live(cancel)?;
         if let Some(dir) = self.path.parent() {
             self.fs
                 .create_dir_all(&dir)
                 .await
                 .map_err(ConfigError::from)?;
         }
-        let lock = self.lock().await?;
+        let lock = self.lock(cancel).await?;
+        live(cancel)?;
         let mut config = self.read().await?;
         for edit in edits {
             config.apply(edit)?;
         }
         check(&config)?;
+        live(cancel)?;
         write_atomic_locked(
             self.fs.as_ref(),
             &self.path,
@@ -136,13 +147,18 @@ impl ConfigStore {
         }
     }
 
-    async fn lock(&self) -> Result<FileLock, ConfigError> {
+    async fn lock(&self, cancel: &CancellationToken) -> Result<FileLock, ConfigError> {
         let lock_path = lock_path(&self.path)?;
         let mut waited = Duration::ZERO;
         loop {
+            live(cancel)?;
             match self.fs.lock(&lock_path).await {
                 Err(FsError::LockHeld(_)) if waited < LOCK_WAIT => {
-                    self.clock.sleep(LOCK_RETRY_INTERVAL).await;
+                    tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => return Err(ConfigError::Cancelled),
+                        () = self.clock.sleep(LOCK_RETRY_INTERVAL) => {}
+                    }
                     waited += LOCK_RETRY_INTERVAL;
                 }
                 other => return other.map_err(ConfigError::from),

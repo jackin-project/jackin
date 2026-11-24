@@ -172,6 +172,11 @@ impl CommandError {
             | CommandError::Purge(
                 PurgeError::WorkNotExported { .. } | PurgeError::Replaced { .. },
             ) => ExitClass::Refused,
+            CommandError::Config(error) | CommandError::Account(AccountError::Config(error))
+                if error.cancelled() =>
+            {
+                ExitClass::Cancelled
+            }
             CommandError::Cancelled(_)
             | CommandError::Usage(UsageError::Cancelled)
             | CommandError::Role(RoleError::Cancelled)

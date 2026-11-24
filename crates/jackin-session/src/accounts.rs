@@ -176,6 +176,14 @@ struct Locked {
     _held: Vec<FileLock>,
 }
 
+fn live(cancel: &CancellationToken) -> Result<(), ConfigError> {
+    if cancel.is_cancelled() {
+        Err(ConfigError::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
 fn account_lock(name: &AccountName) -> String {
     format!("account-{name}.lock")
 }
@@ -451,6 +459,7 @@ impl RemovalPlan {
         let mut journal = Vec::new();
         let written = async {
             for account in &self.forget {
+                live(cancel)?;
                 let held = holds(gateway.as_ref(), account)
                     .await
                     .map_err(|error| on_gateway(&self.name, error))?;
@@ -609,6 +618,7 @@ impl GatewayPlan {
             effects,
             agents,
         } = self;
+        live(cancel)?;
         check_gateways(&locked.config, gateways)?;
         let store = &locked.desk.store;
         let home = gateways.home();
@@ -619,8 +629,8 @@ impl GatewayPlan {
         };
         let mut journal = Vec::new();
         let written = async {
-            forget(&sessions, &effects.forget, &mut journal).await?;
-            publish(&sessions, &effects.publish, &agents, &mut journal).await?;
+            forget(&sessions, &effects.forget, &mut journal, cancel).await?;
+            publish(&sessions, &effects.publish, &agents, &mut journal, cancel).await?;
             store
                 .edit_checked(edits, cancel, |live| {
                     check_gateway_entries(&locked.config, live).map_err(AccountEditError::from)
@@ -639,9 +649,11 @@ async fn forget<'a>(
     sessions: &[&'a Session],
     accounts: &'a [Account],
     journal: &mut Vec<Undo<'a>>,
+    cancel: &CancellationToken,
 ) -> Result<(), AccountEditError> {
     for account in accounts {
         for &session in sessions {
+            live(cancel)?;
             let held = holds(session.deps.gateway.as_ref(), account)
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error))?;
@@ -661,11 +673,13 @@ async fn publish<'a>(
     publish: &'a [Publish],
     agents: &BTreeMap<AccountName, Agent>,
     journal: &mut Vec<Undo<'a>>,
+    cancel: &CancellationToken,
 ) -> Result<(), AccountEditError> {
     let Some((home, _)) = sessions.split_first() else {
         return Ok(());
     };
     for entry in publish {
+        live(cancel)?;
         let acting = agents.get(entry.account.name()).copied();
         let agent = acting.unwrap_or_else(|| account_agent(&entry.account));
         let provider = ProviderName::for_account(entry.account.name(), agent);
@@ -677,6 +691,7 @@ async fn publish<'a>(
                 .await
                 .map_err(|error| on_gateway(home.gateway_name(), error.into()))?;
             let held = state == ProviderState::Present;
+            live(cancel)?;
             journal.push(home.undo(
                 if held {
                     Action::Restore
@@ -705,6 +720,7 @@ async fn publish<'a>(
                     .map_err(|error| on_gateway(session.gateway_name(), error.into()))?
                     == ProviderState::Present;
                 if held_previous {
+                    live(cancel)?;
                     journal.push(session.undo(Action::Restore, previous, previous_agent));
                     session
                         .deps
@@ -722,6 +738,7 @@ async fn publish<'a>(
                 .map_err(|error| on_gateway(session.gateway_name(), error.into()))?;
             let held = state == ProviderState::Present;
             if held || index == 0 || held_previous {
+                live(cancel)?;
                 journal.push(if held {
                     session.undo(Action::Restore, previous, previous_agent)
                 } else {
@@ -733,7 +750,15 @@ async fn publish<'a>(
                     .map_err(|error| on_gateway(session.gateway_name(), error))?;
             }
             for candidate in &extra {
-                refresh_held(session, &entry.account, previous, *candidate, journal).await?;
+                refresh_held(
+                    session,
+                    &entry.account,
+                    previous,
+                    *candidate,
+                    journal,
+                    cancel,
+                )
+                .await?;
             }
         }
     }
@@ -762,6 +787,7 @@ async fn refresh_held<'a>(
     previous: &'a Account,
     candidate: Agent,
     journal: &mut Vec<Undo<'a>>,
+    cancel: &CancellationToken,
 ) -> Result<(), AccountEditError> {
     let provider = ProviderName::for_account(account.name(), candidate);
     let held = session
@@ -774,6 +800,7 @@ async fn refresh_held<'a>(
     if !held {
         return Ok(());
     }
+    live(cancel)?;
     if account.has_provider_for(candidate) {
         journal.push(session.undo(
             if previous.has_provider_for(candidate) {

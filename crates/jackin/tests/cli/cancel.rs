@@ -433,8 +433,9 @@ async fn a_cancel_while_the_config_lock_is_held_exits_cancelled_and_changes_noth
         let before = harness.config_bytes()?;
         let held = rig.world.fs.lock(&lock_path(&harness.config_path)?).await?;
         let token = CancellationToken::new();
+        let elsewhere = rig.home.as_path().display().to_string();
         let running = harness
-            .command(&["workspace", "add", "extra", "."])
+            .command(&["workspace", "add", "extra", &elsewhere])
             .cancel(token.clone())
             .run();
         let canceller = async {
@@ -451,7 +452,7 @@ async fn a_cancel_while_the_config_lock_is_held_exits_cancelled_and_changes_noth
 
         drop(held);
         harness
-            .run(&["workspace", "add", "extra", "."])
+            .run(&["workspace", "add", "extra", &elsewhere])
             .await?
             .ok()?;
         assert_ne!(harness.config_bytes()?, before);

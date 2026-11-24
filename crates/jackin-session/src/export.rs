@@ -476,7 +476,7 @@ impl Session {
             return Err(ExportError::Cancelled { group: None });
         }
         let view = self
-            .find_managed(sandbox)
+            .find_managed_until(sandbox, &cancel)
             .await?
             .ok_or_else(|| ExportError::NotFound(sandbox.clone()))?;
         if view.phase != Phase::Ready {
@@ -804,7 +804,7 @@ impl Session {
         cancel: &CancellationToken,
     ) -> Result<ChangeSet, ChangesError> {
         let view = self
-            .find_managed(sandbox)
+            .find_managed_until(sandbox, cancel)
             .await?
             .ok_or_else(|| ChangesError::NotFound(sandbox.clone()))?;
         if view.phase != Phase::Ready {

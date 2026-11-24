@@ -6,6 +6,7 @@ mod decide;
 pub(crate) mod hooks;
 pub(crate) mod probe;
 mod run;
+mod settled;
 mod tracker;
 
 use std::fmt;

@@ -24,15 +24,16 @@ use crate::launch::certs::{self, Bound};
 use crate::launch::decide::{Act, Boot, Decision, Done, Finish, HookPlan, Observed, Wait, decide};
 use crate::launch::hooks::{self, HookRun};
 use crate::launch::probe;
+use crate::launch::settled::outcome_unknown;
 use crate::launch::tracker::Tracker;
 use crate::launch::{
     LaunchError, LaunchEvent, LaunchEvents, LaunchFailure, LaunchOutcome, LaunchStep,
-    RestoreCandidate, RestoreFinding, SkipReason,
+    RECOVERY_LOOKUP_BUDGET, RestoreCandidate, RestoreFinding, SkipReason,
 };
 use crate::lock::{self, LockError};
 use crate::plan::{LaunchPlan, PlannedFile};
 use crate::project;
-use crate::service::{POLL, Session};
+use crate::service::{POLL, Session, read_until_cancelled};
 use crate::workspace::workspace_lock;
 
 const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
@@ -96,6 +97,8 @@ struct Run<'a> {
     done: Done,
     tracker: Tracker,
     known: Option<SandboxName>,
+    touched: bool,
+    create_unsettled: bool,
     image_hold: Option<ImageHold>,
     kimi: BTreeMap<AccountName, KimiLoginMetadata>,
 }
@@ -115,6 +118,8 @@ impl Session {
             done: Done::new(),
             tracker: Tracker::new(),
             known: None,
+            touched: false,
+            create_unsettled: false,
             image_hold: None,
             kimi: BTreeMap::new(),
         }
@@ -211,26 +216,62 @@ impl Run<'_> {
     }
 
     async fn cancelled(&self) -> LaunchOutcome {
-        let found = self
-            .session
-            .deps
-            .gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(
-                self.plan.launch_id(),
-            )))
-            .await;
-        let sandbox = match found {
-            Ok(views) if views.len() == 1 => views.first().map(|view| view.name.clone()),
-            Ok(_) => None,
-            Err(_) => self.known.clone(),
-        };
         LaunchOutcome::Cancelled(RestoreCandidate {
             launch_id: self.plan.launch_id().clone(),
-            finding: match sandbox {
-                Some(name) => RestoreFinding::Observed(name),
-                None => RestoreFinding::Absent { requested: false },
-            },
+            finding: self.recovered().await,
         })
+    }
+
+    async fn recovered(&self) -> RestoreFinding {
+        let gateway = self.session.deps.gateway.as_ref();
+        let launch = self.plan.launch_id();
+        let by_label = SandboxQuery::Labels(LabelSelector::launch(launch));
+        let by_name = SandboxQuery::Name(self.plan.draft().name().clone());
+        let lookups = async {
+            let labelled = gateway.find_sandboxes(&by_label).await;
+            let named = gateway.find_sandboxes(&by_name).await;
+            (labelled, named)
+        };
+        let budget = self.session.deps.host.clock.sleep(RECOVERY_LOOKUP_BUDGET);
+        let (labelled, named) = tokio::select! {
+            biased;
+            found = lookups => found,
+            () = budget => return self.unconfirmed(None),
+        };
+        let hit = named.as_ref().ok().and_then(|views| {
+            views
+                .iter()
+                .find(|view| {
+                    SandboxLabels::from_labels(&view.labels)
+                        .is_ok_and(|labels| labels.planned.launch == *launch)
+                })
+                .map(|view| view.name.clone())
+        });
+        match labelled {
+            Err(_) => self.unconfirmed(hit),
+            Ok(views) if views.len() > 1 => {
+                let mut names: Vec<SandboxName> = views.into_iter().map(|view| view.name).collect();
+                names.sort();
+                RestoreFinding::Ambiguous(names)
+            }
+            Ok(mut views) if views.len() == 1 => RestoreFinding::Observed(views.remove(0).name),
+            Ok(_) => match (named, hit) {
+                (Err(_), _) => self.unconfirmed(None),
+                (Ok(_), Some(name)) => RestoreFinding::Observed(name),
+                (Ok(_), None) if self.create_unsettled || self.known.is_some() => {
+                    self.unconfirmed(None)
+                }
+                (Ok(_), None) => RestoreFinding::Absent {
+                    requested: self.touched,
+                },
+            },
+        }
+    }
+
+    fn unconfirmed(&self, seen: Option<SandboxName>) -> RestoreFinding {
+        RestoreFinding::Unconfirmed {
+            last_observed: self.known.clone().or(seen),
+        }
     }
 
     async fn finished(&mut self, finish: Finish) -> LaunchOutcome {
@@ -257,12 +298,16 @@ impl Run<'_> {
     async fn observe(&mut self) -> Result<Observed, Stop> {
         let hint = self.tracker.current().unwrap_or(LaunchStep::Sandbox);
         let gateway = self.session.deps.gateway.as_ref();
-        let mut views = gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(
+        let mut views = read_until_cancelled(
+            self.cancel,
+            GatewayOp::Find,
+            gateway.find_sandboxes(&SandboxQuery::Labels(LabelSelector::launch(
                 self.plan.launch_id(),
-            )))
-            .await
-            .map_err(|error| failed(hint, error))?;
+            ))),
+        )
+        .await
+        .map_err(|error| failed(hint, error))?;
+        self.touched |= !views.is_empty();
         match views.len() {
             0 => Ok(self.vanished_sandbox()),
             1 => {
@@ -293,10 +338,14 @@ impl Run<'_> {
         if !view.phase.accepts_exec() {
             return Ok(Observed::Settling(view));
         }
-        let probe = probe::read(
-            self.session.deps.gateway.as_ref(),
-            &view.name,
-            self.plan.launch_id(),
+        let probe = read_until_cancelled(
+            self.cancel,
+            GatewayOp::ReadFiles,
+            probe::read(
+                self.session.deps.gateway.as_ref(),
+                &view.name,
+                self.plan.launch_id(),
+            ),
         )
         .await;
         match probe {
@@ -390,13 +439,13 @@ impl Run<'_> {
             if let Some(metadata) = &metadata {
                 self.kimi.insert(account.name().clone(), metadata.clone());
             }
-            let state = self
-                .session
-                .deps
-                .gateway
-                .provider_state(name)
-                .await
-                .map_err(|error| failed(LaunchStep::Provider, error))?;
+            let state = read_until_cancelled(
+                self.cancel,
+                GatewayOp::Provider,
+                self.session.deps.gateway.provider_state(name),
+            )
+            .await
+            .map_err(|error| failed(LaunchStep::Provider, error))?;
             self.live()?;
             if state == ProviderState::Present && !Session::holds_static_key(account, *agent) {
                 self.tracker.skip(SkipReason::ProviderPresent);
@@ -432,6 +481,8 @@ impl Run<'_> {
         self.enter(LaunchStep::Sandbox).await;
         let create = self.plan.draft().complete(image, docker);
         let _held = self.hold_workspace().await?;
+        self.live()?;
+        self.touched = true;
         match self.session.deps.gateway.create_sandbox(&create).await {
             Ok(view) => {
                 self.done.created = self.done.created.saturating_add(1);
@@ -439,7 +490,10 @@ impl Run<'_> {
                 Ok(())
             }
             Err(GatewayError::AlreadyExists { .. }) => self.join(create.name()).await,
-            Err(error) => Err(failed(LaunchStep::Sandbox, error)),
+            Err(error) => {
+                self.create_unsettled = outcome_unknown(&error);
+                Err(failed(LaunchStep::Sandbox, error))
+            }
         }
     }
 
@@ -493,13 +547,16 @@ impl Run<'_> {
     }
 
     async fn join(&mut self, name: &SandboxName) -> Result<(), Stop> {
-        let found = self
-            .session
-            .deps
-            .gateway
-            .find_sandboxes(&SandboxQuery::Name(name.clone()))
-            .await
-            .map_err(|error| failed(LaunchStep::Sandbox, error))?;
+        let found = read_until_cancelled(
+            self.cancel,
+            GatewayOp::Find,
+            self.session
+                .deps
+                .gateway
+                .find_sandboxes(&SandboxQuery::Name(name.clone())),
+        )
+        .await
+        .map_err(|error| failed(LaunchStep::Sandbox, error))?;
         let Some(view) = found.first() else {
             return self.vanished(name).await;
         };
@@ -540,16 +597,20 @@ impl Run<'_> {
 
     async fn replace(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
         self.enter(LaunchStep::Sandbox).await;
+        self.live()?;
         self.session
             .deps
             .gateway
             .delete_sandbox(sandbox)
             .await
-            .map_err(|error| failed(LaunchStep::Sandbox, error))
+            .map_err(|error| failed(LaunchStep::Sandbox, error))?;
+        self.known = None;
+        Ok(())
     }
 
     async fn power(&mut self, sandbox: &SandboxName) -> Result<(), Stop> {
         self.enter(LaunchStep::Ready).await;
+        self.live()?;
         self.session
             .deps
             .gateway
@@ -873,11 +934,14 @@ impl Run<'_> {
         let deps = &self.session.deps;
         let launch = self.plan.launch_id();
         let marker = sandbox_layout::uploaded_marker(launch);
-        let found = deps
-            .gateway
-            .read_files(sandbox, std::slice::from_ref(&marker))
-            .await
-            .map_err(|error| failed(STEP, error))?;
+        let found = read_until_cancelled(
+            self.cancel,
+            GatewayOp::ReadFiles,
+            deps.gateway
+                .read_files(sandbox, std::slice::from_ref(&marker)),
+        )
+        .await
+        .map_err(|error| failed(STEP, error))?;
         if found.first().is_some_and(Option::is_some) {
             return Ok(Uploaded::ByPeer);
         }
@@ -911,9 +975,13 @@ impl Run<'_> {
                 self.tracker.skip(SkipReason::SetupAlreadyDone);
                 setup = false;
             }
-            let env = crate::state::env_file(gateway, sandbox, self.plan.launch_id())
-                .await
-                .map_err(|error| failed(STEP, error))?;
+            let env = read_until_cancelled(
+                self.cancel,
+                GatewayOp::ReadFiles,
+                crate::state::env_file(gateway, sandbox, self.plan.launch_id()),
+            )
+            .await
+            .map_err(|error| failed(STEP, error))?;
             let timeout = self.session.deps.limits.hook;
             for (wanted, kind) in [
                 (setup, HookKind::Setup),
@@ -962,13 +1030,16 @@ impl Run<'_> {
 
     async fn setup_done(&self, sandbox: &SandboxName) -> Result<bool, Stop> {
         let marker = sandbox_layout::setup_done_marker(self.plan.launch_id());
-        let found = self
-            .session
-            .deps
-            .gateway
-            .read_files(sandbox, std::slice::from_ref(&marker))
-            .await
-            .map_err(|error| failed(LaunchStep::Hooks, error))?;
+        let found = read_until_cancelled(
+            self.cancel,
+            GatewayOp::ReadFiles,
+            self.session
+                .deps
+                .gateway
+                .read_files(sandbox, std::slice::from_ref(&marker)),
+        )
+        .await
+        .map_err(|error| failed(LaunchStep::Hooks, error))?;
         Ok(found.first().is_some_and(Option::is_some))
     }
 

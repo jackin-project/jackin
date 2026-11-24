@@ -431,7 +431,7 @@ impl Session {
     ) -> Result<AttachedTerminal, AttachError> {
         let sandbox = &request.sandbox;
         let view = self
-            .find_managed(sandbox)
+            .find_managed_until(sandbox, cancel)
             .await?
             .ok_or_else(|| AttachError::NotFound(sandbox.clone()))?;
         require_ready::<AttachError>(view.phase, sandbox)?;
@@ -548,7 +548,7 @@ impl Session {
     ) -> Result<AttachTarget, RestartError> {
         let gateway = self.deps.gateway.as_ref();
         let view = self
-            .find_managed(sandbox)
+            .find_managed_until(sandbox, &cancel)
             .await?
             .ok_or_else(|| not_found(sandbox))?;
         require_ready::<RestartError>(view.phase, sandbox)?;

@@ -88,11 +88,9 @@ async fn a_hung_recovery_lookup_gives_up_after_its_budget_as_unconfirmed() -> Te
     guard_within(WITHIN, async {
         let rig = launch_rig().await?;
         let hold = Trigger::Op(GatewayOp::Find);
-        for _ in 0..2 {
-            rig.gateway().inject(Fault::HoldAt {
-                trigger: hold.clone(),
-            });
-        }
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
         let before = rig.world.clock.stamp();
         let found = finding(rig.run(rig.request(1)?, cancelled()).await?)?;
         let after = rig.world.clock.stamp();
@@ -105,7 +103,7 @@ async fn a_hung_recovery_lookup_gives_up_after_its_budget_as_unconfirmed() -> Te
         assert_eq!(after.seconds - before.seconds, 3);
         assert_eq!(after.nanos, before.nanos);
         assert_eq!(RECOVERY_LOOKUP_BUDGET, Duration::from_secs(3));
-        while rig.gateway().release(&hold) {}
+        rig.gateway().release(&hold);
 
         ready(rig.launch_observed(1).await?)?;
         assert_eq!(rig.gateway().sandboxes().len(), 1);
