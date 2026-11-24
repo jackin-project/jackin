@@ -29,6 +29,7 @@ mod wall;
 pub use changes::read_changes;
 pub use checks::folder_probe;
 pub use clipboard::HostClipboard;
+pub use connections::reload_usage_board;
 pub use console::*;
 pub use fleet::*;
 pub use ids::IdTable;

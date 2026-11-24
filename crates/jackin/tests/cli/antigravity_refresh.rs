@@ -168,6 +168,34 @@ async fn cli_refresh_matches_across_launches_and_keeps_a_failed_reading() -> Tes
         assert_eq!(resources["3p-5h"]["resets_at"], 1_803_999_600_i64);
         assert_eq!(resources["3p-weekly"]["resets_at"], 1_804_496_400_i64);
         assert_eq!(resources["gemini-argon-wtu-weekly"]["resets_at"], 1_804_550_400_i64);
+        let clock: Arc<dyn Clock> = world.clock.clone();
+        let again: Arc<dyn CredentialVault> = vault.clone();
+        let login = OwnedLogin::new(path.clone(), server.endpoints(), clock).with_vault(again);
+        let board = jackin_tui::reload_usage_board(&login).await?;
+        assert!(
+            board.iter().any(|line| line.contains(&id.to_string())),
+            "{board:?}"
+        );
+        for label in ["Gemini weekly", "Argon weekly", "Claude 5h", "Claude weekly"] {
+            assert!(board.iter().any(|line| line.contains(label)), "{board:?}");
+        }
+        eprintln!("cli-account {id}");
+        eprintln!("cli-plan {}", account["usage"]["plan"]);
+        for key in [
+            "gemini-5h",
+            "gemini-weekly",
+            "gemini-argon-wtu-weekly",
+            "3p-5h",
+            "3p-weekly",
+        ] {
+            eprintln!(
+                "cli-window {key} fraction {} resets {}",
+                resources[key]["remaining_fraction"], resources[key]["resets_at"]
+            );
+        }
+        for line in &board {
+            eprintln!("tui-row {line}");
+        }
         let fetched = account["fetched_at"].as_i64().ok_or("missing age")?;
         world.clock.advance(Duration::from_secs(120));
         server.replace(

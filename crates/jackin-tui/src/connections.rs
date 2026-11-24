@@ -461,6 +461,209 @@ async fn refresh_accounts(
     Ok(())
 }
 
+pub async fn reload_usage_board(service: &OwnedLogin) -> Result<Vec<String>, ConnectionError> {
+    refresh_accounts(service, true, true, None, &CancellationToken::new()).await?;
+    let mut memory = jackin_usage::dashboard::DashboardMemory::default();
+    let board = board::load(
+        service,
+        false,
+        jackin_console::usage_connections::BoardEdit::Read,
+        &mut memory,
+        service.now().0,
+    )?;
+    Ok(board
+        .rows
+        .iter()
+        .map(|row| {
+            format!(
+                "{} {} {} {}",
+                row.account.as_deref().unwrap_or("-"),
+                row.title,
+                row.exact_value,
+                row.reset.as_deref().unwrap_or("-")
+            )
+        })
+        .collect())
+}
+
+#[cfg(test)]
+mod tui_refresh {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use jackin_console::usage_connections::BoardEdit;
+    use jackin_core::{Clock, Provider, SecretBytes};
+    use jackin_testkit::{FakeClock, Method, Route, UsageServer};
+    use jackin_usage::accounts::{CandidateIdentity, CredentialVault, UsageProvider};
+    use jackin_usage::dashboard::DashboardMemory;
+    use serde_json::json;
+
+    use super::*;
+
+    #[derive(Debug, Default)]
+    struct Memory {
+        values: Mutex<HashMap<Uuid, Vec<u8>>>,
+    }
+
+    impl CredentialVault for Memory {
+        fn store(&self, id: Uuid, secret: &SecretBytes) -> Result<(), ConnectionError> {
+            self.values
+                .lock()
+                .map_err(|_| ConnectionError::Vault)?
+                .insert(id, secret.expose().to_vec());
+            Ok(())
+        }
+
+        fn load(&self, id: Uuid) -> Result<SecretBytes, ConnectionError> {
+            self.values
+                .lock()
+                .map_err(|_| ConnectionError::Vault)?
+                .get(&id)
+                .cloned()
+                .map(SecretBytes::new)
+                .ok_or(ConnectionError::MissingCredential)
+        }
+
+        fn delete(&self, id: Uuid) -> Result<(), ConnectionError> {
+            self.values
+                .lock()
+                .map_err(|_| ConnectionError::Vault)?
+                .remove(&id);
+            Ok(())
+        }
+    }
+
+    fn reading() -> String {
+        r#"{"groups":[{"displayName":"Gemini","buckets":[
+            {"bucketId":"gemini-5h","remainingFraction":0.99965,"resetTime":"2027-03-02T14:00:00Z"},
+            {"bucketId":"gemini-weekly","remainingFraction":0.9742,"resetTime":"2027-03-08T09:00:00Z"},
+            {"bucketId":"3p-5h","remainingFraction":0.5,"resetTime":"2027-03-02T15:00:00Z"},
+            {"bucketId":"3p-weekly","remainingFraction":0.4,"resetTime":"2027-03-08T09:00:00Z"}
+        ]},{"displayName":"Gemini 4 Argon","buckets":[
+            {"bucketId":"gemini-argon-wtu-weekly","window":"weekly","remainingFraction":0.8,"resetTime":"2027-03-09T00:00:00Z"}
+        ]}]}"#
+        .to_owned()
+    }
+
+    #[tokio::test]
+    async fn board_reload_shows_the_same_snapshot_as_cli_refresh() {
+        let server = UsageServer::start().await.expect("fixture server");
+        let load = r#"{"paidTier":{"id":"g1-ultra-tier","name":"ignored"},"cloudaicompanionProject":"proj-1"}"#;
+        server.serve(
+            Provider::Antigravity,
+            Method::Post,
+            "/production/v1internal:loadCodeAssist",
+            Route::json(200, load),
+        );
+        server.serve(
+            Provider::Antigravity,
+            Method::Post,
+            "/daily/v1internal:retrieveUserQuotaSummary",
+            Route::json(200, &reading()).requires_json_body(json!({"project": "proj-1"})),
+        );
+        let world = jackin_testkit::World::builder().build().expect("world");
+        let path = world
+            .config
+            .path()
+            .as_path()
+            .parent()
+            .expect("config parent")
+            .join("usage/accounts.sqlite3");
+        let clock = Arc::new(FakeClock::new());
+        let vault: Arc<dyn CredentialVault> = Arc::new(Memory::default());
+        let mut db = AccountRegistry::with_vault(&path, Arc::clone(&vault)).expect("registry");
+        let now = clock.now().0;
+        let id = db
+            .add_with_snapshot(
+                UsageProvider::Antigravity,
+                "Personal",
+                &CandidateIdentity::OAuth(Some("ultra@example.com".into())),
+                &SecretBytes::new(
+                    serde_json::to_vec(&json!({
+                        "product": "antigravity",
+                        "client_id": "jackin-fixture-desktop.apps.googleusercontent.com",
+                        "client_secret": "fixture-not-a-secret",
+                        "access": "old-access",
+                        "refresh": "refresh-1",
+                        "expires_at": now + 10_000
+                    }))
+                    .expect("grant"),
+                ),
+                now - 60,
+                &json!({"plan":"stale","resources":{"gemini-5h":{"kind":"quota","unit":"percent","remaining_fraction":0.1,"window_seconds":18000}}}),
+            )
+            .expect("seed");
+        drop(db);
+        let clock_port: Arc<dyn Clock> = clock.clone();
+        let service = OwnedLogin::new(path.clone(), server.endpoints(), clock_port)
+            .with_vault(Arc::clone(&vault));
+        refresh_accounts(&service, true, true, None, &CancellationToken::new())
+            .await
+            .expect("tui refresh");
+        let registry = AccountRegistry::with_vault(&path, vault).expect("reopen");
+        let (_row, _at, snapshot) = registry
+            .snapshots()
+            .expect("snapshots")
+            .into_iter()
+            .next()
+            .expect("snapshot");
+        let snapshot = snapshot.expect("snapshot body");
+        assert_eq!(snapshot["plan"], "Google AI Ultra");
+        let resources = snapshot["resources"].as_object().expect("resources");
+        let expect = [
+            ("gemini-5h", 0.99965, 1_803_996_000_i64),
+            ("gemini-weekly", 0.9742, 1_804_496_400_i64),
+            ("gemini-argon-wtu-weekly", 0.8, 1_804_550_400_i64),
+            ("3p-5h", 0.5, 1_803_999_600_i64),
+            ("3p-weekly", 0.4, 1_804_496_400_i64),
+        ];
+        for (key, fraction, reset) in expect {
+            assert_eq!(resources[key]["remaining_fraction"], fraction, "{key}");
+            assert_eq!(resources[key]["resets_at"], reset, "{key}");
+        }
+        let mut memory = DashboardMemory::default();
+        let board = board::load(&service, false, BoardEdit::Read, &mut memory, clock.now().0)
+            .expect("board");
+        let rendered: Vec<_> = board
+            .rows
+            .iter()
+            .map(|row| {
+                format!(
+                    "{} {} {} {}",
+                    row.account.as_deref().unwrap_or("-"),
+                    row.title,
+                    row.exact_value,
+                    row.reset.as_deref().unwrap_or("-")
+                )
+            })
+            .collect();
+        assert!(
+            rendered.iter().any(|line| line.contains(&id.to_string())),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered.iter().any(|line| line.contains("Gemini weekly")),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered.iter().any(|line| line.contains("Argon weekly")),
+            "{rendered:?}"
+        );
+        assert!(
+            rendered.iter().any(|line| line.contains("Claude")),
+            "{rendered:?}"
+        );
+        eprintln!("tui-account {id}");
+        eprintln!("tui-plan {}", snapshot["plan"]);
+        for (key, fraction, reset) in expect {
+            eprintln!("tui-window {key} fraction {fraction} resets {reset}");
+        }
+        for line in &rendered {
+            eprintln!("tui-row {line}");
+        }
+    }
+}
+
 fn hubs(service: &OwnedLogin) -> Result<UsageUpdate, ConnectionError> {
     let Some(db) = AccountRegistry::open_read_only(service.database())? else {
         return Ok(UsageUpdate::Hubs(Vec::new()));
