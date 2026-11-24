@@ -136,7 +136,18 @@ pub(super) async fn journey(
     lab.console.settle().await?;
     let overview = lab.console.screen_at(180, 120);
     assert!(overview.contains("All Usage"), "{overview}");
-    let total = jackin_usage::dashboard::metric_order(&snapshot, &[]).len();
+    let fake = Arc::clone(&lab.rig.world.clock);
+    let clock: Arc<dyn Clock> = fake;
+    let total = jackin_tui::read_usage_board(
+        &jackin_usage::onboarding::OwnedLogin::new(
+            path.clone(),
+            jackin_usage::ProviderEndpoints::real(),
+            clock,
+        ),
+        false,
+    )?
+    .rows
+    .len();
     if total > 1 {
         activate(&mut lab, BOARD, "save").await?;
     }

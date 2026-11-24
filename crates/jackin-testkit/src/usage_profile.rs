@@ -1,13 +1,19 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{Secret, SecretBytes};
+use jackin_core::{Clock, Secret, SecretBytes};
 use jackin_usage::accounts::{
-    AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, UsageProvider,
+    AccountRegistry, CandidateIdentity, ConnectionError, CredentialVault, FailureKind,
+    UsageProvider,
 };
 use serde_json::Value;
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, time::Duration};
 use uuid::Uuid;
+
+use crate::host::FakeClock;
+
+pub const USAGE_VIEW_NOW: i64 = 1_795_534_620;
+pub const USAGE_VIEW_OFFSET: i32 = 25_200;
 
 #[derive(Debug)]
 pub struct ProfileAccount {
@@ -80,4 +86,117 @@ pub fn seed_usage_profile(
         });
     }
     Ok(accounts)
+}
+
+pub fn seed_usage_view(path: &Path) -> Result<Vec<ProfileAccount>, Box<dyn std::error::Error>> {
+    let source: Vec<Value> =
+        serde_json::from_str(include_str!("../tests/fixtures/usage_view.json"))?;
+    let mut db = AccountRegistry::with_vault(path, Arc::new(ProfileVault))?;
+    let mut accounts = Vec::new();
+    for (index, row) in source.into_iter().enumerate() {
+        let provider: UsageProvider = row["provider"]
+            .as_str()
+            .ok_or("fixture provider missing")?
+            .parse()?;
+        let label = row["label"]
+            .as_str()
+            .ok_or("fixture label missing")?
+            .to_owned();
+        let fetched_at = row["fetched_at"]
+            .as_i64()
+            .ok_or("fixture fetched_at missing")?;
+        let identity = match (provider, row["identity"].as_str()) {
+            (_, Some(shared)) => CandidateIdentity::OAuth(Some(shared.to_owned())),
+            (
+                UsageProvider::Kimi
+                | UsageProvider::Zai
+                | UsageProvider::MiniMax
+                | UsageProvider::Mimo
+                | UsageProvider::OpenRouter,
+                None,
+            ) => CandidateIdentity::api_key(&Secret::new(format!("synthetic-{index}-{label}"))),
+            _ => CandidateIdentity::OAuth(Some(format!("synthetic-subject-{index}-{label}"))),
+        };
+        let snapshot = row["snapshot"].clone();
+        let id = db.add_with_snapshot(
+            provider,
+            &label,
+            &identity,
+            &SecretBytes::new(vec![1]),
+            fetched_at,
+            &snapshot,
+        )?;
+        if let Some(failure) = row.get("failure") {
+            let kind: FailureKind = serde_json::from_value(failure["kind"].clone())?;
+            let failed_at = failure["failed_at"]
+                .as_i64()
+                .ok_or("fixture failed_at missing")?;
+            let message = failure["message"]
+                .as_str()
+                .ok_or("fixture failure message missing")?;
+            let version = db.version(id)?;
+            db.record_failure(id, version, failed_at, kind, None, message)?;
+        }
+        accounts.push(ProfileAccount {
+            id,
+            provider,
+            label,
+            snapshot,
+        });
+    }
+    Ok(accounts)
+}
+
+#[derive(Debug)]
+pub struct SeedRow<'a> {
+    pub provider: UsageProvider,
+    pub label: &'a str,
+    pub fetched_at: i64,
+    pub snapshot: Value,
+    pub failure: Option<(FailureKind, &'a str, i64)>,
+}
+
+pub fn seed_usage_rows(
+    path: &Path,
+    rows: Vec<SeedRow<'_>>,
+) -> Result<Vec<ProfileAccount>, Box<dyn std::error::Error>> {
+    let mut db = AccountRegistry::with_vault(path, Arc::new(ProfileVault))?;
+    let mut accounts = Vec::new();
+    for (index, row) in rows.into_iter().enumerate() {
+        let identity = match row.provider {
+            UsageProvider::Kimi
+            | UsageProvider::Zai
+            | UsageProvider::MiniMax
+            | UsageProvider::Mimo
+            | UsageProvider::OpenRouter => {
+                CandidateIdentity::api_key(&Secret::new(format!("row-{index}-{}", row.label)))
+            }
+            _ => CandidateIdentity::OAuth(Some(format!("row-subject-{index}-{}", row.label))),
+        };
+        let id = db.add_with_snapshot(
+            row.provider,
+            row.label,
+            &identity,
+            &SecretBytes::new(vec![1]),
+            row.fetched_at,
+            &row.snapshot,
+        )?;
+        if let Some((kind, message, failed_at)) = row.failure {
+            let version = db.version(id)?;
+            db.record_failure(id, version, failed_at, kind, None, message)?;
+        }
+        accounts.push(ProfileAccount {
+            id,
+            provider: row.provider,
+            label: row.label.to_owned(),
+            snapshot: row.snapshot,
+        });
+    }
+    Ok(accounts)
+}
+
+pub fn pin_usage_view_clock(clock: &FakeClock) {
+    let behind = USAGE_VIEW_NOW.saturating_sub(clock.now().0);
+    clock.advance(Duration::from_secs(u64::try_from(behind).unwrap_or(0)));
+    clock.set_utc_offset(USAGE_VIEW_OFFSET);
 }

@@ -74,7 +74,7 @@ fn priority_distinguishes_waiting_hidden_attention_empty_and_spent() -> Result {
             .iter()
             .find(|r| r.metric == "weekly")
             .map(|r| r.value.as_str()),
-        Some("<1%")
+        Some(">99%")
     );
     assert!(
         !low.priority
@@ -199,7 +199,7 @@ fn unified_limits_keep_members_units_and_the_earliest_reset() -> Result {
         .ok_or("missing weekly")?;
     assert_eq!(week.members.len(), 2);
     assert_eq!(week.plan.as_deref(), Some("Multiple"));
-    assert_eq!(week.value, "26%");
+    assert_eq!(week.value, "75%");
     assert_eq!(week.reset.as_deref(), Some("2023-11-14 22:23 UTC"));
     assert_eq!(week.details.len(), 2);
     assert!(week.pace_mark.is_none());
@@ -262,5 +262,22 @@ fn unused_warning_needs_a_long_non_spend_window_and_an_observed_reset() -> Resul
             .len(),
         1
     );
+    Ok(())
+}
+
+#[test]
+fn a_stored_payload_with_the_retired_remaining_key_still_loads() -> Result {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("usage/accounts.db");
+    let registry = db(&path, &Arc::new(Vault::default()))?;
+    registry.set_dashboard_settings(&DashboardSettings::default())?;
+    let stored = rusqlite::Connection::open(&path)?;
+    stored.execute(
+        "UPDATE dashboard_settings SET value=?1 WHERE id=1",
+        [r#"{"remaining":false,"pace_marks":true,"warning":40,"critical":15}"#],
+    )?;
+    let loaded = registry.dashboard_settings()?;
+    assert!(loaded.pace_marks);
+    assert_eq!((loaded.warning, loaded.critical), (40, 15));
     Ok(())
 }

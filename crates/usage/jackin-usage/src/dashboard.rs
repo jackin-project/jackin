@@ -24,7 +24,6 @@ use reading::{Measure, Metrics};
     reason = "Each switch is an independent user preference persisted by name."
 )]
 pub struct DashboardSettings {
-    pub remaining: bool,
     pub default_all: bool,
     pub exact_resets: bool,
     pub pace_marks: bool,
@@ -45,7 +44,6 @@ pub struct DashboardSettings {
 impl Default for DashboardSettings {
     fn default() -> Self {
         Self {
-            remaining: true,
             default_all: false,
             exact_resets: false,
             pace_marks: false,
@@ -455,11 +453,7 @@ pub(crate) fn account_detail_lines(
     metrics.sort_by_key(|(id, _)| reading::default_order(id));
     let mut lines = Vec::new();
     for (id, measure) in metrics {
-        lines.push(format!(
-            "{} · {}",
-            measure.label,
-            measure.display(settings.remaining)
-        ));
+        lines.push(format!("{} · {}", measure.label, measure.display(false)));
         lines.extend(measure.quantity_details());
         if let Some(at) = visible_reset(provider, &id, &measure, now) {
             lines.push(format!(
@@ -493,8 +487,7 @@ pub(crate) fn account_summary_lines(
         .into_iter()
         .take(3)
         .map(|(id, measure)| {
-            let mut line =
-                crate::presentation::caption(&measure.label, measure.caption(settings.remaining));
+            let mut line = crate::presentation::caption(&measure.label, measure.caption(false));
             if let Some(at) = visible_reset(account.provider, &id, &measure, now) {
                 let reset = reading::reset_text(at, now, settings.exact_resets);
                 line = crate::presentation::caption(
@@ -551,14 +544,13 @@ impl DashboardRow {
         prior_burn: Option<i64>,
     ) -> Metrics {
         let m = self.reading.metrics(settings, now, prior_burn);
-        self.value = self.reading.display(settings.remaining);
+        self.value = self.reading.display(false);
         self.reset = visible_reset(self.provider, &self.metric, &self.reading, now)
             .map(|t| reading::reset_text(t, now, settings.exact_resets));
         self.severity = m.severity;
         self.pace_mark = m
             .share
-            .filter(|_| settings.pace_marks && !m.spent && self.reset.is_some())
-            .map(|s| if settings.remaining { 1.0 - s } else { s });
+            .filter(|_| settings.pace_marks && !m.spent && self.reset.is_some());
         let (section, rank) = if m.spent || self.reading.empty_balance {
             (
                 Some(Section::UsedUp),
