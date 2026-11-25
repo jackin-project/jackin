@@ -389,11 +389,16 @@ fn assert_provider(outcome: &jackin_usage::UsageOutcome) {
 }
 
 #[tokio::test]
-async fn a_spend_amount_at_the_edge_of_the_integers_is_a_provider_error_port_fidelity() -> TestResult
-{
+async fn a_spend_pair_at_the_edge_of_the_integers_subtracts_exactly() -> TestResult {
     guard(async {
         let body = "{\"spend\":{\"used\":{\"amount_minor\":-9223372036854775808,\"currency\":\"USD\",\"exponent\":2},\"limit\":{\"amount_minor\":9223372036854775807,\"currency\":\"USD\",\"exponent\":2},\"percent\":18,\"enabled\":true}}";
-        assert_provider(&windows_for(body).await?);
+        let outcome = windows_for(body).await?;
+        let windows = windows_of(&outcome);
+        assert_eq!(windows.len(), 1);
+        assert_eq!(
+            windows[0].remaining_text(),
+            "184467440737095516.15 USD left"
+        );
         Ok(())
     })
     .await

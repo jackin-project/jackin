@@ -39,6 +39,7 @@ mod usage;
 mod usage_details;
 mod usage_ls;
 mod usage_only;
+mod usage_openrouter;
 mod usage_providers;
 mod usage_snapshot;
 mod usage_view;

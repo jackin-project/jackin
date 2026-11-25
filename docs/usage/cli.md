@@ -149,6 +149,19 @@ See the [terminal walkthrough](terminal-walkthrough.md) for the keyboard control
 | `usage` | Null before the first successful fetch. Otherwise an object with optional `plan` and a `resources` map keyed by metric ID. |
 | `resources.<id>` | A reading with `kind` (consumption, balance, amount or quota) and `unit`. Numeric fields depend on the metric. These may include `used`, `limit`, `available`, `remaining`, `amount`, `window_seconds` and `resets_at`. Monetary readings can include `currency`. |
 
-A reported zero is a number. An omitted field or resource has no reported value. Utilization and remaining fractions use a scale of 0–1. Remaining percentages use 0–100. Currency readings in minor units include an exponent (2 means hundredths). A quota can report a provider status such as `unlimited`, `not_in_plan` or `exhausted`. Reset inventory can include an ordered `resources.rateLimitResets.expires_at` array. Grant identifiers and private history ledgers stay in the local account store.
+A reported zero is a number. An omitted field or resource has no reported value. Utilization and remaining fractions use a scale of 0–1. Remaining percentages use 0–100. Currency readings in minor units include an exponent (2 means hundredths). OpenRouter USD readings are the exception: they are exact decimal strings in major units, described in the next section. A quota can report a provider status such as `unlimited`, `not_in_plan` or `exhausted`. Reset inventory can include an ordered `resources.rateLimitResets.expires_at` array. Grant identifiers and private history ledgers stay in the local account store.
+
+### Exact amounts
+
+OpenRouter amounts are exact decimals. Jackin reads each amount from the response text and never converts it to a floating-point number, so `0.004` and `0.10000000000000001` keep every digit through the stored snapshot, `jackin usage --json`, `jackin usage details`, `jackin usage host` and the host cache. USD amounts in a connected OpenRouter snapshot are decimal strings in major units, such as `"used":"0.0042"`, with no `exponent`. Counts and token totals stay numbers. Readers accept numbers and decimal strings.
+
+| Case | Behavior |
+| --- | --- |
+| Precision | At most 38 digits after dropping leading and trailing zeros, and at most 38 digits after the decimal point. Adding or subtracting two amounts also refuses operands that need more than 128 bits to line up, even when the result would fit. |
+| Exponent | JSON exponent notation is expanded exactly: `1.5e-7` is `0.00000015`. Zero with any exponent is `0`. |
+| Overflow | A value or a sum beyond the precision, such as `1e-39` or `1e40`, fails the read with "a number in the response is out of range". Jackin never rounds, saturates or truncates an amount. |
+| Not a number | `null`, booleans, empty text and text that is not a decimal (`n/a`, `NaN`, `inf`) count as not reported. Text such as `" 7.5 "` or `"2.5e-3"` is a number. |
+| Negative amounts | A key remainder, balance, budget spend or connected period spend below zero is read as zero. `jackin usage host` shows a negative key, daily, weekly or monthly spend as reported. A negative or unreadable activity amount rejects that activity read. The days that did not need reading stay as they were. |
+| Rounding | Only presentation rounds: percentages, pace marks, the `K`, `M`, `B` and `T` captions for amounts of 10,000 or more, and the text cards of `jackin usage` and `jackin usage details`, which read each amount as a floating-point number to draw it. `--json` keeps every digit. `jackin usage share` shows an integer amount as an integer and any other amount as a floating-point number. |
 
 Exit 0 indicates at least one matching account has a stored snapshot. Exit 4 means the selected accounts have no stored snapshot, including an empty installation. Both can produce valid JSON. Invalid filters and filters matching zero accounts exit 2. Active refresh can return exit 1 with the last stored snapshot on stdout and the refresh error on stderr. Cancellation exits 130.
