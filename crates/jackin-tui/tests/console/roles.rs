@@ -595,7 +595,9 @@ async fn a_git_sourced_role_stays_cached_while_local_roles_are_reread_on_refresh
         assert_eq!(docker(&mut lab, "sentinel")?, Some(false));
 
         edit_manifest(remote.root(), true).await?;
-        let status = tokio::process::Command::new("git")
+        let status = tokio::process::Command::new("/usr/bin/git")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
             .arg("-C")
             .arg(remote.root().as_path())
             .args([
@@ -603,6 +605,10 @@ async fn a_git_sourced_role_stays_cached_while_local_roles_are_reread_on_refresh
                 "user.name=test",
                 "-c",
                 "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
                 "commit",
                 "-q",
                 "-a",
