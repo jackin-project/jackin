@@ -348,7 +348,10 @@ fn read_below(
         .unwrap_or(u64::MAX)
         .saturating_add(1);
     let sized = meta.len().saturating_add(meta.len() / 16 + 4096).min(limit);
-    let mut bytes = Vec::with_capacity(usize::try_from(sized).unwrap_or(0));
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(usize::try_from(sized).unwrap_or(0))
+        .map_err(|_| io::Error::from(ErrorKind::OutOfMemory))?;
     (&mut opened).take(limit).read_to_end(&mut bytes)?;
     Ok(Ok(RegularFile {
         bytes,

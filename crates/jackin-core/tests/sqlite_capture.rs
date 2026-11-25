@@ -807,28 +807,35 @@ async fn a_bounded_query_has_a_fixed_budget_of_steps() -> TestResult {
 
 #[tokio::test]
 async fn only_two_captures_run_at_once_and_a_dropped_one_frees_its_place() -> TestResult {
-    let stalled = Arc::new(fixture(&[("agent.db", database(512))]).await?);
-    let probe = stalled.stall_reads_of("agent.db");
     let mut holders = Vec::new();
+    let mut probes = Vec::new();
     for _ in 0..2 {
-        let fs = Arc::clone(&stalled);
+        let fs = Arc::new(fixture(&[("agent.db", database(512))]).await?);
+        probes.push(fs.stall_reads_after("agent.db", 1));
         holders.push(tokio::spawn(async move {
             capture(&*fs, &at("agent.db").expect("a path"), LIMITS)
                 .await
                 .map(|_| ())
         }));
     }
-    for _ in 0..500 {
-        if probe.entered() == 2 {
-            break;
+    for probe in &probes {
+        for _ in 0..500 {
+            if probe.entered() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        assert_eq!(probe.entered(), 1);
     }
-    assert_eq!(probe.entered(), 2);
     let waiting = CaptureLimits {
         deadline: Duration::from_millis(200),
         ..LIMITS
     };
+    let not_sqlite = fixture(&[("agent.db", vec![b'x'; 64])]).await?;
+    assert_eq!(
+        capture(&not_sqlite, &at("agent.db")?, waiting).await.err(),
+        Some(CaptureProblem::NotSqlite)
+    );
     let free = fixture(&[("agent.db", database(512))]).await?;
     assert_eq!(
         capture(&free, &at("agent.db")?, waiting).await.err(),

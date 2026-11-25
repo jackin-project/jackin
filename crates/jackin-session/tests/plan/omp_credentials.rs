@@ -110,3 +110,30 @@ async fn an_omp_credential_view_that_never_finishes_is_given_up_on_and_frees_its
     assert_eq!(key.expose(), "fake-wanted-key");
     Ok(())
 }
+
+fn key_store(dir: &Path, total: usize) -> Result<HostPath, Box<dyn std::error::Error>> {
+    let frame = "{\"key\": \"\"}".len();
+    let data = format!("{{\"key\": \"{}\"}}", "k".repeat(total - frame));
+    assert_eq!(data.len(), total);
+    view_store(
+        dir,
+        &format!(
+            "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT);
+             INSERT INTO auth_credentials (provider, credential_type, data) VALUES ('wanted', 'api_key', '{data}');"
+        ),
+    )
+}
+
+#[tokio::test]
+async fn an_omp_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unreadable() -> TestResult {
+    let cap = jackin_core::STORE_VALUE_MAX_BYTES;
+    let fs = StdFileSystem::default();
+    let exact = tempfile::tempdir()?;
+    let key = read_omp_host_key(&fs, &key_store(exact.path(), cap)?, "wanted").await?;
+    assert_eq!(key.expose().len(), cap - "{\"key\": \"\"}".len());
+    let over = tempfile::tempdir()?;
+    read_omp_host_key(&fs, &key_store(over.path(), cap + 1)?, "wanted")
+        .await
+        .unwrap_err();
+    Ok(())
+}

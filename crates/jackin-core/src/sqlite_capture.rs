@@ -134,16 +134,7 @@ pub async fn capture(
     database: &HostPath,
     limits: CaptureLimits,
 ) -> Result<Capture, CaptureProblem> {
-    let within = async {
-        let slot = Arc::new(
-            Arc::clone(capture_slots())
-                .acquire_owned()
-                .await
-                .map_err(|_| CaptureProblem::Unreadable)?,
-        );
-        capture_pinned(fs, database, limits, slot).await
-    };
-    tokio::time::timeout(limits.deadline, within)
+    tokio::time::timeout(limits.deadline, capture_pinned(fs, database, limits))
         .await
         .map_err(|_| CaptureProblem::TimedOut)?
 }
@@ -175,7 +166,6 @@ async fn capture_pinned(
     fs: &dyn FileSystem,
     database: &HostPath,
     limits: CaptureLimits,
-    slot: Slot,
 ) -> Result<Capture, CaptureProblem> {
     match fs.stat(database).await {
         Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::Symlink),
@@ -205,6 +195,12 @@ async fn capture_pinned(
         Ok(Err(_)) => return Err(CaptureProblem::NotARegularFile),
         Err(_) => return Err(CaptureProblem::Unreadable),
     }
+    let slot: Slot = Arc::new(
+        Arc::clone(capture_slots())
+            .acquire_owned()
+            .await
+            .map_err(|_| CaptureProblem::Unreadable)?,
+    );
     for attempt in 0..ATTEMPTS {
         if attempt > 0 {
             tokio::time::sleep(RETRY_PAUSE * u32::try_from(attempt).unwrap_or(1)).await;
@@ -517,7 +513,10 @@ fn apply_log(
         .filter(|total| *total <= image_bytes)
         .ok_or(CaptureProblem::ImageTooLarge)?;
     if total > image.len() {
-        let mut grown = Zeroizing::new(Vec::with_capacity(total));
+        let mut grown = Zeroizing::new(Vec::new());
+        grown
+            .try_reserve_exact(total)
+            .map_err(|_| CaptureProblem::ImageTooLarge)?;
         grown.extend_from_slice(image);
         grown.resize(total, 0);
         *image = grown;

@@ -49,9 +49,16 @@ struct FsState {
     next_inode: u64,
     calls: HashMap<FsOp, u32>,
     faults: Vec<FsFault>,
-    stall: Option<(String, Arc<StallProbe>)>,
+    stall: Option<Stall>,
     reads: HashMap<String, usize>,
     hooks: Vec<ReadHook>,
+}
+
+#[derive(Debug)]
+struct Stall {
+    name: String,
+    passes: usize,
+    probe: Arc<StallProbe>,
 }
 
 type ReadAction = Arc<dyn Fn(&MemFs, usize) + Send + Sync>;
@@ -177,8 +184,16 @@ impl MemFs {
     }
 
     pub fn stall_reads_of(&self, name: &str) -> Arc<StallProbe> {
+        self.stall_reads_after(name, 0)
+    }
+
+    pub fn stall_reads_after(&self, name: &str, passes: usize) -> Arc<StallProbe> {
         let probe = Arc::new(StallProbe::default());
-        locked(&self.state).stall = Some((name.to_owned(), Arc::clone(&probe)));
+        locked(&self.state).stall = Some(Stall {
+            name: name.to_owned(),
+            passes,
+            probe: Arc::clone(&probe),
+        });
         probe
     }
 
@@ -541,11 +556,15 @@ impl FileSystem for MemFs {
         file: &RepoPath,
         max_bytes: usize,
     ) -> Result<Result<RegularFile, RegularFileProblem>, FsError> {
-        let stalled = locked(&self.state)
-            .stall
-            .as_ref()
-            .filter(|(name, _)| name == file.as_str())
-            .map(|(_, probe)| Arc::clone(probe));
+        let stalled = {
+            let state = locked(&self.state);
+            let done = state.reads.get(file.as_str()).copied().unwrap_or(0);
+            state
+                .stall
+                .as_ref()
+                .filter(|stall| stall.name == file.as_str() && done >= stall.passes)
+                .map(|stall| Arc::clone(&stall.probe))
+        };
         if let Some(probe) = stalled {
             probe.entered.fetch_add(1, Ordering::SeqCst);
             let _abandoned = Abandoned(&probe);
