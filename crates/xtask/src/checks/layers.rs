@@ -31,6 +31,7 @@ pub const EXPOSE_ALLOWLIST: &[&str] = &[
     "crates/jackin-testkit/src/gateway/exec.rs",
     "crates/jackin-testkit/src/gateway/files.rs",
     "crates/jackin-testkit/src/host/runner.rs",
+    "crates/jackin-testkit/src/usage_profile.rs",
     "crates/usage/jackin-usage/src/credential.rs",
     "crates/usage/jackin-usage/src/dispatch.rs",
     "crates/xtask/src/e2e/a1.rs",
