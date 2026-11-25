@@ -54,6 +54,7 @@ fn request(role: &str) -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: vec![jackin_core::SandboxPath::from_static("/tmp")],
         rebuild: Rebuild::No,
     })
 }

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use jackin_core::{GroupFault, ImageId, ImageTag, Platform};
+use jackin_core::{GroupFault, ImageId, ImageTag, Platform, plain};
 use thiserror::Error;
 
 use crate::dockerfile::DockerfileError;
@@ -35,6 +35,16 @@ pub enum ImageError {
         expected: ImageId,
         found: Option<ImageId>,
     },
+    #[error(
+        "the read_write path {} of the role policy names the root, is longer than {} bytes or holds a control character, which the image scan cannot take",
+        plain(.path),
+        crate::key::READ_WRITE_PATH_MAX_BYTES
+    )]
+    ReadWritePath { path: String },
+    #[error(
+        "the read_write paths of the role policy add up to {bytes} bytes, more than the {limit} bytes that one build argument can hold"
+    )]
+    ReadWritePathsTotal { bytes: usize, limit: usize },
     #[error("gave up waiting for another process to finish building {key}")]
     LockTimeout { key: ImageTag },
     #[error("cancelled{}", GroupFault::note(.group.as_ref()))]

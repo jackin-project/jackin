@@ -5,7 +5,25 @@ mod details;
 pub use details::details_account;
 
 use crate::accounts::ConnectedAccount;
+use jackin_usage_provider_core::Decimal;
 use serde_json::{Map, Value, json};
+
+pub(crate) fn amount(value: &Value) -> Option<Value> {
+    match value {
+        Value::Number(_) => Some(value.clone()),
+        Value::String(text) => Decimal::parse_text(text)
+            .ok()
+            .map(|exact| Value::String(exact.to_string())),
+        _ => None,
+    }
+}
+
+fn float(value: &Value) -> Option<f64> {
+    match value {
+        Value::String(text) => Decimal::parse_text(text).ok().map(|exact| exact.to_f64()),
+        other => other.as_f64(),
+    }
+}
 
 pub fn snapshot_account(
     account: &ConnectedAccount,
@@ -60,12 +78,12 @@ fn public_resource(resource: &Value) -> Option<Value> {
     }
     let unit = resource["unit"].as_str()?;
     let mut reading = json!({"kind":kind,"unit":unit});
+    for field in ["used", "limit", "remaining", "available", "amount"] {
+        if let Some(value) = amount(&resource[field]) {
+            reading[field] = value;
+        }
+    }
     for field in [
-        "used",
-        "limit",
-        "remaining",
-        "available",
-        "amount",
         "remaining_fraction",
         "remaining_percent",
         "utilization",
@@ -92,8 +110,8 @@ fn public_resource(resource: &Value) -> Option<Value> {
         }
     }
     if reading.get("utilization").is_none()
-        && let Some(limit) = reading["limit"].as_f64().filter(|n| *n > 0.0)
-        && let Some(used) = reading["used"].as_f64()
+        && let Some(limit) = float(&reading["limit"]).filter(|n| *n > 0.0)
+        && let Some(used) = float(&reading["used"])
     {
         reading["utilization"] = json!(used / limit);
     }

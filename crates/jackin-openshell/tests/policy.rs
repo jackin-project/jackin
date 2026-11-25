@@ -9,10 +9,11 @@
 use std::collections::BTreeSet;
 use std::num::NonZeroU16;
 
-use jackin_core::ProviderName;
+use jackin_core::{Compatibility, ProviderName, SandboxPath};
 use jackin_openshell::{
     AuthoredPolicy, ClosedPolicy, ClosedPolicyError, ClosureViolation, EndpointProtocol,
-    HostPattern, NetworkRule, PolicyDocument, PolicyError, RuleKey, TlsMode,
+    HostPattern, NetworkRule, PROXY_BASELINE_VERIFIED_AT_OPENSHELL_COMMIT, PolicyDocument,
+    PolicyError, RuleKey, TlsMode,
 };
 use openshell_core::host_pattern::host_matches;
 use openshell_policy::{
@@ -1073,10 +1074,12 @@ fn policy_errors_print_no_control_sequences() {
     ] {
         let text = format!("version: 1\nfilesystem_policy:\n  {list}:\n    - \"{path}\"\n{HARD}");
         let error = AuthoredPolicy::parse(&text).unwrap_err();
-        assert!(
-            matches!(error, PolicyError::Gateway { .. }),
-            "{list}: {error:?}"
-        );
+        let refused = if list == "read_write" {
+            matches!(error, PolicyError::ReadWritePath { .. })
+        } else {
+            matches!(error, PolicyError::Gateway { .. })
+        };
+        assert!(refused, "{list}: {error:?}");
         let closed = ClosedPolicy::parse(&text).unwrap_err();
         for shown in [error.to_string(), closed.to_string()] {
             assert!(shown.contains("[31m"), "{shown}");
@@ -1226,5 +1229,121 @@ fn role_check_gives_the_policy_crate_verdict_of_the_gateway_create_check_for_eve
     assert!(
         PolicyDocument::parse(&endpoint_doc("198.18.0.2", tcp)).is_ok(),
         "the live parse of a stored policy stays lenient"
+    );
+}
+
+fn read_write_of(listed: &[&str]) -> Result<Vec<String>, PolicyError> {
+    let lines = listed
+        .iter()
+        .map(|path| format!("    - '{}'\n", path.replace('\'', "''")))
+        .collect::<Vec<_>>()
+        .concat();
+    let text = format!(
+        "version: 1\nfilesystem_policy:\n  read_only:\n    - /usr\n  read_write:\n{lines}{HARD}"
+    );
+    let policy = AuthoredPolicy::parse(&text)?;
+    Ok(policy
+        .document()
+        .read_write_paths()?
+        .iter()
+        .map(|path| path.as_str().to_owned())
+        .collect())
+}
+
+#[test]
+fn the_read_write_paths_of_an_authored_policy_are_absolute_collapsed_sorted_and_unique() {
+    assert_eq!(
+        read_write_of(&["/tmp", "/sandbox"]).unwrap(),
+        ["/sandbox", "/tmp"]
+    );
+    assert_eq!(
+        read_write_of(&["//var/./data/", "/sandbox", "/sandbox/", "/./sandbox"]).unwrap(),
+        ["/sandbox", "/var/data"]
+    );
+    assert_eq!(
+        read_write_of(&["/opt/with space/it's: a;name"]).unwrap(),
+        ["/opt/with space/it's: a;name"]
+    );
+}
+
+#[test]
+fn the_effective_read_write_paths_add_the_baseline_the_gateway_grants_to_every_proxy_sandbox() {
+    let text = format!(
+        "version: 1\nfilesystem_policy:\n  read_only:\n    - /usr\n  read_write:\n    - /sandbox\n{HARD}"
+    );
+    let policy = AuthoredPolicy::parse(&text).unwrap();
+    let effective: Vec<String> = policy
+        .document()
+        .effective_read_write_paths()
+        .unwrap()
+        .iter()
+        .map(|path| path.as_str().to_owned())
+        .collect();
+    assert_eq!(effective, ["/dev/null", "/sandbox", "/tmp"]);
+    let read_only_tmp = format!(
+        "version: 1\nfilesystem_policy:\n  read_only:\n    - /usr\n    - /tmp\n  read_write:\n    - /sandbox\n{HARD}"
+    );
+    let effective: Vec<String> = AuthoredPolicy::parse(&read_only_tmp)
+        .unwrap()
+        .document()
+        .effective_read_write_paths()
+        .unwrap()
+        .iter()
+        .map(|path| path.as_str().to_owned())
+        .collect();
+    assert_eq!(effective, ["/dev/null", "/sandbox"]);
+    let listed = read_write_of(&["/tmp", "/dev/null", "/sandbox"]).unwrap();
+    assert_eq!(listed, ["/dev/null", "/sandbox", "/tmp"]);
+}
+
+#[test]
+fn the_proxy_baseline_was_read_from_the_pinned_openshell_commit() {
+    let pinned = Compatibility::pinned().unwrap().openshell_commit;
+    assert_eq!(
+        pinned, PROXY_BASELINE_VERIFIED_AT_OPENSHELL_COMMIT,
+        "OpenShell was bumped: read PROXY_BASELINE_READ_WRITE in crates/openshell-supervisor/src/lib.rs of the new commit, update PROXY_BASELINE_READ_WRITE in crates/jackin-openshell/src/policy.rs if it differs, then update PROXY_BASELINE_VERIFIED_AT_OPENSHELL_COMMIT"
+    );
+}
+
+#[test]
+fn a_live_policy_with_an_unusable_read_write_path_is_never_silently_dropped() {
+    let live = PolicyDocument::parse(
+        "version: 1\nfilesystem_policy:\n  read_write:\n    - relative/path\n    - /ok\n",
+    )
+    .unwrap();
+    assert!(matches!(
+        live.read_write_paths(),
+        Err(PolicyError::ReadWritePath { .. })
+    ));
+    let traversal =
+        PolicyDocument::parse("version: 1\nfilesystem_policy:\n  read_write:\n    - /a/../b\n")
+            .unwrap();
+    assert!(matches!(
+        traversal.read_write_paths(),
+        Err(PolicyError::ReadWritePath { .. })
+    ));
+}
+
+#[test]
+fn an_authored_read_write_list_refuses_control_characters_and_the_live_parse_keeps_the_root() {
+    for escaped in ["/a\\nb", "/a\\tb", "/a\\u007fb"] {
+        let text = format!(
+            "version: 1\nfilesystem_policy:\n  read_only:\n    - /usr\n  read_write:\n    - \"{escaped}\"\n{HARD}"
+        );
+        assert!(
+            matches!(
+                AuthoredPolicy::parse(&text),
+                Err(PolicyError::ReadWritePath { .. })
+            ),
+            "{escaped}"
+        );
+    }
+    let live =
+        PolicyDocument::parse("version: 1\nfilesystem_policy:\n  read_write:\n    - /\n    - /.\n")
+            .unwrap();
+    let paths = live.read_write_paths().unwrap();
+    assert_eq!(
+        paths.iter().map(SandboxPath::as_str).collect::<Vec<_>>(),
+        ["/"]
     );
 }

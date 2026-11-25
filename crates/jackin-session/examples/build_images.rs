@@ -11,12 +11,14 @@ use std::time::Duration;
 
 use jackin_core::{
     Agent, BuilderName, CommitId, DockerLayer, FileSystem, HostPath, Platform, ProcessRunner,
-    ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath, RoleName, Sha256, StdFileSystem,
+    ProcessSpec, ProcessStatus, ProcessStdin, Program, RepoPath, RoleName, SandboxPath, Sha256,
+    StdFileSystem,
 };
 use jackin_image::{
     BuildxEngine, ContextEntry, HookFiles, ImageEvent, ImageRequest, Rebuild, RoleRevision,
     SourceFile, ensure_image, read_regular_file,
 };
+use jackin_openshell::PolicyDocument;
 use jackin_session::TokioProcessRunner;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -28,6 +30,7 @@ struct Options {
     work_dir: PathBuf,
     rebuild: Rebuild,
     calls: usize,
+    read_write: Vec<SandboxPath>,
 }
 
 fn state_work_dir() -> Result<PathBuf, Box<dyn Error>> {
@@ -70,7 +73,10 @@ fn options() -> Result<Options, Box<dyn Error>> {
         work_dir: state_work_dir()?,
         rebuild: Rebuild::No,
         calls: 2,
+        read_write: PolicyDocument::parse("version: 1\n")?.effective_read_write_paths()?,
     };
+    let mut explicit = 0usize;
+    let mut cleared = false;
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         let mut value = |name: &str| args.next().ok_or_else(|| format!("{name} needs a value"));
@@ -81,6 +87,22 @@ fn options() -> Result<Options, Box<dyn Error>> {
             "--work-dir" => options.work_dir = PathBuf::from(value("--work-dir")?),
             "--calls" => options.calls = value("--calls")?.parse()?,
             "--rebuild" => options.rebuild = Rebuild::Yes,
+            "--no-read-write" => {
+                if explicit > 0 {
+                    return Err("--no-read-write cannot follow --read-write".into());
+                }
+                options.read_write.clear();
+                cleared = true;
+            }
+            "--read-write" => {
+                if cleared {
+                    return Err("--read-write cannot follow --no-read-write".into());
+                }
+                explicit += 1;
+                options
+                    .read_write
+                    .push(SandboxPath::parse(&value("--read-write")?)?);
+            }
             other => return Err(format!("unknown argument {other}").into()),
         }
     }
@@ -213,6 +235,7 @@ async fn request(
         platform: Platform::host_default(),
         builder: BuilderName::parse(&options.builder)?,
         docker: DockerLayer::Absent,
+        read_write: options.read_write.clone(),
         rebuild: options.rebuild,
     })
 }

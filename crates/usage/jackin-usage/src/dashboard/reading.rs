@@ -2,6 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Robin Ebers
 // SPDX-License-Identifier: Apache-2.0 AND MIT
 
+use jackin_usage_provider_core::Decimal;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
@@ -21,9 +22,15 @@ pub(super) struct Measure {
     pub empty_balance: bool,
     pub parts: Vec<(String, f64)>,
     pub detail: Vec<String>,
-    exact_limit: Option<String>,
-    exact_used: Option<String>,
-    exact_left: Option<String>,
+    exact: ExactText,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ExactText {
+    limit: Option<String>,
+    used: Option<String>,
+    left: Option<String>,
+    exhausted: Option<bool>,
 }
 
 #[derive(Clone, Copy)]
@@ -151,22 +158,49 @@ pub(super) fn read(body: &Value) -> Vec<(String, Measure)> {
     readings
 }
 
-fn prior_models(days: &Value) -> BTreeMap<&str, BTreeMap<&str, f64>> {
-    let mut models: BTreeMap<&str, BTreeMap<&str, f64>> = BTreeMap::new();
+fn prior_models(days: &Value) -> Value {
+    let mut models: BTreeMap<&str, BTreeMap<&str, Option<Decimal>>> = BTreeMap::new();
     for (_, day) in days.as_object().into_iter().flatten() {
         for (name, fields) in day["by_model"].as_object().into_iter().flatten() {
             for (field, value) in fields.as_object().into_iter().flatten() {
-                if let Some(amount) = value.as_f64() {
-                    *models.entry(name).or_default().entry(field).or_default() += amount;
+                if let Ok(amount) = Decimal::from_json(value) {
+                    let sum = models
+                        .entry(name)
+                        .or_default()
+                        .entry(field)
+                        .or_insert(Some(Decimal::ZERO));
+                    *sum = sum.and_then(|total| total.checked_add(&amount));
                 }
             }
         }
     }
-    models
+    Value::Object(
+        models
+            .into_iter()
+            .map(|(name, fields)| {
+                let fields = fields
+                    .into_iter()
+                    .filter_map(|(field, sum)| {
+                        let sum = sum?;
+                        let shown = if matches!(field, "spend" | "byokSpend") {
+                            Value::String(sum.to_string())
+                        } else {
+                            json!(sum.to_f64())
+                        };
+                        Some((field.to_owned(), shown))
+                    })
+                    .collect();
+                (name.to_owned(), Value::Object(fields))
+            })
+            .collect(),
+    )
 }
 
 fn history_quantity(field: &str, value: &Value) -> Option<String> {
-    let amount = number(value.as_f64()?);
+    let amount = match value {
+        Value::String(text) => Decimal::parse_text(text).ok()?.to_string(),
+        other => number(other.as_f64()?),
+    };
     let unit = match field {
         "spend" | "usageValue" => "USD spent",
         "byokSpend" => "USD BYOK spend",
@@ -306,7 +340,10 @@ pub(super) fn decode(id: &str, v: &Value) -> Option<Measure> {
         v["exponent"].as_u64().filter(|n| *n <= 9).unwrap_or(0) as u32
     };
     let scale = 10_u64.pow(exponent) as f64;
-    let amount = |key: &str| v[key].as_f64().map(|n| n / scale);
+    let amount = |key: &str| match &v[key] {
+        Value::String(text) => Decimal::parse_text(text).ok().map(|exact| exact.to_f64()),
+        other => other.as_f64().map(|n| n / scale),
+    };
     let mut used = amount("used");
     let mut limit = amount("limit");
     let mut available = amount("available")
@@ -374,7 +411,12 @@ pub(super) fn decode(id: &str, v: &Value) -> Option<Measure> {
     let exact = |key: &str| {
         fraction
             .is_none()
-            .then(|| scaled_integer(&v[key], exponent))
+            .then(|| match &v[key] {
+                Value::String(text) => Decimal::parse_text(text)
+                    .ok()
+                    .map(|exact| exact.to_string()),
+                other => scaled_integer(other, exponent),
+            })
             .flatten()
     };
     let empty_balance = kind == "balance"
@@ -394,12 +436,25 @@ pub(super) fn decode(id: &str, v: &Value) -> Option<Measure> {
         empty_balance,
         parts: Vec::new(),
         detail,
-        exact_limit: exact("limit"),
-        exact_used: exact("used"),
-        exact_left: exact("available")
-            .or_else(|| exact("amount"))
-            .or_else(|| exact("remaining")),
+        exact: ExactText {
+            limit: exact("limit"),
+            used: exact("used"),
+            left: exact("available")
+                .or_else(|| exact("amount"))
+                .or_else(|| exact("remaining")),
+            exhausted: exhausted(v).filter(|_| fraction.is_none()),
+        },
     })
+}
+
+fn exhausted(v: &Value) -> Option<bool> {
+    let (Value::String(limit), Value::String(used)) = (&v["limit"], &v["used"]) else {
+        return None;
+    };
+    let (limit, used) = Decimal::parse_text(limit)
+        .ok()
+        .zip(Decimal::parse_text(used).ok())?;
+    limit.checked_sub(&used).map(|left| !left.is_positive())
 }
 
 pub(super) fn advanced(reset: Option<i64>, previous: Option<i64>, now: i64) -> bool {
@@ -418,6 +473,9 @@ impl Measure {
     pub(super) fn spent(&self) -> bool {
         if !self.bounded() {
             return false;
+        }
+        if let Some(exhausted) = self.exact.exhausted {
+            return exhausted;
         }
         if self.unit == "percent" {
             return self
@@ -522,15 +580,15 @@ impl Measure {
                 (
                     self.available
                         .or_else(|| self.limit.zip(self.used).map(|(l, u)| (l - u).max(0.0))),
-                    &self.exact_left,
+                    &self.exact.left,
                 )
             } else {
-                (self.used, &self.exact_used)
+                (self.used, &self.exact.used)
             }
         } else if self.available.is_some() {
-            (self.available, &self.exact_left)
+            (self.available, &self.exact.left)
         } else {
-            (self.used, &self.exact_used)
+            (self.used, &self.exact.used)
         };
         match value {
             Some(n) if self.unit == "percent" && n > 0.0 && n < 1.0 => "<1%".into(),
@@ -554,7 +612,7 @@ impl Measure {
                     "Limit · {}",
                     format_value(
                         &self.unit,
-                        &self.exact_limit.clone().unwrap_or_else(|| number(limit))
+                        &self.exact.limit.clone().unwrap_or_else(|| number(limit))
                     )
                 ));
             }
@@ -577,13 +635,11 @@ impl Measure {
             return None;
         }
         self.limit
-            .map(|limit| display_quantity(&self.unit, limit, self.exact_limit.as_deref(), compact))
+            .map(|limit| display_quantity(&self.unit, limit, self.exact.limit.as_deref(), compact))
     }
 
     pub(super) fn clear_exact(&mut self) {
-        self.exact_limit = None;
-        self.exact_used = None;
-        self.exact_left = None;
+        self.exact = ExactText::default();
     }
 
     pub(super) fn redacted_values(&self) -> Value {
@@ -612,7 +668,7 @@ impl Measure {
                 .and_then(|s| s.parse::<u64>().ok())
                 .map_or_else(|| json!(fallback), |n| json!(n))
         };
-        json!({"unit":safe_unit(&self.unit),"used":quantity(&self.exact_used,self.used),"limit":quantity(&self.exact_limit,self.limit),"available":quantity(&self.exact_left,self.available),
+        json!({"unit":safe_unit(&self.unit),"used":quantity(&self.exact.used,self.used),"limit":quantity(&self.exact.limit,self.limit),"available":quantity(&self.exact.left,self.available),
             "amounts":self.parts.iter().map(|(u,n)|json!({"unit":safe_unit(u),"amount":n})).collect::<Vec<_>>()})
     }
 }

@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 
 use jackin_core::{
-    Agent, BuilderName, CommitId, DockerLayer, Platform, Provider, RepoPath, RoleName, Sha256,
-    TupleState, lookup_tuple,
+    Agent, BuilderName, CommitId, DockerLayer, Platform, Provider, RepoPath, RoleName, SandboxPath,
+    Sha256, TupleState, lookup_tuple,
 };
 use jackin_image::{HookFiles, ImagePlan, ImageRequest, Rebuild, RoleRevision, SourceFile};
 
@@ -33,6 +33,7 @@ fn request(agent: Agent) -> Result<ImageRequest, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: vec![SandboxPath::from_static("/tmp")],
         rebuild: Rebuild::No,
     })
 }
@@ -524,5 +525,109 @@ fn antigravity_plan_pins_the_stable_tarball_and_renames_the_member() -> TestResu
         text.contains("install -D -m 0755 -o root -g root \"$work/$1\" \"/out${AGENT_BINARY}\""),
         "{text}"
     );
+    Ok(())
+}
+
+#[test]
+fn the_read_write_argument_is_the_same_for_every_agent_combination() -> TestResult {
+    for agents in [
+        vec![Agent::Codex],
+        vec![Agent::Codex, Agent::Omp],
+        vec![Agent::Omp, Agent::Codex],
+    ] {
+        let mut request = request(agents[0])?;
+        request.agents = agents.clone();
+        request.read_write = vec![SandboxPath::parse("/tmp")?, SandboxPath::parse("/sandbox")?];
+        let args = args_of(&ImagePlan::new(&request)?)?;
+        assert_eq!(
+            args.get("READ_WRITE_PATHS").map(String::as_str),
+            Some("/sandbox\n/tmp"),
+            "{agents:?}"
+        );
+    }
+    Ok(())
+}
+
+fn args_of(plan: &ImagePlan) -> Result<BTreeMap<String, String>, Box<dyn Error>> {
+    let id = jackin_core::ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
+    Ok(plan
+        .final_builds(&id)
+        .derived
+        .args
+        .iter()
+        .filter_map(|arg| {
+            arg.strip_prefix("--build-arg=")?
+                .split_once('=')
+                .map(|(k, v)| (k.to_owned(), v.to_owned()))
+        })
+        .collect())
+}
+
+fn scan_stage(text: &str) -> Result<String, Box<dyn Error>> {
+    let (_, scan) = text
+        .split_once("AS scan\n")
+        .ok_or("the derived Dockerfile has no scan stage")?;
+    Ok(scan
+        .split("\nFROM ")
+        .next()
+        .ok_or("no scan stage text")?
+        .to_owned())
+}
+
+fn upper_variables(text: &str) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    let chars: Vec<char> = text.chars().collect();
+    let mut index = 0;
+    while index < chars.len() {
+        if chars[index] == '$' {
+            let mut next = index + 1;
+            if chars.get(next) == Some(&'{') {
+                next += 1;
+            }
+            let name: String = chars[next..]
+                .iter()
+                .take_while(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || **c == '_')
+                .collect();
+            if name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) {
+                found.insert(name);
+            }
+        }
+        index += 1;
+    }
+    found
+}
+
+#[test]
+fn every_variable_the_scan_run_reads_is_declared_in_the_scan_stage_for_any_number_of_agents()
+-> TestResult {
+    for agents in [
+        vec![Agent::Codex],
+        vec![Agent::Codex, Agent::Omp],
+        vec![Agent::ClaudeCode, Agent::Codex, Agent::Omp],
+    ] {
+        let mut request = request(agents[0])?;
+        request.agents = agents.clone();
+        request.read_write = vec![SandboxPath::parse("/sandbox")?];
+        let text = dockerfile(&ImagePlan::new(&request)?)?;
+        let scan = scan_stage(&text)?;
+        let declared: BTreeSet<String> = scan
+            .lines()
+            .filter_map(|line| line.strip_prefix("ARG "))
+            .map(|rest| rest.split('=').next().unwrap_or(rest).to_owned())
+            .collect();
+        let run_at = scan.find("RUN ").ok_or("no scan RUN")?;
+        let used = upper_variables(&scan[run_at..]);
+        let missing: Vec<&String> = used.difference(&declared).collect();
+        assert!(missing.is_empty(), "{agents:?}: undeclared {missing:?}");
+        assert!(used.contains("READ_WRITE_PATHS"), "{agents:?}");
+        let owner_at = scan
+            .find("--sandbox-owner 1000:1000")
+            .ok_or("no owner flag")?;
+        let loop_at = scan
+            .find("--read-write \"$rw\"")
+            .ok_or("no read_write loop")?;
+        let call_at = scan.find("/bin/sh /jackin-scan").ok_or("no scan call")?;
+        assert!(owner_at < call_at && loop_at < call_at, "{agents:?}");
+    }
     Ok(())
 }

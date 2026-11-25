@@ -235,6 +235,8 @@ pub enum PolicyError {
     ReadWriteRoot { path: String },
     #[error("read_write path {} is /proc, /sys or below them, which alias the filesystem root", plain(.path))]
     ReadWriteAlias { path: String },
+    #[error("read_write path {} is not an absolute path without parent segments or control characters", plain(.path))]
+    ReadWritePath { path: String },
     #[error("the gateway would refuse the policy: {}", plain_list(.violations))]
     Gateway {
         violations: Vec<openshell_policy::PolicyViolation>,

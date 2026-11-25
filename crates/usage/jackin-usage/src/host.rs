@@ -7,7 +7,7 @@ use jackin_core::{Provider, Timestamp};
 use jackin_usage_provider_core::Http;
 use tokio_util::sync::CancellationToken;
 
-use crate::cache::{Cache, Entry, Good, fingerprint};
+use crate::cache::{Cache, Entry, Good, Hold, fingerprint};
 use crate::credential::{Material, Unresolved, resolve};
 use crate::deps::UsageDeps;
 use crate::dispatch::{Call, Failure, collect, unsupported_without_credentials};
@@ -31,7 +31,6 @@ pub struct HostUsage {
 enum Update {
     Keep,
     Set(Entry),
-    Remove,
 }
 
 struct Settled {
@@ -76,7 +75,6 @@ impl HostUsage {
             match done.update {
                 Update::Keep => {}
                 Update::Set(entry) => cache.put(account, entry),
-                Update::Remove => cache.remove(account),
             }
             accounts.push(done.usage);
         }
@@ -101,7 +99,7 @@ impl HostUsage {
                 account,
                 Freshness::Fresh,
                 UsageOutcome::Unavailable(reason),
-                Update::Remove,
+                Update::Set(Entry::cleared(fingerprint(account, None, None), now)),
             );
         }
         let material = match resolve(&self.deps, account, cancel).await {
@@ -159,7 +157,11 @@ impl HostUsage {
                         fetched_at: now,
                         windows: found.clone(),
                     }),
-                    retry_at: None,
+                    hold: Hold {
+                        observed_at: now,
+                        until: None,
+                    },
+                    cleared_at: None,
                 };
                 settled(
                     account,
@@ -203,7 +205,7 @@ fn ttl(provider: Provider) -> i64 {
 }
 
 fn held(entry: &Entry, now: i64) -> Option<(Freshness, UsageOutcome)> {
-    let retry_at = entry.retry_at.filter(|at| *at > now)?;
+    let retry_at = entry.hold.until.filter(|at| *at > now)?;
     Some(match &entry.good {
         Some(good) => (
             Freshness::Stale {
@@ -251,22 +253,32 @@ fn failed(
             account,
             Freshness::Fresh,
             UsageOutcome::Unavailable(reason),
-            Update::Remove,
+            Update::Set(Entry::cleared(print, now)),
         );
     }
-    let retry_at = match &reason {
-        UnavailableReason::RateLimited { retry_at } => retry_at.map(|at| at.0),
-        _ => entry
-            .as_ref()
-            .and_then(|entry| entry.retry_at)
-            .filter(|at| *at > now),
+    let hold = match &reason {
+        UnavailableReason::RateLimited { retry_at } => Hold {
+            observed_at: now,
+            until: retry_at.map(|at| at.0),
+        },
+        _ => entry.as_ref().map_or(
+            Hold {
+                observed_at: now,
+                until: None,
+            },
+            |entry| Hold {
+                until: entry.hold.until.filter(|at| *at > now),
+                ..entry.hold
+            },
+        ),
     };
     let next = Entry {
-        retry_at,
+        hold,
         ..entry.unwrap_or(Entry {
             fingerprint: print,
             good: None,
-            retry_at: None,
+            hold,
+            cleared_at: None,
         })
     };
     if established && let Some(good) = next.good.clone() {
@@ -279,7 +291,7 @@ fn failed(
             Update::Set(next),
         );
     }
-    let update = if next.retry_at.is_some() {
+    let update = if next.hold.until.is_some() {
         Update::Set(next)
     } else {
         Update::Keep

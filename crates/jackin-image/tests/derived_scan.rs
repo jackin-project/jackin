@@ -108,6 +108,7 @@ fn derived_file(name: &str) -> Result<Vec<u8>, Box<dyn Error>> {
         platform: Platform::LinuxArm64,
         builder: BuilderName::parse("orbstack")?,
         docker: DockerLayer::Absent,
+        read_write: vec![jackin_core::SandboxPath::from_static("/tmp")],
         rebuild: Rebuild::No,
     };
     let id = ImageId::parse(&format!("sha256:{}", "1".repeat(64)))?;
@@ -176,7 +177,7 @@ impl Fixture {
             gid: meta.gid(),
             absent: scan_absent_paths()?,
         };
-        for name in ["find", "tr", "cmp"] {
+        for name in ["find", "tr", "cmp", "ls", "awk"] {
             fx.tool(name)?;
         }
         fx.stub("getcap", NO_GETCAP)?;
@@ -187,6 +188,7 @@ impl Fixture {
             fx.file(leaf, &leaf_bytes(leaf), 0o755)?;
             fs::write(fx.trusted(leaf), leaf_bytes(leaf))?;
         }
+        fx.dir("/sandbox", 0o755)?;
         fx.dir("/etc", 0o755)?;
         fx.dir("/etc/codex", 0o755)?;
         fx.file(CONFIG, CONFIG_BYTES, 0o644)?;
@@ -248,8 +250,19 @@ impl Fixture {
         Ok(())
     }
 
+    fn owners(&self) -> Vec<String> {
+        vec![
+            "--owner".to_owned(),
+            format!("{}:{}", self.uid, self.gid),
+            "--sandbox-owner".to_owned(),
+            format!("{}:{}", self.uid, self.gid),
+            "--read-write".to_owned(),
+            "/dev/null".to_owned(),
+        ]
+    }
+
     fn arguments(&self) -> Vec<String> {
-        let mut args = vec!["--owner".to_owned(), format!("{}:{}", self.uid, self.gid)];
+        let mut args = self.owners();
         for leaf in LEAVES {
             args.push("--same-as".to_owned());
             args.push(format!("{leaf}={}", self.trusted(leaf).display()));
@@ -308,7 +321,7 @@ impl Fixture {
     }
 
     fn client_arguments(&self) -> Vec<String> {
-        let mut args = vec!["--owner".to_owned(), format!("{}:{}", self.uid, self.gid)];
+        let mut args = self.owners();
         for leaf in LEAVES.iter().chain(&CLIENT) {
             args.push("--same-as".to_owned());
             args.push(format!("{leaf}={}", self.trusted(leaf).display()));
@@ -329,6 +342,25 @@ impl Fixture {
 
     fn scan(&self) -> Result<Outcome, Box<dyn Error>> {
         self.run(&self.arguments())
+    }
+
+    fn scan_with(&self, flags: &[&str]) -> Result<Outcome, Box<dyn Error>> {
+        let mut args = self.arguments();
+        let image = self.top.join("image").display().to_string();
+        let at = args
+            .iter()
+            .position(|arg| *arg == image)
+            .ok_or("the arguments hold no image root")?;
+        args.splice(at..at, flags.iter().map(|flag| (*flag).to_owned()));
+        self.run(&args)
+    }
+
+    fn scan_read_write(&self, paths: &[&str]) -> Result<Outcome, Box<dyn Error>> {
+        let flags: Vec<&str> = paths
+            .iter()
+            .flat_map(|path| ["--read-write", *path])
+            .collect();
+        self.scan_with(&flags)
     }
 
     fn move_aside(&self, path: &str) -> Result<PathBuf, Box<dyn Error>> {
@@ -1424,5 +1456,563 @@ fn scan_refuses_every_codex_system_layer_path_the_role_image_holds() -> TestResu
             out.stderr
         );
     }
+    Ok(())
+}
+
+fn crossing(path: &str, at: &str) -> String {
+    format!(
+        "read_write path of the role policy is or crosses a symlink: {path} (at {at}); list the real directory instead"
+    )
+}
+
+#[test]
+fn scan_passes_a_read_write_path_that_is_a_real_directory_or_absent() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/sandbox/work", 0o755)?;
+    fx.dir("/tmp", 0o1777)?;
+    fx.dir("/opt/with space/it's: a;name$x", 0o755)?;
+    let out = fx.scan_read_write(&[
+        "/sandbox",
+        "/sandbox/work",
+        "/tmp",
+        "/sandbox/not-created-yet",
+        "/not/created/at/all",
+        "/opt/with space/it's: a;name$x",
+    ])?;
+    assert!(out.ok, "{}", out.stderr);
+    assert_eq!(out.stdout, "jackin-image-scan 1\n");
+    assert_eq!(out.stderr, "");
+    let none = Fixture::new()?.scan()?;
+    assert!(none.ok, "{}", none.stderr);
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_read_write_path_that_is_or_crosses_a_symlink() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/usr/local/bin", 0o755)?;
+    symlink("/usr/local/bin", fx.image("/sandbox/tools"))?;
+    let out = fx.scan_read_write(&["/sandbox/tools"])?;
+    assert!(!out.ok, "an alias of a system directory passed");
+    assert_eq!(
+        out.lines(),
+        [crossing("/sandbox/tools", "/sandbox/tools")],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.dir("/usr/share/data", 0o755)?;
+    symlink("/usr/share", fx.image("/srv"))?;
+    let out = fx.scan_read_write(&["/srv/data"])?;
+    assert_eq!(
+        out.lines(),
+        [crossing("/srv/data", "/srv")],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    symlink("/nonexistent", fx.image("/dangling"))?;
+    let out = fx.scan_read_write(&["/dangling"])?;
+    assert_eq!(out.lines(), [crossing("/dangling", "/dangling")]);
+
+    let fx = Fixture::new()?;
+    symlink("../usr", fx.image("/sandbox/link"))?;
+    let out = fx.scan_read_write(&["/sandbox/link/not-created-yet/deeper"])?;
+    assert_eq!(
+        out.lines(),
+        [crossing(
+            "/sandbox/link/not-created-yet/deeper",
+            "/sandbox/link"
+        )],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.dir("/opt/with space", 0o755)?;
+    symlink("/", fx.image("/opt/with space/it's"))?;
+    let out = fx.scan_read_write(&["/opt/with space/it's/x y"])?;
+    assert_eq!(
+        out.lines(),
+        [crossing("/opt/with space/it's/x y", "/opt/with space/it's")],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fx.dir("/usr/local/bin", 0o755)?;
+    fx.dir("/ok", 0o755)?;
+    symlink("/usr/local/bin", fx.image("/one"))?;
+    symlink("/usr", fx.image("/two"))?;
+    let out = fx.scan_read_write(&["/one", "/ok", "/two/x"])?;
+    assert_eq!(
+        sorted_lines(&out),
+        [crossing("/one", "/one"), crossing("/two/x", "/two")]
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_read_write_argument_that_is_not_a_normal_absolute_path_without_control_characters()
+-> TestResult {
+    for bad in [
+        "relative", "", "/", "/a//b", "/a/./b", "/a/../b", "/a/", "/a/.", "/a/..", "/a\nb",
+        "/a\n/b", "/a\tb", "/a\u{7f}", "/a\rb",
+    ] {
+        let fx = Fixture::new()?;
+        let out = fx.scan_read_write(&[bad])?;
+        assert_eq!(out.code, Some(64), "{bad:?}: {}", out.stderr);
+    }
+    Ok(())
+}
+
+fn home_line(reason: &str) -> String {
+    format!("sandbox home is not a real directory owned by the sandbox user: /sandbox ({reason})")
+}
+
+#[test]
+fn scan_requires_the_sandbox_home_to_be_a_real_directory_owned_by_the_sandbox_user() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.relink("/sandbox", true)?;
+    expect_lines(&fx, "absolute symlink", &[&home_line("symlink")])?;
+
+    let fx = Fixture::new()?;
+    fx.relink("/sandbox", false)?;
+    expect_lines(&fx, "relative symlink", &[&home_line("symlink")])?;
+
+    let fx = Fixture::new()?;
+    fs::remove_dir(fx.image("/sandbox"))?;
+    symlink("/", fx.image("/sandbox"))?;
+    let out = fx.scan_read_write(&["/sandbox/anything"])?;
+    assert!(!out.ok);
+    assert_eq!(
+        sorted_lines(&out),
+        {
+            let mut wanted = vec![
+                home_line("symlink"),
+                crossing("/sandbox/anything", "/sandbox"),
+            ];
+            wanted.sort();
+            wanted
+        },
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fs::remove_dir(fx.image("/sandbox"))?;
+    expect_lines(&fx, "missing", &[&home_line("missing")])?;
+
+    let fx = Fixture::new()?;
+    fs::remove_dir(fx.image("/sandbox"))?;
+    fx.file("/sandbox", b"not a directory", 0o644)?;
+    expect_lines(&fx, "a file", &[&home_line("wrong type")])?;
+
+    for mode in [0o775, 0o757, 0o777] {
+        let fx = Fixture::new()?;
+        fs::set_permissions(fx.image("/sandbox"), fs::Permissions::from_mode(mode))?;
+        expect_lines(
+            &fx,
+            &format!("mode {mode:o}"),
+            &[&home_line("writable by group or others")],
+        )?;
+    }
+    for mode in [0o500, 0o555] {
+        let fx = Fixture::new()?;
+        fs::set_permissions(fx.image("/sandbox"), fs::Permissions::from_mode(mode))?;
+        expect_lines(
+            &fx,
+            &format!("mode {mode:o}"),
+            &[&home_line("not writable by its owner")],
+        )?;
+        fs::set_permissions(fx.image("/sandbox"), fs::Permissions::from_mode(0o755))?;
+    }
+    for mode in [0o700, 0o750, 0o755] {
+        let fx = Fixture::new()?;
+        fs::set_permissions(fx.image("/sandbox"), fs::Permissions::from_mode(mode))?;
+        let out = fx.scan()?;
+        assert!(out.ok, "mode {mode:o}: {}", out.stderr);
+    }
+
+    let fx = Fixture::new()?;
+    let mut args = fx.arguments();
+    let at = args
+        .iter()
+        .position(|arg| arg == "--sandbox-owner")
+        .ok_or("no sandbox owner")?;
+    args[at + 1] = format!("{}:{}", fx.uid + 1, fx.gid);
+    let out = fx.run(&args)?;
+    assert_eq!(
+        out.lines(),
+        [home_line(&format!(
+            "not owned by {}:{}",
+            fx.uid + 1,
+            fx.gid
+        ))],
+        "{}",
+        out.stderr
+    );
+    let mut args = fx.arguments();
+    args[at + 1] = format!("{}:{}", fx.uid, fx.gid + 1);
+    let out = fx.run(&args)?;
+    assert_eq!(
+        out.lines(),
+        [home_line(&format!(
+            "not owned by {}:{}",
+            fx.uid,
+            fx.gid + 1
+        ))],
+        "{}",
+        out.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_requires_a_well_formed_sandbox_owner_argument() -> TestResult {
+    let fx = Fixture::new()?;
+    let mut args = fx.arguments();
+    let at = args
+        .iter()
+        .position(|arg| arg == "--sandbox-owner")
+        .ok_or("no sandbox owner")?;
+    let mut missing = args.clone();
+    missing.drain(at..at + 2);
+    assert_eq!(fx.run(&missing)?.code, Some(64));
+    for bad in ["", "1000", "a:b", ":1000", "1000:", "1:2:3", "01000:1000"] {
+        args[at + 1] = bad.to_owned();
+        assert_eq!(fx.run(&args)?.code, Some(64), "{bad:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn scan_never_expands_or_reinterprets_the_characters_of_a_read_write_path() -> TestResult {
+    let names = [
+        "[u]sr",
+        "star*",
+        "what?",
+        "back\\slash",
+        "-dash",
+        "--read-write",
+        "it's",
+        "$HOME",
+        "a b",
+    ];
+    let fx = Fixture::new()?;
+    fx.dir("/usr/share", 0o755)?;
+    let mut paths = Vec::new();
+    let mut expected = Vec::new();
+    for name in names {
+        symlink("/usr/share", fx.image(&format!("/{name}")))?;
+        let path = format!("/{name}/x");
+        expected.push(crossing(&path, &format!("/{name}")));
+        paths.push(path);
+    }
+    let arguments: Vec<&str> = paths.iter().map(String::as_str).collect();
+    let out = fx.scan_read_write(&arguments)?;
+    assert_eq!(out.lines(), expected, "{}", out.stderr);
+    Ok(())
+}
+
+#[test]
+fn scan_leaves_the_usual_root_links_and_links_below_a_writable_directory_alone() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/usr/bin", 0o755)?;
+    fx.dir("/usr/lib", 0o755)?;
+    fx.dir("/run", 0o755)?;
+    fx.dir("/var", 0o755)?;
+    fx.dir("/tmp", 0o1777)?;
+    symlink("usr/bin", fx.image("/bin"))?;
+    symlink("usr/lib", fx.image("/lib"))?;
+    symlink("/run", fx.image("/var/run"))?;
+    symlink("/usr", fx.image("/sandbox/inner"))?;
+    let out = fx.scan_read_write(&["/sandbox", "/tmp"])?;
+    assert!(out.ok, "{}", out.stderr);
+    let out = fx.scan_read_write(&["/var/run/lock"])?;
+    assert_eq!(
+        out.lines(),
+        [crossing("/var/run/lock", "/var/run")],
+        "{}",
+        out.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_link_into_its_own_tree_so_the_policy_names_the_real_directory() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/sandbox/real", 0o755)?;
+    symlink("/sandbox/real", fx.image("/sandbox/work"))?;
+    let out = fx.scan_read_write(&["/sandbox/work"])?;
+    assert_eq!(
+        out.lines(),
+        [crossing("/sandbox/work", "/sandbox/work")],
+        "{}",
+        out.stderr
+    );
+    let out = fx.scan_read_write(&["/sandbox/real"])?;
+    assert!(out.ok, "{}", out.stderr);
+    Ok(())
+}
+
+fn path_of_length(length: usize) -> String {
+    let mut path = String::from("/");
+    while path.len() < length {
+        path.push(if path.len() % 100 == 99 { '/' } else { 'a' });
+    }
+    if path.ends_with('/') {
+        path.pop();
+        path.push('a');
+    }
+    path
+}
+
+#[test]
+fn scan_refuses_a_read_write_path_it_cannot_stat_below_its_root_instead_of_calling_it_absent()
+-> TestResult {
+    let fx = Fixture::new()?;
+    let root_length = fx.top.join("image").to_string_lossy().len();
+    let limit = 4095 - root_length;
+    let fits = path_of_length(limit);
+    let out = fx.scan_read_write(&[&fits])?;
+    assert!(out.ok, "{}", out.stderr);
+    for length in [limit + 1, limit + 5, 4096, 4300] {
+        let long = path_of_length(length);
+        let out = fx.scan_read_write(&[&long])?;
+        assert_eq!(
+            out.lines(),
+            [format!(
+                "read_write path of the role policy is too long to inspect: {long}"
+            )],
+            "{length}"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_run_that_names_no_read_write_path() -> TestResult {
+    let fx = Fixture::new()?;
+    let mut args = fx.arguments();
+    let at = args
+        .iter()
+        .position(|arg| arg == "--read-write")
+        .ok_or("no read_write flag")?;
+    args.drain(at..at + 2);
+    assert_eq!(fx.run(&args)?.code, Some(64));
+    assert!(fx.scan()?.ok);
+    Ok(())
+}
+
+#[test]
+fn scan_refuses_a_read_write_flag_without_a_value() -> TestResult {
+    let fx = Fixture::new()?;
+    let mut args = fx.owners();
+    args.push("--read-write".to_owned());
+    assert_eq!(fx.run(&args)?.code, Some(64));
+    Ok(())
+}
+
+fn without_read_write(fx: &Fixture) -> Result<Vec<String>, Box<dyn Error>> {
+    let mut args = fx.arguments();
+    let at = args
+        .iter()
+        .position(|arg| arg == "--read-write")
+        .ok_or("no read_write flag")?;
+    args.drain(at..at + 2);
+    Ok(args)
+}
+
+#[test]
+fn scan_accepts_an_explicit_empty_writable_set_but_never_a_silent_one() -> TestResult {
+    let fx = Fixture::new()?;
+    let mut args = without_read_write(&fx)?;
+    assert_eq!(fx.run(&args)?.code, Some(64));
+    let at = args
+        .iter()
+        .position(|arg| arg == "--owner")
+        .ok_or("no owner flag")?;
+    args.insert(at, "--no-read-write".to_owned());
+    let out = fx.run(&args)?;
+    assert!(out.ok, "{}", out.stderr);
+    assert_eq!(out.stdout, "jackin-image-scan 1\n");
+    assert_eq!(out.stderr, "");
+    args.splice(at..at, ["--read-write".to_owned(), "/tmp".to_owned()]);
+    assert_eq!(fx.run(&args)?.code, Some(64));
+    Ok(())
+}
+
+#[test]
+fn scan_still_checks_the_rest_of_the_image_when_the_writable_set_is_empty() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.file("/usr/bin/sudo", b"x", 0o755)?;
+    let mut args = without_read_write(&fx)?;
+    args.insert(0, "--no-read-write".to_owned());
+    let out = fx.run(&args)?;
+    assert!(!out.ok);
+    assert_eq!(out.lines(), [forbidden("/usr/bin/sudo")], "{}", out.stderr);
+    Ok(())
+}
+
+fn hard_linked(path: &str) -> String {
+    format!(
+        "file of a read_write path of the role policy is hard linked outside the writable set: {path}"
+    )
+}
+
+#[test]
+fn scan_refuses_a_writable_file_that_has_another_hard_link_outside_the_writable_set() -> TestResult
+{
+    let fx = Fixture::new()?;
+    fx.file("/sandbox/shared", b"data", 0o644)?;
+    fx.dir("/opt", 0o755)?;
+    fs::hard_link(fx.image("/sandbox/shared"), fx.image("/opt/other name"))?;
+    let out = fx.scan_read_write(&["/sandbox/shared"])?;
+    assert!(!out.ok, "a hard linked writable file passed");
+    assert_eq!(
+        out.lines(),
+        [hard_linked("/opt/other name")],
+        "{}",
+        out.stderr
+    );
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert_eq!(
+        out.lines(),
+        [hard_linked("/opt/other name")],
+        "{}",
+        out.stderr
+    );
+
+    let fx = Fixture::new()?;
+    fs::hard_link(fx.image(START), fx.image("/sandbox/js"))?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert_eq!(out.lines(), [hard_linked(START)], "{}", out.stderr);
+    Ok(())
+}
+
+#[test]
+fn scan_allows_hard_links_that_stay_inside_the_writable_set_or_outside_it() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/tmp", 0o1777)?;
+    fx.dir("/opt", 0o755)?;
+    fx.file("/sandbox/one", b"data", 0o644)?;
+    fs::hard_link(fx.image("/sandbox/one"), fx.image("/sandbox/two"))?;
+    fs::hard_link(fx.image("/sandbox/one"), fx.image("/tmp/three"))?;
+    fx.file("/opt/a", b"data", 0o644)?;
+    fs::hard_link(fx.image("/opt/a"), fx.image("/opt/b"))?;
+    fx.file("/sandbox/solo", b"data", 0o644)?;
+    let out = fx.scan_read_write(&["/sandbox", "/tmp"])?;
+    assert!(out.ok, "{}", out.stderr);
+    assert_eq!(out.stderr, "");
+    let out = fx.scan_read_write(&["/sandbox/solo"])?;
+    assert!(out.ok, "{}", out.stderr);
+    let out = fx.scan_read_write(&["/sandbox/not-created-yet"])?;
+    assert!(out.ok, "{}", out.stderr);
+    Ok(())
+}
+
+#[test]
+fn scan_reads_a_hard_link_outside_a_writable_prefix_sibling_as_outside() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/sandbox-extra", 0o755)?;
+    fx.file("/sandbox/f", b"data", 0o644)?;
+    fs::hard_link(fx.image("/sandbox/f"), fx.image("/sandbox-extra/f"))?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert_eq!(
+        out.lines(),
+        [hard_linked("/sandbox-extra/f")],
+        "{}",
+        out.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_fails_closed_when_ls_is_missing_while_it_looks_for_hard_links() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.file("/sandbox/shared", b"data", 0o644)?;
+    fx.dir("/opt", 0o755)?;
+    fs::hard_link(fx.image("/sandbox/shared"), fx.image("/opt/other"))?;
+    fx.drop_tool("ls")?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert!(!out.ok, "a missing ls passed");
+    assert!(
+        out.lines()
+            .contains(&"find or ls failed while looking for hard links"),
+        "{}",
+        out.stderr
+    );
+    let fx = Fixture::new()?;
+    fx.file("/sandbox/shared", b"data", 0o644)?;
+    fx.dir("/opt", 0o755)?;
+    fs::hard_link(fx.image("/sandbox/shared"), fx.image("/opt/other"))?;
+    fx.drop_tool("awk")?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert!(!out.ok, "a missing awk passed");
+    assert!(
+        out.lines()
+            .contains(&"awk failed while looking for hard links"),
+        "{}",
+        out.stderr
+    );
+    Ok(())
+}
+
+const PADDING_LS: &str = r#"n=0
+/bin/ls "$@" | while IFS= read -r line; do
+    n=$((n + 1))
+    pad=
+    i=0
+    while [ "$i" -lt $((n % 7 + 1)) ]; do
+        pad="$pad "
+        i=$((i + 1))
+    done
+    printf '%s%s\n' "$pad" "$line"
+done
+"#;
+
+#[test]
+fn scan_reads_hard_links_from_ls_lines_that_are_padded_to_different_widths() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/opt", 0o755)?;
+    fx.file("/sandbox/ lead and trail ", b"data", 0o644)?;
+    fs::hard_link(
+        fx.image("/sandbox/ lead and trail "),
+        fx.image("/opt/ outside name "),
+    )?;
+    fx.file("/opt/unrelated one", b"x", 0o644)?;
+    fs::hard_link(
+        fx.image("/opt/unrelated one"),
+        fx.image("/opt/unrelated two"),
+    )?;
+    fx.file("/opt/unrelated three", b"y", 0o644)?;
+    fs::hard_link(
+        fx.image("/opt/unrelated three"),
+        fx.image("/opt/unrelated four"),
+    )?;
+    fx.stub("ls", PADDING_LS)?;
+    let out = fx.scan_read_write(&["/sandbox"])?;
+    assert_eq!(
+        out.lines(),
+        [hard_linked("/opt/ outside name ")],
+        "{}",
+        out.stderr
+    );
+    Ok(())
+}
+
+#[test]
+fn scan_matches_the_writable_set_literally_whatever_characters_its_paths_hold() -> TestResult {
+    let fx = Fixture::new()?;
+    fx.dir("/opt", 0o755)?;
+    fx.file("/sand\\nbox/f*[a]?", b"data", 0o644)?;
+    fs::hard_link(fx.image("/sand\\nbox/f*[a]?"), fx.image("/opt/o"))?;
+    let out = fx.scan_read_write(&["/sand\\nbox"])?;
+    assert_eq!(out.lines(), [hard_linked("/opt/o")], "{}", out.stderr);
+    let out = fx.scan_read_write(&["/sand\\nbox/f*[a]?", "/opt"])?;
+    assert!(out.ok, "{}", out.stderr);
     Ok(())
 }
