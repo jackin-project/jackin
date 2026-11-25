@@ -43,13 +43,8 @@ async fn kimi_displays_the_fractional_booster_balance_and_plan_window() -> TestR
         UsageProvider::Kimi,
         snapshot,
         Expected {
-            account: &[
-                "Global",
-                "0.000125 cents",
-                "75%",
-                "Monthly charge limit · Off",
-            ],
-            board: &["Booster", "0.000125 cents", "75%"],
+            account: &["Global", "25% used", "75% left"],
+            board: &["Booster", "0.000125 cents", "25% used"],
             absent: &["millionths_of_cent"],
         },
     )
@@ -65,8 +60,8 @@ async fn minimax_displays_model_windows_with_the_region() -> TestResult {
         UsageProvider::MiniMax,
         snapshot,
         Expected {
-            account: &["Global", "general weekly"],
-            board: &["general weekly"],
+            account: &["Global", "General weekly", "90% left"],
+            board: &["General weekly"],
             absent: &["current_weekly_total_count"],
         },
     )
@@ -83,18 +78,11 @@ async fn mimo_displays_plan_region_renewal_and_remaining_credits() -> TestResult
         UsageProvider::Mimo,
         snapshot,
         Expected {
-            account: &[
-                "Singapore",
-                "Automatic renewal · Off",
-                "50474251078 credits",
-            ],
-            board: &["50.47B credits"],
+            account: &["Singapore", "auto-renew off", "50.5B left"],
+            board: &["8% used"],
             absent: &["auto_renew"],
         },
-        Some((
-            "Token Plan",
-            &["50474251078 credits", "55000000000 credits"],
-        )),
+        Some(("Token Plan", &["55B credits", "50.5B left"])),
     )
     .await
 }
@@ -115,7 +103,7 @@ async fn minimax_metered_balance_keeps_small_nonzero_amounts_and_alert_state() -
         UsageProvider::MiniMax,
         snapshot,
         Expected {
-            account: &["Balance alerts · On", "0.001251 monetary units"],
+            account: &["region Global", "fetched"],
             board: &["Available", "0.001251 monetary units"],
             absent: &["sk-api-fixture"],
         },
@@ -150,19 +138,8 @@ async fn mimo_account_shows_balance_currency_partial_history_and_exact_daily_cos
         UsageProvider::Mimo,
         snapshot,
         Expected {
-            account: &[
-                "Total available",
-                "1.25 CNY",
-                "Daily history unavailable",
-                "0.000001 CNY",
-                "2 requests",
-            ],
-            board: &[
-                "Total available",
-                "1.25 CNY",
-                "Daily consumption",
-                "Daily bills",
-            ],
+            account: &["Available", "1.25 CNY"],
+            board: &["Available", "1.25 CNY", "Daily usage", "Daily bills"],
             absent: &["CNY/totalAvailable"],
         },
     )

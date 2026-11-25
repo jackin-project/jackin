@@ -1,0 +1,12 @@
+PROVIDER                 ACCOUNT               PLAN  STATUS      FLAGS
+Claude                   work@example.com      Max   failing 2m
+Antigravity (Google AI)  personal@example.com  Max   fresh 2m    duplicate
+Antigravity (Google AI)  personal@example.com  Max   failing 2m  duplicate
+
+3 accounts · 2 providers · 2 failing · 1 duplicate
+! Antigravity (Google AI):
+  personal@example.com is connected twice.
+! 1 account to sign in again: jackin account usage reconnect
+  <id> (IDs: jackin account usage ls --wide)
+  IDs: jackin account usage ls --wide
+    remove one: jackin account usage rm <id>

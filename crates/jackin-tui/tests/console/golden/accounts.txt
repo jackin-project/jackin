@@ -1,0 +1,24 @@
+  jackin❯    File   Go   Help       …  Accounts › Overview  inside the sandbox  
+                                                                                
+ ╭─ Accounts ──────────────────────────────────────── 14 usage · 1 execution ─╮ 
+ │ ▎   Overview                                                             ┃ │ 
+ │     Usage accounts                                           14 accounts ┃ │ 
+ │       Claude · work@example.com                                   Claude ┃ │ 
+ │       Claude · work2@example.com                                  Claude ┃ │ 
+ │       ChatGPT / Codex · work@example.com                 ChatGPT / Codex ┆ │ 
+ │       ChatGPT / Codex · home@example.com                 ChatGPT / Codex ┆ │ 
+ │       Muse · work@example.com                                       Muse ┆ │ 
+ │       Grok Account                                                  Grok ┆ │ 
+ │       Kimi Code                                                     Kimi ┆ │ 
+ │       Z.ai Account                                                  Z.ai ┆ │ 
+ │       MiniMax Token Plan                                         MiniMax ┆ │ 
+ ╰────────────────────────────────────────────────────────────────────────────╯ 
+                                                                                
+   Overview                              14 usage · 1 execution · Tab details   
+   ──────────────────────────────────────────────────────────────────────────   
+   Select Usage accounts to browse connected identities.                        
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+ Enter Details  r Refresh execution  n Add usage account  Esc Back  …           

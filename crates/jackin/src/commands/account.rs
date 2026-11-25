@@ -5,8 +5,8 @@ use jackin_core::{
     Account, Agent, ConfigEdit, CredentialFileProblem, CredentialSource, read_credential_file,
 };
 use jackin_session::{
-    AccountPlan, plan_account_edits, plan_account_edits_for_agent, read_chatgpt_login,
-    read_omp_host_key,
+    AccountPlan, GatewayPlan, Gateways, plan_account_edits, plan_account_edits_for_agent,
+    read_chatgpt_login, read_omp_host_key,
 };
 
 use crate::app::App;
@@ -252,11 +252,18 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
             plan.apply().await?;
         }
         AccountPlan::Gateway(plan) => {
-            let gateways = app.gateways(plan.config()).await?;
+            let gateways = connect(app, &plan).await?;
             plan.apply(&gateways).await?;
         }
     }
     Ok(())
+}
+
+async fn connect(app: &App, plan: &GatewayPlan) -> Result<Gateways, CommandError> {
+    let home = app.session(plan.config()).await?;
+    Ok(plan
+        .connect(home, app.deps.connect.as_ref(), &app.cancel)
+        .await?)
 }
 
 async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
@@ -265,7 +272,7 @@ async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
             plan.apply().await?;
         }
         AccountPlan::Gateway(plan) => {
-            let gateways = app.gateways(plan.config()).await?;
+            let gateways = connect(app, &plan).await?;
             plan.apply(&gateways).await?;
         }
     }
