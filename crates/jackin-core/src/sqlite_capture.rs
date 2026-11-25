@@ -8,6 +8,7 @@ use crate::ids::Sha256;
 use crate::paths::{HostPath, RepoPath};
 
 pub const SQLITE_MAGIC: &[u8] = b"SQLite format 3\0";
+const JOURNAL_MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
 
 const ATTEMPTS: usize = 3;
 const WAL_HEADER: usize = 32;
@@ -99,18 +100,20 @@ pub async fn capture(
         Ok(_) => {}
         Err(_) => return Err(CaptureProblem::Unreadable),
     }
-    let target = fs
-        .canonicalize(database)
-        .await
-        .map_err(|_| CaptureProblem::Unreadable)?
-        .ok_or(CaptureProblem::Missing)?;
-    let (Some(dir), Some(name)) = (
-        target.parent(),
-        target.file_name().and_then(|name| name.to_str()),
+    let (Some(parent), Some(name)) = (
+        database.parent(),
+        database.file_name().and_then(|name| name.to_str()),
     ) else {
         return Err(CaptureProblem::NotARegularFile);
     };
+    let dir = fs
+        .canonicalize(&parent)
+        .await
+        .map_err(|_| CaptureProblem::Unreadable)?
+        .ok_or(CaptureProblem::Missing)?;
+    let target = dir.join_name(name);
     let log_name = format!("{name}-wal");
+    let journal_name = format!("{name}-journal");
     let probe = RepoPath::parse(name).map_err(|_| CaptureProblem::Unreadable)?;
     match fs.read_regular(&dir, &probe, SQLITE_MAGIC.len()).await {
         Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC) => {}
@@ -167,6 +170,9 @@ pub async fn capture(
         else {
             continue;
         };
+        if journal_is_hot(fs, &dir, &journal_name).await? {
+            continue;
+        }
         let after = identity_of(fs, &target).await?;
         let same = offload(move || {
             let again = Zeroizing::new(again);
@@ -186,6 +192,23 @@ pub async fn capture(
         });
     }
     Err(CaptureProblem::Changed)
+}
+
+async fn journal_is_hot(
+    fs: &dyn FileSystem,
+    dir: &HostPath,
+    name: &str,
+) -> Result<bool, CaptureProblem> {
+    let file = RepoPath::parse(name).map_err(|_| CaptureProblem::Unreadable)?;
+    match fs.read_regular(dir, &file, JOURNAL_MAGIC.len()).await {
+        Ok(Ok(head)) => Ok(head.bytes.starts_with(JOURNAL_MAGIC)),
+        Ok(Err(RegularFileProblem::Missing))
+        | Err(FsError::Io {
+            kind: std::io::ErrorKind::NotFound,
+            ..
+        }) => Ok(false),
+        Ok(Err(_)) | Err(_) => Err(CaptureProblem::Unreadable),
+    }
 }
 
 async fn offload<T: Send + 'static>(

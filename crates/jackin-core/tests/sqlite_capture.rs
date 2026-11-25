@@ -121,3 +121,40 @@ async fn a_database_that_is_a_symbolic_link_is_refused() -> TestResult {
         .map_err(|problem| format!("{problem:?}"))?;
     Ok(())
 }
+
+#[tokio::test]
+async fn a_hot_rollback_journal_makes_the_capture_retry_and_then_give_up() -> TestResult {
+    let mut hot = vec![0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
+    hot.resize(64, 0);
+    assert_eq!(
+        problem(&[("agent.db", database(512)), ("agent.db-journal", hot)]).await?,
+        CaptureProblem::Changed
+    );
+    let fs = fixture(&[
+        ("agent.db", database(512)),
+        ("agent.db-journal", vec![0; 64]),
+    ])
+    .await?;
+    capture(&fs, &at("agent.db")?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_database_reached_through_a_linked_directory_is_still_read() -> TestResult {
+    let dir = tempfile::tempdir()?;
+    let real = dir.path().join("real");
+    std::fs::create_dir(&real)?;
+    std::fs::write(real.join("agent.db"), database(512))?;
+    std::os::unix::fs::symlink(&real, dir.path().join("via"))?;
+    let fs = jackin_core::StdFileSystem::default();
+    capture(
+        &fs,
+        &HostPath::parse(&dir.path().join("via").join("agent.db"))?,
+        LIMITS,
+    )
+    .await
+    .map_err(|problem| format!("{problem:?}"))?;
+    Ok(())
+}
