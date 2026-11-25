@@ -430,3 +430,58 @@ async fn a_rollback_puts_every_held_provider_of_a_changed_key_back_on_the_old_ke
     })
     .await
 }
+
+#[tokio::test]
+async fn a_held_provider_the_replacement_could_not_delete_keeps_the_gateway_material_when_it_rolls_back()
+-> TestResult {
+    guard(async {
+        let world = registered().await?;
+        let keyed = account(&world, &world.config).await?;
+        hold(&world, &keyed, &zai_agents(&keyed)).await?;
+        let claude = ProviderName::for_account(keyed.name(), Agent::ClaudeCode);
+        let held = world
+            .gateway
+            .provider(&claude)
+            .ok_or("no claude provider")?;
+        write_key(&world, ROTATED_KEY).await?;
+        let home = super::support::Home::new(&super::support::login_json()).await?;
+        let login = super::support::codex_account(&home.path, super::support::ACCOUNT_ID)?;
+        let login = Account::new(
+            keyed.name().clone(),
+            Provider::Codex,
+            login.credential().clone(),
+        )?;
+        let plan = plan_account_edits(
+            &world.desk(),
+            vec![
+                ConfigEdit::RemoveAccountClearingBindings(keyed.name().clone()),
+                ConfigEdit::AddAccount(login),
+            ],
+            &CancellationToken::new(),
+        )
+        .await?;
+        world.gateway.inject(Fault::FailAfter {
+            op: GatewayOp::Provider,
+            calls: 5,
+            error: GatewayError::Protocol {
+                message: "the claude provider could not be deleted".to_owned(),
+            },
+        });
+
+        let error = plan
+            .apply(
+                &Gateways::single(world.session.clone()),
+                &CancellationToken::new(),
+            )
+            .await
+            .err()
+            .ok_or("a replacement with a failing delete succeeded")?;
+        assert!(
+            matches!(error, AccountEditError::OnGateway { .. }),
+            "{error:?}"
+        );
+        assert_eq!(world.gateway.provider(&claude), Some(held));
+        Ok(())
+    })
+    .await
+}
