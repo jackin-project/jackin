@@ -109,7 +109,7 @@ fn preflight_slots() -> &'static Arc<Semaphore> {
 }
 
 fn is_wal_mode(header: &[u8]) -> bool {
-    header.get(18..20) == Some(&[WAL_FORMAT_VERSION, WAL_FORMAT_VERSION][..])
+    header.get(19) == Some(&WAL_FORMAT_VERSION)
 }
 
 async fn read_file(
@@ -357,7 +357,12 @@ async fn read_pair(
     if matches!(first, Read::Absent) {
         return Err(CaptureProblem::Missing);
     }
-    let log_first = read_log(fs, dir, log_name, limits, slot).await?;
+    let wal_mode = matches!(&first, Read::Bytes(bytes) if is_wal_mode(bytes));
+    let log_first = if wal_mode {
+        read_log(fs, dir, log_name, limits, slot).await?
+    } else {
+        Read::Absent
+    };
     let again = read_database(fs, dir, name, limits, slot).await?;
     let held = Arc::clone(slot);
     let (first, same) = offload(move || {
@@ -369,7 +374,11 @@ async fn read_pair(
     if !same {
         return Ok(None);
     }
-    let log_again = read_log(fs, dir, log_name, limits, slot).await?;
+    let log_again = if wal_mode {
+        read_log(fs, dir, log_name, limits, slot).await?
+    } else {
+        Read::Absent
+    };
     let held = Arc::clone(slot);
     let (log_first, same) = offload(move || {
         let _held = held;

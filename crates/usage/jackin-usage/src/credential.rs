@@ -420,6 +420,11 @@ struct OpenCodeRecord {
 fn extract_opencode_credential(
     connection: &rusqlite::Connection,
 ) -> Result<OpenCodeRecord, Unresolved> {
+    if !is_plain_table(connection, "credential") {
+        return Err(Unresolved::Unreadable(
+            "the OpenCode store could not be read",
+        ));
+    }
     let mut statement = connection
         .prepare(OPENCODE_CREDENTIAL_QUERY)
         .map_err(|_| Unresolved::Unreadable("the OpenCode store could not be read"))?;
@@ -541,6 +546,9 @@ fn read_omp_api_key(
     connection: &rusqlite::Connection,
     provider_id: &str,
 ) -> Result<Extracted, Unresolved> {
+    if !is_plain_table(connection, "auth_credentials") {
+        return Err(Unresolved::Unreadable("the OMP store could not be read"));
+    }
     let (id, data): (i64, Secret) = connection
         .query_row(
             "SELECT id, data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
@@ -624,10 +632,30 @@ where
 
 fn store_policy(context: AuthContext<'_>) -> Authorization {
     match context.action {
-        AuthAction::Select | AuthAction::Function { .. } => Authorization::Allow,
-        AuthAction::Read { .. } if context.accessor.is_none() => Authorization::Allow,
+        AuthAction::Select | AuthAction::Function { .. } | AuthAction::Read { .. }
+            if context.accessor.is_none() =>
+        {
+            Authorization::Allow
+        }
         _ => Authorization::Deny,
     }
+}
+
+fn is_plain_table(connection: &rusqlite::Connection, name: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT type, sql FROM sqlite_schema WHERE name = ?1",
+            [name],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .is_ok_and(|(kind, sql)| {
+            kind == "table"
+                && !sql.is_some_and(|sql| {
+                    sql.trim_start()
+                        .to_ascii_uppercase()
+                        .starts_with("CREATE VIRTUAL")
+                })
+        })
 }
 
 fn store_connection(opened: &'static str) -> Result<rusqlite::Connection, Unresolved> {

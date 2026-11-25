@@ -122,6 +122,8 @@ async fn an_omp_credential_view_is_refused_instead_of_run() -> TestResult {
         "CREATE TABLE real (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT);
          INSERT INTO real VALUES (1, 'wanted', 'api_key', '{\"key\": \"fake-wanted-key\"}');
          CREATE VIEW auth_credentials AS SELECT * FROM real;",
+        "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'wanted' AS provider, 'api_key' AS credential_type, '{\"key\": \"fake-wanted-key\"}' AS data;",
+        "CREATE VIEW auth_credentials AS SELECT DISTINCT a.column1 AS id, 'wanted' AS provider, 'api_key' AS credential_type, 'x' AS data FROM (VALUES (1),(2),(3)) a, (VALUES (1),(2),(3)) b;",
     ] {
         let dir = tempfile::tempdir()?;
         let store = view_store(dir.path(), schema)?;

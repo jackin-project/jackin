@@ -68,7 +68,7 @@ async fn a_database_over_its_cap_is_refused() -> TestResult {
 async fn a_log_over_its_cap_is_refused() -> TestResult {
     assert_eq!(
         problem(&[
-            ("agent.db", database(512)),
+            ("agent.db", page_database(1)),
             ("agent.db-wal", vec![0; LIMITS.log_bytes + 1]),
         ])
         .await?,
@@ -395,7 +395,7 @@ async fn a_real_hot_rollback_journal_is_noticed_from_its_first_bytes() -> TestRe
 #[tokio::test]
 async fn a_real_log_that_is_a_symbolic_link_is_refused() -> TestResult {
     let dir = tempfile::tempdir()?;
-    std::fs::write(dir.path().join("agent.db"), database(512))?;
+    std::fs::write(dir.path().join("agent.db"), page_database(1))?;
     std::fs::write(dir.path().join("elsewhere"), log(&[(1, 1, marked_page(9))]))?;
     std::os::unix::fs::symlink(
         dir.path().join("elsewhere"),
@@ -421,7 +421,7 @@ async fn a_pipe_in_place_of_the_database_or_the_log_is_refused_without_blocking(
     ] {
         let dir = tempfile::tempdir()?;
         if pipe != "agent.db" {
-            std::fs::write(dir.path().join("agent.db"), database(512))?;
+            std::fs::write(dir.path().join("agent.db"), page_database(1))?;
         }
         let fifo = dir.path().join(pipe);
         let made = tokio::task::spawn_blocking(move || {
@@ -940,5 +940,49 @@ async fn a_read_that_outlives_its_capture_keeps_the_slot_it_was_given() -> TestR
         capture(&free, &at("agent.db")?, short).await.err(),
         Some(CaptureProblem::TimedOut)
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn only_four_probes_run_at_once_and_classification_is_never_starved_by_captures() -> TestResult
+{
+    let mut holders = Vec::new();
+    let mut probes = Vec::new();
+    for _ in 0..4 {
+        let fs = Arc::new(fixture(&[("agent.db", database(512))]).await?);
+        probes.push(fs.stall_reads_of("agent.db"));
+        holders.push(tokio::spawn(async move {
+            capture(&*fs, &at("agent.db").expect("a path"), LIMITS)
+                .await
+                .map(|_| ())
+        }));
+    }
+    for probe in &probes {
+        for _ in 0..500 {
+            if probe.entered() == 1 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(probe.entered(), 1);
+    }
+    let waiting = CaptureLimits {
+        deadline: Duration::from_millis(200),
+        ..LIMITS
+    };
+    let fifth = fixture(&[("agent.db", database(512))]).await?;
+    assert_eq!(
+        capture(&fifth, &at("agent.db")?, waiting).await.err(),
+        Some(CaptureProblem::TimedOut)
+    );
+    for holder in &holders {
+        holder.abort();
+    }
+    for holder in holders {
+        drop(holder.await);
+    }
+    capture(&fifth, &at("agent.db")?, LIMITS)
+        .await
+        .map_err(|problem| format!("{problem:?}"))?;
     Ok(())
 }

@@ -221,6 +221,9 @@ fn text<'a>(parent: &'a Value, name: &str, key: &str) -> Result<&'a str, Credent
 }
 
 fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Secret> {
+    if !is_plain_table(connection, "auth_credentials") {
+        return None;
+    }
     let data: Zeroizing<String> = connection
         .query_row(
             "SELECT data FROM auth_credentials WHERE provider = ?1 AND credential_type = 'api_key' ORDER BY id DESC LIMIT 1",
@@ -246,10 +249,30 @@ fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Se
 fn omp_policy(context: rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization {
     use rusqlite::hooks::{AuthAction, Authorization};
     match context.action {
-        AuthAction::Select | AuthAction::Function { .. } => Authorization::Allow,
-        AuthAction::Read { .. } if context.accessor.is_none() => Authorization::Allow,
+        AuthAction::Select | AuthAction::Function { .. } | AuthAction::Read { .. }
+            if context.accessor.is_none() =>
+        {
+            Authorization::Allow
+        }
         _ => Authorization::Deny,
     }
+}
+
+fn is_plain_table(connection: &rusqlite::Connection, name: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT type, sql FROM sqlite_schema WHERE name = ?1",
+            [name],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .is_ok_and(|(kind, sql)| {
+            kind == "table"
+                && !sql.is_some_and(|sql| {
+                    sql.trim_start()
+                        .to_ascii_uppercase()
+                        .starts_with("CREATE VIRTUAL")
+                })
+        })
 }
 
 fn omp_connection() -> rusqlite::Result<rusqlite::Connection> {

@@ -667,6 +667,10 @@ async fn a_store_whose_write_ahead_log_cannot_be_read_is_unreadable() -> TestRes
             directory.path(),
             &[("cred_1", "opencode", 1, &credential(TOKEN, EXPIRES, None))],
         );
+        let db = directory.path().join("opencode.db");
+        let mut bytes = std::fs::read(&db)?;
+        bytes[18..20].copy_from_slice(&[2, 2]);
+        std::fs::write(&db, bytes)?;
         std::fs::create_dir(directory.path().join("opencode.db-wal"))?;
         let harness = UsageHarness::new().await?;
         let account = account(
