@@ -71,10 +71,10 @@ impl ConfigStore {
         let lock = self.lock(cancel).await?;
         ConfigError::unless_cancelled(cancel)?;
         let mut config = self.read().await?;
+        check(&config)?;
         for edit in edits {
             config.apply(edit)?;
         }
-        check(&config)?;
         ConfigError::unless_cancelled(cancel)?;
         write_atomic_locked(
             self.fs.as_ref(),

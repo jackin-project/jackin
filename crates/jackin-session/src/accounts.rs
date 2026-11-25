@@ -86,6 +86,10 @@ pub enum AccountError {
     GatewayAdded { gateway: GatewayName },
     #[error("gateway {gateway} changed in the config after the gateways were connected")]
     GatewayChanged { gateway: GatewayName },
+    #[error(
+        "account {account} gained a login on the gateways after the gateway removal was planned"
+    )]
+    LoginAdded { account: AccountName },
     #[error("account {account} uses {mode}, which is not supported yet")]
     Unsupported {
         account: AccountName,
@@ -218,6 +222,29 @@ struct Locked {
     _held: Vec<FileLock>,
 }
 
+type LiveCheck = fn(&Config, &Config) -> Result<(), AccountError>;
+
+impl Locked {
+    async fn ensure_current(&self, check: LiveCheck) -> Result<(), AccountEditError> {
+        check(&self.config, &self.desk.store.load().await?)?;
+        Ok(())
+    }
+
+    async fn commit(
+        &self,
+        edits: Vec<ConfigEdit>,
+        cancel: &CancellationToken,
+        check: LiveCheck,
+    ) -> Result<Config, AccountEditError> {
+        self.desk
+            .store
+            .edit_checked(edits, cancel, |live| {
+                check(&self.config, live).map_err(AccountEditError::from)
+            })
+            .await
+    }
+}
+
 fn account_lock(name: &AccountName) -> String {
     format!("account-{name}.lock")
 }
@@ -278,8 +305,14 @@ pub struct GatewayPlan {
 
 #[derive(Debug)]
 pub enum GatewayRemoval {
-    Offline(OfflinePlan),
+    Offline(OfflineRemoval),
     Online(RemovalPlan),
+}
+
+#[derive(Debug)]
+pub struct OfflineRemoval {
+    locked: Locked,
+    name: GatewayName,
 }
 
 #[derive(Debug)]
@@ -434,8 +467,10 @@ pub async fn plan_gateway_removal(
     cancel: &CancellationToken,
 ) -> Result<GatewayRemoval, AccountEditError> {
     let locked = desk.lock(login_accounts, cancel).await?;
-    let edit = ConfigEdit::RemoveGateway(name.clone());
-    locked.config.clone().apply(edit.clone())?;
+    locked
+        .config
+        .clone()
+        .apply(ConfigEdit::RemoveGateway(name.clone()))?;
     let forget: Vec<Account> = locked
         .config
         .accounts()
@@ -450,9 +485,9 @@ pub async fn plan_gateway_removal(
             entry,
             forget,
         }),
-        _ => GatewayRemoval::Offline(OfflinePlan {
+        _ => GatewayRemoval::Offline(OfflineRemoval {
             locked,
-            edits: vec![edit],
+            name: name.clone(),
         }),
     })
 }
@@ -480,6 +515,15 @@ impl OfflinePlan {
     }
 }
 
+impl OfflineRemoval {
+    pub async fn apply(self, cancel: &CancellationToken) -> Result<Config, AccountEditError> {
+        let edit = ConfigEdit::RemoveGateway(self.name.clone());
+        self.locked
+            .commit(vec![edit], cancel, check_no_new_logins)
+            .await
+    }
+}
+
 impl RemovalPlan {
     pub fn gateway(&self) -> &GatewayName {
         &self.name
@@ -490,6 +534,8 @@ impl RemovalPlan {
         connector: &dyn GatewayConnector,
         cancel: &CancellationToken,
     ) -> Result<Config, AccountEditError> {
+        ConfigError::unless_cancelled(cancel)?;
+        self.locked.ensure_current(check_removal).await?;
         let gateway = match connector.connect(&self.name, &self.entry, cancel).await {
             Ok(gateway) => gateway,
             Err(error) if error.is_cancelled() => return Err(AccountEditError::Connect(error)),
@@ -521,7 +567,7 @@ impl RemovalPlan {
                     .await
                     .map_err(|error| on_gateway(&self.name, error))?;
             }
-            Ok(self.locked.desk.store.edit(vec![edit], cancel).await?)
+            self.locked.commit(vec![edit], cancel, check_removal).await
         }
         .await;
         match written {
@@ -695,6 +741,22 @@ fn check_gateway_entries(retained: &Config, live: &Config) -> Result<(), Account
     }
 }
 
+fn check_no_new_logins(planned: &Config, live: &Config) -> Result<(), AccountError> {
+    let known = login_accounts(planned);
+    match login_accounts(live)
+        .into_iter()
+        .find(|name| !known.contains(name))
+    {
+        Some(account) => Err(AccountError::LoginAdded { account }),
+        None => Ok(()),
+    }
+}
+
+fn check_removal(planned: &Config, live: &Config) -> Result<(), AccountError> {
+    check_gateway_entries(planned, live)?;
+    check_no_new_logins(planned, live)
+}
+
 impl GatewayPlan {
     pub fn config(&self) -> &Config {
         &self.locked.config
@@ -732,8 +794,7 @@ impl GatewayPlan {
         ConfigError::unless_cancelled(cancel)?;
         let scope = effects.scope();
         check_gateways(&locked.config, gateways, scope)?;
-        let store = &locked.desk.store;
-        check_gateway_entries(&locked.config, &store.load().await?)?;
+        locked.ensure_current(check_gateway_entries).await?;
         let sessions = match scope {
             GatewayScope::Every => gateways.every().map_err(AccountEditError::Unreachable)?,
             GatewayScope::Home => vec![gateways.home()],
@@ -742,11 +803,7 @@ impl GatewayPlan {
         let written = async {
             forget(&sessions, &effects.forget, &mut journal, cancel).await?;
             publish(&sessions, &effects.publish, &agents, &mut journal, cancel).await?;
-            store
-                .edit_checked(edits, cancel, |live| {
-                    check_gateway_entries(&locked.config, live).map_err(AccountEditError::from)
-                })
-                .await
+            locked.commit(edits, cancel, check_gateway_entries).await
         }
         .await;
         match written {

@@ -9,10 +9,11 @@ use jackin_core::{
 };
 use jackin_openshell::{Gateway, GatewayError, GatewayOp};
 use jackin_session::{
-    AccountEditError, AccountError, AccountPlan, ConnectError, GatewayScope, Gateways, HostPorts,
-    Session, SessionDeps, plan_account_edits,
+    AccountEditError, AccountError, AccountPlan, ConnectError, GatewayRemoval, GatewayScope,
+    Gateways, HostPorts, RemovalPlan, Session, SessionDeps, plan_account_edits,
+    plan_gateway_removal,
 };
-use jackin_testkit::{FakeGateway, Fault, ScriptedConnector, World, default_limits};
+use jackin_testkit::{FakeGateway, Fault, ScriptedConnector, Trigger, World, default_limits};
 use tokio_util::sync::CancellationToken;
 
 use super::support::{
@@ -1123,7 +1124,7 @@ async fn a_rollback_never_gives_a_peer_the_login_provider_of_the_account_it_repl
 
         let token = CancellationToken::new();
         fleet.second.inject(Fault::CancelAt {
-            trigger: jackin_testkit::Trigger::Op(GatewayOp::Profile),
+            trigger: Trigger::Op(GatewayOp::Profile),
             token: token.clone(),
         });
         let plan = plan_account_edits(
@@ -1152,6 +1153,399 @@ async fn a_rollback_never_gives_a_peer_the_login_provider_of_the_account_it_repl
         assert_eq!(fleet.holders()?, [true, false, false]);
         assert!(fleet.second.provider(&omp).is_some());
         assert!(fleet.world.gateway.provider(&omp).is_none());
+        Ok(())
+    })
+    .await
+}
+
+impl Fleet {
+    async fn removal(&self, gateway: &str) -> Result<RemovalPlan, Box<dyn std::error::Error>> {
+        let removal = plan_gateway_removal(
+            &self.world.desk(),
+            &GatewayName::parse(gateway)?,
+            &CancellationToken::new(),
+        )
+        .await?;
+        match removal {
+            GatewayRemoval::Online(plan) => Ok(plan),
+            GatewayRemoval::Offline(_) => Err("a login account needs the gateway".into()),
+        }
+    }
+
+    fn provider_calls(&self) -> [u32; 3] {
+        [
+            self.world.gateway.calls(GatewayOp::Provider),
+            self.second.calls(GatewayOp::Provider),
+            self.third.calls(GatewayOp::Provider),
+        ]
+    }
+
+    async fn edit(&self, edits: Vec<ConfigEdit>) -> Result<Config, jackin_core::ConfigError> {
+        self.store.edit(edits, &CancellationToken::new()).await
+    }
+
+    fn moved(&self, gateway: &str) -> Result<Vec<ConfigEdit>, Box<dyn std::error::Error>> {
+        let gateway = GatewayName::parse(gateway)?;
+        let entry = Config::parse(&format!(
+            "[gateways.{gateway}]\nopenshell_workspace = \"default\"\nbuilder = \"moved\"\nplatform = \"linux/arm64\"\n"
+        ))?
+        .gateway(&gateway)
+        .ok_or("the moved entry")?
+        .clone();
+        Ok(vec![
+            ConfigEdit::RemoveGateway(gateway.clone()),
+            ConfigEdit::AddGateway {
+                name: gateway,
+                entry,
+            },
+        ])
+    }
+
+    async fn added(&self, gateway: &str) -> Result<Vec<ConfigEdit>, Box<dyn std::error::Error>> {
+        let entry = self
+            .store
+            .load()
+            .await?
+            .gateway(&GatewayName::parse("second")?)
+            .ok_or("second")?
+            .clone();
+        Ok(vec![ConfigEdit::AddGateway {
+            name: GatewayName::parse(gateway)?,
+            entry,
+        }])
+    }
+
+    async fn refuses_without_a_gateway_operation(
+        &self,
+        plan: RemovalPlan,
+    ) -> Result<AccountEditError, Box<dyn std::error::Error>> {
+        let config = self.store.load().await?;
+        let operations = self.provider_calls();
+        let connector = scripted(self);
+        let refused = plan
+            .apply(connector.as_ref(), &CancellationToken::new())
+            .await;
+        let error = refused.err().ok_or("a stale removal plan was applied")?;
+        assert_eq!(connector.calls(&GatewayName::parse("second")?), 0);
+        assert_eq!(connector.calls(&GatewayName::parse("third")?), 0);
+        assert_eq!(self.provider_calls(), operations);
+        assert_eq!(self.holders()?, [true, true, true]);
+        assert_eq!(self.store.load().await?, config);
+        Ok(error)
+    }
+}
+
+#[tokio::test]
+async fn a_gateway_added_after_a_removal_plan_refuses_the_apply_and_touches_no_gateway()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let plan = fleet.removal("second").await?;
+        fleet.edit(fleet.added("zulu").await?).await?;
+
+        let error = fleet.refuses_without_a_gateway_operation(plan).await?;
+
+        assert!(
+            matches!(
+                &error,
+                AccountEditError::Account(AccountError::GatewayAdded { gateway })
+                    if gateway.as_str() == "zulu"
+            ),
+            "{error:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_peer_removed_after_a_removal_plan_refuses_the_apply_and_touches_no_gateway() -> TestResult
+{
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let plan = fleet.removal("second").await?;
+        fleet
+            .edit(vec![ConfigEdit::RemoveGateway(GatewayName::parse(
+                "third",
+            )?)])
+            .await?;
+
+        let error = fleet.refuses_without_a_gateway_operation(plan).await?;
+
+        assert!(
+            matches!(
+                &error,
+                AccountEditError::Account(AccountError::GatewayRemoved { gateway })
+                    if gateway.as_str() == "third"
+            ),
+            "{error:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_gateway_being_removed_already_gone_after_a_removal_plan_refuses_the_apply()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let plan = fleet.removal("second").await?;
+        fleet
+            .edit(vec![ConfigEdit::RemoveGateway(GatewayName::parse(
+                "second",
+            )?)])
+            .await?;
+
+        let error = fleet.refuses_without_a_gateway_operation(plan).await?;
+
+        assert!(
+            matches!(
+                &error,
+                AccountEditError::Account(AccountError::GatewayRemoved { gateway })
+                    if gateway.as_str() == "second"
+            ),
+            "{error:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn the_entry_of_the_gateway_being_removed_changed_after_a_removal_plan_refuses_the_apply()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let plan = fleet.removal("second").await?;
+        fleet.edit(fleet.moved("second")?).await?;
+
+        let error = fleet.refuses_without_a_gateway_operation(plan).await?;
+
+        assert!(
+            matches!(
+                &error,
+                AccountEditError::Account(AccountError::GatewayChanged { gateway })
+                    if gateway.as_str() == "second"
+            ),
+            "{error:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_peer_entry_changed_after_a_removal_plan_refuses_the_apply_and_touches_no_gateway()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let plan = fleet.removal("second").await?;
+        fleet.edit(fleet.moved("third")?).await?;
+
+        let error = fleet.refuses_without_a_gateway_operation(plan).await?;
+
+        assert!(
+            matches!(
+                &error,
+                AccountEditError::Account(AccountError::GatewayChanged { gateway })
+                    if gateway.as_str() == "third"
+            ),
+            "{error:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_login_account_added_after_a_removal_plan_refuses_the_apply_and_touches_no_gateway()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let plan = fleet.removal("second").await?;
+        let (_other, added) = other_login_account().await?;
+        fleet.edit(vec![ConfigEdit::AddAccount(added)]).await?;
+
+        let error = fleet.refuses_without_a_gateway_operation(plan).await?;
+
+        assert!(
+            matches!(
+                &error,
+                AccountEditError::Account(AccountError::LoginAdded { account })
+                    if account.as_str() == "other"
+            ),
+            "{error:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_login_account_added_after_an_offline_removal_plan_refuses_the_apply() -> TestResult {
+    guard(async {
+        let fleet = fleet([false, false, false]).await?;
+        fleet
+            .edit(vec![ConfigEdit::RemoveAccountClearingBindings(name(
+                "work",
+            )?)])
+            .await?;
+        let cancel = CancellationToken::new();
+        let GatewayRemoval::Offline(plan) =
+            plan_gateway_removal(&fleet.world.desk(), &GatewayName::parse("second")?, &cancel)
+                .await?
+        else {
+            return Err("a config without login accounts needs no gateway".into());
+        };
+        let (_other, added) = other_login_account().await?;
+        let config = fleet.edit(vec![ConfigEdit::AddAccount(added)]).await?;
+
+        let refused = plan.apply(&cancel).await.map_err(AccountEditError::from);
+
+        assert!(
+            matches!(
+                &refused,
+                Err(AccountEditError::Account(AccountError::LoginAdded { account }))
+                    if account.as_str() == "other"
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(fleet.store.load().await?, config);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_removal_plan_cancelled_before_it_starts_connects_to_no_gateway() -> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let plan = fleet.removal("second").await?;
+        let config = fleet.store.load().await?;
+        let operations = fleet.provider_calls();
+        let connector = scripted(&fleet);
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        let refused = plan.apply(connector.as_ref(), &cancel).await;
+
+        assert!(
+            matches!(
+                &refused,
+                Err(AccountEditError::Config(
+                    jackin_core::ConfigError::Cancelled
+                ))
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(connector.calls(&GatewayName::parse("second")?), 0);
+        assert_eq!(fleet.provider_calls(), operations);
+        assert_eq!(fleet.holders()?, [true, true, true]);
+        assert_eq!(fleet.store.load().await?, config);
+        Ok(())
+    })
+    .await
+}
+
+async fn removal_meddled_with_after_the_first_forget(
+    fleet: &Fleet,
+    meddling: Vec<ConfigEdit>,
+) -> Result<(AccountEditError, Config), Box<dyn std::error::Error>> {
+    let plan = fleet.removal("second").await?;
+    let held = fleet.second.provider(&provider()?).ok_or("no provider")?;
+    let operations = fleet.provider_calls();
+    let hold = Trigger::Op(GatewayOp::Provider);
+    fleet.second.inject(Fault::HoldAt {
+        trigger: hold.clone(),
+    });
+    let connector = scripted(fleet);
+    let cancel = CancellationToken::new();
+    let meddler = async {
+        assert!(fleet.second.until_held(&hold).await);
+        let config = fleet.edit(meddling).await;
+        fleet.second.release(&hold);
+        config
+    };
+    let (removed, meddled) = tokio::join!(plan.apply(connector.as_ref(), &cancel), meddler);
+    let error = removed
+        .err()
+        .ok_or("a removal that went stale was committed")?;
+    assert!(fleet.second.calls(GatewayOp::Provider) > operations[1]);
+    assert_eq!(fleet.holders()?, [true, true, true]);
+    assert!(fleet.second.provider(&provider()?).ok_or("no provider")? == held);
+    assert_eq!(fleet.store.load().await?, meddled?);
+    Ok((error, fleet.store.load().await?))
+}
+
+#[tokio::test]
+async fn a_gateway_added_while_a_removal_forgets_the_providers_restores_them_and_commits_nothing()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let meddling = fleet.added("zulu").await?;
+
+        let (error, config) = removal_meddled_with_after_the_first_forget(&fleet, meddling).await?;
+
+        assert!(
+            matches!(
+                &error,
+                AccountEditError::Account(AccountError::GatewayAdded { gateway })
+                    if gateway.as_str() == "zulu"
+            ),
+            "{error:?}"
+        );
+        assert!(config.gateway(&GatewayName::parse("second")?).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_login_account_added_while_a_removal_forgets_the_providers_restores_them_and_commits_nothing()
+-> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let (_other, added) = other_login_account().await?;
+
+        let (error, config) = removal_meddled_with_after_the_first_forget(
+            &fleet,
+            vec![ConfigEdit::AddAccount(added)],
+        )
+        .await?;
+
+        assert!(
+            matches!(
+                &error,
+                AccountEditError::Account(AccountError::LoginAdded { account })
+                    if account.as_str() == "other"
+            ),
+            "{error:?}"
+        );
+        assert!(config.gateway(&GatewayName::parse("second")?).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_default_gateway_change_after_a_removal_plan_does_not_stop_the_removal() -> TestResult {
+    guard(async {
+        let fleet = fleet([true, true, true]).await?;
+        let plan = fleet.removal("second").await?;
+        let third = GatewayName::parse("third")?;
+        fleet
+            .edit(vec![ConfigEdit::SetDefaultGateway(Some(third.clone()))])
+            .await?;
+        let connector = scripted(&fleet);
+
+        let after = plan
+            .apply(connector.as_ref(), &CancellationToken::new())
+            .await?;
+
+        assert!(after.gateway(&GatewayName::parse("second")?).is_none());
+        assert!(after.gateway(&third).is_some());
+        assert_eq!(fleet.holders()?, [true, false, true]);
         Ok(())
     })
     .await
