@@ -17,6 +17,7 @@ const JOURNAL_MAGIC: &[u8] = &[0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
 const ATTEMPTS: usize = 5;
 const RETRY_PAUSE: Duration = Duration::from_millis(40);
 const CAPTURE_SLOTS: usize = 2;
+const PREFLIGHT_SLOTS: usize = 4;
 const WAL_HEADER: usize = 32;
 const WAL_FRAME_HEADER: usize = 24;
 const WAL_MAGIC: u32 = 0x377f_0682;
@@ -102,6 +103,15 @@ fn capture_slots() -> &'static Arc<Semaphore> {
     SLOTS.get_or_init(|| Arc::new(Semaphore::new(CAPTURE_SLOTS)))
 }
 
+fn preflight_slots() -> &'static Arc<Semaphore> {
+    static SLOTS: OnceLock<Arc<Semaphore>> = OnceLock::new();
+    SLOTS.get_or_init(|| Arc::new(Semaphore::new(PREFLIGHT_SLOTS)))
+}
+
+fn is_wal_mode(header: &[u8]) -> bool {
+    header.get(18..20) == Some(&[WAL_FORMAT_VERSION, WAL_FORMAT_VERSION][..])
+}
+
 async fn read_file(
     fs: &dyn FileSystem,
     dir: &HostPath,
@@ -174,6 +184,12 @@ async fn capture_pinned(
     database: &HostPath,
     limits: CaptureLimits,
 ) -> Result<Capture, CaptureProblem> {
+    let preflight: Slot = Arc::new(
+        Arc::clone(preflight_slots())
+            .acquire_owned()
+            .await
+            .map_err(|_| CaptureProblem::Unreadable)?,
+    );
     match fs.stat(database).await {
         Ok(Some(FileKind::Symlink)) => return Err(CaptureProblem::Symlink),
         Ok(_) => {}
@@ -195,13 +211,18 @@ async fn capture_pinned(
     let log_target = dir.join_name(&log_name);
     let journal_name = format!("{name}-journal");
     let probe = RepoPath::parse(name).map_err(|_| CaptureProblem::Unreadable)?;
-    match fs.read_regular(&dir, &probe, SQLITE_MAGIC.len()).await {
+    let hold: Hold = Arc::<OwnedSemaphorePermit>::clone(&preflight);
+    match fs
+        .read_regular_holding(&dir, &probe, SQLITE_MAGIC.len(), hold)
+        .await
+    {
         Ok(Ok(head)) if head.bytes.starts_with(SQLITE_MAGIC) => {}
         Ok(Ok(_)) => return Err(CaptureProblem::NotSqlite),
         Ok(Err(RegularFileProblem::Missing)) => return Err(CaptureProblem::Missing),
         Ok(Err(_)) => return Err(CaptureProblem::NotARegularFile),
         Err(_) => return Err(CaptureProblem::Unreadable),
     }
+    drop(preflight);
     let slot: Slot = Arc::new(
         Arc::clone(capture_slots())
             .acquire_owned()
@@ -225,7 +246,7 @@ async fn capture_pinned(
         if journal_is_hot(fs, &dir, &journal_name, &slot).await? {
             continue;
         }
-        let first = if first.get(18) == Some(&WAL_FORMAT_VERSION) {
+        let first = if is_wal_mode(&first) {
             first
         } else {
             let again = read_database(fs, &dir, name, limits, &slot).await?;
@@ -415,7 +436,7 @@ fn store_image(
     if image.len() > image_bytes {
         return Err(CaptureProblem::ImageTooLarge);
     }
-    if let Some(log) = log {
+    if let Some(log) = log.filter(|_| is_wal_mode(&image)) {
         apply_log(&mut image, log, image_bytes)?;
     }
     if let Some(header) = image.get_mut(18..20) {

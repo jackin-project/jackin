@@ -98,9 +98,23 @@ async fn a_file_that_is_not_a_database_falls_through_whatever_its_size() -> Test
 #[tokio::test]
 async fn a_log_without_a_valid_header_is_unreadable() -> TestResult {
     assert_eq!(
-        problem(&[("agent.db", database(512)), ("agent.db-wal", vec![7; 64]),]).await?,
+        problem(&[
+            ("agent.db", page_database(1)),
+            ("agent.db-wal", vec![7; 64]),
+        ])
+        .await?,
         CaptureProblem::LogUnreadable
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_log_beside_a_rollback_mode_database_is_ignored() -> TestResult {
+    for wal in [log(&[(1, 1, marked_page(7))]), vec![7; 64]] {
+        let image = image_of(&[("agent.db", rollback_database(0)), ("agent.db-wal", wal)]).await?;
+        assert_eq!(image[100], 0);
+        assert_eq!(image.len(), 512);
+    }
     Ok(())
 }
 
@@ -350,7 +364,7 @@ async fn a_real_log_over_its_cap_is_refused_and_one_at_the_cap_is_judged_on_its_
 -> TestResult {
     assert_eq!(
         real_problem(&[
-            ("agent.db", database(512)),
+            ("agent.db", page_database(1)),
             ("agent.db-wal", vec![0; REAL.log_bytes + 1]),
         ])
         .await?,
@@ -358,7 +372,7 @@ async fn a_real_log_over_its_cap_is_refused_and_one_at_the_cap_is_judged_on_its_
     );
     assert_eq!(
         real_problem(&[
-            ("agent.db", database(512)),
+            ("agent.db", page_database(1)),
             ("agent.db-wal", vec![0; REAL.log_bytes]),
         ])
         .await?,

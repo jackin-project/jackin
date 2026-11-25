@@ -80,14 +80,17 @@ fn view_store(dir: &Path, view: &str) -> Result<HostPath, Box<dyn std::error::Er
     Ok(HostPath::parse(&std::fs::canonicalize(&path)?)?)
 }
 
+const HANG: &str = "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, data TEXT);
+     WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r WHERE x < 400000) INSERT INTO auth_credentials (id, provider, data) SELECT x, 'wanted', 'x' FROM r;
+     ALTER TABLE auth_credentials ADD COLUMN credential_type TEXT AS (CASE WHEN length(hex(zeroblob(60000 + id % 2))) > 0 THEN 'never' END);";
+
 #[tokio::test]
-async fn an_omp_credential_view_that_never_finishes_is_given_up_on_and_frees_its_place()
+async fn an_omp_credential_query_that_never_finishes_is_given_up_on_and_frees_its_place()
 -> TestResult {
-    let hang = "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'wanted' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;";
     let fs = StdFileSystem::default();
     for _ in 0..3 {
         let dir = tempfile::tempdir()?;
-        let store = view_store(dir.path(), hang)?;
+        let store = view_store(dir.path(), HANG)?;
         let finished = tokio::time::timeout(
             std::time::Duration::from_secs(30),
             read_omp_host_key(&fs, &store, "wanted"),
@@ -99,7 +102,8 @@ async fn an_omp_credential_view_that_never_finishes_is_given_up_on_and_frees_its
     let dir = tempfile::tempdir()?;
     let store = view_store(
         dir.path(),
-        "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'wanted' AS provider, 'api_key' AS credential_type, '{\"key\": \"fake-wanted-key\"}' AS data;",
+        "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT);
+         INSERT INTO auth_credentials VALUES (1, 'wanted', 'api_key', '{\"key\": \"fake-wanted-key\"}');",
     )?;
     let key = tokio::time::timeout(
         std::time::Duration::from_secs(10),
@@ -108,6 +112,48 @@ async fn an_omp_credential_view_that_never_finishes_is_given_up_on_and_frees_its
     .await
     .map_err(|_| "the worker of an abandoned query still holds its place")??;
     assert_eq!(key.expose(), "fake-wanted-key");
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_omp_credential_view_is_refused_instead_of_run() -> TestResult {
+    for schema in [
+        "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'wanted' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;",
+        "CREATE TABLE real (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT);
+         INSERT INTO real VALUES (1, 'wanted', 'api_key', '{\"key\": \"fake-wanted-key\"}');
+         CREATE VIEW auth_credentials AS SELECT * FROM real;",
+    ] {
+        let dir = tempfile::tempdir()?;
+        let store = view_store(dir.path(), schema)?;
+        let started = std::time::Instant::now();
+        read_omp_host_key(&StdFileSystem::default(), &store, "wanted")
+            .await
+            .unwrap_err();
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(4),
+            "the view was run"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_omp_value_that_a_query_builds_beyond_the_length_limit_is_refused() -> TestResult {
+    let table = |pad: u32| {
+        format!(
+            "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT AS (substr('{{\"key\": \"k\"}}' || printf('%.*c', {pad}, 'x'), 1, 12)));
+             INSERT INTO auth_credentials (id, provider, credential_type) VALUES (1, 'wanted', 'api_key');"
+        )
+    };
+    let dir = tempfile::tempdir()?;
+    let store = view_store(dir.path(), &table(300_000))?;
+    read_omp_host_key(&StdFileSystem::default(), &store, "wanted")
+        .await
+        .unwrap_err();
+    let small = tempfile::tempdir()?;
+    let store = view_store(small.path(), &table(30))?;
+    let key = read_omp_host_key(&StdFileSystem::default(), &store, "wanted").await?;
+    assert_eq!(key.expose(), "k");
     Ok(())
 }
 
@@ -135,25 +181,5 @@ async fn an_omp_value_of_exactly_the_cap_resolves_and_one_byte_more_is_unreadabl
     read_omp_host_key(&fs, &key_store(over.path(), cap + 1)?, "wanted")
         .await
         .unwrap_err();
-    Ok(())
-}
-
-#[tokio::test]
-async fn an_omp_value_that_a_view_builds_beyond_the_length_limit_is_refused() -> TestResult {
-    let dir = tempfile::tempdir()?;
-    let store = view_store(
-        dir.path(),
-        "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'wanted' AS provider, 'api_key' AS credential_type, substr('{\"key\": \"k\"}' || printf('%.*c', 300000, 'x'), 1, 12) AS data;",
-    )?;
-    read_omp_host_key(&StdFileSystem::default(), &store, "wanted")
-        .await
-        .unwrap_err();
-    let small = tempfile::tempdir()?;
-    let store = view_store(
-        small.path(),
-        "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'wanted' AS provider, 'api_key' AS credential_type, substr('{\"key\": \"k\"}' || printf('%.*c', 30, 'x'), 1, 12) AS data;",
-    )?;
-    let key = read_omp_host_key(&StdFileSystem::default(), &store, "wanted").await?;
-    assert_eq!(key.expose(), "k");
     Ok(())
 }

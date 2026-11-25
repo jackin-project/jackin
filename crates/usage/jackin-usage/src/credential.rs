@@ -12,6 +12,7 @@ use jackin_core::{
     run_bounded,
 };
 use jackin_usage_provider_core::Credential;
+use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
@@ -612,10 +613,21 @@ where
             .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
             .map_err(|_| Unresolved::Unreadable(opened))?;
         image.wipe();
+        connection
+            .authorizer(Some(store_policy))
+            .map_err(|_| Unresolved::Unreadable(opened))?;
         work(&connection)
     })
     .await;
     done.unwrap_or(Err(Unresolved::Unreadable(read)))
+}
+
+fn store_policy(context: AuthContext<'_>) -> Authorization {
+    match context.action {
+        AuthAction::Select | AuthAction::Function { .. } => Authorization::Allow,
+        AuthAction::Read { .. } if context.accessor.is_none() => Authorization::Allow,
+        _ => Authorization::Deny,
+    }
 }
 
 fn store_connection(opened: &'static str) -> Result<rusqlite::Connection, Unresolved> {

@@ -243,6 +243,15 @@ fn omp_key_of(connection: &rusqlite::Connection, provider_id: &str) -> Option<Se
     }
 }
 
+fn omp_policy(context: rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization {
+    use rusqlite::hooks::{AuthAction, Authorization};
+    match context.action {
+        AuthAction::Select | AuthAction::Function { .. } => Authorization::Allow,
+        AuthAction::Read { .. } if context.accessor.is_none() => Authorization::Allow,
+        _ => Authorization::Deny,
+    }
+}
+
 fn omp_connection() -> rusqlite::Result<rusqlite::Connection> {
     let connection = rusqlite::Connection::open_in_memory()?;
     connection.execute_batch(jackin_core::STORE_PRAGMAS)?;
@@ -277,6 +286,7 @@ pub async fn read_omp_host_key(
             .deserialize_read_exact("main", std::io::Cursor::new(image.as_slice()), length, true)
             .ok()?;
         image.wipe();
+        connection.authorizer(Some(omp_policy)).ok()?;
         omp_key_of(&connection, &wanted)
     })
     .await;

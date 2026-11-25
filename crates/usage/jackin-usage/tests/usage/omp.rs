@@ -713,33 +713,37 @@ async fn a_committed_update_that_only_the_log_holds_is_read() -> TestResult {
     .await
 }
 
-async fn hung_view_report() -> TestResult {
+const HANG: &str = "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, data TEXT);
+     WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r WHERE x < 400000) INSERT INTO auth_credentials (id, provider, data) SELECT x, 'zai', 'x' FROM r;
+     ALTER TABLE auth_credentials ADD COLUMN credential_type TEXT AS (CASE WHEN length(hex(zeroblob(60000 + id % 2))) > 0 THEN 'never' END);";
+
+async fn schema_report(
+    schema: &str,
+) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
     let omp = started(&[]).await?;
     let directory = omp.directory.path().join(".omp").join("agent");
     std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
     std::fs::create_dir_all(&directory)?;
     let connection = Connection::open(directory.join("agent.db"))?;
-    connection.execute_batch(
-        "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'zai' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;",
-    )?;
+    connection.execute_batch(schema)?;
     drop(connection);
     let finished = tokio::time::timeout(Duration::from_secs(30), omp.report()).await;
-    let outcome = finished.map_err(|_| "the report did not finish")??;
-    assert!(
-        matches!(
-            unavailable(&outcome),
-            UnavailableReason::Provider(message) if message.contains("could not be read")
-        ),
-        "{outcome:?}"
-    );
-    Ok(())
+    finished.map_err(|_| "the report did not finish")?
+}
+
+fn is_unreadable(outcome: &jackin_usage::UsageOutcome) -> bool {
+    matches!(
+        unavailable(outcome),
+        UnavailableReason::Provider(message) if message == "the OMP store could not be read"
+    )
 }
 
 #[tokio::test]
-async fn a_credential_view_that_never_finishes_is_given_up_on_and_frees_its_place() -> TestResult {
+async fn a_credential_query_that_never_finishes_is_given_up_on_and_frees_its_place() -> TestResult {
     guard(async {
         for _ in 0..3 {
-            hung_view_report().await?;
+            let outcome = schema_report(HANG).await?;
+            assert!(is_unreadable(&outcome), "{outcome:?}");
         }
         let again = started(&[(1, &key_json(KEY))]).await?;
         let outcome = tokio::time::timeout(Duration::from_secs(10), again.report())
@@ -751,33 +755,38 @@ async fn a_credential_view_that_never_finishes_is_given_up_on_and_frees_its_plac
     .await
 }
 
-async fn view_report(view: &str) -> Result<jackin_usage::UsageOutcome, Box<dyn std::error::Error>> {
-    let omp = started(&[]).await?;
-    let directory = omp.directory.path().join(".omp").join("agent");
-    std::fs::remove_dir_all(omp.directory.path().join(".omp"))?;
-    std::fs::create_dir_all(&directory)?;
-    let connection = Connection::open(directory.join("agent.db"))?;
-    connection.execute_batch(view)?;
-    drop(connection);
-    omp.report().await
+#[tokio::test]
+async fn a_credential_view_is_refused_instead_of_run() -> TestResult {
+    guard(async {
+        for schema in [
+            "CREATE VIEW auth_credentials AS WITH RECURSIVE r(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM r) SELECT x AS id, 'zai' AS provider, 'api_key' AS credential_type, 'x' AS data FROM r WHERE x < 0;",
+            "CREATE TABLE real (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT);
+             INSERT INTO real VALUES (1, 'zai', 'api_key', '{\"key\":\"SECRET_TOKEN_OMP\"}');
+             CREATE VIEW auth_credentials AS SELECT * FROM real;",
+        ] {
+            let started = std::time::Instant::now();
+            let outcome = schema_report(schema).await?;
+            assert!(is_unreadable(&outcome), "{outcome:?}");
+            assert!(started.elapsed() < Duration::from_secs(4), "the view was run");
+        }
+        Ok(())
+    })
+    .await
 }
 
 #[tokio::test]
-async fn a_value_that_a_view_builds_beyond_the_length_limit_is_refused() -> TestResult {
+async fn a_value_that_a_query_builds_beyond_the_length_limit_is_refused() -> TestResult {
     guard(async {
-        let small = view_report(
-            "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'zai' AS provider, 'api_key' AS credential_type, substr('{\"key\":\"SECRET_TOKEN_OMP\"}' || printf('%.*c', 30, 'x'), 1, 26) AS data;",
-        )
-        .await?;
+        let table = |pad: u32| {
+            format!(
+                "CREATE TABLE auth_credentials (id INTEGER PRIMARY KEY, provider TEXT, credential_type TEXT, data TEXT AS (substr('{{\"key\":\"SECRET_TOKEN_OMP\"}}' || printf('%.*c', {pad}, 'x'), 1, 26)));
+                 INSERT INTO auth_credentials (id, provider, credential_type) VALUES (1, 'zai', 'api_key');"
+            )
+        };
+        let small = schema_report(&table(30)).await?;
         assert_eq!(windows_of(&small).len(), 2);
-        let large = view_report(
-            "CREATE VIEW auth_credentials AS SELECT 1 AS id, 'zai' AS provider, 'api_key' AS credential_type, substr('{\"key\":\"SECRET_TOKEN_OMP\"}' || printf('%.*c', 300000, 'x'), 1, 26) AS data;",
-        )
-        .await?;
-        assert_eq!(
-            unavailable(&large),
-            &UnavailableReason::Provider("the OMP store could not be read".to_owned())
-        );
+        let large = schema_report(&table(300_000)).await?;
+        assert!(is_unreadable(&large), "{large:?}");
         Ok(())
     })
     .await
