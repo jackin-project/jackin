@@ -1995,6 +1995,8 @@ mod error_paths {
             "    L(Label),",
             "    #[error(\"generic ufcs {}\", <Renderer<Path>>::display(.0))]",
             "    M(Label),",
+            "    #[error(\"own module {}\", crate::sanitized::Path::display(.0))]",
+            "    Y(Label),",
             "    #[error(\"own type {}\", Mixed::display(.0))]",
             "    Z(Label),",
             "    #[error(\"own type {}\", Safe::display(.0))]",

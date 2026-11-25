@@ -475,6 +475,7 @@ fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
                 .is_some_and(|name| names.contains(&name))
                 && tokens.get(index + 1).is_some_and(|t| t.is_punct('{'))
                 && opens_fields(tokens, index + 2)
+                && is_ratatui_path(tokens, *index)
                 && !is_type_position(tokens, *index)
                 && !tests.iter().any(|range| range.contains(index))
         })
@@ -487,6 +488,15 @@ fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
             )
         })
         .collect()
+}
+
+fn is_ratatui_path(tokens: &[Token], index: usize) -> bool {
+    if !tokens[index].is_ident("Buffer") || !is_path_separator(tokens, index.wrapping_sub(2)) {
+        return true;
+    }
+    index
+        .checked_sub(3)
+        .is_some_and(|module| tokens[module].is_ident("buffer"))
 }
 
 fn opens_fields(tokens: &[Token], start: usize) -> bool {

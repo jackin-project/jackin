@@ -181,7 +181,12 @@ fn is_qualified_display(arguments: &[Token], index: usize, paths: &[&str]) -> bo
     };
     let named = |token: &Token| token.ident().is_some_and(|name| paths.contains(&name));
     if !arguments[qualifier].is_punct('>') {
-        return named(&arguments[qualifier]);
+        return named(&arguments[qualifier])
+            && (!arguments[qualifier].is_ident("Path")
+                || !is_path_separator(arguments, qualifier.wrapping_sub(2))
+                || qualifier
+                    .checked_sub(3)
+                    .is_some_and(|module| arguments[module].is_ident("path")));
     }
     let mut depth = 0usize;
     let mut open = None;
