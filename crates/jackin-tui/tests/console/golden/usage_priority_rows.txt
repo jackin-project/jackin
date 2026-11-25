@@ -1,4 +1,4 @@
-summary | Priority
+summary | Needs attention (4)
 notice | FAILING · Antigravity (Google AI) · personal@example.com #a0000014 · HTTP 403 SERVICE_DISABLED · retry due since Mon 22:28
 notice | NEAR LIMIT · Muse · work@example.com · Weekly 99% used · resets in 5d 8h · Mon 07:00
 notice | NEAR LIMIT · Antigravity (Google AI) · personal@example.com #a0000013 #a0000014 · Claude weekly >99% used · resets in 1d 7h · Thu 06:19

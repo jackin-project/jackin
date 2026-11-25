@@ -4,9 +4,11 @@
 use jackin_core::Timestamp;
 
 use super::detail;
-use super::model::{AccountQuota, Feed, Meter, Note, Reading, ResetStatus, UsageView, Used};
+use super::model::{
+    AccountQuota, Feed, Meter, Note, Reading, ResetStatus, TodayTokens, UsageView, Used,
+};
 use super::render::{Ctx, Depth, Line, Span, Tone};
-use super::text;
+use super::text::{self, Part};
 
 const MAIN_INDENT: usize = 4;
 const MAIN_NAME: usize = 16;
@@ -63,7 +65,7 @@ pub fn heading(name: &str, accounts: usize, ctx: &Ctx) -> Line {
     };
     let gap = ctx
         .columns()
-        .saturating_sub(name.chars().count() + count.len())
+        .saturating_sub(text::width(name) + text::width(&count))
         .max(MIN_GAP);
     Line::of(vec![
         Span::strong(name),
@@ -76,20 +78,19 @@ fn header(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Line {
     let right = text::freshness(&account.reading, view.now, ctx.narrow());
     let right_width: usize = right.iter().map(Span::width).sum();
     let short = account.is_duplicate().then(|| account.short());
-    let short_width = short.as_ref().map_or(0, |short| 2 + short.chars().count());
+    let short_width = short.as_ref().map_or(0, |short| 2 + text::width(short));
     let room = ctx.columns().saturating_sub(right_width + MIN_GAP);
     let mut label = account.label.clone();
     let mut plan = account.plan.clone().unwrap_or_else(|| NO_PLAN.to_owned());
-    let measure = |label: &str, plan: &str| {
-        2 + label.chars().count() + short_width + 3 + plan.chars().count()
-    };
+    let measure =
+        |label: &str, plan: &str| 2 + text::width(label) + short_width + 3 + text::width(plan);
     let excess = measure(&label, &plan).saturating_sub(room);
     if excess > 0 {
-        plan = text::truncate(&plan, plan.chars().count().saturating_sub(excess).max(1));
+        plan = text::truncate(&plan, text::width(&plan).saturating_sub(excess).max(1));
     }
     let excess = measure(&label, &plan).saturating_sub(room);
     if excess > 0 {
-        label = text::truncate(&label, label.chars().count().saturating_sub(excess).max(1));
+        label = text::truncate(&label, text::width(&label).saturating_sub(excess).max(1));
     }
     let plan_span = if account.plan.is_some() {
         Span::plain(plan)
@@ -140,9 +141,9 @@ fn meter_block(
 
 fn gauge(meter: &Meter, indent: usize, name_width: usize, view: &UsageView, ctx: Ctx) -> Line {
     let lead = Span::plain(format!(
-        "{:indent$}{:<name_width$} ",
+        "{:indent$}{} ",
         "",
-        text::truncate(&meter.name, name_width)
+        text::pad(&text::truncate(&meter.name, name_width), name_width)
     ));
     let fraction = meter.fraction();
     let mut head = vec![lead];
@@ -227,7 +228,10 @@ fn note_block(note: &Note, view: &UsageView, ctx: Ctx) -> Vec<Line> {
         "{:SIDE_INDENT$}{name:<SIDE_NAME$} ",
         ""
     ))];
-    let parts: Vec<(String, Tone)> = parts.into_iter().map(|part| (part, Tone::Plain)).collect();
+    let parts: Vec<Part> = parts
+        .into_iter()
+        .map(|part| Part::new(part, Tone::Plain))
+        .collect();
     text::wrap(prefix, SUB_INDENT, &parts, ctx.columns())
 }
 
@@ -280,7 +284,11 @@ pub fn note_parts(note: &Note, view: &UsageView) -> (String, Vec<String>) {
             last30,
         } => {
             let total = |tokens: u64| text::number(tokens as f64);
-            let mut parts = vec![format!("today {}", today.map_or("n/a".to_owned(), total))];
+            let mut parts: Vec<String> = match today {
+                TodayTokens::Hidden => Vec::new(),
+                TodayTokens::Unavailable => vec!["today n/a".to_owned()],
+                TodayTokens::Count(tokens) => vec![format!("today {}", total(*tokens))],
+            };
             parts.extend(
                 yesterday
                     .iter()
@@ -350,12 +358,13 @@ fn failure_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line
     let mut parts = Vec::new();
     match retry_at {
         Some(at) => {
-            parts.push((
+            parts.push(Part::new(
                 format!("{}! refresh failed: {message}", " ".repeat(MAIN_INDENT)),
                 Tone::Crit,
             ));
             if *reconnect {
-                parts.push((text::reconnect_command(account.id), Tone::Plain));
+                let command = text::reconnect_command(account.id, text::IdForm::Hyphenated);
+                parts.push(Part::new(format!("run: {command}"), Tone::Plain).atom(command));
             } else {
                 let retry = if *at <= view.now {
                     format!(
@@ -365,10 +374,10 @@ fn failure_lines(account: &AccountQuota, view: &UsageView, ctx: Ctx) -> Vec<Line
                 } else {
                     format!("next retry in {}", text::rel(at.0 - view.now.0))
                 };
-                parts.push((retry, Tone::Dim));
+                parts.push(Part::new(retry, Tone::Dim));
             }
         }
-        None => parts.push((
+        None => parts.push(Part::new(
             format!("{}! {message}", " ".repeat(MAIN_INDENT)),
             Tone::Crit,
         )),

@@ -182,7 +182,7 @@ async fn one_identity_under_different_labels_is_still_flagged_as_a_duplicate() -
             .parent()
             .ok_or("config directory")?
             .join(DATABASE_PATH);
-        let registry = AccountRegistry::open(&path)?;
+        let registry = AccountRegistry::with_vault(&path, jackin_testkit::MemoryVault::shared())?;
         let antigravity: Vec<_> = registry
             .list()?
             .into_iter()

@@ -5,7 +5,7 @@
 use super::{
     AccountRegistry, ConnectionError, CredentialVersion, UsageProvider, uuid as read_uuid,
 };
-use jackin_core::SecretBytes;
+use jackin_core::{CriticalWrite, SecretBytes};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -168,11 +168,11 @@ impl AccountRegistry {
 
     pub fn install_hub(
         &mut self,
+        write: &CriticalWrite,
         existing: Option<(Uuid, CredentialVersion)>,
         address: &str,
         key: &SecretBytes,
         listing: &Listing,
-        cancel: &tokio_util::sync::CancellationToken,
     ) -> Result<Uuid, ConnectionError> {
         let _hub_lock = existing.map(|(id, _)| self.hub_lock(id)).transpose()?;
         let id = existing.map_or_else(Uuid::new_v4, |(id, _)| id);
@@ -180,7 +180,7 @@ impl AccountRegistry {
         let envelope = SecretBytes::new(
             serde_json::to_vec(&(address, key)).map_err(|_| ConnectionError::Invalid)?,
         );
-        self.install_cancellable(&envelope, cancel, |tx, slot| {
+        self.install(write, &envelope, |tx, slot| {
             if let Some((_, version)) = existing {
                 if tx.execute(
                     "UPDATE hubs SET slot=?1,refused=0 WHERE id=?2 AND slot=?3 AND address=?4",
@@ -340,7 +340,11 @@ impl AccountRegistry {
             .transpose()
     }
 
-    pub fn set_proxy(&mut self, secret: Option<&SecretBytes>) -> Result<(), ConnectionError> {
+    pub fn set_proxy(
+        &mut self,
+        write: &CriticalWrite,
+        secret: Option<&SecretBytes>,
+    ) -> Result<(), ConnectionError> {
         let retire = |tx: &Connection| -> Result<(), ConnectionError> {
             tx.execute(
                 "INSERT INTO retired_slots SELECT slot FROM usage_proxy WHERE id=1",
@@ -350,7 +354,7 @@ impl AccountRegistry {
             Ok(())
         };
         if let Some(secret) = secret {
-            self.install(secret, |tx, slot| {
+            self.install(write, secret, |tx, slot| {
                 retire(tx)?;
                 tx.execute("INSERT INTO usage_proxy VALUES(1,?1)", [slot.to_string()])?;
                 Ok(())

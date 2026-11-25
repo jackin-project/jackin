@@ -153,6 +153,7 @@ fn service(app: &App) -> Result<OwnedLogin, CommandError> {
         database(app)?,
         app.deps.usage_endpoints.clone(),
         Arc::clone(&app.deps.host.clock),
+        Arc::clone(&app.deps.usage_vault),
     )
     .with_google_registration(
         jackin_usage::onboarding::GoogleRegistrationFile::from_environment(
@@ -161,10 +162,7 @@ fn service(app: &App) -> Result<OwnedLogin, CommandError> {
             Arc::clone(&app.deps.host.fs),
         ),
     );
-    Ok(match &app.deps.usage_vault {
-        Some(vault) => login.with_vault(Arc::clone(vault)),
-        None => login,
-    })
+    Ok(login)
 }
 
 async fn connect(
@@ -311,7 +309,12 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
             .map_err(failure);
     }
     if matches!(command, UsageCommand::Share) {
-        let Some(db) = AccountRegistry::open_read_only(&database(app)?).map_err(failure)? else {
+        let Some(db) = AccountRegistry::open_read_only_with_vault(
+            &database(app)?,
+            Arc::clone(&app.deps.usage_vault),
+        )
+        .map_err(failure)?
+        else {
             return Err(CommandError::NoUsageSnapshot);
         };
         let dashboard = jackin_usage::dashboard::Dashboard::load(
@@ -353,6 +356,7 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
                 &destination,
                 &input,
                 app.deps.host.clock.now().0,
+                Arc::clone(&app.deps.usage_vault),
             )
             .map_err(failure)?;
             app.io.line(if stored {
@@ -391,7 +395,22 @@ async fn refresh(app: &mut App, filter: UsageFilter, json: bool) -> Result<(), C
         );
     }
     overview::refreshed(app, &db, &filter, provider, &outcome)?;
-    outcome.first_error.map_or(Ok(()), Err)
+    let accounts = outcome.messages.len() - outcome.skipped.len();
+    match outcome.first_error {
+        None => Ok(()),
+        Some(_) => Err(failure(failure_summary(accounts, outcome.hubs_failed))),
+    }
+}
+
+fn failure_summary(accounts: usize, hubs: usize) -> String {
+    let mut parts = Vec::new();
+    if accounts > 0 {
+        parts.push(jackin_usage::view::text::plural(accounts, "account"));
+    }
+    if hubs > 0 {
+        parts.push(jackin_usage::view::text::plural(hubs, "hub"));
+    }
+    format!("refresh failed for {}", parts.join(" and "))
 }
 
 #[derive(Default)]
@@ -399,6 +418,7 @@ pub(super) struct RefreshOutcome {
     first_error: Option<CommandError>,
     messages: Vec<(Uuid, String)>,
     skipped: Vec<Uuid>,
+    hubs_failed: usize,
 }
 
 impl RefreshOutcome {
@@ -433,7 +453,13 @@ async fn refresh_selected(
                 if app.cancel.is_cancelled() {
                     return Err(cancelled());
                 }
-                app.io.note(&format!("{}: {error}", hub.id));
+                let text = format!("{}: {error}", hub.id);
+                if noisy {
+                    app.io.note(&text);
+                } else {
+                    overview::note(app, &text, &[hub.id.to_string()]);
+                }
+                outcome.hubs_failed += 1;
                 outcome.first_error.get_or_insert_with(|| failure(error));
             }
         }
@@ -524,9 +550,12 @@ async fn hub(
 }
 
 async fn redeem(app: &mut App, id: Uuid, index: usize) -> Result<(), CommandError> {
-    let db = AccountRegistry::open_read_only(&database(app)?)
-        .map_err(failure)?
-        .ok_or_else(|| CommandError::Argument("no saved usage accounts".into()))?;
+    let db = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?
+    .ok_or_else(|| CommandError::Argument("no saved usage accounts".into()))?;
     let (account, _, snapshot) = db
         .snapshots()
         .map_err(failure)?

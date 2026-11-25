@@ -21,7 +21,9 @@ async fn profile(
         .ok_or("config dir")?
         .join(DATABASE_PATH);
     let entries = seed_usage_profile(&path, lab.rig.world.clock.now().0, openrouter)?;
-    let db = AccountRegistry::open_read_only(&path)?.ok_or("missing fixture registry")?;
+    let db =
+        AccountRegistry::open_read_only_with_vault(&path, jackin_testkit::MemoryVault::shared())?
+            .ok_or("missing fixture registry")?;
     let rows = db.list()?;
     assert!(
         entries

@@ -3,7 +3,7 @@
 
 use jackin_testkit::assert_golden;
 use jackin_usage::view::render::{self, Ctx};
-use jackin_usage::view::{Report, ViewFilter, report};
+use jackin_usage::view::{Report, ViewFilter, report, text};
 
 use super::{NOW, Result, Seeded};
 
@@ -249,7 +249,7 @@ fn a_narrow_details_report_keeps_every_card_line_within_its_width() -> Result<()
         "{text}"
     );
     for line in cards {
-        assert!(line.chars().count() <= 60, "{line}");
+        assert!(text::width(line) <= 60, "{line}");
     }
     Ok(())
 }

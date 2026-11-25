@@ -22,6 +22,7 @@ use crate::fixtures::FixtureError;
 use crate::gateway::FakeGateway;
 use crate::host::{FakeClock, FsFault, TestRunner, WorkingFs};
 use crate::usage::LazyUsageServer;
+use crate::vault::MemoryVault;
 
 #[derive(Debug)]
 pub struct World {
@@ -35,6 +36,7 @@ pub struct World {
     pub roles: Arc<RoleCatalog>,
     pub config: ConfigStore,
     pub usage: LazyUsageServer,
+    pub vault: Arc<MemoryVault>,
     cache_dir: HostPath,
     home: HostPath,
     _dir: TempDir,
@@ -299,6 +301,7 @@ impl WorldBuilder {
             )),
             config,
             usage: LazyUsageServer::default(),
+            vault: Arc::new(MemoryVault::default()),
             gateway,
             engine,
             clock,

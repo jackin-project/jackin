@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -9,7 +10,7 @@ use jackin_core::{Provider, Secret};
 use jackin_testkit::{FakeClock, Method, Route, UsageServer};
 use jackin_usage::accounts::{AccountRegistry, CandidateIdentity, ConnectionError, UsageProvider};
 use jackin_usage::connected::KeyConnection;
-use jackin_usage::onboarding::{LoginError, OwnedLogin};
+use jackin_usage::onboarding::{LoginError, LoginPrompt, OwnedLogin};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -54,11 +55,7 @@ fn slot_holding(vault: &Vault, value: &[u8]) -> Result<Uuid> {
 
 fn wait_for_stalled_read(vault: &Vault) -> Result<()> {
     let started = Instant::now();
-    while vault
-        .stalled_reads
-        .load(std::sync::atomic::Ordering::Acquire)
-        == 0
-    {
+    while vault.stalled_reads.load(Ordering::Acquire) == 0 {
         if started.elapsed() > PATIENCE {
             return Err("the stalled read never started".into());
         }
@@ -73,12 +70,14 @@ fn two_accounts(
 ) -> Result<(AccountRegistry, Uuid, Uuid)> {
     let mut registry = db(path, vault)?;
     let first = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "first",
         &scoped("user/first"),
         &bytes("first-secret"),
     )?;
     let second = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "second",
         &scoped("user/second"),
@@ -141,7 +140,12 @@ fn a_read_that_races_a_rotation_returns_the_new_credential() -> Result<()> {
         let _sent = tx.send(read);
     });
     wait_for_stalled_read(&vault)?;
-    let rotated = registry.rotate(first, old, &bytes("rotated"))?;
+    let rotated = registry.rotate(
+        &jackin_core::CriticalWrite::begin(),
+        first,
+        old,
+        &bytes("rotated"),
+    )?;
     vault.release_stalled_reads();
     let (version, secret) = rx.recv_timeout(PATIENCE)??;
     assert_eq!(version, rotated);
@@ -160,6 +164,7 @@ fn a_writer_waiting_on_a_busy_store_fails_with_a_message_naming_the_keychain() -
     let started = Instant::now();
     let error = registry
         .add(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Claude,
             "third",
             &scoped("user/third"),
@@ -173,6 +178,7 @@ fn a_writer_waiting_on_a_busy_store_fails_with_a_message_naming_the_keychain() -
     drop(held);
     assert_eq!(registry.list()?.len(), 2);
     registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "third",
         &scoped("user/third"),
@@ -196,7 +202,14 @@ fn a_rotation_carrying_new_material_waits_for_the_store_lock_instead_of_dropping
     std::thread::spawn(move || {
         let rotated = AccountRegistry::with_vault(&writer_path, writer_vault)
             .map(|registry| registry.with_lock_wait(Duration::from_millis(100)))
-            .and_then(|mut registry| registry.rotate(first, old, &bytes("rotated")))
+            .and_then(|mut registry| {
+                registry.rotate(
+                    &jackin_core::CriticalWrite::begin(),
+                    first,
+                    old,
+                    &bytes("rotated"),
+                )
+            })
             .map_err(|e| e.to_string());
         let _sent = tx.send(rotated);
     });
@@ -222,12 +235,14 @@ async fn refresh_names_the_keychain_when_one_credential_read_stalls_and_the_rest
     let key = |name: &str| Secret::new(name.into());
     let (stuck_key, fine_key) = (key("stuck"), key("fine"));
     let stuck = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Zai,
         "stuck",
         &CandidateIdentity::api_key(&stuck_key),
         &KeyConnection::Zai.encode(&stuck_key)?,
     )?;
     let fine = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Zai,
         "fine",
         &CandidateIdentity::api_key(&fine_key),
@@ -253,9 +268,13 @@ async fn refresh_names_the_keychain_when_one_credential_read_stalls_and_the_rest
     ] {
         server.serve(Provider::Zai, Method::Get, route, Route::json(200, body));
     }
-    let service = OwnedLogin::new(path, server.endpoints(), Arc::new(FakeClock::new()))
-        .with_vault(Arc::<Vault>::clone(&vault))
-        .with_store_wait(Duration::from_millis(400));
+    let service = OwnedLogin::new(
+        path,
+        server.endpoints(),
+        Arc::new(FakeClock::new()),
+        Arc::<Vault>::clone(&vault),
+    )
+    .with_store_wait(Duration::from_millis(400));
     let accounts = registry.list()?;
     let account = |id: Uuid| {
         accounts
@@ -283,5 +302,116 @@ async fn refresh_names_the_keychain_when_one_credential_read_stalls_and_the_rest
     let recorded = registry.failure(stuck)?.ok_or("failure not recorded")?;
     assert!(recorded.message.contains("Keychain"));
     assert!(registry.failure(fine)?.is_none());
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_login_stores_its_issued_credentials_even_when_cancelled_while_the_keychain_write_is_pending()
+-> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("usage/accounts.db");
+    let vault = Arc::new(Vault::default());
+    let registry = db(&path, &vault)?;
+    let server = UsageServer::start().await?;
+    let quota = "/api/monitor/usage/quota/limit";
+    server.serve(
+        Provider::Zai,
+        Method::Get,
+        quota,
+        Route::json(200,&json!({"success":true,"code":200,"data":{"limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":10}]}}).to_string())
+            .requires_header("authorization", "Bearer issued"),
+    );
+    for (path, body) in [
+        ("/api/biz/subscription/list", r#"{"data":[]}"#),
+        (
+            "/api/biz/customer-package-reset/list?targetType=PERSONAL",
+            r#"{"data":{}}"#,
+        ),
+    ] {
+        server.serve(Provider::Zai, Method::Get, path, Route::json(200, body));
+    }
+    let service = OwnedLogin::new(
+        path,
+        server.endpoints(),
+        Arc::new(FakeClock::new()),
+        Arc::<Vault>::clone(&vault),
+    );
+    vault.stall_stores.store(true, Ordering::Release);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let cancel = CancellationToken::new();
+    let login = service.connect(UsageProvider::Zai, None, None, tx, &cancel);
+    tokio::pin!(login);
+    let prompt = tokio::select! {
+        prompt = rx.recv() => prompt.ok_or("missing key prompt")?,
+        result = &mut login => return Err(format!("login ended before the key: {result:?}").into()),
+    };
+    let LoginPrompt::Key { reply, .. } = prompt else {
+        return Err("unexpected prompt".into());
+    };
+    reply
+        .send(Secret::new("issued".into()))
+        .map_err(|_| "key prompt closed")?;
+    let started = Instant::now();
+    while vault.stores_entered.load(Ordering::Acquire) == 0 {
+        tokio::select! {
+            result = &mut login => return Err(format!("login ended before the write: {result:?}").into()),
+            () = tokio::time::sleep(Duration::from_millis(10)) => {}
+        }
+        if started.elapsed() > PATIENCE {
+            return Err("the credential write never began".into());
+        }
+    }
+    cancel.cancel();
+    vault.release_stalled_reads();
+    let id = login.await?;
+    assert_eq!(registry.list()?.len(), 1);
+    assert_eq!(registry.list()?[0].id, id);
+    assert_eq!(
+        registry.credential(id)?.1.expose(),
+        KeyConnection::Zai
+            .encode(&Secret::new("issued".into()))?
+            .expose()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_hub_key_is_stored_when_the_cancel_arrives_with_the_listing() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("usage/accounts.db");
+    let vault = Arc::new(Vault::default());
+    let registry = db(&path, &vault)?;
+    let server = UsageServer::start().await?;
+    let listing = "/v0/management/auth-files";
+    server.serve(
+        Provider::Claude,
+        Method::Get,
+        listing,
+        Route::json(200, r#"{"files":[]}"#).requires_header("authorization", "Bearer hub-key"),
+    );
+    let held = server.hold(Provider::Claude, Method::Get, listing);
+    let service = OwnedLogin::new(
+        path,
+        server.endpoints(),
+        Arc::new(FakeClock::new()),
+        Arc::<Vault>::clone(&vault),
+    );
+    let cancel = CancellationToken::new();
+    let origin = server.provider_base(Provider::Claude);
+    let key = Secret::new("hub-key".into());
+    let connecting = service.connect_hub(&origin, &key, None, &cancel);
+    tokio::pin!(connecting);
+    tokio::select! {
+        result = &mut connecting => return Err(format!("hub ended before the listing: {result:?}").into()),
+        () = held.arrived() => {}
+    }
+    cancel.cancel();
+    held.release();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let id = connecting.await?;
+    let hubs = registry.hubs()?;
+    assert_eq!(hubs.len(), 1);
+    assert_eq!(hubs[0].id, id);
+    assert_eq!(vault.values.lock().map_err(|_| "vault poisoned")?.len(), 1);
     Ok(())
 }

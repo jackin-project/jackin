@@ -10,9 +10,11 @@ use jackin_usage::accounts::{
     DATABASE_PATH, FailureKind, UsageProvider,
 };
 use jackin_usage::dashboard::DashboardSettings;
+use jackin_usage::presentation;
+use jackin_usage::view::card;
 use jackin_usage::view::{
-    AccountQuota, Attention, Currency, Fact, Note, Reading, ResetStatus, Role, Unit, UsageView,
-    Used, ViewFilter, build,
+    AccountQuota, Attention, Currency, Fact, Note, Reading, ResetStatus, Role, TodayTokens, Unit,
+    UsageView, Used, ViewFilter, build,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -324,8 +326,11 @@ fn accounts_sharing_a_label_with_different_identities_are_not_duplicates() -> Re
         })
         .into();
     let seeded = seed_usage_rows(&dir.path().join(DATABASE_PATH), rows)?;
-    let registry = AccountRegistry::open_read_only(&dir.path().join(DATABASE_PATH))?
-        .ok_or("the usage registry is missing")?;
+    let registry = AccountRegistry::open_read_only_with_vault(
+        &dir.path().join(DATABASE_PATH),
+        jackin_testkit::MemoryVault::shared(),
+    )?
+    .ok_or("the usage registry is missing")?;
     let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
     for account in &seeded {
         assert!(find(&view, account.id)?.duplicates.is_empty());
@@ -346,18 +351,21 @@ fn accounts_with_one_identity_are_duplicates_whatever_their_labels_or_case() -> 
     let mut registry = AccountRegistry::with_vault(&path, Arc::new(Vault))?;
     let secret = SecretBytes::new(vec![1]);
     let first = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Work",
         &CandidateIdentity::OAuth(Some("Me@Example.com".to_owned())),
         &secret,
     )?;
     let second = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Home",
         &CandidateIdentity::OAuth(Some("me@example.com".to_owned())),
         &secret,
     )?;
     let other = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
         "Work",
         &CandidateIdentity::OAuth(Some("other@example.com".to_owned())),
@@ -365,7 +373,8 @@ fn accounts_with_one_identity_are_duplicates_whatever_their_labels_or_case() -> 
     )?;
     drop(registry);
     let registry =
-        AccountRegistry::open_read_only(&path)?.ok_or("the usage registry is missing")?;
+        AccountRegistry::open_read_only_with_vault(&path, jackin_testkit::MemoryVault::shared())?
+            .ok_or("the usage registry is missing")?;
     let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
     assert_eq!(find(&view, first)?.duplicates, [second]);
     assert_eq!(find(&view, second)?.duplicates, [first]);
@@ -499,7 +508,7 @@ fn notes_and_facts_carry_credits_resets_tokens_spend_and_account_facts() -> Resu
     );
     match &codex.notes[2] {
         Note::Tokens {
-            today: None,
+            today: TodayTokens::Unavailable,
             yesterday: Some(yesterday),
             last30: Some(last30),
         } => {
@@ -695,11 +704,50 @@ fn the_duplicate_to_remove_is_the_failing_one_else_the_last_connected() -> Resul
     Ok(())
 }
 
+#[test]
+fn the_duplicate_to_remove_follows_the_registry_order_whatever_the_ids() -> Result<()> {
+    let seeded = Seeded::new()?;
+    let first = seeded.id_of("antigravity", "personal@example.com", 0)?;
+    let second = seeded.id_of("antigravity", "personal@example.com", 1)?;
+    let mut registry =
+        AccountRegistry::with_vault(&seeded.dir.path().join(DATABASE_PATH), Arc::new(Vault))?;
+    let body = &seeded.accounts[13].snapshot;
+    registry.put_snapshot(second, registry.version(second)?, NOW.0 - 100, body)?;
+    let mut order = seeded.ids();
+    let low = order
+        .iter()
+        .position(|id| *id == first)
+        .ok_or("the first account is missing")?;
+    let high = order
+        .iter()
+        .position(|id| *id == second)
+        .ok_or("the second account is missing")?;
+    order.swap(low, high);
+    registry.reorder(&order)?;
+    drop(registry);
+    let view = seeded.view(&ViewFilter::default(), NOW)?;
+    let duplicate = view.attention.iter().find_map(|item| match item {
+        Attention::Duplicate { accounts, remove } => Some((accounts.clone(), *remove)),
+        Attention::Failing { .. } | Attention::NearLimit { .. } => None,
+    });
+    assert_eq!(duplicate, Some((vec![second, first], first)));
+    Ok(())
+}
+
 fn crafted_account(
     provider: UsageProvider,
     snapshot: serde_json::Value,
     hidden: &[&str],
 ) -> Result<AccountQuota> {
+    let (view, id) = crafted_view(provider, snapshot, hidden)?;
+    Ok(find(&view, id)?.clone())
+}
+
+fn crafted_view(
+    provider: UsageProvider,
+    snapshot: serde_json::Value,
+    hidden: &[&str],
+) -> Result<(UsageView, Uuid)> {
     let dir = tempfile::tempdir()?;
     let path = dir.path().join(DATABASE_PATH);
     let seeded = seed_usage_rows(
@@ -724,9 +772,10 @@ fn crafted_account(
     )?;
     drop(registry);
     let registry =
-        AccountRegistry::open_read_only(&path)?.ok_or("the usage registry is missing")?;
+        AccountRegistry::open_read_only_with_vault(&path, jackin_testkit::MemoryVault::shared())?
+            .ok_or("the usage registry is missing")?;
     let view = build(&registry, &ViewFilter::default(), NOW, 0)?;
-    Ok(find(&view, id)?.clone())
+    Ok((view, id))
 }
 
 fn token_ranges() -> serde_json::Value {
@@ -751,7 +800,10 @@ fn tokens_of(account: &AccountQuota) -> Option<(Option<u64>, Option<u64>, Option
             yesterday,
             last30,
         } => Some((
-            *today,
+            match today {
+                TodayTokens::Count(tokens) => Some(*tokens),
+                TodayTokens::Hidden | TodayTokens::Unavailable => None,
+            },
             yesterday.as_ref().map(|activity| activity.tokens),
             last30.as_ref().map(|activity| activity.tokens),
         )),
@@ -871,5 +923,68 @@ fn an_idle_antigravity_five_hour_window_has_no_reset_but_a_used_one_keeps_it() -
         reset_of(&other, "gemini-5h")?,
         Some(Timestamp(NOW.0 + 3_600))
     );
+    Ok(())
+}
+
+fn token_parts(snapshot: serde_json::Value, hidden: &[&str]) -> Result<Option<Vec<String>>> {
+    let (view, id) = crafted_view(UsageProvider::ChatGpt, snapshot, hidden)?;
+    Ok(find(&view, id)?
+        .notes
+        .iter()
+        .find(|note| matches!(note, Note::Tokens { .. }))
+        .map(|note| card::note_parts(note, &view).1))
+}
+
+#[test]
+fn a_hidden_today_is_omitted_and_an_unreported_one_reads_n_a() -> Result<()> {
+    assert_eq!(
+        token_parts(token_ranges(), &[])?,
+        Some(vec![
+            "today 10".to_owned(),
+            "yesterday 20".to_owned(),
+            "30 days 30".to_owned()
+        ])
+    );
+    assert_eq!(
+        token_parts(token_ranges(), &["today"])?,
+        Some(vec!["yesterday 20".to_owned(), "30 days 30".to_owned()])
+    );
+    let legacy = json!({"plan": "Pay", "resources": {}, "activity": {
+        "yesterday": {"totals": {"tokens": 7}},
+        "prior30Days": {"tokens": 70},
+        "observed_days": 30, "expected_days": 30,
+    }});
+    assert_eq!(
+        token_parts(legacy, &[])?,
+        Some(vec![
+            "today n/a".to_owned(),
+            "yesterday 7".to_owned(),
+            "30 days 70".to_owned()
+        ])
+    );
+    Ok(())
+}
+
+#[test]
+fn one_account_with_two_near_limit_meters_gets_two_distinct_attention_rows() -> Result<()> {
+    let (live, week, five) = (NOW.0 + 3_600, 604_800, 18_000);
+    let (view, id) = crafted_view(
+        UsageProvider::Claude,
+        windows(&[
+            ("session", 99.0, Some(live), five),
+            ("weekly", 98.0, Some(live), week),
+        ]),
+        &[],
+    )?;
+    let rows = presentation::attention_rows(&view);
+    let near: Vec<_> = rows
+        .iter()
+        .filter(|row| row.accounts == [id] && row.key.starts_with("near-limit:"))
+        .collect();
+    assert_eq!(near.len(), 2, "{rows:?}");
+    assert_ne!(near[0].key, near[1].key);
+    let mut labels: Vec<&str> = near.iter().map(|row| row.label.as_str()).collect();
+    labels.sort_unstable();
+    assert_eq!(labels, ["Session", "Weekly"]);
     Ok(())
 }

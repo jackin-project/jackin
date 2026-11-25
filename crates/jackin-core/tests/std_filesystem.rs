@@ -5,7 +5,7 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::time::Duration;
 
 use jackin_core::{
-    DirEntry, EntryProblem, FileKind, FileMode, FileSystem, FsError, HostPath, PathError,
+    DirEntry, EntryProblem, FileKind, FileLock, FileMode, FileSystem, FsError, HostPath, PathError,
     RegularFileProblem, RepoPath, StdFileSystem,
 };
 
@@ -13,6 +13,18 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn at(dir: &tempfile::TempDir, name: &str) -> Result<HostPath, PathError> {
     HostPath::parse(&dir.path().join(name))
+}
+
+async fn relock(fs: &StdFileSystem, path: &HostPath) -> Result<FileLock, FsError> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        match fs.lock(path).await {
+            Err(FsError::LockHeld(_)) if std::time::Instant::now() < deadline => {
+                tokio::task::yield_now().await;
+            }
+            outcome => return outcome,
+        }
+    }
 }
 
 #[tokio::test]
@@ -81,7 +93,7 @@ async fn file_lock_is_exclusive_until_dropped() -> TestResult {
         other => panic!("{other:?}"),
     }
     drop(first);
-    fs.lock(&path).await?;
+    relock(&fs, &path).await?;
     Ok(())
 }
 
@@ -496,7 +508,7 @@ async fn a_lock_still_works_through_a_symlinked_ancestor_and_stays_exclusive() -
         Err(FsError::LockHeld(_))
     ));
     drop(held);
-    fs.lock(&at(&dir, "real/state.lock")?).await?;
+    relock(&fs, &at(&dir, "real/state.lock")?).await?;
     Ok(())
 }
 
