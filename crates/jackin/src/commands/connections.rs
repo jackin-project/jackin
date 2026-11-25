@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod details;
+mod providers;
+
+pub(super) use providers::show as providers;
 
 use std::path::PathBuf;
 
@@ -104,23 +107,22 @@ pub(super) async fn account(
         }
         return Ok(());
     }
+    if let UsageAccountCommand::Connect {
+        provider,
+        region,
+        auth,
+    } = command
+    {
+        let provider = providers::connector(&provider)?;
+        if provider == UsageProvider::Gemini {
+            app.io.note("Connecting Gemini Code Assist for a Google Cloud project. For a personal Gemini subscription, run jackin usage providers google-ai-ultra.");
+        }
+        return connect(app, provider, auth, region.as_deref(), None).await;
+    }
     let mut db = service(app)?.with_registry(Ok).await.map_err(failure)?;
     match command {
-        UsageAccountCommand::Ls(_) => Ok(()),
+        UsageAccountCommand::Ls(_) | UsageAccountCommand::Connect { .. } => Ok(()),
         UsageAccountCommand::Hub(command) => hub(app, &mut db, command).await,
-        UsageAccountCommand::Connect {
-            provider,
-            region,
-            auth,
-        } => {
-            let provider: UsageProvider =
-                provider
-                    .parse()
-                    .map_err(|e: jackin_usage::accounts::ConnectionError| {
-                        CommandError::Argument(e.to_string())
-                    })?;
-            connect(app, provider, auth, region.as_deref(), None).await
-        }
         UsageAccountCommand::ReplaceKey { id, region } => {
             if !db
                 .uses_api_key(id)
@@ -283,18 +285,43 @@ async fn handle_prompt(app: &mut App, prompt: LoginPrompt) -> Result<(), Command
     Ok(())
 }
 
-pub(super) async fn overview(app: &mut App, json: bool) -> Result<(), CommandError> {
+pub(super) fn overview(app: &mut App, json: bool) -> Result<(), CommandError> {
+    let db = AccountRegistry::open_read_only(&database(app)?).map_err(failure)?;
     if json {
-        return usage(
-            app,
-            UsageCommand::Snapshot(UsageFilter {
-                provider: None,
-                account: None,
-            }),
-        )
-        .await;
+        let snapshots = db
+            .as_ref()
+            .map(AccountRegistry::snapshots)
+            .transpose()
+            .map_err(failure)?
+            .unwrap_or_default();
+        let now = app.deps.host.clock.now().0;
+        let catalog = providers::catalog(snapshots.iter().map(|(account, _, _)| account.provider));
+        let accounts: Vec<_> = snapshots
+            .iter()
+            .map(|(account, at, payload)| {
+                jackin_usage::export::snapshot_account(account, *at, payload.as_ref(), now)
+            })
+            .collect();
+        app.io.json(
+            &json!({"schema":1,"generated_at":now,"accounts":accounts,"providers":catalog}),
+        )?;
+        return if snapshots.iter().any(|(_, _, payload)| payload.is_some()) {
+            Ok(())
+        } else {
+            Err(CommandError::NoUsageSnapshot)
+        };
     }
-    let Some(db) = AccountRegistry::open_read_only(&database(app)?).map_err(failure)? else {
+    let accounts = db
+        .as_ref()
+        .map(AccountRegistry::list)
+        .transpose()
+        .map_err(failure)?
+        .unwrap_or_default();
+    let catalog = providers::catalog(accounts.iter().map(|a| a.provider));
+    let Some(db) = db else {
+        for provider in catalog {
+            app.io.line(&provider.to_string())?;
+        }
         app.io.note("To connect your first provider, open Accounts in the console or run jackin account usage connect <provider>.");
         return Err(CommandError::NoUsageSnapshot);
     };
@@ -330,30 +357,52 @@ pub(super) async fn overview(app: &mut App, json: bool) -> Result<(), CommandErr
         app.io
             .line(&TerminalText::sanitize(line.as_bytes()).to_string())?;
     }
-    if !board.waiting.is_empty() {
-        app.io.note(&format!(
-            "Waiting for a first usage reading: {}",
-            board.waiting.len()
-        ));
-    }
     if board.all.is_empty() && board.waiting.is_empty() {
         app.io.line(&board.summary.to_string())?;
     }
-    for notice in board.notices {
-        app.io.note(
-            &TerminalText::sanitize(format!("{}: {}", notice.label, notice.message).as_bytes())
-                .to_string(),
-        );
+    for (index, account) in accounts.iter().enumerate() {
+        let notice = board
+            .notices
+            .iter()
+            .find(|notice| notice.account == account.id);
+        if board
+            .all
+            .iter()
+            .any(|row| row.account == Some(account.id) || row.members.contains(&account.id))
+        {
+            if let Some(notice) = notice {
+                app.io.note(
+                    &TerminalText::sanitize(
+                        format!("{}: {}", notice.label, notice.message).as_bytes(),
+                    )
+                    .to_string(),
+                );
+            }
+            continue;
+        }
+        let label = if board.settings.conceal_names {
+            jackin_usage::dashboard::concealed_label(index)
+        } else {
+            account.label.clone()
+        };
+        let status = if let Some(notice) = notice {
+            notice.message.as_str()
+        } else if board.waiting.contains(&account.id) {
+            "Waiting for a first usage reading"
+        } else {
+            "No displayed readings"
+        };
+        let line = format!("{} · {label} · {status}", account.provider);
+        app.io
+            .line(&TerminalText::sanitize(line.as_bytes()).to_string())?;
     }
-    if db
-        .snapshots()
-        .map_err(failure)?
-        .iter()
-        .all(|(_, _, v)| v.is_none())
-    {
-        Err(CommandError::NoUsageSnapshot)
-    } else {
+    for provider in catalog.iter().filter(|p| p.account_count == 0) {
+        app.io.line(&provider.to_string())?;
+    }
+    if board.has_snapshot {
         Ok(())
+    } else {
+        Err(CommandError::NoUsageSnapshot)
     }
 }
 
@@ -396,7 +445,10 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
     let filter = match command {
         UsageCommand::Refresh(f) | UsageCommand::Snapshot(f) => f,
         UsageCommand::Details { filter, json } => return details::show(app, &filter, json),
-        UsageCommand::Host(_) | UsageCommand::Share | UsageCommand::Proxy { .. } => {
+        UsageCommand::Providers { .. }
+        | UsageCommand::Host(_)
+        | UsageCommand::Share
+        | UsageCommand::Proxy { .. } => {
             return Err(CommandError::Argument("choose a usage filter".into()));
         }
         UsageCommand::Redeem { .. } => {
@@ -405,10 +457,9 @@ pub(super) async fn usage(app: &mut App, command: UsageCommand) -> Result<(), Co
     };
     let provider = filter
         .provider
-        .as_ref()
-        .map(|p| p.parse::<UsageProvider>())
-        .transpose()
-        .map_err(|e| CommandError::Argument(e.to_string()))?;
+        .as_deref()
+        .map(providers::connector)
+        .transpose()?;
     let path = database(app)?;
     let mut db = if active {
         Some(service(app)?.with_registry(Ok).await.map_err(failure)?)

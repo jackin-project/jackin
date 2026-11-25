@@ -45,6 +45,9 @@ pub(crate) async fn dispatch(app: &mut App, command: Command) -> Result<(), Comm
         Command::Ls(arg) => ls::run(app, &arg).await,
         Command::Usage(arg) => match arg.command {
             Some(crate::cli::UsageCommand::Host(host)) => usage::run(app, &host).await,
+            Some(crate::cli::UsageCommand::Providers { provider, json }) => {
+                connections::providers(app, provider.as_deref(), json || arg.json)
+            }
             Some(crate::cli::UsageCommand::Details { filter, json }) => {
                 connections::usage(
                     app,
@@ -56,7 +59,7 @@ pub(crate) async fn dispatch(app: &mut App, command: Command) -> Result<(), Comm
                 .await
             }
             Some(command) => connections::usage(app, command).await,
-            None => connections::overview(app, arg.json).await,
+            None => connections::overview(app, arg.json),
         },
         Command::Inspect(args) => inspect::run(app, args).await,
         Command::Role(command) => role::run(app, command).await,

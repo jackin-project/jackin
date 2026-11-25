@@ -30,6 +30,7 @@ const COMMANDS: &[&str] = &[
     "usage host",
     "usage share",
     "usage proxy",
+    "usage providers",
     "usage redeem",
     "usage refresh",
     "usage snapshot",
