@@ -116,6 +116,24 @@ fn a_key_that_claims_the_public_key_of_another_certificate_never_pairs_up() -> T
 }
 
 #[test]
+fn a_certificate_that_names_another_curve_around_the_same_point_never_pairs_up() -> TestResult {
+    let set = generate(EngineKeyKind::EcdsaP256)?;
+    let mut der = der_of(&set.cert)?;
+    let p256 = [0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07];
+    let at = der
+        .windows(p256.len())
+        .position(|window| window == p256)
+        .ok_or("no P-256 curve identifier")?;
+    der[at + p256.len() - 1] = 0x01;
+    assert_eq!(
+        pair(&armored("CERTIFICATE", &der), &set.key),
+        Err(EngineCertProblem::PairMismatch)
+    );
+    assert_eq!(pair(&set.cert, &set.key), Ok(()));
+    Ok(())
+}
+
+#[test]
 fn only_the_first_certificate_is_the_client_certificate() -> TestResult {
     let set = EngineCertificateSet::generate()?;
     assert_eq!(pair(&format!("{}{}", set.cert, set.ca), &set.key), Ok(()));

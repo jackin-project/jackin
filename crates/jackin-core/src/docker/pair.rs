@@ -11,7 +11,7 @@ use rustls::sign::SigningKey;
 use x509_parser::certificate::X509CertificateParser;
 use x509_parser::nom::Parser as _;
 use x509_parser::prelude::FromDer as _;
-use x509_parser::x509::SubjectPublicKeyInfo;
+use x509_parser::x509::{AlgorithmIdentifier, SubjectPublicKeyInfo};
 use zeroize::Zeroizing;
 
 use super::{EngineCert, EngineCertProblem, EnginePairProblem, KEY_LABELS, pem_blocks};
@@ -47,6 +47,13 @@ fn signing_key(der: &[u8]) -> Option<Arc<dyn SigningKey>> {
     .find_map(|candidate| any_supported_type(candidate).ok())
 }
 
+fn curve<'a>(algorithm: &'a AlgorithmIdentifier<'a>) -> &'a [u8] {
+    match &algorithm.parameters {
+        Some(parameters) => parameters.data,
+        None => &[],
+    }
+}
+
 pub(super) fn check(cert: &[u8], key: &[u8]) -> Result<(), EnginePairProblem> {
     EngineCert::Cert
         .check(cert)
@@ -74,6 +81,7 @@ pub(super) fn check(cert: &[u8], key: &[u8]) -> Result<(), EnginePairProblem> {
         SubjectPublicKeyInfo::from_der(public.as_ref()).map_err(|_| malformed_key())?;
     let held = certificate.public_key();
     if derived.algorithm.algorithm == held.algorithm.algorithm
+        && curve(&derived.algorithm) == curve(&held.algorithm)
         && derived.subject_public_key.data == held.subject_public_key.data
     {
         Ok(())
