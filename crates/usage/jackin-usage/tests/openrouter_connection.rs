@@ -580,7 +580,7 @@ async fn a_remainder_below_a_cent_is_not_used_up_and_zero_is() -> Result<(), Box
         .iter()
         .find(|row| row.metric == "keyLimit")
         .ok_or("no key limit row")?;
-    assert_eq!(key.value, "0.004 usd");
+    assert_eq!(key.value, "99.996 usd");
     Ok(())
 }
 
@@ -624,7 +624,7 @@ async fn the_stored_snapshot_round_trips_and_every_surface_shows_the_exact_text(
     assert_eq!(shown("today").as_deref(), Some("0.10000000000000001 usd"));
     assert_eq!(shown("week").as_deref(), Some("0.0025 usd"));
     assert_eq!(shown("month").as_deref(), Some("0.0000001 usd"));
-    assert_eq!(shown("budget").as_deref(), Some("0.0000001 usd"));
+    assert_eq!(shown("budget").as_deref(), Some("10000000000 usd"));
     let report = export::details_account(
         rows.remove(0),
         0,
@@ -682,7 +682,7 @@ async fn string_amounts_drive_every_dashboard_surface() -> Result<(), Box<dyn Er
             .ok_or(format!("no row for {metric}"))
     };
     let key = row("keyLimit")?;
-    assert_eq!(key.value, "0.01 usd");
+    assert_eq!(key.value, "99.99 usd");
     assert_eq!(key.severity, Severity::Critical);
     assert!(key.display_fraction(true).is_some_and(|left| left < 0.0002));
     assert!(

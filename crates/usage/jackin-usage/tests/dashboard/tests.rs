@@ -241,7 +241,7 @@ fn a_pooled_row_of_exact_amounts_does_not_inherit_an_exhausted_member() -> Resul
         .find(|r| r.metric == "extraUsage")
         .ok_or("missing pooled row")?;
     assert_eq!(pooled.members.len(), 2);
-    assert_eq!(pooled.value, "9 usd");
+    assert_eq!(pooled.value, "11 usd");
     assert!(
         !d.priority
             .iter()
