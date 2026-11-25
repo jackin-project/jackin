@@ -78,14 +78,18 @@ impl WorkingFs {
         ReadHold { arrived, open }
     }
 
-    pub fn reads_of(&self, file: &str) -> usize {
+    pub fn reads_of(&self, root: &HostPath, file: &str) -> usize {
         let reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
-        reads.get(file).copied().unwrap_or(0)
+        reads.get(&Self::key(root, file)).copied().unwrap_or(0)
     }
 
-    fn counted(&self, file: &RepoPath) {
+    fn key(root: &HostPath, file: &str) -> String {
+        root.as_path().join(file).display().to_string()
+    }
+
+    fn counted(&self, root: &HostPath, file: &RepoPath) {
         let mut reads = self.reads.lock().unwrap_or_else(PoisonError::into_inner);
-        *reads.entry(file.as_str().to_owned()).or_insert(0) += 1;
+        *reads.entry(Self::key(root, file.as_str())).or_insert(0) += 1;
     }
 
     async fn parked_at(&self, file: &RepoPath) {
@@ -229,7 +233,7 @@ impl FileSystem for WorkingFs {
         self.parked_at(file).await;
         let _working = self.clock.working();
         let read = self.inner.read_regular(root, file, max_bytes).await;
-        self.counted(file);
+        self.counted(root, file);
         read
     }
 

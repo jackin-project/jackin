@@ -546,10 +546,11 @@ async fn a_check_running_while_the_manifest_changes_does_not_restore_its_stale_r
         }
         assert!(hold.has_arrived(), "the check never reached its inspection");
 
-        let before = lab.rig.world.reads_of("jackin.role.toml");
+        let manifest_reads = |lab: &Lab| lab.rig.world.reads_of(twin.root(), "jackin.role.toml");
+        let before = manifest_reads(&lab);
         edit_manifest(twin.root(), true).await?;
         for _ in 0..500 {
-            if lab.rig.world.reads_of("jackin.role.toml") > before {
+            if manifest_reads(&lab) > before + 1 {
                 break;
             }
             lab.console.elapse(1);
@@ -557,10 +558,9 @@ async fn a_check_running_while_the_manifest_changes_does_not_restore_its_stale_r
             lab.console.pump(2).await;
         }
         assert!(
-            lab.rig.world.reads_of("jackin.role.toml") > before,
-            "no refresh read the edited manifest while the check was parked"
+            manifest_reads(&lab) > before + 1,
+            "the refresh never reloaded the edited role while the check was parked"
         );
-        lab.console.pump(10).await;
         hold.release();
         lab.console.settle().await?;
         after_refresh(&mut lab).await?;

@@ -79,8 +79,8 @@ impl World {
         self.working_fs.hold_read(file)
     }
 
-    pub fn reads_of(&self, file: &str) -> usize {
-        self.working_fs.reads_of(file)
+    pub fn reads_of(&self, root: &HostPath, file: &str) -> usize {
+        self.working_fs.reads_of(root, file)
     }
 
     pub fn fail_fs(&self, fault: FsFault) {
