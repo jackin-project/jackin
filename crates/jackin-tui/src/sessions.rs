@@ -339,6 +339,35 @@ impl SessionSet {
             .collect()
     }
 
+    async fn redial(
+        &self,
+        name: &GatewayName,
+        entry: &GatewayEntry,
+        previous: Option<GatewayEntry>,
+        connector: &dyn SessionConnector,
+        deadline: Duration,
+        cancel: &CancellationToken,
+    ) -> Result<Session, GatewayError> {
+        let session = match within(deadline, connector.connect(name, entry, cancel)).await {
+            Some(Ok(session)) => session,
+            Some(Err(error)) => return Err(error),
+            None => {
+                return Err(GatewayError::Unreachable {
+                    endpoint: name.to_string(),
+                    message: TimedOut(Waited(deadline)).to_string(),
+                });
+            }
+        };
+        let mut state = locked(&self.state);
+        if state.built.get(name) == previous.as_ref() {
+            state
+                .slots
+                .insert(name.clone(), Slot::Up(Box::new(session.clone())));
+            state.built.insert(name.clone(), entry.clone());
+        }
+        Ok(session)
+    }
+
     pub(crate) async fn home(
         &self,
         config: &Config,
@@ -367,24 +396,12 @@ impl SessionSet {
         let home = match stale {
             None => cached,
             Some((entry, previous)) => {
-                match within(deadline, connector.connect(&default, &entry, cancel)).await {
-                    Some(Ok(session)) => {
-                        let mut state = locked(&self.state);
-                        if state.built.get(&default) == previous.as_ref() {
-                            state
-                                .slots
-                                .insert(default.clone(), Slot::Up(Box::new(session.clone())));
-                            state.built.insert(default.clone(), entry);
-                        }
-                        session
-                    }
-                    Some(Err(error)) => return Home::Down(Arc::new(error)),
-                    None => {
-                        return Home::Down(Arc::new(GatewayError::Unreachable {
-                            endpoint: default.to_string(),
-                            message: TimedOut(Waited(deadline)).to_string(),
-                        }));
-                    }
+                match self
+                    .redial(&default, &entry, previous, connector, deadline, cancel)
+                    .await
+                {
+                    Ok(session) => session,
+                    Err(error) => return Home::Down(Arc::new(error)),
                 }
             }
         };
@@ -413,8 +430,15 @@ impl SessionSet {
         };
         let mut peers = Vec::new();
         for (name, entry) in config.gateways().filter(|(name, _)| **name != default) {
+            let built = locked(&self.state).built.get(name).cloned();
             peers.push(match known.get(name) {
-                Some(Reached::Up(session)) => Ok(Session::clone(session)),
+                Some(Reached::Up(session)) if built.as_ref() == Some(entry) => {
+                    Ok(Session::clone(session))
+                }
+                Some(Reached::Up(_)) => self
+                    .redial(name, entry, built, connector, deadline, cancel)
+                    .await
+                    .map_err(|error| unreachable(name, &error)),
                 Some(Reached::Down(error)) => Err(unreachable(name, error)),
                 None => connector
                     .connect(name, entry, cancel)
