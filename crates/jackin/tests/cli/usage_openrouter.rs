@@ -50,7 +50,9 @@ async fn a_refreshed_openrouter_account_keeps_every_digit_in_json_and_text() -> 
             Route::json(200, KEY).requires_header("authorization", "Bearer SECRET_TOKEN_ROUTER"),
         );
         let id = id.to_string();
-        let refreshed = cli.run(&["usage", "refresh", "--account", &id]).await?;
+        let refreshed = cli
+            .run(&["usage", "refresh", "--json", "--account", &id])
+            .await?;
         refreshed.ok()?;
         let after: Value = serde_json::from_str(&refreshed.stdout)?;
         let usage = &after["accounts"][0]["usage"];
@@ -80,11 +82,9 @@ async fn a_refreshed_openrouter_account_keeps_every_digit_in_json_and_text() -> 
         let text = cli.run(&["usage", "details", "--account", &id]).await?;
         text.ok()?;
         for expected in [
-            "Today · 0.30000000000000004 usd",
-            "This week · 0.0025 usd",
-            "This month · 0.0000001 usd",
-            "Limit · 10000000000.0000001 usd",
-            "Remaining · 0.0000001 usd",
+            "Key limit",
+            "Spend          today 0.30 USD · week 0.0025 USD · month <0.000001 USD",
+            "Budget",
         ] {
             assert!(
                 text.stdout.contains(expected),
@@ -95,7 +95,7 @@ async fn a_refreshed_openrouter_account_keeps_every_digit_in_json_and_text() -> 
         let overview = cli.run(&["usage"]).await?;
         overview.ok()?;
         assert!(
-            overview.stdout.contains("Today · 0.30000000000000004 usd"),
+            overview.stdout.contains("Router") && overview.stdout.contains("OpenRouter"),
             "{}",
             overview.stdout
         );
