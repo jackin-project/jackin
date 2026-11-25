@@ -11,8 +11,8 @@ use jackin_core::{
     ProcessStatus, ProcessStdin, Program, Provider, ProviderName,
 };
 use jackin_openshell::{
-    Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial, ProviderProfile,
-    ProviderSpec, ProviderState, ProviderWriteEffect, ProviderWriteError,
+    CreateOutcome, Gateway, GatewayError, PolicyError, ProfileSync, ProviderMaterial,
+    ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect, ProviderWriteError,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
@@ -514,7 +514,7 @@ impl RemovalPlan {
                         gateway: gateway.as_ref(),
                         account,
                         agent,
-                        action: Action::Restore,
+                        action: Action::Recreate,
                     });
                 }
                 forget_login(gateway.as_ref(), account)
@@ -534,7 +534,58 @@ impl RemovalPlan {
 #[derive(Debug)]
 enum Action {
     Remove,
-    Restore,
+    Recreate,
+    Revert,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Write {
+    Upsert,
+    IfAbsent,
+}
+
+#[derive(Clone, Copy)]
+struct Writing<'a> {
+    gateway: &'a dyn Gateway,
+    write: Write,
+}
+
+impl<'a> Writing<'a> {
+    fn upsert(gateway: &'a dyn Gateway) -> Writing<'a> {
+        Writing {
+            gateway,
+            write: Write::Upsert,
+        }
+    }
+
+    fn if_absent(gateway: &'a dyn Gateway) -> Writing<'a> {
+        Writing {
+            gateway,
+            write: Write::IfAbsent,
+        }
+    }
+
+    async fn put(&self, spec: &ProviderSpec) -> Result<ProviderWriteEffect, ProviderWriteError> {
+        match self.write {
+            Write::Upsert => self.gateway.put_provider(spec).await,
+            Write::IfAbsent => self
+                .gateway
+                .create_provider_if_absent(spec)
+                .await
+                .map(|outcome| match outcome {
+                    CreateOutcome::Created => ProviderWriteEffect::Created,
+                    CreateOutcome::PeerExists => ProviderWriteEffect::NoWrite,
+                }),
+        }
+    }
+}
+
+impl<'a> std::ops::Deref for Writing<'a> {
+    type Target = dyn Gateway + 'a;
+
+    fn deref(&self) -> &Self::Target {
+        self.gateway
+    }
 }
 
 #[derive(Debug)]
@@ -548,23 +599,30 @@ struct Undo<'a> {
 
 impl Undo<'_> {
     async fn run(&self) -> Result<(), AccountError> {
-        match self.action {
+        let provider = ProviderName::for_account(self.account.name(), self.agent);
+        let writing = match self.action {
             Action::Remove => {
-                let provider = ProviderName::for_account(self.account.name(), self.agent);
                 self.gateway.delete_provider(&provider).await?;
-                Ok(())
+                return Ok(());
             }
-            Action::Restore => sync_login(
-                self.host,
-                self.gateway,
-                self.account,
-                self.agent,
-                None,
-                &CancellationToken::new(),
-            )
-            .await
-            .map(drop),
-        }
+            Action::Recreate => {
+                if self.gateway.provider_state(&provider).await? == ProviderState::Present {
+                    return Ok(());
+                }
+                Writing::if_absent(self.gateway)
+            }
+            Action::Revert => Writing::upsert(self.gateway),
+        };
+        sync_login(
+            self.host,
+            writing,
+            self.account,
+            self.agent,
+            None,
+            &CancellationToken::new(),
+        )
+        .await
+        .map(drop)
     }
 }
 
@@ -769,7 +827,7 @@ async fn forget<'a>(
                 .await
                 .map_err(|error| on_gateway(session.gateway_name(), error))?;
             for (agent, _) in held {
-                journal.push(session.undo(Action::Restore, account, agent));
+                journal.push(session.undo(Action::Recreate, account, agent));
             }
             forget_login(session.deps.gateway.as_ref(), account)
                 .await
@@ -821,7 +879,7 @@ async fn publish<'a>(
                     == ProviderState::Present;
                 if held_previous {
                     ConfigError::unless_cancelled(cancel)?;
-                    journal.push(session.undo(Action::Restore, previous, previous_agent));
+                    journal.push(session.undo(Action::Recreate, previous, previous_agent));
                     session
                         .deps
                         .gateway
@@ -845,7 +903,7 @@ async fn publish<'a>(
                 record(
                     journal,
                     (held && previous.has_provider_for(agent))
-                        .then(|| session.undo(Action::Restore, previous, agent)),
+                        .then(|| session.undo(Action::Revert, previous, agent)),
                     session.undo(Action::Remove, &entry.account, agent),
                     &synced,
                 );
@@ -909,7 +967,7 @@ async fn refresh_held<'a>(
             journal,
             previous
                 .has_provider_for(candidate)
-                .then(|| session.undo(Action::Restore, previous, candidate)),
+                .then(|| session.undo(Action::Revert, previous, candidate)),
             session.undo(Action::Remove, account, candidate),
             &synced,
         );
@@ -917,7 +975,7 @@ async fn refresh_held<'a>(
         return Ok(());
     }
     if previous.has_provider_for(candidate) {
-        journal.push(session.undo(Action::Restore, previous, candidate));
+        journal.push(session.undo(Action::Recreate, previous, candidate));
     }
     session
         .deps
@@ -1078,7 +1136,7 @@ impl Session {
     ) -> Result<AccountSync, AccountError> {
         sync_login(
             &self.deps.host,
-            self.deps.gateway.as_ref(),
+            Writing::upsert(self.deps.gateway.as_ref()),
             account,
             agent,
             expected,
@@ -1120,7 +1178,7 @@ async fn holds(
 
 async fn sync_grok_login(
     host: &HostPorts,
-    gateway: &dyn Gateway,
+    gateway: Writing<'_>,
     account: &Account,
     agent: Agent,
     path: &HostPath,
@@ -1143,7 +1201,7 @@ async fn sync_grok_login(
 }
 
 async fn publish_static_login(
-    gateway: &dyn Gateway,
+    gateway: Writing<'_>,
     account: &Account,
     agent: Agent,
     key: jackin_core::Secret,
@@ -1152,7 +1210,7 @@ async fn publish_static_login(
 }
 
 async fn publish_login(
-    gateway: &dyn Gateway,
+    gateway: Writing<'_>,
     account: &Account,
     agent: Agent,
     material: ProviderMaterial,
@@ -1173,7 +1231,7 @@ async fn publish_login(
 }
 
 async fn publish_profile_login(
-    gateway: &dyn Gateway,
+    gateway: Writing<'_>,
     account: &Account,
     agent: Agent,
     profile: ProviderProfile,
@@ -1184,7 +1242,7 @@ async fn publish_profile_login(
     let synced = gateway.ensure_profile(&profile).await?;
     let name = ProviderName::for_account(account.name(), agent);
     let write = gateway
-        .put_provider(&ProviderSpec {
+        .put(&ProviderSpec {
             name: name.clone(),
             profile: profile.id,
             keys: jackin_core::CredentialKeys {
@@ -1211,7 +1269,7 @@ static KIMI_GLOBAL_PROFILE: jackin_core::ProfileAsset = jackin_core::ProfileAsse
 
 async fn sync_kimi_login(
     host: &HostPorts,
-    gateway: &dyn Gateway,
+    gateway: Writing<'_>,
     account: &Account,
     agent: Agent,
     path: &HostPath,
@@ -1281,7 +1339,7 @@ async fn sync_mimo_login(host: &HostPorts, path: &HostPath) -> Result<AccountSyn
 
 async fn sync_muse_login(
     host: &HostPorts,
-    gateway: &dyn Gateway,
+    gateway: Writing<'_>,
     account: &Account,
     agent: Agent,
     path: &HostPath,
@@ -1344,7 +1402,7 @@ async fn sync_muse_login(
 
 async fn sync_claude_login(
     host: &HostPorts,
-    gateway: &dyn Gateway,
+    gateway: Writing<'_>,
     account: &Account,
     agent: Agent,
     path: &HostPath,
@@ -1379,7 +1437,7 @@ async fn sync_claude_login(
 
 async fn sync_antigravity_login(
     host: &HostPorts,
-    gateway: &dyn Gateway,
+    gateway: Writing<'_>,
     account: &Account,
     agent: Agent,
     cancel: &CancellationToken,
@@ -1400,7 +1458,7 @@ async fn sync_antigravity_login(
 
 async fn sync_login(
     host: &HostPorts,
-    gateway: &dyn Gateway,
+    gateway: Writing<'_>,
     account: &Account,
     agent: Agent,
     expected: Option<&KimiLoginMetadata>,
@@ -1464,7 +1522,7 @@ async fn sync_login(
             .credential_env()
             .or_else(|| agent.spec().credential_env_names.first().copied());
         let write = gateway
-            .put_provider(&ProviderSpec {
+            .put(&ProviderSpec {
                 name: name.clone(),
                 profile: profile.id,
                 keys: jackin_core::CredentialKeys {
@@ -1506,7 +1564,7 @@ async fn sync_login(
     let synced = gateway.ensure_profile(&profile).await?;
     let name = ProviderName::for_account(account.name(), Agent::Codex);
     let write = gateway
-        .put_provider(&ProviderSpec {
+        .put(&ProviderSpec {
             name: name.clone(),
             profile: profile.id,
             keys: spec.codex.openshell.keys,

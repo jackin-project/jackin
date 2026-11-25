@@ -260,11 +260,14 @@ async fn add(app: &App, args: AccountAddArgs) -> Result<(), CommandError> {
         }
         AccountPlan::Gateway(plan) => {
             let gateways = connect(app, &plan).await?;
+            app.unsettled(UNSETTLED_ACCOUNT.to_owned());
             plan.apply(&gateways, &app.cancel).await?;
         }
     }
     Ok(())
 }
+
+const UNSETTLED_ACCOUNT: &str = "the account change may be partly applied: provider state on the gateways can differ from the config; run the same command again";
 
 async fn connect(app: &App, plan: &GatewayPlan) -> Result<Gateways, CommandError> {
     let home = app.session(plan.config()).await?;
@@ -280,6 +283,7 @@ async fn apply(app: &App, edits: Vec<ConfigEdit>) -> Result<(), CommandError> {
         }
         AccountPlan::Gateway(plan) => {
             let gateways = connect(app, &plan).await?;
+            app.unsettled(UNSETTLED_ACCOUNT.to_owned());
             plan.apply(&gateways, &app.cancel).await?;
         }
     }

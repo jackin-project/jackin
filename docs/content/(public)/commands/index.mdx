@@ -14,8 +14,8 @@ The option `--gateway <name>` is global. It selects a gateway entry from the jac
 | 0 | The command succeeded. |
 | 1 | The command failed. |
 | 2 | The command line is wrong. |
-| 3 | Jackin refused the action, for example `jackin purge` on unexported work. |
-| 130 | You cancelled the command. |
+| 3 | Jackin refused the action, for example `jackin purge` on unexported work, or on a sandbox that jackin did not create. |
+| 130 | You cancelled the command. Press Ctrl-C once to cancel and let jackin wind down. Press it a second time to stop waiting. Jackin then says that the outcome is not confirmed and what may be unsettled, such as the launch ID to repeat with `jackin load --launch-id`. |
 
 ## Commands
 

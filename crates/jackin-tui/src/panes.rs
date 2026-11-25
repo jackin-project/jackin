@@ -416,6 +416,7 @@ fn attach_fault(error: &AttachError) -> LinkFault {
     match error {
         AttachError::Gateway(gateway) => fault(error, Some(gateway)),
         AttachError::NotFound(_)
+        | AttachError::NotManaged(_)
         | AttachError::MainProcessEnded { .. }
         | AttachError::EnvFile { .. } => fault(error, None),
     }
@@ -474,10 +475,13 @@ impl Run {
         let Some(agent) = self.agent else {
             return self
                 .session
-                .open_shell(ShellRequest {
-                    sandbox: self.sandbox.clone(),
-                    size,
-                })
+                .open_shell(
+                    ShellRequest {
+                        sandbox: self.sandbox.clone(),
+                        size,
+                    },
+                    &self.gone,
+                )
                 .await
                 .map(Terminal::Shell)
                 .map_err(|error| attach_fault(&error));

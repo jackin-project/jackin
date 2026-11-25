@@ -315,6 +315,14 @@ impl Rig {
         name: SandboxName,
         launch: u8,
     ) -> Result<SandboxHandle, FixtureError> {
+        self.sandbox_of_launch(name, launch_id(launch)).await
+    }
+
+    pub async fn sandbox_of_launch(
+        &self,
+        name: SandboxName,
+        launch: LaunchId,
+    ) -> Result<SandboxHandle, FixtureError> {
         let image = self.final_image()?;
         let labels = PlannedLabels {
             workspace: WorkspaceName::parse("platform-backend")?,
@@ -324,7 +332,7 @@ impl Rig {
                 AccountName::parse("work")?,
             )),
             policy: PolicyLabel::of("policy"),
-            launch: launch_id(launch),
+            launch,
         }
         .complete(&image.id, DockerLabel::Off);
         self.gateway().add_image(&image.tag);

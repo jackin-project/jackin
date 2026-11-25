@@ -14,8 +14,8 @@ use jackin_core::{
 };
 use jackin_image::ImageEngine;
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayHealth, GatewayOp, PowerAction, ProfileSync, ProgramOutcome,
-    ProgramRun, ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect,
+    CreateOutcome, Gateway, GatewayError, GatewayHealth, GatewayOp, PowerAction, ProfileSync,
+    ProgramOutcome, ProgramRun, ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect,
     ProviderWriteError, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView,
     TerminalRequest, TerminalSession,
 };
@@ -53,6 +53,22 @@ struct Hooks {
     pause: Duration,
     active: BTreeMap<SandboxName, usize>,
     peak: usize,
+    names: Names,
+    deletes: u32,
+    finds_after_delete: Option<Lookup>,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+enum Names {
+    #[default]
+    Plain,
+    Doubled,
+}
+
+#[derive(Debug)]
+pub(crate) enum Lookup {
+    Fail(GatewayError),
+    Hang,
 }
 
 #[derive(Debug)]
@@ -114,6 +130,14 @@ impl Tap {
             config: world.config.clone(),
             limits,
         })
+    }
+
+    pub(crate) fn lookups_after_a_delete(&self, lookup: Lookup) {
+        self.hooks().finds_after_delete = Some(lookup);
+    }
+
+    pub(crate) fn list_each_sandbox_twice_by_name(&self) {
+        self.hooks().names = Names::Doubled;
     }
 
     pub(crate) fn replace_next_download(&self, bytes: Vec<u8>) {
@@ -303,6 +327,13 @@ impl Gateway for Tap {
         self.inner.put_provider(spec).await
     }
 
+    async fn create_provider_if_absent(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<CreateOutcome, ProviderWriteError> {
+        self.inner.create_provider_if_absent(spec).await
+    }
+
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
         self.inner.delete_provider(name).await
     }
@@ -316,7 +347,32 @@ impl Gateway for Tap {
             self.entered.notify_one();
             std::future::pending::<()>().await;
         }
-        self.inner.find_sandboxes(query).await
+        let hang = {
+            let mut hooks = self.hooks();
+            if hooks.deletes > 0 {
+                match hooks.finds_after_delete.take() {
+                    Some(Lookup::Fail(error)) => return Err(error),
+                    Some(Lookup::Hang) => {
+                        hooks.finds_after_delete = Some(Lookup::Hang);
+                        true
+                    }
+                    None => false,
+                }
+            } else {
+                false
+            }
+        };
+        if hang {
+            std::future::pending::<()>().await;
+        }
+        let found = self.inner.find_sandboxes(query).await?;
+        if matches!(query, SandboxQuery::Name(_)) && (self.hooks().names == Names::Doubled) {
+            return Ok(found
+                .into_iter()
+                .flat_map(|view| [view.clone(), view])
+                .collect());
+        }
+        Ok(found)
     }
 
     async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
@@ -339,7 +395,9 @@ impl Gateway for Tap {
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
-        self.inner.delete_sandbox(name).await
+        let result = self.inner.delete_sandbox(name).await;
+        self.hooks().deletes += 1;
+        result
     }
 
     async fn run_program(

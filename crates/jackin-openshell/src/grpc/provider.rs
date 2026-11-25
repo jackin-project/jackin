@@ -15,7 +15,7 @@ use openshell_sdk::raw::proto::{
 use super::Inner;
 use crate::error::{GatewayError, GatewayOp, Missing};
 use crate::gateway::{
-    ProfileSync, ProviderMaterial, ProviderSpec, ProviderState, ProviderWriteEffect,
+    CreateOutcome, ProfileSync, ProviderMaterial, ProviderSpec, ProviderState, ProviderWriteEffect,
     ProviderWriteError,
 };
 use crate::policy::ProviderProfile as ProfileModel;
@@ -252,11 +252,14 @@ impl Inner {
         })
     }
 
-    pub(crate) async fn put_provider(
-        &self,
+    fn prepared(
         spec: &ProviderSpec,
-    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
-        let (credentials, refresh, redactor) = match &spec.material {
+    ) -> (
+        HashMap<String, String>,
+        Option<RefreshConfiguration>,
+        Redactor,
+    ) {
+        match &spec.material {
             ProviderMaterial::StaticKey { key } => (
                 HashMap::from([(spec.keys.access_token.to_owned(), key.expose().to_owned())]),
                 None,
@@ -299,7 +302,10 @@ impl Inner {
                     Redactor::new([access_token, refresh_token]),
                 )
             }
-        };
+        }
+    }
+
+    async fn require_profile(&self, spec: &ProviderSpec) -> Result<(), ProviderWriteError> {
         self.unary(
             GatewayOp::Profile,
             Some(Missing::Profile(spec.profile.clone())),
@@ -309,13 +315,62 @@ impl Inner {
             }),
         )
         .await
-        .map_err(|error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite))?;
+        .map(drop)
+        .map_err(|error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite))
+    }
+
+    pub(crate) async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
+        let (credentials, refresh, redactor) = Self::prepared(spec);
+        self.require_profile(spec).await?;
         self.write_provider(spec, credentials, refresh)
             .await
             .map_err(|error| {
                 let (source, effect) = error.into_parts();
                 ProviderWriteError::new(redact(source, &redactor), effect)
             })
+    }
+
+    pub(crate) async fn create_provider_if_absent(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<CreateOutcome, ProviderWriteError> {
+        let (credentials, refresh, redactor) = Self::prepared(spec);
+        self.require_profile(spec).await?;
+        self.create_only(spec, credentials, refresh)
+            .await
+            .map_err(|error| {
+                let (source, effect) = error.into_parts();
+                ProviderWriteError::new(redact(source, &redactor), effect)
+            })
+    }
+
+    async fn create_only(
+        &self,
+        spec: &ProviderSpec,
+        credentials: HashMap<String, String>,
+        refresh: Option<RefreshConfiguration>,
+    ) -> Result<CreateOutcome, ProviderWriteError> {
+        let mut record =
+            provider_record(&spec.name, spec.profile.as_str(), self.workspace.as_str());
+        record.credentials = credentials;
+        let untouched = |error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite);
+        if self.provider_state(&spec.name).await.map_err(untouched)? == ProviderState::Present {
+            return Ok(CreateOutcome::PeerExists);
+        }
+        match self.create_provider(spec, record).await {
+            Ok(()) => {}
+            Err(GatewayError::AlreadyExists { .. }) => return Ok(CreateOutcome::PeerExists),
+            Err(error) => {
+                let effect = ProviderWriteEffect::after_failed_write(false, &error);
+                return Err(ProviderWriteError::new(error, effect));
+            }
+        }
+        self.configure_refresh(spec, refresh, ProviderWriteEffect::Created)
+            .await?;
+        Ok(CreateOutcome::Created)
     }
 
     async fn write_provider(
@@ -358,9 +413,19 @@ impl Inner {
                 ProviderWriteEffect::Existing
             }
         };
+        self.configure_refresh(spec, refresh, effect).await?;
+        Ok(effect)
+    }
+
+    async fn configure_refresh(
+        &self,
+        spec: &ProviderSpec,
+        refresh: Option<RefreshConfiguration>,
+        effect: ProviderWriteEffect,
+    ) -> Result<(), ProviderWriteError> {
         let after = |error| ProviderWriteError::new(error, effect);
         let Some(refresh) = refresh else {
-            return Ok(effect);
+            return Ok(());
         };
         let mut request = ConfigureProviderRefreshRequest {
             workspace_scope: Some(self.scope()),
@@ -389,7 +454,7 @@ impl Inner {
         )
         .await
         .map_err(after)?;
-        Ok(effect)
+        Ok(())
     }
 
     async fn create_provider(

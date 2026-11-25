@@ -10,6 +10,10 @@ use crate::error::CommandError;
 pub(crate) async fn run(app: &mut App, arg: SandboxArg) -> Result<(), CommandError> {
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
+    app.unsettled(format!(
+        "sandbox {}: the export may have written refs and files on the host; run jackin export again to finish it",
+        arg.sandbox
+    ));
     let report = session
         .export(&config, &arg.sandbox, app.cancel.clone())
         .await?;

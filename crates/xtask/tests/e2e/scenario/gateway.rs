@@ -9,10 +9,10 @@ use jackin_core::{
     SandboxPath, Secret, Sha256,
 };
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, PowerAction, ProfileSync,
-    ProgramOutcome, ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState,
-    ProviderWriteEffect, ProviderWriteError, SandboxCreate, SandboxDetail, SandboxFile,
-    SandboxQuery, SandboxView, TerminalRequest, TerminalSession,
+    CreateOutcome, Gateway, GatewayError, GatewayHealth, GatewayOp, Missing, PowerAction,
+    ProfileSync, ProgramOutcome, ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec,
+    ProviderState, ProviderWriteEffect, ProviderWriteError, SandboxCreate, SandboxDetail,
+    SandboxFile, SandboxQuery, SandboxView, TerminalRequest, TerminalSession,
 };
 use jackin_testkit::FakeGateway;
 use serde_json::Value;
@@ -330,6 +330,13 @@ impl Gateway for ScenarioGateway {
         spec: &ProviderSpec,
     ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         self.fake.put_provider(spec).await
+    }
+
+    async fn create_provider_if_absent(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<CreateOutcome, ProviderWriteError> {
+        self.fake.create_provider_if_absent(spec).await
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {

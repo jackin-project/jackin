@@ -17,6 +17,7 @@ mod heads;
 mod honest;
 mod host_calls;
 mod lab;
+mod lookups;
 mod nesting;
 mod non_utf8;
 mod pack;

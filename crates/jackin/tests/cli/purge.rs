@@ -4,6 +4,7 @@
 use jackin::ExitClass;
 use jackin_core::{Labels, Phase, SandboxName};
 use jackin_testkit::{Rig, TestResult, guard};
+use tokio_util::sync::CancellationToken;
 
 use super::support::{Failure, Harness, failed};
 
@@ -47,7 +48,8 @@ async fn purge_deletes_an_exported_sandbox_refuses_unexported_work_and_force_del
 }
 
 #[tokio::test]
-async fn purging_an_absent_sandbox_is_ok_and_an_unmanaged_one_is_never_deleted() -> TestResult {
+async fn purging_an_absent_sandbox_is_ok_and_an_unmanaged_one_is_refused_and_never_deleted()
+-> TestResult {
     guard(async {
         let (rig, harness, clean, _dirty) = two().await?;
         harness.run(&["purge", "jackin-absent-0009"]).await?.ok()?;
@@ -55,11 +57,36 @@ async fn purging_an_absent_sandbox_is_ok_and_an_unmanaged_one_is_never_deleted()
         rig.world
             .gateway
             .insert_unmanaged(&ghost, Labels::from_pairs([])?, Phase::Ready)?;
-        harness
-            .run(&["purge", ghost.as_str(), "--force"])
-            .await?
-            .ok()?;
+        let refused = harness.run(&["purge", ghost.as_str(), "--force"]).await?;
+        failed(&refused, ExitClass::Refused, &["not a jackin sandbox"])?;
+        assert!(
+            !refused.stderr.contains("already gone"),
+            "{}",
+            refused.stderr
+        );
         assert!(rig.world.gateway.sandbox(&ghost).is_some());
+        assert!(rig.world.gateway.sandbox(&clean).is_some());
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancelled_purge_exits_130_and_deletes_nothing() -> TestResult {
+    guard(async {
+        let (rig, harness, clean, _dirty) = two().await?;
+        let token = CancellationToken::new();
+        token.cancel();
+        let cancelled = harness
+            .command(&["purge", clean.as_str()])
+            .cancel(token)
+            .run()
+            .await?;
+        failed(
+            &cancelled,
+            ExitClass::Cancelled,
+            &["cancelled", clean.as_str()],
+        )?;
         assert!(rig.world.gateway.sandbox(&clean).is_some());
         Ok(())
     })

@@ -14,6 +14,14 @@ pub(crate) async fn run(
 ) -> Result<(), CommandError> {
     let config = app.store.load().await?;
     let session = app.session(&config).await?;
+    app.unsettled(format!(
+        "sandbox {}: the {} request may have been sent; jackin ls shows its state",
+        arg.sandbox,
+        match action {
+            PowerAction::Start => "start",
+            PowerAction::Stop => "stop",
+        }
+    ));
     let summary = session
         .power(&arg.sandbox, action, &app.cancel)
         .await

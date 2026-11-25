@@ -3,8 +3,8 @@
 
 use jackin_core::{Agent, ProfileId, Provider as ProviderKind, ProviderName, SandboxPath, Secret};
 use jackin_openshell::{
-    Gateway, GatewayError, GatewayOp, Missing, ProfileSync, ProviderMaterial, ProviderProfile,
-    ProviderSpec, ProviderState, ProviderWriteEffect,
+    CreateOutcome, Gateway, GatewayError, GatewayOp, Missing, ProfileSync, ProviderMaterial,
+    ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect,
 };
 use openshell_sdk::raw::proto::{ObjectMeta, Provider, ProviderCredentialRefreshStrategy};
 use tonic::Code;
@@ -822,4 +822,171 @@ fn every_error_that_may_have_reached_the_gateway_is_an_unknown_outcome() {
         ProviderWriteEffect::after_failed_write(false, &refused),
         ProviderWriteEffect::NoWrite
     );
+}
+
+#[tokio::test]
+async fn create_provider_if_absent_creates_and_configures_refresh_when_the_provider_is_absent() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    let keys = Agent::Codex.spec().codex.openshell.keys;
+    assert_eq!(
+        guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+            .await
+            .unwrap(),
+        CreateOutcome::Created
+    );
+    let state = env.server.state();
+    let provider = &state.providers[&(WORKSPACE.to_owned(), PROVIDER.to_owned())];
+    assert_eq!(provider.credentials[keys.access_token], ACCESS);
+    let refresh_key = (
+        WORKSPACE.to_owned(),
+        PROVIDER.to_owned(),
+        keys.access_token.to_owned(),
+    );
+    assert_eq!(
+        state.refresh[&refresh_key].material["refresh_token"],
+        REFRESH
+    );
+}
+
+#[tokio::test]
+async fn create_provider_if_absent_leaves_a_present_provider_untouched() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    let keys = Agent::Codex.spec().codex.openshell.keys;
+    guard(gateway.put_provider(&spec("peer-access", "peer-refresh")))
+        .await
+        .unwrap();
+    let refresh_key = (
+        WORKSPACE.to_owned(),
+        PROVIDER.to_owned(),
+        keys.access_token.to_owned(),
+    );
+    let before = env.server.state().refresh[&refresh_key].material.clone();
+
+    assert_eq!(
+        guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+            .await
+            .unwrap(),
+        CreateOutcome::PeerExists
+    );
+    let state = env.server.state();
+    let provider = &state.providers[&(WORKSPACE.to_owned(), PROVIDER.to_owned())];
+    assert_eq!(provider.credentials[keys.access_token], "peer-access");
+    assert_eq!(state.refresh[&refresh_key].material, before);
+}
+
+#[tokio::test]
+async fn create_provider_if_absent_treats_a_create_that_loses_a_race_as_a_peer() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    let keys = Agent::Codex.spec().codex.openshell.keys;
+    let provider_key = (WORKSPACE.to_owned(), PROVIDER.to_owned());
+    let rival_key = provider_key.clone();
+    env.server.state().before_create_provider = Some(Box::new(move |state: &mut State| {
+        state.providers.insert(
+            rival_key.clone(),
+            Provider {
+                metadata: Some(ObjectMeta {
+                    name: PROVIDER.to_owned(),
+                    ..ObjectMeta::default()
+                }),
+                r#type: "codex".to_owned(),
+                profile_workspace: WORKSPACE.to_owned(),
+                credentials: [(keys.access_token.to_owned(), "rival-access".to_owned())].into(),
+                ..Provider::default()
+            },
+        );
+    }));
+    assert_eq!(
+        guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+            .await
+            .unwrap(),
+        CreateOutcome::PeerExists
+    );
+    let state = env.server.state();
+    assert_eq!(
+        state.providers[&provider_key].credentials[keys.access_token],
+        "rival-access"
+    );
+    assert!(state.refresh.is_empty());
+}
+
+#[tokio::test]
+async fn a_failed_create_if_absent_is_classified_like_a_failed_create() {
+    for (code, expected) in [
+        (Code::PermissionDenied, ProviderWriteEffect::NoWrite),
+        (Code::Unavailable, ProviderWriteEffect::Unknown),
+    ] {
+        let env = env().await;
+        let gateway = connect(&env, WORKSPACE).await;
+        guard(gateway.ensure_profile(&profile())).await.unwrap();
+        env.server.state().faults.insert(
+            "create_provider",
+            Fault::Status(code, "create failed".to_owned()),
+        );
+        let error = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+            .await
+            .unwrap_err();
+        assert_eq!(error.effect(), expected, "{code:?}: {error:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_failed_create_if_absent_never_prints_the_secrets_it_was_given() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    env.server.state().faults.insert(
+        "create_provider",
+        Fault::Status(
+            Code::Internal,
+            format!("create failed for {ACCESS} and {REFRESH}"),
+        ),
+    );
+    let error = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_no_secret(&error.to_string());
+    assert_no_secret(&format!("{error:?}"));
+
+    env.server.state().faults.clear();
+    env.server.state().faults.insert(
+        "configure_provider_refresh",
+        Fault::Status(
+            Code::Internal,
+            format!("refresh failed for {ACCESS} and {REFRESH}"),
+        ),
+    );
+    let after_create = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_eq!(after_create.effect(), ProviderWriteEffect::Created);
+    assert_no_secret(&after_create.to_string());
+    assert_no_secret(&format!("{after_create:?}"));
+    assert!(
+        env.server
+            .state()
+            .providers
+            .contains_key(&(WORKSPACE.to_owned(), PROVIDER.to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn create_if_absent_with_an_unreadable_state_writes_nothing() {
+    let env = env().await;
+    let gateway = connect(&env, WORKSPACE).await;
+    guard(gateway.ensure_profile(&profile())).await.unwrap();
+    env.server.state().faults.insert(
+        "get_provider",
+        Fault::Status(Code::Unavailable, "state lookup failed".to_owned()),
+    );
+    let unreadable = guard(gateway.create_provider_if_absent(&spec(ACCESS, REFRESH)))
+        .await
+        .unwrap_err();
+    assert_eq!(unreadable.effect(), ProviderWriteEffect::NoWrite);
+    assert!(env.server.state().providers.is_empty());
 }

@@ -102,7 +102,7 @@ async fn attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_witho
                 &CancellationToken::new(),
             )
             .await;
-        assert!(matches!(ghost, Err(AttachError::NotFound(found)) if found == foreign));
+        assert!(matches!(ghost, Err(AttachError::NotManaged(found)) if found == foreign));
 
         let request = AttachRequest::owner(target(&rig, 1).await?, size()?);
         session
@@ -169,6 +169,36 @@ async fn a_cancel_interrupts_a_hung_lookup_before_an_attach_and_opens_nothing() 
         );
         assert_eq!(handle.attachments(), 0);
         rig.gateway().release(&hold);
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_while_the_main_terminal_is_being_opened_does_not_abandon_the_open() -> TestResult
+{
+    guard_within(Duration::from_secs(20), async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let hold = Trigger::Op(GatewayOp::Terminal);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let request = AttachRequest::owner(target(&rig, 1).await?, size()?);
+        let attaching = rig.world.session.attach(request, &token);
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+            rig.gateway().release(&hold);
+        };
+        let (attached, ()) = tokio::join!(attaching, driver);
+        let terminal = attached.map_err(|error| format!("the open was abandoned: {error:?}"))?;
+        assert_eq!(rig.handle(1).await?.attachments(), 1);
+        drop(terminal);
         Ok(())
     })
     .await

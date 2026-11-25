@@ -189,7 +189,7 @@ Cockpit keys:
 | `i` | Show the instance info. |
 | `Ctrl+Q` | Quit the console. |
 
-A cancel keeps a sandbox that exists. Jackin reports it as a restore candidate and attaches nothing. If the gateway cannot confirm whether a sandbox exists, or finds several for the launch, jackin refreshes the fleet and does not claim that none exists.
+A cancel keeps a sandbox that exists. Jackin reports it as a restore candidate and attaches nothing. If the gateway cannot confirm whether a sandbox exists, or finds several for the launch, jackin refreshes the fleet and says so on the status line: that several sandboxes match the launch, or that the gateway could not confirm whether the sandbox exists. It does not claim that none exists.
 
 When the stages finish, the console opens Jackin Capsule with the Codex pane attached.
 
