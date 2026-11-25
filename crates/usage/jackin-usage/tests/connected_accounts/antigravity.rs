@@ -391,21 +391,44 @@ async fn direct_sign_in_can_replace_a_status_line_account_of_the_same_google_acc
     Ok(())
 }
 
-#[tokio::test]
-async fn status_line_enrollment_for_a_direct_google_account_is_a_duplicate() -> Result<()> {
-    let tmp = tempfile::tempdir()?;
-    let path = tmp.path().join("usage/accounts.sqlite3");
-    let clock = Arc::new(FakeClock::new());
-    let vault = Arc::new(super::Vault::default());
-    let mut registry = super::db(&path, &vault)?;
-    registry.add(
+fn sharing(
+    path: &std::path::Path,
+    clock: Arc<FakeClock>,
+    vault: &Arc<dyn CredentialVault>,
+) -> OwnedLogin {
+    OwnedLogin::new(
+        path.to_path_buf(),
+        closed_endpoints(),
+        clock,
+        Arc::clone(vault),
+    )
+}
+
+fn direct_row(
+    path: &std::path::Path,
+    vault: &Arc<dyn CredentialVault>,
+    label: &str,
+) -> Result<(AccountRegistry, Uuid)> {
+    let mut registry = AccountRegistry::with_vault(path, Arc::clone(vault))?;
+    let id = registry.add(
         &jackin_core::CriticalWrite::begin(),
         UsageProvider::Antigravity,
-        "Direct",
+        label,
         &oauth("me@example.com"),
         &super::bytes("grant"),
     )?;
-    let (service, _) = offline(&path, clock);
+    Ok((registry, id))
+}
+
+#[tokio::test]
+async fn status_line_enrollment_for_a_direct_google_account_with_a_credential_is_a_duplicate()
+-> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let vault: Arc<dyn CredentialVault> = Arc::new(MemoryVault::default());
+    let (registry, _) = direct_row(&path, &vault, "Direct")?;
+    let service = sharing(&path, clock, &vault);
     let (send, mut prompts) = tokio::sync::mpsc::channel(2);
     let cancel = CancellationToken::new();
     let task = {
@@ -427,6 +450,51 @@ async fn status_line_enrollment_for_a_direct_google_account_is_a_duplicate() -> 
         Err(LoginError::Store(ConnectionError::DuplicateDirect))
     ));
     assert_eq!(registry.list()?.len(), 1);
+    assert!(!registry.is_statusline(registry.list()?.remove(0).id)?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn status_line_enrollment_replaces_a_direct_row_whose_credential_is_missing() -> Result<()> {
+    use jackin_usage::accounts::AccountPreferences;
+
+    let tmp = tempfile::tempdir()?;
+    let path = tmp.path().join("usage/accounts.sqlite3");
+    let clock = Arc::new(FakeClock::new());
+    let now = clock.now().0;
+    let vault: Arc<dyn CredentialVault> = Arc::new(MemoryVault::default());
+    let (registry, id) = direct_row(&path, &vault, "Work")?;
+    let mut prefs = AccountPreferences::default();
+    prefs.hidden.insert("3p-5h".into());
+    registry.set_preferences(id, &prefs)?;
+    let emptied: Arc<dyn CredentialVault> = Arc::new(MemoryVault::default());
+    let service = sharing(&path, clock, &emptied);
+    let cancel = CancellationToken::new();
+    let pending = begin(&service, "ME@example.com", None, &cancel).await?;
+    assert!(update(&service, "me@example.com", Some("ultra"), now)?);
+    assert_eq!(pending.await??, id);
+    let rows = registry.list()?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, id);
+    assert_eq!(rows[0].label, "Work");
+    assert_eq!(rows[0].preferences, prefs);
+    assert!(registry.is_statusline(id)?);
+    assert!(matches!(
+        registry.credential(id),
+        Err(ConnectionError::CredentialKind)
+    ));
+    assert!(update(&service, "me@example.com", Some("ultra"), now + 60)?);
+    let stored = registry
+        .snapshots()?
+        .into_iter()
+        .find(|row| row.0.id == id)
+        .ok_or("missing snapshot")?;
+    assert_eq!(stored.1, Some(now + 60));
+    let reading = stored.2.ok_or("missing reading")?;
+    assert_eq!(
+        reading["resources"]["3p-weekly"]["remaining_fraction"],
+        0.05
+    );
     Ok(())
 }
 

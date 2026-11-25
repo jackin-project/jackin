@@ -1,8 +1,11 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{AccountRegistry, ConnectionError, CredentialVault};
-use rusqlite::{OptionalExtension, TransactionBehavior, params};
+use super::{
+    AccountRegistry, ConnectionError, CredentialVault, CredentialVersion, changed, replace_slot,
+    uuid,
+};
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use std::{path::Path, sync::Arc};
 use uuid::Uuid;
 
@@ -45,15 +48,7 @@ impl AccountRegistry {
             });
         }
         if replace.is_none() {
-            let direct: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM accounts
-                 WHERE provider='antigravity' AND kind='oauth' AND lower(identity)=lower(?1))",
-                [email],
-                |row| row.get(0),
-            )?;
-            if direct {
-                return Err(ConnectionError::DuplicateDirect);
-            }
+            dead_direct(&tx, self.vault.as_ref(), email)?;
         }
         let inserted = tx.execute(
             "INSERT INTO antigravity_enrollments(ticket,email,expires)
@@ -134,7 +129,15 @@ impl AccountRegistry {
         let (Some(fetched), Some(snapshot)) = (fetched, snapshot) else {
             return Ok(None);
         };
+        let dead = if replace.is_none() {
+            dead_direct(&tx, self.vault.as_ref(), &email)?
+        } else {
+            None
+        };
         let id = if let Some(id) = replace {
+            id
+        } else if let Some((id, slot)) = dead {
+            convert_direct(&tx, id, CredentialVersion(slot), &email, fetched, &snapshot)?;
             id
         } else {
             let id = Uuid::new_v4();
@@ -153,4 +156,43 @@ impl AccountRegistry {
         tx.commit()?;
         Ok(Some(id))
     }
+}
+
+fn dead_direct(
+    db: &Connection,
+    vault: &dyn CredentialVault,
+    email: &str,
+) -> Result<Option<(Uuid, Uuid)>, ConnectionError> {
+    let Some((id, slot)) = db
+        .query_row(
+            "SELECT id,slot FROM accounts
+             WHERE provider='antigravity' AND kind='oauth' AND lower(identity)=lower(?1)",
+            [email],
+            |row| Ok((uuid(row, 0)?, uuid(row, 1)?)),
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    match vault.load(slot) {
+        Err(ConnectionError::MissingCredential) => Ok(Some((id, slot))),
+        Ok(_) => Err(ConnectionError::DuplicateDirect),
+        Err(error) => Err(error),
+    }
+}
+
+fn convert_direct(
+    tx: &Connection,
+    id: Uuid,
+    expected: CredentialVersion,
+    email: &str,
+    fetched: i64,
+    snapshot: &str,
+) -> Result<(), ConnectionError> {
+    replace_slot(tx, id, expected, id)?;
+    changed(tx.execute(
+        "UPDATE accounts SET kind='statusline', identity=?1, fetched_at=?2, snapshot=?3
+         WHERE id=?4 AND kind='oauth'",
+        params![email, fetched, snapshot, id.to_string()],
+    )?)
 }
