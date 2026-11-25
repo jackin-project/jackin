@@ -16,12 +16,14 @@ use jackin_session::{
     DEFAULT_EXPORT_TOTAL_BYTES, HostPorts, LaunchLimits, RoleCatalog, Session, SessionDeps,
 };
 use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
 
 use crate::engine::FakeEngine;
 use crate::fixtures::FixtureError;
 use crate::gateway::FakeGateway;
 use crate::host::{FakeClock, FsFault, TestRunner, WorkingFs};
 use crate::usage::LazyUsageServer;
+use crate::vault::MemoryVault;
 
 #[derive(Debug)]
 pub struct World {
@@ -35,6 +37,7 @@ pub struct World {
     pub roles: Arc<RoleCatalog>,
     pub config: ConfigStore,
     pub usage: LazyUsageServer,
+    pub vault: Arc<MemoryVault>,
     cache_dir: HostPath,
     home: HostPath,
     _dir: TempDir,
@@ -77,6 +80,10 @@ impl World {
 
     pub fn fail_fs(&self, fault: FsFault) {
         self.working_fs.fail_next(fault);
+    }
+
+    pub fn cancel_fs(&self, fault: FsFault, token: &CancellationToken) {
+        self.working_fs.cancel_next(fault, token);
     }
 
     pub fn desk(&self) -> AccountDesk {
@@ -148,7 +155,7 @@ impl World {
             })
             .collect();
         edits.extend(config.accounts().cloned().map(ConfigEdit::AddAccount));
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &CancellationToken::new()).await?;
         Ok(())
     }
 
@@ -160,7 +167,7 @@ impl World {
                 workspace: workspace.clone(),
             })
             .collect();
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &CancellationToken::new()).await?;
         Ok(())
     }
 
@@ -232,7 +239,7 @@ impl World {
                 value: Some(value.clone()),
             });
         }
-        self.config.edit(edits).await?;
+        self.config.edit(edits, &CancellationToken::new()).await?;
         Ok(())
     }
 }
@@ -291,6 +298,7 @@ impl WorldBuilder {
             )),
             config,
             usage: LazyUsageServer::default(),
+            vault: Arc::new(MemoryVault::default()),
             gateway,
             engine,
             clock,

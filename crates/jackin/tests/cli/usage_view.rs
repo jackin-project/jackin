@@ -33,7 +33,8 @@ pub(super) fn view_text(
         .ok_or("config directory")?
         .join(DATABASE_PATH);
     let registry =
-        AccountRegistry::open_read_only(&path)?.ok_or("the usage registry is missing")?;
+        AccountRegistry::open_read_only_with_vault(&path, jackin_testkit::MemoryVault::shared())?
+            .ok_or("the usage registry is missing")?;
     let view = build(
         &registry,
         filter,

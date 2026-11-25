@@ -8,7 +8,8 @@ use jackin_core::{
     Clock, ConfigStore, FileSystem, GatewayName, HostPath, ProcessRunner, SandboxName,
 };
 use jackin_image::ImageEngine;
-use jackin_openshell::{Gateway, GatewayError, SandboxQuery, SandboxView};
+use jackin_openshell::{Gateway, GatewayError, GatewayOp, SandboxQuery, SandboxView};
+use tokio_util::sync::CancellationToken;
 
 use crate::plan::LaunchLimits;
 
@@ -55,7 +56,30 @@ impl Session {
     }
 }
 
+pub(crate) async fn read_until_cancelled<T, E>(
+    cancel: &CancellationToken,
+    op: GatewayOp,
+    call: impl Future<Output = Result<T, E>>,
+) -> Result<T, E>
+where
+    E: From<GatewayError>,
+{
+    tokio::select! {
+        biased;
+        () = cancel.cancelled() => Err(GatewayError::Cancelled { op, group: None }.into()),
+        result = call => result,
+    }
+}
+
 impl Session {
+    pub(crate) async fn find_managed_until(
+        &self,
+        name: &SandboxName,
+        cancel: &CancellationToken,
+    ) -> Result<Option<SandboxView>, GatewayError> {
+        read_until_cancelled(cancel, GatewayOp::Find, self.find_managed(name)).await
+    }
+
     pub(crate) async fn find_managed(
         &self,
         name: &SandboxName,

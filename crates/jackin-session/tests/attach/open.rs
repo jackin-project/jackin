@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use jackin_core::{AttemptId, Labels, Phase, SandboxName, SupervisorReading, SupervisorState};
-use jackin_openshell::{GatewayError, InputLease, PowerAction, TerminalEvent};
+use jackin_openshell::{GatewayError, GatewayOp, InputLease, PowerAction, TerminalEvent};
 use jackin_session::{AttachError, AttachRequest};
-use jackin_testkit::{Rig, TestResult, guard};
+use jackin_testkit::{Fault, Rig, TestResult, Trigger, guard, guard_within};
+
+use std::time::Duration;
 
 use super::support::{events, owner, set_state, size, target, until};
 use tokio_util::sync::CancellationToken;
@@ -132,6 +134,41 @@ async fn attach_refuses_an_absent_a_foreign_a_stopped_and_an_ended_sandbox_witho
             }
             assert_eq!(handle.attachments(), 0);
         }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_interrupts_a_hung_lookup_before_an_attach_and_opens_nothing() -> TestResult {
+    guard_within(Duration::from_secs(20), async {
+        let rig = Rig::new().await?;
+        rig.launch(1).await?;
+        let handle = rig.handle(1).await?;
+        let hold = Trigger::Op(GatewayOp::Find);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: hold.clone(),
+        });
+        let token = CancellationToken::new();
+        let driver = async {
+            assert!(rig.gateway().until_held(&hold).await);
+            token.cancel();
+        };
+        let request = AttachRequest::viewer(rig.sandbox_name(1)?, size()?);
+        let (result, ()) = tokio::join!(rig.world.session.attach(request, &token), driver);
+        let error = result.err().ok_or("a cancelled attach succeeded")?;
+        assert!(
+            matches!(
+                error,
+                AttachError::Gateway(GatewayError::Cancelled {
+                    op: GatewayOp::Find,
+                    ..
+                })
+            ),
+            "{error:?}"
+        );
+        assert_eq!(handle.attachments(), 0);
+        rig.gateway().release(&hold);
         Ok(())
     })
     .await

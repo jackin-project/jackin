@@ -11,6 +11,7 @@ use jackin_core::{Account, AccountName, Agent, ConfigEdit, CredentialSource, Hos
 use jackin_testkit::{ConsoleRig, Rig, RoleFixture, TestResult, guard};
 
 use super::support::{console, only};
+use tokio_util::sync::CancellationToken;
 
 const ROLE: &str = "schema = 1\n\n[role]\nname = \"sentinel\"\ndockerfile = \"Dockerfile\"\npolicy = \"policy.yaml\"\n\n[agents.codex]\ninstructions = \"instructions/codex.md\"\n\n[agents.claude]\ninstructions = \"instructions/claude.md\"\n\n[agents.omp]\ninstructions = \"instructions/omp.md\"\n\n[docker]\nenabled = false\n";
 
@@ -66,16 +67,19 @@ async fn add_zai_account(rig: &Rig) -> Result<(), Box<dyn std::error::Error>> {
     tokio::fs::write(path.as_path(), "test-key").await?;
     rig.world
         .config
-        .edit(vec![
-            ConfigEdit::AddAccount(Account::new(
-                AccountName::parse("zai-work")?,
-                Provider::Zai,
-                CredentialSource::File { path },
-            )?),
-            ConfigEdit::SetDefaultAccount {
-                account: AccountName::parse("zai-work")?,
-            },
-        ])
+        .edit(
+            vec![
+                ConfigEdit::AddAccount(Account::new(
+                    AccountName::parse("zai-work")?,
+                    Provider::Zai,
+                    CredentialSource::File { path },
+                )?),
+                ConfigEdit::SetDefaultAccount {
+                    account: AccountName::parse("zai-work")?,
+                },
+            ],
+            &CancellationToken::new(),
+        )
         .await?;
     Ok(())
 }

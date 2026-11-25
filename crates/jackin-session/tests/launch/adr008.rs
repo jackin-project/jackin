@@ -5,16 +5,12 @@ use std::collections::BTreeMap;
 use std::error::Error;
 
 use jackin_core::{
-    AccountName, Agent, NameSuffix, Phase, PlannedLabels, PolicyLabel, RoleName, SandboxName,
-    SandboxPath, SandboxSlug, SupervisorState, WorkspaceName, sandbox_layout,
+    NameSuffix, Phase, SandboxName, SandboxPath, SandboxSlug, SupervisorState, sandbox_layout,
 };
-use jackin_openshell::{ClosedPolicy, Gateway, MainProcess, SandboxCreate, SandboxQuery};
 use jackin_session::{LaunchError, LaunchStep};
 
-use super::support::{
-    TestResult, failure, guard, has_file, launch_id, launch_rig, path, ready, running,
-};
-use jackin_testkit::{Rig, SandboxHandle};
+use super::support::{TestResult, failure, guard, has_file, launch_id, launch_rig, ready, running};
+use jackin_testkit::SandboxHandle;
 
 type Snapshot = (
     BTreeMap<SandboxPath, Vec<u8>>,
@@ -76,45 +72,6 @@ async fn a_new_launch_id_makes_a_new_sandbox_and_leaves_the_live_one_untouched()
     .await
 }
 
-async fn foreign(
-    rig: &Rig,
-    name: SandboxName,
-    launch: u8,
-) -> Result<SandboxHandle, Box<dyn Error>> {
-    let image = rig.final_image()?;
-    let labels = PlannedLabels {
-        workspace: WorkspaceName::parse("platform-backend")?,
-        role: RoleName::parse("sentinel")?,
-        agents: jackin_core::AgentInstances::single(jackin_core::AgentInstance::lead(
-            Agent::Codex,
-            AccountName::parse("work")?,
-        )),
-        policy: PolicyLabel::of("policy"),
-        launch: launch_id(launch),
-    }
-    .complete(&image.id, jackin_core::DockerLabel::Off);
-    rig.gateway().add_image(&image.tag);
-    rig.gateway()
-        .create_sandbox(&SandboxCreate::new(
-            name.clone(),
-            image.tag,
-            labels,
-            Vec::new(),
-            ClosedPolicy::parse(&rig.loaded.policy().document().render()?)?,
-            MainProcess {
-                program: path("/bin/sh")?,
-                args: vec!["-c".to_owned(), "sleep 3600".to_owned()],
-            },
-        ))
-        .await?;
-    rig.gateway()
-        .find_sandboxes(&SandboxQuery::Name(name.clone()))
-        .await?;
-    rig.gateway()
-        .sandbox(&name)
-        .ok_or_else(|| "the foreign sandbox is missing".into())
-}
-
 #[tokio::test]
 async fn a_name_collision_or_an_ambiguous_label_is_a_typed_stop_that_changes_nothing() -> TestResult
 {
@@ -122,7 +79,7 @@ async fn a_name_collision_or_an_ambiguous_label_is_a_typed_stop_that_changes_not
         let rig = launch_rig().await?;
         ready(rig.launch_observed(9).await?)?;
         let name = rig.sandbox_name(1)?;
-        let other = foreign(&rig, name.clone(), 3).await?;
+        let other = rig.foreign_sandbox(name.clone(), 3).await?;
         let before = snapshot(&other);
         let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Sandbox);
@@ -140,8 +97,8 @@ async fn a_name_collision_or_an_ambiguous_label_is_a_typed_stop_that_changes_not
             Ok(SandboxName::new(&SandboxSlug::parse("dup")?, &NameSuffix::parse(suffix)?))
         };
         let (a, b) = (make("aaaa")?, make("bbbb")?);
-        let first = foreign(&rig, a.clone(), 1).await?;
-        let second = foreign(&rig, b.clone(), 1).await?;
+        let first = rig.foreign_sandbox(a.clone(), 1).await?;
+        let second = rig.foreign_sandbox(b.clone(), 1).await?;
         let (before_a, before_b) = (snapshot(&first), snapshot(&second));
         let failed = failure(rig.launch_observed(1).await?)?;
         assert_eq!(failed.step, LaunchStep::Sandbox);

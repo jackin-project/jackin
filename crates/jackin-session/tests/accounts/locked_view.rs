@@ -76,10 +76,13 @@ async fn an_account_edit_chooses_offline_or_gateway_from_the_config_it_reads_und
             until_polling(&world, 1).await;
             world
                 .config
-                .edit(vec![ConfigEdit::SetAccountCredential {
-                    account: AccountName::parse("work")?,
-                    credential: login.credential().clone(),
-                }])
+                .edit(
+                    vec![ConfigEdit::SetAccountCredential {
+                        account: AccountName::parse("work")?,
+                        credential: login.credential().clone(),
+                    }],
+                    &CancellationToken::new(),
+                )
                 .await?;
             drop(held);
             Ok::<(), Box<dyn std::error::Error>>(())
@@ -89,7 +92,11 @@ async fn an_account_edit_chooses_offline_or_gateway_from_the_config_it_reads_und
 
         let plan = plan?;
         assert!(plan.needs_gateway());
-        plan.apply(&Gateways::single(world.session.clone())).await?;
+        plan.apply(
+            &Gateways::single(world.session.clone()),
+            &CancellationToken::new(),
+        )
+        .await?;
         assert!(world.gateway.providers().is_empty());
         assert_eq!(world.config.load().await?.accounts().count(), 0);
         Ok(())
@@ -142,7 +149,10 @@ async fn a_gateway_removal_takes_the_lock_of_a_login_account_that_appeared_while
             until_polling(&world, 1).await;
             world
                 .config
-                .edit(vec![ConfigEdit::AddAccount(other.clone())])
+                .edit(
+                    vec![ConfigEdit::AddAccount(other.clone())],
+                    &CancellationToken::new(),
+                )
                 .await?;
             drop(held_work);
             let seen = world.clock.slept().len();
@@ -186,7 +196,7 @@ async fn a_gateway_removal_without_provider_accounts_connects_to_nothing() -> Te
         let GatewayRemoval::Offline(plan) = removal else {
             return Err("a gateway without providers needs no connection".into());
         };
-        plan.apply().await?;
+        plan.apply(&CancellationToken::new()).await?;
         assert!(world.config.load().await?.gateway(&name).is_none());
         assert!(matches!(
             plan_account_edits(&world.desk(), Vec::new(), &CancellationToken::new()).await?,

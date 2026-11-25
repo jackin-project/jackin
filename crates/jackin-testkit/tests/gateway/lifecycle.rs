@@ -11,7 +11,7 @@ use jackin_core::{
 };
 use jackin_openshell::{
     Gateway, GatewayError, GatewayOp, Missing, PolicyDocument, ProfileSync, ProviderMaterial,
-    ProviderProfile, ProviderSpec, ProviderState, Provisioning, SandboxQuery,
+    ProviderProfile, ProviderSpec, ProviderState, ProviderWriteEffect, Provisioning, SandboxQuery,
 };
 use jackin_testkit::{FakeEngine, FakeGateway, Fault};
 
@@ -137,7 +137,12 @@ async fn profile_flow(
 ) -> Result<String, Box<dyn Error>> {
     let early = fake.put_provider(&login(&profile.id, provider)?).await;
     let early = match early {
-        Err(error @ GatewayError::NotFound { .. }) => error,
+        Err(error)
+            if error.effect() == ProviderWriteEffect::NoWrite
+                && matches!(error.gateway_error(), GatewayError::NotFound { .. }) =>
+        {
+            error.into_parts().0
+        }
         other => return Err(format!("put without a profile: {other:?}").into()),
     };
     assert!(

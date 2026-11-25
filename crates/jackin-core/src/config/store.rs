@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use std::time::Duration;
 
+use tokio_util::sync::CancellationToken;
+
 use super::{Config, ConfigEdit, ConfigError};
 use crate::boundary::{Clock, FileLock, FileMode, FileSystem, FsError, RegularFileProblem};
 use crate::fs::{lock_path, write_atomic_locked};
@@ -42,30 +44,38 @@ impl ConfigStore {
         self.read().await
     }
 
-    pub async fn edit(&self, edits: Vec<ConfigEdit>) -> Result<Config, ConfigError> {
-        self.edit_checked(edits, |_| Ok(())).await
+    pub async fn edit(
+        &self,
+        edits: Vec<ConfigEdit>,
+        cancel: &CancellationToken,
+    ) -> Result<Config, ConfigError> {
+        self.edit_checked(edits, cancel, |_| Ok(())).await
     }
 
     pub async fn edit_checked<E>(
         &self,
         edits: Vec<ConfigEdit>,
+        cancel: &CancellationToken,
         check: impl FnOnce(&Config) -> Result<(), E>,
     ) -> Result<Config, E>
     where
         E: From<ConfigError>,
     {
+        ConfigError::unless_cancelled(cancel)?;
         if let Some(dir) = self.path.parent() {
             self.fs
                 .create_dir_all(&dir)
                 .await
                 .map_err(ConfigError::from)?;
         }
-        let lock = self.lock().await?;
+        let lock = self.lock(cancel).await?;
+        ConfigError::unless_cancelled(cancel)?;
         let mut config = self.read().await?;
         for edit in edits {
             config.apply(edit)?;
         }
         check(&config)?;
+        ConfigError::unless_cancelled(cancel)?;
         write_atomic_locked(
             self.fs.as_ref(),
             &self.path,
@@ -129,13 +139,18 @@ impl ConfigStore {
         }
     }
 
-    async fn lock(&self) -> Result<FileLock, ConfigError> {
+    async fn lock(&self, cancel: &CancellationToken) -> Result<FileLock, ConfigError> {
         let lock_path = lock_path(&self.path)?;
         let mut waited = Duration::ZERO;
         loop {
+            ConfigError::unless_cancelled(cancel)?;
             match self.fs.lock(&lock_path).await {
                 Err(FsError::LockHeld(_)) if waited < LOCK_WAIT => {
-                    self.clock.sleep(LOCK_RETRY_INTERVAL).await;
+                    tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => return Err(ConfigError::Cancelled),
+                        () = self.clock.sleep(LOCK_RETRY_INTERVAL) => {}
+                    }
                     waited += LOCK_RETRY_INTERVAL;
                 }
                 other => return other.map_err(ConfigError::from),

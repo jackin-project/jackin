@@ -199,9 +199,12 @@ async fn roster_hides_unmanaged_and_notes_unreadable() -> TestResult {
         );
         rig.world
             .config
-            .edit(vec![ConfigEdit::RemoveWorkspace(WorkspaceName::parse(
-                "platform-backend",
-            )?)])
+            .edit(
+                vec![ConfigEdit::RemoveWorkspace(WorkspaceName::parse(
+                    "platform-backend",
+                )?)],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::new(&rig.world).await?;
         let world = &console.console().app().world;
@@ -232,9 +235,12 @@ async fn removed_workspace_label_lists_without_workspace() -> TestResult {
         rig.world.seed_all(&rig.config).await?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::RemoveWorkspace(WorkspaceName::parse(
-                "platform-backend",
-            )?)])
+            .edit(
+                vec![ConfigEdit::RemoveWorkspace(WorkspaceName::parse(
+                    "platform-backend",
+                )?)],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::new(&rig.world).await?;
         let world = &console.console().app().world;
@@ -261,10 +267,13 @@ async fn list_failure_on_one_gateway() -> TestResult {
             .ok_or("the rig has no gateway")?;
         rig.world
             .config
-            .edit(vec![ConfigEdit::AddGateway {
-                name: lost.clone(),
-                entry,
-            }])
+            .edit(
+                vec![ConfigEdit::AddGateway {
+                    name: lost.clone(),
+                    entry,
+                }],
+                &CancellationToken::new(),
+            )
             .await?;
         let mut console = ConsoleRig::builder(&rig.world)
             .gateway(

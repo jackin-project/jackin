@@ -22,9 +22,10 @@ use jackin_core::{
 use jackin_openshell::{
     ClosedPolicy, EndpointProtocol, Gateway, GatewayError, GatewayHealth, GatewayOp, MainProcess,
     Missing, NetworkRule, PolicyDocument, PolicyReport, PowerAction, ProfileSync, ProgramOutcome,
-    ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState, RuleEndpoint,
-    RuleKey, SandboxCreate, SandboxDetail, SandboxFile, SandboxQuery, SandboxView, TermSize,
-    TerminalKind, TerminalRequest, TerminalSession, TlsMode, TransferOp,
+    ProgramRun, ProviderMaterial, ProviderProfile, ProviderSpec, ProviderState,
+    ProviderWriteEffect, ProviderWriteError, RuleEndpoint, RuleKey, SandboxCreate, SandboxDetail,
+    SandboxFile, SandboxQuery, SandboxView, TermSize, TerminalKind, TerminalRequest,
+    TerminalSession, TlsMode, TransferOp,
 };
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
@@ -33,7 +34,8 @@ pub use handle::SandboxHandle;
 
 use self::main_process::MainPlan;
 use self::state::{
-    Action, Armed, ArmedTrigger, Cell, Direction, Hold, HoldStatus, Registry, Sandbox, Settling,
+    Action, Armed, ArmedTrigger, Cell, Direction, Hiding, Hold, HoldStatus, Registry, Sandbox,
+    Settling,
 };
 use crate::engine::FakeEngine;
 use crate::host::{FakeClock, Working};
@@ -158,6 +160,7 @@ pub enum Fault {
         token: CancellationToken,
     },
     HideUntilCreateConflict,
+    HideEverywhereUntilCreateConflict,
     StartIgnored,
     HoldAt {
         trigger: Trigger,
@@ -165,7 +168,14 @@ pub enum Fault {
     PutProviderFailsAfterWrite {
         error: GatewayError,
     },
+    PutProviderOutcomeUnknown {
+        error: GatewayError,
+    },
     DeleteProviderFailsAfterWrite {
+        error: GatewayError,
+    },
+    LoseResponse {
+        op: GatewayOp,
         error: GatewayError,
     },
 }
@@ -214,15 +224,22 @@ impl FakeGateway {
             Fault::CancelAt { trigger, token } => registry
                 .triggers
                 .push(ArmedTrigger::new(trigger, Action::Cancel(token))),
-            Fault::HideUntilCreateConflict => registry.hidden_until_conflict = true,
+            Fault::HideUntilCreateConflict => registry.hiding = Hiding::FromLabelQueries,
+            Fault::HideEverywhereUntilCreateConflict => {
+                registry.hiding = Hiding::FromEveryQuery;
+            }
             Fault::StartIgnored => registry.start_ignored = true,
             Fault::HoldAt { trigger } => registry.holds.push(Hold::new(trigger)),
             Fault::PutProviderFailsAfterWrite { error } => {
                 registry.put_fails_after_write = Some(error);
             }
+            Fault::PutProviderOutcomeUnknown { error } => {
+                registry.put_outcome_unknown = Some(error);
+            }
             Fault::DeleteProviderFailsAfterWrite { error } => {
                 registry.delete_fails_after_write = Some(error);
             }
+            Fault::LoseResponse { op, error } => registry.lost_responses.push((op, error)),
         }
     }
 
@@ -657,15 +674,27 @@ impl Gateway for FakeGateway {
         })
     }
 
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+    async fn put_provider(
+        &self,
+        spec: &ProviderSpec,
+    ) -> Result<ProviderWriteEffect, ProviderWriteError> {
         tokio::task::yield_now().await;
-        self.pause(GatewayOp::Provider, None, None).await?;
+        if let Err(error) = self.pause(GatewayOp::Provider, None, None).await {
+            let held = self.registry().providers.contains_key(&spec.name);
+            return Err(failed_write(held, error));
+        }
         let mut registry = self.registry();
-        registry.strike(GatewayOp::Provider)?;
+        if let Err(error) = registry.strike(GatewayOp::Provider) {
+            let held = registry.providers.contains_key(&spec.name);
+            return Err(failed_write(held, error));
+        }
         if !registry.profiles.contains_key(&spec.profile) {
-            return Err(GatewayError::NotFound {
-                what: Missing::Profile(spec.profile.clone()),
-            });
+            return Err(ProviderWriteError::new(
+                GatewayError::NotFound {
+                    what: Missing::Profile(spec.profile.clone()),
+                },
+                ProviderWriteEffect::NoWrite,
+            ));
         }
         let record = match &spec.material {
             ProviderMaterial::OAuth2RefreshToken {
@@ -696,11 +725,19 @@ impl Gateway for FakeGateway {
                 additional_credentials: BTreeMap::new(),
             },
         };
+        let effect = if registry.providers.contains_key(&spec.name) {
+            ProviderWriteEffect::Existing
+        } else {
+            ProviderWriteEffect::Created
+        };
         registry.providers.insert(spec.name.clone(), record);
-        match registry.put_fails_after_write.take() {
-            Some(error) => Err(error),
-            None => Ok(()),
+        if let Some(error) = registry.put_fails_after_write.take() {
+            return Err(ProviderWriteError::new(error, effect));
         }
+        if let Some(error) = registry.put_outcome_unknown.take() {
+            return Err(ProviderWriteError::new(error, ProviderWriteEffect::Unknown));
+        }
+        Ok(effect)
     }
 
     async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
@@ -742,7 +779,7 @@ impl Gateway for FakeGateway {
         let mut registry = self.registry();
         registry.strike(GatewayOp::Create)?;
         if registry.sandboxes.contains_key(spec.name()) {
-            registry.hidden_until_conflict = false;
+            registry.hiding = Hiding::Visible;
             return Err(GatewayError::AlreadyExists {
                 what: Missing::Sandbox(spec.name().clone()),
             });
@@ -788,6 +825,7 @@ impl Gateway for FakeGateway {
                 inner: Mutex::new(sandbox),
             }),
         );
+        registry.lose_response(GatewayOp::Create)?;
         Ok(view)
     }
 
@@ -798,10 +836,11 @@ impl Gateway for FakeGateway {
             let mut registry = self.registry();
             registry.strike(GatewayOp::Find)?;
             match query {
+                SandboxQuery::Name(_) if registry.hiding == Hiding::FromEveryQuery => Vec::new(),
                 SandboxQuery::Name(name) => {
                     registry.sandboxes.get(name).cloned().into_iter().collect()
                 }
-                SandboxQuery::Labels(_) if registry.hidden_until_conflict => Vec::new(),
+                SandboxQuery::Labels(_) if registry.hiding != Hiding::Visible => Vec::new(),
                 SandboxQuery::Labels(selector) => {
                     let wanted = selector_pairs(&selector.render());
                     registry
@@ -929,7 +968,10 @@ impl Gateway for FakeGateway {
             }
             (PowerAction::Start, _) => return Err(already_running()),
         }
-        Ok(state.view())
+        let view = state.view();
+        drop(state);
+        self.registry().lose_response(GatewayOp::Power)?;
+        Ok(view)
     }
 
     async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
@@ -943,6 +985,7 @@ impl Gateway for FakeGateway {
             cell.closed.cancel();
             cell.state().main.exit(None);
         }
+        self.registry().lose_response(GatewayOp::Delete)?;
         Ok(())
     }
 
@@ -991,7 +1034,8 @@ impl Gateway for FakeGateway {
         self.pause(GatewayOp::WriteFile, Some(&trigger), None)
             .await?;
         let cell = self.exec_cell_at(GatewayOp::WriteFile, Some(&trigger), sandbox)?;
-        files::write_file(&cell, file).await
+        files::write_file(&cell, file).await?;
+        self.registry().lose_response(GatewayOp::WriteFile)
     }
 
     async fn upload_tree(
@@ -1092,4 +1136,9 @@ fn already_running() -> GatewayError {
     GatewayError::FailedPrecondition {
         message: "start sandbox failed: VM sandbox is already running generation".to_owned(),
     }
+}
+
+fn failed_write(held: bool, error: GatewayError) -> ProviderWriteError {
+    let effect = ProviderWriteEffect::after_failed_write(held, &error);
+    ProviderWriteError::new(error, effect)
 }

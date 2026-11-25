@@ -6,7 +6,6 @@ use std::fmt::Debug;
 use jackin_core::SecretBytes;
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 use keyring_core::Entry;
-#[cfg(any(target_os = "windows", target_os = "macos"))]
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -19,7 +18,11 @@ pub trait CredentialVault: Debug + Send + Sync {
 }
 
 #[derive(Debug)]
-pub(super) struct SystemVault;
+struct SystemVault;
+
+pub fn system_vault() -> Arc<dyn CredentialVault> {
+    Arc::new(SystemVault)
+}
 
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 fn entry(slot: Uuid) -> Result<Entry, ConnectionError> {

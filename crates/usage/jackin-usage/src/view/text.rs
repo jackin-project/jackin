@@ -3,6 +3,7 @@
 
 use jackin_core::Timestamp;
 use time::{Date, OffsetDateTime, UtcOffset};
+use unicode_width::UnicodeWidthStr;
 
 use super::model::{Currency, Reading, Unit, UsedFraction};
 use super::render::{Line, Span, Tone};
@@ -325,8 +326,25 @@ fn marked(word: &str, tone: Tone, age: Option<String>, narrow: bool) -> Vec<Span
     }
 }
 
-pub fn reconnect_command(id: uuid::Uuid) -> String {
-    format!("run: jackin account usage reconnect {}", id.hyphenated())
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IdForm {
+    Hyphenated,
+    Simple,
+}
+
+fn id_text(id: uuid::Uuid, form: IdForm) -> String {
+    match form {
+        IdForm::Hyphenated => id.hyphenated().to_string(),
+        IdForm::Simple => id.simple().to_string(),
+    }
+}
+
+pub fn reconnect_command(id: uuid::Uuid, form: IdForm) -> String {
+    format!("jackin account usage reconnect {}", id_text(id, form))
+}
+
+pub fn remove_command(id: uuid::Uuid, form: IdForm) -> String {
+    format!("jackin account usage rm {}", id_text(id, form))
 }
 
 pub const STATUS_LINE_FEED: &str = "updated by the Antigravity status-line hook";
@@ -338,20 +356,153 @@ pub fn status_line_note(at: Timestamp, now: Timestamp) -> String {
     )
 }
 
+pub fn plural(count: usize, noun: &str) -> String {
+    if count == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{count} {noun}s")
+    }
+}
+
 pub fn truncate(text: &str, columns: usize) -> String {
-    if text.chars().count() <= columns {
+    if width(text) <= columns {
         return text.to_owned();
     }
     let keep = columns.max(1) - 1;
-    let mut cut: String = text.chars().take(keep).collect();
+    let mut end = 0;
+    for (index, ch) in text.char_indices() {
+        let next = index + ch.len_utf8();
+        if text.get(..next).is_none_or(|head| width(head) > keep) {
+            break;
+        }
+        end = next;
+    }
+    let mut cut = text.get(..end).unwrap_or_default().to_owned();
     cut.push('…');
     cut
 }
 
-pub fn split_parts(text: &str, tone: Tone) -> Vec<(String, Tone)> {
+pub fn width(text: &str) -> usize {
+    UnicodeWidthStr::width(text)
+}
+
+pub fn pad(text: &str, columns: usize) -> String {
+    format!("{text}{}", " ".repeat(columns.saturating_sub(width(text))))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Part {
+    text: String,
+    tone: Tone,
+    atoms: Vec<String>,
+}
+
+impl Part {
+    pub fn new(text: impl Into<String>, tone: Tone) -> Part {
+        Part {
+            text: text.into(),
+            tone,
+            atoms: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn atom(mut self, atom: impl Into<String>) -> Part {
+        self.atoms.push(atom.into());
+        self
+    }
+}
+
+pub fn split_parts(text: &str, tone: Tone) -> Vec<Part> {
+    split_atomic(text, tone, &[])
+}
+
+pub fn split_atomic(text: &str, tone: Tone, atoms: &[String]) -> Vec<Part> {
     text.split(SEPARATOR)
-        .map(|part| (part.to_owned(), tone))
+        .map(|part| {
+            let mut found = Part::new(part, tone);
+            found.atoms = atoms
+                .iter()
+                .filter(|atom| !atom.is_empty() && part.contains(atom.as_str()))
+                .cloned()
+                .collect();
+            found
+        })
         .collect()
+}
+
+struct Token<'a> {
+    text: &'a str,
+    atomic: bool,
+    spaced: bool,
+}
+
+fn glued_len(after: &str, atoms: &[String]) -> usize {
+    let word = after.find(char::is_whitespace).unwrap_or(after.len());
+    let word_text = after.get(..word).unwrap_or(after);
+    atoms
+        .iter()
+        .filter(|atom| !atom.is_empty())
+        .filter_map(|atom| word_text.find(atom.as_str()))
+        .min()
+        .unwrap_or(word)
+}
+
+fn opening_len(before: &str) -> usize {
+    before
+        .chars()
+        .rev()
+        .take_while(|ch| !ch.is_whitespace() && !ch.is_alphanumeric())
+        .map(char::len_utf8)
+        .sum()
+}
+
+fn tokens<'a>(text: &'a str, atoms: &[String]) -> Vec<Token<'a>> {
+    let mut out = Vec::new();
+    let mut rest = text;
+    let mut spaced = false;
+    while !rest.is_empty() {
+        let next = atoms
+            .iter()
+            .filter(|atom| !atom.is_empty())
+            .filter_map(|atom| rest.find(atom.as_str()).map(|at| (at, atom.len())))
+            .min_by_key(|(at, len)| (*at, std::cmp::Reverse(*len)));
+        let (prose, atom, after) = match next {
+            Some((at, len)) => {
+                let (before, tail) = rest.split_at_checked(at).unwrap_or((rest, ""));
+                let glued = tail.get(len..).map_or(0, |after| glued_len(after, atoms));
+                let start = at - opening_len(before);
+                let (head, group) = rest.split_at_checked(start).unwrap_or((rest, ""));
+                let (atom, after) = group
+                    .split_at_checked(at - start + len + glued)
+                    .unwrap_or((group, ""));
+                (head, Some(atom), after)
+            }
+            None => (rest, None, ""),
+        };
+        spaced |= prose.starts_with(char::is_whitespace);
+        for word in prose.split_whitespace() {
+            out.push(Token {
+                text: word,
+                atomic: false,
+                spaced,
+            });
+            spaced = true;
+        }
+        if !prose.is_empty() {
+            spaced = prose.ends_with(char::is_whitespace);
+        }
+        if let Some(atom) = atom {
+            out.push(Token {
+                text: atom,
+                atomic: true,
+                spaced,
+            });
+            spaced = false;
+        }
+        rest = after;
+    }
+    out
 }
 
 struct Flow {
@@ -365,7 +516,7 @@ struct Flow {
 
 impl Flow {
     fn push(&mut self, text: String, tone: Tone) {
-        self.used += text.chars().count();
+        self.used += width(&text);
         match self.spans.last_mut() {
             Some(last) if self.started && last.tone == tone => last.text.push_str(&text),
             _ => self.spans.push(Span::new(text, tone)),
@@ -388,15 +539,30 @@ impl Flow {
         }
     }
 
-    fn put(&mut self, text: &str, tone: Tone) {
-        if self.used + text.chars().count() <= self.columns {
+    fn blank(&self) -> bool {
+        self.spans.iter().all(|span| span.text.trim().is_empty())
+    }
+
+    fn relocate(&mut self, width: usize) {
+        let hang = if self.indent + width <= self.columns || width > self.columns {
+            self.indent
+        } else {
+            0
+        };
+        self.spans = vec![Span::plain(" ".repeat(hang))];
+        self.used = hang;
+        self.started = false;
+    }
+
+    fn put(&mut self, part: &Part) {
+        let (text, tone) = (part.text.as_str(), part.tone);
+        if self.used + width(text) <= self.columns {
             self.push(text.to_owned(), tone);
             return;
         }
         if let Some((head, tail)) = text.split_once(": ") {
             let head = format!("{head}:");
-            if self.used + head.chars().count() <= self.columns
-                && self.indent + tail.chars().count() <= self.columns
+            if self.used + width(&head) <= self.columns && self.indent + width(tail) <= self.columns
             {
                 self.push(head, tone);
                 self.turn();
@@ -406,12 +572,23 @@ impl Flow {
         }
         let mut chunk = " ".repeat(text.len() - text.trim_start().len());
         let mut empty = true;
-        for word in text.split_whitespace() {
-            let gap = usize::from(!empty);
-            let reach = self.used + chunk.chars().count() + gap + word.chars().count();
+        for token in tokens(text, &part.atoms) {
+            let gap = usize::from(!empty && token.spaced);
+            let reach = self.used + width(&chunk) + gap + width(token.text);
             if reach <= self.columns {
                 chunk.push_str(&" ".repeat(gap));
-                chunk.push_str(word);
+                chunk.push_str(token.text);
+                empty = false;
+                continue;
+            }
+            if token.atomic {
+                if !empty || !self.blank() {
+                    self.push(std::mem::take(&mut chunk), tone);
+                    self.turn();
+                }
+                chunk.clear();
+                self.relocate(width(token.text));
+                chunk.push_str(token.text);
                 empty = false;
                 continue;
             }
@@ -419,10 +596,8 @@ impl Flow {
                 self.push(std::mem::take(&mut chunk), tone);
                 self.turn();
             }
-            let room = self
-                .columns
-                .saturating_sub(self.used + chunk.chars().count());
-            chunk.push_str(&truncate(word, room));
+            let room = self.columns.saturating_sub(self.used + width(&chunk));
+            chunk.push_str(&truncate(token.text, room));
             empty = false;
         }
         if !chunk.is_empty() {
@@ -431,12 +606,7 @@ impl Flow {
     }
 }
 
-pub fn wrap(
-    prefix: Vec<Span>,
-    indent: usize,
-    parts: &[(String, Tone)],
-    columns: usize,
-) -> Vec<Line> {
+pub fn wrap(prefix: Vec<Span>, indent: usize, parts: &[Part], columns: usize) -> Vec<Line> {
     let used = prefix.iter().map(Span::width).sum();
     let mut flow = Flow {
         lines: Vec::new(),
@@ -446,16 +616,16 @@ pub fn wrap(
         columns,
         started: false,
     };
-    for (position, (text, tone)) in parts.iter().enumerate() {
-        let width = text.chars().count();
+    for (position, part) in parts.iter().enumerate() {
+        let size = width(&part.text);
         if position == 0 {
-            flow.put(text, *tone);
-        } else if flow.used + SEPARATOR.chars().count() + width <= columns {
-            flow.push(format!("{SEPARATOR}{text}"), *tone);
+            flow.put(part);
+        } else if flow.used + width(SEPARATOR) + size <= columns {
+            flow.push(format!("{SEPARATOR}{}", part.text), part.tone);
         } else {
             flow.turn();
-            flow.dedent(width);
-            flow.put(text, *tone);
+            flow.dedent(size);
+            flow.put(part);
         }
     }
     flow.lines.push(Line::of(flow.spans));

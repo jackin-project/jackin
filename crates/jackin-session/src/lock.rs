@@ -28,6 +28,9 @@ pub(crate) async fn hold(
     file: &str,
     cancel: &CancellationToken,
 ) -> Result<FileLock, LockError> {
+    if cancel.is_cancelled() {
+        return Err(LockError::Cancelled);
+    }
     let path = HostPath::resolve(Path::new(file), cache_dir)?;
     host.fs.create_private_dir_all(cache_dir).await?;
     loop {

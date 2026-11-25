@@ -33,7 +33,7 @@ The tui-term incompatibility is a blocking constraint, not a preference. Option 
 
 ## Benchmark evidence
 
-The benchmark at <RepoFile path="crates/apps/jackin-capsule/benches/pane_body.rs">crates/apps/jackin-capsule/benches/pane_body.rs</RepoFile> compared the custom widget approach against the existing raw-ANSI baseline at 200 × 50 columns/rows (a representative full-screen pane):
+The benchmark at `crates/apps/jackin-capsule/benches/pane_body.rs` (removed with the old product in [#1264](https://github.com/jackin-project/jackin/pull/1264)) compared the custom widget approach against the existing raw-ANSI baseline at 200 × 50 columns/rows (a representative full-screen pane):
 
 | Approach | Mean time (µs) | Throughput (Melem/s) |
 |---|---|---|
@@ -56,6 +56,8 @@ The custom widget is ~3× slower than the raw-ANSI baseline. This overhead is ac
 - tui-term is not a dependency. Revisit only if it supports termpane's owned model without losing typed passthrough semantics or the single-render-path invariant.
 
 ## Run the benchmark
+
+The benchmark no longer exists in the tree. At the time of this decision it ran as:
 
 ```sh
 cargo bench -p jackin-capsule --bench pane_body

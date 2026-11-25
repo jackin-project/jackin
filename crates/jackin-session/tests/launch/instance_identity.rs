@@ -54,7 +54,10 @@ async fn configured() -> Result<Rig, Box<dyn std::error::Error>> {
     )?;
     rig.world
         .config
-        .edit(vec![ConfigEdit::AddAccount(account)])
+        .edit(
+            vec![ConfigEdit::AddAccount(account)],
+            &CancellationToken::new(),
+        )
         .await?;
     let config = rig.world.config.load().await?;
     let codex = config
