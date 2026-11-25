@@ -3,7 +3,9 @@
 
 use jackin_console::app::Route;
 use jackin_console::domain::launch::{LaunchContent, NextStep};
-use jackin_core::{ConfigEdit, GatewayName, HookKind, SupervisorState, sandbox_layout};
+use jackin_core::{
+    ConfigEdit, GatewayName, HookKind, SandboxName, SupervisorState, sandbox_layout,
+};
 use jackin_openshell::{GatewayError, GatewayOp};
 use jackin_testkit::{ConsoleRig, Fault, ProgramScript, Rig, TestResult, Trigger, guard};
 
@@ -264,6 +266,93 @@ async fn cancel_after_a_lost_create_response_says_the_gateway_could_not_confirm_
                 .starts_with("Cancelled · the gateway could not confirm whether sandbox")
         })
         .await?;
+        Ok(())
+    })
+    .await
+}
+
+async fn shown_status(console: &mut ConsoleRig) -> String {
+    console
+        .console()
+        .app()
+        .shell
+        .status
+        .text()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[tokio::test]
+async fn a_cancel_that_finds_two_sandboxes_for_the_launch_says_so_on_the_status_line() -> TestResult
+{
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut console = console(&rig).await?;
+        let upload = Trigger::Op(GatewayOp::UploadTree);
+        rig.gateway().inject(Fault::HoldAt {
+            trigger: upload.clone(),
+        });
+        launch(&mut console).await?;
+        assert!(rig.gateway().until_held(&upload).await);
+        until_stage(&mut console, "05 Upload", Stage::Running).await?;
+        let first = only(&rig)?;
+        let twin = SandboxName::parse("jackin-twin-0001")?;
+        rig.sandbox_of_launch(twin.clone(), labels(&first)?.planned.launch)
+            .await?;
+        console.keys("x right enter")?;
+        until_route(&mut console, Route::Manager).await?;
+        rig.gateway().release(&upload);
+        until_untouched(&mut console, "the ambiguous-cancel notice", |c| {
+            c.console()
+                .app()
+                .shell
+                .status
+                .text()
+                .unwrap_or_default()
+                .starts_with("Cancelled · several sandboxes match this launch")
+        })
+        .await?;
+        let status = shown_status(&mut console).await;
+        assert!(status.contains(twin.as_str()), "{status}");
+        assert!(status.contains(first.name().as_str()), "{status}");
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+async fn a_cancel_whose_sandbox_cannot_be_read_in_time_says_so_on_the_status_line() -> TestResult {
+    guard(async {
+        let rig = Rig::new().await?;
+        let mut console = console(&rig).await?;
+        let upload = Trigger::Op(GatewayOp::UploadTree);
+        let detail = Trigger::Op(GatewayOp::Detail);
+        for trigger in [&upload, &detail] {
+            rig.gateway().inject(Fault::HoldAt {
+                trigger: trigger.clone(),
+            });
+        }
+        launch(&mut console).await?;
+        assert!(rig.gateway().until_held(&upload).await);
+        until_stage(&mut console, "05 Upload", Stage::Running).await?;
+        let name = only(&rig)?.name();
+        console.keys("x right enter")?;
+        until_route(&mut console, Route::Manager).await?;
+        rig.gateway().release(&upload);
+        until_untouched(&mut console, "the unreadable-sandbox notice", |c| {
+            c.console()
+                .app()
+                .shell
+                .status
+                .text()
+                .unwrap_or_default()
+                .starts_with("Cancelled · sandbox")
+        })
+        .await?;
+        let status = shown_status(&mut console).await;
+        assert!(status.contains(name.as_str()), "{status}");
+        assert!(status.contains("could not be read"), "{status}");
+        rig.gateway().release(&detail);
         Ok(())
     })
     .await

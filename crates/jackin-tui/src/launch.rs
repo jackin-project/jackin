@@ -769,8 +769,15 @@ impl Run {
             .map(|origin| (name.clone(), origin))
             .into_iter()
             .collect();
-        self.record(session, config, gateway, sandbox, &origins, &self.cancel)
-            .await
+        self.record(
+            session,
+            config,
+            gateway,
+            sandbox,
+            &origins,
+            &CancellationToken::new(),
+        )
+        .await
     }
 }
 
