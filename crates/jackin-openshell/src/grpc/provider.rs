@@ -328,14 +328,21 @@ impl Inner {
             provider_record(&spec.name, spec.profile.as_str(), self.workspace.as_str());
         record.credentials = credentials;
         let untouched = |error| ProviderWriteError::new(error, ProviderWriteEffect::NoWrite);
-        let existing = |error| ProviderWriteError::new(error, ProviderWriteEffect::Existing);
+        let rejected = |error: GatewayError| {
+            let effect = if error.outcome_unknown() {
+                ProviderWriteEffect::Existing
+            } else {
+                ProviderWriteEffect::NoWrite
+            };
+            ProviderWriteError::new(error, effect)
+        };
         let effect = match self.provider_state(&spec.name).await.map_err(untouched)? {
             ProviderState::Absent => match self.create_provider(spec, record.clone()).await {
                 Ok(()) => ProviderWriteEffect::Created,
                 Err(error @ GatewayError::AlreadyExists { .. }) => {
                     match self.provider_state(&spec.name).await.map_err(untouched)? {
                         ProviderState::Present => {
-                            self.update_provider(spec, record).await.map_err(existing)?;
+                            self.update_provider(spec, record).await.map_err(rejected)?;
                             ProviderWriteEffect::Existing
                         }
                         ProviderState::Absent => return Err(untouched(error)),
@@ -347,7 +354,7 @@ impl Inner {
                 }
             },
             ProviderState::Present => {
-                self.update_provider(spec, record).await.map_err(existing)?;
+                self.update_provider(spec, record).await.map_err(rejected)?;
                 ProviderWriteEffect::Existing
             }
         };

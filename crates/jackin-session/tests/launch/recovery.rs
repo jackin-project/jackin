@@ -480,6 +480,26 @@ async fn a_name_hit_on_another_launch_never_becomes_the_last_observed_sandbox() 
 }
 
 #[tokio::test]
+async fn a_cancel_while_another_launch_holds_the_planned_name_is_not_reported_absent() -> TestResult
+{
+    guard(async {
+        let rig = launch_rig().await?;
+        ready(rig.launch_observed(9).await?)?;
+        rig.foreign_sandbox(rig.sandbox_name(1)?, 3).await?;
+        let found = finding(rig.run(rig.request(1)?, cancelled()).await?)?;
+        assert_eq!(
+            found,
+            RestoreFinding::Unconfirmed {
+                last_observed: None,
+                planned: rig.sandbox_name(1)?,
+            }
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
 async fn a_sandbox_that_is_being_deleted_is_not_offered_as_a_restore_candidate() -> TestResult {
     guard(async {
         let rig = launch_rig().await?;

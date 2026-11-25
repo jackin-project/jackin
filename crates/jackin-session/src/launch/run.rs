@@ -273,7 +273,11 @@ impl Run<'_> {
             Some(Ok(views)) if views.len() == 1 => self.seen(&views[0]),
             Some(Ok(_)) => match (&named, hit) {
                 (Some(Ok(_)), Some(view)) => self.seen(view),
-                (Some(Ok(_)), None) if !self.create_unsettled && self.acknowledged.is_none() => {
+                (Some(Ok(views)), None)
+                    if views.is_empty()
+                        && !self.create_unsettled
+                        && self.acknowledged.is_none() =>
+                {
                     RestoreFinding::Absent {
                         requested: self.touched,
                     }

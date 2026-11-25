@@ -681,6 +681,32 @@ async fn a_failed_refresh_configuration_reports_who_owns_the_provider() {
 }
 
 #[tokio::test]
+async fn a_rejected_update_of_an_existing_provider_is_no_write_unless_it_may_have_applied() {
+    for (code, expected) in [
+        (Code::PermissionDenied, ProviderWriteEffect::NoWrite),
+        (Code::InvalidArgument, ProviderWriteEffect::NoWrite),
+        (Code::FailedPrecondition, ProviderWriteEffect::NoWrite),
+        (Code::Unavailable, ProviderWriteEffect::Existing),
+        (Code::DeadlineExceeded, ProviderWriteEffect::Existing),
+    ] {
+        let env = env().await;
+        let gateway = connect(&env, WORKSPACE).await;
+        guard(gateway.ensure_profile(&profile())).await.unwrap();
+        guard(gateway.put_provider(&spec(ACCESS, REFRESH)))
+            .await
+            .unwrap();
+        env.server.state().faults.insert(
+            "update_provider",
+            Fault::Status(code, "update failed".to_owned()),
+        );
+        let error = guard(gateway.put_provider(&spec("next-access-token", "next-refresh-token")))
+            .await
+            .unwrap_err();
+        assert_eq!(error.effect(), expected, "{code:?}: {error:?}");
+    }
+}
+
+#[tokio::test]
 async fn a_rival_create_followed_by_a_refresh_failure_is_never_reported_as_created() {
     let env = env().await;
     let gateway = connect(&env, WORKSPACE).await;
