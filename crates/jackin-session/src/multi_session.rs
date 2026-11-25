@@ -14,7 +14,7 @@ use jackin_openshell::{
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::service::{Session, read_until_cancelled};
+use crate::service::{Located, Session, read_until_cancelled};
 
 const KILL_POLL: Duration = Duration::from_millis(100);
 const KILL_EXIT: Duration = Duration::from_secs(30);
@@ -376,6 +376,7 @@ impl Session {
             self.deps.gateway.read_files(sandbox, &[path]),
         )
         .await?;
+        self.same_incarnation(sandbox, view, cancel).await?;
         let bytes = found
             .into_iter()
             .next()
@@ -393,6 +394,29 @@ impl Session {
             return Err(invalid_instance_identity());
         }
         Ok(instances)
+    }
+
+    async fn same_incarnation(
+        &self,
+        sandbox: &SandboxName,
+        view: &SandboxView,
+        cancel: &CancellationToken,
+    ) -> Result<(), GatewayError> {
+        match self.locate(sandbox, cancel).await? {
+            Located::Found(now)
+                if view.created_at.is_some() && now.created_at == view.created_at =>
+            {
+                Ok(())
+            }
+            Located::Unmanaged => Err(GatewayError::FailedPrecondition {
+                message: crate::sandbox_unmanaged(sandbox),
+            }),
+            Located::Found(_) | Located::Absent => Err(GatewayError::FailedPrecondition {
+                message: format!(
+                    "sandbox {sandbox} was replaced or removed while its agents were read"
+                ),
+            }),
+        }
     }
 
     pub(crate) async fn agent_names_of(

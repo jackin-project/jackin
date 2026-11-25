@@ -110,7 +110,7 @@ fn export_error(error: &ExportError) -> String {
 
 pub(crate) fn abandoned(unsettled: Option<String>) -> String {
     let detail = unsettled.unwrap_or_else(|| {
-        "what it had started may or may not be complete; check the state it changes (jackin ls lists the sandboxes)"
+        "what it had started may or may not be complete; check the state it changes before you rely on it"
             .to_owned()
     });
     format!(

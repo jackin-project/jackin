@@ -306,3 +306,30 @@ async fn a_second_interrupt_during_an_export_says_the_host_may_hold_part_of_it()
     })
     .await
 }
+
+#[tokio::test]
+async fn a_second_interrupt_during_a_gateway_removal_says_providers_may_be_deleted() -> TestResult {
+    guard_within(WITHIN, async {
+        let (rig, harness) = rigged().await?;
+        let work = AccountName::parse("work")?;
+        let account = rig.config.account(&work).ok_or("no work account")?;
+        rig.world
+            .session
+            .sync_account(account, Agent::Codex, &CancellationToken::new())
+            .await?;
+        let ran = abandoned_while_held(
+            &rig,
+            &harness,
+            &["gateway", "rm", "fake-gateway"],
+            GatewayOp::Provider,
+        )
+        .await?;
+        says(
+            &ran,
+            &["gateway removal may have deleted account providers"],
+        );
+        assert!(!ran.stderr.contains("jackin ls"), "{}", ran.stderr);
+        Ok(())
+    })
+    .await
+}
