@@ -3,7 +3,7 @@
 
 use super::Check;
 use crate::ci::CiStep;
-use crate::lex::{Token, alias_names, leading_segment, lex_rust, module_names, root_aliases};
+use crate::lex::{Token, lex_rust};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
@@ -22,14 +22,10 @@ impl Check for ErrorsCheck {
         for file in repo.files() {
             if file.kind() == FileKind::Rust && !file.is_third_party_source() {
                 let tokens = lex_rust(file.text()).tokens;
-                let roots = root_aliases(&tokens, &["std", "core"]);
-                let mut modules = module_names(&tokens, "path", &["std", "core"]);
-                modules.extend(roots);
-                let paths = path_names(&tokens, &modules);
                 violations.extend(
                     (0..tokens.len())
                         .filter_map(|index| error_attribute(&tokens, index))
-                        .flat_map(|attribute| attribute_problems(&attribute, &paths, &modules))
+                        .flat_map(|attribute| attribute_problems(&attribute))
                         .map(|(line, message)| {
                             Violation::at_line(self.step(), file.path(), line, message)
                         }),
@@ -84,11 +80,7 @@ fn ends_expression(token: &Token) -> bool {
         || token.is_punct(']')
 }
 
-fn attribute_problems(
-    attribute: &ErrorAttribute<'_>,
-    paths: &[&str],
-    modules: &[&str],
-) -> Vec<(u32, String)> {
+fn attribute_problems(attribute: &ErrorAttribute<'_>) -> Vec<(u32, String)> {
     let arguments = attribute.arguments;
     let mut problems = Vec::new();
     for (index, token) in arguments.iter().enumerate() {
@@ -97,7 +89,7 @@ fn attribute_problems(
                 problems.push((token.line, message));
             }
         } else if (token.is_punct('.') && is_display_call(arguments, index))
-            || is_qualified_display(arguments, index, paths, modules)
+            || is_qualified_display(arguments, index)
         {
             if !inside_plain(arguments, index) {
                 problems.push((token.line, display_message()));
@@ -133,77 +125,8 @@ fn is_display_call(arguments: &[Token], index: usize) -> bool {
         && arguments.get(index + 3).is_some_and(|t| t.is_punct(')'))
 }
 
-fn path_names<'a>(tokens: &'a [Token], modules: &[&str]) -> Vec<&'a str> {
-    alias_names(tokens, "Path", "path", &["std", "core"], modules)
-}
-
-fn is_qualified_display(
-    arguments: &[Token],
-    index: usize,
-    paths: &[&str],
-    modules: &[&str],
-) -> bool {
-    if !(arguments[index].is_ident("display")
-        && is_path_separator(arguments, index.wrapping_sub(2)))
-    {
-        return false;
-    }
-    let Some(qualifier) = index.checked_sub(3) else {
-        return false;
-    };
-    let named = |token: &Token| token.ident().is_some_and(|name| paths.contains(&name));
-    let qualified = |at: usize| {
-        named(&arguments[at])
-            && (!arguments[at].is_ident("Path")
-                || !is_path_separator(arguments, at.wrapping_sub(2))
-                || leading_segment(arguments, at).is_some_and(|first| {
-                    ["std", "core"].contains(&first) || modules.contains(&first)
-                }))
-    };
-    if !arguments[qualifier].is_punct('>') {
-        return qualified(qualifier);
-    }
-    let mut depth = 0usize;
-    let mut open = None;
-    for position in (0..=qualifier).rev() {
-        if arguments[position].is_punct('>') {
-            depth += 1;
-        } else if arguments[position].is_punct('<') {
-            depth -= 1;
-            if depth == 0 {
-                open = Some(position);
-                break;
-            }
-        }
-    }
-    let Some(open) = open else {
-        return false;
-    };
-    if open >= 2 && is_path_separator(arguments, open - 2) {
-        return open >= 3 && qualified(open - 3);
-    }
-    let mut level = 0usize;
-    let mut receiver: Vec<&Token> = Vec::new();
-    for token in &arguments[open + 1..qualifier] {
-        if token.is_punct('<') {
-            level += 1;
-        } else if token.is_punct('>') {
-            level = level.saturating_sub(1);
-        } else if level == 0 {
-            if token.is_ident("as") {
-                break;
-            }
-            if token.ident().is_some() {
-                receiver.push(token);
-            }
-        }
-    }
-    let rooted = receiver.len() < 2
-        || receiver
-            .first()
-            .and_then(|first| first.ident())
-            .is_some_and(|first| ["std", "core"].contains(&first) || modules.contains(&first));
-    rooted && receiver.last().copied().is_some_and(named)
+fn is_qualified_display(arguments: &[Token], index: usize) -> bool {
+    arguments[index].is_ident("display") && is_path_separator(arguments, index.wrapping_sub(2))
 }
 
 fn is_path_separator(arguments: &[Token], index: usize) -> bool {
@@ -231,7 +154,7 @@ fn inside_plain(arguments: &[Token], index: usize) -> bool {
 }
 
 fn display_message() -> String {
-    "`.display()` or `Path::display(..)` in an #[error] message prints a path as it is; it can hold terminal controls, so print a HostPath through its Display or pass the path through plain".to_owned()
+    "`.display()` or a `::display(..)` call in an #[error] message prints a path as it is; it can hold terminal controls, so print a HostPath through its Display or pass the path through plain".to_owned()
 }
 
 fn is_source(argument: &str, sources: &[String]) -> bool {

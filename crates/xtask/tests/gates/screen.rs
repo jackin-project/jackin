@@ -424,50 +424,39 @@ fn destructuring_a_buffer_fails() -> TestResult {
          mod tests {\n\
          \x20   fn t(b: Buffer) { let Buffer { content, .. } = b; }\n\
          }\n\
-         use ratatui::buffer::Buffer as Cells;\n\
-         fn l(b: Cells) { let Cells { content, .. } = b; }\n\
          fn m(b: &Buffer) { let &Buffer { ref content, .. } = b; }\n\
          fn n(bs: Vec<Buffer>) { for Buffer { content, .. } in bs {} }\n\
          fn o(b: Buffer) { let Buffer { #[allow(unused)] content, .. } = b; }\n\
-         type Grid = ratatui::buffer::Buffer;\n\
-         fn p(b: Grid) { let Grid { content, .. } = b; }\n\
-         use crate::model::Buffer as Domain;\n\
-         use crate::{buffer::Helper, model::Buffer as Mixed};\n\
-         fn mixed(d: Mixed) { let Mixed { value, .. } = d; }\n\
          fn own(d: u8) { let crate::model::Buffer { value, .. } = d; }\n\
          fn local(d: u8) { let crate::buffer::Buffer { value, .. } = d; }\n\
          enum View { Buffer { value: usize } }\n\
          union Buffer { content: usize }\n\
          fn closure(buf: Buffer) { let _ = { enum E {} || { let Buffer { content, .. } = buf; } }; }\n\
-         use crate::buffer::Buffer as Local;\n\
-         fn localised(d: Local) { let Local { value, .. } = d; }\n\
-         fn s(d: Domain) { let Domain { value, .. } = d; }\n\
-         type Outer = Inner;\n\
-         type Inner = ratatui::buffer::Buffer;\n\
-         fn r(b: Outer) { let Outer { content, .. } = b; }\n\
          fn q() -> ::ratatui::buffer::Buffer {\n\
          \x20   Default::default()\n\
          }\n\
-         use ratatui::buffer as rb;\n\
+         fn ptr() -> *mut Buffer {\n\
+         \x20   std::ptr::null_mut()\n\
+         }\n\
+         use ratatui::buffer::Buffer as Cells;\n\
+         type Grid = ratatui::buffer::Buffer;\n\
          #[cfg(test)]\n\
          pub(crate) mod more_tests {\n\
          \x20   fn t(b: Buffer) { let Buffer { content, .. } = b; }\n\
          }\n",
         &[
-            ("C1", 3, "Buffer"),
-            ("C1", 6, "Buffer"),
-            ("C1", 9, "Buffer"),
-            ("C1", 14, "Buffer"),
-            ("C1", 28, "Buffer"),
-            ("C1", 34, "Buffer"),
+            ("C1", 3, "destructures"),
+            ("C1", 6, "destructures"),
+            ("C1", 9, "destructures"),
+            ("C1", 14, "destructures"),
+            ("C1", 28, "destructures"),
+            ("C1", 34, "destructures"),
+            ("C1", 40, "destructures"),
             ("C1", 41, "destructures"),
             ("C1", 42, "destructures"),
-            ("C1", 43, "destructures"),
-            ("C1", 44, "destructures"),
-            ("C1", 46, "destructures"),
-            ("C1", 54, "destructures"),
-            ("C1", 60, "destructures"),
-            ("C1", 64, "imports ratatui::buffer"),
+            ("C1", 47, "destructures"),
+            ("C1", 54, "renames"),
+            ("C1", 55, "renames"),
         ],
     )
 }

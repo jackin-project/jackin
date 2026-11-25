@@ -7,7 +7,7 @@ use std::path::Path;
 
 use super::Check;
 use crate::ci::CiStep;
-use crate::lex::{Tok, Token, alias_names, leading_segment, lex_rust};
+use crate::lex::{Tok, Token, leading_segment, lex_rust};
 use crate::repo::{FileKind, Repo};
 use crate::violation::{Violation, sorted};
 
@@ -91,6 +91,7 @@ impl Check for ScreenCheck {
             violations.extend(index_violations(file.path(), &tokens));
             violations.extend(silencing_violations(file.path(), &tokens));
             violations.extend(pattern_violations(file.path(), &tokens));
+            violations.extend(alias_violations(file.path(), &tokens));
             violations.extend(literal_violations(
                 file.path(),
                 &tokens,
@@ -424,18 +425,31 @@ fn index_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
         .collect()
 }
 
-fn buffer_names(tokens: &[Token]) -> Vec<&str> {
-    alias_names(tokens, "Buffer", "buffer", &["ratatui"], &[])
+fn alias_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
+    let message = "C1: renames a ratatui Buffer; jackin-tui names the type as Buffer so the drawing gate can see it";
+    tokens
+        .iter()
+        .enumerate()
+        .filter(|(index, token)| {
+            let renamed =
+                token.is_ident("Buffer") && tokens.get(index + 1).is_some_and(|t| t.is_ident("as"));
+            let aliased = token.is_ident("type")
+                && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
+                && tokens[index + 3..]
+                    .iter()
+                    .take_while(|t| !t.is_punct(';'))
+                    .any(|t| t.is_ident("Buffer"));
+            renamed || aliased
+        })
+        .map(|(index, _)| Violation::at_line(CiStep::Screen, path, tokens[index].line, message))
+        .collect()
 }
 
 fn pattern_violations(path: &Path, tokens: &[Token]) -> Vec<Violation> {
     let tests = test_modules(tokens);
-    let names = buffer_names(tokens);
     (1..tokens.len())
         .filter(|index| {
-            tokens[*index]
-                .ident()
-                .is_some_and(|name| names.contains(&name))
+            tokens[*index].is_ident("Buffer")
                 && tokens.get(index + 1).is_some_and(|t| t.is_punct('{'))
                 && opens_fields(tokens, index + 2)
                 && is_ratatui_path(tokens, *index)
@@ -516,7 +530,9 @@ fn is_type_position(tokens: &[Token], index: usize) -> bool {
     }
     while start >= 1
         && (tokens[start - 1].is_punct('&')
+            || tokens[start - 1].is_punct('*')
             || tokens[start - 1].is_ident("mut")
+            || tokens[start - 1].is_ident("const")
             || tokens[start - 1].kind == Tok::Other)
     {
         start -= 1;
