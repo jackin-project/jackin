@@ -16,10 +16,11 @@ use jackin_testkit::{
 use jackin_tui::{ConsoleLimits, DefaultGateway, Fleet, GatewayState, SessionSet, read_fleet};
 use tokio_util::sync::CancellationToken;
 
-#[path = "fleet/probe.rs"]
-mod probe;
+#[expect(dead_code, reason = "each test binary uses part of the shared tap")]
+#[path = "../../jackin-session/tests/common/tap.rs"]
+mod tap;
 
-use probe::Probe;
+use tap::Tap;
 
 const DEADLINE: Duration = Duration::from_secs(1);
 const STALE: &str = "▲ gateway stale";
@@ -355,9 +356,9 @@ async fn a_large_fleet_is_observed_by_at_most_the_configured_number_of_sandboxes
         rig.launch(9).await?;
         let running = rig.sandbox_name(9)?;
         let config = seeded(&rig).await?;
-        let probe = Probe::over(&rig.world.gateway);
-        probe.pause(Duration::from_millis(25));
-        let set = sessions(&rig, &config, Arc::<Probe>::clone(&probe));
+        let probe = Tap::new(&rig);
+        probe.pause_reads(Duration::from_millis(25));
+        let set = sessions(&rig, &config, Arc::<Tap>::clone(&probe));
 
         let fleet = read_fleet(
             &set,
@@ -385,7 +386,7 @@ async fn a_large_fleet_is_observed_by_at_most_the_configured_number_of_sandboxes
                 .iter()
                 .all(|observed| observed.supervisor.is_some())
         );
-        assert_eq!(probe.peak(), 2);
+        assert_eq!(probe.peak_observed(), 2);
         Ok(())
     })
     .await
@@ -401,9 +402,9 @@ async fn slow_reads_and_queued_permits_share_one_deadline_and_keep_every_sandbox
             rig.handle(id).await?.exit_codex(0);
         }
         let config = seeded(&rig).await?;
-        let probe = Probe::over(&rig.world.gateway);
-        probe.stall();
-        let set = sessions(&rig, &config, Arc::<Probe>::clone(&probe));
+        let probe = Tap::new(&rig);
+        probe.stall_reads();
+        let set = sessions(&rig, &config, Arc::<Tap>::clone(&probe));
         let deadline = Duration::from_millis(500);
 
         let started = Instant::now();
@@ -445,9 +446,9 @@ async fn stalled_sandboxes_cost_only_their_own_reading_even_when_they_hold_every
         }
         let config = seeded(&rig).await?;
         let stuck = [rig.sandbox_name(1)?, rig.sandbox_name(2)?];
-        let probe = Probe::over(&rig.world.gateway);
+        let probe = Tap::new(&rig);
         probe.stall_only(&stuck);
-        let set = sessions(&rig, &config, Arc::<Probe>::clone(&probe));
+        let set = sessions(&rig, &config, Arc::<Tap>::clone(&probe));
 
         let fleet = read_fleet(
             &set,
@@ -472,9 +473,9 @@ async fn stalled_sandboxes_cost_only_their_own_reading_even_when_they_hold_every
     .await
 }
 
-async fn cancelled_pass(rig: &Rig, probe: &Arc<Probe>) -> TestResult {
+async fn cancelled_pass(rig: &Rig, probe: &Arc<Tap>) -> TestResult {
     let config = seeded(rig).await?;
-    let set = sessions(rig, &config, Arc::<Probe>::clone(probe));
+    let set = sessions(rig, &config, Arc::<Tap>::clone(probe));
     let cancel = CancellationToken::new();
     let stopper = cancel.clone();
     let watched = Arc::clone(probe);
@@ -502,8 +503,8 @@ async fn cancelling_the_pass_returns_even_with_every_read_stalled_or_queued() ->
             rig.launch(id).await?;
             rig.handle(id).await?.exit_codex(0);
         }
-        let probe = Probe::over(&rig.world.gateway);
-        probe.stall();
+        let probe = Tap::new(&rig);
+        probe.stall_reads();
         cancelled_pass(&rig, &probe).await
     })
     .await
@@ -514,7 +515,7 @@ async fn cancelling_the_pass_returns_even_while_the_listing_is_stalled() -> Test
     guard(async {
         let rig = Rig::new().await?;
         rig.launch(1).await?;
-        let probe = Probe::over(&rig.world.gateway);
+        let probe = Tap::new(&rig);
         probe.stall_listing();
         cancelled_pass(&rig, &probe).await
     })

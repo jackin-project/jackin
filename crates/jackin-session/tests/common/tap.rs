@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::BTreeMap;
+use std::future::Future;
 use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -44,12 +46,19 @@ struct Hooks {
     rm_runs: Vec<RmRun>,
     download_dir_modes: Vec<u32>,
     program_delay: Duration,
+    stalled_all: bool,
+    stalled_listing: bool,
+    stalled_only: Vec<SandboxName>,
+    pause: Duration,
+    active: BTreeMap<SandboxName, usize>,
+    peak: usize,
 }
 
 #[derive(Debug)]
 pub(crate) struct Tap {
     inner: Arc<FakeGateway>,
     hooks: Mutex<Hooks>,
+    entered: Notify,
 }
 
 impl Tap {
@@ -57,6 +66,7 @@ impl Tap {
         Arc::new(Tap {
             inner: Arc::clone(&rig.world.gateway),
             hooks: Mutex::new(Hooks::default()),
+            entered: Notify::new(),
         })
     }
 
@@ -126,89 +136,55 @@ impl Tap {
         self.hooks().rm_clock = Some(clock);
     }
 
-    pub(crate) fn slow_programs(&self, delay: Duration) {
-        self.hooks().program_delay = delay;
+    pub(crate) fn stall_reads(&self) {
+        self.hooks().stalled_all = true;
     }
 
-    pub(crate) fn download_dir_modes(&self) -> Vec<u32> {
-        self.hooks().download_dir_modes.clone()
+    pub(crate) fn stall_listing(&self) {
+        self.hooks().stalled_listing = true;
     }
 
-    pub(crate) fn rm_runs(&self) -> Vec<RmRun> {
-        self.hooks().rm_runs.clone()
-    }
-}
-
-pub(crate) fn file(path: &SandboxPath, bytes: &[u8]) -> SandboxFile {
-    SandboxFile {
-        path: path.clone(),
-        mode: FileMode(0o600),
-        content: SecretBytes::new(bytes.to_vec()),
-    }
-}
-
-#[async_trait]
-impl Gateway for Tap {
-    fn name(&self) -> &GatewayName {
-        self.inner.name()
+    pub(crate) fn stall_only(&self, sandboxes: &[SandboxName]) {
+        self.hooks().stalled_only = sandboxes.to_vec();
     }
 
-    async fn health(&self) -> Result<GatewayHealth, GatewayError> {
-        self.inner.health().await
+    pub(crate) fn pause_reads(&self, pause: Duration) {
+        self.hooks().pause = pause;
     }
 
-    async fn ensure_profile(&self, profile: &ProviderProfile) -> Result<ProfileSync, GatewayError> {
-        self.inner.ensure_profile(profile).await
+    pub(crate) async fn until_stalled(&self) {
+        self.entered.notified().await;
     }
 
-    async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError> {
-        self.inner.delete_profile(id).await
+    pub(crate) fn peak_observed(&self) -> usize {
+        self.hooks().peak
     }
 
-    async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError> {
-        self.inner.provider_state(name).await
+    async fn observed<T>(&self, sandbox: &SandboxName, call: impl Future<Output = T>) -> T {
+        let (stall, pause) = {
+            let mut hooks = self.hooks();
+            *hooks.active.entry(sandbox.clone()).or_default() += 1;
+            hooks.peak = hooks.peak.max(hooks.active.len());
+            (
+                hooks.stalled_all || hooks.stalled_only.contains(sandbox),
+                hooks.pause,
+            )
+        };
+        let _leave = Leave {
+            tap: self,
+            sandbox: sandbox.clone(),
+        };
+        if stall {
+            self.entered.notify_one();
+            std::future::pending::<()>().await;
+        }
+        if !pause.is_zero() {
+            tokio::time::sleep(pause).await;
+        }
+        call.await
     }
 
-    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
-        self.inner.put_provider(spec).await
-    }
-
-    async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
-        self.inner.delete_provider(name).await
-    }
-
-    async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError> {
-        self.inner.create_sandbox(spec).await
-    }
-
-    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
-        self.inner.find_sandboxes(query).await
-    }
-
-    async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
-        self.inner.sandbox_detail(name).await
-    }
-
-    async fn sandbox_environment(
-        &self,
-        name: &SandboxName,
-    ) -> Result<std::collections::BTreeMap<jackin_core::EnvName, String>, GatewayError> {
-        self.inner.sandbox_environment(name).await
-    }
-
-    async fn set_power(
-        &self,
-        name: &SandboxName,
-        action: PowerAction,
-    ) -> Result<SandboxView, GatewayError> {
-        self.inner.set_power(name, action).await
-    }
-
-    async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
-        self.inner.delete_sandbox(name).await
-    }
-
-    async fn run_program(
+    async fn tapped_program(
         &self,
         run: &ProgramRun,
         cancel: &CancellationToken,
@@ -259,12 +235,125 @@ impl Gateway for Tap {
         outcome
     }
 
+    pub(crate) fn slow_programs(&self, delay: Duration) {
+        self.hooks().program_delay = delay;
+    }
+
+    pub(crate) fn download_dir_modes(&self) -> Vec<u32> {
+        self.hooks().download_dir_modes.clone()
+    }
+
+    pub(crate) fn rm_runs(&self) -> Vec<RmRun> {
+        self.hooks().rm_runs.clone()
+    }
+}
+
+pub(crate) fn file(path: &SandboxPath, bytes: &[u8]) -> SandboxFile {
+    SandboxFile {
+        path: path.clone(),
+        mode: FileMode(0o600),
+        content: SecretBytes::new(bytes.to_vec()),
+    }
+}
+
+struct Leave<'a> {
+    tap: &'a Tap,
+    sandbox: SandboxName,
+}
+
+impl Drop for Leave<'_> {
+    fn drop(&mut self) {
+        let mut hooks = self.tap.hooks();
+        if let Some(count) = hooks.active.get_mut(&self.sandbox) {
+            *count -= 1;
+            if *count == 0 {
+                hooks.active.remove(&self.sandbox);
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl Gateway for Tap {
+    fn name(&self) -> &GatewayName {
+        self.inner.name()
+    }
+
+    async fn health(&self) -> Result<GatewayHealth, GatewayError> {
+        self.inner.health().await
+    }
+
+    async fn ensure_profile(&self, profile: &ProviderProfile) -> Result<ProfileSync, GatewayError> {
+        self.inner.ensure_profile(profile).await
+    }
+
+    async fn delete_profile(&self, id: &ProfileId) -> Result<(), GatewayError> {
+        self.inner.delete_profile(id).await
+    }
+
+    async fn provider_state(&self, name: &ProviderName) -> Result<ProviderState, GatewayError> {
+        self.inner.provider_state(name).await
+    }
+
+    async fn put_provider(&self, spec: &ProviderSpec) -> Result<(), GatewayError> {
+        self.inner.put_provider(spec).await
+    }
+
+    async fn delete_provider(&self, name: &ProviderName) -> Result<(), GatewayError> {
+        self.inner.delete_provider(name).await
+    }
+
+    async fn create_sandbox(&self, spec: &SandboxCreate) -> Result<SandboxView, GatewayError> {
+        self.inner.create_sandbox(spec).await
+    }
+
+    async fn find_sandboxes(&self, query: &SandboxQuery) -> Result<Vec<SandboxView>, GatewayError> {
+        if self.hooks().stalled_listing {
+            self.entered.notify_one();
+            std::future::pending::<()>().await;
+        }
+        self.inner.find_sandboxes(query).await
+    }
+
+    async fn sandbox_detail(&self, name: &SandboxName) -> Result<SandboxDetail, GatewayError> {
+        self.observed(name, self.inner.sandbox_detail(name)).await
+    }
+
+    async fn sandbox_environment(
+        &self,
+        name: &SandboxName,
+    ) -> Result<std::collections::BTreeMap<jackin_core::EnvName, String>, GatewayError> {
+        self.inner.sandbox_environment(name).await
+    }
+
+    async fn set_power(
+        &self,
+        name: &SandboxName,
+        action: PowerAction,
+    ) -> Result<SandboxView, GatewayError> {
+        self.inner.set_power(name, action).await
+    }
+
+    async fn delete_sandbox(&self, name: &SandboxName) -> Result<(), GatewayError> {
+        self.inner.delete_sandbox(name).await
+    }
+
+    async fn run_program(
+        &self,
+        run: &ProgramRun,
+        cancel: &CancellationToken,
+    ) -> Result<ProgramOutcome, GatewayError> {
+        self.observed(&run.sandbox, self.tapped_program(run, cancel))
+            .await
+    }
+
     async fn read_files(
         &self,
         sandbox: &SandboxName,
         paths: &[SandboxPath],
     ) -> Result<Vec<Option<Vec<u8>>>, GatewayError> {
-        self.inner.read_files(sandbox, paths).await
+        self.observed(sandbox, self.inner.read_files(sandbox, paths))
+            .await
     }
 
     async fn write_file(
@@ -323,9 +412,11 @@ impl Gateway for Tap {
                 .write_file(sandbox, &file(remote, &bytes))
                 .await?;
         }
-        self.inner
-            .download_file(sandbox, remote, local, cancel)
-            .await
+        self.observed(
+            sandbox,
+            self.inner.download_file(sandbox, remote, local, cancel),
+        )
+        .await
     }
 
     async fn open_terminal(
