@@ -430,6 +430,18 @@ fn buffer_names(tokens: &[Token]) -> Vec<&str> {
         {
             names.push(alias);
         }
+        if token.is_ident("type")
+            && let Some(alias) = tokens.get(index + 1).and_then(Token::ident)
+            && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
+            && tokens[index + 3..]
+                .iter()
+                .take_while(|t| !t.is_punct(';'))
+                .filter_map(Token::ident)
+                .last()
+                .is_some_and(|last| names.contains(&last))
+        {
+            names.push(alias);
+        }
     }
     names
 }
@@ -488,6 +500,9 @@ fn is_type_position(tokens: &[Token], index: usize) -> bool {
     while start >= 3 && is_path_separator(tokens, start - 2) && tokens[start - 3].ident().is_some()
     {
         start -= 3;
+    }
+    if start >= 2 && is_path_separator(tokens, start - 2) {
+        start -= 2;
     }
     while start >= 1
         && (tokens[start - 1].is_punct('&')

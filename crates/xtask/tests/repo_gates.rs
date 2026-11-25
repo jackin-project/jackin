@@ -1964,6 +1964,7 @@ mod error_paths {
     fn a_qualified_display_call_and_a_multi_line_attribute_are_reported() -> TestResult {
         let source = text(&[
             "use std::path::Path as P;",
+            "type Q = std::path::Path;",
             "enum E {",
             "    #[error(\"qualified {}\", Path::display(.path.as_path()))] // p_qualified",
             "    A { path: PathBuf },",
@@ -1984,6 +1985,12 @@ mod error_paths {
             "    I(Label),",
             "    #[error(\"full ufcs {}\", <std::path::Path>::display(.0.as_path()))] // p_deep",
             "    J(PathBuf),",
+            "    #[error(\"type alias {}\", Q::display(.0.as_path()))] // p_typed",
+            "    K(PathBuf),",
+            "    #[error(\"generic {}\", Renderer::<Path>::display(.0))]",
+            "    L(Label),",
+            "    #[error(\"generic ufcs {}\", <Renderer<Path>>::display(.0))]",
+            "    M(Label),",
             "    #[error(\"aliased {}\", P::display(.0.as_path()))] // p_aliased",
             "    E(PathBuf),",
             "    #[error(\"ufcs {}\", <Path>::display(.0.as_path()))] // p_ufcs",
@@ -2002,6 +2009,7 @@ mod error_paths {
                     "p_multi",
                     "p_mapped",
                     "p_deep",
+                    "p_typed",
                     "p_aliased",
                     "p_ufcs"
                 ]

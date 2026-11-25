@@ -135,6 +135,18 @@ fn path_names(tokens: &[Token]) -> Vec<&str> {
         {
             names.push(alias);
         }
+        if token.is_ident("type")
+            && let Some(alias) = tokens.get(index + 1).and_then(Token::ident)
+            && tokens.get(index + 2).is_some_and(|t| t.is_punct('='))
+            && tokens[index + 3..]
+                .iter()
+                .take_while(|t| !t.is_punct(';'))
+                .filter_map(Token::ident)
+                .last()
+                .is_some_and(|last| names.contains(&last))
+        {
+            names.push(alias);
+        }
     }
     names
 }
@@ -148,23 +160,46 @@ fn is_qualified_display(arguments: &[Token], index: usize, paths: &[&str]) -> bo
     let Some(qualifier) = index.checked_sub(3) else {
         return false;
     };
-    if arguments[qualifier].is_punct('>') {
-        let Some(open) = arguments[..qualifier]
-            .iter()
-            .rposition(|token| token.is_punct('<'))
-        else {
-            return false;
-        };
-        return arguments[open + 1..qualifier]
-            .iter()
-            .take_while(|token| !token.is_ident("as"))
-            .filter_map(Token::ident)
-            .last()
-            .is_some_and(|name| paths.contains(&name));
+    let named = |token: &Token| token.ident().is_some_and(|name| paths.contains(&name));
+    if !arguments[qualifier].is_punct('>') {
+        return named(&arguments[qualifier]);
     }
-    arguments[qualifier]
-        .ident()
-        .is_some_and(|name| paths.contains(&name))
+    let mut depth = 0usize;
+    let mut open = None;
+    for position in (0..=qualifier).rev() {
+        if arguments[position].is_punct('>') {
+            depth += 1;
+        } else if arguments[position].is_punct('<') {
+            depth -= 1;
+            if depth == 0 {
+                open = Some(position);
+                break;
+            }
+        }
+    }
+    let Some(open) = open else {
+        return false;
+    };
+    if open >= 2 && is_path_separator(arguments, open - 2) {
+        return open >= 3 && named(&arguments[open - 3]);
+    }
+    let mut level = 0usize;
+    let mut receiver = None;
+    for token in &arguments[open + 1..qualifier] {
+        if token.is_punct('<') {
+            level += 1;
+        } else if token.is_punct('>') {
+            level = level.saturating_sub(1);
+        } else if level == 0 {
+            if token.is_ident("as") {
+                break;
+            }
+            if token.ident().is_some() {
+                receiver = Some(token);
+            }
+        }
+    }
+    receiver.is_some_and(named)
 }
 
 fn is_path_separator(arguments: &[Token], index: usize) -> bool {
