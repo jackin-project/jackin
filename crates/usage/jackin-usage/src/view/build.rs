@@ -10,8 +10,8 @@ use uuid::Uuid;
 
 use super::model::{
     AccountQuota, Activity, Attention, Currency, FRESH_SECS, Fact, Feed, Meter, Note,
-    PositiveAmount, ProviderGroup, Reading, ResetCredit, ResetStatus, Role, Unit, UsageView, Used,
-    UsedFraction,
+    PositiveAmount, ProviderGroup, Reading, ResetCredit, ResetStatus, Role, TodayTokens, Unit,
+    UsageView, Used, UsedFraction,
 };
 use crate::accounts::{
     AccountRegistry, ConnectedAccount, ConnectionError, FailureKind, RefreshFailure, UsageProvider,
@@ -564,16 +564,17 @@ fn resets(body: &Value, provider: UsageProvider, now: Timestamp) -> Option<Note>
         .filter_map(|(index, grant)| {
             let at = grant["expiresAt"].as_i64()?;
             let live = at > now.0;
-            let usable = grant["usable"] == true && live;
+            let remaining = grant["remaining"].as_u64().unwrap_or(1);
+            let usable = grant["usable"] == true && live && remaining > 0;
             Some(ResetCredit {
                 kind: plain(grant["kind"].as_str().unwrap_or("reset")),
                 status: match (usable, live && queues) {
                     (true, _) => ResetStatus::Ready,
-                    (false, true) => ResetStatus::Queued,
-                    (false, false) => ResetStatus::Unavailable,
+                    (false, true) if remaining > 0 => ResetStatus::Queued,
+                    (false, _) => ResetStatus::Unavailable,
                 },
                 expires_at: Timestamp(at),
-                remaining: grant["remaining"].as_u64().unwrap_or(1),
+                remaining,
                 index,
             })
         })
@@ -642,7 +643,7 @@ fn tokens(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
     let shown = |key: &str| !hidden.contains(key);
     let (today, yesterday, last30) = if ranges.is_object() {
         (
-            count(&ranges["today"]["totals"]["tokens"]).filter(|_| shown("today")),
+            today_tokens(count(&ranges["today"]["totals"]["tokens"]), shown("today")),
             activity(&ranges["yesterday"]).filter(|_| shown("yesterday")),
             activity(&ranges["last30"]).filter(|_| shown("last30")),
         )
@@ -654,16 +655,26 @@ fn tokens(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {
             "expectedDays": log["expected_days"],
         });
         (
-            None,
+            today_tokens(None, shown("today")),
             activity(&log["yesterday"]).filter(|_| shown("yesterday")),
             activity(&prior).filter(|_| shown("prior30")),
         )
     };
-    (today.is_some() || yesterday.is_some() || last30.is_some()).then_some(Note::Tokens {
-        today,
-        yesterday,
-        last30,
-    })
+    (matches!(today, TodayTokens::Count(_)) || yesterday.is_some() || last30.is_some()).then_some(
+        Note::Tokens {
+            today,
+            yesterday,
+            last30,
+        },
+    )
+}
+
+fn today_tokens(count: Option<u64>, shown: bool) -> TodayTokens {
+    match (shown, count) {
+        (false, _) => TodayTokens::Hidden,
+        (true, Some(tokens)) => TodayTokens::Count(tokens),
+        (true, None) => TodayTokens::Unavailable,
+    }
 }
 
 fn spend(body: &Value, hidden: &BTreeSet<String>) -> Option<Note> {

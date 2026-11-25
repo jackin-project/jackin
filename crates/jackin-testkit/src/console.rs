@@ -36,6 +36,7 @@ use crate::doctor_host::DoctorHost;
 use crate::fixtures::FixtureError;
 use crate::gateway::FakeGateway;
 use crate::host::FakeClock;
+use crate::vault::MemoryVault;
 use crate::world::World;
 
 const USAGE_DIR: &str = "usage";
@@ -307,7 +308,7 @@ impl ConsoleRig {
         let screen = self.screen();
         screen.lines().enumerate().find_map(|(row, line)| {
             let byte = line.find(text)?;
-            let column = line[..byte].chars().count();
+            let column = jackin_usage::view::text::width(&line[..byte]);
             Some((u16::try_from(column).ok()?, u16::try_from(row).ok()?))
         })
     }
@@ -547,6 +548,7 @@ impl ConsoleRigBuilder<'_> {
             config: world.config.clone(),
             desk: world.desk(),
             usage,
+            vault: Arc::<MemoryVault>::clone(&world.vault),
             sessions: SessionSet::new(&config, default, entries),
             connect,
             roles: Arc::clone(&world.roles),

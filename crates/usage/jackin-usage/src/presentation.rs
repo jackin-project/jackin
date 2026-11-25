@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Alexey Zhokhov
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::accounts::{AccountRegistry, ConnectedAccount, ConnectionError, StoredSnapshot};
+use crate::accounts::{ConnectedAccount, ConnectionError, StoredSnapshot};
 use crate::dashboard::{DashboardRow, DashboardSettings};
 use crate::onboarding::OwnedLogin;
 use crate::view::{
@@ -165,7 +165,7 @@ pub(crate) fn detail(
 }
 
 pub fn entries(service: &OwnedLogin) -> Result<Vec<AccountDetails>, ConnectionError> {
-    let Some(db) = AccountRegistry::open_read_only(service.database())? else {
+    let Some(db) = service.open_read_only_registry()? else {
         return Ok(Vec::new());
     };
     let settings = db.dashboard_settings()?;
@@ -275,10 +275,7 @@ pub fn summary(view: &UsageView, account: &AccountQuota) -> Vec<String> {
             format!("! {message}")
         });
         if *reconnect {
-            lines.push(format!(
-                "jackin account usage reconnect {}",
-                account.id.simple()
-            ));
+            lines.push(text::reconnect_command(account.id, text::IdForm::Simple));
         }
     }
     if let (view::Feed::StatusLine, Reading::Stale { at }) = (account.feed, &account.reading) {
@@ -363,7 +360,7 @@ fn marked(account: &AccountQuota, value: &str) -> String {
         return text::truncate(value, VALUE_COLUMNS);
     };
     let spaced = format!("{marks} · {value}");
-    let joined = if spaced.chars().count() <= VALUE_COLUMNS {
+    let joined = if text::width(&spaced) <= VALUE_COLUMNS {
         spaced
     } else {
         format!("{marks} {value}")
@@ -440,11 +437,14 @@ pub fn covered_keys(account: &AccountQuota) -> Vec<&str> {
 }
 
 pub fn attention_notices(view: &UsageView) -> Vec<String> {
-    view.attention
-        .iter()
-        .filter_map(|item| view::report::attention_text(view, item))
+    view::report::attention_entries(view)
         .map(|item| format!("{} · {} · {}", item.tag, item.subject, item.detail))
         .collect()
+}
+
+pub fn attention_summary(view: &UsageView) -> Option<String> {
+    let count = view::report::attention_entries(view).count();
+    (count > 0).then(|| view::report::attention_heading(count))
 }
 
 #[derive(Clone, Debug)]
@@ -522,8 +522,14 @@ fn attention_row(view: &UsageView, item: &Attention) -> Option<AttentionRow> {
             Attention::Failing { .. } | Attention::NearLimit { .. } => freshness_text(quota, view),
         };
     }
+    let key = match item {
+        Attention::NearLimit { meter, .. } => format!("{kind}:{}:{meter}", first.hyphenated()),
+        Attention::Failing { .. } | Attention::Duplicate { .. } => {
+            format!("{kind}:{}", first.hyphenated())
+        }
+    };
     Some(AttentionRow {
-        key: format!("{kind}:{}", first.hyphenated()),
+        key,
         provider: group.provider,
         accounts,
         title: format!("{} · {subject}", text.tag),

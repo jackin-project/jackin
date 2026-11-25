@@ -30,6 +30,7 @@ fn priority_distinguishes_waiting_hidden_attention_empty_and_spent() -> Result {
     let mut mem = DashboardMemory::default();
     let now = 1700000000;
     let id = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "private@example.invalid",
         &scoped("a"),
@@ -119,6 +120,7 @@ fn warnings_rearm_after_recovery_and_fast_pace_latches_until_ninety_percent() ->
         &Arc::new(Vault::default()),
     )?;
     let id = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "Account",
         &scoped("a"),
@@ -178,12 +180,12 @@ fn unified_limits_keep_members_units_and_the_earliest_reset() -> Result {
         body["resources"]["extraUsage"] =
             json!({"kind":"consumption","unit":unit,"used":10,"limit":20});
         registry.add_with_snapshot(
+            &jackin_core::CriticalWrite::begin(),
             UsageProvider::Claude,
             label,
             &scoped(label),
             &bytes("sample"),
-            now,
-            &body,
+            (now, &body),
         )?;
     }
     registry.set_dashboard_settings(&DashboardSettings {
@@ -258,6 +260,7 @@ fn unused_warning_needs_a_long_non_spend_window_and_an_observed_reset() -> Resul
         &Arc::new(Vault::default()),
     )?;
     let id = registry.add(
+        &jackin_core::CriticalWrite::begin(),
         UsageProvider::Claude,
         "Account",
         &scoped("a"),

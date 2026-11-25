@@ -13,6 +13,7 @@ mod connect;
 mod console;
 mod docker;
 mod doctor;
+mod drive;
 mod env;
 mod exit;
 mod export;

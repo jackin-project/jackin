@@ -13,8 +13,8 @@ pub use build::{ViewFilter, build};
 pub use card::card;
 pub use model::{
     AccountQuota, Activity, Attention, Currency, Fact, Feed, Meter, Note, PositiveAmount,
-    ProviderGroup, Reading, ResetCredit, ResetStatus, Role, Unit, UsageView, Used, UsedFraction,
-    short_id,
+    ProviderGroup, Reading, ResetCredit, ResetStatus, Role, TodayTokens, Unit, UsageView, Used,
+    UsedFraction, short_id,
 };
 pub use render::{Ctx, Depth, Line, Report, Span, Tone};
 pub use report::report;

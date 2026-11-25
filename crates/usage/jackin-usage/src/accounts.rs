@@ -20,18 +20,17 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use jackin_core::SecretBytes;
+use jackin_core::{CriticalWrite, SecretBytes};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior, params};
 use serde_json::Value;
 use thiserror::Error;
-use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 pub use types::{
     AccountPreferences, CandidateIdentity, ConnectedAccount, CredentialVersion, KeyFingerprint,
     UsageProvider,
 };
-pub use vault::CredentialVault;
+pub use vault::{CredentialVault, system_vault};
 
 pub const DATABASE_PATH: &str = "usage/accounts.sqlite3";
 
@@ -87,8 +86,6 @@ const COLUMNS: &str = "id, provider, label, position, preferences";
 
 #[derive(Debug, Error)]
 pub enum ConnectionError {
-    #[error("usage account operation cancelled")]
-    Cancelled,
     #[error("manage this login on its hub, or remove the local hub connection")]
     HubManaged,
     #[error("the hub refused its management key; replace the management key")]
@@ -181,17 +178,17 @@ impl AccountRegistry {
             })?)
     }
 
-    pub fn open(path: &Path) -> Result<Self, ConnectionError> {
-        Self::with_vault(path, Arc::new(vault::SystemVault))
-    }
-
-    pub fn open_read_only(path: &Path) -> Result<Option<Self>, ConnectionError> {
-        Self::open_existing(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+    pub fn open_read_only_with_vault(
+        path: &Path,
+        vault: Arc<dyn CredentialVault>,
+    ) -> Result<Option<Self>, ConnectionError> {
+        Self::open_existing(path, OpenFlags::SQLITE_OPEN_READ_ONLY, vault)
     }
 
     pub(crate) fn open_existing(
         path: &Path,
         mode: OpenFlags,
+        vault: Arc<dyn CredentialVault>,
     ) -> Result<Option<Self>, ConnectionError> {
         match std::fs::symlink_metadata(path) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -210,7 +207,7 @@ impl AccountRegistry {
         Ok(Some(Self {
             db,
             directory,
-            vault: Arc::new(vault::SystemVault),
+            vault,
             lock_wait: LOCK_WAIT,
         }))
     }
@@ -361,53 +358,54 @@ impl AccountRegistry {
 
     pub fn add(
         &mut self,
+        write: &CriticalWrite,
         provider: UsageProvider,
         label: &str,
         identity: &CandidateIdentity,
         secret: &SecretBytes,
     ) -> Result<Uuid, ConnectionError> {
         self.add_candidate(
+            write,
             provider,
             label,
             identity,
             secret,
             InitialRead::Pending,
-            &CancellationToken::new(),
         )
     }
 
     pub fn add_with_snapshot(
         &mut self,
+        write: &CriticalWrite,
         provider: UsageProvider,
         label: &str,
         identity: &CandidateIdentity,
         secret: &SecretBytes,
-        fetched_at: i64,
-        payload: &Value,
+        reading: (i64, &Value),
     ) -> Result<Uuid, ConnectionError> {
         self.add_candidate(
+            write,
             provider,
             label,
             identity,
             secret,
-            InitialRead::Snapshot(fetched_at, payload),
-            &CancellationToken::new(),
+            InitialRead::Snapshot(reading.0, reading.1),
         )
     }
 
     pub fn add_candidate(
         &mut self,
+        write: &CriticalWrite,
         provider: UsageProvider,
         label: &str,
         identity: &CandidateIdentity,
         secret: &SecretBytes,
         initial: InitialRead<'_>,
-        cancel: &CancellationToken,
     ) -> Result<Uuid, ConnectionError> {
         let label = nonempty(label)?;
         let (kind, identity) = identity.parts(provider)?;
         let id = Uuid::new_v4();
-        self.install_cancellable(secret, cancel, |tx, slot| {
+        self.install(write, secret, |tx, slot| {
             reject_duplicate(tx, provider, kind, identity, id)?;
             reject_cross_kind(tx, provider, kind, identity, id)?;
             tx.execute(
@@ -449,50 +447,37 @@ impl AccountRegistry {
 
     pub fn replace(
         &mut self,
+        write: &CriticalWrite,
         id: Uuid,
         expected: CredentialVersion,
         identity: &CandidateIdentity,
         secret: &SecretBytes,
     ) -> Result<(), ConnectionError> {
-        self.replace_candidate(
-            id,
-            expected,
-            identity,
-            secret,
-            None,
-            &CancellationToken::new(),
-        )
+        self.replace_candidate(write, id, expected, identity, secret, None)
     }
 
     pub fn replace_with_snapshot(
         &mut self,
+        write: &CriticalWrite,
         id: Uuid,
         expected: CredentialVersion,
         identity: &CandidateIdentity,
         secret: &SecretBytes,
-        fetched_at: i64,
-        payload: &Value,
+        reading: (i64, &Value),
     ) -> Result<(), ConnectionError> {
-        self.replace_candidate(
-            id,
-            expected,
-            identity,
-            secret,
-            Some((fetched_at, payload)),
-            &CancellationToken::new(),
-        )
+        self.replace_candidate(write, id, expected, identity, secret, Some(reading))
     }
 
     pub fn replace_candidate(
         &mut self,
+        write: &CriticalWrite,
         id: Uuid,
         expected: CredentialVersion,
         identity: &CandidateIdentity,
         secret: &SecretBytes,
         snapshot: Option<(i64, &Value)>,
-        cancel: &CancellationToken,
     ) -> Result<(), ConnectionError> {
-        self.install_cancellable(secret, cancel, |tx, slot| {
+        self.install(write, secret, |tx, slot| {
             let (provider, old_kind, known): (String, String, Option<String>) = tx
                 .query_row(
                     "SELECT provider,kind,identity FROM accounts WHERE id=?1 AND slot=?2",
@@ -532,12 +517,12 @@ impl AccountRegistry {
 
     pub fn replace_grant_keeping_reading(
         &mut self,
+        write: &CriticalWrite,
         id: Uuid,
         expected: CredentialVersion,
         grant: KeptGrant<'_>,
-        cancel: &CancellationToken,
     ) -> Result<(), ConnectionError> {
-        self.install_cancellable(grant.secret, cancel, |tx, slot| {
+        self.install(write, grant.secret, |tx, slot| {
             let (provider, old_kind, known): (String, String, Option<String>) = tx
                 .query_row(
                     "SELECT provider,kind,identity FROM accounts WHERE id=?1 AND slot=?2",
@@ -580,43 +565,33 @@ impl AccountRegistry {
 
     pub fn rotate(
         &mut self,
+        write: &CriticalWrite,
         id: Uuid,
         expected: CredentialVersion,
         secret: &SecretBytes,
     ) -> Result<CredentialVersion, ConnectionError> {
-        self.install_within(None, secret, &CancellationToken::new(), |tx, slot| {
+        self.install_within(None, write, secret, |tx, slot| {
             replace_slot(tx, id, expected, slot)
         })
     }
 
     fn install(
         &mut self,
+        write: &CriticalWrite,
         secret: &SecretBytes,
         change: impl FnOnce(&Connection, Uuid) -> Result<(), ConnectionError>,
     ) -> Result<CredentialVersion, ConnectionError> {
-        self.install_cancellable(secret, &CancellationToken::new(), change)
-    }
-
-    fn install_cancellable(
-        &mut self,
-        secret: &SecretBytes,
-        cancel: &CancellationToken,
-        change: impl FnOnce(&Connection, Uuid) -> Result<(), ConnectionError>,
-    ) -> Result<CredentialVersion, ConnectionError> {
-        self.install_within(Some(self.lock_wait), secret, cancel, change)
+        self.install_within(Some(self.lock_wait), write, secret, change)
     }
 
     fn install_within(
         &mut self,
         wait: Option<Duration>,
+        _write: &CriticalWrite,
         secret: &SecretBytes,
-        cancel: &CancellationToken,
         change: impl FnOnce(&Connection, Uuid) -> Result<(), ConnectionError>,
     ) -> Result<CredentialVersion, ConnectionError> {
         let _lock = self.mutation_lock(wait)?;
-        if cancel.is_cancelled() {
-            return Err(ConnectionError::Cancelled);
-        }
         let slot = Uuid::new_v4();
         self.db
             .execute("INSERT INTO retired_slots VALUES (?1)", [slot.to_string()])?;
@@ -626,9 +601,6 @@ impl AccountRegistry {
                 .db
                 .transaction_with_behavior(TransactionBehavior::Immediate)?;
             change(&tx, slot)?;
-            if cancel.is_cancelled() {
-                return Err(ConnectionError::Cancelled);
-            }
             tx.execute(
                 "DELETE FROM retired_slots WHERE slot=?1",
                 [slot.to_string()],

@@ -62,7 +62,7 @@ impl Span {
     }
 
     pub fn width(&self) -> usize {
-        self.text.chars().count()
+        super::text::width(&self.text)
     }
 }
 

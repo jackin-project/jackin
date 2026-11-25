@@ -6,6 +6,7 @@ use jackin_usage::view::{
     self, Ctx, Line, Reading, Report, Span, Tone, UsageView, ViewFilter, render,
 };
 use serde_json::json;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use super::{RefreshOutcome, database, failure, providers, selected};
@@ -14,7 +15,11 @@ use crate::cli::UsageFilter;
 use crate::error::CommandError;
 
 pub(in crate::commands) fn overview(app: &mut App, json: bool) -> Result<(), CommandError> {
-    let db = AccountRegistry::open_read_only(&database(app)?).map_err(failure)?;
+    let db = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?;
     if json {
         let snapshots = db
             .as_ref()
@@ -61,11 +66,25 @@ fn print(app: &mut App, view: &UsageView, kind: Report) -> Result<(), CommandErr
     app.io.lines(&lines)
 }
 
+pub(super) fn note(app: &mut App, text: &str, atoms: &[String]) {
+    let lines = view::text::wrap(
+        Vec::new(),
+        2,
+        &view::text::split_atomic(text, Tone::Plain, atoms),
+        context(app).columns(),
+    );
+    app.io.note(&render::plain(&lines));
+}
+
 fn introduce(app: &mut App) -> Result<(), CommandError> {
     for provider in providers::catalog(std::iter::empty()) {
         app.io.line(&provider.to_string())?;
     }
-    app.io.note("To connect your first provider, open Accounts in the console or run jackin account usage connect <provider>.");
+    note(
+        app,
+        "To connect your first provider, open Accounts in the console or run jackin account usage connect <provider>.",
+        &["jackin account usage connect <provider>".to_owned()],
+    );
     Err(CommandError::NoUsageSnapshot)
 }
 
@@ -75,7 +94,11 @@ fn show(app: &mut App, filter: &UsageFilter, kind: Report) -> Result<(), Command
         .as_deref()
         .map(providers::connector)
         .transpose()?;
-    let db = AccountRegistry::open_read_only(&database(app)?).map_err(failure)?;
+    let db = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?;
     let filtered = provider.is_some() || filter.account.is_some();
     let Some(db) = db else {
         return if filtered {
@@ -127,7 +150,11 @@ pub(super) fn snapshot(
         .as_deref()
         .map(providers::connector)
         .transpose()?;
-    let db = AccountRegistry::open_read_only(&database(app)?).map_err(failure)?;
+    let db = AccountRegistry::open_read_only_with_vault(
+        &database(app)?,
+        Arc::clone(&app.deps.usage_vault),
+    )
+    .map_err(failure)?;
     emit(app, db.as_ref(), filter, provider, &[], None)
 }
 
@@ -219,26 +246,33 @@ pub(super) fn refreshed(
     if failed > 0 {
         headline.push_str(&format!(" · {failed} failed"));
     }
-    let mut lines = vec![Line::of(vec![Span::strong(headline)])];
+    let columns = context(app).columns();
+    let mut lines = view::text::wrap(
+        Vec::new(),
+        0,
+        &view::text::split_parts(&headline, Tone::Strong),
+        columns,
+    );
     for (group, quota) in view.accounts() {
         let name = format!("{} · {}", group.name, quota.label);
         if outcome.skipped(quota.id) {
-            lines.push(Line::of(vec![
-                Span::new("  skipped ", Tone::Warn),
-                Span::plain(format!("{name}: {}", view::text::STATUS_LINE_FEED)),
-            ]));
+            lines.extend(entry(
+                "  skipped ",
+                Tone::Warn,
+                &format!("{name}: {}", view::text::STATUS_LINE_FEED),
+                columns,
+            ));
             continue;
         }
         match outcome.message(quota.id) {
-            None => lines.push(Line::of(vec![
-                Span::new("  ok      ", Tone::Ok),
-                Span::plain(name),
-            ])),
+            None => lines.extend(entry("  ok      ", Tone::Ok, &name, columns)),
             Some(message) => {
-                lines.push(Line::of(vec![
-                    Span::new("  failed  ", Tone::Crit),
-                    Span::plain(format!("{name}: {message}")),
-                ]));
+                lines.extend(entry(
+                    "  failed  ",
+                    Tone::Crit,
+                    &format!("{name}: {message}"),
+                    columns,
+                ));
                 if matches!(
                     quota.reading,
                     Reading::Failed {
@@ -246,17 +280,45 @@ pub(super) fn refreshed(
                         ..
                     }
                 ) {
-                    lines.push(Line::of(vec![Span::dim(format!(
-                        "          {}",
-                        view::text::reconnect_command(quota.id)
-                    ))]));
+                    let command =
+                        view::text::reconnect_command(quota.id, view::text::IdForm::Hyphenated);
+                    lines.extend(view::text::wrap(
+                        vec![Span::plain(" ".repeat(ENTRY_INDENT))],
+                        ENTRY_INDENT,
+                        &[view::text::Part::new(format!("run: {command}"), Tone::Dim)
+                            .atom(command)],
+                        columns,
+                    ));
                 }
             }
         }
     }
     lines.push(Line::blank());
-    lines.push(Line::of(vec![Span::dim(
-        "View usage: jackin usage · jackin usage details · jackin usage refresh --json",
-    )]));
+    lines.extend(view::text::wrap(
+        Vec::new(),
+        0,
+        &view::text::split_atomic(
+            "View usage: jackin usage · jackin usage details · jackin usage refresh --json",
+            Tone::Dim,
+            &VIEW_COMMANDS.map(str::to_owned),
+        ),
+        columns,
+    ));
     app.io.lines(&lines)
+}
+
+const ENTRY_INDENT: usize = 10;
+const VIEW_COMMANDS: [&str; 3] = [
+    "jackin usage",
+    "jackin usage details",
+    "jackin usage refresh --json",
+];
+
+fn entry(tag: &str, tone: Tone, text: &str, columns: usize) -> Vec<Line> {
+    view::text::wrap(
+        vec![Span::new(tag, tone)],
+        ENTRY_INDENT,
+        &[view::text::Part::new(text, Tone::Plain)],
+        columns,
+    )
 }
