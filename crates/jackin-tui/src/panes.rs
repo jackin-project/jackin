@@ -416,6 +416,7 @@ fn attach_fault(error: &AttachError) -> LinkFault {
     match error {
         AttachError::Gateway(gateway) => fault(error, Some(gateway)),
         AttachError::NotFound(_)
+        | AttachError::NotManaged(_)
         | AttachError::MainProcessEnded { .. }
         | AttachError::EnvFile { .. } => fault(error, None),
     }

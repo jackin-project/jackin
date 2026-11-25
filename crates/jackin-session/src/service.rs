@@ -78,10 +78,15 @@ pub(crate) enum Located {
 }
 
 impl Located {
-    pub(crate) fn managed(self) -> Option<SandboxView> {
+    pub(crate) fn require<E>(
+        self,
+        absent: impl FnOnce() -> E,
+        unmanaged: impl FnOnce() -> E,
+    ) -> Result<SandboxView, E> {
         match self {
-            Located::Found(view) => Some(*view),
-            Located::Unmanaged | Located::Absent => None,
+            Located::Found(view) => Ok(*view),
+            Located::Absent => Err(absent()),
+            Located::Unmanaged => Err(unmanaged()),
         }
     }
 }
@@ -95,29 +100,23 @@ impl Session {
         read_until_cancelled(cancel, GatewayOp::Find, self.listed(name)).await
     }
 
-    pub(crate) async fn find_managed_until(
-        &self,
-        name: &SandboxName,
-        cancel: &CancellationToken,
-    ) -> Result<Option<SandboxView>, GatewayError> {
-        Ok(self.locate(name, cancel).await?.managed())
-    }
-
     async fn listed(&self, name: &SandboxName) -> Result<Located, GatewayError> {
         let found = self
             .deps
             .gateway
             .find_sandboxes(&SandboxQuery::Name(name.clone()))
             .await?;
-        Ok(found
-            .into_iter()
-            .find(|view| view.name == *name)
-            .map_or(Located::Absent, |view| {
-                if view.labels.is_managed() {
-                    Located::Found(Box::new(view))
-                } else {
-                    Located::Unmanaged
-                }
-            }))
+        let mut named = found.into_iter().filter(|view| view.name == *name);
+        let first = named.next();
+        if named.next().is_some() {
+            return Err(GatewayError::Protocol {
+                message: format!("the gateway listed several sandboxes named {name}"),
+            });
+        }
+        Ok(match first {
+            None => Located::Absent,
+            Some(view) if view.labels.is_managed() => Located::Found(Box::new(view)),
+            Some(_) => Located::Unmanaged,
+        })
     }
 }

@@ -14,7 +14,7 @@ use jackin_openshell::{
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::service::Session;
+use crate::service::{Located, Session};
 
 const KILL_POLL: Duration = Duration::from_millis(100);
 const KILL_EXIT: Duration = Duration::from_secs(30);
@@ -347,12 +347,14 @@ impl Session {
         sandbox: &SandboxName,
         cancel: &CancellationToken,
     ) -> Result<AgentInstances, GatewayError> {
-        let view = self
-            .find_managed_until(sandbox, cancel)
-            .await?
-            .ok_or_else(|| GatewayError::NotFound {
-                what: Missing::Sandbox(sandbox.clone()),
-            })?;
+        let view = match self.locate(sandbox, cancel).await? {
+            Located::Found(view) => *view,
+            Located::Absent | Located::Unmanaged => {
+                return Err(GatewayError::NotFound {
+                    what: Missing::Sandbox(sandbox.clone()),
+                });
+            }
+        };
         let labels =
             SandboxLabels::from_labels(&view.labels).map_err(|_| invalid_instance_identity())?;
         let path = SandboxPath::from_static("/sandbox/.jackin/agents.json");

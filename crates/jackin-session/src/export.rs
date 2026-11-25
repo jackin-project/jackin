@@ -28,7 +28,7 @@ use self::bundle::{Limits, MAX_HEADS};
 use self::host::{HEAD, Host, HostRefs, Update, Worktree, exported_prefix};
 use self::sandbox::{Remote, RemoteError, Repository};
 use crate::project::{HostProject, HostProjectError, UnsupportedProject};
-use crate::service::Session;
+use crate::service::{Located, Session};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExportedBranch {
@@ -162,6 +162,8 @@ pub enum ExportError {
     },
     #[error("sandbox {0} was not found")]
     NotFound(SandboxName),
+    #[error("sandbox {0} exists but is not a jackin sandbox")]
+    NotManaged(SandboxName),
     #[error(
         "{sandbox} was replaced, or cannot be told apart from a replacement, while it was exported; nothing was exported"
     )]
@@ -478,10 +480,10 @@ impl Session {
         if cancel.is_cancelled() {
             return Err(ExportError::Cancelled { group: None });
         }
-        let view = self
-            .find_managed_until(sandbox, &cancel)
-            .await?
-            .ok_or_else(|| ExportError::NotFound(sandbox.clone()))?;
+        let view = self.locate(sandbox, &cancel).await?.require(
+            || ExportError::NotFound(sandbox.clone()),
+            || ExportError::NotManaged(sandbox.clone()),
+        )?;
         if view.phase != Phase::Ready {
             return Err(ExportError::NotRunning {
                 sandbox: sandbox.clone(),
@@ -564,11 +566,17 @@ impl Session {
         inspected: &SandboxView,
         cancel: &CancellationToken,
     ) -> Result<(), ExportError> {
-        let now = self
-            .find_managed_until(sandbox, cancel)
-            .await?
-            .filter(|now| now.phase != Phase::Deleting)
-            .ok_or_else(|| ExportError::NotFound(sandbox.clone()))?;
+        let now = match self.locate(sandbox, cancel).await? {
+            Located::Found(now) if now.phase != Phase::Deleting => now,
+            Located::Found(_) | Located::Absent => {
+                return Err(ExportError::NotFound(sandbox.clone()));
+            }
+            Located::Unmanaged => {
+                return Err(ExportError::Replaced {
+                    sandbox: sandbox.clone(),
+                });
+            }
+        };
         if inspected.created_at.is_none() || now.created_at != inspected.created_at {
             return Err(ExportError::Replaced {
                 sandbox: sandbox.clone(),
@@ -786,6 +794,8 @@ pub enum ChangesError {
     Gateway(#[from] GatewayError),
     #[error("sandbox {0} was not found")]
     NotFound(SandboxName),
+    #[error("sandbox {0} exists but is not a jackin sandbox")]
+    NotManaged(SandboxName),
     #[error("sandbox {sandbox} is not running ({phase})")]
     NotRunning { sandbox: SandboxName, phase: Phase },
     #[error("sandbox {sandbox} has no git repository")]
@@ -808,10 +818,10 @@ impl Session {
         sandbox: &SandboxName,
         cancel: &CancellationToken,
     ) -> Result<ChangeSet, ChangesError> {
-        let view = self
-            .find_managed_until(sandbox, cancel)
-            .await?
-            .ok_or_else(|| ChangesError::NotFound(sandbox.clone()))?;
+        let view = self.locate(sandbox, cancel).await?.require(
+            || ChangesError::NotFound(sandbox.clone()),
+            || ChangesError::NotManaged(sandbox.clone()),
+        )?;
         if view.phase != Phase::Ready {
             return Err(ChangesError::NotRunning {
                 sandbox: sandbox.clone(),
@@ -853,12 +863,15 @@ impl Session {
         sandbox: &SandboxName,
         cancel: &CancellationToken,
     ) -> WorkState {
-        match self.find_managed_until(sandbox, cancel).await {
-            Ok(Some(view)) => {
+        match self.locate(sandbox, cancel).await {
+            Ok(Located::Found(view)) => {
                 self.work_state_of(config, sandbox, view.phase, &view.labels, cancel)
                     .await
             }
-            Ok(None) | Err(_) => WorkState::Unknown(UnknownReason::InspectionFailed),
+            Err(GatewayError::Cancelled { .. }) => WorkState::Unknown(UnknownReason::Cancelled),
+            Ok(Located::Absent | Located::Unmanaged) | Err(_) => {
+                WorkState::Unknown(UnknownReason::InspectionFailed)
+            }
         }
     }
 
@@ -872,6 +885,7 @@ impl Session {
     ) -> WorkState {
         match self.inspected(config, sandbox, phase, labels, cancel).await {
             Ok(state) => state,
+            Err(_) if cancel.is_cancelled() => WorkState::Unknown(UnknownReason::Cancelled),
             Err(reason) => WorkState::Unknown(reason),
         }
     }
@@ -882,7 +896,7 @@ impl Session {
         sandbox: &SandboxName,
         phase: Phase,
         labels: &jackin_core::Labels,
-        _cancel: &CancellationToken,
+        cancel: &CancellationToken,
     ) -> Result<WorkState, UnknownReason> {
         if phase != Phase::Ready {
             return Err(UnknownReason::NotRunning(phase));
@@ -893,8 +907,7 @@ impl Session {
         let entry = config
             .workspace(workspace)
             .ok_or_else(|| UnknownReason::WorkspaceUnknown(workspace.clone()))?;
-        let cancel = CancellationToken::new();
-        let remote = self.remote(sandbox, &cancel);
+        let remote = self.remote(sandbox, cancel);
         let repository = match remote.repository().await {
             Ok(repository) => repository,
             Err(RemoteError::NoRepository) => return Err(UnknownReason::NoRepository),
@@ -907,7 +920,7 @@ impl Session {
         let project = ProjectRoot::open(self.deps.host.fs.as_ref(), &entry.path)
             .await
             .map_err(|_| UnknownReason::InspectionFailed)?;
-        let authenticated = HostProject::open(&self.deps, &project, &cancel)
+        let authenticated = HostProject::open(&self.deps, &project, cancel)
             .await
             .map_err(|_| UnknownReason::InspectionFailed)?;
         let host = Host::new(&authenticated);

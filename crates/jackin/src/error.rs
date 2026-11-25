@@ -170,8 +170,14 @@ impl CommandError {
             CommandError::Plan(PlanError::EnvNeeded(_))
             | CommandError::Restart(RestartError::AlreadyRunning { .. })
             | CommandError::Purge(
-                PurgeError::WorkNotExported { .. } | PurgeError::Replaced { .. },
-            ) => ExitClass::Refused,
+                PurgeError::WorkNotExported { .. }
+                | PurgeError::Replaced { .. }
+                | PurgeError::NotManaged { .. },
+            )
+            | CommandError::Attach(AttachError::NotManaged(_))
+            | CommandError::Restart(RestartError::NotManaged(_))
+            | CommandError::Lifecycle(LifecycleError::NotManaged(_))
+            | CommandError::Export(ExportError::NotManaged(_)) => ExitClass::Refused,
             CommandError::Config(error) if error.cancelled() => ExitClass::Cancelled,
             CommandError::Account(error) if error.is_cancelled() => ExitClass::Cancelled,
             CommandError::WorkspaceInUse(WorkspaceGuardError::Lock(LockError::Cancelled)) => {
@@ -183,6 +189,13 @@ impl CommandError {
             | CommandError::Lifecycle(
                 LifecycleError::Cancelled | LifecycleError::PowerCancelled { .. },
             )
+            | CommandError::Purge(
+                PurgeError::Cancelled { .. } | PurgeError::Gateway(GatewayError::Cancelled { .. }),
+            )
+            | CommandError::WorkspaceInUse(WorkspaceGuardError::Listing {
+                source: LifecycleError::Cancelled,
+                ..
+            })
             | CommandError::Image(ImageError::Cancelled { .. })
             | CommandError::Export(ExportError::Cancelled { .. })
             | CommandError::Console(ConsoleError::Cancelled)

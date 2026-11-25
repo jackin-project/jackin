@@ -9,14 +9,15 @@ use jackin_core::{
     WorkspaceName, plain_duration,
 };
 use jackin_openshell::{
-    ClosureViolation, GatewayError, PolicyError, PowerAction, ProfileEndpoint, ProviderProfile,
-    RuleKey, SandboxQuery, SandboxView,
+    ClosureViolation, GatewayError, GatewayOp, PolicyError, PowerAction, ProfileEndpoint,
+    ProviderProfile, RuleKey, SandboxQuery, SandboxView,
 };
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
 use crate::export::WorkState;
-use crate::service::{POLL, Session};
+use crate::launch::RECOVERY_LOOKUP_BUDGET;
+use crate::service::{Located, POLL, Session, read_until_cancelled};
 
 #[derive(Debug)]
 pub struct SandboxListing {
@@ -85,6 +86,8 @@ pub enum LifecycleError {
     },
     #[error("sandbox {0} was not found")]
     NotFound(SandboxName),
+    #[error("sandbox {0} exists but is not a jackin sandbox")]
+    NotManaged(SandboxName),
     #[error("sandbox {sandbox} did not reach {wanted} within {}", plain_duration(.after))]
     PowerTimeout {
         sandbox: SandboxName,
@@ -141,6 +144,13 @@ fn summary(view: &SandboxView) -> Result<SandboxSummary, LifecycleError> {
     })
 }
 
+fn lifecycle_gateway(error: GatewayError) -> LifecycleError {
+    match error {
+        GatewayError::Cancelled { .. } => LifecycleError::Cancelled,
+        other => LifecycleError::Gateway(other),
+    }
+}
+
 fn labelled(name: &SandboxName, labels: &Labels) -> Result<SandboxLabels, LifecycleError> {
     SandboxLabels::from_labels(labels).map_err(|source| LifecycleError::Labels {
         sandbox: name.clone(),
@@ -156,23 +166,38 @@ impl Session {
         mode: PurgeMode,
         cancel: &CancellationToken,
     ) -> Result<PurgeOutcome, PurgeError> {
-        let found = self.find_managed_until(sandbox, cancel).await?;
-        let Some(view) = found.filter(|view| view.phase != Phase::Deleting) else {
-            return Ok(PurgeOutcome::AlreadyGone {
-                sandbox: sandbox.clone(),
-            });
+        let cancelled = || PurgeError::Cancelled {
+            sandbox: sandbox.clone(),
+        };
+        let view = match self.locate(sandbox, cancel).await {
+            Ok(Located::Found(view)) if view.phase != Phase::Deleting => *view,
+            Ok(Located::Found(_) | Located::Absent) => {
+                return Ok(PurgeOutcome::AlreadyGone {
+                    sandbox: sandbox.clone(),
+                });
+            }
+            Ok(Located::Unmanaged) => {
+                return Err(PurgeError::NotManaged {
+                    sandbox: sandbox.clone(),
+                });
+            }
+            Err(GatewayError::Cancelled { .. }) => return Err(cancelled()),
+            Err(error) => return Err(error.into()),
         };
         let was = self
             .work_state_of(config, sandbox, view.phase, &view.labels, cancel)
             .await;
+        if cancel.is_cancelled() {
+            return Err(cancelled());
+        }
         if mode == PurgeMode::Guarded && was != WorkState::Exported {
             return Err(PurgeError::WorkNotExported {
                 sandbox: sandbox.clone(),
                 state: Box::new(was),
             });
         }
-        match self.find_managed_until(sandbox, cancel).await? {
-            Some(now) if now.phase != Phase::Deleting => {
+        match self.locate(sandbox, cancel).await {
+            Ok(Located::Found(now)) if now.phase != Phase::Deleting => {
                 let replaced = match (view.created_at, now.created_at) {
                     (Some(before), Some(current)) => current != before,
                     _ => true,
@@ -183,28 +208,76 @@ impl Session {
                     });
                 }
             }
-            Some(_) | None => {
+            Ok(Located::Found(_) | Located::Absent) => {
                 return Ok(PurgeOutcome::AlreadyGone {
                     sandbox: sandbox.clone(),
                 });
             }
+            Ok(Located::Unmanaged) => {
+                return Err(PurgeError::Replaced {
+                    sandbox: sandbox.clone(),
+                });
+            }
+            Err(GatewayError::Cancelled { .. }) => return Err(cancelled()),
+            Err(error) => return Err(error.into()),
         }
-        self.deps.gateway.delete_sandbox(sandbox).await?;
-        Ok(PurgeOutcome::Deleted {
-            sandbox: sandbox.clone(),
-            was,
-        })
+        if cancel.is_cancelled() {
+            return Err(cancelled());
+        }
+        match self.deps.gateway.delete_sandbox(sandbox).await {
+            Ok(()) => Ok(PurgeOutcome::Deleted {
+                sandbox: sandbox.clone(),
+                was,
+            }),
+            Err(error) if error.outcome_unknown() => {
+                self.settle_delete(sandbox, &view, was, error).await
+            }
+            Err(error) => Err(error.into()),
+        }
     }
 
-    pub async fn list(
+    async fn settle_delete(
         &self,
-        _cancel: &CancellationToken,
-    ) -> Result<SandboxListing, LifecycleError> {
-        let views = self
-            .deps
-            .gateway
-            .find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed()))
-            .await?;
+        sandbox: &SandboxName,
+        deleted: &SandboxView,
+        was: WorkState,
+        error: GatewayError,
+    ) -> Result<PurgeOutcome, PurgeError> {
+        let outcome = PurgeOutcome::Deleted {
+            sandbox: sandbox.clone(),
+            was,
+        };
+        let unconfirmed = || PurgeError::DeleteUnconfirmed {
+            sandbox: sandbox.clone(),
+        };
+        let fresh = CancellationToken::new();
+        let lookup = self.locate(sandbox, &fresh);
+        let budget = self.deps.host.clock.sleep(RECOVERY_LOOKUP_BUDGET);
+        tokio::select! {
+            biased;
+            found = lookup => match found {
+                Ok(Located::Absent | Located::Unmanaged) => Ok(outcome),
+                Ok(Located::Found(now)) if now.phase == Phase::Deleting => Ok(outcome),
+                Ok(Located::Found(now)) => match (deleted.created_at, now.created_at) {
+                    (Some(before), Some(current)) if current != before => Ok(outcome),
+                    _ => Err(error.into()),
+                },
+                Err(_) => Err(unconfirmed()),
+            },
+            () = budget => Err(unconfirmed()),
+        }
+    }
+
+    pub async fn list(&self, cancel: &CancellationToken) -> Result<SandboxListing, LifecycleError> {
+        let views = read_until_cancelled(
+            cancel,
+            GatewayOp::Find,
+            self.deps
+                .gateway
+                .find_sandboxes(&SandboxQuery::Labels(LabelSelector::managed())),
+        )
+        .await
+        .map_err(lifecycle_gateway)?;
         let mut listing = SandboxListing {
             sandboxes: Vec::new(),
             unreadable: Vec::new(),
@@ -236,12 +309,19 @@ impl Session {
         sandbox: &SandboxName,
         cancel: &CancellationToken,
     ) -> Result<InspectView, LifecycleError> {
-        let detail = match self.deps.gateway.sandbox_detail(sandbox).await {
+        let detail = match read_until_cancelled(
+            cancel,
+            GatewayOp::Detail,
+            self.deps.gateway.sandbox_detail(sandbox),
+        )
+        .await
+        {
             Ok(detail) if detail.view.labels.is_managed() => detail,
-            Ok(_) | Err(GatewayError::NotFound { .. }) => {
+            Ok(_) => return Err(LifecycleError::NotManaged(sandbox.clone())),
+            Err(GatewayError::NotFound { .. }) => {
                 return Err(LifecycleError::NotFound(sandbox.clone()));
             }
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(lifecycle_gateway(error)),
         };
         let labels = labelled(sandbox, &detail.view.labels)?;
         let mut violations = Vec::new();
@@ -310,7 +390,13 @@ impl Session {
         violations.sort();
         violations.dedup();
         let supervisor = if detail.view.phase == Phase::Ready {
-            crate::state::run_state(self.deps.gateway.as_ref(), sandbox).await?
+            read_until_cancelled(
+                cancel,
+                GatewayOp::ReadFiles,
+                crate::state::run_state(self.deps.gateway.as_ref(), sandbox),
+            )
+            .await
+            .map_err(lifecycle_gateway)?
         } else {
             SupervisorReading::Unreadable
         };
@@ -359,10 +445,12 @@ impl Session {
         sandbox: &SandboxName,
         cancel: &CancellationToken,
     ) -> Result<SandboxView, LifecycleError> {
-        match self.find_managed_until(sandbox, cancel).await {
-            Ok(found) => found.ok_or_else(|| LifecycleError::NotFound(sandbox.clone())),
-            Err(GatewayError::Cancelled { .. }) => Err(LifecycleError::Cancelled),
-            Err(error) => Err(error.into()),
+        match self.locate(sandbox, cancel).await {
+            Ok(found) => found.require(
+                || LifecycleError::NotFound(sandbox.clone()),
+                || LifecycleError::NotManaged(sandbox.clone()),
+            ),
+            Err(error) => Err(lifecycle_gateway(error)),
         }
     }
 
